@@ -1,0 +1,15 @@
+[Unit]
+Description=LoxiLB KV Cache Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/loxilb-kv-agent --listen :9099
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+RuntimeDirectory=loxilb-kv
+
+[Install]
+WantedBy=multi-user.target

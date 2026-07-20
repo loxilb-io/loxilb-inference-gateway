@@ -1,0 +1,62 @@
+# Dockerfile.kv-agent -- Separate Docker image for loxilb-kv-agent.
+#
+# Builds only the KV cache pipeline agent binary with DOCA Compress/DMA/ComCh
+# runtime libraries. No eBPF, no Flow, no netlink dependencies.
+#
+# Build:
+#   docker build -f Dockerfile.kv-agent -t ghcr.io/loxilb-io/loxilb-kv-agent:latest .
+#
+# Run:
+#   docker run --privileged --network host ghcr.io/loxilb-io/loxilb-kv-agent:latest
+
+FROM ubuntu:22.04 AS builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG HAVE_DOCA=0
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    ca-certificates \
+    git \
+    wget \
+    zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Go
+ARG GO_VERSION=1.24.13
+RUN wget -q https://go.dev/dl/go${GO_VERSION}.linux-arm64.tar.gz \
+    && tar -C /usr/local -xzf go${GO_VERSION}.linux-arm64.tar.gz \
+    && rm go${GO_VERSION}.linux-arm64.tar.gz
+ENV PATH="/usr/local/go/bin:${PATH}"
+
+# Copy source tree
+WORKDIR /build
+COPY . .
+
+# Build kv-agent binary
+RUN make kv-agent HAVE_DOCA=${HAVE_DOCA}
+
+# ---------- Runtime stage ----------
+FROM ubuntu:22.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    zlib1g \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create runtime directories
+RUN mkdir -p /run/loxilb-kv /etc/loxilb
+
+# Copy binary from builder
+COPY --from=builder /build/loxilb-kv-agent /usr/local/bin/loxilb-kv-agent
+
+# Copy KV pipeline shared library (stub or DOCA)
+COPY --from=builder /build/loxilb-ebpf/doca/kv/libloxilb_kv.so /usr/local/lib/ 2>/dev/null || true
+COPY --from=builder /build/loxilb-ebpf/doca/kv/libloxilb_kv.a /usr/local/lib/ 2>/dev/null || true
+RUN ldconfig
+
+EXPOSE 9099
+
+ENTRYPOINT ["/usr/local/bin/loxilb-kv-agent"]
