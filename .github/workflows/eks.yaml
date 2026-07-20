@@ -83,7 +83,7 @@ jobs:
         echo "HOST_USER=ubuntu" >> $GITHUB_ENV
 
     - name: Loxilb update
-      uses: appleboy/ssh-action@v0.1.6
+      uses: appleboy/ssh-action@v1.2.5
       with:          
         host: ${{ env.LOXILB_PUBLIC_IP }}
         username: ${{ env.LOXILB_USER }}
@@ -120,7 +120,7 @@ jobs:
         kubectl get pods -A
            
     - name: Host Commands
-      uses: appleboy/ssh-action@v0.1.6
+      uses: appleboy/ssh-action@v1.2.5
       with:
         host: ${{ env.HOST_PUBLIC_IP }}
         username: ${{ env.HOST_USER }}
