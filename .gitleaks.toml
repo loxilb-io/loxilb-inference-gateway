@@ -10,4 +10,19 @@ description = "Unit-test fixtures with dummy credentials"
 paths = [
   '''pkg/mcp/phase3_test\.go''',
   '''pkg/mcp/server_test\.go''',
+  # Upstream loxilb cicd/ test fixtures surfaced by the full-history scan:
+  # ephemeral throwaway CI clusters, Vagrant well-known insecure keys,
+  # minica-generated self-signed test certs, and kubeadm bootstrap tokens for
+  # CI-only clusters that no longer exist. These are NOT secrets — the public
+  # upstream loxilb repo ships these same files. Scoped to fixture file *types*
+  # so a real credential accidentally committed to a cicd script is still caught.
+  '''(^|/)\.vagrant/.*/private_key$''',        # Vagrant default insecure keypair
+  '''^cicd/.*/(minica-)?key\.pem$''',          # minica-generated test TLS keys
+  '''^cicd/.*/server\.key$''',                 # per-scenario self-signed server keys
+  '''^cicd/.*/k3s\.yaml$''',                   # throwaway k3s kubeconfig/server token
+  '''^cicd/.*/configs/config$''',              # throwaway kubeadm kubeconfig
+  '''^cicd/.*/configs/join\.sh$''',            # kubeadm join: ephemeral bootstrap token
+  '''^cicd/.*/ingress/loxilb-secret\.yml$''',  # test ingress TLS secret
+  '''^cicd/ipsec[^/]*/config\.sh$''',          # IPsec test PSK values
+  '''^api/certification/server\.key$''',       # swagger codegen self-signed test key
 ]
