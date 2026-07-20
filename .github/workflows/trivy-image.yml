@@ -1,0 +1,69 @@
+name: Trivy-Image
+
+# CVE scan of the published container images (default and -u24 variants).
+# Blocking gate: CRITICAL vulnerabilities WITH an available fix fail the
+# scan; everything else is reported non-blocking. release.yml calls this
+# workflow on the freshly pushed release images before the GitHub release
+# is published; the weekly schedule keeps `latest` covered.
+
+on:
+  workflow_call:
+    inputs:
+      image-tag:
+        description: 'Image tag to scan (without variant suffix)'
+        type: string
+        default: 'latest'
+  schedule:
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+    inputs:
+      image-tag:
+        description: 'Image tag to scan (without variant suffix)'
+        default: 'latest'
+
+env:
+  IMAGE: ghcr.io/loxilb-io/loxilb-inference-gateway
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  scan:
+    name: trivy ${{ matrix.suffix == '' && 'u22' || 'u24' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        suffix: [ '', '-u24' ]
+    steps:
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve image reference
+        id: ref
+        run: |
+          tag="${{ inputs.image-tag }}"
+          [ -n "$tag" ] || tag=latest
+          echo "image=${IMAGE}:${tag}${{ matrix.suffix }}" >> "$GITHUB_OUTPUT"
+
+      - name: Report (HIGH+, non-blocking)
+        uses: aquasecurity/trivy-action@0.29.0
+        with:
+          image-ref: ${{ steps.ref.outputs.image }}
+          severity: HIGH,CRITICAL
+          exit-code: '0'
+          format: table
+
+      - name: Gate (CRITICAL with fix available)
+        uses: aquasecurity/trivy-action@0.29.0
+        with:
+          image-ref: ${{ steps.ref.outputs.image }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table

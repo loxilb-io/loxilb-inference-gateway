@@ -1,0 +1,25 @@
+name: Release-Hygiene
+
+# Repository hygiene gate: runs scripts/release-hygiene.sh over the PR's
+# commit range and the tracked tree (AI attribution, internal identifiers,
+# internal-doc links, tracked tooling artifacts). Blocking on every PR.
+# The secret scan half of the script is covered by gitleaks.yml.
+
+on:
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  hygiene:
+    name: hygiene gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run hygiene checks
+        run: bash scripts/release-hygiene.sh --base "origin/${{ github.base_ref }}" --skip-gitleaks

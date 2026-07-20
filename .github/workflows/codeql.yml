@@ -1,0 +1,54 @@
+name: CodeQL
+
+# Static analysis of the Go code paths. Advisory at launch (not a required
+# status check); findings land in the repository's Security tab.
+# Manual build mode: the tree needs the eBPF submodule's cgo build, which
+# CodeQL's autobuild cannot drive.
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  schedule:
+    - cron: '0 4 * * 2'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: analyze go
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: go
+          build-mode: manual
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm libelf-dev gcc-multilib libpcap-dev \
+            libbsd-dev build-essential elfutils dwarves bison flex pkg-config
+          sudo mkdir -p /opt/loxilb /usr/lib64
+          sudo chown -R "$(id -u)" /opt/loxilb /usr/lib64
+
+      - name: Build
+        run: make
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: '/language:go'

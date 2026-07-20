@@ -1,0 +1,38 @@
+name: Gitleaks
+
+# Secret scan over the full git history (all refs) using the repository's
+# .gitleaks.toml allowlist. Blocking: any finding fails the workflow.
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  push:
+    branches: [ "main" ]
+  schedule:
+    - cron: '0 2 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    name: full-history secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: 8.24.3
+        run: |
+          curl -sfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz gitleaks
+          ./gitleaks version
+
+      - name: Scan full history
+        run: |
+          ./gitleaks detect --source . --config .gitleaks.toml \
+            --log-opts="--all" --redact --no-banner --verbose
