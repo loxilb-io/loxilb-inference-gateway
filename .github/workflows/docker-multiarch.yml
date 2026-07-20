@@ -92,7 +92,7 @@ jobs:
         password: ${{ secrets.GHCR_TOKEN }}
 
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      uses: docker/setup-buildx-action@v4
 
     - name: Build and push amd64 image
       uses: docker/build-push-action@v6
@@ -127,7 +127,7 @@ jobs:
         password: ${{ secrets.GHCR_TOKEN }}
 
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      uses: docker/setup-buildx-action@v4
 
     - name: Build and push arm64 image
       uses: docker/build-push-action@v6
@@ -159,7 +159,7 @@ jobs:
         password: ${{ secrets.GHCR_TOKEN }}
 
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      uses: docker/setup-buildx-action@v4
 
     - name: Create and push multi-arch manifest
       run: |
