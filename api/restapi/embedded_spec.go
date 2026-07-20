@@ -13392,13 +13392,14 @@ func init() {
               "type": "boolean"
             },
             "security": {
-              "description": "value for Security mode (0-Plain, 1-https, 1-tls, 2-e2ehttps, 0-default)",
+              "description": "value for Security mode (0-Plain, 1-https, 2-tls, 3-e2ehttps, 0-default)",
               "type": "integer",
               "format": "int32",
               "enum": [
                 0,
                 1,
-                2
+                2,
+                3
               ]
             },
             "sel": {
@@ -29284,13 +29285,14 @@ func init() {
               "type": "boolean"
             },
             "security": {
-              "description": "value for Security mode (0-Plain, 1-https, 1-tls, 2-e2ehttps, 0-default)",
+              "description": "value for Security mode (0-Plain, 1-https, 2-tls, 3-e2ehttps, 0-default)",
               "type": "integer",
               "format": "int32",
               "enum": [
                 0,
                 1,
-                2
+                2,
+                3
               ]
             },
             "sel": {
@@ -29902,13 +29904,14 @@ func init() {
           "type": "boolean"
         },
         "security": {
-          "description": "value for Security mode (0-Plain, 1-https, 1-tls, 2-e2ehttps, 0-default)",
+          "description": "value for Security mode (0-Plain, 1-https, 2-tls, 3-e2ehttps, 0-default)",
           "type": "integer",
           "format": "int32",
           "enum": [
             0,
             1,
-            2
+            2,
+            3
           ]
         },
         "sel": {

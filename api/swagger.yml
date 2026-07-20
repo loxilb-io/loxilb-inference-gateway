@@ -7160,8 +7160,8 @@ definitions:
           security:
             type: integer
             format: int32
-            enum: [0,1,2]
-            description: value for Security mode (0-Plain, 1-https, 1-tls, 2-e2ehttps, 0-default)
+            enum: [0,1,2,3]
+            description: value for Security mode (0-Plain, 1-https, 2-tls, 3-e2ehttps, 0-default)
           block:
             type: integer
             format: uint32
