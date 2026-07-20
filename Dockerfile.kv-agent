@@ -23,7 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Go
-ARG GO_VERSION=1.24.13
+ARG GO_VERSION=1.25.12
 RUN wget -q https://go.dev/dl/go${GO_VERSION}.linux-arm64.tar.gz \
     && tar -C /usr/local -xzf go${GO_VERSION}.linux-arm64.tar.gz \
     && rm go${GO_VERSION}.linux-arm64.tar.gz

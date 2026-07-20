@@ -10,7 +10,7 @@
 # spawned via the `reflect-echo` dock-type in cicd/common.sh. Listens on :80; behaviour driven
 # entirely by env vars (ECHO_NAME / HEALTHZ_CODE / SLOW_MS / LISTEN_PORT) set per-container.
 
-FROM golang:1.24-alpine AS build
+FROM golang:1.25-alpine AS build
 WORKDIR /src
 # Copy module + vendored deps first (cache-friendly), then the source.
 COPY go.mod go.sum ./

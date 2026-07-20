@@ -31,7 +31,7 @@ RUN mkdir -p /opt/loxilb && \
     update-alternatives --install /usr/bin/llvm-strip llvm-strip /usr/bin/llvm-strip-14 100 && \
     arch=$(arch | sed s/aarch64/arm64/ | sed s/x86_64/amd64/) && echo $arch && if [ "$arch" = "arm64" ] ; then cpus="1" && apt-get install -y gcc-arm-linux-gnueabihf; else cpus=$(nproc) && apt-get update && apt-get install -y  gcc-multilib;fi && \
     # Arch specific packages - GoLang
-    wget https://go.dev/dl/go1.24.13.linux-${arch}.tar.gz && tar -xzf go1.24.13.linux-${arch}.tar.gz --directory /usr/local/ && rm go1.24.13.linux-${arch}.tar.gz && \
+    wget https://go.dev/dl/go1.25.12.linux-${arch}.tar.gz && tar -xzf go1.25.12.linux-${arch}.tar.gz --directory /usr/local/ && rm go1.25.12.linux-${arch}.tar.gz && \
     # Dev and util packages
     apt-get install -y libelf-dev libpcap-dev vim net-tools \
     elfutils dwarves git libbsd-dev bridge-utils wget unzip build-essential \
@@ -51,17 +51,19 @@ RUN mkdir -p /opt/loxilb && \
     make clean && 	make -j $(nproc) && cp -f ./bpftool /usr/local/sbin/bpftool && \
     cd - && rm -fr bpftool* && \
     # Install loxicmd
-    # git clone https://github.com/loxilb-io/loxicmd.git && cd loxicmd && git fetch --all --tags && \
-    # git checkout $TAG && go get . && \    
-    cd /root/loxilb-io/loxilb/cmd/loxicmd-enterprise/ && go get . && \
+    git clone https://github.com/loxilb-io/loxicmd.git && cd loxicmd && git fetch --all --tags && \
+    git checkout $TAG && go get . && \
     make && cp ./loxicmd /usr/local/sbin/loxicmd && cd - && rm -fr loxicmd && \
     /usr/local/sbin/loxicmd completion bash > /etc/bash_completion.d/loxi_completion && \
+    # Pre-built libtokenizers static library (KV router HF tokenizer backend)
+    wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz -O /tmp/libtokenizers.tar.gz && \
+    tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz && \
     # Install loxilb
     # git clone --recurse-submodules https://github.com/loxilb-io/loxilb  /root/loxilb-io/loxilb/ && \
     # cd /root/loxilb-io/loxilb/ && git fetch --all --tags && git checkout $TAG && \
     cd /root/loxilb-io/loxilb/ && \
     # cd loxilb-ebpf && git fetch --all --tags && git checkout $TAG && cd .. \
-    go get . && if [ "$arch" = "arm64" ] ; then DOCKER_BUILDX_ARM64=true make; \
+    go get . && make clean && if [ "$arch" = "arm64" ] ; then DOCKER_BUILDX_ARM64=true make; \
     else make ;fi && cp loxilb-ebpf/utils/mkllb_bpffs.sh /usr/local/sbin/mkllb_bpffs && \
     cp tools/k8s/mkllb-url /usr/local/sbin/mkllb-url && \
     cp loxilb-ebpf/utils/mkllb_cgroup.sh /usr/local/sbin/mkllb_cgroup && \

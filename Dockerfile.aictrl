@@ -9,8 +9,8 @@
 # Build (repo root):  docker build -f Dockerfile.aictrl -t loxilb-ai-controller .
 # ============================================================================
 
-# ── builder: match the go.mod toolchain (go 1.24.x) ─────────────────────────
-FROM golang:1.24 AS builder
+# ── builder: match the go.mod toolchain (go 1.25.x) ─────────────────────────
+FROM golang:1.25 AS builder
 WORKDIR /src
 
 # Module graph first (layer-cacheable), then ONLY the pure-Go packages the

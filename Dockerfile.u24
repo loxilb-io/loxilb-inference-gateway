@@ -45,9 +45,9 @@ RUN arch=$(arch | sed s/aarch64/arm64/ | sed s/x86_64/amd64/) && \
     else \
         apt-get update && apt-get install -y gcc-multilib && rm -rf /var/lib/apt/lists/*; \
     fi && \
-    wget https://go.dev/dl/go1.24.13.linux-${arch}.tar.gz && \
-    tar -xzf go1.24.13.linux-${arch}.tar.gz --directory /usr/local/ && \
-    rm go1.24.13.linux-${arch}.tar.gz
+    wget https://go.dev/dl/go1.25.12.linux-${arch}.tar.gz && \
+    tar -xzf go1.25.12.linux-${arch}.tar.gz --directory /usr/local/ && \
+    rm go1.25.12.linux-${arch}.tar.gz
 
 # Install build tools (split to reduce layer size)
 RUN apt-get update && \

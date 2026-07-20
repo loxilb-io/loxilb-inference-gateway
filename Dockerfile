@@ -25,11 +25,11 @@ RUN mkdir -p /opt/loxilb && \
     apt-get update && apt-get install -y wget && \
     arch=$(arch | sed s/aarch64/arm64/ | sed s/x86_64/amd64/) && echo $arch && if [ "$arch" = "arm64" ] ; then apt-get install -y gcc-arm-linux-gnueabihf; else apt-get update && apt-get install -y gcc-multilib; fi && if [ "$OPENSSL_BUILD_CPUS" != "0" ] ; then cpus=$OPENSSL_BUILD_CPUS; else cpus=$(nproc); fi && \
     # Arch specific packages - GoLang
-    wget https://go.dev/dl/go1.24.0.linux-${arch}.tar.gz && tar -xzf go1.24.0.linux-${arch}.tar.gz --directory /usr/local/ && rm go1.24.0.linux-${arch}.tar.gz && \
+    wget https://go.dev/dl/go1.25.12.linux-${arch}.tar.gz && tar -xzf go1.25.12.linux-${arch}.tar.gz --directory /usr/local/ && rm go1.25.12.linux-${arch}.tar.gz && \
     # Dev and util packages
     apt-get install -y clang-14 llvm libelf-dev libpcap-dev vim net-tools ca-certificates \
     elfutils dwarves git libbsd-dev bridge-utils wget unzip build-essential \
-    bison flex sudo iproute2 pkg-config tcpdump iputils-ping curl bash-completion && \
+    bison flex sudo iproute2 pkg-config tcpdump iputils-ping curl bash-completion libjson-c-dev libnghttp2-dev && \
     # Install openssl-3.4.1
     wget https://github.com/openssl/openssl/releases/download/openssl-3.4.1/openssl-3.4.1.tar.gz && tar -xvzf openssl-3.4.1.tar.gz && \
     cd openssl-3.4.1 && ./Configure enable-ktls '-Wl,-rpath,$(LIBRPATH)' --prefix=/usr/local/build && \
@@ -48,6 +48,9 @@ RUN mkdir -p /opt/loxilb && \
     git checkout $TAG && go get . && \
     make && cp ./loxicmd /usr/local/sbin/loxicmd && cd - && rm -fr loxicmd && \
     /usr/local/sbin/loxicmd completion bash > /etc/bash_completion.d/loxi_completion && \
+    # Pre-built libtokenizers static library (KV router HF tokenizer backend)
+    wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz -O /tmp/libtokenizers.tar.gz && \
+    tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz && \
     # Install loxilb
     cd /root/loxilb-io/loxilb/ && \
     go get . && make clean && if [ "$arch" = "arm64" ] && [ "$USE_DOCKER_BUILDX_ARM64" = "true" ] ; then DOCKER_BUILDX_ARM64=true make; \
@@ -91,7 +94,7 @@ ENV PATH="${PATH}:/usr/local/go/bin"
 ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/lib64/"
 
 RUN apt-get update && apt-get install -y --no-install-recommends sudo wget \
-    libbsd-dev iproute2 tcpdump bridge-utils net-tools libllvm14 ca-certificates curl && \
+    libbsd-dev iproute2 tcpdump bridge-utils net-tools libllvm14 ca-certificates curl libnghttp2-14 && \
     rm -rf /var/lib/apt/lists/* && apt clean
 
 COPY --from=build /usr/lib64/libbpf* /usr/lib64/

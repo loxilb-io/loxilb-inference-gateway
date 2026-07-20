@@ -459,13 +459,22 @@ Docker**, and the repo ships extra Dockerfiles for the optional AI components.
 
 ### Prerequisites
 
-Linux only (macOS cannot build the eBPF/CGO parts). Go ≥ 1.18, Docker (needed once for the
+Linux only (macOS cannot build the eBPF/CGO parts). Go ≥ 1.25, Docker (needed once for the
 swagger-model regeneration), and the eBPF toolchain:
 
 ```bash
 sudo apt-get install -y clang llvm libelf-dev gcc-multilib libpcap-dev \
   linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip \
-  build-essential bison flex iproute2
+  build-essential bison flex iproute2 libjson-c-dev libnghttp2-dev
+```
+
+The KV-cache router links against the prebuilt
+[daulet/tokenizers](https://github.com/daulet/tokenizers) static library:
+
+```bash
+arch=$(arch | sed s/aarch64/arm64/ | sed s/x86_64/amd64/)
+wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz
+sudo tar -xzf libtokenizers.linux-${arch}.tar.gz -C /usr/local/lib/
 ```
 
 ### Build the gateway binary

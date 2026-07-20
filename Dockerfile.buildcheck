@@ -29,15 +29,22 @@ RUN set -eux; \
 
 RUN set -eux; \
     arch=$(arch | sed s/aarch64/arm64/ | sed s/x86_64/amd64/); \
-    wget "https://go.dev/dl/go1.24.0.linux-${arch}.tar.gz"; \
-    tar -xzf "go1.24.0.linux-${arch}.tar.gz" --directory /usr/local/; \
-    rm "go1.24.0.linux-${arch}.tar.gz"
+    wget "https://go.dev/dl/go1.25.12.linux-${arch}.tar.gz"; \
+    tar -xzf "go1.25.12.linux-${arch}.tar.gz" --directory /usr/local/; \
+    rm "go1.25.12.linux-${arch}.tar.gz"
 
 RUN set -eux; \
     apt-get update; \
     apt-get install -y clang-14 llvm libelf-dev libpcap-dev vim net-tools ca-certificates \
       elfutils dwarves git libbsd-dev bridge-utils wget unzip build-essential \
-      bison flex sudo iproute2 pkg-config tcpdump iputils-ping curl bash-completion
+      bison flex sudo iproute2 pkg-config tcpdump iputils-ping curl bash-completion libjson-c-dev libnghttp2-dev
+
+# Pre-built libtokenizers static library (KV router HF tokenizer backend)
+RUN set -eux; \
+    arch=$(arch | sed s/aarch64/arm64/ | sed s/x86_64/amd64/); \
+    wget -q "https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz" -O /tmp/libtokenizers.tar.gz; \
+    tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/; \
+    rm /tmp/libtokenizers.tar.gz
 
 RUN set -eux; \
     arch=$(arch | sed s/aarch64/arm64/ | sed s/x86_64/amd64/); \
@@ -131,7 +138,7 @@ ENV PATH="${PATH}:/usr/local/go/bin"
 ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/lib64/"
 
 RUN apt-get update && apt-get install -y --no-install-recommends sudo wget \
-    libbsd-dev iproute2 tcpdump bridge-utils net-tools libllvm14 ca-certificates && \
+    libbsd-dev iproute2 tcpdump bridge-utils net-tools libllvm14 ca-certificates libnghttp2-14 && \
     rm -rf /var/lib/apt/lists/* && apt clean
 
 COPY --from=build /usr/lib64/libbpf* /usr/lib64/
