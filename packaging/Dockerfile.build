@@ -9,7 +9,7 @@
 # built here runs on every target. The container images use their own
 # Dockerfiles; this builder exists only to produce package payloads.
 
-FROM ubuntu:20.04 AS build
+FROM ubuntu:26.04 AS build
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG USE_DOCKER_BUILDX_ARM64=false
