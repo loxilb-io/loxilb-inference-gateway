@@ -13,6 +13,10 @@ delete_docker_host l3ep1
 delete_docker_host l3ep2
 delete_docker_host l3ep3
 
+rm -rf 10.10.10.1 10.10.10.254 31.31.31.* 32.32.32.1 33.33.33.1 minica.pem minica-key.pem \
+       client1.internal.corp.com client2.external.com loxilb.internal.loadbalancer.com \
+       client-expired rogue-ca rogue-client san-only
+
 echo "#########################################"
 echo "Deleted testbed"
 echo "#########################################"

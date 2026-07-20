@@ -1,4 +1,7 @@
 #!/bin/bash
+# minica (github.com/jsha/minica) is fetched on demand — no binary is committed.
+MINICA="$(command -v minica || echo "$(go env GOPATH)/bin/minica")"
+[ -x "$MINICA" ] || { go install github.com/jsha/minica@latest; MINICA="$(go env GOPATH)/bin/minica"; }
 
 source ../common.sh
 
@@ -35,7 +38,7 @@ config_docker_host --host1 llb1 --host2 l3ep2 --ptype phy --addr 32.32.32.254/24
 config_docker_host --host1 llb1 --host2 l3ep3 --ptype phy --addr 33.33.33.254/24
 
 $dexec llb1 ip addr add 10.10.10.3/32 dev lo
-./minica -ip-addresses 10.10.10.254
+"$MINICA" -ip-addresses 10.10.10.254
 
 docker cp minica.pem llb1:/opt/loxilb/cert/rootCA.crt
 docker cp 10.10.10.254/cert.pem llb1:/opt/loxilb/cert/server.crt

@@ -2,10 +2,8 @@
 
 source ../common.sh
 
-# Best-effort stop of the backend nginx instances.
-for ep in l3ep1 l3ep2 l3ep3; do
-  $dexec "$ep" nginx -s stop 2>/dev/null || true
-done
+# Cleanup: delete /v1 fallback rule added by PREFIX-T1 LPM test
+$dexec llb1 loxicmd delete lb 10.10.10.254 --tcp=2020 --path-prefix=/v1 2>/dev/null || true
 
 disconnect_docker_hosts l3h1 llb1
 disconnect_docker_hosts l3ep1 llb1
@@ -18,7 +16,9 @@ delete_docker_host l3ep1
 delete_docker_host l3ep2
 delete_docker_host l3ep3
 
-rm -rf 10.10.10.254/ minica.pem minica-key.pem nginx.l3ep*.conf apt.l3ep*.log
+# Generate certificates
+rm -rf 10.10.10.254  # LB VIP
+rm -rf 10.10.10.1    # Client
 
 echo "#########################################"
 echo "Deleted testbed"

@@ -1,9 +1,9 @@
 #!/bin/bash
 source ../common.sh
-echo SCENARIO-httpproxy-tcplb
-$hexec l3ep1 node ../common/tcp_server.js server1 &
-$hexec l3ep2 node ../common/tcp_server.js server2 &
-$hexec l3ep3 node ../common/tcp_server.js server3 &
+echo SCENARIO-e2ehttps-tcplb
+$hexec l3ep1 node ../common/tcp_https_server.js server1 10.10.10.254 &
+$hexec l3ep2 node ../common/tcp_https_server.js server2 10.10.10.254 &
+$hexec l3ep3 node ../common/tcp_https_server.js server3 10.10.10.254 &
 
 sleep 5
 code=0
@@ -12,27 +12,6 @@ servArr=( "server1" "server2" "server3" )
 ep=( "31.31.31.1" "32.32.32.1" "33.33.33.1" )
 j=0
 waitCount=0
-while [ $j -le 2 ]
-do
-    res=$($hexec l3h1 curl --max-time 10 -s ${ep[j]}:8080)
-    #echo $res
-    if [[ $res == "${servArr[j]}" ]]
-    then
-        echo "$res UP"
-        j=$(( $j + 1 ))
-    else
-        echo "Waiting for ${servArr[j]}(${ep[j]})"
-        waitCount=$(( $waitCount + 1 ))
-        if [[ $waitCount == 10 ]];
-        then
-            echo "All Servers are not UP"
-            echo SCENARIO-httpproxy-tcplb [FAILED]
-            sudo killall -9 node 2>&1 > /dev/null
-            exit 1
-        fi
-    fi
-    sleep 1
-done
 
 for k in {0..0}
 do
@@ -48,7 +27,7 @@ total_requests=12
 
 for i in $(seq 1 $total_requests)
 do
-    res=$($hexec l3h1 curl --max-time 10 -s http://${servIP[k]}:2020)
+    res=$($hexec l3h1 curl --max-time 10 -H "Application/json" -H "Content-type: application/json" -H "HOST: 10.10.10.254" --insecure -s https://${servIP[k]}:2020)
     echo $res
     
     if [[ $res == "server1" ]] || [[ $res == "server2" ]] || [[ $res == "server3" ]]; then
@@ -68,9 +47,9 @@ if [[ ${backend_count["server1"]} -eq 0 ]] || [[ ${backend_count["server2"]} -eq
 fi
 if [[ $lcode == 0 ]]
 then
-    echo SCENARIO-httpproxy-tcplb with ${servIP[k]} [OK]
+    echo SCENARIO-e2ehttps-tcplb with ${servIP[k]} [OK]
 else
-    echo SCENARIO-httpproxy-tcplb with ${servIP[k]} [FAILED]
+    echo SCENARIO-e2ehttps-tcplb with ${servIP[k]} [FAILED]
     code=1
 fi
 done
