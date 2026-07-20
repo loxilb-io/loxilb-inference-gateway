@@ -1,0 +1,262 @@
+# Download base image ubuntu 24.04 for build
+FROM ubuntu:24.04 as build
+
+# Disable Prompt During Packages Installation
+ARG DEBIAN_FRONTEND=noninteractive
+
+ARG TAG=main
+
+# Env variables
+ENV PATH="${PATH}:/usr/local/go/bin"
+ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/lib64/"
+
+RUN mkdir -p /root/loxilb-io/loxilb
+RUN mkdir -p /opt/loxilb/trace-catalogs
+COPY . /root/loxilb-io/loxilb/
+COPY examples/trace-catalogs /opt/loxilb/trace-catalogs/
+
+# Create directories
+RUN mkdir -p /opt/loxilb && \
+    mkdir -p /usr/lib64/ && \
+    mkdir -p /opt/loxilb/cert/ && \
+    mkdir -p /etc/loxilb/certs/ && \
+    mkdir -p /etc/bash_completion.d/
+
+# Update and install basic tools
+RUN apt-get update && \
+    apt-get install -y wget ca-certificates curl && \
+    rm -rf /var/lib/apt/lists/*
+
+# Enable universe repository (required for clang-14, lksctp-tools, strongswan-swanctl on noble)
+# Disable DEP-11 AppStream metadata (not needed in Docker, causes intermittent mirror sync failures)
+RUN echo 'Acquire::IndexTargets::deb::DEP-11::DefaultEnabled "false";' > /etc/apt/apt.conf.d/99-disable-dep11 && \
+    echo 'Acquire::Retries "3";' >> /etc/apt/apt.conf.d/99-disable-dep11 && \
+    apt-get update && \
+    apt-get install -y software-properties-common && \
+    add-apt-repository universe && \
+    apt-get update && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install architecture-specific tools and Go
+RUN arch=$(arch | sed s/aarch64/arm64/ | sed s/x86_64/amd64/) && \
+    echo "Architecture: $arch" && \
+    if [ "$arch" = "arm64" ] ; then \
+        apt-get update && apt-get install -y gcc-arm-linux-gnueabihf && rm -rf /var/lib/apt/lists/*; \
+    else \
+        apt-get update && apt-get install -y gcc-multilib && rm -rf /var/lib/apt/lists/*; \
+    fi && \
+    wget https://go.dev/dl/go1.24.13.linux-${arch}.tar.gz && \
+    tar -xzf go1.24.13.linux-${arch}.tar.gz --directory /usr/local/ && \
+    rm go1.24.13.linux-${arch}.tar.gz
+
+# Install build tools (split to reduce layer size)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        bison \
+        flex \
+        pkg-config && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install development libraries
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        clang-14 \
+        llvm-14 \
+        libelf-dev \
+        libpcap-dev \
+        libbsd-dev \
+        libjson-c-dev \
+        libnghttp2-dev && \
+    update-alternatives --install /usr/bin/llc llc /usr/bin/llc-14 100 && \
+    update-alternatives --install /usr/bin/llvm-strip llvm-strip /usr/bin/llvm-strip-14 100 && \
+    rm -rf /var/lib/apt/lists/*
+
+# NOTE: do NOT install the system libbpf-dev — noble ships libbpf 1.3.x; loxilb vendors
+# libbpf 1.5.0 (loxilb-ebpf/libbpf/src) which is staged to /usr/lib64 post-make below.
+
+# Install utility packages
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        vim \
+        net-tools \
+        elfutils \
+        dwarves \
+        git \
+        bridge-utils \
+        unzip \
+        sudo \
+        iproute2 \
+        tcpdump \
+        iputils-ping \
+        bash-completion \
+        lksctp-tools \
+        iperf3 \
+        strongswan \
+        strongswan-swanctl && \
+    rm -rf /var/lib/apt/lists/*
+
+
+# Build and install loxicmd
+RUN git clone https://github.com/loxilb-io/loxicmd.git && cd loxicmd && git fetch --all --tags && \
+    git checkout $TAG && go get . && \
+    make && cp ./loxicmd /usr/local/sbin/loxicmd && cd - && rm -fr loxicmd && \
+    /usr/local/sbin/loxicmd completion bash > /etc/bash_completion.d/loxi_completion
+
+# Build and install OpenSSL
+RUN arch=$(arch | sed s/aarch64/arm64/ | sed s/x86_64/amd64/) && \
+    cpus=$(if [ "$arch" = "arm64" ]; then echo "1"; else nproc; fi) && \
+    openssl_opts=$(if [ "$arch" = "arm64" ]; then echo "no-asm no-ktls"; else echo "enable-ktls"; fi) && \
+    wget https://github.com/openssl/openssl/releases/download/openssl-3.4.1/openssl-3.4.1.tar.gz && \
+    tar -xzf openssl-3.4.1.tar.gz && \
+    cd openssl-3.4.1 && \
+    ./Configure $openssl_opts '-Wl,-rpath,$(LIBRPATH)' --prefix=/usr/local/build && \
+    make -j$cpus && \
+    make install_dev install_modules && \
+    cd .. && \
+    cp -a /usr/local/build/include/openssl /usr/include/ && \
+    if [ -d /usr/local/build/lib64 ]; then mv /usr/local/build/lib64 /usr/local/build/lib; fi && \
+    cp -fr /usr/local/build/lib/* /usr/lib/ && \
+    ldconfig && \
+    rm -fr openssl-3.4.1*
+
+# Build and install bpftool
+RUN wget https://github.com/libbpf/bpftool/releases/download/v7.2.0/bpftool-libbpf-v7.2.0-sources.tar.gz && \
+    tar -xzf bpftool-libbpf-v7.2.0-sources.tar.gz && \
+    cd bpftool/src/ && \
+    make clean && \
+    make -j $(nproc) && \
+    cp -f ./bpftool /usr/local/sbin/bpftool && \
+    cd ../.. && \
+    rm -fr bpftool*
+
+
+# Build loxilb - Step 0: Download pre-built libtokenizers static library
+# Required by pkg/loxinet/ai_kv_tokenizer_hf.go (KV Tier-1.5 HuggingFace tokenizer backend).
+# Downloads the pre-built Rust binary — no Rust toolchain needed at build time.
+# Note: v1.27.0+ releases are packaged as .tar.gz (contains libtokenizers.a);
+# the bare .a asset 404s upstream.
+RUN arch=$(arch | sed s/aarch64/arm64/ | sed s/x86_64/amd64/) && \
+    wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz \
+        -O /tmp/libtokenizers.tar.gz && \
+    tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && \
+    rm /tmp/libtokenizers.tar.gz
+
+# Build loxilb - Step 1: Download dependencies
+RUN cd /root/loxilb-io/loxilb/ && go get .
+
+# Build loxilb - Step 2: Build binary
+RUN cd /root/loxilb-io/loxilb/ && \
+    arch=$(arch | sed s/aarch64/arm64/ | sed s/x86_64/amd64/) && \
+    if [ "$arch" = "arm64" ]; then \
+        DOCKER_BUILDX_ARM64=true make HAVE_HTTP_TRACE=1 HAVE_L4_TRACE=1 HAVE_MTLS=1 EXTRA_CFLAGS="-DHAVE_L4_TRACE"; \
+    else \
+        make HAVE_HTTP_TRACE=1 HAVE_L4_TRACE=1 HAVE_MTLS=1 EXTRA_CFLAGS="-DHAVE_L4_TRACE"; \
+    fi
+
+# Build loxilb - Step 3: Install utilities
+RUN cd /root/loxilb-io/loxilb/ && \
+    cp -a loxilb-ebpf/libbpf/src/libbpf.so* /usr/lib64/ && \
+    ln -sf libbpf.so.1.5.0 /usr/lib64/libbpf.so.1 && \
+    ln -sf libbpf.so.1 /usr/lib64/libbpf.so && \
+    cp loxilb-ebpf/utils/mkllb_bpffs.sh /usr/local/sbin/mkllb_bpffs && \
+    cp loxilb-ebpf/kernel/llb_ebpf_emain.o loxilb-ebpf/kernel/llb_ebpf_main.o loxilb-ebpf/kernel/llb_kern_mon.o loxilb-ebpf/kernel/llb_kern_sock.o loxilb-ebpf/kernel/llb_kern_sockdirect.o loxilb-ebpf/kernel/llb_kern_sockmap.o loxilb-ebpf/kernel/llb_kern_sockstream.o loxilb-ebpf/kernel/llb_xdp_main.o /opt/loxilb/  && \
+    cp tools/k8s/mkllb-url /usr/local/sbin/mkllb-url && \
+    cp loxilb-ebpf/utils/mkllb_cgroup.sh /usr/local/sbin/mkllb_cgroup && \
+    cp loxilb-ebpf/kernel/loxilb_dp_debug /usr/local/sbin/loxilb_dp_debug && \
+    cp loxilb /usr/local/sbin/loxilb
+
+# Build loxilb - Step 4: Cleanup and preserve binary
+RUN cd /root/loxilb-io/loxilb/ && \
+    rm -fr /root/loxilb-io/loxilb/* && \
+    rm -fr /root/loxilb-io/loxilb/.git && \
+    rm -fr /root/loxilb-io/loxilb/.github && \
+    mkdir -p /root/loxilb-io/loxilb/ && \
+    cp /usr/local/sbin/loxilb /root/loxilb-io/loxilb/loxilb && \
+    rm /usr/local/sbin/loxilb
+
+# Install gobgp
+RUN arch=$(arch | sed s/aarch64/arm64/ | sed s/x86_64/amd64/) && \
+    wget https://github.com/osrg/gobgp/releases/download/v3.29.0/gobgp_3.29.0_linux_${arch}.tar.gz && \
+    tar -xzf gobgp_3.29.0_linux_${arch}.tar.gz && \
+    rm gobgp_3.29.0_linux_${arch}.tar.gz && \
+    mv gobgp* /usr/sbin/ && \
+    rm -f LICENSE README.md
+
+# Cleanup build dependencies
+RUN apt-get purge -y \
+        clang-14 \
+        llvm-14 \
+        libelf-dev \
+        libpcap-dev \
+        libbsd-dev \
+        build-essential \
+        elfutils \
+        dwarves \
+        git \
+        bison \
+        flex \
+        wget \
+        unzip && \
+    arch=$(arch | sed s/aarch64/arm64/ | sed s/x86_64/amd64/) && \
+    if [ "$arch" = "arm64" ]; then \
+        apt-get purge -y gcc-arm-linux-gnueabihf; \
+    else \
+        apt-get purge -y gcc-multilib; \
+    fi && \
+    apt-get -y autoremove && \
+    rm -rf /var/lib/apt/lists/* && \
+    apt-get clean
+
+# Configure bash completion
+RUN echo "if [ -f /etc/bash_completion ] && ! shopt -oq posix; then" >> /root/.bashrc && \
+    echo "    . /etc/bash_completion" >> /root/.bashrc && \
+    echo "fi" >> /root/.bashrc
+
+# Optional files, only apply when files exist
+# COPY ./loxilb.rep* /root/loxilb-io/loxilb/loxilb
+# COPY ./llb_ebpf_main.o.rep* /opt/loxilb/llb_ebpf_main.o
+# COPY ./llb_xdp_main.o.rep* /opt/loxilb/llb_xdp_main.o
+
+FROM ubuntu:24.04
+
+# LABEL about the loxilb image
+LABEL description="loxilb-inference-gateway official docker image"
+
+# Disable Prompt During Packages Installation
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Env variables
+ENV PATH="${PATH}:/usr/local/go/bin"
+ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/lib64/"
+
+# Enable universe repository (required for libllvm14t64 on noble)
+RUN apt-get update && \
+    apt-get install -y software-properties-common && \
+    add-apt-repository universe && \
+    apt-get update && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN apt-get update && apt-get install -y --no-install-recommends sudo wget \
+    libbsd-dev iproute2 tcpdump bridge-utils net-tools libllvm14t64 ca-certificates libnghttp2-14 curl \
+    strongswan strongswan-swanctl && \
+    rm -rf /var/lib/apt/lists/* && apt clean
+
+COPY --from=build /usr/lib64/libbpf* /usr/lib64/
+COPY --from=build /usr/local/build/lib/ /usr/lib64
+COPY --from=build /usr/local/go/bin /usr/local/go/bin
+COPY --from=build /usr/local/sbin/mkllb_bpffs /usr/local/sbin/mkllb_bpffs
+COPY --from=build /usr/local/sbin/mkllb-url /usr/local/sbin/mkllb-url
+COPY --from=build /usr/local/sbin/mkllb_cgroup /usr/local/sbin/mkllb_cgroup
+COPY --from=build /usr/local/sbin/loxilb_dp_debug /usr/local/sbin/loxilb_dp_debug
+COPY --from=build /usr/local/sbin/loxicmd /usr/local/sbin/loxicmd
+COPY --from=build /opt/loxilb /opt/loxilb
+COPY --from=build /root/loxilb-io/loxilb/loxilb /root/loxilb-io/loxilb/loxilb
+COPY --from=build /usr/local/sbin/bpftool /usr/local/sbin/bpftool
+COPY --from=build /usr/sbin/gobgp* /usr/sbin/
+COPY --from=build /root/.bashrc /root/.bashrc
+
+ENTRYPOINT ["/root/loxilb-io/loxilb/loxilb"]
+
+# Expose Ports
+EXPOSE 11111 22222 3784
