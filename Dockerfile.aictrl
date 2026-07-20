@@ -24,7 +24,7 @@ COPY cmd/loxilb-ai-controller ./cmd/loxilb-ai-controller
 RUN CGO_ENABLED=0 go build -o /out/loxilb-ai-controller ./cmd/loxilb-ai-controller/
 
 # ── final: minimal base + static binary + registry COPY slot ────────────────
-FROM alpine:3.20
+FROM alpine:3.24
 
 COPY --from=builder /out/loxilb-ai-controller /usr/local/bin/loxilb-ai-controller
 
