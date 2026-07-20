@@ -1,0 +1,38 @@
+# Dockerfile.aictrl — the standalone global AI controller image (96-07, D-02).
+# ============================================================================
+# PURE-GO, CGO_ENABLED=0 (CTRL-01): no pkg/loxinet, no eBPF, no cgo — the
+# image is a PLAIN container (no host networking, no XDP risk) and therefore
+# the fleet's SAFE FAULT TARGET (the only container 96-08 fault actions may
+# touch). Runtime binds are the deployer's job: publish ports on the PRIVATE
+# bus address only (10.0.0.13), never 0.0.0.0 on a public iface (T-96-23).
+#
+# Build (repo root):  docker build -f Dockerfile.aictrl -t loxilb-ai-controller .
+# ============================================================================
+
+# ── builder: match the go.mod toolchain (go 1.24.x) ─────────────────────────
+FROM golang:1.24 AS builder
+WORKDIR /src
+
+# Module graph first (layer-cacheable), then ONLY the pure-Go packages the
+# controller needs — go build fetches just the required deps.
+COPY go.mod go.sum ./
+COPY pkg/aictrl ./pkg/aictrl
+COPY pkg/aimetrics ./pkg/aimetrics
+COPY cmd/loxilb-ai-controller ./cmd/loxilb-ai-controller
+
+# CTRL-01: this exact command is the requirement — static, no cgo.
+RUN CGO_ENABLED=0 go build -o /out/loxilb-ai-controller ./cmd/loxilb-ai-controller/
+
+# ── final: minimal base + static binary + registry COPY slot ────────────────
+FROM alpine:3.20
+
+COPY --from=builder /out/loxilb-ai-controller /usr/local/bin/loxilb-ai-controller
+
+# Registry COPY slot: the in-repo fleet registry is baked as the default;
+# deploys bind-mount a fresh copy over /etc/loxilb/ai-controller.yaml.
+COPY bench/testbed/ai-controller.yaml /etc/loxilb/ai-controller.yaml
+
+# 18856 = gRPC snapshot bus (private bind), 18857 = CTRL-05 /metrics.
+EXPOSE 18856 18857
+
+ENTRYPOINT ["/usr/local/bin/loxilb-ai-controller", "--registry", "/etc/loxilb/ai-controller.yaml"]
