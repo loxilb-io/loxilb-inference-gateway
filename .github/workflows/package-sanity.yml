@@ -73,6 +73,7 @@ jobs:
         if: inputs.artifact_prefix == ''
         with:
           submodules: recursive
+          token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
 
       - name: Install nfpm
         if: inputs.artifact_prefix == ''
