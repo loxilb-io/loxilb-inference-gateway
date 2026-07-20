@@ -1,0 +1,39 @@
+{
+  "_note": "Phase 88 Gap-B2 (completions special-token splitting parity) ground-truth fixture. Records the AUTHORITATIVE vLLM AutoTokenizer token_id vector for a completions prompt whose leading text is the literal special-token string <|im_end|>, plus which daulet construction mode reproduces it. Generated live on the warm Naver kv-* fleet inside the vLLM container (real Qwen/Qwen2.5-7B-Instruct), transformers 4.57.6, via AutoTokenizer.encode(prompt, add_special_tokens=False) — the exact call vLLM makes for a /v1/completions prompt. The daulet mode was confirmed LIVE end-to-end through loxilb's data plane (KV_HASH logs), NOT via a transformers proxy (see daulet_mode_diff.correction). The Go regression test (pkg/loxinet/ai_kv_special_token_parity_test.go) asserts loxilb's daulet backend reproduces vllm_authoritative_ids; the live :9003 Mooncake tier15_hits gate (Phase 88-03) is the end-to-end backstop and showed tier15_hits 0->9 with blk=0 first token == 151645.",
+  "model": "Qwen/Qwen2.5-7B-Instruct",
+  "transformers_version": "4.57.6",
+  "prompt": "<|im_end|> in the place of mine To calm this tempest",
+  "special_token_ids": {
+    "<|endoftext|>": 151643,
+    "<|im_start|>": 151644,
+    "<|im_end|>": 151645
+  },
+  "vllm_authoritative_ids": [151645, 304, 279, 1992, 315, 10485, 2014, 19300, 419, 1562, 29123],
+  "vllm_len": 11,
+  "vllm_first_id_is_im_end": true,
+  "auto_bos_finding": {
+    "add_special_tokens_true_first3": [151645, 304, 279],
+    "note": "add_special_tokens=True yields the same leading ids as add_special_tokens=False (no bos prepended). Qwen2.5 prepends no bos for a completions prompt, so loxilb's Encode(text, addSpecialTokens=false) already matches vLLM. No Encode-arg change needed."
+  },
+  "daulet_mode_diff": {
+    "decision": "default",
+    "decision_detail": "Use daulet FromFile(path) / FromBytes WITHOUT WithEncodeSpecialTokens. daulet's DEFAULT (HF Rust tokenizers encode_special_tokens=false) RECOGNIZES embedded special-token text as its single special id == vLLM. Do NOT pass WithEncodeSpecialTokens().",
+    "recognized_form_daulet_default_ids": [151645, 304, 279, 1992, 315, 10485, 2014, 19300, 419, 1562, 29123],
+    "recognized_form_len": 11,
+    "recognized_matches_vllm": true,
+    "split_form_daulet_withspecial_ids": [27, 91, 318, 6213, 91, 29, 304, 279, 1992, 315, 10485, 2014, 19300, 419, 1562, 29123],
+    "split_form_len": 16,
+    "split_matches_vllm": false,
+    "evidence": "daulet WithEncodeSpecialTokens() (encode_special_tokens=true) SPLITS the literal '<|im_end|>' into 6 normal tokens [27,91,318,6213,91,29] ('<','|','im','_end','|','>'), shifting every 16-token block boundary -> zero KV-exact inventory matches. daulet DEFAULT recognizes it as the single special id 151645 == vLLM. CONFIRMED LIVE: with WithEncodeSpecialTokens the loxilb KV_HASH log showed blk=0=[27,91,318,...] and all no_worker; with the default it showed blk=0=[151645,...] and tier15_hits 0->9.",
+    "correction": "An earlier iteration of this fixture/code passed WithEncodeSpecialTokens() based on transformers' split_special_tokens flag as a proxy for daulet. That mapping is INVERTED: transformers split_special_tokens=True == daulet encode_special_tokens=true == SPLIT; transformers split_special_tokens=False (default, recognize) == daulet DEFAULT. daulet's option name is misleading. The correct loxilb setting is the daulet DEFAULT (no option), verified live."
+  },
+  "daulet_api_note": "daulet/tokenizers@v1.27.0 FromFile(path) takes NO options and uses encode_special_tokens=false (recognize) — which is exactly what we want. (Only FromBytes accepts opts; we use FromFile.)",
+  "staged_test_tokenizer": {
+    "slug": "Qwen__Qwen3-0.6B",
+    "path": "cicd/common/kv_hash/fixtures/tokenizers/Qwen__Qwen3-0.6B/tokenizer.json",
+    "shares_qwen2.5_registry": true,
+    "verified_ids": {"<|im_end|>": 151645, "Ġin": 304, "Ġthe": 279, "Ġplace": 1992},
+    "note": "The staged Qwen3-0.6B tokenizer shares Qwen2.5's ChatML special-token registry AND the relevant base-vocab ids (verified locally against the committed tokenizer.json), so daulet (default mode) on it reproduces vllm_authoritative_ids exactly. Expected ids come from the vLLM AutoTokenizer computation above (NOT from daulet), so the test is non-circular."
+  },
+  "w2_resolution": "The checker's W2 latent risk (chat vs completions needing different tokenizer modes) is RESOLVED: vLLM recognizes embedded special tokens for completions, and the chat path's rendered template emits the same literal <|im_start|>/<|im_end|> text that must become special ids. Both paths want recognition -> they SHARE the daulet DEFAULT mode. No per-path mode mechanism is needed. Confirmed live: both completions (blk0=151645) and chat (blk0=151644) tokenize correctly under the default and advance tier15_hits."
+}

@@ -1,0 +1,33 @@
+FROM python:3.11-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    curl \
+    netcat-openbsd \
+    net-tools \
+    iputils-ping \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy minica binary for certificate generation
+COPY minica /usr/local/bin/minica
+RUN chmod +x /usr/local/bin/minica
+
+# Copy requirements
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy MCP server application
+COPY mcp-server/mcp-server.py /app/server.py
+
+# Expose HTTPS port
+EXPOSE 8443
+
+# Use bash as entrypoint to keep container running
+ENTRYPOINT ["/bin/bash"]

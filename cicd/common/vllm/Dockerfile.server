@@ -1,0 +1,55 @@
+FROM ubuntu:20.04 AS builder
+
+# Prevent interactive prompts during build
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install dependencies for building vLLM
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    git \
+    ca-certificates \
+    python3 \
+    python3-pip \
+    python3-dev \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Clone vLLM repository
+WORKDIR /build
+RUN git clone https://github.com/vllm-project/vllm.git && \
+    cd vllm && \
+    git checkout v0.9.0.1
+
+# Build vLLM CPU Docker image
+WORKDIR /build/vllm
+RUN DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.cpu \
+    --tag vllm-cpu-env \
+    --target vllm-openai .
+
+# Final stage - use the built vLLM image
+FROM vllm-cpu-env
+
+# Set environment variables for vLLM CPU optimization
+ENV VLLM_CPU_KVCACHE_SPACE=4
+ENV VLLM_USE_V1=0
+ENV HF_HOME=/root/.cache/huggingface
+
+# Install updated transformers version
+RUN pip install --no-cache-dir -U "transformers<4.54.0"
+
+# Install additional utilities for testing
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    curl \
+    wget \
+    netcat \
+    net-tools \
+    iputils-ping \
+    jq \
+    && rm -rf /var/lib/apt/lists/*
+
+# Expose vLLM API port
+EXPOSE 8000
+
+# Use bash as entrypoint to keep container running
+ENTRYPOINT ["/bin/bash"]

@@ -1,0 +1,37 @@
+{
+  "_note": "Phase 88 Gap-B1 (chat-template parity) ground-truth fixture. Records vLLM's tokenizer.apply_chat_template output (rendered string + token_ids, add_generation_prompt=True) for Qwen/Qwen2.5-7B-Instruct, generated live on the warm Naver kv-* fleet inside the vLLM container (transformers 4.57.6). loxilb must render the SAME templated string in Go (daulet has no apply_chat_template) and feed it through the existing Encode path (WithEncodeSpecialTokens, add_special_tokens=false) to reproduce templated_ids. CONFIRMED: encode_rendered_matches_templated==true for every case -> Encode(rendered) == apply_chat_template(tokenize=True), so one tokenizer path serves chat AND completions (W2 resolved). The Go renderer test (pkg/loxinet/ai_kv_chat_template_test.go) asserts the rendered string matches rendered_exact; the live :9003 chat Mooncake tier15_hits gate (Phase 88-03) is the end-to-end backstop.",
+  "model": "Qwen/Qwen2.5-7B-Instruct",
+  "model_slug": "Qwen__Qwen2.5-7B-Instruct",
+  "transformers_version": "4.57.6",
+  "template_rules": {
+    "per_message": "<|im_start|>{role}\\n{content}<|im_end|>\\n",
+    "generation_prompt": "<|im_start|>assistant\\n",
+    "default_system_when_absent": "You are Qwen, created by Alibaba Cloud. You are a helpful assistant.",
+    "default_system_rendered": "<|im_start|>system\\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\\n",
+    "note": "If the first message is role=system, use it verbatim and DO NOT inject the default. Otherwise inject the default system block before the messages. add_generation_prompt=True always appends the generation prompt. This v1 hardcoded form covers plain role/content chat messages (the campaign workload); the full Qwen2.5 Jinja template additionally handles tool-calls — out of scope for v1, registry seam left for later."
+  },
+  "special_token_ids": {"<|im_start|>": 151644, "<|im_end|>": 151645},
+  "cases": {
+    "user_only": {
+      "messages": [{"role": "user", "content": "What is 2+2?"}],
+      "rendered_exact": "<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant\n",
+      "templated_ids": [151644, 8948, 198, 2610, 525, 1207, 16948, 11, 3465, 553, 54364, 14817, 13, 1446, 525, 264, 10950, 17847, 13, 151645, 198, 151644, 872, 198, 3838, 374, 220, 17, 10, 17, 30, 151645, 198, 151644, 77091, 198],
+      "templated_len": 36,
+      "encode_rendered_matches_templated": true
+    },
+    "system_user": {
+      "messages": [{"role": "system", "content": "You are a terse assistant."}, {"role": "user", "content": "What is 2+2?"}],
+      "rendered_exact": "<|im_start|>system\nYou are a terse assistant.<|im_end|>\n<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant\n",
+      "templated_ids": [151644, 8948, 198, 2610, 525, 264, 50537, 17847, 13, 151645, 198, 151644, 872, 198, 3838, 374, 220, 17, 10, 17, 30, 151645, 198, 151644, 77091, 198],
+      "templated_len": 26,
+      "encode_rendered_matches_templated": true
+    },
+    "multi_turn": {
+      "messages": [{"role": "user", "content": "What is 2+2?"}, {"role": "assistant", "content": "4"}, {"role": "user", "content": "And times 3?"}],
+      "rendered_exact": "<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant\n4<|im_end|>\n<|im_start|>user\nAnd times 3?<|im_end|>\n<|im_start|>assistant\n",
+      "templated_ids": [151644, 8948, 198, 2610, 525, 1207, 16948, 11, 3465, 553, 54364, 14817, 13, 1446, 525, 264, 10950, 17847, 13, 151645, 198, 151644, 872, 198, 3838, 374, 220, 17, 10, 17, 30, 151645, 198, 151644, 77091, 198, 19, 151645, 198, 151644, 872, 198, 3036, 3039, 220, 18, 30, 151645, 198, 151644, 77091, 198],
+      "templated_len": 52,
+      "encode_rendered_matches_templated": true
+    }
+  }
+}
