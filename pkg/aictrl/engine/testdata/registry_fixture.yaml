@@ -1,0 +1,57 @@
+# Test fixture — mirrors the bench/testbed/ai-controller.yaml schema on the
+# real fleet topology (small, values chosen for the discovery-mismatch test:
+# decode expected 7408 vs discovered 9000).
+version: 1
+
+service:
+  key: "10.0.0.12:9003:tcp"
+  vip: 10.0.0.12
+  port: 9003
+
+epoch_period_sec: 10
+
+hosts:
+  10.0.0.7:
+    gpu_model: L4
+    hbm_gb: 24
+    role: prefill
+    port: 8100
+    ep_idx: 0
+    expected_num_gpu_blocks: 7408
+    serving_throughput_prior: 1.0
+
+  10.0.0.8:
+    gpu_model: L4
+    hbm_gb: 24
+    role: prefill
+    port: 8100
+    ep_idx: 1
+    expected_num_gpu_blocks: 7408
+    serving_throughput_prior: 1.0
+
+  10.0.0.9:
+    gpu_model: L4
+    hbm_gb: 24
+    role: prefill
+    port: 8100
+    ep_idx: 2
+    expected_num_gpu_blocks: 7408
+    serving_throughput_prior: 1.0
+
+  10.0.0.11:
+    gpu_model: L40S
+    hbm_gb: 48
+    role: prefill
+    port: 8100
+    ep_idx: 3
+    expected_num_gpu_blocks: 32600
+    serving_throughput_prior: 2.0
+
+  10.0.0.10:
+    gpu_model: L40S
+    hbm_gb: 48
+    role: decode
+    port: 8200
+    ep_idx: 4
+    expected_num_gpu_blocks: 7408
+    serving_throughput_prior: 2.0

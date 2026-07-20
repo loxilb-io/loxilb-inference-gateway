@@ -1,0 +1,10 @@
+catalog_name: "mcp"  
+description: "MCP protocol tracing"
+version: "1.0"
+
+deep_inspection:
+  enabled: true
+  sample_rate: 100
+  parser_type: "mcp"
+  max_body_size: 32768
+  redact_pii: true

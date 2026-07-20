@@ -1,0 +1,168 @@
+// loxilb.aictrl.v1 — FROZEN controller→loxilb snapshot contract (SNAP-01, Phase 96 Wave 2).
+//
+// CODEGEN PROVENANCE (regenerate ONLY with these exact pins — house pattern:
+// generated .pb.go files are committed in-tree, xsync style):
+//   protoc              v34.1 (libprotoc 34.1, local homebrew)
+//   protoc-gen-go       v1.33.0  (matches go.mod google.golang.org/protobuf v1.33.0)
+//   protoc-gen-go-grpc  v1.2.0   (matches xsync_grpc.pb.go provenance; grpc pin v1.59.0)
+// Regeneration command (from repo root):
+//   go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.33.0
+//   go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2.0
+//   protoc --go_out=. --go_opt=paths=source_relative \
+//          --go-grpc_out=. --go-grpc_opt=paths=source_relative \
+//          pkg/aictrl/aictrl.proto
+//
+// FROZEN-CONTRACT RULE: this wire format is frozen by golden byte tests
+// (pkg/aictrl/testdata/*.golden.bin, see golden_test.go). ANY field change —
+// number, type, name, addition, removal — requires regenerated golden files
+// (-update flag) AND explicit review. Downstream consumers: the loxilb applier
+// (pkg/loxinet, Wave 4) and the CGO_ENABLED=0 controller binary (Waves 5-6)
+// both compile against the committed stubs in this pure-Go package.
+//
+// P1 RULE (structural, tripwired): snapshot messages carry NO per-EP load-like
+// fields — no live counters, no scraped gauges, nothing the data plane could
+// mistake for its own local health inputs. The 81-09 hot-spot root cause was a
+// scraped load value displacing the live local signal (2.7x under-count).
+// noload_test.go walks every field descriptor in this package via protoreflect
+// and FAILS on forbidden name substrings. Contrast xsync.proto VllmWorkerMetrics
+// — that shape is exactly what this contract must NOT contain.
+//
+// EPOCH ACCEPTANCE RULE (T-96-04, enforced by the Wave-4 applier):
+//   accept iff (boot_id != last_boot_id) || (epoch > last_epoch)
+// Replays and lower epochs on the same boot_id are NACKed (ACK_STATUS_REJECTED);
+// a rejected snapshot leaves last-good state applied and the staleness clock
+// running (a bad snapshot is equivalent to an absent controller).
+//
+// DEFAULT CONTROLLER gRPC PORT: 18856
+// (chosen != 22222 xSync and != fleet ports 8100/8200/9000/9003/9444/11111/5557/5600).
+// loxilb DIALS OUT to the controller (interim security posture, 96-07); mTLS is
+// deferred to Phase 100 (GA-03) per roadmap — T-96-06 accepted interim deferral.
+
+syntax = "proto3";
+
+package loxilb.aictrl.v1;
+
+option go_package = "github.com/loxilb-io/loxilb/pkg/aictrl;aictrl";
+
+// Snapshot — one full state-of-the-world (SotW) message. Every message carries
+// FULL state for every service the controller manages; there are no deltas.
+// The applier replaces its entire controller-derived view on each accepted epoch.
+message Snapshot {
+  // Monotonic per-boot generation counter. Acceptance requires epoch > last
+  // seen for the same boot_id (see EPOCH ACCEPTANCE RULE in header).
+  uint64 epoch = 1;
+  // Controller process instance UUID; changes on controller restart. A new
+  // boot_id resets the epoch acceptance floor (fresh counter after restart).
+  string boot_id = 2;
+  // Absolute wall-clock deadline (unix milliseconds) after which this snapshot
+  // is STALE: the applier begins the alpha-decay ladder toward Autonomous
+  // (P5 — one continuous decay scalar, not mode branches).
+  uint64 staleness_deadline_unix_ms = 3;
+  // Full per-service instruction set. Services absent here receive NO
+  // controller instruction (applier treats them as Autonomous).
+  repeated ServiceSnapshot services = 4;
+  // Minimum applier protocol capability required to apply this snapshot.
+  // Appliers with a lower version MUST reject (ACK_STATUS_REJECTED) and keep
+  // last-good — forward-compat gate for future semantic additions.
+  uint32 min_applier_version = 5;
+  // Opaque per-snapshot token echoed back in Ack.nonce for end-to-end
+  // apply-confirmation correlation (T-96-04 replay evidence).
+  string nonce = 6;
+}
+
+// ServiceSnapshot — controller instruction for ONE loxilb service (LB rule).
+message ServiceSnapshot {
+  // Service identity key, "xip:xport:proto" — reuses xsync.proto
+  // SockproxySessionEntry keying so the applier's bridge walk resolves the
+  // same service the sockproxy data plane sees (e.g. "10.0.0.12:9003:tcp").
+  string service_key = 1;
+  // Full endpoint instruction set for this service (SotW — all EPs, every time).
+  repeated EpEntry eps = 2;
+}
+
+// EpEntry — controller instruction for ONE endpoint of a service.
+// NOTE (P1): this message is instruction-only — weight and state are controller
+// OUTPUTS. It must never grow observed-signal fields; see header P1 RULE.
+message EpEntry {
+  // Endpoint index in the service's EP array (the data plane's native handle,
+  // matches per-EP metric labeling ep_idx).
+  uint32 ep_idx = 1;
+  // Endpoint address "ip:port" — identity CROSS-CHECK only. The applier
+  // verifies ep_addr matches its local EP table at ep_idx and rejects on
+  // mismatch; it is NEVER a routing input and never creates/renames EPs.
+  string ep_addr = 2;
+  // P/D role this instruction applies to (prefill vs decode selectors are
+  // independent in the data plane).
+  Role role = 3;
+  // Relative routing weight in [0,100]. 100 = arithmetic no-op vs today's
+  // behavior (G3-friendly neutral); 0 = do not prefer, but local health may
+  // still route as last resort. Applier blends probabilistically (P3) and
+  // intersects with local health (P4) — a weight can never resurrect a
+  // CB-open EP (G4).
+  uint32 weight = 4;
+  // Desired lifecycle state. Values 1/2/3 match the C packed-atomic
+  // drain_state encoding; 0 (UNSPECIFIED) = no instruction, leave local state.
+  EpState state = 5;
+}
+
+// Role — which P/D selector an EpEntry instruction targets.
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_PREFILL = 1;
+  ROLE_DECODE = 2;
+}
+
+// EpState — desired endpoint lifecycle state. Numeric values 1/2/3 mirror the
+// C packed-atomic state values with 0 reserved for "no instruction".
+enum EpState {
+  EP_STATE_UNSPECIFIED = 0;
+  EP_STATE_ACTIVE = 1;
+  EP_STATE_DRAINING = 2;
+  EP_STATE_DISABLED = 3;
+}
+
+// WatchRequest — loxilb's stream subscription (loxilb dials the controller).
+message WatchRequest {
+  // Stable identity of this loxilb gateway instance (echoed in Ack.gateway_id).
+  string gateway_id = 1;
+  // Applier protocol capability version; controller compares against
+  // Snapshot.min_applier_version before/while streaming.
+  uint32 applier_version = 2;
+}
+
+// Ack — applier's apply-result report for one received Snapshot.
+message Ack {
+  // Epoch of the snapshot this Ack refers to.
+  uint64 epoch = 1;
+  // Echo of Snapshot.nonce (end-to-end correlation, T-96-04).
+  string nonce = 2;
+  // Apply outcome.
+  AckStatus status = 3;
+  // Human-readable rejection reason when status == ACK_STATUS_REJECTED
+  // (e.g. "epoch replay on same boot_id", "min_applier_version 3 > mine 1",
+  // "ep_addr identity mismatch at ep_idx 2").
+  string error_detail = 4;
+  // Identity of the acking gateway (WatchRequest.gateway_id echo).
+  string gateway_id = 5;
+}
+
+// AckStatus — apply outcome for a snapshot.
+enum AckStatus {
+  ACK_STATUS_UNSPECIFIED = 0;
+  ACK_STATUS_APPLIED = 1;
+  ACK_STATUS_REJECTED = 2;
+}
+
+// AckResponse — empty by design; the Ack RPC is fire-and-report.
+message AckResponse {
+}
+
+// AiCtrl — controller service. loxilb (client) dials OUT and subscribes;
+// the controller (server) streams full SotW snapshots and receives Acks.
+service AiCtrl {
+  // Server-stream of full SotW snapshots. The controller sends the current
+  // snapshot immediately on subscribe, then on every epoch generation.
+  rpc WatchSnapshots (WatchRequest) returns (stream Snapshot) {}
+  // Unary apply-result report for a received snapshot.
+  rpc AckSnapshot (Ack) returns (AckResponse) {}
+}

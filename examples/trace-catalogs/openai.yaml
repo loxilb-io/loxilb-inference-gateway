@@ -1,0 +1,11 @@
+catalog_name: "openai"
+description: "OpenAI API tracing with 100% sampling"
+version: "1.0"
+
+deep_inspection:
+  enabled: true
+  sample_rate: 100
+  parser_type: "openai"
+  max_body_size: 65536
+  redact_pii: false
+  parser_timeout: "2s"

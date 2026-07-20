@@ -55,6 +55,45 @@ const (
 	ValidateTokenQuery      = "SELECT username,role FROM token WHERE token_value = ? AND expires_at > NOW()"
 	DeleteTokenQuery        = "DELETE FROM token WHERE token_value = ?"
 	DeleteExpiredTokenQuery = "DELETE FROM token WHERE expires_at < NOW()"
+
+	CreateAPIKeysTableQuery = `CREATE TABLE IF NOT EXISTS api_keys (` +
+		`key_id VARCHAR(64) PRIMARY KEY,` +
+		`key_hash VARCHAR(64) NOT NULL,` +
+		`tenant_id VARCHAR(128) NOT NULL,` +
+		`name VARCHAR(255) NOT NULL DEFAULT '',` +
+		`allowed_models TEXT NOT NULL DEFAULT '',` +
+		`rate_limit_rps INT DEFAULT 0,` +
+		`burst_size INT DEFAULT 0,` +
+		`tokens_per_min INT DEFAULT 0,` +
+		`created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),` +
+		`expires_at DATETIME(3) NULL,` +
+		`enabled TINYINT(1) NOT NULL DEFAULT 1,` +
+		`INDEX idx_tenant_id (tenant_id)` +
+		`) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+
+	CreateTenantRateLimitsTableQuery = `CREATE TABLE IF NOT EXISTS tenant_rate_limits (` +
+		`tenant_id VARCHAR(128) PRIMARY KEY,` +
+		`rps INT NOT NULL DEFAULT 0,` +
+		`tokens_per_min INT NOT NULL DEFAULT 0,` +
+		`updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)` +
+		`) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+
+	CreateUsersTableQuery = `CREATE TABLE IF NOT EXISTS users (` +
+		`id INT AUTO_INCREMENT PRIMARY KEY,` +
+		`username VARCHAR(255) NOT NULL,` +
+		`password VARCHAR(255) NOT NULL,` +
+		`created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,` +
+		`role VARCHAR(255) NOT NULL DEFAULT 'viewer'` +
+		`) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+
+	CreateTokenTableQuery = `CREATE TABLE IF NOT EXISTS token (` +
+		`id INT AUTO_INCREMENT PRIMARY KEY,` +
+		`token_value VARCHAR(512) NOT NULL,` +
+		`username VARCHAR(255) NOT NULL,` +
+		`expires_at TIMESTAMP NOT NULL,` +
+		`created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,` +
+		`role VARCHAR(255) NOT NULL` +
+		`) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
 )
 
 func InitDB() (*sql.DB, error) {
@@ -67,7 +106,7 @@ func InitDB() (*sql.DB, error) {
 	rawPassword := string(bytePassword)
 	Password := strings.TrimSpace(rawPassword)
 
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s",
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?parseTime=true",
 		options.Opts.DatabaseUser,
 		Password,
 		options.Opts.DatabaseHost,
@@ -83,6 +122,22 @@ func InitDB() (*sql.DB, error) {
 	defer cancel()
 	if err = db.PingContext(ctx); err != nil {
 		tk.LogIt(tk.LogCritical, "Error connecting to the database: %v\n", err)
+		return nil, err
+	}
+	if _, err = db.Exec(CreateUsersTableQuery); err != nil {
+		tk.LogIt(tk.LogCritical, "Failed to create users table: %v\n", err)
+		return nil, err
+	}
+	if _, err = db.Exec(CreateTokenTableQuery); err != nil {
+		tk.LogIt(tk.LogCritical, "Failed to create token table: %v\n", err)
+		return nil, err
+	}
+	if _, err = db.Exec(CreateAPIKeysTableQuery); err != nil {
+		tk.LogIt(tk.LogCritical, "Failed to create api_keys table: %v\n", err)
+		return nil, err
+	}
+	if _, err = db.Exec(CreateTenantRateLimitsTableQuery); err != nil {
+		tk.LogIt(tk.LogCritical, "Failed to create tenant_rate_limits table: %v\n", err)
 		return nil, err
 	}
 	return db, nil
@@ -106,7 +161,7 @@ func ConnectWithRetry(maxRetries int, retryDelay time.Duration) (*sql.DB, error)
 	}
 	rawPassword := string(bytePassword)
 	Password := strings.TrimSpace(rawPassword)
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s",
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?parseTime=true",
 		options.Opts.DatabaseUser,
 		Password,
 		options.Opts.DatabaseHost,

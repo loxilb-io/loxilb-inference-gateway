@@ -1,0 +1,39 @@
+# HELP vllm:num_requests_running Number of requests in model execution batches.
+# TYPE vllm:num_requests_running gauge
+vllm:num_requests_running{engine="0",model_name="Qwen/Qwen2.5-7B-Instruct"} 4.0
+# HELP vllm:num_requests_waiting Number of requests waiting to be processed.
+# TYPE vllm:num_requests_waiting gauge
+vllm:num_requests_waiting{engine="0",model_name="Qwen/Qwen2.5-7B-Instruct"} 3.0
+# HELP vllm:kv_cache_usage_perc KV-cache usage. 1 means 100 percent usage.
+# TYPE vllm:kv_cache_usage_perc gauge
+vllm:kv_cache_usage_perc{engine="0",model_name="Qwen/Qwen2.5-7B-Instruct"} 0.42
+# HELP vllm:cache_config_info Information of the LLMEngine CacheConfig
+# TYPE vllm:cache_config_info gauge
+vllm:cache_config_info{block_size="16",cache_dtype="auto",calculate_kv_scales="False",cpu_offload_gb="0",enable_prefix_caching="True",gpu_memory_utilization="0.9",num_cpu_blocks="0",num_gpu_blocks="7408",num_gpu_blocks_override="None",sliding_window="None",swap_space_bytes="4294967296"} 1.0
+# HELP vllm:prompt_tokens_total Number of prefill tokens processed.
+# TYPE vllm:prompt_tokens_total counter
+vllm:prompt_tokens_total{engine="0",model_name="Qwen/Qwen2.5-7B-Instruct"} 1.423876e+06
+# HELP vllm:generation_tokens_total Number of generation tokens processed.
+# TYPE vllm:generation_tokens_total counter
+vllm:generation_tokens_total{engine="0",model_name="Qwen/Qwen2.5-7B-Instruct"} 523441.0
+# HELP vllm:time_to_first_token_seconds Histogram of time to first token in seconds.
+# TYPE vllm:time_to_first_token_seconds histogram
+vllm:time_to_first_token_seconds_bucket{engine="0",le="0.001",model_name="Qwen/Qwen2.5-7B-Instruct"} 0.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="0.005",model_name="Qwen/Qwen2.5-7B-Instruct"} 0.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="0.01",model_name="Qwen/Qwen2.5-7B-Instruct"} 3.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="0.02",model_name="Qwen/Qwen2.5-7B-Instruct"} 24.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="0.04",model_name="Qwen/Qwen2.5-7B-Instruct"} 141.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="0.06",model_name="Qwen/Qwen2.5-7B-Instruct"} 289.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="0.08",model_name="Qwen/Qwen2.5-7B-Instruct"} 403.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="0.1",model_name="Qwen/Qwen2.5-7B-Instruct"} 512.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="0.25",model_name="Qwen/Qwen2.5-7B-Instruct"} 694.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="0.5",model_name="Qwen/Qwen2.5-7B-Instruct"} 758.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="0.75",model_name="Qwen/Qwen2.5-7B-Instruct"} 781.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="1.0",model_name="Qwen/Qwen2.5-7B-Instruct"} 795.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="2.5",model_name="Qwen/Qwen2.5-7B-Instruct"} 806.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="5.0",model_name="Qwen/Qwen2.5-7B-Instruct"} 810.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="7.5",model_name="Qwen/Qwen2.5-7B-Instruct"} 811.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="10.0",model_name="Qwen/Qwen2.5-7B-Instruct"} 812.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="+Inf",model_name="Qwen/Qwen2.5-7B-Instruct"} 812.0
+vllm:time_to_first_token_seconds_count{engine="0",model_name="Qwen/Qwen2.5-7B-Instruct"} 812.0
+vllm:time_to_first_token_seconds_sum{engine="0",model_name="Qwen/Qwen2.5-7B-Instruct"} 145.31877
