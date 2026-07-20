@@ -1,8 +1,15 @@
 name: Release
 
-# Tag-triggered release: builds and publishes the loxilb-inference-gateway
-# container image to GHCR and creates a GitHub release for the tag.
-# Push a semver tag to trigger, e.g.:  git tag v0.9.8.6-igw && git push origin v0.9.8.6-igw
+# Tag-triggered release pipeline. Produces the full artifact matrix:
+#   - multi-arch (amd64+arm64) container images: Ubuntu 22.04 default + -u24 variant
+#   - .deb / .rpm packages (amd64+arm64) via in-repo nfpm packaging
+#   - binary tarballs (loxilb + loxilb-mcp) per architecture
+#   - SHA256SUMS over every non-image artifact
+# Packages are validated by package-sanity before anything is attached to the
+# GitHub release. Release-candidate tags (…-rc.N) publish as pre-releases and
+# do NOT move the `latest` / `latest-u24` image tags.
+#
+# Tag scheme: v<upstream-base>-igw.<n>[-rc.<m>], e.g. v0.9.8.6-igw.1-rc.1
 
 on:
   push:
@@ -11,33 +18,54 @@ on:
   workflow_dispatch:
     inputs:
       tagName:
-        description: 'Image tag to publish (e.g. v0.9.8.6-igw)'
+        description: 'Existing tag to rebuild (images/packages only, no release page)'
         required: true
-        default: 'latest'
 
 env:
   IMAGE: ghcr.io/loxilb-io/loxilb-inference-gateway
 
 jobs:
-  release:
-    name: build-and-release
+  meta:
+    name: resolve tag
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+    steps:
+      - name: Resolve tag and channel
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            tag="${GITHUB_REF#refs/tags/}"
+          else
+            tag="${{ github.event.inputs.tagName }}"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          case "$tag" in
+            *-rc.*) echo "prerelease=true"  >> "$GITHUB_OUTPUT" ;;
+            *)      echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+  build-image:
+    name: image ${{ matrix.variant }} ${{ matrix.arch }}
+    needs: meta
+    runs-on: ${{ matrix.runner }}
     permissions:
-      contents: write
+      contents: read
       packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { variant: u22, dockerfile: Dockerfile,     suffix: '',     arch: amd64, runner: ubuntu-22.04 }
+          - { variant: u22, dockerfile: Dockerfile,     suffix: '',     arch: arm64, runner: ubuntu-24.04-arm }
+          - { variant: u24, dockerfile: Dockerfile.u24, suffix: '-u24', arch: amd64, runner: ubuntu-24.04 }
+          - { variant: u24, dockerfile: Dockerfile.u24, suffix: '-u24', arch: arm64, runner: ubuntu-24.04-arm }
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ needs.meta.outputs.tag }}
           submodules: recursive
-
-      - name: Resolve tag
-        id: tag
-        run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "value=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
-          else
-            echo "value=${{ github.event.inputs.tagName }}" >> "$GITHUB_OUTPUT"
-          fi
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
@@ -46,25 +74,159 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build image
-        run: |
-          docker build . --tag "${IMAGE}:${{ steps.tag.outputs.value }}" --tag "${IMAGE}:latest"
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Push image
+      - name: Build and push per-arch image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/${{ matrix.arch }}
+          push: true
+          tags: ${{ env.IMAGE }}:${{ needs.meta.outputs.tag }}${{ matrix.suffix }}-${{ matrix.arch }}
+          cache-from: type=gha,scope=release-${{ matrix.variant }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=release-${{ matrix.variant }}-${{ matrix.arch }}
+
+  merge-image:
+    name: manifest ${{ matrix.variant }}
+    needs: [meta, build-image]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - { variant: u22, suffix: '',     latest: latest }
+          - { variant: u24, suffix: '-u24', latest: latest-u24 }
+    steps:
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create and push multi-arch manifest
+        env:
+          TAG: ${{ needs.meta.outputs.tag }}
+          SUFFIX: ${{ matrix.suffix }}
+          LATEST: ${{ matrix.latest }}
+          PRERELEASE: ${{ needs.meta.outputs.prerelease }}
         run: |
-          docker push "${IMAGE}:${{ steps.tag.outputs.value }}"
-          docker push "${IMAGE}:latest"
+          docker buildx imagetools create \
+            --tag "${IMAGE}:${TAG}${SUFFIX}" \
+            "${IMAGE}:${TAG}${SUFFIX}-amd64" \
+            "${IMAGE}:${TAG}${SUFFIX}-arm64"
+          if [ "$PRERELEASE" = "false" ]; then
+            docker buildx imagetools create \
+              --tag "${IMAGE}:${LATEST}" \
+              "${IMAGE}:${TAG}${SUFFIX}-amd64" \
+              "${IMAGE}:${TAG}${SUFFIX}-arm64"
+          fi
+          docker buildx imagetools inspect "${IMAGE}:${TAG}${SUFFIX}"
+
+  build-packages:
+    name: packages ${{ matrix.arch }}
+    needs: meta
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: amd64, runner: ubuntu-22.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.meta.outputs.tag }}
+          submodules: recursive
+
+      - name: Install nfpm
+        run: |
+          curl -sfL "https://github.com/goreleaser/nfpm/releases/download/v2.41.3/nfpm_2.41.3_$(dpkg --print-architecture).deb" -o /tmp/nfpm.deb
+          sudo dpkg -i /tmp/nfpm.deb
+
+      - name: Build packages and tarball
+        run: |
+          packaging/build-pkgs.sh \
+            --version "${{ needs.meta.outputs.tag }}" \
+            --arch "${{ matrix.arch }}" \
+            --from-docker \
+            --formats deb,rpm,tarball \
+            --out dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ matrix.arch }}
+          path: |
+            dist/*.deb
+            dist/*.rpm
+            dist/*.tar.gz
+          if-no-files-found: error
+
+  package-sanity:
+    name: package sanity
+    needs: build-packages
+    uses: ./.github/workflows/package-sanity.yml
+    with:
+      artifact_prefix: packages-
+
+  trivy:
+    name: image CVE gate
+    needs: [meta, merge-image]
+    uses: ./.github/workflows/trivy-image.yml
+    permissions:
+      contents: read
+      packages: read
+    with:
+      image-tag: ${{ needs.meta.outputs.tag }}
+
+  release:
+    name: publish release
+    if: github.event_name == 'push'
+    needs: [meta, merge-image, package-sanity, trivy]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: packages-*
+          merge-multiple: true
+          path: dist
+
+      - name: Generate SHA256SUMS
+        run: |
+          cd dist
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
 
       - name: Create GitHub release
-        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.tag.outputs.value }}
+          tag_name: ${{ needs.meta.outputs.tag }}
+          prerelease: ${{ needs.meta.outputs.prerelease == 'true' }}
           generate_release_notes: true
+          files: |
+            dist/*
           body: |
-            LoxiLB Inference Gateway `${{ steps.tag.outputs.value }}`.
+            LoxiLB Inference Gateway `${{ needs.meta.outputs.tag }}`.
 
-            Container image: `${{ env.IMAGE }}:${{ steps.tag.outputs.value }}`
+            Container images (multi-arch, amd64+arm64):
+            - `${{ env.IMAGE }}:${{ needs.meta.outputs.tag }}` (Ubuntu 22.04 base)
+            - `${{ env.IMAGE }}:${{ needs.meta.outputs.tag }}-u24` (Ubuntu 24.04 base)
+
+            Attached artifacts: `.deb` (Ubuntu 20.04/22.04/24.04), `.rpm`
+            (RHEL/Rocky/Alma 9), binary tarballs, and `SHA256SUMS`. See the
+            README for install instructions and the kernel baseline required
+            by the eBPF datapath.
 
             This is a fork of [loxilb-io/loxilb](https://github.com/loxilb-io/loxilb)
             with inference-aware L4/L7 routing for LLM serving fleets.
