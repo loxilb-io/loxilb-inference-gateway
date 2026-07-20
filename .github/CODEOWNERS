@@ -1,0 +1,16 @@
+# Code owners for loxilb-inference-gateway.
+# These owners are requested for review automatically on matching PRs.
+# See https://docs.github.com/articles/about-code-owners
+
+# Default owner for everything in the repo
+*                           @NLX-SeokHwanKong
+
+# AI-gateway specific areas
+/cicd/vllm-**               @NLX-SeokHwanKong
+/cicd/sglang-**             @NLX-SeokHwanKong
+/cicd/ai-**                 @NLX-SeokHwanKong
+/cicd/mcp-**                @NLX-SeokHwanKong
+/docs/load-balancing/       @NLX-SeokHwanKong
+
+# CI / release tooling
+/.github/                   @NLX-SeokHwanKong
