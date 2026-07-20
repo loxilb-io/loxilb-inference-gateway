@@ -1,0 +1,336 @@
+name: Package-Sanity
+
+# Three-tier validation of the .deb/.rpm/tarball release artifacts
+# (see packaging/README.md):
+#   Tier 1  lint & layout          lintian/rpmlint, file layout, unit verify
+#   Tier 2  install lifecycle      install/upgrade/remove on pristine OS containers
+#   Tier 3  functional smoke       host-native install + cicd/pkg-smoke datapath run
+#
+# Standalone triggers (PR/schedule/dispatch) build the packages from the
+# checked-out tree. release.yml calls this workflow (workflow_call) with the
+# artifact prefix of its own package builds, so the exact bytes that get
+# published are the bytes that were validated.
+#
+# arm64 legs are skipped on pull requests: hosted arm runners consume paid
+# minutes while the repository is private. Schedules, dispatches, and release
+# tags run the full matrix.
+
+on:
+  workflow_call:
+    inputs:
+      artifact_prefix:
+        description: 'Artifact name prefix holding prebuilt packages (e.g. packages-)'
+        type: string
+        default: ''
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'packaging/**'
+      - 'cicd/pkg-smoke/**'
+      - '.github/workflows/package-sanity.yml'
+      - '.github/workflows/release.yml'
+  schedule:
+    # Weekly, offset from the upstream loxilb nightly window
+    - cron: '30 12 * * 1'
+  workflow_dispatch:
+
+jobs:
+  plan:
+    name: plan matrix
+    runs-on: ubuntu-latest
+    outputs:
+      arches: ${{ steps.plan.outputs.arches }}
+      tier3: ${{ steps.plan.outputs.tier3 }}
+    steps:
+      - name: Compute matrix (skip arm64 on pull requests)
+        id: plan
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo 'arches=["amd64"]' >> "$GITHUB_OUTPUT"
+            echo 'tier3=[{"runner":"ubuntu-22.04","arch":"amd64"},{"runner":"ubuntu-24.04","arch":"amd64"}]' >> "$GITHUB_OUTPUT"
+          else
+            echo 'arches=["amd64","arm64"]' >> "$GITHUB_OUTPUT"
+            echo 'tier3=[{"runner":"ubuntu-22.04","arch":"amd64"},{"runner":"ubuntu-24.04","arch":"amd64"},{"runner":"ubuntu-24.04-arm","arch":"arm64"}]' >> "$GITHUB_OUTPUT"
+          fi
+
+  obtain:
+    name: obtain packages ${{ matrix.arch }}
+    needs: plan
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-22.04' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: ${{ fromJSON(needs.plan.outputs.arches) }}
+    steps:
+      - name: Download prebuilt packages
+        if: inputs.artifact_prefix != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact_prefix }}${{ matrix.arch }}
+          path: dist
+
+      - uses: actions/checkout@v4
+        if: inputs.artifact_prefix == ''
+        with:
+          submodules: recursive
+
+      - name: Install nfpm
+        if: inputs.artifact_prefix == ''
+        run: |
+          curl -sfL "https://github.com/goreleaser/nfpm/releases/download/v2.41.3/nfpm_2.41.3_$(dpkg --print-architecture).deb" -o /tmp/nfpm.deb
+          sudo dpkg -i /tmp/nfpm.deb
+
+      - name: Build packages from this tree
+        if: inputs.artifact_prefix == ''
+        run: |
+          packaging/build-pkgs.sh --arch "${{ matrix.arch }}" --from-docker \
+            --formats deb,rpm,tarball --out dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sanity-pkgs-${{ matrix.arch }}
+          path: |
+            dist/*.deb
+            dist/*.rpm
+            dist/*.tar.gz
+          if-no-files-found: error
+
+  tier1-lint-layout:
+    name: 'tier1: lint & layout ${{ matrix.arch }}'
+    needs: [plan, obtain]
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: ${{ fromJSON(needs.plan.outputs.arches) }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: sanity-pkgs-${{ matrix.arch }}
+          path: dist
+
+      - name: Install lint tooling
+        run: sudo apt-get update && sudo apt-get install -y lintian rpmlint rpm file
+
+      - name: lintian (.deb)
+        # The package ships /usr/share/lintian/overrides for its deliberate
+        # design findings (eBPF objects, /opt/loxilb, private-lib RUNPATHs);
+        # --fail-on error then catches anything genuinely new.
+        run: lintian --no-tag-display-limit --fail-on error dist/*.deb
+
+      - name: rpmlint (.rpm)
+        run: |
+          rpmlint dist/*.rpm > rpmlint.out 2>&1 || true
+          cat rpmlint.out
+          # Fail on errors except the deliberate design choices below. rpm has
+          # no in-package override file, so the allowlist lives here:
+          #   dir-or-file-in-opt           /opt/loxilb is the datapath loader path
+          #   *rpath / library-without-*   bundled libs; wrapper sets the path
+          #   explicit-lib-dependency      deps are hand-declared (nfpm has no
+          #                                automatic dependency generation)
+          #   no-binary                    the ELF lives in /usr/lib/loxilb, not sbin
+          #   no-changelogname-tag/no-group-tag/no-signature  nfpm output; the
+          #                                release signs artifacts via SHA256SUMS
+          #   spelling-error               "balancer"/"eBPF" false positives
+          allow='dir-or-file-in-opt|rpath|library-without-ldconfig|explicit-lib-dependency|no-binary|no-changelogname-tag|no-group-tag|no-signature|spelling-error'
+          bad=$(grep ' E: ' rpmlint.out | grep -vE "$allow" || true)
+          if [ -n "$bad" ]; then
+            echo "rpmlint errors:"; echo "$bad"; exit 1
+          fi
+
+      - name: File layout asserts
+        run: |
+          set -e
+          deb=$(ls dist/*.deb)
+          rpm=$(ls dist/*.rpm)
+          for path in ./usr/sbin/loxilb ./usr/lib/loxilb/loxilb ./usr/lib/loxilb/libssl.so.3 \
+                      ./usr/lib/loxilb/libcrypto.so.3 \
+                      ./usr/sbin/mkllb-bpffs ./lib/systemd/system/loxilb.service \
+                      ./opt/loxilb/llb_ebpf_main.o ./etc/loxilb/; do
+            dpkg-deb -c "$deb" | awk '{print $NF}' | grep -qx "$path" || { echo "deb missing $path"; exit 1; }
+          done
+          for path in /usr/sbin/loxilb /usr/lib/loxilb/loxilb /usr/lib/systemd/system/loxilb.service \
+                      /opt/loxilb/llb_ebpf_main.o /etc/loxilb; do
+            rpm -qlp "$rpm" | grep -qx "$path" || { echo "rpm missing $path"; exit 1; }
+          done
+          echo "layout ok"
+
+      - name: systemd unit verify
+        run: |
+          dpkg-deb -x dist/*.deb extract
+          sudo systemd-analyze verify --root="$PWD/extract" loxilb.service
+
+      - name: Binary architecture check
+        run: |
+          case "${{ matrix.arch }}" in
+            amd64) want="x86-64" ;;
+            arm64) want="aarch64" ;;
+          esac
+          file extract/usr/lib/loxilb/loxilb | grep -q "$want" || { echo "wrong arch"; exit 1; }
+          file extract/usr/lib/loxilb/loxilb
+
+  tier2-lifecycle:
+    name: 'tier2: lifecycle ${{ matrix.os-image }} ${{ matrix.arch }}'
+    needs: [plan, obtain]
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    container:
+      image: ${{ matrix.os-image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: ${{ fromJSON(needs.plan.outputs.arches) }}
+        os-image: [ 'ubuntu:20.04', 'ubuntu:22.04', 'ubuntu:24.04', 'rockylinux:9' ]
+        include:
+          - { os-image: 'ubuntu:20.04', family: deb }
+          - { os-image: 'ubuntu:22.04', family: deb }
+          - { os-image: 'ubuntu:24.04', family: deb }
+          - { os-image: 'rockylinux:9', family: rpm }
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: sanity-pkgs-${{ matrix.arch }}
+          path: dist
+
+      - name: Install / verify / upgrade / remove (.deb)
+        if: matrix.family == 'deb'
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          set -e
+          apt-get update
+          apt-get install -y "$PWD"/dist/loxilb-inference-gateway_*.deb
+
+          test -x /usr/sbin/loxilb
+          test -x /usr/lib/loxilb/loxilb
+          test -f /lib/systemd/system/loxilb.service
+          test -f /opt/loxilb/llb_ebpf_main.o
+          test -d /etc/loxilb
+          /usr/sbin/loxilb --version
+          echo "install ok"
+
+          # Upgrade drill: runtime files in /etc/loxilb must survive package
+          # operations (protects snapshot persistence from apt/dnf upgrades).
+          echo "marker" > /etc/loxilb/marker.conf
+          echo '{}' > /etc/loxilb/snapshot.json
+          apt-get install --reinstall -y "$PWD"/dist/loxilb-inference-gateway_*.deb
+          grep -q marker /etc/loxilb/marker.conf
+          test -f /etc/loxilb/snapshot.json
+          echo "upgrade ok"
+
+          apt-get purge -y loxilb-inference-gateway
+          test ! -e /usr/sbin/loxilb
+          test ! -e /usr/lib/loxilb
+          test ! -e /lib/systemd/system/loxilb.service
+          test ! -e /opt/loxilb/llb_ebpf_main.o
+          # Runtime files are user data: they survive even purge
+          test -f /etc/loxilb/snapshot.json
+          echo "remove ok"
+
+      - name: Install / verify / upgrade / remove (.rpm)
+        if: matrix.family == 'rpm'
+        run: |
+          set -e
+          dnf install -y "$PWD"/dist/loxilb-inference-gateway-*.rpm
+
+          test -x /usr/sbin/loxilb
+          test -x /usr/lib/loxilb/loxilb
+          test -f /usr/lib/systemd/system/loxilb.service
+          test -f /opt/loxilb/llb_ebpf_main.o
+          test -d /etc/loxilb
+          /usr/sbin/loxilb --version
+          echo "install ok"
+
+          echo "marker" > /etc/loxilb/marker.conf
+          echo '{}' > /etc/loxilb/snapshot.json
+          dnf reinstall -y "$PWD"/dist/loxilb-inference-gateway-*.rpm
+          grep -q marker /etc/loxilb/marker.conf
+          test -f /etc/loxilb/snapshot.json
+          echo "upgrade ok"
+
+          dnf remove -y loxilb-inference-gateway
+          test ! -e /usr/sbin/loxilb
+          test ! -e /usr/lib/loxilb
+          test ! -e /usr/lib/systemd/system/loxilb.service
+          test ! -e /opt/loxilb/llb_ebpf_main.o
+          test -f /etc/loxilb/snapshot.json
+          echo "remove ok"
+
+  tier3-deb-smoke:
+    name: 'tier3: deb smoke ${{ matrix.runner }}'
+    needs: [plan, obtain]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.tier3) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: sanity-pkgs-${{ matrix.arch }}
+          path: dist
+
+      - name: Install package on the runner host
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "$PWD"/dist/loxilb-inference-gateway_*.deb
+
+      - name: pkg-smoke scenario
+        working-directory: cicd/pkg-smoke
+        run: |
+          ./config.sh
+          ./validation.sh
+
+      - name: Teardown scenario
+        if: always()
+        working-directory: cicd/pkg-smoke
+        run: ./rmconfig.sh
+
+      - name: Clean removal
+        if: always()
+        run: |
+          sudo apt-get purge -y loxilb-inference-gateway
+          test ! -e /usr/sbin/loxilb
+          test ! -e /usr/lib/loxilb
+          test ! -e /lib/systemd/system/loxilb.service
+          echo "clean removal ok"
+
+  # rpm functional smoke runs on the self-hosted RHEL 9 host once that runner
+  # is registered for this repository; until then Tier 2 on Rocky 9 is the rpm
+  # floor (documented gap, see the release plan). Enable by setting the
+  # repository variable RH9_PKG_SMOKE=true.
+  tier3-rpm-smoke:
+    name: 'tier3: rpm smoke rh9'
+    needs: [plan, obtain]
+    if: github.repository == 'loxilb-io/loxilb-inference-gateway' && vars.RH9_PKG_SMOKE == 'true'
+    runs-on: [ self-hosted, redhat ]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: sanity-pkgs-amd64
+          path: dist
+
+      - name: Install package on the runner host
+        run: sudo dnf install -y "$PWD"/dist/loxilb-inference-gateway-*.rpm
+
+      - name: pkg-smoke scenario
+        working-directory: cicd/pkg-smoke
+        run: |
+          ./config.sh
+          ./validation.sh
+
+      - name: Teardown scenario
+        if: always()
+        working-directory: cicd/pkg-smoke
+        run: ./rmconfig.sh
+
+      - name: Clean removal
+        if: always()
+        run: |
+          sudo dnf remove -y loxilb-inference-gateway
+          test ! -e /usr/sbin/loxilb
+          test ! -e /usr/lib/loxilb
+          echo "clean removal ok"
