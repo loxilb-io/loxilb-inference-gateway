@@ -1,0 +1,82 @@
+{
+  "custom_recognizers": [
+    {
+      "name": "EMPLOYEE_ID",
+      "entity_type": "CUSTOM_EMPLOYEE_ID",
+      "enabled": true,
+      "score": 0.85,
+      "patterns": [
+        {
+          "name": "EMP_PATTERN_STANDARD",
+          "regex": "EMP-[0-9]{6}",
+          "score": 0.9
+        },
+        {
+          "name": "EMP_PATTERN_ALTERNATIVE",
+          "regex": "EMPLOYEE-ID-[0-9]{8}",
+          "score": 0.85
+        }
+      ],
+      "context_words": [
+        "employee",
+        "staff",
+        "worker",
+        "personnel"
+      ]
+    },
+    {
+      "name": "CUSTOMER_NUMBER",
+      "entity_type": "CUSTOM_CUSTOMER_NUMBER",
+      "enabled": true,
+      "score": 0.8,
+      "patterns": [
+        {
+          "name": "CUST_PATTERN",
+          "regex": "CUST[0-9]{10}",
+          "score": 0.85
+        }
+      ],
+      "context_words": [
+        "customer",
+        "client",
+        "account"
+      ]
+    },
+    {
+      "name": "API_KEY",
+      "entity_type": "CUSTOM_API_KEY",
+      "enabled": true,
+      "score": 0.95,
+      "patterns": [
+        {
+          "name": "API_KEY_PATTERN",
+          "regex": "sk-[a-zA-Z0-9]{32}",
+          "score": 0.95
+        }
+      ],
+      "context_words": [
+        "api_key",
+        "secret_key",
+        "token"
+      ]
+    },
+    {
+      "name": "PROJECT_CODE",
+      "entity_type": "CUSTOM_PROJECT_CODE",
+      "enabled": false,
+      "score": 0.7,
+      "patterns": [
+        {
+          "name": "PROJECT_PATTERN",
+          "regex": "PRJ-[A-Z]{3}-[0-9]{4}",
+          "score": 0.7
+        }
+      ],
+      "context_words": [
+        "project",
+        "code",
+        "identifier"
+      ]
+    }
+  ]
+}

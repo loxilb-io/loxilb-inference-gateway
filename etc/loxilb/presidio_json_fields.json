@@ -1,0 +1,159 @@
+{
+  "version": "2.1.0",
+  "description": "Presidio JSON Field Mappings - Production Configuration for OpenAI & MCP Services",
+  "enabled": true,
+  "fallback_to_text": true,
+  "response_scanning": false,
+  "preserve_structure": true,
+  "enable_json_detection": true,
+  "exclude_fields": [
+    "$.params.protocolVersion",
+    "$.protocolVersion",
+    "$.clientInfo.version",
+    "$.clientInfo.name",
+    "method",
+    "jsonrpc", 
+    "id",
+    "params.protocolVersion",
+    "_meta",
+    "_meta.progressToken"
+  ],  
+  "fields": [
+    {
+      "json_path": "$.messages[*].content",
+      "entity_types": ["EMAIL_ADDRESS", "PHONE_NUMBER", "PERSON", "LOCATION", "US_SSN", "CREDIT_CARD"],
+      "operator": "replace",
+      "priority": "high",
+      "always_scan": true,
+      "description": "OpenAI Chat Completions - message content (highest priority)"
+    },
+    {
+      "json_path": "$.prompt",
+      "entity_types": ["EMAIL_ADDRESS", "PHONE_NUMBER", "PERSON", "LOCATION", "US_SSN", "CREDIT_CARD"],
+      "operator": "replace",
+      "priority": "high",
+      "always_scan": true,
+      "description": "OpenAI Completions API - direct prompt field"
+    },
+    {
+      "json_path": "$.input",
+      "entity_types": ["EMAIL_ADDRESS", "PHONE_NUMBER", "PERSON", "LOCATION"],
+      "operator": "replace",
+      "priority": "high",
+      "always_scan": true,
+      "description": "OpenAI Embeddings API - input text"
+    },
+    {
+      "json_path": "$.user",
+      "entity_types": ["EMAIL_ADDRESS"],
+      "operator": "hash",
+      "priority": "medium",
+      "always_scan": false,
+      "description": "User identifier - hashed for analytics (preserves uniqueness)"
+    },
+    {
+      "json_path": "$.functions[*].description",
+      "entity_types": ["EMAIL_ADDRESS", "PHONE_NUMBER"],
+      "operator": "replace",
+      "priority": "medium",
+      "always_scan": false,
+      "description": "OpenAI Function Calling - function descriptions"
+    },
+    {
+      "json_path": "$.tools[*].function.description",
+      "entity_types": ["EMAIL_ADDRESS", "PHONE_NUMBER"],
+      "operator": "replace",
+      "priority": "medium",
+      "always_scan": false,
+      "description": "OpenAI Tools API - tool descriptions"
+    },
+    {
+      "json_path": "$.params.prompt",
+      "entity_types": ["EMAIL_ADDRESS", "PHONE_NUMBER", "PERSON", "LOCATION"],
+      "operator": "replace",
+      "priority": "high",
+      "always_scan": true,
+      "description": "MCP Protocol - sampling/createMessage params.prompt"
+    },
+    {
+      "json_path": "$.params.messages[*].content.text",
+      "entity_types": ["EMAIL_ADDRESS", "PHONE_NUMBER", "PERSON", "LOCATION"],
+      "operator": "replace",
+      "priority": "high",
+      "always_scan": true,
+      "description": "MCP Protocol - message content text"
+    },
+    {
+      "json_path": "$.result.content[*].text",
+      "entity_types": ["EMAIL_ADDRESS", "PHONE_NUMBER", "PERSON"],
+      "operator": "replace",
+      "priority": "high",
+      "always_scan": false,
+      "description": "MCP Protocol - response content text"
+    },
+    {
+      "json_path": "$.params.uri",
+      "entity_types": ["EMAIL_ADDRESS"],
+      "operator": "redact",
+      "priority": "medium",
+      "always_scan": false,
+      "description": "MCP Protocol - resource URI (may contain sensitive paths)"
+    },
+    {
+      "json_path": "$.params.arguments.prompt",
+      "entity_types": ["EMAIL_ADDRESS", "PHONE_NUMBER", "PERSON", "LOCATION", "US_SSN", "CREDIT_CARD"],
+      "operator": "replace",
+      "priority": "high",
+      "always_scan": true,
+      "description": "MCP Protocol - tools/call arguments.prompt (user input string)"
+    },
+    {
+      "json_path": "$.params.arguments.messages[*].content",
+      "entity_types": ["EMAIL_ADDRESS", "PHONE_NUMBER", "PERSON", "LOCATION", "US_SSN", "CREDIT_CARD"],
+      "operator": "replace",
+      "priority": "high",
+      "always_scan": true,
+      "description": "MCP Protocol - tools/call arguments.messages (chat history)"
+    },
+    {
+      "json_path": "$.result.prompts[*].description",
+      "entity_types": ["EMAIL_ADDRESS", "PHONE_NUMBER"],
+      "operator": "replace",
+      "priority": "low",
+      "always_scan": false,
+      "description": "MCP Protocol - prompt template descriptions"
+    },
+    {
+      "json_path": "$.result.resources[*].uri",
+      "entity_types": ["EMAIL_ADDRESS"],
+      "operator": "redact",
+      "priority": "low",
+      "always_scan": false,
+      "description": "MCP Protocol - resource URIs"
+    },
+    {
+      "json_path": "$.result.resources[*].description",
+      "entity_types": ["EMAIL_ADDRESS", "PHONE_NUMBER"],
+      "operator": "replace",
+      "priority": "low",
+      "always_scan": false,
+      "description": "MCP Protocol - resource descriptions"
+    },
+    {
+      "json_path": "$.fine_tuning_job.training_file",
+      "entity_types": ["EMAIL_ADDRESS"],
+      "operator": "redact",
+      "priority": "medium",
+      "always_scan": false,
+      "description": "OpenAI Fine-tuning - training file paths"
+    },
+    {
+      "json_path": "$.metadata",
+      "entity_types": ["EMAIL_ADDRESS", "PHONE_NUMBER"],
+      "operator": "hash",
+      "priority": "low",
+      "always_scan": false,
+      "description": "Generic metadata fields - hashed for traceability"
+    }
+  ]
+}
