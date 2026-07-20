@@ -2,7 +2,7 @@ version: "2.4"
 services:
         loxilb:
                 container_name: loxilb
-                image: ghcr.io/loxilb-io/loxilb:latest
+                image: ghcr.io/loxilb-io/loxilb-inference-gateway:latest
                 command: "-b -k in --host=0.0.0.0 --cluster=192.168.59.111"
                 restart: always
                 privileged: true

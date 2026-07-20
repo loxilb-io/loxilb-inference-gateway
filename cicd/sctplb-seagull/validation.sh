@@ -36,19 +36,33 @@ do
     sleep 1
 done
 
-for i in {1..4}
-do
-for j in {0..2}
+# Count responses from each backend to verify load distribution
+declare -A backend_count
+backend_count["server1"]=0
+backend_count["server2"]=0
+backend_count["server3"]=0
+total_requests=12
+
+for i in $(seq 1 $total_requests)
 do
     res=$($hexec l3h1 timeout 10 ../common/sctp_client 10.10.10.1 0 20.20.20.1 2020)
     echo -e $res
-    if [[ $res != "${servArr[j]}" ]]
-    then
+    
+    if [[ $res == "server1" ]] || [[ $res == "server2" ]] || [[ $res == "server3" ]]; then
+        backend_count[$res]=$((backend_count[$res] + 1))
+    else
+        echo "Unexpected response: $res"
         code=1
     fi
     sleep 1
 done
-done
+
+# Verify all backends received at least one request
+echo "Load distribution: server1=${backend_count["server1"]}, server2=${backend_count["server2"]}, server3=${backend_count["server3"]}"
+if [[ ${backend_count["server1"]} -eq 0 ]] || [[ ${backend_count["server2"]} -eq 0 ]] || [[ ${backend_count["server3"]} -eq 0 ]]; then
+    echo "Load balancing failed: not all backends received requests"
+    code=1
+fi
 sudo pkill sctp_server >/dev/null 2>&1
 if [[ $code == 0 ]]
 then

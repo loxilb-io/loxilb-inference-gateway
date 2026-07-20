@@ -1,4 +1,5 @@
 #!/bin/bash
+# sudo chage -d today -M -1 root 
 set -eo pipefail
 
 export OSE_LOXILB_SERVERS=${OSE_LOXILB_SERVERS:-1}

@@ -41,7 +41,7 @@ spec:
             nsenter --cgroup=/hproc/1/ns/cgroup --mount=/hproc/1/ns/mnt /bin/mkllb_cgroup;
             echo done;
             rm /hbin/mkllb_cgroup;
-        image: "ghcr.io/loxilb-io/loxilb:latest"
+        image: "ghcr.io/loxilb-io/loxilb-inference-gateway:latest"
         imagePullPolicy: Always
         volumeMounts:
           - name: hproc
@@ -56,7 +56,7 @@ spec:
               - SYS_ADMIN
       containers:
       - name: loxilb-app
-        image: "ghcr.io/loxilb-io/loxilb:latest"
+        image: "ghcr.io/loxilb-io/loxilb-inference-gateway:latest"
         imagePullPolicy: IfNotPresent
         command: [ "/root/loxilb-io/loxilb/loxilb", "--egr-hooks", "--blacklist=cni[0-9a-z]|veth.|flannel.|cali.|tunl.|vxlan[.]calico", "--localsockpolicy" ]
         ports:

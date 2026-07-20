@@ -104,25 +104,127 @@ cd lb6timeout/
 ./rmconfig.sh
 cd -
 
-cd httpsep/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
-
-cd http2ep/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
-
 cd tcpsctpperf
 ./config.sh
 ./validation.sh 20  30
 ./rmconfig.sh
 cd -
 
-cd tcpepscale/
+cd e2ehttpsproxy/
+./config.sh
+./validation-http1.sh
+./validation-http2.sh
+./rmconfig.sh
+cd -
+
+cd e2ehttpsproxy-prefix/
+./config.sh
+./validation-http1.sh
+./validation-http2.sh
+./rmconfig.sh
+cd -
+
+cd e2ehttpsproxy-grpc/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
+cd httpproxy/
+./config.sh
+./validation.sh
+./validation-http2.sh
+./rmconfig.sh
+cd -
+
+cd httpproxy-prefix/
+./config.sh
+./validation.sh
+./validation-http2.sh
+./rmconfig.sh
+cd -
+
+cd httpsproxy/
+./config.sh
+./validation.sh
+./validation-http2.sh
+./rmconfig.sh
+cd -
+
+cd httpsproxy-prefix/
+./config.sh
+./validation.sh
+./validation-http2.sh
+./rmconfig.sh
+cd -
+
+cd vllm-fullproxy/
+./config.sh
+./validation-level1.sh
+./rmconfig.sh
+cd -
+
+cd vllm-httpproxy/
+./config.sh
+./validation-level1.sh
+./rmconfig.sh
+cd -
+
+cd vllm-fullproxy-wrr/
+./config.sh
+./validation-level1.sh
+./rmconfig.sh
+cd -
+
+cd vllm-httpproxy-wrr/
+./config.sh
+./validation-level1.sh
+./rmconfig.sh
+cd -
+
+cd mcp-fullproxy/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
+cd httpsproxy-mtls/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
+cd e2ehttpsproxy-mtls/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
+cd ai-apikey/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
+cd ai-model-routing/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
+cd ai-sse-quota/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
+cd vllm-pd-disagg/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
+cd sglang-loxilb-kvcache/
 ./config.sh
 ./validation.sh
 ./rmconfig.sh

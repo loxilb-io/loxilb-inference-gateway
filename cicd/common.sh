@@ -11,16 +11,20 @@ hexec="sudo ip netns exec "
 dexec="sudo docker exec -i "
 hns="sudo ip netns "
 hexist="$vrn$hn"
-lxdocker="ghcr.io/loxilb-io/loxilb:latest"
+lxdocker="ghcr.io/loxilb-io/loxilb-inference-gateway:latest"
 hostdocker="ghcr.io/loxilb-io/nettest:latest"
 cluster_opts=""
 extra_opts=""
 ka_opts=""
 docker_extra_opts=""
-#var=$(lsb_release -r | cut -f2)
-#if [[ $var == *"22.04"* ]];then
-#  lxdocker="ghcr.io/loxilb-io/loxilb:latestu22"
-#fi
+var=$(lsb_release -r | cut -f2)
+if [[ $var == *"22.04"* ]];then
+ lxdocker="ghcr.io/loxilb-io/loxilb-inference-gateway:latest"
+fi
+var=$(lsb_release -r | cut -f2)
+if [[ $var == *"24.04"* ]];then
+ lxdocker="ghcr.io/loxilb-io/loxilb-inference-gateway:latest-u24"
+fi
 
 
 if [ ! -d loxilb.io ]; then
@@ -141,6 +145,29 @@ spawn_docker_host() {
     fi
   elif [[ "$dtype" == "seahost" ]]; then
       docker run -u root --cap-add SYS_ADMIN -i -t --rm --detach --entrypoint /bin/bash --name $dname  ghcr.io/loxilb-io/seagull:ubuntu1804
+  elif [[ "$dtype" == "reflect-echo" ]]; then
+      # Header-reflecting echo backend. Image built via cicd/common/reflect-echo/docker-build.sh
+      # (ghcr.io/loxilb-io/reflect-echo:latest); behaviour is driven per-container via -e env
+      # (ECHO_NAME/HEALTHZ_CODE/SLOW_MS/LISTEN_PORT) passed through --docker-args (docker_extra_opts).
+      # shellcheck disable=SC2086
+      docker run -u root --cap-add SYS_ADMIN --privileged -dit --rm --detach $docker_extra_opts --name $dname ghcr.io/loxilb-io/reflect-echo:latest
+  elif [[ "$dtype" == "grpc-h2server" ]]; then
+      docker run -u root --cap-add SYS_ADMIN -i -t --rm -v `pwd`/cert:/certs --detach --name $dname  ghcr.io/loxilb-io/grpc-h2server:latest
+  elif [[ "$dtype" == "grpc-h2client" ]]; then
+      docker run -u root --cap-add SYS_ADMIN -i -t --rm -v `pwd`/cert:/certs --detach --name $dname  ghcr.io/loxilb-io/grpc-h2client:latest
+  elif [[ "$dtype" == "mcp-server" ]]; then
+      docker run -u root --cap-add SYS_ADMIN -i -t --rm -v `pwd`/cert:/certs --detach --name $dname  ghcr.io/loxilb-io/mcp-server:latest
+  elif [[ "$dtype" == "mcp-hserver" ]]; then
+      docker run -u root --cap-add SYS_ADMIN -i -t --rm -v `pwd`/cert:/certs --detach --name $dname  ghcr.io/loxilb-io/mcp-server-https:latest
+  elif [[ "$dtype" == "mcp-client" ]]; then
+      docker run -u root --cap-add SYS_ADMIN -i -t --rm -v `pwd`/cert:/certs --detach --name $dname  ghcr.io/loxilb-io/mcp-client:latest
+  elif [[ "$dtype" == "vllm-server" ]]; then
+      # Real vLLM backend (OpenAI-compatible). Mounts /tmp/hf-cache if pre-warmed;
+      # otherwise the model downloads from HuggingFace at container startup.
+      _hf_vol=""
+      if [[ -d /tmp/hf-cache ]]; then _hf_vol="-v /tmp/hf-cache:/root/.cache/huggingface"; fi
+      # shellcheck disable=SC2086
+      docker run -u root --cap-add SYS_ADMIN --cap-add SYS_NICE --security-opt seccomp=unconfined --shm-size=4g -i -t --rm --detach --name $dname $_hf_vol ghcr.io/loxilb-io/vllm-server:latest
   fi
 
   pid=""

@@ -11,10 +11,10 @@ hexec="sudo ip netns exec "
 dexec="sudo docker exec -i "
 hns="sudo ip netns "
 hexist="$vrn$hn"
-lxdocker="ghcr.io/loxilb-io/loxilb:latest"
+lxdocker="ghcr.io/loxilb-io/loxilb-inference-gateway:latest"
 var=$(lsb_release -r | cut -f2)
 if [[ $var == *"22.04"* ]];then
-  lxdocker="ghcr.io/loxilb-io/loxilb:latestU22"
+  lxdocker="ghcr.io/loxilb-io/loxilb-inference-gateway:latestU22"
 fi
 
 loxilbs=()

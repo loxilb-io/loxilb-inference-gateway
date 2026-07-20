@@ -11,7 +11,7 @@ hexec="sudo ip netns exec "
 dexec="sudo docker exec -i "
 hns="sudo ip netns "
 hexist="$vrn$hn"
-lxdocker="ghcr.io/loxilb-io/loxilb:latest"
+lxdocker="ghcr.io/loxilb-io/loxilb-inference-gateway:latest"
 
 loxilbs=()
 

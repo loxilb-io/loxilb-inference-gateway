@@ -13,7 +13,7 @@ add-apt-repository -y "deb [arch=amd64] https://download.docker.com/linux/ubuntu
 apt-get install -y docker-ce
 
 echo "Start loxilb installation"
-sudo docker run -u root --cap-add SYS_ADMIN --restart unless-stopped --privileged --entrypoint /root/loxilb-io/loxilb/loxilb -dit -v /dev/log:/dev/log  --name loxilb ghcr.io/loxilb-io/loxilb:latest
+sudo docker run -u root --cap-add SYS_ADMIN --restart unless-stopped --privileged --entrypoint /root/loxilb-io/loxilb/loxilb -dit -v /dev/log:/dev/log  --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest
 
 #docker exec -i loxilb apt-get update
 #docker exec -i loxilb apt-get -y install clang-10 llvm libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip build-essential bison flex iperf iproute2 nodejs socat ethtool

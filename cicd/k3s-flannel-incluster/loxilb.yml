@@ -32,7 +32,7 @@ spec:
                 operator: Exists
       containers:
       - name: loxilb-app
-        image: "ghcr.io/loxilb-io/loxilb:latest"
+        image: "ghcr.io/loxilb-io/loxilb-inference-gateway:latest"
         imagePullPolicy: Always
         command: [ "/root/loxilb-io/loxilb/loxilb", "--bgp", "--egr-hooks", "--blacklist=cni[0-9a-z]|veth.|flannel.|cali.|tunl.|vxlan[.]calico" ]
         ports:

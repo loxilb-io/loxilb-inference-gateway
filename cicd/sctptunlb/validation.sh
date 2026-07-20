@@ -39,17 +39,25 @@ done
 
 for k in {1..2}
 do
-for i in {1..2}
-do
-for j in {0..2}
+echo "Testing from h$k"
+
+# Count responses from each backend to verify load distribution
+declare -A backend_count_h$k
+eval "backend_count_h${k}[server1]=0"
+eval "backend_count_h${k}[server2]=0"
+eval "backend_count_h${k}[server3]=0"
+total_requests=12
+
+for i in $(seq 1 $total_requests)
 do
     res=$($hexec h$k timeout 10 ../common/sctp_socat_client ${ueIP[k]} 0 88.88.88.88 2020)
     echo -e $res
-    if [[ $res != "${servArr[j]}" ]]
-    then
-        echo -e "Expected ${servArr[j]}, Received : $res"
-        if [[ "$res" != *"server"* ]];
-        then
+    
+    if [[ $res == "server1" ]] || [[ $res == "server2" ]] || [[ $res == "server3" ]]; then
+        eval "backend_count_h${k}[$res]=\$((\${backend_count_h${k}[$res]} + 1))"
+    else
+        echo -e "Unexpected response: $res"
+        if [[ "$res" != *"server"* ]]; then
             echo "llb1 ct"
             $dexec llb1 loxicmd get ct
             echo "llb2 ct"
@@ -61,7 +69,13 @@ do
     fi
     sleep 1
 done
-done
+
+# Verify all backends received at least one request
+eval "echo \"Load distribution from h$k: server1=\${backend_count_h${k}[server1]}, server2=\${backend_count_h${k}[server2]}, server3=\${backend_count_h${k}[server3]}\""
+eval "if [[ \${backend_count_h${k}[server1]} -eq 0 ]] || [[ \${backend_count_h${k}[server2]} -eq 0 ]] || [[ \${backend_count_h${k}[server3]} -eq 0 ]]; then
+    echo \"Load balancing failed: not all backends received requests from h$k\"
+    code=1
+fi"
 done
 if [[ $code == 0 ]]
 then

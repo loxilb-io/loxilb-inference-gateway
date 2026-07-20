@@ -22,7 +22,7 @@ mv 192.168.80.9.pem ./server.crt
 mv 192.168.80.9-key.pem ./server.key
 cd -
 
-docker run -u root --cap-add SYS_ADMIN   --restart unless-stopped --privileged -dit -v /dev/log:/dev/log -v `pwd`/cert:/opt/loxilb/cert/ --net=host --name loxilb ghcr.io/loxilb-io/loxilb:latest --tls
+docker run -u root --cap-add SYS_ADMIN   --restart unless-stopped --privileged -dit -v /dev/log:/dev/log -v `pwd`/cert:/opt/loxilb/cert/ --net=host --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest --tls
 echo alias loxicmd=\"sudo docker exec -it loxilb loxicmd\" >> ~/.bashrc
 echo alias loxilb=\"sudo docker exec -it loxilb \" >> ~/.bashrc
 

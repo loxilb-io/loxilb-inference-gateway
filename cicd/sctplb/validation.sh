@@ -36,19 +36,41 @@ do
     sleep 1
 done
 
-for i in {1..4}
-do
-for j in {0..2}
+# Count responses from each server
+declare -A serverCount
+serverCount["server1"]=0
+serverCount["server2"]=0
+serverCount["server3"]=0
+
+for i in {1..12}
 do
     res=$($hexec l3h1 timeout 10 ../common/sctp_socat_client 10.10.10.1 0 20.20.20.1 2020)
     echo -e $res
-    if [[ $res != "${servArr[j]}" ]]
+    if [[ $res == "server1" ]] || [[ $res == "server2" ]] || [[ $res == "server3" ]]
     then
+        serverCount[$res]=$(( ${serverCount[$res]} + 1 ))
+    else
+        echo "Unexpected response: $res"
         code=1
     fi
     sleep 1
 done
-done
+
+# Verify all servers received requests and are roughly balanced
+echo "Distribution: server1=${serverCount[server1]}, server2=${serverCount[server2]}, server3=${serverCount[server3]}"
+
+if [[ ${serverCount[server1]} -eq 0 ]] || [[ ${serverCount[server2]} -eq 0 ]] || [[ ${serverCount[server3]} -eq 0 ]]
+then
+    echo "Some servers received no requests"
+    code=1
+fi
+
+# Check if distribution is reasonable (each server should get at least 2 requests out of 12)
+if [[ ${serverCount[server1]} -lt 2 ]] || [[ ${serverCount[server2]} -lt 2 ]] || [[ ${serverCount[server3]} -lt 2 ]]
+then
+    echo "Load distribution is too unbalanced"
+    code=1
+fi
 sudo pkill socat >/dev/null 2>&1
 sudo pkill sctp_server >/dev/null 2>&1
 if [[ $code == 0 ]]

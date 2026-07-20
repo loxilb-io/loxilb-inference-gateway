@@ -10,7 +10,7 @@ wget https://raw.githubusercontent.com/pimlie/ubuntu-mainline-kernel.sh/master/u
 chmod +x ubuntu-mainline-kernel.sh
 sudo mv ubuntu-mainline-kernel.sh /usr/local/bin/
 sudo ubuntu-mainline-kernel.sh -i v5.19.17
-sudo docker run -u root --cap-add SYS_ADMIN   --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --net=host --name loxilb ghcr.io/loxilb-io/loxilb:latestu22
+sudo docker run -u root --cap-add SYS_ADMIN   --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --net=host --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latestu22
 echo alias loxicmd=\"sudo docker exec -it loxilb loxicmd\" >> ~/.bashrc
 echo alias loxilb=\"sudo docker exec -it loxilb \" >> ~/.bashrc
 echo $LOXILB_IP > /vagrant/loxilb-ip
