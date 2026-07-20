@@ -1,0 +1,337 @@
+{
+  "title": "LoxiLB / Overview",
+  "uid": "loxilb-overview",
+  "tags": ["loxilb", "overview"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "editable": true,
+  "graphTooltip": 1,
+  "links": [
+    {
+      "type": "dashboards",
+      "title": "LoxiLB dashboards",
+      "tags": ["loxilb"],
+      "asDropdown": true,
+      "includeVars": true,
+      "keepTime": true,
+      "icon": "external link",
+      "targetBlank": false,
+      "url": ""
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "instance",
+        "label": "Instance",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+        "query": { "query": "label_values(up{job=\"loxilb\"}, instance)", "refId": "StandardVariableQuery" },
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Gateway up",
+      "description": "0 also means metrics collection is disabled (endpoint returns 503). Alert home: LoxilbScrapeDown.",
+      "gridPos": { "h": 4, "w": 3, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [{ "refId": "A", "expr": "up{job=\"loxilb\",instance=~\"$instance\"}" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "value", "graphMode": "none", "textMode": "auto" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] },
+          "mappings": [ { "type": "value", "options": { "0": { "text": "DOWN" }, "1": { "text": "UP" } } } ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Healthy endpoints",
+      "description": "Alert home: LoxilbNoHealthyEndpoints.",
+      "gridPos": { "h": 4, "w": 3, "x": 3, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [{ "refId": "A", "expr": "loxilb_healthy_endpoints{instance=~\"$instance\"}" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "value", "graphMode": "none", "textMode": "auto" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Unhealthy endpoints",
+      "gridPos": { "h": 4, "w": 3, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [{ "refId": "A", "expr": "loxilb_unhealthy_endpoints{instance=~\"$instance\"}" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "value", "graphMode": "none", "textMode": "auto" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "#EAB839", "value": 1 } ] },
+          "links": [ { "title": "L4 Load Balancer", "url": "/d/loxilb-l4/loxilb-l4-load-balancer" } ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "LB rules",
+      "gridPos": { "h": 4, "w": 3, "x": 9, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [{ "refId": "A", "expr": "loxilb_lb_rules{instance=~\"$instance\"}" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "value", "graphMode": "none", "textMode": "auto" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "fixed", "fixedColor": "blue" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Active sessions (L4)",
+      "description": "Established sessions only — short-lived flows may never appear (design §6.1).",
+      "gridPos": { "h": 4, "w": 3, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [{ "refId": "A", "expr": "loxilb_active_conntrack_entries{instance=~\"$instance\"}" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "value", "graphMode": "none", "textMode": "auto" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "fixed", "fixedColor": "blue" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Active connections (L7)",
+      "gridPos": { "h": 4, "w": 3, "x": 15, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [{ "refId": "A", "expr": "loxilb_proxy_active_connections{instance=~\"$instance\"}" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "value", "graphMode": "none", "textMode": "auto" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data",
+          "color": { "mode": "fixed", "fixedColor": "blue" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Error rate",
+      "description": "Alert home: LoxilbL4ErrorBurst.",
+      "gridPos": { "h": 4, "w": 3, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [{ "refId": "A", "expr": "sum(rate(loxilb_l4_error_events_total{reason!=\"rst_client\",instance=~\"$instance\"}[5m]))" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "value", "graphMode": "none", "textMode": "auto" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "#EAB839", "value": 0.001 } ] },
+          "links": [ { "title": "L4 Load Balancer", "url": "/d/loxilb-l4/loxilb-l4-load-balancer" } ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "5xx ratio (L7, 5m)",
+      "gridPos": { "h": 4, "w": 3, "x": 21, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [{ "refId": "A", "expr": "sum(rate(loxilb_proxy_http_responses_by_status_total{status_class=\"5xx\",instance=~\"$instance\"}[5m])) / sum(rate(loxilb_proxy_http_responses_total{instance=~\"$instance\"}[5m]))" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "value", "graphMode": "none", "textMode": "auto" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "No data",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "#EAB839", "value": 0.01 }, { "color": "red", "value": 0.05 } ] },
+          "links": [ { "title": "L7 Proxy", "url": "/d/loxilb-l7/loxilb-l7-proxy" } ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Throughput (DP bytes)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [{ "refId": "A", "expr": "rate(loxilb_processed_bytes_total{instance=~\"$instance\"}[$__rate_interval]) * 8", "legendFormat": "{{instance}}" }],
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "fieldConfig": { "defaults": { "unit": "bps" }, "overrides": [] }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Packets/s by protocol",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [
+        { "refId": "A", "expr": "rate(loxilb_processed_tcp_packets_total{instance=~\"$instance\"}[$__rate_interval])", "legendFormat": "tcp" },
+        { "refId": "B", "expr": "rate(loxilb_processed_udp_packets_total{instance=~\"$instance\"}[$__rate_interval])", "legendFormat": "udp" },
+        { "refId": "C", "expr": "rate(loxilb_processed_sctp_packets_total{instance=~\"$instance\"}[$__rate_interval])", "legendFormat": "sctp" }
+      ],
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "fieldConfig": { "defaults": { "unit": "pps" }, "overrides": [] }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "L4 requests/s (new sessions)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [{ "refId": "A", "expr": "rate(loxilb_requests_total{instance=~\"$instance\"}[$__rate_interval])", "legendFormat": "{{instance}}" }],
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "L7 responses/s by class",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [{ "refId": "A", "expr": "sum by (status_class) (rate(loxilb_proxy_http_responses_by_status_total{instance=~\"$instance\"}[$__rate_interval]))", "legendFormat": "{{status_class}}" }],
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "fieldConfig": { "defaults": { "unit": "reqps", "noValue": "No data" }, "overrides": [] }
+    },
+    {
+      "id": 13,
+      "type": "bargauge",
+      "title": "CPU / Memory / Disk",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [
+        { "refId": "A", "expr": "loxilb_system_cpu_utilization_percent{instance=~\"$instance\"}", "legendFormat": "CPU" },
+        { "refId": "B", "expr": "loxilb_system_memory_utilization_percent{instance=~\"$instance\"}", "legendFormat": "Memory" },
+        { "refId": "C", "expr": "loxilb_system_disk_utilization_percent{instance=~\"$instance\"}", "legendFormat": "Disk" }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "#EAB839", "value": 70 }, { "color": "red", "value": 90 } ] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "HA sync errors/s",
+      "description": "Alert home: LoxilbHaSyncFailing.",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [
+        { "refId": "A", "expr": "rate(loxilb_sockproxy_sync_apply_errors_total{instance=~\"$instance\"}[$__rate_interval])", "legendFormat": "apply_errors" },
+        { "refId": "B", "expr": "rate(loxilb_sockproxy_sync_drop_total{instance=~\"$instance\"}[$__rate_interval])", "legendFormat": "drop" },
+        { "refId": "C", "expr": "rate(loxilb_sockproxy_sync_conflict_total{instance=~\"$instance\"}[$__rate_interval])", "legendFormat": "conflict" },
+        { "refId": "D", "expr": "rate(loxilb_sockproxy_sync_overflow_total{instance=~\"$instance\"}[$__rate_interval])", "legendFormat": "overflow" }
+      ],
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "fieldConfig": { "defaults": { "unit": "short", "noValue": "No data" }, "overrides": [] }
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "HA sync push latency p95",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [{ "refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(loxilb_sockproxy_sync_push_latency_seconds_bucket{instance=~\"$instance\"}[$__rate_interval])))", "legendFormat": "p95" }],
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "fieldConfig": { "defaults": { "unit": "s", "noValue": "No data" }, "overrides": [] }
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Conntrack stat resets/s",
+      "description": "Counter-baseline churn: sustained >0 means conntrack stat counters are being re-baselined (design §6). Amber if sustained. Alert home: LoxilbConntrackStatResets.",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 26 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [{ "refId": "A", "expr": "rate(loxilb_conntrack_stat_resets_total{instance=~\"$instance\"}[$__rate_interval])", "legendFormat": "{{instance}}" }],
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
+    },
+    {
+      "id": 17,
+      "type": "row",
+      "title": "DPU offload (DOCA) — N/A when no DPU attached",
+      "collapsed": true,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
+      "panels": [
+        {
+          "id": 18,
+          "type": "timeseries",
+          "title": "DOCA active offloaded flows",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 33 },
+          "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+          "targets": [{ "refId": "A", "expr": "doca_offload_active_flows{instance=~\"$instance\"}", "legendFormat": "{{instance}}" }],
+          "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+          "fieldConfig": { "defaults": { "unit": "short", "noValue": "N/A (no DPU attached)" }, "overrides": [] }
+        },
+        {
+          "id": 19,
+          "type": "timeseries",
+          "title": "DOCA offload failures/s",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 33 },
+          "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+          "targets": [{ "refId": "A", "expr": "rate(doca_offload_failures_total{instance=~\"$instance\"}[$__rate_interval])", "legendFormat": "{{instance}}" }],
+          "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+          "fieldConfig": { "defaults": { "unit": "short", "noValue": "N/A (no DPU attached)" }, "overrides": [] }
+        },
+        {
+          "id": 20,
+          "type": "timeseries",
+          "title": "DOCA CT pipe utilization",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 41 },
+          "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+          "targets": [{ "refId": "A", "expr": "doca_ct_pipe_utilization{instance=~\"$instance\"}", "legendFormat": "{{instance}}" }],
+          "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+          "fieldConfig": { "defaults": { "unit": "percentunit", "noValue": "N/A (no DPU attached)" }, "overrides": [] }
+        },
+        {
+          "id": 21,
+          "type": "timeseries",
+          "title": "DOCA meter pool exhausted/s",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 41 },
+          "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+          "targets": [{ "refId": "A", "expr": "rate(doca_meter_pool_exhausted_total{instance=~\"$instance\"}[$__rate_interval])", "legendFormat": "{{instance}}" }],
+          "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+          "fieldConfig": { "defaults": { "unit": "short", "noValue": "N/A (no DPU attached)" }, "overrides": [] }
+        }
+      ]
+    }
+  ]
+}

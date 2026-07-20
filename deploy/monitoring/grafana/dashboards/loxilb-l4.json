@@ -1,0 +1,331 @@
+{
+  "title": "LoxiLB / L4 Load Balancer",
+  "uid": "loxilb-l4",
+  "tags": ["loxilb", "l4"],
+  "description": "Where is traffic going, is it balanced? NOTE: per-service metrics only exist for NAMED lb rules (loxicmd create lb ... --name=...); unnamed rules produce no loxilb_service_* series (finding F1).",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "editable": true,
+  "graphTooltip": 1,
+  "links": [
+    {
+      "type": "dashboards",
+      "title": "LoxiLB dashboards",
+      "tags": ["loxilb"],
+      "asDropdown": true,
+      "includeVars": true,
+      "keepTime": true,
+      "icon": "external link",
+      "targetBlank": false,
+      "url": ""
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "instance",
+        "label": "Instance",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+        "query": { "query": "label_values(up{job=\"loxilb\"}, instance)", "refId": "StandardVariableQuery" },
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
+        "sort": 1
+      },
+      {
+        "name": "service",
+        "label": "Service (NAMED lb rules only — finding F1)",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+        "query": { "query": "label_values(loxilb_service_requests_total, service)", "refId": "StandardVariableQuery" },
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Requests/s per service",
+      "description": "Only NAMED lb rules export per-service series.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (service) (rate(loxilb_service_requests_total{service=~\"$service\",instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{service}}"
+        }
+      ],
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "noValue": "No data"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Errors/s per service",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (service) (rate(loxilb_service_errors_total{service=~\"$service\",instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{service}}"
+        }
+      ],
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "noValue": "No data"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Endpoint load distribution",
+      "description": "Per-SERVICE traffic share. A true per-endpoint split is blocked: the exporter's dip label carries VIP/client IP, never the endpoint IP (finding F2); the per-endpoint panel returns with the exporter attribution fix (rollout step 2b).",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (service) (rate(loxilb_service_traffic_bytes_total{instance=~\"$instance\"}[5m])) / ignoring(service) group_left sum(rate(loxilb_service_traffic_bytes_total{instance=~\"$instance\"}[5m]))",
+          "legendFormat": "{{service}}"
+        }
+      ],
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "max": 1,
+          "noValue": "No data",
+          "custom": {
+            "stacking": { "mode": "normal" },
+            "fillOpacity": 30
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Service throughput",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (service) (rate(loxilb_service_traffic_bytes_total{service=~\"$service\",instance=~\"$instance\"}[$__rate_interval])) * 8",
+          "legendFormat": "{{service}}"
+        }
+      ],
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bps",
+          "noValue": "No data"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Active flows by protocol",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "loxilb_active_flow_count_tcp{instance=~\"$instance\"}",
+          "legendFormat": "tcp"
+        },
+        {
+          "refId": "B",
+          "expr": "loxilb_active_flow_count_udp{instance=~\"$instance\"}",
+          "legendFormat": "udp"
+        },
+        {
+          "refId": "C",
+          "expr": "loxilb_active_flow_count_sctp{instance=~\"$instance\"}",
+          "legendFormat": "sctp"
+        }
+      ],
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Conntrack entries",
+      "description": "Established sessions only; short-lived flows may never appear (design §6.1). Capacity = datapath map size.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "loxilb_active_conntrack_entries{instance=~\"$instance\"}",
+          "legendFormat": "active"
+        },
+        {
+          "refId": "B",
+          "expr": "loxilb_conntrack_max_entries{instance=~\"$instance\"}",
+          "legendFormat": "capacity"
+        }
+      ],
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "capacity" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } },
+              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 10] } },
+              { "id": "custom.fillOpacity", "value": 0 }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "New flows per sweep",
+      "description": "Sampled gauge per 10 s sweep — not an exact counter.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "loxilb_new_flows{instance=~\"$instance\"}",
+          "legendFormat": "new flows"
+        }
+      ],
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Top clients (pkts/s)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(10, sum by (service, sip) (rate(loxilb_client_traffic_packets_total{instance=~\"$instance\"}[5m])))",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "transformations": [{ "id": "organize" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "pps",
+          "noValue": "No data"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Firewall drops/s",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(loxilb_fw_drop_packets_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "drops"
+        }
+      ],
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "pps",
+          "noValue": "No data"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "Top dropping FW rules",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(10, rate(loxilb_fw_rule_drop_packets_total{instance=~\"$instance\"}[5m]))",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "transformations": [{ "id": "organize" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "pps",
+          "noValue": "No data"
+        },
+        "overrides": []
+      }
+    }
+  ]
+}

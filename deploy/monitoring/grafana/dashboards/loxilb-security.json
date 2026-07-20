@@ -1,0 +1,390 @@
+{
+  "title": "LoxiLB / Security",
+  "uid": "loxilb-security",
+  "tags": ["loxilb", "security"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "editable": true,
+  "graphTooltip": 1,
+  "links": [
+    {
+      "type": "dashboards",
+      "title": "LoxiLB dashboards",
+      "tags": ["loxilb"],
+      "asDropdown": true,
+      "includeVars": true,
+      "keepTime": true,
+      "icon": "external link",
+      "targetBlank": false,
+      "url": ""
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "instance",
+        "label": "Instance",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+        "query": { "query": "label_values(up{job=\"loxilb\"}, instance)", "refId": "StandardVariableQuery" },
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Blocked ratio (all L4 security, 5m)",
+      "description": "Share of packets blocked by SYN-flood, conn-rate and UDP-flood limiters over the last 5m. Any non-zero value means a limiter is actively dropping.",
+      "gridPos": { "h": 4, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum(rate(loxilb_security_syn_blocked_total{instance=~\"$instance\"}[5m])) + sum(rate(loxilb_security_conn_blocked_total{instance=~\"$instance\"}[5m])) + sum(rate(loxilb_security_udp_blocked_total{instance=~\"$instance\"}[5m]))) / (sum(rate(loxilb_security_syn_passed_total{instance=~\"$instance\"}[5m])) + sum(rate(loxilb_security_syn_blocked_total{instance=~\"$instance\"}[5m])) + sum(rate(loxilb_security_conn_passed_total{instance=~\"$instance\"}[5m])) + sum(rate(loxilb_security_conn_blocked_total{instance=~\"$instance\"}[5m])) + sum(rate(loxilb_security_udp_passed_total{instance=~\"$instance\"}[5m])) + sum(rate(loxilb_security_udp_blocked_total{instance=~\"$instance\"}[5m])))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "No data",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "#EAB839", "value": 0.000001 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Firewall rules",
+      "gridPos": { "h": 4, "w": 3, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [{ "refId": "A", "expr": "loxilb_firewall_rules{instance=~\"$instance\"}" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data",
+          "color": { "mode": "fixed", "fixedColor": "blue" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "ipfilter rules",
+      "gridPos": { "h": 4, "w": 3, "x": 15, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (type) (loxilb_ipfilter_rules{instance=~\"$instance\"})",
+          "legendFormat": "{{type}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data",
+          "color": { "mode": "fixed", "fixedColor": "blue" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "OPA firewall rules",
+      "gridPos": { "h": 4, "w": 3, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [{ "refId": "A", "expr": "loxilb_opa_firewall_rules{instance=~\"$instance\"}" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data",
+          "color": { "mode": "fixed", "fixedColor": "blue" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "LB rules",
+      "gridPos": { "h": 4, "w": 3, "x": 21, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [{ "refId": "A", "expr": "loxilb_lb_rules{instance=~\"$instance\"}" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data",
+          "color": { "mode": "fixed", "fixedColor": "blue" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "SYN flood: passed vs blocked/s",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(loxilb_security_syn_passed_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "passed"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(loxilb_security_syn_blocked_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "blocked"
+        },
+        {
+          "refId": "C",
+          "expr": "rate(loxilb_security_syn_cookies_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "cookies"
+        }
+      ],
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": { "unit": "pps", "noValue": "No data" },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "blocked" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }]
+          }
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Conn-rate limiter: passed vs blocked/s",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(loxilb_security_conn_passed_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "passed"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(loxilb_security_conn_blocked_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "blocked"
+        }
+      ],
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": { "unit": "pps", "noValue": "No data" },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "blocked" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }]
+          }
+        ]
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "UDP flood: passed vs blocked",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(loxilb_security_udp_passed_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "passed pps"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(loxilb_security_udp_blocked_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "blocked pps"
+        },
+        {
+          "refId": "C",
+          "expr": "rate(loxilb_security_udp_bytes_blocked_total{instance=~\"$instance\"}[$__rate_interval]) * 8",
+          "legendFormat": "blocked bps"
+        }
+      ],
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": { "unit": "pps", "noValue": "No data" },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "blocked pps" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "blocked bps" },
+            "properties": [{ "id": "unit", "value": "bps" }]
+          }
+        ]
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Unique source IPs",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "loxilb_security_unique_ips{instance=~\"$instance\"}",
+          "legendFormat": "unique IPs"
+        }
+      ],
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "noValue": "No data" },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "ipfilter: blacklist hits",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(10, sum by (cidr, zone) (rate(loxilb_ipfilter_blacklist_packets_total{instance=~\"$instance\"}[5m])))",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "pps", "noValue": "No data" },
+        "overrides": []
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "ipfilter: whitelist traffic",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(loxilb_ipfilter_whitelist_packets_total{instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "whitelist pps"
+        }
+      ],
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": { "unit": "pps", "noValue": "No data" },
+        "overrides": []
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "OPA health",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "loxilb_opa_circuit_breaker_state{instance=~\"$instance\"}",
+          "legendFormat": "circuit breaker (0=closed)"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(loxilb_opa_watcher_syncs_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "watcher syncs/s"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(loxilb_opa_sync_duration_seconds_bucket{instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "sync p95 (s)"
+        }
+      ],
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "noValue": "No data" },
+        "overrides": []
+      }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "FW drops/s",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(loxilb_fw_drop_packets_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "drops/s"
+        }
+      ],
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": { "unit": "pps", "noValue": "No data" },
+        "overrides": []
+      }
+    },
+    {
+      "id": 14,
+      "type": "table",
+      "title": "Top dropping FW rules",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 36 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(10, rate(loxilb_fw_rule_drop_packets_total{instance=~\"$instance\"}[5m]))",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "pps", "noValue": "No data" },
+        "overrides": []
+      }
+    }
+  ]
+}

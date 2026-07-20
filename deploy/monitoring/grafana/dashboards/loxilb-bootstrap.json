@@ -1,0 +1,73 @@
+{
+  "title": "LoxiLB / Monitoring Bootstrap (T0/T1)",
+  "uid": "loxilb-bootstrap",
+  "tags": ["loxilb", "bootstrap"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Gateway up",
+      "description": "0 also means metrics collection is disabled (endpoint returns 503). Enable via POST /netlox/v1/config/metrics.",
+      "gridPos": { "h": 6, "w": 4, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [{ "refId": "A", "expr": "up{job=\"loxilb\"}" }],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] },
+          "mappings": [ { "type": "value", "options": { "0": { "text": "DOWN" }, "1": { "text": "UP" } } } ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "loxilb series count",
+      "description": "Idle baseline reference for T1 (approx 108 families, series count higher due to labels).",
+      "gridPos": { "h": 6, "w": 4, "x": 4, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [{ "refId": "A", "expr": "count({__name__=~\"loxilb_.*\", job=\"loxilb\"})" }],
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 50 } ] } }, "overrides": [] }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Firing alerts",
+      "gridPos": { "h": 6, "w": 4, "x": 8, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [{ "refId": "A", "expr": "count(ALERTS{alertstate=\"firing\"}) or vector(0)" }],
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] } }, "overrides": [] }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Scrape duration (mTLS path)",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [{ "refId": "A", "expr": "scrape_duration_seconds{job=\"loxilb\"}", "legendFormat": "scrape s" }],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "TSDB head series (cardinality watch)",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [{ "refId": "A", "expr": "prometheus_tsdb_head_series", "legendFormat": "head series" }],
+      "fieldConfig": { "defaults": {}, "overrides": [] }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Samples scraped per scrape",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [{ "refId": "A", "expr": "scrape_samples_scraped{job=\"loxilb\"}", "legendFormat": "samples" }],
+      "fieldConfig": { "defaults": {}, "overrides": [] }
+    }
+  ]
+}

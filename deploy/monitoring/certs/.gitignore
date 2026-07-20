@@ -1,0 +1,4 @@
+# generated keys/certs never enter git
+*
+!gen-certs.sh
+!.gitignore
