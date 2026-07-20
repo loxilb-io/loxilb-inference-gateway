@@ -534,6 +534,10 @@ func serializeLBRule(lb cmn.LbRuleMod) *models.LoadbalanceEntry {
 	tmpSvc.Managed = lb.Serv.Managed
 	tmpSvc.Probetype = lb.Serv.ProbeType
 	tmpSvc.Probeport = lb.Serv.ProbePort
+	tmpSvc.Probereq = lb.Serv.ProbeReq
+	tmpSvc.Proberesp = lb.Serv.ProbeResp
+	tmpSvc.ProbeTimeout = lb.Serv.ProbeTimeout
+	tmpSvc.ProbeRetries = int32(lb.Serv.ProbeRetries)
 	tmpSvc.Name = lb.Serv.Name
 	tmpSvc.Snat = lb.Serv.Snat
 	tmpSvc.Host = lb.Serv.HostUrl

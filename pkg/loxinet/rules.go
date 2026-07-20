@@ -1158,6 +1158,8 @@ func (R *RuleH) GetLBRule() ([]cmn.LbRuleMod, error) {
 		ret.Serv.ProbePort = data.hChk.prbPort
 		ret.Serv.ProbeReq = data.hChk.prbReq
 		ret.Serv.ProbeResp = data.hChk.prbResp
+		ret.Serv.ProbeTimeout = data.hChk.prbTimeo
+		ret.Serv.ProbeRetries = data.hChk.prbRetries
 		ret.Serv.Name = data.name
 		ret.Serv.HostUrl = data.tuples.path
 		ret.Serv.PathPrefix = data.tuples.pathPrefix       // P6: Return path prefix in GET
