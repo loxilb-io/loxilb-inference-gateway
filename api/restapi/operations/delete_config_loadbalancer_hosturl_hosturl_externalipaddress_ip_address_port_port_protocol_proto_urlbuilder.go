@@ -21,8 +21,10 @@ type DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortPro
 	Port      float64
 	Proto     string
 
-	Bgp   *bool
-	Block *float64
+	Bgp           *bool
+	Block         *float64
+	PathMatchMode *string
+	PathPrefix    *string
 
 	_basePath string
 	// avoid unkeyed usage
@@ -100,6 +102,22 @@ func (o *DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPor
 	}
 	if blockQ != "" {
 		qs.Set("block", blockQ)
+	}
+
+	var pathMatchModeQ string
+	if o.PathMatchMode != nil {
+		pathMatchModeQ = *o.PathMatchMode
+	}
+	if pathMatchModeQ != "" {
+		qs.Set("path_match_mode", pathMatchModeQ)
+	}
+
+	var pathPrefixQ string
+	if o.PathPrefix != nil {
+		pathPrefixQ = *o.PathPrefix
+	}
+	if pathPrefixQ != "" {
+		qs.Set("path_prefix", pathPrefixQ)
 	}
 
 	_result.RawQuery = qs.Encode()

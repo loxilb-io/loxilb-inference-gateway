@@ -17,6 +17,7 @@ package handler
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/go-openapi/runtime/middleware"
 	"github.com/loxilb-io/loxilb/api/loxinlp"
@@ -50,11 +51,21 @@ func ConfigGetIPv4Address(params operations.GetConfigIpv4addressAllParams, princ
 	var result []*models.IPV4AddressGetEntry
 	result = make([]*models.IPV4AddressGetEntry, 0)
 	for _, ipaddrs := range res {
+		// NetAddrGet is family-agnostic - keep only IPv4 entries here
+		v4 := make([]string, 0, len(ipaddrs.IP))
+		for _, ip := range ipaddrs.IP {
+			if !strings.Contains(ip, ":") {
+				v4 = append(v4, ip)
+			}
+		}
+		if len(v4) == 0 {
+			continue
+		}
 		var tmpResult models.IPV4AddressGetEntry
 		tmpResult.Dev = ipaddrs.Dev
 		helperSync := int64(ipaddrs.Sync)
 		tmpResult.Sync = &helperSync
-		tmpResult.IPAddress = ipaddrs.IP
+		tmpResult.IPAddress = v4
 		result = append(result, &tmpResult)
 	}
 	return operations.NewGetConfigIpv4addressAllOK().WithPayload(&operations.GetConfigIpv4addressAllOKBody{IPAttr: result})

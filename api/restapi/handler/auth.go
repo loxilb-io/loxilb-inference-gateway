@@ -42,6 +42,9 @@ import (
 //   - bool: the claims contained in the token if it is valid.
 //   - error: an error if the token is invalid or parsing fails.
 func BearerAuthAuth(tokenString string) (interface{}, error) {
+	// go-swagger APIKeyAuthenticator passes the full header value including
+	// the "Bearer " prefix. Strip it before validation.
+	tokenString = strings.TrimPrefix(tokenString, "Bearer ")
 	if opts.Opts.UserServiceEnable {
 		// User DB based valaidation
 		return ApiHooks.NetUserValidate(tokenString)

@@ -18,6 +18,9 @@ package loxinet
 
 import (
 	"errors"
+	"net"
+	"strconv"
+	"strings"
 
 	tk "github.com/loxilb-io/loxilib"
 
@@ -100,7 +103,8 @@ func PolInfoXlateValidate(pInfo *cmn.PolInfo) bool {
 		return false
 	}
 
-	if pInfo.PeakInfoRate < MinPolRate {
+	// PeakInfoRate=0 is valid for srTCM (single-rate, RFC2697) where only CIR is used
+	if pInfo.PeakInfoRate != 0 && pInfo.PeakInfoRate < MinPolRate {
 		return false
 	}
 
@@ -189,14 +193,63 @@ func (P *PolH) PolAdd(pName string, pInfo cmn.PolInfo, pObjArgs cmn.PolObj) (int
 	pObjInfo := PolObjInfo{Args: pObjArgs}
 	pObjInfo.Parent = p
 
+	// Append PObjs BEFORE DP call so DP can resolve TargetLBMark from attachments
+	p.PObjs = append(p.PObjs, pObjInfo)
+
 	P.PolMap[key] = p
 
 	p.DP(DpCreate)
 	pObjInfo.PolObj2DP(DpCreate)
 
+	tk.LogIt(tk.LogInfo, "policer added - %s\n", pName)
+
+	return 0, nil
+}
+
+// PolAssociateLbRule - : associate a PRE-EXISTING policer ident to a VIP
+// LB rule, reusing policer↔LB-rule association mechanism. lbKey is the
+// "VIP:PORT:PROTO" key that GetLBRuleMarkByKey resolves to the rule mark. loxilb only
+// associates an EXISTING ident — an unresolvable ident surfaces PolNoExistErr (no
+// silent-drop); the external Octavia driver owns creating the
+// policy via /config/policy. The association is idempotent: re-associating the same
+// ident→rule is a no-op (the LB-rule attachment is set, not appended twice).
+func (P *PolH) PolAssociateLbRule(ident string, lbKey string) (int, error) {
+	if ident == "" {
+		// Empty ⇒ caller must not associate; treat as a no-op success so an absent
+		// vip_qos_policy_id round-trips byte-identical. Defensive — the
+		// LB-create caller already guards on a non-empty ident.
+		return 0, nil
+	}
+
+	key := PolKey{ident}
+	p, found := P.PolMap[key]
+	if found == false {
+		tk.LogIt(tk.LogError, "policer associate - %s: no such policer (vip_qos_policy_id)\n", ident)
+		return PolNoExistErr, errors.New("no such policer error")
+	}
+
+	// Idempotent: if this LB-rule attachment already exists on the policer, do nothing.
+	for idx := range p.PObjs {
+		pObj := &p.PObjs[idx]
+		if pObj.Args.AttachMent == cmn.PolAttachLbRule && pObj.Args.PolObjName == lbKey {
+			return 0, nil
+		}
+	}
+
+	pObjArgs := cmn.PolObj{PolObjName: lbKey, AttachMent: cmn.PolAttachLbRule}
+	if PolObjValidate(&pObjArgs) == false {
+		return PolAttachErr, errors.New("pol-attachpoint error")
+	}
+
+	pObjInfo := PolObjInfo{Args: pObjArgs}
+	pObjInfo.Parent = p
+	// Append BEFORE the DP call so p.DP resolves TargetLBMark via GetLBRuleMarkByKey.
 	p.PObjs = append(p.PObjs, pObjInfo)
 
-	tk.LogIt(tk.LogInfo, "policer added - %s\n", pName)
+	p.DP(DpCreate)
+	pObjInfo.PolObj2DP(DpCreate)
+
+	tk.LogIt(tk.LogInfo, "policer %s associated to lb-rule %s (vip_qos_policy_id)\n", ident, lbKey)
 
 	return 0, nil
 }
@@ -276,12 +329,34 @@ func (P *PolH) PolTicker() {
 			}
 		}
 	}
+
+	// collect DOCA meter stats when MeterOffload is active
+	P.polTickerDocaMeterStats()
+}
+
+// polTickerDocaMeterStats queries DOCA shared meter stats for active meters.
+// All CGO calls go through DocaBridge.submit (never direct C calls from PolTicker goroutine).
+// P49-R2/R3: also drives the per-pipe HW counter collector and the
+// kernel-bridge byte sampler — both piggyback the existing 10s PolTicker tick
+// rather than spawning new goroutines (49-PATTERNS.md §20 dpu_metrics.go analog).
+func (P *PolH) polTickerDocaMeterStats() {
+	if mh.dpuMgr == nil {
+		return
+	}
+	mh.dpuMgr.CollectMeterStats()
+	mh.dpuMgr.CollectHwOffloadStats()
+	SampleKernelBridgeBytes()
 }
 
 // PolObj2DP - Sync state of policer's attachment point with data-path
 func (pObjInfo *PolObjInfo) PolObj2DP(work DpWorkT) int {
 
-	// Only port attachment is supported currently
+	// LB rule attachment: handled via TargetLBMark in DP → ShadowPolAdd path
+	if pObjInfo.Args.AttachMent == cmn.PolAttachLbRule {
+		pObjInfo.Sync = 0
+		return 0
+	}
+
 	if pObjInfo.Args.AttachMent != cmn.PolAttachPort {
 		return -1
 	}
@@ -334,6 +409,38 @@ func (p *PolEntry) DP(work DpWorkT) int {
 	pwq.Cbs = p.Info.CommittedBlkSize
 	pwq.Ebs = p.Info.ExcessBlkSize
 	pwq.Status = &p.Sync
+	pwq.Name = p.Key.PolName
+
+	// resolve LB rule mark + VIP match info for DOCA meter pipe
+	for _, pObj := range p.PObjs {
+		if pObj.Args.AttachMent == cmn.PolAttachLbRule && pObj.Args.PolObjName != "" {
+			if mark := p.Zone.Rules.GetLBRuleMarkByKey(pObj.Args.PolObjName); mark > 0 {
+				pwq.TargetLBMark = mark
+			}
+			// Parse "VIP:PORT:PROTO" for meter pipe match fields
+			parts := strings.SplitN(pObj.Args.PolObjName, ":", 3)
+			if len(parts) >= 1 {
+				ip := net.ParseIP(parts[0])
+				if ip != nil {
+					pwq.MeterDstIP = tk.IPtonl(ip)
+				}
+			}
+			if len(parts) >= 2 {
+				if p, err := strconv.ParseUint(parts[1], 10, 16); err == nil {
+					pwq.MeterDstPort = tk.Htons(uint16(p))
+				}
+			}
+			if len(parts) >= 3 {
+				switch parts[2] {
+				case "tcp":
+					pwq.MeterProto = 6
+				case "udp":
+					pwq.MeterProto = 17
+				}
+			}
+			break
+		}
+	}
 
 	mh.dp.ToDpCh <- pwq
 

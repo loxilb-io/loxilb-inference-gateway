@@ -19,8 +19,12 @@ import (
 	"github.com/go-openapi/strfmt"
 	"github.com/go-openapi/swag"
 
+	"github.com/loxilb-io/loxilb/api/restapi/operations/ai"
 	"github.com/loxilb-io/loxilb/api/restapi/operations/auth"
+	"github.com/loxilb-io/loxilb/api/restapi/operations/l4_tracing"
 	"github.com/loxilb-io/loxilb/api/restapi/operations/metadata"
+	"github.com/loxilb-io/loxilb/api/restapi/operations/opa"
+	"github.com/loxilb-io/loxilb/api/restapi/operations/tracing"
 	"github.com/loxilb-io/loxilb/api/restapi/operations/users"
 )
 
@@ -45,6 +49,7 @@ func NewLoxilbRestAPIAPI(spec *loads.Document) *LoxilbRestAPIAPI {
 		JSONConsumer:          runtime.JSONConsumer(),
 		MultipartformConsumer: runtime.DiscardConsumer,
 
+		BinProducer:  runtime.ByteStreamProducer(),
 		JSONProducer: runtime.JSONProducer(),
 
 		UsersDeleteAuthUsersIDHandler: users.DeleteAuthUsersIDHandlerFunc(func(params users.DeleteAuthUsersIDParams, principal interface{}) middleware.Responder {
@@ -77,8 +82,26 @@ func NewLoxilbRestAPIAPI(spec *loads.Document) *LoxilbRestAPIAPI {
 		DeleteConfigFirewallHandler: DeleteConfigFirewallHandlerFunc(func(params DeleteConfigFirewallParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation DeleteConfigFirewall has not yet been implemented")
 		}),
+		DeleteConfigIpfilterHandler: DeleteConfigIpfilterHandlerFunc(func(params DeleteConfigIpfilterParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation DeleteConfigIpfilter has not yet been implemented")
+		}),
+		DeleteConfigIpsecCaCertificatesNameHandler: DeleteConfigIpsecCaCertificatesNameHandlerFunc(func(params DeleteConfigIpsecCaCertificatesNameParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation DeleteConfigIpsecCaCertificatesName has not yet been implemented")
+		}),
+		DeleteConfigIpsecCertificatesNameHandler: DeleteConfigIpsecCertificatesNameHandlerFunc(func(params DeleteConfigIpsecCertificatesNameParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation DeleteConfigIpsecCertificatesName has not yet been implemented")
+		}),
+		DeleteConfigIpsecStatsHandler: DeleteConfigIpsecStatsHandlerFunc(func(params DeleteConfigIpsecStatsParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation DeleteConfigIpsecStats has not yet been implemented")
+		}),
+		DeleteConfigIpsecTunnelsNameHandler: DeleteConfigIpsecTunnelsNameHandlerFunc(func(params DeleteConfigIpsecTunnelsNameParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation DeleteConfigIpsecTunnelsName has not yet been implemented")
+		}),
 		DeleteConfigIpv4addressIPAddressMaskDevIfNameHandler: DeleteConfigIpv4addressIPAddressMaskDevIfNameHandlerFunc(func(params DeleteConfigIpv4addressIPAddressMaskDevIfNameParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation DeleteConfigIpv4addressIPAddressMaskDevIfName has not yet been implemented")
+		}),
+		DeleteConfigIpv6addressIPAddressMaskDevIfNameHandler: DeleteConfigIpv6addressIPAddressMaskDevIfNameHandlerFunc(func(params DeleteConfigIpv6addressIPAddressMaskDevIfNameParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation DeleteConfigIpv6addressIPAddressMaskDevIfName has not yet been implemented")
 		}),
 		DeleteConfigLoadbalancerAllHandler: DeleteConfigLoadbalancerAllHandlerFunc(func(params DeleteConfigLoadbalancerAllParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation DeleteConfigLoadbalancerAll has not yet been implemented")
@@ -113,6 +136,9 @@ func NewLoxilbRestAPIAPI(spec *loads.Document) *LoxilbRestAPIAPI {
 		DeleteConfigRouteDestinationIPNetIPAddressMaskHandler: DeleteConfigRouteDestinationIPNetIPAddressMaskHandlerFunc(func(params DeleteConfigRouteDestinationIPNetIPAddressMaskParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation DeleteConfigRouteDestinationIPNetIPAddressMask has not yet been implemented")
 		}),
+		DeleteConfigSecurityrateHandler: DeleteConfigSecurityrateHandlerFunc(func(params DeleteConfigSecurityrateParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation DeleteConfigSecurityrate has not yet been implemented")
+		}),
 		DeleteConfigSessionIdentIdentHandler: DeleteConfigSessionIdentIdentHandlerFunc(func(params DeleteConfigSessionIdentIdentParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation DeleteConfigSessionIdentIdent has not yet been implemented")
 		}),
@@ -130,6 +156,9 @@ func NewLoxilbRestAPIAPI(spec *loads.Document) *LoxilbRestAPIAPI {
 		}),
 		DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedHandler: DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedHandlerFunc(func(params DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation DeleteConfigVlanVlanIDMemberIfNameTaggedTagged has not yet been implemented")
+		}),
+		DeleteSniCertificatesHandler: DeleteSniCertificatesHandlerFunc(func(params DeleteSniCertificatesParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation DeleteSniCertificates has not yet been implemented")
 		}),
 		UsersGetAuthUsersHandler: users.GetAuthUsersHandlerFunc(func(params users.GetAuthUsersParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation users.GetAuthUsers has not yet been implemented")
@@ -167,8 +196,56 @@ func NewLoxilbRestAPIAPI(spec *loads.Document) *LoxilbRestAPIAPI {
 		GetConfigFirewallAllHandler: GetConfigFirewallAllHandlerFunc(func(params GetConfigFirewallAllParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation GetConfigFirewallAll has not yet been implemented")
 		}),
+		GetConfigGpuStatusHandler: GetConfigGpuStatusHandlerFunc(func(params GetConfigGpuStatusParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetConfigGpuStatus has not yet been implemented")
+		}),
+		GetConfigIpfilterAllHandler: GetConfigIpfilterAllHandlerFunc(func(params GetConfigIpfilterAllParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetConfigIpfilterAll has not yet been implemented")
+		}),
+		GetConfigIpsecHandler: GetConfigIpsecHandlerFunc(func(params GetConfigIpsecParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetConfigIpsec has not yet been implemented")
+		}),
+		GetConfigIpsecCaCertificatesAllHandler: GetConfigIpsecCaCertificatesAllHandlerFunc(func(params GetConfigIpsecCaCertificatesAllParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetConfigIpsecCaCertificatesAll has not yet been implemented")
+		}),
+		GetConfigIpsecCaCertificatesNameHandler: GetConfigIpsecCaCertificatesNameHandlerFunc(func(params GetConfigIpsecCaCertificatesNameParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetConfigIpsecCaCertificatesName has not yet been implemented")
+		}),
+		GetConfigIpsecCertificatesAllHandler: GetConfigIpsecCertificatesAllHandlerFunc(func(params GetConfigIpsecCertificatesAllParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetConfigIpsecCertificatesAll has not yet been implemented")
+		}),
+		GetConfigIpsecCertificatesNameHandler: GetConfigIpsecCertificatesNameHandlerFunc(func(params GetConfigIpsecCertificatesNameParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetConfigIpsecCertificatesName has not yet been implemented")
+		}),
+		GetConfigIpsecSasAllHandler: GetConfigIpsecSasAllHandlerFunc(func(params GetConfigIpsecSasAllParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetConfigIpsecSasAll has not yet been implemented")
+		}),
+		GetConfigIpsecStatsHandler: GetConfigIpsecStatsHandlerFunc(func(params GetConfigIpsecStatsParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetConfigIpsecStats has not yet been implemented")
+		}),
+		GetConfigIpsecTunnelsAllHandler: GetConfigIpsecTunnelsAllHandlerFunc(func(params GetConfigIpsecTunnelsAllParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetConfigIpsecTunnelsAll has not yet been implemented")
+		}),
+		GetConfigIpsecTunnelsNameHandler: GetConfigIpsecTunnelsNameHandlerFunc(func(params GetConfigIpsecTunnelsNameParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetConfigIpsecTunnelsName has not yet been implemented")
+		}),
+		GetConfigIpsecTunnelsNamePeerconfigHandler: GetConfigIpsecTunnelsNamePeerconfigHandlerFunc(func(params GetConfigIpsecTunnelsNamePeerconfigParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetConfigIpsecTunnelsNamePeerconfig has not yet been implemented")
+		}),
 		GetConfigIpv4addressAllHandler: GetConfigIpv4addressAllHandlerFunc(func(params GetConfigIpv4addressAllParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation GetConfigIpv4addressAll has not yet been implemented")
+		}),
+		GetConfigIpv6addressAllHandler: GetConfigIpv6addressAllHandlerFunc(func(params GetConfigIpv6addressAllParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetConfigIpv6addressAll has not yet been implemented")
+		}),
+		L4TracingGetConfigL4traceStatusHandler: l4_tracing.GetConfigL4traceStatusHandlerFunc(func(params l4_tracing.GetConfigL4traceStatusParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation l4_tracing.GetConfigL4traceStatus has not yet been implemented")
+		}),
+		GetConfigLlamafirewallStatsHandler: GetConfigLlamafirewallStatsHandlerFunc(func(params GetConfigLlamafirewallStatsParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetConfigLlamafirewallStats has not yet been implemented")
+		}),
+		GetConfigLlamafirewallStatusHandler: GetConfigLlamafirewallStatusHandlerFunc(func(params GetConfigLlamafirewallStatusParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetConfigLlamafirewallStatus has not yet been implemented")
 		}),
 		GetConfigLoadbalancerAllHandler: GetConfigLoadbalancerAllHandlerFunc(func(params GetConfigLoadbalancerAllParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation GetConfigLoadbalancerAll has not yet been implemented")
@@ -185,6 +262,12 @@ func NewLoxilbRestAPIAPI(spec *loads.Document) *LoxilbRestAPIAPI {
 		GetConfigParamsHandler: GetConfigParamsHandlerFunc(func(params GetConfigParamsParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation GetConfigParams has not yet been implemented")
 		}),
+		GetConfigPiiStatsHandler: GetConfigPiiStatsHandlerFunc(func(params GetConfigPiiStatsParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetConfigPiiStats has not yet been implemented")
+		}),
+		GetConfigPiiStatusHandler: GetConfigPiiStatusHandlerFunc(func(params GetConfigPiiStatusParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetConfigPiiStatus has not yet been implemented")
+		}),
 		GetConfigPolicyAllHandler: GetConfigPolicyAllHandlerFunc(func(params GetConfigPolicyAllParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation GetConfigPolicyAll has not yet been implemented")
 		}),
@@ -194,17 +277,32 @@ func NewLoxilbRestAPIAPI(spec *loads.Document) *LoxilbRestAPIAPI {
 		GetConfigRouteAllHandler: GetConfigRouteAllHandlerFunc(func(params GetConfigRouteAllParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation GetConfigRouteAll has not yet been implemented")
 		}),
+		GetConfigSecurityrateAllHandler: GetConfigSecurityrateAllHandlerFunc(func(params GetConfigSecurityrateAllParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetConfigSecurityrateAll has not yet been implemented")
+		}),
 		GetConfigSessionAllHandler: GetConfigSessionAllHandlerFunc(func(params GetConfigSessionAllParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation GetConfigSessionAll has not yet been implemented")
 		}),
 		GetConfigSessionulclAllHandler: GetConfigSessionulclAllHandlerFunc(func(params GetConfigSessionulclAllParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation GetConfigSessionulclAll has not yet been implemented")
 		}),
+		GetConfigSnapshotHandler: GetConfigSnapshotHandlerFunc(func(params GetConfigSnapshotParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetConfigSnapshot has not yet been implemented")
+		}),
+		TracingGetConfigTraceOtlpHandler: tracing.GetConfigTraceOtlpHandlerFunc(func(params tracing.GetConfigTraceOtlpParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation tracing.GetConfigTraceOtlp has not yet been implemented")
+		}),
+		TracingGetConfigTraceStatusHandler: tracing.GetConfigTraceStatusHandlerFunc(func(params tracing.GetConfigTraceStatusParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation tracing.GetConfigTraceStatus has not yet been implemented")
+		}),
 		GetConfigTunnelVxlanAllHandler: GetConfigTunnelVxlanAllHandlerFunc(func(params GetConfigTunnelVxlanAllParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation GetConfigTunnelVxlanAll has not yet been implemented")
 		}),
 		GetConfigVlanAllHandler: GetConfigVlanAllHandlerFunc(func(params GetConfigVlanAllParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation GetConfigVlanAll has not yet been implemented")
+		}),
+		GetConfigWorkerMetricsHandler: GetConfigWorkerMetricsHandlerFunc(func(params GetConfigWorkerMetricsParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetConfigWorkerMetrics has not yet been implemented")
 		}),
 		GetLogArchivesHandler: GetLogArchivesHandlerFunc(func(params GetLogArchivesParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation GetLogArchives has not yet been implemented")
@@ -269,6 +367,9 @@ func NewLoxilbRestAPIAPI(spec *loads.Document) *LoxilbRestAPIAPI {
 		AuthGetOauthProviderTokenHandler: auth.GetOauthProviderTokenHandlerFunc(func(params auth.GetOauthProviderTokenParams) middleware.Responder {
 			return middleware.NotImplemented("operation auth.GetOauthProviderToken has not yet been implemented")
 		}),
+		GetSniCertificatesHandler: GetSniCertificatesHandlerFunc(func(params GetSniCertificatesParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetSniCertificates has not yet been implemented")
+		}),
 		GetStatusDeviceHandler: GetStatusDeviceHandlerFunc(func(params GetStatusDeviceParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation GetStatusDevice has not yet been implemented")
 		}),
@@ -329,11 +430,65 @@ func NewLoxilbRestAPIAPI(spec *loads.Document) *LoxilbRestAPIAPI {
 		PostConfigFirewallHandler: PostConfigFirewallHandlerFunc(func(params PostConfigFirewallParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation PostConfigFirewall has not yet been implemented")
 		}),
+		PostConfigGpuConversationsCleanupHandler: PostConfigGpuConversationsCleanupHandlerFunc(func(params PostConfigGpuConversationsCleanupParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation PostConfigGpuConversationsCleanup has not yet been implemented")
+		}),
+		PostConfigGpuDisableHandler: PostConfigGpuDisableHandlerFunc(func(params PostConfigGpuDisableParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation PostConfigGpuDisable has not yet been implemented")
+		}),
+		PostConfigGpuEnableHandler: PostConfigGpuEnableHandlerFunc(func(params PostConfigGpuEnableParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation PostConfigGpuEnable has not yet been implemented")
+		}),
 		PostConfigImportHandler: PostConfigImportHandlerFunc(func(params PostConfigImportParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation PostConfigImport has not yet been implemented")
 		}),
+		PostConfigIpfilterHandler: PostConfigIpfilterHandlerFunc(func(params PostConfigIpfilterParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation PostConfigIpfilter has not yet been implemented")
+		}),
+		PostConfigIpsecHandler: PostConfigIpsecHandlerFunc(func(params PostConfigIpsecParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation PostConfigIpsec has not yet been implemented")
+		}),
+		PostConfigIpsecCaCertificatesHandler: PostConfigIpsecCaCertificatesHandlerFunc(func(params PostConfigIpsecCaCertificatesParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation PostConfigIpsecCaCertificates has not yet been implemented")
+		}),
+		PostConfigIpsecCertificatesHandler: PostConfigIpsecCertificatesHandlerFunc(func(params PostConfigIpsecCertificatesParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation PostConfigIpsecCertificates has not yet been implemented")
+		}),
+		PostConfigIpsecCertificatesValidateHandler: PostConfigIpsecCertificatesValidateHandlerFunc(func(params PostConfigIpsecCertificatesValidateParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation PostConfigIpsecCertificatesValidate has not yet been implemented")
+		}),
+		PostConfigIpsecTunnelsHandler: PostConfigIpsecTunnelsHandlerFunc(func(params PostConfigIpsecTunnelsParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation PostConfigIpsecTunnels has not yet been implemented")
+		}),
+		PostConfigIpsecTunnelsNameActionHandler: PostConfigIpsecTunnelsNameActionHandlerFunc(func(params PostConfigIpsecTunnelsNameActionParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation PostConfigIpsecTunnelsNameAction has not yet been implemented")
+		}),
 		PostConfigIpv4addressHandler: PostConfigIpv4addressHandlerFunc(func(params PostConfigIpv4addressParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation PostConfigIpv4address has not yet been implemented")
+		}),
+		PostConfigIpv6addressHandler: PostConfigIpv6addressHandlerFunc(func(params PostConfigIpv6addressParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation PostConfigIpv6address has not yet been implemented")
+		}),
+		L4TracingPostConfigL4traceDisableHandler: l4_tracing.PostConfigL4traceDisableHandlerFunc(func(params l4_tracing.PostConfigL4traceDisableParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation l4_tracing.PostConfigL4traceDisable has not yet been implemented")
+		}),
+		L4TracingPostConfigL4traceEnableHandler: l4_tracing.PostConfigL4traceEnableHandlerFunc(func(params l4_tracing.PostConfigL4traceEnableParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation l4_tracing.PostConfigL4traceEnable has not yet been implemented")
+		}),
+		L4TracingPostConfigL4traceStatsResetHandler: l4_tracing.PostConfigL4traceStatsResetHandlerFunc(func(params l4_tracing.PostConfigL4traceStatsResetParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation l4_tracing.PostConfigL4traceStatsReset has not yet been implemented")
+		}),
+		PostConfigLlamafirewallConfigureHandler: PostConfigLlamafirewallConfigureHandlerFunc(func(params PostConfigLlamafirewallConfigureParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation PostConfigLlamafirewallConfigure has not yet been implemented")
+		}),
+		PostConfigLlamafirewallEnableHandler: PostConfigLlamafirewallEnableHandlerFunc(func(params PostConfigLlamafirewallEnableParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation PostConfigLlamafirewallEnable has not yet been implemented")
+		}),
+		PostConfigLlamafirewallHealthHandler: PostConfigLlamafirewallHealthHandlerFunc(func(params PostConfigLlamafirewallHealthParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation PostConfigLlamafirewallHealth has not yet been implemented")
+		}),
+		PostConfigLlamafirewallScannersHandler: PostConfigLlamafirewallScannersHandlerFunc(func(params PostConfigLlamafirewallScannersParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation PostConfigLlamafirewallScanners has not yet been implemented")
 		}),
 		PostConfigLoadbalancerHandler: PostConfigLoadbalancerHandlerFunc(func(params PostConfigLoadbalancerParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation PostConfigLoadbalancer has not yet been implemented")
@@ -350,17 +505,44 @@ func NewLoxilbRestAPIAPI(spec *loads.Document) *LoxilbRestAPIAPI {
 		PostConfigParamsHandler: PostConfigParamsHandlerFunc(func(params PostConfigParamsParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation PostConfigParams has not yet been implemented")
 		}),
+		PostConfigPersistHandler: PostConfigPersistHandlerFunc(func(params PostConfigPersistParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation PostConfigPersist has not yet been implemented")
+		}),
+		PostConfigPiiConfigureHandler: PostConfigPiiConfigureHandlerFunc(func(params PostConfigPiiConfigureParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation PostConfigPiiConfigure has not yet been implemented")
+		}),
+		PostConfigPiiEnableHandler: PostConfigPiiEnableHandlerFunc(func(params PostConfigPiiEnableParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation PostConfigPiiEnable has not yet been implemented")
+		}),
+		PostConfigPiiURLPatternsHandler: PostConfigPiiURLPatternsHandlerFunc(func(params PostConfigPiiURLPatternsParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation PostConfigPiiURLPatterns has not yet been implemented")
+		}),
 		PostConfigPolicyHandler: PostConfigPolicyHandlerFunc(func(params PostConfigPolicyParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation PostConfigPolicy has not yet been implemented")
 		}),
+		PostConfigRestoreHandler: PostConfigRestoreHandlerFunc(func(params PostConfigRestoreParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation PostConfigRestore has not yet been implemented")
+		}),
 		PostConfigRouteHandler: PostConfigRouteHandlerFunc(func(params PostConfigRouteParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation PostConfigRoute has not yet been implemented")
+		}),
+		PostConfigSecurityrateHandler: PostConfigSecurityrateHandlerFunc(func(params PostConfigSecurityrateParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation PostConfigSecurityrate has not yet been implemented")
 		}),
 		PostConfigSessionHandler: PostConfigSessionHandlerFunc(func(params PostConfigSessionParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation PostConfigSession has not yet been implemented")
 		}),
 		PostConfigSessionulclHandler: PostConfigSessionulclHandlerFunc(func(params PostConfigSessionulclParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation PostConfigSessionulcl has not yet been implemented")
+		}),
+		TracingPostConfigTraceDisableHandler: tracing.PostConfigTraceDisableHandlerFunc(func(params tracing.PostConfigTraceDisableParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation tracing.PostConfigTraceDisable has not yet been implemented")
+		}),
+		TracingPostConfigTraceEnableHandler: tracing.PostConfigTraceEnableHandlerFunc(func(params tracing.PostConfigTraceEnableParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation tracing.PostConfigTraceEnable has not yet been implemented")
+		}),
+		TracingPostConfigTraceOtlpHandler: tracing.PostConfigTraceOtlpHandlerFunc(func(params tracing.PostConfigTraceOtlpParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation tracing.PostConfigTraceOtlp has not yet been implemented")
 		}),
 		PostConfigTunnelVxlanHandler: PostConfigTunnelVxlanHandlerFunc(func(params PostConfigTunnelVxlanParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation PostConfigTunnelVxlan has not yet been implemented")
@@ -374,11 +556,107 @@ func NewLoxilbRestAPIAPI(spec *loads.Document) *LoxilbRestAPIAPI {
 		PostConfigVlanVlanIDMemberHandler: PostConfigVlanVlanIDMemberHandlerFunc(func(params PostConfigVlanVlanIDMemberParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation PostConfigVlanVlanIDMember has not yet been implemented")
 		}),
+		PostConfigWorkerMetricsHandler: PostConfigWorkerMetricsHandlerFunc(func(params PostConfigWorkerMetricsParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation PostConfigWorkerMetrics has not yet been implemented")
+		}),
+		PostSniCertificatesHandler: PostSniCertificatesHandlerFunc(func(params PostSniCertificatesParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation PostSniCertificates has not yet been implemented")
+		}),
 		UsersPutAuthUsersIDHandler: users.PutAuthUsersIDHandlerFunc(func(params users.PutAuthUsersIDParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation users.PutAuthUsersID has not yet been implemented")
 		}),
+		PutConfigIpsecTunnelsNameHandler: PutConfigIpsecTunnelsNameHandlerFunc(func(params PutConfigIpsecTunnelsNameParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation PutConfigIpsecTunnelsName has not yet been implemented")
+		}),
+		L4TracingPutConfigL4traceSamplingHandler: l4_tracing.PutConfigL4traceSamplingHandlerFunc(func(params l4_tracing.PutConfigL4traceSamplingParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation l4_tracing.PutConfigL4traceSampling has not yet been implemented")
+		}),
+		PutConfigSecurityrateResetHandler: PutConfigSecurityrateResetHandlerFunc(func(params PutConfigSecurityrateResetParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation PutConfigSecurityrateReset has not yet been implemented")
+		}),
+		TracingDeleteCatalogParserHandler: tracing.DeleteCatalogParserHandlerFunc(func(params tracing.DeleteCatalogParserParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation tracing.DeleteCatalogParser has not yet been implemented")
+		}),
+		AiDeleteConfigAiApikeyKeyIDHandler: ai.DeleteConfigAiApikeyKeyIDHandlerFunc(func(params ai.DeleteConfigAiApikeyKeyIDParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation ai.DeleteConfigAiApikeyKeyID has not yet been implemented")
+		}),
+		DeleteConfigCertCertIDHandler: DeleteConfigCertCertIDHandlerFunc(func(params DeleteConfigCertCertIDParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation DeleteConfigCertCertID has not yet been implemented")
+		}),
+		DeleteConfigL7PolicyIDHandler: DeleteConfigL7PolicyIDHandlerFunc(func(params DeleteConfigL7PolicyIDParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation DeleteConfigL7PolicyID has not yet been implemented")
+		}),
+		OpaDeleteConfigOpaWatcherHandler: opa.DeleteConfigOpaWatcherHandlerFunc(func(params opa.DeleteConfigOpaWatcherParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation opa.DeleteConfigOpaWatcher has not yet been implemented")
+		}),
+		TracingGetCatalogParserHandler: tracing.GetCatalogParserHandlerFunc(func(params tracing.GetCatalogParserParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation tracing.GetCatalogParser has not yet been implemented")
+		}),
+		AiGetConfigAiApikeyHandler: ai.GetConfigAiApikeyHandlerFunc(func(params ai.GetConfigAiApikeyParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation ai.GetConfigAiApikey has not yet been implemented")
+		}),
+		AiGetConfigAiApikeyKeyIDHandler: ai.GetConfigAiApikeyKeyIDHandlerFunc(func(params ai.GetConfigAiApikeyKeyIDParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation ai.GetConfigAiApikeyKeyID has not yet been implemented")
+		}),
+		AiGetConfigAiTenantRatelimitTenantIDHandler: ai.GetConfigAiTenantRatelimitTenantIDHandlerFunc(func(params ai.GetConfigAiTenantRatelimitTenantIDParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation ai.GetConfigAiTenantRatelimitTenantID has not yet been implemented")
+		}),
+		GetConfigCertCertIDHandler: GetConfigCertCertIDHandlerFunc(func(params GetConfigCertCertIDParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetConfigCertCertID has not yet been implemented")
+		}),
+		GetConfigL7PolicyAllHandler: GetConfigL7PolicyAllHandlerFunc(func(params GetConfigL7PolicyAllParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetConfigL7PolicyAll has not yet been implemented")
+		}),
+		GetConfigL7PolicyIDHandler: GetConfigL7PolicyIDHandlerFunc(func(params GetConfigL7PolicyIDParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetConfigL7PolicyID has not yet been implemented")
+		}),
+		GetConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoHandler: GetConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoHandlerFunc(func(params GetConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProto has not yet been implemented")
+		}),
+		GetConfigLoadbalancerIDHandler: GetConfigLoadbalancerIDHandlerFunc(func(params GetConfigLoadbalancerIDParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetConfigLoadbalancerID has not yet been implemented")
+		}),
+		GetConfigLoadbalancerStatsHandler: GetConfigLoadbalancerStatsHandlerFunc(func(params GetConfigLoadbalancerStatsParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetConfigLoadbalancerStats has not yet been implemented")
+		}),
+		GetConfigLoadbalancerStatusHandler: GetConfigLoadbalancerStatusHandlerFunc(func(params GetConfigLoadbalancerStatusParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetConfigLoadbalancerStatus has not yet been implemented")
+		}),
+		OpaGetConfigOpaWatcherHandler: opa.GetConfigOpaWatcherHandlerFunc(func(params opa.GetConfigOpaWatcherParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation opa.GetConfigOpaWatcher has not yet been implemented")
+		}),
 		MetadataGetMetaHandler: metadata.GetMetaHandlerFunc(func(params metadata.GetMetaParams) middleware.Responder {
 			return middleware.NotImplemented("operation metadata.GetMeta has not yet been implemented")
+		}),
+		TracingGetTraceCatalogsHandler: tracing.GetTraceCatalogsHandlerFunc(func(params tracing.GetTraceCatalogsParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation tracing.GetTraceCatalogs has not yet been implemented")
+		}),
+		TracingGetTraceParsersHandler: tracing.GetTraceParsersHandlerFunc(func(params tracing.GetTraceParsersParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation tracing.GetTraceParsers has not yet been implemented")
+		}),
+		PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoHandler: PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoHandlerFunc(func(params PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProto has not yet been implemented")
+		}),
+		AiPostConfigAiApikeyHandler: ai.PostConfigAiApikeyHandlerFunc(func(params ai.PostConfigAiApikeyParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation ai.PostConfigAiApikey has not yet been implemented")
+		}),
+		AiPostConfigAiTenantRatelimitHandler: ai.PostConfigAiTenantRatelimitHandlerFunc(func(params ai.PostConfigAiTenantRatelimitParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation ai.PostConfigAiTenantRatelimit has not yet been implemented")
+		}),
+		PostConfigCertHandler: PostConfigCertHandlerFunc(func(params PostConfigCertParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation PostConfigCert has not yet been implemented")
+		}),
+		PostConfigL7PolicyHandler: PostConfigL7PolicyHandlerFunc(func(params PostConfigL7PolicyParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation PostConfigL7Policy has not yet been implemented")
+		}),
+		OpaPostConfigOpaWatcherHandler: opa.PostConfigOpaWatcherHandlerFunc(func(params opa.PostConfigOpaWatcherParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation opa.PostConfigOpaWatcher has not yet been implemented")
+		}),
+		PutConfigCertCertIDHandler: PutConfigCertCertIDHandlerFunc(func(params PutConfigCertCertIDParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation PutConfigCertCertID has not yet been implemented")
+		}),
+		TracingUpdateCatalogParserHandler: tracing.UpdateCatalogParserHandlerFunc(func(params tracing.UpdateCatalogParserParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation tracing.UpdateCatalogParser has not yet been implemented")
 		}),
 
 		// Applies when the "Authorization" header is set
@@ -417,11 +695,15 @@ type LoxilbRestAPIAPI struct {
 
 	// JSONConsumer registers a consumer for the following mime types:
 	//   - application/json
+	//   - application/merge-patch+json
 	JSONConsumer runtime.Consumer
 	// MultipartformConsumer registers a consumer for the following mime types:
 	//   - multipart/form-data
 	MultipartformConsumer runtime.Consumer
 
+	// BinProducer registers a producer for the following mime types:
+	//   - application/octet-stream
+	BinProducer runtime.Producer
 	// JSONProducer registers a producer for the following mime types:
 	//   - application/json
 	JSONProducer runtime.Producer
@@ -453,8 +735,20 @@ type LoxilbRestAPIAPI struct {
 	DeleteConfigFdbMacAddressDevIfNameHandler DeleteConfigFdbMacAddressDevIfNameHandler
 	// DeleteConfigFirewallHandler sets the operation handler for the delete config firewall operation
 	DeleteConfigFirewallHandler DeleteConfigFirewallHandler
+	// DeleteConfigIpfilterHandler sets the operation handler for the delete config ipfilter operation
+	DeleteConfigIpfilterHandler DeleteConfigIpfilterHandler
+	// DeleteConfigIpsecCaCertificatesNameHandler sets the operation handler for the delete config ipsec ca certificates name operation
+	DeleteConfigIpsecCaCertificatesNameHandler DeleteConfigIpsecCaCertificatesNameHandler
+	// DeleteConfigIpsecCertificatesNameHandler sets the operation handler for the delete config ipsec certificates name operation
+	DeleteConfigIpsecCertificatesNameHandler DeleteConfigIpsecCertificatesNameHandler
+	// DeleteConfigIpsecStatsHandler sets the operation handler for the delete config ipsec stats operation
+	DeleteConfigIpsecStatsHandler DeleteConfigIpsecStatsHandler
+	// DeleteConfigIpsecTunnelsNameHandler sets the operation handler for the delete config ipsec tunnels name operation
+	DeleteConfigIpsecTunnelsNameHandler DeleteConfigIpsecTunnelsNameHandler
 	// DeleteConfigIpv4addressIPAddressMaskDevIfNameHandler sets the operation handler for the delete config ipv4address IP address mask dev if name operation
 	DeleteConfigIpv4addressIPAddressMaskDevIfNameHandler DeleteConfigIpv4addressIPAddressMaskDevIfNameHandler
+	// DeleteConfigIpv6addressIPAddressMaskDevIfNameHandler sets the operation handler for the delete config ipv6address IP address mask dev if name operation
+	DeleteConfigIpv6addressIPAddressMaskDevIfNameHandler DeleteConfigIpv6addressIPAddressMaskDevIfNameHandler
 	// DeleteConfigLoadbalancerAllHandler sets the operation handler for the delete config loadbalancer all operation
 	DeleteConfigLoadbalancerAllHandler DeleteConfigLoadbalancerAllHandler
 	// DeleteConfigLoadbalancerExternalipaddressIPAddressPortPortPortmaxPortmaxProtocolProtoHandler sets the operation handler for the delete config loadbalancer externalipaddress IP address port port portmax portmax protocol proto operation
@@ -477,6 +771,8 @@ type LoxilbRestAPIAPI struct {
 	DeleteConfigPolicyIdentIdentHandler DeleteConfigPolicyIdentIdentHandler
 	// DeleteConfigRouteDestinationIPNetIPAddressMaskHandler sets the operation handler for the delete config route destination IP net IP address mask operation
 	DeleteConfigRouteDestinationIPNetIPAddressMaskHandler DeleteConfigRouteDestinationIPNetIPAddressMaskHandler
+	// DeleteConfigSecurityrateHandler sets the operation handler for the delete config securityrate operation
+	DeleteConfigSecurityrateHandler DeleteConfigSecurityrateHandler
 	// DeleteConfigSessionIdentIdentHandler sets the operation handler for the delete config session ident ident operation
 	DeleteConfigSessionIdentIdentHandler DeleteConfigSessionIdentIdentHandler
 	// DeleteConfigSessionulclIdentIdentUlclAddressIPAddressHandler sets the operation handler for the delete config sessionulcl ident ident ulcl address IP address operation
@@ -489,6 +785,8 @@ type LoxilbRestAPIAPI struct {
 	DeleteConfigVlanVlanIDHandler DeleteConfigVlanVlanIDHandler
 	// DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedHandler sets the operation handler for the delete config vlan vlan ID member if name tagged tagged operation
 	DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedHandler DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedHandler
+	// DeleteSniCertificatesHandler sets the operation handler for the delete sni certificates operation
+	DeleteSniCertificatesHandler DeleteSniCertificatesHandler
 	// UsersGetAuthUsersHandler sets the operation handler for the get auth users operation
 	UsersGetAuthUsersHandler users.GetAuthUsersHandler
 	// GetConfigBfdAllHandler sets the operation handler for the get config bfd all operation
@@ -513,8 +811,40 @@ type LoxilbRestAPIAPI struct {
 	GetConfigFdbAllHandler GetConfigFdbAllHandler
 	// GetConfigFirewallAllHandler sets the operation handler for the get config firewall all operation
 	GetConfigFirewallAllHandler GetConfigFirewallAllHandler
+	// GetConfigGpuStatusHandler sets the operation handler for the get config gpu status operation
+	GetConfigGpuStatusHandler GetConfigGpuStatusHandler
+	// GetConfigIpfilterAllHandler sets the operation handler for the get config ipfilter all operation
+	GetConfigIpfilterAllHandler GetConfigIpfilterAllHandler
+	// GetConfigIpsecHandler sets the operation handler for the get config ipsec operation
+	GetConfigIpsecHandler GetConfigIpsecHandler
+	// GetConfigIpsecCaCertificatesAllHandler sets the operation handler for the get config ipsec ca certificates all operation
+	GetConfigIpsecCaCertificatesAllHandler GetConfigIpsecCaCertificatesAllHandler
+	// GetConfigIpsecCaCertificatesNameHandler sets the operation handler for the get config ipsec ca certificates name operation
+	GetConfigIpsecCaCertificatesNameHandler GetConfigIpsecCaCertificatesNameHandler
+	// GetConfigIpsecCertificatesAllHandler sets the operation handler for the get config ipsec certificates all operation
+	GetConfigIpsecCertificatesAllHandler GetConfigIpsecCertificatesAllHandler
+	// GetConfigIpsecCertificatesNameHandler sets the operation handler for the get config ipsec certificates name operation
+	GetConfigIpsecCertificatesNameHandler GetConfigIpsecCertificatesNameHandler
+	// GetConfigIpsecSasAllHandler sets the operation handler for the get config ipsec sas all operation
+	GetConfigIpsecSasAllHandler GetConfigIpsecSasAllHandler
+	// GetConfigIpsecStatsHandler sets the operation handler for the get config ipsec stats operation
+	GetConfigIpsecStatsHandler GetConfigIpsecStatsHandler
+	// GetConfigIpsecTunnelsAllHandler sets the operation handler for the get config ipsec tunnels all operation
+	GetConfigIpsecTunnelsAllHandler GetConfigIpsecTunnelsAllHandler
+	// GetConfigIpsecTunnelsNameHandler sets the operation handler for the get config ipsec tunnels name operation
+	GetConfigIpsecTunnelsNameHandler GetConfigIpsecTunnelsNameHandler
+	// GetConfigIpsecTunnelsNamePeerconfigHandler sets the operation handler for the get config ipsec tunnels name peerconfig operation
+	GetConfigIpsecTunnelsNamePeerconfigHandler GetConfigIpsecTunnelsNamePeerconfigHandler
 	// GetConfigIpv4addressAllHandler sets the operation handler for the get config ipv4address all operation
 	GetConfigIpv4addressAllHandler GetConfigIpv4addressAllHandler
+	// GetConfigIpv6addressAllHandler sets the operation handler for the get config ipv6address all operation
+	GetConfigIpv6addressAllHandler GetConfigIpv6addressAllHandler
+	// L4TracingGetConfigL4traceStatusHandler sets the operation handler for the get config l4trace status operation
+	L4TracingGetConfigL4traceStatusHandler l4_tracing.GetConfigL4traceStatusHandler
+	// GetConfigLlamafirewallStatsHandler sets the operation handler for the get config llamafirewall stats operation
+	GetConfigLlamafirewallStatsHandler GetConfigLlamafirewallStatsHandler
+	// GetConfigLlamafirewallStatusHandler sets the operation handler for the get config llamafirewall status operation
+	GetConfigLlamafirewallStatusHandler GetConfigLlamafirewallStatusHandler
 	// GetConfigLoadbalancerAllHandler sets the operation handler for the get config loadbalancer all operation
 	GetConfigLoadbalancerAllHandler GetConfigLoadbalancerAllHandler
 	// GetConfigMetricsHandler sets the operation handler for the get config metrics operation
@@ -525,20 +855,34 @@ type LoxilbRestAPIAPI struct {
 	GetConfigNeighborAllHandler GetConfigNeighborAllHandler
 	// GetConfigParamsHandler sets the operation handler for the get config params operation
 	GetConfigParamsHandler GetConfigParamsHandler
+	// GetConfigPiiStatsHandler sets the operation handler for the get config pii stats operation
+	GetConfigPiiStatsHandler GetConfigPiiStatsHandler
+	// GetConfigPiiStatusHandler sets the operation handler for the get config pii status operation
+	GetConfigPiiStatusHandler GetConfigPiiStatusHandler
 	// GetConfigPolicyAllHandler sets the operation handler for the get config policy all operation
 	GetConfigPolicyAllHandler GetConfigPolicyAllHandler
 	// GetConfigPortAllHandler sets the operation handler for the get config port all operation
 	GetConfigPortAllHandler GetConfigPortAllHandler
 	// GetConfigRouteAllHandler sets the operation handler for the get config route all operation
 	GetConfigRouteAllHandler GetConfigRouteAllHandler
+	// GetConfigSecurityrateAllHandler sets the operation handler for the get config securityrate all operation
+	GetConfigSecurityrateAllHandler GetConfigSecurityrateAllHandler
 	// GetConfigSessionAllHandler sets the operation handler for the get config session all operation
 	GetConfigSessionAllHandler GetConfigSessionAllHandler
 	// GetConfigSessionulclAllHandler sets the operation handler for the get config sessionulcl all operation
 	GetConfigSessionulclAllHandler GetConfigSessionulclAllHandler
+	// GetConfigSnapshotHandler sets the operation handler for the get config snapshot operation
+	GetConfigSnapshotHandler GetConfigSnapshotHandler
+	// TracingGetConfigTraceOtlpHandler sets the operation handler for the get config trace otlp operation
+	TracingGetConfigTraceOtlpHandler tracing.GetConfigTraceOtlpHandler
+	// TracingGetConfigTraceStatusHandler sets the operation handler for the get config trace status operation
+	TracingGetConfigTraceStatusHandler tracing.GetConfigTraceStatusHandler
 	// GetConfigTunnelVxlanAllHandler sets the operation handler for the get config tunnel vxlan all operation
 	GetConfigTunnelVxlanAllHandler GetConfigTunnelVxlanAllHandler
 	// GetConfigVlanAllHandler sets the operation handler for the get config vlan all operation
 	GetConfigVlanAllHandler GetConfigVlanAllHandler
+	// GetConfigWorkerMetricsHandler sets the operation handler for the get config worker metrics operation
+	GetConfigWorkerMetricsHandler GetConfigWorkerMetricsHandler
 	// GetLogArchivesHandler sets the operation handler for the get log archives operation
 	GetLogArchivesHandler GetLogArchivesHandler
 	// GetLogArchivesFilenameHandler sets the operation handler for the get log archives filename operation
@@ -581,6 +925,8 @@ type LoxilbRestAPIAPI struct {
 	AuthGetOauthProviderCallbackHandler auth.GetOauthProviderCallbackHandler
 	// AuthGetOauthProviderTokenHandler sets the operation handler for the get oauth provider token operation
 	AuthGetOauthProviderTokenHandler auth.GetOauthProviderTokenHandler
+	// GetSniCertificatesHandler sets the operation handler for the get sni certificates operation
+	GetSniCertificatesHandler GetSniCertificatesHandler
 	// GetStatusDeviceHandler sets the operation handler for the get status device operation
 	GetStatusDeviceHandler GetStatusDeviceHandler
 	// GetStatusFilesystemHandler sets the operation handler for the get status filesystem operation
@@ -621,10 +967,46 @@ type LoxilbRestAPIAPI struct {
 	PostConfigFdbHandler PostConfigFdbHandler
 	// PostConfigFirewallHandler sets the operation handler for the post config firewall operation
 	PostConfigFirewallHandler PostConfigFirewallHandler
+	// PostConfigGpuConversationsCleanupHandler sets the operation handler for the post config gpu conversations cleanup operation
+	PostConfigGpuConversationsCleanupHandler PostConfigGpuConversationsCleanupHandler
+	// PostConfigGpuDisableHandler sets the operation handler for the post config gpu disable operation
+	PostConfigGpuDisableHandler PostConfigGpuDisableHandler
+	// PostConfigGpuEnableHandler sets the operation handler for the post config gpu enable operation
+	PostConfigGpuEnableHandler PostConfigGpuEnableHandler
 	// PostConfigImportHandler sets the operation handler for the post config import operation
 	PostConfigImportHandler PostConfigImportHandler
+	// PostConfigIpfilterHandler sets the operation handler for the post config ipfilter operation
+	PostConfigIpfilterHandler PostConfigIpfilterHandler
+	// PostConfigIpsecHandler sets the operation handler for the post config ipsec operation
+	PostConfigIpsecHandler PostConfigIpsecHandler
+	// PostConfigIpsecCaCertificatesHandler sets the operation handler for the post config ipsec ca certificates operation
+	PostConfigIpsecCaCertificatesHandler PostConfigIpsecCaCertificatesHandler
+	// PostConfigIpsecCertificatesHandler sets the operation handler for the post config ipsec certificates operation
+	PostConfigIpsecCertificatesHandler PostConfigIpsecCertificatesHandler
+	// PostConfigIpsecCertificatesValidateHandler sets the operation handler for the post config ipsec certificates validate operation
+	PostConfigIpsecCertificatesValidateHandler PostConfigIpsecCertificatesValidateHandler
+	// PostConfigIpsecTunnelsHandler sets the operation handler for the post config ipsec tunnels operation
+	PostConfigIpsecTunnelsHandler PostConfigIpsecTunnelsHandler
+	// PostConfigIpsecTunnelsNameActionHandler sets the operation handler for the post config ipsec tunnels name action operation
+	PostConfigIpsecTunnelsNameActionHandler PostConfigIpsecTunnelsNameActionHandler
 	// PostConfigIpv4addressHandler sets the operation handler for the post config ipv4address operation
 	PostConfigIpv4addressHandler PostConfigIpv4addressHandler
+	// PostConfigIpv6addressHandler sets the operation handler for the post config ipv6address operation
+	PostConfigIpv6addressHandler PostConfigIpv6addressHandler
+	// L4TracingPostConfigL4traceDisableHandler sets the operation handler for the post config l4trace disable operation
+	L4TracingPostConfigL4traceDisableHandler l4_tracing.PostConfigL4traceDisableHandler
+	// L4TracingPostConfigL4traceEnableHandler sets the operation handler for the post config l4trace enable operation
+	L4TracingPostConfigL4traceEnableHandler l4_tracing.PostConfigL4traceEnableHandler
+	// L4TracingPostConfigL4traceStatsResetHandler sets the operation handler for the post config l4trace stats reset operation
+	L4TracingPostConfigL4traceStatsResetHandler l4_tracing.PostConfigL4traceStatsResetHandler
+	// PostConfigLlamafirewallConfigureHandler sets the operation handler for the post config llamafirewall configure operation
+	PostConfigLlamafirewallConfigureHandler PostConfigLlamafirewallConfigureHandler
+	// PostConfigLlamafirewallEnableHandler sets the operation handler for the post config llamafirewall enable operation
+	PostConfigLlamafirewallEnableHandler PostConfigLlamafirewallEnableHandler
+	// PostConfigLlamafirewallHealthHandler sets the operation handler for the post config llamafirewall health operation
+	PostConfigLlamafirewallHealthHandler PostConfigLlamafirewallHealthHandler
+	// PostConfigLlamafirewallScannersHandler sets the operation handler for the post config llamafirewall scanners operation
+	PostConfigLlamafirewallScannersHandler PostConfigLlamafirewallScannersHandler
 	// PostConfigLoadbalancerHandler sets the operation handler for the post config loadbalancer operation
 	PostConfigLoadbalancerHandler PostConfigLoadbalancerHandler
 	// PostConfigMetricsHandler sets the operation handler for the post config metrics operation
@@ -635,14 +1017,32 @@ type LoxilbRestAPIAPI struct {
 	PostConfigNeighborHandler PostConfigNeighborHandler
 	// PostConfigParamsHandler sets the operation handler for the post config params operation
 	PostConfigParamsHandler PostConfigParamsHandler
+	// PostConfigPersistHandler sets the operation handler for the post config persist operation
+	PostConfigPersistHandler PostConfigPersistHandler
+	// PostConfigPiiConfigureHandler sets the operation handler for the post config pii configure operation
+	PostConfigPiiConfigureHandler PostConfigPiiConfigureHandler
+	// PostConfigPiiEnableHandler sets the operation handler for the post config pii enable operation
+	PostConfigPiiEnableHandler PostConfigPiiEnableHandler
+	// PostConfigPiiURLPatternsHandler sets the operation handler for the post config pii URL patterns operation
+	PostConfigPiiURLPatternsHandler PostConfigPiiURLPatternsHandler
 	// PostConfigPolicyHandler sets the operation handler for the post config policy operation
 	PostConfigPolicyHandler PostConfigPolicyHandler
+	// PostConfigRestoreHandler sets the operation handler for the post config restore operation
+	PostConfigRestoreHandler PostConfigRestoreHandler
 	// PostConfigRouteHandler sets the operation handler for the post config route operation
 	PostConfigRouteHandler PostConfigRouteHandler
+	// PostConfigSecurityrateHandler sets the operation handler for the post config securityrate operation
+	PostConfigSecurityrateHandler PostConfigSecurityrateHandler
 	// PostConfigSessionHandler sets the operation handler for the post config session operation
 	PostConfigSessionHandler PostConfigSessionHandler
 	// PostConfigSessionulclHandler sets the operation handler for the post config sessionulcl operation
 	PostConfigSessionulclHandler PostConfigSessionulclHandler
+	// TracingPostConfigTraceDisableHandler sets the operation handler for the post config trace disable operation
+	TracingPostConfigTraceDisableHandler tracing.PostConfigTraceDisableHandler
+	// TracingPostConfigTraceEnableHandler sets the operation handler for the post config trace enable operation
+	TracingPostConfigTraceEnableHandler tracing.PostConfigTraceEnableHandler
+	// TracingPostConfigTraceOtlpHandler sets the operation handler for the post config trace otlp operation
+	TracingPostConfigTraceOtlpHandler tracing.PostConfigTraceOtlpHandler
 	// PostConfigTunnelVxlanHandler sets the operation handler for the post config tunnel vxlan operation
 	PostConfigTunnelVxlanHandler PostConfigTunnelVxlanHandler
 	// PostConfigTunnelVxlanVxlanIDPeerHandler sets the operation handler for the post config tunnel vxlan vxlan ID peer operation
@@ -651,10 +1051,74 @@ type LoxilbRestAPIAPI struct {
 	PostConfigVlanHandler PostConfigVlanHandler
 	// PostConfigVlanVlanIDMemberHandler sets the operation handler for the post config vlan vlan ID member operation
 	PostConfigVlanVlanIDMemberHandler PostConfigVlanVlanIDMemberHandler
+	// PostConfigWorkerMetricsHandler sets the operation handler for the post config worker metrics operation
+	PostConfigWorkerMetricsHandler PostConfigWorkerMetricsHandler
+	// PostSniCertificatesHandler sets the operation handler for the post sni certificates operation
+	PostSniCertificatesHandler PostSniCertificatesHandler
 	// UsersPutAuthUsersIDHandler sets the operation handler for the put auth users ID operation
 	UsersPutAuthUsersIDHandler users.PutAuthUsersIDHandler
+	// PutConfigIpsecTunnelsNameHandler sets the operation handler for the put config ipsec tunnels name operation
+	PutConfigIpsecTunnelsNameHandler PutConfigIpsecTunnelsNameHandler
+	// L4TracingPutConfigL4traceSamplingHandler sets the operation handler for the put config l4trace sampling operation
+	L4TracingPutConfigL4traceSamplingHandler l4_tracing.PutConfigL4traceSamplingHandler
+	// PutConfigSecurityrateResetHandler sets the operation handler for the put config securityrate reset operation
+	PutConfigSecurityrateResetHandler PutConfigSecurityrateResetHandler
+	// TracingDeleteCatalogParserHandler sets the operation handler for the delete catalog parser operation
+	TracingDeleteCatalogParserHandler tracing.DeleteCatalogParserHandler
+	// AiDeleteConfigAiApikeyKeyIDHandler sets the operation handler for the delete config ai apikey key ID operation
+	AiDeleteConfigAiApikeyKeyIDHandler ai.DeleteConfigAiApikeyKeyIDHandler
+	// DeleteConfigCertCertIDHandler sets the operation handler for the delete config cert cert Id operation
+	DeleteConfigCertCertIDHandler DeleteConfigCertCertIDHandler
+	// DeleteConfigL7PolicyIDHandler sets the operation handler for the delete config l7 policy ID operation
+	DeleteConfigL7PolicyIDHandler DeleteConfigL7PolicyIDHandler
+	// OpaDeleteConfigOpaWatcherHandler sets the operation handler for the delete config opa watcher operation
+	OpaDeleteConfigOpaWatcherHandler opa.DeleteConfigOpaWatcherHandler
+	// TracingGetCatalogParserHandler sets the operation handler for the get catalog parser operation
+	TracingGetCatalogParserHandler tracing.GetCatalogParserHandler
+	// AiGetConfigAiApikeyHandler sets the operation handler for the get config ai apikey operation
+	AiGetConfigAiApikeyHandler ai.GetConfigAiApikeyHandler
+	// AiGetConfigAiApikeyKeyIDHandler sets the operation handler for the get config ai apikey key ID operation
+	AiGetConfigAiApikeyKeyIDHandler ai.GetConfigAiApikeyKeyIDHandler
+	// AiGetConfigAiTenantRatelimitTenantIDHandler sets the operation handler for the get config ai tenant ratelimit tenant ID operation
+	AiGetConfigAiTenantRatelimitTenantIDHandler ai.GetConfigAiTenantRatelimitTenantIDHandler
+	// GetConfigCertCertIDHandler sets the operation handler for the get config cert cert Id operation
+	GetConfigCertCertIDHandler GetConfigCertCertIDHandler
+	// GetConfigL7PolicyAllHandler sets the operation handler for the get config l7 policy all operation
+	GetConfigL7PolicyAllHandler GetConfigL7PolicyAllHandler
+	// GetConfigL7PolicyIDHandler sets the operation handler for the get config l7 policy ID operation
+	GetConfigL7PolicyIDHandler GetConfigL7PolicyIDHandler
+	// GetConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoHandler sets the operation handler for the get config loadbalancer externalipaddress IP address port port protocol proto operation
+	GetConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoHandler GetConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoHandler
+	// GetConfigLoadbalancerIDHandler sets the operation handler for the get config loadbalancer ID operation
+	GetConfigLoadbalancerIDHandler GetConfigLoadbalancerIDHandler
+	// GetConfigLoadbalancerStatsHandler sets the operation handler for the get config loadbalancer stats operation
+	GetConfigLoadbalancerStatsHandler GetConfigLoadbalancerStatsHandler
+	// GetConfigLoadbalancerStatusHandler sets the operation handler for the get config loadbalancer status operation
+	GetConfigLoadbalancerStatusHandler GetConfigLoadbalancerStatusHandler
+	// OpaGetConfigOpaWatcherHandler sets the operation handler for the get config opa watcher operation
+	OpaGetConfigOpaWatcherHandler opa.GetConfigOpaWatcherHandler
 	// MetadataGetMetaHandler sets the operation handler for the get meta operation
 	MetadataGetMetaHandler metadata.GetMetaHandler
+	// TracingGetTraceCatalogsHandler sets the operation handler for the get trace catalogs operation
+	TracingGetTraceCatalogsHandler tracing.GetTraceCatalogsHandler
+	// TracingGetTraceParsersHandler sets the operation handler for the get trace parsers operation
+	TracingGetTraceParsersHandler tracing.GetTraceParsersHandler
+	// PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoHandler sets the operation handler for the patch config loadbalancer externalipaddress IP address port port protocol proto operation
+	PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoHandler PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoHandler
+	// AiPostConfigAiApikeyHandler sets the operation handler for the post config ai apikey operation
+	AiPostConfigAiApikeyHandler ai.PostConfigAiApikeyHandler
+	// AiPostConfigAiTenantRatelimitHandler sets the operation handler for the post config ai tenant ratelimit operation
+	AiPostConfigAiTenantRatelimitHandler ai.PostConfigAiTenantRatelimitHandler
+	// PostConfigCertHandler sets the operation handler for the post config cert operation
+	PostConfigCertHandler PostConfigCertHandler
+	// PostConfigL7PolicyHandler sets the operation handler for the post config l7 policy operation
+	PostConfigL7PolicyHandler PostConfigL7PolicyHandler
+	// OpaPostConfigOpaWatcherHandler sets the operation handler for the post config opa watcher operation
+	OpaPostConfigOpaWatcherHandler opa.PostConfigOpaWatcherHandler
+	// PutConfigCertCertIDHandler sets the operation handler for the put config cert cert Id operation
+	PutConfigCertCertIDHandler PutConfigCertCertIDHandler
+	// TracingUpdateCatalogParserHandler sets the operation handler for the update catalog parser operation
+	TracingUpdateCatalogParserHandler tracing.UpdateCatalogParserHandler
 
 	// ServeError is called when an error is received, there is a default handler
 	// but you can set your own with this
@@ -731,6 +1195,9 @@ func (o *LoxilbRestAPIAPI) Validate() error {
 		unregistered = append(unregistered, "MultipartformConsumer")
 	}
 
+	if o.BinProducer == nil {
+		unregistered = append(unregistered, "BinProducer")
+	}
 	if o.JSONProducer == nil {
 		unregistered = append(unregistered, "JSONProducer")
 	}
@@ -769,8 +1236,26 @@ func (o *LoxilbRestAPIAPI) Validate() error {
 	if o.DeleteConfigFirewallHandler == nil {
 		unregistered = append(unregistered, "DeleteConfigFirewallHandler")
 	}
+	if o.DeleteConfigIpfilterHandler == nil {
+		unregistered = append(unregistered, "DeleteConfigIpfilterHandler")
+	}
+	if o.DeleteConfigIpsecCaCertificatesNameHandler == nil {
+		unregistered = append(unregistered, "DeleteConfigIpsecCaCertificatesNameHandler")
+	}
+	if o.DeleteConfigIpsecCertificatesNameHandler == nil {
+		unregistered = append(unregistered, "DeleteConfigIpsecCertificatesNameHandler")
+	}
+	if o.DeleteConfigIpsecStatsHandler == nil {
+		unregistered = append(unregistered, "DeleteConfigIpsecStatsHandler")
+	}
+	if o.DeleteConfigIpsecTunnelsNameHandler == nil {
+		unregistered = append(unregistered, "DeleteConfigIpsecTunnelsNameHandler")
+	}
 	if o.DeleteConfigIpv4addressIPAddressMaskDevIfNameHandler == nil {
 		unregistered = append(unregistered, "DeleteConfigIpv4addressIPAddressMaskDevIfNameHandler")
+	}
+	if o.DeleteConfigIpv6addressIPAddressMaskDevIfNameHandler == nil {
+		unregistered = append(unregistered, "DeleteConfigIpv6addressIPAddressMaskDevIfNameHandler")
 	}
 	if o.DeleteConfigLoadbalancerAllHandler == nil {
 		unregistered = append(unregistered, "DeleteConfigLoadbalancerAllHandler")
@@ -805,6 +1290,9 @@ func (o *LoxilbRestAPIAPI) Validate() error {
 	if o.DeleteConfigRouteDestinationIPNetIPAddressMaskHandler == nil {
 		unregistered = append(unregistered, "DeleteConfigRouteDestinationIPNetIPAddressMaskHandler")
 	}
+	if o.DeleteConfigSecurityrateHandler == nil {
+		unregistered = append(unregistered, "DeleteConfigSecurityrateHandler")
+	}
 	if o.DeleteConfigSessionIdentIdentHandler == nil {
 		unregistered = append(unregistered, "DeleteConfigSessionIdentIdentHandler")
 	}
@@ -822,6 +1310,9 @@ func (o *LoxilbRestAPIAPI) Validate() error {
 	}
 	if o.DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedHandler == nil {
 		unregistered = append(unregistered, "DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedHandler")
+	}
+	if o.DeleteSniCertificatesHandler == nil {
+		unregistered = append(unregistered, "DeleteSniCertificatesHandler")
 	}
 	if o.UsersGetAuthUsersHandler == nil {
 		unregistered = append(unregistered, "users.GetAuthUsersHandler")
@@ -859,8 +1350,56 @@ func (o *LoxilbRestAPIAPI) Validate() error {
 	if o.GetConfigFirewallAllHandler == nil {
 		unregistered = append(unregistered, "GetConfigFirewallAllHandler")
 	}
+	if o.GetConfigGpuStatusHandler == nil {
+		unregistered = append(unregistered, "GetConfigGpuStatusHandler")
+	}
+	if o.GetConfigIpfilterAllHandler == nil {
+		unregistered = append(unregistered, "GetConfigIpfilterAllHandler")
+	}
+	if o.GetConfigIpsecHandler == nil {
+		unregistered = append(unregistered, "GetConfigIpsecHandler")
+	}
+	if o.GetConfigIpsecCaCertificatesAllHandler == nil {
+		unregistered = append(unregistered, "GetConfigIpsecCaCertificatesAllHandler")
+	}
+	if o.GetConfigIpsecCaCertificatesNameHandler == nil {
+		unregistered = append(unregistered, "GetConfigIpsecCaCertificatesNameHandler")
+	}
+	if o.GetConfigIpsecCertificatesAllHandler == nil {
+		unregistered = append(unregistered, "GetConfigIpsecCertificatesAllHandler")
+	}
+	if o.GetConfigIpsecCertificatesNameHandler == nil {
+		unregistered = append(unregistered, "GetConfigIpsecCertificatesNameHandler")
+	}
+	if o.GetConfigIpsecSasAllHandler == nil {
+		unregistered = append(unregistered, "GetConfigIpsecSasAllHandler")
+	}
+	if o.GetConfigIpsecStatsHandler == nil {
+		unregistered = append(unregistered, "GetConfigIpsecStatsHandler")
+	}
+	if o.GetConfigIpsecTunnelsAllHandler == nil {
+		unregistered = append(unregistered, "GetConfigIpsecTunnelsAllHandler")
+	}
+	if o.GetConfigIpsecTunnelsNameHandler == nil {
+		unregistered = append(unregistered, "GetConfigIpsecTunnelsNameHandler")
+	}
+	if o.GetConfigIpsecTunnelsNamePeerconfigHandler == nil {
+		unregistered = append(unregistered, "GetConfigIpsecTunnelsNamePeerconfigHandler")
+	}
 	if o.GetConfigIpv4addressAllHandler == nil {
 		unregistered = append(unregistered, "GetConfigIpv4addressAllHandler")
+	}
+	if o.GetConfigIpv6addressAllHandler == nil {
+		unregistered = append(unregistered, "GetConfigIpv6addressAllHandler")
+	}
+	if o.L4TracingGetConfigL4traceStatusHandler == nil {
+		unregistered = append(unregistered, "l4_tracing.GetConfigL4traceStatusHandler")
+	}
+	if o.GetConfigLlamafirewallStatsHandler == nil {
+		unregistered = append(unregistered, "GetConfigLlamafirewallStatsHandler")
+	}
+	if o.GetConfigLlamafirewallStatusHandler == nil {
+		unregistered = append(unregistered, "GetConfigLlamafirewallStatusHandler")
 	}
 	if o.GetConfigLoadbalancerAllHandler == nil {
 		unregistered = append(unregistered, "GetConfigLoadbalancerAllHandler")
@@ -877,6 +1416,12 @@ func (o *LoxilbRestAPIAPI) Validate() error {
 	if o.GetConfigParamsHandler == nil {
 		unregistered = append(unregistered, "GetConfigParamsHandler")
 	}
+	if o.GetConfigPiiStatsHandler == nil {
+		unregistered = append(unregistered, "GetConfigPiiStatsHandler")
+	}
+	if o.GetConfigPiiStatusHandler == nil {
+		unregistered = append(unregistered, "GetConfigPiiStatusHandler")
+	}
 	if o.GetConfigPolicyAllHandler == nil {
 		unregistered = append(unregistered, "GetConfigPolicyAllHandler")
 	}
@@ -886,17 +1431,32 @@ func (o *LoxilbRestAPIAPI) Validate() error {
 	if o.GetConfigRouteAllHandler == nil {
 		unregistered = append(unregistered, "GetConfigRouteAllHandler")
 	}
+	if o.GetConfigSecurityrateAllHandler == nil {
+		unregistered = append(unregistered, "GetConfigSecurityrateAllHandler")
+	}
 	if o.GetConfigSessionAllHandler == nil {
 		unregistered = append(unregistered, "GetConfigSessionAllHandler")
 	}
 	if o.GetConfigSessionulclAllHandler == nil {
 		unregistered = append(unregistered, "GetConfigSessionulclAllHandler")
 	}
+	if o.GetConfigSnapshotHandler == nil {
+		unregistered = append(unregistered, "GetConfigSnapshotHandler")
+	}
+	if o.TracingGetConfigTraceOtlpHandler == nil {
+		unregistered = append(unregistered, "tracing.GetConfigTraceOtlpHandler")
+	}
+	if o.TracingGetConfigTraceStatusHandler == nil {
+		unregistered = append(unregistered, "tracing.GetConfigTraceStatusHandler")
+	}
 	if o.GetConfigTunnelVxlanAllHandler == nil {
 		unregistered = append(unregistered, "GetConfigTunnelVxlanAllHandler")
 	}
 	if o.GetConfigVlanAllHandler == nil {
 		unregistered = append(unregistered, "GetConfigVlanAllHandler")
+	}
+	if o.GetConfigWorkerMetricsHandler == nil {
+		unregistered = append(unregistered, "GetConfigWorkerMetricsHandler")
 	}
 	if o.GetLogArchivesHandler == nil {
 		unregistered = append(unregistered, "GetLogArchivesHandler")
@@ -961,6 +1521,9 @@ func (o *LoxilbRestAPIAPI) Validate() error {
 	if o.AuthGetOauthProviderTokenHandler == nil {
 		unregistered = append(unregistered, "auth.GetOauthProviderTokenHandler")
 	}
+	if o.GetSniCertificatesHandler == nil {
+		unregistered = append(unregistered, "GetSniCertificatesHandler")
+	}
 	if o.GetStatusDeviceHandler == nil {
 		unregistered = append(unregistered, "GetStatusDeviceHandler")
 	}
@@ -1021,11 +1584,65 @@ func (o *LoxilbRestAPIAPI) Validate() error {
 	if o.PostConfigFirewallHandler == nil {
 		unregistered = append(unregistered, "PostConfigFirewallHandler")
 	}
+	if o.PostConfigGpuConversationsCleanupHandler == nil {
+		unregistered = append(unregistered, "PostConfigGpuConversationsCleanupHandler")
+	}
+	if o.PostConfigGpuDisableHandler == nil {
+		unregistered = append(unregistered, "PostConfigGpuDisableHandler")
+	}
+	if o.PostConfigGpuEnableHandler == nil {
+		unregistered = append(unregistered, "PostConfigGpuEnableHandler")
+	}
 	if o.PostConfigImportHandler == nil {
 		unregistered = append(unregistered, "PostConfigImportHandler")
 	}
+	if o.PostConfigIpfilterHandler == nil {
+		unregistered = append(unregistered, "PostConfigIpfilterHandler")
+	}
+	if o.PostConfigIpsecHandler == nil {
+		unregistered = append(unregistered, "PostConfigIpsecHandler")
+	}
+	if o.PostConfigIpsecCaCertificatesHandler == nil {
+		unregistered = append(unregistered, "PostConfigIpsecCaCertificatesHandler")
+	}
+	if o.PostConfigIpsecCertificatesHandler == nil {
+		unregistered = append(unregistered, "PostConfigIpsecCertificatesHandler")
+	}
+	if o.PostConfigIpsecCertificatesValidateHandler == nil {
+		unregistered = append(unregistered, "PostConfigIpsecCertificatesValidateHandler")
+	}
+	if o.PostConfigIpsecTunnelsHandler == nil {
+		unregistered = append(unregistered, "PostConfigIpsecTunnelsHandler")
+	}
+	if o.PostConfigIpsecTunnelsNameActionHandler == nil {
+		unregistered = append(unregistered, "PostConfigIpsecTunnelsNameActionHandler")
+	}
 	if o.PostConfigIpv4addressHandler == nil {
 		unregistered = append(unregistered, "PostConfigIpv4addressHandler")
+	}
+	if o.PostConfigIpv6addressHandler == nil {
+		unregistered = append(unregistered, "PostConfigIpv6addressHandler")
+	}
+	if o.L4TracingPostConfigL4traceDisableHandler == nil {
+		unregistered = append(unregistered, "l4_tracing.PostConfigL4traceDisableHandler")
+	}
+	if o.L4TracingPostConfigL4traceEnableHandler == nil {
+		unregistered = append(unregistered, "l4_tracing.PostConfigL4traceEnableHandler")
+	}
+	if o.L4TracingPostConfigL4traceStatsResetHandler == nil {
+		unregistered = append(unregistered, "l4_tracing.PostConfigL4traceStatsResetHandler")
+	}
+	if o.PostConfigLlamafirewallConfigureHandler == nil {
+		unregistered = append(unregistered, "PostConfigLlamafirewallConfigureHandler")
+	}
+	if o.PostConfigLlamafirewallEnableHandler == nil {
+		unregistered = append(unregistered, "PostConfigLlamafirewallEnableHandler")
+	}
+	if o.PostConfigLlamafirewallHealthHandler == nil {
+		unregistered = append(unregistered, "PostConfigLlamafirewallHealthHandler")
+	}
+	if o.PostConfigLlamafirewallScannersHandler == nil {
+		unregistered = append(unregistered, "PostConfigLlamafirewallScannersHandler")
 	}
 	if o.PostConfigLoadbalancerHandler == nil {
 		unregistered = append(unregistered, "PostConfigLoadbalancerHandler")
@@ -1042,17 +1659,44 @@ func (o *LoxilbRestAPIAPI) Validate() error {
 	if o.PostConfigParamsHandler == nil {
 		unregistered = append(unregistered, "PostConfigParamsHandler")
 	}
+	if o.PostConfigPersistHandler == nil {
+		unregistered = append(unregistered, "PostConfigPersistHandler")
+	}
+	if o.PostConfigPiiConfigureHandler == nil {
+		unregistered = append(unregistered, "PostConfigPiiConfigureHandler")
+	}
+	if o.PostConfigPiiEnableHandler == nil {
+		unregistered = append(unregistered, "PostConfigPiiEnableHandler")
+	}
+	if o.PostConfigPiiURLPatternsHandler == nil {
+		unregistered = append(unregistered, "PostConfigPiiURLPatternsHandler")
+	}
 	if o.PostConfigPolicyHandler == nil {
 		unregistered = append(unregistered, "PostConfigPolicyHandler")
 	}
+	if o.PostConfigRestoreHandler == nil {
+		unregistered = append(unregistered, "PostConfigRestoreHandler")
+	}
 	if o.PostConfigRouteHandler == nil {
 		unregistered = append(unregistered, "PostConfigRouteHandler")
+	}
+	if o.PostConfigSecurityrateHandler == nil {
+		unregistered = append(unregistered, "PostConfigSecurityrateHandler")
 	}
 	if o.PostConfigSessionHandler == nil {
 		unregistered = append(unregistered, "PostConfigSessionHandler")
 	}
 	if o.PostConfigSessionulclHandler == nil {
 		unregistered = append(unregistered, "PostConfigSessionulclHandler")
+	}
+	if o.TracingPostConfigTraceDisableHandler == nil {
+		unregistered = append(unregistered, "tracing.PostConfigTraceDisableHandler")
+	}
+	if o.TracingPostConfigTraceEnableHandler == nil {
+		unregistered = append(unregistered, "tracing.PostConfigTraceEnableHandler")
+	}
+	if o.TracingPostConfigTraceOtlpHandler == nil {
+		unregistered = append(unregistered, "tracing.PostConfigTraceOtlpHandler")
 	}
 	if o.PostConfigTunnelVxlanHandler == nil {
 		unregistered = append(unregistered, "PostConfigTunnelVxlanHandler")
@@ -1066,11 +1710,107 @@ func (o *LoxilbRestAPIAPI) Validate() error {
 	if o.PostConfigVlanVlanIDMemberHandler == nil {
 		unregistered = append(unregistered, "PostConfigVlanVlanIDMemberHandler")
 	}
+	if o.PostConfigWorkerMetricsHandler == nil {
+		unregistered = append(unregistered, "PostConfigWorkerMetricsHandler")
+	}
+	if o.PostSniCertificatesHandler == nil {
+		unregistered = append(unregistered, "PostSniCertificatesHandler")
+	}
 	if o.UsersPutAuthUsersIDHandler == nil {
 		unregistered = append(unregistered, "users.PutAuthUsersIDHandler")
 	}
+	if o.PutConfigIpsecTunnelsNameHandler == nil {
+		unregistered = append(unregistered, "PutConfigIpsecTunnelsNameHandler")
+	}
+	if o.L4TracingPutConfigL4traceSamplingHandler == nil {
+		unregistered = append(unregistered, "l4_tracing.PutConfigL4traceSamplingHandler")
+	}
+	if o.PutConfigSecurityrateResetHandler == nil {
+		unregistered = append(unregistered, "PutConfigSecurityrateResetHandler")
+	}
+	if o.TracingDeleteCatalogParserHandler == nil {
+		unregistered = append(unregistered, "tracing.DeleteCatalogParserHandler")
+	}
+	if o.AiDeleteConfigAiApikeyKeyIDHandler == nil {
+		unregistered = append(unregistered, "ai.DeleteConfigAiApikeyKeyIDHandler")
+	}
+	if o.DeleteConfigCertCertIDHandler == nil {
+		unregistered = append(unregistered, "DeleteConfigCertCertIDHandler")
+	}
+	if o.DeleteConfigL7PolicyIDHandler == nil {
+		unregistered = append(unregistered, "DeleteConfigL7PolicyIDHandler")
+	}
+	if o.OpaDeleteConfigOpaWatcherHandler == nil {
+		unregistered = append(unregistered, "opa.DeleteConfigOpaWatcherHandler")
+	}
+	if o.TracingGetCatalogParserHandler == nil {
+		unregistered = append(unregistered, "tracing.GetCatalogParserHandler")
+	}
+	if o.AiGetConfigAiApikeyHandler == nil {
+		unregistered = append(unregistered, "ai.GetConfigAiApikeyHandler")
+	}
+	if o.AiGetConfigAiApikeyKeyIDHandler == nil {
+		unregistered = append(unregistered, "ai.GetConfigAiApikeyKeyIDHandler")
+	}
+	if o.AiGetConfigAiTenantRatelimitTenantIDHandler == nil {
+		unregistered = append(unregistered, "ai.GetConfigAiTenantRatelimitTenantIDHandler")
+	}
+	if o.GetConfigCertCertIDHandler == nil {
+		unregistered = append(unregistered, "GetConfigCertCertIDHandler")
+	}
+	if o.GetConfigL7PolicyAllHandler == nil {
+		unregistered = append(unregistered, "GetConfigL7PolicyAllHandler")
+	}
+	if o.GetConfigL7PolicyIDHandler == nil {
+		unregistered = append(unregistered, "GetConfigL7PolicyIDHandler")
+	}
+	if o.GetConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoHandler == nil {
+		unregistered = append(unregistered, "GetConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoHandler")
+	}
+	if o.GetConfigLoadbalancerIDHandler == nil {
+		unregistered = append(unregistered, "GetConfigLoadbalancerIDHandler")
+	}
+	if o.GetConfigLoadbalancerStatsHandler == nil {
+		unregistered = append(unregistered, "GetConfigLoadbalancerStatsHandler")
+	}
+	if o.GetConfigLoadbalancerStatusHandler == nil {
+		unregistered = append(unregistered, "GetConfigLoadbalancerStatusHandler")
+	}
+	if o.OpaGetConfigOpaWatcherHandler == nil {
+		unregistered = append(unregistered, "opa.GetConfigOpaWatcherHandler")
+	}
 	if o.MetadataGetMetaHandler == nil {
 		unregistered = append(unregistered, "metadata.GetMetaHandler")
+	}
+	if o.TracingGetTraceCatalogsHandler == nil {
+		unregistered = append(unregistered, "tracing.GetTraceCatalogsHandler")
+	}
+	if o.TracingGetTraceParsersHandler == nil {
+		unregistered = append(unregistered, "tracing.GetTraceParsersHandler")
+	}
+	if o.PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoHandler == nil {
+		unregistered = append(unregistered, "PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoHandler")
+	}
+	if o.AiPostConfigAiApikeyHandler == nil {
+		unregistered = append(unregistered, "ai.PostConfigAiApikeyHandler")
+	}
+	if o.AiPostConfigAiTenantRatelimitHandler == nil {
+		unregistered = append(unregistered, "ai.PostConfigAiTenantRatelimitHandler")
+	}
+	if o.PostConfigCertHandler == nil {
+		unregistered = append(unregistered, "PostConfigCertHandler")
+	}
+	if o.PostConfigL7PolicyHandler == nil {
+		unregistered = append(unregistered, "PostConfigL7PolicyHandler")
+	}
+	if o.OpaPostConfigOpaWatcherHandler == nil {
+		unregistered = append(unregistered, "opa.PostConfigOpaWatcherHandler")
+	}
+	if o.PutConfigCertCertIDHandler == nil {
+		unregistered = append(unregistered, "PutConfigCertCertIDHandler")
+	}
+	if o.TracingUpdateCatalogParserHandler == nil {
+		unregistered = append(unregistered, "tracing.UpdateCatalogParserHandler")
 	}
 
 	if len(unregistered) > 0 {
@@ -1112,6 +1852,8 @@ func (o *LoxilbRestAPIAPI) ConsumersFor(mediaTypes []string) map[string]runtime.
 		switch mt {
 		case "application/json":
 			result["application/json"] = o.JSONConsumer
+		case "application/merge-patch+json":
+			result["application/merge-patch+json"] = o.JSONConsumer
 		case "multipart/form-data":
 			result["multipart/form-data"] = o.MultipartformConsumer
 		}
@@ -1129,6 +1871,8 @@ func (o *LoxilbRestAPIAPI) ProducersFor(mediaTypes []string) map[string]runtime.
 	result := make(map[string]runtime.Producer, len(mediaTypes))
 	for _, mt := range mediaTypes {
 		switch mt {
+		case "application/octet-stream":
+			result["application/octet-stream"] = o.BinProducer
 		case "application/json":
 			result["application/json"] = o.JSONProducer
 		}
@@ -1214,7 +1958,31 @@ func (o *LoxilbRestAPIAPI) initHandlerCache() {
 	if o.handlers["DELETE"] == nil {
 		o.handlers["DELETE"] = make(map[string]http.Handler)
 	}
+	o.handlers["DELETE"]["/config/ipfilter"] = NewDeleteConfigIpfilter(o.context, o.DeleteConfigIpfilterHandler)
+	if o.handlers["DELETE"] == nil {
+		o.handlers["DELETE"] = make(map[string]http.Handler)
+	}
+	o.handlers["DELETE"]["/config/ipsec/ca-certificates/{name}"] = NewDeleteConfigIpsecCaCertificatesName(o.context, o.DeleteConfigIpsecCaCertificatesNameHandler)
+	if o.handlers["DELETE"] == nil {
+		o.handlers["DELETE"] = make(map[string]http.Handler)
+	}
+	o.handlers["DELETE"]["/config/ipsec/certificates/{name}"] = NewDeleteConfigIpsecCertificatesName(o.context, o.DeleteConfigIpsecCertificatesNameHandler)
+	if o.handlers["DELETE"] == nil {
+		o.handlers["DELETE"] = make(map[string]http.Handler)
+	}
+	o.handlers["DELETE"]["/config/ipsec/stats"] = NewDeleteConfigIpsecStats(o.context, o.DeleteConfigIpsecStatsHandler)
+	if o.handlers["DELETE"] == nil {
+		o.handlers["DELETE"] = make(map[string]http.Handler)
+	}
+	o.handlers["DELETE"]["/config/ipsec/tunnels/{name}"] = NewDeleteConfigIpsecTunnelsName(o.context, o.DeleteConfigIpsecTunnelsNameHandler)
+	if o.handlers["DELETE"] == nil {
+		o.handlers["DELETE"] = make(map[string]http.Handler)
+	}
 	o.handlers["DELETE"]["/config/ipv4address/{ip_address}/{mask}/dev/{if_name}"] = NewDeleteConfigIpv4addressIPAddressMaskDevIfName(o.context, o.DeleteConfigIpv4addressIPAddressMaskDevIfNameHandler)
+	if o.handlers["DELETE"] == nil {
+		o.handlers["DELETE"] = make(map[string]http.Handler)
+	}
+	o.handlers["DELETE"]["/config/ipv6address/{ip_address}/{mask}/dev/{if_name}"] = NewDeleteConfigIpv6addressIPAddressMaskDevIfName(o.context, o.DeleteConfigIpv6addressIPAddressMaskDevIfNameHandler)
 	if o.handlers["DELETE"] == nil {
 		o.handlers["DELETE"] = make(map[string]http.Handler)
 	}
@@ -1262,6 +2030,10 @@ func (o *LoxilbRestAPIAPI) initHandlerCache() {
 	if o.handlers["DELETE"] == nil {
 		o.handlers["DELETE"] = make(map[string]http.Handler)
 	}
+	o.handlers["DELETE"]["/config/securityrate"] = NewDeleteConfigSecurityrate(o.context, o.DeleteConfigSecurityrateHandler)
+	if o.handlers["DELETE"] == nil {
+		o.handlers["DELETE"] = make(map[string]http.Handler)
+	}
 	o.handlers["DELETE"]["/config/session/ident/{ident}"] = NewDeleteConfigSessionIdentIdent(o.context, o.DeleteConfigSessionIdentIdentHandler)
 	if o.handlers["DELETE"] == nil {
 		o.handlers["DELETE"] = make(map[string]http.Handler)
@@ -1283,6 +2055,10 @@ func (o *LoxilbRestAPIAPI) initHandlerCache() {
 		o.handlers["DELETE"] = make(map[string]http.Handler)
 	}
 	o.handlers["DELETE"]["/config/vlan/{vlan_id}/member/{if_name}/tagged/{tagged}"] = NewDeleteConfigVlanVlanIDMemberIfNameTaggedTagged(o.context, o.DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedHandler)
+	if o.handlers["DELETE"] == nil {
+		o.handlers["DELETE"] = make(map[string]http.Handler)
+	}
+	o.handlers["DELETE"]["/sni/certificates"] = NewDeleteSniCertificates(o.context, o.DeleteSniCertificatesHandler)
 	if o.handlers["GET"] == nil {
 		o.handlers["GET"] = make(map[string]http.Handler)
 	}
@@ -1334,7 +2110,71 @@ func (o *LoxilbRestAPIAPI) initHandlerCache() {
 	if o.handlers["GET"] == nil {
 		o.handlers["GET"] = make(map[string]http.Handler)
 	}
+	o.handlers["GET"]["/config/gpu/status"] = NewGetConfigGpuStatus(o.context, o.GetConfigGpuStatusHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/ipfilter/all"] = NewGetConfigIpfilterAll(o.context, o.GetConfigIpfilterAllHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/ipsec"] = NewGetConfigIpsec(o.context, o.GetConfigIpsecHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/ipsec/ca-certificates/all"] = NewGetConfigIpsecCaCertificatesAll(o.context, o.GetConfigIpsecCaCertificatesAllHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/ipsec/ca-certificates/{name}"] = NewGetConfigIpsecCaCertificatesName(o.context, o.GetConfigIpsecCaCertificatesNameHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/ipsec/certificates/all"] = NewGetConfigIpsecCertificatesAll(o.context, o.GetConfigIpsecCertificatesAllHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/ipsec/certificates/{name}"] = NewGetConfigIpsecCertificatesName(o.context, o.GetConfigIpsecCertificatesNameHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/ipsec/sas/all"] = NewGetConfigIpsecSasAll(o.context, o.GetConfigIpsecSasAllHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/ipsec/stats"] = NewGetConfigIpsecStats(o.context, o.GetConfigIpsecStatsHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/ipsec/tunnels/all"] = NewGetConfigIpsecTunnelsAll(o.context, o.GetConfigIpsecTunnelsAllHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/ipsec/tunnels/{name}"] = NewGetConfigIpsecTunnelsName(o.context, o.GetConfigIpsecTunnelsNameHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/ipsec/tunnels/{name}/peerconfig"] = NewGetConfigIpsecTunnelsNamePeerconfig(o.context, o.GetConfigIpsecTunnelsNamePeerconfigHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
 	o.handlers["GET"]["/config/ipv4address/all"] = NewGetConfigIpv4addressAll(o.context, o.GetConfigIpv4addressAllHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/ipv6address/all"] = NewGetConfigIpv6addressAll(o.context, o.GetConfigIpv6addressAllHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/l4trace/status"] = l4_tracing.NewGetConfigL4traceStatus(o.context, o.L4TracingGetConfigL4traceStatusHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/llamafirewall/stats"] = NewGetConfigLlamafirewallStats(o.context, o.GetConfigLlamafirewallStatsHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/llamafirewall/status"] = NewGetConfigLlamafirewallStatus(o.context, o.GetConfigLlamafirewallStatusHandler)
 	if o.handlers["GET"] == nil {
 		o.handlers["GET"] = make(map[string]http.Handler)
 	}
@@ -1358,6 +2198,14 @@ func (o *LoxilbRestAPIAPI) initHandlerCache() {
 	if o.handlers["GET"] == nil {
 		o.handlers["GET"] = make(map[string]http.Handler)
 	}
+	o.handlers["GET"]["/config/pii/stats"] = NewGetConfigPiiStats(o.context, o.GetConfigPiiStatsHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/pii/status"] = NewGetConfigPiiStatus(o.context, o.GetConfigPiiStatusHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
 	o.handlers["GET"]["/config/policy/all"] = NewGetConfigPolicyAll(o.context, o.GetConfigPolicyAllHandler)
 	if o.handlers["GET"] == nil {
 		o.handlers["GET"] = make(map[string]http.Handler)
@@ -1370,6 +2218,10 @@ func (o *LoxilbRestAPIAPI) initHandlerCache() {
 	if o.handlers["GET"] == nil {
 		o.handlers["GET"] = make(map[string]http.Handler)
 	}
+	o.handlers["GET"]["/config/securityrate/all"] = NewGetConfigSecurityrateAll(o.context, o.GetConfigSecurityrateAllHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
 	o.handlers["GET"]["/config/session/all"] = NewGetConfigSessionAll(o.context, o.GetConfigSessionAllHandler)
 	if o.handlers["GET"] == nil {
 		o.handlers["GET"] = make(map[string]http.Handler)
@@ -1378,11 +2230,27 @@ func (o *LoxilbRestAPIAPI) initHandlerCache() {
 	if o.handlers["GET"] == nil {
 		o.handlers["GET"] = make(map[string]http.Handler)
 	}
+	o.handlers["GET"]["/config/snapshot"] = NewGetConfigSnapshot(o.context, o.GetConfigSnapshotHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/trace/otlp"] = tracing.NewGetConfigTraceOtlp(o.context, o.TracingGetConfigTraceOtlpHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/trace/status"] = tracing.NewGetConfigTraceStatus(o.context, o.TracingGetConfigTraceStatusHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
 	o.handlers["GET"]["/config/tunnel/vxlan/all"] = NewGetConfigTunnelVxlanAll(o.context, o.GetConfigTunnelVxlanAllHandler)
 	if o.handlers["GET"] == nil {
 		o.handlers["GET"] = make(map[string]http.Handler)
 	}
 	o.handlers["GET"]["/config/vlan/all"] = NewGetConfigVlanAll(o.context, o.GetConfigVlanAllHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/worker/metrics"] = NewGetConfigWorkerMetrics(o.context, o.GetConfigWorkerMetricsHandler)
 	if o.handlers["GET"] == nil {
 		o.handlers["GET"] = make(map[string]http.Handler)
 	}
@@ -1470,6 +2338,10 @@ func (o *LoxilbRestAPIAPI) initHandlerCache() {
 	if o.handlers["GET"] == nil {
 		o.handlers["GET"] = make(map[string]http.Handler)
 	}
+	o.handlers["GET"]["/sni/certificates"] = NewGetSniCertificates(o.context, o.GetSniCertificatesHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
 	o.handlers["GET"]["/status/device"] = NewGetStatusDevice(o.context, o.GetStatusDeviceHandler)
 	if o.handlers["GET"] == nil {
 		o.handlers["GET"] = make(map[string]http.Handler)
@@ -1550,11 +2422,83 @@ func (o *LoxilbRestAPIAPI) initHandlerCache() {
 	if o.handlers["POST"] == nil {
 		o.handlers["POST"] = make(map[string]http.Handler)
 	}
+	o.handlers["POST"]["/config/gpu/conversations/cleanup"] = NewPostConfigGpuConversationsCleanup(o.context, o.PostConfigGpuConversationsCleanupHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/config/gpu/disable"] = NewPostConfigGpuDisable(o.context, o.PostConfigGpuDisableHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/config/gpu/enable"] = NewPostConfigGpuEnable(o.context, o.PostConfigGpuEnableHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
 	o.handlers["POST"]["/config/import"] = NewPostConfigImport(o.context, o.PostConfigImportHandler)
 	if o.handlers["POST"] == nil {
 		o.handlers["POST"] = make(map[string]http.Handler)
 	}
+	o.handlers["POST"]["/config/ipfilter"] = NewPostConfigIpfilter(o.context, o.PostConfigIpfilterHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/config/ipsec"] = NewPostConfigIpsec(o.context, o.PostConfigIpsecHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/config/ipsec/ca-certificates"] = NewPostConfigIpsecCaCertificates(o.context, o.PostConfigIpsecCaCertificatesHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/config/ipsec/certificates"] = NewPostConfigIpsecCertificates(o.context, o.PostConfigIpsecCertificatesHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/config/ipsec/certificates/validate"] = NewPostConfigIpsecCertificatesValidate(o.context, o.PostConfigIpsecCertificatesValidateHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/config/ipsec/tunnels"] = NewPostConfigIpsecTunnels(o.context, o.PostConfigIpsecTunnelsHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/config/ipsec/tunnels/{name}/action"] = NewPostConfigIpsecTunnelsNameAction(o.context, o.PostConfigIpsecTunnelsNameActionHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
 	o.handlers["POST"]["/config/ipv4address"] = NewPostConfigIpv4address(o.context, o.PostConfigIpv4addressHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/config/ipv6address"] = NewPostConfigIpv6address(o.context, o.PostConfigIpv6addressHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/config/l4trace/disable"] = l4_tracing.NewPostConfigL4traceDisable(o.context, o.L4TracingPostConfigL4traceDisableHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/config/l4trace/enable"] = l4_tracing.NewPostConfigL4traceEnable(o.context, o.L4TracingPostConfigL4traceEnableHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/config/l4trace/stats/reset"] = l4_tracing.NewPostConfigL4traceStatsReset(o.context, o.L4TracingPostConfigL4traceStatsResetHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/config/llamafirewall/configure"] = NewPostConfigLlamafirewallConfigure(o.context, o.PostConfigLlamafirewallConfigureHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/config/llamafirewall/enable"] = NewPostConfigLlamafirewallEnable(o.context, o.PostConfigLlamafirewallEnableHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/config/llamafirewall/health"] = NewPostConfigLlamafirewallHealth(o.context, o.PostConfigLlamafirewallHealthHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/config/llamafirewall/scanners"] = NewPostConfigLlamafirewallScanners(o.context, o.PostConfigLlamafirewallScannersHandler)
 	if o.handlers["POST"] == nil {
 		o.handlers["POST"] = make(map[string]http.Handler)
 	}
@@ -1578,11 +2522,35 @@ func (o *LoxilbRestAPIAPI) initHandlerCache() {
 	if o.handlers["POST"] == nil {
 		o.handlers["POST"] = make(map[string]http.Handler)
 	}
+	o.handlers["POST"]["/config/persist"] = NewPostConfigPersist(o.context, o.PostConfigPersistHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/config/pii/configure"] = NewPostConfigPiiConfigure(o.context, o.PostConfigPiiConfigureHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/config/pii/enable"] = NewPostConfigPiiEnable(o.context, o.PostConfigPiiEnableHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/config/pii/url-patterns"] = NewPostConfigPiiURLPatterns(o.context, o.PostConfigPiiURLPatternsHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
 	o.handlers["POST"]["/config/policy"] = NewPostConfigPolicy(o.context, o.PostConfigPolicyHandler)
 	if o.handlers["POST"] == nil {
 		o.handlers["POST"] = make(map[string]http.Handler)
 	}
+	o.handlers["POST"]["/config/restore"] = NewPostConfigRestore(o.context, o.PostConfigRestoreHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
 	o.handlers["POST"]["/config/route"] = NewPostConfigRoute(o.context, o.PostConfigRouteHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/config/securityrate"] = NewPostConfigSecurityrate(o.context, o.PostConfigSecurityrateHandler)
 	if o.handlers["POST"] == nil {
 		o.handlers["POST"] = make(map[string]http.Handler)
 	}
@@ -1591,6 +2559,18 @@ func (o *LoxilbRestAPIAPI) initHandlerCache() {
 		o.handlers["POST"] = make(map[string]http.Handler)
 	}
 	o.handlers["POST"]["/config/sessionulcl"] = NewPostConfigSessionulcl(o.context, o.PostConfigSessionulclHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/config/trace/disable"] = tracing.NewPostConfigTraceDisable(o.context, o.TracingPostConfigTraceDisableHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/config/trace/enable"] = tracing.NewPostConfigTraceEnable(o.context, o.TracingPostConfigTraceEnableHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/config/trace/otlp"] = tracing.NewPostConfigTraceOtlp(o.context, o.TracingPostConfigTraceOtlpHandler)
 	if o.handlers["POST"] == nil {
 		o.handlers["POST"] = make(map[string]http.Handler)
 	}
@@ -1607,14 +2587,142 @@ func (o *LoxilbRestAPIAPI) initHandlerCache() {
 		o.handlers["POST"] = make(map[string]http.Handler)
 	}
 	o.handlers["POST"]["/config/vlan/{vlan_id}/member"] = NewPostConfigVlanVlanIDMember(o.context, o.PostConfigVlanVlanIDMemberHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/config/worker/metrics"] = NewPostConfigWorkerMetrics(o.context, o.PostConfigWorkerMetricsHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/sni/certificates"] = NewPostSniCertificates(o.context, o.PostSniCertificatesHandler)
 	if o.handlers["PUT"] == nil {
 		o.handlers["PUT"] = make(map[string]http.Handler)
 	}
 	o.handlers["PUT"]["/auth/users/{id}"] = users.NewPutAuthUsersID(o.context, o.UsersPutAuthUsersIDHandler)
+	if o.handlers["PUT"] == nil {
+		o.handlers["PUT"] = make(map[string]http.Handler)
+	}
+	o.handlers["PUT"]["/config/ipsec/tunnels/{name}"] = NewPutConfigIpsecTunnelsName(o.context, o.PutConfigIpsecTunnelsNameHandler)
+	if o.handlers["PUT"] == nil {
+		o.handlers["PUT"] = make(map[string]http.Handler)
+	}
+	o.handlers["PUT"]["/config/l4trace/sampling"] = l4_tracing.NewPutConfigL4traceSampling(o.context, o.L4TracingPutConfigL4traceSamplingHandler)
+	if o.handlers["PUT"] == nil {
+		o.handlers["PUT"] = make(map[string]http.Handler)
+	}
+	o.handlers["PUT"]["/config/securityrate/reset"] = NewPutConfigSecurityrateReset(o.context, o.PutConfigSecurityrateResetHandler)
+	if o.handlers["DELETE"] == nil {
+		o.handlers["DELETE"] = make(map[string]http.Handler)
+	}
+	o.handlers["DELETE"]["/config/trace/catalog/{catalog_id}/parser"] = tracing.NewDeleteCatalogParser(o.context, o.TracingDeleteCatalogParserHandler)
+	if o.handlers["DELETE"] == nil {
+		o.handlers["DELETE"] = make(map[string]http.Handler)
+	}
+	o.handlers["DELETE"]["/config/ai/apikey/{key_id}"] = ai.NewDeleteConfigAiApikeyKeyID(o.context, o.AiDeleteConfigAiApikeyKeyIDHandler)
+	if o.handlers["DELETE"] == nil {
+		o.handlers["DELETE"] = make(map[string]http.Handler)
+	}
+	o.handlers["DELETE"]["/config/cert/{certId}"] = NewDeleteConfigCertCertID(o.context, o.DeleteConfigCertCertIDHandler)
+	if o.handlers["DELETE"] == nil {
+		o.handlers["DELETE"] = make(map[string]http.Handler)
+	}
+	o.handlers["DELETE"]["/config/l7policy/id/{id}"] = NewDeleteConfigL7PolicyID(o.context, o.DeleteConfigL7PolicyIDHandler)
+	if o.handlers["DELETE"] == nil {
+		o.handlers["DELETE"] = make(map[string]http.Handler)
+	}
+	o.handlers["DELETE"]["/config/opa/watcher"] = opa.NewDeleteConfigOpaWatcher(o.context, o.OpaDeleteConfigOpaWatcherHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/trace/catalog/{catalog_id}/parser"] = tracing.NewGetCatalogParser(o.context, o.TracingGetCatalogParserHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/ai/apikey"] = ai.NewGetConfigAiApikey(o.context, o.AiGetConfigAiApikeyHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/ai/apikey/{key_id}"] = ai.NewGetConfigAiApikeyKeyID(o.context, o.AiGetConfigAiApikeyKeyIDHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/ai/tenant/ratelimit/{tenant_id}"] = ai.NewGetConfigAiTenantRatelimitTenantID(o.context, o.AiGetConfigAiTenantRatelimitTenantIDHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/cert/{certId}"] = NewGetConfigCertCertID(o.context, o.GetConfigCertCertIDHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/l7policy"] = NewGetConfigL7PolicyAll(o.context, o.GetConfigL7PolicyAllHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/l7policy/id/{id}"] = NewGetConfigL7PolicyID(o.context, o.GetConfigL7PolicyIDHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/loadbalancer/externalipaddress/{ip_address}/port/{port}/protocol/{proto}"] = NewGetConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProto(o.context, o.GetConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/loadbalancer/id/{id}"] = NewGetConfigLoadbalancerID(o.context, o.GetConfigLoadbalancerIDHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/loadbalancer/externalipaddress/{ip_address}/port/{port}/protocol/{proto}/stats"] = NewGetConfigLoadbalancerStats(o.context, o.GetConfigLoadbalancerStatsHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/loadbalancer/externalipaddress/{ip_address}/port/{port}/protocol/{proto}/status"] = NewGetConfigLoadbalancerStatus(o.context, o.GetConfigLoadbalancerStatusHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/opa/watcher"] = opa.NewGetConfigOpaWatcher(o.context, o.OpaGetConfigOpaWatcherHandler)
 	if o.handlers["GET"] == nil {
 		o.handlers["GET"] = make(map[string]http.Handler)
 	}
 	o.handlers["GET"]["/meta"] = metadata.NewGetMeta(o.context, o.MetadataGetMetaHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/trace/catalogs"] = tracing.NewGetTraceCatalogs(o.context, o.TracingGetTraceCatalogsHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/trace/parsers"] = tracing.NewGetTraceParsers(o.context, o.TracingGetTraceParsersHandler)
+	if o.handlers["PATCH"] == nil {
+		o.handlers["PATCH"] = make(map[string]http.Handler)
+	}
+	o.handlers["PATCH"]["/config/loadbalancer/externalipaddress/{ip_address}/port/{port}/protocol/{proto}"] = NewPatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProto(o.context, o.PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/config/ai/apikey"] = ai.NewPostConfigAiApikey(o.context, o.AiPostConfigAiApikeyHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/config/ai/tenant/ratelimit"] = ai.NewPostConfigAiTenantRatelimit(o.context, o.AiPostConfigAiTenantRatelimitHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/config/cert"] = NewPostConfigCert(o.context, o.PostConfigCertHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/config/l7policy"] = NewPostConfigL7Policy(o.context, o.PostConfigL7PolicyHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/config/opa/watcher"] = opa.NewPostConfigOpaWatcher(o.context, o.OpaPostConfigOpaWatcherHandler)
+	if o.handlers["PUT"] == nil {
+		o.handlers["PUT"] = make(map[string]http.Handler)
+	}
+	o.handlers["PUT"]["/config/cert/{certId}"] = NewPutConfigCertCertID(o.context, o.PutConfigCertCertIDHandler)
+	if o.handlers["PUT"] == nil {
+		o.handlers["PUT"] = make(map[string]http.Handler)
+	}
+	o.handlers["PUT"]["/config/trace/catalog/{catalog_id}/parser"] = tracing.NewUpdateCatalogParser(o.context, o.TracingUpdateCatalogParserHandler)
 }
 
 // Serve creates a http handler to serve the API over HTTP

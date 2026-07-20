@@ -46,8 +46,12 @@ func RegisterAPIHooks(hooks cmn.NetHookInterface) {
 //go:embed swagger.yml
 var EmbeddedSwagger []byte
 
+//go:embed swagger-extras.yml
+var EmbeddedSwaggerExtras []byte
+
 func EmbeddedSwaggerInit() {
 	handler.EmbeddedSwagger = EmbeddedSwagger
+	handler.EmbeddedSwaggerExtras = EmbeddedSwaggerExtras
 }
 
 // WaitAPIServerReady - routine to wait till api server is up

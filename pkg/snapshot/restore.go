@@ -1,0 +1,568 @@
+/*
+ * Copyright (c) 2026 NetLOX Inc
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at:
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+// This file (restore.go) covers task G-2: the 7-stage restore engine
+// described in docs/SNAPSHOT-DESIGN.md §5.3, built on top of G-1's document
+// types/codec (doc.go, codec.go, migrate.go) and the domain registry
+// (registry.go), and G-6's wipe primitive (wipe.go).
+package snapshot
+
+import (
+	"bytes"
+	"fmt"
+	"strings"
+	"time"
+)
+
+// ---------------------------------------------------------------------
+// Public types (§5.2 response shape, §5.3 options)
+// ---------------------------------------------------------------------
+
+// RestoreMode selects dry-run (validate + plan only) vs commit (actually
+// mutate) behavior, per §5.1's `mode=dry-run|commit` query parameter. The
+// zero value behaves as ModeDryRun -- §5.2: "default dry-run -- commit must
+// be explicit".
+type RestoreMode string
+
+const (
+	ModeDryRun RestoreMode = "dry-run"
+	ModeCommit RestoreMode = "commit"
+)
+
+// Result.Result values, spelled exactly as §5.2 specifies.
+const (
+	ResultOK             = "ok"
+	ResultRolledBack     = "rolled-back"
+	ResultRollbackFailed = "ROLLBACK-FAILED"
+)
+
+// RestoreOptions configures one Restore call.
+type RestoreOptions struct {
+	// Mode selects dry-run vs commit (ignored, see Boot, when Boot is set).
+	Mode RestoreMode
+	// Components filters which domains participate, exactly like the
+	// `components` REST query parameter (task G-3) and Select (registry.go).
+	// Nil/empty selects every v1 domain.
+	Components []string
+	// Boot selects the §6.2 boot-time variant: applies doc with NO
+	// pre-restore capture and NO pre-apply wipe, because the datapath is
+	// empty at boot (there is nothing live to preserve or delete). Mode is
+	// ignored when Boot is set -- a boot restore always runs the
+	// apply/verify/commit-or-rollback stages. Used by the future G-5 boot
+	// loader (nlp.go); wired here now per task G-2's instructions so G-5
+	// needs no engine changes later.
+	Boot bool
+}
+
+func (o RestoreOptions) modeString() string {
+	if o.Boot {
+		return "boot"
+	}
+	if o.Mode == ModeCommit {
+		return string(ModeCommit)
+	}
+	return string(ModeDryRun)
+}
+
+func (o RestoreOptions) isDryRun() bool {
+	return !o.Boot && o.Mode != ModeCommit
+}
+
+// PlanItem is one row of the §5.2 `plan` array: how many live items this
+// domain currently has (to be deleted) and how many the incoming document
+// carries (to be applied).
+type PlanItem struct {
+	Domain   string `json:"domain"`
+	ToDelete int    `json:"to_delete"`
+	ToApply  int    `json:"to_apply"`
+}
+
+// Result is the §5.2 restore response shape, returned for both dry-run and
+// commit calls (and, internally, for the §6.2 boot variant).
+type Result struct {
+	Mode                   string     `json:"mode"`
+	Compatible             bool       `json:"compatible"`
+	SchemaVersion          string     `json:"schema_version"`
+	SnapshotGatewayVersion string     `json:"snapshot_gateway_version"`
+	CurrentGatewayVersion  string     `json:"current_gateway_version"`
+	Plan                   []PlanItem `json:"plan"`
+	// Errors holds validation errors (dry-run/VALIDATE failures) or apply
+	///verify/rollback errors (commit), as human-readable strings -- this is
+	// a REST response payload (§5.2), not a Go error chain.
+	Errors []string `json:"errors"`
+	// Result is one of ResultOK/ResultRolledBack/ResultRollbackFailed, or
+	// "" if the pipeline never reached APPLY (e.g. PARSE/VALIDATE failure,
+	// or a successful dry-run/PLAN-only call -- see stage gating below: a
+	// dry-run that passes VALIDATE+PLAN reports ResultOK since nothing was
+	// left inconsistent; a dry-run that fails VALIDATE reports "" with
+	// Errors populated).
+	Result string `json:"result,omitempty"`
+	// PreRestoreSnapshotPersisted is the on-disk path of the PRESERVE-stage
+	// snapshot (§5.3 step 4), empty for dry-run, failed-before-PRESERVE, and
+	// Boot (which never captures one) cases.
+	PreRestoreSnapshotPersisted string `json:"pre_restore_snapshot_persisted,omitempty"`
+}
+
+// Clock lets tests control "now" (used for the pre-restore file's
+// timestamp); defaults to time.Now.
+type Clock func() time.Time
+
+// Engine is the restore pipeline's dependency-injected entrypoint. Every
+// external dependency (hooks, clock, disk paths, version strings) is a
+// field so the whole pipeline is unit-testable against mockHooks without
+// touching pkg/loxinet or the filesystem's real clock.
+type Engine struct {
+	// Hooks is the same Hooks interface the domain registry (registry.go)
+	// runs against; production callers (task G-3) pass their existing
+	// cmn.NetHookInterface implementation straight through.
+	Hooks Hooks
+	// GatewayVersion is recorded into pre-restore documents and reported as
+	// Result.CurrentGatewayVersion. Production callers pass cmn.Version
+	// (common/common.go) -- this package does not import it directly to
+	// keep the dependency explicit and the engine testable with fixture
+	// version strings.
+	GatewayVersion string
+	// Hostname is recorded into pre-restore documents (§4's "hostname"
+	// field).
+	Hostname string
+	// PreRestoreDir is the directory PRESERVE (§5.3 step 4) atomically
+	// writes "pre-restore-<ts>.json" into, 0600, temp-file-then-rename.
+	// Required for any non-Boot commit; dry-run and Boot never use it.
+	PreRestoreDir string
+	// Now defaults to time.Now; overridable for deterministic tests.
+	Now Clock
+}
+
+// NewEngine builds an Engine with Now defaulted to time.Now.
+func NewEngine(hooks Hooks, gatewayVersion, hostname, preRestoreDir string) *Engine {
+	return &Engine{
+		Hooks:          hooks,
+		GatewayVersion: gatewayVersion,
+		Hostname:       hostname,
+		PreRestoreDir:  preRestoreDir,
+		Now:            time.Now,
+	}
+}
+
+func (e *Engine) now() time.Time {
+	if e.Now != nil {
+		return e.Now()
+	}
+	return time.Now()
+}
+
+// ---------------------------------------------------------------------
+// Restore: the §5.3 7-stage pipeline entrypoint.
+//
+// LOCKING CONTRACT (§5.3 implementer note): Restore does NOT take the
+// gateway's global config lock itself. Stages 1-3 (PARSE/VALIDATE/PLAN) are
+// read-only (decode + Get calls) and safe to run unlocked. The CALLER (the
+// REST layer, task G-3) MUST hold the global config write lock for the
+// duration of stages 4-7 (PRESERVE/APPLY/VERIFY/COMMIT-or-ROLLBACK) so that
+// concurrent mutating API calls are rejected (409/503) for the duration of
+// a restore, exactly as §5.3 specifies. Restore has no way to enforce this
+// itself; a caller that invokes it without holding that lock risks
+// interleaving a restore with concurrent config mutations.
+// ---------------------------------------------------------------------
+
+// Restore runs the §5.3 pipeline against raw (a snapshot document's raw
+// JSON bytes, as produced by Encode/GET /config/snapshot). It always
+// returns a non-nil *Result describing what happened, even on failure --
+// the returned Go error is reserved for engine-level precondition failures
+// (e.g. an unconfigured PreRestoreDir on a commit call), not for
+// document/validation/apply problems, which are reported via
+// Result.Errors/Result.Result so callers can render the §5.2 response
+// regardless of where the pipeline stopped.
+func (e *Engine) Restore(raw []byte, opts RestoreOptions) (*Result, error) {
+	start := e.now()
+	result, err := e.restore(raw, opts)
+	end := e.now()
+	committed := err == nil && result != nil && result.Result == ResultOK && !opts.isDryRun()
+	observeRestore(opts.modeString(), result, err, end.Sub(start), committed, end)
+	return result, err
+}
+
+// restore is the uninstrumented pipeline body (Restore wraps it with the §7
+// metrics so every return path is observed exactly once).
+func (e *Engine) restore(raw []byte, opts RestoreOptions) (*Result, error) {
+	result := &Result{
+		Mode:                  opts.modeString(),
+		SchemaVersion:         SchemaVersion,
+		CurrentGatewayVersion: e.GatewayVersion,
+	}
+
+	// 1. PARSE -- strict decode + checksum verify.
+	doc, err := stageParse(raw)
+	if err != nil {
+		result.Errors = []string{err.Error()}
+		return result, nil
+	}
+	result.SchemaVersion = doc.SchemaVersion
+	result.SnapshotGatewayVersion = doc.GatewayVersion
+
+	selected, err := Select(opts.Components)
+	if err != nil {
+		result.Errors = []string{err.Error()}
+		return result, nil
+	}
+
+	// 2. VALIDATE -- schema-version gate + per-domain semantic checks.
+	// Stage gating: a VALIDATE failure returns here and never reaches
+	// PLAN/PRESERVE/APPLY (no Get/Add/Del call has happened yet beyond the
+	// pure in-memory decode).
+	compatible, verrs := stageValidate(doc, selected)
+	result.Compatible = compatible
+	if len(verrs) > 0 {
+		result.Errors = verrs
+		return result, nil
+	}
+
+	// 3. PLAN -- ordered per-domain {to_delete (live), to_apply (doc)}.
+	// Read-only (Get calls only); dry-run stops here.
+	plan, err := e.stagePlan(doc, selected)
+	if err != nil {
+		result.Errors = []string{err.Error()}
+		return result, nil
+	}
+	result.Plan = plan
+
+	if opts.isDryRun() {
+		result.Result = ResultOK
+		return result, nil
+	}
+
+	// 4. PRESERVE -- capture + persist live config before touching
+	// anything, UNLESS this is the Boot variant (§6.2: datapath is empty at
+	// boot, nothing to preserve).
+	var preDoc *Document
+	if !opts.Boot {
+		preDoc, err = e.stagePreserve(selected)
+		if err != nil {
+			result.Errors = []string{fmt.Sprintf("preserve: %v", err)}
+			return result, nil // nothing mutated yet -- safe to stop here
+		}
+		path, perr := e.persistPreRestore(preDoc)
+		if perr != nil {
+			result.Errors = []string{fmt.Sprintf("preserve: persist: %v", perr)}
+			return result, nil // still nothing mutated
+		}
+		result.PreRestoreSnapshotPersisted = path
+	} else {
+		// Implicit rollback target for Boot: "nothing existed before".
+		preDoc = NewDocument(e.GatewayVersion, e.Hostname, TriggerPreRestore)
+	}
+
+	// 5. APPLY -- wipe (unless Boot) then apply forward-order; any error
+	// aborts remaining domains and falls through to ROLLBACK.
+	applyErrs := e.stageApply(doc, selected, opts.Boot)
+
+	// 6. VERIFY -- only meaningful if APPLY fully succeeded.
+	if len(applyErrs) == 0 {
+		applyErrs = append(applyErrs, e.stageVerify(doc, plan, selected)...)
+	}
+
+	if len(applyErrs) == 0 {
+		// 7. COMMIT.
+		result.Result = ResultOK
+		return result, nil
+	}
+
+	for _, ae := range applyErrs {
+		result.Errors = append(result.Errors, ae.Error())
+	}
+
+	// ROLLBACK: wipe again + re-apply the step-4 (or implicit-empty, for
+	// Boot) pre-restore document. "already exists" apply errors are
+	// tolerated (item-level idempotency, §5.3) -- see rollback().
+	rollbackErrs := e.rollback(preDoc, selected)
+	if len(rollbackErrs) == 0 {
+		result.Result = ResultRolledBack
+		return result, nil
+	}
+	for _, re := range rollbackErrs {
+		result.Errors = append(result.Errors, re.Error())
+	}
+	result.Result = ResultRollbackFailed
+	return result, nil
+}
+
+// ---------------------------------------------------------------------
+// Stage 1: PARSE
+// ---------------------------------------------------------------------
+
+func stageParse(raw []byte) (*Document, error) {
+	doc, err := Decode(bytes.NewReader(raw))
+	if err != nil {
+		return nil, err
+	}
+	if err := VerifyChecksum(doc); err != nil {
+		return nil, err
+	}
+	return doc, nil
+}
+
+// ---------------------------------------------------------------------
+// Stage 2: VALIDATE
+// ---------------------------------------------------------------------
+
+// stageValidate implements §5.3 step 2: the schema-version gate (§4.2),
+// then ApplyMigrations (migrate.go's stable call site, a no-op today), then
+// per-domain semantic checks. compatible reflects the schema-version gate
+// specifically (true even if semantic checks below it fail -- those are a
+// different failure mode from cross-version incompatibility).
+func stageValidate(doc *Document, selected []DomainEntry) (compatible bool, errs []string) {
+	if err := CheckSchemaVersion(doc.SchemaVersion); err != nil {
+		return false, []string{err.Error()}
+	}
+	if err := ApplyMigrations(doc); err != nil {
+		return true, []string{err.Error()}
+	}
+
+	// NOTE (G-8/G-9 E2E finding, 2026-07-20): the §5.3 example semantic
+	// check "every LB endpoint reference resolvable within the doc" was
+	// implemented here and then REMOVED. It contradicts the capture-side
+	// RuleManaged filter: snapshots deliberately carry only standalone
+	// (non-rule-managed) endpoints, while NetLbRuleAdd auto-creates the
+	// endpoints named in each rule's Eps list -- so an LB endpoint absent
+	// from the endpoint domain is the NORMAL shape of a captured document,
+	// not a dangling reference. With the check in place, every
+	// write-through/auto-persisted snapshot containing an LB whose
+	// endpoints are all rule-managed failed VALIDATE on boot restore.
+	return true, nil
+}
+
+// ---------------------------------------------------------------------
+// Stage 3: PLAN
+// ---------------------------------------------------------------------
+
+func (e *Engine) stagePlan(doc *Document, selected []DomainEntry) ([]PlanItem, error) {
+	plan := make([]PlanItem, 0, len(selected))
+	for _, entry := range selected {
+		scratch := &Document{}
+		if err := entry.Get(e.Hooks, scratch); err != nil {
+			return nil, fmt.Errorf("plan: get %s: %w", entry.Name, err)
+		}
+		plan = append(plan, PlanItem{
+			Domain:   entry.Name,
+			ToDelete: countDomain(entry.Name, &scratch.Domains),
+			ToApply:  countDomain(entry.Name, &doc.Domains),
+		})
+	}
+	return plan, nil
+}
+
+// countDomain returns how many items a Domains struct carries for the
+// named domain -- the same shape Apply functions (registry.go) build up
+// and PLAN/VERIFY compare against.
+func countDomain(name string, d *Domains) int {
+	switch name {
+	case DomainEndpoint:
+		return len(d.Endpoint)
+	case DomainLoadBalancer:
+		return len(d.LoadBalancer)
+	case DomainFirewall:
+		return len(d.Firewall)
+	case DomainPolicy:
+		return len(d.Policy)
+	case DomainMirror:
+		return len(d.Mirror)
+	case DomainSession:
+		return len(d.Session)
+	case DomainSessionUlCl:
+		return len(d.SessionUlCl)
+	case DomainIPFilter:
+		return len(d.IPFilter)
+	case DomainSecurityRate:
+		if d.SecurityRate != nil {
+			return 1
+		}
+		return 0
+	case DomainBFD:
+		return len(d.BFD)
+	case DomainBGP:
+		n := len(d.BGP.Neighbors) + len(d.BGP.DefinedSets) + len(d.BGP.PolicyDefinitions)
+		if d.BGP.GlobalConfig != nil {
+			n++
+		}
+		return n
+	case DomainIPsec:
+		// The Config singleton is deliberately NOT counted: it cannot be
+		// wiped (deleteIPsec's documented no-op) and it materializes on its
+		// own once the IPsec subsystem initializes, so counting it makes
+		// VERIFY fail whenever doc-vs-live config presence differs (e.g.
+		// restoring a doc captured while IPsec was still starting up --
+		// found live in testbed E2E, 2026-07-20). Config apply still runs
+		// and still fails loudly on error; it is only the count-based
+		// plan/verify arithmetic that ignores it.
+		return len(d.IPsec.Tunnels) + len(d.IPsec.Certificates) + len(d.IPsec.CACertificates)
+	default:
+		return 0
+	}
+}
+
+// ---------------------------------------------------------------------
+// Stage 4: PRESERVE
+// ---------------------------------------------------------------------
+
+func (e *Engine) stagePreserve(selected []DomainEntry) (*Document, error) {
+	preDoc := NewDocument(e.GatewayVersion, e.Hostname, TriggerPreRestore)
+	for _, entry := range selected {
+		if err := entry.Get(e.Hooks, preDoc); err != nil {
+			return nil, fmt.Errorf("get %s: %w", entry.Name, err)
+		}
+	}
+	snapshotTotal.WithLabelValues(string(TriggerPreRestore)).Inc()
+	return preDoc, nil
+}
+
+// persistPreRestore atomically (temp file + rename, 0600) writes doc to
+// PreRestoreDir/pre-restore-<ts>.json (§5.3 step 4 / §6 style path),
+// returning the final path.
+func (e *Engine) persistPreRestore(doc *Document) (string, error) {
+	if e.PreRestoreDir == "" {
+		return "", fmt.Errorf("PreRestoreDir not configured, cannot persist pre-restore snapshot")
+	}
+	data, err := Encode(doc)
+	if err != nil {
+		return "", fmt.Errorf("encode: %w", err)
+	}
+
+	ts := e.now().UTC().Format("20060102-150405.000000000")
+	path, err := writeAtomic(e.PreRestoreDir, fmt.Sprintf("pre-restore-%s.json", ts), data)
+	if err == nil {
+		// G-8 (legacy defect #6): bound the pre-restore backlog now that a
+		// new one landed. Best-effort — never fails the restore.
+		PruneArtifacts(e.PreRestoreDir, PreRestoreKeep, e.now())
+	}
+	return path, err
+}
+
+// ---------------------------------------------------------------------
+// Stage 5: APPLY
+// ---------------------------------------------------------------------
+
+// stageApply implements §5.3 step 5: delete existing (reverse domain
+// order, via Wipe/G-6) then apply the document (forward order). Per-item
+// apply errors (returned by DomainEntry.Apply, which itself already stops
+// at the first failing item within a domain) abort remaining DOMAINS too --
+// stageApply returns immediately on the first domain-level error rather
+// than continuing to apply further domains onto a known-inconsistent
+// state. skipWipe is true for the Boot variant (§6.2: nothing live to wipe).
+//
+// Wipe's own contract (wipe.go) is "attempt every domain, collect errors,
+// never abort mid-wipe" -- that contract is unchanged and still honored
+// here (Wipe runs to completion internally). What stageApply decides is
+// what to do with a non-empty Wipe error: treat it as fatal to the APPLY
+// stage as a whole and skip the forward-apply phase entirely, since
+// applying the new document on top of a partially-wiped, unknown state
+// would compound the inconsistency rather than resolve it.
+func (e *Engine) stageApply(doc *Document, selected []DomainEntry, skipWipe bool) []error {
+	if !skipWipe {
+		_, wipeErr := Wipe(e.Hooks, entryNames(selected))
+		if wipeErr != nil {
+			return []error{fmt.Errorf("wipe: %w", wipeErr)}
+		}
+	}
+
+	var errs []error
+	for _, entry := range selected {
+		if _, err := entry.Apply(e.Hooks, doc); err != nil {
+			errs = append(errs, fmt.Errorf("apply %s: %w", entry.Name, err))
+			break // abort remaining domains (§5.3: "abort remaining items")
+		}
+	}
+	return errs
+}
+
+// ---------------------------------------------------------------------
+// Stage 6: VERIFY
+// ---------------------------------------------------------------------
+
+// stageVerify re-Gets each selected domain and compares its live count
+// against the plan's to_apply value (§5.3 step 6). It is only reached when
+// stageApply reported zero errors, at which point every selected domain's
+// Apply necessarily added exactly its full doc-side item count -- so a
+// mismatch here means the backend silently didn't persist what it
+// acknowledged, not a normal apply failure.
+func (e *Engine) stageVerify(doc *Document, plan []PlanItem, selected []DomainEntry) []error {
+	var errs []error
+	for i, entry := range selected {
+		scratch := &Document{}
+		if err := entry.Get(e.Hooks, scratch); err != nil {
+			errs = append(errs, fmt.Errorf("verify: get %s: %w", entry.Name, err))
+			continue
+		}
+		got := countDomain(entry.Name, &scratch.Domains)
+		want := plan[i].ToApply
+		if got != want {
+			errs = append(errs, fmt.Errorf("verify: %s: expected %d item(s) after apply, found %d", entry.Name, want, got))
+		}
+	}
+	return errs
+}
+
+// ---------------------------------------------------------------------
+// ROLLBACK
+// ---------------------------------------------------------------------
+
+// rollback implements §5.3's ROLLBACK path: wipe again, then re-apply
+// preDoc (the step-4 capture, or the implicit empty document for Boot).
+//
+// Unlike the forward APPLY loop (which aborts remaining domains on the
+// first error), rollback attempts EVERY selected domain regardless of
+// earlier failures in this pass -- rollback is the last line of defense
+// against silently leaving partial state (§5.3: "Never silently leave
+// partial state"), so it maximizes how much of the pre-restore state it
+// manages to restore before reporting ROLLBACK-FAILED, rather than
+// stopping at the first domain that won't cooperate. "already exists"
+// apply errors are tolerated as warnings (not collected as failures),
+// per §5.3's item-level idempotency note -- only during rollback, not
+// during the forward APPLY stage.
+func (e *Engine) rollback(preDoc *Document, selected []DomainEntry) []error {
+	var errs []error
+
+	if _, wipeErr := Wipe(e.Hooks, entryNames(selected)); wipeErr != nil {
+		errs = append(errs, fmt.Errorf("rollback wipe: %w", wipeErr))
+	}
+
+	for _, entry := range selected {
+		if _, err := entry.Apply(e.Hooks, preDoc); err != nil {
+			if isAlreadyExists(err) {
+				continue // tolerated: item-level idempotency (§5.3)
+			}
+			errs = append(errs, fmt.Errorf("rollback apply %s: %w", entry.Name, err))
+		}
+	}
+	return errs
+}
+
+// isAlreadyExists reports whether err looks like an idempotent "already
+// exists" condition (the loxinet convention, e.g. ipsec.go's `tunnel %s
+// already exists`, `certificate %s already exists`, session.go's `%s:%s
+// already exists`) -- tolerated during rollback re-apply only (§5.3).
+func isAlreadyExists(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "already exists")
+}
+
+// entryNames extracts DomainEntry.Name in order, for passing a selected
+// subset back into Wipe/Select as a `components` list.
+func entryNames(entries []DomainEntry) []string {
+	out := make([]string, len(entries))
+	for i, e := range entries {
+		out[i] = e.Name
+	}
+	return out
+}

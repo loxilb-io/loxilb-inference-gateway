@@ -792,12 +792,7 @@ func (P *PortsH) PortNotifierRegister(notifier PortEventIntf) {
 
 // PortTicker - a ticker routine for ports
 func (P *PortsH) PortTicker() {
-	var ev PortEvent
-	portMod := false
-
 	for _, port := range P.portSmap {
-		portMod = false
-
 		if port.HInfo.Real != "" {
 			rp := P.portSmap[port.HInfo.Real]
 			if rp == nil {
@@ -810,39 +805,6 @@ func (P *PortsH) PortTicker() {
 				port.SInfo.PortReal = rp
 			}
 		}
-
-		continue
-
-		// TODO - This is not very efficient since internally
-		// it will get all OS interfaces each time
-		osIntf, err := net.InterfaceByName(port.Name)
-		if err == nil {
-			// Delete Port - TODO
-			continue
-		}
-
-		// TODO - check link status also ??
-		// Currently golang's net package does not extract it
-		if !port.HInfo.State {
-			if osIntf.Flags&net.FlagUp != 0 {
-				port.HInfo.State = true
-				ev = 0
-				portMod = true
-			}
-		} else {
-			if osIntf.Flags&net.FlagUp == 0 {
-				port.HInfo.State = false
-				ev = PortEvDown
-				portMod = true
-			}
-		}
-
-		if portMod {
-			for _, notif := range P.portNotifs {
-				notif.PortNotifier(port.Name, port.SInfo.OsID, ev)
-			}
-		}
-
 	}
 }
 

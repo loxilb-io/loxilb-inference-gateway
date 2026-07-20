@@ -17,8 +17,23 @@ import (
 // swagger:model Logs
 type Logs struct {
 
+	// Whether more log lines are available (pass next_cursor to fetch them).
+	HasMore bool `json:"has_more,omitempty"`
+
+	// Number of log lines returned in this page.
+	LogCount int64 `json:"log_count,omitempty"`
+
+	// Name of the log file the lines were read from.
+	LogFile string `json:"log_file,omitempty"`
+
 	// List of filtered logs.
 	Logs []string `json:"logs"`
+
+	// Opaque cursor for the next page; present only when has_more is true.
+	NextCursor string `json:"next_cursor,omitempty"`
+
+	// Total size of the log file in bytes.
+	TotalSize int64 `json:"total_size,omitempty"`
 }
 
 // Validate validates this logs

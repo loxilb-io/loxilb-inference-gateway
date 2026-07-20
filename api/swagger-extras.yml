@@ -1,0 +1,497 @@
+#  Copyright (c) 2026 NetLOX Inc
+#
+#   Licensed under the Apache License, Version 2.0 (the "License");
+#   you may not use this file except in compliance with the License.
+#   You may obtain a copy of the License at:
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+#   Unless required by applicable law or agreed to in writing, software
+#   distributed under the License is distributed on an "AS IS" BASIS,
+#   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#   See the License for the specific language governing permissions and
+#   limitations under the License.
+swagger: '2.0'
+info:
+  title: LoxiLB Inference Gateway — Extended Observability & Ops API
+  description: >
+    Companion specification for REST endpoints that are served directly by the
+    API server's global middleware (api/restapi/configure_loxilb_rest_api.go)
+    and by raw HTTP handlers registered alongside it. These endpoints bypass
+    the go-swagger code generation pipeline and are therefore NOT part of the
+    code-generated specification (swagger.yml). Do not add them to swagger.yml;
+    this document is maintained by hand to match the middleware implementation.
+    Covered areas are the raw configuration/debug handlers (AI KV inventory,
+    DPU debug and hardware counters, OPA policy watcher, AI API key patch).
+  version: 0.0.1
+schemes:
+  - http
+  - https
+host: "0.0.0.0:11111"
+basePath: /netlox/v1
+produces:
+  - application/json
+consumes:
+  - application/json
+paths:
+
+  # ===============================
+  # Raw configuration / debug handlers
+  # ===============================
+  '/config/ai/kv/inventory':
+    get:
+      summary: Dump the KV-cache block inventory for an endpoint
+      description: >
+        Read-only admin endpoint returning the per-block 64-bit hash inventory
+        tracked for one endpoint of an AI service. block_idx is a synthetic
+        sequence index (map iteration order), not a semantic block position.
+      parameters:
+        - name: service_id
+          in: query
+          required: true
+          type: integer
+          format: int64
+          description: Numeric service identifier (uint32)
+        - name: ep_idx
+          in: query
+          required: true
+          type: integer
+          description: Endpoint index within the service
+      responses:
+        '200':
+          description: KV inventory snapshot
+          schema:
+            type: object
+            properties:
+              service_id:
+                type: integer
+              ep_idx:
+                type: integer
+              hash_algo:
+                type: string
+                description: Hash algorithm used for block keys
+              blocks:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    block_idx:
+                      type: integer
+                      description: Synthetic sequence index
+                    hash_uint64:
+                      type: integer
+                      format: uint64
+                      description: 64-bit block hash key
+              total:
+                type: integer
+        '400':
+          description: Invalid service_id or ep_idx
+          schema:
+            $ref: '#/definitions/SimpleError'
+        '404':
+          description: Service or endpoint not found
+          schema:
+            $ref: '#/definitions/SimpleError'
+        '405':
+          description: Method not allowed (GET only)
+        '503':
+          description: KV inventory provider not registered
+          schema:
+            $ref: '#/definitions/SimpleError'
+
+  '/config/dpu/debug':
+    get:
+      summary: Get DPU offload debug state and hardware counters
+      description: >
+        Returns DPU offload status, aggregate counters, per-pipe counters, and
+        optionally per-entry detail. Without query parameters the fast
+        aggregate shape is returned; flows=1 opts in to expensive per-entry
+        enumeration (flows, fdb_entries, route_entries, acl_entries). Supplying
+        any of pipe, svc, ep, or limit switches to the filtered per-entry
+        detail path, which populates doca_entry_details.
+      parameters:
+        - name: flows
+          in: query
+          type: string
+          enum: ['1']
+          description: Set to 1 to include per-flow/FDB/route/ACL hardware counter arrays
+        - name: pipe
+          in: query
+          type: string
+          enum: [rss, to_kernel, egress_dispatch, ct_fwd_5tuple, ct_rev_5tuple, root_l3l4_dispatch, fdb_l2, deny, allow]
+          description: Restrict the filtered entry query to one hardware pipe
+        - name: svc
+          in: query
+          type: string
+          description: Filter entries by service name
+        - name: ep
+          in: query
+          type: string
+          description: Filter entries by endpoint in addr:port form
+        - name: limit
+          in: query
+          type: integer
+          default: 200
+          maximum: 2000
+          description: Maximum entries returned by the filtered query (clamped to 2000)
+      responses:
+        '200':
+          description: DPU debug state
+          schema:
+            $ref: '#/definitions/DpuDebugResponse'
+        '400':
+          description: Invalid pipe or endpoint parameter
+          schema:
+            $ref: '#/definitions/SimpleError'
+        '503':
+          description: DPU manager not initialized (filtered path only)
+          schema:
+            $ref: '#/definitions/SimpleError'
+    post:
+      summary: Trigger a DPU debug action
+      description: >
+        Executes a debug action. Supported actions are "unregister" (unload a
+        DPU plugin by name) and "cb_force" (pin the offload circuit breaker
+        open or closed for testing).
+      parameters:
+        - name: attr
+          in: body
+          required: true
+          description: Debug action
+          schema:
+            type: object
+            required:
+              - action
+            properties:
+              action:
+                type: string
+                enum: [unregister, cb_force]
+              plugin:
+                type: string
+                description: Plugin name (required for action=unregister)
+              mode:
+                type: string
+                enum: [open, close]
+                description: Circuit breaker mode (required for action=cb_force)
+      responses:
+        '200':
+          description: Action executed
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+              circuit_breaker_open:
+                type: boolean
+                description: Present for action=cb_force
+        '400':
+          description: Invalid JSON, unsupported action, or missing field
+          schema:
+            $ref: '#/definitions/SimpleError'
+        '405':
+          description: Method not allowed
+        '503':
+          description: DPU manager not initialized
+          schema:
+            $ref: '#/definitions/SimpleError'
+
+  '/config/dpu/hwcounters':
+    get:
+      summary: Get per-flow DPU hardware counters
+      description: >
+        Returns hardware packet and byte counters for all offloaded flows,
+        with the flow key parsed into protocol and source/destination IPs.
+        Returns an empty flow list when no DPU provider is registered.
+      responses:
+        '200':
+          description: Hardware counters per flow
+          schema:
+            type: object
+            properties:
+              flows:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    flow_id:
+                      type: string
+                      description: Raw flow key
+                    protocol:
+                      type: string
+                    src_ip:
+                      type: string
+                    dst_ip:
+                      type: string
+                    packets:
+                      type: integer
+                      format: uint64
+                    bytes:
+                      type: integer
+                      format: uint64
+              total_flows:
+                type: integer
+        '405':
+          description: Method not allowed (GET only)
+
+  '/config/opa/watcher':
+    get:
+      summary: Get OPA policy watcher status
+      description: >
+        Returns the configuration and runtime status of the OPA L4 policy
+        watcher. When no watcher is configured, status is "not_configured".
+      responses:
+        '200':
+          description: Watcher status
+          schema:
+            type: object
+            properties:
+              opa_url:
+                type: string
+              policy_path:
+                type: string
+              poll_interval_sec:
+                type: integer
+              fail_open:
+                type: boolean
+              status:
+                type: string
+                enum: [not_configured, running, stopped]
+              last_sync_at:
+                type: string
+                description: RFC 3339 timestamp of the last successful sync
+              rules_count:
+                type: integer
+              circuit_breaker_state:
+                type: integer
+              last_error:
+                type: string
+    post:
+      summary: Configure and start the OPA policy watcher
+      description: >
+        Creates (or replaces) the OPA L4 policy watcher and starts polling the
+        given OPA server. URLs resolving to private or reserved IP ranges are
+        rejected for SSRF protection.
+      parameters:
+        - name: attr
+          in: body
+          required: true
+          description: Watcher configuration
+          schema:
+            type: object
+            required:
+              - opa_url
+            properties:
+              opa_url:
+                type: string
+                description: Base URL of the OPA server
+              policy_path:
+                type: string
+                default: loxilb/l4
+                description: OPA policy path to poll
+              poll_interval_sec:
+                type: integer
+                default: 30
+                description: Poll interval in seconds
+              fail_open:
+                type: boolean
+                description: Allow traffic when OPA is unreachable
+      responses:
+        '200':
+          description: Watcher configured
+          schema:
+            type: object
+            properties:
+              result:
+                type: string
+        '400':
+          description: Invalid JSON, missing opa_url, or URL blocked by SSRF protection
+          schema:
+            $ref: '#/definitions/SimpleError'
+        '405':
+          description: Method not allowed
+    delete:
+      summary: Stop and remove the OPA policy watcher
+      description: Stops the watcher if running. Succeeds even when no watcher is configured.
+      responses:
+        '200':
+          description: Watcher stopped
+          schema:
+            type: object
+            properties:
+              result:
+                type: string
+
+  '/config/ai/apikey/{key_id}':
+    patch:
+      summary: Update an AI gateway API key
+      description: >
+        Updates the allowed model list and/or the enabled flag of an existing
+        API key. Only the PATCH method on this path is handled by the
+        middleware; the other API key operations are part of the generated
+        specification.
+      parameters:
+        - name: key_id
+          in: path
+          required: true
+          type: string
+          description: API key identifier
+        - name: attr
+          in: body
+          required: true
+          description: Fields to update
+          schema:
+            type: object
+            properties:
+              allowed_models:
+                type: array
+                items:
+                  type: string
+                description: Replacement list of models the key may access
+              enabled:
+                type: boolean
+                description: Enable or disable the key
+      responses:
+        '204':
+          description: Key updated
+        '400':
+          description: Missing key_id or invalid request body
+          schema:
+            $ref: '#/definitions/SimpleError'
+        '404':
+          description: Key not found
+          schema:
+            $ref: '#/definitions/SimpleError'
+        '500':
+          description: Update failed
+          schema:
+            $ref: '#/definitions/SimpleError'
+
+definitions:
+  SimpleError:
+    type: object
+    description: Minimal error envelope returned by the raw handlers.
+    properties:
+      error:
+        type: string
+  DpuDebugResponse:
+    type: object
+    description: DPU offload debug state, aggregate counters, and optional per-entry detail.
+    properties:
+      enabled:
+        type: boolean
+      offload_success:
+        type: integer
+        format: uint64
+      offload_failure:
+        type: integer
+        format: uint64
+      offload_active:
+        type: integer
+        format: int64
+      offload_success_by_pipe:
+        type: object
+        additionalProperties:
+          type: integer
+      offload_failure_by_pipe:
+        type: object
+        additionalProperties:
+          type: integer
+      offload_active_by_pipe:
+        type: object
+        additionalProperties:
+          type: integer
+        description: Per-pipe active counts plus a synthetic "total" key
+      plugins:
+        type: array
+        items:
+          type: string
+      flows:
+        type: array
+        description: Per-flow hardware counters (only with flows=1)
+        items:
+          type: object
+          properties:
+            flow_key:
+              type: string
+            pipe_key:
+              type: string
+            hw_bytes:
+              type: integer
+              format: uint64
+            hw_pkts:
+              type: integer
+              format: uint64
+      fdb_entries:
+        type: array
+        description: Per-FDB-entry hardware counters (populated with flows=1; always present as an array)
+        items:
+          type: object
+          properties:
+            mac:
+              type: string
+            port:
+              type: integer
+            hw_bytes:
+              type: integer
+              format: uint64
+            hw_pkts:
+              type: integer
+              format: uint64
+      route_entries:
+        type: array
+        description: Per-route hardware counters (always present as an array)
+        items:
+          type: object
+          properties:
+            dst:
+              type: string
+            next_hop_mac:
+              type: string
+            port:
+              type: integer
+            hw_bytes:
+              type: integer
+              format: uint64
+            hw_pkts:
+              type: integer
+              format: uint64
+      acl_entries:
+        type: array
+        description: Per-ACL-rule hardware counters (always present as an array)
+        items:
+          type: object
+          properties:
+            rule_id:
+              type: integer
+            action:
+              type: string
+            hw_bytes:
+              type: integer
+              format: uint64
+            hw_pkts:
+              type: integer
+              format: uint64
+      circuit_breaker_open:
+        type: boolean
+      doca_entry_details:
+        type: array
+        description: Per-entry detail (only on the filtered query path)
+        items:
+          type: object
+          properties:
+            entry_handle_hashed:
+              type: string
+              description: Hashed entry handle for log correlation
+            5_tuple:
+              type: string
+            hw_pkts:
+              type: integer
+              format: uint64
+            hw_bytes:
+              type: integer
+              format: uint64
+            age_ms:
+              type: integer
+              format: uint64
+            pipe_key:
+              type: string

@@ -256,6 +256,11 @@ func (l2 *L2H) L2FdbAdd(key FdbKey, attr FdbAttr) (int, error) {
 
 	nfdb.DP(DpCreate)
 
+	// DPU FDB offload (non-blocking, non-fatal)
+	if mh.dpuMgr != nil {
+		mh.dpuMgr.ShadowFdbFlowOffload(nfdb)
+	}
+
 	tk.LogIt(tk.LogDebug, "added fdb ent, %v : health(%v)\n", key, !nfdb.unReach)
 
 	return 0, nil
@@ -299,6 +304,11 @@ func (l2 *L2H) L2FdbDel(key FdbKey) (int, error) {
 			fdb.FdbTun.nh = nil
 		}
 		fdb.FdbTun.ep = nil
+	}
+
+	// DPU FDB removal (non-blocking, non-fatal)
+	if mh.dpuMgr != nil {
+		mh.dpuMgr.ShadowFdbFlowRemove(fdb)
 	}
 
 	fdb.DP(DpRemove)

@@ -16,120 +16,180 @@
 package prometheus
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/go-openapi/errors"
-	"github.com/loxilb-io/loxilb/options"
-
-	"encoding/json"
-
+	"github.com/loxilb-io/loxilb/common"
 	cmn "github.com/loxilb-io/loxilb/common"
+	"github.com/loxilb-io/loxilb/options"
 	tk "github.com/loxilb-io/loxilib"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	dto "github.com/prometheus/client_model/go"
 )
 
-// Define the struct for the metrics
-type DipMetric struct {
-	Dip   string  `json:"dip"`
-	Value float64 `json:"value"`
-	Ratio float64 `json:"ratio"`
+func readCPUUtilization() (float64, error) {
+	f, err := os.Open("/proc/stat")
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	if !scanner.Scan() {
+		return 0, fmt.Errorf("empty /proc/stat")
+	}
+	line := scanner.Text()
+	if !strings.HasPrefix(line, "cpu ") {
+		return 0, fmt.Errorf("unexpected /proc/stat format")
+	}
+
+	// Fields: user nice system idle iowait irq softirq steal guest guest_nice
+	parts := strings.Fields(line)
+	var vals []uint64
+	for _, p := range parts[1:] {
+		v, err := strconv.ParseUint(p, 10, 64)
+		if err != nil {
+			return 0, err
+		}
+		vals = append(vals, v)
+	}
+	if len(vals) < 4 {
+		return 0, fmt.Errorf("insufficient cpu fields")
+	}
+	idle := vals[3]
+	// total is sum of all
+	var total uint64
+	for _, v := range vals {
+		total += v
+	}
+
+	if !cpuInited {
+		prevCPUIdle = idle
+		prevCPUTotal = total
+		cpuInited = true
+		return 0, nil // first sample has no delta
+	}
+
+	idleDelta := float64(idle - prevCPUIdle)
+	totalDelta := float64(total - prevCPUTotal)
+	prevCPUIdle = idle
+	prevCPUTotal = total
+
+	if totalDelta <= 0 {
+		return 0, fmt.Errorf("non-positive total delta")
+	}
+	usage := (1.0 - idleDelta/totalDelta) * 100.0
+	if usage < 0 {
+		usage = 0
+	} else if usage > 100 {
+		usage = 100
+	}
+	return usage, nil
 }
 
-// Define the map type for the outer object
-type DipMetrics map[string][]DipMetric
+// readMemoryUtilization reads /proc/meminfo to compute used percentage
+func readMemoryUtilization() (float64, error) {
+	f, err := os.Open("/proc/meminfo")
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
 
-// Define the struct for the metrics
-type ServiceDistMetric struct {
-	Value float64 `json:"value"`
-	Ratio float64 `json:"ratio"`
+	var total, available uint64
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "MemTotal:") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				total, _ = strconv.ParseUint(fields[1], 10, 64)
+			}
+		} else if strings.HasPrefix(line, "MemAvailable:") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				available, _ = strconv.ParseUint(fields[1], 10, 64)
+			}
+		}
+		if total > 0 && available > 0 {
+			break
+		}
+	}
+	if total == 0 {
+		return 0, fmt.Errorf("memtotal not found")
+	}
+	used := float64(total-available) / float64(total) * 100.0
+	if used < 0 {
+		used = 0
+	} else if used > 100 {
+		used = 100
+	}
+	return used, nil
 }
 
-// Define the map type for the outer object
-type ServiceDistMetrics map[string]ServiceDistMetric
-
-// Define the struct for the service metrics
-type ServiceMetric struct {
-	Name  string  `json:"name"`
-	Value float64 `json:"value"`
+// readDiskUtilization uses Statfs on root filesystem
+func readDiskUtilization() (float64, error) {
+	var st syscall.Statfs_t
+	if err := syscall.Statfs("/", &st); err != nil {
+		return 0, err
+	}
+	total := float64(st.Blocks) * float64(st.Bsize)
+	avail := float64(st.Bavail) * float64(st.Bsize)
+	if total <= 0 {
+		return 0, fmt.Errorf("invalid disk size")
+	}
+	used := (1.0 - (avail / total)) * 100.0
+	if used < 0 {
+		used = 0
+	} else if used > 100 {
+		used = 100
+	}
+	return used, nil
 }
 
-// Define the map type for the outer object
-type RequestMetrics struct {
-	TotalRequests           float64         `json:"total_requests"`
-	TotalRequestsPerService []ServiceMetric `json:"total_requests_per_service"`
-}
+// RunSystemUtilization periodically samples system metrics and updates gauges
+func RunSystemUtilization(ctx context.Context) {
+	ticker := time.NewTicker(PrometheusDefaultPeriod)
+	defer ticker.Stop()
 
-// Define the struct for the error metrics
-type ErrorMetrics struct {
-	TotalErrors           float64         `json:"total_errors"`
-	TotalErrorsPerService []ServiceMetric `json:"total_errors_per_service"`
-}
-
-// Define the struct for the interaction metrics
-type InteractionMetric struct {
-	Service string  `json:"service"`
-	Sip     string  `json:"sip"`
-	Dip     string  `json:"dip"`
-	Value   float64 `json:"value"`
-}
-
-// Define the map type for the outer object
-type ProcessedTrafficMetrics struct {
-	LbRuleInteractionBytes   []InteractionMetric `json:"lb_rule_interaction_bytes"`
-	LbRuleInteractionPackets []InteractionMetric `json:"lb_rule_interaction_packets"`
-}
-
-// Define the struct for the firewall drop metrics per rule
-type FwDropMetric struct {
-	FwRule string  `json:"fw_rule"`
-	Value  float64 `json:"value"`
-}
-
-// Define the struct for the firewall drop metrics
-type FwDropsMetrics struct {
-	TotalFwDrops        float64        `json:"total_fw_drops"`
-	TotalFwDropsPerRule []FwDropMetric `json:"total_fw_drops_per_rule"`
-}
-
-// Define the Node structure
-type Node struct {
-	ID            string  `json:"id"`
-	Title         string  `json:"title"`
-	Subtitle      string  `json:"subtitle"`
-	Mainstat      float64 `json:"mainstat"`
-	Secondarystat float64 `json:"secondarystat,omitempty"`
-	Color         string  `json:"color"`
-	Icon          string  `json:"icon"`
-	NodeRadius    int     `json:"nodeRadius"`
-}
-
-// Define the Edge structure
-type Edge struct {
-	ID            string  `json:"id"`
-	Source        string  `json:"source"`
-	Target        string  `json:"target"`
-	Mainstat      float64 `json:"mainstat"`
-	Secondarystat float64 `json:"secondarystat,omitempty"`
-	Thickness     int     `json:"thickness"`
-	Color         string  `json:"color"`
-}
-
-// Define the Nodegraph structure
-type NodeGraphShcmea struct {
-	SchemaVersion int `json:"schemaVersion"`
-	Meta          struct {
-		PreferredVisualisationType string `json:"preferredVisualisationType"`
-	} `json:"meta"`
-	Nodes []Node `json:"nodes"`
-	Edges []Edge `json:"edges"`
+	safeGoroutineOperation(func(ctx context.Context) error {
+		select {
+		case <-ctx.Done():
+			// Normal shutdown - the outer loop exits on the next iteration
+			return nil
+		case <-ticker.C:
+			if cpu, err := readCPUUtilization(); err == nil {
+				lastSystemCPU = cpu
+				systemCPUUtilization.Set(cpu)
+			} else {
+				return fmt.Errorf("CPU util read error: %v", err)
+			}
+			if mem, err := readMemoryUtilization(); err == nil {
+				lastSystemMem = mem
+				systemMemoryUtilization.Set(mem)
+			} else {
+				return fmt.Errorf("memory util read error: %v", err)
+			}
+			if du, err := readDiskUtilization(); err == nil {
+				lastSystemDisk = du
+				systemDiskUtilization.Set(du)
+			} else {
+				return fmt.Errorf("disk util read error: %v", err)
+			}
+		}
+		return nil
+	}, "system_utilization", ctx)
 }
 
 type Stats struct {
@@ -138,149 +198,178 @@ type Stats struct {
 }
 type ConntrackKey string
 
-type SharedMetric struct {
-	Name   string            `json:"name"`
-	Value  float64           `json:"value"`
-	Labels map[string]string `json:"labels,omitempty"` // Optional labels
-}
-
 var (
-	hooks                  cmn.NetHookInterface
-	ConntrackInfo          []cmn.CtInfo
-	EndPointInfo           []cmn.EndPointMod
-	LBRuleInfo             []cmn.LbRuleMod
-	FWRuleInfo             []cmn.FwRuleMod
-	err                    error
-	mutex                  *sync.Mutex
-	ConntrackStats         map[ConntrackKey]Stats // Key [string] : sip dip pro sport dport
-	PreFlowCounts          int
-	PromethusDefaultPeriod = 10 * time.Second
-	PromethusPartialPeriod = (PromethusDefaultPeriod / 6)
-	PromethusLongPeriod    = (PromethusDefaultPeriod * 600) // To reset Period
-	prometheusCtx          context.Context
-	prometheusCancel       context.CancelFunc
-	activeConntrackCount   = promauto.NewGauge(
+	hooks                   cmn.NetHookInterface
+	ConntrackInfo           []cmn.CtInfo
+	EndPointInfo            []cmn.EndPointMod
+	LBRuleInfo              []cmn.LbRuleMod
+	FWRuleInfo              []cmn.FwRuleMod
+	err                     error
+	mutex                   = &sync.Mutex{}        // Protects ConntrackInfo/ConntrackStats/EndPointInfo/LBRuleInfo/FWRuleInfo
+	ConntrackStats          map[ConntrackKey]Stats // Key [string] : sip dip pro sport dport
+	PreFlowCounts           int
+	PrometheusDefaultPeriod = 10 * time.Second
+	PrometheusPartialPeriod = (PrometheusDefaultPeriod / 6)
+	prometheusCtx           context.Context
+	prometheusCancel        context.CancelFunc
+	initMutex               sync.Mutex // Guards Init/PrometheusTurnOff lifecycle state (prometheusCtx/prometheusCancel)
+	MaxPoolStatsServiceSize = 16       // Maximum size of the conntrack info slice pool
+
+	activeConntrackCount = promauto.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "active_conntrack_count",
-			Help: "The average number of active established connections from clients to targets.",
+			Name: MetricActiveConntrackCount,
+			Help: "Number of active established connections from clients to targets.",
 		},
 	)
 	activeFlowCountTcp = promauto.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "active_flow_count_tcp",
-			Help: "The average number of concurrent TCP flows (or connections) from clients to targets.",
+			Name: MetricActiveFlowCountTCP,
+			Help: "Number of concurrent TCP flows (or connections) from clients to targets.",
 		},
 	)
 	activeFlowCountUdp = promauto.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "active_flow_count_udp",
-			Help: "The average number of concurrent UDP flows (or connections) from clients to targets.",
+			Name: MetricActiveFlowCountUDP,
+			Help: "Number of concurrent UDP flows (or connections) from clients to targets.",
 		},
 	)
 	activeFlowCountSctp = promauto.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "active_flow_count_sctp",
-			Help: "The average number of concurrent SCTP flows (or connections) from clients to targets.",
-		},
-	)
-	inActiveFlowCount = promauto.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "inactive_flow_count",
-			Help: "The average number of concurrent closed flows (or connections) from clients to targets.",
+			Name: MetricActiveFlowCountSCTP,
+			Help: "Number of concurrent SCTP flows (or connections) from clients to targets.",
 		},
 	)
 	healthyHostCount = promauto.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "healthy_host_count",
-			Help: "Average number of healthy targets.",
+			Name: MetricHealthyEndpointsCount,
+			Help: "Number of healthy targets.",
 		},
 	)
 	unHealthyHostCount = promauto.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "unhealthy_host_count",
-			Help: "Average number of unhealthy targets.",
+			Name: MetricUnhealthyEndpointsCount,
+			Help: "Number of unhealthy targets.",
 		},
 	)
 	ruleCount = promauto.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "lb_rule_count",
+			Name: MetricLBRuleCount,
 			Help: "Total number of load balancing rules.",
-		},
-	)
-	consumedLcus = promauto.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "consumed_lcus",
-			Help: "The number of LCUs used by the load balancer.",
 		},
 	)
 	newFlowCount = promauto.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "new_flow_count",
+			Name: MetricNewFlowCount,
 			Help: "The number of new TCP connections from clients to targets.",
 		},
 	)
 	processedBytes = promauto.NewCounter(
 		prometheus.CounterOpts{
-			Name: "processed_bytes",
-			Help: "The total number of bytes processed by the load balancer, including TCP/IP headers.",
+			Name: MetricProcessedBytesTotal,
+			Help: "The total number of bytes processed by the load balancer, including protocol and IP headers.",
 		},
 	)
 	processedTCPBytes = promauto.NewCounter(
 		prometheus.CounterOpts{
-			Name: "processed_tcp_bytes",
-			Help: "The total number of bytes processed by the load balancer, including TCP/IP headers.",
+			Name: MetricProcessedTCPBytes,
+			Help: "The total number of TCP bytes processed by the load balancer, including TCP/IP headers.",
 		},
 	)
 	processedUDPBytes = promauto.NewCounter(
 		prometheus.CounterOpts{
-			Name: "processed_udp_bytes",
-			Help: "The total number of bytes processed by the load balancer, including TCP/IP headers.",
+			Name: MetricProcessedUDPBytes,
+			Help: "The total number of UDP bytes processed by the load balancer, including UDP/IP headers.",
 		},
 	)
 	processedSCTPBytes = promauto.NewCounter(
 		prometheus.CounterOpts{
-			Name: "processed_sctp_bytes",
-			Help: "The total number of bytes processed by the load balancer, including TCP/IP headers.",
+			Name: MetricProcessedSCTPBytes,
+			Help: "The total number of SCTP bytes processed by the load balancer, including SCTP/IP headers.",
+		},
+	)
+	processedTCPPackets = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: MetricProcessedTCPPackets,
+			Help: "The total number of TCP packets processed by the load balancer.",
+		},
+	)
+	processedUDPPackets = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: MetricProcessedUDPPackets,
+			Help: "The total number of UDP packets processed by the load balancer.",
+		},
+	)
+	processedSCTPPackets = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: MetricProcessedSCTPPackets,
+			Help: "The total number of SCTP packets processed by the load balancer.",
 		},
 	)
 	processedPackets = promauto.NewCounter(
 		prometheus.CounterOpts{
-			Name: "processed_packets",
+			Name: MetricProcessedPacketsTotal,
 			Help: "The total number of packets processed by the load balancer.",
 		},
 	)
-	// ProcessedBtyes per LB Rule PromQL : sum(rate(lb_rule_interaction_bytes[1m])) by (service)
-	// ProcessedBtyes per endpoint PromQL: sum(rate(lb_rule_interaction_bytes[1m])) by (dip)
+	// Processed bytes per LB rule PromQL : sum(rate(loxilb_lb_rule_interaction_bytes_total[1m])) by (service)
+	// Processed bytes per endpoint PromQL: sum(rate(loxilb_lb_rule_interaction_bytes_total[1m])) by (dip)
 	lbRuleInteractionBytes = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "lb_rule_interaction_bytes",
-			Help: "Total bytes exchanged between load banacer and IPs",
+			Name: MetricLBRuleInteractionBytes,
+			Help: "Total bytes exchanged between load balancer and IPs",
 		},
 		[]string{"service", "sip", "dip"},
 	)
 	lbRuleInteractionPackets = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "lb_rule_interaction_packets",
+			Name: MetricLBRuleInteractionPackets,
 			Help: "Total packets exchanged between load balancer and IPs",
 		},
 		[]string{"service", "sip", "dip"},
 	)
 
-	// Prometheus metrics for total requests and RPS
-	// Can calculate Requests Per Second (RPS) by tracking the number of new flows over a specific time interval.
-	// Can use a Prometheus counter to track the total number of requests
-	// and then use the rate function in Prometheus to calculate the RPS
-	// PromQL : rate(total_requests[1m])
+	// Traffic distribution metrics for monitoring
+	serviceTrafficBytes = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricServiceTrafficBytes,
+			Help: "Total bytes per service",
+		},
+		[]string{"service"},
+	)
+	serviceTrafficPackets = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricServiceTrafficPackets,
+			Help: "Total packets per service",
+		},
+		[]string{"service"},
+	)
+	endpointTrafficBytes = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricEndpointTrafficBytes,
+			Help: "Total bytes per endpoint per service",
+		},
+		[]string{"service", "dip"},
+	)
+	clientTrafficPackets = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricClientTrafficPackets,
+			Help: "Total packets per client per service",
+		},
+		[]string{"service", "sip"},
+	)
+
+	// Request counters; requests-per-second is derived in PromQL:
+	// rate(loxilb_requests_total[1m])
 	totalRequests = promauto.NewCounter(
 		prometheus.CounterOpts{
-			Name: "total_requests",
+			Name: MetricTotalRequests,
 			Help: "Total number of requests",
 		},
 	)
 
 	totalRequestsPerService = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "total_requests_per_service",
+			Name: MetricTotalRequestsPerService,
 			Help: "Total number of requests per service",
 		},
 		[]string{"service"},
@@ -288,72 +377,259 @@ var (
 
 	totalErrors = promauto.NewCounter(
 		prometheus.CounterOpts{
-			Name: "total_errors",
+			Name: MetricTotalErrors,
 			Help: "Total number of errors",
 		},
 	)
 
 	totalErrorsPerService = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "total_errors_per_service",
+			Name: MetricTotalErrorsPerService,
 			Help: "Total number of errors per service",
 		},
 		[]string{"service"},
 	)
 
-	totalDropsByFw = promauto.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "total_fw_drops",
-			Help: "Total number of drops by firewall rule",
+	// Firewall drop counters: the data plane exposes cumulative per-rule drop
+	// counters; RunGetFwRule adds per-cycle deltas so rate() works as expected.
+	totalDropsByFw = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: MetricTotalFwDrops,
+			Help: "Total number of packets dropped by firewall rules",
 		},
 	)
 
-	totalDropsByFwPerRule = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "total_fw_drops_per_rule",
-			Help: "Total number of drops by firewall per rule",
+	totalDropsByFwPerRule = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricTotalFwDropsPerRule,
+			Help: "Total number of packets dropped by firewall, per rule preference",
 		},
 		[]string{"fw_rule"},
 	)
 
-	endpointLoadDistsPerService = promauto.NewGaugeVec(
+	fwRuleCount = promauto.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "endpoint_load_dists_per_service",
-			Help: "Ratio of traffic distribution across backend endpoints per service",
+			Name: MetricFirewallRulesCount,
+			Help: "Number of active firewall rules",
 		},
-		[]string{"service", "dip"},
-	)
-
-	totalLoadDistsPerService = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "total_load_dists_per_service",
-			Help: "Ratio of total traffic distribution across backend endpoints per service",
-		},
-		[]string{"service"},
 	)
 
 	prevConntrackStats = make(map[ConntrackKey]Stats)
 	prevConntrackInfo  = make(map[ConntrackKey]bool)
 
-	// Shared metrics
-	sharedMetrics = struct {
-		sync.RWMutex
-		data map[string]SharedMetric
-	}{data: make(map[string]SharedMetric)}
+	// finalizedClosedFlows remembers closed conntrack entries whose final metrics
+	// were already captured, so an entry lingering in the conntrack table across
+	// collection cycles is not re-counted every cycle. Pruned automatically once
+	// the entry leaves the table. Protected by conntrackRWMutex.
+	finalizedClosedFlows = make(map[ConntrackKey]bool)
 
-	enableSharedMetrics = true
+	// prevErrorFlows tracks flows that were already in an error state last cycle,
+	// so the error counters count error transitions (events), not error state
+	// per sweep. Protected by conntrackRWMutex.
+	prevErrorFlows = make(map[ConntrackKey]bool)
+
+	// firstCollectionCycle marks the first sweep after Init: baselines are seeded
+	// without adding to counters, so pre-existing long-lived flows do not appear
+	// as a phantom traffic burst when metrics are (re-)enabled.
+	firstCollectionCycle = true
+
+	// Cumulative per-rule firewall drop baselines for delta computation, keyed by
+	// rule preference. Only touched by the RunGetFwRule goroutine.
+	prevFwRuleDrops = make(map[string]uint64)
+
+	// Previous security stats for delta calculation (like conntrack overflow handling)
+	prevSecurityStats cmn.SecurityRateStats
+	prevIPFilterStats map[string]struct {
+		Packets uint64
+		Bytes   uint64
+	}
+
+	// Collection-pipeline self-diagnostics
+	counterResetEvents = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "loxilb_conntrack_stat_resets_total",
+			Help: "Total number of conntrack statistics reset events detected",
+		},
+	)
+	closedConnectionsProcessed = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "loxilb_closed_connections_processed_total",
+			Help: "Total number of closed connections with final metrics captured",
+		},
+	)
+
+	conntrackRWMutex sync.RWMutex // Protects prevConntrackStats and prevConntrackInfo
+
+	// Bound on prevConntrackStats size to prevent unbounded growth
+	MaxPrevConntrackEntries = 1000000
+	prevStatsCleanupCount   uint64 // Track cleanup cycles for logging
+
+	// System utilization gauges
+	systemCPUUtilization = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: MetricSystemCPUUtilization,
+			Help: "Total system CPU utilization percentage [0-100]",
+		},
+	)
+	systemMemoryUtilization = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: MetricSystemMemoryUtilization,
+			Help: "Total system memory utilization percentage [0-100]",
+		},
+	)
+	systemDiskUtilization = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: MetricSystemDiskUtilization,
+			Help: "Total system disk utilization percentage [0-100] (root filesystem)",
+		},
+	)
+
+	// Security rate limiting metrics
+	securitySYNBlocked = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: MetricSecuritySYNBlocked,
+			Help: "Total number of SYN packets blocked by SYN flood protection",
+		},
+	)
+
+	securitySYNPassed = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: MetricSecuritySYNPassed,
+			Help: "Total number of SYN packets passed by SYN flood protection",
+		},
+	)
+
+	securitySYNCookies = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: MetricSecuritySYNCookies,
+			Help: "Total number of SYN cookie activations",
+		},
+	)
+
+	securityConnBlocked = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: MetricSecurityConnBlocked,
+			Help: "Total number of connections blocked by rate limiting",
+		},
+	)
+
+	securityConnPassed = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: MetricSecurityConnPassed,
+			Help: "Total number of connections passed by rate limiting",
+		},
+	)
+
+	securityUniqueIPs = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: MetricSecurityUniqueIPs,
+			Help: "Number of unique IPs being tracked for security rate limiting",
+		},
+	)
+
+	securityUDPBlocked = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: MetricSecurityUDPBlocked,
+			Help: "Total number of UDP packets blocked by UDP flood protection",
+		},
+	)
+
+	securityUDPPassed = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: MetricSecurityUDPPassed,
+			Help: "Total number of UDP packets passed by UDP flood protection",
+		},
+	)
+
+	securityUDPBytesBlocked = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: MetricSecurityUDPBytesBlocked,
+			Help: "Total number of UDP bytes blocked by UDP flood protection",
+		},
+	)
+
+	securityUDPBytesPassed = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: MetricSecurityUDPBytesPassed,
+			Help: "Total number of UDP bytes passed by UDP flood protection",
+		},
+	)
+
+	// IP filter metrics
+	ipFilterBlacklistPackets = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricIPFilterBlacklistPackets,
+			Help: "Total number of packets blocked by IP blacklist rules",
+		},
+		[]string{"cidr", "priority", "zone"},
+	)
+
+	ipFilterBlacklistBytes = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricIPFilterBlacklistBytes,
+			Help: "Total number of bytes blocked by IP blacklist rules",
+		},
+		[]string{"cidr", "priority", "zone"},
+	)
+
+	ipFilterWhitelistPackets = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricIPFilterWhitelistPackets,
+			Help: "Total number of packets allowed by IP whitelist rules",
+		},
+		[]string{"cidr", "priority", "zone"},
+	)
+
+	ipFilterWhitelistBytes = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricIPFilterWhitelistBytes,
+			Help: "Total number of bytes allowed by IP whitelist rules",
+		},
+		[]string{"cidr", "priority", "zone"},
+	)
+
+	ipFilterTotalRules = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: MetricIPFilterTotalRules,
+			Help: "Total number of active IP filter rules",
+		},
+		[]string{"type"},
+	)
+
+	// Cached latest values for DB collection
+	lastSystemCPU  float64
+	lastSystemMem  float64
+	lastSystemDisk float64
+
+	// Previous CPU counters for delta computation
+	prevCPUIdle  uint64
+	prevCPUTotal uint64
+	cpuInited    bool
+
+	// === ISOLATION FRAMEWORK VARIABLES ===
+	// Core health tracking - using atomic for thread safety
+	metricsHealthy  atomic.Bool  // Master enable (Init/PrometheusTurnOff)
+	lastMetricError atomic.Int64 // Unix timestamp of last error (any collector)
+
+	// Isolation framework configuration
+	MaxMetricErrors  = int64(3)        // Trip after 3 consecutive errors
+	RetryInterval    = int64(300)      // Wait 5 minutes before retry (300 seconds)
+	OperationTimeout = 5 * time.Second // Max operation duration
 )
 
-func PrometheusRegister(hook cmn.NetHookInterface) {
+func PrometheusRegister(hook common.NetHookInterface) {
 	hooks = hook
 }
 
-// PrometheusInit initializes the Prometheus metrics and starts the necessary goroutines
+// CheckInit reports whether the Prometheus subsystem is registered and running
 func CheckInit() error {
 	if hooks == nil {
 		return errors.New(http.StatusBadRequest, "Prometheus API hooks are not registered")
 	}
-	if prometheusCtx == nil {
+	initMutex.Lock()
+	running := prometheusCtx != nil
+	initMutex.Unlock()
+	if !running {
 		return errors.New(http.StatusBadRequest, "Prometheus is not running")
 	}
 	return nil
@@ -364,503 +640,108 @@ func OptionStateChange(state bool) {
 	options.Opts.Prometheus = state
 }
 
-// PrometheusTurnOff turns off the Prometheus
-// prometheusCtx and hooks are set to nil for garbage collection
+// PrometheusTurnOff turns off the Prometheus metrics collection
+// NOTE: eBPF hooks are preserved to maintain load balancing functionality
 func PrometheusTurnOff() error {
+	initMutex.Lock()
+	defer initMutex.Unlock()
+
+	if prometheusCancel == nil {
+		return nil // already off
+	}
+
+	tk.LogIt(tk.LogInfo, "[Metrics] Shutting down metrics collection...\n")
+
+	// Signal all goroutines to stop
 	prometheusCancel()
+
+	// Disable metrics processing immediately
+	metricsHealthy.Store(false)
+
+	// Clear prometheus-specific resources (but preserve eBPF hooks for load balancing)
 	prometheusCancel = nil
 	prometheusCtx = nil
-	hooks = nil
+	// hooks preserved intentionally - load balancing continues
+
+	tk.LogIt(tk.LogInfo, "[Metrics] Stopped - Load balancing continues with preserved eBPF hooks\n")
 	return nil
 }
 
-// Helper functions for shared metrics
-func SetSharedMetric(name string, value float64) {
-	sharedMetrics.Lock()
-	defer sharedMetrics.Unlock()
-	sharedMetrics.data[name] = SharedMetric{Name: name, Value: value}
-}
-
-func AddSharedMetric(name string, increment float64) {
-	sharedMetrics.Lock()
-	defer sharedMetrics.Unlock()
-	if metric, exists := sharedMetrics.data[name]; exists {
-		metric.Value += increment
-		sharedMetrics.data[name] = metric
-	} else {
-		sharedMetrics.data[name] = SharedMetric{Name: name, Value: increment}
-	}
-}
-
-func AddLabeledMetric(name string, labels map[string]string, increment float64) {
-	sharedMetrics.Lock()
-	defer sharedMetrics.Unlock()
-	labelsKey := generateLabelsKey(name, labels)
-	if metric, exists := sharedMetrics.data[labelsKey]; exists {
-		metric.Value += increment
-		sharedMetrics.data[labelsKey] = metric
-	} else {
-		sharedMetrics.data[labelsKey] = SharedMetric{Name: name, Value: increment, Labels: labels}
-	}
-}
-
 func generateLabelsKey(name string, labels map[string]string) string {
+	// Sort label names: Go map iteration order is random, and an unsorted key
+	// would split one logical series across up to n! shared-metric entries
+	names := make([]string, 0, len(labels))
+	for key := range labels {
+		names = append(names, key)
+	}
+	sort.Strings(names)
+
 	var builder strings.Builder
 	builder.WriteString(name)
-	for key, value := range labels {
-		builder.WriteString(fmt.Sprintf("|%s=%s", key, value))
+	for _, key := range names {
+		builder.WriteString(fmt.Sprintf("|%s=%s", key, labels[key]))
 	}
 	return builder.String()
 }
 
-// Helper function to retrieve specific metrics from shared metrics
-func metricJSON(metricNames []string) map[string]float64 {
-	sharedMetrics.RLock()
-	defer sharedMetrics.RUnlock()
-
-	metrics := make(map[string]float64)
-	for _, name := range metricNames {
-		if value, exists := sharedMetrics.data[name]; exists {
-			metrics[name] = float64(value.Value)
-		} else {
-			tk.LogIt(tk.LogDebug, "Metric %s not found\n", name)
-		}
-	}
-	return metrics
-}
-
-// Function to get labeled metrics
-func GetLabeledMetrics() []SharedMetric {
-	sharedMetrics.RLock()
-	defer sharedMetrics.RUnlock()
-
-	metrics := make([]SharedMetric, 0, len(sharedMetrics.data))
-	for _, metric := range sharedMetrics.data {
-		metrics = append(metrics, metric)
-	}
-	return metrics
-}
-
-func GetFlowCountSM() map[string]float64 {
-	// API URL : /metrics/flowcount
-	metricNames := []string{
-		"active_conntrack_count",
-		"active_flow_count_tcp",
-		"active_flow_count_udp",
-		"active_flow_count_sctp",
-		"inactive_flow_count",
-	}
-	return metricJSON(metricNames)
-}
-
-func GetHostCountSM() map[string]float64 {
-	// API URL : /metrics/hostcount
-	metricNames := []string{
-		"healthy_host_count",
-		"unhealthy_host_count",
-	}
-	return metricJSON(metricNames)
-}
-
-func GetLBRuleCountSM() map[string]float64 {
-	// API URL : /metrics/lbrulecount
-	metricNames := []string{
-		"lb_rule_count",
-	}
-	return metricJSON(metricNames)
-}
-
-func GetNetFlowCountSM() map[string]float64 {
-	// API URL : /metrics/newflowcount
-	metricNames := []string{
-		"new_flow_count",
-	}
-	return metricJSON(metricNames)
-}
-
-func GetReqCountSM() RequestMetrics {
-	metricNames := []string{
-		"total_requests",
-	}
-
-	metrics := RequestMetrics{}
-	metrics.TotalRequests = metricJSON(metricNames)["total_requests"]
-
-	sharedMetrics.RLock()
-	defer sharedMetrics.RUnlock()
-
-	totalRequestsPerService := make([]ServiceMetric, 0)
-	for key, metric := range sharedMetrics.data {
-		if strings.HasPrefix(key, "total_requests_per_service") {
-			service, ok := metric.Labels["service"]
-			if !ok || service == "" {
-				service = "default"
-			}
-			totalRequestsPerService = append(totalRequestsPerService, ServiceMetric{
-				Name:  service,
-				Value: float64(metric.Value),
-			})
-		}
-	}
-	metrics.TotalRequestsPerService = totalRequestsPerService
-
-	return metrics
-}
-
-func GetErrCountSM() ErrorMetrics {
-	metricNames := []string{
-		"total_errors",
-	}
-
-	metrics := ErrorMetrics{}
-	metrics.TotalErrors = metricJSON(metricNames)["total_errors"]
-
-	sharedMetrics.RLock()
-	defer sharedMetrics.RUnlock()
-
-	totalErrorsPerService := make([]ServiceMetric, 0)
-	for key, metric := range sharedMetrics.data {
-		if strings.HasPrefix(key, "total_errors_per_service") {
-			service, ok := metric.Labels["service"]
-			if !ok || service == "" {
-				service = "default"
-			}
-			totalErrorsPerService = append(totalErrorsPerService, ServiceMetric{
-				Name:  service,
-				Value: float64(metric.Value),
-			})
-		}
-	}
-
-	metrics.TotalErrorsPerService = totalErrorsPerService
-
-	return metrics
-}
-
-func GetProcessedTrafficVecSM() map[string]float64 {
-	metricNames := []string{
-		"processed_bytes",
-		"processed_tcp_bytes",
-		"processed_sctp_bytes",
-		"processed_udp_bytes",
-		"processed_packets",
-	}
-	return metricJSON(metricNames)
-}
-
-func GetLBProcessedTrafficVecSM() ProcessedTrafficMetrics {
-	metrics := ProcessedTrafficMetrics{
-		LbRuleInteractionBytes:   make([]InteractionMetric, 0),
-		LbRuleInteractionPackets: make([]InteractionMetric, 0),
-	}
-
-	sharedMetrics.RLock()
-	defer sharedMetrics.RUnlock()
-
-	for key, metric := range sharedMetrics.data {
-		service, ok := metric.Labels["service"]
-		if !ok || service == "" {
-			service = "default"
-		}
-
-		interactionMetric := InteractionMetric{
-			Service: service,
-			Sip:     metric.Labels["sip"],
-			Dip:     metric.Labels["dip"],
-			Value:   float64(metric.Value),
-		}
-
-		if strings.HasPrefix(key, "lb_rule_interaction_bytes") {
-			metrics.LbRuleInteractionBytes = append(metrics.LbRuleInteractionBytes, interactionMetric)
-		} else if strings.HasPrefix(key, "lb_rule_interaction_packets") {
-			metrics.LbRuleInteractionPackets = append(metrics.LbRuleInteractionPackets, interactionMetric)
-		}
-	}
-
-	return metrics
-}
-
-func GetEpDistTrafficVecSM() DipMetrics {
-	// API URL : /metrics/epdisttraffic
-	serviceTraffic := make(map[string]float64)
-	serviceDipTraffic := make(map[string]map[string]float64)
-
-	// Read lock to ensure thread-safe access to sharedMetrics.data
-	sharedMetrics.RLock()
-	for key, metric := range sharedMetrics.data {
-		if strings.HasPrefix(key, "lb_rule_interaction_bytes") {
-			service, ok := metric.Labels["service"]
-			if !ok || service == "" || service == "-" {
-				service = "default"
-			}
-			dip := metric.Labels["dip"]
-
-			if _, exists := serviceTraffic[service]; !exists {
-				serviceTraffic[service] = 0
-				serviceDipTraffic[service] = make(map[string]float64)
-			}
-
-			serviceTraffic[service] += metric.Value
-			serviceDipTraffic[service][dip] += metric.Value
-		}
-	}
-	sharedMetrics.RUnlock()
-
-	// Calculate distribution ratio
-	metrics := make(DipMetrics)
-	for service, totalTraffic := range serviceTraffic {
-		distribution := make([]DipMetric, 0)
-		for dip, dipTraffic := range serviceDipTraffic[service] {
-			ratio := float64(dipTraffic) / float64(totalTraffic)
-			distribution = append(distribution, DipMetric{
-				Dip:   dip,
-				Value: dipTraffic,
-				Ratio: ratio,
-			})
-		}
-		metrics[service] = distribution
-	}
-
-	return metrics
-}
-
-func GetServiceDistTrafficVecSM() ServiceDistMetrics {
-	// API URL : /metrics/servicedisttraffic
-	serviceTraffic := make(map[string]float64)
-
-	// Read lock to ensure thread-safe access to sharedMetrics.data
-	sharedMetrics.RLock()
-	for key, metric := range sharedMetrics.data {
-		if strings.HasPrefix(key, "lb_rule_interaction_bytes") {
-			service, ok := metric.Labels["service"]
-			if !ok || service == "" || service == "-" {
-				service = "default"
-			}
-
-			if _, exists := serviceTraffic[service]; !exists {
-				serviceTraffic[service] = 0
-			}
-
-			serviceTraffic[service] += metric.Value
-		}
-	}
-	sharedMetrics.RUnlock()
-
-	// Calculate distribution ratio
-	metrics := make(ServiceDistMetrics)
-	totalTraffic := 0.0
-	for _, traffic := range serviceTraffic {
-		totalTraffic += traffic
-	}
-
-	for service, traffic := range serviceTraffic {
-		ratio := traffic / totalTraffic
-		metrics[service] = ServiceDistMetric{
-			Value: traffic,
-			Ratio: ratio,
-		}
-	}
-
-	return metrics
-}
-
-func GetFwDropsSM() FwDropsMetrics {
-	metricNames := []string{
-		"total_fw_drops",
-	}
-
-	metrics := FwDropsMetrics{}
-	metrics.TotalFwDrops = metricJSON(metricNames)["total_fw_drops"]
-
-	sharedMetrics.RLock()
-	defer sharedMetrics.RUnlock()
-
-	totalDropsPerRule := make([]FwDropMetric, 0)
-	for key, metric := range sharedMetrics.data {
-		if strings.HasPrefix(key, "total_fw_drops_per_rule") {
-			totalDropsPerRule = append(totalDropsPerRule, FwDropMetric{
-				FwRule: metric.Labels["fw_rule"],
-				Value:  float64(metric.Value),
-			})
-		}
-	}
-	metrics.TotalFwDropsPerRule = totalDropsPerRule
-
-	return metrics
-}
-
-func GetReqCountPerClientSM() map[string]float64 {
-	clientRequests := make(map[string]float64)
-
-	sharedMetrics.RLock()
-	defer sharedMetrics.RUnlock()
-
-	for key, metric := range sharedMetrics.data {
-		if strings.HasPrefix(key, "lb_rule_interaction_packets") {
-			// EXTRACT CLIENT IP(ip) FROM LABELS
-			clientIP := metric.Labels["sip"]
-			if _, exists := clientRequests[clientIP]; !exists {
-				clientRequests[clientIP] = 0
-			}
-			clientRequests[clientIP] += float64(metric.Value)
-		}
-	}
-
-	resp := make(map[string]float64)
-	for clientIP, count := range clientRequests {
-		resp[clientIP] = count
-	}
-
-	return resp
-}
-
-func GetNodeGraphSM() NodeGraphShcmea {
-	return generateNodeGraphSchema("")
-}
-
-func GetNodeGraphServiceSM(service string) NodeGraphShcmea {
-	return generateNodeGraphSchema(service)
-}
-
-func generateNodeGraphSchema(service string) NodeGraphShcmea {
-	sharedMetrics.RLock()
-	defer sharedMetrics.RUnlock()
-
-	// Define temp data
-	tmpData := make([]map[string]interface{}, 0, len(sharedMetrics.data))
-
-	for key, metric := range sharedMetrics.data {
-		if strings.HasPrefix(key, "lb_rule_interaction_bytes") && (service == "" || metric.Labels["service"] == service) {
-			svc := metric.Labels["service"]
-			if svc == "" || svc == "-" {
-				svc = "default"
-				continue // Skip appending to tmpData
-			}
-			dip := metric.Labels["dip"]
-			if dip == "" {
-				dip = "na"
-			}
-			sip := metric.Labels["sip"]
-			if sip == "" {
-				sip = "na"
-			}
-			value := float64(metric.Value)
-			tmpData = append(tmpData, map[string]interface{}{
-				"service": svc,
-				"dip":     dip,
-				"sip":     sip,
-				"value":   value,
-			})
-		}
-	}
-
-	// Generate Node data
-	nodeMap := make(map[string]Node)
-	for _, data := range tmpData {
-		dip := data["dip"].(string)
-		sip := data["sip"].(string)
-		value := data["value"].(float64)
-		service := data["service"].(string)
-
-		if node, exists := nodeMap[service]; exists {
-			node.Mainstat += value
-			nodeMap[service] = node
-		} else {
-			nodeMap[service] = Node{
-				ID:       service,
-				Title:    service,
-				Mainstat: value,
-				Color:    "blue",
-			}
-		}
-
-		if node, exists := nodeMap[dip]; exists {
-			node.Mainstat += value
-			nodeMap[dip] = node
-		} else {
-			nodeMap[dip] = Node{
-				ID:       dip,
-				Title:    dip,
-				Mainstat: value,
-				Color:    "green",
-			}
-		}
-
-		if node, exists := nodeMap[sip]; exists {
-			node.Mainstat += value
-			nodeMap[sip] = node
-		} else {
-			nodeMap[sip] = Node{
-				ID:       sip,
-				Title:    sip,
-				Mainstat: value,
-				Color:    "yellow",
-			}
-		}
-	}
-
-	nodes := make([]Node, 0, len(nodeMap))
-	for _, node := range nodeMap {
-		nodes = append(nodes, node)
-	}
-
-	edges := make([]Edge, 0, len(tmpData)*2)
-	for _, data := range tmpData {
-		dip := data["dip"].(string)
-		sip := data["sip"].(string)
-		service := data["service"].(string)
-		value := data["value"].(float64)
-
-		edges = append(edges, Edge{
-			ID:        fmt.Sprintf("%s-%s", sip, service),
-			Source:    sip,
-			Target:    service,
-			Mainstat:  value,
-			Thickness: 4,
-			Color:     "cyan",
-		})
-
-		edges = append(edges, Edge{
-			ID:        fmt.Sprintf("%s-%s", service, dip),
-			Source:    service,
-			Target:    dip,
-			Mainstat:  value,
-			Thickness: 4,
-			Color:     "orange",
-		})
-	}
-
-	return NodeGraphShcmea{
-		SchemaVersion: 37,
-		Meta: struct {
-			PreferredVisualisationType string `json:"preferredVisualisationType"`
-		}{
-			PreferredVisualisationType: "nodeGraph",
-		},
-		Nodes: nodes,
-		Edges: edges,
-	}
-}
-
 func Init() {
+	initMutex.Lock()
+	defer initMutex.Unlock()
+
+	// Idempotent: a second Init while collection is running would leak a full
+	// set of collector goroutines and orphan the previous cancel func
+	if prometheusCtx != nil {
+		tk.LogIt(tk.LogInfo, "[Metrics] Already running - skipping duplicate init\n")
+		return
+	}
+
+	// Initialize health state - MUST be first
+	metricsHealthy.Store(true) // Master enable
+	lastMetricError.Store(0)   // No previous errors
+	resetAllBreakers()         // Per-collector breakers start healthy
+
 	prometheusCtx, prometheusCancel = context.WithCancel(context.Background())
 
-	// Make Conntrack Statistic map
+	// Reset collection state so a re-enable starts from fresh baselines
+	mutex.Lock()
 	ConntrackStats = make(map[ConntrackKey]Stats)
-	mutex = &sync.Mutex{}
+	mutex.Unlock()
+	prevIPFilterStats = make(map[string]struct {
+		Packets uint64
+		Bytes   uint64
+	})
+	conntrackRWMutex.Lock()
+	prevConntrackStats = make(map[ConntrackKey]Stats)
+	prevConntrackInfo = make(map[ConntrackKey]bool)
+	finalizedClosedFlows = make(map[ConntrackKey]bool)
+	prevErrorFlows = make(map[ConntrackKey]bool)
+	firstCollectionCycle = true
+	conntrackRWMutex.Unlock()
 
 	go RunGetConntrack(prometheusCtx)
 	go RunGetEndpoint(prometheusCtx)
 	go RunGetFwRule(prometheusCtx)
+	go RunGetLBRule(prometheusCtx)
+	// Start system utilization sampler
+	go RunSystemUtilization(prometheusCtx)
 
 	go RunActiveConntrackCount(prometheusCtx)
-	go RunHostCount(prometheusCtx)
-	go RunProcessedStatistic(prometheusCtx)
-	go RunResetCounts(prometheusCtx)
-	go RunGetLBRule(prometheusCtx)
-	go RunLcusCalculator(prometheusCtx)
-	go RunFwStatistic(prometheusCtx)
 
+	// Start sockproxy metrics collection (TIER 1-3 metrics for AI/LLM workloads)
+	// TIER 1: 10s interval - Critical cache backpressure and session affinity metrics
+	// TIER 2: 30s interval - Important observability (connections, HTTP/2 sessions)
+	// TIER 3: 2m interval - Operational debugging (drain events, graceful closes, TTL expirations)
+	go RunSockproxyMetrics(prometheusCtx)
+
+	// Start security metrics collection
+	go RunSecurityRateStats(prometheusCtx)
+	go RunIPFilterStats(prometheusCtx)
+
+	// Start always-on L4 connection-error metrics (event-driven, trace-independent).
+	// Feeds loxilb_l4_error_events_total — the source of truth for LoxilbL4ErrorBurst.
+	go RunL4ErrorStats(prometheusCtx)
+
+	tk.LogIt(tk.LogInfo, "[Metrics] System initialized with isolation protection\n")
 }
 
 func toJSON(v interface{}) string {
@@ -877,41 +758,46 @@ func MakeConntrackKey(c cmn.CtInfo) (key ConntrackKey) {
 }
 
 func isErrorState(c cmn.CtInfo) bool {
-	// Define your error conditions here.
-	return c.CState == "h/e" || c.CState == "closed-wait" || c.CAct == "err" || c.CAct == "abort"
-}
-
-func RunResetCounts(ctx context.Context) {
-	ticker := time.NewTicker(PromethusLongPeriod)
-	defer ticker.Stop()
-	for {
-		// Statistic reset
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			mutex.Lock()
-			ConntrackStats = map[ConntrackKey]Stats{}
-			mutex.Unlock()
-		}
-	}
+	// Error conditions. NOTE: the eBPF data plane encodes SCTP error/abort as
+	// CState ("err"/"abort", see dpebpf_linux.go), NOT CAct — CAct only ever holds
+	// NAT-action strings ("n/a", "fdnat-…", "fp|…"). The previous CAct=="err"/"abort"
+	// checks were therefore dead code and every SCTP error/abort flow went uncounted
+	// in loxilb_errors_total (LoxilbL4ErrorBurst was blind to all SCTP failures).
+	return c.CState == "h/e" || c.CState == "closed-wait" ||
+		c.CState == "err" || c.CState == "abort"
 }
 
 func RunGetConntrack(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
+	tk.LogIt(tk.LogInfo, "[Metrics] Starting conntrack collection goroutine\n")
+	safeGoroutineOperation(func(ctx context.Context) error {
+		tk.LogIt(tk.LogDebug, "[Metrics] Attempting conntrack collection - hooks available: %v\n", hooks != nil)
+
+		if hooks == nil {
+			tk.LogIt(tk.LogError, "[Metrics] eBPF hooks not available for conntrack collection\n")
+			time.Sleep(PrometheusDefaultPeriod)
+			return nil
 		}
 
-		ConntrackInfo, err = hooks.NetCtInfoGet()
+		localConntrackInfo, err := hooks.NetCtInfoGet()
 		if err != nil {
-			tk.LogIt(tk.LogDebug, "[Prometheus] Error occurred while getting conntrack info: %v\n", err)
-			continue
+			// Log but don't treat as fatal error - eBPF hooks may be temporarily unavailable
+			tk.LogIt(tk.LogWarning, "[Metrics] Conntrack collection temporarily unavailable: %v\n", err)
+			time.Sleep(PrometheusDefaultPeriod)
+			return nil // Return success to prevent circuit breaker
 		}
-		localStats := make(map[ConntrackKey]Stats, len(ConntrackInfo))
-		for _, ct := range ConntrackInfo {
+
+		tk.LogIt(tk.LogDebug, "[Metrics] Successfully collected %d conntrack entries\n", len(localConntrackInfo))
+
+		// Debug: Log first few entries to understand data structure
+		for i, ct := range localConntrackInfo {
+			if i < 3 { // Log first 3 entries for debugging
+				tk.LogIt(tk.LogDebug, "[Metrics] ConntrackInfo[%d]: SIP=%s, DIP=%s, Sport=%d, Dport=%d, Proto=%s, Service=%s, State=%s, Bytes=%d, Pkts=%d\n",
+					i, ct.Sip, ct.Dip, ct.Sport, ct.Dport, ct.Proto, ct.ServiceName, ct.CState, ct.Bytes, ct.Pkts)
+			}
+		}
+
+		localStats := make(map[ConntrackKey]Stats, len(localConntrackInfo))
+		for _, ct := range localConntrackInfo {
 			key := MakeConntrackKey(ct)
 			localStats[key] = Stats{
 				Bytes:   ct.Bytes,
@@ -920,46 +806,63 @@ func RunGetConntrack(ctx context.Context) {
 		}
 
 		mutex.Lock()
+		ConntrackInfo = localConntrackInfo // Update global ConntrackInfo with fresh data from eBPF
 		ConntrackStats = localStats
+		tk.LogIt(tk.LogDebug, "[Metrics] Updated global ConntrackInfo with %d entries and ConntrackStats with %d entries\n", len(ConntrackInfo), len(localStats))
 		mutex.Unlock()
 
-		time.Sleep(PromethusDefaultPeriod)
-	}
+		time.Sleep(PrometheusDefaultPeriod)
+		return nil
+	}, "conntrack_collection", ctx)
 }
 
 func RunGetEndpoint(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			info, err := hooks.NetEpHostGet()
-			if err != nil {
-				tk.LogIt(tk.LogDebug, "[Prometheus] Error occurred while getting endpoint info: %v\n", err)
-				continue
-			}
-
-			mutex.Lock()
-			EndPointInfo = info
-			mutex.Unlock()
+	safeGoroutineOperation(func(ctx context.Context) error {
+		if hooks == nil {
+			time.Sleep(PrometheusDefaultPeriod)
+			return nil
+		}
+		info, err := hooks.NetEpHostGet()
+		if err != nil {
+			return fmt.Errorf("endpoint info get failed: %v", err)
 		}
 
-		time.Sleep(PromethusDefaultPeriod)
-	}
+		mutex.Lock()
+		EndPointInfo = info
+		mutex.Unlock()
+
+		// Update Prometheus gauge metrics for endpoint health.
+		// Single definition: anything not "ok" counts as unhealthy.
+		var healthyCount, unhealthyCount uint64
+		for _, ep := range info {
+			if ep.CurrState == "ok" {
+				healthyCount++
+			} else {
+				unhealthyCount++
+			}
+		}
+		healthyHostCount.Set(float64(healthyCount))
+		unHealthyHostCount.Set(float64(unhealthyCount))
+
+		if enableSharedMetrics {
+			SetSharedMetric("healthy_host_count", float64(healthyCount))
+			SetSharedMetric("unhealthy_host_count", float64(unhealthyCount))
+		}
+
+		time.Sleep(PrometheusDefaultPeriod)
+		return nil
+	}, "endpoint_collection", ctx)
 }
 
 func RunGetLBRule(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
+	safeGoroutineOperation(func(ctx context.Context) error {
+		if hooks == nil {
+			time.Sleep(PrometheusDefaultPeriod)
+			return nil
 		}
-
 		info, err := hooks.NetLbRuleGet()
 		if err != nil {
-			tk.LogIt(tk.LogDebug, "[Prometheus] Error occurred while getting LB rule info: %v\n", err)
-			continue
+			return fmt.Errorf("LB rule get failed: %v", err)
 		}
 
 		mutex.Lock()
@@ -972,171 +875,575 @@ func RunGetLBRule(ctx context.Context) {
 			SetSharedMetric("lb_rule_count", float64(len(info)))
 		}
 
-		time.Sleep(PromethusDefaultPeriod)
-	}
+		time.Sleep(PrometheusDefaultPeriod)
+		return nil
+	}, "lbrule_collection", ctx)
 }
 
+// RunActiveConntrackCount is the main entry point - delegates to optimized version
 func RunActiveConntrackCount(ctx context.Context) {
+	safeGoroutineOperation(func(ctx context.Context) error {
+		RunOptimizedActiveConntrackCount(ctx)
+		return nil
+	}, "active_conntrack", ctx)
+}
+
+// RunOptimizedActiveConntrackCount - periodic conntrack processing feeding Prometheus metrics
+func RunOptimizedActiveConntrackCount(ctx context.Context) {
+	ticker := time.NewTicker(GetCollectionInterval(Critical)) // 10s
+	defer ticker.Stop()
+
+	tk.LogIt(tk.LogInfo, "[Metrics] Conntrack metrics collection started (interval: %v)\n", GetCollectionInterval(Critical))
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		default:
-			mutex.Lock()
-			info := make([]cmn.CtInfo, len(ConntrackInfo))
-			copy(info, ConntrackInfo)
-			mutex.Unlock()
 
-			// Initialize counters
-			var (
-				tcpCount    int
-				udpCount    int
-				sctpCount   int
-				closedCount int
-				activeCount int
-				newFlows    int
-				errorCount  int
-				newRequests = make(map[string]int)
-				newErrors   = make(map[string]int)
-			)
-
-			// Constants for protocol and state
-			const (
-				ProtoTCP    = "tcp"
-				ProtoUDP    = "udp"
-				ProtoSCTP   = "sctp"
-				StateClosed = "closed"
-			)
-
-			currentConntrackInfo := make(map[ConntrackKey]bool)
-
-			for _, ct := range info {
-				if ct.CState == StateClosed {
-					closedCount++
-				} else {
-					// Generate key and check for new flows
-					key := MakeConntrackKey(ct)
-					if !prevConntrackInfo[key] {
-						newFlows++
-						newRequests[ct.ServiceName]++
-					}
-					activeCount++
-					switch ct.Proto {
-					case ProtoTCP:
-						tcpCount++
-					case ProtoUDP:
-						udpCount++
-					case ProtoSCTP:
-						sctpCount++
-					}
-					currentConntrackInfo[key] = true
-
-					// Check for error state
-					if isErrorState(ct) {
-						errorCount++
-						newErrors[ct.ServiceName]++
-					}
-				}
-			}
-
-			// Calculate deleted flows which are not present in the current conntrack info
-			// but were present in the previous conntrack info
-			// This is done to calculate the number of flows that have been closed
-			// and are no longer present in the conntrack table
-			for key := range prevConntrackInfo {
-				if !currentConntrackInfo[key] {
-					closedCount++
-				}
-			}
-
-			// Update Prometheus metrics
-			activeConntrackCount.Set(float64(activeCount))
-			activeFlowCountTcp.Set(float64(tcpCount))
-			activeFlowCountUdp.Set(float64(udpCount))
-			activeFlowCountSctp.Set(float64(sctpCount))
-			inActiveFlowCount.Set(float64(closedCount))
-			newFlowCount.Set(float64(newFlows))
-
-			// Increment the total requests and errors counters
-			totalRequests.Add(float64(newFlows))
-			totalErrors.Add(float64(errorCount))
-
-			// Update shared metrics
-			if enableSharedMetrics {
-				SetSharedMetric("active_conntrack_count", float64(activeCount))
-				SetSharedMetric("active_flow_count_tcp", float64(tcpCount))
-				SetSharedMetric("active_flow_count_udp", float64(udpCount))
-				SetSharedMetric("active_flow_count_sctp", float64(sctpCount))
-				SetSharedMetric("inactive_flow_count", float64(closedCount))
-				SetSharedMetric("new_flow_count", float64(newFlows))
-
-				AddSharedMetric("total_requests", float64(newFlows))
-				AddSharedMetric("total_errors", float64(errorCount))
-			}
-
-			// Increment the total requests and errors counters per service
-			for service, count := range newRequests {
-				totalRequestsPerService.WithLabelValues(service).Add(float64(count))
-				if enableSharedMetrics {
-					AddLabeledMetric("total_requests_per_service", map[string]string{"service": service}, float64(count))
-				}
-			}
-			for service, count := range newErrors {
-				totalErrorsPerService.WithLabelValues(service).Add(float64(count))
-				if enableSharedMetrics {
-					AddLabeledMetric("total_errors_per_service", map[string]string{"service": service}, float64(count))
-				}
-			}
-
-			// If there is no newErros, set init value
-			if len(newErrors) == 0 {
-				totalErrorsPerService.WithLabelValues("default").Add(float64(0))
-				if enableSharedMetrics {
-					AddLabeledMetric("total_errors_per_service", map[string]string{"service": "default"}, float64(0))
-				}
-			}
-
-			// Update the previous conntrack info
-			mutex.Lock()
-			prevConntrackInfo = currentConntrackInfo
-			mutex.Unlock()
+		case <-ticker.C:
+			conntrackData := getConntrackDataOptimized()
+			processConntrackDataOptimized(conntrackData)
 		}
-		time.Sleep(PromethusDefaultPeriod)
 	}
 }
 
-func RunHostCount(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
+// getConntrackDataOptimized retrieves a snapshot copy of the current conntrack data
+func getConntrackDataOptimized() []cmn.CtInfo {
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	conntrackSlice := make([]cmn.CtInfo, len(ConntrackInfo))
+	copy(conntrackSlice, ConntrackInfo)
+
+	return conntrackSlice
+}
+
+// UnifiedMetrics holds all metric values to ensure consistency across systems
+type UnifiedMetrics struct {
+	// Connection tracking metrics
+	ActiveCount uint64
+	TcpCount    uint64
+	UdpCount    uint64
+	SctpCount   uint64
+	ClosedCount uint64
+	NewFlows    uint64
+	ErrorCount  uint64
+
+	// Traffic metrics
+	TotalBytes           uint64
+	TotalPackets         uint64
+	TcpBytesProcessed    uint64
+	UdpBytesProcessed    uint64
+	SctpBytesProcessed   uint64
+	TcpPacketsProcessed  uint64
+	UdpPacketsProcessed  uint64
+	SctpPacketsProcessed uint64
+
+	// Service-level metrics
+	ServiceRequests map[string]uint64
+	ServiceErrors   map[string]uint64
+	ServiceBytes    map[string]uint64
+	ServicePackets  map[string]uint64
+
+	// Distribution metrics
+	ServiceTraffic    map[string]float64
+	ServiceDipTraffic map[string]map[string]float64
+	ServiceSipPackets map[string]map[string]float64 // NEW: service -> client_ip -> packet_count
+}
+
+// processConntrackDataOptimized processes conntrack data with unified metrics across all systems.
+// Semantics:
+//   - A request is counted exactly once per connection: at creation for flows
+//     seen active, or at close for short-lived flows that appear already closed.
+//   - Closed entries lingering in the conntrack table are finalized once and
+//     then ignored (finalizedClosedFlows), never re-counted per sweep.
+//   - Errors are counted on state transition, not per sweep.
+//   - The first sweep after Init only seeds baselines (no counter adds), so
+//     pre-existing flows do not produce a phantom traffic burst.
+func processConntrackDataOptimized(info []cmn.CtInfo) {
+	// Initialize unified metrics structure
+	unified := &UnifiedMetrics{
+		ServiceRequests:   make(map[string]uint64),
+		ServiceErrors:     make(map[string]uint64),
+		ServiceBytes:      make(map[string]uint64),
+		ServicePackets:    make(map[string]uint64),
+		ServiceTraffic:    make(map[string]float64, MaxPoolStatsServiceSize),
+		ServiceDipTraffic: make(map[string]map[string]float64, MaxPoolStatsServiceSize),
+		ServiceSipPackets: make(map[string]map[string]float64, MaxPoolStatsServiceSize),
+	}
+
+	currentConntrackInfo := make(map[ConntrackKey]bool)
+	currentConntrackStats := make(map[ConntrackKey]Stats)
+	currentClosedFlows := make(map[ConntrackKey]bool)
+	currentErrorFlows := make(map[ConntrackKey]bool)
+
+	// Get current ConntrackStats with proper locking
+	mutex.Lock()
+	localConntrackStats := make(map[ConntrackKey]Stats, len(ConntrackStats))
+	for k, stats := range ConntrackStats {
+		localConntrackStats[k] = stats
+	}
+	mutex.Unlock()
+
+	conntrackRWMutex.RLock()
+	seedOnly := firstCollectionCycle
+	localPrevConntrackInfo := make(map[ConntrackKey]bool, len(prevConntrackInfo))
+	for k, v := range prevConntrackInfo {
+		localPrevConntrackInfo[k] = v
+	}
+	localPrevConntrackStats := make(map[ConntrackKey]Stats, len(prevConntrackStats))
+	for k, v := range prevConntrackStats {
+		localPrevConntrackStats[k] = v
+	}
+	localFinalizedClosed := make(map[ConntrackKey]bool, len(finalizedClosedFlows))
+	for k, v := range finalizedClosedFlows {
+		localFinalizedClosed[k] = v
+	}
+	localPrevErrorFlows := make(map[ConntrackKey]bool, len(prevErrorFlows))
+	for k, v := range prevErrorFlows {
+		localPrevErrorFlows[k] = v
+	}
+	conntrackRWMutex.RUnlock()
+
+	// Process each conntrack entry and accumulate unified metrics
+	tk.LogIt(tk.LogDebug, "[Metrics] Processing %d conntrack entries for unified metrics\n", len(info))
+	for _, ct := range info {
+		key := MakeConntrackKey(ct)
+
+		// Process closed connections' FINAL metrics exactly once
+		if ct.CState == "closed" {
+			unified.ClosedCount++
+			currentClosedFlows[key] = true
+
+			// Already finalized in an earlier cycle - the entry is just
+			// lingering in the conntrack table; don't re-count it
+			if localFinalizedClosed[key] {
+				continue
+			}
+
+			// Extract serviceName from KEY (always available): for closed
+			// connections ct.ServiceName may be empty/cleared by eBPF, but the
+			// serviceName is preserved in the ConntrackKey from establishment
+			sip, _, dip, _, _, serviceName := parseConntrackKey(key)
+
+			// Capture final metrics for closed connection
+			if currentStats, exists := localConntrackStats[key]; exists && !seedOnly {
+				wasTracked := localPrevConntrackInfo[key]
+				var finalDiffBytes, finalDiffPackets uint64
+
+				// Check if we've seen this connection before (has previous stats)
+				if prevStats, hasPrevStats := localPrevConntrackStats[key]; hasPrevStats {
+					// Connection was tracked previously - calculate delta
+					if currentStats.Bytes >= prevStats.Bytes {
+						finalDiffBytes = currentStats.Bytes - prevStats.Bytes
+					}
+					if currentStats.Packets >= prevStats.Packets {
+						finalDiffPackets = currentStats.Packets - prevStats.Packets
+					}
+				} else {
+					// Short-lived connection that appeared and closed between
+					// collection cycles: use TOTAL stats as its traffic
+					finalDiffBytes = currentStats.Bytes
+					finalDiffPackets = currentStats.Packets
+					tk.LogIt(tk.LogDebug, "[Metrics] NEW closed connection (short-lived): %s->%s, TotalBytes=%d, TotalPkts=%d\n",
+						ct.Sip, ct.Dip, finalDiffBytes, finalDiffPackets)
+				}
+
+				// Add final metrics to unified totals
+				unified.TotalBytes += finalDiffBytes
+				unified.TotalPackets += finalDiffPackets
+
+				// Protocol-specific tracking for closed connections
+				switch ct.Proto {
+				case "tcp":
+					unified.TcpBytesProcessed += finalDiffBytes
+					unified.TcpPacketsProcessed += finalDiffPackets
+				case "udp":
+					unified.UdpBytesProcessed += finalDiffBytes
+					unified.UdpPacketsProcessed += finalDiffPackets
+				case "sctp":
+					unified.SctpBytesProcessed += finalDiffBytes
+					unified.SctpPacketsProcessed += finalDiffPackets
+				}
+
+				// Per-service tracking for closed connections - USE serviceName from KEY
+				if serviceName != "" {
+					unified.ServiceBytes[serviceName] += finalDiffBytes
+					unified.ServicePackets[serviceName] += finalDiffPackets
+
+					// Count a request only if the flow was never seen active:
+					// flows seen active were already counted at creation
+					if !wasTracked {
+						unified.NewFlows++
+						unified.ServiceRequests[serviceName]++
+					}
+
+					// Update Prometheus counters for traffic visibility
+					lbRuleInteractionBytes.WithLabelValues(serviceName, sip, dip).Add(float64(finalDiffBytes))
+					lbRuleInteractionPackets.WithLabelValues(serviceName, sip, dip).Add(float64(finalDiffPackets))
+					if enableSharedMetrics {
+						AddLabeledMetric("lb_rule_interaction_bytes", map[string]string{"service": serviceName, "sip": sip, "dip": dip}, float64(finalDiffBytes))
+						AddLabeledMetric("lb_rule_interaction_packets", map[string]string{"service": serviceName, "sip": sip, "dip": dip}, float64(finalDiffPackets))
+					}
+
+					// Update distribution tracking
+					if _, exists := unified.ServiceTraffic[serviceName]; !exists {
+						unified.ServiceTraffic[serviceName] = 0
+						unified.ServiceDipTraffic[serviceName] = make(map[string]float64)
+						unified.ServiceSipPackets[serviceName] = make(map[string]float64)
+					}
+					unified.ServiceTraffic[serviceName] += float64(finalDiffBytes)
+					unified.ServiceDipTraffic[serviceName][dip] += float64(finalDiffBytes)
+					unified.ServiceSipPackets[serviceName][sip] += float64(finalDiffPackets)
+				}
+
+				closedConnectionsProcessed.Inc()
+				tk.LogIt(tk.LogDebug, "[Metrics] Processed CLOSED flow final metrics: %s->%s, FinalBytes=%d, FinalPkts=%d, ServiceName=%s\n",
+					ct.Sip, ct.Dip, finalDiffBytes, finalDiffPackets, serviceName)
+			}
+			// Closed connections are NOT added to currentConntrackInfo (they're gone)
+			continue
 		}
 
-		mutex.Lock()
-		localEndPointInfo := EndPointInfo
-		mutex.Unlock()
+		isNewFlow := !localPrevConntrackInfo[key]
 
-		healthyCount := 0
-		unHealthyCount := 0
+		if isNewFlow && !seedOnly {
+			unified.NewFlows++
+			tk.LogIt(tk.LogDebug, "[Metrics] Found new flow: %s (Service: %s)\n", string(key), ct.ServiceName)
 
-		for _, ep := range localEndPointInfo {
-			if ep.CurrState == "ok" {
-				healthyCount++
-			} else if ep.CurrState == "nok" {
-				unHealthyCount++
+			// Request counting: a request is counted exactly once, at flow creation.
+			// CRITICAL: Extract serviceName from KEY (always preserved) not ct.ServiceName (may be empty)
+			_, _, _, _, _, serviceNameForRequest := parseConntrackKey(key)
+			if serviceNameForRequest != "" {
+				unified.ServiceRequests[serviceNameForRequest]++
+			}
+		}
+		unified.ActiveCount++
+		tk.LogIt(tk.LogDebug, "[Metrics] Active flow: %s->%s, Service=%s, Bytes=%d, Pkts=%d\n",
+			ct.Sip, ct.Dip, ct.ServiceName, ct.Bytes, ct.Pkts)
+
+		// Protocol-specific flow counting
+		switch ct.Proto {
+		case "tcp":
+			unified.TcpCount++
+		case "udp":
+			unified.UdpCount++
+		case "sctp":
+			unified.SctpCount++
+		}
+
+		currentConntrackInfo[key] = true
+
+		// Error accounting: count transitions INTO an error state, not error
+		// state per sweep - a single stuck connection must not produce a
+		// constant fake error rate
+		if isErrorState(ct) {
+			currentErrorFlows[key] = true
+			if !seedOnly && !localPrevErrorFlows[key] {
+				unified.ErrorCount++
+				// CRITICAL: Use serviceName from KEY (always preserved) not ct.ServiceName
+				_, _, _, _, _, serviceNameError := parseConntrackKey(key)
+				if serviceNameError != "" {
+					unified.ServiceErrors[serviceNameError]++
+				}
 			}
 		}
 
-		healthyHostCount.Set(float64(healthyCount))
-		unHealthyHostCount.Set(float64(unHealthyCount))
+		// Handle byte/packet counter overflow with unified metrics
+		if currentStats, exists := localConntrackStats[key]; exists {
+			// Store current stats for next cycle (always, even for new flows)
+			currentConntrackStats[key] = currentStats
 
-		if enableSharedMetrics {
-			SetSharedMetric("healthy_host_count", float64(healthyCount))
-			SetSharedMetric("unhealthy_host_count", float64(unHealthyCount))
+			if isNewFlow {
+				if seedOnly {
+					// First sweep after Init: only seed the baseline; adding the
+					// cumulative totals of pre-existing flows would produce a
+					// phantom traffic burst on (re-)enable
+					continue
+				}
+				// Truly new flow - use current stats as its initial traffic so
+				// the first cycle's traffic is captured instead of lost
+				unified.TotalBytes += currentStats.Bytes
+				unified.TotalPackets += currentStats.Packets
+
+				switch ct.Proto {
+				case "tcp":
+					unified.TcpBytesProcessed += currentStats.Bytes
+					unified.TcpPacketsProcessed += currentStats.Packets
+				case "udp":
+					unified.UdpBytesProcessed += currentStats.Bytes
+					unified.UdpPacketsProcessed += currentStats.Packets
+				case "sctp":
+					unified.SctpBytesProcessed += currentStats.Bytes
+					unified.SctpPacketsProcessed += currentStats.Packets
+				}
+
+				// CRITICAL: Use serviceName from KEY (always preserved)
+				sip, _, dip, _, _, serviceName := parseConntrackKey(key)
+				if serviceName != "" {
+					unified.ServiceBytes[serviceName] += currentStats.Bytes
+					unified.ServicePackets[serviceName] += currentStats.Packets
+
+					// Update distribution tracking for new flows
+					if _, exists := unified.ServiceTraffic[serviceName]; !exists {
+						unified.ServiceTraffic[serviceName] = 0
+						unified.ServiceDipTraffic[serviceName] = make(map[string]float64)
+						unified.ServiceSipPackets[serviceName] = make(map[string]float64)
+					}
+					unified.ServiceTraffic[serviceName] += float64(currentStats.Bytes)
+					unified.ServiceDipTraffic[serviceName][dip] += float64(currentStats.Bytes)
+					unified.ServiceSipPackets[serviceName][sip] += float64(currentStats.Packets)
+
+					// Update Prometheus counters (every 10s for real-time monitoring)
+					lbRuleInteractionBytes.WithLabelValues(serviceName, sip, dip).Add(float64(currentStats.Bytes))
+					lbRuleInteractionPackets.WithLabelValues(serviceName, sip, dip).Add(float64(currentStats.Packets))
+					if enableSharedMetrics {
+						AddLabeledMetric("lb_rule_interaction_bytes", map[string]string{"service": serviceName, "sip": sip, "dip": dip}, float64(currentStats.Bytes))
+						AddLabeledMetric("lb_rule_interaction_packets", map[string]string{"service": serviceName, "sip": sip, "dip": dip}, float64(currentStats.Packets))
+					}
+				}
+
+				tk.LogIt(tk.LogDebug, "[Conntrack] NEW flow first-cycle capture: key=%s, Bytes=%d, Pkts=%d\n",
+					string(key), currentStats.Bytes, currentStats.Packets)
+
+				continue // Move to next entry after processing new flow
+			}
+
+			prevStats, hasPrevStats := localPrevConntrackStats[key]
+			if !hasPrevStats {
+				// This shouldn't happen since isNewFlow would be true, but handle defensively
+				tk.LogIt(tk.LogWarning, "[Conntrack] Missing prev stats for existing flow %s, using current as baseline\n", string(key))
+				continue
+			}
+
+			var diffBytes, diffPackets uint64
+			counterResetDetected := false
+
+			if prevStats.Bytes > currentStats.Bytes {
+				// Counter reset detected - use current value as the delta (new baseline)
+				counterResetEvents.Inc()
+				counterResetDetected = true
+				diffBytes = currentStats.Bytes // Use current as new baseline delta
+				tk.LogIt(tk.LogWarning, "[Conntrack] Byte counter RESET: key=%s prev=%d curr=%d, using current=%d as delta\n",
+					string(key), prevStats.Bytes, currentStats.Bytes, diffBytes)
+			} else {
+				diffBytes = currentStats.Bytes - prevStats.Bytes
+
+				// Additional validation: detect and log unreasonably large jumps
+				if diffBytes > 10*1024*1024*1024 {
+					tk.LogIt(tk.LogWarning, "[Conntrack] SPIKE ALERT: Huge byte diff for key=%s prev=%d curr=%d diff=%d (%.2fGB in 10s)\n",
+						string(key), prevStats.Bytes, currentStats.Bytes, diffBytes, float64(diffBytes)/(1024*1024*1024))
+				}
+			}
+
+			// Handle packet counter with proper reset detection
+			if prevStats.Packets > currentStats.Packets {
+				counterResetDetected = true
+				diffPackets = currentStats.Packets // Use current as new baseline delta
+				tk.LogIt(tk.LogWarning, "[Conntrack] Packet counter RESET: key=%s prev=%d curr=%d, using current=%d as delta\n",
+					string(key), prevStats.Packets, currentStats.Packets, diffPackets)
+			} else {
+				diffPackets = currentStats.Packets - prevStats.Packets
+
+				if diffPackets > 10*1000*1000 {
+					tk.LogIt(tk.LogWarning, "[Conntrack] SPIKE ALERT: Huge packet diff for key=%s prev=%d curr=%d diff=%d (%.2fM in 10s)\n",
+						string(key), prevStats.Packets, currentStats.Packets, diffPackets, float64(diffPackets)/(1000*1000))
+				}
+			}
+
+			// Log counter reset but DON'T skip metrics
+			if counterResetDetected {
+				tk.LogIt(tk.LogDebug, "[Conntrack] Counter reset handled for flow %s, using deltas: bytes=%d, pkts=%d\n",
+					string(key), diffBytes, diffPackets)
+			}
+
+			// Accumulate unified totals
+			unified.TotalBytes += diffBytes
+			unified.TotalPackets += diffPackets
+
+			// Protocol-specific byte and packet tracking using unified approach
+			switch ct.Proto {
+			case "tcp":
+				unified.TcpBytesProcessed += diffBytes
+				unified.TcpPacketsProcessed += diffPackets
+			case "udp":
+				unified.UdpBytesProcessed += diffBytes
+				unified.UdpPacketsProcessed += diffPackets
+			case "sctp":
+				unified.SctpBytesProcessed += diffBytes
+				unified.SctpPacketsProcessed += diffPackets
+			}
+
+			// Parse conntrack key for service and endpoint information
+			// (serviceName from the KEY is always preserved; ct.ServiceName may be empty)
+			sip, _, dip, _, _, serviceName := parseConntrackKey(key)
+
+			// Accumulate per-service totals in unified metrics
+			if serviceName != "" {
+				unified.ServiceBytes[serviceName] += diffBytes
+				unified.ServicePackets[serviceName] += diffPackets
+			}
+
+			// Per-service and per-endpoint traffic calculation for distribution ratios
+			if _, exists := unified.ServiceTraffic[serviceName]; !exists {
+				unified.ServiceTraffic[serviceName] = 0
+				unified.ServiceDipTraffic[serviceName] = make(map[string]float64)
+				unified.ServiceSipPackets[serviceName] = make(map[string]float64)
+			}
+			unified.ServiceTraffic[serviceName] += float64(diffBytes)
+			unified.ServiceDipTraffic[serviceName][dip] += float64(diffBytes)
+			unified.ServiceSipPackets[serviceName][sip] += float64(diffPackets)
+
+			// Update Prometheus counters for traffic visibility (every 10s for real-time monitoring)
+			lbRuleInteractionBytes.WithLabelValues(serviceName, sip, dip).Add(float64(diffBytes))
+			lbRuleInteractionPackets.WithLabelValues(serviceName, sip, dip).Add(float64(diffPackets))
+			if enableSharedMetrics {
+				AddLabeledMetric("lb_rule_interaction_bytes", map[string]string{"service": serviceName, "sip": sip, "dip": dip}, float64(diffBytes))
+				AddLabeledMetric("lb_rule_interaction_packets", map[string]string{"service": serviceName, "sip": sip, "dip": dip}, float64(diffPackets))
+			}
 		}
 
-		time.Sleep(PromethusDefaultPeriod)
+	}
+
+	// Update all prometheus and shared metrics using unified values
+	updateAllMetricSystems(unified, seedOnly)
+
+	if !seedOnly {
+		// Update Prometheus counters for real-time monitoring; per-service
+		// traffic counters advance in the same cycle as the totals
+		for service, traffic := range unified.ServiceTraffic {
+			serviceTrafficBytes.WithLabelValues(service).Add(traffic)
+
+			// Send raw endpoint traffic data per service
+			for dip, dipTraffic := range unified.ServiceDipTraffic[service] {
+				endpointTrafficBytes.WithLabelValues(service, dip).Add(dipTraffic)
+			}
+
+			// Send raw client(source ip) request packet data per service
+			for sip, sipPackets := range unified.ServiceSipPackets[service] {
+				clientTrafficPackets.WithLabelValues(service, sip).Add(sipPackets)
+			}
+		}
+
+		// Update service packet counter (same pattern as bytes)
+		for service, packets := range unified.ServicePackets {
+			serviceTrafficPackets.WithLabelValues(service).Add(float64(packets))
+		}
+	}
+
+	// Only keep stats for connections still present in currentConntrackInfo, so
+	// closed/disappeared connections cannot persist and cause phantom metrics
+	cleanedPrevStats := make(map[ConntrackKey]Stats, len(currentConntrackInfo))
+	for key := range currentConntrackInfo {
+		// Only store stats for connections that are currently active
+		// This ensures closed connections are removed from tracking
+		if stats, exists := localConntrackStats[key]; exists {
+			cleanedPrevStats[key] = stats
+		}
+	}
+
+	// Enforce the bounded-map limit; on overflow trim arbitrary entries (maps
+	// are unordered) and log a warning
+	if len(cleanedPrevStats) > MaxPrevConntrackEntries {
+		trimCount := len(cleanedPrevStats) - MaxPrevConntrackEntries
+		trimmed := 0
+		for key := range cleanedPrevStats {
+			if trimmed >= trimCount {
+				break
+			}
+			delete(cleanedPrevStats, key)
+			trimmed++
+		}
+		tk.LogIt(tk.LogWarning, "[Metrics] MEMORY PROTECTION: Trimmed %d entries from prevConntrackStats (max=%d)\n",
+			trimmed, MaxPrevConntrackEntries)
+	}
+
+	// Log cleanup stats for observability
+	removedCount := len(localPrevConntrackStats) - len(cleanedPrevStats)
+	if removedCount > 0 {
+		tk.LogIt(tk.LogDebug, "[Metrics] Cleaned up %d disappeared connections from tracking (prev=%d, current=%d)\n",
+			removedCount, len(localPrevConntrackStats), len(cleanedPrevStats))
+		atomic.AddUint64(&prevStatsCleanupCount, uint64(removedCount))
+	}
+
+	// Update the previous conntrack info and stats for overflow handling
+	conntrackRWMutex.Lock()
+	prevConntrackInfo = currentConntrackInfo
+	// Use cleaned stats instead of raw localConntrackStats
+	prevConntrackStats = cleanedPrevStats
+	// Closed keys seen this cycle are all finalized now (processed this cycle or
+	// earlier); keys that left the conntrack table drop out automatically
+	finalizedClosedFlows = currentClosedFlows
+	prevErrorFlows = currentErrorFlows
+	firstCollectionCycle = false
+	conntrackRWMutex.Unlock()
+}
+
+// updateAllMetricSystems updates prometheus and shared metrics using unified
+// values. With seedOnly (first sweep after Init), only point-in-time gauges are
+// updated; cumulative counters are skipped because the sweep only seeded
+// baselines.
+func updateAllMetricSystems(unified *UnifiedMetrics, seedOnly bool) {
+	// 1. Update point-in-time gauges
+	activeConntrackCount.Set(float64(unified.ActiveCount))
+	activeFlowCountTcp.Set(float64(unified.TcpCount))
+	activeFlowCountUdp.Set(float64(unified.UdpCount))
+	activeFlowCountSctp.Set(float64(unified.SctpCount))
+	newFlowCount.Set(float64(unified.NewFlows))
+
+	// Mirror the gauges into the shared-metrics store for the /metrics/* REST endpoints
+	if enableSharedMetrics {
+		SetSharedMetric("active_conntrack_count", float64(unified.ActiveCount))
+		SetSharedMetric("active_flow_count_tcp", float64(unified.TcpCount))
+		SetSharedMetric("active_flow_count_udp", float64(unified.UdpCount))
+		SetSharedMetric("active_flow_count_sctp", float64(unified.SctpCount))
+		SetSharedMetric("inactive_flow_count", float64(unified.ClosedCount))
+		SetSharedMetric("new_flow_count", float64(unified.NewFlows))
+	}
+
+	if seedOnly {
+		return
+	}
+
+	// 2. Update cumulative counters
+	// Request counting: unified exactly-once semantics (counted at creation, or
+	// at close for short-lived flows never seen active)
+	totalRequests.Add(float64(unified.NewFlows))
+	totalErrors.Add(float64(unified.ErrorCount))
+
+	// Update protocol-specific Prometheus metrics
+	processedBytes.Add(float64(unified.TotalBytes))
+	processedPackets.Add(float64(unified.TotalPackets))
+	processedTCPBytes.Add(float64(unified.TcpBytesProcessed))
+	processedUDPBytes.Add(float64(unified.UdpBytesProcessed))
+	processedSCTPBytes.Add(float64(unified.SctpBytesProcessed))
+	processedTCPPackets.Add(float64(unified.TcpPacketsProcessed))
+	processedUDPPackets.Add(float64(unified.UdpPacketsProcessed))
+	processedSCTPPackets.Add(float64(unified.SctpPacketsProcessed))
+
+	// Update per-service Prometheus metrics
+	for service, count := range unified.ServiceRequests {
+		totalRequestsPerService.WithLabelValues(service).Add(float64(count))
+	}
+	for service, count := range unified.ServiceErrors {
+		totalErrorsPerService.WithLabelValues(service).Add(float64(count))
+	}
+
+	// Mirror the cumulative counters into the shared-metrics store
+	if enableSharedMetrics {
+		AddSharedMetric("total_requests", float64(unified.NewFlows))
+		AddSharedMetric("total_errors", float64(unified.ErrorCount))
+		AddSharedMetric("processed_bytes", float64(unified.TotalBytes))
+		AddSharedMetric("processed_packets", float64(unified.TotalPackets))
+		AddSharedMetric("processed_tcp_bytes", float64(unified.TcpBytesProcessed))
+		AddSharedMetric("processed_udp_bytes", float64(unified.UdpBytesProcessed))
+		AddSharedMetric("processed_sctp_bytes", float64(unified.SctpBytesProcessed))
+		for service, count := range unified.ServiceRequests {
+			AddLabeledMetric("total_requests_per_service", map[string]string{"service": service}, float64(count))
+		}
+		for service, count := range unified.ServiceErrors {
+			AddLabeledMetric("total_errors_per_service", map[string]string{"service": service}, float64(count))
+		}
 	}
 }
 
@@ -1148,238 +1455,562 @@ func parseConntrackKey(key ConntrackKey) (sip, sport, dip, dport, proto, service
 	return "", "", "", "", "", ""
 }
 
-func RunProcessedStatistic(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			mutex.Lock()
-			localPrevConntrackStats := make(map[ConntrackKey]Stats, len(ConntrackStats))
-			serviceTraffic := make(map[string]float64)
-			serviceDipTraffic := make(map[string]map[string]float64)
-
-			for k, ct := range ConntrackStats {
-				localPrevConntrackStats[k] = ct
-			}
-			mutex.Unlock()
-
-			for k, ct := range localPrevConntrackStats {
-				prevStats, exists := prevConntrackStats[k]
-				if !exists {
-					prevStats = Stats{Bytes: 0, Packets: 0}
-				}
-
-				var diffBytes uint64
-				var diffPackets uint64
-
-				if prevStats.Bytes > ct.Bytes {
-					diffBytes = ct.Bytes
-				} else {
-					diffBytes = ct.Bytes - prevStats.Bytes
-				}
-
-				if prevStats.Packets > ct.Packets {
-					diffPackets = ct.Packets
-				} else {
-					diffPackets = ct.Packets - prevStats.Packets
-				}
-
-				if diffBytes > 0 || diffPackets > 0 {
-					// Update processed bytes and packets
-					processedBytes.Add(float64(diffBytes))
-					processedPackets.Add(float64(diffPackets))
-
-					// Update protocol-specific metrics
-					if strings.Contains(string(k), "tcp") {
-						processedTCPBytes.Add(float64(diffBytes))
-					} else if strings.Contains(string(k), "udp") {
-						processedUDPBytes.Add(float64(diffBytes))
-					} else if strings.Contains(string(k), "sctp") {
-						processedSCTPBytes.Add(float64(diffBytes))
-					}
-
-					// Update per-rule and per-endpoint metrics
-					sip, _, dip, _, _, serviceName := parseConntrackKey(k)
-					lbRuleInteractionBytes.WithLabelValues(serviceName, sip, dip).Add(float64(diffBytes))
-					lbRuleInteractionPackets.WithLabelValues(serviceName, sip, dip).Add(float64(diffPackets))
-
-					// Update total traffic per service and traffic per dip
-					// serviceTraffic calculates the total traffic per service
-					// serviceDipTraffic calculates the total traffic per dip per service
-					// This is used to calculate the distribution ratio of traffic across backend endpoints per service
-					// and the total traffic distribution across backend endpoints per service
-					// This is used to calculate the total traffic distribution across backend endpoints per service
-					if _, exists := serviceTraffic[serviceName]; !exists {
-						serviceTraffic[serviceName] = 0
-						serviceDipTraffic[serviceName] = make(map[string]float64)
-					}
-					serviceTraffic[serviceName] += float64(ct.Bytes)
-					serviceDipTraffic[serviceName][dip] += float64(ct.Bytes)
-
-					// Update shared metrics if enabled
-					if enableSharedMetrics {
-						AddSharedMetric("processed_bytes", float64(diffBytes))
-						AddSharedMetric("processed_packets", float64(diffPackets))
-
-						if strings.Contains(string(k), "tcp") {
-							AddSharedMetric("processed_tcp_bytes", float64(diffBytes))
-						} else if strings.Contains(string(k), "udp") {
-							AddSharedMetric("processed_udp_bytes", float64(diffBytes))
-						} else if strings.Contains(string(k), "sctp") {
-							AddSharedMetric("processed_sctp_bytes", float64(diffBytes))
-						}
-
-						AddLabeledMetric("lb_rule_interaction_bytes", map[string]string{"service": serviceName, "sip": sip, "dip": dip}, float64(diffBytes))
-						AddLabeledMetric("lb_rule_interaction_packets", map[string]string{"service": serviceName, "sip": sip, "dip": dip}, float64(diffPackets))
-					}
-				}
-			}
-
-			// Calculate distribution ratio (endpoint load dist per service) and update the metrics
-			// Calculate distribution ratio (load dist per service) and update the metrics
-			totalTraffic := 0.0
-			for _, traffic := range serviceTraffic {
-				totalTraffic += traffic
-			}
-
-			for service, traffic := range serviceTraffic {
-				for dip, dipTraffic := range serviceDipTraffic[service] {
-					ratio := dipTraffic / traffic
-					endpointLoadDistsPerService.WithLabelValues(service, dip).Set(ratio)
-					if enableSharedMetrics {
-						AddLabeledMetric("endpoint_load_dists_per_service", map[string]string{"service": service, "dip": dip}, ratio)
-					}
-					// Log for debug
-					tk.LogIt(tk.LogDebug, "Service: %s, DIP: %s, Ratio: %f\n", service, dip, ratio)
-				}
-
-				serviceRatio := traffic / totalTraffic
-
-				totalLoadDistsPerService.WithLabelValues(service).Set(serviceRatio)
-				if enableSharedMetrics {
-					AddLabeledMetric("service_distribution_ratio", map[string]string{"service": service}, serviceRatio)
-				}
-				// Log for debug
-				tk.LogIt(tk.LogDebug, "Service: %s, Total Traffic: %f, Service Ratio: %f\n", service, traffic, serviceRatio)
-			}
-
-			mutex.Lock()
-			prevConntrackStats = localPrevConntrackStats
-			mutex.Unlock()
-		}
-
-		time.Sleep(PromethusDefaultPeriod)
+// parseFwCounterPackets parses the data-plane rule counter string, formatted as
+// "packets:bytes" (see pkg/loxinet/rules.go), and returns the packets count.
+func parseFwCounterPackets(counter string) (uint64, bool) {
+	fields := strings.SplitN(counter, ":", 2)
+	if len(fields) == 0 || fields[0] == "" {
+		return 0, false
 	}
-}
-
-func RunLcusCalculator(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			var LCUNewFlowCount = &dto.Metric{}
-			var LCUActiveFlowCount = &dto.Metric{}
-			var LCURuleCount = &dto.Metric{}
-			var LCUProcessedBytes = &dto.Metric{}
-
-			mutex.Lock()
-
-			if err := newFlowCount.Write(LCUNewFlowCount); err != nil {
-				tk.LogIt(tk.LogError, "[Prometheus] Error writing newFlowCount: %v\n", err)
-			}
-			if err := activeConntrackCount.Write(LCUActiveFlowCount); err != nil {
-				tk.LogIt(tk.LogError, "[Prometheus] Error writing activeConntrackCount: %v\n", err)
-			}
-			if err := ruleCount.Write(LCURuleCount); err != nil {
-				tk.LogIt(tk.LogError, "[Prometheus] Error writing ruleCount: %v\n", err)
-			}
-			if err := processedBytes.Write(LCUProcessedBytes); err != nil {
-				tk.LogIt(tk.LogError, "[Prometheus] Error writing processedBytes: %v\n", err)
-			}
-			localConntrackStatsLen := len(ConntrackStats)
-			mutex.Unlock()
-
-			// LCU of accumulated Flow count = Flowcount / 2160000
-			// LCU of Rule = ruleCount/1000
-			// LCU of Byte = processedBytes(Gb)/1h
-			if LCURuleCount.Gauge != nil && LCURuleCount.Gauge.Value != nil && LCUProcessedBytes.Gauge != nil && LCUProcessedBytes.Gauge.Value != nil {
-				consumedLcus.Set(float64(localConntrackStatsLen)/2160000 +
-					*LCURuleCount.Gauge.Value/1000 +
-					(*LCUProcessedBytes.Gauge.Value*8)/360000000000) // (byte * 8)/ (60*60*1G)/10
-			}
-		}
-		time.Sleep(PromethusDefaultPeriod)
+	v, parseErr := strconv.ParseUint(strings.TrimSpace(fields[0]), 10, 64)
+	if parseErr != nil {
+		return 0, false
 	}
+	return v, true
 }
 
 func RunGetFwRule(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
+	safeGoroutineOperation(func(ctx context.Context) error {
+		if hooks == nil {
+			time.Sleep(PrometheusDefaultPeriod)
+			return nil
 		}
-
 		info, err := hooks.NetFwRuleGet()
 		if err != nil {
-			tk.LogIt(tk.LogDebug, "[Prometheus] Error occurred while getting firewall rule info: %v\n", err)
-			continue
+			return fmt.Errorf("firewall rule get failed: %v", err)
 		}
 
 		mutex.Lock()
 		FWRuleInfo = info
 		mutex.Unlock()
 
-		time.Sleep(PromethusDefaultPeriod)
+		// The data-plane drop counters are cumulative per rule; add per-cycle
+		// deltas to the Prometheus counters so rate() behaves correctly
+		var totalDropsCumulative uint64
+		currentRules := make(map[string]bool, len(info))
+		for _, rule := range info {
+			drops, ok := parseFwCounterPackets(rule.Opts.Counter)
+			if !ok {
+				tk.LogIt(tk.LogDebug, "[Metrics] Unparsable firewall counter %q for pref %d\n",
+					rule.Opts.Counter, rule.Rule.Pref)
+				continue
+			}
+			ruleID := strconv.Itoa(int(rule.Rule.Pref))
+			currentRules[ruleID] = true
+			totalDropsCumulative += drops
+
+			delta := drops
+			if prev, seen := prevFwRuleDrops[ruleID]; seen && drops >= prev {
+				delta = drops - prev
+			}
+			// On first sight or counter reset (rule re-created), the full
+			// current value is the delta
+			if delta > 0 {
+				totalDropsByFwPerRule.WithLabelValues(ruleID).Add(float64(delta))
+				totalDropsByFw.Add(float64(delta))
+			}
+			prevFwRuleDrops[ruleID] = drops
+
+			if enableSharedMetrics {
+				SetLabeledMetric("total_fw_drops_per_rule", map[string]string{"fw_rule": ruleID}, float64(drops))
+			}
+		}
+
+		// Remove series and baselines for rules that no longer exist
+		for ruleID := range prevFwRuleDrops {
+			if !currentRules[ruleID] {
+				delete(prevFwRuleDrops, ruleID)
+				totalDropsByFwPerRule.DeleteLabelValues(ruleID)
+				if enableSharedMetrics {
+					DeleteLabeledMetric("total_fw_drops_per_rule", map[string]string{"fw_rule": ruleID})
+				}
+			}
+		}
+
+		fwRuleCount.Set(float64(len(info)))
+
+		if enableSharedMetrics {
+			SetSharedMetric("total_fw_drops", float64(totalDropsCumulative))
+			SetSharedMetric("firewall_rules_count", float64(len(info)))
+		}
+
+		time.Sleep(PrometheusDefaultPeriod)
+		return nil
+	}, "firewall_collection", ctx)
+}
+
+// RunSecurityRateStats - Collect unified security rate limiting statistics
+// (SYN flood, connection rate and UDP flood protection)
+func RunSecurityRateStats(ctx context.Context) {
+	safeGoroutineOperation(func(ctx context.Context) error {
+		stats, err := hooks.NetSecurityRateStatsGet()
+		if err != nil {
+			return fmt.Errorf("security rate stats get failed: %v", err)
+		}
+
+		// Calculate deltas (eBPF counters are cumulative, following conntrack pattern)
+		// Handle counter overflow/reset by checking if current < previous
+		var (
+			deltaSYNBlocked      uint64
+			deltaSYNPassed       uint64
+			deltaSYNCookies      uint64
+			deltaConnBlocked     uint64
+			deltaConnPassed      uint64
+			deltaUDPBlocked      uint64
+			deltaUDPPassed       uint64
+			deltaUDPBytesBlocked uint64
+			deltaUDPBytesPassed  uint64
+		)
+
+		// SYN flood deltas with overflow protection
+		if stats.SYNBlocked >= prevSecurityStats.SYNBlocked {
+			deltaSYNBlocked = stats.SYNBlocked - prevSecurityStats.SYNBlocked
+		}
+		if stats.SYNPassed >= prevSecurityStats.SYNPassed {
+			deltaSYNPassed = stats.SYNPassed - prevSecurityStats.SYNPassed
+		}
+		if stats.SYNCookies >= prevSecurityStats.SYNCookies {
+			deltaSYNCookies = stats.SYNCookies - prevSecurityStats.SYNCookies
+		}
+
+		// Connection rate deltas with overflow protection
+		if stats.ConnBlocked >= prevSecurityStats.ConnBlocked {
+			deltaConnBlocked = stats.ConnBlocked - prevSecurityStats.ConnBlocked
+		}
+		if stats.ConnPassed >= prevSecurityStats.ConnPassed {
+			deltaConnPassed = stats.ConnPassed - prevSecurityStats.ConnPassed
+		}
+
+		// UDP flood deltas with overflow protection
+		if stats.UDPBlocked >= prevSecurityStats.UDPBlocked {
+			deltaUDPBlocked = stats.UDPBlocked - prevSecurityStats.UDPBlocked
+		}
+		if stats.UDPPassed >= prevSecurityStats.UDPPassed {
+			deltaUDPPassed = stats.UDPPassed - prevSecurityStats.UDPPassed
+		}
+		if stats.UDPBytesBlocked >= prevSecurityStats.UDPBytesBlocked {
+			deltaUDPBytesBlocked = stats.UDPBytesBlocked - prevSecurityStats.UDPBytesBlocked
+		}
+		if stats.UDPBytesPassed >= prevSecurityStats.UDPBytesPassed {
+			deltaUDPBytesPassed = stats.UDPBytesPassed - prevSecurityStats.UDPBytesPassed
+		}
+
+		// Update Prometheus metrics with deltas (Counter.Add)
+		securitySYNBlocked.Add(float64(deltaSYNBlocked))
+		securitySYNPassed.Add(float64(deltaSYNPassed))
+		securitySYNCookies.Add(float64(deltaSYNCookies))
+		securityConnBlocked.Add(float64(deltaConnBlocked))
+		securityConnPassed.Add(float64(deltaConnPassed))
+		securityUDPBlocked.Add(float64(deltaUDPBlocked))
+		securityUDPPassed.Add(float64(deltaUDPPassed))
+		securityUDPBytesBlocked.Add(float64(deltaUDPBytesBlocked))
+		securityUDPBytesPassed.Add(float64(deltaUDPBytesPassed))
+
+		// Unique IPs is a gauge (point-in-time value, not cumulative)
+		securityUniqueIPs.Set(float64(stats.UniqueIPs))
+
+		// Store current stats for next cycle
+		prevSecurityStats = stats
+
+		time.Sleep(PrometheusDefaultPeriod)
+		return nil
+	}, "security_rate_stats", ctx)
+}
+
+// RunIPFilterStats - Collect IP filter (whitelist/blacklist) statistics
+// Pattern: Follows RunGetFwRule pattern for periodic metrics collection
+// Collects: Per-rule packet/byte counters for both blacklist and whitelist
+func RunIPFilterStats(ctx context.Context) {
+	safeGoroutineOperation(func(ctx context.Context) error {
+		entries, err := hooks.NetIPFilterGet()
+		if err != nil {
+			return fmt.Errorf("IP filter get failed: %v", err)
+		}
+
+		// Track rule counts by type
+		blacklistCount := 0
+		whitelistCount := 0
+		currentFilters := make(map[string]bool, len(entries))
+
+		// Update per-rule metrics
+		for _, entry := range entries {
+			cidr := entry.CIDR
+			priority := fmt.Sprintf("%d", entry.Priority)
+			zone := fmt.Sprintf("%d", entry.Zone)
+
+			// Create unique key for this filter rule
+			filterKey := fmt.Sprintf("%s|%s|%d|%d|", entry.FilterType, cidr, entry.Priority, entry.Zone)
+			currentFilters[filterKey] = true
+
+			// Calculate deltas (eBPF counters are cumulative)
+			var deltaPackets, deltaBytes uint64
+			if prevStats, exists := prevIPFilterStats[filterKey]; exists {
+				if entry.Packets >= prevStats.Packets {
+					deltaPackets = entry.Packets - prevStats.Packets
+				}
+				if entry.Bytes >= prevStats.Bytes {
+					deltaBytes = entry.Bytes - prevStats.Bytes
+				}
+			} else {
+				// First time seeing this rule, use current values as delta
+				deltaPackets = entry.Packets
+				deltaBytes = entry.Bytes
+			}
+
+			// Store current stats for next cycle
+			prevIPFilterStats[filterKey] = struct {
+				Packets uint64
+				Bytes   uint64
+			}{Packets: entry.Packets, Bytes: entry.Bytes}
+
+			if entry.FilterType == "blacklist" {
+				blacklistCount++
+				ipFilterBlacklistPackets.WithLabelValues(cidr, priority, zone).Add(float64(deltaPackets))
+				ipFilterBlacklistBytes.WithLabelValues(cidr, priority, zone).Add(float64(deltaBytes))
+			} else if entry.FilterType == "whitelist" {
+				whitelistCount++
+				ipFilterWhitelistPackets.WithLabelValues(cidr, priority, zone).Add(float64(deltaPackets))
+				ipFilterWhitelistBytes.WithLabelValues(cidr, priority, zone).Add(float64(deltaBytes))
+			}
+		}
+
+		// Remove series and baselines for rules that no longer exist - deleted
+		// rules would otherwise leak Prometheus series forever (unbounded
+		// cardinality on rule churn). Same pattern as the firewall collector.
+		for key := range prevIPFilterStats {
+			if currentFilters[key] {
+				continue
+			}
+			delete(prevIPFilterStats, key)
+			// key layout: type|cidr|priority|zone| (label values use the same
+			// string formatting as the key segments)
+			parts := strings.Split(key, "|")
+			if len(parts) >= 4 {
+				ftype, cidr, prio, zone := parts[0], parts[1], parts[2], parts[3]
+				if ftype == "blacklist" {
+					ipFilterBlacklistPackets.DeleteLabelValues(cidr, prio, zone)
+					ipFilterBlacklistBytes.DeleteLabelValues(cidr, prio, zone)
+				} else if ftype == "whitelist" {
+					ipFilterWhitelistPackets.DeleteLabelValues(cidr, prio, zone)
+					ipFilterWhitelistBytes.DeleteLabelValues(cidr, prio, zone)
+				}
+			}
+		}
+
+		// Update total rule counts
+		ipFilterTotalRules.WithLabelValues("blacklist").Set(float64(blacklistCount))
+		ipFilterTotalRules.WithLabelValues("whitelist").Set(float64(whitelistCount))
+
+		time.Sleep(PrometheusDefaultPeriod)
+		return nil
+	}, "ip_filter_stats", ctx)
+}
+
+// === ISOLATION FRAMEWORK SAFETY FUNCTIONS ===
+
+// === PHASE 2: COMPREHENSIVE OPERATION WRAPPERS ===
+
+// safeMetricsCollection - Wrapper for metrics data collection operations
+func safeMetricsCollection(operation func() (interface{}, error), operationName string) interface{} {
+	if !isMetricsSafe(operationName) {
+		return nil // Skip collection if metrics are unhealthy
+	}
+
+	// 3-second timeout for collection operations
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	resultChan := make(chan interface{}, 1)
+	errorChan := make(chan error, 1)
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				errorChan <- fmt.Errorf("collection panic: %v", r)
+			}
+		}()
+
+		result, err := operation()
+		if err != nil {
+			errorChan <- err
+		} else {
+			resultChan <- result
+			recordMetricsSuccess(operationName) // Record success
+		}
+	}()
+
+	select {
+	case result := <-resultChan:
+		return result
+	case err := <-errorChan:
+		recordMetricsError(operationName, err)
+		return nil
+	case <-ctx.Done():
+		recordMetricsError(operationName, fmt.Errorf("collection timeout"))
+		return nil
 	}
 }
 
-func RunFwStatistic(ctx context.Context) {
+// safeAPIOperation - Wrapper for API-related operations
+func safeAPIOperation(operation func() error, operationName string) error {
+	if !isMetricsSafe(operationName) {
+		return fmt.Errorf("metrics system unavailable") // Return error but don't crash
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			recordMetricsError(operationName, fmt.Errorf("API panic: %v", r))
+		}
+	}()
+
+	err := operation()
+	if err != nil {
+		recordMetricsError(operationName, err)
+		return err
+	}
+
+	recordMetricsSuccess(operationName)
+	return nil
+}
+
+// safeGoroutineOperation - Wrapper for long-running goroutine operations.
+// Each iteration recovers from panics individually, so a single panic degrades
+// one cycle instead of permanently killing the collection goroutine.
+func safeGoroutineOperation(operation func(context.Context) error, operationName string, ctx context.Context) {
+	runOnce := func() (opErr error) {
+		defer func() {
+			if r := recover(); r != nil {
+				tk.LogIt(tk.LogError, "[Metrics] Goroutine %s recovered from panic: %v - LOAD BALANCING CONTINUES\n", operationName, r)
+				opErr = fmt.Errorf("goroutine panic: %v", r)
+			}
+		}()
+		return operation(ctx)
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
+			tk.LogIt(tk.LogInfo, "[Metrics] Goroutine %s stopped gracefully\n", operationName)
 			return
 		default:
-			mutex.Lock()
-			localFWRuleInfo := make([]cmn.FwRuleMod, len(FWRuleInfo))
-			copy(localFWRuleInfo, FWRuleInfo)
-			mutex.Unlock()
-
-			totalDrops := 0
-
-			for _, rule := range localFWRuleInfo {
-				// FIXME: DBG:  2025/01/22 07:31:25 [Prometheus] Error converting counter: strconv.Atoi: parsing "0:0": invalid syntax
-				counter, err := strconv.Atoi(rule.Opts.Counter)
-				if err != nil {
-					tk.LogIt(tk.LogDebug, "[Prometheus] Error converting counter: %v\n", err)
-					continue
-				}
-
-				ruleSpecLabel := fmt.Sprintf("%s_%s_%s_%s_%s_%s_%s_%s",
-					rule.Rule.SrcIP, rule.Rule.DstIP, rule.Rule.SrcPortMin, rule.Rule.SrcPortMax,
-					rule.Rule.DstPortMin, rule.Rule.DstPortMax, rule.Rule.Proto, rule.Rule.Pref)
-
-				totalDropsByFwPerRule.WithLabelValues(ruleSpecLabel).Set(float64(counter))
-				totalDrops += counter
-
-				if enableSharedMetrics {
-					AddLabeledMetric("total_fw_drops_per_rule", map[string]string{"fw_rule": ruleSpecLabel}, float64(counter))
-				}
+			if !isMetricsSafe(operationName) {
+				time.Sleep(10 * time.Second) // Wait during unhealthy state
+				continue
 			}
 
-			// If there is no localFWRuleInfo, set init value
-			if len(localFWRuleInfo) == 0 {
-				totalDropsByFwPerRule.WithLabelValues("no_rule").Set(float64(0))
-			}
-
-			totalDropsByFw.Set(float64(totalDrops))
-
-			if enableSharedMetrics {
-				SetSharedMetric("total_fw_drops", float64(totalDrops))
+			if err := runOnce(); err != nil {
+				recordMetricsError(operationName, err)
+				time.Sleep(5 * time.Second) // Brief pause on error
+			} else {
+				recordMetricsSuccess(operationName)
 			}
 		}
-		time.Sleep(PromethusDefaultPeriod)
 	}
+}
+
+// safeBatchOperation - Wrapper for batch processing operations
+func safeBatchOperation(operation func([]interface{}) error, data []interface{}, operationName string) error {
+	if !isMetricsSafe(operationName) {
+		return nil // Skip batch processing if unhealthy
+	}
+
+	if len(data) == 0 {
+		return nil // Nothing to process
+	}
+
+	// 10-second timeout for batch operations
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	errorChan := make(chan error, 1)
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				errorChan <- fmt.Errorf("batch panic: %v", r)
+			}
+		}()
+
+		err := operation(data)
+		errorChan <- err
+	}()
+
+	select {
+	case err := <-errorChan:
+		if err != nil {
+			recordMetricsError(operationName, err)
+			return err
+		}
+		recordMetricsSuccess(operationName)
+		return nil
+	case <-ctx.Done():
+		recordMetricsError(operationName, fmt.Errorf("batch timeout"))
+		return fmt.Errorf("batch operation timeout")
+	}
+}
+
+// Per-collector circuit breakers (metrics audit: ONE global consecutive-
+// error counter shared by ~12 collectors froze ALL metrics for 300s after 3
+// errors from any mix — e.g. one flaky sysfs read silenced conntrack,
+// firewall and security collection too). metricsHealthy remains the MASTER
+// enable toggled by Init/PrometheusTurnOff; each named operation now trips
+// and recovers its own breaker independently.
+type componentBreaker struct {
+	healthy   atomic.Bool
+	lastError atomic.Int64 // Unix timestamp of last error
+	errors    atomic.Int64 // Consecutive error counter
+}
+
+var (
+	breakerMu sync.Mutex
+	breakers  = map[string]*componentBreaker{}
+)
+
+func breakerFor(component string) *componentBreaker {
+	breakerMu.Lock()
+	defer breakerMu.Unlock()
+	b, ok := breakers[component]
+	if !ok {
+		b = &componentBreaker{}
+		b.healthy.Store(true)
+		breakers[component] = b
+	}
+	return b
+}
+
+// resetAllBreakers restores every component breaker (called from Init so a
+// re-enable starts clean).
+func resetAllBreakers() {
+	breakerMu.Lock()
+	defer breakerMu.Unlock()
+	for _, b := range breakers {
+		b.healthy.Store(true)
+		b.errors.Store(0)
+		b.lastError.Store(0)
+	}
+}
+
+// isMetricsSafe checks if this component's operations should be attempted.
+func isMetricsSafe(component string) bool {
+	if !metricsHealthy.Load() {
+		return false // master disable (TurnOff)
+	}
+	b := breakerFor(component)
+	if b.healthy.Load() {
+		return true
+	}
+
+	// Component is unhealthy - check if retry interval passed
+	lastErr := b.lastError.Load()
+	currentTime := time.Now().Unix()
+
+	if currentTime-lastErr > RetryInterval {
+		tk.LogIt(tk.LogInfo, "[Metrics] %s: retry attempt after %d second cooldown - ALLOWING SINGLE OPERATION\n", component, RetryInterval)
+		// Do not auto-heal here: allow ONE operation to proceed while staying
+		// in the unhealthy state; recovery happens only via recordMetricsSuccess
+		// when that operation actually succeeds
+		b.lastError.Store(currentTime) // Reset cooldown timer for next retry
+		return true
+	}
+
+	// Still in cooldown period
+	return false
+}
+
+// recordMetricsError handles an error from one named component.
+func recordMetricsError(component string, err error) {
+	b := breakerFor(component)
+	count := b.errors.Add(1)
+	b.lastError.Store(time.Now().Unix())
+	lastMetricError.Store(time.Now().Unix())
+
+	tk.LogIt(tk.LogWarning, "[Metrics] Error in %s: %v (consecutive errors: %d)\n",
+		component, err, count)
+
+	if count >= MaxMetricErrors {
+		tk.LogIt(tk.LogError, "[Metrics] Collector %s disabled after %d errors - other collectors and LOAD BALANCING CONTINUE\n",
+			component, count)
+		b.healthy.Store(false)
+	}
+}
+
+// recordMetricsSuccess resets one component's error tracking on success.
+func recordMetricsSuccess(component string) {
+	b := breakerFor(component)
+	wasUnhealthy := !b.healthy.Load()
+	if b.errors.Load() > 0 || wasUnhealthy {
+		tk.LogIt(tk.LogInfo, "[Metrics] %s: operation successful - resetting error count and restoring health\n", component)
+		b.errors.Store(0)
+		if wasUnhealthy {
+			tk.LogIt(tk.LogInfo, "[Metrics] HEALTH RESTORED: collector %s recovered after successful operation\n", component)
+			b.healthy.Store(true)
+		}
+	}
+}
+
+// RunSockproxyMetrics is defined in sockproxy_metrics.go
+// (Must be in CGO file due to C package file-scope limitation)
+
+// GetMetricsHealth returns current metrics system health status.
+// consecutive_errors reports the WORST per-collector breaker;
+// unhealthy_collectors lists breakers currently tripped.
+func GetMetricsHealth() map[string]interface{} {
+	var maxErrors int64
+	unhealthy := []string{}
+	breakerMu.Lock()
+	for name, b := range breakers {
+		if e := b.errors.Load(); e > maxErrors {
+			maxErrors = e
+		}
+		if !b.healthy.Load() {
+			unhealthy = append(unhealthy, name)
+		}
+	}
+	breakerMu.Unlock()
+	return map[string]interface{}{
+		"load_balancer_core":        "RUNNING", // Assume core is always running
+		"ebpf_hooks_available":      hooks != nil,
+		"metrics_enabled":           metricsHealthy.Load(),
+		"consecutive_errors":        maxErrors,
+		"unhealthy_collectors":      unhealthy,
+		"last_error_seconds_ago":    time.Now().Unix() - lastMetricError.Load(),
+		"retry_interval_seconds":    RetryInterval,
+		"max_allowed_errors":        MaxMetricErrors,
+		"operation_timeout_seconds": int(OperationTimeout.Seconds()),
+	}
+}
+
+// GetMetricsHealthSimple returns basic health check for external monitoring
+func GetMetricsHealthSimple() bool {
+	return hooks != nil // Only care if core eBPF hooks are available
+}
+
+// IsHooksAvailable checks if eBPF hooks are available for load balancing
+func IsHooksAvailable() bool {
+	return hooks != nil
+}
+
+var (
+	conntrackMaxOnce  sync.Once
+	conntrackMaxGauge prometheus.Gauge
+)
+
+// SetConntrackMaxEntries publishes the datapath conntrack table capacity as
+// the loxilb_conntrack_max_entries gauge. Registered lazily on the first
+// positive value so the family is absent on builds without a datapath
+// capacity — absence means "not applicable", never a fake 0 (which would make
+// utilization ratios divide by zero).
+func SetConntrackMaxEntries(n int) {
+	if n <= 0 {
+		return
+	}
+	conntrackMaxOnce.Do(func() {
+		conntrackMaxGauge = promauto.NewGauge(
+			prometheus.GaugeOpts{
+				Name: MetricConntrackMaxEntries,
+				Help: "Capacity of the datapath conntrack table (maximum concurrently tracked sessions).",
+			},
+		)
+	})
+	conntrackMaxGauge.Set(float64(n))
 }

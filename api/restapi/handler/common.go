@@ -125,6 +125,7 @@ func ResultErrorResponseErrorMessage(msg string) *models.Error {
 		"Cors URL cannot be empty", "wildcard '*' is not allowed",
 		"Failed to add Cors", "Failed to delete Cors", "filename is required", "file is empty",
 		"no configuration file provided", "invalid json format",
+		"is required",
 	) {
 		return &models.Error{Code: 400, Message: "Malformed arguments for API call", Result: msg}
 	}

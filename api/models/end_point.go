@@ -20,9 +20,21 @@ import (
 // swagger:model EndPoint
 type EndPoint struct {
 
+	// doubles as TLS SNI for HTTPS monitors AND the Host header. Optional/additive.
+	DomainName string `json:"domainName,omitempty"`
+
+	// Octavia expected_codes — single "200", list "200,202", or range "200-204". Optional/additive — empty defaults to "200".
+	ExpectedCodes string `json:"expectedCodes,omitempty"`
+
 	// Host name in CIDR
 	// Required: true
 	HostName *string `json:"hostName"`
+
+	// HTTP(S) health-monitor method (e.g. GET, HEAD). Optional/additive — empty defaults to GET. Control-plane only (probeReq/probeResp retained as the escape hatch).
+	HTTPMethod string `json:"httpMethod,omitempty"`
+
+	// HM HTTP version "1.0" or "1.1". When "1.1" a Host header is sent (domainName, else the member address). Optional/additive.
+	HTTPVersion string `json:"httpVersion,omitempty"`
 
 	// Number of inactive retries
 	InactiveReTries int64 `json:"inactiveReTries,omitempty"`
@@ -42,9 +54,12 @@ type EndPoint struct {
 	// Response for http/https probes
 	ProbeResp string `json:"probeResp,omitempty"`
 
-	// Type of probe used
-	// Enum: [tcp udp sctp ping http https none]
+	// Type of probe used (tls-hello = handshake-only TLS liveness probe)
+	// Enum: [tcp udp sctp ping http https none tls-hello]
 	ProbeType string `json:"probeType,omitempty"`
+
+	// HM request path (e.g. /healthz). Optional/additive — empty falls back to probeReq or "/".
+	URLPath string `json:"urlPath,omitempty"`
 }
 
 // Validate validates this end point
@@ -78,7 +93,7 @@ var endPointTypeProbeTypePropEnum []interface{}
 
 func init() {
 	var res []string
-	if err := json.Unmarshal([]byte(`["tcp","udp","sctp","ping","http","https","none"]`), &res); err != nil {
+	if err := json.Unmarshal([]byte(`["tcp","udp","sctp","ping","http","https","none","tls-hello"]`), &res); err != nil {
 		panic(err)
 	}
 	for _, v := range res {
@@ -108,6 +123,9 @@ const (
 
 	// EndPointProbeTypeNone captures enum value "none"
 	EndPointProbeTypeNone string = "none"
+
+	// EndPointProbeTypeTLSDashHello captures enum value "tls-hello"
+	EndPointProbeTypeTLSDashHello string = "tls-hello"
 )
 
 // prop value enum

@@ -20,6 +20,10 @@ type FirewallRuleEntry struct {
 	// Destination IP in CIDR notation
 	DestinationIP string `json:"destinationIP,omitempty"`
 
+	// opt-IN per-rule HW offload flag. When true, the rule is mirrored into the DOCA ingress ACL pipeline (DENY_PIPE / ALLOW_PIPE) in addition to the eBPF firewall fallback. The rule MUST be expressible in HW (IPv4, single-port, no proto-specific match) — non-expressible rules are hard-rejected at AddFwRule. Default false preserves existing eBPF-only behaviour for all deployments.
+	//
+	HwOffload bool `json:"hwOffload,omitempty"`
+
 	// Maximum  destination port range
 	MaxDestinationPort int64 `json:"maxDestinationPort,omitempty"`
 

@@ -41,9 +41,14 @@ const (
 	VlanZoneErr
 )
 
-// constant to declare maximum number of vlans
+// constant to declare maximum number of vlans.
+// Bumped to 6144 (v7.0 HW offload) to accommodate the bridge-VID
+// allocator range [5000, 6143]. The eBPF bd_stats_map / tx_bd_stats_map PERCPU
+// arrays (llb_kern_cdefs.h) hard-cap at LLB_INTF_MAP_ENTRIES=6144, so 6143 is
+// the highest VID safe for both control plane and data plane. See
+// CONTEXT §.
 const (
-	MaximumVlans = 4094
+	MaximumVlans = 6144
 )
 
 // vlanStat - statistics for vlan interface
@@ -80,9 +85,11 @@ func VlanInit(zone *Zone) *VlansH {
 	return nV
 }
 
-// VlanValid - routine to validate vlanId
+// VlanValid - routine to validate vlanId.
+// Accepts VIDs in [1, MaximumVlans-1] = [1, 6143] inclusive. dropped
+// the off-by-one `-1` that previously rejected the top-of-range slot (6143).
 func VlanValid(vlanID int) bool {
-	if vlanID > 0 && vlanID < MaximumVlans-1 {
+	if vlanID > 0 && vlanID < MaximumVlans {
 		return true
 	}
 	return false

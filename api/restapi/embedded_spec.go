@@ -355,6 +355,264 @@ func init() {
         }
       }
     },
+    "/config/ai/apikey": {
+      "get": {
+        "description": "Returns all API keys belonging to the specified tenant.",
+        "tags": [
+          "ai"
+        ],
+        "summary": "List API keys for a tenant",
+        "operationId": "getConfigAiApikey",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Filter by tenant ID",
+            "name": "tenant_id",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/ApiKeySummary"
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "post": {
+        "description": "Creates a new API key for a tenant. The raw key is returned ONLY in this response.",
+        "tags": [
+          "ai"
+        ],
+        "summary": "Create a new API key",
+        "operationId": "postConfigAiApikey",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ApiKeyCreateRequest"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "schema": {
+              "$ref": "#/definitions/ApiKeyCreateResponse"
+            }
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ai/apikey/{key_id}": {
+      "get": {
+        "description": "Returns the summary of a single API key by its ID.",
+        "tags": [
+          "ai"
+        ],
+        "summary": "Get a specific API key",
+        "operationId": "getConfigAiApikeyKeyID",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "API key identifier",
+            "name": "key_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/ApiKeySummary"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "delete": {
+        "description": "Permanently deletes the specified API key.",
+        "tags": [
+          "ai"
+        ],
+        "summary": "Delete an API key",
+        "operationId": "deleteConfigAiApikeyKeyID",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "API key identifier",
+            "name": "key_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ai/tenant/ratelimit": {
+      "post": {
+        "description": "Creates or updates the rate limit configuration for a tenant.",
+        "tags": [
+          "ai"
+        ],
+        "summary": "Set or update tenant rate limit",
+        "operationId": "postConfigAiTenantRatelimit",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/TenantRateLimitMod"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ai/tenant/ratelimit/{tenant_id}": {
+      "get": {
+        "description": "Returns the current rate limit configuration for the specified tenant.",
+        "tags": [
+          "ai"
+        ],
+        "summary": "Get tenant rate limit configuration",
+        "operationId": "getConfigAiTenantRatelimitTenantID",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Tenant identifier",
+            "name": "tenant_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/TenantRateLimitEntry"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
     "/config/bfd": {
       "post": {
         "description": "Create vlan interface in the device",
@@ -1297,6 +1555,184 @@ func init() {
           },
           "503": {
             "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/cert": {
+      "post": {
+        "description": "Uploads inline PEM material (cert + key [+ chain]) under an opaque certId — the canonical TLS-material store. The handler persists the PEM to the managed dir (/etc/loxilb/certs/\u003ccertId\u003e/, 0700 dir / 0600 key) and registers it via the C certId registry, which auto-derives the hostname(s) from the leaf cert SAN/CN and registers them into the hostname-keyed SNI store. Selection at handshake stays by hostname; certId is the upload/rotate/delete handle. When certId is absent the server mints one. Malformed PEM / missing key is rejected with 400 (never a panic).",
+        "summary": "Upload a TLS certificate under an opaque certId",
+        "operationId": "postConfigCert",
+        "parameters": [
+          {
+            "description": "Certificate attributes (certId optional; inline PEM)",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/Cert"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "400": {
+            "description": "Malformed PEM / missing material",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/cert/{certId}": {
+      "get": {
+        "description": "Returns the certId metadata (id + auto-derived hostnames + public cert/chain). The private key is never returned.",
+        "summary": "Get a certId's metadata",
+        "operationId": "getConfigCertCertId",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Opaque certificate management handle",
+            "name": "certId",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/Cert"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Certificate not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "put": {
+        "description": "Atomic zero-downtime rotation — re-persists the new PEM under the SAME certId and swaps the cert object into the SNI store under lock; in-flight connections keep the old SSL until they close. Unknown certId returns 404; malformed material returns 400.",
+        "summary": "Rotate the material under a stable certId",
+        "operationId": "putConfigCertCertId",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Opaque certificate management handle",
+            "name": "certId",
+            "in": "path",
+            "required": true
+          },
+          {
+            "description": "New certificate material to rotate in",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/Cert"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Malformed PEM / missing material",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Certificate not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "delete": {
+        "description": "Removes the managed-dir material and unregisters the derived hostnames from the SNI store.",
+        "summary": "Delete a certId",
+        "operationId": "deleteConfigCertCertId",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Opaque certificate management handle",
+            "name": "certId",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Invalid certId / delete error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Certificate not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -2278,6 +2714,161 @@ func init() {
         }
       }
     },
+    "/config/gpu/conversations/cleanup": {
+      "post": {
+        "description": "Removes stale conversation mappings older than specified age",
+        "summary": "Manual conversation cleanup",
+        "parameters": [
+          {
+            "type": "integer",
+            "default": 1,
+            "description": "Maximum age in hours for conversations to keep (older ones deleted)",
+            "name": "max_age_hours",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cleanup completed successfully",
+            "schema": {
+              "$ref": "#/definitions/ConversationCleanupResponse"
+            }
+          },
+          "400": {
+            "description": "GPU monitoring disabled or invalid parameters",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Cleanup operation failed",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/gpu/disable": {
+      "post": {
+        "description": "Deactivates GPU-aware routing and reverts to standard CHWBL",
+        "summary": "Disable GPU-aware load balancing",
+        "responses": {
+          "200": {
+            "description": "GPU monitoring disabled successfully",
+            "schema": {
+              "$ref": "#/definitions/GPUEnableResponse"
+            }
+          },
+          "400": {
+            "description": "GPU monitoring already disabled",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Failed to disable GPU monitoring",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/gpu/enable": {
+      "post": {
+        "description": "Activates GPU-aware routing mode and starts conversation cleanup thread",
+        "summary": "Enable GPU-aware load balancing",
+        "responses": {
+          "200": {
+            "description": "GPU monitoring enabled successfully",
+            "schema": {
+              "$ref": "#/definitions/GPUEnableResponse"
+            }
+          },
+          "400": {
+            "description": "GPU monitoring already enabled",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Failed to enable GPU monitoring",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/gpu/status": {
+      "get": {
+        "description": "Returns current GPU monitoring state and statistics",
+        "summary": "Get GPU monitoring status",
+        "responses": {
+          "200": {
+            "description": "GPU monitoring status",
+            "schema": {
+              "$ref": "#/definitions/GPUMonitoringStatus"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
     "/config/import": {
       "post": {
         "consumes": [
@@ -2295,6 +2886,957 @@ func init() {
         "responses": {
           "204": {
             "description": "OK"
+          }
+        }
+      }
+    },
+    "/config/ipfilter": {
+      "post": {
+        "description": "Create a new IP whitelist or blacklist rule for DDoS protection.",
+        "summary": "Create a new IP filter rule",
+        "parameters": [
+          {
+            "description": "Attributes for IP filter rule",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/IPFilterEntry"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "delete": {
+        "description": "Delete an IP whitelist or blacklist rule.",
+        "summary": "Delete an IP filter rule",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Filter type (whitelist or blacklist)",
+            "name": "filterType",
+            "in": "query",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "IP address in CIDR notation",
+            "name": "cidr",
+            "in": "query",
+            "required": true
+          },
+          {
+            "type": "integer",
+            "description": "Security zone (0 = all zones)",
+            "name": "zone",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipfilter/all": {
+      "get": {
+        "description": "Get all IP whitelist and blacklist rules with statistics.",
+        "summary": "Get all IP filter rules",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "ipFilterAttr": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/IPFilterEntry"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipsec": {
+      "get": {
+        "description": "Get current IPsec global configuration including fast-path and hardware offload settings.",
+        "summary": "Get IPsec configuration",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/IPsecConfig"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "post": {
+        "description": "Update IPsec global configuration settings for fast-path, hardware offload, and other parameters.",
+        "summary": "Update IPsec configuration",
+        "parameters": [
+          {
+            "description": "IPsec configuration attributes",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/IPsecConfigMod"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipsec/ca-certificates": {
+      "post": {
+        "description": "Upload a CA certificate to the trust store.",
+        "summary": "Upload a CA certificate",
+        "parameters": [
+          {
+            "description": "CA certificate",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/IPsecCACertificateMod"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "CA certificate installed",
+            "schema": {
+              "$ref": "#/definitions/IPsecCACertificate"
+            }
+          },
+          "400": {
+            "description": "Invalid CA certificate",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "409": {
+            "description": "CA certificate already exists",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipsec/ca-certificates/all": {
+      "get": {
+        "description": "Get all CA certificates from trust store.",
+        "summary": "Get all CA certificates",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "ipsecCACertificateAttr": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/IPsecCACertificate"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipsec/ca-certificates/{name}": {
+      "get": {
+        "description": "Get details of a specific CA certificate by name.",
+        "summary": "Get CA certificate details",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "CA certificate name",
+            "name": "name",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/IPsecCACertificate"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "CA certificate not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "delete": {
+        "description": "Delete a CA certificate from trust store.",
+        "summary": "Delete a CA certificate",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "CA certificate name",
+            "name": "name",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "CA certificate not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "409": {
+            "description": "CA certificate in use",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipsec/certificates": {
+      "post": {
+        "description": "Upload a certificate and private key for IPsec authentication.",
+        "summary": "Upload a certificate",
+        "parameters": [
+          {
+            "description": "Certificate and private key",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/IPsecCertificateMod"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Certificate installed",
+            "schema": {
+              "$ref": "#/definitions/IPsecCertificate"
+            }
+          },
+          "400": {
+            "description": "Invalid certificate or key",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "409": {
+            "description": "Certificate already exists",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipsec/certificates/all": {
+      "get": {
+        "description": "Get all installed certificates (without private keys).",
+        "summary": "Get all certificates",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "ipsecCertificateAttr": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/IPsecCertificate"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipsec/certificates/validate": {
+      "post": {
+        "description": "Validate certificate and private key without installing (dry-run).",
+        "summary": "Validate certificate",
+        "parameters": [
+          {
+            "description": "Certificate and key to validate",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/IPsecCertificateMod"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Validation result",
+            "schema": {
+              "$ref": "#/definitions/IPsecCertValidation"
+            }
+          },
+          "400": {
+            "description": "Invalid certificate or key",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipsec/certificates/{name}": {
+      "get": {
+        "description": "Get details of a specific certificate by name.",
+        "summary": "Get certificate details",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Certificate name",
+            "name": "name",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/IPsecCertificate"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Certificate not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "delete": {
+        "description": "Delete a certificate and its private key.",
+        "summary": "Delete a certificate",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Certificate name",
+            "name": "name",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Certificate not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "409": {
+            "description": "Certificate in use by active tunnels",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipsec/sas/all": {
+      "get": {
+        "description": "Get all active Security Associations (SAs) from kernel XFRM.",
+        "summary": "Get all Security Associations",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "ipsecSaAttr": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/IPsecSA"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipsec/stats": {
+      "get": {
+        "description": "Get aggregated IPsec statistics for all tunnels and SAs.",
+        "summary": "Get IPsec statistics",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/IPsecStats"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "delete": {
+        "description": "Reset all IPsec statistics counters to zero.",
+        "summary": "Reset IPsec statistics",
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipsec/tunnels": {
+      "post": {
+        "description": "Create a new IPsec tunnel with strongSwan configuration.",
+        "summary": "Create an IPsec tunnel",
+        "parameters": [
+          {
+            "description": "IPsec tunnel configuration",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/IPsecTunnelMod"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "409": {
+            "description": "Tunnel already exists",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipsec/tunnels/all": {
+      "get": {
+        "description": "Get all configured IPsec tunnels with their current state and statistics.",
+        "summary": "Get all IPsec tunnels",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "ipsecTunnelAttr": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/IPsecTunnel"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipsec/tunnels/{name}": {
+      "get": {
+        "description": "Get details of a specific IPsec tunnel by name.",
+        "summary": "Get specific IPsec tunnel",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Tunnel name",
+            "name": "name",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/IPsecTunnel"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Tunnel not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "put": {
+        "description": "Update an existing IPsec tunnel in place. The tunnel is replaced within a single configuration regeneration and strongSwan reload (no delete/recreate window). The name in the path takes precedence over the body.",
+        "summary": "Update an IPsec tunnel",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Tunnel name",
+            "name": "name",
+            "in": "path",
+            "required": true
+          },
+          {
+            "description": "New IPsec tunnel configuration",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/IPsecTunnelMod"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Tunnel not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "delete": {
+        "description": "Delete an existing IPsec tunnel and remove associated SAs.",
+        "summary": "Delete an IPsec tunnel",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Tunnel name",
+            "name": "name",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Tunnel not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipsec/tunnels/{name}/action": {
+      "post": {
+        "description": "Initiate, terminate, or restart the strongSwan connection for an existing tunnel without changing its configuration.",
+        "summary": "Execute a connection action on an IPsec tunnel",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Tunnel name",
+            "name": "name",
+            "in": "path",
+            "required": true
+          },
+          {
+            "description": "Action to execute",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/IPsecTunnelActionMod"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Tunnel not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipsec/tunnels/{name}/peerconfig": {
+      "get": {
+        "description": "Generate a mirrored strongSwan configuration (ipsec.conf conn block and ipsec.secrets entry) ready to install on the remote peer of this tunnel. For PSK tunnels the response contains the pre-shared key.",
+        "summary": "Get remote-peer strongSwan configuration for a tunnel",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Tunnel name",
+            "name": "name",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/IPsecPeerConfig"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Tunnel not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
           }
         }
       }
@@ -2479,6 +4021,814 @@ func init() {
         }
       }
     },
+    "/config/ipv6address": {
+      "post": {
+        "description": "Assign IPv6 addresses in the device",
+        "summary": "Assign IPv6 addresses in the device",
+        "parameters": [
+          {
+            "description": "Attributes for IPv6 address",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/IPv6AddressEntry"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Capacity insufficient",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "409": {
+            "description": "Resource Conflict. VLAN already exists OR dependency VRF/VNET not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipv6address/all": {
+      "get": {
+        "description": "Get IPv6 addresses in the device(interface)",
+        "summary": "Get IPv6 addresses in the device(interface)",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "ipAttr": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/IPv6AddressGetEntry"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipv6address/{ip_address}/{mask}/dev/{if_name}": {
+      "delete": {
+        "description": "Delete IPv6 addresses in the device",
+        "summary": "Delete IPv6 addresses in the device",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Attributes IPv6 Address in the device",
+            "name": "ip_address",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "Attributes IPv6 mask in the device",
+            "name": "mask",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "Attributes of the target device",
+            "name": "if_name",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Capacity insufficient",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "409": {
+            "description": "Resource Conflict. VLAN already exists OR dependency VRF/VNET not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/l4trace/disable": {
+      "post": {
+        "description": "Disables L4 connection tracing and stops emitting events to ring buffers.\nIn-flight connections will complete their spans before export stops.\n",
+        "tags": [
+          "L4Tracing"
+        ],
+        "summary": "Disable L4 connection tracing",
+        "operationId": "PostConfigL4traceDisable",
+        "responses": {
+          "200": {
+            "description": "L4 tracing disabled successfully",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "type": "string",
+                  "example": "L4 connection tracing disabled"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/l4trace/enable": {
+      "post": {
+        "description": "Enables distributed tracing for all TCP/SCTP connections passing through loxilb.\nEvents are emitted to eBPF ring buffers for export to OpenTelemetry collectors.\n\n**Features:**\n- Per-connection spans with full lifecycle tracking\n- Connection state machine visualization\n- RTT, retransmission, and throughput metrics\n- Configurable sampling rate (0-100%)\n",
+        "tags": [
+          "L4Tracing"
+        ],
+        "summary": "Enable L4 connection tracing",
+        "operationId": "PostConfigL4traceEnable",
+        "parameters": [
+          {
+            "name": "attr",
+            "in": "body",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "sampling_rate": {
+                  "description": "Percentage of connections to trace (0-100)",
+                  "type": "integer",
+                  "format": "int64",
+                  "default": 100,
+                  "maximum": 100,
+                  "example": 100
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "L4 tracing enabled successfully",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "type": "string",
+                  "example": "L4 connection tracing enabled (sampling: 100%)"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid sampling rate",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/l4trace/sampling": {
+      "put": {
+        "description": "Changes the L4 tracing sampling rate without disabling tracing.\nNew connections will use the updated rate immediately.\n\n**Sampling behavior:**\n- 0%: Effectively disables tracing (use /disable endpoint instead)\n- 1-99%: Hash-based deterministic sampling (same connection always gets same decision)\n- 100%: Trace all connections (production debugging)\n",
+        "tags": [
+          "L4Tracing"
+        ],
+        "summary": "Update L4 tracing sampling rate",
+        "operationId": "PutConfigL4traceSampling",
+        "parameters": [
+          {
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "required": [
+                "sampling_rate"
+              ],
+              "properties": {
+                "sampling_rate": {
+                  "description": "Percentage of connections to trace (0-100)",
+                  "type": "integer",
+                  "format": "int64",
+                  "maximum": 100,
+                  "example": 10
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sampling rate updated successfully",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "type": "string",
+                  "example": "L4 sampling rate updated to 10%"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid sampling rate",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/l4trace/stats/reset": {
+      "post": {
+        "description": "Resets all L4 tracing statistics counters to zero.\nDoes not affect current tracing configuration (enabled/disabled state).\nUseful for baseline measurements and performance testing.\n",
+        "tags": [
+          "L4Tracing"
+        ],
+        "summary": "Reset L4 tracing statistics",
+        "operationId": "PostConfigL4traceStatsReset",
+        "responses": {
+          "200": {
+            "description": "Statistics reset successfully",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "type": "string",
+                  "example": "L4 tracing statistics reset successfully"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/l4trace/status": {
+      "get": {
+        "description": "Returns current L4 tracing configuration, connection statistics, and event counters.\n\n**Statistics include:**\n- Total events emitted (TCP + SCTP state changes)\n- Connection lifecycle counters (new, established, closed, timeout, reset, error)\n- Protocol breakdown (TCP vs SCTP events)\n- Ring buffer health (dropped events)\n",
+        "tags": [
+          "L4Tracing"
+        ],
+        "summary": "Get L4 tracing status and statistics",
+        "operationId": "GetConfigL4traceStatus",
+        "responses": {
+          "200": {
+            "description": "L4 tracing status retrieved successfully",
+            "schema": {
+              "$ref": "#/definitions/L4TraceStatusResponse"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/l7policy": {
+      "get": {
+        "summary": "Get all L7 content-routing policies",
+        "operationId": "getConfigL7PolicyAll",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/L7PolicyGetEntry"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "post": {
+        "description": "Creates a dedicated L7_POLICY resource (policy + ordered child rules) and attaches it to an existing L4 load-balancer referenced by its stable opaque id. The body is validated server-side with Octavia per-type rules (FILE_TYPE only EQUAL_TO/REGEX; key required for HEADER/COOKIE/QUERY; redirect statusCode allow-list default 302; REJECT default 403; REGEX patterns try-compiled at config time) and translated to the internal route IR, then carried to the running sockproxy by a SEPARATE attach call (proxy_attach_l7_policy) — NEVER inline on the 4096-byte proxy_arg.",
+        "summary": "Create an L7 content-routing policy",
+        "operationId": "postConfigL7Policy",
+        "parameters": [
+          {
+            "description": "L7 policy attributes",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/L7Policy"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Malformed arguments (failed Octavia validation or unrepresentable export)",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Referenced load-balancer not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/l7policy/id/{id}": {
+      "get": {
+        "summary": "Get a single L7 content-routing policy by id",
+        "operationId": "getConfigL7PolicyID",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Stable opaque identifier of the L7 policy",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/L7Policy"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "delete": {
+        "description": "Detaches the policy from its load-balancer (proxy_detach_l7_policy regfrees every compiled REGEX) and removes the resource.",
+        "summary": "Delete an L7 content-routing policy by id",
+        "operationId": "deleteConfigL7PolicyID",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Stable opaque identifier of the L7 policy",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/llamafirewall/configure": {
+      "post": {
+        "description": "Update LlamaFirewall configuration (server URL, scanners, policy, thresholds)",
+        "summary": "Configure LlamaFirewall security scanning settings",
+        "parameters": [
+          {
+            "description": "LlamaFirewall configuration",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/LlamaFirewallConfigEntry"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "LlamaFirewall configuration updated successfully",
+            "schema": {
+              "$ref": "#/definitions/PostSuccess"
+            }
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/llamafirewall/enable": {
+      "post": {
+        "description": "Toggle LlamaFirewall security scanning on or off for API traffic",
+        "summary": "Enable or disable LlamaFirewall AI security scanning",
+        "parameters": [
+          {
+            "description": "Enable/disable flag",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "required": [
+                "enabled"
+              ],
+              "properties": {
+                "enabled": {
+                  "description": "Enable (true) or disable (false) LlamaFirewall scanning",
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "LlamaFirewall status updated successfully",
+            "schema": {
+              "$ref": "#/definitions/PostSuccess"
+            }
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/llamafirewall/health": {
+      "post": {
+        "description": "Check connectivity and health of LlamaFirewall gRPC server",
+        "summary": "Trigger LlamaFirewall health check",
+        "responses": {
+          "200": {
+            "description": "Health check successful",
+            "schema": {
+              "$ref": "#/definitions/LlamaFirewallHealthResponse"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error (health check failed)",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/llamafirewall/scanners": {
+      "post": {
+        "description": "Enable/disable specific scanners (PromptGuard, CodeShield, Regex, etc.)",
+        "summary": "Configure individual scanner settings",
+        "parameters": [
+          {
+            "description": "Scanner configuration",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/LlamaFirewallScannersEntry"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Scanner configuration updated successfully",
+            "schema": {
+              "$ref": "#/definitions/PostSuccess"
+            }
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/llamafirewall/stats": {
+      "get": {
+        "description": "Retrieve scanning statistics (scans, blocks, scanner performance, decisions)",
+        "summary": "Get LlamaFirewall security scanning statistics",
+        "responses": {
+          "200": {
+            "description": "LlamaFirewall statistics retrieved successfully",
+            "schema": {
+              "$ref": "#/definitions/LlamaFirewallStatsResponse"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/llamafirewall/status": {
+      "get": {
+        "description": "Retrieve current LlamaFirewall settings, connection status, and enabled scanners",
+        "summary": "Get current LlamaFirewall configuration and status",
+        "responses": {
+          "200": {
+            "description": "LlamaFirewall status retrieved successfully",
+            "schema": {
+              "$ref": "#/definitions/LlamaFirewallStatusResponse"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
     "/config/loadbalancer": {
       "post": {
         "description": "Create a new load balancer service with .",
@@ -2550,6 +4900,14 @@ func init() {
       "get": {
         "description": "Get all of the load balancer services with conntrack infomation.",
         "summary": "Get all of the load balancer services",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Octavia tenant/project identifier filter. When supplied, only load-balancer services whose serviceArguments.projectId matches are returned. This is a CONVENIENCE filter, NOT a tenant-isolation/authz boundary: an unfiltered GET still returns rules with any projectId.",
+            "name": "projectId",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
             "description": "OK",
@@ -2733,6 +5091,60 @@ func init() {
       }
     },
     "/config/loadbalancer/externalipaddress/{ip_address}/port/{port}/protocol/{proto}": {
+      "get": {
+        "description": "Returns a single load balancer rule identified by its VIP/port/protocol composite key (Octavia).",
+        "summary": "Get a Load balancer service by composite key",
+        "operationId": "getConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProto",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "External (VIP) IP address of the load balancer service",
+            "name": "ip_address",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "number",
+            "description": "Service port of the load balancer service",
+            "name": "port",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "Protocol of the load balancer service (tcp/udp/sctp)",
+            "name": "proto",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/LoadbalanceEntry"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
       "delete": {
         "description": "Delete an existing load balancer service with .",
         "summary": "Delete an existing Load balancer service",
@@ -2818,6 +5230,188 @@ func init() {
             }
           }
         }
+      },
+      "patch": {
+        "description": "Apply an RFC 7386 JSON merge-patch to an existing load balancer rule identified by its VIP/port/protocol composite key (Octavia). Fields present in the body are overwritten, absent fields are left untouched, and an explicit null clears a clearable field. Immutable fields (security, egress, mode, protocol, VIP composite key) are rejected with 400. Returns 200 if the target rule exists, 404 if it is absent. The rule is mutated in place; established connections are not dropped.",
+        "consumes": [
+          "application/merge-patch+json",
+          "application/json"
+        ],
+        "summary": "Patch an existing Load balancer service (RFC 7386 JSON merge-patch)",
+        "operationId": "patchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProto",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "External (VIP) IP address of the load balancer service",
+            "name": "ip_address",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "number",
+            "description": "Service port of the load balancer service",
+            "name": "port",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "Protocol of the load balancer service (tcp/udp/sctp)",
+            "name": "proto",
+            "in": "path",
+            "required": true
+          },
+          {
+            "description": "RFC 7386 merge-patch document over the load balancer service",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/LoadbalanceEntry"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated"
+          },
+          "400": {
+            "description": "Malformed merge-patch body or attempt to modify an immutable field",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/loadbalancer/externalipaddress/{ip_address}/port/{port}/protocol/{proto}/stats": {
+      "get": {
+        "description": "Returns the per-LB statistics quad (activeConnections, bytesIn, bytesOut, totalConnections) for the rule identified by its composite key (Octavia). activeConnections is the same selector-agnostic live concurrent-connection count the connectionLimit gate enforces; bytesIn/bytesOut are the real per-direction CT byte totals; totalConnections is a monotonic cumulative counter reset to zero on restart.",
+        "summary": "Get per-service statistics of a Load balancer service",
+        "operationId": "getConfigLoadbalancerStats",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "External (VIP) IP address of the load balancer service. IPv6 literals may be RFC-bracketed ([2001:db8::1]); brackets are stripped before the lookup.",
+            "name": "ip_address",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "number",
+            "description": "Service port of the load balancer service",
+            "name": "port",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "Protocol of the load balancer service (tcp/udp/sctp)",
+            "name": "proto",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/LoadbalanceStats"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/loadbalancer/externalipaddress/{ip_address}/port/{port}/protocol/{proto}/status": {
+      "get": {
+        "description": "Returns the per-LB lifecycle status (adminStateUp, operatingStatus, lastUpdated) for the rule identified by its composite key (Octavia).",
+        "summary": "Get the lifecycle status of a Load balancer service",
+        "operationId": "getConfigLoadbalancerStatus",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "External (VIP) IP address of the load balancer service",
+            "name": "ip_address",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "number",
+            "description": "Service port of the load balancer service",
+            "name": "port",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "Protocol of the load balancer service (tcp/udp/sctp)",
+            "name": "proto",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/LoadbalanceStatus"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
       }
     },
     "/config/loadbalancer/hosturl/{hosturl}/externalipaddress/{ip_address}/port/{port}/portmax/{portmax}/protocol/{proto}": {
@@ -2870,6 +5464,18 @@ func init() {
             "type": "number",
             "description": "block value if any",
             "name": "block",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "URL path prefix to match for deletion (allows selective deletion of path-based rules)",
+            "name": "path_prefix",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "Path matching mode (disabled, prefix, exact) for selective deletion",
+            "name": "path_match_mode",
             "in": "query"
           }
         ],
@@ -2966,6 +5572,18 @@ func init() {
             "description": "block value if any",
             "name": "block",
             "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "URL path prefix to match for deletion (allows selective deletion of path-based rules)",
+            "name": "path_prefix",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "Path matching mode (disabled, prefix, exact) for selective deletion",
+            "name": "path_match_mode",
+            "in": "query"
           }
         ],
         "responses": {
@@ -3010,6 +5628,48 @@ func init() {
           },
           "503": {
             "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/loadbalancer/id/{id}": {
+      "get": {
+        "description": "Returns a single load balancer rule identified by its stable opaque id (Octavia).",
+        "summary": "Get a Load balancer service by opaque id",
+        "operationId": "getConfigLoadbalancerID",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Stable opaque identifier of the load balancer rule",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/LoadbalanceEntry"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -3519,6 +6179,93 @@ func init() {
         }
       }
     },
+    "/config/opa/watcher": {
+      "get": {
+        "description": "Returns current configuration and operational status of the OPA watcher.",
+        "tags": [
+          "opa"
+        ],
+        "summary": "Get OPA L4 policy watcher status",
+        "operationId": "getConfigOpaWatcher",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OPAWatcherStatus"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        },
+        "x-raw-middleware": true
+      },
+      "post": {
+        "description": "Start or reconfigure the OPA L4 policy watcher. Stops any existing watcher before starting a new one.",
+        "tags": [
+          "opa"
+        ],
+        "summary": "Configure OPA L4 policy watcher",
+        "operationId": "postConfigOpaWatcher",
+        "parameters": [
+          {
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/OPAWatcherConfig"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/PostSuccess"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        },
+        "x-raw-middleware": true
+      },
+      "delete": {
+        "description": "Stops the running OPA watcher and removes its configuration.",
+        "tags": [
+          "opa"
+        ],
+        "summary": "Stop and remove OPA L4 policy watcher",
+        "operationId": "deleteConfigOpaWatcher",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/PostSuccess"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        },
+        "x-raw-middleware": true
+      }
+    },
     "/config/params": {
       "get": {
         "description": "Get Operational params of LoxiLB",
@@ -3621,6 +6368,267 @@ func init() {
           },
           "409": {
             "description": "Resource Conflict. VLAN already exists OR dependency VRF/VNET not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/persist": {
+      "post": {
+        "description": "Dumps the gateway's live configuration to {config-path}/snapshot.json (atomic temp-file + rename, 0600) so it survives a daemon restart. This is \"save\" as an API (single-writer rule) - the same write the gateway performs automatically after a committed restore and, when auto-persist is enabled, after every successful mutating config call. loxicmd save --api calls this instead of writing legacy *.txt files client-side.",
+        "produces": [
+          "application/json"
+        ],
+        "summary": "Persist the running configuration to disk",
+        "responses": {
+          "200": {
+            "description": "Configuration persisted",
+            "schema": {
+              "$ref": "#/definitions/PersistResult"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "409": {
+            "description": "Another snapshot or restore operation is in progress",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/pii/configure": {
+      "post": {
+        "description": "Update PII detection configuration (mode, thresholds, URLs, circuit breaker)",
+        "summary": "Configure PII detection settings",
+        "parameters": [
+          {
+            "description": "PII detection configuration",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PIIConfigEntry"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "PII configuration updated successfully",
+            "schema": {
+              "$ref": "#/definitions/PostSuccess"
+            }
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/pii/enable": {
+      "post": {
+        "description": "Toggle PII detection on or off for HTTP/HTTPS traffic",
+        "summary": "Enable or disable PII detection",
+        "parameters": [
+          {
+            "description": "Enable/disable flag",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "required": [
+                "enabled"
+              ],
+              "properties": {
+                "enabled": {
+                  "description": "Enable (true) or disable (false) PII detection",
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "PII detection status updated successfully",
+            "schema": {
+              "$ref": "#/definitions/PostSuccess"
+            }
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/pii/stats": {
+      "get": {
+        "description": "Retrieve PII detection statistics (scans, detections, blocks, errors)",
+        "summary": "Get PII detection statistics",
+        "responses": {
+          "200": {
+            "description": "PII statistics retrieved successfully",
+            "schema": {
+              "$ref": "#/definitions/PIIStatsResponse"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/pii/status": {
+      "get": {
+        "description": "Retrieve current PII detection settings and status",
+        "summary": "Get current PII detection configuration",
+        "responses": {
+          "200": {
+            "description": "PII configuration retrieved successfully",
+            "schema": {
+              "$ref": "#/definitions/PIIStatusResponse"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/pii/url-patterns": {
+      "post": {
+        "description": "Configure URL patterns (include/exclude) for selective PII scanning",
+        "summary": "Add or update URL patterns for PII scanning",
+        "parameters": [
+          {
+            "description": "URL pattern configuration",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PIIURLPatternsEntry"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "URL patterns updated successfully",
+            "schema": {
+              "$ref": "#/definitions/PostSuccess"
+            }
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -3846,6 +6854,75 @@ func init() {
         }
       }
     },
+    "/config/restore": {
+      "post": {
+        "description": "Runs the staged restore pipeline (parse, validate, plan, preserve, apply, verify, commit-or-rollback) on the posted snapshot document. Default mode is dry-run, which validates and plans without mutating anything; commit must be explicit. Replaces the deprecated /config/import.",
+        "produces": [
+          "application/json"
+        ],
+        "summary": "Restore an instance snapshot",
+        "parameters": [
+          {
+            "enum": [
+              "dry-run",
+              "commit"
+            ],
+            "type": "string",
+            "default": "dry-run",
+            "description": "dry-run (default) validates and returns the plan without mutating anything; commit applies the snapshot with automatic rollback on failure.",
+            "name": "mode",
+            "in": "query"
+          },
+          {
+            "description": "The snapshot document, as produced by GET /config/snapshot.",
+            "name": "snapshot",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Restore result (both modes; inspect result and errors fields)",
+            "schema": {
+              "$ref": "#/definitions/RestoreResult"
+            }
+          },
+          "400": {
+            "description": "Malformed or incompatible snapshot document",
+            "schema": {
+              "$ref": "#/definitions/RestoreResult"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "409": {
+            "description": "Another snapshot or restore operation is in progress",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Restore failed (rolled-back or ROLLBACK-FAILED; see result field)",
+            "schema": {
+              "$ref": "#/definitions/RestoreResult"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
     "/config/route": {
       "post": {
         "description": "Create a new route config .",
@@ -4036,6 +7113,136 @@ func init() {
           },
           "503": {
             "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/securityrate": {
+      "post": {
+        "description": "Configure unified SYN flood protection (P0-5) and connection rate limiting (P0-6).",
+        "summary": "Configure unified security rate limiting",
+        "parameters": [
+          {
+            "description": "Unified security rate limiting configuration",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/SecurityRateConfigMod"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "delete": {
+        "description": "Disable all security rate limiting (SYN flood + connection rate) and clear tracking state.",
+        "summary": "Disable unified security rate limiting",
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/securityrate/all": {
+      "get": {
+        "description": "Get current unified security rate limiting (P0-5 + P0-6 + P0-7) configuration and statistics.",
+        "summary": "Get unified security rate limiting configuration and statistics",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "securityrateAttr": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/SecurityRateEntry"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/securityrate/reset": {
+      "put": {
+        "description": "Reset all accumulated statistics counters for security rate limiting (SYN/Conn/UDP) to zero.",
+        "summary": "Reset security rate limiting statistics",
+        "responses": {
+          "204": {
+            "description": "Statistics reset successfully"
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -4375,6 +7582,614 @@ func init() {
           },
           "503": {
             "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/snapshot": {
+      "get": {
+        "description": "Returns the versioned, checksummed snapshot document (schema 1.0) covering all v1 configuration domains. Replaces the deprecated /config/export. Response carries Content-Disposition and X-Snapshot-Checksum headers.",
+        "produces": [
+          "application/json"
+        ],
+        "summary": "Download a complete instance snapshot",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Comma-separated list of v1 domains to capture (endpoint, loadbalancer, firewall, policy, mirror, session, sessionulcl, ipfilter, securityrate, bfd, bgp, ipsec). If not specified, all domains are captured.",
+            "name": "components",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Snapshot document download",
+            "schema": {
+              "type": "file"
+            },
+            "headers": {
+              "Content-Disposition": {
+                "type": "string"
+              },
+              "X-Snapshot-Checksum": {
+                "type": "string"
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid parameters",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "409": {
+            "description": "Another snapshot or restore operation is in progress",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/trace/catalog/{catalog_id}/parser": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Returns the parser currently assigned to a specific trace catalog.\nShows catalog name, parser name, and parser_type from YAML configuration.\n",
+        "tags": [
+          "Tracing"
+        ],
+        "summary": "Get parser assignment for a catalog",
+        "operationId": "getCatalogParser",
+        "parameters": [
+          {
+            "maximum": 255,
+            "minimum": 1,
+            "type": "integer",
+            "description": "Catalog ID (1-255)",
+            "name": "catalog_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Catalog parser mapping",
+            "schema": {
+              "$ref": "#/definitions/CatalogParserMapping"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Catalog not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "put": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Dynamically changes which parser is used for a specific catalog at runtime.\nThis allows switching parsers without restarting loxilb or reloading YAML files.\n\n**Use Cases:**\n- Switch from mock to production parser after testing\n- Change parser when service protocol changes\n- A/B testing different parser implementations\n\n**Parser Selection Priority:**\n1. Catalog ID → parser mapping (set by this endpoint or YAML)\n2. URL path prefix matching (e.g., /v1/chat/completions → openai)\n3. Default mock parser\n",
+        "tags": [
+          "Tracing"
+        ],
+        "summary": "Update parser assignment for a catalog",
+        "operationId": "updateCatalogParser",
+        "parameters": [
+          {
+            "maximum": 255,
+            "minimum": 1,
+            "type": "integer",
+            "description": "Catalog ID (1-255)",
+            "name": "catalog_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "description": "Parser assignment",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/TraceParserUpdate"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Parser updated successfully",
+            "schema": {
+              "$ref": "#/definitions/PostSuccess"
+            }
+          },
+          "400": {
+            "description": "Invalid parser name",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Catalog or parser not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "delete": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Removes the catalog → parser mapping, causing the system to fall back to:\n1. URL path-based routing (e.g., /v1/chat/completions → openai)\n2. Default mock parser\n\nUse this to revert to path-based parser selection or remove custom assignments.\n",
+        "tags": [
+          "Tracing"
+        ],
+        "summary": "Remove parser assignment for a catalog",
+        "operationId": "deleteCatalogParser",
+        "parameters": [
+          {
+            "maximum": 255,
+            "minimum": 1,
+            "type": "integer",
+            "description": "Catalog ID (1-255)",
+            "name": "catalog_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Parser mapping removed successfully"
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Catalog not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/trace/catalogs": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Returns a list of all tracing catalog templates loaded from YAML files.\nCatalogs define parser assignments, sampling rates, and tracing behavior for different services.\n\n**Catalog Sources:**\n- Builtin catalogs: /opt/loxilb/trace-catalogs/\n- User overrides: /etc/loxilb/trace-catalogs/\n\n**Response includes:**\n- Catalog name (from YAML filename)\n- Parser assignment (parser_type from YAML)\n- Sample rate (percentage of requests traced)\n- Enabled status\n- Version and description\n",
+        "tags": [
+          "Tracing"
+        ],
+        "summary": "List all loaded trace catalogs",
+        "operationId": "getTraceCatalogs",
+        "responses": {
+          "200": {
+            "description": "List of loaded trace catalogs",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/TraceCatalogEntry"
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        },
+        "x-not-implemented": true
+      }
+    },
+    "/config/trace/disable": {
+      "post": {
+        "description": "Disables distributed tracing and stops emitting events to ring buffers.",
+        "tags": [
+          "Tracing"
+        ],
+        "summary": "Disable HTTP/HTTPS protocol tracing",
+        "operationId": "PostConfigTraceDisable",
+        "responses": {
+          "200": {
+            "description": "Tracing disabled successfully",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "type": "string",
+                  "example": "HTTP/HTTPS tracing disabled"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/trace/enable": {
+      "post": {
+        "description": "Enables distributed tracing for all HTTP/HTTPS traffic passing through loxilb proxy. Events are emitted to ring buffers for export to Jaeger/OpenTelemetry.",
+        "tags": [
+          "Tracing"
+        ],
+        "summary": "Enable HTTP/HTTPS protocol tracing",
+        "operationId": "PostConfigTraceEnable",
+        "responses": {
+          "200": {
+            "description": "Tracing enabled successfully",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "type": "string",
+                  "example": "HTTP/HTTPS tracing enabled"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/trace/otlp": {
+      "get": {
+        "description": "Returns current OTLP endpoint address, protocol, TLS settings, and connection status.",
+        "tags": [
+          "Tracing"
+        ],
+        "summary": "Get OTLP endpoint configuration (with security settings)",
+        "operationId": "GetConfigTraceOtlp",
+        "responses": {
+          "200": {
+            "description": "OTLP configuration retrieved successfully",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "connected": {
+                  "description": "Whether OTLP exporter is currently connected",
+                  "type": "boolean"
+                },
+                "endpoint": {
+                  "description": "OTLP endpoint address",
+                  "type": "string",
+                  "example": "jaeger.example.com:4317"
+                },
+                "headers": {
+                  "description": "Configured authentication headers (values redacted for security)",
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "example": {
+                    "Authorization": "***REDACTED***",
+                    "X-API-Key": "***REDACTED***"
+                  }
+                },
+                "protocol": {
+                  "description": "OTLP protocol (grpc or http)",
+                  "type": "string",
+                  "example": "grpc"
+                },
+                "tls_skip_verify": {
+                  "description": "Whether TLS certificate verification is skipped (insecure if true)",
+                  "type": "boolean",
+                  "example": false
+                },
+                "use_tls": {
+                  "description": "Whether TLS encryption is enabled",
+                  "type": "boolean",
+                  "example": true
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "post": {
+        "description": "Sets the OpenTelemetry Protocol (OTLP) endpoint address and protocol for exporting distributed traces to Jaeger/Tempo/etc.\n\n**Security Features:**\n- TLS encryption enabled by default (use_tls: true)\n- TLS certificate verification (tls_skip_verify: false)\n- Optional authentication headers (API keys, bearer tokens)\n- Endpoint validation (host:port format, DNS resolution)\n\n**Production Recommendations:**\n- Always use TLS (use_tls: true) to encrypt trace data\n- Never skip TLS verification (tls_skip_verify: false) in production\n- Use authentication headers for secured endpoints\n- Validate endpoint connectivity before deploying\n",
+        "tags": [
+          "Tracing"
+        ],
+        "summary": "Configure OTLP endpoint for trace export (with TLS security)",
+        "operationId": "PostConfigTraceOtlp",
+        "parameters": [
+          {
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "required": [
+                "endpoint",
+                "protocol"
+              ],
+              "properties": {
+                "endpoint": {
+                  "description": "OTLP endpoint address in host:port format (validated)",
+                  "type": "string",
+                  "pattern": "^([a-zA-Z0-9.-]+|\\[[0-9a-fA-F:]+\\]):[0-9]+$",
+                  "example": "jaeger.example.com:4317"
+                },
+                "headers": {
+                  "description": "Optional authentication headers (e.g., API keys)",
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "example": {
+                    "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                    "X-API-Key": "your-api-key-here"
+                  }
+                },
+                "protocol": {
+                  "description": "OTLP protocol type",
+                  "type": "string",
+                  "enum": [
+                    "grpc",
+                    "http"
+                  ],
+                  "example": "grpc"
+                },
+                "tls_skip_verify": {
+                  "description": "Skip TLS certificate verification (default=false, INSECURE if true)",
+                  "type": "boolean",
+                  "default": false
+                },
+                "use_tls": {
+                  "description": "Enable TLS encryption (default=true, RECOMMENDED)",
+                  "type": "boolean",
+                  "default": true
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OTLP endpoint configured successfully",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "type": "string",
+                  "example": "OTLP endpoint configured successfully"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (bad endpoint, protocol, or headers)",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/trace/parsers": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Returns a list of all protocol parsers registered in the tracing system.\nParsers analyze HTTP/HTTPS request/response bodies to extract protocol-specific attributes.\n\n**Available Parsers:**\n- **openai**: OpenAI API (GPT models, tokens, streaming)\n- **mcp**: Model Context Protocol (JSON-RPC tools, prompts, resources)\n- **mock**: Simple JSON parser for testing\n\nUse this endpoint to discover which parsers are available before assigning them to catalogs.\n",
+        "tags": [
+          "Tracing"
+        ],
+        "summary": "List all available trace parsers",
+        "operationId": "getTraceParsers",
+        "responses": {
+          "200": {
+            "description": "List of available parsers",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "parsers": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/TraceParserInfo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/trace/status": {
+      "get": {
+        "description": "Returns current tracing status, ring buffer statistics, and OTLP endpoint configuration.",
+        "tags": [
+          "Tracing"
+        ],
+        "summary": "Get HTTP/HTTPS tracing status",
+        "operationId": "GetConfigTraceStatus",
+        "responses": {
+          "200": {
+            "description": "Tracing status retrieved successfully",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "dropped_events": {
+                  "description": "Total number of events dropped due to ring buffer full",
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "enabled": {
+                  "description": "Whether tracing is currently enabled",
+                  "type": "boolean"
+                },
+                "otlp_connected": {
+                  "description": "Whether OTLP exporter is currently connected",
+                  "type": "boolean"
+                },
+                "otlp_endpoint": {
+                  "description": "Currently configured OTLP endpoint address",
+                  "type": "string",
+                  "example": "localhost:4317"
+                },
+                "otlp_protocol": {
+                  "description": "OTLP protocol (grpc or http)",
+                  "type": "string",
+                  "example": "grpc"
+                },
+                "ring_utilization": {
+                  "description": "Current utilization (pending events) per worker ring buffer",
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "int32"
+                  }
+                },
+                "total_events": {
+                  "description": "Total number of events emitted across all workers",
+                  "type": "integer",
+                  "format": "int64"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -4910,6 +8725,84 @@ func init() {
         }
       }
     },
+    "/config/worker/metrics": {
+      "get": {
+        "description": "Returns current GPU metrics for all tracked workers",
+        "summary": "Get all worker metrics",
+        "responses": {
+          "200": {
+            "description": "Worker metrics retrieved successfully",
+            "schema": {
+              "$ref": "#/definitions/WorkerMetricsResponse"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "post": {
+        "description": "Receives GPU metrics from metrics agent and updates routing decisions",
+        "summary": "Update worker GPU metrics",
+        "parameters": [
+          {
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/WorkerMetricsEntry"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Metrics updated successfully",
+            "schema": {
+              "$ref": "#/definitions/WorkerMetricsUpdateResponse"
+            }
+          },
+          "400": {
+            "description": "GPU monitoring disabled or invalid request",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Failed to update metrics",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
     "/log-archives": {
       "get": {
         "description": "Retrieve a list of all rotated log archive files available for download.",
@@ -4933,6 +8826,9 @@ func init() {
     "/log-archives/{filename}": {
       "get": {
         "description": "Download a log archive file by its name.",
+        "produces": [
+          "application/octet-stream"
+        ],
         "summary": "Download a specific log archive",
         "parameters": [
           {
@@ -4992,6 +8888,18 @@ func init() {
             "type": "string",
             "description": "Filter logs containing a specific keyword or phrase.",
             "name": "keyword",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "Opaque pagination cursor from a previous response's next_cursor; fetches the next page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "Specific log file to read (default is the current log file).",
+            "name": "file",
             "in": "query"
           }
         ],
@@ -5073,7 +8981,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        }
+        },
+        "x-not-implemented": true
       }
     },
     "/metrics/errorcount": {
@@ -5093,7 +9002,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        }
+        },
+        "x-not-implemented": true
       }
     },
     "/metrics/flowcount": {
@@ -5113,7 +9023,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        }
+        },
+        "x-not-implemented": true
       }
     },
     "/metrics/fwdrops": {
@@ -5133,7 +9044,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        }
+        },
+        "x-not-implemented": true
       }
     },
     "/metrics/hostcount": {
@@ -5153,7 +9065,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        }
+        },
+        "x-not-implemented": true
       }
     },
     "/metrics/lbprocessedtraffic": {
@@ -5173,7 +9086,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        }
+        },
+        "x-not-implemented": true
       }
     },
     "/metrics/lbrulecount": {
@@ -5193,7 +9107,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        }
+        },
+        "x-not-implemented": true
       }
     },
     "/metrics/newflowcount": {
@@ -5213,7 +9128,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        }
+        },
+        "x-not-implemented": true
       }
     },
     "/metrics/processedtraffic": {
@@ -5233,7 +9149,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        }
+        },
+        "x-not-implemented": true
       }
     },
     "/metrics/reqcountperclient": {
@@ -5253,7 +9170,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        }
+        },
+        "x-not-implemented": true
       }
     },
     "/metrics/requestcount": {
@@ -5273,7 +9191,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        }
+        },
+        "x-not-implemented": true
       }
     },
     "/metrics/servicedisttraffic": {
@@ -5293,7 +9212,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        }
+        },
+        "x-not-implemented": true
       }
     },
     "/nodegraph/all": {
@@ -5325,7 +9245,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        }
+        },
+        "x-not-implemented": true
       }
     },
     "/nodegraph/{service}": {
@@ -5366,7 +9287,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        }
+        },
+        "x-not-implemented": true
       }
     },
     "/oauth/{provider}": {
@@ -5503,6 +9425,137 @@ func init() {
             "description": "Internal Server Error",
             "schema": {
               "$ref": "#/definitions/OauthErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/sni/certificates": {
+      "get": {
+        "description": "Get all SNI certificates in the global certificate store (shared by all proxies)",
+        "summary": "List all global SNI certificates",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "certificates": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "certPath": {
+                        "description": "Certificate directory path",
+                        "type": "string"
+                      },
+                      "hostname": {
+                        "description": "Hostname (e.g., api.example.com)",
+                        "type": "string"
+                      },
+                      "refCount": {
+                        "description": "Number of proxies using this certificate",
+                        "type": "integer"
+                      }
+                    }
+                  }
+                },
+                "totalCertificates": {
+                  "description": "Total number of registered certificates",
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      },
+      "post": {
+        "description": "Register an SNI certificate in the global certificate store. Multiple loadbalancer rules can share the same certificate by hostname. The certificate is stored independently and looked up during TLS handshake based on SNI.",
+        "summary": "Register SNI certificate globally (shared by all proxies)",
+        "parameters": [
+          {
+            "description": "SNI certificate registration parameters",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/SNICertificateEntry"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/SuccessResponse"
+            }
+          },
+          "400": {
+            "description": "Bad Request - Certificate load failed or invalid parameters",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "409": {
+            "description": "Conflict - Certificate already registered for this hostname",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      },
+      "delete": {
+        "description": "Remove SNI certificate from global store",
+        "summary": "Unregister SNI certificate globally",
+        "parameters": [
+          {
+            "description": "SNI certificate removal parameters",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "required": [
+                "hostname"
+              ],
+              "properties": {
+                "hostname": {
+                  "description": "Hostname to unregister (e.g., api.example.com)",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/SuccessResponse"
+            }
+          },
+          "404": {
+            "description": "Certificate not found",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
             }
           }
         }
@@ -5655,6 +9708,123 @@ func init() {
     }
   },
   "definitions": {
+    "ApiKeyCreateRequest": {
+      "type": "object",
+      "required": [
+        "tenant_id"
+      ],
+      "properties": {
+        "allowed_models": {
+          "description": "List of model identifiers this key may access",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "burst_size": {
+          "description": "Burst capacity above the steady-state RPS limit",
+          "type": "integer",
+          "format": "int64"
+        },
+        "enabled": {
+          "description": "Whether the API key is active. Absent = enabled (optional, nullable to distinguish unset).",
+          "type": "boolean",
+          "x-nullable": true
+        },
+        "expires_at": {
+          "description": "Optional expiry timestamp (RFC3339)",
+          "type": "string",
+          "format": "date-time"
+        },
+        "name": {
+          "description": "Human-readable label for the API key",
+          "type": "string"
+        },
+        "rate_limit_rps": {
+          "description": "Maximum requests per second allowed for this key",
+          "type": "integer",
+          "format": "int64"
+        },
+        "tenant_id": {
+          "description": "Tenant identifier that owns this key",
+          "type": "string"
+        },
+        "tokens_per_min": {
+          "description": "Maximum LLM tokens per minute for this key",
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
+    "ApiKeyCreateResponse": {
+      "type": "object",
+      "required": [
+        "raw_key"
+      ],
+      "properties": {
+        "key_id": {
+          "description": "Unique identifier of the created API key",
+          "type": "string"
+        },
+        "raw_key": {
+          "description": "The plaintext API key — returned ONLY at creation time",
+          "type": "string"
+        }
+      }
+    },
+    "ApiKeySummary": {
+      "type": "object",
+      "properties": {
+        "allowed_models": {
+          "description": "List of model identifiers this key may access",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "burst_size": {
+          "description": "Burst capacity above the steady-state RPS limit",
+          "type": "integer",
+          "format": "int64"
+        },
+        "created_at": {
+          "description": "Timestamp when the key was created",
+          "type": "string",
+          "format": "date-time"
+        },
+        "enabled": {
+          "description": "Whether this key is currently active",
+          "type": "boolean"
+        },
+        "expires_at": {
+          "description": "Optional expiry timestamp (RFC3339)",
+          "type": "string",
+          "format": "date-time"
+        },
+        "key_id": {
+          "description": "Unique identifier of the API key",
+          "type": "string"
+        },
+        "name": {
+          "description": "Human-readable label for the API key",
+          "type": "string"
+        },
+        "rate_limit_rps": {
+          "description": "Maximum requests per second allowed for this key",
+          "type": "integer",
+          "format": "int64"
+        },
+        "tenant_id": {
+          "description": "Tenant that owns this key",
+          "type": "string"
+        },
+        "tokens_per_min": {
+          "description": "Maximum LLM tokens per minute for this key",
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
     "BGPApplyPolicyToNeighborMod": {
       "type": "object",
       "required": [
@@ -6128,9 +10298,80 @@ func init() {
         }
       }
     },
+    "CatalogParserMapping": {
+      "type": "object",
+      "required": [
+        "catalog_id"
+      ],
+      "properties": {
+        "catalog_id": {
+          "description": "Catalog ID",
+          "type": "integer",
+          "maximum": 255,
+          "minimum": 1,
+          "example": 1
+        },
+        "catalog_name": {
+          "description": "Catalog name from YAML",
+          "type": "string",
+          "example": "v1"
+        },
+        "parser_name": {
+          "description": "Currently assigned parser",
+          "type": "string",
+          "example": "openai"
+        },
+        "parser_type": {
+          "description": "Parser type from YAML configuration",
+          "type": "string",
+          "example": "openai"
+        }
+      }
+    },
+    "Cert": {
+      "type": "object",
+      "required": [
+        "certPem",
+        "keyPem"
+      ],
+      "properties": {
+        "certId": {
+          "description": "Opaque certificate management handle. Client-supplied verbatim or server-minted when absent. Stable across rotation (PUT). Max 63 chars; no path separators.",
+          "type": "string",
+          "x-nullable": true
+        },
+        "certPem": {
+          "description": "Leaf (server) certificate in PEM. Required on POST/PUT. Try-parsed as X.509 — malformed PEM is rejected with 400.",
+          "type": "string",
+          "x-nullable": true
+        },
+        "chainPem": {
+          "description": "Optional intermediate-chain PEM appended after the leaf.",
+          "type": "string"
+        },
+        "hostnames": {
+          "description": "Output-only. SAN-DNS/CN auto-derived hostnames the certId registered into the SNI store. Ignored on POST/PUT.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "keyPem": {
+          "description": "Private key in PEM. Required on POST/PUT. Persisted 0600 (key-at-rest). Never returned on GET.",
+          "type": "string",
+          "x-nullable": true
+        }
+      }
+    },
     "ConntrackEntry": {
       "type": "object",
       "properties": {
+        "ageMs": {
+          "description": "DOCA detail: age of this conntrack/offload flow in milliseconds (age-query estimate; 0 when unavailable). Declared so a ` + "`" + `swagger generate server` + "`" + ` reproduces the hand-maintained DOCA age field instead of clobbering it. Additive/optional.",
+          "type": "integer",
+          "format": "uint64",
+          "x-nullable": false
+        },
         "bytes": {
           "description": "Packet bytes of the conntrack",
           "type": "integer"
@@ -6151,9 +10392,26 @@ func init() {
           "description": "port number for the access",
           "type": "integer"
         },
+        "hw_bytes": {
+          "description": "Byte count served by the HW fast-path for this flow",
+          "type": "integer",
+          "format": "uint64",
+          "x-nullable": false
+        },
+        "hw_pkts": {
+          "description": "Packet count served by the HW fast-path for this flow",
+          "type": "integer",
+          "format": "uint64",
+          "x-nullable": false
+        },
         "ident": {
           "description": "value for Conntrack ident",
           "type": "string"
+        },
+        "offload_state": {
+          "description": "HW offload state of the conntrack flow (\"none\", \"hw\"). Absent when none.",
+          "type": "string",
+          "x-nullable": false
         },
         "packets": {
           "description": "Packet counts of the conntrack",
@@ -6174,6 +10432,29 @@ func init() {
         "sourcePort": {
           "description": "port number for the access",
           "type": "integer"
+        }
+      }
+    },
+    "ConversationCleanupResponse": {
+      "type": "object",
+      "required": [
+        "deleted_count",
+        "oldest_remaining_hours",
+        "message"
+      ],
+      "properties": {
+        "deleted_count": {
+          "description": "Number of conversations deleted",
+          "type": "integer"
+        },
+        "message": {
+          "description": "Status message",
+          "type": "string"
+        },
+        "oldest_remaining_hours": {
+          "description": "Age in hours of oldest remaining conversation",
+          "type": "number",
+          "format": "float"
         }
       }
     },
@@ -6255,8 +10536,24 @@ func init() {
         "hostName"
       ],
       "properties": {
+        "domainName": {
+          "description": "doubles as TLS SNI for HTTPS monitors AND the Host header. Optional/additive.",
+          "type": "string"
+        },
+        "expectedCodes": {
+          "description": "Octavia expected_codes — single \"200\", list \"200,202\", or range \"200-204\". Optional/additive — empty defaults to \"200\".",
+          "type": "string"
+        },
         "hostName": {
           "description": "Host name in CIDR",
+          "type": "string"
+        },
+        "httpMethod": {
+          "description": "HTTP(S) health-monitor method (e.g. GET, HEAD). Optional/additive — empty defaults to GET. Control-plane only (probeReq/probeResp retained as the escape hatch).",
+          "type": "string"
+        },
+        "httpVersion": {
+          "description": "HM HTTP version \"1.0\" or \"1.1\". When \"1.1\" a Host header is sent (domainName, else the member address). Optional/additive.",
           "type": "string"
         },
         "inactiveReTries": {
@@ -6284,7 +10581,7 @@ func init() {
           "type": "string"
         },
         "probeType": {
-          "description": "Type of probe used",
+          "description": "Type of probe used (tls-hello = handshake-only TLS liveness probe)",
           "type": "string",
           "enum": [
             "tcp",
@@ -6293,8 +10590,13 @@ func init() {
             "ping",
             "http",
             "https",
-            "none"
+            "none",
+            "tls-hello"
           ]
+        },
+        "urlPath": {
+          "description": "HM request path (e.g. /healthz). Optional/additive — empty falls back to probeReq or \"/\".",
+          "type": "string"
         }
       }
     },
@@ -6442,6 +10744,14 @@ func init() {
         }
       }
     },
+    "ErrorResponse": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string"
+        }
+      }
+    },
     "FDBEntry": {
       "type": "object",
       "required": [
@@ -6567,6 +10877,12 @@ func init() {
           "description": "Destination IP in CIDR notation",
           "type": "string"
         },
+        "hwOffload": {
+          "description": "opt-IN per-rule HW offload flag. When true, the rule is mirrored into the DOCA ingress ACL pipeline (DENY_PIPE / ALLOW_PIPE) in addition to the eBPF firewall fallback. The rule MUST be expressible in HW (IPv4, single-port, no proto-specific match) — non-expressible rules are hard-rejected at AddFwRule. Default false preserves existing eBPF-only behaviour for all deployments.\n",
+          "type": "boolean",
+          "default": false,
+          "x-nullable": false
+        },
         "maxDestinationPort": {
           "description": "Maximum  destination port range",
           "type": "integer"
@@ -6643,6 +10959,54 @@ func init() {
         }
       }
     },
+    "GPUEnableResponse": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "routing_mode",
+        "message"
+      ],
+      "properties": {
+        "enabled": {
+          "description": "Whether GPU monitoring is now enabled",
+          "type": "boolean"
+        },
+        "message": {
+          "description": "Status message",
+          "type": "string"
+        },
+        "routing_mode": {
+          "description": "Current routing mode (gpu_aware or standard_chwbl)",
+          "type": "string"
+        }
+      }
+    },
+    "GPUMonitoringStatus": {
+      "type": "object",
+      "properties": {
+        "ebpf_map_loaded": {
+          "description": "Whether eBPF maps are loaded",
+          "type": "boolean"
+        },
+        "enabled": {
+          "description": "Whether GPU monitoring is currently active",
+          "type": "boolean"
+        },
+        "last_metrics_update": {
+          "description": "Timestamp of last metrics update",
+          "type": "string",
+          "format": "date-time"
+        },
+        "routing_mode": {
+          "description": "Current routing mode (standard_chwbl or gpu_aware)",
+          "type": "string"
+        },
+        "worker_count": {
+          "description": "Number of workers being tracked",
+          "type": "integer"
+        }
+      }
+    },
     "HealthCheckResponse": {
       "type": "object",
       "properties": {
@@ -6659,6 +11023,877 @@ func init() {
         },
         "unhealthy_host_count": {
           "type": "number"
+        }
+      }
+    },
+    "IPFilterEntry": {
+      "type": "object",
+      "required": [
+        "filterType",
+        "cidr",
+        "action"
+      ],
+      "properties": {
+        "action": {
+          "description": "Action to take (allow or drop)",
+          "type": "string",
+          "enum": [
+            "allow",
+            "drop"
+          ]
+        },
+        "bytes": {
+          "description": "Byte counter (read-only)",
+          "type": "integer",
+          "format": "int64"
+        },
+        "cidr": {
+          "description": "IP address in CIDR notation (e.g., 192.168.1.0/24)",
+          "type": "string"
+        },
+        "filterType": {
+          "description": "Filter type (whitelist or blacklist)",
+          "type": "string",
+          "enum": [
+            "whitelist",
+            "blacklist"
+          ]
+        },
+        "packets": {
+          "description": "Packet counter (read-only)",
+          "type": "integer",
+          "format": "int64"
+        },
+        "priority": {
+          "description": "Rule priority (higher = more important)",
+          "type": "integer",
+          "format": "int64",
+          "default": 100
+        },
+        "zone": {
+          "description": "Security zone (0 = all zones)",
+          "type": "integer",
+          "format": "int64",
+          "default": 0
+        }
+      }
+    },
+    "IPsecCACertificate": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "installedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "issuer": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "notAfter": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "notBefore": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "serial": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        }
+      }
+    },
+    "IPsecCACertificateMod": {
+      "type": "object",
+      "required": [
+        "name",
+        "certificate"
+      ],
+      "properties": {
+        "certificate": {
+          "description": "PEM-encoded X.509 CA certificate",
+          "type": "string"
+        },
+        "description": {
+          "description": "Optional description",
+          "type": "string"
+        },
+        "name": {
+          "description": "CA certificate name",
+          "type": "string"
+        }
+      }
+    },
+    "IPsecCertValidation": {
+      "type": "object",
+      "properties": {
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "issuer": {
+          "type": "string"
+        },
+        "keyAlgorithm": {
+          "type": "string"
+        },
+        "keySize": {
+          "type": "integer"
+        },
+        "notAfter": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "notBefore": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "valid": {
+          "type": "boolean"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "IPsecCertificate": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "installedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "issuer": {
+          "type": "string"
+        },
+        "keyUsage": {
+          "description": "Key usage extensions",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "name": {
+          "type": "string"
+        },
+        "notAfter": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "notBefore": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "san": {
+          "description": "Subject Alternative Names",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "serial": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        }
+      }
+    },
+    "IPsecCertificateMod": {
+      "type": "object",
+      "required": [
+        "name",
+        "certificate",
+        "privateKey"
+      ],
+      "properties": {
+        "certificate": {
+          "description": "PEM-encoded X.509 certificate",
+          "type": "string"
+        },
+        "description": {
+          "description": "Optional description",
+          "type": "string"
+        },
+        "name": {
+          "description": "Certificate name (unique identifier)",
+          "type": "string"
+        },
+        "passphrase": {
+          "description": "Optional passphrase for encrypted private key",
+          "type": "string"
+        },
+        "privateKey": {
+          "description": "PEM-encoded private key",
+          "type": "string"
+        }
+      }
+    },
+    "IPsecConfig": {
+      "type": "object",
+      "properties": {
+        "antiReplayEnabled": {
+          "description": "Enable anti-replay protection",
+          "type": "boolean"
+        },
+        "fastPathEnabled": {
+          "description": "Enable eBPF fast-path bypass for established SAs",
+          "type": "boolean"
+        },
+        "hwCapabilities": {
+          "type": "object",
+          "properties": {
+            "dpaa2Available": {
+              "type": "boolean"
+            },
+            "qatAvailable": {
+              "type": "boolean"
+            },
+            "qatDevices": {
+              "type": "integer"
+            }
+          }
+        },
+        "hwOffloadEnabled": {
+          "description": "Enable hardware crypto offload (QAT/DPAA2)",
+          "type": "boolean"
+        },
+        "hwOffloadType": {
+          "description": "Hardware offload type",
+          "type": "string",
+          "enum": [
+            "none",
+            "qat",
+            "dpaa2",
+            "inline"
+          ]
+        },
+        "mtu": {
+          "description": "Maximum transmission unit for IPsec packets",
+          "type": "integer",
+          "format": "uint16"
+        },
+        "saLifetimeWarnSeconds": {
+          "description": "Warn before SA expiration (seconds)",
+          "type": "integer",
+          "format": "uint32"
+        },
+        "seqOverflowAction": {
+          "description": "Action on sequence number overflow",
+          "type": "string",
+          "enum": [
+            "rekey",
+            "drop",
+            "continue"
+          ]
+        },
+        "supportedAlgorithms": {
+          "description": "List of supported crypto algorithms",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "IPsecConfigMod": {
+      "type": "object",
+      "properties": {
+        "antiReplayEnabled": {
+          "description": "Enable anti-replay protection",
+          "type": "boolean"
+        },
+        "fastPathEnabled": {
+          "description": "Enable eBPF fast-path bypass",
+          "type": "boolean"
+        },
+        "hwOffloadEnabled": {
+          "description": "Enable hardware crypto offload",
+          "type": "boolean"
+        },
+        "hwOffloadType": {
+          "description": "Hardware offload type",
+          "type": "string",
+          "enum": [
+            "none",
+            "qat",
+            "dpaa2",
+            "inline"
+          ]
+        },
+        "mtu": {
+          "description": "Maximum transmission unit",
+          "type": "integer",
+          "format": "uint16"
+        },
+        "saLifetimeWarnSeconds": {
+          "description": "Warn before SA expiration (seconds)",
+          "type": "integer",
+          "format": "uint32"
+        },
+        "seqOverflowAction": {
+          "description": "Action on sequence number overflow",
+          "type": "string",
+          "enum": [
+            "rekey",
+            "drop",
+            "continue"
+          ]
+        }
+      }
+    },
+    "IPsecDPD": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "description": "Dead Peer Detection action",
+          "type": "string",
+          "default": "restart",
+          "enum": [
+            "restart",
+            "clear",
+            "hold"
+          ]
+        },
+        "delay": {
+          "description": "Seconds between DPD checks",
+          "type": "integer",
+          "format": "uint32",
+          "default": 30
+        },
+        "timeout": {
+          "description": "Timeout for DPD response",
+          "type": "integer",
+          "format": "uint32",
+          "default": 150
+        }
+      }
+    },
+    "IPsecPeerConfig": {
+      "type": "object",
+      "properties": {
+        "ipsecConf": {
+          "description": "strongSwan ipsec.conf conn block for the remote peer",
+          "type": "string"
+        },
+        "ipsecSecrets": {
+          "description": "strongSwan ipsec.secrets entry for the remote peer (PSK mode only; contains the pre-shared key)",
+          "type": "string"
+        },
+        "notes": {
+          "description": "Peer-side installation notes",
+          "type": "string"
+        },
+        "tunnelName": {
+          "description": "Tunnel name",
+          "type": "string"
+        }
+      }
+    },
+    "IPsecSA": {
+      "type": "object",
+      "properties": {
+        "bytesIn": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "bytesOut": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "direction": {
+          "description": "SA direction",
+          "type": "string",
+          "enum": [
+            "in",
+            "out"
+          ]
+        },
+        "encryption": {
+          "description": "Encryption algorithm",
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "integrity": {
+          "description": "Integrity algorithm",
+          "type": "string"
+        },
+        "localIp": {
+          "description": "Local IP address",
+          "type": "string"
+        },
+        "packetsIn": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "packetsOut": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "remoteIp": {
+          "description": "Remote IP address",
+          "type": "string"
+        },
+        "replayWindow": {
+          "type": "integer",
+          "format": "uint32"
+        },
+        "sequenceNumber": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "spi": {
+          "description": "Security Parameter Index",
+          "type": "string"
+        },
+        "state": {
+          "description": "SA state",
+          "type": "string",
+          "enum": [
+            "active",
+            "expired",
+            "rekeying"
+          ]
+        },
+        "tunnelName": {
+          "description": "Associated tunnel name",
+          "type": "string"
+        }
+      }
+    },
+    "IPsecSelector": {
+      "type": "object",
+      "properties": {
+        "dstCidr": {
+          "description": "Destination CIDR (e.g., 10.1.0.0/24)",
+          "type": "string"
+        },
+        "dstPort": {
+          "description": "Destination port (0 for any)",
+          "type": "integer",
+          "format": "uint16"
+        },
+        "protocol": {
+          "description": "IP protocol (132 for SCTP, 0 for any)",
+          "type": "integer",
+          "format": "uint8"
+        },
+        "srcCidr": {
+          "description": "Source CIDR (e.g., 10.0.0.0/24)",
+          "type": "string"
+        },
+        "srcPort": {
+          "description": "Source port (0 for any)",
+          "type": "integer",
+          "format": "uint16"
+        }
+      }
+    },
+    "IPsecStats": {
+      "type": "object",
+      "properties": {
+        "authErrors": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "decryptErrors": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "encryptErrors": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "lastUpdated": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "replayErrors": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "seqOverflows": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "totalBytesIn": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "totalBytesOut": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "totalPacketsIn": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "totalPacketsOut": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "totalSas": {
+          "type": "integer"
+        },
+        "totalTunnels": {
+          "type": "integer"
+        },
+        "tunnelsDown": {
+          "type": "integer"
+        },
+        "tunnelsUp": {
+          "type": "integer"
+        }
+      }
+    },
+    "IPsecTunnel": {
+      "type": "object",
+      "properties": {
+        "authMode": {
+          "type": "string"
+        },
+        "auto": {
+          "description": "Connection startup mode - start (initiator/client), add (responder/server), route (on-demand)",
+          "type": "string",
+          "enum": [
+            "start",
+            "add",
+            "route"
+          ]
+        },
+        "bytesIn": {
+          "description": "Bytes received",
+          "type": "integer",
+          "format": "uint64"
+        },
+        "bytesOut": {
+          "description": "Bytes transmitted",
+          "type": "integer",
+          "format": "uint64"
+        },
+        "caCertName": {
+          "type": "string"
+        },
+        "certName": {
+          "type": "string"
+        },
+        "compatFallback": {
+          "description": "Weak legacy proposal fallback enabled",
+          "type": "boolean"
+        },
+        "compress": {
+          "description": "IP compression enabled",
+          "type": "boolean"
+        },
+        "dpd": {
+          "$ref": "#/definitions/IPsecDPD"
+        },
+        "espDhGroup": {
+          "type": "string"
+        },
+        "espEncryption": {
+          "type": "string"
+        },
+        "espIntegrity": {
+          "type": "string"
+        },
+        "espLifetime": {
+          "type": "integer"
+        },
+        "ikeDhGroup": {
+          "type": "string"
+        },
+        "ikeEncryption": {
+          "type": "string"
+        },
+        "ikeIntegrity": {
+          "type": "string"
+        },
+        "ikeLifetime": {
+          "type": "integer"
+        },
+        "ikeVersion": {
+          "type": "string"
+        },
+        "installPolicy": {
+          "description": "Automatically install XFRM policies",
+          "type": "boolean"
+        },
+        "installedAt": {
+          "description": "When tunnel was created",
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastRekeyAt": {
+          "description": "Last rekey time",
+          "type": "string",
+          "format": "date-time"
+        },
+        "localId": {
+          "type": "string"
+        },
+        "localIp": {
+          "type": "string"
+        },
+        "mark": {
+          "description": "Netfilter mark for VTI routing",
+          "type": "integer",
+          "format": "uint32"
+        },
+        "mobike": {
+          "description": "MOBIKE enabled",
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "packetsIn": {
+          "description": "Packets received",
+          "type": "integer",
+          "format": "uint64"
+        },
+        "packetsOut": {
+          "description": "Packets transmitted",
+          "type": "integer",
+          "format": "uint64"
+        },
+        "reauth": {
+          "description": "Re-authentication on rekey",
+          "type": "boolean"
+        },
+        "rekey": {
+          "description": "Automatic rekeying enabled",
+          "type": "boolean"
+        },
+        "remoteId": {
+          "type": "string"
+        },
+        "remoteIp": {
+          "type": "string"
+        },
+        "sasInstalled": {
+          "description": "Number of SAs installed",
+          "type": "integer"
+        },
+        "selector": {
+          "$ref": "#/definitions/IPsecSelector"
+        },
+        "state": {
+          "description": "Tunnel state",
+          "type": "string",
+          "enum": [
+            "down",
+            "connecting",
+            "up"
+          ]
+        },
+        "tunnelMode": {
+          "description": "IPsec mode (tunnel or transport)",
+          "type": "string"
+        }
+      }
+    },
+    "IPsecTunnelActionMod": {
+      "type": "object",
+      "required": [
+        "action"
+      ],
+      "properties": {
+        "action": {
+          "description": "Connection action - initiate (ipsec up), terminate (ipsec down), restart (down then up)",
+          "type": "string",
+          "enum": [
+            "initiate",
+            "terminate",
+            "restart"
+          ]
+        }
+      }
+    },
+    "IPsecTunnelMod": {
+      "type": "object",
+      "required": [
+        "name",
+        "localIp",
+        "remoteIp",
+        "authMode"
+      ],
+      "properties": {
+        "authMode": {
+          "description": "Authentication mode (PSK or certificate)",
+          "type": "string",
+          "enum": [
+            "psk",
+            "cert"
+          ]
+        },
+        "auto": {
+          "description": "Connection startup mode - start (initiator/client), add (responder/server), route (on-demand)",
+          "type": "string",
+          "default": "start",
+          "enum": [
+            "start",
+            "add",
+            "route"
+          ]
+        },
+        "caCertName": {
+          "description": "CA certificate name (required for cert mode)",
+          "type": "string"
+        },
+        "certName": {
+          "description": "Certificate name (required for cert mode)",
+          "type": "string"
+        },
+        "compatFallback": {
+          "description": "Append a weak legacy proposal (aes128-sha1-modp1024 for IKE, aes128-sha1 for ESP) as a compatibility fallback for old peers. Disabled by default.",
+          "type": "boolean",
+          "default": false
+        },
+        "compress": {
+          "description": "Enable IP compression",
+          "type": "boolean",
+          "default": false
+        },
+        "dpd": {
+          "$ref": "#/definitions/IPsecDPD"
+        },
+        "espDhGroup": {
+          "description": "ESP PFS DH group as a single token (e.g. modp2048). When set, it is appended to the ESP proposal to enable Perfect Forward Secrecy; leave empty to disable PFS.",
+          "type": "string"
+        },
+        "espEncryption": {
+          "description": "ESP encryption algorithm as a single token (e.g. aes256, aes128). The gateway composes the proposal as encryption-integrity[-pfsgroup].",
+          "type": "string",
+          "default": "aes256"
+        },
+        "espIntegrity": {
+          "description": "ESP integrity algorithm as a single token (e.g. sha256, sha1)",
+          "type": "string",
+          "default": "sha256"
+        },
+        "espLifetime": {
+          "description": "ESP lifetime in seconds",
+          "type": "integer",
+          "format": "uint32",
+          "default": 3600
+        },
+        "ikeDhGroup": {
+          "description": "IKE DH group as a single token (e.g. modp2048, modp1024)",
+          "type": "string",
+          "default": "modp2048"
+        },
+        "ikeEncryption": {
+          "description": "IKE encryption algorithm as a single token (e.g. aes256, aes128). The gateway composes the proposal as encryption-integrity-dhgroup.",
+          "type": "string",
+          "default": "aes256"
+        },
+        "ikeIntegrity": {
+          "description": "IKE integrity algorithm as a single token (e.g. sha256, sha1)",
+          "type": "string",
+          "default": "sha256"
+        },
+        "ikeLifetime": {
+          "description": "IKE lifetime in seconds",
+          "type": "integer",
+          "format": "uint32",
+          "default": 28800
+        },
+        "ikeVersion": {
+          "description": "IKE version",
+          "type": "string",
+          "default": "ikev2",
+          "enum": [
+            "ikev1",
+            "ikev2"
+          ]
+        },
+        "installPolicy": {
+          "description": "Automatically install XFRM policies",
+          "type": "boolean",
+          "default": true
+        },
+        "localId": {
+          "description": "IKE local identifier",
+          "type": "string"
+        },
+        "localIp": {
+          "description": "Local gateway IP address",
+          "type": "string"
+        },
+        "mark": {
+          "description": "Netfilter mark for VTI routing (0 = no mark)",
+          "type": "integer",
+          "format": "uint32",
+          "default": 100
+        },
+        "mobike": {
+          "description": "Enable MOBIKE (IKEv2 mobility)",
+          "type": "boolean",
+          "default": false
+        },
+        "name": {
+          "description": "Tunnel name (unique identifier)",
+          "type": "string"
+        },
+        "psk": {
+          "description": "Pre-shared key (required for PSK mode)",
+          "type": "string"
+        },
+        "reauth": {
+          "description": "Re-authenticate on rekey (vs just rekey)",
+          "type": "boolean",
+          "default": false
+        },
+        "rekey": {
+          "description": "Enable automatic rekeying",
+          "type": "boolean",
+          "default": true
+        },
+        "remoteId": {
+          "description": "IKE remote identifier",
+          "type": "string"
+        },
+        "remoteIp": {
+          "description": "Remote gateway IP address",
+          "type": "string"
+        },
+        "selector": {
+          "$ref": "#/definitions/IPsecSelector"
+        },
+        "tunnelMode": {
+          "description": "IPsec mode (tunnel or transport)",
+          "type": "string",
+          "default": "tunnel",
+          "enum": [
+            "tunnel",
+            "transport"
+          ]
         }
       }
     },
@@ -6680,6 +11915,45 @@ func init() {
       }
     },
     "IPv4AddressGetEntry": {
+      "type": "object",
+      "required": [
+        "sync"
+      ],
+      "properties": {
+        "dev": {
+          "description": "Name of the interface device to which you want to modify the IP address",
+          "type": "string"
+        },
+        "ipAddress": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sync": {
+          "description": "Sync - sync state",
+          "type": "integer"
+        }
+      }
+    },
+    "IPv6AddressEntry": {
+      "type": "object",
+      "required": [
+        "dev",
+        "ipAddress"
+      ],
+      "properties": {
+        "dev": {
+          "description": "Name of the interface device to which you want to modify the IP address",
+          "type": "string"
+        },
+        "ipAddress": {
+          "description": "IP address to modify.",
+          "type": "string"
+        }
+      }
+    },
+    "IPv6AddressGetEntry": {
       "type": "object",
       "required": [
         "sync"
@@ -6778,6 +12052,338 @@ func init() {
         }
       }
     },
+    "L4TraceStats": {
+      "type": "object",
+      "properties": {
+        "conn_closed": {
+          "description": "Clean closes",
+          "type": "integer",
+          "format": "int64",
+          "example": 1450
+        },
+        "conn_error": {
+          "description": "Error events",
+          "type": "integer",
+          "format": "int64",
+          "example": 2
+        },
+        "conn_established": {
+          "description": "Established connections",
+          "type": "integer",
+          "format": "int64",
+          "example": 1520
+        },
+        "conn_new": {
+          "description": "New connections",
+          "type": "integer",
+          "format": "int64",
+          "example": 1523
+        },
+        "conn_reset": {
+          "description": "RST/ABORT closes",
+          "type": "integer",
+          "format": "int64",
+          "example": 28
+        },
+        "conn_timeout": {
+          "description": "Timeout closes",
+          "type": "integer",
+          "format": "int64",
+          "example": 45
+        },
+        "dropped_events": {
+          "description": "Ring buffer overflows",
+          "type": "integer",
+          "format": "int64",
+          "example": 12
+        },
+        "sampled_events": {
+          "description": "Events that passed sampling",
+          "type": "integer",
+          "format": "int64",
+          "example": 15234
+        },
+        "sctp_events": {
+          "description": "SCTP state changes",
+          "type": "integer",
+          "format": "int64",
+          "example": 2734
+        },
+        "tcp_events": {
+          "description": "TCP state changes",
+          "type": "integer",
+          "format": "int64",
+          "example": 12500
+        },
+        "total_events": {
+          "description": "Total L4 events emitted",
+          "type": "integer",
+          "format": "int64",
+          "example": 15234
+        },
+        "udp_events": {
+          "description": "UDP state changes",
+          "type": "integer",
+          "format": "int64",
+          "example": 5678
+        }
+      }
+    },
+    "L4TraceStatusResponse": {
+      "type": "object",
+      "properties": {
+        "config_version": {
+          "description": "Configuration version number",
+          "type": "integer",
+          "format": "int64",
+          "example": 5
+        },
+        "enabled": {
+          "description": "Whether L4 tracing is enabled",
+          "type": "boolean",
+          "example": true
+        },
+        "sampling_rate": {
+          "description": "Current sampling rate (0-100)",
+          "type": "integer",
+          "format": "int64",
+          "example": 100
+        },
+        "stats": {
+          "$ref": "#/definitions/L4TraceStats"
+        }
+      }
+    },
+    "L7Action": {
+      "description": "The single tagged-union action for a route.",
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "forward": {
+          "description": "FORWARD target (re-enters the existing intra-pool EP-select, never the AI engine).",
+          "type": "object",
+          "properties": {
+            "backendRefs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "ep": {
+                    "type": "integer",
+                    "format": "uint32"
+                  },
+                  "weight": {
+                    "type": "integer"
+                  }
+                }
+              }
+            },
+            "poolId": {
+              "type": "integer",
+              "format": "uint32"
+            }
+          }
+        },
+        "kind": {
+          "description": "FORWARD to a (weighted) pool; REDIRECT (synthetic 3xx); REJECT (synthetic 4xx, terminal). REJECT is NOT representable on Gateway API — a HARD ERROR on export.",
+          "type": "string",
+          "enum": [
+            "FORWARD",
+            "REDIRECT",
+            "REJECT"
+          ]
+        },
+        "redirect": {
+          "description": "REDIRECT target. statusCode is restricted to {301,302,303,307,308} (default 302).",
+          "type": "object",
+          "properties": {
+            "host": {
+              "type": "string"
+            },
+            "pathOp": {
+              "type": "string",
+              "enum": [
+                "NONE",
+                "REPLACE_FULL",
+                "REPLACE_PREFIX"
+              ]
+            },
+            "port": {
+              "type": "integer"
+            },
+            "scheme": {
+              "type": "string"
+            },
+            "statusCode": {
+              "description": "One of 301/302/303/307/308; 0 or absent defaults to 302 (server-side allow-list, 400 otherwise).",
+              "type": "integer"
+            },
+            "value": {
+              "type": "string"
+            }
+          }
+        },
+        "reject": {
+          "description": "REJECT target. statusCode defaults to 403.",
+          "type": "object",
+          "properties": {
+            "statusCode": {
+              "description": "A 4xx; 0 or absent defaults to 403.",
+              "type": "integer"
+            }
+          }
+        }
+      }
+    },
+    "L7Condition": {
+      "description": "One predicate, AND-combined within a match set.",
+      "type": "object",
+      "required": [
+        "field",
+        "op"
+      ],
+      "properties": {
+        "field": {
+          "description": "Request field to match. HOST/PATH/HEADER/COOKIE/FILE_TYPE are the Octavia l7rule types; METHOD/QUERY are Gateway API additions. The SSL_* field range is reserved for is NOT accepted here.",
+          "type": "string",
+          "enum": [
+            "HOST",
+            "PATH",
+            "HEADER",
+            "COOKIE",
+            "FILE_TYPE",
+            "METHOD",
+            "QUERY"
+          ]
+        },
+        "invert": {
+          "description": "Negate this condition's result (Octavia invert semantics). NOT representable on Gateway API — a policy carrying invert is a HARD ERROR on Gateway export, never silently dropped.",
+          "type": "boolean"
+        },
+        "key": {
+          "description": "Header/cookie/query NAME. REQUIRED for HEADER, COOKIE, and QUERY (400 if absent).",
+          "type": "string"
+        },
+        "op": {
+          "description": "Compare op. FILE_TYPE accepts ONLY EQUAL_TO or REGEX (Octavia constraint — server-side validated, 400 otherwise).",
+          "type": "string",
+          "enum": [
+            "EQUAL_TO",
+            "STARTS_WITH",
+            "SEGMENT_PREFIX",
+            "ENDS_WITH",
+            "CONTAINS",
+            "REGEX"
+          ]
+        },
+        "value": {
+          "description": "Operand the request field is compared against. A REGEX value is try-compiled at config time (400 on a malformed pattern) and recompiled once at attach.",
+          "type": "string"
+        }
+      }
+    },
+    "L7Policy": {
+      "description": "A dedicated L7_POLICY resource: a named ordered set of L7 routing rules attached to an existing L4 load-balancer, referenced by the LB's stable opaque ` + "`" + `id` + "`" + `. CRUD'd independently of the LB and carried to the running sockproxy by a SEPARATE attach call (never inline on the 4096-byte proxy_arg).: L7_POLICY is a dedicated resource (asymmetric with the inline AI_POLICY).",
+      "type": "object",
+      "required": [
+        "lbId",
+        "rules"
+      ],
+      "properties": {
+        "id": {
+          "description": "Stable opaque identifier for this L7 policy. Client-supplied is stored verbatim; when absent one is minted control-plane side.",
+          "type": "string"
+        },
+        "lbId": {
+          "description": "The stable opaque id of the L4 load-balancer this policy attaches to (GET /config/loadbalancer/id/{id}). 404 if no such LB exists.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Human-readable policy name.",
+          "type": "string"
+        },
+        "rules": {
+          "description": "Ordered L7 routes (FIRST-MATCH-WINS by ascending position).",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/L7Rule"
+          }
+        }
+      }
+    },
+    "L7PolicyGetEntry": {
+      "description": "GET wrapper for the L7_POLICY collection.",
+      "type": "object",
+      "properties": {
+        "l7policyAttr": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/L7Policy"
+          }
+        }
+      }
+    },
+    "L7Rule": {
+      "description": "One L7 routing rule: an ordered route with OR-of-AND match sets and a single tagged-union action (FORWARD / REDIRECT / REJECT). The translation-neutral superset of an OpenStack Octavia l7policy+l7rules group AND a Kubernetes Gateway API HTTPRoute rule. Routes are evaluated FIRST-MATCH-WINS in ascending ` + "`" + `position` + "`" + `.",
+      "type": "object",
+      "properties": {
+        "action": {
+          "$ref": "#/definitions/L7Action"
+        },
+        "insertHeaders": {
+          "description": "bounded request-header insertion filter — a tagged op {SET|ADD|REMOVE} + name(+value). A faithful superset of BOTH Octavia insert_headers (SET/ADD) AND Gateway API RequestHeaderModifier (set/add/remove). Optional/additive — omit for no header insertion. Bounded server-side (DoS guard).",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "SET",
+                  "ADD",
+                  "REMOVE"
+                ]
+              },
+              "value": {
+                "description": "Header value; ignored for REMOVE.",
+                "type": "string"
+              }
+            }
+          }
+        },
+        "matchSets": {
+          "description": "OR across sets; AND within a set. Each element is a list of conditions.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "conditions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/L7Condition"
+                }
+              }
+            }
+          }
+        },
+        "position": {
+          "description": "Explicit precedence; routes are evaluated in ascending position order.",
+          "type": "integer"
+        },
+        "sessionPersistence": {
+          "description": "session-persistence mode for this route. HTTP_COOKIE enables LB-generated Set-Cookie + read-back affinity; omit for off. Mutually exclusive with APP_COOKIE/SOURCE_IP per pool (Octavia semantics). Optional/additive.",
+          "type": "string",
+          "enum": [
+            "HTTP_COOKIE"
+          ]
+        }
+      }
+    },
     "LbProcessedTrafficMetrics": {
       "type": "object",
       "properties": {
@@ -6831,12 +12437,395 @@ func init() {
         }
       }
     },
+    "LlamaFirewallConfigEntry": {
+      "type": "object",
+      "properties": {
+        "block_threshold": {
+          "description": "Minimum confidence score to block (0.0-1.0)",
+          "type": "number",
+          "format": "float",
+          "maximum": 1,
+          "x-nullable": true,
+          "example": 0.9
+        },
+        "cache_enabled": {
+          "description": "Enable response caching for identical requests",
+          "type": "boolean",
+          "x-nullable": true,
+          "example": true
+        },
+        "cache_ttl_sec": {
+          "description": "Cache TTL in seconds",
+          "type": "integer",
+          "format": "int64",
+          "x-nullable": true,
+          "example": 300
+        },
+        "connection_pool_size": {
+          "description": "Number of reusable gRPC connections",
+          "type": "integer",
+          "format": "int64",
+          "maximum": 100,
+          "minimum": 1,
+          "x-nullable": true,
+          "example": 10
+        },
+        "fail_closed": {
+          "description": "Fail-closed (true=block on error) vs fail-open (false=allow on error)",
+          "type": "boolean",
+          "x-nullable": true,
+          "example": false
+        },
+        "scan_patterns": {
+          "description": "URL patterns to scan (empty = scan all)",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "example": [
+            "/api/v1/chat*",
+            "/api/*/code"
+          ]
+        },
+        "server_url": {
+          "description": "LlamaFirewall gRPC server URL",
+          "type": "string",
+          "example": "localhost:50052"
+        },
+        "skip_patterns": {
+          "description": "URL patterns to skip scanning",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "example": [
+            "/health",
+            "/metrics"
+          ]
+        },
+        "timeout_sec": {
+          "description": "Request timeout in seconds (for ML models)",
+          "type": "integer",
+          "format": "int64",
+          "maximum": 300,
+          "minimum": 1,
+          "x-nullable": true,
+          "example": 15
+        }
+      }
+    },
+    "LlamaFirewallDecisionStats": {
+      "type": "object",
+      "properties": {
+        "allow": {
+          "description": "Number of ALLOW decisions",
+          "type": "integer",
+          "format": "int64",
+          "example": 2397
+        },
+        "block": {
+          "description": "Number of BLOCK decisions",
+          "type": "integer",
+          "format": "int64",
+          "example": 12
+        },
+        "hitl": {
+          "description": "Number of Human-In-The-Loop decisions",
+          "type": "integer",
+          "format": "int64",
+          "example": 47
+        }
+      }
+    },
+    "LlamaFirewallHealthResponse": {
+      "type": "object",
+      "properties": {
+        "connected": {
+          "description": "Connection status",
+          "type": "boolean",
+          "example": true
+        },
+        "healthy": {
+          "description": "Overall health status",
+          "type": "boolean",
+          "example": true
+        },
+        "latency_ms": {
+          "description": "Health check latency",
+          "type": "integer",
+          "format": "int64",
+          "example": 12
+        },
+        "message": {
+          "description": "Health check message",
+          "type": "string",
+          "example": "LlamaFirewall server is healthy"
+        },
+        "server_url": {
+          "description": "Server URL checked",
+          "type": "string",
+          "example": "localhost:50052"
+        },
+        "timestamp": {
+          "description": "Health check timestamp (RFC3339)",
+          "type": "string",
+          "example": "2025-01-10T10:30:00Z"
+        }
+      }
+    },
+    "LlamaFirewallIndividualScannerStats": {
+      "type": "object",
+      "properties": {
+        "avg_latency_ms": {
+          "description": "Average latency for this scanner",
+          "type": "integer",
+          "format": "int64",
+          "example": 45
+        },
+        "detections": {
+          "description": "Threats detected by this scanner",
+          "type": "integer",
+          "format": "int64",
+          "example": 15
+        },
+        "errors": {
+          "description": "Errors from this scanner",
+          "type": "integer",
+          "format": "int64",
+          "example": 1
+        },
+        "scans": {
+          "description": "Number of scans by this scanner",
+          "type": "integer",
+          "format": "int64",
+          "example": 1523
+        }
+      }
+    },
+    "LlamaFirewallScannerStats": {
+      "type": "object",
+      "properties": {
+        "agent_alignment": {
+          "$ref": "#/definitions/LlamaFirewallIndividualScannerStats"
+        },
+        "code_shield": {
+          "$ref": "#/definitions/LlamaFirewallIndividualScannerStats"
+        },
+        "hidden_ascii": {
+          "$ref": "#/definitions/LlamaFirewallIndividualScannerStats"
+        },
+        "pii_detection": {
+          "$ref": "#/definitions/LlamaFirewallIndividualScannerStats"
+        },
+        "prompt_guard": {
+          "$ref": "#/definitions/LlamaFirewallIndividualScannerStats"
+        },
+        "regex": {
+          "$ref": "#/definitions/LlamaFirewallIndividualScannerStats"
+        }
+      }
+    },
+    "LlamaFirewallScannersEntry": {
+      "type": "object",
+      "properties": {
+        "agent_alignment": {
+          "description": "Enable AgentAlignment (AI agent misalignment detection)",
+          "type": "boolean",
+          "x-nullable": true,
+          "example": false
+        },
+        "code_shield": {
+          "description": "Enable CodeShield (insecure code pattern detection)",
+          "type": "boolean",
+          "x-nullable": true,
+          "example": true
+        },
+        "hidden_ascii": {
+          "description": "Enable HiddenASCII (zero-width/invisible character detection)",
+          "type": "boolean",
+          "x-nullable": true,
+          "example": true
+        },
+        "pii_detection": {
+          "description": "Enable PII Detection (complementary to Presidio)",
+          "type": "boolean",
+          "x-nullable": true,
+          "example": false
+        },
+        "prompt_guard": {
+          "description": "Enable PromptGuard (ML-based prompt injection detection)",
+          "type": "boolean",
+          "x-nullable": true,
+          "example": true
+        },
+        "regex": {
+          "description": "Enable Regex (credential/API key leak detection)",
+          "type": "boolean",
+          "x-nullable": true,
+          "example": true
+        }
+      }
+    },
+    "LlamaFirewallScannersStatus": {
+      "type": "object",
+      "properties": {
+        "agent_alignment": {
+          "description": "AgentAlignment enabled",
+          "type": "boolean",
+          "example": false
+        },
+        "code_shield": {
+          "description": "CodeShield enabled",
+          "type": "boolean",
+          "example": true
+        },
+        "hidden_ascii": {
+          "description": "HiddenASCII enabled",
+          "type": "boolean",
+          "example": true
+        },
+        "pii_detection": {
+          "description": "PII Detection enabled",
+          "type": "boolean",
+          "example": false
+        },
+        "prompt_guard": {
+          "description": "PromptGuard enabled",
+          "type": "boolean",
+          "example": true
+        },
+        "regex": {
+          "description": "Regex enabled",
+          "type": "boolean",
+          "example": true
+        }
+      }
+    },
+    "LlamaFirewallStatsResponse": {
+      "type": "object",
+      "properties": {
+        "avg_latency_ms": {
+          "description": "Average scan latency in milliseconds",
+          "type": "integer",
+          "format": "int64",
+          "example": 85
+        },
+        "cache_hits": {
+          "description": "Number of cache hits",
+          "type": "integer",
+          "format": "int64",
+          "example": 542
+        },
+        "decisions": {
+          "$ref": "#/definitions/LlamaFirewallDecisionStats"
+        },
+        "requests_blocked": {
+          "description": "Requests blocked due to threats",
+          "type": "integer",
+          "format": "int64",
+          "example": 12
+        },
+        "requests_scanned": {
+          "description": "User requests scanned (PromptGuard+Regex)",
+          "type": "integer",
+          "format": "int64",
+          "example": 1523
+        },
+        "responses_scanned": {
+          "description": "AI responses scanned (CodeShield+Regex)",
+          "type": "integer",
+          "format": "int64",
+          "example": 933
+        },
+        "scan_errors": {
+          "description": "Number of scan errors",
+          "type": "integer",
+          "format": "int64",
+          "example": 3
+        },
+        "scanner_stats": {
+          "$ref": "#/definitions/LlamaFirewallScannerStats"
+        },
+        "threats_detected": {
+          "description": "Total threats detected across all scanners",
+          "type": "integer",
+          "format": "int64",
+          "example": 47
+        },
+        "total_scans": {
+          "description": "Total number of scans performed",
+          "type": "integer",
+          "format": "int64",
+          "example": 2456
+        }
+      }
+    },
+    "LlamaFirewallStatusResponse": {
+      "type": "object",
+      "properties": {
+        "block_threshold": {
+          "description": "Current block threshold",
+          "type": "number",
+          "format": "float",
+          "example": 0.9
+        },
+        "cache_enabled": {
+          "description": "Cache status",
+          "type": "boolean",
+          "example": true
+        },
+        "cache_ttl_sec": {
+          "description": "Cache TTL",
+          "type": "integer",
+          "format": "int64",
+          "example": 300
+        },
+        "connected": {
+          "description": "Connection status to gRPC server",
+          "type": "boolean",
+          "example": true
+        },
+        "enabled": {
+          "description": "Whether LlamaFirewall scanning is enabled",
+          "type": "boolean",
+          "example": true
+        },
+        "fail_closed": {
+          "description": "Current fail policy",
+          "type": "boolean",
+          "example": false
+        },
+        "last_health_check": {
+          "description": "Last health check timestamp (RFC3339)",
+          "type": "string",
+          "example": "2025-01-10T10:30:00Z"
+        },
+        "scan_patterns": {
+          "description": "Active scan patterns",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "scanners": {
+          "$ref": "#/definitions/LlamaFirewallScannersStatus"
+        },
+        "server_url": {
+          "description": "Configured server URL",
+          "type": "string",
+          "example": "localhost:50052"
+        },
+        "skip_patterns": {
+          "description": "Active skip patterns",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "LoadbalanceEntry": {
       "type": "object",
-      "required": [
-        "serviceArguments",
-        "endpoints"
-      ],
       "properties": {
         "allowedSources": {
           "description": "values of allowed source IP",
@@ -6860,21 +12849,66 @@ func init() {
               "targetPort"
             ],
             "properties": {
+              "backup": {
+                "description": "Octavia standby member flag. A backup endpoint carries traffic only when all primaries are unavailable. Absent/false = primary (today's behavior).",
+                "type": "boolean",
+                "default": false
+              },
               "counter": {
                 "description": "traffic counters of the endpoint",
+                "type": "string"
+              },
+              "domainName": {
+                "description": "doubles as TLS SNI for HTTPS monitors AND the Host header. Optional/additive.",
                 "type": "string"
               },
               "endpointIP": {
                 "description": "IP address for external access",
                 "type": "string"
               },
+              "ep_role": {
+                "description": "Endpoint role for P/D disaggregation - 0=normal (no role), 1=prefill, 2=decode. Only used when pd_disagg_mode is true.",
+                "type": "integer",
+                "format": "int32",
+                "default": 0
+              },
+              "expectedCodes": {
+                "description": "Octavia expected_codes — single \"200\", list \"200,202\", or range \"200-204\". Optional/additive — empty defaults to \"200\".",
+                "type": "string"
+              },
+              "httpMethod": {
+                "description": "HTTP(S) health-monitor method (e.g. GET, HEAD). Optional/additive — empty defaults to GET. Control-plane only (probeReq/probeResp retained as the escape hatch).",
+                "type": "string"
+              },
+              "httpVersion": {
+                "description": "HM HTTP version \"1.0\" or \"1.1\". When \"1.1\" a Host header is sent (domainName, else the member address). Optional/additive.",
+                "type": "string"
+              },
+              "monitorAddress": {
+                "description": "Octavia per-member health-probe address. When set, the health probe targets this address instead of the traffic IP; absent = probe the traffic IP.",
+                "type": "string"
+              },
+              "nixl_port": {
+                "description": "NIXL side-channel port for KV cache transfer. 0=use targetPort (backward compatible). Only meaningful when pd_disagg_mode is true.",
+                "type": "integer",
+                "format": "int32",
+                "default": 0
+              },
               "state": {
                 "description": "state of the endpoint",
+                "type": "string"
+              },
+              "subnetId": {
+                "description": "Octavia member subnet identifier. Opaque store-verbatim round-trip field; not interpreted (no routing effect this phase).",
                 "type": "string"
               },
               "targetPort": {
                 "description": "port number for access service",
                 "type": "integer"
+              },
+              "urlPath": {
+                "description": "HM request path (e.g. /healthz). Optional/additive — empty falls back to probeReq or \"/\".",
+                "type": "string"
               },
               "weight": {
                 "description": "Weight for the load balancing",
@@ -6882,6 +12916,23 @@ func init() {
               }
             }
           }
+        },
+        "hw_bytes": {
+          "description": "aggregate DOCA hardware byte count for this LB service (omitempty). Generated Go field HwBytes (camelCase alias hwBytes).",
+          "type": "integer",
+          "format": "uint64",
+          "x-nullable": false
+        },
+        "hw_pkts": {
+          "description": "aggregate DOCA hardware packet count for this LB service (omitempty). Generated Go field HwPkts (camelCase alias hwPkts).",
+          "type": "integer",
+          "format": "uint64",
+          "x-nullable": false
+        },
+        "offload_state": {
+          "description": "aggregate DOCA HW offload state for this LB service (\"none\", \"hw\"), derived from the dominant CT offload state across active flows. Absent when no DOCA plugin is active (omitempty). Generated Go field OffloadState (camelCase alias offloadState).",
+          "type": "string",
+          "x-nullable": false
         },
         "secondaryIPs": {
           "description": "values of Secondary IPs",
@@ -6895,13 +12946,76 @@ func init() {
             }
           }
         },
+        "secondaryVIPs": {
+          "description": "Structured secondary VIPs (Octavia additional_vips). Additive ALONGSIDE the flat secondaryIPs (kept unchanged). Stored and round-tripped for all protocols; only SCTP consumes them at the dataplane. All fields opaque.",
+          "type": "array",
+          "items": {
+            "properties": {
+              "address": {
+                "description": "secondary VIP address",
+                "type": "string"
+              },
+              "portId": {
+                "description": "opaque Octavia port identifier for this VIP (round-trip only)",
+                "type": "string"
+              },
+              "proto": {
+                "description": "opaque protocol hint for this VIP (round-trip only)",
+                "type": "string"
+              },
+              "subnetId": {
+                "description": "opaque Octavia subnet identifier for this VIP (round-trip only)",
+                "type": "string"
+              }
+            }
+          }
+        },
         "serviceArguments": {
           "type": "object",
-          "required": [
-            "externalIP",
-            "port"
-          ],
           "properties": {
+            "adminStateUp": {
+              "description": "Octavia admin_state_up lifecycle flag. Absent/true = enabled; false = paused.",
+              "type": "boolean"
+            },
+            "alpn_protocols": {
+              "description": "Octavia alpn_protocols list (e.g. [\"h2\",\"http/1.1\"]). Mapped to the existing backend_protocol_cap enum ([h2,http/1.1]=2, [h2]=1, [http/1.1]=0). Advertised on listener + pool. Optional/additive — empty preserves the backendProtocol-driven value.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "annotations": {
+              "description": "Opaque key/value map round-tripping octaviaProtocol and any future Octavia field verbatim. Store-as-given, return-as-stored; never interpreted.",
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "backend_ca_cert_id": {
+              "description": "(16) certId of the backend re-encryption CA bundle (resolved by the certId registry to the managed-dir ca.crt at backend SSL_CTX build). Optional/additive — empty = system default.",
+              "type": "string"
+            },
+            "backend_client_cert_id": {
+              "description": "(16) certId of loxilb's backend client cert+key. Optional/additive — empty = no backend client cert (today's behaviour).",
+              "type": "string"
+            },
+            "backend_keepalive_interval_sec": {
+              "description": "Sets SO_KEEPALIVE + TCP_KEEPIDLE on backend socket in seconds. Keeps TCP CT entries alive through cloud NAT during long SSE streams. 0 = disabled. Recommended value 60 for most cloud environments.",
+              "type": "integer",
+              "format": "int32",
+              "default": 0,
+              "x-nullable": false
+            },
+            "backend_protocol": {
+              "description": "Backend protocol capability for ALPN negotiation - http1 (HTTP/1.1 only, safest default), http2 (HTTP/2 only), both (supports both HTTP/1.1 and HTTP/2)",
+              "type": "string",
+              "default": "http1",
+              "enum": [
+                "http1",
+                "http2",
+                "both"
+              ]
+            },
             "bgp": {
               "description": "value for BGP enable or not",
               "type": "boolean"
@@ -6911,16 +13025,74 @@ func init() {
               "type": "integer",
               "format": "uint32"
             },
+            "chwbl_enable_cache_salt": {
+              "description": "Require cache_salt field in requests for CHWBL/WRR_HASH (sel=8 or sel=10) - enforces strict multi-tenant isolation. If false, cache_salt is optional. Only used when sel=8 or sel=10",
+              "type": "boolean",
+              "default": false
+            },
+            "chwbl_mean_load_factor": {
+              "description": "Maximum load factor percentage for CHWBL/WRR_HASH (sel=8 or sel=10) - max_load = avg_load × factor / 100. Range 100-300, default 125 (allows 25% overload). Only used when sel=8 or sel=10",
+              "type": "integer",
+              "default": 125,
+              "maximum": 300,
+              "minimum": 100
+            },
+            "chwbl_prefix_hash_flags": {
+              "description": "Optional field inclusion flags for CHWBL/WRR_HASH (sel=8 or sel=10) - Bit 0=LoRA, Bit 1=image, Bit 2=audio, Bit 3=cache_salt, Bit 4=tools, Bit 5=session, Bit 6=RAG template, Bit 7=RAG docs. 0=auto-detect. Only used when sel=8 or sel=10",
+              "type": "integer",
+              "default": 0,
+              "maximum": 255
+            },
+            "chwbl_prefix_hash_level": {
+              "description": "Prefix hash level for CHWBL/WRR_HASH modes (sel=8 or sel=10) - 1=Level1 only (system prompt+model), 2=Level1+Level2 (session context), 3=Level1+Level2+Level3 (RAG). Only used when sel=8 or sel=10. Optional - defaults to 1 for backward compatibility",
+              "type": "integer",
+              "default": 1,
+              "enum": [
+                1,
+                2,
+                3
+              ]
+            },
+            "chwbl_replication": {
+              "description": "Virtual nodes per physical endpoint for CHWBL/WRR_HASH (sel=8 or sel=10) - higher values improve distribution but use more memory. Range 1-1024, default 100. For WRR_HASH, this is the total vnode count distributed proportionally by weight. Only used when sel=8 or sel=10",
+              "type": "integer",
+              "default": 100,
+              "maximum": 1024,
+              "minimum": 1
+            },
+            "connectionLimit": {
+              "description": "Octavia per-service concurrent-connection ceiling. Per-rule max simultaneous connections across all endpoints. 0/absent = unlimited (legacy). eBPF-CT enforced (SYN refused at sel=-1 -\u003e pm.nf=0 when live count \u003e= limit). DISTINCT from the SecurityRateConfig per-SOURCE-IP concurrentLimit (P0-6); not per-EP.",
+              "type": "integer",
+              "format": "uint32"
+            },
             "egress": {
               "description": "flag to indicate an egress rule",
               "type": "boolean"
             },
             "externalIP": {
               "description": "IP address for external access",
-              "type": "string"
+              "type": "string",
+              "x-nullable": true
             },
             "host": {
               "description": "Ingress specific host URL path",
+              "type": "string"
+            },
+            "hsts_include_subdomains": {
+              "description": "append \"; includeSubDomains\" to the HSTS header. Only meaningful when hsts_max_age \u003e 0.",
+              "type": "boolean"
+            },
+            "hsts_max_age": {
+              "description": "Strict-Transport-Security max-age (seconds). The data plane synthesizes the header and injects it on HTTPS listeners only (L7-gated). Optional/additive — 0/absent = no HSTS injection.",
+              "type": "integer",
+              "format": "uint32"
+            },
+            "hsts_preload": {
+              "description": "append \"; preload\" to the HSTS header. Only meaningful when hsts_max_age \u003e 0.",
+              "type": "boolean"
+            },
+            "id": {
+              "description": "Stable opaque identifier for the LB rule (Octavia). Client-supplied verbatim or minted (UUIDv4) when absent.",
               "type": "string"
             },
             "inactiveTimeOut": {
@@ -6928,12 +13100,80 @@ func init() {
               "type": "integer",
               "format": "int32"
             },
+            "kvBlockSize": {
+              "description": "Token block size for KV hash computation. Must match vLLM's block_size configuration.",
+              "type": "integer",
+              "format": "int64",
+              "default": 16,
+              "minimum": 1,
+              "x-nullable": false
+            },
+            "kvDpRankCount": {
+              "description": "SGLang data-parallel rank count. Rank N publishes KV events at kvZmqPort+N; all ranks union into one per-EP inventory.",
+              "type": "integer",
+              "format": "int32",
+              "default": 1,
+              "maximum": 8,
+              "minimum": 1,
+              "x-nullable": false
+            },
+            "kvEngineType": {
+              "description": "KV-event engine behind this rule. One framework per VIP; immutable after create (delete+recreate to change). Drives hash-algo default: sglang =\u003e sha256_sglang. NOTE: LOXILB_KV_* env knobs (unified mode, eps/lambda, cap-sum, max-blocks) are process-global and shared across all KV VIPs (accepted limitation).",
+              "type": "string",
+              "default": "vllm",
+              "enum": [
+                "vllm",
+                "sglang"
+              ],
+              "x-nullable": false
+            },
+            "kvExactMode": {
+              "description": "KV-cache exact routing mode: 0=off, 1=zmq (P/D role-partitioned), 2=nats(reserved), 3=zmq single-role (— all EPs subscribed, no P/D role split). Enables Tier 1.5 block-hash routing between Tier 1 (trie) and Tier 2 (min-load).",
+              "type": "integer",
+              "format": "int64",
+              "default": 0,
+              "maximum": 3,
+              "x-nullable": false
+            },
+            "kvHashAlgo": {
+              "description": "Hash algorithm for KV block matching. Must match vLLM's configured hash algorithm.",
+              "type": "string",
+              "default": "sha256_cbor",
+              "enum": [
+                "sha256_cbor",
+                "xxhash_cbor"
+              ],
+              "x-nullable": false
+            },
+            "kvWarmupSec": {
+              "description": "Seconds to wait after ZMQ subscriber connects before activating Tier 1.5 routing. Allows inventory to populate.",
+              "type": "integer",
+              "format": "int64",
+              "default": 30,
+              "x-nullable": false
+            },
+            "kvZmqPort": {
+              "description": "ZMQ PUB socket port on vLLM prefill endpoints for KV cache events.",
+              "type": "integer",
+              "format": "int64",
+              "default": 5557,
+              "maximum": 65535,
+              "minimum": 1,
+              "x-nullable": false
+            },
             "managed": {
               "description": "externally managed rule or not",
               "type": "boolean"
             },
+            "max_stream_duration_sec": {
+              "description": "Absolute wall-clock cap for SSE streams in seconds. 0 = use system hard cap (86400s / 24h). Set to a lower value (e.g. 300) to bound runaway streams.",
+              "type": "integer",
+              "format": "int32",
+              "default": 0,
+              "x-nullable": false
+            },
             "mode": {
-              "description": "value for NAT mode (0-DNAT,1-onearm, 2-fullnat, 3-dsr, 4-fullproxy, 5-hostonearm, 0-default)",
+              "description": "value for NAT mode (0-DNAT,1-onearm, 2-fullnat, 3-dsr, 4-fullproxy, 5-hostonearm, 6-aigw, 0-default)",
               "type": "integer",
               "format": "int32",
               "enum": [
@@ -6942,12 +13182,85 @@ func init() {
                 2,
                 3,
                 4,
-                5
+                5,
+                6
               ]
+            },
+            "model_name": {
+              "description": "LB endpoint pool selection key for AI model routing (e.g. \"llama-70b\"); empty = wildcard pool (backward compatible)",
+              "type": "string"
             },
             "monitor": {
               "description": "value for monitoring enabled or not",
               "type": "boolean"
+            },
+            "mtls_backend": {
+              "description": "Backend mTLS configuration for server certificate verification and client certificate presentation. Only valid with security=2 (E2E HTTPS) and mode=4 (FullProxy)",
+              "type": "object",
+              "properties": {
+                "backend_ca_path": {
+                  "description": "Path to backend CA bundle (PEM format). Empty uses system CA store (/etc/ssl/certs/). Example /opt/loxilb/cert/backend_ca.crt",
+                  "type": "string"
+                },
+                "client_cert_data": {
+                  "description": "Inline client certificate (base64-encoded PEM). Alternative to client_cert_path",
+                  "type": "string"
+                },
+                "client_cert_path": {
+                  "description": "Path to loxilb's client certificate for backend mTLS. Example /opt/loxilb/cert/loxilb_client.crt",
+                  "type": "string"
+                },
+                "client_key_data": {
+                  "description": "Inline client key (base64-encoded PEM). Alternative to client_key_path",
+                  "type": "string"
+                },
+                "client_key_path": {
+                  "description": "Path to loxilb's private key for backend mTLS. Example /opt/loxilb/cert/loxilb_client.key",
+                  "type": "string"
+                },
+                "verify_server_cert": {
+                  "description": "Enable backend server certificate verification (SSL_VERIFY_PEER). False skips verification (SSL_VERIFY_NONE, default for backward compatibility)",
+                  "type": "boolean",
+                  "default": false
+                }
+              }
+            },
+            "mtls_frontend": {
+              "description": "Frontend mTLS configuration for client certificate verification. Only valid with security=1 (HTTPS) or security=2 (E2E HTTPS) and mode=4 (FullProxy)",
+              "type": "object",
+              "properties": {
+                "client_ca_cert_data": {
+                  "description": "Inline CA certificate data (base64-encoded PEM). Alternative to client_ca_path for Kubernetes secrets",
+                  "type": "string"
+                },
+                "client_ca_path": {
+                  "description": "Path to client CA certificate bundle (PEM format). Example /opt/loxilb/cert/client_ca_bundle.crt",
+                  "type": "string"
+                },
+                "client_cert_mode": {
+                  "description": "Client certificate requirement - disabled (no verification, default), optional (accept with/without cert), required (reject without valid cert)",
+                  "type": "string",
+                  "default": "disabled",
+                  "enum": [
+                    "disabled",
+                    "optional",
+                    "required"
+                  ]
+                },
+                "client_cn_pattern": {
+                  "description": "Required CN pattern (e.g., *.corp.example.com). Supports wildcard matching. Only used if require_client_cn is true",
+                  "type": "string"
+                },
+                "client_crl_path": {
+                  "description": "(08) operator-supplied static CRL file (PEM) loaded into the verify X509_STORE with leaf-only X509_V_FLAG_CRL_CHECK. A revoked client LEAF cert is rejected; a valid one passes. Optional/additive — empty preserves today's behaviour (the 77-04 sibling crl.pem convention).",
+                  "type": "string"
+                },
+                "require_client_cn": {
+                  "description": "Require specific CN pattern in client certificate for additional security",
+                  "type": "boolean",
+                  "default": false
+                }
+              }
             },
             "name": {
               "description": "service name",
@@ -6963,9 +13276,58 @@ func init() {
                 2
               ]
             },
+            "path_match_mode": {
+              "description": "Path matching mode - disabled (hostname-only, backward compat), prefix (longest prefix match), exact (exact path match)",
+              "type": "string",
+              "default": "disabled",
+              "enum": [
+                "disabled",
+                "prefix",
+                "exact"
+              ]
+            },
+            "path_prefix": {
+              "description": "URL path prefix for L7 routing (e.g., /v1/users). Optional - empty means hostname-only matching (backward compatible)",
+              "type": "string"
+            },
+            "pd_balance_abs_threshold": {
+              "description": "Load imbalance threshold for P/D cache-aware routing. If max-min active connections exceeds this, bypass cache affinity.",
+              "type": "integer",
+              "format": "int32",
+              "default": 3,
+              "x-nullable": false
+            },
+            "pd_cache_aware_mode": {
+              "description": "Enable P/D cache-aware routing. When true, uses session stickiness, radix trie prefix matching, and min-load balancing for endpoint selection. Requires pd_disagg_mode=true.",
+              "type": "boolean",
+              "default": false,
+              "x-nullable": false
+            },
+            "pd_cache_threshold": {
+              "description": "Cache match threshold (0-100) for P/D cache-aware routing. Lower values make cache routing more aggressive.",
+              "type": "integer",
+              "format": "int32",
+              "default": 20,
+              "maximum": 100,
+              "x-nullable": false
+            },
+            "pd_disagg_mode": {
+              "description": "Enable vLLM prefill/decode disaggregation mode. When true, the proxy orchestrates a two-phase flow - prefill request to a prefill endpoint, then decode request to a decode endpoint using KV transfer parameters from the prefill response.",
+              "type": "boolean",
+              "default": false,
+              "x-nullable": false
+            },
+            "pd_session_ttl_sec": {
+              "description": "Session stickiness TTL in seconds for P/D cache-aware routing. 0 = no automatic expiry. Only used when pd_cache_aware_mode is true.",
+              "type": "integer",
+              "format": "int32",
+              "default": 0,
+              "x-nullable": false
+            },
             "port": {
               "description": "(Min) port number for the access",
-              "type": "integer"
+              "type": "integer",
+              "x-nullable": true
             },
             "portMax": {
               "description": "Max port number(range) for the access",
@@ -7011,6 +13373,10 @@ func init() {
                 "none"
               ]
             },
+            "projectId": {
+              "description": "Octavia tenant/project identifier. Opaque store-verbatim string, filtered on GET /all. NOT a tenant-isolation boundary.",
+              "type": "string"
+            },
             "protocol": {
               "description": "value for access protocol",
               "type": "string",
@@ -7036,7 +13402,7 @@ func init() {
               ]
             },
             "sel": {
-              "description": "value for load balance algorithim(0-rr, 1-hash, 2-priority, 3-persist, 4-lc, 5-n2, 6-n3, 0-default)",
+              "description": "value for load balance algorithim(0-rr, 1-hash, 2-priority/wrr, 3-persist, 4-lc, 5-n2, 6-n3, 7-reserved, 8-chwbl, 9-gpuaware, 10-wrr-hash, 0-default)",
               "type": "integer",
               "enum": [
                 0,
@@ -7045,14 +13411,114 @@ func init() {
                 3,
                 4,
                 5,
-                6
+                6,
+                7,
+                8,
+                9,
+                10
               ]
+            },
+            "session_header_name": {
+              "description": "Session affinity configuration for persist mode (sel=3). Supports multiple methods:\n\n**Regular Header** (full value extraction):\n- \"X-Session-ID\" - Extracts full header value\n- \"mcp-session-id\" - Custom application header\n- \"authorization\" - Full Authorization header\n\n**Cookie-based** (specific cookie extraction):\n- \"cookie:JSESSIONID\" - Java/Tomcat session cookie\n- \"cookie:PHPSESSID\" - PHP session cookie\n- \"cookie:ASP.NET_SessionId\" - ASP.NET session\n- \"cookie:connect.sid\" - Node.js/Express session\n- \"cookie:SESSION_TOKEN\" - Custom cookie name\n\n**Query Parameter** (URL parameter extraction):\n- \"query:sessionid\" - Extract from ?sessionid=value\n- \"query:token\" - Extract from ?token=value\n- \"query:jsessionid\" - Common Java fallback\n\n**Basic Authentication** (username extraction):\n- \"basic-auth\" - Extract username from Authorization: Basic header\n\nIf empty and sel=3, falls back to IP-based persistence.\nCookie/query methods ignore other cookies/parameters, ensuring consistent routing.\n",
+              "type": "string"
             },
             "snat": {
               "description": "snat rule",
               "type": "boolean"
+            },
+            "sse_mode": {
+              "description": "Enable SSE (Server-Sent Events) streaming mode. When true, idle-timeout is suppressed while a streaming LLM response is active (Content-Type text/event-stream detected). Required for OpenAI-compatible streaming endpoints.",
+              "type": "boolean",
+              "default": false,
+              "x-nullable": false
+            },
+            "timeoutMemberConnect": {
+              "description": "backend connect timeout in MILLISECONDS (Octavia native unit). Optional/additive — 0/absent preserves today's 500ms default (NOT Octavia's 5000ms). Enforced only on the L7_Proxy peer (has_l7_policy==1).",
+              "type": "integer",
+              "format": "uint32"
+            },
+            "timeoutMemberData": {
+              "description": "member-side relay idle timeout in MILLISECONDS. Optional/additive — 0/absent preserves the existing client-idle value.",
+              "type": "integer",
+              "format": "uint32"
+            },
+            "timeoutTcpInspect": {
+              "description": "header-accumulation deadline in MILLISECONDS (slowloris protection). Optional/additive — 0/absent uses a sane bounded default. NO Gateway-API equivalent — Octavia-only; a future Gateway controller MUST hard-error, never silent-drop.",
+              "type": "integer",
+              "format": "uint32"
+            },
+            "tls_ciphers": {
+              "description": "OpenSSL cipher string, applied to BOTH SSL_CTX_set_cipher_list (TLS1.2) and SSL_CTX_set_ciphersuites (TLS1.3) on listener + pool. Optional/additive — empty preserves today's hardcoded ciphers.",
+              "type": "string"
+            },
+            "tls_versions": {
+              "description": "Octavia tls_versions list (e.g. [\"TLSv1.2\",\"TLSv1.3\"]). Collapsed to a minmax protocol-version range. Optional/additive — empty preserves today's TLS1.21.3.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "trace_type": {
+              "description": "Tracing catalog name for deep inspection and protocol analysis (e.g., v1, anthropic, default). Enables body capture and parser invocation for observability.",
+              "type": "string"
+            },
+            "vip_qos_policy_id": {
+              "description": "references an EXISTING loxilb /config/policy ident (pre-created by the external Octavia driver). On create, when non-empty, loxilb ASSOCIATES that policy to the VIP rule (policer association). Optional/additive — empty/absent leaves the rule unchanged. An unresolvable ident is an error (no silent-drop).",
+              "type": "string"
             }
           }
+        }
+      }
+    },
+    "LoadbalanceStats": {
+      "description": "Per-LB statistics quad (Octavia).",
+      "type": "object",
+      "properties": {
+        "activeConnections": {
+          "description": "Live concurrent-connection count for the rule — the same selector-agnostic live count the connectionLimit gate enforces. Recomputed from the conntrack walk; reset to zero on restart.",
+          "type": "integer",
+          "format": "uint64"
+        },
+        "bytesIn": {
+          "description": "Real per-direction byte total for the forward CT_DIR_IN (client to VIP request) entries of the rule. NOT a 50/50 heuristic. Reset to zero on restart.",
+          "type": "integer",
+          "format": "uint64"
+        },
+        "bytesOut": {
+          "description": "Real per-direction byte total for the reverse CT_DIR_OUT (VIP to client response) entries of the rule. Reset to zero on restart.",
+          "type": "integer",
+          "format": "uint64"
+        },
+        "totalConnections": {
+          "description": "Monotonic cumulative connection count (incremented on first-seen CT for the rule, never decremented). In-memory only, reset to zero on restart.",
+          "type": "integer",
+          "format": "uint64"
+        }
+      }
+    },
+    "LoadbalanceStatus": {
+      "description": "Per-LB lifecycle status (Octavia).",
+      "type": "object",
+      "properties": {
+        "adminStateUp": {
+          "description": "Octavia admin_state_up — true = enabled, false = paused.",
+          "type": "boolean"
+        },
+        "lastUpdated": {
+          "description": "In-memory last-mutation timestamp (RFC3339). Reset-to-now on restart, never persisted.",
+          "type": "string",
+          "format": "date-time"
+        },
+        "operatingStatus": {
+          "description": "Aggregated operating status derived from endpoint health.",
+          "type": "string",
+          "enum": [
+            "ONLINE",
+            "OFFLINE",
+            "DEGRADED",
+            "ERROR",
+            "NO_MONITOR"
+          ]
         }
       }
     },
@@ -7079,12 +13545,33 @@ func init() {
     "Logs": {
       "type": "object",
       "properties": {
+        "has_more": {
+          "description": "Whether more log lines are available (pass next_cursor to fetch them).",
+          "type": "boolean"
+        },
+        "log_count": {
+          "description": "Number of log lines returned in this page.",
+          "type": "integer"
+        },
+        "log_file": {
+          "description": "Name of the log file the lines were read from.",
+          "type": "string"
+        },
         "logs": {
           "description": "List of filtered logs.",
           "type": "array",
           "items": {
             "type": "string"
           }
+        },
+        "next_cursor": {
+          "description": "Opaque cursor for the next page; present only when has_more is true.",
+          "type": "string"
+        },
+        "total_size": {
+          "description": "Total size of the log file in bytes.",
+          "type": "integer",
+          "format": "int64"
         }
       }
     },
@@ -7339,6 +13826,75 @@ func init() {
         }
       }
     },
+    "OPAWatcherConfig": {
+      "type": "object",
+      "required": [
+        "opa_url"
+      ],
+      "properties": {
+        "fail_open": {
+          "description": "Allow traffic when OPA is unreachable",
+          "type": "boolean",
+          "default": false
+        },
+        "opa_url": {
+          "description": "OPA server URL (e.g. http://opa:8181)",
+          "type": "string"
+        },
+        "policy_path": {
+          "description": "OPA policy path to query",
+          "type": "string",
+          "default": "loxilb/l4"
+        },
+        "poll_interval_sec": {
+          "description": "Polling interval in seconds",
+          "type": "integer",
+          "default": 30
+        }
+      }
+    },
+    "OPAWatcherStatus": {
+      "type": "object",
+      "properties": {
+        "circuit_breaker_state": {
+          "description": "Circuit breaker state (0=closed, 1=half-open, 2=open)",
+          "type": "integer"
+        },
+        "fail_open": {
+          "description": "Fail-open setting",
+          "type": "boolean"
+        },
+        "last_error": {
+          "description": "Last error message if any",
+          "type": "string"
+        },
+        "last_sync_at": {
+          "description": "Timestamp of last successful sync",
+          "type": "string",
+          "format": "date-time"
+        },
+        "opa_url": {
+          "description": "Configured OPA server URL",
+          "type": "string"
+        },
+        "policy_path": {
+          "description": "Configured OPA policy path",
+          "type": "string"
+        },
+        "poll_interval_sec": {
+          "description": "Configured polling interval in seconds",
+          "type": "integer"
+        },
+        "rules_count": {
+          "description": "Number of active firewall rules",
+          "type": "integer"
+        },
+        "status": {
+          "description": "Current watcher status (running, stopped, not_configured)",
+          "type": "string"
+        }
+      }
+    },
     "OauthErrorResponse": {
       "type": "object",
       "properties": {
@@ -7409,6 +13965,334 @@ func init() {
             "emergency",
             "alert"
           ]
+        }
+      }
+    },
+    "PIICircuitBreaker": {
+      "type": "object",
+      "properties": {
+        "success_threshold": {
+          "description": "Number of successes needed to close circuit",
+          "type": "integer",
+          "format": "int64",
+          "example": 3
+        },
+        "threshold": {
+          "description": "Number of failures before opening circuit",
+          "type": "integer",
+          "format": "int64",
+          "example": 5
+        },
+        "timeout_sec": {
+          "description": "Time to wait before attempting half-open (seconds)",
+          "type": "integer",
+          "format": "int64",
+          "example": 60
+        }
+      }
+    },
+    "PIIConfigEntry": {
+      "type": "object",
+      "properties": {
+        "analyzer_url": {
+          "description": "Presidio analyzer gRPC endpoint",
+          "type": "string",
+          "example": "localhost:50051"
+        },
+        "anonymizer_url": {
+          "description": "Presidio anonymizer gRPC endpoint (optional)",
+          "type": "string",
+          "example": "localhost:50051"
+        },
+        "batch_size": {
+          "description": "Batch size for v2 streaming API",
+          "type": "integer",
+          "format": "int64",
+          "maximum": 100,
+          "minimum": 1,
+          "example": 10
+        },
+        "circuit_breaker": {
+          "$ref": "#/definitions/PIICircuitBreaker"
+        },
+        "default_operator": {
+          "description": "Default anonymization operator for v2",
+          "type": "string",
+          "enum": [
+            "replace",
+            "redact",
+            "hash",
+            "mask",
+            "encrypt"
+          ],
+          "example": "encrypt"
+        },
+        "direction": {
+          "description": "Scan direction (both, request, response)",
+          "type": "string",
+          "enum": [
+            "both",
+            "request",
+            "response"
+          ],
+          "example": "both"
+        },
+        "enable_v2": {
+          "description": "Enable Presidio v2 API (combined analyze+anonymize, 40% faster)",
+          "type": "boolean",
+          "example": true
+        },
+        "encryption_key": {
+          "description": "Base64-encoded encryption key for v2 (AES-256, 32 bytes)",
+          "type": "string",
+          "example": "YourBase64EncodedKey32BytesLong="
+        },
+        "fail_mode": {
+          "description": "Behavior when Presidio is unavailable (open, closed)",
+          "type": "string",
+          "enum": [
+            "open",
+            "closed"
+          ],
+          "example": "open"
+        },
+        "max_body_size": {
+          "description": "Maximum HTTP body size to scan (bytes)",
+          "type": "integer",
+          "format": "int64",
+          "example": 65536
+        },
+        "min_body_size": {
+          "description": "Minimum HTTP body size to scan (bytes)",
+          "type": "integer",
+          "format": "int64",
+          "example": 100
+        },
+        "mode": {
+          "description": "Detection mode (detect, mask, redact, anonymize)",
+          "type": "string",
+          "enum": [
+            "detect",
+            "mask",
+            "redact",
+            "anonymize"
+          ],
+          "example": "mask"
+        },
+        "retry": {
+          "$ref": "#/definitions/PIIRetry"
+        },
+        "scan_mode": {
+          "description": "Large body handling (full=skip if too large, truncate=scan first 64KB)",
+          "type": "string",
+          "enum": [
+            "full",
+            "truncate"
+          ],
+          "example": "truncate"
+        },
+        "score_threshold": {
+          "description": "Minimum confidence score for PII detection (0.0-1.0)",
+          "type": "number",
+          "format": "float",
+          "maximum": 1,
+          "example": 0.7
+        },
+        "timeout_ms": {
+          "description": "Presidio request timeout in milliseconds",
+          "type": "integer",
+          "format": "int64",
+          "example": 100
+        }
+      }
+    },
+    "PIIRetry": {
+      "type": "object",
+      "properties": {
+        "backoff_ms": {
+          "description": "Backoff time between retries (milliseconds)",
+          "type": "integer",
+          "format": "int64",
+          "example": 100
+        },
+        "max_retries": {
+          "description": "Maximum number of retry attempts",
+          "type": "integer",
+          "format": "int64",
+          "example": 1
+        }
+      }
+    },
+    "PIIStatsResponse": {
+      "type": "object",
+      "properties": {
+        "errors": {
+          "description": "Number of scan errors",
+          "type": "integer",
+          "format": "int64",
+          "example": 8
+        },
+        "pii_blocked": {
+          "description": "Number of requests blocked due to PII",
+          "type": "integer",
+          "format": "int64",
+          "example": 12
+        },
+        "pii_detected": {
+          "description": "Number of requests with PII detected",
+          "type": "integer",
+          "format": "int64",
+          "example": 245
+        },
+        "total_scans": {
+          "description": "Total number of PII scans performed",
+          "type": "integer",
+          "format": "int64",
+          "example": 1523
+        }
+      }
+    },
+    "PIIStatusResponse": {
+      "type": "object",
+      "properties": {
+        "analyzer_url": {
+          "description": "Analyzer endpoint",
+          "type": "string",
+          "example": "localhost:50051"
+        },
+        "anonymizer_url": {
+          "description": "Anonymizer endpoint",
+          "type": "string",
+          "example": "localhost:50051"
+        },
+        "circuit_breaker": {
+          "$ref": "#/definitions/PIICircuitBreaker"
+        },
+        "direction": {
+          "description": "Current scan direction",
+          "type": "string",
+          "example": "both"
+        },
+        "enabled": {
+          "description": "Whether PII detection is enabled",
+          "type": "boolean",
+          "example": true
+        },
+        "fail_mode": {
+          "description": "Current fail mode",
+          "type": "string",
+          "example": "open"
+        },
+        "max_body_size": {
+          "description": "Maximum body size to scan",
+          "type": "integer",
+          "format": "int64",
+          "example": 65536
+        },
+        "min_body_size": {
+          "description": "Minimum body size to scan",
+          "type": "integer",
+          "format": "int64",
+          "example": 100
+        },
+        "mode": {
+          "description": "Current detection mode",
+          "type": "string",
+          "example": "mask"
+        },
+        "retry": {
+          "$ref": "#/definitions/PIIRetry"
+        },
+        "scan_mode": {
+          "description": "Current large body handling mode",
+          "type": "string",
+          "example": "truncate"
+        },
+        "score_threshold": {
+          "description": "Current confidence threshold",
+          "type": "number",
+          "format": "float",
+          "example": 0.7
+        },
+        "timeout_ms": {
+          "description": "Request timeout",
+          "type": "integer",
+          "format": "int64",
+          "example": 100
+        },
+        "url_pattern_count": {
+          "description": "Number of configured URL patterns",
+          "type": "integer",
+          "format": "int64",
+          "example": 3
+        },
+        "url_patterns": {
+          "description": "Current URL patterns",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PIIURLPattern"
+          }
+        }
+      }
+    },
+    "PIIURLPattern": {
+      "type": "object",
+      "required": [
+        "pattern"
+      ],
+      "properties": {
+        "is_exclude": {
+          "description": "Exclude pattern (true) or include pattern (false)",
+          "type": "boolean",
+          "example": false
+        },
+        "pattern": {
+          "description": "URL pattern with wildcards (e.g., /v1/chat/*, /api/*)",
+          "type": "string",
+          "example": "/v1/chat/*"
+        }
+      }
+    },
+    "PIIURLPatternsEntry": {
+      "type": "object",
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "description": "Pattern update mode (add, replace, clear)",
+          "type": "string",
+          "enum": [
+            "add",
+            "replace",
+            "clear"
+          ],
+          "example": "replace"
+        },
+        "patterns": {
+          "description": "List of URL patterns (max 64)",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PIIURLPattern"
+          }
+        }
+      }
+    },
+    "PersistResult": {
+      "description": "Result of POST /config/persist.",
+      "type": "object",
+      "properties": {
+        "checksum": {
+          "description": "SHA-256 checksum of the persisted snapshot document.",
+          "type": "string"
+        },
+        "path": {
+          "description": "On-disk path of the persisted snapshot (config-path/snapshot.json).",
+          "type": "string"
+        },
+        "result": {
+          "description": "Always \"ok\" on 200.",
+          "type": "string"
         }
       }
     },
@@ -7742,6 +14626,67 @@ func init() {
         }
       }
     },
+    "RestorePlanItem": {
+      "description": "Per-domain apply/delete counts computed by the restore PLAN stage.",
+      "type": "object",
+      "properties": {
+        "domain": {
+          "type": "string"
+        },
+        "to_apply": {
+          "type": "integer"
+        },
+        "to_delete": {
+          "type": "integer"
+        }
+      }
+    },
+    "RestoreResult": {
+      "description": "Result of POST /config/restore (both dry-run and commit modes).",
+      "type": "object",
+      "properties": {
+        "compatible": {
+          "type": "boolean"
+        },
+        "current_gateway_version": {
+          "type": "string"
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "dry-run",
+            "commit",
+            "boot"
+          ]
+        },
+        "plan": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RestorePlanItem"
+          }
+        },
+        "pre_restore_snapshot_persisted": {
+          "description": "On-disk path of the pre-restore snapshot captured before APPLY (commit mode only).",
+          "type": "string"
+        },
+        "result": {
+          "description": "ok, rolled-back, or ROLLBACK-FAILED; empty when the pipeline stopped before APPLY.",
+          "type": "string"
+        },
+        "schema_version": {
+          "type": "string"
+        },
+        "snapshot_gateway_version": {
+          "type": "string"
+        }
+      }
+    },
     "RouteEntry": {
       "type": "object",
       "required": [
@@ -7805,6 +14750,185 @@ func init() {
         },
         "sync": {
           "type": "integer"
+        }
+      }
+    },
+    "SNICertificateEntry": {
+      "type": "object",
+      "required": [
+        "hostname"
+      ],
+      "properties": {
+        "certPath": {
+          "description": "Optional certificate directory path (defaults to /opt/loxilb/cert/{hostname}). Directory must contain server.crt, server.key, and optionally rootCA.crt for mTLS.",
+          "type": "string"
+        },
+        "hostname": {
+          "description": "Hostname for SNI certificate (e.g., api.example.com). This certificate will be automatically used by all loadbalancer rules that have matching 'host' field.",
+          "type": "string"
+        }
+      }
+    },
+    "SecurityRateConfigMod": {
+      "type": "object",
+      "required": [
+        "synEnabled",
+        "synThreshold",
+        "cookieThreshold",
+        "connRateEnabled",
+        "ratePerSec",
+        "udpEnabled",
+        "udpPktThreshold",
+        "udpBandwidthMB"
+      ],
+      "properties": {
+        "connRateEnabled": {
+          "description": "Enable/disable connection rate limiting (P0-6)",
+          "type": "boolean"
+        },
+        "cookieThreshold": {
+          "description": "Enable SYN cookies above this rate (must be \u003c synThreshold)",
+          "type": "integer",
+          "format": "int64",
+          "default": 50
+        },
+        "ratePerSec": {
+          "description": "Maximum new connections per second per IP",
+          "type": "integer",
+          "format": "int64",
+          "default": 50
+        },
+        "synEnabled": {
+          "description": "Enable/disable SYN flood protection (P0-5)",
+          "type": "boolean"
+        },
+        "synThreshold": {
+          "description": "Maximum SYNs per second per IP (hard drop threshold)",
+          "type": "integer",
+          "format": "int64",
+          "default": 100
+        },
+        "udpBandwidthMB": {
+          "description": "Maximum UDP bandwidth in MB per second per IP",
+          "type": "integer",
+          "format": "int64",
+          "default": 100
+        },
+        "udpEnabled": {
+          "description": "Enable/disable UDP flood protection (P0-7)",
+          "type": "boolean"
+        },
+        "udpPktThreshold": {
+          "description": "Maximum UDP packets per second per IP",
+          "type": "integer",
+          "format": "int64",
+          "default": 1000
+        },
+        "whitelistIps": {
+          "description": "IP addresses to bypass all rate limiting",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "SecurityRateEntry": {
+      "type": "object",
+      "properties": {
+        "connBlocked": {
+          "description": "Connections blocked by rate limit (read-only)",
+          "type": "integer",
+          "format": "int64"
+        },
+        "connPassed": {
+          "description": "Connections passed (read-only)",
+          "type": "integer",
+          "format": "int64"
+        },
+        "connRateEnabled": {
+          "description": "Whether connection rate limiting is enabled",
+          "type": "boolean"
+        },
+        "cookieThreshold": {
+          "description": "SYN cookie activation threshold",
+          "type": "integer",
+          "format": "int64"
+        },
+        "ratePerSec": {
+          "description": "Maximum new connections per second per IP",
+          "type": "integer",
+          "format": "int64"
+        },
+        "synBlocked": {
+          "description": "SYN packets blocked (read-only)",
+          "type": "integer",
+          "format": "int64"
+        },
+        "synCookies": {
+          "description": "SYN cookie activations (read-only)",
+          "type": "integer",
+          "format": "int64"
+        },
+        "synEnabled": {
+          "description": "Whether SYN flood protection is enabled",
+          "type": "boolean"
+        },
+        "synPassed": {
+          "description": "SYN packets passed (read-only)",
+          "type": "integer",
+          "format": "int64"
+        },
+        "synThreshold": {
+          "description": "Maximum SYNs per second per IP",
+          "type": "integer",
+          "format": "int64"
+        },
+        "udpBandwidthMB": {
+          "description": "Maximum UDP bandwidth in MB per second per IP",
+          "type": "integer",
+          "format": "int64"
+        },
+        "udpBlocked": {
+          "description": "UDP packets blocked (read-only)",
+          "type": "integer",
+          "format": "int64"
+        },
+        "udpBytesBlocked": {
+          "description": "UDP bytes blocked (read-only)",
+          "type": "integer",
+          "format": "int64"
+        },
+        "udpBytesPassed": {
+          "description": "UDP bytes passed (read-only)",
+          "type": "integer",
+          "format": "int64"
+        },
+        "udpEnabled": {
+          "description": "Whether UDP flood protection is enabled",
+          "type": "boolean"
+        },
+        "udpPassed": {
+          "description": "UDP packets passed (read-only)",
+          "type": "integer",
+          "format": "int64"
+        },
+        "udpPktThreshold": {
+          "description": "Maximum UDP packets per second per IP",
+          "type": "integer",
+          "format": "int64"
+        },
+        "uniqueIps": {
+          "description": "Number of unique source IPs tracked (read-only)",
+          "type": "integer",
+          "format": "int64"
+        },
+        "whitelistIps": {
+          "description": "Whitelisted IPs",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
@@ -7894,6 +15018,176 @@ func init() {
       "properties": {
         "message": {
           "type": "string"
+        }
+      }
+    },
+    "TenantRateLimitEntry": {
+      "type": "object",
+      "required": [
+        "tenant_id"
+      ],
+      "properties": {
+        "rps": {
+          "description": "Maximum requests per second for the tenant",
+          "type": "integer",
+          "format": "int64"
+        },
+        "tenant_id": {
+          "description": "Tenant identifier",
+          "type": "string"
+        },
+        "tokens_per_min": {
+          "description": "Maximum LLM tokens per minute for the tenant",
+          "type": "integer",
+          "format": "int64"
+        },
+        "updated_at": {
+          "description": "Timestamp of the last rate limit update",
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "TenantRateLimitMod": {
+      "type": "object",
+      "required": [
+        "tenant_id"
+      ],
+      "properties": {
+        "rps": {
+          "description": "Maximum requests per second for the tenant",
+          "type": "integer",
+          "format": "int64"
+        },
+        "tenant_id": {
+          "description": "Tenant identifier",
+          "type": "string"
+        },
+        "tokens_per_min": {
+          "description": "Maximum LLM tokens per minute for the tenant",
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
+    "TraceCatalogEntry": {
+      "type": "object",
+      "required": [
+        "name",
+        "parser_type",
+        "sample_rate",
+        "enabled"
+      ],
+      "properties": {
+        "description": {
+          "description": "Human-readable description",
+          "type": "string",
+          "example": "OpenAI API tracing catalog"
+        },
+        "enabled": {
+          "description": "Whether this catalog is currently active",
+          "type": "boolean",
+          "example": true
+        },
+        "max_body_size": {
+          "description": "Maximum request/response body size to capture (bytes, 0=unlimited)",
+          "type": "integer",
+          "format": "int32",
+          "example": 65536
+        },
+        "name": {
+          "description": "Catalog name (from YAML filename without .yaml extension)",
+          "type": "string",
+          "example": "openai"
+        },
+        "parser_type": {
+          "description": "Parser assigned to this catalog",
+          "type": "string",
+          "example": "openai"
+        },
+        "sample_rate": {
+          "description": "Percentage of requests to trace (0-100)",
+          "type": "integer",
+          "format": "int32",
+          "maximum": 100,
+          "example": 100
+        },
+        "version": {
+          "description": "Catalog version for compatibility",
+          "type": "string",
+          "example": "1.0"
+        }
+      }
+    },
+    "TraceParserInfo": {
+      "type": "object",
+      "required": [
+        "name",
+        "version",
+        "protocol"
+      ],
+      "properties": {
+        "capabilities": {
+          "description": "Supported features",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "example": [
+            "streaming",
+            "cost_estimation",
+            "tool_calls"
+          ]
+        },
+        "description": {
+          "description": "Human-readable description",
+          "type": "string",
+          "example": "Parses OpenAI API requests including GPT models, token usage, and streaming responses"
+        },
+        "name": {
+          "description": "Parser identifier (e.g., \"openai\", \"mcp\", \"mock\")",
+          "type": "string",
+          "example": "openai"
+        },
+        "protocol": {
+          "description": "Protocol handled by parser",
+          "type": "string",
+          "example": "OpenAI API v1"
+        },
+        "supported_paths": {
+          "description": "URL paths this parser handles",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "example": [
+            "/v1/chat/completions",
+            "/v1/completions",
+            "/v1/embeddings"
+          ]
+        },
+        "version": {
+          "description": "Parser version",
+          "type": "string",
+          "example": "1.0.0"
+        }
+      }
+    },
+    "TraceParserUpdate": {
+      "type": "object",
+      "required": [
+        "parser_name"
+      ],
+      "properties": {
+        "parser_name": {
+          "description": "Parser to assign to catalog (must match registered parser name)",
+          "type": "string",
+          "enum": [
+            "openai",
+            "mcp",
+            "mock"
+          ],
+          "example": "openai"
         }
       }
     },
@@ -8059,6 +15353,79 @@ func init() {
       "properties": {
         "peerIP": {
           "type": "string"
+        }
+      }
+    },
+    "WorkerMetricsEntry": {
+      "type": "object",
+      "required": [
+        "endpoint_ip",
+        "queued_requests",
+        "kv_cache_usage_perc"
+      ],
+      "properties": {
+        "endpoint_ip": {
+          "description": "Worker endpoint IP:port (e.g., \"192.168.1.10:8000\")",
+          "type": "string"
+        },
+        "kv_cache_usage_perc": {
+          "description": "vllm:gpu_cache_usage_perc * 100 (0-100 scale)",
+          "type": "integer",
+          "maximum": 100
+        },
+        "num_gpu_blocks": {
+          "description": "Static config from vllm:cache_config_info{num_gpu_blocks}",
+          "type": "integer"
+        },
+        "queued_requests": {
+          "description": "vllm:num_requests_running + vllm:num_requests_waiting (total queue depth)",
+          "type": "integer"
+        },
+        "swapped_requests": {
+          "description": "Delta of vllm:num_preemptions_total since last update",
+          "type": "integer"
+        },
+        "timestamp": {
+          "description": "Timestamp of metrics collection",
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "WorkerMetricsResponse": {
+      "type": "object",
+      "properties": {
+        "monitoring_enabled": {
+          "description": "Whether GPU monitoring is enabled",
+          "type": "boolean"
+        },
+        "workers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/WorkerMetricsEntry"
+          }
+        }
+      }
+    },
+    "WorkerMetricsUpdateResponse": {
+      "type": "object",
+      "required": [
+        "endpoint_ip",
+        "queued_requests",
+        "message"
+      ],
+      "properties": {
+        "endpoint_ip": {
+          "description": "Worker endpoint that was updated",
+          "type": "string"
+        },
+        "message": {
+          "description": "Status message",
+          "type": "string"
+        },
+        "queued_requests": {
+          "description": "Number of queued requests (for confirmation)",
+          "type": "integer"
         }
       }
     }
@@ -8407,6 +15774,264 @@ func init() {
           },
           "500": {
             "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ai/apikey": {
+      "get": {
+        "description": "Returns all API keys belonging to the specified tenant.",
+        "tags": [
+          "ai"
+        ],
+        "summary": "List API keys for a tenant",
+        "operationId": "getConfigAiApikey",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Filter by tenant ID",
+            "name": "tenant_id",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/ApiKeySummary"
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "post": {
+        "description": "Creates a new API key for a tenant. The raw key is returned ONLY in this response.",
+        "tags": [
+          "ai"
+        ],
+        "summary": "Create a new API key",
+        "operationId": "postConfigAiApikey",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ApiKeyCreateRequest"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "schema": {
+              "$ref": "#/definitions/ApiKeyCreateResponse"
+            }
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ai/apikey/{key_id}": {
+      "get": {
+        "description": "Returns the summary of a single API key by its ID.",
+        "tags": [
+          "ai"
+        ],
+        "summary": "Get a specific API key",
+        "operationId": "getConfigAiApikeyKeyID",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "API key identifier",
+            "name": "key_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/ApiKeySummary"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "delete": {
+        "description": "Permanently deletes the specified API key.",
+        "tags": [
+          "ai"
+        ],
+        "summary": "Delete an API key",
+        "operationId": "deleteConfigAiApikeyKeyID",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "API key identifier",
+            "name": "key_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ai/tenant/ratelimit": {
+      "post": {
+        "description": "Creates or updates the rate limit configuration for a tenant.",
+        "tags": [
+          "ai"
+        ],
+        "summary": "Set or update tenant rate limit",
+        "operationId": "postConfigAiTenantRatelimit",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/TenantRateLimitMod"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ai/tenant/ratelimit/{tenant_id}": {
+      "get": {
+        "description": "Returns the current rate limit configuration for the specified tenant.",
+        "tags": [
+          "ai"
+        ],
+        "summary": "Get tenant rate limit configuration",
+        "operationId": "getConfigAiTenantRatelimitTenantID",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Tenant identifier",
+            "name": "tenant_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/TenantRateLimitEntry"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -9356,6 +16981,184 @@ func init() {
           },
           "503": {
             "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/cert": {
+      "post": {
+        "description": "Uploads inline PEM material (cert + key [+ chain]) under an opaque certId — the canonical TLS-material store. The handler persists the PEM to the managed dir (/etc/loxilb/certs/\u003ccertId\u003e/, 0700 dir / 0600 key) and registers it via the C certId registry, which auto-derives the hostname(s) from the leaf cert SAN/CN and registers them into the hostname-keyed SNI store. Selection at handshake stays by hostname; certId is the upload/rotate/delete handle. When certId is absent the server mints one. Malformed PEM / missing key is rejected with 400 (never a panic).",
+        "summary": "Upload a TLS certificate under an opaque certId",
+        "operationId": "postConfigCert",
+        "parameters": [
+          {
+            "description": "Certificate attributes (certId optional; inline PEM)",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/Cert"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "400": {
+            "description": "Malformed PEM / missing material",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/cert/{certId}": {
+      "get": {
+        "description": "Returns the certId metadata (id + auto-derived hostnames + public cert/chain). The private key is never returned.",
+        "summary": "Get a certId's metadata",
+        "operationId": "getConfigCertCertId",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Opaque certificate management handle",
+            "name": "certId",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/Cert"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Certificate not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "put": {
+        "description": "Atomic zero-downtime rotation — re-persists the new PEM under the SAME certId and swaps the cert object into the SNI store under lock; in-flight connections keep the old SSL until they close. Unknown certId returns 404; malformed material returns 400.",
+        "summary": "Rotate the material under a stable certId",
+        "operationId": "putConfigCertCertId",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Opaque certificate management handle",
+            "name": "certId",
+            "in": "path",
+            "required": true
+          },
+          {
+            "description": "New certificate material to rotate in",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/Cert"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Malformed PEM / missing material",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Certificate not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "delete": {
+        "description": "Removes the managed-dir material and unregisters the derived hostnames from the SNI store.",
+        "summary": "Delete a certId",
+        "operationId": "deleteConfigCertCertId",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Opaque certificate management handle",
+            "name": "certId",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Invalid certId / delete error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Certificate not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -10337,6 +18140,161 @@ func init() {
         }
       }
     },
+    "/config/gpu/conversations/cleanup": {
+      "post": {
+        "description": "Removes stale conversation mappings older than specified age",
+        "summary": "Manual conversation cleanup",
+        "parameters": [
+          {
+            "type": "integer",
+            "default": 1,
+            "description": "Maximum age in hours for conversations to keep (older ones deleted)",
+            "name": "max_age_hours",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cleanup completed successfully",
+            "schema": {
+              "$ref": "#/definitions/ConversationCleanupResponse"
+            }
+          },
+          "400": {
+            "description": "GPU monitoring disabled or invalid parameters",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Cleanup operation failed",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/gpu/disable": {
+      "post": {
+        "description": "Deactivates GPU-aware routing and reverts to standard CHWBL",
+        "summary": "Disable GPU-aware load balancing",
+        "responses": {
+          "200": {
+            "description": "GPU monitoring disabled successfully",
+            "schema": {
+              "$ref": "#/definitions/GPUEnableResponse"
+            }
+          },
+          "400": {
+            "description": "GPU monitoring already disabled",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Failed to disable GPU monitoring",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/gpu/enable": {
+      "post": {
+        "description": "Activates GPU-aware routing mode and starts conversation cleanup thread",
+        "summary": "Enable GPU-aware load balancing",
+        "responses": {
+          "200": {
+            "description": "GPU monitoring enabled successfully",
+            "schema": {
+              "$ref": "#/definitions/GPUEnableResponse"
+            }
+          },
+          "400": {
+            "description": "GPU monitoring already enabled",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Failed to enable GPU monitoring",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/gpu/status": {
+      "get": {
+        "description": "Returns current GPU monitoring state and statistics",
+        "summary": "Get GPU monitoring status",
+        "responses": {
+          "200": {
+            "description": "GPU monitoring status",
+            "schema": {
+              "$ref": "#/definitions/GPUMonitoringStatus"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
     "/config/import": {
       "post": {
         "consumes": [
@@ -10354,6 +18312,957 @@ func init() {
         "responses": {
           "204": {
             "description": "OK"
+          }
+        }
+      }
+    },
+    "/config/ipfilter": {
+      "post": {
+        "description": "Create a new IP whitelist or blacklist rule for DDoS protection.",
+        "summary": "Create a new IP filter rule",
+        "parameters": [
+          {
+            "description": "Attributes for IP filter rule",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/IPFilterEntry"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "delete": {
+        "description": "Delete an IP whitelist or blacklist rule.",
+        "summary": "Delete an IP filter rule",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Filter type (whitelist or blacklist)",
+            "name": "filterType",
+            "in": "query",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "IP address in CIDR notation",
+            "name": "cidr",
+            "in": "query",
+            "required": true
+          },
+          {
+            "type": "integer",
+            "description": "Security zone (0 = all zones)",
+            "name": "zone",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipfilter/all": {
+      "get": {
+        "description": "Get all IP whitelist and blacklist rules with statistics.",
+        "summary": "Get all IP filter rules",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "ipFilterAttr": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/IPFilterEntry"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipsec": {
+      "get": {
+        "description": "Get current IPsec global configuration including fast-path and hardware offload settings.",
+        "summary": "Get IPsec configuration",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/IPsecConfig"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "post": {
+        "description": "Update IPsec global configuration settings for fast-path, hardware offload, and other parameters.",
+        "summary": "Update IPsec configuration",
+        "parameters": [
+          {
+            "description": "IPsec configuration attributes",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/IPsecConfigMod"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipsec/ca-certificates": {
+      "post": {
+        "description": "Upload a CA certificate to the trust store.",
+        "summary": "Upload a CA certificate",
+        "parameters": [
+          {
+            "description": "CA certificate",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/IPsecCACertificateMod"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "CA certificate installed",
+            "schema": {
+              "$ref": "#/definitions/IPsecCACertificate"
+            }
+          },
+          "400": {
+            "description": "Invalid CA certificate",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "409": {
+            "description": "CA certificate already exists",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipsec/ca-certificates/all": {
+      "get": {
+        "description": "Get all CA certificates from trust store.",
+        "summary": "Get all CA certificates",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "ipsecCACertificateAttr": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/IPsecCACertificate"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipsec/ca-certificates/{name}": {
+      "get": {
+        "description": "Get details of a specific CA certificate by name.",
+        "summary": "Get CA certificate details",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "CA certificate name",
+            "name": "name",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/IPsecCACertificate"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "CA certificate not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "delete": {
+        "description": "Delete a CA certificate from trust store.",
+        "summary": "Delete a CA certificate",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "CA certificate name",
+            "name": "name",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "CA certificate not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "409": {
+            "description": "CA certificate in use",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipsec/certificates": {
+      "post": {
+        "description": "Upload a certificate and private key for IPsec authentication.",
+        "summary": "Upload a certificate",
+        "parameters": [
+          {
+            "description": "Certificate and private key",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/IPsecCertificateMod"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Certificate installed",
+            "schema": {
+              "$ref": "#/definitions/IPsecCertificate"
+            }
+          },
+          "400": {
+            "description": "Invalid certificate or key",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "409": {
+            "description": "Certificate already exists",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipsec/certificates/all": {
+      "get": {
+        "description": "Get all installed certificates (without private keys).",
+        "summary": "Get all certificates",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "ipsecCertificateAttr": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/IPsecCertificate"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipsec/certificates/validate": {
+      "post": {
+        "description": "Validate certificate and private key without installing (dry-run).",
+        "summary": "Validate certificate",
+        "parameters": [
+          {
+            "description": "Certificate and key to validate",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/IPsecCertificateMod"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Validation result",
+            "schema": {
+              "$ref": "#/definitions/IPsecCertValidation"
+            }
+          },
+          "400": {
+            "description": "Invalid certificate or key",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipsec/certificates/{name}": {
+      "get": {
+        "description": "Get details of a specific certificate by name.",
+        "summary": "Get certificate details",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Certificate name",
+            "name": "name",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/IPsecCertificate"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Certificate not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "delete": {
+        "description": "Delete a certificate and its private key.",
+        "summary": "Delete a certificate",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Certificate name",
+            "name": "name",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Certificate not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "409": {
+            "description": "Certificate in use by active tunnels",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipsec/sas/all": {
+      "get": {
+        "description": "Get all active Security Associations (SAs) from kernel XFRM.",
+        "summary": "Get all Security Associations",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "ipsecSaAttr": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/IPsecSA"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipsec/stats": {
+      "get": {
+        "description": "Get aggregated IPsec statistics for all tunnels and SAs.",
+        "summary": "Get IPsec statistics",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/IPsecStats"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "delete": {
+        "description": "Reset all IPsec statistics counters to zero.",
+        "summary": "Reset IPsec statistics",
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipsec/tunnels": {
+      "post": {
+        "description": "Create a new IPsec tunnel with strongSwan configuration.",
+        "summary": "Create an IPsec tunnel",
+        "parameters": [
+          {
+            "description": "IPsec tunnel configuration",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/IPsecTunnelMod"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "409": {
+            "description": "Tunnel already exists",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipsec/tunnels/all": {
+      "get": {
+        "description": "Get all configured IPsec tunnels with their current state and statistics.",
+        "summary": "Get all IPsec tunnels",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "ipsecTunnelAttr": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/IPsecTunnel"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipsec/tunnels/{name}": {
+      "get": {
+        "description": "Get details of a specific IPsec tunnel by name.",
+        "summary": "Get specific IPsec tunnel",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Tunnel name",
+            "name": "name",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/IPsecTunnel"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Tunnel not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "put": {
+        "description": "Update an existing IPsec tunnel in place. The tunnel is replaced within a single configuration regeneration and strongSwan reload (no delete/recreate window). The name in the path takes precedence over the body.",
+        "summary": "Update an IPsec tunnel",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Tunnel name",
+            "name": "name",
+            "in": "path",
+            "required": true
+          },
+          {
+            "description": "New IPsec tunnel configuration",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/IPsecTunnelMod"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Tunnel not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "delete": {
+        "description": "Delete an existing IPsec tunnel and remove associated SAs.",
+        "summary": "Delete an IPsec tunnel",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Tunnel name",
+            "name": "name",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Tunnel not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipsec/tunnels/{name}/action": {
+      "post": {
+        "description": "Initiate, terminate, or restart the strongSwan connection for an existing tunnel without changing its configuration.",
+        "summary": "Execute a connection action on an IPsec tunnel",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Tunnel name",
+            "name": "name",
+            "in": "path",
+            "required": true
+          },
+          {
+            "description": "Action to execute",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/IPsecTunnelActionMod"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Tunnel not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipsec/tunnels/{name}/peerconfig": {
+      "get": {
+        "description": "Generate a mirrored strongSwan configuration (ipsec.conf conn block and ipsec.secrets entry) ready to install on the remote peer of this tunnel. For PSK tunnels the response contains the pre-shared key.",
+        "summary": "Get remote-peer strongSwan configuration for a tunnel",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Tunnel name",
+            "name": "name",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/IPsecPeerConfig"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Tunnel not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
           }
         }
       }
@@ -10538,6 +19447,816 @@ func init() {
         }
       }
     },
+    "/config/ipv6address": {
+      "post": {
+        "description": "Assign IPv6 addresses in the device",
+        "summary": "Assign IPv6 addresses in the device",
+        "parameters": [
+          {
+            "description": "Attributes for IPv6 address",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/IPv6AddressEntry"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Capacity insufficient",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "409": {
+            "description": "Resource Conflict. VLAN already exists OR dependency VRF/VNET not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipv6address/all": {
+      "get": {
+        "description": "Get IPv6 addresses in the device(interface)",
+        "summary": "Get IPv6 addresses in the device(interface)",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "ipAttr": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/IPv6AddressGetEntry"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ipv6address/{ip_address}/{mask}/dev/{if_name}": {
+      "delete": {
+        "description": "Delete IPv6 addresses in the device",
+        "summary": "Delete IPv6 addresses in the device",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Attributes IPv6 Address in the device",
+            "name": "ip_address",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "Attributes IPv6 mask in the device",
+            "name": "mask",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "Attributes of the target device",
+            "name": "if_name",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Capacity insufficient",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "409": {
+            "description": "Resource Conflict. VLAN already exists OR dependency VRF/VNET not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/l4trace/disable": {
+      "post": {
+        "description": "Disables L4 connection tracing and stops emitting events to ring buffers.\nIn-flight connections will complete their spans before export stops.\n",
+        "tags": [
+          "L4Tracing"
+        ],
+        "summary": "Disable L4 connection tracing",
+        "operationId": "PostConfigL4traceDisable",
+        "responses": {
+          "200": {
+            "description": "L4 tracing disabled successfully",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "type": "string",
+                  "example": "L4 connection tracing disabled"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/l4trace/enable": {
+      "post": {
+        "description": "Enables distributed tracing for all TCP/SCTP connections passing through loxilb.\nEvents are emitted to eBPF ring buffers for export to OpenTelemetry collectors.\n\n**Features:**\n- Per-connection spans with full lifecycle tracking\n- Connection state machine visualization\n- RTT, retransmission, and throughput metrics\n- Configurable sampling rate (0-100%)\n",
+        "tags": [
+          "L4Tracing"
+        ],
+        "summary": "Enable L4 connection tracing",
+        "operationId": "PostConfigL4traceEnable",
+        "parameters": [
+          {
+            "name": "attr",
+            "in": "body",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "sampling_rate": {
+                  "description": "Percentage of connections to trace (0-100)",
+                  "type": "integer",
+                  "format": "int64",
+                  "default": 100,
+                  "maximum": 100,
+                  "minimum": 0,
+                  "example": 100
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "L4 tracing enabled successfully",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "type": "string",
+                  "example": "L4 connection tracing enabled (sampling: 100%)"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid sampling rate",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/l4trace/sampling": {
+      "put": {
+        "description": "Changes the L4 tracing sampling rate without disabling tracing.\nNew connections will use the updated rate immediately.\n\n**Sampling behavior:**\n- 0%: Effectively disables tracing (use /disable endpoint instead)\n- 1-99%: Hash-based deterministic sampling (same connection always gets same decision)\n- 100%: Trace all connections (production debugging)\n",
+        "tags": [
+          "L4Tracing"
+        ],
+        "summary": "Update L4 tracing sampling rate",
+        "operationId": "PutConfigL4traceSampling",
+        "parameters": [
+          {
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "required": [
+                "sampling_rate"
+              ],
+              "properties": {
+                "sampling_rate": {
+                  "description": "Percentage of connections to trace (0-100)",
+                  "type": "integer",
+                  "format": "int64",
+                  "maximum": 100,
+                  "minimum": 0,
+                  "example": 10
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sampling rate updated successfully",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "type": "string",
+                  "example": "L4 sampling rate updated to 10%"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid sampling rate",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/l4trace/stats/reset": {
+      "post": {
+        "description": "Resets all L4 tracing statistics counters to zero.\nDoes not affect current tracing configuration (enabled/disabled state).\nUseful for baseline measurements and performance testing.\n",
+        "tags": [
+          "L4Tracing"
+        ],
+        "summary": "Reset L4 tracing statistics",
+        "operationId": "PostConfigL4traceStatsReset",
+        "responses": {
+          "200": {
+            "description": "Statistics reset successfully",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "type": "string",
+                  "example": "L4 tracing statistics reset successfully"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/l4trace/status": {
+      "get": {
+        "description": "Returns current L4 tracing configuration, connection statistics, and event counters.\n\n**Statistics include:**\n- Total events emitted (TCP + SCTP state changes)\n- Connection lifecycle counters (new, established, closed, timeout, reset, error)\n- Protocol breakdown (TCP vs SCTP events)\n- Ring buffer health (dropped events)\n",
+        "tags": [
+          "L4Tracing"
+        ],
+        "summary": "Get L4 tracing status and statistics",
+        "operationId": "GetConfigL4traceStatus",
+        "responses": {
+          "200": {
+            "description": "L4 tracing status retrieved successfully",
+            "schema": {
+              "$ref": "#/definitions/L4TraceStatusResponse"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/l7policy": {
+      "get": {
+        "summary": "Get all L7 content-routing policies",
+        "operationId": "getConfigL7PolicyAll",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/L7PolicyGetEntry"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "post": {
+        "description": "Creates a dedicated L7_POLICY resource (policy + ordered child rules) and attaches it to an existing L4 load-balancer referenced by its stable opaque id. The body is validated server-side with Octavia per-type rules (FILE_TYPE only EQUAL_TO/REGEX; key required for HEADER/COOKIE/QUERY; redirect statusCode allow-list default 302; REJECT default 403; REGEX patterns try-compiled at config time) and translated to the internal route IR, then carried to the running sockproxy by a SEPARATE attach call (proxy_attach_l7_policy) — NEVER inline on the 4096-byte proxy_arg.",
+        "summary": "Create an L7 content-routing policy",
+        "operationId": "postConfigL7Policy",
+        "parameters": [
+          {
+            "description": "L7 policy attributes",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/L7Policy"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Malformed arguments (failed Octavia validation or unrepresentable export)",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Referenced load-balancer not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/l7policy/id/{id}": {
+      "get": {
+        "summary": "Get a single L7 content-routing policy by id",
+        "operationId": "getConfigL7PolicyID",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Stable opaque identifier of the L7 policy",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/L7Policy"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "delete": {
+        "description": "Detaches the policy from its load-balancer (proxy_detach_l7_policy regfrees every compiled REGEX) and removes the resource.",
+        "summary": "Delete an L7 content-routing policy by id",
+        "operationId": "deleteConfigL7PolicyID",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Stable opaque identifier of the L7 policy",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/llamafirewall/configure": {
+      "post": {
+        "description": "Update LlamaFirewall configuration (server URL, scanners, policy, thresholds)",
+        "summary": "Configure LlamaFirewall security scanning settings",
+        "parameters": [
+          {
+            "description": "LlamaFirewall configuration",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/LlamaFirewallConfigEntry"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "LlamaFirewall configuration updated successfully",
+            "schema": {
+              "$ref": "#/definitions/PostSuccess"
+            }
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/llamafirewall/enable": {
+      "post": {
+        "description": "Toggle LlamaFirewall security scanning on or off for API traffic",
+        "summary": "Enable or disable LlamaFirewall AI security scanning",
+        "parameters": [
+          {
+            "description": "Enable/disable flag",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "required": [
+                "enabled"
+              ],
+              "properties": {
+                "enabled": {
+                  "description": "Enable (true) or disable (false) LlamaFirewall scanning",
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "LlamaFirewall status updated successfully",
+            "schema": {
+              "$ref": "#/definitions/PostSuccess"
+            }
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/llamafirewall/health": {
+      "post": {
+        "description": "Check connectivity and health of LlamaFirewall gRPC server",
+        "summary": "Trigger LlamaFirewall health check",
+        "responses": {
+          "200": {
+            "description": "Health check successful",
+            "schema": {
+              "$ref": "#/definitions/LlamaFirewallHealthResponse"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error (health check failed)",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/llamafirewall/scanners": {
+      "post": {
+        "description": "Enable/disable specific scanners (PromptGuard, CodeShield, Regex, etc.)",
+        "summary": "Configure individual scanner settings",
+        "parameters": [
+          {
+            "description": "Scanner configuration",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/LlamaFirewallScannersEntry"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Scanner configuration updated successfully",
+            "schema": {
+              "$ref": "#/definitions/PostSuccess"
+            }
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/llamafirewall/stats": {
+      "get": {
+        "description": "Retrieve scanning statistics (scans, blocks, scanner performance, decisions)",
+        "summary": "Get LlamaFirewall security scanning statistics",
+        "responses": {
+          "200": {
+            "description": "LlamaFirewall statistics retrieved successfully",
+            "schema": {
+              "$ref": "#/definitions/LlamaFirewallStatsResponse"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/llamafirewall/status": {
+      "get": {
+        "description": "Retrieve current LlamaFirewall settings, connection status, and enabled scanners",
+        "summary": "Get current LlamaFirewall configuration and status",
+        "responses": {
+          "200": {
+            "description": "LlamaFirewall status retrieved successfully",
+            "schema": {
+              "$ref": "#/definitions/LlamaFirewallStatusResponse"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
     "/config/loadbalancer": {
       "post": {
         "description": "Create a new load balancer service with .",
@@ -10609,6 +20328,14 @@ func init() {
       "get": {
         "description": "Get all of the load balancer services with conntrack infomation.",
         "summary": "Get all of the load balancer services",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Octavia tenant/project identifier filter. When supplied, only load-balancer services whose serviceArguments.projectId matches are returned. This is a CONVENIENCE filter, NOT a tenant-isolation/authz boundary: an unfiltered GET still returns rules with any projectId.",
+            "name": "projectId",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
             "description": "OK",
@@ -10792,6 +20519,60 @@ func init() {
       }
     },
     "/config/loadbalancer/externalipaddress/{ip_address}/port/{port}/protocol/{proto}": {
+      "get": {
+        "description": "Returns a single load balancer rule identified by its VIP/port/protocol composite key (Octavia).",
+        "summary": "Get a Load balancer service by composite key",
+        "operationId": "getConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProto",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "External (VIP) IP address of the load balancer service",
+            "name": "ip_address",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "number",
+            "description": "Service port of the load balancer service",
+            "name": "port",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "Protocol of the load balancer service (tcp/udp/sctp)",
+            "name": "proto",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/LoadbalanceEntry"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
       "delete": {
         "description": "Delete an existing load balancer service with .",
         "summary": "Delete an existing Load balancer service",
@@ -10877,6 +20658,188 @@ func init() {
             }
           }
         }
+      },
+      "patch": {
+        "description": "Apply an RFC 7386 JSON merge-patch to an existing load balancer rule identified by its VIP/port/protocol composite key (Octavia). Fields present in the body are overwritten, absent fields are left untouched, and an explicit null clears a clearable field. Immutable fields (security, egress, mode, protocol, VIP composite key) are rejected with 400. Returns 200 if the target rule exists, 404 if it is absent. The rule is mutated in place; established connections are not dropped.",
+        "consumes": [
+          "application/json",
+          "application/merge-patch+json"
+        ],
+        "summary": "Patch an existing Load balancer service (RFC 7386 JSON merge-patch)",
+        "operationId": "patchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProto",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "External (VIP) IP address of the load balancer service",
+            "name": "ip_address",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "number",
+            "description": "Service port of the load balancer service",
+            "name": "port",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "Protocol of the load balancer service (tcp/udp/sctp)",
+            "name": "proto",
+            "in": "path",
+            "required": true
+          },
+          {
+            "description": "RFC 7386 merge-patch document over the load balancer service",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/LoadbalanceEntry"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated"
+          },
+          "400": {
+            "description": "Malformed merge-patch body or attempt to modify an immutable field",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/loadbalancer/externalipaddress/{ip_address}/port/{port}/protocol/{proto}/stats": {
+      "get": {
+        "description": "Returns the per-LB statistics quad (activeConnections, bytesIn, bytesOut, totalConnections) for the rule identified by its composite key (Octavia). activeConnections is the same selector-agnostic live concurrent-connection count the connectionLimit gate enforces; bytesIn/bytesOut are the real per-direction CT byte totals; totalConnections is a monotonic cumulative counter reset to zero on restart.",
+        "summary": "Get per-service statistics of a Load balancer service",
+        "operationId": "getConfigLoadbalancerStats",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "External (VIP) IP address of the load balancer service. IPv6 literals may be RFC-bracketed ([2001:db8::1]); brackets are stripped before the lookup.",
+            "name": "ip_address",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "number",
+            "description": "Service port of the load balancer service",
+            "name": "port",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "Protocol of the load balancer service (tcp/udp/sctp)",
+            "name": "proto",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/LoadbalanceStats"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/loadbalancer/externalipaddress/{ip_address}/port/{port}/protocol/{proto}/status": {
+      "get": {
+        "description": "Returns the per-LB lifecycle status (adminStateUp, operatingStatus, lastUpdated) for the rule identified by its composite key (Octavia).",
+        "summary": "Get the lifecycle status of a Load balancer service",
+        "operationId": "getConfigLoadbalancerStatus",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "External (VIP) IP address of the load balancer service",
+            "name": "ip_address",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "number",
+            "description": "Service port of the load balancer service",
+            "name": "port",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "Protocol of the load balancer service (tcp/udp/sctp)",
+            "name": "proto",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/LoadbalanceStatus"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
       }
     },
     "/config/loadbalancer/hosturl/{hosturl}/externalipaddress/{ip_address}/port/{port}/portmax/{portmax}/protocol/{proto}": {
@@ -10929,6 +20892,18 @@ func init() {
             "type": "number",
             "description": "block value if any",
             "name": "block",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "URL path prefix to match for deletion (allows selective deletion of path-based rules)",
+            "name": "path_prefix",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "Path matching mode (disabled, prefix, exact) for selective deletion",
+            "name": "path_match_mode",
             "in": "query"
           }
         ],
@@ -11025,6 +21000,18 @@ func init() {
             "description": "block value if any",
             "name": "block",
             "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "URL path prefix to match for deletion (allows selective deletion of path-based rules)",
+            "name": "path_prefix",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "Path matching mode (disabled, prefix, exact) for selective deletion",
+            "name": "path_match_mode",
+            "in": "query"
           }
         ],
         "responses": {
@@ -11069,6 +21056,48 @@ func init() {
           },
           "503": {
             "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/loadbalancer/id/{id}": {
+      "get": {
+        "description": "Returns a single load balancer rule identified by its stable opaque id (Octavia).",
+        "summary": "Get a Load balancer service by opaque id",
+        "operationId": "getConfigLoadbalancerID",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Stable opaque identifier of the load balancer rule",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/LoadbalanceEntry"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -11578,6 +21607,93 @@ func init() {
         }
       }
     },
+    "/config/opa/watcher": {
+      "get": {
+        "description": "Returns current configuration and operational status of the OPA watcher.",
+        "tags": [
+          "opa"
+        ],
+        "summary": "Get OPA L4 policy watcher status",
+        "operationId": "getConfigOpaWatcher",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OPAWatcherStatus"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        },
+        "x-raw-middleware": true
+      },
+      "post": {
+        "description": "Start or reconfigure the OPA L4 policy watcher. Stops any existing watcher before starting a new one.",
+        "tags": [
+          "opa"
+        ],
+        "summary": "Configure OPA L4 policy watcher",
+        "operationId": "postConfigOpaWatcher",
+        "parameters": [
+          {
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/OPAWatcherConfig"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/PostSuccess"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        },
+        "x-raw-middleware": true
+      },
+      "delete": {
+        "description": "Stops the running OPA watcher and removes its configuration.",
+        "tags": [
+          "opa"
+        ],
+        "summary": "Stop and remove OPA L4 policy watcher",
+        "operationId": "deleteConfigOpaWatcher",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/PostSuccess"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        },
+        "x-raw-middleware": true
+      }
+    },
     "/config/params": {
       "get": {
         "description": "Get Operational params of LoxiLB",
@@ -11680,6 +21796,267 @@ func init() {
           },
           "409": {
             "description": "Resource Conflict. VLAN already exists OR dependency VRF/VNET not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/persist": {
+      "post": {
+        "description": "Dumps the gateway's live configuration to {config-path}/snapshot.json (atomic temp-file + rename, 0600) so it survives a daemon restart. This is \"save\" as an API (single-writer rule) - the same write the gateway performs automatically after a committed restore and, when auto-persist is enabled, after every successful mutating config call. loxicmd save --api calls this instead of writing legacy *.txt files client-side.",
+        "produces": [
+          "application/json"
+        ],
+        "summary": "Persist the running configuration to disk",
+        "responses": {
+          "200": {
+            "description": "Configuration persisted",
+            "schema": {
+              "$ref": "#/definitions/PersistResult"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "409": {
+            "description": "Another snapshot or restore operation is in progress",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/pii/configure": {
+      "post": {
+        "description": "Update PII detection configuration (mode, thresholds, URLs, circuit breaker)",
+        "summary": "Configure PII detection settings",
+        "parameters": [
+          {
+            "description": "PII detection configuration",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PIIConfigEntry"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "PII configuration updated successfully",
+            "schema": {
+              "$ref": "#/definitions/PostSuccess"
+            }
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/pii/enable": {
+      "post": {
+        "description": "Toggle PII detection on or off for HTTP/HTTPS traffic",
+        "summary": "Enable or disable PII detection",
+        "parameters": [
+          {
+            "description": "Enable/disable flag",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "required": [
+                "enabled"
+              ],
+              "properties": {
+                "enabled": {
+                  "description": "Enable (true) or disable (false) PII detection",
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "PII detection status updated successfully",
+            "schema": {
+              "$ref": "#/definitions/PostSuccess"
+            }
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/pii/stats": {
+      "get": {
+        "description": "Retrieve PII detection statistics (scans, detections, blocks, errors)",
+        "summary": "Get PII detection statistics",
+        "responses": {
+          "200": {
+            "description": "PII statistics retrieved successfully",
+            "schema": {
+              "$ref": "#/definitions/PIIStatsResponse"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/pii/status": {
+      "get": {
+        "description": "Retrieve current PII detection settings and status",
+        "summary": "Get current PII detection configuration",
+        "responses": {
+          "200": {
+            "description": "PII configuration retrieved successfully",
+            "schema": {
+              "$ref": "#/definitions/PIIStatusResponse"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/pii/url-patterns": {
+      "post": {
+        "description": "Configure URL patterns (include/exclude) for selective PII scanning",
+        "summary": "Add or update URL patterns for PII scanning",
+        "parameters": [
+          {
+            "description": "URL pattern configuration",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PIIURLPatternsEntry"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "URL patterns updated successfully",
+            "schema": {
+              "$ref": "#/definitions/PostSuccess"
+            }
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -11905,6 +22282,75 @@ func init() {
         }
       }
     },
+    "/config/restore": {
+      "post": {
+        "description": "Runs the staged restore pipeline (parse, validate, plan, preserve, apply, verify, commit-or-rollback) on the posted snapshot document. Default mode is dry-run, which validates and plans without mutating anything; commit must be explicit. Replaces the deprecated /config/import.",
+        "produces": [
+          "application/json"
+        ],
+        "summary": "Restore an instance snapshot",
+        "parameters": [
+          {
+            "enum": [
+              "dry-run",
+              "commit"
+            ],
+            "type": "string",
+            "default": "dry-run",
+            "description": "dry-run (default) validates and returns the plan without mutating anything; commit applies the snapshot with automatic rollback on failure.",
+            "name": "mode",
+            "in": "query"
+          },
+          {
+            "description": "The snapshot document, as produced by GET /config/snapshot.",
+            "name": "snapshot",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Restore result (both modes; inspect result and errors fields)",
+            "schema": {
+              "$ref": "#/definitions/RestoreResult"
+            }
+          },
+          "400": {
+            "description": "Malformed or incompatible snapshot document",
+            "schema": {
+              "$ref": "#/definitions/RestoreResult"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "409": {
+            "description": "Another snapshot or restore operation is in progress",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Restore failed (rolled-back or ROLLBACK-FAILED; see result field)",
+            "schema": {
+              "$ref": "#/definitions/RestoreResult"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
     "/config/route": {
       "post": {
         "description": "Create a new route config .",
@@ -12095,6 +22541,136 @@ func init() {
           },
           "503": {
             "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/securityrate": {
+      "post": {
+        "description": "Configure unified SYN flood protection (P0-5) and connection rate limiting (P0-6).",
+        "summary": "Configure unified security rate limiting",
+        "parameters": [
+          {
+            "description": "Unified security rate limiting configuration",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/SecurityRateConfigMod"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "delete": {
+        "description": "Disable all security rate limiting (SYN flood + connection rate) and clear tracking state.",
+        "summary": "Disable unified security rate limiting",
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/securityrate/all": {
+      "get": {
+        "description": "Get current unified security rate limiting (P0-5 + P0-6 + P0-7) configuration and statistics.",
+        "summary": "Get unified security rate limiting configuration and statistics",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "securityrateAttr": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/SecurityRateEntry"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/securityrate/reset": {
+      "put": {
+        "description": "Reset all accumulated statistics counters for security rate limiting (SYN/Conn/UDP) to zero.",
+        "summary": "Reset security rate limiting statistics",
+        "responses": {
+          "204": {
+            "description": "Statistics reset successfully"
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -12434,6 +23010,614 @@ func init() {
           },
           "503": {
             "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/snapshot": {
+      "get": {
+        "description": "Returns the versioned, checksummed snapshot document (schema 1.0) covering all v1 configuration domains. Replaces the deprecated /config/export. Response carries Content-Disposition and X-Snapshot-Checksum headers.",
+        "produces": [
+          "application/json"
+        ],
+        "summary": "Download a complete instance snapshot",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Comma-separated list of v1 domains to capture (endpoint, loadbalancer, firewall, policy, mirror, session, sessionulcl, ipfilter, securityrate, bfd, bgp, ipsec). If not specified, all domains are captured.",
+            "name": "components",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Snapshot document download",
+            "schema": {
+              "type": "file"
+            },
+            "headers": {
+              "Content-Disposition": {
+                "type": "string"
+              },
+              "X-Snapshot-Checksum": {
+                "type": "string"
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid parameters",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "409": {
+            "description": "Another snapshot or restore operation is in progress",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/trace/catalog/{catalog_id}/parser": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Returns the parser currently assigned to a specific trace catalog.\nShows catalog name, parser name, and parser_type from YAML configuration.\n",
+        "tags": [
+          "Tracing"
+        ],
+        "summary": "Get parser assignment for a catalog",
+        "operationId": "getCatalogParser",
+        "parameters": [
+          {
+            "maximum": 255,
+            "minimum": 1,
+            "type": "integer",
+            "description": "Catalog ID (1-255)",
+            "name": "catalog_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Catalog parser mapping",
+            "schema": {
+              "$ref": "#/definitions/CatalogParserMapping"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Catalog not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "put": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Dynamically changes which parser is used for a specific catalog at runtime.\nThis allows switching parsers without restarting loxilb or reloading YAML files.\n\n**Use Cases:**\n- Switch from mock to production parser after testing\n- Change parser when service protocol changes\n- A/B testing different parser implementations\n\n**Parser Selection Priority:**\n1. Catalog ID → parser mapping (set by this endpoint or YAML)\n2. URL path prefix matching (e.g., /v1/chat/completions → openai)\n3. Default mock parser\n",
+        "tags": [
+          "Tracing"
+        ],
+        "summary": "Update parser assignment for a catalog",
+        "operationId": "updateCatalogParser",
+        "parameters": [
+          {
+            "maximum": 255,
+            "minimum": 1,
+            "type": "integer",
+            "description": "Catalog ID (1-255)",
+            "name": "catalog_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "description": "Parser assignment",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/TraceParserUpdate"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Parser updated successfully",
+            "schema": {
+              "$ref": "#/definitions/PostSuccess"
+            }
+          },
+          "400": {
+            "description": "Invalid parser name",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Catalog or parser not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "delete": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Removes the catalog → parser mapping, causing the system to fall back to:\n1. URL path-based routing (e.g., /v1/chat/completions → openai)\n2. Default mock parser\n\nUse this to revert to path-based parser selection or remove custom assignments.\n",
+        "tags": [
+          "Tracing"
+        ],
+        "summary": "Remove parser assignment for a catalog",
+        "operationId": "deleteCatalogParser",
+        "parameters": [
+          {
+            "maximum": 255,
+            "minimum": 1,
+            "type": "integer",
+            "description": "Catalog ID (1-255)",
+            "name": "catalog_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Parser mapping removed successfully"
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Catalog not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/trace/catalogs": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Returns a list of all tracing catalog templates loaded from YAML files.\nCatalogs define parser assignments, sampling rates, and tracing behavior for different services.\n\n**Catalog Sources:**\n- Builtin catalogs: /opt/loxilb/trace-catalogs/\n- User overrides: /etc/loxilb/trace-catalogs/\n\n**Response includes:**\n- Catalog name (from YAML filename)\n- Parser assignment (parser_type from YAML)\n- Sample rate (percentage of requests traced)\n- Enabled status\n- Version and description\n",
+        "tags": [
+          "Tracing"
+        ],
+        "summary": "List all loaded trace catalogs",
+        "operationId": "getTraceCatalogs",
+        "responses": {
+          "200": {
+            "description": "List of loaded trace catalogs",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/TraceCatalogEntry"
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        },
+        "x-not-implemented": true
+      }
+    },
+    "/config/trace/disable": {
+      "post": {
+        "description": "Disables distributed tracing and stops emitting events to ring buffers.",
+        "tags": [
+          "Tracing"
+        ],
+        "summary": "Disable HTTP/HTTPS protocol tracing",
+        "operationId": "PostConfigTraceDisable",
+        "responses": {
+          "200": {
+            "description": "Tracing disabled successfully",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "type": "string",
+                  "example": "HTTP/HTTPS tracing disabled"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/trace/enable": {
+      "post": {
+        "description": "Enables distributed tracing for all HTTP/HTTPS traffic passing through loxilb proxy. Events are emitted to ring buffers for export to Jaeger/OpenTelemetry.",
+        "tags": [
+          "Tracing"
+        ],
+        "summary": "Enable HTTP/HTTPS protocol tracing",
+        "operationId": "PostConfigTraceEnable",
+        "responses": {
+          "200": {
+            "description": "Tracing enabled successfully",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "type": "string",
+                  "example": "HTTP/HTTPS tracing enabled"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/trace/otlp": {
+      "get": {
+        "description": "Returns current OTLP endpoint address, protocol, TLS settings, and connection status.",
+        "tags": [
+          "Tracing"
+        ],
+        "summary": "Get OTLP endpoint configuration (with security settings)",
+        "operationId": "GetConfigTraceOtlp",
+        "responses": {
+          "200": {
+            "description": "OTLP configuration retrieved successfully",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "connected": {
+                  "description": "Whether OTLP exporter is currently connected",
+                  "type": "boolean"
+                },
+                "endpoint": {
+                  "description": "OTLP endpoint address",
+                  "type": "string",
+                  "example": "jaeger.example.com:4317"
+                },
+                "headers": {
+                  "description": "Configured authentication headers (values redacted for security)",
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "example": {
+                    "Authorization": "***REDACTED***",
+                    "X-API-Key": "***REDACTED***"
+                  }
+                },
+                "protocol": {
+                  "description": "OTLP protocol (grpc or http)",
+                  "type": "string",
+                  "example": "grpc"
+                },
+                "tls_skip_verify": {
+                  "description": "Whether TLS certificate verification is skipped (insecure if true)",
+                  "type": "boolean",
+                  "example": false
+                },
+                "use_tls": {
+                  "description": "Whether TLS encryption is enabled",
+                  "type": "boolean",
+                  "example": true
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "post": {
+        "description": "Sets the OpenTelemetry Protocol (OTLP) endpoint address and protocol for exporting distributed traces to Jaeger/Tempo/etc.\n\n**Security Features:**\n- TLS encryption enabled by default (use_tls: true)\n- TLS certificate verification (tls_skip_verify: false)\n- Optional authentication headers (API keys, bearer tokens)\n- Endpoint validation (host:port format, DNS resolution)\n\n**Production Recommendations:**\n- Always use TLS (use_tls: true) to encrypt trace data\n- Never skip TLS verification (tls_skip_verify: false) in production\n- Use authentication headers for secured endpoints\n- Validate endpoint connectivity before deploying\n",
+        "tags": [
+          "Tracing"
+        ],
+        "summary": "Configure OTLP endpoint for trace export (with TLS security)",
+        "operationId": "PostConfigTraceOtlp",
+        "parameters": [
+          {
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "required": [
+                "endpoint",
+                "protocol"
+              ],
+              "properties": {
+                "endpoint": {
+                  "description": "OTLP endpoint address in host:port format (validated)",
+                  "type": "string",
+                  "pattern": "^([a-zA-Z0-9.-]+|\\[[0-9a-fA-F:]+\\]):[0-9]+$",
+                  "example": "jaeger.example.com:4317"
+                },
+                "headers": {
+                  "description": "Optional authentication headers (e.g., API keys)",
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "example": {
+                    "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                    "X-API-Key": "your-api-key-here"
+                  }
+                },
+                "protocol": {
+                  "description": "OTLP protocol type",
+                  "type": "string",
+                  "enum": [
+                    "grpc",
+                    "http"
+                  ],
+                  "example": "grpc"
+                },
+                "tls_skip_verify": {
+                  "description": "Skip TLS certificate verification (default=false, INSECURE if true)",
+                  "type": "boolean",
+                  "default": false
+                },
+                "use_tls": {
+                  "description": "Enable TLS encryption (default=true, RECOMMENDED)",
+                  "type": "boolean",
+                  "default": true
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OTLP endpoint configured successfully",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "type": "string",
+                  "example": "OTLP endpoint configured successfully"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (bad endpoint, protocol, or headers)",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/trace/parsers": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Returns a list of all protocol parsers registered in the tracing system.\nParsers analyze HTTP/HTTPS request/response bodies to extract protocol-specific attributes.\n\n**Available Parsers:**\n- **openai**: OpenAI API (GPT models, tokens, streaming)\n- **mcp**: Model Context Protocol (JSON-RPC tools, prompts, resources)\n- **mock**: Simple JSON parser for testing\n\nUse this endpoint to discover which parsers are available before assigning them to catalogs.\n",
+        "tags": [
+          "Tracing"
+        ],
+        "summary": "List all available trace parsers",
+        "operationId": "getTraceParsers",
+        "responses": {
+          "200": {
+            "description": "List of available parsers",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "parsers": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/TraceParserInfo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/trace/status": {
+      "get": {
+        "description": "Returns current tracing status, ring buffer statistics, and OTLP endpoint configuration.",
+        "tags": [
+          "Tracing"
+        ],
+        "summary": "Get HTTP/HTTPS tracing status",
+        "operationId": "GetConfigTraceStatus",
+        "responses": {
+          "200": {
+            "description": "Tracing status retrieved successfully",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "dropped_events": {
+                  "description": "Total number of events dropped due to ring buffer full",
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "enabled": {
+                  "description": "Whether tracing is currently enabled",
+                  "type": "boolean"
+                },
+                "otlp_connected": {
+                  "description": "Whether OTLP exporter is currently connected",
+                  "type": "boolean"
+                },
+                "otlp_endpoint": {
+                  "description": "Currently configured OTLP endpoint address",
+                  "type": "string",
+                  "example": "localhost:4317"
+                },
+                "otlp_protocol": {
+                  "description": "OTLP protocol (grpc or http)",
+                  "type": "string",
+                  "example": "grpc"
+                },
+                "ring_utilization": {
+                  "description": "Current utilization (pending events) per worker ring buffer",
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "int32"
+                  }
+                },
+                "total_events": {
+                  "description": "Total number of events emitted across all workers",
+                  "type": "integer",
+                  "format": "int64"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -12969,6 +24153,84 @@ func init() {
         }
       }
     },
+    "/config/worker/metrics": {
+      "get": {
+        "description": "Returns current GPU metrics for all tracked workers",
+        "summary": "Get all worker metrics",
+        "responses": {
+          "200": {
+            "description": "Worker metrics retrieved successfully",
+            "schema": {
+              "$ref": "#/definitions/WorkerMetricsResponse"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "post": {
+        "description": "Receives GPU metrics from metrics agent and updates routing decisions",
+        "summary": "Update worker GPU metrics",
+        "parameters": [
+          {
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/WorkerMetricsEntry"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Metrics updated successfully",
+            "schema": {
+              "$ref": "#/definitions/WorkerMetricsUpdateResponse"
+            }
+          },
+          "400": {
+            "description": "GPU monitoring disabled or invalid request",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Failed to update metrics",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
     "/log-archives": {
       "get": {
         "description": "Retrieve a list of all rotated log archive files available for download.",
@@ -12992,6 +24254,9 @@ func init() {
     "/log-archives/{filename}": {
       "get": {
         "description": "Download a log archive file by its name.",
+        "produces": [
+          "application/octet-stream"
+        ],
         "summary": "Download a specific log archive",
         "parameters": [
           {
@@ -13051,6 +24316,18 @@ func init() {
             "type": "string",
             "description": "Filter logs containing a specific keyword or phrase.",
             "name": "keyword",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "Opaque pagination cursor from a previous response's next_cursor; fetches the next page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "Specific log file to read (default is the current log file).",
+            "name": "file",
             "in": "query"
           }
         ],
@@ -13132,7 +24409,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        }
+        },
+        "x-not-implemented": true
       }
     },
     "/metrics/errorcount": {
@@ -13152,7 +24430,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        }
+        },
+        "x-not-implemented": true
       }
     },
     "/metrics/flowcount": {
@@ -13172,7 +24451,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        }
+        },
+        "x-not-implemented": true
       }
     },
     "/metrics/fwdrops": {
@@ -13192,7 +24472,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        }
+        },
+        "x-not-implemented": true
       }
     },
     "/metrics/hostcount": {
@@ -13212,7 +24493,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        }
+        },
+        "x-not-implemented": true
       }
     },
     "/metrics/lbprocessedtraffic": {
@@ -13232,7 +24514,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        }
+        },
+        "x-not-implemented": true
       }
     },
     "/metrics/lbrulecount": {
@@ -13252,7 +24535,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        }
+        },
+        "x-not-implemented": true
       }
     },
     "/metrics/newflowcount": {
@@ -13272,7 +24556,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        }
+        },
+        "x-not-implemented": true
       }
     },
     "/metrics/processedtraffic": {
@@ -13292,7 +24577,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        }
+        },
+        "x-not-implemented": true
       }
     },
     "/metrics/reqcountperclient": {
@@ -13312,7 +24598,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        }
+        },
+        "x-not-implemented": true
       }
     },
     "/metrics/requestcount": {
@@ -13332,7 +24619,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        }
+        },
+        "x-not-implemented": true
       }
     },
     "/metrics/servicedisttraffic": {
@@ -13352,7 +24640,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        }
+        },
+        "x-not-implemented": true
       }
     },
     "/nodegraph/all": {
@@ -13384,7 +24673,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        }
+        },
+        "x-not-implemented": true
       }
     },
     "/nodegraph/{service}": {
@@ -13425,7 +24715,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        }
+        },
+        "x-not-implemented": true
       }
     },
     "/oauth/{provider}": {
@@ -13562,6 +24853,123 @@ func init() {
             "description": "Internal Server Error",
             "schema": {
               "$ref": "#/definitions/OauthErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/sni/certificates": {
+      "get": {
+        "description": "Get all SNI certificates in the global certificate store (shared by all proxies)",
+        "summary": "List all global SNI certificates",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "certificates": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/CertificatesItems0"
+                  }
+                },
+                "totalCertificates": {
+                  "description": "Total number of registered certificates",
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      },
+      "post": {
+        "description": "Register an SNI certificate in the global certificate store. Multiple loadbalancer rules can share the same certificate by hostname. The certificate is stored independently and looked up during TLS handshake based on SNI.",
+        "summary": "Register SNI certificate globally (shared by all proxies)",
+        "parameters": [
+          {
+            "description": "SNI certificate registration parameters",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/SNICertificateEntry"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/SuccessResponse"
+            }
+          },
+          "400": {
+            "description": "Bad Request - Certificate load failed or invalid parameters",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "409": {
+            "description": "Conflict - Certificate already registered for this hostname",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      },
+      "delete": {
+        "description": "Remove SNI certificate from global store",
+        "summary": "Unregister SNI certificate globally",
+        "parameters": [
+          {
+            "description": "SNI certificate removal parameters",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "required": [
+                "hostname"
+              ],
+              "properties": {
+                "hostname": {
+                  "description": "Hostname to unregister (e.g., api.example.com)",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/SuccessResponse"
+            }
+          },
+          "404": {
+            "description": "Certificate not found",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
             }
           }
         }
@@ -13714,6 +25122,123 @@ func init() {
     }
   },
   "definitions": {
+    "ApiKeyCreateRequest": {
+      "type": "object",
+      "required": [
+        "tenant_id"
+      ],
+      "properties": {
+        "allowed_models": {
+          "description": "List of model identifiers this key may access",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "burst_size": {
+          "description": "Burst capacity above the steady-state RPS limit",
+          "type": "integer",
+          "format": "int64"
+        },
+        "enabled": {
+          "description": "Whether the API key is active. Absent = enabled (optional, nullable to distinguish unset).",
+          "type": "boolean",
+          "x-nullable": true
+        },
+        "expires_at": {
+          "description": "Optional expiry timestamp (RFC3339)",
+          "type": "string",
+          "format": "date-time"
+        },
+        "name": {
+          "description": "Human-readable label for the API key",
+          "type": "string"
+        },
+        "rate_limit_rps": {
+          "description": "Maximum requests per second allowed for this key",
+          "type": "integer",
+          "format": "int64"
+        },
+        "tenant_id": {
+          "description": "Tenant identifier that owns this key",
+          "type": "string"
+        },
+        "tokens_per_min": {
+          "description": "Maximum LLM tokens per minute for this key",
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
+    "ApiKeyCreateResponse": {
+      "type": "object",
+      "required": [
+        "raw_key"
+      ],
+      "properties": {
+        "key_id": {
+          "description": "Unique identifier of the created API key",
+          "type": "string"
+        },
+        "raw_key": {
+          "description": "The plaintext API key — returned ONLY at creation time",
+          "type": "string"
+        }
+      }
+    },
+    "ApiKeySummary": {
+      "type": "object",
+      "properties": {
+        "allowed_models": {
+          "description": "List of model identifiers this key may access",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "burst_size": {
+          "description": "Burst capacity above the steady-state RPS limit",
+          "type": "integer",
+          "format": "int64"
+        },
+        "created_at": {
+          "description": "Timestamp when the key was created",
+          "type": "string",
+          "format": "date-time"
+        },
+        "enabled": {
+          "description": "Whether this key is currently active",
+          "type": "boolean"
+        },
+        "expires_at": {
+          "description": "Optional expiry timestamp (RFC3339)",
+          "type": "string",
+          "format": "date-time"
+        },
+        "key_id": {
+          "description": "Unique identifier of the API key",
+          "type": "string"
+        },
+        "name": {
+          "description": "Human-readable label for the API key",
+          "type": "string"
+        },
+        "rate_limit_rps": {
+          "description": "Maximum requests per second allowed for this key",
+          "type": "integer",
+          "format": "int64"
+        },
+        "tenant_id": {
+          "description": "Tenant that owns this key",
+          "type": "string"
+        },
+        "tokens_per_min": {
+          "description": "Maximum LLM tokens per minute for this key",
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
     "BGPApplyPolicyToNeighborMod": {
       "type": "object",
       "required": [
@@ -14642,9 +26167,97 @@ func init() {
         }
       }
     },
+    "CatalogParserMapping": {
+      "type": "object",
+      "required": [
+        "catalog_id"
+      ],
+      "properties": {
+        "catalog_id": {
+          "description": "Catalog ID",
+          "type": "integer",
+          "maximum": 255,
+          "minimum": 1,
+          "example": 1
+        },
+        "catalog_name": {
+          "description": "Catalog name from YAML",
+          "type": "string",
+          "example": "v1"
+        },
+        "parser_name": {
+          "description": "Currently assigned parser",
+          "type": "string",
+          "example": "openai"
+        },
+        "parser_type": {
+          "description": "Parser type from YAML configuration",
+          "type": "string",
+          "example": "openai"
+        }
+      }
+    },
+    "Cert": {
+      "type": "object",
+      "required": [
+        "certPem",
+        "keyPem"
+      ],
+      "properties": {
+        "certId": {
+          "description": "Opaque certificate management handle. Client-supplied verbatim or server-minted when absent. Stable across rotation (PUT). Max 63 chars; no path separators.",
+          "type": "string",
+          "x-nullable": true
+        },
+        "certPem": {
+          "description": "Leaf (server) certificate in PEM. Required on POST/PUT. Try-parsed as X.509 — malformed PEM is rejected with 400.",
+          "type": "string",
+          "x-nullable": true
+        },
+        "chainPem": {
+          "description": "Optional intermediate-chain PEM appended after the leaf.",
+          "type": "string"
+        },
+        "hostnames": {
+          "description": "Output-only. SAN-DNS/CN auto-derived hostnames the certId registered into the SNI store. Ignored on POST/PUT.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "keyPem": {
+          "description": "Private key in PEM. Required on POST/PUT. Persisted 0600 (key-at-rest). Never returned on GET.",
+          "type": "string",
+          "x-nullable": true
+        }
+      }
+    },
+    "CertificatesItems0": {
+      "type": "object",
+      "properties": {
+        "certPath": {
+          "description": "Certificate directory path",
+          "type": "string"
+        },
+        "hostname": {
+          "description": "Hostname (e.g., api.example.com)",
+          "type": "string"
+        },
+        "refCount": {
+          "description": "Number of proxies using this certificate",
+          "type": "integer"
+        }
+      }
+    },
     "ConntrackEntry": {
       "type": "object",
       "properties": {
+        "ageMs": {
+          "description": "DOCA detail: age of this conntrack/offload flow in milliseconds (age-query estimate; 0 when unavailable). Declared so a ` + "`" + `swagger generate server` + "`" + ` reproduces the hand-maintained DOCA age field instead of clobbering it. Additive/optional.",
+          "type": "integer",
+          "format": "uint64",
+          "x-nullable": false
+        },
         "bytes": {
           "description": "Packet bytes of the conntrack",
           "type": "integer"
@@ -14665,9 +26278,26 @@ func init() {
           "description": "port number for the access",
           "type": "integer"
         },
+        "hw_bytes": {
+          "description": "Byte count served by the HW fast-path for this flow",
+          "type": "integer",
+          "format": "uint64",
+          "x-nullable": false
+        },
+        "hw_pkts": {
+          "description": "Packet count served by the HW fast-path for this flow",
+          "type": "integer",
+          "format": "uint64",
+          "x-nullable": false
+        },
         "ident": {
           "description": "value for Conntrack ident",
           "type": "string"
+        },
+        "offload_state": {
+          "description": "HW offload state of the conntrack flow (\"none\", \"hw\"). Absent when none.",
+          "type": "string",
+          "x-nullable": false
         },
         "packets": {
           "description": "Packet counts of the conntrack",
@@ -14688,6 +26318,29 @@ func init() {
         "sourcePort": {
           "description": "port number for the access",
           "type": "integer"
+        }
+      }
+    },
+    "ConversationCleanupResponse": {
+      "type": "object",
+      "required": [
+        "deleted_count",
+        "oldest_remaining_hours",
+        "message"
+      ],
+      "properties": {
+        "deleted_count": {
+          "description": "Number of conversations deleted",
+          "type": "integer"
+        },
+        "message": {
+          "description": "Status message",
+          "type": "string"
+        },
+        "oldest_remaining_hours": {
+          "description": "Age in hours of oldest remaining conversation",
+          "type": "number",
+          "format": "float"
         }
       }
     },
@@ -14769,8 +26422,24 @@ func init() {
         "hostName"
       ],
       "properties": {
+        "domainName": {
+          "description": "doubles as TLS SNI for HTTPS monitors AND the Host header. Optional/additive.",
+          "type": "string"
+        },
+        "expectedCodes": {
+          "description": "Octavia expected_codes — single \"200\", list \"200,202\", or range \"200-204\". Optional/additive — empty defaults to \"200\".",
+          "type": "string"
+        },
         "hostName": {
           "description": "Host name in CIDR",
+          "type": "string"
+        },
+        "httpMethod": {
+          "description": "HTTP(S) health-monitor method (e.g. GET, HEAD). Optional/additive — empty defaults to GET. Control-plane only (probeReq/probeResp retained as the escape hatch).",
+          "type": "string"
+        },
+        "httpVersion": {
+          "description": "HM HTTP version \"1.0\" or \"1.1\". When \"1.1\" a Host header is sent (domainName, else the member address). Optional/additive.",
           "type": "string"
         },
         "inactiveReTries": {
@@ -14798,7 +26467,7 @@ func init() {
           "type": "string"
         },
         "probeType": {
-          "description": "Type of probe used",
+          "description": "Type of probe used (tls-hello = handshake-only TLS liveness probe)",
           "type": "string",
           "enum": [
             "tcp",
@@ -14807,8 +26476,13 @@ func init() {
             "ping",
             "http",
             "https",
-            "none"
+            "none",
+            "tls-hello"
           ]
+        },
+        "urlPath": {
+          "description": "HM request path (e.g. /healthz). Optional/additive — empty falls back to probeReq or \"/\".",
+          "type": "string"
         }
       }
     },
@@ -14962,6 +26636,14 @@ func init() {
         }
       }
     },
+    "ErrorResponse": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string"
+        }
+      }
+    },
     "FDBEntry": {
       "type": "object",
       "required": [
@@ -15087,6 +26769,12 @@ func init() {
           "description": "Destination IP in CIDR notation",
           "type": "string"
         },
+        "hwOffload": {
+          "description": "opt-IN per-rule HW offload flag. When true, the rule is mirrored into the DOCA ingress ACL pipeline (DENY_PIPE / ALLOW_PIPE) in addition to the eBPF firewall fallback. The rule MUST be expressible in HW (IPv4, single-port, no proto-specific match) — non-expressible rules are hard-rejected at AddFwRule. Default false preserves existing eBPF-only behaviour for all deployments.\n",
+          "type": "boolean",
+          "default": false,
+          "x-nullable": false
+        },
         "maxDestinationPort": {
           "description": "Maximum  destination port range",
           "type": "integer"
@@ -15166,6 +26854,54 @@ func init() {
         }
       }
     },
+    "GPUEnableResponse": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "routing_mode",
+        "message"
+      ],
+      "properties": {
+        "enabled": {
+          "description": "Whether GPU monitoring is now enabled",
+          "type": "boolean"
+        },
+        "message": {
+          "description": "Status message",
+          "type": "string"
+        },
+        "routing_mode": {
+          "description": "Current routing mode (gpu_aware or standard_chwbl)",
+          "type": "string"
+        }
+      }
+    },
+    "GPUMonitoringStatus": {
+      "type": "object",
+      "properties": {
+        "ebpf_map_loaded": {
+          "description": "Whether eBPF maps are loaded",
+          "type": "boolean"
+        },
+        "enabled": {
+          "description": "Whether GPU monitoring is currently active",
+          "type": "boolean"
+        },
+        "last_metrics_update": {
+          "description": "Timestamp of last metrics update",
+          "type": "string",
+          "format": "date-time"
+        },
+        "routing_mode": {
+          "description": "Current routing mode (standard_chwbl or gpu_aware)",
+          "type": "string"
+        },
+        "worker_count": {
+          "description": "Number of workers being tracked",
+          "type": "integer"
+        }
+      }
+    },
     "HealthCheckResponse": {
       "type": "object",
       "properties": {
@@ -15182,6 +26918,891 @@ func init() {
         },
         "unhealthy_host_count": {
           "type": "number"
+        }
+      }
+    },
+    "IPFilterEntry": {
+      "type": "object",
+      "required": [
+        "filterType",
+        "cidr",
+        "action"
+      ],
+      "properties": {
+        "action": {
+          "description": "Action to take (allow or drop)",
+          "type": "string",
+          "enum": [
+            "allow",
+            "drop"
+          ]
+        },
+        "bytes": {
+          "description": "Byte counter (read-only)",
+          "type": "integer",
+          "format": "int64"
+        },
+        "cidr": {
+          "description": "IP address in CIDR notation (e.g., 192.168.1.0/24)",
+          "type": "string"
+        },
+        "filterType": {
+          "description": "Filter type (whitelist or blacklist)",
+          "type": "string",
+          "enum": [
+            "whitelist",
+            "blacklist"
+          ]
+        },
+        "packets": {
+          "description": "Packet counter (read-only)",
+          "type": "integer",
+          "format": "int64"
+        },
+        "priority": {
+          "description": "Rule priority (higher = more important)",
+          "type": "integer",
+          "format": "int64",
+          "default": 100
+        },
+        "zone": {
+          "description": "Security zone (0 = all zones)",
+          "type": "integer",
+          "format": "int64",
+          "default": 0
+        }
+      }
+    },
+    "IPsecCACertificate": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "installedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "issuer": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "notAfter": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "notBefore": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "serial": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        }
+      }
+    },
+    "IPsecCACertificateMod": {
+      "type": "object",
+      "required": [
+        "name",
+        "certificate"
+      ],
+      "properties": {
+        "certificate": {
+          "description": "PEM-encoded X.509 CA certificate",
+          "type": "string"
+        },
+        "description": {
+          "description": "Optional description",
+          "type": "string"
+        },
+        "name": {
+          "description": "CA certificate name",
+          "type": "string"
+        }
+      }
+    },
+    "IPsecCertValidation": {
+      "type": "object",
+      "properties": {
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "issuer": {
+          "type": "string"
+        },
+        "keyAlgorithm": {
+          "type": "string"
+        },
+        "keySize": {
+          "type": "integer"
+        },
+        "notAfter": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "notBefore": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "valid": {
+          "type": "boolean"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "IPsecCertificate": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "installedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "issuer": {
+          "type": "string"
+        },
+        "keyUsage": {
+          "description": "Key usage extensions",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "name": {
+          "type": "string"
+        },
+        "notAfter": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "notBefore": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "san": {
+          "description": "Subject Alternative Names",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "serial": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        }
+      }
+    },
+    "IPsecCertificateMod": {
+      "type": "object",
+      "required": [
+        "name",
+        "certificate",
+        "privateKey"
+      ],
+      "properties": {
+        "certificate": {
+          "description": "PEM-encoded X.509 certificate",
+          "type": "string"
+        },
+        "description": {
+          "description": "Optional description",
+          "type": "string"
+        },
+        "name": {
+          "description": "Certificate name (unique identifier)",
+          "type": "string"
+        },
+        "passphrase": {
+          "description": "Optional passphrase for encrypted private key",
+          "type": "string"
+        },
+        "privateKey": {
+          "description": "PEM-encoded private key",
+          "type": "string"
+        }
+      }
+    },
+    "IPsecConfig": {
+      "type": "object",
+      "properties": {
+        "antiReplayEnabled": {
+          "description": "Enable anti-replay protection",
+          "type": "boolean"
+        },
+        "fastPathEnabled": {
+          "description": "Enable eBPF fast-path bypass for established SAs",
+          "type": "boolean"
+        },
+        "hwCapabilities": {
+          "type": "object",
+          "properties": {
+            "dpaa2Available": {
+              "type": "boolean"
+            },
+            "qatAvailable": {
+              "type": "boolean"
+            },
+            "qatDevices": {
+              "type": "integer"
+            }
+          }
+        },
+        "hwOffloadEnabled": {
+          "description": "Enable hardware crypto offload (QAT/DPAA2)",
+          "type": "boolean"
+        },
+        "hwOffloadType": {
+          "description": "Hardware offload type",
+          "type": "string",
+          "enum": [
+            "none",
+            "qat",
+            "dpaa2",
+            "inline"
+          ]
+        },
+        "mtu": {
+          "description": "Maximum transmission unit for IPsec packets",
+          "type": "integer",
+          "format": "uint16"
+        },
+        "saLifetimeWarnSeconds": {
+          "description": "Warn before SA expiration (seconds)",
+          "type": "integer",
+          "format": "uint32"
+        },
+        "seqOverflowAction": {
+          "description": "Action on sequence number overflow",
+          "type": "string",
+          "enum": [
+            "rekey",
+            "drop",
+            "continue"
+          ]
+        },
+        "supportedAlgorithms": {
+          "description": "List of supported crypto algorithms",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "IPsecConfigHwCapabilities": {
+      "type": "object",
+      "properties": {
+        "dpaa2Available": {
+          "type": "boolean"
+        },
+        "qatAvailable": {
+          "type": "boolean"
+        },
+        "qatDevices": {
+          "type": "integer"
+        }
+      }
+    },
+    "IPsecConfigMod": {
+      "type": "object",
+      "properties": {
+        "antiReplayEnabled": {
+          "description": "Enable anti-replay protection",
+          "type": "boolean"
+        },
+        "fastPathEnabled": {
+          "description": "Enable eBPF fast-path bypass",
+          "type": "boolean"
+        },
+        "hwOffloadEnabled": {
+          "description": "Enable hardware crypto offload",
+          "type": "boolean"
+        },
+        "hwOffloadType": {
+          "description": "Hardware offload type",
+          "type": "string",
+          "enum": [
+            "none",
+            "qat",
+            "dpaa2",
+            "inline"
+          ]
+        },
+        "mtu": {
+          "description": "Maximum transmission unit",
+          "type": "integer",
+          "format": "uint16"
+        },
+        "saLifetimeWarnSeconds": {
+          "description": "Warn before SA expiration (seconds)",
+          "type": "integer",
+          "format": "uint32"
+        },
+        "seqOverflowAction": {
+          "description": "Action on sequence number overflow",
+          "type": "string",
+          "enum": [
+            "rekey",
+            "drop",
+            "continue"
+          ]
+        }
+      }
+    },
+    "IPsecDPD": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "description": "Dead Peer Detection action",
+          "type": "string",
+          "default": "restart",
+          "enum": [
+            "restart",
+            "clear",
+            "hold"
+          ]
+        },
+        "delay": {
+          "description": "Seconds between DPD checks",
+          "type": "integer",
+          "format": "uint32",
+          "default": 30
+        },
+        "timeout": {
+          "description": "Timeout for DPD response",
+          "type": "integer",
+          "format": "uint32",
+          "default": 150
+        }
+      }
+    },
+    "IPsecPeerConfig": {
+      "type": "object",
+      "properties": {
+        "ipsecConf": {
+          "description": "strongSwan ipsec.conf conn block for the remote peer",
+          "type": "string"
+        },
+        "ipsecSecrets": {
+          "description": "strongSwan ipsec.secrets entry for the remote peer (PSK mode only; contains the pre-shared key)",
+          "type": "string"
+        },
+        "notes": {
+          "description": "Peer-side installation notes",
+          "type": "string"
+        },
+        "tunnelName": {
+          "description": "Tunnel name",
+          "type": "string"
+        }
+      }
+    },
+    "IPsecSA": {
+      "type": "object",
+      "properties": {
+        "bytesIn": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "bytesOut": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "direction": {
+          "description": "SA direction",
+          "type": "string",
+          "enum": [
+            "in",
+            "out"
+          ]
+        },
+        "encryption": {
+          "description": "Encryption algorithm",
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "integrity": {
+          "description": "Integrity algorithm",
+          "type": "string"
+        },
+        "localIp": {
+          "description": "Local IP address",
+          "type": "string"
+        },
+        "packetsIn": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "packetsOut": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "remoteIp": {
+          "description": "Remote IP address",
+          "type": "string"
+        },
+        "replayWindow": {
+          "type": "integer",
+          "format": "uint32"
+        },
+        "sequenceNumber": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "spi": {
+          "description": "Security Parameter Index",
+          "type": "string"
+        },
+        "state": {
+          "description": "SA state",
+          "type": "string",
+          "enum": [
+            "active",
+            "expired",
+            "rekeying"
+          ]
+        },
+        "tunnelName": {
+          "description": "Associated tunnel name",
+          "type": "string"
+        }
+      }
+    },
+    "IPsecSelector": {
+      "type": "object",
+      "properties": {
+        "dstCidr": {
+          "description": "Destination CIDR (e.g., 10.1.0.0/24)",
+          "type": "string"
+        },
+        "dstPort": {
+          "description": "Destination port (0 for any)",
+          "type": "integer",
+          "format": "uint16"
+        },
+        "protocol": {
+          "description": "IP protocol (132 for SCTP, 0 for any)",
+          "type": "integer",
+          "format": "uint8"
+        },
+        "srcCidr": {
+          "description": "Source CIDR (e.g., 10.0.0.0/24)",
+          "type": "string"
+        },
+        "srcPort": {
+          "description": "Source port (0 for any)",
+          "type": "integer",
+          "format": "uint16"
+        }
+      }
+    },
+    "IPsecStats": {
+      "type": "object",
+      "properties": {
+        "authErrors": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "decryptErrors": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "encryptErrors": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "lastUpdated": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "replayErrors": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "seqOverflows": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "totalBytesIn": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "totalBytesOut": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "totalPacketsIn": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "totalPacketsOut": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "totalSas": {
+          "type": "integer"
+        },
+        "totalTunnels": {
+          "type": "integer"
+        },
+        "tunnelsDown": {
+          "type": "integer"
+        },
+        "tunnelsUp": {
+          "type": "integer"
+        }
+      }
+    },
+    "IPsecTunnel": {
+      "type": "object",
+      "properties": {
+        "authMode": {
+          "type": "string"
+        },
+        "auto": {
+          "description": "Connection startup mode - start (initiator/client), add (responder/server), route (on-demand)",
+          "type": "string",
+          "enum": [
+            "start",
+            "add",
+            "route"
+          ]
+        },
+        "bytesIn": {
+          "description": "Bytes received",
+          "type": "integer",
+          "format": "uint64"
+        },
+        "bytesOut": {
+          "description": "Bytes transmitted",
+          "type": "integer",
+          "format": "uint64"
+        },
+        "caCertName": {
+          "type": "string"
+        },
+        "certName": {
+          "type": "string"
+        },
+        "compatFallback": {
+          "description": "Weak legacy proposal fallback enabled",
+          "type": "boolean"
+        },
+        "compress": {
+          "description": "IP compression enabled",
+          "type": "boolean"
+        },
+        "dpd": {
+          "$ref": "#/definitions/IPsecDPD"
+        },
+        "espDhGroup": {
+          "type": "string"
+        },
+        "espEncryption": {
+          "type": "string"
+        },
+        "espIntegrity": {
+          "type": "string"
+        },
+        "espLifetime": {
+          "type": "integer"
+        },
+        "ikeDhGroup": {
+          "type": "string"
+        },
+        "ikeEncryption": {
+          "type": "string"
+        },
+        "ikeIntegrity": {
+          "type": "string"
+        },
+        "ikeLifetime": {
+          "type": "integer"
+        },
+        "ikeVersion": {
+          "type": "string"
+        },
+        "installPolicy": {
+          "description": "Automatically install XFRM policies",
+          "type": "boolean"
+        },
+        "installedAt": {
+          "description": "When tunnel was created",
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastRekeyAt": {
+          "description": "Last rekey time",
+          "type": "string",
+          "format": "date-time"
+        },
+        "localId": {
+          "type": "string"
+        },
+        "localIp": {
+          "type": "string"
+        },
+        "mark": {
+          "description": "Netfilter mark for VTI routing",
+          "type": "integer",
+          "format": "uint32"
+        },
+        "mobike": {
+          "description": "MOBIKE enabled",
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "packetsIn": {
+          "description": "Packets received",
+          "type": "integer",
+          "format": "uint64"
+        },
+        "packetsOut": {
+          "description": "Packets transmitted",
+          "type": "integer",
+          "format": "uint64"
+        },
+        "reauth": {
+          "description": "Re-authentication on rekey",
+          "type": "boolean"
+        },
+        "rekey": {
+          "description": "Automatic rekeying enabled",
+          "type": "boolean"
+        },
+        "remoteId": {
+          "type": "string"
+        },
+        "remoteIp": {
+          "type": "string"
+        },
+        "sasInstalled": {
+          "description": "Number of SAs installed",
+          "type": "integer"
+        },
+        "selector": {
+          "$ref": "#/definitions/IPsecSelector"
+        },
+        "state": {
+          "description": "Tunnel state",
+          "type": "string",
+          "enum": [
+            "down",
+            "connecting",
+            "up"
+          ]
+        },
+        "tunnelMode": {
+          "description": "IPsec mode (tunnel or transport)",
+          "type": "string"
+        }
+      }
+    },
+    "IPsecTunnelActionMod": {
+      "type": "object",
+      "required": [
+        "action"
+      ],
+      "properties": {
+        "action": {
+          "description": "Connection action - initiate (ipsec up), terminate (ipsec down), restart (down then up)",
+          "type": "string",
+          "enum": [
+            "initiate",
+            "terminate",
+            "restart"
+          ]
+        }
+      }
+    },
+    "IPsecTunnelMod": {
+      "type": "object",
+      "required": [
+        "name",
+        "localIp",
+        "remoteIp",
+        "authMode"
+      ],
+      "properties": {
+        "authMode": {
+          "description": "Authentication mode (PSK or certificate)",
+          "type": "string",
+          "enum": [
+            "psk",
+            "cert"
+          ]
+        },
+        "auto": {
+          "description": "Connection startup mode - start (initiator/client), add (responder/server), route (on-demand)",
+          "type": "string",
+          "default": "start",
+          "enum": [
+            "start",
+            "add",
+            "route"
+          ]
+        },
+        "caCertName": {
+          "description": "CA certificate name (required for cert mode)",
+          "type": "string"
+        },
+        "certName": {
+          "description": "Certificate name (required for cert mode)",
+          "type": "string"
+        },
+        "compatFallback": {
+          "description": "Append a weak legacy proposal (aes128-sha1-modp1024 for IKE, aes128-sha1 for ESP) as a compatibility fallback for old peers. Disabled by default.",
+          "type": "boolean",
+          "default": false
+        },
+        "compress": {
+          "description": "Enable IP compression",
+          "type": "boolean",
+          "default": false
+        },
+        "dpd": {
+          "$ref": "#/definitions/IPsecDPD"
+        },
+        "espDhGroup": {
+          "description": "ESP PFS DH group as a single token (e.g. modp2048). When set, it is appended to the ESP proposal to enable Perfect Forward Secrecy; leave empty to disable PFS.",
+          "type": "string"
+        },
+        "espEncryption": {
+          "description": "ESP encryption algorithm as a single token (e.g. aes256, aes128). The gateway composes the proposal as encryption-integrity[-pfsgroup].",
+          "type": "string",
+          "default": "aes256"
+        },
+        "espIntegrity": {
+          "description": "ESP integrity algorithm as a single token (e.g. sha256, sha1)",
+          "type": "string",
+          "default": "sha256"
+        },
+        "espLifetime": {
+          "description": "ESP lifetime in seconds",
+          "type": "integer",
+          "format": "uint32",
+          "default": 3600
+        },
+        "ikeDhGroup": {
+          "description": "IKE DH group as a single token (e.g. modp2048, modp1024)",
+          "type": "string",
+          "default": "modp2048"
+        },
+        "ikeEncryption": {
+          "description": "IKE encryption algorithm as a single token (e.g. aes256, aes128). The gateway composes the proposal as encryption-integrity-dhgroup.",
+          "type": "string",
+          "default": "aes256"
+        },
+        "ikeIntegrity": {
+          "description": "IKE integrity algorithm as a single token (e.g. sha256, sha1)",
+          "type": "string",
+          "default": "sha256"
+        },
+        "ikeLifetime": {
+          "description": "IKE lifetime in seconds",
+          "type": "integer",
+          "format": "uint32",
+          "default": 28800
+        },
+        "ikeVersion": {
+          "description": "IKE version",
+          "type": "string",
+          "default": "ikev2",
+          "enum": [
+            "ikev1",
+            "ikev2"
+          ]
+        },
+        "installPolicy": {
+          "description": "Automatically install XFRM policies",
+          "type": "boolean",
+          "default": true
+        },
+        "localId": {
+          "description": "IKE local identifier",
+          "type": "string"
+        },
+        "localIp": {
+          "description": "Local gateway IP address",
+          "type": "string"
+        },
+        "mark": {
+          "description": "Netfilter mark for VTI routing (0 = no mark)",
+          "type": "integer",
+          "format": "uint32",
+          "default": 100
+        },
+        "mobike": {
+          "description": "Enable MOBIKE (IKEv2 mobility)",
+          "type": "boolean",
+          "default": false
+        },
+        "name": {
+          "description": "Tunnel name (unique identifier)",
+          "type": "string"
+        },
+        "psk": {
+          "description": "Pre-shared key (required for PSK mode)",
+          "type": "string"
+        },
+        "reauth": {
+          "description": "Re-authenticate on rekey (vs just rekey)",
+          "type": "boolean",
+          "default": false
+        },
+        "rekey": {
+          "description": "Enable automatic rekeying",
+          "type": "boolean",
+          "default": true
+        },
+        "remoteId": {
+          "description": "IKE remote identifier",
+          "type": "string"
+        },
+        "remoteIp": {
+          "description": "Remote gateway IP address",
+          "type": "string"
+        },
+        "selector": {
+          "$ref": "#/definitions/IPsecSelector"
+        },
+        "tunnelMode": {
+          "description": "IPsec mode (tunnel or transport)",
+          "type": "string",
+          "default": "tunnel",
+          "enum": [
+            "tunnel",
+            "transport"
+          ]
         }
       }
     },
@@ -15203,6 +27824,45 @@ func init() {
       }
     },
     "IPv4AddressGetEntry": {
+      "type": "object",
+      "required": [
+        "sync"
+      ],
+      "properties": {
+        "dev": {
+          "description": "Name of the interface device to which you want to modify the IP address",
+          "type": "string"
+        },
+        "ipAddress": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sync": {
+          "description": "Sync - sync state",
+          "type": "integer"
+        }
+      }
+    },
+    "IPv6AddressEntry": {
+      "type": "object",
+      "required": [
+        "dev",
+        "ipAddress"
+      ],
+      "properties": {
+        "dev": {
+          "description": "Name of the interface device to which you want to modify the IP address",
+          "type": "string"
+        },
+        "ipAddress": {
+          "description": "IP address to modify.",
+          "type": "string"
+        }
+      }
+    },
+    "IPv6AddressGetEntry": {
       "type": "object",
       "required": [
         "sync"
@@ -15301,6 +27961,403 @@ func init() {
         }
       }
     },
+    "L4TraceStats": {
+      "type": "object",
+      "properties": {
+        "conn_closed": {
+          "description": "Clean closes",
+          "type": "integer",
+          "format": "int64",
+          "example": 1450
+        },
+        "conn_error": {
+          "description": "Error events",
+          "type": "integer",
+          "format": "int64",
+          "example": 2
+        },
+        "conn_established": {
+          "description": "Established connections",
+          "type": "integer",
+          "format": "int64",
+          "example": 1520
+        },
+        "conn_new": {
+          "description": "New connections",
+          "type": "integer",
+          "format": "int64",
+          "example": 1523
+        },
+        "conn_reset": {
+          "description": "RST/ABORT closes",
+          "type": "integer",
+          "format": "int64",
+          "example": 28
+        },
+        "conn_timeout": {
+          "description": "Timeout closes",
+          "type": "integer",
+          "format": "int64",
+          "example": 45
+        },
+        "dropped_events": {
+          "description": "Ring buffer overflows",
+          "type": "integer",
+          "format": "int64",
+          "example": 12
+        },
+        "sampled_events": {
+          "description": "Events that passed sampling",
+          "type": "integer",
+          "format": "int64",
+          "example": 15234
+        },
+        "sctp_events": {
+          "description": "SCTP state changes",
+          "type": "integer",
+          "format": "int64",
+          "example": 2734
+        },
+        "tcp_events": {
+          "description": "TCP state changes",
+          "type": "integer",
+          "format": "int64",
+          "example": 12500
+        },
+        "total_events": {
+          "description": "Total L4 events emitted",
+          "type": "integer",
+          "format": "int64",
+          "example": 15234
+        },
+        "udp_events": {
+          "description": "UDP state changes",
+          "type": "integer",
+          "format": "int64",
+          "example": 5678
+        }
+      }
+    },
+    "L4TraceStatusResponse": {
+      "type": "object",
+      "properties": {
+        "config_version": {
+          "description": "Configuration version number",
+          "type": "integer",
+          "format": "int64",
+          "example": 5
+        },
+        "enabled": {
+          "description": "Whether L4 tracing is enabled",
+          "type": "boolean",
+          "example": true
+        },
+        "sampling_rate": {
+          "description": "Current sampling rate (0-100)",
+          "type": "integer",
+          "format": "int64",
+          "example": 100
+        },
+        "stats": {
+          "$ref": "#/definitions/L4TraceStats"
+        }
+      }
+    },
+    "L7Action": {
+      "description": "The single tagged-union action for a route.",
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "forward": {
+          "description": "FORWARD target (re-enters the existing intra-pool EP-select, never the AI engine).",
+          "type": "object",
+          "properties": {
+            "backendRefs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/L7ActionForwardBackendRefsItems0"
+              }
+            },
+            "poolId": {
+              "type": "integer",
+              "format": "uint32"
+            }
+          }
+        },
+        "kind": {
+          "description": "FORWARD to a (weighted) pool; REDIRECT (synthetic 3xx); REJECT (synthetic 4xx, terminal). REJECT is NOT representable on Gateway API — a HARD ERROR on export.",
+          "type": "string",
+          "enum": [
+            "FORWARD",
+            "REDIRECT",
+            "REJECT"
+          ]
+        },
+        "redirect": {
+          "description": "REDIRECT target. statusCode is restricted to {301,302,303,307,308} (default 302).",
+          "type": "object",
+          "properties": {
+            "host": {
+              "type": "string"
+            },
+            "pathOp": {
+              "type": "string",
+              "enum": [
+                "NONE",
+                "REPLACE_FULL",
+                "REPLACE_PREFIX"
+              ]
+            },
+            "port": {
+              "type": "integer"
+            },
+            "scheme": {
+              "type": "string"
+            },
+            "statusCode": {
+              "description": "One of 301/302/303/307/308; 0 or absent defaults to 302 (server-side allow-list, 400 otherwise).",
+              "type": "integer"
+            },
+            "value": {
+              "type": "string"
+            }
+          }
+        },
+        "reject": {
+          "description": "REJECT target. statusCode defaults to 403.",
+          "type": "object",
+          "properties": {
+            "statusCode": {
+              "description": "A 4xx; 0 or absent defaults to 403.",
+              "type": "integer"
+            }
+          }
+        }
+      }
+    },
+    "L7ActionForward": {
+      "description": "FORWARD target (re-enters the existing intra-pool EP-select, never the AI engine).",
+      "type": "object",
+      "properties": {
+        "backendRefs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/L7ActionForwardBackendRefsItems0"
+          }
+        },
+        "poolId": {
+          "type": "integer",
+          "format": "uint32"
+        }
+      }
+    },
+    "L7ActionForwardBackendRefsItems0": {
+      "type": "object",
+      "properties": {
+        "ep": {
+          "type": "integer",
+          "format": "uint32"
+        },
+        "weight": {
+          "type": "integer"
+        }
+      }
+    },
+    "L7ActionRedirect": {
+      "description": "REDIRECT target. statusCode is restricted to {301,302,303,307,308} (default 302).",
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string"
+        },
+        "pathOp": {
+          "type": "string",
+          "enum": [
+            "NONE",
+            "REPLACE_FULL",
+            "REPLACE_PREFIX"
+          ]
+        },
+        "port": {
+          "type": "integer"
+        },
+        "scheme": {
+          "type": "string"
+        },
+        "statusCode": {
+          "description": "One of 301/302/303/307/308; 0 or absent defaults to 302 (server-side allow-list, 400 otherwise).",
+          "type": "integer"
+        },
+        "value": {
+          "type": "string"
+        }
+      }
+    },
+    "L7ActionReject": {
+      "description": "REJECT target. statusCode defaults to 403.",
+      "type": "object",
+      "properties": {
+        "statusCode": {
+          "description": "A 4xx; 0 or absent defaults to 403.",
+          "type": "integer"
+        }
+      }
+    },
+    "L7Condition": {
+      "description": "One predicate, AND-combined within a match set.",
+      "type": "object",
+      "required": [
+        "field",
+        "op"
+      ],
+      "properties": {
+        "field": {
+          "description": "Request field to match. HOST/PATH/HEADER/COOKIE/FILE_TYPE are the Octavia l7rule types; METHOD/QUERY are Gateway API additions. The SSL_* field range is reserved for is NOT accepted here.",
+          "type": "string",
+          "enum": [
+            "HOST",
+            "PATH",
+            "HEADER",
+            "COOKIE",
+            "FILE_TYPE",
+            "METHOD",
+            "QUERY"
+          ]
+        },
+        "invert": {
+          "description": "Negate this condition's result (Octavia invert semantics). NOT representable on Gateway API — a policy carrying invert is a HARD ERROR on Gateway export, never silently dropped.",
+          "type": "boolean"
+        },
+        "key": {
+          "description": "Header/cookie/query NAME. REQUIRED for HEADER, COOKIE, and QUERY (400 if absent).",
+          "type": "string"
+        },
+        "op": {
+          "description": "Compare op. FILE_TYPE accepts ONLY EQUAL_TO or REGEX (Octavia constraint — server-side validated, 400 otherwise).",
+          "type": "string",
+          "enum": [
+            "EQUAL_TO",
+            "STARTS_WITH",
+            "SEGMENT_PREFIX",
+            "ENDS_WITH",
+            "CONTAINS",
+            "REGEX"
+          ]
+        },
+        "value": {
+          "description": "Operand the request field is compared against. A REGEX value is try-compiled at config time (400 on a malformed pattern) and recompiled once at attach.",
+          "type": "string"
+        }
+      }
+    },
+    "L7Policy": {
+      "description": "A dedicated L7_POLICY resource: a named ordered set of L7 routing rules attached to an existing L4 load-balancer, referenced by the LB's stable opaque ` + "`" + `id` + "`" + `. CRUD'd independently of the LB and carried to the running sockproxy by a SEPARATE attach call (never inline on the 4096-byte proxy_arg).: L7_POLICY is a dedicated resource (asymmetric with the inline AI_POLICY).",
+      "type": "object",
+      "required": [
+        "lbId",
+        "rules"
+      ],
+      "properties": {
+        "id": {
+          "description": "Stable opaque identifier for this L7 policy. Client-supplied is stored verbatim; when absent one is minted control-plane side.",
+          "type": "string"
+        },
+        "lbId": {
+          "description": "The stable opaque id of the L4 load-balancer this policy attaches to (GET /config/loadbalancer/id/{id}). 404 if no such LB exists.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Human-readable policy name.",
+          "type": "string"
+        },
+        "rules": {
+          "description": "Ordered L7 routes (FIRST-MATCH-WINS by ascending position).",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/L7Rule"
+          }
+        }
+      }
+    },
+    "L7PolicyGetEntry": {
+      "description": "GET wrapper for the L7_POLICY collection.",
+      "type": "object",
+      "properties": {
+        "l7policyAttr": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/L7Policy"
+          }
+        }
+      }
+    },
+    "L7Rule": {
+      "description": "One L7 routing rule: an ordered route with OR-of-AND match sets and a single tagged-union action (FORWARD / REDIRECT / REJECT). The translation-neutral superset of an OpenStack Octavia l7policy+l7rules group AND a Kubernetes Gateway API HTTPRoute rule. Routes are evaluated FIRST-MATCH-WINS in ascending ` + "`" + `position` + "`" + `.",
+      "type": "object",
+      "properties": {
+        "action": {
+          "$ref": "#/definitions/L7Action"
+        },
+        "insertHeaders": {
+          "description": "bounded request-header insertion filter — a tagged op {SET|ADD|REMOVE} + name(+value). A faithful superset of BOTH Octavia insert_headers (SET/ADD) AND Gateway API RequestHeaderModifier (set/add/remove). Optional/additive — omit for no header insertion. Bounded server-side (DoS guard).",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/L7RuleInsertHeadersItems0"
+          }
+        },
+        "matchSets": {
+          "description": "OR across sets; AND within a set. Each element is a list of conditions.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/L7RuleMatchSetsItems0"
+          }
+        },
+        "position": {
+          "description": "Explicit precedence; routes are evaluated in ascending position order.",
+          "type": "integer"
+        },
+        "sessionPersistence": {
+          "description": "session-persistence mode for this route. HTTP_COOKIE enables LB-generated Set-Cookie + read-back affinity; omit for off. Mutually exclusive with APP_COOKIE/SOURCE_IP per pool (Octavia semantics). Optional/additive.",
+          "type": "string",
+          "enum": [
+            "HTTP_COOKIE"
+          ]
+        }
+      }
+    },
+    "L7RuleInsertHeadersItems0": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "enum": [
+            "SET",
+            "ADD",
+            "REMOVE"
+          ]
+        },
+        "value": {
+          "description": "Header value; ignored for REMOVE.",
+          "type": "string"
+        }
+      }
+    },
+    "L7RuleMatchSetsItems0": {
+      "type": "object",
+      "properties": {
+        "conditions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/L7Condition"
+          }
+        }
+      }
+    },
     "LbProcessedTrafficMetrics": {
       "type": "object",
       "properties": {
@@ -15360,12 +28417,397 @@ func init() {
         }
       }
     },
+    "LlamaFirewallConfigEntry": {
+      "type": "object",
+      "properties": {
+        "block_threshold": {
+          "description": "Minimum confidence score to block (0.0-1.0)",
+          "type": "number",
+          "format": "float",
+          "maximum": 1,
+          "minimum": 0,
+          "x-nullable": true,
+          "example": 0.9
+        },
+        "cache_enabled": {
+          "description": "Enable response caching for identical requests",
+          "type": "boolean",
+          "x-nullable": true,
+          "example": true
+        },
+        "cache_ttl_sec": {
+          "description": "Cache TTL in seconds",
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0,
+          "x-nullable": true,
+          "example": 300
+        },
+        "connection_pool_size": {
+          "description": "Number of reusable gRPC connections",
+          "type": "integer",
+          "format": "int64",
+          "maximum": 100,
+          "minimum": 1,
+          "x-nullable": true,
+          "example": 10
+        },
+        "fail_closed": {
+          "description": "Fail-closed (true=block on error) vs fail-open (false=allow on error)",
+          "type": "boolean",
+          "x-nullable": true,
+          "example": false
+        },
+        "scan_patterns": {
+          "description": "URL patterns to scan (empty = scan all)",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "example": [
+            "/api/v1/chat*",
+            "/api/*/code"
+          ]
+        },
+        "server_url": {
+          "description": "LlamaFirewall gRPC server URL",
+          "type": "string",
+          "example": "localhost:50052"
+        },
+        "skip_patterns": {
+          "description": "URL patterns to skip scanning",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "example": [
+            "/health",
+            "/metrics"
+          ]
+        },
+        "timeout_sec": {
+          "description": "Request timeout in seconds (for ML models)",
+          "type": "integer",
+          "format": "int64",
+          "maximum": 300,
+          "minimum": 1,
+          "x-nullable": true,
+          "example": 15
+        }
+      }
+    },
+    "LlamaFirewallDecisionStats": {
+      "type": "object",
+      "properties": {
+        "allow": {
+          "description": "Number of ALLOW decisions",
+          "type": "integer",
+          "format": "int64",
+          "example": 2397
+        },
+        "block": {
+          "description": "Number of BLOCK decisions",
+          "type": "integer",
+          "format": "int64",
+          "example": 12
+        },
+        "hitl": {
+          "description": "Number of Human-In-The-Loop decisions",
+          "type": "integer",
+          "format": "int64",
+          "example": 47
+        }
+      }
+    },
+    "LlamaFirewallHealthResponse": {
+      "type": "object",
+      "properties": {
+        "connected": {
+          "description": "Connection status",
+          "type": "boolean",
+          "example": true
+        },
+        "healthy": {
+          "description": "Overall health status",
+          "type": "boolean",
+          "example": true
+        },
+        "latency_ms": {
+          "description": "Health check latency",
+          "type": "integer",
+          "format": "int64",
+          "example": 12
+        },
+        "message": {
+          "description": "Health check message",
+          "type": "string",
+          "example": "LlamaFirewall server is healthy"
+        },
+        "server_url": {
+          "description": "Server URL checked",
+          "type": "string",
+          "example": "localhost:50052"
+        },
+        "timestamp": {
+          "description": "Health check timestamp (RFC3339)",
+          "type": "string",
+          "example": "2025-01-10T10:30:00Z"
+        }
+      }
+    },
+    "LlamaFirewallIndividualScannerStats": {
+      "type": "object",
+      "properties": {
+        "avg_latency_ms": {
+          "description": "Average latency for this scanner",
+          "type": "integer",
+          "format": "int64",
+          "example": 45
+        },
+        "detections": {
+          "description": "Threats detected by this scanner",
+          "type": "integer",
+          "format": "int64",
+          "example": 15
+        },
+        "errors": {
+          "description": "Errors from this scanner",
+          "type": "integer",
+          "format": "int64",
+          "example": 1
+        },
+        "scans": {
+          "description": "Number of scans by this scanner",
+          "type": "integer",
+          "format": "int64",
+          "example": 1523
+        }
+      }
+    },
+    "LlamaFirewallScannerStats": {
+      "type": "object",
+      "properties": {
+        "agent_alignment": {
+          "$ref": "#/definitions/LlamaFirewallIndividualScannerStats"
+        },
+        "code_shield": {
+          "$ref": "#/definitions/LlamaFirewallIndividualScannerStats"
+        },
+        "hidden_ascii": {
+          "$ref": "#/definitions/LlamaFirewallIndividualScannerStats"
+        },
+        "pii_detection": {
+          "$ref": "#/definitions/LlamaFirewallIndividualScannerStats"
+        },
+        "prompt_guard": {
+          "$ref": "#/definitions/LlamaFirewallIndividualScannerStats"
+        },
+        "regex": {
+          "$ref": "#/definitions/LlamaFirewallIndividualScannerStats"
+        }
+      }
+    },
+    "LlamaFirewallScannersEntry": {
+      "type": "object",
+      "properties": {
+        "agent_alignment": {
+          "description": "Enable AgentAlignment (AI agent misalignment detection)",
+          "type": "boolean",
+          "x-nullable": true,
+          "example": false
+        },
+        "code_shield": {
+          "description": "Enable CodeShield (insecure code pattern detection)",
+          "type": "boolean",
+          "x-nullable": true,
+          "example": true
+        },
+        "hidden_ascii": {
+          "description": "Enable HiddenASCII (zero-width/invisible character detection)",
+          "type": "boolean",
+          "x-nullable": true,
+          "example": true
+        },
+        "pii_detection": {
+          "description": "Enable PII Detection (complementary to Presidio)",
+          "type": "boolean",
+          "x-nullable": true,
+          "example": false
+        },
+        "prompt_guard": {
+          "description": "Enable PromptGuard (ML-based prompt injection detection)",
+          "type": "boolean",
+          "x-nullable": true,
+          "example": true
+        },
+        "regex": {
+          "description": "Enable Regex (credential/API key leak detection)",
+          "type": "boolean",
+          "x-nullable": true,
+          "example": true
+        }
+      }
+    },
+    "LlamaFirewallScannersStatus": {
+      "type": "object",
+      "properties": {
+        "agent_alignment": {
+          "description": "AgentAlignment enabled",
+          "type": "boolean",
+          "example": false
+        },
+        "code_shield": {
+          "description": "CodeShield enabled",
+          "type": "boolean",
+          "example": true
+        },
+        "hidden_ascii": {
+          "description": "HiddenASCII enabled",
+          "type": "boolean",
+          "example": true
+        },
+        "pii_detection": {
+          "description": "PII Detection enabled",
+          "type": "boolean",
+          "example": false
+        },
+        "prompt_guard": {
+          "description": "PromptGuard enabled",
+          "type": "boolean",
+          "example": true
+        },
+        "regex": {
+          "description": "Regex enabled",
+          "type": "boolean",
+          "example": true
+        }
+      }
+    },
+    "LlamaFirewallStatsResponse": {
+      "type": "object",
+      "properties": {
+        "avg_latency_ms": {
+          "description": "Average scan latency in milliseconds",
+          "type": "integer",
+          "format": "int64",
+          "example": 85
+        },
+        "cache_hits": {
+          "description": "Number of cache hits",
+          "type": "integer",
+          "format": "int64",
+          "example": 542
+        },
+        "decisions": {
+          "$ref": "#/definitions/LlamaFirewallDecisionStats"
+        },
+        "requests_blocked": {
+          "description": "Requests blocked due to threats",
+          "type": "integer",
+          "format": "int64",
+          "example": 12
+        },
+        "requests_scanned": {
+          "description": "User requests scanned (PromptGuard+Regex)",
+          "type": "integer",
+          "format": "int64",
+          "example": 1523
+        },
+        "responses_scanned": {
+          "description": "AI responses scanned (CodeShield+Regex)",
+          "type": "integer",
+          "format": "int64",
+          "example": 933
+        },
+        "scan_errors": {
+          "description": "Number of scan errors",
+          "type": "integer",
+          "format": "int64",
+          "example": 3
+        },
+        "scanner_stats": {
+          "$ref": "#/definitions/LlamaFirewallScannerStats"
+        },
+        "threats_detected": {
+          "description": "Total threats detected across all scanners",
+          "type": "integer",
+          "format": "int64",
+          "example": 47
+        },
+        "total_scans": {
+          "description": "Total number of scans performed",
+          "type": "integer",
+          "format": "int64",
+          "example": 2456
+        }
+      }
+    },
+    "LlamaFirewallStatusResponse": {
+      "type": "object",
+      "properties": {
+        "block_threshold": {
+          "description": "Current block threshold",
+          "type": "number",
+          "format": "float",
+          "example": 0.9
+        },
+        "cache_enabled": {
+          "description": "Cache status",
+          "type": "boolean",
+          "example": true
+        },
+        "cache_ttl_sec": {
+          "description": "Cache TTL",
+          "type": "integer",
+          "format": "int64",
+          "example": 300
+        },
+        "connected": {
+          "description": "Connection status to gRPC server",
+          "type": "boolean",
+          "example": true
+        },
+        "enabled": {
+          "description": "Whether LlamaFirewall scanning is enabled",
+          "type": "boolean",
+          "example": true
+        },
+        "fail_closed": {
+          "description": "Current fail policy",
+          "type": "boolean",
+          "example": false
+        },
+        "last_health_check": {
+          "description": "Last health check timestamp (RFC3339)",
+          "type": "string",
+          "example": "2025-01-10T10:30:00Z"
+        },
+        "scan_patterns": {
+          "description": "Active scan patterns",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "scanners": {
+          "$ref": "#/definitions/LlamaFirewallScannersStatus"
+        },
+        "server_url": {
+          "description": "Configured server URL",
+          "type": "string",
+          "example": "localhost:50052"
+        },
+        "skip_patterns": {
+          "description": "Active skip patterns",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "LoadbalanceEntry": {
       "type": "object",
-      "required": [
-        "serviceArguments",
-        "endpoints"
-      ],
       "properties": {
         "allowedSources": {
           "description": "values of allowed source IP",
@@ -15381,6 +28823,23 @@ func init() {
             "$ref": "#/definitions/LoadbalanceEntryEndpointsItems0"
           }
         },
+        "hw_bytes": {
+          "description": "aggregate DOCA hardware byte count for this LB service (omitempty). Generated Go field HwBytes (camelCase alias hwBytes).",
+          "type": "integer",
+          "format": "uint64",
+          "x-nullable": false
+        },
+        "hw_pkts": {
+          "description": "aggregate DOCA hardware packet count for this LB service (omitempty). Generated Go field HwPkts (camelCase alias hwPkts).",
+          "type": "integer",
+          "format": "uint64",
+          "x-nullable": false
+        },
+        "offload_state": {
+          "description": "aggregate DOCA HW offload state for this LB service (\"none\", \"hw\"), derived from the dominant CT offload state across active flows. Absent when no DOCA plugin is active (omitempty). Generated Go field OffloadState (camelCase alias offloadState).",
+          "type": "string",
+          "x-nullable": false
+        },
         "secondaryIPs": {
           "description": "values of Secondary IPs",
           "type": "array",
@@ -15388,13 +28847,60 @@ func init() {
             "$ref": "#/definitions/LoadbalanceEntrySecondaryIPsItems0"
           }
         },
+        "secondaryVIPs": {
+          "description": "Structured secondary VIPs (Octavia additional_vips). Additive ALONGSIDE the flat secondaryIPs (kept unchanged). Stored and round-tripped for all protocols; only SCTP consumes them at the dataplane. All fields opaque.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/LoadbalanceEntrySecondaryVIPsItems0"
+          }
+        },
         "serviceArguments": {
           "type": "object",
-          "required": [
-            "externalIP",
-            "port"
-          ],
           "properties": {
+            "adminStateUp": {
+              "description": "Octavia admin_state_up lifecycle flag. Absent/true = enabled; false = paused.",
+              "type": "boolean"
+            },
+            "alpn_protocols": {
+              "description": "Octavia alpn_protocols list (e.g. [\"h2\",\"http/1.1\"]). Mapped to the existing backend_protocol_cap enum ([h2,http/1.1]=2, [h2]=1, [http/1.1]=0). Advertised on listener + pool. Optional/additive — empty preserves the backendProtocol-driven value.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "annotations": {
+              "description": "Opaque key/value map round-tripping octaviaProtocol and any future Octavia field verbatim. Store-as-given, return-as-stored; never interpreted.",
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "backend_ca_cert_id": {
+              "description": "(16) certId of the backend re-encryption CA bundle (resolved by the certId registry to the managed-dir ca.crt at backend SSL_CTX build). Optional/additive — empty = system default.",
+              "type": "string"
+            },
+            "backend_client_cert_id": {
+              "description": "(16) certId of loxilb's backend client cert+key. Optional/additive — empty = no backend client cert (today's behaviour).",
+              "type": "string"
+            },
+            "backend_keepalive_interval_sec": {
+              "description": "Sets SO_KEEPALIVE + TCP_KEEPIDLE on backend socket in seconds. Keeps TCP CT entries alive through cloud NAT during long SSE streams. 0 = disabled. Recommended value 60 for most cloud environments.",
+              "type": "integer",
+              "format": "int32",
+              "default": 0,
+              "minimum": 0,
+              "x-nullable": false
+            },
+            "backend_protocol": {
+              "description": "Backend protocol capability for ALPN negotiation - http1 (HTTP/1.1 only, safest default), http2 (HTTP/2 only), both (supports both HTTP/1.1 and HTTP/2)",
+              "type": "string",
+              "default": "http1",
+              "enum": [
+                "http1",
+                "http2",
+                "both"
+              ]
+            },
             "bgp": {
               "description": "value for BGP enable or not",
               "type": "boolean"
@@ -15404,16 +28910,75 @@ func init() {
               "type": "integer",
               "format": "uint32"
             },
+            "chwbl_enable_cache_salt": {
+              "description": "Require cache_salt field in requests for CHWBL/WRR_HASH (sel=8 or sel=10) - enforces strict multi-tenant isolation. If false, cache_salt is optional. Only used when sel=8 or sel=10",
+              "type": "boolean",
+              "default": false
+            },
+            "chwbl_mean_load_factor": {
+              "description": "Maximum load factor percentage for CHWBL/WRR_HASH (sel=8 or sel=10) - max_load = avg_load × factor / 100. Range 100-300, default 125 (allows 25% overload). Only used when sel=8 or sel=10",
+              "type": "integer",
+              "default": 125,
+              "maximum": 300,
+              "minimum": 100
+            },
+            "chwbl_prefix_hash_flags": {
+              "description": "Optional field inclusion flags for CHWBL/WRR_HASH (sel=8 or sel=10) - Bit 0=LoRA, Bit 1=image, Bit 2=audio, Bit 3=cache_salt, Bit 4=tools, Bit 5=session, Bit 6=RAG template, Bit 7=RAG docs. 0=auto-detect. Only used when sel=8 or sel=10",
+              "type": "integer",
+              "default": 0,
+              "maximum": 255,
+              "minimum": 0
+            },
+            "chwbl_prefix_hash_level": {
+              "description": "Prefix hash level for CHWBL/WRR_HASH modes (sel=8 or sel=10) - 1=Level1 only (system prompt+model), 2=Level1+Level2 (session context), 3=Level1+Level2+Level3 (RAG). Only used when sel=8 or sel=10. Optional - defaults to 1 for backward compatibility",
+              "type": "integer",
+              "default": 1,
+              "enum": [
+                1,
+                2,
+                3
+              ]
+            },
+            "chwbl_replication": {
+              "description": "Virtual nodes per physical endpoint for CHWBL/WRR_HASH (sel=8 or sel=10) - higher values improve distribution but use more memory. Range 1-1024, default 100. For WRR_HASH, this is the total vnode count distributed proportionally by weight. Only used when sel=8 or sel=10",
+              "type": "integer",
+              "default": 100,
+              "maximum": 1024,
+              "minimum": 1
+            },
+            "connectionLimit": {
+              "description": "Octavia per-service concurrent-connection ceiling. Per-rule max simultaneous connections across all endpoints. 0/absent = unlimited (legacy). eBPF-CT enforced (SYN refused at sel=-1 -\u003e pm.nf=0 when live count \u003e= limit). DISTINCT from the SecurityRateConfig per-SOURCE-IP concurrentLimit (P0-6); not per-EP.",
+              "type": "integer",
+              "format": "uint32"
+            },
             "egress": {
               "description": "flag to indicate an egress rule",
               "type": "boolean"
             },
             "externalIP": {
               "description": "IP address for external access",
-              "type": "string"
+              "type": "string",
+              "x-nullable": true
             },
             "host": {
               "description": "Ingress specific host URL path",
+              "type": "string"
+            },
+            "hsts_include_subdomains": {
+              "description": "append \"; includeSubDomains\" to the HSTS header. Only meaningful when hsts_max_age \u003e 0.",
+              "type": "boolean"
+            },
+            "hsts_max_age": {
+              "description": "Strict-Transport-Security max-age (seconds). The data plane synthesizes the header and injects it on HTTPS listeners only (L7-gated). Optional/additive — 0/absent = no HSTS injection.",
+              "type": "integer",
+              "format": "uint32"
+            },
+            "hsts_preload": {
+              "description": "append \"; preload\" to the HSTS header. Only meaningful when hsts_max_age \u003e 0.",
+              "type": "boolean"
+            },
+            "id": {
+              "description": "Stable opaque identifier for the LB rule (Octavia). Client-supplied verbatim or minted (UUIDv4) when absent.",
               "type": "string"
             },
             "inactiveTimeOut": {
@@ -15421,12 +28986,83 @@ func init() {
               "type": "integer",
               "format": "int32"
             },
+            "kvBlockSize": {
+              "description": "Token block size for KV hash computation. Must match vLLM's block_size configuration.",
+              "type": "integer",
+              "format": "int64",
+              "default": 16,
+              "minimum": 1,
+              "x-nullable": false
+            },
+            "kvDpRankCount": {
+              "description": "SGLang data-parallel rank count. Rank N publishes KV events at kvZmqPort+N; all ranks union into one per-EP inventory.",
+              "type": "integer",
+              "format": "int32",
+              "default": 1,
+              "maximum": 8,
+              "minimum": 1,
+              "x-nullable": false
+            },
+            "kvEngineType": {
+              "description": "KV-event engine behind this rule. One framework per VIP; immutable after create (delete+recreate to change). Drives hash-algo default: sglang =\u003e sha256_sglang. NOTE: LOXILB_KV_* env knobs (unified mode, eps/lambda, cap-sum, max-blocks) are process-global and shared across all KV VIPs (accepted limitation).",
+              "type": "string",
+              "default": "vllm",
+              "enum": [
+                "vllm",
+                "sglang"
+              ],
+              "x-nullable": false
+            },
+            "kvExactMode": {
+              "description": "KV-cache exact routing mode: 0=off, 1=zmq (P/D role-partitioned), 2=nats(reserved), 3=zmq single-role (— all EPs subscribed, no P/D role split). Enables Tier 1.5 block-hash routing between Tier 1 (trie) and Tier 2 (min-load).",
+              "type": "integer",
+              "format": "int64",
+              "default": 0,
+              "maximum": 3,
+              "minimum": 0,
+              "x-nullable": false
+            },
+            "kvHashAlgo": {
+              "description": "Hash algorithm for KV block matching. Must match vLLM's configured hash algorithm.",
+              "type": "string",
+              "default": "sha256_cbor",
+              "enum": [
+                "sha256_cbor",
+                "xxhash_cbor"
+              ],
+              "x-nullable": false
+            },
+            "kvWarmupSec": {
+              "description": "Seconds to wait after ZMQ subscriber connects before activating Tier 1.5 routing. Allows inventory to populate.",
+              "type": "integer",
+              "format": "int64",
+              "default": 30,
+              "minimum": 0,
+              "x-nullable": false
+            },
+            "kvZmqPort": {
+              "description": "ZMQ PUB socket port on vLLM prefill endpoints for KV cache events.",
+              "type": "integer",
+              "format": "int64",
+              "default": 5557,
+              "maximum": 65535,
+              "minimum": 1,
+              "x-nullable": false
+            },
             "managed": {
               "description": "externally managed rule or not",
               "type": "boolean"
             },
+            "max_stream_duration_sec": {
+              "description": "Absolute wall-clock cap for SSE streams in seconds. 0 = use system hard cap (86400s / 24h). Set to a lower value (e.g. 300) to bound runaway streams.",
+              "type": "integer",
+              "format": "int32",
+              "default": 0,
+              "minimum": 0,
+              "x-nullable": false
+            },
             "mode": {
-              "description": "value for NAT mode (0-DNAT,1-onearm, 2-fullnat, 3-dsr, 4-fullproxy, 5-hostonearm, 0-default)",
+              "description": "value for NAT mode (0-DNAT,1-onearm, 2-fullnat, 3-dsr, 4-fullproxy, 5-hostonearm, 6-aigw, 0-default)",
               "type": "integer",
               "format": "int32",
               "enum": [
@@ -15435,12 +29071,85 @@ func init() {
                 2,
                 3,
                 4,
-                5
+                5,
+                6
               ]
+            },
+            "model_name": {
+              "description": "LB endpoint pool selection key for AI model routing (e.g. \"llama-70b\"); empty = wildcard pool (backward compatible)",
+              "type": "string"
             },
             "monitor": {
               "description": "value for monitoring enabled or not",
               "type": "boolean"
+            },
+            "mtls_backend": {
+              "description": "Backend mTLS configuration for server certificate verification and client certificate presentation. Only valid with security=2 (E2E HTTPS) and mode=4 (FullProxy)",
+              "type": "object",
+              "properties": {
+                "backend_ca_path": {
+                  "description": "Path to backend CA bundle (PEM format). Empty uses system CA store (/etc/ssl/certs/). Example /opt/loxilb/cert/backend_ca.crt",
+                  "type": "string"
+                },
+                "client_cert_data": {
+                  "description": "Inline client certificate (base64-encoded PEM). Alternative to client_cert_path",
+                  "type": "string"
+                },
+                "client_cert_path": {
+                  "description": "Path to loxilb's client certificate for backend mTLS. Example /opt/loxilb/cert/loxilb_client.crt",
+                  "type": "string"
+                },
+                "client_key_data": {
+                  "description": "Inline client key (base64-encoded PEM). Alternative to client_key_path",
+                  "type": "string"
+                },
+                "client_key_path": {
+                  "description": "Path to loxilb's private key for backend mTLS. Example /opt/loxilb/cert/loxilb_client.key",
+                  "type": "string"
+                },
+                "verify_server_cert": {
+                  "description": "Enable backend server certificate verification (SSL_VERIFY_PEER). False skips verification (SSL_VERIFY_NONE, default for backward compatibility)",
+                  "type": "boolean",
+                  "default": false
+                }
+              }
+            },
+            "mtls_frontend": {
+              "description": "Frontend mTLS configuration for client certificate verification. Only valid with security=1 (HTTPS) or security=2 (E2E HTTPS) and mode=4 (FullProxy)",
+              "type": "object",
+              "properties": {
+                "client_ca_cert_data": {
+                  "description": "Inline CA certificate data (base64-encoded PEM). Alternative to client_ca_path for Kubernetes secrets",
+                  "type": "string"
+                },
+                "client_ca_path": {
+                  "description": "Path to client CA certificate bundle (PEM format). Example /opt/loxilb/cert/client_ca_bundle.crt",
+                  "type": "string"
+                },
+                "client_cert_mode": {
+                  "description": "Client certificate requirement - disabled (no verification, default), optional (accept with/without cert), required (reject without valid cert)",
+                  "type": "string",
+                  "default": "disabled",
+                  "enum": [
+                    "disabled",
+                    "optional",
+                    "required"
+                  ]
+                },
+                "client_cn_pattern": {
+                  "description": "Required CN pattern (e.g., *.corp.example.com). Supports wildcard matching. Only used if require_client_cn is true",
+                  "type": "string"
+                },
+                "client_crl_path": {
+                  "description": "(08) operator-supplied static CRL file (PEM) loaded into the verify X509_STORE with leaf-only X509_V_FLAG_CRL_CHECK. A revoked client LEAF cert is rejected; a valid one passes. Optional/additive — empty preserves today's behaviour (the 77-04 sibling crl.pem convention).",
+                  "type": "string"
+                },
+                "require_client_cn": {
+                  "description": "Require specific CN pattern in client certificate for additional security",
+                  "type": "boolean",
+                  "default": false
+                }
+              }
             },
             "name": {
               "description": "service name",
@@ -15456,9 +29165,61 @@ func init() {
                 2
               ]
             },
+            "path_match_mode": {
+              "description": "Path matching mode - disabled (hostname-only, backward compat), prefix (longest prefix match), exact (exact path match)",
+              "type": "string",
+              "default": "disabled",
+              "enum": [
+                "disabled",
+                "prefix",
+                "exact"
+              ]
+            },
+            "path_prefix": {
+              "description": "URL path prefix for L7 routing (e.g., /v1/users). Optional - empty means hostname-only matching (backward compatible)",
+              "type": "string"
+            },
+            "pd_balance_abs_threshold": {
+              "description": "Load imbalance threshold for P/D cache-aware routing. If max-min active connections exceeds this, bypass cache affinity.",
+              "type": "integer",
+              "format": "int32",
+              "default": 3,
+              "minimum": 0,
+              "x-nullable": false
+            },
+            "pd_cache_aware_mode": {
+              "description": "Enable P/D cache-aware routing. When true, uses session stickiness, radix trie prefix matching, and min-load balancing for endpoint selection. Requires pd_disagg_mode=true.",
+              "type": "boolean",
+              "default": false,
+              "x-nullable": false
+            },
+            "pd_cache_threshold": {
+              "description": "Cache match threshold (0-100) for P/D cache-aware routing. Lower values make cache routing more aggressive.",
+              "type": "integer",
+              "format": "int32",
+              "default": 20,
+              "maximum": 100,
+              "minimum": 0,
+              "x-nullable": false
+            },
+            "pd_disagg_mode": {
+              "description": "Enable vLLM prefill/decode disaggregation mode. When true, the proxy orchestrates a two-phase flow - prefill request to a prefill endpoint, then decode request to a decode endpoint using KV transfer parameters from the prefill response.",
+              "type": "boolean",
+              "default": false,
+              "x-nullable": false
+            },
+            "pd_session_ttl_sec": {
+              "description": "Session stickiness TTL in seconds for P/D cache-aware routing. 0 = no automatic expiry. Only used when pd_cache_aware_mode is true.",
+              "type": "integer",
+              "format": "int32",
+              "default": 0,
+              "minimum": 0,
+              "x-nullable": false
+            },
             "port": {
               "description": "(Min) port number for the access",
-              "type": "integer"
+              "type": "integer",
+              "x-nullable": true
             },
             "portMax": {
               "description": "Max port number(range) for the access",
@@ -15504,6 +29265,10 @@ func init() {
                 "none"
               ]
             },
+            "projectId": {
+              "description": "Octavia tenant/project identifier. Opaque store-verbatim string, filtered on GET /all. NOT a tenant-isolation boundary.",
+              "type": "string"
+            },
             "protocol": {
               "description": "value for access protocol",
               "type": "string",
@@ -15529,7 +29294,7 @@ func init() {
               ]
             },
             "sel": {
-              "description": "value for load balance algorithim(0-rr, 1-hash, 2-priority, 3-persist, 4-lc, 5-n2, 6-n3, 0-default)",
+              "description": "value for load balance algorithim(0-rr, 1-hash, 2-priority/wrr, 3-persist, 4-lc, 5-n2, 6-n3, 7-reserved, 8-chwbl, 9-gpuaware, 10-wrr-hash, 0-default)",
               "type": "integer",
               "enum": [
                 0,
@@ -15538,12 +29303,60 @@ func init() {
                 3,
                 4,
                 5,
-                6
+                6,
+                7,
+                8,
+                9,
+                10
               ]
+            },
+            "session_header_name": {
+              "description": "Session affinity configuration for persist mode (sel=3). Supports multiple methods:\n\n**Regular Header** (full value extraction):\n- \"X-Session-ID\" - Extracts full header value\n- \"mcp-session-id\" - Custom application header\n- \"authorization\" - Full Authorization header\n\n**Cookie-based** (specific cookie extraction):\n- \"cookie:JSESSIONID\" - Java/Tomcat session cookie\n- \"cookie:PHPSESSID\" - PHP session cookie\n- \"cookie:ASP.NET_SessionId\" - ASP.NET session\n- \"cookie:connect.sid\" - Node.js/Express session\n- \"cookie:SESSION_TOKEN\" - Custom cookie name\n\n**Query Parameter** (URL parameter extraction):\n- \"query:sessionid\" - Extract from ?sessionid=value\n- \"query:token\" - Extract from ?token=value\n- \"query:jsessionid\" - Common Java fallback\n\n**Basic Authentication** (username extraction):\n- \"basic-auth\" - Extract username from Authorization: Basic header\n\nIf empty and sel=3, falls back to IP-based persistence.\nCookie/query methods ignore other cookies/parameters, ensuring consistent routing.\n",
+              "type": "string"
             },
             "snat": {
               "description": "snat rule",
               "type": "boolean"
+            },
+            "sse_mode": {
+              "description": "Enable SSE (Server-Sent Events) streaming mode. When true, idle-timeout is suppressed while a streaming LLM response is active (Content-Type text/event-stream detected). Required for OpenAI-compatible streaming endpoints.",
+              "type": "boolean",
+              "default": false,
+              "x-nullable": false
+            },
+            "timeoutMemberConnect": {
+              "description": "backend connect timeout in MILLISECONDS (Octavia native unit). Optional/additive — 0/absent preserves today's 500ms default (NOT Octavia's 5000ms). Enforced only on the L7_Proxy peer (has_l7_policy==1).",
+              "type": "integer",
+              "format": "uint32"
+            },
+            "timeoutMemberData": {
+              "description": "member-side relay idle timeout in MILLISECONDS. Optional/additive — 0/absent preserves the existing client-idle value.",
+              "type": "integer",
+              "format": "uint32"
+            },
+            "timeoutTcpInspect": {
+              "description": "header-accumulation deadline in MILLISECONDS (slowloris protection). Optional/additive — 0/absent uses a sane bounded default. NO Gateway-API equivalent — Octavia-only; a future Gateway controller MUST hard-error, never silent-drop.",
+              "type": "integer",
+              "format": "uint32"
+            },
+            "tls_ciphers": {
+              "description": "OpenSSL cipher string, applied to BOTH SSL_CTX_set_cipher_list (TLS1.2) and SSL_CTX_set_ciphersuites (TLS1.3) on listener + pool. Optional/additive — empty preserves today's hardcoded ciphers.",
+              "type": "string"
+            },
+            "tls_versions": {
+              "description": "Octavia tls_versions list (e.g. [\"TLSv1.2\",\"TLSv1.3\"]). Collapsed to a minmax protocol-version range. Optional/additive — empty preserves today's TLS1.21.3.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "trace_type": {
+              "description": "Tracing catalog name for deep inspection and protocol analysis (e.g., v1, anthropic, default). Enables body capture and parser invocation for observability.",
+              "type": "string"
+            },
+            "vip_qos_policy_id": {
+              "description": "references an EXISTING loxilb /config/policy ident (pre-created by the external Octavia driver). On create, when non-empty, loxilb ASSOCIATES that policy to the VIP rule (policer association). Optional/additive — empty/absent leaves the rule unchanged. An unresolvable ident is an error (no silent-drop).",
+              "type": "string"
             }
           }
         }
@@ -15564,21 +29377,66 @@ func init() {
         "targetPort"
       ],
       "properties": {
+        "backup": {
+          "description": "Octavia standby member flag. A backup endpoint carries traffic only when all primaries are unavailable. Absent/false = primary (today's behavior).",
+          "type": "boolean",
+          "default": false
+        },
         "counter": {
           "description": "traffic counters of the endpoint",
+          "type": "string"
+        },
+        "domainName": {
+          "description": "doubles as TLS SNI for HTTPS monitors AND the Host header. Optional/additive.",
           "type": "string"
         },
         "endpointIP": {
           "description": "IP address for external access",
           "type": "string"
         },
+        "ep_role": {
+          "description": "Endpoint role for P/D disaggregation - 0=normal (no role), 1=prefill, 2=decode. Only used when pd_disagg_mode is true.",
+          "type": "integer",
+          "format": "int32",
+          "default": 0
+        },
+        "expectedCodes": {
+          "description": "Octavia expected_codes — single \"200\", list \"200,202\", or range \"200-204\". Optional/additive — empty defaults to \"200\".",
+          "type": "string"
+        },
+        "httpMethod": {
+          "description": "HTTP(S) health-monitor method (e.g. GET, HEAD). Optional/additive — empty defaults to GET. Control-plane only (probeReq/probeResp retained as the escape hatch).",
+          "type": "string"
+        },
+        "httpVersion": {
+          "description": "HM HTTP version \"1.0\" or \"1.1\". When \"1.1\" a Host header is sent (domainName, else the member address). Optional/additive.",
+          "type": "string"
+        },
+        "monitorAddress": {
+          "description": "Octavia per-member health-probe address. When set, the health probe targets this address instead of the traffic IP; absent = probe the traffic IP.",
+          "type": "string"
+        },
+        "nixl_port": {
+          "description": "NIXL side-channel port for KV cache transfer. 0=use targetPort (backward compatible). Only meaningful when pd_disagg_mode is true.",
+          "type": "integer",
+          "format": "int32",
+          "default": 0
+        },
         "state": {
           "description": "state of the endpoint",
+          "type": "string"
+        },
+        "subnetId": {
+          "description": "Octavia member subnet identifier. Opaque store-verbatim round-trip field; not interpreted (no routing effect this phase).",
           "type": "string"
         },
         "targetPort": {
           "description": "port number for access service",
           "type": "integer"
+        },
+        "urlPath": {
+          "description": "HM request path (e.g. /healthz). Optional/additive — empty falls back to probeReq or \"/\".",
+          "type": "string"
         },
         "weight": {
           "description": "Weight for the load balancing",
@@ -15594,13 +29452,73 @@ func init() {
         }
       }
     },
+    "LoadbalanceEntrySecondaryVIPsItems0": {
+      "properties": {
+        "address": {
+          "description": "secondary VIP address",
+          "type": "string"
+        },
+        "portId": {
+          "description": "opaque Octavia port identifier for this VIP (round-trip only)",
+          "type": "string"
+        },
+        "proto": {
+          "description": "opaque protocol hint for this VIP (round-trip only)",
+          "type": "string"
+        },
+        "subnetId": {
+          "description": "opaque Octavia subnet identifier for this VIP (round-trip only)",
+          "type": "string"
+        }
+      }
+    },
     "LoadbalanceEntryServiceArguments": {
       "type": "object",
-      "required": [
-        "externalIP",
-        "port"
-      ],
       "properties": {
+        "adminStateUp": {
+          "description": "Octavia admin_state_up lifecycle flag. Absent/true = enabled; false = paused.",
+          "type": "boolean"
+        },
+        "alpn_protocols": {
+          "description": "Octavia alpn_protocols list (e.g. [\"h2\",\"http/1.1\"]). Mapped to the existing backend_protocol_cap enum ([h2,http/1.1]=2, [h2]=1, [http/1.1]=0). Advertised on listener + pool. Optional/additive — empty preserves the backendProtocol-driven value.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "annotations": {
+          "description": "Opaque key/value map round-tripping octaviaProtocol and any future Octavia field verbatim. Store-as-given, return-as-stored; never interpreted.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "backend_ca_cert_id": {
+          "description": "(16) certId of the backend re-encryption CA bundle (resolved by the certId registry to the managed-dir ca.crt at backend SSL_CTX build). Optional/additive — empty = system default.",
+          "type": "string"
+        },
+        "backend_client_cert_id": {
+          "description": "(16) certId of loxilb's backend client cert+key. Optional/additive — empty = no backend client cert (today's behaviour).",
+          "type": "string"
+        },
+        "backend_keepalive_interval_sec": {
+          "description": "Sets SO_KEEPALIVE + TCP_KEEPIDLE on backend socket in seconds. Keeps TCP CT entries alive through cloud NAT during long SSE streams. 0 = disabled. Recommended value 60 for most cloud environments.",
+          "type": "integer",
+          "format": "int32",
+          "default": 0,
+          "minimum": 0,
+          "x-nullable": false
+        },
+        "backend_protocol": {
+          "description": "Backend protocol capability for ALPN negotiation - http1 (HTTP/1.1 only, safest default), http2 (HTTP/2 only), both (supports both HTTP/1.1 and HTTP/2)",
+          "type": "string",
+          "default": "http1",
+          "enum": [
+            "http1",
+            "http2",
+            "both"
+          ]
+        },
         "bgp": {
           "description": "value for BGP enable or not",
           "type": "boolean"
@@ -15610,16 +29528,75 @@ func init() {
           "type": "integer",
           "format": "uint32"
         },
+        "chwbl_enable_cache_salt": {
+          "description": "Require cache_salt field in requests for CHWBL/WRR_HASH (sel=8 or sel=10) - enforces strict multi-tenant isolation. If false, cache_salt is optional. Only used when sel=8 or sel=10",
+          "type": "boolean",
+          "default": false
+        },
+        "chwbl_mean_load_factor": {
+          "description": "Maximum load factor percentage for CHWBL/WRR_HASH (sel=8 or sel=10) - max_load = avg_load × factor / 100. Range 100-300, default 125 (allows 25% overload). Only used when sel=8 or sel=10",
+          "type": "integer",
+          "default": 125,
+          "maximum": 300,
+          "minimum": 100
+        },
+        "chwbl_prefix_hash_flags": {
+          "description": "Optional field inclusion flags for CHWBL/WRR_HASH (sel=8 or sel=10) - Bit 0=LoRA, Bit 1=image, Bit 2=audio, Bit 3=cache_salt, Bit 4=tools, Bit 5=session, Bit 6=RAG template, Bit 7=RAG docs. 0=auto-detect. Only used when sel=8 or sel=10",
+          "type": "integer",
+          "default": 0,
+          "maximum": 255,
+          "minimum": 0
+        },
+        "chwbl_prefix_hash_level": {
+          "description": "Prefix hash level for CHWBL/WRR_HASH modes (sel=8 or sel=10) - 1=Level1 only (system prompt+model), 2=Level1+Level2 (session context), 3=Level1+Level2+Level3 (RAG). Only used when sel=8 or sel=10. Optional - defaults to 1 for backward compatibility",
+          "type": "integer",
+          "default": 1,
+          "enum": [
+            1,
+            2,
+            3
+          ]
+        },
+        "chwbl_replication": {
+          "description": "Virtual nodes per physical endpoint for CHWBL/WRR_HASH (sel=8 or sel=10) - higher values improve distribution but use more memory. Range 1-1024, default 100. For WRR_HASH, this is the total vnode count distributed proportionally by weight. Only used when sel=8 or sel=10",
+          "type": "integer",
+          "default": 100,
+          "maximum": 1024,
+          "minimum": 1
+        },
+        "connectionLimit": {
+          "description": "Octavia per-service concurrent-connection ceiling. Per-rule max simultaneous connections across all endpoints. 0/absent = unlimited (legacy). eBPF-CT enforced (SYN refused at sel=-1 -\u003e pm.nf=0 when live count \u003e= limit). DISTINCT from the SecurityRateConfig per-SOURCE-IP concurrentLimit (P0-6); not per-EP.",
+          "type": "integer",
+          "format": "uint32"
+        },
         "egress": {
           "description": "flag to indicate an egress rule",
           "type": "boolean"
         },
         "externalIP": {
           "description": "IP address for external access",
-          "type": "string"
+          "type": "string",
+          "x-nullable": true
         },
         "host": {
           "description": "Ingress specific host URL path",
+          "type": "string"
+        },
+        "hsts_include_subdomains": {
+          "description": "append \"; includeSubDomains\" to the HSTS header. Only meaningful when hsts_max_age \u003e 0.",
+          "type": "boolean"
+        },
+        "hsts_max_age": {
+          "description": "Strict-Transport-Security max-age (seconds). The data plane synthesizes the header and injects it on HTTPS listeners only (L7-gated). Optional/additive — 0/absent = no HSTS injection.",
+          "type": "integer",
+          "format": "uint32"
+        },
+        "hsts_preload": {
+          "description": "append \"; preload\" to the HSTS header. Only meaningful when hsts_max_age \u003e 0.",
+          "type": "boolean"
+        },
+        "id": {
+          "description": "Stable opaque identifier for the LB rule (Octavia). Client-supplied verbatim or minted (UUIDv4) when absent.",
           "type": "string"
         },
         "inactiveTimeOut": {
@@ -15627,12 +29604,83 @@ func init() {
           "type": "integer",
           "format": "int32"
         },
+        "kvBlockSize": {
+          "description": "Token block size for KV hash computation. Must match vLLM's block_size configuration.",
+          "type": "integer",
+          "format": "int64",
+          "default": 16,
+          "minimum": 1,
+          "x-nullable": false
+        },
+        "kvDpRankCount": {
+          "description": "SGLang data-parallel rank count. Rank N publishes KV events at kvZmqPort+N; all ranks union into one per-EP inventory.",
+          "type": "integer",
+          "format": "int32",
+          "default": 1,
+          "maximum": 8,
+          "minimum": 1,
+          "x-nullable": false
+        },
+        "kvEngineType": {
+          "description": "KV-event engine behind this rule. One framework per VIP; immutable after create (delete+recreate to change). Drives hash-algo default: sglang =\u003e sha256_sglang. NOTE: LOXILB_KV_* env knobs (unified mode, eps/lambda, cap-sum, max-blocks) are process-global and shared across all KV VIPs (accepted limitation).",
+          "type": "string",
+          "default": "vllm",
+          "enum": [
+            "vllm",
+            "sglang"
+          ],
+          "x-nullable": false
+        },
+        "kvExactMode": {
+          "description": "KV-cache exact routing mode: 0=off, 1=zmq (P/D role-partitioned), 2=nats(reserved), 3=zmq single-role (— all EPs subscribed, no P/D role split). Enables Tier 1.5 block-hash routing between Tier 1 (trie) and Tier 2 (min-load).",
+          "type": "integer",
+          "format": "int64",
+          "default": 0,
+          "maximum": 3,
+          "minimum": 0,
+          "x-nullable": false
+        },
+        "kvHashAlgo": {
+          "description": "Hash algorithm for KV block matching. Must match vLLM's configured hash algorithm.",
+          "type": "string",
+          "default": "sha256_cbor",
+          "enum": [
+            "sha256_cbor",
+            "xxhash_cbor"
+          ],
+          "x-nullable": false
+        },
+        "kvWarmupSec": {
+          "description": "Seconds to wait after ZMQ subscriber connects before activating Tier 1.5 routing. Allows inventory to populate.",
+          "type": "integer",
+          "format": "int64",
+          "default": 30,
+          "minimum": 0,
+          "x-nullable": false
+        },
+        "kvZmqPort": {
+          "description": "ZMQ PUB socket port on vLLM prefill endpoints for KV cache events.",
+          "type": "integer",
+          "format": "int64",
+          "default": 5557,
+          "maximum": 65535,
+          "minimum": 1,
+          "x-nullable": false
+        },
         "managed": {
           "description": "externally managed rule or not",
           "type": "boolean"
         },
+        "max_stream_duration_sec": {
+          "description": "Absolute wall-clock cap for SSE streams in seconds. 0 = use system hard cap (86400s / 24h). Set to a lower value (e.g. 300) to bound runaway streams.",
+          "type": "integer",
+          "format": "int32",
+          "default": 0,
+          "minimum": 0,
+          "x-nullable": false
+        },
         "mode": {
-          "description": "value for NAT mode (0-DNAT,1-onearm, 2-fullnat, 3-dsr, 4-fullproxy, 5-hostonearm, 0-default)",
+          "description": "value for NAT mode (0-DNAT,1-onearm, 2-fullnat, 3-dsr, 4-fullproxy, 5-hostonearm, 6-aigw, 0-default)",
           "type": "integer",
           "format": "int32",
           "enum": [
@@ -15641,12 +29689,85 @@ func init() {
             2,
             3,
             4,
-            5
+            5,
+            6
           ]
+        },
+        "model_name": {
+          "description": "LB endpoint pool selection key for AI model routing (e.g. \"llama-70b\"); empty = wildcard pool (backward compatible)",
+          "type": "string"
         },
         "monitor": {
           "description": "value for monitoring enabled or not",
           "type": "boolean"
+        },
+        "mtls_backend": {
+          "description": "Backend mTLS configuration for server certificate verification and client certificate presentation. Only valid with security=2 (E2E HTTPS) and mode=4 (FullProxy)",
+          "type": "object",
+          "properties": {
+            "backend_ca_path": {
+              "description": "Path to backend CA bundle (PEM format). Empty uses system CA store (/etc/ssl/certs/). Example /opt/loxilb/cert/backend_ca.crt",
+              "type": "string"
+            },
+            "client_cert_data": {
+              "description": "Inline client certificate (base64-encoded PEM). Alternative to client_cert_path",
+              "type": "string"
+            },
+            "client_cert_path": {
+              "description": "Path to loxilb's client certificate for backend mTLS. Example /opt/loxilb/cert/loxilb_client.crt",
+              "type": "string"
+            },
+            "client_key_data": {
+              "description": "Inline client key (base64-encoded PEM). Alternative to client_key_path",
+              "type": "string"
+            },
+            "client_key_path": {
+              "description": "Path to loxilb's private key for backend mTLS. Example /opt/loxilb/cert/loxilb_client.key",
+              "type": "string"
+            },
+            "verify_server_cert": {
+              "description": "Enable backend server certificate verification (SSL_VERIFY_PEER). False skips verification (SSL_VERIFY_NONE, default for backward compatibility)",
+              "type": "boolean",
+              "default": false
+            }
+          }
+        },
+        "mtls_frontend": {
+          "description": "Frontend mTLS configuration for client certificate verification. Only valid with security=1 (HTTPS) or security=2 (E2E HTTPS) and mode=4 (FullProxy)",
+          "type": "object",
+          "properties": {
+            "client_ca_cert_data": {
+              "description": "Inline CA certificate data (base64-encoded PEM). Alternative to client_ca_path for Kubernetes secrets",
+              "type": "string"
+            },
+            "client_ca_path": {
+              "description": "Path to client CA certificate bundle (PEM format). Example /opt/loxilb/cert/client_ca_bundle.crt",
+              "type": "string"
+            },
+            "client_cert_mode": {
+              "description": "Client certificate requirement - disabled (no verification, default), optional (accept with/without cert), required (reject without valid cert)",
+              "type": "string",
+              "default": "disabled",
+              "enum": [
+                "disabled",
+                "optional",
+                "required"
+              ]
+            },
+            "client_cn_pattern": {
+              "description": "Required CN pattern (e.g., *.corp.example.com). Supports wildcard matching. Only used if require_client_cn is true",
+              "type": "string"
+            },
+            "client_crl_path": {
+              "description": "(08) operator-supplied static CRL file (PEM) loaded into the verify X509_STORE with leaf-only X509_V_FLAG_CRL_CHECK. A revoked client LEAF cert is rejected; a valid one passes. Optional/additive — empty preserves today's behaviour (the 77-04 sibling crl.pem convention).",
+              "type": "string"
+            },
+            "require_client_cn": {
+              "description": "Require specific CN pattern in client certificate for additional security",
+              "type": "boolean",
+              "default": false
+            }
+          }
         },
         "name": {
           "description": "service name",
@@ -15662,9 +29783,61 @@ func init() {
             2
           ]
         },
+        "path_match_mode": {
+          "description": "Path matching mode - disabled (hostname-only, backward compat), prefix (longest prefix match), exact (exact path match)",
+          "type": "string",
+          "default": "disabled",
+          "enum": [
+            "disabled",
+            "prefix",
+            "exact"
+          ]
+        },
+        "path_prefix": {
+          "description": "URL path prefix for L7 routing (e.g., /v1/users). Optional - empty means hostname-only matching (backward compatible)",
+          "type": "string"
+        },
+        "pd_balance_abs_threshold": {
+          "description": "Load imbalance threshold for P/D cache-aware routing. If max-min active connections exceeds this, bypass cache affinity.",
+          "type": "integer",
+          "format": "int32",
+          "default": 3,
+          "minimum": 0,
+          "x-nullable": false
+        },
+        "pd_cache_aware_mode": {
+          "description": "Enable P/D cache-aware routing. When true, uses session stickiness, radix trie prefix matching, and min-load balancing for endpoint selection. Requires pd_disagg_mode=true.",
+          "type": "boolean",
+          "default": false,
+          "x-nullable": false
+        },
+        "pd_cache_threshold": {
+          "description": "Cache match threshold (0-100) for P/D cache-aware routing. Lower values make cache routing more aggressive.",
+          "type": "integer",
+          "format": "int32",
+          "default": 20,
+          "maximum": 100,
+          "minimum": 0,
+          "x-nullable": false
+        },
+        "pd_disagg_mode": {
+          "description": "Enable vLLM prefill/decode disaggregation mode. When true, the proxy orchestrates a two-phase flow - prefill request to a prefill endpoint, then decode request to a decode endpoint using KV transfer parameters from the prefill response.",
+          "type": "boolean",
+          "default": false,
+          "x-nullable": false
+        },
+        "pd_session_ttl_sec": {
+          "description": "Session stickiness TTL in seconds for P/D cache-aware routing. 0 = no automatic expiry. Only used when pd_cache_aware_mode is true.",
+          "type": "integer",
+          "format": "int32",
+          "default": 0,
+          "minimum": 0,
+          "x-nullable": false
+        },
         "port": {
           "description": "(Min) port number for the access",
-          "type": "integer"
+          "type": "integer",
+          "x-nullable": true
         },
         "portMax": {
           "description": "Max port number(range) for the access",
@@ -15710,6 +29883,10 @@ func init() {
             "none"
           ]
         },
+        "projectId": {
+          "description": "Octavia tenant/project identifier. Opaque store-verbatim string, filtered on GET /all. NOT a tenant-isolation boundary.",
+          "type": "string"
+        },
         "protocol": {
           "description": "value for access protocol",
           "type": "string",
@@ -15735,7 +29912,7 @@ func init() {
           ]
         },
         "sel": {
-          "description": "value for load balance algorithim(0-rr, 1-hash, 2-priority, 3-persist, 4-lc, 5-n2, 6-n3, 0-default)",
+          "description": "value for load balance algorithim(0-rr, 1-hash, 2-priority/wrr, 3-persist, 4-lc, 5-n2, 6-n3, 7-reserved, 8-chwbl, 9-gpuaware, 10-wrr-hash, 0-default)",
           "type": "integer",
           "enum": [
             0,
@@ -15744,12 +29921,180 @@ func init() {
             3,
             4,
             5,
-            6
+            6,
+            7,
+            8,
+            9,
+            10
           ]
+        },
+        "session_header_name": {
+          "description": "Session affinity configuration for persist mode (sel=3). Supports multiple methods:\n\n**Regular Header** (full value extraction):\n- \"X-Session-ID\" - Extracts full header value\n- \"mcp-session-id\" - Custom application header\n- \"authorization\" - Full Authorization header\n\n**Cookie-based** (specific cookie extraction):\n- \"cookie:JSESSIONID\" - Java/Tomcat session cookie\n- \"cookie:PHPSESSID\" - PHP session cookie\n- \"cookie:ASP.NET_SessionId\" - ASP.NET session\n- \"cookie:connect.sid\" - Node.js/Express session\n- \"cookie:SESSION_TOKEN\" - Custom cookie name\n\n**Query Parameter** (URL parameter extraction):\n- \"query:sessionid\" - Extract from ?sessionid=value\n- \"query:token\" - Extract from ?token=value\n- \"query:jsessionid\" - Common Java fallback\n\n**Basic Authentication** (username extraction):\n- \"basic-auth\" - Extract username from Authorization: Basic header\n\nIf empty and sel=3, falls back to IP-based persistence.\nCookie/query methods ignore other cookies/parameters, ensuring consistent routing.\n",
+          "type": "string"
         },
         "snat": {
           "description": "snat rule",
           "type": "boolean"
+        },
+        "sse_mode": {
+          "description": "Enable SSE (Server-Sent Events) streaming mode. When true, idle-timeout is suppressed while a streaming LLM response is active (Content-Type text/event-stream detected). Required for OpenAI-compatible streaming endpoints.",
+          "type": "boolean",
+          "default": false,
+          "x-nullable": false
+        },
+        "timeoutMemberConnect": {
+          "description": "backend connect timeout in MILLISECONDS (Octavia native unit). Optional/additive — 0/absent preserves today's 500ms default (NOT Octavia's 5000ms). Enforced only on the L7_Proxy peer (has_l7_policy==1).",
+          "type": "integer",
+          "format": "uint32"
+        },
+        "timeoutMemberData": {
+          "description": "member-side relay idle timeout in MILLISECONDS. Optional/additive — 0/absent preserves the existing client-idle value.",
+          "type": "integer",
+          "format": "uint32"
+        },
+        "timeoutTcpInspect": {
+          "description": "header-accumulation deadline in MILLISECONDS (slowloris protection). Optional/additive — 0/absent uses a sane bounded default. NO Gateway-API equivalent — Octavia-only; a future Gateway controller MUST hard-error, never silent-drop.",
+          "type": "integer",
+          "format": "uint32"
+        },
+        "tls_ciphers": {
+          "description": "OpenSSL cipher string, applied to BOTH SSL_CTX_set_cipher_list (TLS1.2) and SSL_CTX_set_ciphersuites (TLS1.3) on listener + pool. Optional/additive — empty preserves today's hardcoded ciphers.",
+          "type": "string"
+        },
+        "tls_versions": {
+          "description": "Octavia tls_versions list (e.g. [\"TLSv1.2\",\"TLSv1.3\"]). Collapsed to a minmax protocol-version range. Optional/additive — empty preserves today's TLS1.21.3.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "trace_type": {
+          "description": "Tracing catalog name for deep inspection and protocol analysis (e.g., v1, anthropic, default). Enables body capture and parser invocation for observability.",
+          "type": "string"
+        },
+        "vip_qos_policy_id": {
+          "description": "references an EXISTING loxilb /config/policy ident (pre-created by the external Octavia driver). On create, when non-empty, loxilb ASSOCIATES that policy to the VIP rule (policer association). Optional/additive — empty/absent leaves the rule unchanged. An unresolvable ident is an error (no silent-drop).",
+          "type": "string"
+        }
+      }
+    },
+    "LoadbalanceEntryServiceArgumentsMtlsBackend": {
+      "description": "Backend mTLS configuration for server certificate verification and client certificate presentation. Only valid with security=2 (E2E HTTPS) and mode=4 (FullProxy)",
+      "type": "object",
+      "properties": {
+        "backend_ca_path": {
+          "description": "Path to backend CA bundle (PEM format). Empty uses system CA store (/etc/ssl/certs/). Example /opt/loxilb/cert/backend_ca.crt",
+          "type": "string"
+        },
+        "client_cert_data": {
+          "description": "Inline client certificate (base64-encoded PEM). Alternative to client_cert_path",
+          "type": "string"
+        },
+        "client_cert_path": {
+          "description": "Path to loxilb's client certificate for backend mTLS. Example /opt/loxilb/cert/loxilb_client.crt",
+          "type": "string"
+        },
+        "client_key_data": {
+          "description": "Inline client key (base64-encoded PEM). Alternative to client_key_path",
+          "type": "string"
+        },
+        "client_key_path": {
+          "description": "Path to loxilb's private key for backend mTLS. Example /opt/loxilb/cert/loxilb_client.key",
+          "type": "string"
+        },
+        "verify_server_cert": {
+          "description": "Enable backend server certificate verification (SSL_VERIFY_PEER). False skips verification (SSL_VERIFY_NONE, default for backward compatibility)",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "LoadbalanceEntryServiceArgumentsMtlsFrontend": {
+      "description": "Frontend mTLS configuration for client certificate verification. Only valid with security=1 (HTTPS) or security=2 (E2E HTTPS) and mode=4 (FullProxy)",
+      "type": "object",
+      "properties": {
+        "client_ca_cert_data": {
+          "description": "Inline CA certificate data (base64-encoded PEM). Alternative to client_ca_path for Kubernetes secrets",
+          "type": "string"
+        },
+        "client_ca_path": {
+          "description": "Path to client CA certificate bundle (PEM format). Example /opt/loxilb/cert/client_ca_bundle.crt",
+          "type": "string"
+        },
+        "client_cert_mode": {
+          "description": "Client certificate requirement - disabled (no verification, default), optional (accept with/without cert), required (reject without valid cert)",
+          "type": "string",
+          "default": "disabled",
+          "enum": [
+            "disabled",
+            "optional",
+            "required"
+          ]
+        },
+        "client_cn_pattern": {
+          "description": "Required CN pattern (e.g., *.corp.example.com). Supports wildcard matching. Only used if require_client_cn is true",
+          "type": "string"
+        },
+        "client_crl_path": {
+          "description": "(08) operator-supplied static CRL file (PEM) loaded into the verify X509_STORE with leaf-only X509_V_FLAG_CRL_CHECK. A revoked client LEAF cert is rejected; a valid one passes. Optional/additive — empty preserves today's behaviour (the 77-04 sibling crl.pem convention).",
+          "type": "string"
+        },
+        "require_client_cn": {
+          "description": "Require specific CN pattern in client certificate for additional security",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "LoadbalanceStats": {
+      "description": "Per-LB statistics quad (Octavia).",
+      "type": "object",
+      "properties": {
+        "activeConnections": {
+          "description": "Live concurrent-connection count for the rule — the same selector-agnostic live count the connectionLimit gate enforces. Recomputed from the conntrack walk; reset to zero on restart.",
+          "type": "integer",
+          "format": "uint64"
+        },
+        "bytesIn": {
+          "description": "Real per-direction byte total for the forward CT_DIR_IN (client to VIP request) entries of the rule. NOT a 50/50 heuristic. Reset to zero on restart.",
+          "type": "integer",
+          "format": "uint64"
+        },
+        "bytesOut": {
+          "description": "Real per-direction byte total for the reverse CT_DIR_OUT (VIP to client response) entries of the rule. Reset to zero on restart.",
+          "type": "integer",
+          "format": "uint64"
+        },
+        "totalConnections": {
+          "description": "Monotonic cumulative connection count (incremented on first-seen CT for the rule, never decremented). In-memory only, reset to zero on restart.",
+          "type": "integer",
+          "format": "uint64"
+        }
+      }
+    },
+    "LoadbalanceStatus": {
+      "description": "Per-LB lifecycle status (Octavia).",
+      "type": "object",
+      "properties": {
+        "adminStateUp": {
+          "description": "Octavia admin_state_up — true = enabled, false = paused.",
+          "type": "boolean"
+        },
+        "lastUpdated": {
+          "description": "In-memory last-mutation timestamp (RFC3339). Reset-to-now on restart, never persisted.",
+          "type": "string",
+          "format": "date-time"
+        },
+        "operatingStatus": {
+          "description": "Aggregated operating status derived from endpoint health.",
+          "type": "string",
+          "enum": [
+            "ONLINE",
+            "OFFLINE",
+            "DEGRADED",
+            "ERROR",
+            "NO_MONITOR"
+          ]
         }
       }
     },
@@ -15776,12 +30121,33 @@ func init() {
     "Logs": {
       "type": "object",
       "properties": {
+        "has_more": {
+          "description": "Whether more log lines are available (pass next_cursor to fetch them).",
+          "type": "boolean"
+        },
+        "log_count": {
+          "description": "Number of log lines returned in this page.",
+          "type": "integer"
+        },
+        "log_file": {
+          "description": "Name of the log file the lines were read from.",
+          "type": "string"
+        },
         "logs": {
           "description": "List of filtered logs.",
           "type": "array",
           "items": {
             "type": "string"
           }
+        },
+        "next_cursor": {
+          "description": "Opaque cursor for the next page; present only when has_more is true.",
+          "type": "string"
+        },
+        "total_size": {
+          "description": "Total size of the log file in bytes.",
+          "type": "integer",
+          "format": "int64"
         }
       }
     },
@@ -16141,6 +30507,75 @@ func init() {
         }
       }
     },
+    "OPAWatcherConfig": {
+      "type": "object",
+      "required": [
+        "opa_url"
+      ],
+      "properties": {
+        "fail_open": {
+          "description": "Allow traffic when OPA is unreachable",
+          "type": "boolean",
+          "default": false
+        },
+        "opa_url": {
+          "description": "OPA server URL (e.g. http://opa:8181)",
+          "type": "string"
+        },
+        "policy_path": {
+          "description": "OPA policy path to query",
+          "type": "string",
+          "default": "loxilb/l4"
+        },
+        "poll_interval_sec": {
+          "description": "Polling interval in seconds",
+          "type": "integer",
+          "default": 30
+        }
+      }
+    },
+    "OPAWatcherStatus": {
+      "type": "object",
+      "properties": {
+        "circuit_breaker_state": {
+          "description": "Circuit breaker state (0=closed, 1=half-open, 2=open)",
+          "type": "integer"
+        },
+        "fail_open": {
+          "description": "Fail-open setting",
+          "type": "boolean"
+        },
+        "last_error": {
+          "description": "Last error message if any",
+          "type": "string"
+        },
+        "last_sync_at": {
+          "description": "Timestamp of last successful sync",
+          "type": "string",
+          "format": "date-time"
+        },
+        "opa_url": {
+          "description": "Configured OPA server URL",
+          "type": "string"
+        },
+        "policy_path": {
+          "description": "Configured OPA policy path",
+          "type": "string"
+        },
+        "poll_interval_sec": {
+          "description": "Configured polling interval in seconds",
+          "type": "integer"
+        },
+        "rules_count": {
+          "description": "Number of active firewall rules",
+          "type": "integer"
+        },
+        "status": {
+          "description": "Current watcher status (running, stopped, not_configured)",
+          "type": "string"
+        }
+      }
+    },
     "OauthErrorResponse": {
       "type": "object",
       "properties": {
@@ -16211,6 +30646,343 @@ func init() {
             "emergency",
             "alert"
           ]
+        }
+      }
+    },
+    "PIICircuitBreaker": {
+      "type": "object",
+      "properties": {
+        "success_threshold": {
+          "description": "Number of successes needed to close circuit",
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0,
+          "example": 3
+        },
+        "threshold": {
+          "description": "Number of failures before opening circuit",
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0,
+          "example": 5
+        },
+        "timeout_sec": {
+          "description": "Time to wait before attempting half-open (seconds)",
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0,
+          "example": 60
+        }
+      }
+    },
+    "PIIConfigEntry": {
+      "type": "object",
+      "properties": {
+        "analyzer_url": {
+          "description": "Presidio analyzer gRPC endpoint",
+          "type": "string",
+          "example": "localhost:50051"
+        },
+        "anonymizer_url": {
+          "description": "Presidio anonymizer gRPC endpoint (optional)",
+          "type": "string",
+          "example": "localhost:50051"
+        },
+        "batch_size": {
+          "description": "Batch size for v2 streaming API",
+          "type": "integer",
+          "format": "int64",
+          "maximum": 100,
+          "minimum": 1,
+          "example": 10
+        },
+        "circuit_breaker": {
+          "$ref": "#/definitions/PIICircuitBreaker"
+        },
+        "default_operator": {
+          "description": "Default anonymization operator for v2",
+          "type": "string",
+          "enum": [
+            "replace",
+            "redact",
+            "hash",
+            "mask",
+            "encrypt"
+          ],
+          "example": "encrypt"
+        },
+        "direction": {
+          "description": "Scan direction (both, request, response)",
+          "type": "string",
+          "enum": [
+            "both",
+            "request",
+            "response"
+          ],
+          "example": "both"
+        },
+        "enable_v2": {
+          "description": "Enable Presidio v2 API (combined analyze+anonymize, 40% faster)",
+          "type": "boolean",
+          "example": true
+        },
+        "encryption_key": {
+          "description": "Base64-encoded encryption key for v2 (AES-256, 32 bytes)",
+          "type": "string",
+          "example": "YourBase64EncodedKey32BytesLong="
+        },
+        "fail_mode": {
+          "description": "Behavior when Presidio is unavailable (open, closed)",
+          "type": "string",
+          "enum": [
+            "open",
+            "closed"
+          ],
+          "example": "open"
+        },
+        "max_body_size": {
+          "description": "Maximum HTTP body size to scan (bytes)",
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0,
+          "example": 65536
+        },
+        "min_body_size": {
+          "description": "Minimum HTTP body size to scan (bytes)",
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0,
+          "example": 100
+        },
+        "mode": {
+          "description": "Detection mode (detect, mask, redact, anonymize)",
+          "type": "string",
+          "enum": [
+            "detect",
+            "mask",
+            "redact",
+            "anonymize"
+          ],
+          "example": "mask"
+        },
+        "retry": {
+          "$ref": "#/definitions/PIIRetry"
+        },
+        "scan_mode": {
+          "description": "Large body handling (full=skip if too large, truncate=scan first 64KB)",
+          "type": "string",
+          "enum": [
+            "full",
+            "truncate"
+          ],
+          "example": "truncate"
+        },
+        "score_threshold": {
+          "description": "Minimum confidence score for PII detection (0.0-1.0)",
+          "type": "number",
+          "format": "float",
+          "maximum": 1,
+          "minimum": 0,
+          "example": 0.7
+        },
+        "timeout_ms": {
+          "description": "Presidio request timeout in milliseconds",
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0,
+          "example": 100
+        }
+      }
+    },
+    "PIIRetry": {
+      "type": "object",
+      "properties": {
+        "backoff_ms": {
+          "description": "Backoff time between retries (milliseconds)",
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0,
+          "example": 100
+        },
+        "max_retries": {
+          "description": "Maximum number of retry attempts",
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0,
+          "example": 1
+        }
+      }
+    },
+    "PIIStatsResponse": {
+      "type": "object",
+      "properties": {
+        "errors": {
+          "description": "Number of scan errors",
+          "type": "integer",
+          "format": "int64",
+          "example": 8
+        },
+        "pii_blocked": {
+          "description": "Number of requests blocked due to PII",
+          "type": "integer",
+          "format": "int64",
+          "example": 12
+        },
+        "pii_detected": {
+          "description": "Number of requests with PII detected",
+          "type": "integer",
+          "format": "int64",
+          "example": 245
+        },
+        "total_scans": {
+          "description": "Total number of PII scans performed",
+          "type": "integer",
+          "format": "int64",
+          "example": 1523
+        }
+      }
+    },
+    "PIIStatusResponse": {
+      "type": "object",
+      "properties": {
+        "analyzer_url": {
+          "description": "Analyzer endpoint",
+          "type": "string",
+          "example": "localhost:50051"
+        },
+        "anonymizer_url": {
+          "description": "Anonymizer endpoint",
+          "type": "string",
+          "example": "localhost:50051"
+        },
+        "circuit_breaker": {
+          "$ref": "#/definitions/PIICircuitBreaker"
+        },
+        "direction": {
+          "description": "Current scan direction",
+          "type": "string",
+          "example": "both"
+        },
+        "enabled": {
+          "description": "Whether PII detection is enabled",
+          "type": "boolean",
+          "example": true
+        },
+        "fail_mode": {
+          "description": "Current fail mode",
+          "type": "string",
+          "example": "open"
+        },
+        "max_body_size": {
+          "description": "Maximum body size to scan",
+          "type": "integer",
+          "format": "int64",
+          "example": 65536
+        },
+        "min_body_size": {
+          "description": "Minimum body size to scan",
+          "type": "integer",
+          "format": "int64",
+          "example": 100
+        },
+        "mode": {
+          "description": "Current detection mode",
+          "type": "string",
+          "example": "mask"
+        },
+        "retry": {
+          "$ref": "#/definitions/PIIRetry"
+        },
+        "scan_mode": {
+          "description": "Current large body handling mode",
+          "type": "string",
+          "example": "truncate"
+        },
+        "score_threshold": {
+          "description": "Current confidence threshold",
+          "type": "number",
+          "format": "float",
+          "example": 0.7
+        },
+        "timeout_ms": {
+          "description": "Request timeout",
+          "type": "integer",
+          "format": "int64",
+          "example": 100
+        },
+        "url_pattern_count": {
+          "description": "Number of configured URL patterns",
+          "type": "integer",
+          "format": "int64",
+          "example": 3
+        },
+        "url_patterns": {
+          "description": "Current URL patterns",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PIIURLPattern"
+          }
+        }
+      }
+    },
+    "PIIURLPattern": {
+      "type": "object",
+      "required": [
+        "pattern"
+      ],
+      "properties": {
+        "is_exclude": {
+          "description": "Exclude pattern (true) or include pattern (false)",
+          "type": "boolean",
+          "example": false
+        },
+        "pattern": {
+          "description": "URL pattern with wildcards (e.g., /v1/chat/*, /api/*)",
+          "type": "string",
+          "example": "/v1/chat/*"
+        }
+      }
+    },
+    "PIIURLPatternsEntry": {
+      "type": "object",
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "description": "Pattern update mode (add, replace, clear)",
+          "type": "string",
+          "enum": [
+            "add",
+            "replace",
+            "clear"
+          ],
+          "example": "replace"
+        },
+        "patterns": {
+          "description": "List of URL patterns (max 64)",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PIIURLPattern"
+          }
+        }
+      }
+    },
+    "PersistResult": {
+      "description": "Result of POST /config/persist.",
+      "type": "object",
+      "properties": {
+        "checksum": {
+          "description": "SHA-256 checksum of the persisted snapshot document.",
+          "type": "string"
+        },
+        "path": {
+          "description": "On-disk path of the persisted snapshot (config-path/snapshot.json).",
+          "type": "string"
+        },
+        "result": {
+          "description": "Always \"ok\" on 200.",
+          "type": "string"
         }
       }
     },
@@ -16731,6 +31503,67 @@ func init() {
         }
       }
     },
+    "RestorePlanItem": {
+      "description": "Per-domain apply/delete counts computed by the restore PLAN stage.",
+      "type": "object",
+      "properties": {
+        "domain": {
+          "type": "string"
+        },
+        "to_apply": {
+          "type": "integer"
+        },
+        "to_delete": {
+          "type": "integer"
+        }
+      }
+    },
+    "RestoreResult": {
+      "description": "Result of POST /config/restore (both dry-run and commit modes).",
+      "type": "object",
+      "properties": {
+        "compatible": {
+          "type": "boolean"
+        },
+        "current_gateway_version": {
+          "type": "string"
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "dry-run",
+            "commit",
+            "boot"
+          ]
+        },
+        "plan": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RestorePlanItem"
+          }
+        },
+        "pre_restore_snapshot_persisted": {
+          "description": "On-disk path of the pre-restore snapshot captured before APPLY (commit mode only).",
+          "type": "string"
+        },
+        "result": {
+          "description": "ok, rolled-back, or ROLLBACK-FAILED; empty when the pipeline stopped before APPLY.",
+          "type": "string"
+        },
+        "schema_version": {
+          "type": "string"
+        },
+        "snapshot_gateway_version": {
+          "type": "string"
+        }
+      }
+    },
     "RouteEntry": {
       "type": "object",
       "required": [
@@ -16811,6 +31644,185 @@ func init() {
         "packets": {
           "description": "Statistic of the egress port bytes.",
           "type": "integer"
+        }
+      }
+    },
+    "SNICertificateEntry": {
+      "type": "object",
+      "required": [
+        "hostname"
+      ],
+      "properties": {
+        "certPath": {
+          "description": "Optional certificate directory path (defaults to /opt/loxilb/cert/{hostname}). Directory must contain server.crt, server.key, and optionally rootCA.crt for mTLS.",
+          "type": "string"
+        },
+        "hostname": {
+          "description": "Hostname for SNI certificate (e.g., api.example.com). This certificate will be automatically used by all loadbalancer rules that have matching 'host' field.",
+          "type": "string"
+        }
+      }
+    },
+    "SecurityRateConfigMod": {
+      "type": "object",
+      "required": [
+        "synEnabled",
+        "synThreshold",
+        "cookieThreshold",
+        "connRateEnabled",
+        "ratePerSec",
+        "udpEnabled",
+        "udpPktThreshold",
+        "udpBandwidthMB"
+      ],
+      "properties": {
+        "connRateEnabled": {
+          "description": "Enable/disable connection rate limiting (P0-6)",
+          "type": "boolean"
+        },
+        "cookieThreshold": {
+          "description": "Enable SYN cookies above this rate (must be \u003c synThreshold)",
+          "type": "integer",
+          "format": "int64",
+          "default": 50
+        },
+        "ratePerSec": {
+          "description": "Maximum new connections per second per IP",
+          "type": "integer",
+          "format": "int64",
+          "default": 50
+        },
+        "synEnabled": {
+          "description": "Enable/disable SYN flood protection (P0-5)",
+          "type": "boolean"
+        },
+        "synThreshold": {
+          "description": "Maximum SYNs per second per IP (hard drop threshold)",
+          "type": "integer",
+          "format": "int64",
+          "default": 100
+        },
+        "udpBandwidthMB": {
+          "description": "Maximum UDP bandwidth in MB per second per IP",
+          "type": "integer",
+          "format": "int64",
+          "default": 100
+        },
+        "udpEnabled": {
+          "description": "Enable/disable UDP flood protection (P0-7)",
+          "type": "boolean"
+        },
+        "udpPktThreshold": {
+          "description": "Maximum UDP packets per second per IP",
+          "type": "integer",
+          "format": "int64",
+          "default": 1000
+        },
+        "whitelistIps": {
+          "description": "IP addresses to bypass all rate limiting",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "SecurityRateEntry": {
+      "type": "object",
+      "properties": {
+        "connBlocked": {
+          "description": "Connections blocked by rate limit (read-only)",
+          "type": "integer",
+          "format": "int64"
+        },
+        "connPassed": {
+          "description": "Connections passed (read-only)",
+          "type": "integer",
+          "format": "int64"
+        },
+        "connRateEnabled": {
+          "description": "Whether connection rate limiting is enabled",
+          "type": "boolean"
+        },
+        "cookieThreshold": {
+          "description": "SYN cookie activation threshold",
+          "type": "integer",
+          "format": "int64"
+        },
+        "ratePerSec": {
+          "description": "Maximum new connections per second per IP",
+          "type": "integer",
+          "format": "int64"
+        },
+        "synBlocked": {
+          "description": "SYN packets blocked (read-only)",
+          "type": "integer",
+          "format": "int64"
+        },
+        "synCookies": {
+          "description": "SYN cookie activations (read-only)",
+          "type": "integer",
+          "format": "int64"
+        },
+        "synEnabled": {
+          "description": "Whether SYN flood protection is enabled",
+          "type": "boolean"
+        },
+        "synPassed": {
+          "description": "SYN packets passed (read-only)",
+          "type": "integer",
+          "format": "int64"
+        },
+        "synThreshold": {
+          "description": "Maximum SYNs per second per IP",
+          "type": "integer",
+          "format": "int64"
+        },
+        "udpBandwidthMB": {
+          "description": "Maximum UDP bandwidth in MB per second per IP",
+          "type": "integer",
+          "format": "int64"
+        },
+        "udpBlocked": {
+          "description": "UDP packets blocked (read-only)",
+          "type": "integer",
+          "format": "int64"
+        },
+        "udpBytesBlocked": {
+          "description": "UDP bytes blocked (read-only)",
+          "type": "integer",
+          "format": "int64"
+        },
+        "udpBytesPassed": {
+          "description": "UDP bytes passed (read-only)",
+          "type": "integer",
+          "format": "int64"
+        },
+        "udpEnabled": {
+          "description": "Whether UDP flood protection is enabled",
+          "type": "boolean"
+        },
+        "udpPassed": {
+          "description": "UDP packets passed (read-only)",
+          "type": "integer",
+          "format": "int64"
+        },
+        "udpPktThreshold": {
+          "description": "Maximum UDP packets per second per IP",
+          "type": "integer",
+          "format": "int64"
+        },
+        "uniqueIps": {
+          "description": "Number of unique source IPs tracked (read-only)",
+          "type": "integer",
+          "format": "int64"
+        },
+        "whitelistIps": {
+          "description": "Whitelisted IPs",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
@@ -16942,6 +31954,178 @@ func init() {
       "properties": {
         "message": {
           "type": "string"
+        }
+      }
+    },
+    "TenantRateLimitEntry": {
+      "type": "object",
+      "required": [
+        "tenant_id"
+      ],
+      "properties": {
+        "rps": {
+          "description": "Maximum requests per second for the tenant",
+          "type": "integer",
+          "format": "int64"
+        },
+        "tenant_id": {
+          "description": "Tenant identifier",
+          "type": "string"
+        },
+        "tokens_per_min": {
+          "description": "Maximum LLM tokens per minute for the tenant",
+          "type": "integer",
+          "format": "int64"
+        },
+        "updated_at": {
+          "description": "Timestamp of the last rate limit update",
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "TenantRateLimitMod": {
+      "type": "object",
+      "required": [
+        "tenant_id"
+      ],
+      "properties": {
+        "rps": {
+          "description": "Maximum requests per second for the tenant",
+          "type": "integer",
+          "format": "int64"
+        },
+        "tenant_id": {
+          "description": "Tenant identifier",
+          "type": "string"
+        },
+        "tokens_per_min": {
+          "description": "Maximum LLM tokens per minute for the tenant",
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
+    "TraceCatalogEntry": {
+      "type": "object",
+      "required": [
+        "name",
+        "parser_type",
+        "sample_rate",
+        "enabled"
+      ],
+      "properties": {
+        "description": {
+          "description": "Human-readable description",
+          "type": "string",
+          "example": "OpenAI API tracing catalog"
+        },
+        "enabled": {
+          "description": "Whether this catalog is currently active",
+          "type": "boolean",
+          "example": true
+        },
+        "max_body_size": {
+          "description": "Maximum request/response body size to capture (bytes, 0=unlimited)",
+          "type": "integer",
+          "format": "int32",
+          "minimum": 0,
+          "example": 65536
+        },
+        "name": {
+          "description": "Catalog name (from YAML filename without .yaml extension)",
+          "type": "string",
+          "example": "openai"
+        },
+        "parser_type": {
+          "description": "Parser assigned to this catalog",
+          "type": "string",
+          "example": "openai"
+        },
+        "sample_rate": {
+          "description": "Percentage of requests to trace (0-100)",
+          "type": "integer",
+          "format": "int32",
+          "maximum": 100,
+          "minimum": 0,
+          "example": 100
+        },
+        "version": {
+          "description": "Catalog version for compatibility",
+          "type": "string",
+          "example": "1.0"
+        }
+      }
+    },
+    "TraceParserInfo": {
+      "type": "object",
+      "required": [
+        "name",
+        "version",
+        "protocol"
+      ],
+      "properties": {
+        "capabilities": {
+          "description": "Supported features",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "example": [
+            "streaming",
+            "cost_estimation",
+            "tool_calls"
+          ]
+        },
+        "description": {
+          "description": "Human-readable description",
+          "type": "string",
+          "example": "Parses OpenAI API requests including GPT models, token usage, and streaming responses"
+        },
+        "name": {
+          "description": "Parser identifier (e.g., \"openai\", \"mcp\", \"mock\")",
+          "type": "string",
+          "example": "openai"
+        },
+        "protocol": {
+          "description": "Protocol handled by parser",
+          "type": "string",
+          "example": "OpenAI API v1"
+        },
+        "supported_paths": {
+          "description": "URL paths this parser handles",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "example": [
+            "/v1/chat/completions",
+            "/v1/completions",
+            "/v1/embeddings"
+          ]
+        },
+        "version": {
+          "description": "Parser version",
+          "type": "string",
+          "example": "1.0.0"
+        }
+      }
+    },
+    "TraceParserUpdate": {
+      "type": "object",
+      "required": [
+        "parser_name"
+      ],
+      "properties": {
+        "parser_name": {
+          "description": "Parser to assign to catalog (must match registered parser name)",
+          "type": "string",
+          "enum": [
+            "openai",
+            "mcp",
+            "mock"
+          ],
+          "example": "openai"
         }
       }
     },
@@ -17124,6 +32308,83 @@ func init() {
       "properties": {
         "peerIP": {
           "type": "string"
+        }
+      }
+    },
+    "WorkerMetricsEntry": {
+      "type": "object",
+      "required": [
+        "endpoint_ip",
+        "queued_requests",
+        "kv_cache_usage_perc"
+      ],
+      "properties": {
+        "endpoint_ip": {
+          "description": "Worker endpoint IP:port (e.g., \"192.168.1.10:8000\")",
+          "type": "string"
+        },
+        "kv_cache_usage_perc": {
+          "description": "vllm:gpu_cache_usage_perc * 100 (0-100 scale)",
+          "type": "integer",
+          "maximum": 100,
+          "minimum": 0
+        },
+        "num_gpu_blocks": {
+          "description": "Static config from vllm:cache_config_info{num_gpu_blocks}",
+          "type": "integer",
+          "minimum": 0
+        },
+        "queued_requests": {
+          "description": "vllm:num_requests_running + vllm:num_requests_waiting (total queue depth)",
+          "type": "integer",
+          "minimum": 0
+        },
+        "swapped_requests": {
+          "description": "Delta of vllm:num_preemptions_total since last update",
+          "type": "integer",
+          "minimum": 0
+        },
+        "timestamp": {
+          "description": "Timestamp of metrics collection",
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "WorkerMetricsResponse": {
+      "type": "object",
+      "properties": {
+        "monitoring_enabled": {
+          "description": "Whether GPU monitoring is enabled",
+          "type": "boolean"
+        },
+        "workers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/WorkerMetricsEntry"
+          }
+        }
+      }
+    },
+    "WorkerMetricsUpdateResponse": {
+      "type": "object",
+      "required": [
+        "endpoint_ip",
+        "queued_requests",
+        "message"
+      ],
+      "properties": {
+        "endpoint_ip": {
+          "description": "Worker endpoint that was updated",
+          "type": "string"
+        },
+        "message": {
+          "description": "Status message",
+          "type": "string"
+        },
+        "queued_requests": {
+          "description": "Number of queued requests (for confirmation)",
+          "type": "integer"
         }
       }
     }

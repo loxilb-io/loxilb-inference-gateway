@@ -50,6 +50,14 @@ type DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortPor
 	  In: path
 	*/
 	IPAddress string
+	/*Path matching mode (disabled, prefix, exact) for selective deletion
+	  In: query
+	*/
+	PathMatchMode *string
+	/*URL path prefix to match for deletion (allows selective deletion of path-based rules)
+	  In: query
+	*/
+	PathPrefix *string
 	/*Attributes for load balance service
 	  Required: true
 	  In: path
@@ -95,6 +103,16 @@ func (o *DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPor
 
 	rIPAddress, rhkIPAddress, _ := route.Params.GetOK("ip_address")
 	if err := o.bindIPAddress(rIPAddress, rhkIPAddress, route.Formats); err != nil {
+		res = append(res, err)
+	}
+
+	qPathMatchMode, qhkPathMatchMode, _ := qs.GetOK("path_match_mode")
+	if err := o.bindPathMatchMode(qPathMatchMode, qhkPathMatchMode, route.Formats); err != nil {
+		res = append(res, err)
+	}
+
+	qPathPrefix, qhkPathPrefix, _ := qs.GetOK("path_prefix")
+	if err := o.bindPathPrefix(qPathPrefix, qhkPathPrefix, route.Formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -188,6 +206,42 @@ func (o *DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPor
 	// Required: true
 	// Parameter is provided by construction from the route
 	o.IPAddress = raw
+
+	return nil
+}
+
+// bindPathMatchMode binds and validates parameter PathMatchMode from query.
+func (o *DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortPortmaxPortmaxProtocolProtoParams) bindPathMatchMode(rawData []string, hasKey bool, formats strfmt.Registry) error {
+	var raw string
+	if len(rawData) > 0 {
+		raw = rawData[len(rawData)-1]
+	}
+
+	// Required: false
+	// AllowEmptyValue: false
+
+	if raw == "" { // empty values pass all other validations
+		return nil
+	}
+	o.PathMatchMode = &raw
+
+	return nil
+}
+
+// bindPathPrefix binds and validates parameter PathPrefix from query.
+func (o *DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortPortmaxPortmaxProtocolProtoParams) bindPathPrefix(rawData []string, hasKey bool, formats strfmt.Registry) error {
+	var raw string
+	if len(rawData) > 0 {
+		raw = rawData[len(rawData)-1]
+	}
+
+	// Required: false
+	// AllowEmptyValue: false
+
+	if raw == "" { // empty values pass all other validations
+		return nil
+	}
+	o.PathPrefix = &raw
 
 	return nil
 }

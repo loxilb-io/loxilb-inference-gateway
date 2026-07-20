@@ -29,13 +29,21 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+// promHandler is constructed once: promhttp.Handler() instruments itself on
+// every call, so building it per scrape would leak allocations
+var promHandler = promhttp.Handler()
+
 func ConfigGetPrometheusCounter(params operations.GetMetricsParams, principal interface{}) middleware.Responder {
 	tk.LogIt(tk.LogTrace, "api: Prometheus %s API called. url : %s\n", params.HTTPRequest.Method, params.HTTPRequest.URL)
 	if !options.Opts.Prometheus {
-		return operations.NewGetMetricsOK().WithPayload("Prometheus option is disabled.")
+		// 503 keeps scrapers reporting a clean "down" state instead of a
+		// 200 with a body that is invalid exposition format
+		return CustomResponder(func(w http.ResponseWriter, _ runtime.Producer) {
+			http.Error(w, "Prometheus option is disabled.", http.StatusServiceUnavailable)
+		})
 	}
 	return CustomResponder(func(w http.ResponseWriter, _ runtime.Producer) {
-		promhttp.Handler().ServeHTTP(w, params.HTTPRequest)
+		promHandler.ServeHTTP(w, params.HTTPRequest)
 	})
 }
 

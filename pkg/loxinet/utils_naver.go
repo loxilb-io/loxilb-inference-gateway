@@ -104,7 +104,10 @@ func (n *NcloudClient) NcloudCreatePrivateIp(ni string, vIP net.IP) error {
 	}
 
 	if checkReturn.AssignSecondaryIpsResponse.ReturnMessage != "success" {
-		return fmt.Errorf(string(respBody))
+		// -A Rule 3 fix: `go vet` (run automatically by `go test`) flags
+		// fmt.Errorf with a non-constant format string. Use "%s" wrapper to
+		// preserve original behaviour while quieting the vet check.
+		return fmt.Errorf("%s", string(respBody))
 	}
 
 	return nil
@@ -142,7 +145,8 @@ func (n *NcloudClient) NcloudDeletePrivateIp(ni string, vIP net.IP) error {
 	}
 
 	if checkReturn.UnassignSecondaryIpsResponse.ReturnMessage != "success" {
-		return fmt.Errorf(string(respBody))
+		// -A Rule 3 fix: same as above — vet requires constant format string.
+		return fmt.Errorf("%s", string(respBody))
 	}
 
 	return nil

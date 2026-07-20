@@ -21,14 +21,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	tk "github.com/loxilb-io/loxilib"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"io"
 	"net"
 	"net/http"
 	"net/rpc"
+	"strconv"
 	"time"
+
+	tk "github.com/loxilb-io/loxilib"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 type netRPCClient struct {
@@ -38,6 +40,15 @@ type netRPCClient struct {
 type gRPCClient struct {
 	conn    *grpc.ClientConn
 	xclient XSyncClient
+}
+
+// XSyncClient returns the underlying XSyncClient. / CR-02
+// per-peer consumer goroutine needs to invoke SockproxySessionMod on the
+// peer's gRPC client; the DpPeer.Client field is interface{} typed and
+// this method provides a structural-typed accessor without forcing the
+// loxinet package to import gRPC internals.
+func (g gRPCClient) XSyncClient() XSyncClient {
+	return g.xclient
 }
 
 // dialHTTPPath connects to an HTTP RPC server
@@ -71,8 +82,29 @@ func dialHTTPPath(network, address, path string) (*rpc.Client, error) {
 	}
 }
 
+// DialXSyncGRPC opens a fresh gRPC connection to peerIP:SockproxyXSyncPort (22223)
+// and returns the XSyncClient stub. The sockproxy xSync consumerLoop uses this
+// dedicated port so that it speaks gRPC/HTTP2 independently of the CT-sync
+// net/rpc path on XSyncPort (22222).
+// Fix: changed from XSyncPort (22222, net/rpc HTTP/1.1) to
+// SockproxyXSyncPort (22223, gRPC HTTP/2) so the protocol matches the server.
+func DialXSyncGRPC(peerIP string) (XSyncClient, error) {
+	cStr := net.JoinHostPort(peerIP, strconv.Itoa(SockproxyXSyncPort))
+	if _, err := net.DialTimeout("tcp", cStr, 2*time.Second); err != nil {
+		return nil, fmt.Errorf("TCP probe %s: %w", cStr, err)
+	}
+	var opts []grpc.DialOption
+	opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.Dial(cStr, opts...)
+	if conn == nil || err != nil {
+		return nil, fmt.Errorf("gRPC dial %s: %w", cStr, err)
+	}
+	tk.LogIt(tk.LogInfo, "XSync gRPC sockproxy - %s :Connected\n", cStr)
+	return NewXSyncClient(conn), nil
+}
+
 func netRPCConnect(pe *DpPeer) int {
-	cStr := fmt.Sprintf("%s:%d", pe.Peer.String(), XSyncPort)
+	cStr := net.JoinHostPort(pe.Peer.String(), strconv.Itoa(XSyncPort))
 	client, err := dialHTTPPath("tcp", cStr, rpc.DefaultRPCPath)
 	if client == nil || err != nil {
 		tk.LogIt(tk.LogInfo, "XSync netRPC Connect - %s :Fail(%s)\n", cStr, err)
@@ -89,7 +121,7 @@ func (*netRPCClient) RPCConnect(pe *DpPeer) int {
 }
 
 func (*netRPCClient) RPCReset(pe *DpPeer) int {
-	cStr := fmt.Sprintf("%s:%d", pe.Peer.String(), XSyncPort)
+	cStr := net.JoinHostPort(pe.Peer.String(), strconv.Itoa(XSyncPort))
 	client, ok := pe.Client.(*rpc.Client)
 	if ok && client != nil {
 		client.Close()
@@ -137,7 +169,7 @@ func gRPCConnect(pe *DpPeer) int {
 	var err error
 	var opts []grpc.DialOption
 	var cinfo gRPCClient
-	cStr := fmt.Sprintf("%s:%d", pe.Peer.String(), XSyncPort)
+	cStr := net.JoinHostPort(pe.Peer.String(), strconv.Itoa(XSyncPort))
 
 	timeOut := 2 * time.Second
 
@@ -166,7 +198,7 @@ func (*gRPCClient) RPCConnect(pe *DpPeer) int {
 }
 
 func (*gRPCClient) RPCReset(pe *DpPeer) int {
-	cStr := fmt.Sprintf("%s:%d", pe.Peer.String(), XSyncPort)
+	cStr := net.JoinHostPort(pe.Peer.String(), strconv.Itoa(XSyncPort))
 	client, ok := pe.Client.(gRPCClient)
 	if ok {
 		client.conn.Close()
@@ -243,6 +275,34 @@ func callGRPC(client XSyncClient, rpcCallStr string, args interface{}, reply *in
 		xreply, err = client.DpWorkOnCtModGRPC(ctx, &CtInfoMod{Add: false, Ct: ct})
 	} else if rpcCallStr == "XSync.DpWorkOnCtGet" {
 		xreply, err = client.DpWorkOnCtGetGRPC(ctx, &ConnGet{Async: args.(int32)})
+	} else if rpcCallStr == "XSync.SockproxySessionMod" {
+		// stub dispatch — coordinator (sockproxy_sync.go) owns the
+		// real per-peer path. Accepts a pre-built *SockproxySessionModReq;
+		// callers that don't pass one (e.g. legacy DpXsyncRPC funnel) get
+		// an "not-implemented-yet" error so the path stays observable.
+		if msg, ok := args.(*SockproxySessionModReq); ok {
+			xreply, err = client.SockproxySessionMod(ctx, msg)
+		} else {
+			err = errors.New("not-implemented-yet")
+		}
+	} else if rpcCallStr == "XSync.SockproxySessionBulkGet" {
+		if msg, ok := args.(*SockproxyBulkReq); ok {
+			_, err = client.SockproxySessionBulkGet(ctx, msg)
+		} else {
+			err = errors.New("not-implemented-yet")
+		}
+	} else if rpcCallStr == "XSync.RateLimiterSync" {
+		if msg, ok := args.(*RateLimiterBatch); ok {
+			xreply, err = client.RateLimiterSync(ctx, msg)
+		} else {
+			err = errors.New("not-implemented-yet")
+		}
+	} else if rpcCallStr == "XSync.GetSockproxySnapshot" {
+		if msg, ok := args.(*SockproxyBulkReq); ok {
+			_, err = client.GetSockproxySnapshot(ctx, msg)
+		} else {
+			err = errors.New("not-implemented-yet")
+		}
 	}
 
 	if err != nil {

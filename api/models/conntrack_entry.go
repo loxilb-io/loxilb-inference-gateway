@@ -17,6 +17,9 @@ import (
 // swagger:model ConntrackEntry
 type ConntrackEntry struct {
 
+	// DOCA detail: age of this conntrack/offload flow in milliseconds (age-query estimate; 0 when unavailable). Declared so a `swagger generate server` reproduces the hand-maintained DOCA age field instead of clobbering it. Additive/optional.
+	AgeMs uint64 `json:"ageMs,omitempty"`
+
 	// Packet bytes of the conntrack
 	Bytes int64 `json:"bytes,omitempty"`
 
@@ -32,8 +35,17 @@ type ConntrackEntry struct {
 	// port number for the access
 	DestinationPort int64 `json:"destinationPort,omitempty"`
 
+	// Byte count served by the HW fast-path for this flow
+	HwBytes uint64 `json:"hw_bytes,omitempty"`
+
+	// Packet count served by the HW fast-path for this flow
+	HwPkts uint64 `json:"hw_pkts,omitempty"`
+
 	// value for Conntrack ident
 	Ident string `json:"ident,omitempty"`
+
+	// HW offload state of the conntrack flow ("none", "hw"). Absent when none.
+	OffloadState string `json:"offload_state,omitempty"`
 
 	// Packet counts of the conntrack
 	Packets int64 `json:"packets,omitempty"`

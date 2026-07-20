@@ -40,7 +40,22 @@ const (
 	MapNameULCL = "ULCL"
 	MapNameIpol = "IPOL"
 	MapNameFw4  = "FW4"
+	// MapNameNatEp - Octavia : the per-rule NAT endpoint-actions map (nat_ep_map), keyed by
+	// rule mark (ruleNum). A DpMapGet on this name returns map[uint32]*NatEpStats carrying the
+	// datapath-maintained CUMULATIVE statistics the /stats endpoint needs.
+	MapNameNatEp = "NATEP"
 )
+
+// NatEpStats - Octavia : per-rule statistics read straight from the data-plane nat_ep_map
+// (struct dp_nat_epacts). ActiveConns is a live gauge (conc_conns); TotalConns/BytesIn/BytesOut are
+// CUMULATIVE totals the datapath maintains on every CT create/teardown, so they capture short-lived
+// flows the control-plane live-CT walk would miss between RulesSync ticks.
+type NatEpStats struct {
+	ActiveConns uint64 // live concurrent connections (conc_conns)
+	TotalConns  uint64 // cumulative connections ever (total_conns, ++ on CT-create)
+	BytesIn     uint64 // cumulative client->VIP request bytes (cum_bytes_in)
+	BytesOut    uint64 // cumulative VIP->client response bytes (cum_bytes_out)
+}
 
 // error codes
 const (
@@ -86,9 +101,10 @@ const (
 
 // maximum dp work queue lengths
 const (
-	DpWorkQLen = 1024
-	XSyncPort  = 22222
-	DpTiVal    = 20
+	DpWorkQLen         = 1024
+	XSyncPort          = 22222
+	SockproxyXSyncPort = 22223 // dedicated gRPC port for sockproxy session sync
+	DpTiVal            = 20
 )
 
 // MirrDpWorkQ - work queue entry for mirror operation
@@ -199,16 +215,21 @@ type TableDpWorkQ struct {
 
 // PolDpWorkQ - work queue entry for policer related operation
 type PolDpWorkQ struct {
-	Work   DpWorkT
-	Name   string
-	Mark   int
-	Cir    uint64
-	Pir    uint64
-	Cbs    uint64
-	Ebs    uint64
-	Color  bool
-	Srt    bool
-	Status *DpStatusT
+	Work         DpWorkT
+	Name         string
+	Mark         int
+	Cir          uint64
+	Pir          uint64
+	Cbs          uint64
+	Ebs          uint64
+	Color        bool
+	Srt          bool
+	Status       *DpStatusT
+	DscpRemark   uint8  // DSCP remark value for YELLOW traffic (if HW supports it)
+	TargetLBMark int    // target LB rule's HwNum for policer-to-LB association
+	MeterDstIP   uint32 // meter pipe match dst IP (network byte order)
+	MeterDstPort uint16 // meter pipe match dst port (network byte order)
+	MeterProto   uint8  // meter pipe match protocol (6=TCP, 17=UDP, 0=any)
 }
 
 // PeerDpWorkQ - work queue entry for peer association
@@ -249,6 +270,32 @@ type FwDpWorkQ struct {
 	FwVal2   uint32
 	FwRecord bool
 	OnDflt   bool
+	// HwOffload - mirror of FwRuleArg.HwOffload. When
+	// true, the data-path side (DpDocaBf2.FwRuleAdd) installs this rule
+	// into the DOCA DENY_PIPE / ALLOW_PIPE in addition to the eBPF
+	// firewall map. Default false → eBPF-only behaviour (unchanged from
+	// stub posture).
+	HwOffload bool
+}
+
+// IPFilterType - type of IP filter (whitelist or blacklist)
+type IPFilterType uint8
+
+// IP filter type constants
+const (
+	IPFilterWhitelist IPFilterType = iota
+	IPFilterBlacklist
+)
+
+// IPFilterDpWorkQ - work queue entry for IP filter related operation
+type IPFilterDpWorkQ struct {
+	Work       DpWorkT
+	Status     *DpStatusT
+	FilterType IPFilterType // Whitelist or Blacklist
+	IPNet      net.IPNet    // CIDR block (e.g., 192.168.1.0/24)
+	Zone       uint8        // Security zone (0 = all zones)
+	Priority   uint16       // Rule priority (higher = more important)
+	Action     uint8        // 0 = allow, 1 = drop
 }
 
 // NatT - type of NAT
@@ -277,6 +324,10 @@ const (
 	EpLeastConn
 	EpN2
 	EpN3
+	_ // 7 - reserved (was QUIC LB)
+	EpCHWBL
+	EpGPUAware
+	EpWRRHash // P3.5: Weighted Consistent Hash + Bounded Loads
 )
 
 // NatEP - a nat end-point
@@ -286,6 +337,8 @@ type NatEP struct {
 	XPort    uint16
 	Weight   uint8
 	InActive bool
+	EpRole   int    // P/D endpoint role: 0=normal, 1=prefill, 2=decode
+	NixlPort uint16 // NIXL side-channel port (US-514); 0=use XPort
 }
 
 // SecT - type of SecT
@@ -299,26 +352,77 @@ const (
 
 // LBDpWorkQ - work queue entry for lb related operation
 type LBDpWorkQ struct {
-	Work      DpWorkT
-	Status    *DpStatusT
-	ZoneNum   int
-	ServiceIP net.IP
-	L4Port    uint16
-	BlockNum  uint32
-	DsrMode   bool
-	CsumDis   bool
-	SrcCheck  bool
-	Ppv2En    bool
-	SecMode   SecT
-	HostURL   string
-	Proto     uint8
-	Mark      int
-	NatType   NatT
-	EpSel     NatSel
-	InActTo   uint64
-	PersistTo uint64
-	endPoints []NatEP
-	secIP     []net.IP
+	Work                        DpWorkT
+	Status                      *DpStatusT
+	ZoneNum                     int
+	ServiceIP                   net.IP
+	L4Port                      uint16
+	BlockNum                    uint32
+	DsrMode                     bool
+	CsumDis                     bool
+	SrcCheck                    bool
+	Ppv2En                      bool
+	SecMode                     SecT
+	HostURL                     string
+	PathPrefix                  string                  // P6: URL path prefix for L7 routing
+	PathMatchMode               string                  // P6: Path matching mode (disabled, prefix, exact)
+	BackendProtocol             string                  // Backend protocol capability: "http1", "http2", or "both"
+	SessionHeaderName           string                  // Custom session header for persist mode (e.g., "mcp-session-id")
+	ModelName                   string                  // AI model name for pool selection (e.g. "llama-70b"); empty = wildcard
+	CatalogID                   uint16                  // Tracing catalog ID for deep inspection (0 = no tracing)
+	SSEMode                     bool                    // SSE (Server-Sent Events) mode: suppress idle-timeout during streaming
+	MaxStreamDurationSec        uint32                  // Absolute wall-clock cap for streaming connections in seconds (0=system hard cap)
+	BackendKeepaliveIntervalSec uint32                  // Sets SO_KEEPALIVE+TCP_KEEPIDLE on backend socket in seconds (0=disabled)
+	TimeoutMemberConnect        uint32                  // backend connect-poll deadline in ms (0=500ms default)
+	TimeoutMemberData           uint32                  // member-side relay idle deadline in ms (0=existing idle)
+	TimeoutTcpInspect           uint32                  // header-accumulation deadline in ms (0=bounded default)
+	PDDisaggMode                bool                    // P/D disaggregation mode: orchestrate prefill→decode flow
+	PDCacheAwareMode            bool                    // P/D cache-aware routing (US-PD801)
+	PDSessionTTLSec             uint32                  // Session stickiness TTL in seconds
+	PDCacheThreshold            uint8                   // Cache match threshold (0-100)
+	PDBalanceAbsThreshold       uint8                   // Load imbalance threshold
+	KvExactMode                 uint8                   // KV-cache exact routing: 0=off, 1=zmq
+	KvBlockSize                 uint32                  // Token block size for KV hash computation
+	KvHashAlgo                  string                  // "sha256_cbor" or "xxhash_cbor"
+	KvZmqPort                   uint16                  // ZMQ PUB port (default 5557)
+	KvWarmupSec                 uint32                  // Warmup seconds before Tier 1.5 activates
+	KvEngineType                string                  // KV-event engine: ""/"vllm" (default) or "sglang" (SGL-03)
+	KvDpRankCount               uint16                  // SGLang DP rank count (1..8, 0 ⇒ 1)
+	MTLSFrontend                *cmn.MTLSFrontendConfig // mTLS frontend configuration
+	MTLSBackend                 *cmn.MTLSBackendConfig  // mTLS backend configuration
+	// TLS-hardening scalars. All additive/default-off — empty/0
+	// preserves today's behaviour. Threaded into proxy_arg in DpLBRuleMod.
+	AlpnProtocols         []string // mapped to backend_protocol_cap on listener+pool
+	TlsCiphers            string   // inline OpenSSL cipher string → tls_ciphers[256]
+	TlsVersions           []string // collapsed to tls_version_min/max range
+	HstsMaxAge            uint32   // 0 ⇒ no HSTS injection
+	HstsIncludeSubdomains bool     // "; includeSubDomains"
+	HstsPreload           bool     // "; preload"
+	BackendCaCertId       string   // backend CA certId → backend_ca_cert_id
+	BackendClientCertId   string   // backend client certId → backend_client_cert_id
+	CHWBLPrefixHashLevel  int      // CHWBL prefix hash level: 1=model, 2=model+prompt, 3=full
+	CHWBLMeanLoadFactor   int      // CHWBL bounded load factor % (100-300, default 175)
+	CHWBLReplication      int      // CHWBL virtual nodes per endpoint (1-1024, default 256)
+	CHWBLPrefixHashFlags  int      // CHWBL optional field flags bitfield
+	Proto                 uint8
+	Mark                  int
+	NatType               NatT
+	EpSel                 NatSel
+	InActTo               uint64
+	PersistTo             uint64
+	ConnLimit             uint32 // Octavia per-service concurrent-connection ceiling; 0 = unlimited
+	endPoints             []NatEP
+	secIP                 []net.IP
+}
+
+// LBSessionResetWorkQ - Load balancer session reset work queue
+type LBSessionResetWorkQ struct {
+	Mark        int           // Load balancer rule mark identifier
+	EndpointIdx int           // Specific endpoint index (1 for selective reset)
+	ResetType   SessionResetT // Type of reset operation
+	Status      *DpStatusT    // Operation status pointer
+	// Selective reset support
+	EndpointMask []bool // Which endpoints to reset (true = reset, false = preserve)
 }
 
 // LBCtDpWorkQ - work queue entry for service-level CT/FC cleanup
@@ -336,16 +440,6 @@ const (
 	CtFlushRidMatchOrZero uint8 = iota
 	CtFlushRidZeroOnly
 )
-
-// LBSessionResetWorkQ - Load balancer session reset work queue
-type LBSessionResetWorkQ struct {
-	Mark        int           // Load balancer rule mark identifier
-	EndpointIdx int           // Specific endpoint index (-1 for selective reset)
-	ResetType   SessionResetT // Type of reset operation
-	Status      *DpStatusT    // Operation status pointer
-	// Selective reset support
-	EndpointMask []bool // Which endpoints to reset (true = reset, false = preserve)
-}
 
 // DpCtInfo - representation of a datapath conntrack information
 type DpCtInfo struct {
@@ -375,6 +469,24 @@ type DpCtInfo struct {
 	L4ServPortMax uint16 `json:"l4servprotomax"`
 	BlockNum      uint32 `json:"blocknum"`
 	RuleID        uint32 `json:"ruleid"`
+
+	// Dir - per-CT-entry direction (Octavia verdict (a)). loxilb allocates
+	// a SEPARATE CT entry for each direction of a flow: CT_DIR_IN (0) = forward = client->VIP
+	// request path; CT_DIR_OUT (1) = reverse = VIP->client response path. The DP CT collector
+	// surfaces ctd.dir here (previously the two directions were summed into one Bytes field and
+	// the direction discarded). The /stats rollup uses this to attribute per-entry bytes to
+	// bytes_in (CT_DIR_IN) vs bytes_out (CT_DIR_OUT) per rule WITHOUT a 50/50 heuristic and
+	// WITHOUT the direction-collapsed nat_stats_map. -1 = direction unknown/not populated.
+	Dir int `json:"dir"`
+
+	// NAT target fields for DOCA shadow offload
+	NatIP    net.IP `json:"natip"`    // NAT target IP (backend)
+	NatPort  uint16 `json:"natport"`  // NAT target port
+	NatFlags uint8  `json:"natflags"` // 0=none, 1=DNAT, 2=SNAT, 3=HDNAT, 4=HSNAT
+
+	// Extended NAT mode fields for multi-mode DOCA offload
+	NatRIP net.IP `json:"natrip"` // Reverse IP for One-Arm/FullNAT (src rewrite)
+	NatDsr bool   `json:"natdsr"` // DSR flag -- skip IP rewrite in DOCA
 }
 
 const (
@@ -427,11 +539,19 @@ type SockVIPDpWorkQ struct {
 type DpSyncOpT uint8
 
 // Sync Operation type codes
+//
+// APPENDS new opcodes after DpSyncBcast (DO NOT reorder existing
+// values — the wire interpretation downstream depends on the iota ordering).
 const (
 	DpSyncAdd DpSyncOpT = iota + 1
 	DpSyncDelete
 	DpSyncGet
 	DpSyncBcast
+	// sockproxy HA state sync opcodes (SPEC §Req 4).
+	DpSyncSockproxySession  // SockproxySessionMod (push)
+	DpSyncSockproxyBulkGet  // SockproxySessionBulkGet (chunked pull)
+	DpSyncRateLimiter       // RateLimiterSync (Phase B)
+	DpSyncSockproxySnapshot // GetSockproxySnapshot (chunked pull combined)
 )
 
 // Key - outputs a key string for given DpCtInfo pointer
@@ -478,8 +598,14 @@ type DpHookInterface interface {
 	DpLBRuleDel(*LBDpWorkQ) int
 	DpLBCtFlush(*LBCtDpWorkQ) int
 	DpLBSessionReset(*LBSessionResetWorkQ) int
+	DpLBEndpointHealthUpdate(svcIP net.IP, svcPort uint16, proto uint8, epIndex int, inactive bool) int
+	DpLBEndpointHostStateUpdate(svcIP net.IP, svcPort uint16, proto uint8, epIP net.IP, hostState string) int
+	DpLBSetCircuitBreaker(svcIP net.IP, svcPort uint16, proto uint8, enabled bool, failureThreshold uint32, openTimeoutSec uint32) int
 	DpFwRuleAdd(w *FwDpWorkQ) int
 	DpFwRuleDel(w *FwDpWorkQ) int
+	DpIPFilterAdd(w *IPFilterDpWorkQ) int
+	DpIPFilterDel(w *IPFilterDpWorkQ) int
+	DpIPFilterGet(filterType IPFilterType) ([]cmn.IPFilterEntry, error)
 	DpStat(*StatDpWorkQ) int
 	DpUlClAdd(w *UlClDpWorkQ) int
 	DpUlClDel(w *UlClDpWorkQ) int
@@ -493,6 +619,9 @@ type DpHookInterface interface {
 	DpGetLock()
 	DpRelLock()
 	DpEbpfUnInit()
+	GetOrAssignEndpointIndex(endpointIP string) (uint32, error)
+	UpdateEndpointToGPUIndexMap(epIP net.IP, epPort uint16, gpuIdx uint32) error
+	DeleteEndpointFromGPUIndexMap(epIP net.IP, epPort uint16) error
 }
 
 // DpPeer - Remote DP Peer information
@@ -500,6 +629,14 @@ type DpPeer struct {
 	Peer net.IP
 	//Client *rpc.Client
 	Client interface{}
+	// CapMask is the per-peer RPC-family capability bitmask.
+	// Bits start ALL-ONES on construction; the sockproxy coordinator clears
+	// a bit when it observes codes.Unimplemented from that peer for an RPC
+	// in the family, then logs WARN once per (peer, RPC-family).
+	// See pkg/loxinet/sockproxy_sync.go for the canonical bit constants
+	// (capSessionSync, capSessionBulkGet, capRateLimiterSync, capSockproxySnapshot).
+	// Default = 0xFFFFFFFF until the coordinator sees its first Unimplemented.
+	CapMask uint32
 }
 
 // DpH - datapath context container
@@ -599,6 +736,21 @@ func (dp *DpH) DpXsyncRPC(op DpSyncOpT, arg interface{}) int {
 			}
 		} else if op == DpSyncGet {
 			rpcCallStr = "XSync.DpWorkOnCtGet"
+		} else if op == DpSyncSockproxySession {
+			// the sockproxy coordinator (sockproxy_sync.go) maintains
+			// its own per-peer dispatch goroutines and does NOT funnel through
+			// DpXsyncRPC. These cases exist so callers that DO route through
+			// this orchestrator (e.g. future bulk-broadcast paths) have a
+			// well-known rpcCallStr; the client-side switch in callGRPC
+			// (xsync_client.go) recognises it and falls through to its
+			// gRPC-method invocation. Task A3 wires the real Args type.
+			rpcCallStr = "XSync.SockproxySessionMod"
+		} else if op == DpSyncSockproxyBulkGet {
+			rpcCallStr = "XSync.SockproxySessionBulkGet"
+		} else if op == DpSyncRateLimiter {
+			rpcCallStr = "XSync.RateLimiterSync"
+		} else if op == DpSyncSockproxySnapshot {
+			rpcCallStr = "XSync.GetSockproxySnapshot"
 		} else {
 			return -1
 		}
@@ -731,6 +883,9 @@ func (dp *DpH) DpWorkOnRoute(rtWq *RouteDpWorkQ) DpRetT {
 
 // DpWorkOnNatLb - routine  to work on a NAT lb work queue request
 func (dp *DpH) DpWorkOnNatLb(nWq *LBDpWorkQ) DpRetT {
+	// [CP-DEBUG] Stage 4: DpWorkOnNatLb entry - log work item
+	tk.LogIt(tk.LogInfo, "[CP-DEBUG] DpWorkOnNatLb: VIP=%s port=%d proto=%d work=%d eps=%d\n",
+		nWq.ServiceIP.String(), nWq.L4Port, nWq.Proto, nWq.Work, len(nWq.endPoints))
 	if nWq.Work == DpCreate {
 		return dp.DpHooks.DpLBRuleAdd(nWq)
 	} else if nWq.Work == DpRemove {
@@ -815,6 +970,9 @@ func (dp *DpH) DpWorkOnPeerOp(pWq *PeerDpWorkQ) DpRetT {
 			}
 		}
 		newPeer.Peer = pWq.PeerIP
+		// start with all RPC-family bits set; coordinator clears bits
+		// on codes.Unimplemented (per-peer graceful degrade, SPEC D1).
+		newPeer.CapMask = 0xFFFFFFFF
 		dp.Peers = append(dp.Peers, newPeer)
 		tk.LogIt(tk.LogInfo, "Added cluster-peer %s\n", newPeer.Peer.String())
 		return 0
@@ -952,4 +1110,90 @@ func (dp *DpH) DpMapGetCt4() []cmn.CtInfo {
 	dp.DpHooks.DpTableGC()
 
 	return CtInfoArr
+}
+
+// DpCtStatsRollup - Octavia : refresh each rule's in-memory statistics
+// (ruleEnt.activeConns / totalConns / bytesIn / bytesOut) from the data plane.
+//
+// Octavia's statistics quad must be CUMULATIVE: totalConnections and bytesIn/bytesOut count
+// everything the rule has ever served, not just what is live at this instant. A pure live-CT
+// walk cannot deliver that — a flow created and torn down between two RulesSync ticks is invisible
+// to the walk (10 short curls were once counted as 1). So the authoritative source for the
+// cumulative fields is the datapath itself: 74-02's per-rule nat_ep_map (struct dp_nat_epacts)
+// now carries total_conns (++ on CT-create) and cum_bytes_in/out (summed at CT-teardown), which
+// see every flow. This rollup reads those per rule and adds the live-CT walk only as an in-flight
+// refinement for bytes, so a long-lived connection's bytes show up before it closes.
+//
+//   - activeConns = conc_conns, the datapath live gauge — the SAME selector-agnostic count the
+//     connLimit gate enforces.
+//   - totalConns  = total_conns, datapath cumulative; never decremented.
+//
+// - bytesIn = cum_bytes_in (closed flows) + Σ live CT_DIR_IN bytes (in-flight) ((a)).
+//   - bytesOut = cum_bytes_out (closed flows) + Σ live CT_DIR_OUT bytes (in-flight).
+//
+// A live CT contributes to cum_bytes only at teardown, so summing the live walk on top of the
+// cumulative totals neither double-counts a closed flow nor misses an open one. Counters reset to
+// zero on restart / rule delete (datapath maps are recreated; the CP copy is in-memory).
+//
+// LOCKING: the sole caller chain is ZoneTicker -> RulesTicker -> RulesSync -> here, and
+// ZoneTicker already holds mh.mtx for the entire tick (zones.go ZoneTicker: mh.mtx.Lock).
+// mh.mtx is a plain (non-reentrant) sync.Mutex, so this function MUST NOT re-acquire it —
+// doing so self-deadlocks the ticker goroutine while it still holds mh.mtx, which then wedges
+// every mh.mtx writer (e.g. NetLbRuleAdd) and hangs all REST POSTs. The reset+refill below is
+// therefore already atomic against concurrent writers under the caller's lock.
+func (dp *DpH) DpCtStatsRollup() {
+	// NOTE: mh.mtx is already held by the ZoneTicker caller — do NOT lock it here (see LOCKING).
+
+	// Zero every rule's per-pass counters, then refill them from the datapath this pass. All four
+	// fields are recomputed each pass now (the cumulative ones live in the data plane, not in Go),
+	// so a rule whose last CT just tore down still reports its cumulative totals and a 0 active.
+	mh.zr.Rules.resetRuleLiveStats()
+
+	// Authoritative cumulative source: the per-rule nat_ep_map (datapath counters).
+	epTable := new(TableDpWorkQ)
+	epTable.Work = DpMapGet
+	epTable.Name = MapNameNatEp
+	if epRet, err := mh.dp.DpWorkOnTableOp(epTable); err == nil {
+		if epMap, ok := epRet.(map[uint32]*NatEpStats); ok {
+			for mark, st := range epMap {
+				rule := mh.zr.Rules.GetLBRuleByID(mark)
+				if rule == nil {
+					continue
+				}
+				rule.activeConns = st.ActiveConns
+				rule.totalConns = st.TotalConns
+				rule.bytesIn = st.BytesIn
+				rule.bytesOut = st.BytesOut
+			}
+		}
+	}
+
+	// In-flight refinement: add the bytes of currently-live CTs on top of the cumulative totals so
+	// long-lived connections report progress before they tear down (closed flows are already in
+	// cum_bytes_in/out; live ones are not yet, so there is no double count).
+	ctTable := new(TableDpWorkQ)
+	ctTable.Work = DpMapGet
+	ctTable.Name = MapNameCt4
+	ret, err := mh.dp.DpWorkOnTableOp(ctTable)
+	if err != nil {
+		return
+	}
+	ctMap, ok := ret.(map[string]*DpCtInfo)
+	if !ok {
+		return
+	}
+	for _, dCti := range ctMap {
+		rule := mh.zr.Rules.GetLBRuleByID(dCti.RuleID)
+		if rule == nil {
+			continue
+		}
+		switch dCti.Dir {
+		case 0: // CT_DIR_IN — forward, client->VIP request
+			rule.bytesIn += dCti.Bytes
+		case 1: // CT_DIR_OUT — reverse, VIP->client response
+			rule.bytesOut += dCti.Bytes
+		default:
+			// Unknown direction (proxy/aggregate) — no heuristic split, leave byte buckets.
+		}
+	}
 }

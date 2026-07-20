@@ -21,6 +21,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"errors"
+	"strings"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -37,8 +38,18 @@ const (
 	CacheCleanupInterval = 10 // 10 minutes
 )
 
+// DBTX is a minimal database operations interface satisfied by *sql.DB.
+// It allows UserService.DB to be replaced by a test double without
+// importing an external mock library.
+type DBTX interface {
+	Exec(query string, args ...any) (sql.Result, error)
+	Query(query string, args ...any) (*sql.Rows, error)
+	QueryRow(query string, args ...any) *sql.Row
+	Ping() error
+}
+
 type UserService struct {
-	DB    *sql.DB
+	DB    DBTX
 	Cache *cache.Cache
 }
 
@@ -230,6 +241,16 @@ func (s *UserService) Login(username, password string) (string, bool, error) {
 
 // Logout deletes the token from the cache and the database.
 func (s *UserService) Logout(tokenString string) error {
+	// Recover username from cache before deletion (for safe logging)
+	var username string
+	if val, found := s.Cache.Get(tokenString); found {
+		if combined, ok := val.(string); ok {
+			if parts := strings.SplitN(combined, "|", 2); len(parts) == 2 {
+				username = parts[0]
+			}
+		}
+	}
+
 	// Remove the token from the cache
 	s.Cache.Delete(tokenString)
 
@@ -241,7 +262,7 @@ func (s *UserService) Logout(tokenString string) error {
 			return err
 		}
 
-		tk.LogIt(tk.LogInfo, "User logged out and token deleted: %v\n", tokenString)
+		tk.LogIt(tk.LogInfo, "User logged out: %v\n", username)
 		return nil
 	}, db.MaxRetries, db.RetryDelay)
 }

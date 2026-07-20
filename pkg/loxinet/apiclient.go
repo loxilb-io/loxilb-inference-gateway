@@ -18,6 +18,8 @@ package loxinet
 
 import (
 	"errors"
+	"fmt"
+	"net"
 	"time"
 
 	cmn "github.com/loxilb-io/loxilb/common"
@@ -185,6 +187,14 @@ func (na *NetAPIStruct) NetAddrAdd(am *cmn.IPAddrMod) (int, error) {
 	defer mh.mtx.Unlock()
 
 	ret, err := mh.zr.L3.IfaAdd(am.Dev, am.IP)
+	// A4: keep SelfIPCache fresh on successful add. Both NLP
+	// (api/loxinlp/nlp.go calls hooks.NetAddrAdd) and REST flows reach
+	// here, so this single hook covers both event sources.
+	if err == nil {
+		if ipBE, ok := parseIPv4BEFromCIDR(am.IP); ok {
+			SelfIPCache.Add(ipBE)
+		}
+	}
 	return ret, err
 }
 
@@ -197,6 +207,14 @@ func (na *NetAPIStruct) NetAddrDel(am *cmn.IPAddrMod) (int, error) {
 	defer mh.mtx.Unlock()
 
 	ret, err := mh.zr.L3.IfaDelete(am.Dev, am.IP)
+	// A4: keep SelfIPCache fresh on successful delete (mirror
+	// of NetAddrAdd). Stale cache entries would cause resolveFlowMACs
+	// to return wrong MAC for an IP that has been removed.
+	if err == nil {
+		if ipBE, ok := parseIPv4BEFromCIDR(am.IP); ok {
+			SelfIPCache.Del(ipBE)
+		}
+	}
 	return ret, err
 }
 
@@ -344,7 +362,7 @@ func (na *NetAPIStruct) NetLbRuleAdd(lm *cmn.LbRuleMod) (int, error) {
 	mh.mtx.Lock()
 	defer mh.mtx.Unlock()
 	var ips []string
-	ret, err := mh.zr.Rules.AddLbRule(lm.Serv, lm.SecIPs[:], lm.SrcIPs[:], lm.Eps[:])
+	ret, err := mh.zr.Rules.AddLbRule(lm.Serv, lm.SecIPs[:], lm.SecVIPs[:], lm.SrcIPs[:], lm.Eps[:])
 	if err == nil && lm.Serv.Bgp {
 		if mh.bgp != nil {
 			ips = append(ips, lm.Serv.ServIP)
@@ -387,6 +405,61 @@ func (na *NetAPIStruct) NetLbRuleGet() ([]cmn.LbRuleMod, error) {
 	}
 	ret, err := mh.zr.Rules.GetLBRule()
 	return ret, err
+}
+
+// l7ProtoToNum maps a service protocol string to its IP protocol number
+// (matching the rest of the rules layer: tcp=6, udp=17, sctp=132). L7 content
+// routing is meaningful only over the stream protocols; unknown values default to
+// tcp (the only protocol the fullproxy L7 path serves today).
+func l7ProtoToNum(proto string) uint8 {
+	switch proto {
+	case "udp":
+		return 17
+	case "sctp":
+		return 132
+	default:
+		return 6 // tcp
+	}
+}
+
+// NetL7PolicyApply - attach an ordered L7 content-routing route array to the
+// running sockproxy rule fronting vip:port:proto. The route IR
+// reaches the eBPF userspace proxy via the SEPARATE DpProxyAttachL7Policy CGO call
+// (never inline on the 4096-byte proxy_arg). An empty route set detaches.
+func (na *NetAPIStruct) NetL7PolicyApply(vip string, port uint16, proto string, routes []cmn.L7RuleArg) (int, error) {
+	if na.BgpPeerMode {
+		return RuleErrBase, errors.New("running in bgp only mode")
+	}
+	ip := net.ParseIP(vip)
+	if ip == nil {
+		return RuleErrBase, fmt.Errorf("l7policy: invalid VIP %q", vip)
+	}
+	if mh.dpEbpf == nil {
+		return RuleErrBase, errors.New("l7policy: ebpf datapath not initialized")
+	}
+	if ret := DpProxyAttachL7Policy(ip, port, l7ProtoToNum(proto), routes); ret != 0 {
+		return RuleErrBase, fmt.Errorf("l7policy: attach failed for %s:%d (bad regex or no such service)", vip, port)
+	}
+	return 0, nil
+}
+
+// NetL7PolicyRemove - detach any L7 policy from the vip:port:proto sockproxy rule
+// (regfrees every compiled REGEX program on the C side).
+func (na *NetAPIStruct) NetL7PolicyRemove(vip string, port uint16, proto string) (int, error) {
+	if na.BgpPeerMode {
+		return RuleErrBase, errors.New("running in bgp only mode")
+	}
+	ip := net.ParseIP(vip)
+	if ip == nil {
+		return RuleErrBase, fmt.Errorf("l7policy: invalid VIP %q", vip)
+	}
+	if mh.dpEbpf == nil {
+		return RuleErrBase, errors.New("l7policy: ebpf datapath not initialized")
+	}
+	if ret := DpProxyDetachL7Policy(ip, port, l7ProtoToNum(proto)); ret != 0 {
+		return RuleErrBase, fmt.Errorf("l7policy: detach failed for %s:%d", vip, port)
+	}
+	return 0, nil
 }
 
 // NetCtInfoGet - Get connection track info from loxinet
@@ -599,11 +672,320 @@ func (na *NetAPIStruct) NetFwRuleDel(fm *cmn.FwRuleMod) (int, error) {
 	return ret, err
 }
 
+// NetIPFilterAdd - Add an IP filter rule (whitelist/blacklist) in loxinet
+func (na *NetAPIStruct) NetIPFilterAdd(fm *cmn.IPFilterMod) (int, error) {
+	if na.BgpPeerMode {
+		return -1, errors.New("running in bgp only mode")
+	}
+
+	// Validate filter type
+	var filterType IPFilterType
+	if fm.FilterType == "whitelist" {
+		filterType = IPFilterWhitelist
+	} else if fm.FilterType == "blacklist" {
+		filterType = IPFilterBlacklist
+	} else {
+		return -1, errors.New("invalid filter_type: must be 'whitelist' or 'blacklist'")
+	}
+
+	// Parse CIDR
+	_, ipNet, err := net.ParseCIDR(fm.CIDR)
+	if err != nil {
+		return -1, fmt.Errorf("invalid CIDR: %v", err)
+	}
+
+	// Validate action
+	var action uint8
+	if fm.Action == "allow" {
+		action = 0
+	} else if fm.Action == "drop" {
+		action = 1
+	} else {
+		return -1, errors.New("invalid action: must be 'allow' or 'drop'")
+	}
+
+	// Create work queue entry
+	var status DpStatusT
+	wq := IPFilterDpWorkQ{
+		Work:       DpCreate,
+		Status:     &status,
+		FilterType: filterType,
+		IPNet:      *ipNet,
+		Zone:       fm.Zone,
+		Priority:   fm.Priority,
+		Action:     action,
+	}
+
+	// Submit to datapath
+	ret := mh.dp.DpHooks.DpIPFilterAdd(&wq)
+	if ret != 0 {
+		return ret, errors.New("failed to add IP filter rule to datapath")
+	}
+
+	return 0, nil
+}
+
+// NetIPFilterDel - Delete an IP filter rule from loxinet
+func (na *NetAPIStruct) NetIPFilterDel(fm *cmn.IPFilterMod) (int, error) {
+	if na.BgpPeerMode {
+		return -1, errors.New("running in bgp only mode")
+	}
+
+	// Validate filter type
+	var filterType IPFilterType
+	if fm.FilterType == "whitelist" {
+		filterType = IPFilterWhitelist
+	} else if fm.FilterType == "blacklist" {
+		filterType = IPFilterBlacklist
+	} else {
+		return -1, errors.New("invalid filter_type: must be 'whitelist' or 'blacklist'")
+	}
+
+	// Parse CIDR
+	_, ipNet, err := net.ParseCIDR(fm.CIDR)
+	if err != nil {
+		return -1, fmt.Errorf("invalid CIDR: %v", err)
+	}
+
+	// Create work queue entry
+	var status DpStatusT
+	wq := IPFilterDpWorkQ{
+		Work:       DpRemove,
+		Status:     &status,
+		FilterType: filterType,
+		IPNet:      *ipNet,
+		Zone:       fm.Zone,
+		Priority:   fm.Priority,
+		Action:     0, // Don't care for delete
+	}
+
+	// Submit to datapath
+	ret := mh.dp.DpHooks.DpIPFilterDel(&wq)
+	if ret != 0 {
+		return ret, errors.New("no such ipfilter rule (datapath delete failed)")
+	}
+
+	return 0, nil
+}
+
+// NetIPFilterGet - Get IP filter rules from loxinet
+func (na *NetAPIStruct) NetIPFilterGet() ([]cmn.IPFilterEntry, error) {
+	var ret []cmn.IPFilterEntry
+
+	// Get whitelist entries
+	whitelistEntries, err := mh.dp.DpHooks.DpIPFilterGet(IPFilterWhitelist)
+	if err != nil {
+		return ret, fmt.Errorf("failed to get whitelist: %v", err)
+	}
+	ret = append(ret, whitelistEntries...)
+
+	// Get blacklist entries
+	blacklistEntries, err := mh.dp.DpHooks.DpIPFilterGet(IPFilterBlacklist)
+	if err != nil {
+		return ret, fmt.Errorf("failed to get blacklist: %v", err)
+	}
+	ret = append(ret, blacklistEntries...)
+
+	return ret, nil
+}
+
+// NetSecurityRateSet - Set unified security rate limiting configuration (P0-5 + P0-6)
+func (na *NetAPIStruct) NetSecurityRateSet(config *cmn.SecurityRateConfig) (int, error) {
+	if na.BgpPeerMode {
+		return RuleErrBase, errors.New("running in bgp only mode")
+	}
+
+	mh.mtx.Lock()
+	defer mh.mtx.Unlock()
+
+	tk.LogIt(tk.LogInfo, "[API] Security rate limiting: SYN=%v (threshold=%d, cookie=%d), ConnRate=%v (rate=%d), UDP=%v (pkt=%d, bw=%dMB)\n",
+		config.SYNEnabled, config.SYNThreshold, config.CookieThreshold,
+		config.ConnRateEnabled, config.RatePerSec,
+		config.UDPEnabled, config.UDPPktThreshold, config.UDPBandwidthMB)
+
+	// Apply configuration to eBPF datapath
+	if mh.dpEbpf != nil {
+		dpConfig := SecurityRateConfig{
+			SYNEnabled:      config.SYNEnabled,
+			SYNThreshold:    config.SYNThreshold,
+			CookieThreshold: config.CookieThreshold,
+			ConnRateEnabled: config.ConnRateEnabled,
+			RatePerSec:      config.RatePerSec,
+			UDPEnabled:      config.UDPEnabled,
+			UDPPktThreshold: config.UDPPktThreshold,
+			UDPBandwidthMB:  config.UDPBandwidthMB,
+			WhitelistIPs:    config.WhitelistIPs,
+		}
+
+		err := mh.dpEbpf.DpSecurityRateConfigSet(dpConfig)
+		if err != nil {
+			tk.LogIt(tk.LogError, "[API] Failed to set security rate config in eBPF: %v\n", err)
+			// Fail closed: a security control that could not be programmed into the
+			// datapath must report failure, not a false success. mh.securityRateConfig
+			// is deliberately NOT updated here so GET keeps reporting the config that
+			// is actually enforced.
+			return RuleErrBase, err
+		}
+	}
+
+	// Store configuration only after the datapath accepted it, so the reported
+	// state never diverges from the enforced state.
+	mh.securityRateConfig = *config
+
+	return 0, nil
+}
+
+// NetSecurityRateGet - Get unified security rate limiting configuration and statistics
+func (na *NetAPIStruct) NetSecurityRateGet() (*cmn.SecurityRateState, error) {
+	if na.BgpPeerMode {
+		return nil, errors.New("running in bgp only mode")
+	}
+
+	// Snapshot the config under the lock, then release it BEFORE the stats
+	// fetch: DpSecurityRateGetStats iterates the (up to 100K-entry) per-IP
+	// tracking maps one syscall per key and must not starve config writers.
+	mh.mtx.RLock()
+	cfgSnapshot := mh.securityRateConfig
+	mh.mtx.RUnlock()
+
+	// Start with stored configuration
+	state := &cmn.SecurityRateState{
+		Config: cfgSnapshot,
+		Stats: cmn.SecurityRateStats{
+			SYNBlocked:      0,
+			SYNPassed:       0,
+			SYNCookies:      0,
+			ConnBlocked:     0,
+			ConnPassed:      0,
+			UDPBlocked:      0,
+			UDPPassed:       0,
+			UDPBytesBlocked: 0,
+			UDPBytesPassed:  0,
+			UniqueIPs:       0,
+		},
+	}
+
+	// Retrieve statistics from eBPF maps
+	if mh.dpEbpf != nil {
+		dpStats, err := mh.dpEbpf.DpSecurityRateGetStats()
+		if err == nil {
+			// Convert eBPF stats to common stats
+			state.Stats.SYNBlocked = dpStats.SYNBlocked
+			state.Stats.SYNPassed = dpStats.SYNPassed
+			state.Stats.SYNCookies = dpStats.SYNCookies
+			state.Stats.ConnBlocked = dpStats.ConnBlocked
+			state.Stats.ConnPassed = dpStats.ConnPassed
+			state.Stats.UDPBlocked = dpStats.UDPBlocked
+			state.Stats.UDPPassed = dpStats.UDPPassed
+			state.Stats.UDPBytesBlocked = dpStats.UDPBytesBlocked
+			state.Stats.UDPBytesPassed = dpStats.UDPBytesPassed
+			state.Stats.UniqueIPs = dpStats.UniqueIPs
+		} else {
+			tk.LogIt(tk.LogDebug, "[API] Failed to get security rate stats from eBPF: %v\n", err)
+		}
+	}
+
+	return state, nil
+}
+
+// NetSecurityRateStatsGet - Get only security rate limiting statistics (for Prometheus)
+// Pattern: Lightweight stats-only version of NetSecurityRateGet for metrics collection
+func (na *NetAPIStruct) NetSecurityRateStatsGet() (cmn.SecurityRateStats, error) {
+	stats := cmn.SecurityRateStats{}
+
+	if na.BgpPeerMode {
+		return stats, errors.New("running in bgp only mode")
+	}
+
+	// Retrieve statistics directly from eBPF maps (no lock needed for read-only)
+	if mh.dpEbpf != nil {
+		dpStats, err := mh.dpEbpf.DpSecurityRateGetStats()
+		if err == nil {
+			// Direct assignment from eBPF stats
+			stats = cmn.SecurityRateStats{
+				SYNBlocked:      dpStats.SYNBlocked,
+				SYNPassed:       dpStats.SYNPassed,
+				SYNCookies:      dpStats.SYNCookies,
+				ConnBlocked:     dpStats.ConnBlocked,
+				ConnPassed:      dpStats.ConnPassed,
+				UDPBlocked:      dpStats.UDPBlocked,
+				UDPPassed:       dpStats.UDPPassed,
+				UDPBytesBlocked: dpStats.UDPBytesBlocked,
+				UDPBytesPassed:  dpStats.UDPBytesPassed,
+				UniqueIPs:       dpStats.UniqueIPs,
+			}
+		} else {
+			tk.LogIt(tk.LogDebug, "[API] Failed to get security rate stats from eBPF: %v\n", err)
+			return stats, err
+		}
+	}
+
+	return stats, nil
+}
+
+// NetCtErrorStatsGet - Get always-on L4 connection-error counters (for Prometheus).
+// Trace-independent: reads the ct_err_stats eBPF map populated by the CT state
+// machine, so the loxilb_l4_error_events_total metric is exact and present in
+// every build regardless of L4 trace. Mirrors NetSecurityRateStatsGet.
+func (na *NetAPIStruct) NetCtErrorStatsGet() (cmn.CtErrorStats, error) {
+	stats := cmn.CtErrorStats{}
+
+	if na.BgpPeerMode {
+		return stats, errors.New("running in bgp only mode")
+	}
+
+	if mh.dpEbpf != nil {
+		dpStats, err := mh.dpEbpf.DpCtErrorGetStats()
+		if err == nil {
+			stats = cmn.CtErrorStats{
+				TCPRstClient: dpStats.TCPRstClient,
+				TCPRstServer: dpStats.TCPRstServer,
+				TCPErr:       dpStats.TCPErr,
+				SCTPAbort:    dpStats.SCTPAbort,
+				SCTPErr:      dpStats.SCTPErr,
+			}
+		} else {
+			tk.LogIt(tk.LogDebug, "[API] Failed to get ct error stats from eBPF: %v\n", err)
+			return stats, err
+		}
+	}
+
+	return stats, nil
+}
+
+// NetSecurityRateResetStats - Reset security rate limiting statistics
+func (na *NetAPIStruct) NetSecurityRateResetStats() (int, error) {
+	if na.BgpPeerMode {
+		return -1, errors.New("running in bgp only mode")
+	}
+
+	mh.mtx.Lock()
+	defer mh.mtx.Unlock()
+
+	// Reset statistics in eBPF maps
+	if mh.dpEbpf != nil {
+		err := mh.dpEbpf.DpSecurityRateResetStats()
+		if err != nil {
+			tk.LogIt(tk.LogError, "[API] Failed to reset security rate stats: %v\n", err)
+			return -1, err
+		}
+		tk.LogIt(tk.LogInfo, "[API] Security rate statistics reset successfully\n")
+		return 0, nil
+	}
+
+	return -1, errors.New("eBPF not initialized")
+}
+
 // NetFwRuleGet - Get a firewall rule from loxinet
 func (na *NetAPIStruct) NetFwRuleGet() ([]cmn.FwRuleMod, error) {
 	if na.BgpPeerMode {
 		return nil, errors.New("running in bgp only mode")
 	}
+	// GetFwRule iterates the fw rule map; hold the lock to avoid a concurrent
+	// map iteration/write fatal panic against NetFwRuleAdd/NetFwRuleDel.
+	mh.mtx.RLock()
+	defer mh.mtx.RUnlock()
+
 	ret, err := mh.zr.Rules.GetFwRule()
 	return ret, err
 }
@@ -616,9 +998,23 @@ func (na *NetAPIStruct) NetEpHostAdd(em *cmn.EndPointMod) (int, error) {
 	mh.mtx.Lock()
 	defer mh.mtx.Unlock()
 
+	// resolve probe_verify. A nil/absent pointer ⇒ verification ON
+	// (the default); only an explicit false sets InsecureSkipVerify.
+	probeVerify := true
+	if em.ProbeVerify != nil {
+		probeVerify = *em.ProbeVerify
+	}
 	epArgs := epHostOpts{inActTryThr: em.InActTries, probeType: em.ProbeType,
 		probeReq: em.ProbeReq, probeResp: em.ProbeResp,
 		probeDuration: em.ProbeDuration, probePort: em.ProbePort,
+		// structured Octavia HM-content fields, additive/default-off.
+		probeMethod: em.HttpMethod, probePath: em.UrlPath,
+		expectedCodes: em.ExpectedCodes, httpVersion: em.HttpVersion,
+		domainName: em.DomainName,
+		// per-probe CA override + resolved verify toggle.
+		probeCAPath: em.ProbeCaPath, probeVerify: probeVerify,
+		// residual: per-probe static CRL on the same health/verify surface.
+		probeCRLPath: em.ProbeCrlPath,
 	}
 	ret, err := mh.zr.Rules.AddEPHost(true, em.HostName, em.Name, epArgs)
 	return ret, err
@@ -717,6 +1113,15 @@ func (na *NetAPIStruct) NetGoBGPGCAdd(param *cmn.GoBGPGlobalConfig) (int, error)
 	tk.LogIt(tk.LogDebug, "loxilb BGP mode is disabled \n")
 	return 0, errors.New("loxilb BGP mode is disabled")
 
+}
+
+// NetGoBGPGCGet - Get bgp global config
+func (na *NetAPIStruct) NetGoBGPGCGet() (cmn.GoBGPGlobalConfig, error) {
+	if mh.bgp != nil {
+		return mh.bgp.BGPGlobalConfigGet()
+	}
+	tk.LogIt(tk.LogDebug, "loxilb BGP mode is disabled \n")
+	return cmn.GoBGPGlobalConfig{}, errors.New("loxilb BGP mode is disabled")
 }
 
 // NetHandlePanic - Handle panics
@@ -868,4 +1273,506 @@ func (na *NetAPIStruct) NetOauthDeleteToken(token string) error {
 func (na *NetAPIStruct) NetPrometheusEnable() error {
 	mh.PrometheusInit()
 	return nil
+}
+
+// ============================================================================
+// GPU-Aware Load Balancing Interface Implementations
+// ============================================================================
+
+func (na *NetAPIStruct) NetDpEbpfIsGPUMonitoringEnabled() bool {
+	if mh.dpEbpf == nil {
+		return false
+	}
+	return mh.dpEbpf.IsGPUMonitoringEnabled()
+}
+
+func (na *NetAPIStruct) NetDpEbpfEnableGPUMonitoring() error {
+	if mh.dpEbpf == nil {
+		return fmt.Errorf("eBPF datapath not initialized")
+	}
+	return mh.dpEbpf.EnableGPUMonitoring()
+}
+
+func (na *NetAPIStruct) NetDpEbpfDisableGPUMonitoring() error {
+	if mh.dpEbpf == nil {
+		return fmt.Errorf("eBPF datapath not initialized")
+	}
+	return mh.dpEbpf.DisableGPUMonitoring()
+}
+
+func (na *NetAPIStruct) NetDpEbpfGetGPUMonitoringStatus() interface{} {
+	if mh.dpEbpf == nil {
+		return nil
+	}
+	return mh.dpEbpf.GetGPUMonitoringStatus()
+}
+
+func (na *NetAPIStruct) NetDpEbpfUpdateWorkerMetrics(endpointIP string, req interface{}) error {
+	if mh.dpEbpf == nil {
+		return fmt.Errorf("eBPF datapath not initialized")
+	}
+	return mh.dpEbpf.UpdateWorkerMetrics(endpointIP, req)
+}
+
+func (na *NetAPIStruct) NetDpEbpfGetAllWorkerMetrics() []interface{} {
+	if mh.dpEbpf == nil {
+		return []interface{}{}
+	}
+	return mh.dpEbpf.GetAllWorkerMetrics()
+}
+
+func (na *NetAPIStruct) NetDpEbpfCleanupStaleConversations(cutoffTime time.Time) (int, float64, error) {
+	if mh.dpEbpf == nil {
+		return 0, 0.0, fmt.Errorf("eBPF datapath not initialized")
+	}
+	return mh.dpEbpf.CleanupStaleConversations(cutoffTime)
+}
+
+// NetTraceParserRegistryGet - Get the trace parser registry for API operations
+func (na *NetAPIStruct) NetTraceParserRegistryGet() (interface{}, error) {
+	if mh.dpEbpf == nil {
+		return nil, fmt.Errorf("eBPF datapath not initialized")
+	}
+	return mh.dpEbpf.NetTraceParserRegistryGet()
+}
+
+// NetTraceCatalogInfoGet - Get catalog name and parser_type by catalog ID
+func (na *NetAPIStruct) NetTraceCatalogInfoGet(catalogID uint16) (string, string, error) {
+	if mh.dpEbpf == nil {
+		return "", "", fmt.Errorf("eBPF datapath not initialized")
+	}
+	return mh.dpEbpf.NetTraceCatalogInfoGet(catalogID)
+}
+
+// NetTraceParserListGet - Get list of available parsers with metadata
+func (na *NetAPIStruct) NetTraceParserListGet() ([]cmn.NetTraceParserMeta, error) {
+	if mh.dpEbpf == nil {
+		return nil, fmt.Errorf("eBPF datapath not initialized")
+	}
+	return mh.dpEbpf.NetTraceParserListGet()
+}
+
+// NetTraceCatalogParserGet - Get parser name assigned to a catalog
+func (na *NetAPIStruct) NetTraceCatalogParserGet(catalogID uint16) (string, error) {
+	if mh.dpEbpf == nil {
+		return "", fmt.Errorf("eBPF datapath not initialized")
+	}
+	return mh.dpEbpf.NetTraceCatalogParserGet(catalogID)
+}
+
+// NetTraceCatalogParserUpdate - Update parser assignment for a catalog
+func (na *NetAPIStruct) NetTraceCatalogParserUpdate(catalogID uint16, parserName string) error {
+	if mh.dpEbpf == nil {
+		return fmt.Errorf("eBPF datapath not initialized")
+	}
+	return mh.dpEbpf.NetTraceCatalogParserUpdate(catalogID, parserName)
+}
+
+// NetTraceCatalogParserDelete - Remove parser assignment for a catalog
+func (na *NetAPIStruct) NetTraceCatalogParserDelete(catalogID uint16) error {
+	if mh.dpEbpf == nil {
+		return fmt.Errorf("eBPF datapath not initialized")
+	}
+	return mh.dpEbpf.NetTraceCatalogParserDelete(catalogID)
+}
+
+// NetL4TraceEnable - Enable L4 connection tracing with sampling rate
+func (na *NetAPIStruct) NetL4TraceEnable(samplingRate uint32) error {
+	if mh.dpEbpf == nil {
+		return fmt.Errorf("eBPF datapath not initialized")
+	}
+
+	// Lazy initialization: Start ring buffer consumer if not already running
+	// Use mutex to prevent concurrent initialization
+	mh.l4TracingMtx.Lock()
+	if !mh.l4TracingEnabled {
+		tk.LogIt(tk.LogInfo, "[L4Trace] Initializing L4 tracing (lazy initialization from API)\n")
+		if err := mh.initL4Tracing(); err != nil {
+			mh.l4TracingMtx.Unlock()
+			tk.LogIt(tk.LogError, "[L4Trace] Failed to initialize: %v\n", err)
+			return fmt.Errorf("failed to initialize L4 tracing: %w", err)
+		}
+	}
+	mh.l4TracingMtx.Unlock()
+
+	config := L4TraceConfig{
+		Enabled:      true,
+		SamplingRate: samplingRate,
+	}
+
+	if err := mh.dpEbpf.DpL4TraceConfigSet(config); err != nil {
+		return err
+	}
+
+	tk.LogIt(tk.LogInfo, "[L4Trace] Config updated: version=%d enabled=true sampling=%d%%\n",
+		config.Version, samplingRate)
+
+	return nil
+}
+
+// NetL4TraceDisable - Disable L4 connection tracing
+func (na *NetAPIStruct) NetL4TraceDisable() error {
+	if mh.dpEbpf == nil {
+		return fmt.Errorf("eBPF datapath not initialized")
+	}
+
+	config := L4TraceConfig{
+		Enabled:      false,
+		SamplingRate: 100, // Keep sampling rate for next enable
+	}
+
+	return mh.dpEbpf.DpL4TraceConfigSet(config)
+}
+
+// NetL4TraceGetStatus - Get current L4 tracing status and statistics
+func (na *NetAPIStruct) NetL4TraceGetStatus() (*cmn.L4TraceStatus, error) {
+	if mh.dpEbpf == nil {
+		return nil, fmt.Errorf("eBPF datapath not initialized")
+	}
+
+	// Get config
+	cfg, err := mh.dpEbpf.DpL4TraceConfigGet()
+	if err != nil {
+		return nil, err
+	}
+
+	// Get statistics
+	stats, err := mh.dpEbpf.DpL4TraceStatsGet()
+	if err != nil {
+		return nil, err
+	}
+
+	return &cmn.L4TraceStatus{
+		Enabled:       cfg.Enabled,
+		SamplingRate:  cfg.SamplingRate,
+		ConfigVersion: cfg.Version,
+		Stats:         *stats,
+	}, nil
+}
+
+// NetL4TraceUpdateSampling - Update L4 tracing sampling rate
+func (na *NetAPIStruct) NetL4TraceUpdateSampling(samplingRate uint32) error {
+	if mh.dpEbpf == nil {
+		return fmt.Errorf("eBPF datapath not initialized")
+	}
+
+	// Get current config to preserve enabled state
+	cfg, err := mh.dpEbpf.DpL4TraceConfigGet()
+	if err != nil {
+		return err
+	}
+
+	// Update only sampling rate
+	cfg.SamplingRate = samplingRate
+
+	return mh.dpEbpf.DpL4TraceConfigSet(cfg)
+}
+
+// NetL4TraceResetStats - Reset L4 tracing statistics counters
+func (na *NetAPIStruct) NetL4TraceResetStats() error {
+	if mh.dpEbpf == nil {
+		return fmt.Errorf("eBPF datapath not initialized")
+	}
+
+	// Call global function from lxb_l4_trace.go
+	ResetL4TraceStats()
+	return nil
+}
+
+// IPsec API implementations
+
+// NetIPsecGetConfig - Get global IPsec configuration
+func (na *NetAPIStruct) NetIPsecGetConfig() (*cmn.IPsecConfig, error) {
+	if mh.ipsec == nil {
+		return nil, errors.New("IPsec not initialized")
+	}
+	return mh.ipsec.NetIPsecGetConfig()
+}
+
+// NetIPsecConfigSet - Update global IPsec configuration
+func (na *NetAPIStruct) NetIPsecConfigSet(cfg *cmn.IPsecConfigMod) (int, error) {
+	if mh.ipsec == nil {
+		return -1, errors.New("IPsec not initialized")
+	}
+	return mh.ipsec.NetIPsecConfigSet(cfg)
+}
+
+// NetIPsecTunnelAdd - Create a new IPsec tunnel
+func (na *NetAPIStruct) NetIPsecTunnelAdd(tm *cmn.IPsecTunnelMod) (int, error) {
+	if mh.ipsec == nil {
+		return -1, errors.New("IPsec not initialized")
+	}
+	mh.mtx.Lock()
+	defer mh.mtx.Unlock()
+
+	return mh.ipsec.NetIPsecTunnelAdd(tm)
+}
+
+// NetIPsecTunnelUpdate - Update an existing IPsec tunnel in place
+func (na *NetAPIStruct) NetIPsecTunnelUpdate(tm *cmn.IPsecTunnelMod) (int, error) {
+	if mh.ipsec == nil {
+		return -1, errors.New("IPsec not initialized")
+	}
+	mh.mtx.Lock()
+	defer mh.mtx.Unlock()
+
+	return mh.ipsec.NetIPsecTunnelUpdate(tm)
+}
+
+// NetIPsecTunnelAction - Initiate/terminate/restart a tunnel connection
+// Note: no mh.mtx here - the action may block on strongSwan for several
+// seconds and only touches IPsecH state (guarded by its own mutex)
+func (na *NetAPIStruct) NetIPsecTunnelAction(name string, action string) (int, error) {
+	if mh.ipsec == nil {
+		return -1, errors.New("IPsec not initialized")
+	}
+	return mh.ipsec.NetIPsecTunnelAction(name, action)
+}
+
+// NetIPsecTunnelDel - Delete an IPsec tunnel
+func (na *NetAPIStruct) NetIPsecTunnelDel(name string) (int, error) {
+	if mh.ipsec == nil {
+		return -1, errors.New("IPsec not initialized")
+	}
+	mh.mtx.Lock()
+	defer mh.mtx.Unlock()
+
+	return mh.ipsec.NetIPsecTunnelDel(name)
+}
+
+// NetIPsecTunnelGet - Get specific tunnel details
+func (na *NetAPIStruct) NetIPsecTunnelGet(name string) (*cmn.IPsecTunnel, error) {
+	if mh.ipsec == nil {
+		return nil, errors.New("IPsec not initialized")
+	}
+	return mh.ipsec.NetIPsecTunnelGet(name)
+}
+
+// NetIPsecTunnelGetAll - Get all tunnels
+func (na *NetAPIStruct) NetIPsecTunnelGetAll() ([]*cmn.IPsecTunnel, error) {
+	if mh.ipsec == nil {
+		return nil, errors.New("IPsec not initialized")
+	}
+	return mh.ipsec.NetIPsecTunnelGetAll()
+}
+
+// NetIPsecTunnelPeerConfig - Generate remote-peer strongSwan configuration
+func (na *NetAPIStruct) NetIPsecTunnelPeerConfig(name string) (*cmn.IPsecPeerConfig, error) {
+	if mh.ipsec == nil {
+		return nil, errors.New("IPsec not initialized")
+	}
+	return mh.ipsec.NetIPsecTunnelPeerConfig(name)
+}
+
+// NetIPsecSAGetAll - Get all Security Associations (stub for now)
+func (na *NetAPIStruct) NetIPsecSAGetAll() ([]*cmn.IPsecSA, error) {
+	if mh.ipsec == nil {
+		return nil, errors.New("IPsec not initialized")
+	}
+	return mh.ipsec.NetIPsecSAGetAll()
+}
+
+// NetIPsecStatsGet - Get IPsec statistics
+func (na *NetAPIStruct) NetIPsecStatsGet() (*cmn.IPsecStats, error) {
+	if mh.ipsec == nil {
+		return nil, errors.New("IPsec not initialized")
+	}
+	return mh.ipsec.NetIPsecStatsGet()
+}
+
+// NetIPsecStatsReset - Reset IPsec statistics
+func (na *NetAPIStruct) NetIPsecStatsReset() (int, error) {
+	if mh.ipsec == nil {
+		return -1, errors.New("IPsec not initialized")
+	}
+	return mh.ipsec.NetIPsecStatsReset()
+}
+
+// NetIPsecCertificateAdd - Upload and install certificate
+func (na *NetAPIStruct) NetIPsecCertificateAdd(cm *cmn.IPsecCertificateMod) (int, error) {
+	if mh.ipsec == nil {
+		return -1, errors.New("IPsec not initialized")
+	}
+	mh.mtx.Lock()
+	defer mh.mtx.Unlock()
+
+	return mh.ipsec.NetIPsecCertificateAdd(cm)
+}
+
+// NetIPsecCertificateDel - Delete certificate
+func (na *NetAPIStruct) NetIPsecCertificateDel(name string) (int, error) {
+	if mh.ipsec == nil {
+		return -1, errors.New("IPsec not initialized")
+	}
+	mh.mtx.Lock()
+	defer mh.mtx.Unlock()
+
+	return mh.ipsec.NetIPsecCertificateDel(name)
+}
+
+// NetIPsecCertificateGet - Get certificate details
+func (na *NetAPIStruct) NetIPsecCertificateGet(name string) (*cmn.IPsecCertificate, error) {
+	if mh.ipsec == nil {
+		return nil, errors.New("IPsec not initialized")
+	}
+	return mh.ipsec.NetIPsecCertificateGet(name)
+}
+
+// NetIPsecCertificateGetAll - Get all certificates
+func (na *NetAPIStruct) NetIPsecCertificateGetAll() ([]*cmn.IPsecCertificate, error) {
+	if mh.ipsec == nil {
+		return nil, errors.New("IPsec not initialized")
+	}
+	return mh.ipsec.NetIPsecCertificateGetAll()
+}
+
+// NetIPsecCertificateValidate - Validate certificate and private key
+func (na *NetAPIStruct) NetIPsecCertificateValidate(certPEM, keyPEM, passphrase string) (*cmn.IPsecCertValidation, error) {
+	if mh.ipsec == nil {
+		return nil, errors.New("IPsec not initialized")
+	}
+	return mh.ipsec.NetIPsecCertificateValidate(certPEM, keyPEM, passphrase)
+}
+
+// NetIPsecCACertificateAdd - Add CA certificate
+func (na *NetAPIStruct) NetIPsecCACertificateAdd(cm *cmn.IPsecCACertificateMod) (int, error) {
+	if mh.ipsec == nil {
+		return -1, errors.New("IPsec not initialized")
+	}
+	mh.mtx.Lock()
+	defer mh.mtx.Unlock()
+
+	return mh.ipsec.NetIPsecCACertificateAdd(cm)
+}
+
+// NetIPsecCACertificateDel - Delete CA certificate
+func (na *NetAPIStruct) NetIPsecCACertificateDel(name string) (int, error) {
+	if mh.ipsec == nil {
+		return -1, errors.New("IPsec not initialized")
+	}
+	mh.mtx.Lock()
+	defer mh.mtx.Unlock()
+
+	return mh.ipsec.NetIPsecCACertificateDel(name)
+}
+
+// NetIPsecCACertificateGet - Get CA certificate details
+func (na *NetAPIStruct) NetIPsecCACertificateGet(name string) (*cmn.IPsecCACertificate, error) {
+	if mh.ipsec == nil {
+		return nil, errors.New("IPsec not initialized")
+	}
+	return mh.ipsec.NetIPsecCACertificateGet(name)
+}
+
+// NetIPsecCACertificateGetAll - Get all CA certificates
+func (na *NetAPIStruct) NetIPsecCACertificateGetAll() ([]*cmn.IPsecCACertificate, error) {
+	if mh.ipsec == nil {
+		return nil, errors.New("IPsec not initialized")
+	}
+	return mh.ipsec.NetIPsecCACertificateGetAll()
+}
+
+// NetIPsecCertificateExportAll - Export all certificates with PEM material
+// (snapshot/restore only; see cmn.NetHookInterface doc comment)
+func (na *NetAPIStruct) NetIPsecCertificateExportAll() ([]cmn.IPsecCertificateMod, error) {
+	if mh.ipsec == nil {
+		return nil, errors.New("IPsec not initialized")
+	}
+	return mh.ipsec.NetIPsecCertificateExportAll()
+}
+
+// NetIPsecCACertificateExportAll - Export all CA certificates with PEM material
+// (snapshot/restore only)
+func (na *NetAPIStruct) NetIPsecCACertificateExportAll() ([]cmn.IPsecCACertificateMod, error) {
+	if mh.ipsec == nil {
+		return nil, errors.New("IPsec not initialized")
+	}
+	return mh.ipsec.NetIPsecCACertificateExportAll()
+}
+
+// ============================================================================
+// AI Gateway - API key lifecycle management
+// ============================================================================
+
+// NetAPIKeyCreate - Create a new API key for a tenant.
+func (na *NetAPIStruct) NetAPIKeyCreate(entry cmn.ApiKeyEntry) (string, string, error) {
+	if mh.UserService == nil {
+		return "", "", errors.New("user service not initialized")
+	}
+	return mh.UserService.CreateAPIKey(entry)
+}
+
+// NetAPIKeyList - List API keys. If tenantID is empty, returns all keys.
+func (na *NetAPIStruct) NetAPIKeyList(tenantID string) ([]cmn.ApiKeySummary, error) {
+	if mh.UserService == nil {
+		return nil, errors.New("user service not initialized")
+	}
+	return mh.UserService.ListAPIKeys(tenantID)
+}
+
+// NetAPIKeyGet - Retrieve a single API key by its key_id.
+func (na *NetAPIStruct) NetAPIKeyGet(keyID string) (*cmn.ApiKeySummary, error) {
+	if mh.UserService == nil {
+		return nil, errors.New("user service not initialized")
+	}
+	return mh.UserService.GetAPIKeyByID(keyID)
+}
+
+// NetAPIKeyRevoke - Disable an API key and evict it from cache.
+func (na *NetAPIStruct) NetAPIKeyRevoke(keyID string) error {
+	if mh.UserService == nil {
+		return errors.New("user service not initialized")
+	}
+	return mh.UserService.RevokeAPIKey(keyID)
+}
+
+// NetAPIKeyPatch - Update allowed_models and/or enabled for an API key.
+func (na *NetAPIStruct) NetAPIKeyPatch(keyID string, allowedModels []string, enabled *bool) error {
+	if mh.UserService == nil {
+		return errors.New("user service not initialized")
+	}
+	return mh.UserService.PatchAPIKey(keyID, allowedModels, enabled)
+}
+
+// NetTenantRateLimitSet - Upsert per-tenant rate limit configuration.
+func (na *NetAPIStruct) NetTenantRateLimitSet(tenantID string, rps, tokensPerMin int) error {
+	if mh.UserService == nil {
+		return errors.New("user service not initialized")
+	}
+	return mh.UserService.SetTenantRateLimit(tenantID, rps, tokensPerMin)
+}
+
+// NetTenantRateLimitGet - Retrieve the full rate limit entry for a tenant.
+func (na *NetAPIStruct) NetTenantRateLimitGet(tenantID string) (*cmn.TenantRateLimitEntry, error) {
+	if mh.UserService == nil {
+		return nil, errors.New("user service not initialized")
+	}
+	return mh.UserService.GetTenantRateLimitEntry(tenantID)
+}
+
+// NetGetOrAllocBridgeVid - : thin wrapper over the
+// package-level bridge VID allocator. Routing the call through the
+// cmn.NetHookInterface lets api/loxinlp reach the allocator without
+// importing pkg/loxinet (which already imports api/loxinlp -- direct call
+// would form an import cycle). See 47-02-SUMMARY.md "Deviations" for the
+// Option A design decision. Runs on netlink goroutines; the underlying
+// allocator carries its own sync.Mutex -- no mh.mtx acquisition needed.
+func (*NetAPIStruct) NetGetOrAllocBridgeVid(name string) (int, error) {
+	return GetOrAllocBridgeVid(name)
+}
+
+// NetLookupBridgeVid - : thin wrapper for DEL paths.
+// Lookup-only; MUST NOT allocate. Returns (vid, true) if a VID has already
+// been assigned for the bridge name, else (0, false) so callers treat the
+// DELETE as a no-op for never-seen bridges.
+func (*NetAPIStruct) NetLookupBridgeVid(name string) (int, bool) {
+	return LookupBridgeVid(name)
+}
+
+// NetReleaseBridgeVid - : thin wrapper for DelLink path.
+// Called by api/loxinlp after a successful NetVlanDel on the bridge itself
+// to return the slot to the pool. Prevents allocator-slot leakage during
+// bridge rename churn.
+func (*NetAPIStruct) NetReleaseBridgeVid(name string) error {
+	return ReleaseBridgeVid(name)
 }

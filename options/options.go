@@ -23,6 +23,12 @@ var Opts struct {
 	ClusterNodes         string         `long:"cluster" description:"Comma-separated list of cluter-node IP Addresses" default:"none"`
 	ClusterSelf          int            `long:"self" description:"annonation of self in cluster" default:"0"`
 	LogLevel             string         `long:"loglevel" description:"One of trace,debug,info,error,warning,notice,critical,emergency,alert" default:"debug"`
+	LogDir               string         `long:"log-dir" description:"Directory for loxilb structured log files" default:"/var/log/loxilb/" env:"LOXILB_LOG_DIR"`
+	LogFormat            string         `long:"log-format" description:"Log output format: json, text, or both" default:"both" env:"LOXILB_LOG_FORMAT"`
+	LogMaxSize           int            `long:"log-max-size" description:"Rotate a log file when it exceeds this many MB (0 disables rotation)" default:"50" env:"LOXILB_LOG_MAX_SIZE"`
+	LogMaxBackups        int            `long:"log-max-backups" description:"Rotated files to keep per log, oldest deleted first (0 keeps all until log-max-age)" default:"4" env:"LOXILB_LOG_MAX_BACKUPS"`
+	LogMaxAge            int            `long:"log-max-age" description:"Days to retain rotated log files (0 keeps forever)" default:"28" env:"LOXILB_LOG_MAX_AGE"`
+	LogNoCompress        bool           `long:"log-no-compress" description:"Do not gzip rotated log files" env:"LOXILB_LOG_NO_COMPRESS"`
 	CPUProfile           string         `long:"cpuprofile" description:"Enable cpu profiling and specify file to use" default:"none" env:"CPUPROF"`
 	Prometheus           bool           `short:"p" long:"prometheus" description:"Run prometheus thread"`
 	CRC32SumDisable      bool           `long:"disable-crc32" description:"Disable crc32 checksum update(experimental)"`
@@ -37,10 +43,12 @@ var Opts struct {
 	FallBack             bool           `long:"fallback" description:"Fallback to system default networking(experimental)"`
 	LocalSockPolicy      bool           `long:"localsockpolicy" description:"support local socket policies (experimental)"`
 	SockMapSupport       bool           `long:"sockmapsupport" description:"Support sockmap based L4 proxying (experimental)"`
+	KtlsSupport          bool           `long:"ktlssupport" description:"Support kernel TLS offload for HTTPS sockmap (experimental)"`
 	Cloud                string         `long:"cloud" description:"cloud type if any e.g aws,ncloud" default:"on-prem"`
 	CloudCIDRBlock       string         `long:"cloudcidrblock" description:"cloud implementations need VIP cidr blocks(experimental)"`
 	CloudInstance        string         `long:"cloudinstance" description:"instance-name to distinguish instance sets running in a same cloud-region"`
 	ConfigPath           string         `long:"config-path" description:"Config file path" default:"/etc/loxilb/"`
+	ConfigAutoPersist    string         `long:"config-auto-persist" description:"Debounced write-through of the running config to snapshot.json after successful mutating API calls (on/off)" choice:"on" choice:"off" default:"on"`
 	ProxyModeOnly        bool           `long:"proxyonlymode" description:"Run loxilb in proxy mode only, no Datapath"`
 	WhiteList            string         `long:"whitelist" description:"Regex string of whitelisted interface(experimental)" default:"none"`
 	ClusterInterface     string         `long:"clusterinterface" description:"cluster interface for egress HA" default:""`
@@ -58,6 +66,22 @@ var Opts struct {
 	// Oauth2 Options as input arguemtns
 	Oauth2Enable   bool   `long:"oauth2" description:"Enable user oauth2 service for loxilb"`
 	Oauth2Provider string `long:"oauth2provider" description:"Oauth2 provider names, comma-separated" default:"google"`
+
+	// KV Cache Agent
+	KVAgentAddr string `long:"kv-agent-addr" description:"KV agent REST address for auto-discovery override" default:"" env:"KV_AGENT_ADDR"`
+
+	// DPU plugin
+	DpuPlugin    string `long:"dpu-plugin" description:"DPU plugin to activate (e.g., doca-bf2)" default:"" env:"DPU_PLUGIN"`
+	DocaTcpAging uint32 `long:"doca-tcp-aging" description:"DOCA TCP CT entry idle timeout (seconds)" default:"120" env:"DOCA_TCP_AGING"`
+	DocaUdpAging uint32 `long:"doca-udp-aging" description:"DOCA UDP CT entry idle timeout (seconds)" default:"30" env:"DOCA_UDP_AGING"`
+	DocaAiAging  uint32 `long:"doca-ai-aging" description:"DOCA AI/SSE CT entry idle timeout (seconds)" default:"3600" env:"DOCA_AI_AGING"`
+
+	// DOCA counter configuration.
+	// PerEpSharedCounters: gate per-EP SHARED counter lifecycle.
+	//   Default false — no production BASIC pipe uses SHARED counters today.
+	//   Set true to activate ensureEpSharedCounter / releaseEpSharedCounter hooks
+	//   when a future v6.x phase introduces protocol-pipe SHARED pools.
+	DocaPerEpSharedCounters bool `long:"doca-per-ep-shared-counters" description:"Enable per-EP SHARED counter lifecycle (default off)" env:"DOCA_PER_EP_SHARED_COUNTERS"`
 
 	// Oauth2 secure informations
 	Oauth2GoogleClientID     string `long:"oauth2google-clientid" description:"Oauth2 google client id" env:"OAUTH2_GOOGLE_CLIENT_ID"`

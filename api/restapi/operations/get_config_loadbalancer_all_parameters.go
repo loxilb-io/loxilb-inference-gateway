@@ -9,7 +9,9 @@ import (
 	"net/http"
 
 	"github.com/go-openapi/errors"
+	"github.com/go-openapi/runtime"
 	"github.com/go-openapi/runtime/middleware"
+	"github.com/go-openapi/strfmt"
 )
 
 // NewGetConfigLoadbalancerAllParams creates a new GetConfigLoadbalancerAllParams object
@@ -28,6 +30,11 @@ type GetConfigLoadbalancerAllParams struct {
 
 	// HTTP Request Object
 	HTTPRequest *http.Request `json:"-"`
+
+	/*Octavia tenant/project identifier filter. When supplied, only load-balancer services whose serviceArguments.projectId matches are returned. This is a CONVENIENCE filter, NOT a tenant-isolation/authz boundary: an unfiltered GET still returns rules with any projectId.
+	  In: query
+	*/
+	ProjectID *string
 }
 
 // BindRequest both binds and validates a request, it assumes that complex things implement a Validatable(strfmt.Registry) error interface
@@ -39,8 +46,32 @@ func (o *GetConfigLoadbalancerAllParams) BindRequest(r *http.Request, route *mid
 
 	o.HTTPRequest = r
 
+	qs := runtime.Values(r.URL.Query())
+
+	qProjectID, qhkProjectID, _ := qs.GetOK("projectId")
+	if err := o.bindProjectID(qProjectID, qhkProjectID, route.Formats); err != nil {
+		res = append(res, err)
+	}
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
+	return nil
+}
+
+// bindProjectID binds and validates parameter ProjectID from query.
+func (o *GetConfigLoadbalancerAllParams) bindProjectID(rawData []string, hasKey bool, formats strfmt.Registry) error {
+	var raw string
+	if len(rawData) > 0 {
+		raw = rawData[len(rawData)-1]
+	}
+
+	// Required: false
+	// AllowEmptyValue: false
+
+	if raw == "" { // empty values pass all other validations
+		return nil
+	}
+	o.ProjectID = &raw
+
 	return nil
 }

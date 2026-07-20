@@ -50,7 +50,13 @@ func ConfigPostPolicy(params operations.PostConfigPolicyParams, principal interf
 			polMod.Target.PolObjName = *params.Attr.TargetObject.PolObjName
 		}
 		if params.Attr.TargetObject.Attachment != nil {
-			polMod.Target.AttachMent = cmn.PolObjType(*params.Attr.TargetObject.Attachment)
+			// API enum: 0=RuleName, 1=PortName → internal: PolAttachLbRule=2, PolAttachPort=1
+			switch *params.Attr.TargetObject.Attachment {
+			case 0:
+				polMod.Target.AttachMent = cmn.PolAttachLbRule
+			case 1:
+				polMod.Target.AttachMent = cmn.PolAttachPort
+			}
 		}
 	}
 
@@ -101,9 +107,15 @@ func ConfigGetPolicy(params operations.GetConfigPolicyAllParams, principal inter
 		tmpInfo.ExcessBlkSize = int64(policy.Info.ExcessBlkSize)
 		tmpInfo.PeakInfoRate = int64(policy.Info.PeakInfoRate)
 		tmpInfo.Type = int64(policy.Info.PolType)
-		// Target match
-		attachment := int64(policy.Target.AttachMent)
-		tmpTarget.Attachment = &attachment
+		// Target match: internal PolAttachLbRule=2→API 0, PolAttachPort=1→API 1
+		var apiAttachment int64
+		switch policy.Target.AttachMent {
+		case cmn.PolAttachLbRule:
+			apiAttachment = 0
+		case cmn.PolAttachPort:
+			apiAttachment = 1
+		}
+		tmpTarget.Attachment = &apiAttachment
 		tmpTarget.PolObjName = &policy.Target.PolObjName
 
 		// Assign policy info and target

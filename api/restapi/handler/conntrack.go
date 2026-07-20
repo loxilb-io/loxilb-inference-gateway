@@ -34,17 +34,51 @@ func ConfigGetConntrack(params operations.GetConfigConntrackAllParams, principal
 	result = make([]*models.ConntrackEntry, 0)
 	for _, conntrack := range res {
 		var tmpResult models.ConntrackEntry
-		tmpResult.Bytes = int64(conntrack.Bytes)
 		tmpResult.ConntrackAct = conntrack.CAct
 		tmpResult.ConntrackState = conntrack.CState
 		tmpResult.DestinationIP = conntrack.Dip.String()
 		tmpResult.DestinationPort = int64(conntrack.Dport)
-		tmpResult.Packets = int64(conntrack.Pkts)
 		tmpResult.Protocol = conntrack.Proto
 		tmpResult.Ident = conntrack.Ident
 		tmpResult.SourceIP = conntrack.Sip.String()
 		tmpResult.SourcePort = int64(conntrack.Sport)
 		tmpResult.ServName = conntrack.ServiceName
+
+		// lazy-on-read reconciliation: query DOCA HW counters for this
+		// CT entry via dpuDebugProvider.ReconcileCtFlowStats (OffloadState enum).
+		// On !doca builds or when dpuDebugProvider is nil, returns ("none", 0, 0) so
+		// the model fields are omitempty and absent from JSON (backward-compat).
+		// corrected: total = eBPF (MONOTONIC) + DOCA HW; no reset on offload.
+		if dpuDebugProvider != nil {
+			ref := CtFlowRef{
+				SipStr:    conntrack.Sip.String(),
+				DipStr:    conntrack.Dip.String(),
+				Sport:     conntrack.Sport,
+				Dport:     conntrack.Dport,
+				Proto:     conntrack.Proto,
+				IdentStr:  conntrack.Ident,
+				EbpfPkts:  conntrack.Pkts,
+				EbpfBytes: conntrack.Bytes,
+			}
+			offloadState, hwPkts, hwBytes := dpuDebugProvider.ReconcileCtFlowStats(ref)
+			// compute reconciled totals. eBPF counter is monotonic lifetime total;
+			// DOCA HW adds the offloaded-path portion. Populate model from reconciled values.
+			reconciledPkts := conntrack.Pkts + hwPkts
+			reconciledBytes := conntrack.Bytes + hwBytes
+			tmpResult.Packets = int64(reconciledPkts)
+			tmpResult.Bytes = int64(reconciledBytes)
+			// New fields: omitempty ensures they're absent when OffloadState == "none".
+			if offloadState != "none" {
+				tmpResult.OffloadState = offloadState
+				tmpResult.HwPkts = hwPkts
+				tmpResult.HwBytes = hwBytes
+			}
+		} else {
+			// No DOCA provider: fall back to eBPF-only counters (pre-v6.0 behavior).
+			tmpResult.Packets = int64(conntrack.Pkts)
+			tmpResult.Bytes = int64(conntrack.Bytes)
+		}
+
 		result = append(result, &tmpResult)
 	}
 	return operations.NewGetConfigConntrackAllOK().WithPayload(&operations.GetConfigConntrackAllOKBody{CtAttr: result})

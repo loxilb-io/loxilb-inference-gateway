@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	ghttp "net/http"
 	"os"
 	"reflect"
 	"sort"
@@ -31,7 +32,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
+	"github.com/google/uuid"
 	"github.com/loxilb-io/loxilb/api/loxinlp"
 	cmn "github.com/loxilb-io/loxilb/common"
 	utils "github.com/loxilb-io/loxilb/pkg/utils"
@@ -53,6 +56,215 @@ const (
 	RuleEpNotExistErr
 	RuleEpHostUnkErr
 )
+
+// HwOffload expressibility — typed error for FW rules
+// flagged with HwOffload=true whose shape cannot be expressed in the
+// BF2 DOCA ACL pipes (DENY_PIPE + ALLOW_PIPE 5-tuple TRANSPORT match).
+//
+// The error carries a machine-readable Reason code so callers (REST
+// handlers, unit tests, future operator tooling) can branch on the
+// specific violation without parsing the human-readable message.
+
+// HwOffloadUnexpressibleReason - reason code for hard-reject branches
+// of validateHwOffloadExpressible. Stable across loxilb versions: REST
+// clients and callers may switch on the value.
+type HwOffloadUnexpressibleReason int
+
+const (
+	// HwOffloadReasonNone - sentinel for "expressible". Never returned
+	// as an error reason; reserved for forward-compat composition.
+	HwOffloadReasonNone HwOffloadUnexpressibleReason = iota
+	// HwOffloadReasonIPv6Src - source CIDR is IPv6; ACL pipes are
+	// L3_TYPE_IP4-only.
+	HwOffloadReasonIPv6Src
+	// HwOffloadReasonIPv6Dst - destination CIDR is IPv6; ACL pipes are
+	// L3_TYPE_IP4-only.
+	HwOffloadReasonIPv6Dst
+	// HwOffloadReasonPortRangeSrc - source port range (min != max);
+	// DOCA per-entry match_mask supports single mask per port.
+	HwOffloadReasonPortRangeSrc
+	// HwOffloadReasonPortRangeDst - destination port range (min != max);
+	// DOCA per-entry match_mask supports single mask per port.
+	HwOffloadReasonPortRangeDst
+	// HwOffloadReasonProtoTCP - explicit Proto=6 (TCP). The ACL pipes
+	// use L4_TYPE_EXT=TRANSPORT (proto-agnostic), so proto-pinned
+	// intent cannot be correctly enforced in HW
+	// rule, re-affirmed).
+	HwOffloadReasonProtoTCP
+	// HwOffloadReasonProtoUDP - explicit Proto=17 (UDP). Same rationale
+	// as HwOffloadReasonProtoTCP.
+	HwOffloadReasonProtoUDP
+	// HwOffloadReasonCIDRSrc - source IPv4 prefix length is not /32.
+	// DOCA 2.9.4 BASIC pipes use a single pipe-level template mask set
+	// at create time (UINT32_MAX → exact match per the validated sample);
+	// per-entry CIDR masks are NOT supported. original "CIDR via
+	// per-entry mask" was infeasible — corrected to exact-IP-only.
+	HwOffloadReasonCIDRSrc
+	// HwOffloadReasonCIDRDst - destination IPv4 prefix length is not /32.
+	// Same rationale as HwOffloadReasonCIDRSrc.
+	HwOffloadReasonCIDRDst
+)
+
+// errHwOffloadUnexpressible - typed error returned by AddFwRule when a
+// HwOffload=true rule fails expressibility check. Wraps a
+// reason code + a human-readable message naming the violating constraint
+// + a suggested operator action.
+type errHwOffloadUnexpressible struct {
+	Reason  HwOffloadUnexpressibleReason
+	Message string
+}
+
+// Error - implements the error interface.
+func (e *errHwOffloadUnexpressible) Error() string {
+	return e.Message
+}
+
+// validateHwOffloadExpressible - hard-reject gate. Returns
+// nil if fwRule is expressible in the DOCA ingress ACL pipeline; returns
+// a *errHwOffloadUnexpressible naming the violating constraint otherwise.
+//
+// This function is invoked by AddFwRule only when fwRule.HwOffload == true.
+// Non-HW-flagged rules bypass the check entirely
+// eBPF-only posture unchanged).
+//
+// Branches (enumerates 5 categories; we split port range into src
+// vs dst, proto-specific into TCP vs UDP, and added 2 CIDR branches as
+// part of SDK correction — 8 distinct reason codes total so
+// callers can localize the operator remediation hint):
+//
+// 1. IPv6 source CIDR — ACL pipes are L3_TYPE_IP4-only.
+//  2. IPv6 destination CIDR — same.
+//  3. Non-/32 IPv4 source CIDR — corrected: DOCA 2.9.4 BASIC pipes
+//     support exact-IP match only.
+//  4. Non-/32 IPv4 destination CIDR — same.
+//  5. Port range source (L4SrcMin != L4SrcMax, both non-zero) — DOCA
+//     mask per entry supports a single port per template field.
+//  6. Port range destination — same.
+//  7. Proto-specific TCP (Proto == 6) — L4_TYPE_EXT=TRANSPORT match is
+//     proto-agnostic; pinning to TCP cannot be correctly enforced.
+//  8. Proto-specific UDP (Proto == 17) — same.
+//
+// Hint for operator: every error message ends with the explicit
+// remediation ("use HwOffload=false or split into ").
+// REST handler propagates this text into the 4xx response body.
+func validateHwOffloadExpressible(fwRule cmn.FwRuleArg) error {
+	// 1+2: IPv6 src / dst. Re-use the tk.IsNetIPv6 helper that AddFwRule
+	// already trusts for the SNAT family-coercion path.
+	if tk.IsNetIPv6(fwRule.SrcIP) {
+		return &errHwOffloadUnexpressible{
+			Reason: HwOffloadReasonIPv6Src,
+			Message: fmt.Sprintf(
+				"HwOffload=true incompatible with IPv6 source %q: "+
+					" ACL pipes are IPv4-only;"+
+					"use HwOffload=false to keep this rule on eBPF",
+				fwRule.SrcIP),
+		}
+	}
+	if tk.IsNetIPv6(fwRule.DstIP) {
+		return &errHwOffloadUnexpressible{
+			Reason: HwOffloadReasonIPv6Dst,
+			Message: fmt.Sprintf(
+				"HwOffload=true incompatible with IPv6 destination %q: "+
+					" ACL pipes are IPv4-only;"+
+					"use HwOffload=false to keep this rule on eBPF",
+				fwRule.DstIP),
+		}
+	}
+	// 2.5: Non-/32 IPv4 prefixes — DOCA 2.9.4 correction.
+	// BASIC pipes apply a SINGLE pipe-level template mask set at create
+	// time (UINT32_MAX → exact match) and `doca_flow_pipe_add_entry` is
+	// a 9-arg call that does NOT take a per-entry mask. Per-entry CIDR
+	// is only available via PIPE_ACL (chose BASIC). The
+	// validated flow_acl_basic sample uses exact-IP entries only.
+	//
+	// Parse failures are silently passed through — AddFwRule itself
+	// performs the canonical net.ParseCIDR validation; we only short-
+	// circuit when the parse SUCCEEDS and the prefix is not /32.
+	if _, srcNet, err := net.ParseCIDR(fwRule.SrcIP); err == nil {
+		if ones, bits := srcNet.Mask.Size(); bits == 32 && ones != 32 {
+			return &errHwOffloadUnexpressible{
+				Reason: HwOffloadReasonCIDRSrc,
+				Message: fmt.Sprintf(
+					"HwOffload=true incompatible with source CIDR /%d in %q: "+
+						"DOCA 2.9.4 BASIC pipes support exact-IP match only "+
+						"(no per-entry mask corrected);"+
+						"use HwOffload=false or expand to per-host /32 rules",
+					ones, fwRule.SrcIP),
+			}
+		}
+	}
+	if _, dstNet, err := net.ParseCIDR(fwRule.DstIP); err == nil {
+		if ones, bits := dstNet.Mask.Size(); bits == 32 && ones != 32 {
+			return &errHwOffloadUnexpressible{
+				Reason: HwOffloadReasonCIDRDst,
+				Message: fmt.Sprintf(
+					"HwOffload=true incompatible with destination CIDR /%d in %q: "+
+						"DOCA 2.9.4 BASIC pipes support exact-IP match only "+
+						"(no per-entry mask corrected);"+
+						"use HwOffload=false or expand to per-host /32 rules",
+					ones, fwRule.DstIP),
+			}
+		}
+	}
+	// 3+4: Port ranges. Mirror AddFwRule's guard: a port-tuple is
+	// "active" only when at least one of min/max is non-zero. A range
+	// is min != max. Single-port (min == max != 0) is expressible.
+	if (fwRule.SrcPortMin != 0 || fwRule.SrcPortMax != 0) &&
+		fwRule.SrcPortMin != fwRule.SrcPortMax {
+		return &errHwOffloadUnexpressible{
+			Reason: HwOffloadReasonPortRangeSrc,
+			Message: fmt.Sprintf(
+				"HwOffload=true incompatible with source port range "+
+					"L4SrcMin=%d L4SrcMax=%d: DOCA per-entry match_mask "+
+					"supports a single port per template field;"+
+					"use HwOffload=false or split into single-port rules",
+				fwRule.SrcPortMin, fwRule.SrcPortMax),
+		}
+	}
+	if (fwRule.DstPortMin != 0 || fwRule.DstPortMax != 0) &&
+		fwRule.DstPortMin != fwRule.DstPortMax {
+		return &errHwOffloadUnexpressible{
+			Reason: HwOffloadReasonPortRangeDst,
+			Message: fmt.Sprintf(
+				"HwOffload=true incompatible with destination port range "+
+					"L4DstMin=%d L4DstMax=%d: DOCA per-entry match_mask "+
+					"supports a single port per template field;"+
+					"use HwOffload=false or split into single-port rules",
+				fwRule.DstPortMin, fwRule.DstPortMax),
+		}
+	}
+	// 5+6: Proto-specific. ACL pipes use L4_TYPE_EXT=TRANSPORT which is
+	// proto-agnostic; pinning Proto=6 (TCP) or Proto=17 (UDP) cannot be
+	// correctly enforced. Proto=0 (any) is expressible. Other proto
+	// values are out of scope (not enumerated by);
+	// future expressibility cases land here as additional branches.
+	switch fwRule.Proto {
+	case 0:
+		// Proto=any — TRANSPORT match handles it.
+	case 6:
+		return &errHwOffloadUnexpressible{
+			Reason: HwOffloadReasonProtoTCP,
+			Message: "HwOffload=true incompatible with Proto=6 (TCP-specific): " +
+				" ACL pipes use L4_TYPE_EXT=TRANSPORT (proto-agnostic)" +
+				"so proto-pinned intent cannot be correctly enforced;" +
+				"use HwOffload=false or set Proto=0 (any)",
+		}
+	case 17:
+		return &errHwOffloadUnexpressible{
+			Reason: HwOffloadReasonProtoUDP,
+			Message: "HwOffload=true incompatible with Proto=17 (UDP-specific): " +
+				" ACL pipes use L4_TYPE_EXT=TRANSPORT (proto-agnostic)" +
+				"so proto-pinned intent cannot be correctly enforced;" +
+				"use HwOffload=false or set Proto=0 (any)",
+		}
+	default:
+		// Other proto values (SCTP=132, ICMP=1, …) are silently accepted
+		// at this layer; DOCA wire-up validates them
+		// further. Add explicit branches here when new restrictions
+		// surface during DOCA-side validation.
+	}
+	return nil
+}
 
 type ruleTMatch uint
 
@@ -148,25 +360,28 @@ type ruleStringTuple struct {
 }
 
 type ruleTuples struct {
-	port     ruleStringTuple
-	l2Src    ruleMacTuple
-	l2Dst    ruleMacTuple
-	vlanID   rule16Tuple
-	l3Src    ruleIPTuple
-	l3Dst    ruleIPTuple
-	l4Prot   rule8Tuple
-	l4Src    rule16RTuple
-	l4Dst    rule16RTuple
-	tunID    rule32Tuple
-	inL2Src  ruleMacTuple
-	inL2Dst  ruleMacTuple
-	inL3Src  ruleIPTuple
-	inL3Dst  ruleIPTuple
-	inL4Prot rule8Tuple
-	inL4Src  rule16RTuple
-	inL4Dst  rule16RTuple
-	pref     uint32
-	path     string
+	port          ruleStringTuple
+	l2Src         ruleMacTuple
+	l2Dst         ruleMacTuple
+	vlanID        rule16Tuple
+	l3Src         ruleIPTuple
+	l3Dst         ruleIPTuple
+	l4Prot        rule8Tuple
+	l4Src         rule16RTuple
+	l4Dst         rule16RTuple
+	tunID         rule32Tuple
+	inL2Src       ruleMacTuple
+	inL2Dst       ruleMacTuple
+	inL3Src       ruleIPTuple
+	inL3Dst       ruleIPTuple
+	inL4Prot      rule8Tuple
+	inL4Src       rule16RTuple
+	inL4Dst       rule16RTuple
+	pref          uint32
+	path          string
+	pathPrefix    string // P6: URL path prefix for L7 routing
+	pathMatchMode string // P6: Path matching mode (disabled, prefix, exact)
+	modelName     string // AI model name for pool selection (e.g. "llama-70b"); empty = wildcard
 }
 
 type ruleTActType uint
@@ -191,7 +406,12 @@ const (
 	HostProbeConnectSCTP = "sctp"
 	HostProbeHTTP        = "http"
 	HostProbeHTTPS       = "https"
-	HostProbeNone        = "none"
+	// HostProbeTLSHello - : handshake-only TLS liveness probe.
+	// UP = the TLS handshake completes (ANY cert accepted; the chain is NOT validated —
+	// this is liveness, not a trust probe). SNI = epHostOpts.domainName (consistency).
+	// A non-TLS port fails the handshake ⇒ DOWN.
+	HostProbeTLSHello = "tls-hello"
+	HostProbeNone     = "none"
 )
 
 type epHostOpts struct {
@@ -204,6 +424,62 @@ type epHostOpts struct {
 	probePort         uint16
 	probeActivated    bool
 	egress            bool
+	// structured Octavia HTTP(S) health-monitor content fields.
+	// All default-empty; when unset the prober falls back to the probeReq/probeResp
+	// escape hatch, so existing behaviour is unchanged.
+	probeMethod   string // HM HTTP method (e.g. "GET","HEAD"); empty ⇒ GET
+	probePath     string // HM request path (e.g. "/healthz"); empty ⇒ probeReq / "/"
+	expectedCodes string // Octavia expected_codes: "200" | "200,202" | "200-204"; empty ⇒ "200"
+	httpVersion   string // "1.0" or "1.1"; when "1.1" a Host header is sent
+	domainName    string // TLS SNI for HTTPS monitors AND the Host header
+	// per-health-monitor CA override + verify opt-out. Control-plane only
+	// (no proxy_arg / data-plane impact). probeVerify is the RESOLVED value (NetEpHostAdd
+	// defaults a nil REST field to true ⇒ verification ON by default); only an
+	// explicit probe_verify=false sets InsecureSkipVerify. probeCAPath overrides the CA bundle
+	// used by the HTTPS content probe; empty ⇒ R.rootCAPool (today's behaviour, unchanged).
+	// probeCAPath: override CA bundle for the HTTPS content probe; empty ⇒ R.rootCAPool.
+	probeCAPath string
+	// probeVerify: resolved verify toggle; true ⇒ verify on (default), false ⇒ InsecureSkipVerify.
+	probeVerify bool
+	// probeCRLPath: residual optional static CRL (PEM) the HTTPS content probe
+	// checks the server-cert chain against (leaf-only revocation). Empty ⇒ no CRL (today's
+	// behaviour). Carried here on the same health/verify surface as probeCAPath.
+	probeCRLPath string
+}
+
+// parseExpectedCodes parses Octavia health-monitor expected_codes syntax:
+// single ("200"), comma-list ("200,202"), and range ("200-204"); the empty string
+// defaults to "200". Each part becomes an inclusive [lo,hi] pair. Malformed parts
+// degrade safely (strconv.Atoi error ⇒ 0, a value no real HTTP status hits) so the
+// health goroutine never panics.
+func parseExpectedCodes(s string) [][2]uint16 {
+	if s == "" {
+		return [][2]uint16{{200, 200}}
+	}
+	var out [][2]uint16
+	for _, part := range strings.Split(s, ",") {
+		if lo, hi, ok := strings.Cut(part, "-"); ok {
+			l, _ := strconv.Atoi(strings.TrimSpace(lo))
+			h, _ := strconv.Atoi(strings.TrimSpace(hi))
+			out = append(out, [2]uint16{uint16(l), uint16(h)})
+		} else {
+			c, _ := strconv.Atoi(strings.TrimSpace(part))
+			out = append(out, [2]uint16{uint16(c), uint16(c)})
+		}
+	}
+	return out
+}
+
+// expectedCodeOK reports whether the HTTP status code falls within ANY parsed
+// expected_codes pair. Replaces the old "2xx || 405" literal in the prober.
+func expectedCodeOK(pairs [][2]uint16, code int) bool {
+	c := uint16(code)
+	for _, p := range pairs {
+		if c >= p[0] && c <= p[1] {
+			return true
+		}
+	}
+	return false
 }
 
 type epHost struct {
@@ -227,11 +503,17 @@ type ruleLBEp struct {
 	rIP           net.IP
 	xPort         uint16
 	weight        uint8
+	epRole        int    // P/D endpoint role: 0=normal, 1=prefill, 2=decode
+	nixlPort      uint16 // NIXL side-channel port (US-514); 0=use xPort
 	inActTries    int
 	inActiveEP    bool
 	noService     bool
 	chkVal        bool
 	epCreated     bool
+	subnetId      string // opaque member subnet id, round-trip only, never interpreted
+	backup        bool   // standby member flag; wires dataplane selection semantics
+	monAddr       string // per-member health-probe address override; wires the prober
+	selInactive   bool   // TRANSIENT per-DpCreate selection flag computed by applyMemberSelection in LB2DP (backup gating + weight=0 drain + admin pause). NOT membership/persistence state — NEVER mutate inActiveEP for selection, the GET serializer skips inActiveEP EPs so a weight=0/backup-standby EP must still round-trip.
 	stat          ruleStat
 	foldEndPoints []ruleLBEp
 	foldRuleKey   string
@@ -285,29 +567,79 @@ type ruleProbe struct {
 }
 
 type ruleEnt struct {
-	zone     *Zone
-	ruleNum  uint64
-	sync     DpStatusT
-	tuples   ruleTuples
-	ci       string
-	hChk     ruleProbe
-	managed  bool
-	bgp      bool
-	addrRslv bool
-	sT       time.Time
-	iTO      uint32
-	pTO      uint32
-	act      ruleAct
-	privIP   net.IP
-	secIP    []ruleLBSIP
-	stat     ruleStat
-	name     string
-	inst     string
-	secMode  cmn.LBSec
-	ppv2En   bool
-	egress   bool
-	srcList  []*allowedSrcElem
-	locIPs   map[string]struct{}
+	zone                        *Zone
+	ruleNum                     uint64
+	sync                        DpStatusT
+	tuples                      ruleTuples
+	ci                          string
+	hChk                        ruleProbe
+	managed                     bool
+	bgp                         bool
+	addrRslv                    bool
+	sT                          time.Time
+	iTO                         uint32
+	pTO                         uint32
+	act                         ruleAct
+	privIP                      net.IP
+	secIP                       []ruleLBSIP
+	stat                        ruleStat
+	name                        string
+	inst                        string
+	secMode                     cmn.LBSec
+	ppv2En                      bool
+	egress                      bool
+	traceType                   string                  // Tracing catalog name for deep inspection
+	tracingCatalogID            uint16                  // Resolved catalog_id for tracing (0 = no tracing)
+	backendProtocol             string                  // Backend protocol capability: "http1", "http2", or "both"
+	sessionHeaderName           string                  // Custom session header for persist mode (e.g., "mcp-session-id")
+	sseMode                     bool                    // SSE mode: suppress idle-timeout during streaming (US-401)
+	maxStreamDurationSec        uint32                  // Absolute wall-clock cap for SSE streams in seconds (US-401)
+	backendKeepaliveIntervalSec uint32                  // Backend SO_KEEPALIVE+TCP_KEEPIDLE interval in seconds (US-401)
+	timeoutMemberConnectMs      uint32                  // backend connect-poll deadline in ms (0=500ms default)
+	timeoutMemberDataMs         uint32                  // member-side relay idle deadline in ms (0=existing idle)
+	timeoutTcpInspectMs         uint32                  // header-accumulation deadline in ms (0=bounded default)
+	alpnProtocols               []string                // ALPN list → backend_protocol_cap on listener+pool
+	tlsCiphers                  string                  // inline OpenSSL cipher string (empty=hardcoded)
+	tlsVersions                 []string                // version list → tls_version_min/max range
+	hstsMaxAge                  uint32                  // HSTS max-age (0=no injection)
+	hstsIncludeSubdomains       bool                    // "; includeSubDomains"
+	hstsPreload                 bool                    // "; preload"
+	backendCaCertId             string                  // backend CA certId (empty=system default)
+	backendClientCertId         string                  // backend client certId (empty=none)
+	pdDisaggMode                bool                    // P/D disaggregation mode: orchestrate prefill→decode flow (US-502)
+	pdCacheAwareMode            bool                    // P/D cache-aware routing: session + trie + min-load (US-PD801)
+	pdSessionTTLSec             uint32                  // Session stickiness TTL in seconds (0 = no expiry)
+	pdCacheThreshold            uint8                   // Cache match threshold (0-100, default 20)
+	pdBalanceAbsThreshold       uint8                   // Load imbalance threshold (default 3)
+	kvExactMode                 uint8                   // KV-cache exact routing: 0=off, 1=zmq P/D, 2=nats (reserved), 3=zmq single-role
+	kvBlockSize                 uint32                  // Token block size for KV hash computation
+	kvHashAlgo                  string                  // "sha256_cbor" or "xxhash_cbor"
+	kvZmqPort                   uint16                  // ZMQ PUB port (default 5557)
+	kvWarmupSec                 uint32                  // Warmup seconds before Tier 1.5 activates
+	kvEngineType                string                  // KV-event engine: ""/"vllm" (default) or "sglang" — immutable after create
+	kvDpRankCount               uint16                  // SGLang DP rank count (1..8, 0 ⇒ 1; rank N publishes at kvZmqPort+N)
+	chwblPrefixHashLevel        int                     // CHWBL prefix hash level: 1, 2, or 3
+	chwblPrefixHashFlags        int                     // CHWBL optional field flags bitfield
+	chwblMeanLoadFactor         int                     // CHWBL max load factor percentage (100-300)
+	chwblReplication            int                     // CHWBL virtual nodes per endpoint (1-1024)
+	chwblEnableCacheSalt        bool                    // CHWBL require cache_salt field
+	vllmScraper                 *VllmScraper            // vLLM metrics scraper for queue-depth routing (COMP-01)
+	mtlsFrontend                *cmn.MTLSFrontendConfig // mTLS frontend configuration
+	mtlsBackend                 *cmn.MTLSBackendConfig  // mTLS backend configuration
+	srcList                     []*allowedSrcElem
+	locIPs                      map[string]struct{}
+	hwOffload                   bool              // FwRuleArg.HwOffload mirror, plumbed through Fw2DP to FwDpWorkQ.HwOffload
+	id                          string            // stable opaque id (client-supplied verbatim, or minted UUIDv4)
+	adminStateUp                bool              // EFFECTIVE resolved admin_state_up (nil/absent in body => true/enabled)
+	lastUpdated                 time.Time         // in-memory only, reset-to-now on restart, NEVER serialized
+	projectId                   string            // opaque tenant id, stored verbatim, filtered on GET /all (NOT authz)
+	connLimit                   uint32            // per-service concurrent-connection ceiling (0 = unlimited); plumbed to the dataplane conn_limit
+	activeConns                 uint64            // live concurrent-connection count, snapshotted each RulesSync from the datapath nat_ep_map conc_conns (selector-agnostic — the SAME notion of "current" the connLimit gate enforces; NOT the LC-only active_sess[]). In-memory, reset to 0 on restart.
+	totalConns                  uint64            // cumulative connection count, snapshotted each RulesSync from the datapath nat_ep_map total_conns (++ on CT-create in the datapath so even sub-tick flows count; never decremented). In-memory, reset to 0 on restart.
+	bytesIn                     uint64            // cumulative client->VIP request bytes = datapath cum_bytes_in (closed flows) + live CT_DIR_IN bytes (in-flight). Real per-direction split; NOT a 50/50 heuristic, NOT the direction-collapsed nat_stats_map. In-memory, reset on restart.
+	bytesOut                    uint64            // cumulative VIP->client response bytes = datapath cum_bytes_out (closed flows) + live CT_DIR_OUT bytes (in-flight). In-memory, reset on restart.
+	annotations                 map[string]string // opaque key/value map, round-tripped verbatim, never interpreted
+	secVIPs                     []cmn.LbSecVIPArg // Octavia /07: structured secondary VIPs, stored opaque/round-tripped for ALL protocols; SEPARATE from the flat secIP slice (never merged), NOT SCTP-gated
 }
 
 type ruleTable struct {
@@ -332,6 +664,10 @@ const (
 const (
 	RtMaximumFw4s = (8 * 1024)
 	RtMaximumLbs  = (2 * 1024)
+	// RtMaximumFwActive caps the number of installed fw rules well below the
+	// eBPF per-lookup tail-call ceiling (~33 tail calls, ~6400 rules), beyond
+	// which the datapath would drop packets during the fw scan.
+	RtMaximumFwActive = 6000
 )
 
 // RuleCfg - tunable parameters related to inactive rules
@@ -375,6 +711,10 @@ type RuleH struct {
 	rootCAPool *x509.CertPool
 	tlsCert    tls.Certificate
 	vipST      time.Time
+	// opaqueID - Octavia : in-memory id->ruleEnt index. Rebuilt from persisted
+	// config on restart (no separate persisted structure) since the id round-trips through
+	// lbconfig.txt and replays via NetLbRuleAdd -> AddLbRule on boot.
+	opaqueID map[string]*ruleEnt
 }
 
 // RulesInit - initialize the Rules subsystem
@@ -398,10 +738,13 @@ func RulesInit(zone *Zone) *RuleH {
 	nRh.tables[RtLB].tableType = RtEm
 	nRh.tables[RtLB].eMap = make(map[string]*ruleEnt)
 	nRh.tables[RtLB].Mark = utils.NewMarker(1, RtMaximumLbs)
+	// opaque id -> rule index, rebuilt from persisted config on restart.
+	nRh.opaqueID = make(map[string]*ruleEnt)
 
 	for i := 0; i < MaxEndPointCheckers; i++ {
 		nRh.epCs[i].tD = make(chan bool)
 		nRh.epCs[i].hChk = time.NewTicker(EndPointCheckerDuration * time.Second)
+		// B1: best-effort skip; relies on process exit (RESEARCH §Open Q5).
 		go epTicker(nRh, i)
 	}
 	rootCAPool, err := x509.SystemCertPool()
@@ -444,10 +787,36 @@ func RulesInit(zone *Zone) *RuleH {
 	return nRh
 }
 
+// lbPathMatchMode returns the canonical rule-key spelling of an LB rule's
+// PathMatchMode. "disabled" (the REST handlers' backward-compat default) and
+// "" (the zero value carried by config dumps, legacy *.txt replay, and
+// snapshot documents) mean the same thing — no path matching — but keyed
+// verbatim they produced two DIFFERENT rule keys for otherwise identical
+// rules: a rule re-added from a dump/snapshot could not be found (404) or
+// deduplicated by any REST tuple lookup (snapshot G-8/9 E2E finding). The
+// datapath already folds both spellings to mode 0 (dpebpf_linux.go).
+func lbPathMatchMode(mode string) string {
+	if mode == "disabled" {
+		return ""
+	}
+	return mode
+}
+
 func (r *ruleTuples) ruleKey() string {
 	ks := ""
 	if r.path != "" {
 		ks += r.path
+	}
+	// P6: Include path prefix and match mode in rule key to support multiple rules per VIP:port
+	if r.pathPrefix != "" {
+		ks += "|" + r.pathPrefix
+	}
+	if r.pathMatchMode != "" {
+		ks += "|" + r.pathMatchMode
+	}
+	// Include model name in rule key so rules differing only in ModelName are distinct
+	if r.modelName != "" {
+		ks += "|model:" + r.modelName
 	}
 	ks += fmt.Sprintf("%s", r.port.val)
 	ks += fmt.Sprintf("%02x:%02x:%02x:%02x:%02x:%02x",
@@ -469,20 +838,15 @@ func (r *ruleTuples) ruleKey() string {
 	ks += fmt.Sprintf("%s", r.l3Src.addr.String())
 	ks += fmt.Sprintf("%d", r.l4Prot.val&r.l4Prot.valid)
 
+	// Tag and delimit port ranges so a src-port rule never collides with an
+	// otherwise-identical dst-port rule, and exact port N (rendered N-N) never
+	// collides with range that concatenated to the same digits (e.g. 1-23 vs 123).
 	if r.l4Src.valid {
-		if r.l4Src.valMin == r.l4Src.valMax {
-			ks += fmt.Sprintf("%d", r.l4Src.valMin)
-		} else {
-			ks += fmt.Sprintf("%d%d", r.l4Src.valMin, r.l4Src.valMax)
-		}
+		ks += fmt.Sprintf("|sp:%d-%d", r.l4Src.valMin, r.l4Src.valMax)
 	}
 
 	if r.l4Dst.valid {
-		if r.l4Dst.valMin == r.l4Dst.valMax {
-			ks += fmt.Sprintf("%d", r.l4Dst.valMin)
-		} else {
-			ks += fmt.Sprintf("%d%d", r.l4Dst.valMin, r.l4Dst.valMax)
-		}
+		ks += fmt.Sprintf("|dp:%d-%d", r.l4Dst.valMin, r.l4Dst.valMax)
 	}
 
 	ks += fmt.Sprintf("%02x:%02x:%02x:%02x:%02x:%02x",
@@ -504,20 +868,12 @@ func (r *ruleTuples) ruleKey() string {
 	ks += fmt.Sprintf("%s", r.inL3Src.addr.String())
 	ks += fmt.Sprintf("%d", r.inL4Prot.val&r.inL4Prot.valid)
 	if r.inL4Src.valid {
-		if r.inL4Src.valMin == r.inL4Src.valMax {
-			ks += fmt.Sprintf("%d", r.inL4Src.valMin)
-		} else {
-			ks += fmt.Sprintf("%d%d", r.inL4Src.valMin, r.inL4Src.valMax)
-		}
+		ks += fmt.Sprintf("|isp:%d-%d", r.inL4Src.valMin, r.inL4Src.valMax)
 	}
 	if r.inL4Dst.valid {
-		if r.inL4Dst.valMin == r.inL4Dst.valMax {
-			ks += fmt.Sprintf("%d", r.inL4Dst.valMin)
-		} else {
-			ks += fmt.Sprintf("%d%d", r.inL4Dst.valMin, r.inL4Dst.valMax)
-		}
+		ks += fmt.Sprintf("|idp:%d-%d", r.inL4Dst.valMin, r.inL4Dst.valMax)
 	}
-	ks += fmt.Sprintf("%d", r.pref)
+	ks += fmt.Sprintf("|pref:%d", r.pref)
 	return ks
 }
 
@@ -743,9 +1099,11 @@ func (R *RuleH) Rules2Json() ([]byte, error) {
 		tmpEp := data.act.action.(*ruleLBActs).endPoints
 		for _, ep := range tmpEp {
 			eps = append(eps, cmn.LbEndPointArg{
-				EpIP:   ep.xIP.String(),
-				EpPort: ep.xPort,
-				Weight: ep.weight,
+				EpIP:     ep.xIP.String(),
+				EpPort:   ep.xPort,
+				Weight:   ep.weight,
+				EpRole:   ep.epRole,
+				NixlPort: ep.nixlPort,
 			})
 		}
 		// Make LB rule
@@ -802,8 +1160,77 @@ func (R *RuleH) GetLBRule() ([]cmn.LbRuleMod, error) {
 		ret.Serv.ProbeResp = data.hChk.prbResp
 		ret.Serv.Name = data.name
 		ret.Serv.HostUrl = data.tuples.path
+		ret.Serv.PathPrefix = data.tuples.pathPrefix       // P6: Return path prefix in GET
+		ret.Serv.PathMatchMode = data.tuples.pathMatchMode // P6: Return path match mode in GET
+		ret.Serv.ModelName = data.tuples.modelName         // Return model name in GET
 		ret.Serv.ProxyProtocolV2 = data.ppv2En
 		ret.Serv.Egress = data.egress
+		ret.Serv.TraceType = data.traceType                 // Tracing catalog
+		ret.Serv.BackendProtocol = data.backendProtocol     // Backend protocol capability
+		ret.Serv.SessionHeaderName = data.sessionHeaderName // Custom session header for persist mode
+		ret.Serv.SSEMode = data.sseMode                     // SSE streaming mode (US-401)
+		ret.Serv.MaxStreamDurationSec = data.maxStreamDurationSec
+		ret.Serv.BackendKeepaliveIntervalSec = data.backendKeepaliveIntervalSec
+		ret.Serv.TimeoutMemberConnect = data.timeoutMemberConnectMs // Octavia
+		ret.Serv.TimeoutMemberData = data.timeoutMemberDataMs       // Octavia
+		ret.Serv.TimeoutTcpInspect = data.timeoutTcpInspectMs       // Octavia
+		// TLS-hardening fields — round-trip on GET.
+		ret.Serv.AlpnProtocols = data.alpnProtocols
+		ret.Serv.TlsCiphers = data.tlsCiphers
+		ret.Serv.TlsVersions = data.tlsVersions
+		ret.Serv.HstsMaxAge = data.hstsMaxAge
+		ret.Serv.HstsIncludeSubdomains = data.hstsIncludeSubdomains
+		ret.Serv.HstsPreload = data.hstsPreload
+		ret.Serv.BackendCaCertId = data.backendCaCertId
+		ret.Serv.BackendClientCertId = data.backendClientCertId
+		ret.Serv.PDDisaggMode = data.pdDisaggMode         // P/D disaggregation mode (US-502)
+		ret.Serv.PDCacheAwareMode = data.pdCacheAwareMode // P/D cache-aware routing (US-PD801)
+		ret.Serv.PDSessionTTLSec = data.pdSessionTTLSec
+		ret.Serv.PDCacheThreshold = data.pdCacheThreshold
+		ret.Serv.PDBalanceAbsThreshold = data.pdBalanceAbsThreshold
+		ret.Serv.KvExactMode = data.kvExactMode // KV-cache exact routing
+		ret.Serv.KvBlockSize = data.kvBlockSize
+		ret.Serv.KvHashAlgo = data.kvHashAlgo
+		ret.Serv.KvZmqPort = data.kvZmqPort
+		ret.Serv.KvWarmupSec = data.kvWarmupSec
+		ret.Serv.KvEngineType = data.kvEngineType // zero value ⇒ omitempty ⇒ absent on legacy rules
+		ret.Serv.KvDpRankCount = data.kvDpRankCount
+		// CHWBL configuration (sel=8)
+		ret.Serv.CHWBLPrefixHashLevel = data.chwblPrefixHashLevel
+		ret.Serv.CHWBLPrefixHashFlags = data.chwblPrefixHashFlags
+		ret.Serv.CHWBLMeanLoadFactor = data.chwblMeanLoadFactor
+		ret.Serv.CHWBLReplication = data.chwblReplication
+		ret.Serv.CHWBLEnableCacheSalt = data.chwblEnableCacheSalt
+		// mTLS configuration
+		ret.Serv.MTLSFrontend = data.mtlsFrontend
+		ret.Serv.MTLSBackend = data.mtlsBackend
+		// surface the opaque id + effective admin_state on GET so they
+		// round-trip through lbconfig.txt and are visible to clients. adminStateUp is the
+		// EFFECTIVE resolved bool; expose as a pointer for merge-patch symmetry.
+		ret.Serv.Id = data.id
+		adminStateUp := data.adminStateUp
+		ret.Serv.AdminStateUp = &adminStateUp
+		// Octavia + : surface the opaque projectId + annotations
+		// on GET so they round-trip through lbconfig.txt verbatim. Never interpreted.
+		ret.Serv.ProjectId = data.projectId
+		ret.Serv.Annotations = data.annotations
+		// surface the per-service connectionLimit on GET so it
+		// round-trips through lbconfig.txt and is visible to clients. 0 = unlimited (omitempty).
+		ret.Serv.ConnectionLimit = data.connLimit
+		// surface the per-rule statistics quad (recomputed each RulesSync from
+		// the CT walk by DpCtStatsRollup) on the GET read path so GET .../stats serializes the
+		// real {activeConnections, bytesIn, bytesOut, totalConnections}. All transient (json:"-")
+		// — in-memory only, reset to zero on restart. activeConns is the same
+		// selector-agnostic live count the connLimit gate enforces; bytesIn/bytesOut
+		// are the real per-direction CT_DIR_IN/CT_DIR_OUT split ((a)).
+		ret.Serv.ActiveConns = data.activeConns
+		ret.Serv.TotalConns = data.totalConns
+		ret.Serv.BytesIn = data.bytesIn
+		ret.Serv.BytesOut = data.bytesOut
+		// surface the in-memory last-mutation timestamp on the read
+		// path so GET .../status reports the ACTUAL last mutation, not the request time.
+		// Transient (json:"-") — never serialized to lbconfig.txt.
+		ret.Serv.LastUpdated = data.lastUpdated
 		if data.act.actType == RtActSnat {
 			ret.Serv.Snat = true
 		}
@@ -811,6 +1238,10 @@ func (R *RuleH) GetLBRule() ([]cmn.LbRuleMod, error) {
 		for _, sip := range data.secIP {
 			ret.SecIPs = append(ret.SecIPs, cmn.LbSecIPArg{SecIP: sip.sIP.String()})
 		}
+
+		// Octavia /07: structured secondaryVIPs round-trip for ALL protocols,
+		// stored opaque on a slot SEPARATE from the flat SCTP secIP slice (never merged).
+		ret.SecVIPs = append(ret.SecVIPs, data.secVIPs...)
 
 		for _, src := range data.srcList {
 			ret.SrcIPs = append(ret.SrcIPs, cmn.LbAllowedSrcIPArg{Prefix: src.srcPref.String()})
@@ -836,8 +1267,15 @@ func (R *RuleH) GetLBRule() ([]cmn.LbRuleMod, error) {
 				EpIP:     ep.xIP.String(),
 				EpPort:   ep.xPort,
 				Weight:   ep.weight,
-				State:    state,
-				Counters: counterStr,
+				EpRole:   ep.epRole,
+				NixlPort: ep.nixlPort,
+				// round-trip the additive member fields verbatim.
+				// wires backup/monitorAddress dataplane behavior; subnetId is round-trip only.
+				Backup:         ep.backup,
+				SubnetId:       ep.subnetId,
+				MonitorAddress: ep.monAddr,
+				State:          state,
+				Counters:       counterStr,
 			})
 		}
 		// Make LB rule
@@ -865,6 +1303,28 @@ func validateXlateEPWeights(servEndPoints []cmn.LbEndPointArg) (int, error) {
 	}
 
 	return 0, nil
+}
+
+// probeHost - Octavia : the health-probe target for an endpoint.
+//
+// When the endpoint sets a monitorAddress (monAddr), the health prober dials that IP
+// (with the service-level probePort/monitorPort) instead of the traffic IP; when absent
+// it falls back to the traffic IP — today's behavior, back-compat. Selection, CT, and
+// traffic ALWAYS use the traffic IP (ep.xIP); monitorAddress affects the probe path ONLY.
+//
+// This single helper MUST be used at EVERY makeEPKey/AddEPHost/DeleteEPHost site for an
+// endpoint so the probe key is SYMMETRIC across build (modNatEpHost), lookup
+// (syncEPHostState2Rule), AND teardown (DeleteEPHost). An asymmetric key (build keyed on
+// the monitor IP but lookup/teardown keyed on the traffic IP, or vice-versa) would
+// permanently mismark the EP / leave a stale epMap entry (T-73-mismark).
+//
+// Per Assumption A1 / Open Q1, per-EP monitor_port is OUT of scope: the service-level
+// probePort covers monitor_port, so only a distinct monitor *address* is wired here.
+func probeHost(ep ruleLBEp) string {
+	if ep.monAddr != "" {
+		return ep.monAddr
+	}
+	return ep.xIP.String()
 }
 
 func (R *RuleH) modNatEpHost(r *ruleEnt, endpoints []ruleLBEp, doAddOp bool, liveCheckEn bool, egressEps bool) {
@@ -918,11 +1378,16 @@ func (R *RuleH) modNatEpHost(r *ruleEnt, endpoints []ruleLBEp, doAddOp bool, liv
 			hopts.egress = true
 		}
 
-		epKey := makeEPKey(nep.xIP.String(), pType, pPort)
+		// probe key + dial host use the monitor address when set
+		// (probeHost), else the traffic IP. Build, teardown, AND the lookup site
+		// (syncEPHostState2Rule) MUST all route through probeHost(nep) so the epMap key is
+		// symmetric — an asymmetric key permanently mismarks the EP.
+		pHost := probeHost(*nep)
+		epKey := makeEPKey(pHost, pType, pPort)
 
 		if doAddOp {
 			if !nep.inActiveEP && !nep.epCreated {
-				_, err := R.AddEPHost(false, nep.xIP.String(), epKey, hopts)
+				_, err := R.AddEPHost(false, pHost, epKey, hopts)
 				if err == nil {
 					nep.epCreated = true
 				} else {
@@ -933,7 +1398,7 @@ func (R *RuleH) modNatEpHost(r *ruleEnt, endpoints []ruleLBEp, doAddOp bool, liv
 			}
 		} else {
 			if nep.epCreated {
-				_, err := R.DeleteEPHost(false, epKey, nep.xIP.String(), hopts.probeType, hopts.probePort)
+				_, err := R.DeleteEPHost(false, epKey, pHost, hopts.probeType, hopts.probePort)
 				if err == nil {
 					nep.epCreated = false
 				} else {
@@ -951,6 +1416,278 @@ func (R *RuleH) GetLBRuleByID(ruleID uint32) *ruleEnt {
 	}
 
 	return nil
+}
+
+// resetRuleLiveStats - Octavia : zero every LB rule's statistics quad (activeConns,
+// totalConns, bytesIn, bytesOut) before DpCtStatsRollup refills all four from the data plane
+// this pass. Unlike the previous live-CT-walk design, totalConns and the cumulative byte totals
+// are no longer accumulated in Go — they live in the datapath nat_ep_map, so the Go
+// copy is just a per-pass snapshot of the authoritative counters and is safe to fully clear here.
+// The caller (DpCtStatsRollup) holds the RuleH lock, so this reset+refill is atomic against a
+// concurrent GET read.
+func (R *RuleH) resetRuleLiveStats() {
+	for _, rule := range R.tables[RtLB].eMap {
+		rule.activeConns = 0
+		rule.totalConns = 0
+		rule.bytesIn = 0
+		rule.bytesOut = 0
+	}
+}
+
+// GetLBRuleByOpaqueID - Get a LB rule by its stable opaque id (Octavia).
+// This keys on the client-supplied/minted UUID, NOT the internal ruleNum (use
+// GetLBRuleByID for that). Returns nil when no rule carries the id.
+//
+// WR-05 CONCURRENCY CONTRACT: R.opaqueID is a plain map with NO internal synchronization;
+// it is guarded by the same RuleH-wide lock that guards R.tables[RtLB].eMap. The CALLER
+// MUST HOLD THE RuleH LOCK for the duration of this read — a concurrent register/unregister
+// (AddLbRule/DeleteLbRule) is a map write and racing it here is a data race.
+func (R *RuleH) GetLBRuleByOpaqueID(id string) *ruleEnt {
+	if id == "" || R.opaqueID == nil {
+		return nil
+	}
+	return R.opaqueID[id]
+}
+
+// resolveAdminStateUp - Octavia back-compat resolution: nil/absent (legacy
+// lbconfig.txt entry or a POST that omits the field) resolves to enabled (true);
+// only an explicit false pauses the rule.
+func resolveAdminStateUp(v *bool) bool {
+	return v == nil || *v
+}
+
+// Octavia input bounds (threat T-73-DOS): the opaque annotations map is
+// stored verbatim but unbounded growth would bloat lbconfig.txt and the in-memory rule.
+// Cap the key count and per-value length so a malicious/runaway driver cannot exhaust
+// storage. Excess keys are dropped (deterministic by sorted key) and over-long values are
+// truncated; contents are never interpreted. Returns nil for an empty/nil input.
+const (
+	maxAnnotationKeys   = 32
+	maxAnnotationValLen = 256
+)
+
+func boundAnnotations(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(in))
+	for k := range in {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make(map[string]string, len(keys))
+	for i, k := range keys {
+		if i >= maxAnnotationKeys {
+			break
+		}
+		v := in[k]
+		if len(v) > maxAnnotationValLen {
+			// Truncate on a rune boundary so a verbatim-round-trip annotation
+			// is never stored as invalid/partial UTF-8 (WR-02): slicing by raw
+			// byte count could split a multibyte sequence, which then serializes
+			// back as U+FFFD and corrupts the driver's view of its own value.
+			v = v[:maxAnnotationValLen]
+			for len(v) > 0 && !utf8.ValidString(v) {
+				v = v[:len(v)-1]
+			}
+		}
+		out[k] = v
+	}
+	return out
+}
+
+// applyAdminStateUpDrain - Octavia block-new (Option B, STATE-BASED).
+//
+// adminUp is the EFFECTIVE admin_state of the rule (ruleEnt.adminStateUp, already
+// resolved via resolveAdminStateUp in BOTH the new-rule/boot-replay path AND the
+// existing-rule branch). When adminUp is false the service is paused: every built
+// dataplane backend is marked InActive so that dp_sel_nat_ep yields sel=-1 (no
+// selectable backend) and the NAT pipeline sets xf->pm.nf=0 — i.e. NEW flows are not
+// forwarded (drain). Established conntrack entries match BEFORE backend selection in
+// the eBPF pipeline, so in-flight connections are untouched and survive the pause.
+//
+// This is STATE-BASED, not transition-based: because it keys on the effective state
+// and runs inside LB2DP (consulted by EVERY DpCreate — live add, boot replay, in-place
+// PATCH mutate, member reconcile), a rule whose effective adminStateUp is false at
+// creation/boot programs zero active backends immediately, so the pause SURVIVES a
+// loxilb restart. A rule with nil/absent adminStateUp resolves to enabled=true and its
+// backends are programmed UP — legacy rules are NEVER drained on load.
+//
+// keys ONLY on adminStateUp; it does NOT consult or mutate Managed/inActiveEP/
+// per-EP membership. The endpoint membership set (ruleLBActs.endPoints) is authoritative
+// and is left untouched — admin_state gates SELECTION, not membership. No DpRemove, no
+// probe detach: the same in-place DpCreate carries both pause and resume (Assumptions A5).
+//
+// When adminUp is true the set is returned unchanged (normal active-backend programming).
+func applyAdminStateUpDrain(eps []NatEP, adminUp bool) []NatEP {
+	if adminUp {
+		return eps
+	}
+	for i := range eps {
+		eps[i].InActive = true
+	}
+	return eps
+}
+
+// isEffectivelyAvailable - Octavia unified "down" predicate.
+//
+// A backend is effectively available for traffic selection iff ALL of:
+// - the SERVICE-level effective admin_state is up (svcAdminUp pause),
+//   - the endpoint is NOT probe/health down (!inActiveEP && !noService), and
+//   - the endpoint weight is non-zero (weight=0 drain — a weight=0 member blocks
+//     NEW connections while keeping in-flight CT and staying in the rule).
+//
+// This is the single "down" definition that drives backup-tier gating: a primary is
+// "down" for backup activation if it is probe-down OR weight=0 OR adminStateUp=false.
+// (svcAdminUp is the SERVICE-level flag; if a future phase adds a per-EP
+// admin_state it folds in here the same way.)
+//
+// CRITICAL: this is a READ-ONLY predicate over ruleLBEp metadata. It must
+// NOT mutate inActiveEP (membership/persistence state — the GET serializer skips
+// inActiveEP EPs at the serializer's `if ep.noService`/inActiveEP continue, so a
+// weight=0/backup-standby EP would VANISH from GET). Selection is carried on the
+// transient ruleLBEp.selInactive flag, computed fresh on every DpCreate.
+func isEffectivelyAvailable(ep ruleLBEp, svcAdminUp bool) bool {
+	if !svcAdminUp {
+		return false // service pause — subsumes applyAdminStateUpDrain
+	}
+	if ep.inActiveEP || ep.noService {
+		return false // probe-down / health-down
+	}
+	if ep.weight == 0 {
+		return false // weight=0 drain
+	}
+	return true
+}
+
+// applyMemberSelection - Octavia tier-aware per-EP selection.
+//
+// SUBSUMES and replaces the blanket applyAdminStateUpDrain call in LB2DP: it folds in
+// service admin_state (via the svcAdminUp gate inside isEffectivelyAvailable — all EPs
+// go selInactive when paused) AND adds weight=0 drain + backup-tier gating.
+//
+// Semantics:
+//   - A primary (backup=false) EP is selectable iff it is effectivelyAvailable.
+//   - A backup (backup=true) EP is selectable iff it is effectivelyAvailable AND NO
+//     primary is effectivelyAvailable (anyPrimaryUp==false). Backups therefore carry
+//     ZERO traffic while any primary is up, and activate the instant ALL primaries are
+//     down (probe-down / weight=0 / admin-paused).
+//   - Immediate failback (no hysteresis): because this runs inside LB2DP — the single
+//
+// DpCreate funnel that the syncEPImmediate health-flip push re-enters — the
+//
+//	instant a primary recovers, anyPrimaryUp flips true and the backups go selInactive
+//	again on the very next DpCreate.
+//
+// CRITICAL: this writes ONLY the transient ruleLBEp.selInactive flag, NEVER
+// inActiveEP. Membership/persistence is left untouched so a weight=0 / backup-standby EP
+// still round-trips on GET and survives reconcile. Selection flip only — the caller does
+// NOT DpRemove or flush CT, so in-flight survives a tier/weight transition (T-73-ctflush).
+func applyMemberSelection(eps []ruleLBEp, svcAdminUp bool) {
+	anyPrimaryUp := false
+	for i := range eps {
+		if !eps[i].backup && isEffectivelyAvailable(eps[i], svcAdminUp) {
+			anyPrimaryUp = true
+			break
+		}
+	}
+	for i := range eps {
+		avail := isEffectivelyAvailable(eps[i], svcAdminUp)
+		if eps[i].backup {
+			// Backups carry traffic ONLY when no primary is effectively available.
+			eps[i].selInactive = !(avail && !anyPrimaryUp)
+		} else {
+			eps[i].selInactive = !avail
+		}
+	}
+}
+
+// resolveOpaqueID - Octavia : resolve the opaque id for a rule being added.
+// If supplied is empty, mint a UUIDv4. If supplied is non-empty and already maps to a
+// DIFFERENT rule (different ruleKey), reject with a conflict sentinel. When it
+// maps to the SAME rule (same ruleKey) it is a stable no-op. Does NOT mutate the index;
+// the caller registers via registerOpaqueID after a successful add.
+//
+// WR-05 CONCURRENCY CONTRACT: reads R.opaqueID (a plain map, no internal sync). The CALLER
+// MUST HOLD THE RuleH LOCK that also guards R.tables[RtLB].eMap.
+func (R *RuleH) resolveOpaqueID(supplied string, r *ruleEnt) (string, error) {
+	if supplied == "" {
+		return uuid.NewString(), nil
+	}
+	if R.opaqueID != nil {
+		if existing := R.opaqueID[supplied]; existing != nil && existing != r &&
+			existing.tuples.ruleKey() != r.tuples.ruleKey() {
+			return "", errors.New("lbrule-id conflict: id already bound to a different rule")
+		}
+	}
+	return supplied, nil
+}
+
+// registerOpaqueID - Octavia : register r.id -> r in the opaque-id index. Idempotent
+// for the same rule; called on both live add and boot replay.
+//
+// WR-05 CONCURRENCY CONTRACT: writes R.opaqueID (a plain map, no internal sync). The CALLER
+// MUST HOLD THE RuleH LOCK that also guards R.tables[RtLB].eMap.
+func (R *RuleH) registerOpaqueID(r *ruleEnt) {
+	if r == nil || r.id == "" {
+		return
+	}
+	if R.opaqueID == nil {
+		R.opaqueID = make(map[string]*ruleEnt)
+	}
+	R.opaqueID[r.id] = r
+}
+
+// unregisterOpaqueID - Octavia : remove a rule's id from the opaque-id index on delete.
+//
+// WR-05 CONCURRENCY CONTRACT: writes R.opaqueID (a plain map, no internal sync). The CALLER
+// MUST HOLD THE RuleH LOCK that also guards R.tables[RtLB].eMap.
+func (R *RuleH) unregisterOpaqueID(r *ruleEnt) {
+	if r == nil || r.id == "" || R.opaqueID == nil {
+		return
+	}
+	if R.opaqueID[r.id] == r {
+		delete(R.opaqueID, r.id)
+	}
+}
+
+// GetLBRuleMarkByKey - Find LB rule matching the given key and return its mark (ruleNum).
+// key format: "VIP:PORT:PROTO" (e.g., "20.20.20.1:5201:tcp") for exact match,
+// or just "VIP" (e.g., "20.20.20.1") for first-match by IP only (legacy compat).
+// Used QoS policer to associate DOCA meters with LB rules.
+func (R *RuleH) GetLBRuleMarkByKey(key string) int {
+	parts := strings.SplitN(key, ":", 3)
+	vipIP := parts[0]
+	var port uint16
+	var proto uint8
+	exactMatch := false
+	if len(parts) == 3 {
+		if p, err := strconv.ParseUint(parts[1], 10, 16); err == nil {
+			port = uint16(p)
+		}
+		switch parts[2] {
+		case "tcp":
+			proto = 6
+		case "udp":
+			proto = 17
+		case "sctp":
+			proto = 132
+		}
+		exactMatch = true
+	}
+
+	for _, data := range R.tables[RtLB].eMap {
+		if data.tuples.l3Dst.addr.IP.String() != vipIP {
+			continue
+		}
+		if exactMatch {
+			if data.tuples.l4Dst.valMin != port || data.tuples.l4Prot.val != proto {
+				continue
+			}
+		}
+		return int(data.ruleNum)
+	}
+	return 0
 }
 
 // GetLBRuleByServArgs - Get a LB rule by its service args
@@ -984,7 +1721,16 @@ func (R *RuleH) GetLBRuleByServArgs(serv cmn.LbServiceArg) *ruleEnt {
 	l4prot := rule8Tuple{ipProto, 0xff}
 	l3dst := ruleIPTuple{*sNetAddr}
 	l4dst := rule16RTuple{serv.ServPort, serv.ServPortMax, true}
-	rt := ruleTuples{l3Dst: l3dst, l4Prot: l4prot, l4Dst: l4dst, pref: serv.BlockNum, path: serv.HostUrl}
+	rt := ruleTuples{
+		l3Dst:         l3dst,
+		l4Prot:        l4prot,
+		l4Dst:         l4dst,
+		pref:          serv.BlockNum,
+		path:          serv.HostUrl,
+		pathPrefix:    serv.PathPrefix,    // P6: Path prefix routing
+		pathMatchMode: lbPathMatchMode(serv.PathMatchMode), // P6: Path match mode (canonicalized)
+		modelName:     serv.ModelName,     // AI model name for pool selection
+	}
 	return R.tables[RtLB].eMap[rt.ruleKey()]
 }
 
@@ -1012,7 +1758,16 @@ func (R *RuleH) GetLBRuleSecIPs(serv cmn.LbServiceArg) []string {
 	l4prot := rule8Tuple{ipProto, 0xff}
 	l3dst := ruleIPTuple{*sNetAddr}
 	l4dst := rule16RTuple{serv.ServPort, serv.ServPortMax, true}
-	rt := ruleTuples{l3Dst: l3dst, l4Prot: l4prot, l4Dst: l4dst, pref: serv.BlockNum, path: serv.HostUrl}
+	rt := ruleTuples{
+		l3Dst:         l3dst,
+		l4Prot:        l4prot,
+		l4Dst:         l4dst,
+		pref:          serv.BlockNum,
+		path:          serv.HostUrl,
+		pathPrefix:    serv.PathPrefix,    // P6: Path prefix routing
+		pathMatchMode: lbPathMatchMode(serv.PathMatchMode), // P6: Path match mode (canonicalized)
+		modelName:     serv.ModelName,     // AI model name for pool selection
+	}
 	if R.tables[RtLB].eMap[rt.ruleKey()] != nil {
 		for _, ip := range R.tables[RtLB].eMap[rt.ruleKey()].secIP {
 			ips = append(ips, ip.sIP.String())
@@ -1181,11 +1936,104 @@ func (R *RuleH) electEPSrc(r *ruleEnt) bool {
 				sip = np.rIP
 				if na.mode == cmn.LBModeOneArm || na.mode == cmn.LBModeHostOneArm {
 					mode = "onearm"
-					e, sip, _ = R.zone.L3.IfaSelectAny(np.xIP, true)
-					if e != 0 {
-						tk.LogIt(tk.LogDebug, "Failed to find suitable source for %s\n", np.xIP.String())
-						addrRslv = true
+
+					// First, try routing table lookup for the backend IP directly
+					var err int
+					var tDat tk.TrieData
+					var routeIfObj string
+
+					if tk.IsNetIPv4(np.xIP.String()) {
+						err, _, tDat = R.zone.Rt.Trie4.FindTrie(np.xIP.String())
+					} else {
+						err, _, tDat = R.zone.Rt.Trie6.FindTrie(np.xIP.String())
 					}
+
+					if err == 0 {
+						// Extract interface from routing table entry for backend IP
+						switch rtn := tDat.(type) {
+						case *Neigh:
+							if rtn != nil && rtn.OifPort != nil {
+								routeIfObj = rtn.OifPort.Name
+							}
+						case *int:
+							p := R.zone.Ports.PortFindByOSID(*rtn)
+							if p != nil {
+								routeIfObj = p.Name
+							}
+						}
+
+						// Get IP from the routed interface
+						if routeIfObj != "" && routeIfObj != "lo" {
+							rErr, rSip, _ := R.zone.L3.IfaSelect(routeIfObj, np.xIP, true)
+							if rErr == 0 && !rSip.IsUnspecified() {
+								// Check if this is the EIP interface - if so, we need to use default gateway instead
+								if r.privIP != nil && !r.privIP.IsUnspecified() && rSip.Equal(r.privIP) {
+									tk.LogIt(tk.LogDebug, "[OneARM] Route to %s uses EIP interface %s, looking up default gateway\n",
+										np.xIP.String(), r.privIP.String())
+									// Continue to default gateway lookup below
+								} else {
+									// Perfect! Use this interface
+									sip = rSip
+									tk.LogIt(tk.LogInfo, "[OneARM] Using routed interface %s (%s) for backend %s\n",
+										routeIfObj, sip.String(), np.xIP.String())
+									goto skipDefaultGW
+								}
+							}
+						}
+					}
+
+					// If routing lookup failed or returned EIP interface, try default gateway
+					if tk.IsNetIPv4(np.xIP.String()) {
+						err, _, tDat = R.zone.Rt.Trie4.FindTrie("0.0.0.0")
+					} else {
+						err, _, tDat = R.zone.Rt.Trie6.FindTrie("::")
+					}
+
+					if err == 0 {
+						gwIfObj := ""
+						switch rtn := tDat.(type) {
+						case *Neigh:
+							if rtn != nil && rtn.OifPort != nil {
+								gwIfObj = rtn.OifPort.Name
+							}
+						case *int:
+							p := R.zone.Ports.PortFindByOSID(*rtn)
+							if p != nil {
+								gwIfObj = p.Name
+							}
+						}
+
+						if gwIfObj != "" && gwIfObj != "lo" {
+							gwErr, gwSip, _ := R.zone.L3.IfaSelect(gwIfObj, np.xIP, true)
+							if gwErr == 0 && !gwSip.IsUnspecified() && !gwSip.Equal(r.privIP) {
+								sip = gwSip
+								tk.LogIt(tk.LogInfo, "[OneARM] Using default gateway interface %s (%s) for backend %s\n",
+									gwIfObj, sip.String(), np.xIP.String())
+							} else {
+								tk.LogIt(tk.LogWarning, "[OneARM] Failed to get IP from default gateway interface %s\n", gwIfObj)
+								// Fall back to unreliable IfaSelectAny
+								e, sip, _ = R.zone.L3.IfaSelectAny(np.xIP, true)
+								if e != 0 {
+									tk.LogIt(tk.LogError, "[OneARM] All routing lookups failed for %s\n", np.xIP.String())
+									addrRslv = true
+								}
+							}
+						} else {
+							tk.LogIt(tk.LogWarning, "[OneARM] Could not extract interface from default route\n")
+							e, sip, _ = R.zone.L3.IfaSelectAny(np.xIP, true)
+							if e != 0 {
+								addrRslv = true
+							}
+						}
+					} else {
+						tk.LogIt(tk.LogWarning, "[OneARM] Default route lookup failed\n")
+						e, sip, _ = R.zone.L3.IfaSelectAny(np.xIP, true)
+						if e != 0 {
+							addrRslv = true
+						}
+					}
+
+				skipDefaultGW:
 					if np.xIP.Equal(sip) {
 						sip = net.IPv4(0, 0, 0, 0)
 					}
@@ -1296,20 +2144,57 @@ func (R *RuleH) syncEPHostState2Rule(rule *ruleEnt, checkNow bool) bool {
 			}
 
 			for idx, n := range na.endPoints {
-				sOk := R.IsEPHostActive(makeEPKey(n.xIP.String(), sType, n.xPort))
+				// look up by the SAME monitor-address key the build
+				// site used (probeHost), so a monitorAddress-set EP's probe result maps back
+				// to the EP (— asymmetric key permanently mismarks the EP).
+				sOk := R.IsEPHostActive(makeEPKey(probeHost(n), sType, n.xPort))
 				np := &na.endPoints[idx]
 				if sOk == false {
 					if np.noService == false {
 						np.noService = true
-						rChg = true
 						tk.LogIt(tk.LogDebug, "lb-rule service-down ep - %s:%s\n", sType, n.xIP.String())
+
+						// P2.2: Lightweight health update (ONLY for FullProxy mode)
+						if mh.dp != nil && mh.dp.DpHooks != nil && na.mode == cmn.LBModeFullProxy {
+							svcIP := rule.tuples.l3Dst.addr.IP
+							svcPort := rule.tuples.l4Dst.valMin
+							proto := rule.tuples.l4Prot.val
+							ret := mh.dp.DpHooks.DpLBEndpointHealthUpdate(svcIP, svcPort, proto, idx, true)
+							if ret == 0 {
+								// Lightweight update succeeded - no need for full rule sync
+								tk.LogIt(tk.LogDebug, "P2: Lightweight EP health update succeeded (no full sync needed)\n")
+							} else {
+								// Fallback to full rule sync if lightweight update failed
+								rChg = true
+							}
+						} else {
+							// Non-FullProxy rules require full sync
+							rChg = true
+						}
 					}
 				} else {
 					if n.noService {
 						np.noService = false
 						np.inActTries = 0
-						rChg = true
 						tk.LogIt(tk.LogDebug, "lb-rule service-up ep - %s:%s\n", sType, n.xIP.String())
+
+						// P2.2: Lightweight health update (ONLY for FullProxy mode)
+						if mh.dp != nil && mh.dp.DpHooks != nil && na.mode == cmn.LBModeFullProxy {
+							svcIP := rule.tuples.l3Dst.addr.IP
+							svcPort := rule.tuples.l4Dst.valMin
+							proto := rule.tuples.l4Prot.val
+							ret := mh.dp.DpHooks.DpLBEndpointHealthUpdate(svcIP, svcPort, proto, idx, false)
+							if ret == 0 {
+								// Lightweight update succeeded - no need for full rule sync
+								tk.LogIt(tk.LogDebug, "P2: Lightweight EP health update succeeded (no full sync needed)\n")
+							} else {
+								// Fallback to full rule sync if lightweight update failed
+								rChg = true
+							}
+						} else {
+							// Non-FullProxy rules require full sync
+							rChg = true
+						}
 					}
 				}
 			}
@@ -1441,17 +2326,125 @@ func (R *RuleH) addVIPSys(r *ruleEnt) {
 	}
 }
 
+// snapshotLBEndpoints returns a deep copy of an LB rule's endpoint slice so the
+// pre-reconcile member set can be restored on an atomic-reconcile rollback
+// The copy is independent of the original: the backing array, the per-EP
+// net.IP byte slices (xIP/rIP) and any nested foldEndPoints are duplicated so that a
+// later in-place mutation of the live slice (modNatEpHost / electEPSrc) cannot bleed
+// into the snapshot. Endpoint identity is (xIP,xPort); the deep copy preserves
+// that identity verbatim, which is what keeps an UNCHANGED member's conntrack marker
+// intact when the snapshot is restored.
+func snapshotLBEndpoints(eps []ruleLBEp) []ruleLBEp {
+	if eps == nil {
+		return nil
+	}
+	snap := make([]ruleLBEp, len(eps))
+	for i := range eps {
+		snap[i] = eps[i]
+		if eps[i].xIP != nil {
+			snap[i].xIP = append(net.IP(nil), eps[i].xIP...)
+		}
+		if eps[i].rIP != nil {
+			snap[i].rIP = append(net.IP(nil), eps[i].rIP...)
+		}
+		if eps[i].foldEndPoints != nil {
+			snap[i].foldEndPoints = snapshotLBEndpoints(eps[i].foldEndPoints)
+		}
+	}
+	return snap
+}
+
+// lbEndpointsAddedSince returns the subset of desired endpoints whose (xIP,xPort)
+// identity is NOT present in the old set — i.e. the members genuinely ADDED by a
+// reconcile. It is used on the atomic-reconcile rollback path (WR-02): only
+// the genuinely-new members must be detached on rollback, so an UNCHANGED, CT-bearing
+// member that was present pre-reconcile is NEVER detached/re-attached (no churn). The
+// returned slice aliases the desired entries (read-only on the rollback path).
+func lbEndpointsAddedSince(oldEps, desired []ruleLBEp) []ruleLBEp {
+	var added []ruleLBEp
+	for i := range desired {
+		d := &desired[i]
+		found := false
+		for j := range oldEps {
+			o := &oldEps[j]
+			if d.xIP.Equal(o.xIP) && d.xPort == o.xPort {
+				found = true
+				break
+			}
+		}
+		if !found {
+			added = append(added, *d)
+		}
+	}
+	return added
+}
+
+// reconcileLBEndpointsAtomic applies a declarative endpoint reconcile (retEps =
+// desired set, delEps = members to detach) onto an existing LB rule with
+// all-or-nothing semantics. It snapshots the pre-reconcile member set,
+// performs the probe-registration detach/attach (modNatEpHost touches only the
+// EP-host health-probe registry, NOT the conntrack map, so UNCHANGED members keep
+// their CT —), re-elects the source, then pushes the dataplane via
+// DpCreate. If the DpCreate push fails (non-zero rc), it ROLLS BACK in place: the
+// snapshot is restored onto the rule, the original member set is re-attached via
+// modNatEpHost, and DpCreate is re-pushed to restore the pre-PATCH dataplane state —
+// the rule is left effectively unchanged and an error is returned for the PATCH
+// handler to surface. Rollback NEVER uses DpRemove (it stays on the in-place
+// DpCreate path). A no-op reconcile (retEps identical, no delEps) is a
+// successful pass-through that performs the same attach/elect/push but never trips
+// the rollback. Returns nil on success, a non-nil error on a rolled-back failure.
+func (R *RuleH) reconcileLBEndpointsAtomic(eRule *ruleEnt, retEps []ruleLBEp, delEps []ruleLBEp, activateProbe bool) error {
+	lbActs, ok := eRule.act.action.(*ruleLBActs)
+	if !ok {
+		return errors.New("lb-reconcile error: rule has no lb action")
+	}
+
+	// Snapshot the pre-reconcile member set for rollback (in-place, no DpRemove).
+	snapshot := snapshotLBEndpoints(lbActs.endPoints)
+
+	// Apply the declarative reconcile: detach removed (probe reg only), (re)attach
+	// the desired set, re-elect source, then push to the dataplane in place.
+	lbActs.endPoints = retEps
+	R.modNatEpHost(eRule, delEps, false, activateProbe, eRule.egress)
+	R.modNatEpHost(eRule, retEps, true, activateProbe, eRule.egress)
+	R.electEPSrc(eRule)
+
+	if rc := eRule.DP(DpCreate); rc != 0 {
+		// Mid-reconcile dataplane push failed: restore the pre-PATCH member set and
+		// re-push so the rule is left unchanged (atomic all-or-nothing —).
+		tk.LogIt(tk.LogError, "lb-rule %s reconcile failed (rc=%d) - rolling back to pre-patch member set\n",
+			eRule.tuples.String(), rc)
+		lbActs.endPoints = snapshot
+		// WR-02 / : detach ONLY the members genuinely ADDED by the failed
+		// reconcile (desired-minus-snapshot by (xIP,xPort) identity), not the full retEps.
+		// Detaching the whole desired set would churn the probe registration of UNCHANGED
+		// members that were present pre-reconcile and must stay continuously attached. Then
+		// re-attach the original snapshot members so the pre-PATCH state is restored exactly.
+		addedEps := lbEndpointsAddedSince(snapshot, retEps)
+		R.modNatEpHost(eRule, addedEps, false, activateProbe, eRule.egress)
+		R.modNatEpHost(eRule, snapshot, true, activateProbe, eRule.egress)
+		R.electEPSrc(eRule)
+		eRule.DP(DpCreate)
+		return errors.New("lb-rule reconcile error: endpoint set rolled back to pre-patch state")
+	}
+
+	return nil
+}
+
 func getLBConsolidatedEPs(oldEps []ruleLBEp, newEps []ruleLBEp, oper cmn.LBOp) (bool, []ruleLBEp, []ruleLBEp) {
 	var retEps []ruleLBEp
 	var delEps []ruleLBEp
 	ruleChg := false
 	found := false
 
+	// Single pass: match endpoints and build retEps/delEps
 	for i, eEp := range oldEps {
+		e := &oldEps[i]
+		matched := false
+
+		// Check if this old endpoint exists in new endpoints
 		for j, nEp := range newEps {
-			if eEp.xIP.Equal(nEp.xIP) &&
-				eEp.xPort == nEp.xPort {
-				e := &oldEps[i]
+			if eEp.xIP.Equal(nEp.xIP) && eEp.xPort == nEp.xPort {
 				n := &newEps[j]
 				if eEp.inActiveEP && oper != cmn.LBOPDetach {
 					ruleChg = true
@@ -1463,8 +2456,28 @@ func getLBConsolidatedEPs(oldEps []ruleLBEp, newEps []ruleLBEp, oper cmn.LBOp) (
 				}
 				e.chkVal = true
 				n.chkVal = true
+				matched = true
 				found = true
 				break
+			}
+		}
+
+		// Handle based on oper type
+		if oper == cmn.LBOPDetach {
+			if e.chkVal {
+				delEps = append(delEps, *e)
+			} else {
+				retEps = append(retEps, *e)
+			}
+		} else {
+			// For default operation: keep matched or inactive endpoints, delete others
+			if !matched && !eEp.inActiveEP {
+				// Endpoint not in new list and not inactive -> mark for deletion
+				ruleChg = true // Endpoint deletion is a rule change
+				delEps = append(delEps, *e)
+			} else {
+				// Endpoint matched or is inactive -> keep in retEps
+				retEps = append(retEps, *e)
 			}
 		}
 	}
@@ -1472,28 +2485,17 @@ func getLBConsolidatedEPs(oldEps []ruleLBEp, newEps []ruleLBEp, oper cmn.LBOp) (
 	// Remove LB arms from an existing LB
 	if oper == cmn.LBOPDetach {
 		if !found {
-			return false, oldEps, delEps
+			return false, oldEps, nil
 		}
-		for i := range oldEps {
-			e := &oldEps[i]
-			if !e.chkVal {
-				retEps = append(retEps, *e)
-			} else {
-				e.chkVal = false
-				delEps = append(delEps, *e)
-			}
+		// Reset chkVal flags
+		for i := range retEps {
+			retEps[i].chkVal = false
+		}
+		for i := range delEps {
+			delEps[i].chkVal = false
 		}
 		return true, retEps, delEps
 	}
-
-	for i := range oldEps {
-		e := &oldEps[i]
-		if !e.chkVal && !e.inActiveEP {
-			delEps = append(delEps, *e)
-		}
-	}
-
-	retEps = oldEps
 
 	// Attach LB endpoints to an existing LB
 	for i, nEp := range newEps {
@@ -1517,10 +2519,130 @@ func getLBConsolidatedEPs(oldEps []ruleLBEp, newEps []ruleLBEp, oper cmn.LBOp) (
 	return ruleChg, retEps, delEps
 }
 
+// strSliceEqual reports whether two string slices are element-wise equal (order-sensitive).
+// Used by the LB-rule change detector for ALPN/TLS-version list fields, which
+// cannot use != (slices are not comparable). nil and empty are treated as equal.
+func strSliceEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// KvExactModeSingleRole is the single-role KV-exact routing mode
+// SGL-01). Mirrors sockproxy.h's kv_exact_mode enum: 0=off, 1=zmq (P/D),
+// 2=nats (reserved), 3=zmq single-role. Under mode 3 the rule's endpoints carry
+// no P/D roles (Assumption A2) and EVERY one of them publishes KV events, so
+// the subscriber gate starts subscribers for ALL EPs — the Go half (Gate 2) of
+// the Tier-1.5 decouple whose C half (Gate 1) landed.
+const KvExactModeSingleRole uint8 = 3
+
+// kvSubscriberTargets returns the endpoint indexes the KV subscriber gate must
+// start subscribers for under the given kvExactMode (SGL-01 Gate 2):
+//   - mode 1 (zmq P/D): prefill EPs only (epRole == 1) — the shipped KV-12
+//     filter. AddLbRule's mode-1 loop stays textually verbatim for the
+//     byte-identity discipline; this arm is its semantic twin, kept in lockstep
+//     and pinned by TestKvSingleRoleSubscriberTargets so any future divergence
+//
+// is caught at remote gate.
+//   - mode 3 (KvExactModeSingleRole): ALL EPs — single-role endpoints have no
+//     roles, so there is nothing to filter on.
+//   - any other mode (0=off, 2=nats reserved): no subscribers.
+//
+// Pure function: the gate's fan-out contract is unit-testable without a full
+// rule fixture (pkg/loxinet is CGO — tests execute on the remote gate).
+func kvSubscriberTargets(mode uint8, endPoints []ruleLBEp) []int {
+	var targets []int
+	switch mode {
+	case 1:
+		for i, ep := range endPoints {
+			if ep.epRole == 1 {
+				targets = append(targets, i)
+			}
+		}
+	case KvExactModeSingleRole:
+		for i := range endPoints {
+			targets = append(targets, i)
+		}
+	}
+	return targets
+}
+
+// kvEngineEffective resolves default: an absent kvEngineType means
+// vllm (the established default-OFF pattern — absent field ⇒ today's behavior).
+func kvEngineEffective(engine string) string {
+	if engine == "" {
+		return "vllm"
+	}
+	return engine
+}
+
+// kvEngineEqual reports whether two engine strings denote the SAME engine,
+// treating "" and "vllm" as equal: a PUT that starts spelling
+// the default out loud must not brick an existing rule.
+func kvEngineEqual(a, b string) bool {
+	return kvEngineEffective(a) == kvEngineEffective(b)
+}
+
+// kvEngineConfigValidate is (SGL-04) config-time input validation
+// for the per-rule KV engine surface (ASVS V4/V5):
+//   - kvEngineType allowlist: "", "vllm", "sglang" — unknown strings are
+//     REJECTED, never silently treated as vllm.
+//   - kvDpRankCount bounds: 0 (default 1 downstream) or 18. Values >8
+//     are rejected — rank N subscribes kvZmqPort+N on every EP host, so the
+//     cap bounds the port-range walk.
+//
+// Pure function: unit-testable without a rule fixture (pkg/loxinet is CGO —
+// tests execute at remote gate; kvSubscriberTargets
+// precedent).
+func kvEngineConfigValidate(engine string, dpRankCount uint16) error {
+	switch engine {
+	case "", "vllm", "sglang":
+	default:
+		return errors.New("kv-engine-type must be one of \"vllm\", \"sglang\"")
+	}
+	if dpRankCount > 8 {
+		return errors.New("kv-dp-rank-count must be within 1..8 (0 = default 1)")
+	}
+	return nil
+}
+
+// kvEngineImmutabilityCheck is guard: kvEngineType on an existing
+// rule is IMMUTABLE — delete+recreate is the sanctioned path (a live engine
+// flip would silently re-key the whole Tier-1.5 hash space).
+// ""≡"vllm" per kvEngineEqual. Returns the exact rejection error (paired with
+// RuleExistsErr at the single AddLbRule call site) or nil when unchanged.
+func kvEngineImmutabilityCheck(existing, incoming string) error {
+	if !kvEngineEqual(existing, incoming) {
+		return errors.New("lbrule-exist error: cant modify rule kv engine type (delete and recreate)")
+	}
+	return nil
+}
+
+// kvEngineMixDetect reports whether any co-VIP rule runs a DIFFERENT KV engine
+// than the incoming rule. Mixing engines across ports of one VIP IP is
+// ACCEPTED — that IS multi-framework coexistence story
+// one framework per VIP:port is what the immutability guard enforces) — but
+// it must be observable: the caller emits one WARN naming both engines.
+// Returns the first differing engine's effective name.
+func kvEngineMixDetect(newEngine string, otherEngines []string) (string, bool) {
+	for _, e := range otherEngines {
+		if !kvEngineEqual(newEngine, e) {
+			return kvEngineEffective(e), true
+		}
+	}
+	return "", false
+}
+
 // AddLbRule - Add a service LB rule. The service details are passed in serv argument,
 // and end-point information is passed in the slice servEndPoints. On success,
 // it will return 0 and nil error, else appropriate return code and error string will be set
-func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, allowedSources []cmn.LbAllowedSrcIPArg, servEndPoints []cmn.LbEndPointArg) (int, error) {
+func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, servSecVIPs []cmn.LbSecVIPArg, allowedSources []cmn.LbAllowedSrcIPArg, servEndPoints []cmn.LbEndPointArg) (int, error) {
 	var lBActs ruleLBActs
 	var nSecIP []ruleLBSIP
 	var ipProto uint8
@@ -1569,13 +2691,17 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, al
 			serv.ProbeType != HostProbeConnectTCP &&
 			serv.ProbeType != HostProbeConnectUDP &&
 			serv.ProbeType != HostProbePing &&
-			serv.ProbeType != HostProbeNone {
+			serv.ProbeType != HostProbeNone &&
+			serv.ProbeType != HostProbeHTTP &&
+			serv.ProbeType != HostProbeHTTPS {
 			return RuleArgsErr, errors.New("malformed-service-ptype error")
 		}
 
 		if (serv.ProbeType == HostProbeConnectSCTP ||
 			serv.ProbeType == HostProbeConnectTCP ||
-			serv.ProbeType == HostProbeConnectUDP) &&
+			serv.ProbeType == HostProbeConnectUDP ||
+			serv.ProbeType == HostProbeHTTP ||
+			serv.ProbeType == HostProbeHTTPS) &&
 			(serv.ProbePort == 0) {
 			return RuleArgsErr, errors.New("malformed-service-pport error")
 		}
@@ -1676,6 +2802,14 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, al
 		activateProbe = true
 	}
 
+	// [CP-DEBUG] Stage 1: AddLbRule entry - log service and endpoints
+	tk.LogIt(tk.LogInfo, "[CP-DEBUG] AddLbRule: VIP=%s port=%d proto=%s mode=%d sel=%d eps=%d\n",
+		serv.ServIP, serv.ServPort, serv.Proto, serv.Mode, serv.Sel, len(servEndPoints))
+	for i, ep := range servEndPoints {
+		tk.LogIt(tk.LogInfo, "[CP-DEBUG]   EP[%d] ip=%s port=%d weight=%d\n",
+			i, ep.EpIP, ep.EpPort, ep.Weight)
+	}
+
 	for _, k := range servEndPoints {
 		pNetAddr := net.ParseIP(k.EpIP)
 		xNetAddr := net.IPv4(0, 0, 0, 0)
@@ -1692,8 +2826,71 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, al
 		if lBActs.mode == cmn.LBModeDSR && k.EpPort != serv.ServPort {
 			return RuleUnknownServiceErr, errors.New("malformed-service dsr-port error")
 		}
-		ep := ruleLBEp{pNetAddr, xNetAddr, k.EpPort, k.Weight, 0, false, false, false, false, ruleStat{0, 0}, nil, ""}
+		// Keyed literal (was positional) so additive Octavia member fields (subnetId/backup/
+		// monAddr) thread in without a fragile positional append. subnetId/backup/monAddr come
+		// from the cmn.LbEndPointArg source k; wires backup/monAddr dataplane behavior.
+		ep := ruleLBEp{
+			xIP:      pNetAddr,
+			rIP:      xNetAddr,
+			xPort:    k.EpPort,
+			weight:   k.Weight,
+			epRole:   k.EpRole,
+			nixlPort: k.NixlPort,
+			subnetId: k.SubnetId,
+			backup:   k.Backup,
+			monAddr:  k.MonitorAddress,
+			stat:     ruleStat{0, 0},
+		}
 		lBActs.endPoints = append(lBActs.endPoints, ep)
+	}
+
+	// P/D disaggregation validation (US-502)
+	if serv.PDDisaggMode {
+		if lBActs.mode != cmn.LBModeFullProxy {
+			return RuleUnknownServiceErr, errors.New("pd-disagg requires mode=fullproxy")
+		}
+		hasPrefill := false
+		hasDecode := false
+		for _, ep := range lBActs.endPoints {
+			if ep.epRole == 1 {
+				hasPrefill = true
+			} else if ep.epRole == 2 {
+				hasDecode = true
+			}
+		}
+		if !hasPrefill || !hasDecode {
+			return RuleUnknownServiceErr, errors.New("pd-disagg requires at least 1 prefill (ep_role=1) and 1 decode (ep_role=2) endpoint")
+		}
+	}
+
+	// P/D cache-aware validation (US-PD801)
+	if serv.PDCacheAwareMode {
+		if !serv.PDDisaggMode {
+			return RuleUnknownServiceErr, errors.New("pd-cache-aware requires pd_disagg_mode=true")
+		}
+	}
+
+	// Single-role KV-exact validation (SGL-01)
+	if serv.KvExactMode == KvExactModeSingleRole {
+		// Mode 3 means role-less EPs; P/D means role-partitioned EPs — a rule
+		// cannot be both (contradictory topology).
+		if serv.PDDisaggMode {
+			return RuleUnknownServiceErr, errors.New("kv-exact single-role mode is incompatible with pd-disagg (use kvExactMode=1 for P/D)")
+		}
+		// The Tier-1.5 selection hot path lives in sockproxy, which only
+		// fullproxy traffic reaches. Mode 1 inherits this precondition via the
+		// P/D validation above (pd-disagg requires mode=fullproxy); mirror it
+		// here so mode 3 is never creatable in a topology where the seam can
+		// never run.
+		if lBActs.mode != cmn.LBModeFullProxy {
+			return RuleUnknownServiceErr, errors.New("kv-exact single-role mode requires mode=fullproxy")
+		}
+	}
+
+	// engine allowlist + DP rank bounds — covers
+	// both the create and update paths (everything below flows through here).
+	if err := kvEngineConfigValidate(serv.KvEngineType, serv.KvDpRankCount); err != nil {
+		return RuleUnknownServiceErr, err
 	}
 
 	sort.SliceStable(lBActs.endPoints, func(i, j int) bool {
@@ -1709,9 +2906,35 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, al
 		servPortMax = serv.ServPortMax
 	}
 	l4dst := rule16RTuple{serv.ServPort, servPortMax, true}
-	rt := ruleTuples{l3Dst: l3dst, l4Prot: l4prot, l4Dst: l4dst, pref: serv.BlockNum, path: serv.HostUrl}
+	rt := ruleTuples{
+		l3Dst:         l3dst,
+		l4Prot:        l4prot,
+		l4Dst:         l4dst,
+		pref:          serv.BlockNum,
+		path:          serv.HostUrl,
+		pathPrefix:    serv.PathPrefix,    // P6: Include path prefix in rule key
+		pathMatchMode: lbPathMatchMode(serv.PathMatchMode), // P6: Include path match mode in rule key (canonicalized)
+		modelName:     serv.ModelName,     // AI model name for pool selection
+	}
+	tk.LogIt(tk.LogDebug, "lb-rule key (add): %q\n", rt.ruleKey())
 
 	eRule := R.tables[RtLB].eMap[rt.ruleKey()]
+
+	// two rules on the same VIP IP but different ports MAY run
+	// different engines — that IS the multi-framework coexistence story. Accepted,
+	// but observable: one WARN naming both engines.
+	{
+		var otherEngines []string
+		for _, er := range R.tables[RtLB].eMap {
+			if er != eRule && er.tuples.l3Dst.addr.IP.Equal(sNetAddr.IP) {
+				otherEngines = append(otherEngines, er.kvEngineType)
+			}
+		}
+		if other, mixed := kvEngineMixDetect(serv.KvEngineType, otherEngines); mixed {
+			tk.LogIt(tk.LogWarning, "lb-rule %s:%d kv-engine mix on VIP: new=%s existing=%s (accepted — one framework per VIP:port)\n",
+				serv.ServIP, serv.ServPort, kvEngineEffective(serv.KvEngineType), other)
+		}
+	}
 
 	if eRule != nil {
 		if !reflect.DeepEqual(eRule.secIP, nSecIP) {
@@ -1727,7 +2950,51 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, al
 			eRule.pTO != serv.PersistTimeout || eRule.act.action.(*ruleLBActs).sel != lBActs.sel ||
 			eRule.act.action.(*ruleLBActs).mode != lBActs.mode ||
 			eRule.ppv2En != serv.ProxyProtocolV2 ||
+			eRule.hChk.actChk != serv.Monitor ||
 			len(allowedSources) != len(eRule.srcList) {
+			ruleChg = true
+		}
+
+		// Detect changes to all extended mutable fields
+		if eRule.traceType != serv.TraceType ||
+			eRule.backendProtocol != serv.BackendProtocol ||
+			eRule.sessionHeaderName != serv.SessionHeaderName ||
+			eRule.sseMode != serv.SSEMode ||
+			eRule.maxStreamDurationSec != serv.MaxStreamDurationSec ||
+			eRule.backendKeepaliveIntervalSec != serv.BackendKeepaliveIntervalSec ||
+			eRule.timeoutMemberConnectMs != serv.TimeoutMemberConnect ||
+			eRule.timeoutMemberDataMs != serv.TimeoutMemberData ||
+			eRule.timeoutTcpInspectMs != serv.TimeoutTcpInspect ||
+			eRule.pdDisaggMode != serv.PDDisaggMode ||
+			eRule.pdCacheAwareMode != serv.PDCacheAwareMode ||
+			eRule.pdSessionTTLSec != serv.PDSessionTTLSec ||
+			(serv.PDCacheThreshold != 0 && eRule.pdCacheThreshold != serv.PDCacheThreshold) ||
+			(serv.PDBalanceAbsThreshold != 0 && eRule.pdBalanceAbsThreshold != serv.PDBalanceAbsThreshold) ||
+			eRule.kvExactMode != serv.KvExactMode ||
+			eRule.kvBlockSize != serv.KvBlockSize ||
+			eRule.kvHashAlgo != serv.KvHashAlgo ||
+			eRule.kvZmqPort != serv.KvZmqPort ||
+			eRule.kvWarmupSec != serv.KvWarmupSec ||
+			// kvEngineType is deliberately ABSENT here — an engine
+			// change must REJECT (RuleExistsErr below), never ruleChg delete+re-add.
+			eRule.kvDpRankCount != serv.KvDpRankCount ||
+			eRule.chwblPrefixHashLevel != serv.CHWBLPrefixHashLevel ||
+			eRule.chwblPrefixHashFlags != serv.CHWBLPrefixHashFlags ||
+			eRule.chwblMeanLoadFactor != serv.CHWBLMeanLoadFactor ||
+			eRule.chwblReplication != serv.CHWBLReplication ||
+			eRule.chwblEnableCacheSalt != serv.CHWBLEnableCacheSalt ||
+			eRule.iTO != serv.InactiveTimeout ||
+			eRule.connLimit != serv.ConnectionLimit || // connectionLimit change re-pushes the dataplane gate
+			// TLS-hardening fields — a change re-pushes the dataplane.
+			eRule.tlsCiphers != serv.TlsCiphers ||
+			eRule.hstsMaxAge != serv.HstsMaxAge ||
+			eRule.hstsIncludeSubdomains != serv.HstsIncludeSubdomains ||
+			eRule.hstsPreload != serv.HstsPreload ||
+			eRule.backendCaCertId != serv.BackendCaCertId ||
+			eRule.backendClientCertId != serv.BackendClientCertId ||
+			!strSliceEqual(eRule.alpnProtocols, serv.AlpnProtocols) ||
+			!strSliceEqual(eRule.tlsVersions, serv.TlsVersions) ||
+			eRule.name != serv.Name {
 			ruleChg = true
 		}
 
@@ -1745,6 +3012,23 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, al
 					break
 				}
 			}
+		}
+
+		// an explicit admin_state that differs from the current
+		// effective state is itself a rule change (pause/resume must reach DpCreate).
+		// Without this, an admin_state-only PATCH (every other field identical to
+		// current) leaves ruleChg false, short-circuits at the RuleExistsErr return
+		// below, and never reaches the admin_state apply / LB2DP drain.
+		if serv.AdminStateUp != nil && resolveAdminStateUp(serv.AdminStateUp) != eRule.adminStateUp {
+			ruleChg = true
+		}
+
+		// kvEngineType is IMMUTABLE on a live rule — delete+
+		// recreate is the sanctioned path. Checked BEFORE the !ruleChg
+		// short-circuit so an engine-only PUT (kvEngineType deliberately absent
+		// from the ruleChg OR-chain above) still gets the exact rejection.
+		if err := kvEngineImmutabilityCheck(eRule.kvEngineType, serv.KvEngineType); err != nil {
+			return RuleExistsErr, err
 		}
 
 		if !ruleChg {
@@ -1805,9 +3089,81 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, al
 		eRule.hChk.prbResp = serv.ProbeResp
 		eRule.hChk.prbRetries = serv.ProbeRetries
 		eRule.hChk.prbTimeo = serv.ProbeTimeout
+		eRule.hChk.actChk = serv.Monitor
 		eRule.pTO = serv.PersistTimeout
 		eRule.ppv2En = serv.ProxyProtocolV2
 		eRule.act.action.(*ruleLBActs).sel = lBActs.sel
+
+		// Update all extended mutable fields
+		eRule.traceType = serv.TraceType
+		if serv.BackendProtocol != "" {
+			eRule.backendProtocol = serv.BackendProtocol
+		}
+		eRule.sessionHeaderName = serv.SessionHeaderName
+		eRule.sseMode = serv.SSEMode
+		eRule.maxStreamDurationSec = serv.MaxStreamDurationSec
+		eRule.backendKeepaliveIntervalSec = serv.BackendKeepaliveIntervalSec
+		// update per-listener member timeouts (ms). Assigned
+		// like maxStreamDurationSec so an explicit 0 can clear a previously-set value.
+		eRule.timeoutMemberConnectMs = serv.TimeoutMemberConnect
+		eRule.timeoutMemberDataMs = serv.TimeoutMemberData
+		eRule.timeoutTcpInspectMs = serv.TimeoutTcpInspect
+		// TLS-hardening fields. Assigned verbatim so an explicit
+		// empty/0 can clear a previously-set value (additive/default-off).
+		eRule.alpnProtocols = serv.AlpnProtocols
+		eRule.tlsCiphers = serv.TlsCiphers
+		eRule.tlsVersions = serv.TlsVersions
+		eRule.hstsMaxAge = serv.HstsMaxAge
+		eRule.hstsIncludeSubdomains = serv.HstsIncludeSubdomains
+		eRule.hstsPreload = serv.HstsPreload
+		eRule.backendCaCertId = serv.BackendCaCertId
+		eRule.backendClientCertId = serv.BackendClientCertId
+		// update the per-service connectionLimit (0 = unlimited).
+		// Assigned like maxStreamDurationSec so an explicit 0 can clear a previously-set limit;
+		// the change is detected above and re-pushed to the dataplane conn_limit gate.
+		eRule.connLimit = serv.ConnectionLimit
+		eRule.pdDisaggMode = serv.PDDisaggMode
+		eRule.pdCacheAwareMode = serv.PDCacheAwareMode
+		eRule.pdSessionTTLSec = serv.PDSessionTTLSec
+		if serv.PDCacheThreshold != 0 {
+			eRule.pdCacheThreshold = serv.PDCacheThreshold
+		}
+		if serv.PDBalanceAbsThreshold != 0 {
+			eRule.pdBalanceAbsThreshold = serv.PDBalanceAbsThreshold
+		}
+		eRule.kvExactMode = serv.KvExactMode
+		eRule.kvBlockSize = serv.KvBlockSize
+		eRule.kvHashAlgo = serv.KvHashAlgo
+		eRule.kvZmqPort = serv.KvZmqPort
+		eRule.kvWarmupSec = serv.KvWarmupSec
+		eRule.kvEngineType = serv.KvEngineType // immutability enforced above
+		eRule.kvDpRankCount = serv.KvDpRankCount
+		eRule.chwblPrefixHashLevel = serv.CHWBLPrefixHashLevel
+		eRule.chwblPrefixHashFlags = serv.CHWBLPrefixHashFlags
+		eRule.chwblMeanLoadFactor = serv.CHWBLMeanLoadFactor
+		eRule.chwblReplication = serv.CHWBLReplication
+		eRule.chwblEnableCacheSalt = serv.CHWBLEnableCacheSalt
+		eRule.mtlsFrontend = serv.MTLSFrontend
+		eRule.mtlsBackend = serv.MTLSBackend
+
+		// Re-apply tracing catalog if trace_type changed
+		if serv.Mode == cmn.LBModeFullProxy && serv.TraceType != "" {
+			if mh.dpEbpf != nil && mh.dpEbpf.catalogSyncManager != nil {
+				newCatalogID := mh.dpEbpf.catalogSyncManager.GetCatalogID(serv.TraceType)
+				if newCatalogID != 0 && newCatalogID != eRule.tracingCatalogID {
+					eRule.tracingCatalogID = newCatalogID
+					_ = mh.dpEbpf.catalogSyncManager.AddServiceCatalogMapping(
+						eRule.tuples.l3Dst.addr.IP,
+						eRule.tuples.l4Dst.valMin,
+						eRule.tuples.l4Prot.val,
+						newCatalogID,
+					)
+				}
+			}
+		} else if serv.TraceType == "" && eRule.tracingCatalogID != 0 {
+			// trace_type removed — clear catalog mapping
+			eRule.tracingCatalogID = 0
+		}
 
 		// Capture old endpoints before updating for selective session reset
 		oldEndPoints := eRule.act.action.(*ruleLBActs).endPoints
@@ -1817,30 +3173,95 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, al
 		// Managed flag can't be modified on the fly
 		// eRule.managed = serv.Managed
 
-		// Apply selective session reset for endpoint changes
+		// Apply selective session reset for endpoint changes (only for LC algorithm)
 		if len(delEps) > 0 || len(eRule.act.action.(*ruleLBActs).endPoints) != len(lBActs.endPoints) {
-			tk.LogIt(tk.LogInfo, "[RULE] Applying selective session reset for rule %s (mark=%d)\n",
-				eRule.tuples.String(), int(eRule.ruleNum))
+			// Only apply session reset for Least Connection algorithm
+			if lBActs.sel == cmn.LbSelLeastConnections {
+				tk.LogIt(tk.LogInfo, "[RULE] Applying selective session reset for LC rule %s (mark=%d)\n",
+					eRule.tuples.String(), int(eRule.ruleNum))
 
-			// Apply selective session reset to preserve session counts for unchanged endpoints
-			err := R.applySelectiveSessionReset(eRule, oldEndPoints, retEps, delEps)
-			if err != nil {
-				tk.LogIt(tk.LogError, "[RULE] Selective session reset failed: %v\n", err)
-				// Continue with rule update even if session reset fails
+				// Apply selective session reset to preserve session counts for unchanged endpoints
+				err := R.applySelectiveSessionReset(eRule, oldEndPoints, retEps, delEps)
+				if err != nil {
+					tk.LogIt(tk.LogError, "[RULE] Selective session reset failed: %v\n", err)
+					// Continue with rule update even if session reset fails
+				}
 			}
 		}
 
 		if !serv.Snat {
-			R.modNatEpHost(eRule, delEps, false, activateProbe, eRule.egress)
-			R.modNatEpHost(eRule, retEps, true, activateProbe, eRule.egress)
-			R.electEPSrc(eRule)
+			// GPU-Aware: Clean up GPU map entries for deleted endpoints BEFORE modNatEpHost
+			// This ensures the eBPF endpoint_to_gpu_index_map is synchronized with ep-host changes
+			// Skip for FullProxy mode since DpRemove already handles cleanup
+			if len(delEps) > 0 && mh.dp != nil && mh.dp.DpHooks != nil && lBActs.sel == cmn.LbSelGPUAware &&
+				eRule.act.action.(*ruleLBActs).mode != cmn.LBModeFullProxy {
+				for _, delEp := range delEps {
+					err := mh.dp.DpHooks.DeleteEndpointFromGPUIndexMap(delEp.xIP, delEp.xPort)
+					if err != nil {
+						tk.LogIt(tk.LogWarning, "GPU-Aware: Failed to delete endpoint %s:%d from GPU map: %v\n",
+							delEp.xIP.String(), delEp.xPort, err)
+					} else {
+						tk.LogIt(tk.LogInfo, "GPU-Aware: Cleaned up deleted endpoint %s:%d from GPU map during update\n",
+							delEp.xIP.String(), delEp.xPort)
+					}
+				}
+			}
+
 		}
+
+		// keep the opaque id stable (set from a supplied id when
+		// present — same-rule no-op), resolve the effective admin_state, and bump the
+		// in-memory lastUpdated timestamp.
+		if serv.Id != "" && serv.Id != eRule.id {
+			if _, idErr := R.resolveOpaqueID(serv.Id, eRule); idErr != nil {
+				return RuleExistsErr, idErr
+			}
+			R.unregisterOpaqueID(eRule)
+			eRule.id = serv.Id
+			R.registerOpaqueID(eRule)
+		}
+		// only an EXPLICIT admin_state in the
+		// request mutates the effective flag. A nil/absent AdminStateUp (a member-only
+		// PATCH, a non-admin-state mutate, or a kube-loxilb/boot re-sync that never sets
+		// the field) must PRESERVE the current effective state — so a paused rule is not
+		// silently resumed by an unrelated update, and a legacy resync does not flip a
+		// rule. The PATCH handler carries the rule's current value when the key
+		// is absent in the body, so PATCH presence semantics are end-to-end consistent.
+		if serv.AdminStateUp != nil {
+			eRule.adminStateUp = resolveAdminStateUp(serv.AdminStateUp)
+		}
+		// only
+		// an EXPLICIT non-empty value in the request mutates the stored opaque field, so a
+		// member-only/unrelated PATCH or a boot/kube-loxilb re-sync that omits these does not
+		// silently clear them. Annotations bounded for T-73-DOS; secondaryVIPs round-trip uncapped.
+		if serv.ProjectId != "" {
+			eRule.projectId = serv.ProjectId
+		}
+		if serv.Annotations != nil {
+			eRule.annotations = boundAnnotations(serv.Annotations)
+		}
+		if servSecVIPs != nil {
+			eRule.secVIPs = servSecVIPs
+		}
+		eRule.lastUpdated = time.Now()
 
 		eRule.sT = time.Now()
 		eRule.iTO = serv.InactiveTimeout
 		tk.LogIt(tk.LogDebug, "lb-rule updated - %s:%s\n", eRule.tuples.String(), eRule.act.String())
 		R.flushLBCtEntries(eRule, CtFlushRidMatchOrZero)
-		eRule.DP(DpCreate)
+
+		// route the L4 member reconcile through the atomic
+		// all-or-nothing guard. It performs the probe-registry detach/attach + source
+		// re-election + in-place DpCreate, and rolls back to the pre-patch member set
+		// (in place, NO DpRemove) if the dataplane push fails. The SNAT path has no
+		// per-EP NAT reconcile, so it keeps the plain in-place DpCreate.
+		if !serv.Snat {
+			if recErr := R.reconcileLBEndpointsAtomic(eRule, retEps, delEps, activateProbe); recErr != nil {
+				return RuleExistsErr, recErr
+			}
+		} else {
+			eRule.DP(DpCreate)
+		}
 		DpBrokerSyncBarrier(mh.dp)
 		R.flushLBCtEntries(eRule, CtFlushRidZeroOnly)
 
@@ -1850,8 +3271,36 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, al
 		return RuleNotExistsErr, errors.New("lbrule not-exists error")
 	}
 
+	// PATCH must-exist semantics. The caller (the PATCH handler)
+	// sets MustExist when the rule MUST already exist; an absent target must surface as a
+	// 404, NOT be silently created. POST leaves MustExist=false, so its forgiving upsert
+	// (create-or-update) behavior is unchanged.
+	if serv.MustExist {
+		tk.LogIt(tk.LogInfo, "lb-rule %s-%v-%s does not exist (patch must-exist)\n", serv.ServIP, serv.ServPort, serv.Proto)
+		return RuleNotExistsErr, errors.New("lbrule not-exists error")
+	}
+
 	r := new(ruleEnt)
 	r.tuples = rt
+	// resolve the opaque id up-front (mint when absent, reject a supplied
+	// id that collides with a DIFFERENT rule's VIP-key —) before any marker alloc.
+	resolvedID, idErr := R.resolveOpaqueID(serv.Id, r)
+	if idErr != nil {
+		return RuleExistsErr, idErr
+	}
+	r.id = resolvedID
+	// effective admin_state (nil/absent => enabled). : in-memory lastUpdated.
+	r.adminStateUp = resolveAdminStateUp(serv.AdminStateUp)
+	r.lastUpdated = time.Now()
+	// store the opaque data-fidelity fields verbatim. Input
+	// bounds (T-73-DOS) cap the annotations map; secondaryVIPs round-trip is uncapped for
+	// fidelity (only ≤3 consumed by SCTP, RESEARCH Open Q2). Never interpreted at the dataplane.
+	r.projectId = serv.ProjectId
+	r.annotations = boundAnnotations(serv.Annotations)
+	r.secVIPs = servSecVIPs
+	// per-service concurrent-connection ceiling (0 = unlimited).
+	// Plumbed to the dataplane conn_limit; the eBPF gate refuses the (N+1)th SYN at sel=-1.
+	r.connLimit = serv.ConnectionLimit
 	r.zone = R.zone
 	r.name = serv.Name
 	names := strings.Split(r.name, ":")
@@ -1874,6 +3323,66 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, al
 	r.secMode = serv.Security
 	r.ppv2En = serv.ProxyProtocolV2
 	r.egress = serv.Egress
+	r.traceType = serv.TraceType // Tracing catalog
+
+	// Backend protocol capability - default to "http1" for backward compatibility
+	if serv.BackendProtocol == "" {
+		r.backendProtocol = "http1" // Safe default: HTTP/1.1 only
+	} else {
+		r.backendProtocol = serv.BackendProtocol
+	}
+
+	// Store custom session header name for persist mode
+	r.sessionHeaderName = serv.SessionHeaderName
+
+	// Store SSE streaming configuration (US-401)
+	r.sseMode = serv.SSEMode
+	r.maxStreamDurationSec = serv.MaxStreamDurationSec
+	r.backendKeepaliveIntervalSec = serv.BackendKeepaliveIntervalSec
+
+	// Store Octavia per-listener member timeouts (ms, native unit).
+	r.timeoutMemberConnectMs = serv.TimeoutMemberConnect
+	r.timeoutMemberDataMs = serv.TimeoutMemberData
+	r.timeoutTcpInspectMs = serv.TimeoutTcpInspect
+
+	// Store TLS-hardening fields. Additive/default-off.
+	r.alpnProtocols = serv.AlpnProtocols
+	r.tlsCiphers = serv.TlsCiphers
+	r.tlsVersions = serv.TlsVersions
+	r.hstsMaxAge = serv.HstsMaxAge
+	r.hstsIncludeSubdomains = serv.HstsIncludeSubdomains
+	r.hstsPreload = serv.HstsPreload
+	r.backendCaCertId = serv.BackendCaCertId
+	r.backendClientCertId = serv.BackendClientCertId
+
+	// Store P/D disaggregation configuration (US-502)
+	r.pdDisaggMode = serv.PDDisaggMode
+
+	// Store P/D cache-aware routing configuration (US-PD801)
+	r.pdCacheAwareMode = serv.PDCacheAwareMode
+	r.pdSessionTTLSec = serv.PDSessionTTLSec
+	r.pdCacheThreshold = serv.PDCacheThreshold
+	r.pdBalanceAbsThreshold = serv.PDBalanceAbsThreshold
+
+	// Store KV-cache exact routing configuration
+	r.kvExactMode = serv.KvExactMode
+	r.kvBlockSize = serv.KvBlockSize
+	r.kvHashAlgo = serv.KvHashAlgo
+	r.kvZmqPort = serv.KvZmqPort
+	r.kvWarmupSec = serv.KvWarmupSec
+	r.kvEngineType = serv.KvEngineType // engine + DP rank count
+	r.kvDpRankCount = serv.KvDpRankCount
+
+	// Store CHWBL configuration (sel=8)
+	r.chwblPrefixHashLevel = serv.CHWBLPrefixHashLevel
+	r.chwblPrefixHashFlags = serv.CHWBLPrefixHashFlags
+	r.chwblMeanLoadFactor = serv.CHWBLMeanLoadFactor
+	r.chwblReplication = serv.CHWBLReplication
+	r.chwblEnableCacheSalt = serv.CHWBLEnableCacheSalt
+
+	// Store mTLS configuration
+	r.mtlsFrontend = serv.MTLSFrontend
+	r.mtlsBackend = serv.MTLSBackend
 
 	// Per LB end-point health-check is supposed to be handled at kube-loxilb/CCM,
 	// but it certain cases like stand-alone mode, loxilb can do its own
@@ -1917,6 +3426,17 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, al
 		R.foldRecursiveEPs(r)
 		R.modNatEpHost(r, lBActs.endPoints, true, activateProbe, r.egress)
 		R.electEPSrc(r)
+
+		// [CP-DEBUG] Stage 2: electEPSrc result - log addrRslv and EP state
+		tk.LogIt(tk.LogInfo, "[CP-DEBUG] electEPSrc result: addrRslv=%v\n", r.addrRslv)
+		switch at := r.act.action.(type) {
+		case *ruleLBActs:
+			for i, ep := range at.endPoints {
+				tk.LogIt(tk.LogInfo, "[CP-DEBUG]   EP[%d] xIP=%s rIP=%s inactive=%v foldKey=%q\n",
+					i, ep.xIP.String(), ep.rIP.String(), ep.inActiveEP, ep.foldRuleKey)
+			}
+		}
+
 		if serv.Mode == cmn.LBModeHostOneArm {
 			R.mkHostAssocs(r)
 		}
@@ -1929,11 +3449,174 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, al
 	if r.ruleNum < RtMaximumLbs {
 		R.tables[RtLB].rArr[r.ruleNum] = r
 	}
+	// register id->rule. Runs on both live add and boot replay
+	// (nlp.go applyLoadBalancerConfig -> NetLbRuleAdd -> AddLbRule), so the index
+	// rebuilds on restart with no separate persisted structure.
+	R.registerOpaqueID(r)
+	R.addVIPSys(r)
+
+	// Part 8B: Prepare tracing catalog ID if trace_type specified (Deep Inspection)
+	// This happens BEFORE r.DP(DpCreate) so the catalog_id can be passed through the DP work queue
+	// ONLY for FullProxy mode - independent from GPU routing
+	var tracingCatalogID uint16 = 0
+	if serv.Mode == cmn.LBModeFullProxy && serv.TraceType != "" {
+		traceCatalogName := serv.TraceType
+
+		if mh.dpEbpf != nil && mh.dpEbpf.catalogSyncManager != nil {
+			// On first trace_type usage, sync catalogs to shared memory
+			if !mh.dpEbpf.catalogSyncManager.IsSynced() {
+				tk.LogIt(tk.LogInfo, "[CATALOG] First trace_type usage - syncing catalogs to shared memory\n")
+				if err := mh.dpEbpf.catalogSyncManager.SyncToSharedMemory(); err != nil {
+					tk.LogIt(tk.LogError, "[CATALOG] Failed to sync catalogs: %v\n", err)
+				} else {
+					tk.LogIt(tk.LogInfo, "[CATALOG] Synced %d catalog(s) to shared memory\n",
+						len(mh.dpEbpf.tracingCatalogManager.ListCatalogs()))
+				}
+			}
+
+			// Get catalog_id from sync manager
+			tracingCatalogID = mh.dpEbpf.catalogSyncManager.GetCatalogID(traceCatalogName)
+
+			if tracingCatalogID == 0 {
+				tk.LogIt(tk.LogWarning, "[CATALOG] Unknown trace_type catalog '%s', service created without tracing\n", traceCatalogName)
+			} else {
+				tk.LogIt(tk.LogInfo, "[CATALOG] Service %s:%d will use tracing catalog '%s' (catalog_id=%d)\n",
+					serv.ServIP, r.tuples.l4Dst.valMin, traceCatalogName, tracingCatalogID)
+			}
+		}
+	}
+
+	// Store catalog_id in rule for later DP operations
+	r.tracingCatalogID = tracingCatalogID
+
 	R.flushLBCtEntries(r, CtFlushRidMatchOrZero)
 	r.DP(DpCreate)
 	DpBrokerSyncBarrier(mh.dp)
 	R.flushLBCtEntries(r, CtFlushRidZeroOnly)
-	R.addVIPSys(r)
+
+	// Enable circuit breaker for P/D disaggregation services (fix)
+	// proxy_set_circuit_breaker requires the proxy entry to exist first (created async by DP worker),
+	// so we retry with backoff until the entry is available.
+	if r.pdDisaggMode && mh.dpEbpf != nil {
+		svcIP := r.tuples.l3Dst.addr.IP
+		svcPort := r.tuples.l4Dst.valMin
+		svcProto := r.tuples.l4Prot.val
+		go func() {
+			for attempt := 0; attempt < 20; attempt++ {
+				time.Sleep(200 * time.Millisecond)
+				ret := mh.dpEbpf.DpLBSetCircuitBreaker(svcIP, svcPort, svcProto, true, 3, 30)
+				if ret == 0 {
+					tk.LogIt(tk.LogInfo, "[CB] Circuit breaker enabled for P/D service %v:%d (attempt %d)\n",
+						svcIP, svcPort, attempt+1)
+					return
+				}
+			}
+			tk.LogIt(tk.LogWarning, "[CB] Failed to enable circuit breaker for P/D service %v:%d after retries\n",
+				svcIP, svcPort)
+		}()
+	}
+
+	// Auto-start ZMQ subscribers for KV-cache routing (KV-12)
+	if serv.KvExactMode == 1 {
+		zmqPort := serv.KvZmqPort
+		if zmqPort == 0 {
+			zmqPort = 5557
+		}
+		serviceID := uint32(r.ruleNum)
+		// DP-rank fan-out — SGLang data-parallel
+		// engines publish per-rank on consecutive ports (kvZmqPort+rank), one
+		// subscriber goroutine per rank merging into the shared per-EP
+		// inventory. kvDpRankCount 0 ⇒ 1 (the default idiom) reproduces
+		// today's single KvSubscriberStart call byte-identically.
+		dpRanks := r.kvDpRankCount
+		if dpRanks == 0 {
+			dpRanks = 1
+		}
+		for i, ep := range lBActs.endPoints {
+			// Start subscriber for prefill EPs only (epRole == 1)
+			if ep.epRole == 1 {
+				for rank := uint16(0); rank < dpRanks; rank++ {
+					KvSubscriberStartRank(serviceID, i, rank, ep.xIP.String(), zmqPort+rank, r.kvHashAlgo)
+				}
+			}
+		}
+	} else if serv.KvExactMode == KvExactModeSingleRole {
+		// SGL-01 Gate 2: single-role services have role-less EPs —
+		// start a subscriber for EVERY endpoint (no epRole filter), with the
+		// same zmqPort default and serviceID computation as mode 1. Teardown
+		// stays the generic KvSubscriberStopAll (already service-scoped —
+		// it cancels every (epIdx, rank) entry).
+		zmqPort := serv.KvZmqPort
+		if zmqPort == 0 {
+			zmqPort = 5557
+		}
+		serviceID := uint32(r.ruleNum)
+		// same DP-rank fan-out as the mode-1 gate —
+		// rank N subscribes at kvZmqPort+N; 0 ⇒ 1 default keeps the shipped
+		// single-rank behavior byte-identical.
+		dpRanks := r.kvDpRankCount
+		if dpRanks == 0 {
+			dpRanks = 1
+		}
+		for _, i := range kvSubscriberTargets(serv.KvExactMode, lBActs.endPoints) {
+			for rank := uint16(0); rank < dpRanks; rank++ {
+				KvSubscriberStartRank(serviceID, i, rank, lBActs.endPoints[i].xIP.String(), zmqPort+rank, r.kvHashAlgo)
+			}
+		}
+	}
+
+	// COMP-01 : Start vLLM metrics scraper for queue-depth routing
+	if r.pdDisaggMode {
+		endpoints := make(map[int]string)
+		for i, ep := range lBActs.endPoints {
+			endpoints[i] = fmt.Sprintf("%s:%d", ep.xIP.String(), ep.xPort)
+		}
+		svcIP := tk.IPtonl(r.tuples.l3Dst.addr.IP)
+		svcPort := r.tuples.l4Dst.valMin
+		// updateFn mirrors samples into the Go-side worker-metrics cache so
+		// the REST introspection/staleness APIs see the built-in scraper
+		// (cache only — the eBPF queue-depth push happens inside the sink).
+		r.vllmScraper = NewVllmScraper(endpoints, svcIP, svcPort, 0,
+			func(epIP string, m WorkerMetrics) {
+				if mh.dpEbpf != nil {
+					mh.dpEbpf.StoreWorkerMetricsCache(m.EndpointIP, m)
+				}
+			})
+		// thread the mh-owned shutdown ctx so
+		// the scraper exits when the workers stage cancels.
+		go r.vllmScraper.Run(mh.shutdownCtx)
+	}
+
+	// For FullProxy mode with tracing, add service-to-catalog mapping to shared memory
+	// Sockproxy will look up the catalog_id when creating proxy entries
+	if serv.Mode == cmn.LBModeFullProxy && tracingCatalogID != 0 && mh.dpEbpf != nil && mh.dpEbpf.catalogSyncManager != nil {
+		err := mh.dpEbpf.catalogSyncManager.AddServiceCatalogMapping(
+			r.tuples.l3Dst.addr.IP,
+			r.tuples.l4Dst.valMin,
+			r.tuples.l4Prot.val,
+			tracingCatalogID,
+		)
+
+		if err != nil {
+			tk.LogIt(tk.LogWarning, "[CATALOG] Failed to add service mapping: %v\n", err)
+		}
+	}
+
+	// when vip_qos_policy_id is set, associate the PRE-EXISTING policy
+	// ident to this VIP rule reusing policer association. The rule is now in
+	// R.tables[RtLB] (DP'd above), so GetLBRuleMarkByKey resolves its mark. loxilb only
+	// associates an EXISTING ident — an unresolvable ident surfaces an error here (no
+	// silent-drop). Empty ⇒ no-op (round-trips byte-identical,
+	// The lbKey mirrors GetLBRuleMarkByKey's "VIP:PORT:PROTO" format.
+	if serv.VipQosPolicyId != "" && R.zone != nil && R.zone.Pols != nil {
+		lbKey := fmt.Sprintf("%s:%d:%s", serv.ServIP, serv.ServPort, serv.Proto)
+		if _, qerr := R.zone.Pols.PolAssociateLbRule(serv.VipQosPolicyId, lbKey); qerr != nil {
+			tk.LogIt(tk.LogError, "lb-rule %s: vip_qos_policy_id %q association failed: %v\n",
+				lbKey, serv.VipQosPolicyId, qerr)
+			return RuleArgsErr, qerr
+		}
+	}
+
 	tk.LogIt(tk.LogDebug, "lb-rule added - %d:%s-%s\n", r.ruleNum, r.tuples.String(), r.act.String())
 
 	return 0, nil
@@ -1999,7 +3682,17 @@ func (R *RuleH) DeleteLbRule(serv cmn.LbServiceArg) (int, error) {
 		servPortMax = serv.ServPortMax
 	}
 	l4dst := rule16RTuple{serv.ServPort, servPortMax, true}
-	rt := ruleTuples{l3Dst: l3dst, l4Prot: l4prot, l4Dst: l4dst, pref: serv.BlockNum, path: serv.HostUrl}
+	rt := ruleTuples{
+		l3Dst:         l3dst,
+		l4Prot:        l4prot,
+		l4Dst:         l4dst,
+		pref:          serv.BlockNum,
+		path:          serv.HostUrl,
+		pathPrefix:    serv.PathPrefix,    // P6: Include path prefix in rule key
+		pathMatchMode: lbPathMatchMode(serv.PathMatchMode), // P6: Include path match mode in rule key (canonicalized)
+		modelName:     serv.ModelName,     // AI model name for pool selection
+	}
+	tk.LogIt(tk.LogDebug, "lb-rule key (del): %q\n", rt.ruleKey())
 
 	rule := R.tables[RtLB].eMap[rt.ruleKey()]
 	if rule == nil {
@@ -2027,12 +3720,31 @@ func (R *RuleH) DeleteLbRule(serv cmn.LbServiceArg) (int, error) {
 	rule.srcList = nil
 
 	delete(R.tables[RtLB].eMap, rt.ruleKey())
+	// drop the opaque-id index entry alongside the rule.
+	R.unregisterOpaqueID(rule)
 	if rule.ruleNum < RtMaximumLbs {
 		R.tables[RtLB].rArr[rule.ruleNum] = nil
 	}
 
 	R.deleteVIPSys(rule)
 	R.flushLBCtEntries(rule, CtFlushRidMatchOrZero)
+
+	// Clean up GPU worker metrics mappings for all endpoints (GPU-aware routing)
+	if mh.dpEbpf != nil && mh.dpEbpf.IsGPUMonitoringEnabled() {
+		for _, ep := range eEps {
+			endpointIP := fmt.Sprintf("%s:%d", ep.xIP.String(), ep.xPort)
+			mh.dpEbpf.DeleteWorkerMetrics(endpointIP)
+		}
+	}
+
+	// Stop all KV subscribers for this service
+	KvSubscriberStopAll(uint32(rule.ruleNum))
+
+	// COMP-01 : Stop vLLM metrics scraper
+	if rule.vllmScraper != nil {
+		rule.vllmScraper.Stop()
+		rule.vllmScraper = nil
+	}
 
 	tk.LogIt(tk.LogDebug, "lb-rule deleted %s-%s\n", rule.tuples.String(), rule.act.String())
 
@@ -2086,7 +3798,7 @@ func (R *RuleH) GetFwRule() ([]cmn.FwRuleMod, error) {
 		}
 		if data.tuples.l4Src.valid {
 			ret.Rule.SrcPortMin = data.tuples.l4Src.valMin
-			ret.Rule.SrcPortMin = data.tuples.l4Src.valMax
+			ret.Rule.SrcPortMax = data.tuples.l4Src.valMax
 		}
 
 		ret.Rule.Proto = data.tuples.l4Prot.val
@@ -2133,6 +3845,17 @@ func (R *RuleH) AddFwRule(fwRule cmn.FwRuleArg, fwOptArgs cmn.FwOptArg) (int, er
 	var l4dst rule16RTuple
 	var l4prot rule8Tuple
 
+	// hard-reject gate. Runs before any state mutation
+	// (mark allocation, eBPF install, snat-rule side effects) so a
+	// rejected HwOffload=true rule leaves no residue in either layer.
+	// contract: rejected rule is NOT installed in eBPF either —
+	// operator decides whether to retry with HwOffload=false.
+	if fwRule.HwOffload {
+		if err := validateHwOffloadExpressible(fwRule); err != nil {
+			return RuleArgsErr, err
+		}
+	}
+
 	// Validate rule args
 	if fwOptArgs.DoSnat {
 		if tk.IsNetIPv6(fwOptArgs.ToIP) {
@@ -2152,8 +3875,15 @@ func (R *RuleH) AddFwRule(fwRule cmn.FwRuleArg, fwOptArgs cmn.FwOptArg) (int, er
 
 	_, sNetAddr, err := net.ParseCIDR(fwRule.SrcIP)
 	if err != nil {
-		fmt.Printf("src parse failure %s\n", err)
+		tk.LogIt(tk.LogError, "fw-rule src parse failure %s\n", err)
 		return RuleTupleErr, errors.New("malformed-rule src error")
+	}
+
+	// Reject mixed IPv4/IPv6 src/dst up front. The datapath cannot express a
+	// cross-family rule and would otherwise reject it asynchronously after we
+	// had already reported success to the caller.
+	if (sNetAddr.IP.To4() == nil) != (dNetAddr.IP.To4() == nil) {
+		return RuleArgsErr, errors.New("malformed-rule invalid mixed ipv4/ipv6 src/dst")
 	}
 
 	l3dst := ruleIPTuple{*dNetAddr}
@@ -2164,10 +3894,18 @@ func (R *RuleH) AddFwRule(fwRule cmn.FwRuleArg, fwOptArgs cmn.FwOptArg) (int, er
 	} else {
 		l4prot = rule8Tuple{fwRule.Proto, 0xff}
 	}
-	if (fwRule.SrcPortMax != 0 || fwRule.SrcPortMin != 0) && fwRule.SrcPortMax >= fwRule.SrcPortMin {
+	// Reject inverted port ranges instead of silently dropping the tuple, which
+	// would make the rule match ALL ports (over-broad allow/drop).
+	if fwRule.SrcPortMax != 0 || fwRule.SrcPortMin != 0 {
+		if fwRule.SrcPortMax < fwRule.SrcPortMin {
+			return RuleArgsErr, errors.New("invalid src port range")
+		}
 		l4src = rule16RTuple{fwRule.SrcPortMin, fwRule.SrcPortMax, true}
 	}
-	if (fwRule.DstPortMax != 0 || fwRule.DstPortMin != 0) && fwRule.DstPortMax >= fwRule.DstPortMin {
+	if fwRule.DstPortMax != 0 || fwRule.DstPortMin != 0 {
+		if fwRule.DstPortMax < fwRule.DstPortMin {
+			return RuleArgsErr, errors.New("invalid dst port range")
+		}
 		l4dst = rule16RTuple{fwRule.DstPortMin, fwRule.DstPortMax, true}
 	}
 	inport := ruleStringTuple{fwRule.InPort}
@@ -2188,9 +3926,20 @@ func (R *RuleH) AddFwRule(fwRule cmn.FwRuleArg, fwOptArgs cmn.FwOptArg) (int, er
 		return RuleExistsErr, errors.New("fwrule-exists error")
 	}
 
+	// Cap active fw rules below the datapath tail-call ceiling so the eBPF fw
+	// scan never overruns and starts dropping packets.
+	if len(R.tables[RtFw].eMap) >= RtMaximumFwActive {
+		tk.LogIt(tk.LogError, "fw-rule capacity reached (%d)\n", RtMaximumFwActive)
+		return RuleAllocErr, errors.New("fw rule-hwm capacity reached")
+	}
+
 	r := new(ruleEnt)
 	r.tuples = rt
 	r.zone = R.zone
+	// persist the opt-IN HW offload flag on the
+	// rule entity. Fw2DP copies this into FwDpWorkQ.HwOffload so the
+	// DOCA-side dispatcher routes to DENY_PIPE / ALLOW_PIPE.
+	r.hwOffload = fwRule.HwOffload
 
 	/* Default is drop */
 	fwOpts.op = RtActDrop
@@ -2256,7 +4005,7 @@ func (R *RuleH) AddFwRule(fwRule cmn.FwRuleArg, fwOptArgs cmn.FwOptArg) (int, er
 
 		snatEP := []cmn.LbEndPointArg{{EpIP: fwOpts.opt.snatIP, EpPort: fwOpts.opt.snatPort}}
 
-		_, err := R.AddLbRule(servArg, nil, nil, snatEP)
+		_, err := R.AddLbRule(servArg, nil, nil, nil, snatEP)
 		if err != nil {
 			tk.LogIt(tk.LogError, "fw-rule - %s:%s (%s) snat create error\n", r.tuples.String(), r.act.String(), err)
 			return RuleArgsErr, errors.New("rule-snat error")
@@ -2319,7 +4068,7 @@ func (R *RuleH) DeleteFwRule(fwRule cmn.FwRuleArg) (int, error) {
 		l4src = rule16RTuple{fwRule.SrcPortMin, fwRule.SrcPortMax, true}
 	}
 	if (fwRule.DstPortMax != 0 || fwRule.DstPortMin != 0) && fwRule.DstPortMax >= fwRule.DstPortMin {
-		l4src = rule16RTuple{fwRule.DstPortMin, fwRule.DstPortMax, true}
+		l4dst = rule16RTuple{fwRule.DstPortMin, fwRule.DstPortMax, true}
 	}
 	inport := ruleStringTuple{fwRule.InPort}
 	rt := ruleTuples{l3Src: l3src, l3Dst: l3dst, l4Prot: l4prot, l4Src: l4src, l4Dst: l4dst, port: inport, pref: fwRule.Pref}
@@ -2384,6 +4133,7 @@ func (R *RuleH) GetEpHosts() ([]cmn.EndPointMod, error) {
 		// Make end-point
 		ret.HostName = data.hostName
 		ret.Name = data.epKey
+		ret.RuleManaged = data.ruleCount > 0
 		if !data.opts.probeActivated {
 			ret.ProbeType = HostProbeNone
 		} else {
@@ -2447,6 +4197,7 @@ func validateEPHostOpts(hostName string, args epHostOpts) (int, error) {
 		args.probeType != HostProbeConnectSCTP &&
 		args.probeType != HostProbeHTTP &&
 		args.probeType != HostProbeHTTPS &&
+		args.probeType != HostProbeTLSHello &&
 		args.probeType != HostProbeNone {
 		return RuleArgsErr, errors.New("host-args unknown probe type")
 	}
@@ -2533,7 +4284,7 @@ func (R *RuleH) AddEPHost(apiCall bool, hostName string, name string, args epHos
 	// if args.probeType != HostProbeConnectUDP
 	// Set ep.hID = 0, if we need to disable threads
 	ep.hID = R.lepHID % MaxEndPointCheckers
-	//ep.sT = time.Now()
+	//ep.sT = time.Now
 	R.lepHID++
 
 	if args.egress {
@@ -2610,18 +4361,99 @@ func (R *RuleH) SetEPHostState(hostName string, epPort uint16, epProto string, s
 		if ep == nil {
 			return RuleEpNotExistErr, errors.New("ephost-notfound error")
 		}
+		oldState := ep.hostState
 		ep.hostState = state
 		tk.LogIt(tk.LogDebug, "ep %s - %s\n", ep.epKey, ep.hostState)
+
+		// P2 GPU-Aware: Immediately update sockproxy for FullProxy rules
+		// This provides sub-second response to GPU state changes (vs 5-10s periodic sync)
+		if oldState != state && mh.dp != nil && mh.dp.DpHooks != nil {
+			R.applyHostStateToRules(ep.hostName, epPort, epProto, state)
+		}
 	} else {
+		updatedEPs := make(map[string]bool)
 		for _, ep := range R.epMap {
 			if ep.hostName == hostName {
+				oldState := ep.hostState
 				ep.hostState = state
 				tk.LogIt(tk.LogDebug, "ep %s - %s\n", ep.epKey, ep.hostState)
+
+				// Track unique endpoints to avoid duplicate updates
+				if oldState != state && !updatedEPs[ep.epKey] {
+					updatedEPs[ep.epKey] = true
+				}
 			}
+		}
+
+		// P2 GPU-Aware: Apply state changes to all matching endpoints
+		if len(updatedEPs) > 0 && mh.dp != nil && mh.dp.DpHooks != nil {
+			R.applyHostStateToRules(hostName, 0, "", state)
 		}
 	}
 
 	return 0, nil
+}
+
+// applyHostStateToRules - P2 GPU-Aware: Apply hostState changes to FullProxy rules immediately
+// This function finds all FullProxy LB rules using the specified endpoint and updates sockproxy
+func (R *RuleH) applyHostStateToRules(hostName string, epPort uint16, epProto string, state string) {
+	// Iterate through all LB rules
+	for _, rule := range R.tables[RtLB].eMap {
+		switch na := rule.act.action.(type) {
+		case *ruleLBActs:
+			// Only process FullProxy mode rules
+			if na.mode != cmn.LBModeFullProxy {
+				continue
+			}
+
+			// Find matching endpoint in this rule
+			for idx, ep := range na.endPoints {
+				// Match by hostname (IP address)
+				if ep.xIP.String() != hostName {
+					continue
+				}
+
+				// If specific port/proto specified, match those too
+				if epPort != 0 && ep.xPort != epPort {
+					continue
+				}
+
+				// Determine protocol type
+				var sType string
+				if rule.tuples.l4Prot.val == 6 {
+					sType = HostProbeConnectTCP
+				} else if rule.tuples.l4Prot.val == 17 {
+					sType = HostProbeConnectUDP
+				} else if rule.tuples.l4Prot.val == 132 {
+					sType = HostProbeConnectSCTP
+				} else {
+					continue
+				}
+
+				if epProto != "" && epProto != sType {
+					continue
+				}
+
+				// Found matching endpoint - update sockproxy
+				svcIP := rule.tuples.l3Dst.addr.IP
+				svcPort := rule.tuples.l4Dst.valMin
+				proto := rule.tuples.l4Prot.val
+				epIP := ep.xIP
+
+				ret := mh.dp.DpHooks.DpLBEndpointHostStateUpdate(svcIP, svcPort, proto, epIP, state)
+				if ret == 0 {
+					tk.LogIt(tk.LogInfo, "P2 GPU: Applied hostState '%s' to sockproxy - svc=%v:%v ep=%v\n",
+						state, svcIP, svcPort, epIP)
+				} else {
+					tk.LogIt(tk.LogError, "P2 GPU: Failed to apply hostState to sockproxy - svc=%v:%v ep=%v\n",
+						svcIP, svcPort, epIP)
+				}
+
+				// Note: idx variable is available but unused in this context
+				_ = idx
+			}
+		}
+	}
 }
 
 func (ep *epHost) transitionEPState(currState bool, inactThr int) {
@@ -2661,9 +4493,37 @@ func (ep *epHost) transitionEPState(currState bool, inactThr int) {
 	}
 }
 
+// syncEPImmediate immediately syncs all LB rules' DP state when an EP's health
+// status changes. This avoids the up-to-20-second lag that would otherwise occur
+// waiting for the periodic (10s) RulesSync ticker to pick up the change.
+// Must be called without mh.mtx held (it acquires the lock internally).
+func (R *RuleH) syncEPImmediate() {
+	mh.mtx.Lock()
+	defer mh.mtx.Unlock()
+	for _, rule := range R.tables[RtLB].eMap {
+		if !rule.hChk.actChk {
+			continue
+		}
+		rChg := R.syncEPHostState2Rule(rule, true)
+		if rChg {
+			rule.DP(DpCreate)
+		}
+	}
+}
+
 func (R *RuleH) epCheckNow(ep *epHost) {
 	var sType string
 	sHint := ""
+
+	// Capture inactive state before probe so we can detect transitions
+	prevInactive := ep.inactive
+	defer func() {
+		if prevInactive != ep.inactive {
+			// EP state flipped (active↔inactive) — immediately push DP update
+			// instead of waiting up to 20s for the periodic RulesSync ticker
+			R.syncEPImmediate()
+		}
+	}()
 
 	inActTryThr := ep.opts.inActTryThr
 	if ep.initProberOn {
@@ -2761,8 +4621,36 @@ func (R *RuleH) epCheckNow(ep *epHost) {
 			return
 		}
 
-		urlStr := fmt.Sprintf("http://%s:%d/%s", addr.String(), ep.opts.probePort, ep.opts.probeReq)
-		sOk := tk.HTTPProber(urlStr)
+		// structured path/method/Host build with probeReq as the
+		// escape hatch. probePath wins when set; else fall back to probeReq.
+		path := ep.opts.probePath
+		if path == "" {
+			path = ep.opts.probeReq
+		}
+		urlStr := fmt.Sprintf("http://%s:%d/%s", addr.String(), ep.opts.probePort, strings.TrimPrefix(path, "/"))
+		method := ep.opts.probeMethod
+		if method == "" {
+			method = ghttp.MethodGet
+		}
+		hclient := &ghttp.Client{Timeout: 5 * time.Second}
+		hreq, rerr := ghttp.NewRequest(method, urlStr, nil)
+		if rerr != nil {
+			ep.transitionEPState(false, inActTryThr)
+			return
+		}
+		// http_version 1.1 ⇒ send Host = domain_name (else member address).
+		if ep.opts.httpVersion == "1.1" {
+			if ep.opts.domainName != "" {
+				hreq.Host = ep.opts.domainName
+			} else {
+				hreq.Host = addr.String()
+			}
+		}
+		hresp, herr := hclient.Do(hreq)
+		sOk := herr == nil && expectedCodeOK(parseExpectedCodes(ep.opts.expectedCodes), hresp.StatusCode)
+		if herr == nil {
+			hresp.Body.Close()
+		}
 		ep.transitionEPState(sOk, inActTryThr)
 	} else if ep.opts.probeType == HostProbeHTTPS {
 		var addr net.IP
@@ -2771,15 +4659,141 @@ func (R *RuleH) epCheckNow(ep *epHost) {
 			return
 		}
 
-		urlStr := fmt.Sprintf("https://%s:%d/%s", addr.String(), ep.opts.probePort, ep.opts.probeReq)
-		sOk := utils.HTTPSProber(urlStr, R.tlsCert, R.rootCAPool, ep.opts.probeResp)
-		//tk.LogIt(tk.LogDebug, "[PROBE] https ep - URL[%s:%s] Resp[%s] %v\n", ep.hostName, urlStr, ep.opts.probeResp, sOk)
+		var sOk bool
+		// when any structured HM-content field is configured, run a
+		// local crypto/tls + net/http prober that sets SNI = domain_name and
+		// Host = domain_name, uses http_method/url_path, and matches
+		// the StatusCode against expected_codes. When none are set, fall back to the
+		// existing utils.HTTPSProber substring match (probeResp escape hatch).
+		if ep.opts.expectedCodes != "" || ep.opts.probeMethod != "" ||
+			ep.opts.probePath != "" || ep.opts.httpVersion == "1.1" || ep.opts.domainName != "" {
+			sOk = R.httpsContentProbe(addr, ep.opts)
+		} else {
+			urlStr := fmt.Sprintf("https://%s:%d/%s", addr.String(), ep.opts.probePort, strings.TrimPrefix(ep.opts.probeReq, "/"))
+			sOk = utils.HTTPSProber(urlStr, R.tlsCert, R.rootCAPool, ep.opts.probeResp)
+		}
+		//tk.LogIt(tk.LogDebug, "[PROBE] https ep - URL[%s:%d] Resp[%s] %v\n", ep.hostName, ep.opts.probePort, ep.opts.probeResp, sOk)
+		ep.transitionEPState(sOk, inActTryThr)
+	} else if ep.opts.probeType == HostProbeTLSHello {
+		// handshake-only TLS liveness. UP iff the TLS handshake
+		// completes; the cert chain is NOT validated (any cert accepted — this is
+		// liveness, not a trust probe). SNI = domain_name (consistency). A non-TLS
+		// port (no ServerHello) fails the handshake ⇒ DOWN.
+		var addr net.IP
+		if addr = net.ParseIP(ep.hostName); addr == nil {
+			// This is already verified
+			return
+		}
+		sOk := tlsHelloProbe(addr, ep.opts.probePort, ep.opts.domainName)
 		ep.transitionEPState(sOk, inActTryThr)
 	} else {
 		// TODO
 		ep.inactive = false
 		ep.inActTries = 0
 	}
+}
+
+// tlsHelloProbe runs handshake-only TLS liveness probe against
+// addr:port. It returns true iff the TLS handshake completes. The cert chain is
+// INTENTIONALLY NOT validated (InsecureSkipVerify) — tls-hello is a liveness probe,
+// not a trust probe (any cert, including self-signed, marks the port UP). SNI is set
+// to sni (the health-monitor's domain_name consistency); an empty sni falls back
+// to the member address so a bare-IP TLS listener still completes. A non-TLS port never
+// sends a ServerHello, so the handshake fails ⇒ the port is DOWN.
+func tlsHelloProbe(addr net.IP, port uint16, sni string) bool {
+	serverName := sni
+	if serverName == "" {
+		serverName = addr.String()
+	}
+	dialer := &net.Dialer{Timeout: 5 * time.Second}
+	conn, err := tls.DialWithDialer(dialer, "tcp",
+		fmt.Sprintf("%s:%d", addr.String(), port),
+		&tls.Config{
+			InsecureSkipVerify: true, // handshake-only liveness — chain NOT validated
+			ServerName:         serverName,
+		})
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
+}
+
+// httpsContentProbe runs HTTPS health probe with structured
+// content semantics: TLS SNI = domain_name, Host = domain_name (else
+// member address), the configured http_method + url_path, and a StatusCode match
+// against expected_codes. It reuses R.tlsCert / R.rootCAPool exactly as the legacy
+// utils.HTTPSProber path does. Returns true iff the response status is expected.
+func (R *RuleH) httpsContentProbe(addr net.IP, opts epHostOpts) bool {
+	path := opts.probePath
+	if path == "" {
+		path = opts.probeReq
+	}
+	urlStr := fmt.Sprintf("https://%s:%d/%s", addr.String(), opts.probePort, strings.TrimPrefix(path, "/"))
+	method := opts.probeMethod
+	if method == "" {
+		method = ghttp.MethodGet
+	}
+
+	// SNI = domain_name (else member address) so a shared backend is probed for
+	// the intended vhost.
+	serverName := opts.domainName
+	if serverName == "" {
+		serverName = addr.String()
+	}
+	// per-probe CA override + verify opt-out.
+	//   - probeVerify==false ⇒ InsecureSkipVerify (explicit operator opt-out; the default
+	// resolved value is true ⇒ verification ON).
+	//   - probeCAPath != "" ⇒ build the RootCAs pool from that file instead of R.rootCAPool;
+	//     empty ⇒ R.rootCAPool (today's behaviour, unchanged).
+	rootCAs := R.rootCAPool
+	if opts.probeCAPath != "" {
+		if pool := probeCAPool(opts.probeCAPath); pool != nil {
+			rootCAs = pool
+		}
+	}
+	tlsCfg := &tls.Config{
+		ServerName:         serverName,
+		Certificates:       []tls.Certificate{R.tlsCert},
+		RootCAs:            rootCAs,
+		MinVersion:         tls.VersionTLS12,
+		InsecureSkipVerify: !opts.probeVerify,
+	}
+	tr := &ghttp.Transport{TLSClientConfig: tlsCfg}
+	hclient := &ghttp.Client{Timeout: 5 * time.Second, Transport: tr}
+	defer tr.CloseIdleConnections()
+
+	hreq, rerr := ghttp.NewRequest(method, urlStr, nil)
+	if rerr != nil {
+		return false
+	}
+	// Host header mirrors the HTTP path: domain_name when set, else member address.
+	hreq.Host = serverName
+
+	hresp, herr := hclient.Do(hreq)
+	if herr != nil {
+		return false
+	}
+	defer hresp.Body.Close()
+	return expectedCodeOK(parseExpectedCodes(opts.expectedCodes), hresp.StatusCode)
+}
+
+// probeCAPool builds an x509 CertPool from the PEM file at caPath
+// per-probe CA-bundle override). It returns nil on any read/parse failure so the caller
+// falls back to R.rootCAPool (the override is best-effort; a missing file must not panic
+// the health goroutine). An empty caPath is never passed here (guarded by the caller).
+func probeCAPool(caPath string) *x509.CertPool {
+	pem, err := os.ReadFile(caPath)
+	if err != nil {
+		tk.LogIt(tk.LogError, "[PROBE] probe_ca_path read failed (%s): %v\n", caPath, err)
+		return nil
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(pem) {
+		tk.LogIt(tk.LogError, "[PROBE] probe_ca_path has no valid PEM certs (%s)\n", caPath)
+		return nil
+	}
+	return pool
 }
 
 func epTicker(R *RuleH, helper int) {
@@ -2897,8 +4911,8 @@ func (R *RuleH) RulesSync() {
 	}
 
 	for _, rule := range R.tables[RtFw].eMap {
-		//ruleKeys := rule.tuples.String()
-		//ruleActs := rule.act.String()
+		//ruleKeys := rule.tuples.String
+		//ruleActs := rule.act.String
 		if rule.sync != 0 {
 			rule.Fw2DP(DpCreate)
 		}
@@ -2906,6 +4920,16 @@ func (R *RuleH) RulesSync() {
 		//tk.LogIt(-1, "%d:%s,%s pc %v bc %v \n",
 		//	rule.ruleNum, ruleKeys, ruleActs,
 		//	rule.stat.packets, rule.stat.bytes)
+	}
+
+	// recompute per-rule live/total/directional connection statistics
+	// (activeConns / totalConns / bytesIn / bytesOut) from a single conntrack-map walk.
+	// This is the cheapest race-free recompute pass (RulesSync ticker); the rollup folds
+	// the per-direction CT byte split + the selector-agnostic live count + the monotonic
+	// total directly into each ruleEnt's in-memory counters, which the GET .../stats
+	// handler then serializes. The counters reset to zero on restart.
+	if mh.dp != nil {
+		mh.dp.DpCtStatsRollup()
 	}
 }
 
@@ -2991,13 +5015,19 @@ func (r *ruleEnt) VIP2DP(work DpWorkT) int {
 // LB2DP - Sync state of lb-rule entity to data-path
 func (r *ruleEnt) LB2DP(work DpWorkT) int {
 
+	// [CP-DEBUG] Stage 3: LB2DP gate - log entry and addrRslv state
 	if r.addrRslv {
+		tk.LogIt(tk.LogWarning, "[CP-DEBUG] LB2DP: VIP=%s port=%d DP BLOCKED - addrRslv=true\n",
+			r.tuples.l3Dst.addr.IP.String(), r.tuples.l4Dst.valMin)
 		return -1
 	}
 
 	if r.egress {
 		return 0
 	}
+
+	tk.LogIt(tk.LogInfo, "[CP-DEBUG] LB2DP: VIP=%s port=%d work=%d - proceeding to DP\n",
+		r.tuples.l3Dst.addr.IP.String(), r.tuples.l4Dst.valMin, work)
 
 	nWork := new(LBDpWorkQ)
 
@@ -3015,7 +5045,43 @@ func (r *ruleEnt) LB2DP(work DpWorkT) int {
 	nWork.Mark = int(r.ruleNum)
 	nWork.InActTo = uint64(r.iTO)
 	nWork.PersistTo = uint64(r.pTO)
+	nWork.ConnLimit = r.connLimit // per-service concurrent-conn ceiling (0 = unlimited)
 	nWork.HostURL = r.tuples.path
+	nWork.PathPrefix = r.tuples.pathPrefix                            // P6: Pass path prefix
+	nWork.PathMatchMode = r.tuples.pathMatchMode                      // P6: Pass path match mode
+	nWork.ModelName = r.tuples.modelName                              // AI model name for pool selection
+	nWork.BackendProtocol = r.backendProtocol                         // Backend protocol capability
+	nWork.SessionHeaderName = r.sessionHeaderName                     // Custom session header name for persist mode
+	nWork.SSEMode = r.sseMode                                         // SSE streaming mode (US-401)
+	nWork.MaxStreamDurationSec = r.maxStreamDurationSec               // SSE max stream duration cap
+	nWork.BackendKeepaliveIntervalSec = r.backendKeepaliveIntervalSec // SSE backend keepalive
+	nWork.TimeoutMemberConnect = r.timeoutMemberConnectMs             // connect ms
+	nWork.TimeoutMemberData = r.timeoutMemberDataMs                   // member-data ms
+	nWork.TimeoutTcpInspect = r.timeoutTcpInspectMs                   // inspect ms
+	// TLS-hardening scalars → LBDpWorkQ → dp_proxy_tacts → proxy_arg.
+	nWork.AlpnProtocols = r.alpnProtocols
+	nWork.TlsCiphers = r.tlsCiphers
+	nWork.TlsVersions = r.tlsVersions
+	nWork.HstsMaxAge = r.hstsMaxAge
+	nWork.HstsIncludeSubdomains = r.hstsIncludeSubdomains
+	nWork.HstsPreload = r.hstsPreload
+	nWork.BackendCaCertId = r.backendCaCertId
+	nWork.BackendClientCertId = r.backendClientCertId
+	nWork.PDDisaggMode = r.pdDisaggMode         // P/D disaggregation mode (US-502)
+	nWork.PDCacheAwareMode = r.pdCacheAwareMode // P/D cache-aware routing (US-PD801)
+	nWork.PDSessionTTLSec = r.pdSessionTTLSec
+	nWork.PDCacheThreshold = r.pdCacheThreshold
+	nWork.PDBalanceAbsThreshold = r.pdBalanceAbsThreshold
+	nWork.KvExactMode = r.kvExactMode // KV-cache exact routing
+	nWork.KvBlockSize = r.kvBlockSize
+	nWork.KvHashAlgo = r.kvHashAlgo
+	nWork.KvZmqPort = r.kvZmqPort
+	nWork.KvWarmupSec = r.kvWarmupSec
+	nWork.KvEngineType = r.kvEngineType // engine + DP rank count
+	nWork.KvDpRankCount = r.kvDpRankCount
+	nWork.CatalogID = r.tracingCatalogID // Tracing catalog ID for deep inspection
+	nWork.MTLSFrontend = r.mtlsFrontend  // mTLS frontend configuration
+	nWork.MTLSBackend = r.mtlsBackend    // mTLS backend configuration
 	nWork.Ppv2En = r.ppv2En
 	if r.secMode == cmn.LBServHTTPS {
 		nWork.SecMode = DpTermHTTPS
@@ -3057,8 +5123,8 @@ func (r *ruleEnt) LB2DP(work DpWorkT) int {
 		case at.sel == cmn.LbSelHash:
 			nWork.EpSel = EpHash
 		case at.sel == cmn.LbSelPrio:
-			// Note that internally we use RR to achieve wRR
-			nWork.EpSel = EpRR
+			// P3: Use WRR (Weighted Round-Robin) for priority-based selection
+			nWork.EpSel = EpPrio
 		case at.sel == cmn.LbSelRrPersist:
 			nWork.EpSel = EpRRPersist
 		case at.sel == cmn.LbSelLeastConnections:
@@ -3067,6 +5133,16 @@ func (r *ruleEnt) LB2DP(work DpWorkT) int {
 			nWork.EpSel = EpN2
 		case at.sel == cmn.LbSelN3:
 			nWork.EpSel = EpN3
+		case at.sel == cmn.LbSelCHWBL:
+			nWork.EpSel = EpCHWBL
+			nWork.CHWBLPrefixHashLevel = r.chwblPrefixHashLevel
+			nWork.CHWBLPrefixHashFlags = r.chwblPrefixHashFlags
+			nWork.CHWBLMeanLoadFactor = r.chwblMeanLoadFactor
+			nWork.CHWBLReplication = r.chwblReplication
+		case at.sel == cmn.LbSelGPUAware:
+			nWork.EpSel = EpGPUAware
+		case at.sel == cmn.LbSelWRRHash: // P3.5: WRR_HASH
+			nWork.EpSel = EpWRRHash
 		default:
 			nWork.EpSel = EpRR
 		}
@@ -3075,6 +5151,20 @@ func (r *ruleEnt) LB2DP(work DpWorkT) int {
 			nWork.DsrMode = true
 		}
 		nWork.CsumDis = mh.sumDis
+
+		// Octavia member selection (replaces the blanket
+		// applyAdminStateUpDrain that used to run after this build): compute the
+		// transient per-EP selInactive marks ONCE over the authoritative member set.
+		// This subsumes service admin_state (svcAdminUp gate -> all selInactive when
+		// paused) AND adds weight=0 drain + backup-tier gating. It writes ONLY the
+		// transient selInactive flag (never inActiveEP), so weight=0/backup-standby EPs
+		// still round-trip on GET. The marks are OR'd into NatEP.InActive in BOTH the
+		// priority branch (below) and the non-prio loop so a sel=2/prio rule gets backup
+		// gating + weight=0 drain identically to a default-selection rule. Because this
+		// runs in LB2DP — the single DpCreate funnel the syncEPImmediate health-flip
+		// push re-enters — failover and failback are immediate.
+		applyMemberSelection(at.endPoints, r.adminStateUp)
+
 		if at.sel == cmn.LbSelPrio {
 			j := 0
 			k := 0
@@ -3095,7 +5185,13 @@ func (r *ruleEnt) LB2DP(work DpWorkT) int {
 					neps[j].rIP = oEp.rIP
 					neps[j].xPort = oEp.xPort
 					neps[j].inActiveEP = oEp.inActiveEP
+					// carry the transient member-selection mark so
+					// the prio branch gets backup gating + weight=0 drain identically to
+					// the non-prio loop (a mark in only one branch silently breaks one mode).
+					neps[j].selInactive = oEp.selInactive
 					neps[j].weight = oEp.weight
+					neps[j].epRole = oEp.epRole
+					neps[j].nixlPort = oEp.nixlPort
 					if sw == 1 {
 						small[k] = i
 						k++
@@ -3115,7 +5211,11 @@ func (r *ruleEnt) LB2DP(work DpWorkT) int {
 					neps[j].rIP = oEp.rIP
 					neps[j].xPort = oEp.xPort
 					neps[j].inActiveEP = oEp.inActiveEP
+					// carry the transient member-selection mark (prio branch).
+					neps[j].selInactive = oEp.selInactive
 					neps[j].weight = oEp.weight
+					neps[j].epRole = oEp.epRole
+					neps[j].nixlPort = oEp.nixlPort
 					j++
 					v++
 				}
@@ -3127,7 +5227,11 @@ func (r *ruleEnt) LB2DP(work DpWorkT) int {
 				ep.RIP = e.rIP
 				ep.XPort = e.xPort
 				ep.Weight = e.weight
-				if e.inActiveEP || e.noService {
+				ep.EpRole = e.epRole
+				ep.NixlPort = e.nixlPort
+				// selInactive folds in backup gating +
+				// weight=0 drain + service admin pause (prio branch).
+				if e.inActiveEP || e.noService || e.selInactive {
 					ep.InActive = true
 				}
 				nWork.endPoints = append(nWork.endPoints, ep)
@@ -3142,7 +5246,13 @@ func (r *ruleEnt) LB2DP(work DpWorkT) int {
 						ep.RIP = kf.rIP
 						ep.XPort = kf.xPort
 						ep.Weight = kf.weight
-						if kf.inActiveEP || kf.noService {
+						ep.EpRole = kf.epRole
+						ep.NixlPort = kf.nixlPort
+						// the member-selection mark is
+						// computed over the top-level member set; folded children inherit
+						// the parent EP's selInactive (k.selInactive) in addition to their
+						// own probe/health state.
+						if kf.inActiveEP || kf.noService || k.selInactive {
 							ep.InActive = true
 						}
 
@@ -3155,7 +5265,11 @@ func (r *ruleEnt) LB2DP(work DpWorkT) int {
 					ep.RIP = k.rIP
 					ep.XPort = k.xPort
 					ep.Weight = k.weight
-					if k.inActiveEP || k.noService {
+					ep.EpRole = k.epRole
+					ep.NixlPort = k.nixlPort
+					// selInactive folds in backup gating +
+					// weight=0 drain + service admin pause (non-prio branch).
+					if k.inActiveEP || k.noService || k.selInactive {
 						ep.InActive = true
 					}
 
@@ -3166,6 +5280,16 @@ func (r *ruleEnt) LB2DP(work DpWorkT) int {
 	default:
 		return -1
 	}
+
+	// Octavia service admin_state pause is now SUBSUMED by the
+	// applyMemberSelection call above: isEffectivelyAvailable returns false for EVERY EP
+	// when r.adminStateUp is false (the svcAdminUp gate), so a paused rule programs zero
+	// selectable backends (sel=-1 -> xf->pm.nf=0, new flows not forwarded) exactly as the
+	// old blanket applyAdminStateUpDrain did — plus weight=0 drain + backup-tier gating.
+	// The marks were OR'd into NatEP.InActive in both build branches; established CT
+	// survives (matched before selection), membership is untouched, no DpRemove. State-
+	// based + restart-durable (runs on every DpCreate); legacy nil rules resolve enabled.
+	// (applyAdminStateUpDrain is retained for the isolated unit tests.)
 
 	if !nWork.ServiceIP.IsUnspecified() || nWork.BlockNum != 0 {
 		mh.dp.ToDpCh <- nWork
@@ -3231,6 +5355,11 @@ func (r *ruleEnt) Fw2DP(work DpWorkT) int {
 	nWork.Proto = r.tuples.l4Prot.val
 	nWork.Mark = int(r.ruleNum)
 	nWork.Pref = uint16(r.tuples.pref)
+	// pass-through to the DP work queue. The eBPF
+	// firewall handler ignores this field (mirrored install path is
+	// unchanged); the DpDocaBf2 FwRuleAdd handler routes
+	// HwOffload=true entries into DENY_PIPE / ALLOW_PIPE.
+	nWork.HwOffload = r.hwOffload
 
 	switch at := r.act.action.(type) {
 	case *ruleFwOpts:
@@ -3292,41 +5421,131 @@ func (r *ruleEnt) DP(work DpWorkT) int {
 		if isNat {
 			switch at := r.act.action.(type) {
 			case *ruleLBActs:
-				numEndPoints := 0
-				for i := range at.endPoints {
-					nEP := &at.endPoints[i]
-					if len(nEP.foldEndPoints) > 0 {
-						totBytes := uint64(0)
-						totPackets := uint64(0)
-						for range nEP.foldEndPoints {
-							bytes := uint64(0)
-							packets := uint64(0)
-							nStat := new(StatDpWorkQ)
-							nStat.Work = DpStatsGetImm
-							nStat.Mark = (((uint32(r.ruleNum)) & 0xfff) << 4) | (uint32(numEndPoints) & 0xf)
-							nStat.Name = MapNameNat
-							nStat.Bytes = &bytes
-							nStat.Packets = &packets
-							DpWorkSingle(mh.dp, nStat)
-							numEndPoints++
-							totBytes += bytes
-							totPackets += packets
+				// Special handling for priority mode
+				if at.sel == cmn.LbSelPrio {
+					// Reset all endpoint stats first
+					for i := range at.endPoints {
+						at.endPoints[i].stat.bytes = 0
+						at.endPoints[i].stat.packets = 0
+					}
+
+					// Create the exact same neps array as in LB2DP to map indices correctly
+					j := 0
+					k := 0
+					var small [MaxLBEndPoints]int
+					var neps [MaxLBEndPoints]ruleLBEp
+
+					// Initialize neps array with zero values
+					for i := 0; i < MaxLBEndPoints; i++ {
+						neps[i] = ruleLBEp{}
+					}
+
+					// Reproduce the exact LB2DP algorithm
+					for i, ep := range at.endPoints {
+						if ep.inActiveEP {
+							continue
 						}
-						nEP.stat.bytes = totBytes
-						nEP.stat.packets = totPackets
-					} else {
+						oEp := &at.endPoints[i]
+						sw := (int(ep.weight) * MaxLBEndPoints) / 100
+						if sw == 0 {
+							small[k] = i
+							k++
+						}
+						for x := 0; x < sw && j < MaxLBEndPoints; x++ {
+							neps[j].xIP = oEp.xIP
+							neps[j].rIP = oEp.rIP
+							neps[j].xPort = oEp.xPort
+							neps[j].inActiveEP = oEp.inActiveEP
+							neps[j].weight = oEp.weight
+							if sw == 1 {
+								small[k] = i
+								k++
+							}
+							j++
+						}
+					}
+					if j < MaxLBEndPoints {
+						v := 0
+						if k == 0 {
+							k = len(at.endPoints)
+						}
+						for j < MaxLBEndPoints {
+							idx := small[v%k]
+							oEp := &at.endPoints[idx]
+							neps[j].xIP = oEp.xIP
+							neps[j].rIP = oEp.rIP
+							neps[j].xPort = oEp.xPort
+							neps[j].inActiveEP = oEp.inActiveEP
+							neps[j].weight = oEp.weight
+							j++
+							v++
+						}
+					}
+
+					// Collect stats from all eBPF array indices with corrected Mark calculation
+					for arrayIdx := 0; arrayIdx < MaxLBEndPoints; arrayIdx++ {
+						bytes := uint64(0)
+						packets := uint64(0)
 						nStat := new(StatDpWorkQ)
-						nStat.Work = work
-						nStat.Mark = (((uint32(r.ruleNum)) & 0xfff) << 4) | (uint32(numEndPoints) & 0xf)
+						nStat.Work = DpStatsGetImm
+						// Fix Mark calculation using LLB_NAT_STAT_CID formula: ((rid & 0x7ff) << 5) | (aid & 0x1f)
+						nStat.Mark = (((uint32(r.ruleNum)) & 0x7ff) << 5) | (uint32(arrayIdx) & 0x1f)
 						nStat.Name = MapNameNat
-						nStat.Bytes = &nEP.stat.bytes
-						nStat.Packets = &nEP.stat.packets
-						if work == DpStatsGetImm {
-							DpWorkSingle(mh.dp, nStat)
-						} else {
-							mh.dp.ToDpCh <- nStat
+						nStat.Bytes = &bytes
+						nStat.Packets = &packets
+						DpWorkSingle(mh.dp, nStat)
+
+						// Only accumulate if neps[arrayIdx] has valid xIP (not zero)
+						if !neps[arrayIdx].xIP.IsUnspecified() {
+							// Find which original endpoint this arrayIdx maps to by comparing IPs
+							for epIdx := range at.endPoints {
+								if at.endPoints[epIdx].xIP.Equal(neps[arrayIdx].xIP) &&
+									at.endPoints[epIdx].xPort == neps[arrayIdx].xPort {
+									at.endPoints[epIdx].stat.bytes += bytes
+									at.endPoints[epIdx].stat.packets += packets
+									break
+								}
+							}
 						}
-						numEndPoints++
+					}
+				} else {
+					// Original logic for non-priority modes
+					numEndPoints := 0
+					for i := range at.endPoints {
+						nEP := &at.endPoints[i]
+						if len(nEP.foldEndPoints) > 0 {
+							totBytes := uint64(0)
+							totPackets := uint64(0)
+							for range nEP.foldEndPoints {
+								bytes := uint64(0)
+								packets := uint64(0)
+								nStat := new(StatDpWorkQ)
+								nStat.Work = DpStatsGetImm
+								nStat.Mark = (((uint32(r.ruleNum)) & 0x7ff) << 5) | (uint32(numEndPoints) & 0x1f)
+								nStat.Name = MapNameNat
+								nStat.Bytes = &bytes
+								nStat.Packets = &packets
+								DpWorkSingle(mh.dp, nStat)
+								numEndPoints++
+								totBytes += bytes
+								totPackets += packets
+							}
+							nEP.stat.bytes = totBytes
+							nEP.stat.packets = totPackets
+						} else {
+							nStat := new(StatDpWorkQ)
+							nStat.Work = work
+							nStat.Mark = (((uint32(r.ruleNum)) & 0x7ff) << 5) | (uint32(numEndPoints) & 0x1f)
+							nStat.Name = MapNameNat
+							nStat.Bytes = &nEP.stat.bytes
+							nStat.Packets = &nEP.stat.packets
+							if work == DpStatsGetImm {
+								DpWorkSingle(mh.dp, nStat)
+							} else {
+								mh.dp.ToDpCh <- nStat
+							}
+							numEndPoints++
+						}
 					}
 				}
 			}

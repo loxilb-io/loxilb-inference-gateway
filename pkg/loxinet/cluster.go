@@ -557,6 +557,14 @@ func (ch *CIStateH) CIStateUpdate(cm cmn.HASMod) (int, error) {
 			}
 		}
 		go hookScrptCall(cm)
+
+		// Dispatch sockproxy HA state-sync coordinator on every BFD
+		// state transition. MUST be via `go ...` — BFDSessionNotify holds
+		// mh.mtx; inlining a gRPC pull would deadlock the global mutex on
+		// a slow peer.
+		if mh.sockproxySync != nil {
+			go mh.sockproxySync.OnStateChange(cm.Instance, cm.State)
+		}
 		return ci.State, nil
 	}
 

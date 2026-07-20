@@ -1,0 +1,213 @@
+syntax = "proto3";
+
+package presidio;
+
+option go_package = "github.com/loxilb-io/loxilb/pkg/loxinet/presidio_pb";
+
+// =============================================================================
+// UNIFIED PRESIDIO gRPC SERVICE
+// Supports: Analysis, Anonymization, Structured Data, Batch Processing, Custom Recognizers
+// Merged v1 + v2 features into single unified interface
+// =============================================================================
+
+service PresidioService {
+  // ============== BASIC OPERATIONS ==============
+  
+  // Analyze text for PII entities
+  rpc Analyze(AnalyzeRequest) returns (AnalyzeResponse);
+  
+  // Anonymize text with detected PII
+  rpc Anonymize(AnonymizeRequest) returns (AnonymizeResponse);
+  
+  // Combined: Analyze + Anonymize in one call (most efficient)
+  rpc AnalyzeAndAnonymize(AnalyzeAndAnonymizeRequest) returns (AnonymizeResponse);
+  
+  // ============== BATCH OPERATIONS ==============
+  
+  // Analyze multiple texts (streaming)
+  rpc AnalyzeBatch(stream AnalyzeRequest) returns (stream AnalyzeResponse);
+  
+  // Anonymize multiple texts (streaming)
+  rpc AnonymizeBatch(stream AnonymizeRequest) returns (stream AnonymizeResponse);
+  
+  // ============== STRUCTURED DATA ==============
+  
+  // Analyze JSON payload (structure-aware)
+  rpc AnalyzeJSON(AnalyzeJSONRequest) returns (AnalyzeJSONResponse);
+  
+  // Anonymize JSON while preserving structure
+  rpc AnonymizeJSON(AnonymizeJSONRequest) returns (AnonymizeJSONResponse);
+  
+  // ============== CUSTOM RECOGNIZERS ==============
+  
+  // Register custom PII pattern
+  rpc RegisterCustomRecognizer(RegisterRecognizerRequest) returns (RegisterRecognizerResponse);
+  
+  // List available entity types
+  rpc ListSupportedEntities(ListEntitiesRequest) returns (ListEntitiesResponse);
+  
+  // ============== ENCRYPTION/DECRYPTION ==============
+  
+  // Decrypt previously encrypted PII
+  rpc Deanonymize(DeanonymizeRequest) returns (DeanonymizeResponse);
+}
+
+// =============================================================================
+// MESSAGE DEFINITIONS
+// =============================================================================
+
+// ------------- Basic Analysis -------------
+
+message AnalyzeRequest {
+  string text = 1;
+  string language = 2;
+  repeated string entities = 3;        // Optional: specific entities to detect
+  float score_threshold = 4;           // Default: 0.0
+  string correlation_id = 5;
+  repeated AdHocRecognizer ad_hoc_recognizers = 6;  // Custom patterns per request
+}
+
+message AnalyzeResponse {
+  repeated RecognizerResult results = 1;
+  int32 entity_count = 2;
+  string correlation_id = 3;
+}
+
+message RecognizerResult {
+  string entity_type = 1;
+  int32 start = 2;
+  int32 end = 3;
+  float score = 4;
+  string recognition_metadata = 5;     // Optional: recognizer name, pattern matched
+}
+
+// ------------- Anonymization -------------
+
+message AnonymizeRequest {
+  string text = 1;
+  repeated RecognizerResult analyzer_results = 2;
+  map<string, OperatorConfig> operators = 3;  // Per entity type
+  string correlation_id = 4;
+}
+
+message AnonymizeResponse {
+  string text = 1;                     // Anonymized text
+  repeated AnonymizedEntity items = 2; // What was anonymized
+  string correlation_id = 3;
+}
+
+message AnonymizedEntity {
+  string entity_type = 1;
+  int32 start = 2;                     // Position in anonymized text
+  int32 end = 3;
+  string operator = 4;                 // Which operator was used
+  string original_text = 5;            // Optional: for deanonymization
+}
+
+message OperatorConfig {
+  string operator_name = 1;            // "replace", "redact", "hash", "encrypt", "mask"
+  map<string, string> params = 2;      // e.g., {"key": "secret123", "new_value": "<REDACTED>"}
+}
+
+// ------------- Combined Operation -------------
+
+message AnalyzeAndAnonymizeRequest {
+  string text = 1;
+  string language = 2;
+  repeated string entities = 3;
+  float score_threshold = 4;
+  map<string, OperatorConfig> operators = 5;
+  string correlation_id = 6;
+}
+
+// ------------- Structured Data (JSON) -------------
+
+message AnalyzeJSONRequest {
+  string json_data = 1;                // JSON as string
+  string language = 2;
+  map<string, string> entity_mapping = 3;  // {"user.email": "EMAIL_ADDRESS", "user.name": "PERSON"}
+  string correlation_id = 4;
+  float score_threshold = 5;           // Minimum confidence score (0.0-1.0)
+}
+
+message AnalyzeJSONResponse {
+  string json_data = 1;                // Original JSON
+  map<string, FieldAnalysis> field_results = 2;
+  string correlation_id = 3;
+}
+
+message FieldAnalysis {
+  string field_path = 1;               // e.g., "user.email"
+  repeated RecognizerResult results = 2;
+}
+
+message AnonymizeJSONRequest {
+  string json_data = 1;
+  string language = 2;
+  map<string, string> entity_mapping = 3;
+  map<string, OperatorConfig> operators = 4;
+  string correlation_id = 5;
+  float score_threshold = 6;           // Minimum confidence score (0.0-1.0)
+}
+
+message AnonymizeJSONResponse {
+  string json_data = 1;                // Anonymized JSON (valid structure)
+  int32 fields_anonymized = 2;
+  string correlation_id = 3;
+}
+
+// ------------- Custom Recognizers -------------
+
+message AdHocRecognizer {
+  string name = 1;
+  string entity_type = 2;
+  repeated Pattern patterns = 3;
+  repeated string context_words = 4;
+  float score = 5;
+}
+
+message Pattern {
+  string name = 1;
+  string regex = 2;
+  float score = 3;
+}
+
+message RegisterRecognizerRequest {
+  AdHocRecognizer recognizer = 1;
+  bool persistent = 2;                 // Store for future requests
+}
+
+message RegisterRecognizerResponse {
+  bool success = 1;
+  string message = 2;
+  string recognizer_id = 3;
+}
+
+message ListEntitiesRequest {
+  string language = 1;                 // Optional: filter by language
+}
+
+message ListEntitiesResponse {
+  repeated string entity_types = 1;
+  map<string, EntityInfo> entity_details = 2;
+}
+
+message EntityInfo {
+  string entity_type = 1;
+  string description = 2;
+  repeated string languages = 3;
+}
+
+// ------------- Deanonymization -------------
+
+message DeanonymizeRequest {
+  string text = 1;                     // Encrypted/anonymized text
+  repeated AnonymizedEntity entities = 2;
+  map<string, OperatorConfig> operators = 3;  // Must include decryption keys
+  string correlation_id = 4;
+}
+
+message DeanonymizeResponse {
+  string text = 1;                     // Original text
+  string correlation_id = 2;
+}

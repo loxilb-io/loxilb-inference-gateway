@@ -231,7 +231,7 @@ func (s *UserService) ValidateToken(token string) (interface{}, error) {
 		err := s.DB.QueryRow(query, token).Scan(&username, &role)
 		if err != nil {
 			if err == sql.ErrNoRows {
-				tk.LogIt(tk.LogError, "Token not found: %v\n", token)
+				tk.LogIt(tk.LogError, "Token not found\n")
 				return errors.New("Token not found") // Token not found
 			}
 			tk.LogIt(tk.LogError, "Failed to query token: %v\n", err.Error())

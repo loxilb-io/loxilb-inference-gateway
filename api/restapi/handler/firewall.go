@@ -30,6 +30,27 @@ func ConfigPostFW(params operations.PostConfigFirewallParams, principal interfac
 	Opts := cmn.FwOptArg{}
 	Rules := cmn.FwRuleArg{}
 	FW := cmn.FwRuleMod{}
+
+	// Reject out-of-range numeric inputs instead of silently truncating them via
+	// the uint16/uint8/uint32 casts below (e.g. port 70000 -> 4464, proto 262 -> 6).
+	if params.Attr == nil || params.Attr.RuleArguments == nil {
+		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage("invalid firewall rule: ruleArguments is required")}
+	}
+	ra := params.Attr.RuleArguments
+	if ra.MinSourcePort < 0 || ra.MaxSourcePort < 0 || ra.MinDestinationPort < 0 || ra.MaxDestinationPort < 0 ||
+		ra.MinSourcePort > 65535 || ra.MaxSourcePort > 65535 || ra.MinDestinationPort > 65535 || ra.MaxDestinationPort > 65535 {
+		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage("invalid firewall port: out of range 0-65535")}
+	}
+	if ra.Protocol < 0 || ra.Protocol > 255 {
+		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage("invalid firewall protocol: out of range 0-255")}
+	}
+	if ra.Preference < 0 || ra.Preference > 65535 {
+		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage("invalid firewall preference: out of range 0-65535")}
+	}
+	if params.Attr.Opts != nil && (params.Attr.Opts.ToPort < 0 || params.Attr.Opts.ToPort > 65535) {
+		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage("invalid firewall toPort: out of range 0-65535")}
+	}
+
 	//Body Maker
 	Rules.DstIP = params.Attr.RuleArguments.DestinationIP
 	Rules.DstPortMax = uint16(params.Attr.RuleArguments.MaxDestinationPort)
@@ -40,6 +61,11 @@ func ConfigPostFW(params operations.PostConfigFirewallParams, principal interfac
 	Rules.SrcIP = params.Attr.RuleArguments.SourceIP
 	Rules.SrcPortMax = uint16(params.Attr.RuleArguments.MaxSourcePort)
 	Rules.SrcPortMin = uint16(params.Attr.RuleArguments.MinSourcePort)
+	// opt-IN per-rule HW offload flag. Without this mapping,
+	// the swagger middleware drops the wire field at the model boundary and
+	// AddFwRule's expressibility validator (validateHwOffloadExpressible)
+	// never fires because its first check is `if !w.HwOffload { return nil }`.
+	Rules.HwOffload = params.Attr.RuleArguments.HwOffload
 
 	if Rules.DstIP == "" {
 		if Rules.SrcIP == "" {
@@ -88,7 +114,6 @@ func ConfigPostFW(params operations.PostConfigFirewallParams, principal interfac
 			Rules.SrcIP, Rules.DstIP, Rules.Proto, Rules.SrcPortMin, Rules.SrcPortMax, Rules.DstPortMin, Rules.DstPortMax, Rules.Pref, Rules.InPort)
 	}
 
-	fmt.Printf("FW: %v\n", FW)
 	_, err := ApiHooks.NetFwRuleAdd(&FW)
 	if err != nil {
 		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
@@ -101,9 +126,29 @@ func ConfigDeleteFW(params operations.DeleteConfigFirewallParams, principal inte
 
 	Rules := cmn.FwRuleArg{}
 	FW := cmn.FwRuleMod{}
+
+	// Same range validation as POST: a truncated value here would silently
+	// target a DIFFERENT rule for deletion (e.g. port 70000 -> 4464).
+	for _, c := range []struct {
+		name string
+		val  *int64
+		max  int64
+	}{
+		{"minSourcePort", params.MinSourcePort, 65535},
+		{"maxSourcePort", params.MaxSourcePort, 65535},
+		{"minDestinationPort", params.MinDestinationPort, 65535},
+		{"maxDestinationPort", params.MaxDestinationPort, 65535},
+		{"protocol", params.Protocol, 255},
+		{"preference", params.Preference, 65535},
+	} {
+		if c.val != nil && (*c.val < 0 || *c.val > c.max) {
+			return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(
+				fmt.Sprintf("invalid firewall %s: out of range 0-%d", c.name, c.max))}
+		}
+	}
+
 	// Body Make
 	// Rule
-	fmt.Printf("params.DestinationIP: %v\n", params.DestinationIP)
 	if params.DestinationIP != nil {
 		Rules.DstIP = *params.DestinationIP
 	}
@@ -161,7 +206,6 @@ func ConfigDeleteFW(params operations.DeleteConfigFirewallParams, principal inte
 	}
 
 	FW.Rule = Rules
-	fmt.Printf("FW: %v\n", FW)
 	ret, err := ApiHooks.NetFwRuleDel(&FW)
 	if err != nil {
 		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}

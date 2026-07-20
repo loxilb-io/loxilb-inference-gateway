@@ -25,15 +25,25 @@ type LoadbalanceEntry struct {
 	AllowedSources []*LoadbalanceEntryAllowedSourcesItems0 `json:"allowedSources"`
 
 	// values of End point servers
-	// Required: true
 	Endpoints []*LoadbalanceEntryEndpointsItems0 `json:"endpoints"`
+
+	// aggregate DOCA hardware byte count for this LB service (omitempty). Generated Go field HwBytes (camelCase alias hwBytes).
+	HwBytes uint64 `json:"hw_bytes,omitempty"`
+
+	// aggregate DOCA hardware packet count for this LB service (omitempty). Generated Go field HwPkts (camelCase alias hwPkts).
+	HwPkts uint64 `json:"hw_pkts,omitempty"`
+
+	// aggregate DOCA HW offload state for this LB service ("none", "hw"), derived from the dominant CT offload state across active flows. Absent when no DOCA plugin is active (omitempty). Generated Go field OffloadState (camelCase alias offloadState).
+	OffloadState string `json:"offload_state,omitempty"`
 
 	// values of Secondary IPs
 	SecondaryIPs []*LoadbalanceEntrySecondaryIPsItems0 `json:"secondaryIPs"`
 
+	// Structured secondary VIPs (Octavia additional_vips). Additive ALONGSIDE the flat secondaryIPs (kept unchanged). Stored and round-tripped for all protocols; only SCTP consumes them at the dataplane. All fields opaque.
+	SecondaryVIPs []*LoadbalanceEntrySecondaryVIPsItems0 `json:"secondaryVIPs"`
+
 	// service arguments
-	// Required: true
-	ServiceArguments *LoadbalanceEntryServiceArguments `json:"serviceArguments"`
+	ServiceArguments *LoadbalanceEntryServiceArguments `json:"serviceArguments,omitempty"`
 }
 
 // Validate validates this loadbalance entry
@@ -49,6 +59,10 @@ func (m *LoadbalanceEntry) Validate(formats strfmt.Registry) error {
 	}
 
 	if err := m.validateSecondaryIPs(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateSecondaryVIPs(formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -89,9 +103,8 @@ func (m *LoadbalanceEntry) validateAllowedSources(formats strfmt.Registry) error
 }
 
 func (m *LoadbalanceEntry) validateEndpoints(formats strfmt.Registry) error {
-
-	if err := validate.Required("endpoints", "body", m.Endpoints); err != nil {
-		return err
+	if swag.IsZero(m.Endpoints) { // not required
+		return nil
 	}
 
 	for i := 0; i < len(m.Endpoints); i++ {
@@ -141,10 +154,35 @@ func (m *LoadbalanceEntry) validateSecondaryIPs(formats strfmt.Registry) error {
 	return nil
 }
 
-func (m *LoadbalanceEntry) validateServiceArguments(formats strfmt.Registry) error {
+func (m *LoadbalanceEntry) validateSecondaryVIPs(formats strfmt.Registry) error {
+	if swag.IsZero(m.SecondaryVIPs) { // not required
+		return nil
+	}
 
-	if err := validate.Required("serviceArguments", "body", m.ServiceArguments); err != nil {
-		return err
+	for i := 0; i < len(m.SecondaryVIPs); i++ {
+		if swag.IsZero(m.SecondaryVIPs[i]) { // not required
+			continue
+		}
+
+		if m.SecondaryVIPs[i] != nil {
+			if err := m.SecondaryVIPs[i].Validate(formats); err != nil {
+				if ve, ok := err.(*errors.Validation); ok {
+					return ve.ValidateName("secondaryVIPs" + "." + strconv.Itoa(i))
+				} else if ce, ok := err.(*errors.CompositeError); ok {
+					return ce.ValidateName("secondaryVIPs" + "." + strconv.Itoa(i))
+				}
+				return err
+			}
+		}
+
+	}
+
+	return nil
+}
+
+func (m *LoadbalanceEntry) validateServiceArguments(formats strfmt.Registry) error {
+	if swag.IsZero(m.ServiceArguments) { // not required
+		return nil
 	}
 
 	if m.ServiceArguments != nil {
@@ -174,6 +212,10 @@ func (m *LoadbalanceEntry) ContextValidate(ctx context.Context, formats strfmt.R
 	}
 
 	if err := m.contextValidateSecondaryIPs(ctx, formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.contextValidateSecondaryVIPs(ctx, formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -237,6 +279,26 @@ func (m *LoadbalanceEntry) contextValidateSecondaryIPs(ctx context.Context, form
 					return ve.ValidateName("secondaryIPs" + "." + strconv.Itoa(i))
 				} else if ce, ok := err.(*errors.CompositeError); ok {
 					return ce.ValidateName("secondaryIPs" + "." + strconv.Itoa(i))
+				}
+				return err
+			}
+		}
+
+	}
+
+	return nil
+}
+
+func (m *LoadbalanceEntry) contextValidateSecondaryVIPs(ctx context.Context, formats strfmt.Registry) error {
+
+	for i := 0; i < len(m.SecondaryVIPs); i++ {
+
+		if m.SecondaryVIPs[i] != nil {
+			if err := m.SecondaryVIPs[i].ContextValidate(ctx, formats); err != nil {
+				if ve, ok := err.(*errors.Validation); ok {
+					return ve.ValidateName("secondaryVIPs" + "." + strconv.Itoa(i))
+				} else if ce, ok := err.(*errors.CompositeError); ok {
+					return ce.ValidateName("secondaryVIPs" + "." + strconv.Itoa(i))
 				}
 				return err
 			}
@@ -323,19 +385,49 @@ func (m *LoadbalanceEntryAllowedSourcesItems0) UnmarshalBinary(b []byte) error {
 // swagger:model LoadbalanceEntryEndpointsItems0
 type LoadbalanceEntryEndpointsItems0 struct {
 
+	// Octavia standby member flag. A backup endpoint carries traffic only when all primaries are unavailable. Absent/false = primary (today's behavior).
+	Backup *bool `json:"backup,omitempty"`
+
 	// traffic counters of the endpoint
 	Counter string `json:"counter,omitempty"`
+
+	// doubles as TLS SNI for HTTPS monitors AND the Host header. Optional/additive.
+	DomainName string `json:"domainName,omitempty"`
 
 	// IP address for external access
 	// Required: true
 	EndpointIP *string `json:"endpointIP"`
 
+	// Endpoint role for P/D disaggregation - 0=normal (no role), 1=prefill, 2=decode. Only used when pd_disagg_mode is true.
+	EpRole int32 `json:"ep_role,omitempty"`
+
+	// Octavia expected_codes — single "200", list "200,202", or range "200-204". Optional/additive — empty defaults to "200".
+	ExpectedCodes string `json:"expectedCodes,omitempty"`
+
+	// HTTP(S) health-monitor method (e.g. GET, HEAD). Optional/additive — empty defaults to GET. Control-plane only (probeReq/probeResp retained as the escape hatch).
+	HTTPMethod string `json:"httpMethod,omitempty"`
+
+	// HM HTTP version "1.0" or "1.1". When "1.1" a Host header is sent (domainName, else the member address). Optional/additive.
+	HTTPVersion string `json:"httpVersion,omitempty"`
+
+	// Octavia per-member health-probe address. When set, the health probe targets this address instead of the traffic IP; absent = probe the traffic IP.
+	MonitorAddress string `json:"monitorAddress,omitempty"`
+
+	// NIXL side-channel port for KV cache transfer. 0=use targetPort (backward compatible). Only meaningful when pd_disagg_mode is true.
+	NixlPort int32 `json:"nixl_port,omitempty"`
+
 	// state of the endpoint
 	State string `json:"state,omitempty"`
+
+	// Octavia member subnet identifier. Opaque store-verbatim round-trip field; not interpreted (no routing effect this phase).
+	SubnetID string `json:"subnetId,omitempty"`
 
 	// port number for access service
 	// Required: true
 	TargetPort *int64 `json:"targetPort"`
+
+	// HM request path (e.g. /healthz). Optional/additive — empty falls back to probeReq or "/".
+	URLPath string `json:"urlPath,omitempty"`
 
 	// Weight for the load balancing
 	// Required: true
@@ -451,10 +543,79 @@ func (m *LoadbalanceEntrySecondaryIPsItems0) UnmarshalBinary(b []byte) error {
 	return nil
 }
 
+// LoadbalanceEntrySecondaryVIPsItems0 loadbalance entry secondary v i ps items0
+//
+// swagger:model LoadbalanceEntrySecondaryVIPsItems0
+type LoadbalanceEntrySecondaryVIPsItems0 struct {
+
+	// secondary VIP address
+	Address string `json:"address,omitempty"`
+
+	// opaque Octavia port identifier for this VIP (round-trip only)
+	PortID string `json:"portId,omitempty"`
+
+	// opaque protocol hint for this VIP (round-trip only)
+	Proto string `json:"proto,omitempty"`
+
+	// opaque Octavia subnet identifier for this VIP (round-trip only)
+	SubnetID string `json:"subnetId,omitempty"`
+}
+
+// Validate validates this loadbalance entry secondary v i ps items0
+func (m *LoadbalanceEntrySecondaryVIPsItems0) Validate(formats strfmt.Registry) error {
+	return nil
+}
+
+// ContextValidate validates this loadbalance entry secondary v i ps items0 based on context it is used
+func (m *LoadbalanceEntrySecondaryVIPsItems0) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
+	return nil
+}
+
+// MarshalBinary interface implementation
+func (m *LoadbalanceEntrySecondaryVIPsItems0) MarshalBinary() ([]byte, error) {
+	if m == nil {
+		return nil, nil
+	}
+	return swag.WriteJSON(m)
+}
+
+// UnmarshalBinary interface implementation
+func (m *LoadbalanceEntrySecondaryVIPsItems0) UnmarshalBinary(b []byte) error {
+	var res LoadbalanceEntrySecondaryVIPsItems0
+	if err := swag.ReadJSON(b, &res); err != nil {
+		return err
+	}
+	*m = res
+	return nil
+}
+
 // LoadbalanceEntryServiceArguments loadbalance entry service arguments
 //
 // swagger:model LoadbalanceEntryServiceArguments
 type LoadbalanceEntryServiceArguments struct {
+
+	// Octavia admin_state_up lifecycle flag. Absent/true = enabled; false = paused.
+	AdminStateUp bool `json:"adminStateUp,omitempty"`
+
+	// Octavia alpn_protocols list (e.g. ["h2","http/1.1"]). Mapped to the existing backend_protocol_cap enum ([h2,http/1.1]=2, [h2]=1, [http/1.1]=0). Advertised on listener + pool. Optional/additive — empty preserves the backendProtocol-driven value.
+	AlpnProtocols []string `json:"alpn_protocols"`
+
+	// Opaque key/value map round-tripping octaviaProtocol and any future Octavia field verbatim. Store-as-given, return-as-stored; never interpreted.
+	Annotations map[string]string `json:"annotations,omitempty"`
+
+	// (16) certId of the backend re-encryption CA bundle (resolved by the certId registry to the managed-dir ca.crt at backend SSL_CTX build). Optional/additive — empty = system default.
+	BackendCaCertID string `json:"backend_ca_cert_id,omitempty"`
+
+	// (16) certId of loxilb's backend client cert+key. Optional/additive — empty = no backend client cert (today's behaviour).
+	BackendClientCertID string `json:"backend_client_cert_id,omitempty"`
+
+	// Sets SO_KEEPALIVE + TCP_KEEPIDLE on backend socket in seconds. Keeps TCP CT entries alive through cloud NAT during long SSE streams. 0 = disabled. Recommended value 60 for most cloud environments.
+	// Minimum: 0
+	BackendKeepaliveIntervalSec int32 `json:"backend_keepalive_interval_sec,omitempty"`
+
+	// Backend protocol capability for ALPN negotiation - http1 (HTTP/1.1 only, safest default), http2 (HTTP/2 only), both (supports both HTTP/1.1 and HTTP/2)
+	// Enum: [http1 http2 both]
+	BackendProtocol *string `json:"backend_protocol,omitempty"`
 
 	// value for BGP enable or not
 	Bgp bool `json:"bgp,omitempty"`
@@ -462,28 +623,108 @@ type LoadbalanceEntryServiceArguments struct {
 	// block-number if any of this LB entry
 	Block uint32 `json:"block,omitempty"`
 
+	// Require cache_salt field in requests for CHWBL/WRR_HASH (sel=8 or sel=10) - enforces strict multi-tenant isolation. If false, cache_salt is optional. Only used when sel=8 or sel=10
+	ChwblEnableCacheSalt *bool `json:"chwbl_enable_cache_salt,omitempty"`
+
+	// Maximum load factor percentage for CHWBL/WRR_HASH (sel=8 or sel=10) - max_load = avg_load × factor / 100. Range 100-300, default 125 (allows 25% overload). Only used when sel=8 or sel=10
+	// Maximum: 300
+	// Minimum: 100
+	ChwblMeanLoadFactor int64 `json:"chwbl_mean_load_factor,omitempty"`
+
+	// Optional field inclusion flags for CHWBL/WRR_HASH (sel=8 or sel=10) - Bit 0=LoRA, Bit 1=image, Bit 2=audio, Bit 3=cache_salt, Bit 4=tools, Bit 5=session, Bit 6=RAG template, Bit 7=RAG docs. 0=auto-detect. Only used when sel=8 or sel=10
+	// Maximum: 255
+	// Minimum: 0
+	ChwblPrefixHashFlags *int64 `json:"chwbl_prefix_hash_flags,omitempty"`
+
+	// Prefix hash level for CHWBL/WRR_HASH modes (sel=8 or sel=10) - 1=Level1 only (system prompt+model), 2=Level1+Level2 (session context), 3=Level1+Level2+Level3 (RAG). Only used when sel=8 or sel=10. Optional - defaults to 1 for backward compatibility
+	// Enum: [1 2 3]
+	ChwblPrefixHashLevel *int64 `json:"chwbl_prefix_hash_level,omitempty"`
+
+	// Virtual nodes per physical endpoint for CHWBL/WRR_HASH (sel=8 or sel=10) - higher values improve distribution but use more memory. Range 1-1024, default 100. For WRR_HASH, this is the total vnode count distributed proportionally by weight. Only used when sel=8 or sel=10
+	// Maximum: 1024
+	// Minimum: 1
+	ChwblReplication int64 `json:"chwbl_replication,omitempty"`
+
+	// Octavia per-service concurrent-connection ceiling. Per-rule max simultaneous connections across all endpoints. 0/absent = unlimited (legacy). eBPF-CT enforced (SYN refused at sel=-1 -> pm.nf=0 when live count >= limit). DISTINCT from the SecurityRateConfig per-SOURCE-IP concurrentLimit (P0-6); not per-EP.
+	ConnectionLimit uint32 `json:"connectionLimit,omitempty"`
+
 	// flag to indicate an egress rule
 	Egress bool `json:"egress,omitempty"`
 
 	// IP address for external access
-	// Required: true
-	ExternalIP *string `json:"externalIP"`
+	ExternalIP *string `json:"externalIP,omitempty"`
 
 	// Ingress specific host URL path
 	Host string `json:"host,omitempty"`
 
+	// append "; includeSubDomains" to the HSTS header. Only meaningful when hsts_max_age > 0.
+	HstsIncludeSubdomains bool `json:"hsts_include_subdomains,omitempty"`
+
+	// Strict-Transport-Security max-age (seconds). The data plane synthesizes the header and injects it on HTTPS listeners only (L7-gated). Optional/additive — 0/absent = no HSTS injection.
+	HstsMaxAge uint32 `json:"hsts_max_age,omitempty"`
+
+	// append "; preload" to the HSTS header. Only meaningful when hsts_max_age > 0.
+	HstsPreload bool `json:"hsts_preload,omitempty"`
+
+	// Stable opaque identifier for the LB rule (Octavia). Client-supplied verbatim or minted (UUIDv4) when absent.
+	ID string `json:"id,omitempty"`
+
 	// value for inactivity timeout (in seconds)
 	InactiveTimeOut int32 `json:"inactiveTimeOut,omitempty"`
+
+	// Token block size for KV hash computation. Must match vLLM's block_size configuration.
+	// Minimum: 1
+	KvBlockSize int64 `json:"kvBlockSize,omitempty"`
+
+	// SGLang data-parallel rank count. Rank N publishes KV events at kvZmqPort+N; all ranks union into one per-EP inventory.
+	// Maximum: 8
+	// Minimum: 1
+	KvDpRankCount int32 `json:"kvDpRankCount,omitempty"`
+
+	// KV-event engine behind this rule. One framework per VIP; immutable after create (delete+recreate to change). Drives hash-algo default: sglang => sha256_sglang. NOTE: LOXILB_KV_* env knobs (unified mode, eps/lambda, cap-sum, max-blocks) are process-global and shared across all KV VIPs (accepted limitation).
+	// Enum: [vllm sglang]
+	KvEngineType string `json:"kvEngineType,omitempty"`
+
+	// KV-cache exact routing mode: 0=off, 1=zmq (P/D role-partitioned), 2=nats(reserved), 3=zmq single-role (— all EPs subscribed, no P/D role split). Enables Tier 1.5 block-hash routing between Tier 1 (trie) and Tier 2 (min-load).
+	// Maximum: 3
+	// Minimum: 0
+	KvExactMode int64 `json:"kvExactMode,omitempty"`
+
+	// Hash algorithm for KV block matching. Must match vLLM's configured hash algorithm.
+	// Enum: [sha256_cbor xxhash_cbor]
+	KvHashAlgo string `json:"kvHashAlgo,omitempty"`
+
+	// Seconds to wait after ZMQ subscriber connects before activating Tier 1.5 routing. Allows inventory to populate.
+	// Minimum: 0
+	KvWarmupSec int64 `json:"kvWarmupSec,omitempty"`
+
+	// ZMQ PUB socket port on vLLM prefill endpoints for KV cache events.
+	// Maximum: 65535
+	// Minimum: 1
+	KvZmqPort int64 `json:"kvZmqPort,omitempty"`
 
 	// externally managed rule or not
 	Managed bool `json:"managed,omitempty"`
 
-	// value for NAT mode (0-DNAT,1-onearm, 2-fullnat, 3-dsr, 4-fullproxy, 5-hostonearm, 0-default)
-	// Enum: [0 1 2 3 4 5]
+	// Absolute wall-clock cap for SSE streams in seconds. 0 = use system hard cap (86400s / 24h). Set to a lower value (e.g. 300) to bound runaway streams.
+	// Minimum: 0
+	MaxStreamDurationSec int32 `json:"max_stream_duration_sec,omitempty"`
+
+	// value for NAT mode (0-DNAT,1-onearm, 2-fullnat, 3-dsr, 4-fullproxy, 5-hostonearm, 6-aigw, 0-default)
+	// Enum: [0 1 2 3 4 5 6]
 	Mode int32 `json:"mode,omitempty"`
+
+	// LB endpoint pool selection key for AI model routing (e.g. "llama-70b"); empty = wildcard pool (backward compatible)
+	ModelName string `json:"model_name,omitempty"`
 
 	// value for monitoring enabled or not
 	Monitor bool `json:"monitor,omitempty"`
+
+	// mtls backend
+	MtlsBackend *LoadbalanceEntryServiceArgumentsMtlsBackend `json:"mtls_backend,omitempty"`
+
+	// mtls frontend
+	MtlsFrontend *LoadbalanceEntryServiceArgumentsMtlsFrontend `json:"mtls_frontend,omitempty"`
 
 	// service name
 	Name string `json:"name,omitempty"`
@@ -492,9 +733,34 @@ type LoadbalanceEntryServiceArguments struct {
 	// Enum: [0 1 2]
 	Oper int32 `json:"oper,omitempty"`
 
+	// Path matching mode - disabled (hostname-only, backward compat), prefix (longest prefix match), exact (exact path match)
+	// Enum: [disabled prefix exact]
+	PathMatchMode *string `json:"path_match_mode,omitempty"`
+
+	// URL path prefix for L7 routing (e.g., /v1/users). Optional - empty means hostname-only matching (backward compatible)
+	PathPrefix string `json:"path_prefix,omitempty"`
+
+	// Load imbalance threshold for P/D cache-aware routing. If max-min active connections exceeds this, bypass cache affinity.
+	// Minimum: 0
+	PdBalanceAbsThreshold int32 `json:"pd_balance_abs_threshold,omitempty"`
+
+	// Enable P/D cache-aware routing. When true, uses session stickiness, radix trie prefix matching, and min-load balancing for endpoint selection. Requires pd_disagg_mode=true.
+	PdCacheAwareMode bool `json:"pd_cache_aware_mode,omitempty"`
+
+	// Cache match threshold (0-100) for P/D cache-aware routing. Lower values make cache routing more aggressive.
+	// Maximum: 100
+	// Minimum: 0
+	PdCacheThreshold int32 `json:"pd_cache_threshold,omitempty"`
+
+	// Enable vLLM prefill/decode disaggregation mode. When true, the proxy orchestrates a two-phase flow - prefill request to a prefill endpoint, then decode request to a decode endpoint using KV transfer parameters from the prefill response.
+	PdDisaggMode bool `json:"pd_disagg_mode,omitempty"`
+
+	// Session stickiness TTL in seconds for P/D cache-aware routing. 0 = no automatic expiry. Only used when pd_cache_aware_mode is true.
+	// Minimum: 0
+	PdSessionTTLSec int32 `json:"pd_session_ttl_sec,omitempty"`
+
 	// (Min) port number for the access
-	// Required: true
-	Port *int64 `json:"port"`
+	Port *int64 `json:"port,omitempty"`
 
 	// Max port number(range) for the access
 	PortMax int64 `json:"portMax,omitempty"`
@@ -521,6 +787,9 @@ type LoadbalanceEntryServiceArguments struct {
 	// Enum: [tcp udp sctp http https ping none]
 	Probetype string `json:"probetype,omitempty"`
 
+	// Octavia tenant/project identifier. Opaque store-verbatim string, filtered on GET /all. NOT a tenant-isolation boundary.
+	ProjectID string `json:"projectId,omitempty"`
+
 	// value for access protocol
 	// Enum: [tcp udp sctp icmp]
 	Protocol string `json:"protocol,omitempty"`
@@ -532,19 +801,122 @@ type LoadbalanceEntryServiceArguments struct {
 	// Enum: [0 1 2]
 	Security int32 `json:"security,omitempty"`
 
-	// value for load balance algorithim(0-rr, 1-hash, 2-priority, 3-persist, 4-lc, 5-n2, 6-n3, 0-default)
-	// Enum: [0 1 2 3 4 5 6]
+	// value for load balance algorithim(0-rr, 1-hash, 2-priority/wrr, 3-persist, 4-lc, 5-n2, 6-n3, 7-reserved, 8-chwbl, 9-gpuaware, 10-wrr-hash, 0-default)
+	// Enum: [0 1 2 3 4 5 6 7 8 9 10]
 	Sel int64 `json:"sel,omitempty"`
+
+	// Session affinity configuration for persist mode (sel=3). Supports multiple methods:
+	//
+	// **Regular Header** (full value extraction):
+	// - "X-Session-ID" - Extracts full header value
+	// - "mcp-session-id" - Custom application header
+	// - "authorization" - Full Authorization header
+	//
+	// **Cookie-based** (specific cookie extraction):
+	// - "cookie:JSESSIONID" - Java/Tomcat session cookie
+	// - "cookie:PHPSESSID" - PHP session cookie
+	// - "cookie:ASP.NET_SessionId" - ASP.NET session
+	// - "cookie:connect.sid" - Node.js/Express session
+	// - "cookie:SESSION_TOKEN" - Custom cookie name
+	//
+	// **Query Parameter** (URL parameter extraction):
+	// - "query:sessionid" - Extract from ?sessionid=value
+	// - "query:token" - Extract from ?token=value
+	// - "query:jsessionid" - Common Java fallback
+	//
+	// **Basic Authentication** (username extraction):
+	// - "basic-auth" - Extract username from Authorization: Basic header
+	//
+	// If empty and sel=3, falls back to IP-based persistence.
+	// Cookie/query methods ignore other cookies/parameters, ensuring consistent routing.
+	//
+	SessionHeaderName string `json:"session_header_name,omitempty"`
 
 	// snat rule
 	Snat bool `json:"snat,omitempty"`
+
+	// Enable SSE (Server-Sent Events) streaming mode. When true, idle-timeout is suppressed while a streaming LLM response is active (Content-Type text/event-stream detected). Required for OpenAI-compatible streaming endpoints.
+	SseMode bool `json:"sse_mode,omitempty"`
+
+	// backend connect timeout in MILLISECONDS (Octavia native unit). Optional/additive — 0/absent preserves today's 500ms default (NOT Octavia's 5000ms). Enforced only on the L7_Proxy peer (has_l7_policy==1).
+	TimeoutMemberConnect uint32 `json:"timeoutMemberConnect,omitempty"`
+
+	// member-side relay idle timeout in MILLISECONDS. Optional/additive — 0/absent preserves the existing client-idle value.
+	TimeoutMemberData uint32 `json:"timeoutMemberData,omitempty"`
+
+	// header-accumulation deadline in MILLISECONDS (slowloris protection). Optional/additive — 0/absent uses a sane bounded default. NO Gateway-API equivalent — Octavia-only; a future Gateway controller MUST hard-error, never silent-drop.
+	TimeoutTCPInspect uint32 `json:"timeoutTcpInspect,omitempty"`
+
+	// OpenSSL cipher string, applied to BOTH SSL_CTX_set_cipher_list (TLS1.2) and SSL_CTX_set_ciphersuites (TLS1.3) on listener + pool. Optional/additive — empty preserves today's hardcoded ciphers.
+	TLSCiphers string `json:"tls_ciphers,omitempty"`
+
+	// Octavia tls_versions list (e.g. ["TLSv1.2","TLSv1.3"]). Collapsed to a minmax protocol-version range. Optional/additive — empty preserves today's TLS1.21.3.
+	TLSVersions []string `json:"tls_versions"`
+
+	// Tracing catalog name for deep inspection and protocol analysis (e.g., v1, anthropic, default). Enables body capture and parser invocation for observability.
+	TraceType string `json:"trace_type,omitempty"`
+
+	// references an EXISTING loxilb /config/policy ident (pre-created by the external Octavia driver). On create, when non-empty, loxilb ASSOCIATES that policy to the VIP rule (policer association). Optional/additive — empty/absent leaves the rule unchanged. An unresolvable ident is an error (no silent-drop).
+	VipQosPolicyID string `json:"vip_qos_policy_id,omitempty"`
 }
 
 // Validate validates this loadbalance entry service arguments
 func (m *LoadbalanceEntryServiceArguments) Validate(formats strfmt.Registry) error {
 	var res []error
 
-	if err := m.validateExternalIP(formats); err != nil {
+	if err := m.validateBackendKeepaliveIntervalSec(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateBackendProtocol(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateChwblMeanLoadFactor(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateChwblPrefixHashFlags(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateChwblPrefixHashLevel(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateChwblReplication(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateKvBlockSize(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateKvDpRankCount(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateKvEngineType(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateKvExactMode(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateKvHashAlgo(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateKvWarmupSec(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateKvZmqPort(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateMaxStreamDurationSec(formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -552,11 +924,31 @@ func (m *LoadbalanceEntryServiceArguments) Validate(formats strfmt.Registry) err
 		res = append(res, err)
 	}
 
+	if err := m.validateMtlsBackend(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateMtlsFrontend(formats); err != nil {
+		res = append(res, err)
+	}
+
 	if err := m.validateOper(formats); err != nil {
 		res = append(res, err)
 	}
 
-	if err := m.validatePort(formats); err != nil {
+	if err := m.validatePathMatchMode(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validatePdBalanceAbsThreshold(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validatePdCacheThreshold(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validatePdSessionTTLSec(formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -582,9 +974,306 @@ func (m *LoadbalanceEntryServiceArguments) Validate(formats strfmt.Registry) err
 	return nil
 }
 
-func (m *LoadbalanceEntryServiceArguments) validateExternalIP(formats strfmt.Registry) error {
+func (m *LoadbalanceEntryServiceArguments) validateBackendKeepaliveIntervalSec(formats strfmt.Registry) error {
+	if swag.IsZero(m.BackendKeepaliveIntervalSec) { // not required
+		return nil
+	}
 
-	if err := validate.Required("serviceArguments"+"."+"externalIP", "body", m.ExternalIP); err != nil {
+	if err := validate.MinimumInt("serviceArguments"+"."+"backend_keepalive_interval_sec", "body", int64(m.BackendKeepaliveIntervalSec), 0, false); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+var loadbalanceEntryServiceArgumentsTypeBackendProtocolPropEnum []interface{}
+
+func init() {
+	var res []string
+	if err := json.Unmarshal([]byte(`["http1","http2","both"]`), &res); err != nil {
+		panic(err)
+	}
+	for _, v := range res {
+		loadbalanceEntryServiceArgumentsTypeBackendProtocolPropEnum = append(loadbalanceEntryServiceArgumentsTypeBackendProtocolPropEnum, v)
+	}
+}
+
+const (
+
+	// LoadbalanceEntryServiceArgumentsBackendProtocolHttp1 captures enum value "http1"
+	LoadbalanceEntryServiceArgumentsBackendProtocolHttp1 string = "http1"
+
+	// LoadbalanceEntryServiceArgumentsBackendProtocolHttp2 captures enum value "http2"
+	LoadbalanceEntryServiceArgumentsBackendProtocolHttp2 string = "http2"
+
+	// LoadbalanceEntryServiceArgumentsBackendProtocolBoth captures enum value "both"
+	LoadbalanceEntryServiceArgumentsBackendProtocolBoth string = "both"
+)
+
+// prop value enum
+func (m *LoadbalanceEntryServiceArguments) validateBackendProtocolEnum(path, location string, value string) error {
+	if err := validate.EnumCase(path, location, value, loadbalanceEntryServiceArgumentsTypeBackendProtocolPropEnum, true); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (m *LoadbalanceEntryServiceArguments) validateBackendProtocol(formats strfmt.Registry) error {
+	if swag.IsZero(m.BackendProtocol) { // not required
+		return nil
+	}
+
+	// value enum
+	if err := m.validateBackendProtocolEnum("serviceArguments"+"."+"backend_protocol", "body", *m.BackendProtocol); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *LoadbalanceEntryServiceArguments) validateChwblMeanLoadFactor(formats strfmt.Registry) error {
+	if swag.IsZero(m.ChwblMeanLoadFactor) { // not required
+		return nil
+	}
+
+	if err := validate.MinimumInt("serviceArguments"+"."+"chwbl_mean_load_factor", "body", m.ChwblMeanLoadFactor, 100, false); err != nil {
+		return err
+	}
+
+	if err := validate.MaximumInt("serviceArguments"+"."+"chwbl_mean_load_factor", "body", m.ChwblMeanLoadFactor, 300, false); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *LoadbalanceEntryServiceArguments) validateChwblPrefixHashFlags(formats strfmt.Registry) error {
+	if swag.IsZero(m.ChwblPrefixHashFlags) { // not required
+		return nil
+	}
+
+	if err := validate.MinimumInt("serviceArguments"+"."+"chwbl_prefix_hash_flags", "body", *m.ChwblPrefixHashFlags, 0, false); err != nil {
+		return err
+	}
+
+	if err := validate.MaximumInt("serviceArguments"+"."+"chwbl_prefix_hash_flags", "body", *m.ChwblPrefixHashFlags, 255, false); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+var loadbalanceEntryServiceArgumentsTypeChwblPrefixHashLevelPropEnum []interface{}
+
+func init() {
+	var res []int64
+	if err := json.Unmarshal([]byte(`[1,2,3]`), &res); err != nil {
+		panic(err)
+	}
+	for _, v := range res {
+		loadbalanceEntryServiceArgumentsTypeChwblPrefixHashLevelPropEnum = append(loadbalanceEntryServiceArgumentsTypeChwblPrefixHashLevelPropEnum, v)
+	}
+}
+
+// prop value enum
+func (m *LoadbalanceEntryServiceArguments) validateChwblPrefixHashLevelEnum(path, location string, value int64) error {
+	if err := validate.EnumCase(path, location, value, loadbalanceEntryServiceArgumentsTypeChwblPrefixHashLevelPropEnum, true); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (m *LoadbalanceEntryServiceArguments) validateChwblPrefixHashLevel(formats strfmt.Registry) error {
+	if swag.IsZero(m.ChwblPrefixHashLevel) { // not required
+		return nil
+	}
+
+	// value enum
+	if err := m.validateChwblPrefixHashLevelEnum("serviceArguments"+"."+"chwbl_prefix_hash_level", "body", *m.ChwblPrefixHashLevel); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *LoadbalanceEntryServiceArguments) validateChwblReplication(formats strfmt.Registry) error {
+	if swag.IsZero(m.ChwblReplication) { // not required
+		return nil
+	}
+
+	if err := validate.MinimumInt("serviceArguments"+"."+"chwbl_replication", "body", m.ChwblReplication, 1, false); err != nil {
+		return err
+	}
+
+	if err := validate.MaximumInt("serviceArguments"+"."+"chwbl_replication", "body", m.ChwblReplication, 1024, false); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *LoadbalanceEntryServiceArguments) validateKvBlockSize(formats strfmt.Registry) error {
+	if swag.IsZero(m.KvBlockSize) { // not required
+		return nil
+	}
+
+	if err := validate.MinimumInt("serviceArguments"+"."+"kvBlockSize", "body", m.KvBlockSize, 1, false); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *LoadbalanceEntryServiceArguments) validateKvDpRankCount(formats strfmt.Registry) error {
+	if swag.IsZero(m.KvDpRankCount) { // not required
+		return nil
+	}
+
+	if err := validate.MinimumInt("serviceArguments"+"."+"kvDpRankCount", "body", int64(m.KvDpRankCount), 1, false); err != nil {
+		return err
+	}
+
+	if err := validate.MaximumInt("serviceArguments"+"."+"kvDpRankCount", "body", int64(m.KvDpRankCount), 8, false); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+var loadbalanceEntryServiceArgumentsTypeKvEngineTypePropEnum []interface{}
+
+func init() {
+	var res []string
+	if err := json.Unmarshal([]byte(`["vllm","sglang"]`), &res); err != nil {
+		panic(err)
+	}
+	for _, v := range res {
+		loadbalanceEntryServiceArgumentsTypeKvEngineTypePropEnum = append(loadbalanceEntryServiceArgumentsTypeKvEngineTypePropEnum, v)
+	}
+}
+
+const (
+
+	// LoadbalanceEntryServiceArgumentsKvEngineTypeVllm captures enum value "vllm"
+	LoadbalanceEntryServiceArgumentsKvEngineTypeVllm string = "vllm"
+
+	// LoadbalanceEntryServiceArgumentsKvEngineTypeSglang captures enum value "sglang"
+	LoadbalanceEntryServiceArgumentsKvEngineTypeSglang string = "sglang"
+)
+
+// prop value enum
+func (m *LoadbalanceEntryServiceArguments) validateKvEngineTypeEnum(path, location string, value string) error {
+	if err := validate.EnumCase(path, location, value, loadbalanceEntryServiceArgumentsTypeKvEngineTypePropEnum, true); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (m *LoadbalanceEntryServiceArguments) validateKvEngineType(formats strfmt.Registry) error {
+	if swag.IsZero(m.KvEngineType) { // not required
+		return nil
+	}
+
+	// value enum
+	if err := m.validateKvEngineTypeEnum("serviceArguments"+"."+"kvEngineType", "body", m.KvEngineType); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *LoadbalanceEntryServiceArguments) validateKvExactMode(formats strfmt.Registry) error {
+	if swag.IsZero(m.KvExactMode) { // not required
+		return nil
+	}
+
+	if err := validate.MinimumInt("serviceArguments"+"."+"kvExactMode", "body", m.KvExactMode, 0, false); err != nil {
+		return err
+	}
+
+	if err := validate.MaximumInt("serviceArguments"+"."+"kvExactMode", "body", m.KvExactMode, 3, false); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+var loadbalanceEntryServiceArgumentsTypeKvHashAlgoPropEnum []interface{}
+
+func init() {
+	var res []string
+	if err := json.Unmarshal([]byte(`["sha256_cbor","xxhash_cbor"]`), &res); err != nil {
+		panic(err)
+	}
+	for _, v := range res {
+		loadbalanceEntryServiceArgumentsTypeKvHashAlgoPropEnum = append(loadbalanceEntryServiceArgumentsTypeKvHashAlgoPropEnum, v)
+	}
+}
+
+const (
+
+	// LoadbalanceEntryServiceArgumentsKvHashAlgoSha256Cbor captures enum value "sha256_cbor"
+	LoadbalanceEntryServiceArgumentsKvHashAlgoSha256Cbor string = "sha256_cbor"
+
+	// LoadbalanceEntryServiceArgumentsKvHashAlgoXxhashCbor captures enum value "xxhash_cbor"
+	LoadbalanceEntryServiceArgumentsKvHashAlgoXxhashCbor string = "xxhash_cbor"
+)
+
+// prop value enum
+func (m *LoadbalanceEntryServiceArguments) validateKvHashAlgoEnum(path, location string, value string) error {
+	if err := validate.EnumCase(path, location, value, loadbalanceEntryServiceArgumentsTypeKvHashAlgoPropEnum, true); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (m *LoadbalanceEntryServiceArguments) validateKvHashAlgo(formats strfmt.Registry) error {
+	if swag.IsZero(m.KvHashAlgo) { // not required
+		return nil
+	}
+
+	// value enum
+	if err := m.validateKvHashAlgoEnum("serviceArguments"+"."+"kvHashAlgo", "body", m.KvHashAlgo); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *LoadbalanceEntryServiceArguments) validateKvWarmupSec(formats strfmt.Registry) error {
+	if swag.IsZero(m.KvWarmupSec) { // not required
+		return nil
+	}
+
+	if err := validate.MinimumInt("serviceArguments"+"."+"kvWarmupSec", "body", m.KvWarmupSec, 0, false); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *LoadbalanceEntryServiceArguments) validateKvZmqPort(formats strfmt.Registry) error {
+	if swag.IsZero(m.KvZmqPort) { // not required
+		return nil
+	}
+
+	if err := validate.MinimumInt("serviceArguments"+"."+"kvZmqPort", "body", m.KvZmqPort, 1, false); err != nil {
+		return err
+	}
+
+	if err := validate.MaximumInt("serviceArguments"+"."+"kvZmqPort", "body", m.KvZmqPort, 65535, false); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *LoadbalanceEntryServiceArguments) validateMaxStreamDurationSec(formats strfmt.Registry) error {
+	if swag.IsZero(m.MaxStreamDurationSec) { // not required
+		return nil
+	}
+
+	if err := validate.MinimumInt("serviceArguments"+"."+"max_stream_duration_sec", "body", int64(m.MaxStreamDurationSec), 0, false); err != nil {
 		return err
 	}
 
@@ -595,7 +1284,7 @@ var loadbalanceEntryServiceArgumentsTypeModePropEnum []interface{}
 
 func init() {
 	var res []int32
-	if err := json.Unmarshal([]byte(`[0,1,2,3,4,5]`), &res); err != nil {
+	if err := json.Unmarshal([]byte(`[0,1,2,3,4,5,6]`), &res); err != nil {
 		panic(err)
 	}
 	for _, v := range res {
@@ -619,6 +1308,44 @@ func (m *LoadbalanceEntryServiceArguments) validateMode(formats strfmt.Registry)
 	// value enum
 	if err := m.validateModeEnum("serviceArguments"+"."+"mode", "body", m.Mode); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func (m *LoadbalanceEntryServiceArguments) validateMtlsBackend(formats strfmt.Registry) error {
+	if swag.IsZero(m.MtlsBackend) { // not required
+		return nil
+	}
+
+	if m.MtlsBackend != nil {
+		if err := m.MtlsBackend.Validate(formats); err != nil {
+			if ve, ok := err.(*errors.Validation); ok {
+				return ve.ValidateName("serviceArguments" + "." + "mtls_backend")
+			} else if ce, ok := err.(*errors.CompositeError); ok {
+				return ce.ValidateName("serviceArguments" + "." + "mtls_backend")
+			}
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (m *LoadbalanceEntryServiceArguments) validateMtlsFrontend(formats strfmt.Registry) error {
+	if swag.IsZero(m.MtlsFrontend) { // not required
+		return nil
+	}
+
+	if m.MtlsFrontend != nil {
+		if err := m.MtlsFrontend.Validate(formats); err != nil {
+			if ve, ok := err.(*errors.Validation); ok {
+				return ve.ValidateName("serviceArguments" + "." + "mtls_frontend")
+			} else if ce, ok := err.(*errors.CompositeError); ok {
+				return ce.ValidateName("serviceArguments" + "." + "mtls_frontend")
+			}
+			return err
+		}
 	}
 
 	return nil
@@ -657,9 +1384,85 @@ func (m *LoadbalanceEntryServiceArguments) validateOper(formats strfmt.Registry)
 	return nil
 }
 
-func (m *LoadbalanceEntryServiceArguments) validatePort(formats strfmt.Registry) error {
+var loadbalanceEntryServiceArgumentsTypePathMatchModePropEnum []interface{}
 
-	if err := validate.Required("serviceArguments"+"."+"port", "body", m.Port); err != nil {
+func init() {
+	var res []string
+	if err := json.Unmarshal([]byte(`["disabled","prefix","exact"]`), &res); err != nil {
+		panic(err)
+	}
+	for _, v := range res {
+		loadbalanceEntryServiceArgumentsTypePathMatchModePropEnum = append(loadbalanceEntryServiceArgumentsTypePathMatchModePropEnum, v)
+	}
+}
+
+const (
+
+	// LoadbalanceEntryServiceArgumentsPathMatchModeDisabled captures enum value "disabled"
+	LoadbalanceEntryServiceArgumentsPathMatchModeDisabled string = "disabled"
+
+	// LoadbalanceEntryServiceArgumentsPathMatchModePrefix captures enum value "prefix"
+	LoadbalanceEntryServiceArgumentsPathMatchModePrefix string = "prefix"
+
+	// LoadbalanceEntryServiceArgumentsPathMatchModeExact captures enum value "exact"
+	LoadbalanceEntryServiceArgumentsPathMatchModeExact string = "exact"
+)
+
+// prop value enum
+func (m *LoadbalanceEntryServiceArguments) validatePathMatchModeEnum(path, location string, value string) error {
+	if err := validate.EnumCase(path, location, value, loadbalanceEntryServiceArgumentsTypePathMatchModePropEnum, true); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (m *LoadbalanceEntryServiceArguments) validatePathMatchMode(formats strfmt.Registry) error {
+	if swag.IsZero(m.PathMatchMode) { // not required
+		return nil
+	}
+
+	// value enum
+	if err := m.validatePathMatchModeEnum("serviceArguments"+"."+"path_match_mode", "body", *m.PathMatchMode); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *LoadbalanceEntryServiceArguments) validatePdBalanceAbsThreshold(formats strfmt.Registry) error {
+	if swag.IsZero(m.PdBalanceAbsThreshold) { // not required
+		return nil
+	}
+
+	if err := validate.MinimumInt("serviceArguments"+"."+"pd_balance_abs_threshold", "body", int64(m.PdBalanceAbsThreshold), 0, false); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *LoadbalanceEntryServiceArguments) validatePdCacheThreshold(formats strfmt.Registry) error {
+	if swag.IsZero(m.PdCacheThreshold) { // not required
+		return nil
+	}
+
+	if err := validate.MinimumInt("serviceArguments"+"."+"pd_cache_threshold", "body", int64(m.PdCacheThreshold), 0, false); err != nil {
+		return err
+	}
+
+	if err := validate.MaximumInt("serviceArguments"+"."+"pd_cache_threshold", "body", int64(m.PdCacheThreshold), 100, false); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *LoadbalanceEntryServiceArguments) validatePdSessionTTLSec(formats strfmt.Registry) error {
+	if swag.IsZero(m.PdSessionTTLSec) { // not required
+		return nil
+	}
+
+	if err := validate.MinimumInt("serviceArguments"+"."+"pd_session_ttl_sec", "body", int64(m.PdSessionTTLSec), 0, false); err != nil {
 		return err
 	}
 
@@ -808,7 +1611,7 @@ var loadbalanceEntryServiceArgumentsTypeSelPropEnum []interface{}
 
 func init() {
 	var res []int64
-	if err := json.Unmarshal([]byte(`[0,1,2,3,4,5,6]`), &res); err != nil {
+	if err := json.Unmarshal([]byte(`[0,1,2,3,4,5,6,7,8,9,10]`), &res); err != nil {
 		panic(err)
 	}
 	for _, v := range res {
@@ -837,8 +1640,53 @@ func (m *LoadbalanceEntryServiceArguments) validateSel(formats strfmt.Registry) 
 	return nil
 }
 
-// ContextValidate validates this loadbalance entry service arguments based on context it is used
+// ContextValidate validate this loadbalance entry service arguments based on the context it is used
 func (m *LoadbalanceEntryServiceArguments) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
+	var res []error
+
+	if err := m.contextValidateMtlsBackend(ctx, formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.contextValidateMtlsFrontend(ctx, formats); err != nil {
+		res = append(res, err)
+	}
+
+	if len(res) > 0 {
+		return errors.CompositeValidationError(res...)
+	}
+	return nil
+}
+
+func (m *LoadbalanceEntryServiceArguments) contextValidateMtlsBackend(ctx context.Context, formats strfmt.Registry) error {
+
+	if m.MtlsBackend != nil {
+		if err := m.MtlsBackend.ContextValidate(ctx, formats); err != nil {
+			if ve, ok := err.(*errors.Validation); ok {
+				return ve.ValidateName("serviceArguments" + "." + "mtls_backend")
+			} else if ce, ok := err.(*errors.CompositeError); ok {
+				return ce.ValidateName("serviceArguments" + "." + "mtls_backend")
+			}
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (m *LoadbalanceEntryServiceArguments) contextValidateMtlsFrontend(ctx context.Context, formats strfmt.Registry) error {
+
+	if m.MtlsFrontend != nil {
+		if err := m.MtlsFrontend.ContextValidate(ctx, formats); err != nil {
+			if ve, ok := err.(*errors.Validation); ok {
+				return ve.ValidateName("serviceArguments" + "." + "mtls_frontend")
+			} else if ce, ok := err.(*errors.CompositeError); ok {
+				return ce.ValidateName("serviceArguments" + "." + "mtls_frontend")
+			}
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -853,6 +1701,165 @@ func (m *LoadbalanceEntryServiceArguments) MarshalBinary() ([]byte, error) {
 // UnmarshalBinary interface implementation
 func (m *LoadbalanceEntryServiceArguments) UnmarshalBinary(b []byte) error {
 	var res LoadbalanceEntryServiceArguments
+	if err := swag.ReadJSON(b, &res); err != nil {
+		return err
+	}
+	*m = res
+	return nil
+}
+
+// LoadbalanceEntryServiceArgumentsMtlsBackend Backend mTLS configuration for server certificate verification and client certificate presentation. Only valid with security=2 (E2E HTTPS) and mode=4 (FullProxy)
+//
+// swagger:model LoadbalanceEntryServiceArgumentsMtlsBackend
+type LoadbalanceEntryServiceArgumentsMtlsBackend struct {
+
+	// Path to backend CA bundle (PEM format). Empty uses system CA store (/etc/ssl/certs/). Example /opt/loxilb/cert/backend_ca.crt
+	BackendCaPath string `json:"backend_ca_path,omitempty"`
+
+	// Inline client certificate (base64-encoded PEM). Alternative to client_cert_path
+	ClientCertData string `json:"client_cert_data,omitempty"`
+
+	// Path to loxilb's client certificate for backend mTLS. Example /opt/loxilb/cert/loxilb_client.crt
+	ClientCertPath string `json:"client_cert_path,omitempty"`
+
+	// Inline client key (base64-encoded PEM). Alternative to client_key_path
+	ClientKeyData string `json:"client_key_data,omitempty"`
+
+	// Path to loxilb's private key for backend mTLS. Example /opt/loxilb/cert/loxilb_client.key
+	ClientKeyPath string `json:"client_key_path,omitempty"`
+
+	// Enable backend server certificate verification (SSL_VERIFY_PEER). False skips verification (SSL_VERIFY_NONE, default for backward compatibility)
+	VerifyServerCert *bool `json:"verify_server_cert,omitempty"`
+}
+
+// Validate validates this loadbalance entry service arguments mtls backend
+func (m *LoadbalanceEntryServiceArgumentsMtlsBackend) Validate(formats strfmt.Registry) error {
+	return nil
+}
+
+// ContextValidate validates this loadbalance entry service arguments mtls backend based on context it is used
+func (m *LoadbalanceEntryServiceArgumentsMtlsBackend) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
+	return nil
+}
+
+// MarshalBinary interface implementation
+func (m *LoadbalanceEntryServiceArgumentsMtlsBackend) MarshalBinary() ([]byte, error) {
+	if m == nil {
+		return nil, nil
+	}
+	return swag.WriteJSON(m)
+}
+
+// UnmarshalBinary interface implementation
+func (m *LoadbalanceEntryServiceArgumentsMtlsBackend) UnmarshalBinary(b []byte) error {
+	var res LoadbalanceEntryServiceArgumentsMtlsBackend
+	if err := swag.ReadJSON(b, &res); err != nil {
+		return err
+	}
+	*m = res
+	return nil
+}
+
+// LoadbalanceEntryServiceArgumentsMtlsFrontend Frontend mTLS configuration for client certificate verification. Only valid with security=1 (HTTPS) or security=2 (E2E HTTPS) and mode=4 (FullProxy)
+//
+// swagger:model LoadbalanceEntryServiceArgumentsMtlsFrontend
+type LoadbalanceEntryServiceArgumentsMtlsFrontend struct {
+
+	// Inline CA certificate data (base64-encoded PEM). Alternative to client_ca_path for Kubernetes secrets
+	ClientCaCertData string `json:"client_ca_cert_data,omitempty"`
+
+	// Path to client CA certificate bundle (PEM format). Example /opt/loxilb/cert/client_ca_bundle.crt
+	ClientCaPath string `json:"client_ca_path,omitempty"`
+
+	// Client certificate requirement - disabled (no verification, default), optional (accept with/without cert), required (reject without valid cert)
+	// Enum: [disabled optional required]
+	ClientCertMode *string `json:"client_cert_mode,omitempty"`
+
+	// Required CN pattern (e.g., *.corp.example.com). Supports wildcard matching. Only used if require_client_cn is true
+	ClientCnPattern string `json:"client_cn_pattern,omitempty"`
+
+	// (08) operator-supplied static CRL file (PEM) loaded into the verify X509_STORE with leaf-only X509_V_FLAG_CRL_CHECK. A revoked client LEAF cert is rejected; a valid one passes. Optional/additive — empty preserves today's behaviour (the 77-04 sibling crl.pem convention).
+	ClientCrlPath string `json:"client_crl_path,omitempty"`
+
+	// Require specific CN pattern in client certificate for additional security
+	RequireClientCn *bool `json:"require_client_cn,omitempty"`
+}
+
+// Validate validates this loadbalance entry service arguments mtls frontend
+func (m *LoadbalanceEntryServiceArgumentsMtlsFrontend) Validate(formats strfmt.Registry) error {
+	var res []error
+
+	if err := m.validateClientCertMode(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if len(res) > 0 {
+		return errors.CompositeValidationError(res...)
+	}
+	return nil
+}
+
+var loadbalanceEntryServiceArgumentsMtlsFrontendTypeClientCertModePropEnum []interface{}
+
+func init() {
+	var res []string
+	if err := json.Unmarshal([]byte(`["disabled","optional","required"]`), &res); err != nil {
+		panic(err)
+	}
+	for _, v := range res {
+		loadbalanceEntryServiceArgumentsMtlsFrontendTypeClientCertModePropEnum = append(loadbalanceEntryServiceArgumentsMtlsFrontendTypeClientCertModePropEnum, v)
+	}
+}
+
+const (
+
+	// LoadbalanceEntryServiceArgumentsMtlsFrontendClientCertModeDisabled captures enum value "disabled"
+	LoadbalanceEntryServiceArgumentsMtlsFrontendClientCertModeDisabled string = "disabled"
+
+	// LoadbalanceEntryServiceArgumentsMtlsFrontendClientCertModeOptional captures enum value "optional"
+	LoadbalanceEntryServiceArgumentsMtlsFrontendClientCertModeOptional string = "optional"
+
+	// LoadbalanceEntryServiceArgumentsMtlsFrontendClientCertModeRequired captures enum value "required"
+	LoadbalanceEntryServiceArgumentsMtlsFrontendClientCertModeRequired string = "required"
+)
+
+// prop value enum
+func (m *LoadbalanceEntryServiceArgumentsMtlsFrontend) validateClientCertModeEnum(path, location string, value string) error {
+	if err := validate.EnumCase(path, location, value, loadbalanceEntryServiceArgumentsMtlsFrontendTypeClientCertModePropEnum, true); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (m *LoadbalanceEntryServiceArgumentsMtlsFrontend) validateClientCertMode(formats strfmt.Registry) error {
+	if swag.IsZero(m.ClientCertMode) { // not required
+		return nil
+	}
+
+	// value enum
+	if err := m.validateClientCertModeEnum("serviceArguments"+"."+"mtls_frontend"+"."+"client_cert_mode", "body", *m.ClientCertMode); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// ContextValidate validates this loadbalance entry service arguments mtls frontend based on context it is used
+func (m *LoadbalanceEntryServiceArgumentsMtlsFrontend) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
+	return nil
+}
+
+// MarshalBinary interface implementation
+func (m *LoadbalanceEntryServiceArgumentsMtlsFrontend) MarshalBinary() ([]byte, error) {
+	if m == nil {
+		return nil, nil
+	}
+	return swag.WriteJSON(m)
+}
+
+// UnmarshalBinary interface implementation
+func (m *LoadbalanceEntryServiceArgumentsMtlsFrontend) UnmarshalBinary(b []byte) error {
+	var res LoadbalanceEntryServiceArgumentsMtlsFrontend
 	if err := swag.ReadJSON(b, &res); err != nil {
 		return err
 	}

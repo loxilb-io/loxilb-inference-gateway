@@ -470,6 +470,7 @@ func GoBgpInit(bgpPeerMode bool) *GoBgpH {
 	gbh.pMode = bgpPeerMode
 	gbh.ticker = time.NewTicker(30 * time.Second)
 	gbh.fTicker = time.NewTicker(5 * time.Second)
+	// B1: best-effort skip; relies on process exit (RESEARCH §Open Q5).
 	go gbh.goBGPTicker()
 	go gbh.goBgpSpawn(bgpPeerMode)
 	go gbh.goBgpConnect(gbh.host)
@@ -697,7 +698,7 @@ func (gbh *GoBgpH) AddCurrBgpRoutesToIPRoute() error {
 				continue
 			}
 			if nexthopIP = gbh.getNextHopFromPathAttributes(attrs); nexthopIP == nil {
-				//tk.LogIt(tk.LogDebug, "prefix %s neighbor %s is invalid\n", r.GetPrefix(), p.GetNeighborIp())
+				//tk.LogIt(tk.LogDebug, "prefix %s neighbor %s is invalid\n", r.GetPrefix, p.GetNeighborIp)
 				continue
 			}
 
@@ -716,7 +717,7 @@ func (gbh *GoBgpH) AddCurrBgpRoutesToIPRoute() error {
 			}
 			continue
 		}
-		//tk.LogIt(tk.LogDebug, "[GoBGP] ip route add %s via %s\n", dstIPN.String(), nlpRoute.Gw.String())
+		//tk.LogIt(tk.LogDebug, "[GoBGP] ip route add %s via %s\n", dstIPN.String, nlpRoute.Gw.String)
 		nlp.RouteReplace(nlpRoute)
 	}
 
@@ -787,7 +788,7 @@ func (gbh *GoBgpH) initBgpClient() {
 	}
 
 	/* Get local routes and advertise */
-	//getRoutesAndAdvertise()
+	//getRoutesAndAdvertise
 
 	if err := gbh.AddCurrBgpRoutesToIPRoute(); err != nil {
 		tk.LogIt(tk.LogError, "[GoBGP] AddCurrentBgpRoutesToIpRoute() return err: %s\n", err.Error())
@@ -1382,7 +1383,7 @@ func (gbh *GoBgpH) AddPolicyDefinitions(name string, stmt []cmn.Statement) (int,
 			Conditions: &api.Conditions{},
 			Actions:    &api.Actions{},
 		}
-		// Prefix and Neigh Condition add (any(), invert)
+		// Prefix and Neigh Condition add (any, invert)
 		if statement.Conditions.PrefixSet.PrefixSet != "" {
 			var PrefixSet api.MatchSet
 			PrefixSet.Name = statement.Conditions.PrefixSet.PrefixSet
@@ -1859,11 +1860,64 @@ func (gbh *GoBgpH) BGPGlobalConfigAdd(config cmn.GoBGPGlobalConfig) (int, error)
 	}
 	// Apply the global policy
 	//if _, err := gbh.applyExportPolicy("global", "set-llb-export-gpolicy"); err != nil {
-	//	tk.LogIt(tk.LogError, "[GoBGP] Error applying set-llb-export policy%s\n", err.Error())
+	//	tk.LogIt(tk.LogError, "[GoBGP] Error applying set-llb-export policy%s\n", err.Error)
 	//	return 0, err
 	//}
 
 	return 0, err
+}
+
+// BGPGlobalConfigGet - Routine to read back global config from the goBGP
+// server. Inverse of BGPGlobalConfigAdd for snapshot round-trips: SetNHSelf
+// is not part of goBGP's Global state — it materializes as the
+// "set-next-hop-self-gpolicy" global export policy assignment, so it is
+// recovered from ListPolicyAssignment.
+func (gbh *GoBgpH) BGPGlobalConfigGet() (cmn.GoBGPGlobalConfig, error) {
+	var gc cmn.GoBGPGlobalConfig
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+
+	r, err := gbh.client.GetBgp(ctx, &api.GetBgpRequest{})
+	if err != nil {
+		return gc, err
+	}
+	if r.Global == nil || r.Global.Asn == 0 {
+		// Not an error: global config simply hasn't been set yet. Callers
+		// (snapshot capture) distinguish by the zero LocalAs.
+		return gc, nil
+	}
+
+	gc.LocalAs = int64(r.Global.Asn)
+	gc.RouterID = r.Global.RouterId
+	if r.Global.ListenPort > 0 {
+		gc.ListenPort = uint16(r.Global.ListenPort)
+	}
+
+	stream, err := gbh.client.ListPolicyAssignment(ctx, &api.ListPolicyAssignmentRequest{
+		Name:      "global",
+		Direction: api.PolicyDirection_EXPORT,
+	})
+	if err != nil {
+		tk.LogIt(tk.LogError, "[GoBGP] Error listing global policy assignment %s\n", err.Error())
+		return gc, nil
+	}
+	for {
+		resp, lerr := stream.Recv()
+		if lerr == io.EOF {
+			break
+		}
+		if lerr != nil {
+			tk.LogIt(tk.LogError, "[GoBGP] Error reading policy assignment %s\n", lerr.Error())
+			break
+		}
+		for _, p := range resp.GetAssignment().GetPolicies() {
+			if p.GetName() == "set-next-hop-self-gpolicy" {
+				gc.SetNHSelf = true
+			}
+		}
+	}
+
+	return gc, nil
 }
 
 func getRoutesAndAdvertise() {

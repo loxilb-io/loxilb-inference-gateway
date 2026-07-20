@@ -1,0 +1,153 @@
+syntax = "proto3";
+
+package llamafirewall;
+
+option go_package = "github.com/meta-llama/PurpleLlama/LlamaFirewall/grpc_server/generated/go;llamafirewall";
+
+// Security Scanner Service for loxilb integration
+service SecurityScanner {
+  // Scan a single message for security threats
+  rpc Scan(ScanRequest) returns (ScanResponse);
+
+  // Scan a conversation trace (multiple messages)
+  rpc ScanTrace(ScanTraceRequest) returns (ScanResponse);
+
+  // Batch scan multiple messages for efficiency
+  rpc BatchScan(BatchScanRequest) returns (BatchScanResponse);
+
+  // Health check for monitoring
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+
+  // Get server configuration and supported scanners
+  rpc GetConfig(ConfigRequest) returns (ConfigResponse);
+}
+
+// Message roles in conversation
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_USER = 1;
+  ROLE_ASSISTANT = 2;
+  ROLE_SYSTEM = 3;
+  ROLE_TOOL = 4;
+  ROLE_MEMORY = 5;
+}
+
+// Scanner types supported by LlamaFirewall
+enum ScannerType {
+  SCANNER_UNSPECIFIED = 0;
+  SCANNER_PROMPT_GUARD = 1;
+  SCANNER_CODE_SHIELD = 2;
+  SCANNER_REGEX = 3;
+  SCANNER_HIDDEN_ASCII = 4;
+  SCANNER_AGENT_ALIGNMENT = 5;
+  SCANNER_PII_DETECTION = 6;
+}
+
+// Scan decision results
+enum ScanDecision {
+  DECISION_UNSPECIFIED = 0;
+  DECISION_ALLOW = 1;
+  DECISION_BLOCK = 2;
+  DECISION_HUMAN_IN_THE_LOOP = 3;
+}
+
+// Scan status
+enum ScanStatus {
+  STATUS_UNSPECIFIED = 0;
+  STATUS_SUCCESS = 1;
+  STATUS_ERROR = 2;
+  STATUS_PARTIAL = 3;
+}
+
+// Message to be scanned
+message Message {
+  Role role = 1;
+  string content = 2;
+  map<string, string> metadata = 3;
+}
+
+// Single scan request
+message ScanRequest {
+  Message message = 1;
+  repeated ScannerType scanners = 2;  // If empty, use default scanners for role
+  repeated Message past_trace = 3;    // Optional conversation history
+  map<string, string> scanner_config = 4;  // Optional scanner-specific config
+}
+
+// Conversation trace scan request
+message ScanTraceRequest {
+  repeated Message messages = 1;
+  repeated ScannerType scanners = 2;
+  map<string, string> scanner_config = 3;
+}
+
+// Batch scan request
+message BatchScanRequest {
+  repeated ScanRequest requests = 1;
+}
+
+// Scan response
+message ScanResponse {
+  ScanDecision decision = 1;
+  string reason = 2;
+  double score = 3;
+  ScanStatus status = 4;
+  repeated ScannerResult scanner_results = 5;  // Individual scanner results
+  map<string, string> metadata = 6;
+}
+
+// Individual scanner result
+message ScannerResult {
+  ScannerType scanner_type = 1;
+  ScanDecision decision = 2;
+  string reason = 3;
+  double score = 4;
+  int64 latency_ms = 5;
+}
+
+// Batch scan response
+message BatchScanResponse {
+  repeated ScanResponse responses = 1;
+  int32 total_scanned = 2;
+  int32 total_blocked = 3;
+  int32 total_allowed = 4;
+}
+
+// Health check request
+message HealthCheckRequest {
+  string service = 1;
+}
+
+// Health check response
+message HealthCheckResponse {
+  enum ServingStatus {
+    UNKNOWN = 0;
+    SERVING = 1;
+    NOT_SERVING = 2;
+  }
+  ServingStatus status = 1;
+  string message = 2;
+  map<string, string> details = 3;
+}
+
+// Configuration request
+message ConfigRequest {
+  // Empty for now, can be extended
+}
+
+// Configuration response
+message ConfigResponse {
+  string version = 1;
+  repeated ScannerType available_scanners = 2;
+  map<string, string> default_config = 3;
+  map<string, ScannerInfo> scanner_info = 4;
+}
+
+// Scanner information
+message ScannerInfo {
+  string name = 1;
+  string description = 2;
+  repeated Role supported_roles = 3;
+  bool requires_api_key = 4;
+  map<string, string> config_options = 5;
+}

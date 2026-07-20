@@ -27,6 +27,7 @@ import (
 )
 
 var EmbeddedSwagger []byte
+var EmbeddedSwaggerExtras []byte
 
 // Define SwaggerDoc struct
 type SwaggerDoc struct {
@@ -48,19 +49,25 @@ type Parameter struct {
 	Schema   map[string]interface{} `yaml:"schema"`
 }
 
-// toStringMap: map[interface{}]interface{} -> map[string]interface{}
-func toStringMap(in map[interface{}]interface{}) map[string]interface{} {
-	out := make(map[string]interface{})
-	for k, v := range in {
-		if key, ok := k.(string); ok {
-			if subMap, ok := v.(map[interface{}]interface{}); ok {
-				out[key] = toStringMap(subMap)
-			} else {
-				out[key] = v
+// normalizeValue recursively converts yaml.v2's map[interface{}]interface{}
+// (including maps nested inside slices) to map[string]interface{}.
+func normalizeValue(v interface{}) interface{} {
+	switch t := v.(type) {
+	case map[interface{}]interface{}:
+		out := make(map[string]interface{})
+		for k, val := range t {
+			if key, ok := k.(string); ok {
+				out[key] = normalizeValue(val)
 			}
 		}
+		return out
+	case []interface{}:
+		for i, e := range t {
+			t[i] = normalizeValue(e)
+		}
+		return t
 	}
-	return out
+	return v
 }
 
 // LoadSwaggerDoc is used to load a Swagger document from a file.
@@ -72,10 +79,17 @@ func LoadSwaggerDoc(data []byte) (*SwaggerDoc, error) {
 	}
 
 	// Convert map[interface{}]interface{} to map[string]interface{}
-	if doc.Definitions != nil {
-		for key, def := range doc.Definitions {
-			if defMap, ok := def.(map[interface{}]interface{}); ok {
-				doc.Definitions[key] = toStringMap(defMap)
+	for key, def := range doc.Definitions {
+		doc.Definitions[key] = normalizeValue(def)
+	}
+	// Inline body schemas (schema without $ref) carry the same
+	// map[interface{}]interface{} nesting and must be normalized too.
+	for _, methods := range doc.Paths {
+		for _, op := range methods {
+			for i := range op.Parameters {
+				for k, v := range op.Parameters[i].Schema {
+					op.Parameters[i].Schema[k] = normalizeValue(v)
+				}
 			}
 		}
 	}
@@ -84,33 +98,80 @@ func LoadSwaggerDoc(data []byte) (*SwaggerDoc, error) {
 }
 
 // AutoGenerateMetaData is used to automatically generate metadata as a json format from a Swagger document.
-func AutoGenerateMetaData(swaggerBytes []byte) (map[string]interface{}, error) {
+// Additional swagger fragments (e.g. swagger-extras.yml for hand-wired endpoints) may be passed as
+// extraBytes; their paths and definitions are merged in, with the primary document taking precedence.
+func AutoGenerateMetaData(swaggerBytes []byte, extraBytes ...[]byte) (map[string]interface{}, error) {
 	doc, err := LoadSwaggerDoc(swaggerBytes)
 	if err != nil {
 		return nil, err
+	}
+
+	for _, extra := range extraBytes {
+		if len(extra) == 0 {
+			continue
+		}
+		extraDoc, err := LoadSwaggerDoc(extra)
+		if err != nil {
+			return nil, err
+		}
+		mergeSwaggerDoc(doc, extraDoc)
 	}
 
 	meta := extractMetaData(doc)
 	return meta, nil
 }
 
+// mergeSwaggerDoc merges the paths and definitions of extra into doc.
+// Entries already present in doc win over the extra document's.
+func mergeSwaggerDoc(doc *SwaggerDoc, extra *SwaggerDoc) {
+	if doc.Paths == nil {
+		doc.Paths = make(map[string]map[string]Operation)
+	}
+	for path, methods := range extra.Paths {
+		if _, ok := doc.Paths[path]; !ok {
+			doc.Paths[path] = methods
+			continue
+		}
+		for method, op := range methods {
+			if _, ok := doc.Paths[path][method]; !ok {
+				doc.Paths[path][method] = op
+			}
+		}
+	}
+	if doc.Definitions == nil {
+		doc.Definitions = make(map[string]interface{})
+	}
+	for name, def := range extra.Definitions {
+		if _, ok := doc.Definitions[name]; !ok {
+			doc.Definitions[name] = def
+		}
+	}
+}
+
 // ConfigGetMetadata is used to get metadata from the Swagger document.
 func ConfigGetMetadata(params metadata.GetMetaParams) middleware.Responder {
 	tk.LogIt(tk.LogTrace, "[API] Metadata %s API called. url : %s\n", params.HTTPRequest.Method, params.HTTPRequest.URL)
-	jsonMeta, err := AutoGenerateMetaData(EmbeddedSwagger)
+	jsonMeta, err := AutoGenerateMetaData(EmbeddedSwagger, EmbeddedSwaggerExtras)
 	if err != nil {
 		tk.LogIt(tk.LogError, "Fail create metadata: %v\n", err)
 	}
 	return metadata.NewGetMetaOK().WithPayload(jsonMeta)
 }
 
+// bodyMethodRank orders the body-carrying methods; when a path serves more
+// than one, the entry from the higher-ranked method wins deterministically.
+var bodyMethodRank = map[string]int{"post": 3, "put": 2, "patch": 1}
+
 // extractMetaData is used to extract metadata from a Swagger document.
-// Post or Put methods are processed.
+// Post, Put or Patch methods are processed.
 func extractMetaData(doc *SwaggerDoc) map[string]interface{} {
 	meta := make(map[string]interface{})
+	methodRank := make(map[string]int)
 	for path, methods := range doc.Paths {
 		for method, op := range methods {
-			if strings.ToLower(method) == "post" || strings.ToLower(method) == "put" {
+			rank := bodyMethodRank[strings.ToLower(method)]
+			if rank > 0 && rank > methodRank[path] {
+				methodRank[path] = rank
 				fields := make(map[string]interface{})
 				for _, param := range op.Parameters {
 					if param.Type != "" {

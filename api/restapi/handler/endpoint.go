@@ -71,6 +71,16 @@ func ConfigPostEndPoint(params operations.PostConfigEndpointParams, principal in
 	EP.ProbeResp = params.Attr.ProbeResp
 	EP.ProbeDuration = uint32(params.Attr.ProbeDuration)
 	EP.ProbePort = uint16(params.Attr.ProbePort)
+	// ingest the additive HTTP(S) HM-content fields so the
+	// structured prober (NetEpHostAdd -> epHostOpts -> epCheckNow, plumbed by 76-05) actually
+	// receives them. Without this copy the validated fields are silently dropped before the
+	// prober ever sees them (the same missing REST->cmn leg class 76-04/76-06 fixed). All
+	// additive/optional — empty preserves today's probeReq/probeResp behaviour.
+	EP.HttpMethod = params.Attr.HTTPMethod
+	EP.UrlPath = params.Attr.URLPath
+	EP.ExpectedCodes = params.Attr.ExpectedCodes
+	EP.HttpVersion = params.Attr.HTTPVersion
+	EP.DomainName = params.Attr.DomainName
 
 	_, err := ApiHooks.NetEpHostAdd(&EP)
 	if err != nil {

@@ -18,7 +18,7 @@ package handler
 import (
 	"github.com/go-openapi/runtime/middleware"
 	"github.com/loxilb-io/loxilb/api/models"
-	"github.com/loxilb-io/loxilb/api/prometheus" // Updated import path
+	"github.com/loxilb-io/loxilb/api/prometheus"
 	"github.com/loxilb-io/loxilb/api/restapi/operations"
 	tk "github.com/loxilb-io/loxilib"
 )
@@ -56,7 +56,7 @@ func ConfigGetNewFlowCount(params operations.GetMetricsNewflowcountParams, princ
 	tk.LogIt(tk.LogDebug, "[API] version  %s API called. url : %s\n", params.HTTPRequest.Method, params.HTTPRequest.URL)
 
 	metrics := prometheus.GetNetFlowCountSM()
-	result.NewFlowCount = metrics["lb_rule_count"]
+	result.NewFlowCount = metrics["new_flow_count"]
 
 	return operations.NewGetMetricsNewflowcountOK().WithPayload(&result)
 }
@@ -87,11 +87,11 @@ func ConfigGetErrorCount(params operations.GetMetricsErrorcountParams, principal
 	metrics := prometheus.GetErrCountSM()
 	result.TotalErrors = metrics.TotalErrors
 
-	tk.LogIt(tk.LogDebug, "ConfigGetErrorCount: TotalErrors: %d\n", result.TotalErrors)
+	tk.LogIt(tk.LogDebug, "ConfigGetErrorCount: TotalErrors: %v\n", result.TotalErrors)
 
 	// Extract total_errors_per_service
 	for _, serviceMetric := range metrics.TotalErrorsPerService {
-		tk.LogIt(tk.LogDebug, "ConfigGetErrorCount: Service: %s, Value: %d\n", serviceMetric.Name, serviceMetric.Value)
+		tk.LogIt(tk.LogDebug, "ConfigGetErrorCount: Service: %s, Value: %v\n", serviceMetric.Name, serviceMetric.Value)
 
 		result.TotalErrorsPerService = append(result.TotalErrorsPerService, &models.ErrorCountMetricsTotalErrorsPerServiceItems0{
 			Name:  serviceMetric.Name,
@@ -200,13 +200,7 @@ func ConfigGetFwDrops(params operations.GetMetricsFwdropsParams, principal inter
 
 	metrics := prometheus.GetFwDropsSM()
 
-	// Exception handling if the metrics are not found or no data is available
-	if metrics.TotalFwDrops == 0 {
-		return operations.NewGetMetricsFwdropsInternalServerError().WithPayload(&models.Error{
-			Message: "Failed to fetch metrics for total_fw_drops",
-		})
-	}
-
+	// Zero drops is the normal healthy state, not an error
 	result.TotalFwDrops = metrics.TotalFwDrops
 
 	// For each service, add the total requests

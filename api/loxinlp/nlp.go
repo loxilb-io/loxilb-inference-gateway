@@ -24,13 +24,13 @@ import (
 	"os/exec"
 	"regexp"
 	"runtime/debug"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	cmn "github.com/loxilb-io/loxilb/common"
 	opt "github.com/loxilb-io/loxilb/options"
+	"github.com/loxilb-io/loxilb/pkg/snapshot"
 	"github.com/loxilb-io/loxilb/pkg/utils"
 	tk "github.com/loxilb-io/loxilib"
 	nlp "github.com/vishvananda/netlink"
@@ -210,6 +210,58 @@ func applyFWConfig() bool {
 	}
 	for _, fw := range resp.Attr {
 		hooks.NetFwRuleAdd(&fw)
+	}
+	return true
+}
+
+// applyIPFilterConfig restores ipfilter whitelist/blacklist rules at boot.
+// Without this, ipfilter state is memory+map only and silently lost across a
+// daemon restart (reported empty AND unenforced).
+func applyIPFilterConfig() bool {
+	var resp struct {
+		Attr []cmn.IPFilterMod `json:"ipFilterAttr"`
+	}
+	dpath := opt.Opts.ConfigPath + "/IPFilterconfig.txt"
+	byteBuf, err := os.ReadFile(dpath)
+	if err != nil {
+		tk.LogIt(tk.LogError, "nlp: Failed to read IPFilter Config file: %v\n", err)
+		return false
+	}
+
+	if err := json.Unmarshal(byteBuf, &resp); err != nil {
+		tk.LogIt(tk.LogError, "nlp: Failed to Unmarshal File: %v\n", err)
+		return false
+	}
+	for i := range resp.Attr {
+		if _, err := hooks.NetIPFilterAdd(&resp.Attr[i]); err != nil {
+			tk.LogIt(tk.LogError, "nlp: Failed to restore ipfilter rule %s %s: %v\n",
+				resp.Attr[i].FilterType, resp.Attr[i].CIDR, err)
+		}
+	}
+	return true
+}
+
+// applySecurityRateConfig restores the unified security-rate (SYN/conn/UDP
+// flood) configuration at boot. The kernel defaults to protection OFF until
+// configured, so without this a restart silently disables tuned protection.
+func applySecurityRateConfig() bool {
+	var resp struct {
+		Attr cmn.SecurityRateConfig `json:"securityrateAttr"`
+	}
+	dpath := opt.Opts.ConfigPath + "/SecurityRateconfig.txt"
+	byteBuf, err := os.ReadFile(dpath)
+	if err != nil {
+		tk.LogIt(tk.LogError, "nlp: Failed to read SecurityRate Config file: %v\n", err)
+		return false
+	}
+
+	if err := json.Unmarshal(byteBuf, &resp); err != nil {
+		tk.LogIt(tk.LogError, "nlp: Failed to Unmarshal File: %v\n", err)
+		return false
+	}
+	if _, err := hooks.NetSecurityRateSet(&resp.Attr); err != nil {
+		tk.LogIt(tk.LogError, "nlp: Failed to restore securityrate config: %v\n", err)
+		return false
 	}
 	return true
 }
@@ -750,7 +802,6 @@ func ModLink(link nlp.Link, add bool) int {
 	var mod string
 	var vid int
 	var brLink nlp.Link
-	re := regexp.MustCompile("[0-9]+")
 
 	attrs := link.Attrs()
 	name := attrs.Name
@@ -772,13 +823,24 @@ func ModLink(link nlp.Link, add bool) int {
 
 	if _, ok := link.(*nlp.Bridge); ok {
 
-		vid, _ = strconv.Atoi(strings.Join(re.FindAllString(name, -1), " "))
-		// Dirty hack to support docker0 bridge
-		if vid == 0 {
-			if name == "docker0" {
-				vid = 4090
-			} else if name == "cni0" {
-				vid = 4091
+		// centralized bridge-name -> VID resolution
+		// via cmn.NetHookInterface (indirects through pkg/loxinet allocator to
+		// avoid the pkg/loxinet <-> api/loxinlp import cycle; see 47-02-SUMMARY).
+		// ADD paths allocate (or reuse cached); DEL paths lookup-only and
+		// silently no-op on never-seen bridges.
+		if add {
+			var vErr error
+			vid, vErr = hooks.NetGetOrAllocBridgeVid(name)
+			if vErr != nil {
+				tk.LogIt(tk.LogError, "nlp: bridge %s: VID alloc failed: %v\n", name, vErr)
+				return -1
+			}
+		} else {
+			var haveVid bool
+			vid, haveVid = hooks.NetLookupBridgeVid(name)
+			if !haveVid {
+				tk.LogIt(tk.LogDebug, "nlp: bridge %s: del for unknown bridge, ignoring\n", name)
+				return 0
 			}
 		}
 		if add {
@@ -786,6 +848,14 @@ func ModLink(link nlp.Link, add bool) int {
 				MacAddr: ifMac, Link: linkState, State: state, Mtu: mtu, TunID: 0})
 		} else {
 			ret, err = hooks.NetVlanDel(&cmn.VlanMod{Vid: vid})
+			if ret == 0 && err == nil {
+				// Rename-leak prevention : return the
+				// pool slot only after the VlanDel succeeds, so a failing
+				// teardown does not orphan the BD mapping.
+				if relErr := hooks.NetReleaseBridgeVid(name); relErr != nil {
+					tk.LogIt(tk.LogWarning, "nlp: bridge %s: VID release: %v\n", name, relErr)
+				}
+			}
 		}
 
 		if err != nil {
@@ -808,13 +878,25 @@ func ModLink(link nlp.Link, add bool) int {
 			tk.LogIt(tk.LogError, "nlp: Failed to find bridge link by master: %v\n", err)
 			return -1
 		}
-		vid, _ = strconv.Atoi(strings.Join(re.FindAllString(brLink.Attrs().Name, -1), " "))
-		// Dirty hack to support docker bridge
-		if vid == 0 {
-			if brLink.Attrs().Name == "docker0" {
-				vid = 4090
-			} else if brLink.Attrs().Name == "cni0" {
-				vid = 4091
+		// this site may run
+		// BEFORE site 1 in netlink replay order (ports dumped before bridges).
+		// Helper is idempotent, so first call here + later call at site 1
+		// converge on the same VID. DEL path uses lookup-only -- a port leaving
+		// an unknown master (bridge never registered) is a no-op.
+		mName := brLink.Attrs().Name
+		if add {
+			var vErr error
+			vid, vErr = hooks.NetGetOrAllocBridgeVid(mName)
+			if vErr != nil {
+				tk.LogIt(tk.LogError, "nlp: port %s master %s: VID alloc failed: %v\n", name, mName, vErr)
+				return -1
+			}
+		} else {
+			var haveVid bool
+			vid, haveVid = hooks.NetLookupBridgeVid(mName)
+			if !haveVid {
+				tk.LogIt(tk.LogDebug, "nlp: port %s master %s: del for unknown bridge, ignoring\n", name, mName)
+				return 0
 			}
 		}
 	}
@@ -1043,7 +1125,6 @@ func AddNeigh(neigh nlp.Neigh, link nlp.Link) int {
 	var dst net.IP
 	var ftype int
 
-	re := regexp.MustCompile("[0-9]+")
 	attrs := link.Attrs()
 	name := attrs.Name
 
@@ -1062,8 +1143,8 @@ func AddNeigh(neigh nlp.Neigh, link nlp.Link) int {
 				name, err)
 
 		} /*else {
-			tk.LogIt(tk.LogInfo, "nlp: NH %v mac %v dev %v added\n", neigh.IP.String(), mac, name)
-		} */
+		 tk.LogIt(tk.LogInfo, "nlp: NH %v mac %v dev %v added\n", neigh.IP.String, mac, name)
+				} */
 	} else if neigh.Family == unix.AF_BRIDGE {
 		if neigh.Vlan == 1 {
 			/*FDB comes with vlan 1 also */
@@ -1087,14 +1168,16 @@ func AddNeigh(neigh nlp.Neigh, link nlp.Link) int {
 				/*Same as bridge mac --- IGNORED */
 				return 0
 			}
-			brId, _ = strconv.Atoi(strings.Join(re.FindAllString(brLink.Attrs().Name, -1), " "))
-			// Dirty hack to support docker bridge
-			if brId == 0 {
-				if brLink.Attrs().Name == "docker0" {
-					brId = 4090
-				} else if brLink.Attrs().Name == "cni0" {
-					brId = 4091
-				}
+			// AF_BRIDGE neigh ADD routes through the
+			// allocator via cmn.NetHookInterface. AF_BRIDGE is by definition an
+			// ADD path for the FDB, so GetOrAlloc is correct here; helper is
+			// idempotent so replay/ordering races are safe.
+			brName := brLink.Attrs().Name
+			var vErr error
+			brId, vErr = hooks.NetGetOrAllocBridgeVid(brName)
+			if vErr != nil {
+				tk.LogIt(tk.LogError, "nlp: neigh AF_BRIDGE %s: VID alloc failed: %v\n", brName, vErr)
+				return -1
 			}
 		}
 
@@ -1134,7 +1217,6 @@ func DelNeigh(neigh nlp.Neigh, link nlp.Link) int {
 	var err error
 	var dst net.IP
 
-	re := regexp.MustCompile("[0-9]+")
 	attrs := link.Attrs()
 	name := attrs.Name
 
@@ -1182,14 +1264,15 @@ func DelNeigh(neigh nlp.Neigh, link nlp.Link) int {
 				/*Same as bridge mac --- IGNORED */
 				return 0
 			}
-			brId, _ = strconv.Atoi(strings.Join(re.FindAllString(brLink.Attrs().Name, -1), " "))
-			// Dirty hack to support docker bridge
-			if brId == 0 {
-				if brLink.Attrs().Name == "docker0" {
-					brId = 4090
-				} else if brLink.Attrs().Name == "cni0" {
-					brId = 4091
-				}
+			// DEL path MUST NOT allocate. If the
+			// bridge was never registered with the allocator, silently drop
+			// the FDB del -- no-op.
+			brName := brLink.Attrs().Name
+			var haveVid bool
+			brId, haveVid = hooks.NetLookupBridgeVid(brName)
+			if !haveVid {
+				tk.LogIt(tk.LogDebug, "nlp: del neigh AF_BRIDGE: unknown bridge %s, ignoring\n", brName)
+				return 0
 			}
 		}
 
@@ -1387,7 +1470,7 @@ func AUWorkSingle(m nlp.AddrUpdate) int {
 		return -1
 	}
 
-	//if iSBlackListedIntf(link.Attrs().Name, link.Attrs().MasterIndex) {
+	//if iSBlackListedIntf(link.Attrs.Name, link.Attrs.MasterIndex) {
 	//	return -1
 	//}
 
@@ -1694,10 +1777,159 @@ func NlpGet(ch chan bool) int {
 
 var nNl *NlH
 
+// applySnapshotBoot loads {ConfigPath}/snapshot.json (the §6 write-through
+// snapshot) and applies it via the restore engine's Boot variant (no
+// preserve, no wipe -- the datapath is empty at boot). Returns true when a
+// snapshot was found and fully applied, in which case the legacy *.txt
+// replay is skipped (task G-5 plain boot load; §6.2 newest-wins arbitration
+// between snapshot.json and *.txt is G-9). On any failure it logs loudly
+// and returns false so boot falls back to the legacy replay path.
+//
+// Retry rationale: LbSessionGet runs as a goroutine spawned from NlpInit
+// (loxinet.go loxiNetInit), which starts BEFORE the optional subsystems it
+// may need finish initializing -- notably mh.ipsec (NewIPsecH runs after
+// NlpInit returns) and BGP. A snapshot carrying ipsec/bgp items can
+// therefore fail its first boot apply with "IPsec not initialized"/"loxilb
+// BGP mode is disabled" purely due to startup ordering. A failed boot
+// restore rolls back to the empty boot state, so retrying is safe; retries
+// stop as soon as the failure is not a subsystem-startup error (e.g. a
+// genuinely incompatible document fails once, immediately).
+func applySnapshotBoot() bool {
+	raw, err := snapshot.LoadPersisted(opt.Opts.ConfigPath)
+	if err != nil {
+		tk.LogIt(tk.LogError, "nlp: boot snapshot: read %s/%s: %v\n", opt.Opts.ConfigPath, snapshot.PersistFileName, err)
+		return false
+	}
+	if raw == nil {
+		return false
+	}
+	hostname, herr := os.Hostname()
+	if herr != nil {
+		hostname = "unknown"
+	}
+	engine := snapshot.NewEngine(hooks, cmn.Version, hostname, opt.Opts.ConfigPath)
+
+	const bootRetries = 15
+	for attempt := 1; ; attempt++ {
+		result, err := engine.Restore(raw, snapshot.RestoreOptions{Boot: true})
+		if err != nil {
+			tk.LogIt(tk.LogError, "nlp: boot snapshot: engine: %v\n", err)
+			return false
+		}
+		if result.Result == snapshot.ResultOK {
+			tk.LogIt(tk.LogInfo, "nlp: boot snapshot: %s applied (%d domains planned, attempt %d)\n",
+				snapshot.PersistFileName, len(result.Plan), attempt)
+			return true
+		}
+		if attempt < bootRetries && subsystemStartupErrors(result.Errors) {
+			tk.LogIt(tk.LogWarning, "nlp: boot snapshot: attempt %d hit subsystem startup ordering (%v); retrying\n",
+				attempt, result.Errors)
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		tk.LogIt(tk.LogError, "nlp: boot snapshot: restore failed (result=%q errors=%v); falling back to legacy config replay\n",
+			result.Result, result.Errors)
+		return false
+	}
+}
+
+// legacyConfigFiles are the boot-replay *.txt artifacts that §6.2 newest-wins
+// arbitration weighs against snapshot.json (BFDconfig.txt is replayed from
+// pkg/loxinet/cluster.go but is part of the same legacy artifact set). The
+// ipconfig/ directory (interface addresses/routes) is deliberately outside
+// arbitration -- interface config is excluded from v1 snapshots (§4.1).
+var legacyConfigFiles = []string{
+	"EPconfig.txt", "lbconfig.txt", "sessionconfig.txt", "sessionulclconfig.txt",
+	"FWconfig.txt", "IPFilterconfig.txt", "SecurityRateconfig.txt", "BFDconfig.txt",
+}
+
+// newestLegacyConfigMtime returns the newest mtime across the legacy *.txt
+// set and whether any of them exist.
+func newestLegacyConfigMtime() (time.Time, bool) {
+	var newest time.Time
+	found := false
+	for _, f := range legacyConfigFiles {
+		if info, err := os.Stat(opt.Opts.ConfigPath + "/" + f); err == nil {
+			found = true
+			if info.ModTime().After(newest) {
+				newest = info.ModTime()
+			}
+		}
+	}
+	return newest, found
+}
+
+// bootWriteThrough persists the just-replayed legacy config as
+// snapshot.json (§6.2: makes *.txt → snapshot migration automatic; the next
+// boot loads snapshot.json and the arbitration branch goes quiet).
+func bootWriteThrough() {
+	hostname, herr := os.Hostname()
+	if herr != nil {
+		hostname = "unknown"
+	}
+	path, _, err := snapshot.WriteThrough(hooks, cmn.Version, hostname, opt.Opts.ConfigPath)
+	if err != nil {
+		tk.LogIt(tk.LogError, "nlp: boot: post-legacy write-through failed: %v\n", err)
+		return
+	}
+	tk.LogIt(tk.LogInfo, "nlp: boot: legacy config persisted to %s; the *.txt files are now redundant and can be removed\n", path)
+}
+
+// subsystemStartupErrors reports whether every restore error looks like an
+// optional subsystem that has not finished initializing yet (retryable at
+// boot), as opposed to a genuinely bad document or apply failure.
+func subsystemStartupErrors(errs []string) bool {
+	if len(errs) == 0 {
+		return false
+	}
+	for _, e := range errs {
+		m := strings.ToLower(e)
+		if !strings.Contains(m, "not initialized") &&
+			!strings.Contains(m, "not running") &&
+			!strings.Contains(m, "mode is disabled") {
+			return false
+		}
+	}
+	return true
+}
+
 func LbSessionGet(done bool) int {
 
 	if done {
 
+		// Sweep stale snapshot artifacts (orphaned atomic-write temp files,
+		// surplus pre-restore safety copies) left by a previous run.
+		snapshot.PruneArtifacts(opt.Opts.ConfigPath, snapshot.PreRestoreKeep, time.Now())
+
+		// §6.2 boot arbitration: when BOTH snapshot.json and legacy *.txt
+		// artifacts exist, load the NEWER of the two (never silently discard
+		// the more recent operator intent), warn loudly, and count the
+		// conflict so lingering dual-artifact hosts are visible.
+		useSnapshot := false
+		snapInfo, serr := os.Stat(opt.Opts.ConfigPath + "/" + snapshot.PersistFileName)
+		snapExists := serr == nil
+		txtNewest, txtExists := newestLegacyConfigMtime()
+		switch {
+		case snapExists && txtExists:
+			snapshot.BootConfigConflictInc()
+			useSnapshot = !snapInfo.ModTime().Before(txtNewest)
+			chosen, ts := snapshot.PersistFileName, snapInfo.ModTime()
+			if !useSnapshot {
+				chosen, ts = "legacy *.txt files", txtNewest
+			}
+			tk.LogIt(tk.LogWarning, "nlp: boot: BOTH %s (mtime %s) and legacy *.txt files (newest mtime %s) exist; loading the newer: %s (mtime %s). Remove the stale artifact to silence this warning.\n",
+				snapshot.PersistFileName, snapInfo.ModTime().Format(time.RFC3339), txtNewest.Format(time.RFC3339), chosen, ts.Format(time.RFC3339))
+		case snapExists:
+			useSnapshot = true
+		}
+
+		if useSnapshot && applySnapshotBoot() {
+			tk.LogIt(tk.LogInfo, "nlp: boot config restored from snapshot.json; legacy *.txt replay skipped\n")
+			return 0
+		}
+
+		// Legacy *.txt replay: either no snapshot.json, arbitration chose
+		// the newer *.txt set, or the snapshot boot failed (loudly) above.
 		if _, err := os.Stat(opt.Opts.ConfigPath + "/EPconfig.txt"); errors.Is(err, os.ErrNotExist) {
 			if err != nil {
 				tk.LogIt(tk.LogInfo, "nlp: Continuing without EP config file: %s\n", err.Error())
@@ -1742,6 +1974,35 @@ func LbSessionGet(done bool) int {
 			applyFWConfig()
 		}
 		tk.LogIt(tk.LogInfo, "nlp: Firewall config done\n")
+
+		if _, err := os.Stat(opt.Opts.ConfigPath + "/IPFilterconfig.txt"); errors.Is(err, os.ErrNotExist) {
+			if err != nil {
+				tk.LogIt(tk.LogInfo, "nlp: Continuing without IPFilter config file : %s \n", err.Error())
+			}
+		} else {
+			applyIPFilterConfig()
+		}
+		tk.LogIt(tk.LogInfo, "nlp: IPFilter config done\n")
+
+		if _, err := os.Stat(opt.Opts.ConfigPath + "/SecurityRateconfig.txt"); errors.Is(err, os.ErrNotExist) {
+			if err != nil {
+				tk.LogIt(tk.LogInfo, "nlp: Continuing without SecurityRate config file : %s \n", err.Error())
+			}
+		} else {
+			applySecurityRateConfig()
+		}
+		tk.LogIt(tk.LogInfo, "nlp: SecurityRate config done\n")
+
+		// §6.2 migration: a boot that DECIDED to run the legacy replay
+		// (no snapshot.json, or the *.txt set was newer) persists the
+		// replayed state as snapshot.json so the next boot needs no
+		// arbitration. Deliberately skipped when a chosen snapshot.json
+		// failed to apply and we merely fell back -- overwriting it here
+		// would destroy the operator's snapshot instead of surfacing the
+		// failure again next boot.
+		if !useSnapshot && txtExists {
+			bootWriteThrough()
+		}
 	}
 
 	return 0

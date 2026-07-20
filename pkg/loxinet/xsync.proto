@@ -40,10 +40,99 @@ message BlockCtInfoMod {
     repeated CtInfo ct = 2;
 }
 
+// Phase 70 — sockproxy HA state sync messages (SPEC §Req 1).
+// Wire shape verbatim from PRD §xSync Proto Extensions (lines 117-167).
+
+// SockproxySessionEntry — one row in the synced session table.
+// Covers BOTH conversation_mapping_t and pd_session_mapping_t; receiver
+// disambiguates via prefill_ep_idx/decode_ep_idx==-1 vs ep_idx==-1.
+message SockproxySessionEntry {
+    string service_key = 1;       // "xip:xport:proto" (caller-resolved on sender)
+    string conv_id = 2;           // hash key (conv_id or user_id)
+    int32  prefill_ep_idx = 3;    // -1 if not P/D
+    int32  decode_ep_idx = 4;     // -1 if not P/D
+    int32  ep_idx = 5;            // for conversation mapping; -1 if P/D
+    int64  created_ts = 6;        // unix seconds (first-writer-wins basis)
+    int64  last_access_ts = 7;    // unix seconds (informational)
+    uint32 request_count = 8;     // benign-race counter
+    bool   deleted = 9;           // tombstone: receiver removes the entry
+}
+
+// SockproxySessionModReq — bulk session insert/delete batch (push RPC).
+// Up to 256 entries per call (SPEC §Constraints).
+// Note: the RPC method is named `SockproxySessionMod`; protobuf forbids
+// a method and a message sharing the same name, so the message is suffixed
+// `Req` while the method preserves the symmetric `XxxMod` style of the
+// existing `DpWorkOnCtModGRPC` / `CtInfoMod` pair.
+message SockproxySessionModReq {
+    bool add = 1;
+    repeated SockproxySessionEntry entries = 2;
+}
+
+// SockproxyBulkReq — chunked-pull cursor protocol request.
+// page_size capped at 500 entries per call to stay well under 4 MB
+// protobuf default ceiling (planner reconciliation per PATTERNS).
+message SockproxyBulkReq {
+    string cursor = 1;
+    int32  page_size = 2;
+}
+
+// SockproxySessionBulkReply — chunked-pull reply for SockproxySessionBulkGet.
+message SockproxySessionBulkReply {
+    repeated SockproxySessionEntry entries = 1;
+    string next_cursor = 2;       // empty string indicates final page
+}
+
+// RateLimiterEntry — one token-bucket / quota-window record.
+// Phase 70-B owns the real semantics; declared here so the proto is stable
+// for both A (handlers stubbed) and B (handlers implemented).
+message RateLimiterEntry {
+    string key_id = 1;
+    bool   is_tenant = 2;
+    int64  last_refill_ns = 3;
+    double current_tokens = 4;        // unused; reserved -- DO NOT repurpose
+    int64  epoch_start_ts = 5;
+    int64  tokens_consumed = 6;
+    bool   exceeded = 7;              // CR-06: replaces sign-bit hack on tokens_consumed (D-07).
+}
+
+// RateLimiterBatch — push payload for RateLimiterSync RPC.
+message RateLimiterBatch {
+    bool is_delta = 1;            // false = absolute A-P snapshot; true = A-A delta
+    repeated RateLimiterEntry entries = 2;
+}
+
+// VllmWorkerMetrics — Phase C placeholder (queue depth, GPU cache %).
+// Field reserved by 70-A proto so the wire shape is committed to git; the
+// scraper exporter that populates it lands in 70-C (gated by D-06).
+message VllmWorkerMetrics {
+    string service_key = 1;
+    int32  ep_idx = 2;
+    uint32 queue_depth = 3;
+    float  gpu_cache_pct = 4;
+    int64  scrape_ts = 5;
+}
+
+// SockproxySnapshotReply — combined snapshot for GetSockproxySnapshot.
+// Chunked via next_cursor; sessions covers Phases A+B+C; rl_state populated
+// from Phase B; metrics populated from Phase C (empty in Phase A).
+message SockproxySnapshotReply {
+    repeated SockproxySessionEntry sessions = 1;
+    repeated RateLimiterEntry rl_state = 2;
+    repeated VllmWorkerMetrics metrics = 3;
+    string next_cursor = 4;
+    int32  total_chunks = 5;
+}
+
 // The xsync service definition.
 service XSync {
     rpc DpWorkOnCtGetGRPC (ConnGet) returns (XSyncReply) {}
     rpc DpWorkOnCtModGRPC (CtInfoMod) returns (XSyncReply) {}
     rpc DpWorkOnBlockCtModGRPC (BlockCtInfoMod) returns (XSyncReply) {}
+
+    // Phase 70 — sockproxy HA state sync (SPEC §Req 1, A2).
+    rpc SockproxySessionMod     (SockproxySessionModReq) returns (XSyncReply) {}
+    rpc SockproxySessionBulkGet (SockproxyBulkReq)    returns (SockproxySessionBulkReply) {}
+    rpc RateLimiterSync         (RateLimiterBatch)    returns (XSyncReply) {}
+    rpc GetSockproxySnapshot    (SockproxyBulkReq)    returns (SockproxySnapshotReply) {}
   }
-  
