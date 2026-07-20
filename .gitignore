@@ -55,12 +55,47 @@
 # Local IDE files
 .vscode/
 
+# AI-assistant tooling artifacts (must never be published)
+CLAUDE.md
+**/CLAUDE.md
+AGENTS.md
+**/AGENTS.md
+GEMINI.md
+**/GEMINI.md
+.claude/
+.serena/
+.mcp.json
+.codegraph/
+.planning/
+claudedocs/
+claude-agents/
+
+# Internal-only docs (design trackers, execution/audit logs, maintainer runbooks) —
+# never published to the public OSS repo; relocate to a private repo/wiki as needed.
+docs/internal/
+
 # Kernel Module Compile Results
 *.mod*
 *.cmd
+# ...but never ignore Go module manifests
+!go.mod
+!**/go.mod
+
+# Locally built binaries (repo root)
+/loxilb
+/loxilb-mcp
+/loxilb-ai-controller
+/loxilb-kv-agent
+/aictrl-ttft-fit
+
+# Maintainer-only release tooling (references private infrastructure; not published)
+/scripts/bootstrap-repos.sh
 .tmp_versions/
 modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
 .DS_Store
+
+# monitoring stack local secrets
+deploy/monitoring/.env
