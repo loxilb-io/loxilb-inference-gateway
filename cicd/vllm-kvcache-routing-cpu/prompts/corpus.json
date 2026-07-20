@@ -1,0 +1,54 @@
+{
+  "_doc": {
+    "title": "KV-cache-aware routing prompt corpus — overlap matrix",
+    "tokenizer": "Qwen/Qwen3-0.6B (slug Qwen__Qwen3-0.6B), tokenizer.json of record at cicd/common/kv_hash/fixtures/tokenizers/Qwen__Qwen3-0.6B/tokenizer.json",
+    "block_size": 16,
+    "hash_algo": "sha256_cbor (default; xxhash_cbor parity also valid)",
+    "encode": "bare tok.encode(prompt) — NO chat template; identical token IDs to loxilb's CGO daulet path → genuine inventory intersection",
+    "overlap_design_invariant": "Block hashes chain parent->child (NONE_HASH seed for block 0). Two prompts that share an IDENTICAL leading TEXT prefix tokenize to identical leading token IDs and therefore produce IDENTICAL leading FULL-block hashes (same parent chain, same tokens). Only FULL 16-token blocks are published — partial trailing blocks are never emitted (vLLM v0.17.0 kv_cache_utils.py:574-576). All shared prefixes below are intentionally long (hundreds of chars / well over 32 tokens) so each prompt yields >=2 full blocks and any shared prefix yields >=1 IDENTICAL block hash, independent of the exact token count. The exact per-prompt full-block COUNT is tokenizer-dependent and is verified LIVE on the runner (see acceptance); the SHARED-prefix => shared-block-hash relationship is guaranteed structurally by the chained-hash scheme and does not require local tokenization.",
+    "ep_topology": "6 EPs = 3 prefill (ep_role:1) at NON-ADJACENT absolute indices + 3 decode (ep_role:2). Prefill EPs referenced below as EP-A / EP-B / EP-C map to the non-adjacent prefill absolute indices configured by config.sh; decode EPs are never KV-selection candidates.",
+    "publish_plan_note": "config.sh / validation.sh drive kv_event_publisher.py to pre-seed each prefill EP's inventory per the per-prompt 'publish' hints below, then issue the request prompt and assert the predicted winner (banner==serverN + loxilb_pd_kv_tier15_hits_total{ep} + [KV_T15] log + GET /config/ai/kv/inventory)."
+  },
+  "prompts": [
+    {
+      "id": "shared-prefix-base",
+      "scenario": [1, 3],
+      "prompt": "You are a meticulous senior site-reliability engineer writing an incident postmortem. The system under analysis is a multi-region Kubernetes load balancer using eBPF for the data plane and a Go control plane for service discovery, health checking, and BGP route advertisement. Begin by summarizing the timeline of the outage in precise chronological order, then enumerate the contributing factors. ",
+      "expected_winner_ep": "EP-A",
+      "expected_winner_ep_after_flip": "EP-B",
+      "drives": "Scenario 1 (two-EP partial-overlap argmax + inventory-mutation flip) and Scenario 3 (excluded/CB-open winner falls to 2nd-best prefill). Initially EP-A holds MORE full blocks of this prompt's prefix than EP-B, so the overlap argmax selects EP-A. After the publisher emits MORE blocks of the shared prefix to EP-B (mutation), re-issuing this IDENTICAL prompt must FLIP the winner to EP-B. For Scenario 3, with EP-A (the overlap winner) excluded or circuit-broken (guards F/G), the request must fall to the 2nd-best PREFILL EP (EP-B), NOT to Tier-2 round-robin.",
+      "publish": {
+        "EP-A": "all full blocks of this prompt's tokenized prefix (the initial argmax winner)",
+        "EP-B": "a STRICT SUBSET (fewer leading full blocks) initially; then, for the flip, publish the remaining full blocks so EP-B's overlap >= EP-A's"
+      }
+    },
+    {
+      "id": "shared-prefix-divergent",
+      "scenario": [1],
+      "prompt": "You are a meticulous senior site-reliability engineer writing an incident postmortem. The system under analysis is a multi-region Kubernetes load balancer using eBPF for the data plane and a Go control plane for service discovery, health checking, and BGP route advertisement. Instead of a timeline, produce a five-bullet executive summary aimed at non-technical stakeholders and avoid all jargon. ",
+      "expected_winner_ep": "EP-A",
+      "drives": "Scenario 1 partner prompt. It shares the SAME long leading text prefix as shared-prefix-base (identical leading token IDs => identical leading FULL-block hashes) but DIVERGES after the shared prefix. This proves PARTIAL overlap: the shared leading blocks intersect EP-A's inventory (>=1 identical block-hash uint64) while the divergent tail does not, so EP-A's overlap count is strictly the shared-prefix block count — the precondition for a meaningful argmax against EP-B.",
+      "publish": {
+        "EP-A": "(inherits the shared leading full blocks already published for shared-prefix-base)"
+      }
+    },
+    {
+      "id": "noncontiguous-bitmask-target",
+      "scenario": [2],
+      "prompt": "TASK SPECIFICATION FOR THE NON-ADJACENT PREFILL ENDPOINT. Implement a deterministic CBOR canonical encoder in C that serializes a tuple of (parent_hash_bytes, list_of_uint_token_ids, null) exactly as Python cbor2.dumps(obj, canonical=True) does, including definite-length arrays, minimal-length integer encodings, and big-endian byte order. Provide the header, the implementation, and an exhaustive unit test against the frozen golden vectors. ",
+      "expected_winner_ep": "EP-C",
+      "drives": "Scenario 2 (non-contiguous prefill bitmask). The best-overlap EP for this prompt is EP-C, which sits at a NON-ADJACENT absolute prefill index (the C<->Go bitmask index-translation fix). Selecting EP-C proves the bitmask correctly maps the winning prefill EP at a non-contiguous absolute index — a prompt whose only pre-published inventory lives on the highest-index prefill EP must still be chosen.",
+      "publish": {
+        "EP-C": "all full blocks of this prompt's tokenized prefix (EP-A and EP-B hold none of these blocks)"
+      }
+    },
+    {
+      "id": "warmup-miss-fresh",
+      "scenario": [4],
+      "prompt": "Compose an original haiku about a cold-start cache miss, then explain in two sentences why the first request after a service restart cannot benefit from prefix caching. This prompt is intentionally unique and is never pre-published to any endpoint. ",
+      "expected_winner_ep": "TIER2_RR_FALLTHROUGH",
+      "drives": "Scenario 4 (warmup + miss-reason fallthrough). This fresh prompt is NEVER pre-published to any prefill EP, so it has ZERO inventory overlap. During kvWarmupSec (guard B) and on a no-overlap/no-worker/tokenize miss, KV selection must FALL THROUGH to Tier-2 round-robin and the corresponding kv_t15_miss_reason counter must increment. It must NOT spuriously route to a prefill EP via a false-positive overlap.",
+      "publish": {}
+    }
+  ]
+}

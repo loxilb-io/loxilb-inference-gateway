@@ -1,0 +1,2 @@
+# The --fr 4 self-check extracts the per-model vectors doc here at runtime (generated; do not commit)
+.fr4-vectors-*.json
