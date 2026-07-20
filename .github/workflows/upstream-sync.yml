@@ -1,0 +1,79 @@
+name: Upstream-Sync
+
+# Weekly: fetch upstream loxilb-io/loxilb main and open a sync PR.
+# Merge-based tracking (never rebase) — see docs/UPSTREAM-SYNC.md.
+# This workflow only OPENS the PR; merging stays a human decision behind full CI.
+# The loxilb-ebpf-inference-gateway fork carries a copy of this file with
+# UPSTREAM_REPO pointed at loxilb-io/loxilb-ebpf (sync that repo FIRST, then
+# bump the submodule pin here — lockstep rule).
+
+on:
+  schedule:
+    - cron: '0 1 * * 1'   # Mondays 01:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  UPSTREAM_REPO: https://github.com/loxilb-io/loxilb.git
+  UPSTREAM_BRANCH: main
+  BASE_BRANCH: main
+
+jobs:
+  open-sync-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BASE_BRANCH }}
+          fetch-depth: 0
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream "$UPSTREAM_REPO"
+          git fetch upstream "$UPSTREAM_BRANCH"
+
+      - name: Check whether we are behind upstream
+        id: behind
+        run: |
+          BEHIND=$(git rev-list --count "$BASE_BRANCH..upstream/$UPSTREAM_BRANCH")
+          echo "behind=$BEHIND" >> "$GITHUB_OUTPUT"
+          echo "Upstream commits not yet merged: $BEHIND"
+
+      - name: Create sync branch and attempt merge
+        if: steps.behind.outputs.behind != '0'
+        id: merge
+        run: |
+          git config user.name  "upstream-sync[bot]"
+          git config user.email "noreply@github.com"
+          BRANCH="sync/upstream-$(date +%Y%m%d)"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          git switch -c "$BRANCH"
+          if git merge --no-edit "upstream/$UPSTREAM_BRANCH"; then
+            echo "conflicts=no" >> "$GITHUB_OUTPUT"
+          else
+            # Push the conflicted state resolution burden to a human, but still
+            # open the PR from the clean upstream point so it is visible.
+            git merge --abort
+            git reset --hard "upstream/$UPSTREAM_BRANCH"
+            echo "conflicts=yes" >> "$GITHUB_OUTPUT"
+          fi
+          git push -u origin "$BRANCH"
+
+      - name: Open pull request
+        if: steps.behind.outputs.behind != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BRANCH="${{ steps.merge.outputs.branch }}"
+          if [ "${{ steps.merge.outputs.conflicts }}" = "yes" ]; then
+            TITLE="sync: merge upstream ($(date +%Y-%m-%d)) — CONFLICTS, needs manual resolution"
+            BODY="Automated upstream sync. The merge has conflicts — resolve locally per docs/UPSTREAM-SYNC.md (conflict map) and push to this branch. Do not merge until full CI is green."
+          else
+            TITLE="sync: merge upstream ($(date +%Y-%m-%d))"
+            BODY="Automated upstream sync (clean merge, ${{ steps.behind.outputs.behind }} upstream commits). Verify full CI (build + classic sanity + ai-gateway-sanity) before merging. See docs/UPSTREAM-SYNC.md."
+          fi
+          gh pr create --base "$BASE_BRANCH" --head "$BRANCH" \
+            --title "$TITLE" --body "$BODY" || echo "PR may already exist"

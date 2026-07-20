@@ -20,7 +20,7 @@ jobs:
     if: github.repository == 'loxilb-io/loxilb'
           &&  github.event.inputs.tagName == ''
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
       - run: |
@@ -74,4 +74,4 @@ jobs:
               sudo docker stop $(sudo docker ps -a -q)
               sudo docker rm $(sudo docker ps -a -q)
             fi
-            sudo docker image rm ghcr.io/loxilb-io/loxilb:latest
+            sudo docker image rm ghcr.io/loxilb-io/loxilb-inference-gateway:latest

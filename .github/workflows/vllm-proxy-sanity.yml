@@ -1,0 +1,70 @@
+name: vLLM-Proxy-Sanity-CI
+
+# Validates L7 proxying against REAL CPU-vLLM backends (OpenAI API, CHWBL
+# cache-affinity, weighted round-robin). HEAVY: builds the vllm-server image
+# from source (cicd/common/vllm) and serves Qwen/Qwen3-0.6B on CPU — so this
+# runs on a weekly schedule / manual dispatch, not on every push.
+# The mock-based vLLM scenarios (kvcache-routing-cpu, pd-disagg) run on every
+# push in ai-gateway-sanity.yml instead.
+
+on:
+  schedule:
+    - cron: '0 3 * * 1'   # Mondays 03:00 UTC
+  workflow_dispatch:
+    inputs:
+      logLevel:
+        description: 'Log level'
+        required: true
+        default: 'warning'
+
+jobs:
+  vllm-proxy-sanity:
+    name: vllm-proxy-sanity (real CPU vLLM backends)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '>=1.18.0'
+      - run: sudo apt-get update
+      - run: sudo apt-get -y install clang llvm libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip build-essential bison flex iperf iproute2 nodejs socat ethtool
+      # Free disk space for the vLLM image build (runner has ~14GB free by default)
+      - run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+      - run: loxilb-ebpf/utils/mkllb_bpffs.sh
+      - run: sudo -E env "PATH=$PATH" make
+      - run: go install github.com/jsha/minica@latest
+      # Gateway image: pull the published one, or build locally when not yet published
+      - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
+      # vllm-server image: pull if published, else build from source (long)
+      - run: docker pull ghcr.io/loxilb-io/vllm-server:latest || bash cicd/common/vllm/docker-build.sh
+      - run: docker run -u root --cap-add SYS_ADMIN --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: pwd && ls && sudo -E env "PATH=$PATH" make docker-cp
+      - run: docker exec -dit loxilb mkllb_bpffs
+      - run: id=`docker ps -f name=loxilb | cut -d " " -f 1 | grep -iv "CONTAINER"` && docker commit $id ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: docker stop loxilb && docker rm loxilb
+
+      - name: vLLM HTTP proxy (rr + CHWBL L1/L2/L3)
+        run: |
+          cd cicd/vllm-httpproxy/
+          ./config.sh && ./validation.sh && ./rmconfig.sh
+          cd -
+      - name: vLLM HTTPS fullproxy (TLS termination + health probes)
+        run: |
+          cd cicd/vllm-fullproxy/
+          ./config.sh && ./validation.sh && ./rmconfig.sh
+          cd -
+      - name: vLLM HTTP proxy — weighted round-robin
+        run: |
+          cd cicd/vllm-httpproxy-wrr/
+          ./config.sh && ./validation.sh && ./rmconfig.sh
+          cd -
+      - name: vLLM HTTPS fullproxy — weighted round-robin
+        run: |
+          cd cicd/vllm-fullproxy-wrr/
+          ./config.sh && ./validation.sh && ./rmconfig.sh
+          cd -
+      - run: echo "vLLM proxy sanity complete"

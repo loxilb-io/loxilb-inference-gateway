@@ -1,0 +1,13 @@
+# gitleaks configuration — extends the default ruleset.
+[extend]
+useDefault = true
+
+# Unit-test fixtures use obviously fake credentials (e.g. "sk-live-verysecret-…",
+# "0123456789abcdef…"). Allowlist those files rather than individual findings so
+# history rewrites and line moves do not resurrect false positives.
+[allowlist]
+description = "Unit-test fixtures with dummy credentials"
+paths = [
+  '''pkg/mcp/phase3_test\.go''',
+  '''pkg/mcp/server_test\.go''',
+]

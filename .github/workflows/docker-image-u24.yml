@@ -1,0 +1,61 @@
+name: Build-CI-Ubuntu-24
+
+# Builds and publishes the Ubuntu 24.04 based image
+# ghcr.io/loxilb-io/loxilb-inference-gateway:latest-u24 that the
+# Sanity-CI-Ubuntu-24 workflows consume via cicd/common.sh on 24.04 runners.
+# The daily schedule runs before Sanity-CI-Ubuntu-24 (11:00 UTC) so the tag
+# is fresh; it also refreshes on relevant source changes and on demand.
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'Dockerfile.u24'
+      - '.dockerignore'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Makefile'
+      - 'main.go'
+      - 'api/**'
+      - 'common/**'
+      - 'options/**'
+      - 'pkg/**'
+      - 'loxilb-ebpf/**'
+      - 'tools/**'
+      - '.github/workflows/docker-image-u24.yml'
+  schedule:
+    - cron: '0 10 * * *'
+  workflow_dispatch:
+    inputs:
+      tagName:
+        description: 'Image tag to publish'
+        required: true
+        default: 'latest-u24'
+
+jobs:
+  build-u24:
+    name: build-ci-u24
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Build the Ubuntu 24.04 image
+      run: |
+          docker build -f Dockerfile.u24 . \
+            --tag ghcr.io/loxilb-io/loxilb-inference-gateway:${{ github.event.inputs.tagName || 'latest-u24' }}
+
+    - name: Publish the Ubuntu 24.04 image
+      if: github.repository == 'loxilb-io/loxilb-inference-gateway'
+      run: docker push ghcr.io/loxilb-io/loxilb-inference-gateway:${{ github.event.inputs.tagName || 'latest-u24' }}

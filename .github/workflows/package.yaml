@@ -19,11 +19,11 @@ jobs:
       contents: write
       packages: write
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
-      - uses: actions/setup-python@v2
-      - uses: actions/setup-go@v3
+      - uses: actions/setup-python@v5
+      - uses: actions/setup-go@v5
         with:
              go-version: '>=1.18.0'
       - name: Install Dependencies
@@ -40,7 +40,7 @@ jobs:
         run: git clone https://github.com/loxilb-io/tools.git build-tools && cd build-tools/pkg/ && make major=latest && cd -      
       - name: Upload the package to a release with given tag  
         if: |
-          github.repository == 'loxilb-io/loxilb' 
+          github.repository == 'loxilb-io/loxilb-inference-gateway' 
           &&  github.event.inputs.tagName != ''
         uses: ncipollo/release-action@v1
         with:
@@ -49,7 +49,7 @@ jobs:
           artifacts: "build-tools/pkg/*.deb"
       - name: Upload the package to a release with latest tag  
         if: |
-          github.repository == 'loxilb-io/loxilb' 
+          github.repository == 'loxilb-io/loxilb-inference-gateway' 
           &&  github.event.inputs.tagName == ''
         uses: ncipollo/release-action@v1
         with:

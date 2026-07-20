@@ -20,12 +20,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
       with:
         submodules: recursive
 
     - name: Login to GitHub Container Registry
-      uses: docker/login-action@v1
+      uses: docker/login-action@v3
       with:
         registry: ghcr.io
         username: ${{ github.actor }}
@@ -50,7 +50,7 @@ jobs:
 
     - name: Build the loxilb Docker image (build-check)
       run: |
-        TEST_TAG="ghcr.io/loxilb-io/loxilb:buildcheck-${{ github.run_id }}"
+        TEST_TAG="ghcr.io/loxilb-io/loxilb-inference-gateway:buildcheck-${{ github.run_id }}"
         docker build --progress=plain -f Dockerfile.buildcheck . --tag "$TEST_TAG"
         docker run -u root --cap-add SYS_ADMIN --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb-buildcheck "$TEST_TAG"
     - run: echo ${{ github.event.inputs.userInput }}

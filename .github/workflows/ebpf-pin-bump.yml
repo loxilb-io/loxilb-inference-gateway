@@ -1,0 +1,75 @@
+name: eBPF-Pin-Bump
+
+# Watches loxilb-ebpf-inference-gateway main; when it moves past the submodule
+# pin recorded here, opens a PR bumping the pin. Together with the two
+# Upstream-Sync workflows this automates the full lockstep chain
+# (see docs/UPSTREAM-SYNC.md):
+#   1. ebpf fork syncs itself with upstream loxilb-ebpf   (its Upstream-Sync)
+#   2. THIS workflow proposes the submodule pin bump here
+#   3. this repo syncs itself with upstream loxilb        (our Upstream-Sync)
+# Merging every PR stays a human decision behind full CI.
+
+on:
+  schedule:
+    - cron: '30 0 * * 1'   # Mondays 00:30 UTC — after the ebpf sync, before ours
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  BASE_BRANCH: main
+  SUBMODULE_PATH: loxilb-ebpf
+  EBPF_REPO: https://github.com/loxilb-io/loxilb-ebpf-inference-gateway.git
+  EBPF_BRANCH: main
+
+jobs:
+  bump-pin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BASE_BRANCH }}
+          submodules: false
+
+      - name: Compare recorded pin with ebpf fork HEAD
+        id: cmp
+        run: |
+          PIN=$(git ls-tree HEAD "$SUBMODULE_PATH" | awk '{print $3}')
+          TIP=$(git ls-remote "$EBPF_REPO" "refs/heads/$EBPF_BRANCH" | awk '{print $1}')
+          echo "pin=$PIN"  >> "$GITHUB_OUTPUT"
+          echo "tip=$TIP"  >> "$GITHUB_OUTPUT"
+          echo "Current pin: $PIN"
+          echo "ebpf fork tip: $TIP"
+          if [ -n "$TIP" ] && [ "$PIN" != "$TIP" ]; then
+            echo "changed=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=no" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create bump branch
+        if: steps.cmp.outputs.changed == 'yes'
+        id: bump
+        run: |
+          git config user.name  "upstream-sync[bot]"
+          git config user.email "noreply@github.com"
+          BRANCH="sync/ebpf-pin-$(date +%Y%m%d)"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          git switch -c "$BRANCH"
+          git submodule update --init "$SUBMODULE_PATH"
+          git -C "$SUBMODULE_PATH" fetch origin "$EBPF_BRANCH"
+          git -C "$SUBMODULE_PATH" checkout "${{ steps.cmp.outputs.tip }}"
+          git add "$SUBMODULE_PATH"
+          git commit -m "chore: bump loxilb-ebpf submodule to ${{ steps.cmp.outputs.tip }}"
+          git push -u origin "$BRANCH"
+
+      - name: Open pull request
+        if: steps.cmp.outputs.changed == 'yes'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr create --base "$BASE_BRANCH" --head "${{ steps.bump.outputs.branch }}" \
+            --title "chore: bump loxilb-ebpf submodule pin ($(date +%Y-%m-%d))" \
+            --body "Automated submodule bump: \`${{ steps.cmp.outputs.pin }}\` → \`${{ steps.cmp.outputs.tip }}\` (loxilb-ebpf-inference-gateway ${EBPF_BRANCH}). Requires full CI green (build + classic sanity + ai-gateway-sanity) before merge. See docs/UPSTREAM-SYNC.md." \
+            || echo "PR may already exist"

@@ -17,7 +17,7 @@ jobs:
   build:
     name: k3s-sctpmh-sanity-ubuntu-24
     runs-on: ubuntu-24.04
-    if: github.repository == 'loxilb-io/loxilb'
+    if: github.repository == 'loxilb-io/loxilb-inference-gateway'
           &&  github.event.inputs.tagName == ''
     steps:
       - run: |
@@ -36,7 +36,7 @@ jobs:
       - run: sudo apt-get -y install bridge-utils iproute2 lksctp-tools iputils-ping net-tools
       - run: |
          echo "KUBECONFIG=--kubeconfig=/etc/rancher/k3s/k3s.yaml" >> $GITHUB_ENV
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
       - run: |

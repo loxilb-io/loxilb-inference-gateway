@@ -1,0 +1,115 @@
+name: AI-Gateway-Sanity-CI
+
+# Builds loxilb-inference-gateway from source (Go + eBPF), overlays the fresh
+# binary onto the container image, and runs the self-contained AI-gateway CICD
+# scenarios that need only loxilb + local mock/echo backends (no GPU, no cloud,
+# no external 3rd-party service). Scenarios that require published backend
+# images (vllm-server / mcp-server / grpc) are listed under workflow_dispatch.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'cicd/vllm-**'
+      - 'cicd/sglang-**'
+      - 'cicd/ai-**'
+      - 'cicd/common/reflect-echo/**'
+      - 'pkg/**'
+      - 'api/**'
+      - '.github/workflows/ai-gateway-sanity.yml'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'cicd/vllm-**'
+      - 'cicd/sglang-**'
+      - 'cicd/ai-**'
+      - 'cicd/common/reflect-echo/**'
+      - 'pkg/**'
+      - 'api/**'
+      - '.github/workflows/ai-gateway-sanity.yml'
+  workflow_dispatch:
+    inputs:
+      logLevel:
+        description: 'Log level'
+        required: true
+        default: 'warning'
+      tags:
+        description: 'AI Gateway Sanity'
+
+jobs:
+  ai-gateway-sanity:
+    name: ai-gateway-sanity
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '>=1.18.0'
+      - run: sudo apt-get update
+      - run: sudo apt-get -y install clang llvm libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip build-essential bison flex iperf iproute2 nodejs socat ethtool
+      - run: loxilb-ebpf/utils/mkllb_bpffs.sh
+      - run: sudo -E env "PATH=$PATH" make
+      # minica (github.com/jsha/minica) is fetched on demand by the TLS scenarios' config.sh
+      - run: go install github.com/jsha/minica@latest
+      # Gateway image: pull the published one, or build locally when not yet published
+      - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
+      # reflect-echo backend image (KV-cache scenarios) — always built from the local context
+      - run: bash cicd/common/reflect-echo/docker-build.sh
+      - run: docker run -u root --cap-add SYS_ADMIN --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: pwd && ls && sudo -E env "PATH=$PATH" make docker-cp
+      - run: docker exec -dit loxilb mkllb_bpffs
+      - run: id=`docker ps -f name=loxilb | cut -d " " -f 1 | grep -iv "CONTAINER"` && docker commit $id ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: docker stop loxilb && docker rm loxilb
+
+      # --- Self-contained scenarios (loxilb + local mock/echo backends) ---
+      - name: KV-cache-aware routing (vLLM, echo backends)
+        run: |
+          cd cicd/vllm-kvcache-routing-cpu/
+          ./config.sh
+          ./validation.sh
+          ./rmconfig.sh
+          cd -
+      - name: Prefill/Decode disaggregation (mock vLLM)
+        run: |
+          cd cicd/vllm-pd-disagg/
+          ./config.sh
+          ./validation.sh
+          ./rmconfig.sh
+          cd -
+      - name: SGLang KV-cache-aware routing (echo backends)
+        run: |
+          cd cicd/sglang-loxilb-kvcache/
+          ./config.sh
+          ./validation.sh
+          ./rmconfig.sh
+          cd -
+      - name: Model-name routing
+        run: |
+          cd cicd/ai-model-routing/
+          ./config.sh
+          ./validation.sh
+          ./rmconfig.sh
+          cd -
+      - name: SSE streaming quota
+        run: |
+          cd cicd/ai-sse-quota/
+          ./config.sh
+          ./validation.sh
+          ./rmconfig.sh
+          cd -
+      - name: API keys + tenant rate limits (MariaDB-backed)
+        run: |
+          cd cicd/ai-apikey/
+          ./config.sh
+          ./validation.sh
+          ./rmconfig.sh
+          cd -
+      - run: echo "AI-gateway sanity complete"
+
+# Related feature workflows: mcp-sanity.yml (MCP proxying),
+# l7-proxy-sanity.yml (HTTPS/H1/H2/mTLS/prefix + gRPC),
+# vllm-proxy-sanity.yml (real CPU-vLLM backends; scheduled — heavy image build).

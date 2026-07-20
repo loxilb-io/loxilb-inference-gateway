@@ -29,13 +29,13 @@ on:
         default: ''
 
 env:
-  IMAGE_NAME: ghcr.io/loxilb-io/loxilb
+  IMAGE_NAME: ghcr.io/loxilb-io/loxilb-inference-gateway
   TARGET_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tagName || 'latest' }}
   BUILD_REF: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.sourceTag != '' && github.event.inputs.sourceTag || (github.event_name == 'workflow_dispatch' && github.event.inputs.tagName != 'latest' && github.event.inputs.tagName || 'main') }}
 
 jobs:
   build-check-amd64:
-    if: github.repository != 'loxilb-io/loxilb'
+    if: github.repository != 'loxilb-io/loxilb-inference-gateway'
     runs-on: ubuntu-latest
     name: build check amd64
     steps:
@@ -52,7 +52,7 @@ jobs:
           .
 
   build-check-arm64:
-    if: github.repository != 'loxilb-io/loxilb'
+    if: github.repository != 'loxilb-io/loxilb-inference-gateway'
     runs-on: ubuntu-24.04-arm
     name: build check arm64
     steps:
@@ -70,7 +70,7 @@ jobs:
           .
 
   build-amd64:
-    if: github.repository == 'loxilb-io/loxilb'
+    if: github.repository == 'loxilb-io/loxilb-inference-gateway'
     runs-on: ubuntu-latest
     name: build amd64 image
     permissions:
@@ -104,7 +104,7 @@ jobs:
         cache-to: type=gha,mode=max,scope=amd64
 
   build-arm64:
-    if: github.repository == 'loxilb-io/loxilb'
+    if: github.repository == 'loxilb-io/loxilb-inference-gateway'
     runs-on: ubuntu-24.04-arm
     name: build arm64 image
     permissions:
@@ -139,7 +139,7 @@ jobs:
         cache-to: type=gha,mode=max,scope=arm64
 
   merge-manifest:
-    if: github.repository == 'loxilb-io/loxilb'
+    if: github.repository == 'loxilb-io/loxilb-inference-gateway'
     runs-on: ubuntu-latest
     name: merge multi-arch manifest
     needs: [build-amd64, build-arm64]

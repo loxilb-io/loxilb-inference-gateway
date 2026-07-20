@@ -1,0 +1,70 @@
+name: Release
+
+# Tag-triggered release: builds and publishes the loxilb-inference-gateway
+# container image to GHCR and creates a GitHub release for the tag.
+# Push a semver tag to trigger, e.g.:  git tag v0.9.8.6-igw && git push origin v0.9.8.6-igw
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tagName:
+        description: 'Image tag to publish (e.g. v0.9.8.6-igw)'
+        required: true
+        default: 'latest'
+
+env:
+  IMAGE: ghcr.io/loxilb-io/loxilb-inference-gateway
+
+jobs:
+  release:
+    name: build-and-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Resolve tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "value=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${{ github.event.inputs.tagName }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build image
+        run: |
+          docker build . --tag "${IMAGE}:${{ steps.tag.outputs.value }}" --tag "${IMAGE}:latest"
+
+      - name: Push image
+        run: |
+          docker push "${IMAGE}:${{ steps.tag.outputs.value }}"
+          docker push "${IMAGE}:latest"
+
+      - name: Create GitHub release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.value }}
+          generate_release_notes: true
+          body: |
+            LoxiLB Inference Gateway `${{ steps.tag.outputs.value }}`.
+
+            Container image: `${{ env.IMAGE }}:${{ steps.tag.outputs.value }}`
+
+            This is a fork of [loxilb-io/loxilb](https://github.com/loxilb-io/loxilb)
+            with inference-aware L4/L7 routing for LLM serving fleets.

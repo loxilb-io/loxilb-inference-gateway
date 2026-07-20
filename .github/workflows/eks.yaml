@@ -33,7 +33,7 @@ jobs:
     steps:
     # Checkout the repository to the GitHub Actions runner
     - name: Checkout
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -92,9 +92,9 @@ jobs:
         port: 22
         script_stop: true
         script: |
-            sudo docker image pull ghcr.io/loxilb-io/loxilb:latest
+            sudo docker image pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest
             sudo docker rm -f loxilb || true
-            sudo docker run -u root --cap-add SYS_ADMIN --net host  --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb:latest
+            sudo docker run -u root --cap-add SYS_ADMIN --net host  --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest
             sleep 20
             sudo docker exec loxilb /root/loxilb-io/loxilb/loxilb -v
       

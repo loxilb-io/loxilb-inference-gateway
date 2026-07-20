@@ -11,11 +11,11 @@ on:
         default: 'k3s-flannel-ubuntu-22'
 jobs:
   build:
-    if: github.repository == 'loxilb-io/loxilb'
+    if: github.repository == 'loxilb-io/loxilb-inference-gateway'
     name: k3s-flannel-sanity-ubuntu-22
     runs-on: [self-hosted, large]
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
       - name: Run k3s-flannel CICD

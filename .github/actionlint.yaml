@@ -1,0 +1,12 @@
+# actionlint configuration.
+# Registers the self-hosted runner labels used by loxilb-inference-gateway CI
+# so `actionlint` does not flag them as unknown. These runners are provided by
+# the project's self-hosted fleet and must be registered on the repository:
+#   - redhat : RHEL 9 self-hosted runner (rh9 sanity matrix)
+#   - large  : large self-hosted runner (k8s/k3s integration matrix)
+#   - sb     : sandbox self-hosted runner (long-running perf, e.g. tcpkali)
+self-hosted-runner:
+  labels:
+    - large
+    - redhat
+    - sb

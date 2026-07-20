@@ -1,0 +1,152 @@
+name: L7-Proxy-Sanity-CI
+
+# Validates the modern L7 transport surface used by AI application traffic:
+# HTTP/1.1 + HTTP/2 proxying, HTTPS termination (security:1), end-to-end
+# HTTPS (security:2), mTLS, URL-prefix routing, host-header proxying, and
+# gRPC-over-h2 (backend images built from cicd/common/grpc).
+# All backends are local host/netns servers (node/openssl/minica) — no
+# published backend images required.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'cicd/http**'
+      - 'cicd/e2ehttp**'
+      - 'cicd/common/grpc/**'
+      - 'cicd/common/http2/**'
+      - 'pkg/**'
+      - 'api/**'
+      - '.github/workflows/l7-proxy-sanity.yml'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'cicd/http**'
+      - 'cicd/e2ehttp**'
+      - 'cicd/common/grpc/**'
+      - 'cicd/common/http2/**'
+      - 'pkg/**'
+      - 'api/**'
+      - '.github/workflows/l7-proxy-sanity.yml'
+  workflow_dispatch:
+
+jobs:
+  l7-proxy-sanity:
+    name: l7-proxy-sanity (h1/h2/https/mtls/prefix)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '>=1.18.0'
+      - run: sudo apt-get update
+      - run: sudo apt-get -y install clang llvm libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip build-essential bison flex iperf iproute2 nodejs socat ethtool
+      - run: loxilb-ebpf/utils/mkllb_bpffs.sh
+      - run: sudo -E env "PATH=$PATH" make
+      - run: go install github.com/jsha/minica@latest
+      # Gateway image: pull the published one, or build locally when not yet published
+      - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
+      - run: docker run -u root --cap-add SYS_ADMIN --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: pwd && ls && sudo -E env "PATH=$PATH" make docker-cp
+      - run: docker exec -dit loxilb mkllb_bpffs
+      - run: id=`docker ps -f name=loxilb | cut -d " " -f 1 | grep -iv "CONTAINER"` && docker commit $id ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: docker stop loxilb && docker rm loxilb
+
+      # --- HTTP/1.1 ---
+      - name: HTTP proxy (h1)
+        run: |
+          cd cicd/httpproxy/
+          ./config.sh && ./validation.sh && ./rmconfig.sh
+          cd -
+      - name: HTTP proxy — URL-prefix routing
+        run: |
+          cd cicd/httpproxy-prefix/
+          ./config.sh && ./validation.sh && ./rmconfig.sh
+          cd -
+
+      # --- HTTPS termination (security:1) ---
+      - name: HTTPS proxy (TLS termination)
+        run: |
+          cd cicd/httpsproxy/
+          ./config.sh && ./validation.sh && ./rmconfig.sh
+          cd -
+      - name: HTTPS proxy — mTLS client-cert
+        run: |
+          cd cicd/httpsproxy-mtls/
+          ./config.sh && ./validation.sh && ./rmconfig.sh
+          cd -
+      - name: HTTPS proxy — URL-prefix routing
+        run: |
+          cd cicd/httpsproxy-prefix/
+          ./config.sh && ./validation.sh && ./rmconfig.sh
+          cd -
+      - name: HTTPS host-header proxy
+        run: |
+          cd cicd/httpshostproxy/
+          ./config.sh && ./validation.sh && ./rmconfig.sh
+          cd -
+
+      # --- End-to-end HTTPS (security:2) ---
+      - name: End-to-end HTTPS proxy (h1 + h2)
+        run: |
+          cd cicd/e2ehttpsproxy/
+          ./config.sh && ./validation-http1.sh && ./validation-http2.sh && ./rmconfig.sh
+          cd -
+      - name: End-to-end HTTPS — mTLS
+        run: |
+          cd cicd/e2ehttpsproxy-mtls/
+          ./config.sh && ./validation.sh && ./rmconfig.sh
+          cd -
+      - name: End-to-end HTTPS — URL-prefix routing (h1 + h2)
+        run: |
+          cd cicd/e2ehttpsproxy-prefix/
+          ./config.sh && ./validation-http1.sh && ./validation-http2.sh && ./rmconfig.sh
+          cd -
+
+      # --- HTTP/2 & backend TLS endpoints ---
+      - name: HTTP/2 endpoint
+        run: |
+          cd cicd/http2ep/
+          ./config.sh && ./validation.sh && ./rmconfig.sh
+          cd -
+      - name: HTTPS endpoint (backend TLS probe)
+        run: |
+          cd cicd/httpsep/
+          ./config.sh && ./validation.sh && ./rmconfig.sh
+          cd -
+      - run: echo "L7 proxy sanity complete"
+
+  grpc-h2-sanity:
+    name: grpc-h2-sanity
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '>=1.18.0'
+      - run: sudo apt-get update
+      - run: sudo apt-get -y install clang llvm libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip build-essential bison flex iperf iproute2 nodejs socat ethtool
+      - run: loxilb-ebpf/utils/mkllb_bpffs.sh
+      - run: sudo -E env "PATH=$PATH" make
+      - run: go install github.com/jsha/minica@latest
+      - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
+      # gRPC h2 client/server images from the local build context
+      - run: bash cicd/common/grpc/docker-build.sh
+      - run: docker run -u root --cap-add SYS_ADMIN --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: pwd && ls && sudo -E env "PATH=$PATH" make docker-cp
+      - run: docker exec -dit loxilb mkllb_bpffs
+      - run: id=`docker ps -f name=loxilb | cut -d " " -f 1 | grep -iv "CONTAINER"` && docker commit $id ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: docker stop loxilb && docker rm loxilb
+      - name: End-to-end HTTPS — gRPC over h2
+        run: |
+          cd cicd/e2ehttpsproxy-grpc/
+          ./config.sh && ./validation.sh && ./rmconfig.sh
+          cd -
+      - run: echo "gRPC h2 sanity complete"

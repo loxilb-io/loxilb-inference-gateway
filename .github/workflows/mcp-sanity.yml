@@ -1,0 +1,91 @@
+name: MCP-Sanity-CI
+
+# Validates the MCP (Model Context Protocol) gateway path: session-sticky
+# proxying (mcp-session-id), TLS termination and end-to-end HTTPS, plus the
+# no-LB direct client<->server smokes that isolate backend problems.
+# All backend images (mcp-server, mcp-server-https, mcp-client) are built
+# from the local context cicd/common/mcp — no published images required.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'cicd/mcp-**'
+      - 'cicd/common/mcp/**'
+      - 'pkg/**'
+      - 'api/**'
+      - '.github/workflows/mcp-sanity.yml'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'cicd/mcp-**'
+      - 'cicd/common/mcp/**'
+      - 'pkg/**'
+      - 'api/**'
+      - '.github/workflows/mcp-sanity.yml'
+  workflow_dispatch:
+
+jobs:
+  mcp-sanity:
+    name: mcp-sanity
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '>=1.18.0'
+      - run: sudo apt-get update
+      - run: sudo apt-get -y install clang llvm libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip build-essential bison flex iperf iproute2 nodejs socat ethtool
+      - run: loxilb-ebpf/utils/mkllb_bpffs.sh
+      - run: sudo -E env "PATH=$PATH" make
+      - run: go install github.com/jsha/minica@latest
+      # Gateway image: pull the published one, or build locally when not yet published
+      - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
+      # MCP backend images from the local build context
+      - run: bash cicd/common/mcp/docker-build.sh
+      - run: docker run -u root --cap-add SYS_ADMIN --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: pwd && ls && sudo -E env "PATH=$PATH" make docker-cp
+      - run: docker exec -dit loxilb mkllb_bpffs
+      - run: id=`docker ps -f name=loxilb | cut -d " " -f 1 | grep -iv "CONTAINER"` && docker commit $id ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: docker stop loxilb && docker rm loxilb
+
+      - name: MCP direct connectivity (no LB — backend smoke)
+        run: |
+          cd cicd/mcp-direct-test/
+          ./config.sh
+          ./validation.sh
+          ./rmconfig.sh
+          cd -
+      - name: MCP direct connectivity over HTTPS
+        run: |
+          cd cicd/mcp-direct-test-https/
+          ./config.sh
+          ./validation.sh
+          ./rmconfig.sh
+          cd -
+      - name: MCP HTTP proxy + session stickiness
+        run: |
+          cd cicd/mcp-httpproxy/
+          ./config.sh
+          ./validation.sh
+          ./rmconfig.sh
+          cd -
+      - name: MCP TLS-terminating fullproxy
+        run: |
+          cd cicd/mcp-fullproxy/
+          ./config.sh
+          ./validation.sh
+          ./rmconfig.sh
+          cd -
+      - name: MCP end-to-end HTTPS
+        run: |
+          cd cicd/mcp-e2ehttps/
+          ./config.sh
+          ./validation.sh
+          ./rmconfig.sh
+          cd -
+      - run: echo "MCP sanity complete"

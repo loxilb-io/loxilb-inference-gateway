@@ -13,11 +13,11 @@ jobs:
   test-runner:
     name: k8s-calico-cluster-ipvs3-ha-sanity
     runs-on: [self-hosted, large]
-    if: github.repository == 'loxilb-io/loxilb' 
+    if: github.repository == 'loxilb-io/loxilb-inference-gateway' 
           &&  github.event.inputs.tagName == ''
     steps:
     - name: Checkout
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
       with:
           submodules: recursive
 
