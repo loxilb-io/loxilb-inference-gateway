@@ -21,7 +21,6 @@ jobs:
     name: ipsec-sanity-ubuntu-24
     runs-on: ubuntu-24.04
     if: github.repository == 'loxilb-io/loxilb-inference-gateway'
-          &&  github.event.inputs.tagName == ''
     steps:
       - uses: actions/checkout@v4
         with:

@@ -18,7 +18,6 @@ jobs:
     name: tcp-lb-sanity-rh9
     runs-on: [self-hosted, redhat]
     if: github.repository == 'loxilb-io/loxilb' 
-          &&  github.event.inputs.tagName == ''
     steps:
       - uses: actions/checkout@v4
         with:

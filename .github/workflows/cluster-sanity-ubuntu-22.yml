@@ -22,7 +22,6 @@ jobs:
     name: cluster-sanity-ubuntu-22
     runs-on: ubuntu-22.04
     if: github.repository == 'loxilb-io/loxilb-inference-gateway'
-          &&  github.event.inputs.tagName == ''
     steps:
       - uses: actions/checkout@v4
         with:

@@ -10,3 +10,13 @@ self-hosted-runner:
     - large
     - redhat
     - sb
+
+# Shellcheck findings are advisory: the sanity workflow scripts are inherited
+# from upstream loxilb and kept line-compatible for upstream syncs, so
+# style-level shellcheck rewrites are deliberately not applied. Everything
+# else actionlint reports (expression/type/syntax errors) is blocking; new
+# workflows are expected to be shellcheck-clean as well.
+paths:
+  ".github/workflows/**/*.{yml,yaml}":
+    ignore:
+      - "shellcheck reported issue in this script"

@@ -18,7 +18,6 @@ jobs:
     name: k3s-sctpmh-sanity-ubuntu-24
     runs-on: ubuntu-24.04
     if: github.repository == 'loxilb-io/loxilb-inference-gateway'
-          &&  github.event.inputs.tagName == ''
     steps:
       - run: |
          for pkg in docker.io docker-doc docker-compose podman-docker containerd runc; do sudo apt-get remove $pkg; done
