@@ -1,0 +1,8 @@
+# nfpm changelog — rendered into the Debian changelog and the rpm %changelog.
+# Keep newest entry first. Dates are RFC-3339.
+- semver: 0.9.8.6-igw.1
+  date: 2026-07-20T00:00:00Z
+  packager: NetLOX Inc. <support@netlox.io>
+  changes:
+    - note: Initial packaged release of the LoxiLB Inference Gateway.
+    - note: Ships the loxilb load balancer, the loxilb-mcp bridge, the eBPF datapath objects, and a systemd service.

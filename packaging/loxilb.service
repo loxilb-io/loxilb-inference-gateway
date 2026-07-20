@@ -1,0 +1,19 @@
+[Unit]
+Description=LoxiLB Inference Gateway load balancer
+Documentation=https://github.com/loxilb-io/loxilb-inference-gateway
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=root
+ExecStartPre=/usr/sbin/mkllb-bpffs
+ExecStart=/usr/sbin/loxilb
+Restart=always
+RestartSec=1
+LimitMEMLOCK=infinity
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target

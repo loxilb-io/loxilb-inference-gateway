@@ -1,0 +1,87 @@
+# Package-build container for loxilb-inference-gateway .deb/.rpm/tarball
+# artifacts. Built from the repository root:
+#
+#   DOCKER_BUILDKIT=1 docker build -f packaging/Dockerfile.build \
+#       --target artifacts --output type=local,dest=dist/stage-amd64 .
+#
+# Ubuntu 20.04 is deliberate: its glibc 2.31 is the floor of the supported
+# install matrix (Ubuntu 20.04/22.04/24.04, RHEL/Rocky/Alma 9), so one binary
+# built here runs on every target. The container images use their own
+# Dockerfiles; this builder exists only to produce package payloads.
+
+FROM ubuntu:20.04 AS build
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG USE_DOCKER_BUILDX_ARM64=false
+
+ENV PATH="${PATH}:/usr/local/go/bin"
+ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/lib64/"
+
+RUN mkdir -p /opt/loxilb /usr/lib64 && \
+    apt-get update && apt-get install -y wget ca-certificates software-properties-common gnupg && \
+    # LLVM 14 for Ubuntu 20.04 (eBPF compile)
+    wget --no-check-certificate -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
+    apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 15CF4D18AF4F7421 && \
+    add-apt-repository "deb http://apt.llvm.org/focal/ llvm-toolchain-focal-14 main" && \
+    apt-get update && apt-get install -y clang-14 llvm-14 && \
+    update-alternatives --install /usr/bin/clang clang /usr/bin/clang-14 100 && \
+    update-alternatives --install /usr/bin/llc llc /usr/bin/llc-14 100 && \
+    update-alternatives --install /usr/bin/llvm-strip llvm-strip /usr/bin/llvm-strip-14 100 && \
+    arch=$(arch | sed s/aarch64/arm64/ | sed s/x86_64/amd64/) && echo $arch && \
+    if [ "$arch" = "arm64" ] ; then apt-get install -y gcc-arm-linux-gnueabihf; else apt-get install -y gcc-multilib; fi && \
+    apt-get install -y libelf-dev libpcap-dev libbsd-dev build-essential \
+    elfutils dwarves git bison flex pkg-config iproute2 curl sudo patchelf libnghttp2-dev libjson-c-dev && \
+    # bpftool (the eBPF build regenerates vmlinux.h with it)
+    wget https://github.com/libbpf/bpftool/releases/download/v7.2.0/bpftool-libbpf-v7.2.0-sources.tar.gz && \
+    tar -xzf bpftool-libbpf-v7.2.0-sources.tar.gz && cd bpftool/src/ && \
+    make -j$(nproc) && cp -f ./bpftool /usr/local/sbin/bpftool && \
+    cd - && rm -fr bpftool* && \
+    # Pre-built libtokenizers static library (KV router HF tokenizer backend)
+    wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz -O /tmp/libtokenizers.tar.gz && \
+    tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz && \
+    # GoLang
+    wget https://go.dev/dl/go1.25.12.linux-${arch}.tar.gz && \
+    tar -xzf go1.25.12.linux-${arch}.tar.gz --directory /usr/local/ && rm go1.25.12.linux-${arch}.tar.gz && \
+    # kTLS-enabled OpenSSL (build dependency of the TLS proxy path)
+    wget https://github.com/openssl/openssl/releases/download/openssl-3.4.1/openssl-3.4.1.tar.gz && tar -xzf openssl-3.4.1.tar.gz && \
+    cd openssl-3.4.1 && ./Configure enable-ktls '-Wl,-rpath,$(LIBRPATH)' --prefix=/usr/local/build && \
+    make -j$(nproc) && make install_dev install_modules && cd - && \
+    cp -a /usr/local/build/include/openssl /usr/include/ && \
+    if [ -d /usr/local/build/lib64 ] ; then mv /usr/local/build/lib64 /usr/local/build/lib; fi && \
+    cp -fr /usr/local/build/lib/* /usr/lib/ && ldconfig && \
+    rm -fr openssl-3.4.1*
+
+COPY . /src
+
+RUN cd /src && go get . && \
+    # make clean first: the build context may carry objects compiled on the
+    # developer host against a newer glibc, which must not be linked here
+    make clean && \
+    if [ "$(arch)" = "aarch64" ] && [ "$USE_DOCKER_BUILDX_ARM64" = "true" ] ; then DOCKER_BUILDX_ARM64=true make; else make; fi && \
+    CGO_ENABLED=0 go build -o /src/loxilb-mcp ./cmd/loxilb-mcp && \
+    mkdir -p /out/lib /out/ebpf && \
+    cp /src/loxilb /out/loxilb && \
+    cp /src/loxilb-mcp /out/loxilb-mcp && \
+    cp /opt/loxilb/*.o /out/ebpf/ && \
+    # Normalize shared-library names to their sonames (no symlinks needed).
+    # libbpf is usually linked statically; bundle it only when the binary
+    # actually ends up with a dynamic libbpf dependency.
+    if readelf -d /src/loxilb | grep -q 'libbpf\.so'; then \
+        cp -L /usr/lib64/libbpf.so.1 /out/lib/libbpf.so.1; \
+    fi && \
+    cp -L /usr/local/build/lib/libssl.so.3 /out/lib/libssl.so.3 && \
+    cp -L /usr/local/build/lib/libcrypto.so.3 /out/lib/libcrypto.so.3 && \
+    # Package-hygiene pass on the bundled shared libraries:
+    #  - drop the openssl build-prefix RUNPATH (points at a build-only dir)
+    #  - strip debug info; set library file mode to 0644
+    for so in /out/lib/*.so*; do \
+        patchelf --remove-rpath "$so" || true; \
+        strip --strip-unneeded "$so" || true; \
+        chmod 0644 "$so"; \
+    done && \
+    # The loxilb binary keeps its symbols (Go version stamp / diagnostics) but
+    # its /lib64 RUNPATH is redundant — the launcher sets LD_LIBRARY_PATH.
+    patchelf --remove-rpath /out/loxilb || true
+
+FROM scratch AS artifacts
+COPY --from=build /out/ /

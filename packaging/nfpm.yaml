@@ -1,0 +1,143 @@
+# nfpm configuration for loxilb-inference-gateway .deb / .rpm packages.
+#
+# Built by packaging/build-pkgs.sh, which stages the binaries and exports the
+# environment variables referenced below:
+#
+#   PKG_VERSION  upstream version part of the tag        (e.g. 0.9.8.6)
+#   PKG_RELEASE  package revision part of the tag        (e.g. igw.1, igw.1~rc.1)
+#   PKG_ARCH     GOARCH-style target architecture        (amd64 | arm64)
+#   (packaging/.staging is a symlink to the staging directory, created by build-pkgs.sh)
+#
+# Layout notes:
+#   * The real binary lives in /usr/lib/loxilb together with its private
+#     shared libraries (kTLS-enabled OpenSSL and libbpf builds newer than the
+#     supported distributions ship). /usr/sbin/loxilb is a launcher that adds
+#     that directory to LD_LIBRARY_PATH, so the private libraries never shadow
+#     the system ones.
+#   * /etc/loxilb is owned as a directory only; runtime files created there
+#     (snapshot.json written by the configuration-persistence feature) are not
+#     owned by the package, so upgrades and removals never touch them.
+#   * eBPF objects install to /opt/loxilb, the path the datapath loader uses.
+
+name: loxilb-inference-gateway
+arch: ${PKG_ARCH}
+platform: linux
+version: ${PKG_VERSION}
+release: ${PKG_RELEASE}
+version_schema: none
+section: net
+priority: optional
+maintainer: NetLOX Inc. <support@netlox.io>
+vendor: NetLOX Inc.
+homepage: https://github.com/loxilb-io/loxilb-inference-gateway
+license: Apache-2.0
+description: |
+  eBPF-based load balancer for LLM inference fleets.
+  LoxiLB Inference Gateway is a fork of loxilb with inference-aware L4/L7
+  routing (KV-cache-aware scheduling, session affinity, SSE and gRPC
+  streaming support) for serving large-language-model workloads.
+provides:
+  - loxilb
+conflicts:
+  - loxilb
+
+changelog: packaging/changelog.yaml
+
+contents:
+  # Launcher and real binary
+  - src: packaging/loxilb-wrapper.sh
+    dst: /usr/sbin/loxilb
+    file_info:
+      mode: 0755
+  - src: packaging/.staging/loxilb
+    dst: /usr/lib/loxilb/loxilb
+    file_info:
+      mode: 0755
+
+  # Private shared libraries (see layout notes above)
+  - src: packaging/.staging/lib/*.so*
+    dst: /usr/lib/loxilb/
+
+  # eBPF datapath objects
+  - src: packaging/.staging/ebpf/*.o
+    dst: /opt/loxilb/
+
+  # bpffs mount helper used by the systemd unit (ExecStartPre)
+  - src: packaging/mkllb-bpffs.sh
+    dst: /usr/sbin/mkllb-bpffs
+    file_info:
+      mode: 0755
+
+  # Copyright / license documentation. deb wants a plain file at the canonical
+  # path (lintian); rpm wants it flagged %doc (rpmlint) — hence packager-scoped.
+  - src: packaging/copyright
+    dst: /usr/share/doc/loxilb-inference-gateway/copyright
+    packager: deb
+    file_info:
+      mode: 0644
+  - src: packaging/copyright
+    dst: /usr/share/doc/loxilb-inference-gateway/copyright
+    type: doc
+    packager: rpm
+    file_info:
+      mode: 0644
+  - src: NOTICE
+    dst: /usr/share/doc/loxilb-inference-gateway/NOTICE
+    packager: deb
+    file_info:
+      mode: 0644
+  - src: NOTICE
+    dst: /usr/share/doc/loxilb-inference-gateway/NOTICE
+    type: doc
+    packager: rpm
+    file_info:
+      mode: 0644
+
+  # lintian overrides (deb only) — documents the deliberate-design findings
+  - src: packaging/lintian-overrides
+    dst: /usr/share/lintian/overrides/loxilb-inference-gateway
+    packager: deb
+    file_info:
+      mode: 0644
+
+  # systemd unit
+  - src: packaging/loxilb.service
+    dst: /lib/systemd/system/loxilb.service
+    packager: deb
+  - src: packaging/loxilb.service
+    dst: /usr/lib/systemd/system/loxilb.service
+    packager: rpm
+
+  # Configuration and certificate directories
+  - dst: /etc/loxilb
+    type: dir
+    file_info:
+      mode: 0755
+  - dst: /opt/loxilb/cert
+    type: dir
+    file_info:
+      mode: 0755
+
+scripts:
+  postinstall: packaging/scripts/postinstall.sh
+  preremove: packaging/scripts/preremove.sh
+  postremove: packaging/scripts/postremove.sh
+
+# Runtime dependencies follow the binary's direct NEEDED list (libbpf is
+# linked statically; libssl/libcrypto are bundled privately because Ubuntu
+# 20.04 has no libssl3 package).
+overrides:
+  deb:
+    depends:
+      - iproute2
+      - libelf1
+      - zlib1g
+      - libnghttp2-14
+      - libstdc++6
+  rpm:
+    depends:
+      - iproute
+      - elfutils-libelf
+      - zlib
+      - libnghttp2
+      - libstdc++

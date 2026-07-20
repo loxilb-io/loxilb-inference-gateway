@@ -1,0 +1,29 @@
+# Documented lintian overrides for loxilb-inference-gateway.
+# Each entry is a deliberate design fact of an eBPF load balancer, not a
+# defect. Everything else lintian reports is treated as a real finding and
+# fails CI; package-hygiene issues (RUNPATHs, permissions, stripping,
+# copyright, changelog) are fixed at build time rather than overridden here.
+
+# The eBPF datapath objects are BPF-target bytecode, not host-architecture
+# ELF. lintian correctly sees a "foreign" architecture; that is what an eBPF
+# object is. They are loaded by the kernel verifier, never run on the CPU.
+loxilb-inference-gateway: binary-from-other-architecture [opt/loxilb/*.o]
+
+# /opt/loxilb is the datapath loader's fixed search path (inherited from
+# upstream loxilb): the eBPF objects, certificate dir, and pinned-map mount
+# all live there. Relocating them would break the loader.
+loxilb-inference-gateway: dir-or-file-in-opt [opt/loxilb/]
+loxilb-inference-gateway: dir-or-file-in-opt [opt/loxilb/cert/]
+loxilb-inference-gateway: dir-or-file-in-opt [opt/loxilb/*.o]
+
+# The loxilb Go binary is shipped unstripped on purpose: Go's runtime uses the
+# retained symbol table for readable panic/goroutine traces in production, and
+# `go version -m` provenance introspection depends on the embedded build info.
+# (The bundled C shared libraries ARE stripped — see the build.)
+loxilb-inference-gateway: unstripped-binary-or-object [usr/lib/loxilb/loxilb]
+
+# The kTLS OpenSSL is bundled privately under /usr/lib/loxilb and loaded only
+# through the /usr/sbin/loxilb launcher; it is intentionally not tied to the
+# distribution's libc package (no system shared-library dependency is
+# declared for a privately-bundled library).
+loxilb-inference-gateway: missing-dependency-on-libc
