@@ -24,7 +24,7 @@ require (
 	github.com/loxilb-io/loxilib v0.8.9-0.20241218081253-760c19357603
 	github.com/mattn/go-sqlite3 v1.14.29
 	github.com/modelcontextprotocol/go-sdk v1.6.1
-	github.com/osrg/gobgp/v3 v3.35.0
+	github.com/osrg/gobgp/v3 v3.37.0
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/prometheus-community/pro-bing v0.1.0
 	github.com/prometheus/client_model v0.5.0
