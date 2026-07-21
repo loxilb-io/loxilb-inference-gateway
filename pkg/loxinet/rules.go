@@ -2846,6 +2846,28 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		lBActs.endPoints = append(lBActs.endPoints, ep)
 	}
 
+	// L4/kernel vs L7/sockproxy selector guard. The request-content selectors below
+	// (N2, CHWBL, GPU-aware, WRR-hash) have NO kernel-datapath implementation — their
+	// selection runs entirely in the userspace sockproxy (PROXY_SEL_*), which only
+	// fullproxy traffic reaches. In any non-fullproxy mode the rule is programmed as
+	// DP_SET_DNAT, so the kernel selector dp_sel_nat_ep hits no matching sel_type case,
+	// returns sel=-1 -> xf->pm.nf=0, and every SYN is silently black-holed. Reject at
+	// config time with an actionable error instead of shipping a rule that dead-drops.
+	// NOTE: LbSelPrio (WRR, sel=2) is intentionally NOT gated here — it IS kernel-capable
+	// via control-plane weight-slot replication (LB2DP prio branch) + kernel round-robin.
+	if lBActs.mode != cmn.LBModeFullProxy {
+		switch lBActs.sel {
+		case cmn.LbSelN2:
+			return RuleUnknownServiceErr, errors.New("sel=n2(5) requires mode=fullproxy (no L4 datapath selector)")
+		case cmn.LbSelCHWBL:
+			return RuleUnknownServiceErr, errors.New("sel=chwbl(8) requires mode=fullproxy (no L4 datapath selector)")
+		case cmn.LbSelGPUAware:
+			return RuleUnknownServiceErr, errors.New("sel=gpu-aware(9) requires mode=fullproxy (no L4 datapath selector)")
+		case cmn.LbSelWRRHash:
+			return RuleUnknownServiceErr, errors.New("sel=wrr-hash(10) requires mode=fullproxy (no L4 datapath selector)")
+		}
+	}
+
 	// P/D disaggregation validation (US-502)
 	if serv.PDDisaggMode {
 		if lBActs.mode != cmn.LBModeFullProxy {
