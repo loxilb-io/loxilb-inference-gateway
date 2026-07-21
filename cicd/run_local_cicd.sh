@@ -165,8 +165,16 @@ cd httpsproxy-prefix/
 cd -
 
 cd tlsproxyprotov2/
+# fullnat: eBPF L4 dp_ins_ppv2 GSO fix. EXPECT=fixed is the post-fix regression
+# gate; the default EXPECT=bug asserts the historical #1044/#1089 bug REPRODUCES,
+# which no longer happens now that the GSO fix has landed (so it would fail).
 ./config.sh
-./validation.sh
+EXPECT=fixed ./validation.sh
+./rmconfig.sh
+# fullproxy: L7 userspace sockproxy PPv2 header emit (a separate testbed setup -
+# plaintext proxy_protocol backends + a fullproxy LB rule).
+PPV2MODE=fullproxy ./config.sh
+PPV2MODE=fullproxy ./validation.sh
 ./rmconfig.sh
 cd -
 
