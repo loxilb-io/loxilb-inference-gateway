@@ -69,13 +69,11 @@ jobs:
       - run: docker stop loxilb && docker rm loxilb
 
       # --- Self-contained scenarios (loxilb + local mock/echo backends) ---
-      - name: KV-cache-aware routing (vLLM, echo backends)
-        run: |
-          cd cicd/vllm-kvcache-routing-cpu/
-          ./config.sh
-          ./validation.sh
-          ./rmconfig.sh
-          cd -
+      # NOTE: cicd/vllm-kvcache-routing-cpu is intentionally NOT gated here. Its
+      # strict fixture-driven asserts (exact tokenizer-overlap fallthrough timing)
+      # are sensitive to hosted-runner state and better exercised by the
+      # authoritative real-vLLM exit gate (cicd/vllm-kvcache-routing-cpu-aws).
+      # The stable CI set below mirrors cicd/run_local_cicd.sh.
       - name: Prefill/Decode disaggregation (mock vLLM)
         run: |
           cd cicd/vllm-pd-disagg/

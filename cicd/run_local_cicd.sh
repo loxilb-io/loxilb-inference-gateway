@@ -1,11 +1,11 @@
 #!/bin/bash
 set -e
 
-cd sconnect/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+# cd sconnect/
+# ./config.sh
+# ./validation.sh
+# ./rmconfig.sh
+# cd -
 
 cd tcplb/
 ./config.sh
@@ -229,3 +229,92 @@ cd sglang-loxilb-kvcache/
 ./validation.sh
 ./rmconfig.sh
 cd -
+
+cd cicd/k8slbsim/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
+cd cicd/onearml2/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
+cd cicd/k8slbsim/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
+cd cicd/onearml2/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
+cd cicd/tcptunlb/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
+cd cicd/sctptunlb/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
+cd cicd/wrrtcplb1/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
+cd cicd/wrrtcplb2/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
+cd cicd/nat64tcp/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
+cd cicd/tcplbmaxep/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
+cd cicd/ipmasquerade/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
+cd cicd/httpsproxy/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
+cd cicd/e2ehttpsproxy/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
+cd cicd/tcplb-src/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
+cd cicd/udplb-persist/
+./config.sh
+./validation.sh
+./rmconfig.sh

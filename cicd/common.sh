@@ -17,6 +17,11 @@ cluster_opts=""
 extra_opts=""
 ka_opts=""
 docker_extra_opts=""
+# Prometheus metrics are a first-class feature: enable them by default so every
+# scenario can scrape GET /netlox/v1/metrics (else that endpoint returns 503
+# "Prometheus option is disabled."). Set prom_opts="" before spawn_docker_host
+# to opt a scenario out.
+prom_opts="-p"
 var=$(lsb_release -r | cut -f2)
 if [[ $var == *"22.04"* ]];then
  lxdocker="ghcr.io/loxilb-io/loxilb-inference-gateway:latest"
@@ -129,10 +134,10 @@ spawn_docker_host() {
       sudo mkdir -p /etc/shared/$dname/
       docker run -u root --cap-add SYS_ADMIN   --restart unless-stopped --privileged -dt $docker_extra_opts --entrypoint /bin/bash $bgp_conf -v /dev/log:/dev/log -v /etc/shared/$dname:/etc/shared $loxilb_config --name $dname $lxdocker
       get_llb_peerIP $dname
-      docker exec -dt $dname /root/loxilb-io/loxilb/loxilb $bgp_opts $cluster_opts $ka_opts $extra_opts
+      docker exec -dt $dname /root/loxilb-io/loxilb/loxilb $bgp_opts $cluster_opts $ka_opts $prom_opts $extra_opts
     else
       docker run -u root --cap-add SYS_ADMIN   --restart unless-stopped --privileged -dt $docker_extra_opts --entrypoint /bin/bash $bgp_conf -v /dev/log:/dev/log -v `pwd`/cert:/opt/loxilb/cert/ $loxilb_config --name $dname $lxdocker $bgp_opts
-      docker exec -dt $dname /root/loxilb-io/loxilb/loxilb $bgp_opts $cluster_opts $extra_opts
+      docker exec -dt $dname /root/loxilb-io/loxilb/loxilb $bgp_opts $cluster_opts $prom_opts $extra_opts
     fi
   elif [[ "$dtype" == "host" ]]; then
     if [[ ! -z "$bpath" ]]; then
