@@ -58,7 +58,7 @@ $dexec llb1 pkill loxilb
 $dexec llb1 ip link del llb0
 docker exec -dt llb1 /root/loxilb-io/loxilb/loxilb
 
-sleep 5
+sleep 25
 $dexec llb1 curl -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
   -H "Content-Type: application/json" \
   -d '{

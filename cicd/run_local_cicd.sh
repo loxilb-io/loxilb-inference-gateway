@@ -110,6 +110,12 @@ cd tcpsctpperf
 ./rmconfig.sh
 cd -
 
+cd http2ep/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
 cd e2ehttpsproxy/
 ./config.sh
 ./validation-http1.sh
@@ -155,6 +161,12 @@ cd httpsproxy-prefix/
 ./config.sh
 ./validation.sh
 ./validation-http2.sh
+./rmconfig.sh
+cd -
+
+cd tlsproxyprotov2/
+./config.sh
+./validation.sh
 ./rmconfig.sh
 cd -
 
