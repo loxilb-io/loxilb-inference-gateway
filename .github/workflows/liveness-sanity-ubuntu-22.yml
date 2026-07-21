@@ -38,6 +38,9 @@ jobs:
              go-version: '>=1.18.0'
       - run: sudo apt-get update
       - run: sudo apt-get -y install iperf iproute2 nodejs socat ethtool lksctp-tools
+      # Install minica as root into /usr/local/bin (on PATH) so the TLS scenarios
+      # (httpsep, http2ep) can mint their test certs via 'command -v minica'.
+      - run: sudo -E env "PATH=$PATH" GOBIN=/usr/local/bin go install github.com/jsha/minica@latest
       - run: |
              cd cicd/tcplbmon/
              ./config.sh
