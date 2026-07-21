@@ -10,6 +10,8 @@ $hexec l3e2 socat -v -T0.5 sctp-l:8080,reuseaddr,fork system:"echo 'server2'; ca
 $hexec l3e3 socat -v -T0.5 sctp-l:8080,reuseaddr,fork system:"echo 'server3'; cat" >/dev/null 2>&1 &
 
 sleep 20
+# Overridable for slow/noisy runners: SETTLE=3 ./validation.sh
+SETTLE=${SETTLE:-2}
 code=0
 j=0
 waitCount=0
@@ -36,6 +38,36 @@ do
     fi
     sleep 1
 done
+
+# VIP/tunnel warmup. Drive traffic through the VxLAN tunnel + LB rule until
+# every backend has answered at least once via the VIP. The first association
+# to a freshly-programmed endpoint over the tunnel can wedge on slow runners;
+# polling here lets it establish (or age out and retry) before the strict pass,
+# instead of failing the whole scenario on a transient startup race. A backend
+# that never answers here is a real fault.
+declare -A seen=( [server1]=0 [server2]=0 [server3]=0 )
+warm=0
+warmMax=60
+while [[ ${seen[server1]} -eq 0 || ${seen[server2]} -eq 0 || ${seen[server3]} -eq 0 ]]
+do
+    res=$($hexec h1 timeout 10 ../common/sctp_socat_client 32.32.32.1 0 88.88.88.88 2020)
+    if [[ "$res" == server* ]]; then
+        seen[$res]=1
+    fi
+    warm=$(( warm + 1 ))
+    if [[ $warm -ge $warmMax ]]; then
+        echo "VIP warmup incomplete after ${warmMax}s: server1=${seen[server1]} server2=${seen[server2]} server3=${seen[server3]}"
+        echo "llb1 ct";       $dexec llb1 loxicmd get ct
+        echo "llb2 ct";       $dexec llb2 loxicmd get ct
+        echo "llb2 ip neigh"; $dexec llb2 ip neigh
+        echo SCENARIO-sctptunlb [FAILED]
+        sudo pkill sctp_server >/dev/null 2>&1
+        sudo pkill socat >/dev/null 2>&1
+        exit 1
+    fi
+    sleep 1
+done
+sleep $SETTLE
 
 for k in {1..2}
 do
