@@ -42,6 +42,25 @@ function health() {
         sleep 1
     done
 
+    if [ "$1" != "strict" ]; then
+        if grep -q "VERSION_ID=\"24" /etc/os-release 2>/dev/null; then
+            # On Ubuntu 24, the first VIP request through the L7 HTTP/2 proxy pays the
+            # cold upstream TLS+HTTP/2 connection setup. That first request either times
+            # out (client 5s limit) or advances loxilb's round-robin pointer by one slot,
+            # which would leave the strict RR check below off by one for the whole run.
+            # This probe absorbs the cold start; if it landed on server1, send two more
+            # requests so the main check starts from server1 again. Mirrors ../httpsep.
+            res=$($hexec l3h1 ./client/client -key 10.10.10.1/key.pem --cert 10.10.10.1/cert.pem  --cacert minica.pem -host 20.20.20.1:2020)
+            if [[ $res == "HTTP/2.0:${servArr[0]} HTTP/2.0:${servArr[0]} " ]]
+            then
+                for i in {1..2}
+                do
+                    $hexec l3h1 ./client/client -key 10.10.10.1/key.pem --cert 10.10.10.1/cert.pem  --cacert minica.pem -host 20.20.20.1:2020 > /dev/null
+                done
+            fi
+        fi
+    fi
+
     for i in {1..4}
     do
     for j in {0..2}
