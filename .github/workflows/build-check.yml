@@ -16,6 +16,10 @@ jobs:
 
   build:
     name: build-check-ci
+    # Dependabot PRs don't receive repo secrets, so CI_SUBMODULE_TOKEN is empty
+    # and the private loxilb-ebpf submodule can't be cloned. Skip rather than
+    # fail red; the bump is re-validated by the push/schedule run after merge.
+    if: ${{ github.actor != 'dependabot[bot]' }}
 
     runs-on: ubuntu-latest
 

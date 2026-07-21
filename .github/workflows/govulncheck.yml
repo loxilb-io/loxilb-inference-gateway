@@ -18,6 +18,10 @@ permissions:
 jobs:
   govulncheck:
     name: govulncheck
+    # Dependabot PRs don't receive repo secrets, so CI_SUBMODULE_TOKEN is empty
+    # and the private loxilb-ebpf submodule can't be cloned. Skip rather than
+    # fail red; the scheduled run still provides vuln coverage.
+    if: ${{ github.actor != 'dependabot[bot]' }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
