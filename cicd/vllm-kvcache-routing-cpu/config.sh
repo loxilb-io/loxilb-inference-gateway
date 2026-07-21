@@ -234,10 +234,20 @@ sleep 3
 echo "Probing publisher python deps (pyzmq/cbor2/xxhash/transformers)..."
 if ! python3 -c "import zmq, cbor2, xxhash, transformers" >/dev/null 2>&1; then
     echo "  installing python publisher deps (pyzmq cbor2 xxhash transformers)..."
-    # PEP-668 (Ubuntu 24.04): try plain pip first, then --break-system-packages.
-    pip3 install --quiet pyzmq cbor2 xxhash transformers >/dev/null 2>&1 \
-        || pip3 install --quiet --break-system-packages pyzmq cbor2 xxhash transformers >/dev/null 2>&1 \
-        || echo "  WARN: pip3 install of publisher deps failed — publisher may exit(2)"
+    # pip has prebuilt manylinux wheels for all of these (no compiler needed). Invoke pip
+    # as `python3 -m pip` (NOT the pip3 wrapper, which is absent on bare-python3 hosts).
+    # PEP-668 (Ubuntu 24.04): try plain first, then --break-system-packages.
+    python3 -m pip install --quiet pyzmq cbor2 xxhash transformers >/dev/null 2>&1 \
+        || python3 -m pip install --quiet --break-system-packages pyzmq cbor2 xxhash transformers >/dev/null 2>&1 \
+        || echo "  WARN: pip install of publisher deps failed"
+    # Re-probe so the outcome is visible in the log rather than failing silently at
+    # publisher launch (import error → exit(2) → empty KV inventories downstream).
+    if python3 -c "import zmq, cbor2, xxhash, transformers" >/dev/null 2>&1; then
+        echo "  publisher deps ready"
+    else
+        echo "  ERROR: publisher deps still missing after install — publisher WILL exit(2):"
+        python3 -c "import zmq, cbor2, xxhash, transformers" 2>&1 | sed 's/^/    /'
+    fi
 fi
 
 # serviceID == r.ruleNum (the rule ordinal). The first KV-exact rule on a fresh container is ordinal 0;

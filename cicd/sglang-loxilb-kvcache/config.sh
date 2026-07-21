@@ -300,24 +300,32 @@ sleep 3
 echo "Probing publisher python deps (pyzmq/msgpack/cbor2/xxhash/transformers)..."
 if ! python3 -c "import zmq, msgpack, cbor2, xxhash, transformers" >/dev/null 2>&1; then
     echo "  installing python publisher deps (pyzmq msgpack cbor2 xxhash transformers)..."
+    # Refresh apt lists first: a fresh CI runner can have stale/absent lists, which makes
+    # the install below fail instantly with "Unable to locate package".
+    sudo apt-get update >/dev/null 2>&1 || echo "  WARN: apt-get update failed"
     # Native modules (zmq/msgpack/cbor2/xxhash) install most reliably from apt — no
     # compiler/wheel fetch — and python3-pip bootstraps pip on hosts that ship a bare
     # python3 (no pip3 wrapper AND no ensurepip module, e.g. this Ubuntu 24 testbed).
     sudo apt-get install -y python3-pip python3-zmq python3-msgpack python3-cbor2 python3-xxhash >/dev/null 2>&1 \
-        || echo "  WARN: apt install of native publisher deps failed"
-    # transformers is not packaged in apt → pip it. Invoke pip as `python3 -m pip`
-    # (NOT the pip3 wrapper, which is absent on bare-python3 hosts). PEP-668
-    # (Ubuntu 24.04): pip refuses a system install without --break-system-packages;
-    # older pips don't know the flag — try plain first, then the flag.
-    python3 -m pip install --quiet transformers >/dev/null 2>&1 \
-        || python3 -m pip install --quiet --break-system-packages transformers >/dev/null 2>&1 \
-        || echo "  WARN: pip install of transformers failed — publishers may exit(2)"
+        || echo "  WARN: apt install of native publisher deps failed — falling back to pip"
+    # Fallback for whatever apt could not provide (transformers is never in apt; and on a
+    # locked/stale-apt CI runner the native modules also land here). pip has prebuilt
+    # manylinux wheels for ALL of them, so no compiler is needed. Install to the SYSTEM
+    # site as root so the root publisher launched via `ip netns exec` imports them
+    # directly. PEP-668 (Ubuntu 24.04) needs --break-system-packages; older pips reject
+    # the flag → try plain first, then the flag.
+    if ! python3 -c "import zmq, msgpack, cbor2, xxhash, transformers" >/dev/null 2>&1; then
+        sudo python3 -m pip install --quiet pyzmq msgpack cbor2 xxhash transformers >/dev/null 2>&1 \
+            || sudo python3 -m pip install --quiet --break-system-packages pyzmq msgpack cbor2 xxhash transformers >/dev/null 2>&1 \
+            || echo "  WARN: pip install of publisher deps failed"
+    fi
     # Re-probe so the outcome is visible in the log rather than failing silently at
     # publisher launch (import error → exit(2) → empty KV inventories downstream).
     if python3 -c "import zmq, msgpack, cbor2, xxhash, transformers" >/dev/null 2>&1; then
         echo "  publisher deps ready"
     else
-        echo "  WARN: publisher deps still missing after install — publishers may exit(2)"
+        echo "  ERROR: publisher deps still missing after install — publishers WILL exit(2):"
+        python3 -c "import zmq, msgpack, cbor2, xxhash, transformers" 2>&1 | sed 's/^/    /'
     fi
 fi
 
