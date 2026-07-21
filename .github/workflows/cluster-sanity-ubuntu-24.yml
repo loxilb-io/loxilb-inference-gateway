@@ -22,6 +22,8 @@ jobs:
     name: cluster-sanity-ubuntu-24
     runs-on: ubuntu-22.04
     if: github.repository == 'loxilb-io/loxilb-inference-gateway'
+    env:
+      LOXILB_DOCKER_IMAGE: latest
     steps:
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
