@@ -1,11 +1,11 @@
 #!/bin/bash
 set -e
 
-# cd sconnect/
-# ./config.sh
-# ./validation.sh
-# ./rmconfig.sh
-# cd -
+cd sconnect/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
 
 cd tcplb/
 ./config.sh
@@ -225,18 +225,6 @@ cd vllm-pd-disagg/
 cd -
 
 cd sglang-loxilb-kvcache/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
-
-cd cicd/k8slbsim/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
-
-cd cicd/onearml2/
 ./config.sh
 ./validation.sh
 ./rmconfig.sh

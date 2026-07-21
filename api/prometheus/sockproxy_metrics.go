@@ -859,23 +859,29 @@ func ClearKvEpInfo(service, epIdx string) {
 	pdEpInfo.DeletePartialMatch(prometheus.Labels{"service": service, "ep_idx": epIdx})
 }
 
-// ClearKvEpSeries removes ALL per-EP KV series for a decommissioned endpoint
+// ClearKvEpSeries removes the per-EP KV series for a decommissioned endpoint
 // (series lifecycle, metrics audit): the blocks gauge, subscriber liveness /
-// reconnect / recv-error / cap-eviction series, the Tier-1.5 hit/spill
-// counters, and the ep_idx->IP identity mapping. Stale children otherwise
-// linger on /metrics forever (a connected=0 ghost, a frozen blocks count).
+// reconnect / recv-error / cap-eviction series, and the ep_idx->IP identity
+// mapping. Stale children otherwise linger on /metrics forever (a connected=0
+// ghost, a frozen blocks count). All of these carry a service label, so the
+// deletion is scoped to the one decommissioned (service, ep_idx).
 //
-// Caveat: the tier15 hit/spill counters are keyed by ep_idx ONLY (no service
-// label) — when two services share an ep_idx the deletion resets the shared
-// child; Prometheus rate() treats the reset like any counter restart.
+// The Tier-1.5 hit/spill counters are DELIBERATELY NOT deleted here: they are
+// keyed by ep_idx ONLY (no service label) and are therefore shared by every
+// service that reuses that ep_idx. Deleting the shared child on one service's
+// teardown corrupts the still-live count of the co-tenant service(s) — an EP
+// churn on VIP-B would zero out VIP-A's tier15_hits{ep_idx} — and injects a
+// spurious counter reset into rate() for a series that is still legitimately
+// counting. A monotonic counter is meant to persist for the process lifetime;
+// leaving a lazily-created ep_idx child in place is correct and harmless
+// (ep_idx values are small integers reused across services, so they rarely go
+// permanently stale). See cicd/sglang-loxilb-kvcache L3 isolation.
 func ClearKvEpSeries(service, epIdx string) {
 	pdKvBlocks.DeleteLabelValues(service, epIdx)
 	kvSubscriberConnected.DeleteLabelValues(service, epIdx)
 	kvSubscriberReconnectTotal.DeleteLabelValues(service, epIdx)
 	kvSubscriberRecvErrorTotal.DeleteLabelValues(service, epIdx)
 	kvInvCapEvictionsTotal.DeleteLabelValues(service, epIdx)
-	pdKvTier15HitsTotal.DeleteLabelValues(epIdx)
-	kvTier15SpillsTotal.DeleteLabelValues(epIdx)
 	ClearKvEpInfo(service, epIdx)
 }
 
