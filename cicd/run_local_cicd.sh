@@ -292,7 +292,8 @@ cd -
 
 cd cicd/e2ehttpsproxy/
 ./config.sh
-./validation.sh
+./validation-http1.sh
+./validation-http2.sh
 ./rmconfig.sh
 cd -
 
