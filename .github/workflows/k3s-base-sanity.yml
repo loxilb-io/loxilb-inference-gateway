@@ -28,6 +28,11 @@ jobs:
              go-version: '>=1.18.0'
       - run: sudo apt-get update
       - run: sudo apt-get -y install bridge-utils net-tools iperf curl lksctp-tools wget clang llvm libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip build-essential bison flex iperf iproute2 nodejs socat ethtool libjson-c-dev libnghttp2-dev
+      # 'make docker-cp' runs 'go build', which cgo-links the daulet/tokenizers
+      # library (pkg/loxinet/ai_kv_tokenizer_hf.go, no build tag). Without it the
+      # Go link fails on -ltokenizers. Matches the step in the other builder workflows.
+      - name: Install libtokenizers (KV-router HF backend)
+        run: arch=$(dpkg --print-architecture) && wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz -O /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
       - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
       - run: docker run -u root --cap-add SYS_ADMIN   --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest
       - run: pwd && ls && sudo mkdir /opt/loxilb/ && sudo -E env "PATH=$PATH" make docker-cp
