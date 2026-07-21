@@ -58,5 +58,25 @@ $dexec llb1 ip route add 88.88.88.88/32 via 50.50.50.2 dev ellb1llb2
 $dexec llb2 ip route add 31.31.31.0/24 via 10.10.10.59 dev ellb2llb1
 $dexec llb2 ip route add 32.32.32.0/24 via 10.10.10.59 dev ellb2llb1
 
+# Disable NIC offload on every veth/vxlan in the datapath. In this
+# container-veth testbed the kernel defers inner checksums (CHECKSUM_PARTIAL)
+# for GSO/tx-checksum offload; VxLAN encapsulation over a veth then puts a
+# corrupt checksum on the wire, so the encapsulated 3-way-handshake ACK is
+# silently dropped and the flow wedges in sync-ack. This is intermittent on
+# slow hosted CI runners (not on the faster kv-loxilb testbed) and is why a
+# single backend could never complete the VIP/tunnel handshake. Forcing
+# software checksums avoids it and matches every other datapath scenario
+# (nat66sctp, k3s-calico-dual-stack, ...).
+for hostiface in "llb1 ellb1h1" "llb1 ellb1h2" "llb1 ellb1llb2" "llb1 vxlan50" \
+                 "llb2 ellb2llb1" "llb2 vxlan50" \
+                 "llb2 ellb2l3e1" "llb2 ellb2l3e2" "llb2 ellb2l3e3" \
+                 "h1 eh1llb1" "h2 eh2llb1" \
+                 "l3e1 el3e1llb2" "l3e2 el3e2llb2" "l3e3 el3e3llb2"
+do
+    set -- $hostiface
+    $hexec $1 ethtool --offload $2 rx off tx off >/dev/null 2>&1
+    $hexec $1 ethtool -K $2 gso off tso off >/dev/null 2>&1
+done
+
 ##Create LB rule
 $dexec llb2 loxicmd create lb 88.88.88.88 --tcp=2020:8080 --endpoints=25.25.25.1:1,26.26.26.1:1,27.27.27.1:1
