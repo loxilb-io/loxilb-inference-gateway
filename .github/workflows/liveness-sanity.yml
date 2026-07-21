@@ -38,6 +38,15 @@ jobs:
       # 'command -v minica' resolves it. Doing it after the root 'make' avoids the
       # root-owned Go module cache breaking a later non-root 'go install'.
       - run: sudo -E env "PATH=$PATH" GOBIN=/usr/local/bin go install github.com/jsha/minica@latest
+      # Authenticate to GHCR so the private image pull below succeeds; without
+      # this the pull is 'unauthorized' and CI falls back to a fragile full
+      # from-source docker build.
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
       - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
       - run: docker run -u root --cap-add SYS_ADMIN   --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest
       - run: pwd && ls && sudo -E env "PATH=$PATH" make docker-cp

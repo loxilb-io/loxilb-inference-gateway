@@ -2,6 +2,9 @@
 name: __K3s-Base-Sanity-CI-Module
 on:
   workflow_call:
+    secrets:
+      GHCR_TOKEN:
+        required: false
 jobs:
   build:
     name: k3s-base-sanity
@@ -15,6 +18,15 @@ jobs:
          sudo apt-get update
          sudo apt-get -y install bridge-utils net-tools iperf curl lksctp-tools wget clang llvm libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip build-essential bison flex iperf iproute2 nodejs socat ethtool libjson-c-dev libnghttp2-dev
          git clone --recursive https://github.com/loxilb-io/loxilb
+      # Authenticate to GHCR so the private image pull below succeeds; without
+      # this the pull is 'unauthorized' and CI falls back to a fragile full
+      # from-source docker build. Caller must pass the secret (secrets: inherit).
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
       - working-directory: ./loxilb
         run: |
          docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .

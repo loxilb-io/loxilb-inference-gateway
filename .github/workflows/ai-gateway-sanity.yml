@@ -65,6 +65,15 @@ jobs:
       # minica (github.com/jsha/minica) is fetched on demand by the TLS scenarios' config.sh
       - run: sudo -E env "PATH=$PATH" GOBIN=/usr/local/bin go install github.com/jsha/minica@latest
       # Gateway image: pull the published one, or build locally when not yet published
+      # Authenticate to GHCR so the private image pull below succeeds; without
+      # this the pull is 'unauthorized' and CI falls back to a fragile full
+      # from-source docker build.
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
       - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
       # reflect-echo backend image (KV-cache scenarios) — always built from the local context
       - run: bash cicd/common/reflect-echo/docker-build.sh
