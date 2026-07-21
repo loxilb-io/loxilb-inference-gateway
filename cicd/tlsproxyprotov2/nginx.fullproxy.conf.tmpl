@@ -1,0 +1,31 @@
+worker_processes 1;
+error_log /var/log/nginx/error.log warn;
+pid /run/nginx.pid;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    # Log the client address the PROXY protocol header carried, so validation.sh
+    # can assert loxilb's L7 userspace sockproxy propagated the REAL client
+    # (10.10.10.1) rather than loxilb's own backend-side source IP.
+    log_format ppv2 '$proxy_protocol_addr -> $server_addr "$request" __NAME__';
+    access_log /var/log/nginx/access.log ppv2;
+
+    server {
+        # Plaintext + 'proxy_protocol': nginx expects a PROXY v1/v2 header as the
+        # first bytes on every connection, strips it, then serves plain HTTP. In
+        # fullproxy mode loxilb terminates the client TCP connection and emits the
+        # PROXY v2 header on the freshly-connected backend socket
+        # (sockproxy_conn.c: proxy_setup_ep_connect), before any payload. This is a
+        # stream-level send, hence immune to the GSO corruption that affects the
+        # eBPF L4 fullnat inline path (issue #1044/#1089).
+        listen 8080 proxy_protocol;
+
+        location / {
+            default_type text/plain;
+            return 200 "__NAME__";
+        }
+    }
+}
