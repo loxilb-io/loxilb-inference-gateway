@@ -14,6 +14,12 @@ jobs:
     name: k3s-sctpmh-sanity
     runs-on: ubuntu-22.04
     steps:
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
       - run: sudo apt update
       - run: sudo apt-get -y install bridge-utils iproute2 lksctp-tools iputils-ping
       - run: |

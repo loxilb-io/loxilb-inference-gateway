@@ -19,6 +19,12 @@ jobs:
     runs-on: ubuntu-24.04
     if: github.repository == 'loxilb-io/loxilb-inference-gateway'
     steps:
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
       - run: |
          for pkg in docker.io docker-doc docker-compose podman-docker containerd runc; do sudo apt-get remove $pkg; done
          sudo apt-get update
