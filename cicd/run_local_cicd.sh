@@ -230,80 +230,80 @@ cd sglang-loxilb-kvcache/
 ./rmconfig.sh
 cd -
 
-cd cicd/k8slbsim/
+cd k8slbsim/
 ./config.sh
 ./validation.sh
 ./rmconfig.sh
 cd -
 
-cd cicd/onearml2/
+cd onearml2/
 ./config.sh
 ./validation.sh
 ./rmconfig.sh
 cd -
 
-cd cicd/tcptunlb/
+cd tcptunlb/
 ./config.sh
 ./validation.sh
 ./rmconfig.sh
 cd -
 
-cd cicd/sctptunlb/
+cd sctptunlb/
 ./config.sh
 ./validation.sh
 ./rmconfig.sh
 cd -
 
-cd cicd/wrrtcplb1/
+cd wrrtcplb1/
 ./config.sh
 ./validation.sh
 ./rmconfig.sh
 cd -
 
-cd cicd/wrrtcplb2/
+cd wrrtcplb2/
 ./config.sh
 ./validation.sh
 ./rmconfig.sh
 cd -
 
-cd cicd/nat64tcp/
+cd nat64tcp/
 ./config.sh
 ./validation.sh
 ./rmconfig.sh
 cd -
 
-cd cicd/tcplbmaxep/
+cd tcplbmaxep/
 ./config.sh
 ./validation.sh
 ./rmconfig.sh
 cd -
 
-cd cicd/ipmasquerade/
+cd ipmasquerade/
 ./config.sh
 ./validation.sh
 ./rmconfig.sh
 cd -
 
-cd cicd/httpsproxy/
+cd httpsproxy/
 ./config.sh
 ./validation.sh
 ./rmconfig.sh
 cd -
 
-cd cicd/e2ehttpsproxy/
+cd e2ehttpsproxy/
 ./config.sh
 ./validation-http1.sh
 ./validation-http2.sh
 ./rmconfig.sh
 cd -
 
-cd cicd/tcplb-src/
+cd tcplb-src/
 ./config.sh
 ./validation.sh
 ./rmconfig.sh
 cd -
 
-cd cicd/udplb-persist/
+cd udplb-persist/
 ./config.sh
 ./validation.sh
 ./rmconfig.sh

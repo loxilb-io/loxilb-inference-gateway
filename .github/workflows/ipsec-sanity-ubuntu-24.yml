@@ -21,6 +21,11 @@ jobs:
     name: ipsec-sanity-ubuntu-24
     runs-on: ubuntu-24.04
     if: github.repository == 'loxilb-io/loxilb-inference-gateway'
+    # Force the u22 :latest image on hosted ubuntu-24.04 (6.x-azure)
+    # runners: the latest-u24 eBPF datapath trips the kernel BPF verifier
+    # E2BIG limit and loxilb aborts. common.sh honors LOXILB_DOCKER_IMAGE.
+    env:
+      LOXILB_DOCKER_IMAGE: latest
     steps:
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
@@ -28,13 +33,6 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_TOKEN }}
-      - name: Seed :latest-u24 from :latest on the Azure runner
-        # The u24-built eBPF datapath (tc_packet_func_slow) exceeds the hosted
-        # ubuntu-24.04 (6.17-azure) kernel's BPF verifier limit and loxilb aborts.
-        # The u22-based :latest image loads fine here, so run it on this runner.
-        run: |
-          docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest
-          docker tag ghcr.io/loxilb-io/loxilb-inference-gateway:latest ghcr.io/loxilb-io/loxilb-inference-gateway:latest-u24
       - uses: actions/checkout@v4
         with:
           submodules: recursive

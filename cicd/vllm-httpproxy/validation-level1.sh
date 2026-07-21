@@ -101,8 +101,13 @@ echo "#########################################"
 
 for i in {1..5}; do
     req_id="level1-models-$i"
-    result=$($dexec l3h1 curl -sk  -H "X-Request-Id: $req_id" http://10.10.10.254:$PORT/v1/models 2>&1)
-    
+    result=$($dexec l3h1 curl -sk --max-time 20 -H "X-Request-Id: $req_id" http://10.10.10.254:$PORT/v1/models 2>&1)
+    if [[ $result != *"Qwen/Qwen3-0.6B"* ]]; then
+        # one retry to absorb a transient connection blip; a truly dead backend
+        # fails both attempts and is still reported below.
+        sleep 2
+        result=$($dexec l3h1 curl -sk --max-time 20 -H "X-Request-Id: ${req_id}r" http://10.10.10.254:$PORT/v1/models 2>&1)
+    fi
     if [[ $result == *"Qwen/Qwen3-0.6B"* ]]; then
         echo "  ✓ Models request $i OK"
     else

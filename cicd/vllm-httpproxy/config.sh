@@ -2,6 +2,15 @@
 
 source ../common.sh
 
+# Ensure a shared HuggingFace cache on the host BEFORE spawning endpoints.
+# common.sh mounts /tmp/hf-cache into every vllm-server container when it exists,
+# so all endpoints share ONE model cache. Without it each endpoint downloads the
+# model into its own ephemeral overlay; the second (anonymous) download commonly
+# stalls, leaving that endpoint stuck and never serving /v1/models -- which makes
+# the round-robin /v1/models probes in validation fail. Creating it once means
+# the model is downloaded a single time and reused (and warmed across runs).
+mkdir -p /tmp/hf-cache
+
 echo "#########################################"
 echo "Spawning all hosts"
 echo "#########################################"
@@ -60,6 +69,26 @@ echo "#########################################"
 HF_TOKEN="${LOXILB_HF_TOKEN:-}"
 # HF_TOKEN fallback: export LOXILB_HF_TOKEN=<your-token> in the runner environment
 
+# Poll a vLLM endpoint until it actually serves /v1/models, or fail hard.
+# A fixed sleep is not enough: on a cold HF cache the model download can take
+# minutes (or stall), and proceeding against a half-ready backend makes the
+# round-robin /v1/models probes in validation fail spuriously.
+wait_vllm_ready() {
+    local ctr=$1 logf=$2 timeout=${3:-600} waited=0
+    echo "Waiting for $ctr to serve /v1/models (timeout ${timeout}s)..."
+    while [ $waited -lt $timeout ]; do
+        if $dexec $ctr curl -s --max-time 5 http://localhost:8000/v1/models 2>/dev/null | grep -q "Qwen/Qwen3-0.6B"; then
+            echo "  $ctr ready after ${waited}s"
+            return 0
+        fi
+        sleep 5
+        waited=$(( waited + 5 ))
+    done
+    echo "  ERROR: $ctr not ready after ${timeout}s -- last log lines:"
+    $dexec $ctr tail -n 20 "$logf" 2>/dev/null
+    return 1
+}
+
 echo "#########################################"
 echo "Starting vLLM servers on endpoints"
 echo "#########################################"
@@ -76,8 +105,7 @@ else
     $dexec l3ep1 bash -c "cd /workspace && VLLM_CPU_OMP_THREADS_BIND='0' VLLM_USE_V1=0 VLLM_CPU_KVCACHE_SPACE=1 python -m vllm.entrypoints.openai.api_server --model Qwen/Qwen3-0.6B --device cpu --dtype float32 --max-model-len 1024 --host 0.0.0.0 --port 8000 --enable-request-id-headers > /tmp/vllm-server1.log 2>&1 &"
 fi
 
-echo "Waiting for l3ep1 to download model and initialize (90 seconds)..."
-sleep 90
+wait_vllm_ready l3ep1 /tmp/vllm-server1.log 600 || { echo "ERROR: l3ep1 vLLM failed to start"; exit 1; }
 
 echo "Starting vLLM server on l3ep2 (CPU core 1) - will use cached model..."
 if [[ -n "$HF_TOKEN" ]]; then
@@ -86,19 +114,11 @@ else
     $dexec l3ep2 bash -c "cd /workspace && VLLM_CPU_OMP_THREADS_BIND='1' VLLM_USE_V1=0 VLLM_CPU_KVCACHE_SPACE=1 python -m vllm.entrypoints.openai.api_server --model Qwen/Qwen3-0.6B --device cpu --dtype float32 --max-model-len 1024 --host 0.0.0.0 --port 8000 --enable-request-id-headers > /tmp/vllm-server2.log 2>&1 &"
 fi
 
-echo "Waiting for l3ep2 to initialize (60 seconds)..."
-sleep 60
+wait_vllm_ready l3ep2 /tmp/vllm-server2.log 600 || { echo "ERROR: l3ep2 vLLM failed to start"; exit 1; }
 
 echo "#########################################"
-echo "Verifying vLLM servers are running"
+echo "Both vLLM servers are serving /v1/models"
 echo "#########################################"
-
-# Check if vLLM servers are responding
-for ep in l3ep1 l3ep2 ; do
-    echo "Checking $ep..."
-    $dexec $ep curl -s http://localhost:8000/v1/models || echo "$ep: vLLM server may not be ready yet"
-    sleep 2
-done
 
 echo "#########################################"
 echo "Creating LoxiLB load balancer rule"
