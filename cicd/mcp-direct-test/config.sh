@@ -26,7 +26,7 @@ echo "#########################################"
 
 # Start HTTP MCP server (fastmcp already installed in the image)
 echo "Starting MCP server on 192.168.100.20:8080 (HTTP)..."
-$dexec mserver bash -c "cd /app && python3 server.py test-server 8080 > /tmp/mcp-server.log 2>&1 &"
+$dexec -d mserver bash -c "cd /app && python3 server.py test-server 8080 > /tmp/mcp-server.log 2>&1"
 
 sleep 10
 

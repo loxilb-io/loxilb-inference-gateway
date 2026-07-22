@@ -50,13 +50,21 @@ echo "Copying root CA certificate to client..."
 $dexec mserver cat /app/certs/minica.pem | $dexec mclient tee /app/minica.pem > /dev/null
 
 echo "Starting MCP server with HTTPS (port 8443)..."
-$dexec mserver bash -c "cd /app && python3 server.py test-server 8443 --ssl-certfile /app/certs/192.168.100.20/cert.pem --ssl-keyfile /app/certs/192.168.100.20/key.pem > /tmp/mcp-server.log 2>&1 &"
+# Start detached (docker exec -d) rather than `bash -c "... &"`: the backgrounded
+# form is tied to the exec session and can be reaped the moment docker exec
+# returns (seen as an empty server log + "failed to start").
+$dexec -d mserver bash -c "cd /app && python3 server.py test-server 8443 --ssl-certfile /app/certs/192.168.100.20/cert.pem --ssl-keyfile /app/certs/192.168.100.20/key.pem > /tmp/mcp-server.log 2>&1"
 
 echo "Waiting for MCP server to start..."
-sleep 5
+# Poll for the listener instead of a single fixed sleep: TLS startup can lag a
+# hard-coded 5s on a loaded runner, which caused an intermittent false failure.
+started=0
+for _ in $(seq 1 30); do
+    if $dexec mserver netstat -tlnp 2>/dev/null | grep -q ":8443"; then started=1; break; fi
+    sleep 1
+done
 
-# Verify server is running
-if $dexec mserver netstat -tlnp | grep -q ":8443"; then
+if [[ $started == 1 ]]; then
     echo "✓ MCP server started successfully on port 8443"
 else
     echo "✗ MCP server failed to start"

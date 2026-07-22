@@ -73,13 +73,13 @@ echo "#########################################"
 
 # Start HTTPS MCP servers on each endpoint
 echo "Starting HTTPS MCP server on l3ep1..."
-$dexec l3ep1 bash -c "cd /app && python3 server.py server1 8080 --ssl-certfile /app/certs/31.31.31.1/cert.pem --ssl-keyfile /app/certs/31.31.31.1/key.pem > /tmp/mcp-server1.log 2>&1 &"
+$dexec -d l3ep1 bash -c "cd /app && python3 server.py server1 8080 --ssl-certfile /app/certs/31.31.31.1/cert.pem --ssl-keyfile /app/certs/31.31.31.1/key.pem > /tmp/mcp-server1.log 2>&1"
 
 echo "Starting HTTPS MCP server on l3ep2..."
-$dexec l3ep2 bash -c "cd /app && python3 server.py server2 8080 --ssl-certfile /app/certs/32.32.32.1/cert.pem --ssl-keyfile /app/certs/32.32.32.1/key.pem > /tmp/mcp-server2.log 2>&1 &"
+$dexec -d l3ep2 bash -c "cd /app && python3 server.py server2 8080 --ssl-certfile /app/certs/32.32.32.1/cert.pem --ssl-keyfile /app/certs/32.32.32.1/key.pem > /tmp/mcp-server2.log 2>&1"
 
 echo "Starting HTTPS MCP server on l3ep3..."
-$dexec l3ep3 bash -c "cd /app && python3 server.py server3 8080 --ssl-certfile /app/certs/33.33.33.1/cert.pem --ssl-keyfile /app/certs/33.33.33.1/key.pem > /tmp/mcp-server3.log 2>&1 &"
+$dexec -d l3ep3 bash -c "cd /app && python3 server.py server3 8080 --ssl-certfile /app/certs/33.33.33.1/cert.pem --ssl-keyfile /app/certs/33.33.33.1/key.pem > /tmp/mcp-server3.log 2>&1"
 
 sleep 15
 

@@ -70,13 +70,13 @@ echo "#########################################"
 # Start MCP servers on each endpoint (HTTP on port 8080)
 # fastmcp is already installed in the Docker images
 echo "Starting MCP server on l3ep1..."
-$dexec l3ep1 bash -c "cd /app && python3 server.py server1 8080 > /tmp/mcp-server1.log 2>&1 &"
+$dexec -d l3ep1 bash -c "cd /app && python3 server.py server1 8080 > /tmp/mcp-server1.log 2>&1"
 
 echo "Starting MCP server on l3ep2..."
-$dexec l3ep2 bash -c "cd /app && python3 server.py server2 8080 > /tmp/mcp-server2.log 2>&1 &"
+$dexec -d l3ep2 bash -c "cd /app && python3 server.py server2 8080 > /tmp/mcp-server2.log 2>&1"
 
 echo "Starting MCP server on l3ep3..."
-$dexec l3ep3 bash -c "cd /app && python3 server.py server3 8080 > /tmp/mcp-server3.log 2>&1 &"
+$dexec -d l3ep3 bash -c "cd /app && python3 server.py server3 8080 > /tmp/mcp-server3.log 2>&1"
 
 sleep 10
 
