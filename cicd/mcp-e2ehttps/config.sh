@@ -11,10 +11,10 @@ echo "Spawning all hosts"
 echo "#########################################"
 
 spawn_docker_host --dock-type loxilb --dock-name llb1
-spawn_docker_host --dock-type mcpclient --dock-name l3h1
-spawn_docker_host --dock-type mcpserverhttps --dock-name l3ep1
-spawn_docker_host --dock-type mcpserverhttps --dock-name l3ep2
-spawn_docker_host --dock-type mcpserverhttps --dock-name l3ep3
+spawn_docker_host --dock-type mcp-client --dock-name l3h1
+spawn_docker_host --dock-type mcp-hserver --dock-name l3ep1
+spawn_docker_host --dock-type mcp-hserver --dock-name l3ep2
+spawn_docker_host --dock-type mcp-hserver --dock-name l3ep3
 
 echo "#########################################"
 echo "Connecting and configuring hosts"
