@@ -46,7 +46,14 @@ ifdef HAVE_DP_DPU_SLIM
 export CGO_CFLAGS += -DHAVE_DP_DPU_SLIM=1
 endif
 
-# mTLS support - align Go CGO struct layout with eBPF/userspace C headers
+# mTLS support - align Go CGO struct layout with eBPF/userspace C headers.
+# Stable → compiled in by default. Opt out with `make HAVE_MTLS=` (empty).
+# MUST be exported so the loxilb-ebpf sub-make (libloxilbdp.a) enables it too;
+# otherwise dp_proxy_tacts is sized WITH mtls fields in the cgo Go binary but
+# WITHOUT them in the static lib, and the per-TU _Static_assert cannot catch the
+# cross-build mismatch → silent memory corruption for every proxy rule.
+HAVE_MTLS ?= 1
+export HAVE_MTLS
 ifdef HAVE_MTLS
 export CGO_CFLAGS += -DHAVE_MTLS=1
 ifdef GO_BUILD_TAGS
