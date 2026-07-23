@@ -67,6 +67,12 @@ cd tcplbmon/
 ./validation.sh
 ./rmconfig.sh
 cd -
+
+cd tcplbmon-epstat/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
     
 cd udplbmon/
 ./config.sh
