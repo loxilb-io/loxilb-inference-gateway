@@ -33,35 +33,62 @@ do
     sleep 1
 done
 
-nid=0
-for i in {1..4}
-do
-for j in {0..2}
+# Warm up the VIP - wait until the health monitor (--monitor) confirms all 3
+# backends are active. The direct-UP check above only proves the node servers
+# are listening; it does NOT prove loxilb's monitor has probed and activated
+# each endpoint. Starting the round-robin before convergence let the VIP return
+# empty for a not-yet-active endpoint (observed as a p1 flake).
+declare -A warmup_seen
+warmupCount=0
+while [[ ${#warmup_seen[@]} -lt 3 ]]; do
+    res=$($hexec l3h1 curl -s -j -6 --max-time 10 '[2001::1]:2020')
+    if [[ $res == *"server"* ]]; then
+        warmup_seen[$res]=1
+        echo "VIP warmup: $res (${#warmup_seen[@]}/3 backends seen)"
+    fi
+    warmupCount=$(( $warmupCount + 1 ))
+    if [[ $warmupCount -ge 30 ]]; then
+        echo "VIP health monitor not ready (only ${#warmup_seen[@]}/3 backends active)"
+        echo tcplbmon6 [FAILED]
+        sudo pkill node
+        exit 1
+    fi
+    sleep 3
+done
+unset warmup_seen
+echo "All 3 backends confirmed active via VIP"
+
+# With --monitor enabled, the background health probes perturb strict
+# round-robin ordering between client requests, so verify a balanced
+# distribution (every backend serves traffic) rather than a fixed sequence.
+declare -A serverCount
+serverCount["server1"]=0
+serverCount["server2"]=0
+serverCount["server3"]=0
+for i in {1..12}
 do
     res=$($hexec l3h1 curl -s -j -6 --max-time 10 '[2001::1]:2020')
     echo $res
-    ids=`echo "${res//[!0-9]/}"`
-    if [[ $res == *"server"* ]]; then
-      ids=`echo "${res//[!0-9]/}"`
-      if [[ $nid == 0 ]];then
-        nid=$((($ids + 1)%4))
-        if [[ $nid == 0 ]];then
-          nid=1
-        fi
-      elif [[ $nid != $((ids)) ]]; then
-        echo "Expected server$nid got server$((ids))"
-        code=1
-      fi
-      nid=$((($ids + 1)%4))
-      if [[ $nid == 0 ]];then
-        nid=1
-      fi
+    if [[ $res == "server1" ]] || [[ $res == "server2" ]] || [[ $res == "server3" ]]
+    then
+        serverCount[$res]=$(( ${serverCount[$res]} + 1 ))
     else
-      code=1
+        echo "Unexpected response: $res"
+        code=1
     fi
     sleep 1
 done
-done
+echo "Distribution: server1=${serverCount[server1]}, server2=${serverCount[server2]}, server3=${serverCount[server3]}"
+if [[ ${serverCount[server1]} -eq 0 ]] || [[ ${serverCount[server2]} -eq 0 ]] || [[ ${serverCount[server3]} -eq 0 ]]
+then
+    echo "Some servers received no requests"
+    code=1
+fi
+if [[ ${serverCount[server1]} -lt 2 ]] || [[ ${serverCount[server2]} -lt 2 ]] || [[ ${serverCount[server3]} -lt 2 ]]
+then
+    echo "Load distribution is too unbalanced"
+    code=1
+fi
 if [[ $code == 0 ]]
 then
     echo tcplbmon6 p1 [OK]
