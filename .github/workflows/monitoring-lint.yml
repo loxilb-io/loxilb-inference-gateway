@@ -1,0 +1,63 @@
+name: Monitoring-Lint
+
+# Tier-0 hermetic correctness gate for the Prometheus + Grafana stack
+# (deploy/monitoring/). No loxilb, no traffic, no eBPF — pure static checks that
+# run in seconds on any runner. See docs/MONITORING-CICD.md (Tier 0).
+#
+# Catches the silent-drift class that manual validation can't re-catch per change:
+#   - a dashboard/alert referencing a metric the exporter no longer emits
+#   - a broken PromQL expression
+#   - an alert annotation pointing at a renamed/absent panel
+#   - a panel wired to the wrong datasource
+#
+# Triggered by changes to the stack OR to the exporter metric surface, so a
+# metric rename that orphans a panel fails here, not in production.
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'deploy/monitoring/**'
+      - 'api/prometheus/**'
+      - 'cmd/loxilb-ai-controller/**'
+      - 'doca/**'
+      - '.github/workflows/monitoring-lint.yml'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'deploy/monitoring/**'
+      - 'api/prometheus/**'
+      - 'cmd/loxilb-ai-controller/**'
+      - 'doca/**'
+      - '.github/workflows/monitoring-lint.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  monitoring-lint:
+    name: monitoring-lint
+    runs-on: ubuntu-latest
+    env:
+      PROM_VERSION: 2.53.4   # keep in sync with deploy/monitoring/docker-compose.yml
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false   # exporter metric names live in the main tree only
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install promtool (pinned Prometheus release)
+        run: |
+          arch=$(dpkg --print-architecture)   # amd64 / arm64
+          url="https://github.com/prometheus/prometheus/releases/download/v${PROM_VERSION}/prometheus-${PROM_VERSION}.linux-${arch}.tar.gz"
+          curl -sSL "$url" -o /tmp/prom.tgz
+          tar xzf /tmp/prom.tgz -C /tmp
+          sudo install "/tmp/prometheus-${PROM_VERSION}.linux-${arch}/promtool" /usr/local/bin/promtool
+          promtool --version
+
+      - name: Run monitoring lint (Tier 0)
+        run: python3 deploy/monitoring/ci/lint-monitoring.py
