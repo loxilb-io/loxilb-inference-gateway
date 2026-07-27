@@ -164,16 +164,27 @@ jobs:
 
       - name: systemd unit verify
         run: |
+          set -e
           dpkg-deb -x dist/*.deb extract
+          ud="extract/usr/lib/systemd/system"
+          mkdir -p "$ud"
           # The deb installs the unit under /lib/systemd/system (Debian convention),
           # but `systemd-analyze verify --root` only searches the merged-usr canonical
           # paths (/usr/lib/systemd/system, /etc/systemd/system): the extracted tree
           # has no /lib -> /usr/lib usr-merge symlink, so a bare unit name resolves to
-          # "not found". Mirror the unit into the canonical path so it is discoverable.
-          # --root is kept so the unit's ExecStart* paths (/usr/sbin/loxilb,
-          # /usr/sbin/mkllb-bpffs) resolve against the extracted tree, not the host.
-          mkdir -p extract/usr/lib/systemd/system
-          cp extract/lib/systemd/system/loxilb.service extract/usr/lib/systemd/system/loxilb.service
+          # "Unit loxilb.service not found". Mirror the unit into the canonical path so
+          # it is discoverable. --root is kept so the unit's ExecStart* paths
+          # (/usr/sbin/loxilb, /usr/sbin/mkllb-bpffs) resolve against the extracted
+          # package tree rather than the runner host.
+          cp extract/lib/systemd/system/loxilb.service "$ud/loxilb.service"
+          # The isolated --root tree contains only loxilb.service, so its implicit
+          # (sysinit/basic/shutdown) and explicit (network-online/multi-user) target
+          # dependencies are unresolvable and verification hard-fails. Provide stub
+          # target units so the dependency graph resolves; this keeps the check
+          # focused on loxilb.service's own syntax and ExecStart executables.
+          for t in sysinit.target basic.target shutdown.target network-online.target multi-user.target; do
+            printf '[Unit]\nDescription=stub %s\n' "$t" > "$ud/$t"
+          done
           sudo systemd-analyze verify --root="$PWD/extract" loxilb.service
 
       - name: Binary architecture check
