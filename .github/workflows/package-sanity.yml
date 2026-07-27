@@ -165,6 +165,15 @@ jobs:
       - name: systemd unit verify
         run: |
           dpkg-deb -x dist/*.deb extract
+          # The deb installs the unit under /lib/systemd/system (Debian convention),
+          # but `systemd-analyze verify --root` only searches the merged-usr canonical
+          # paths (/usr/lib/systemd/system, /etc/systemd/system): the extracted tree
+          # has no /lib -> /usr/lib usr-merge symlink, so a bare unit name resolves to
+          # "not found". Mirror the unit into the canonical path so it is discoverable.
+          # --root is kept so the unit's ExecStart* paths (/usr/sbin/loxilb,
+          # /usr/sbin/mkllb-bpffs) resolve against the extracted tree, not the host.
+          mkdir -p extract/usr/lib/systemd/system
+          cp extract/lib/systemd/system/loxilb.service extract/usr/lib/systemd/system/loxilb.service
           sudo systemd-analyze verify --root="$PWD/extract" loxilb.service
 
       - name: Binary architecture check
