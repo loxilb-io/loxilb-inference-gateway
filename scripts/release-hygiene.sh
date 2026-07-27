@@ -109,4 +109,19 @@ else
   fail "gitleaks not installed (use --skip-gitleaks to bypass locally)"
 fi
 
+# 8. Internal development tracking IDs in comments/log strings ----------------
+# US-/Phase-/D-/FR-/REQ-/FIX-/T-/Bug tags read as unprofessional in a public
+# repo. scrub-internal-ids.py is comment/string-aware, so code identifiers
+# (e.g. TestPhase4) are ignored; it scans the working tree (== HEAD in CI).
+if command -v python3 >/dev/null 2>&1; then
+  if idout=$(python3 "$(dirname "$0")/scrub-internal-ids.py" --check .); then
+    pass "no internal development IDs in comments/strings"
+  else
+    fail "internal development tracking IDs in comments/strings (fix: scripts/scrub-internal-ids.py --apply .):"
+    printf '%s\n' "$idout" | grep 'internal ID:' | head -10
+  fi
+else
+  echo "skip: internal-ID check (python3 unavailable)"
+fi
+
 exit $FAIL

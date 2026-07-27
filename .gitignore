@@ -101,3 +101,4 @@ dkms.conf
 deploy/monitoring/.env
 packaging/.staging
 dist/
+__pycache__/
