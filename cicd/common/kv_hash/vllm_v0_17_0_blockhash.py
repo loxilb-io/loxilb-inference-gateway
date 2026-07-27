@@ -3,10 +3,10 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 #
 # vllm_v0_17_0_blockhash.py — LITERAL vendored copy of vLLM v0.17.0's
-# block-hash code path (D-02a strict: "same code path of record").
+# block-hash code path ( strict: "same code path of record").
 #
 # ============================================================================
-# PROVENANCE (D-02a)
+# PROVENANCE 
 # ============================================================================
 # Upstream project : vllm-project/vllm
 # Pinned tag       : v0.17.0
@@ -35,11 +35,11 @@
 #       L61-67, L76-79)
 #   These two CBOR hash functions are imported by kv_cache_utils.py at L17
 #   (`from vllm.utils.hashing import sha256_cbor, xxhash_cbor`) and ARE the
-#   two functions the block-hash path routes through (D-02a requires both;
+# two functions the block-hash path routes through ( requires both;
 #   the kv_cache_utils.py functions alone are insufficient).
 #
 # ============================================================================
-# WHY THIS FILE EXISTS (D-02b)
+# WHY THIS FILE EXISTS 
 # ============================================================================
 # The KV-cache-aware routing gate must hash prompt blocks the SAME way the
 # real vLLM publisher does. Re-deriving the math invites drift; copying the
@@ -48,7 +48,7 @@
 # to the recorded tag. Run `--self-check` to verify the vendored code still
 # reproduces every golden uint64 for both sha256_cbor and xxhash_cbor.
 #
-# Threat T-80-01-01 mitigation: the self-assert is the drift tripwire — any
+# Threat mitigation: the self-assert is the drift tripwire — any
 # silent divergence from the recorded v0.17.0 behavior fails the gate.
 # ============================================================================
 
@@ -193,7 +193,7 @@ def hash_block_tokens(
 
 
 # ============================================================================
-# D-02b GOLDEN-VECTOR SELF-ASSERT
+# GOLDEN-VECTOR SELF-ASSERT
 # ============================================================================
 # This is NOT part of the vendored upstream code — it is the drift tripwire.
 # It loads the frozen golden vectors and asserts the vendored functions above

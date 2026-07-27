@@ -50,7 +50,7 @@ func withCleanSelfIPCache(t *testing.T, ips []string, body func()) {
 	body()
 }
 
-// TestResolveFlowMACs_SelfIPFastPath — A4 / REQ-55-05: when the
+// TestResolveFlowMACs_SelfIPFastPath — A4 / -05: when the
 // SelfIPCache reports the target IP as loxilb-owned, resolveFlowMACs must
 // return ok=true immediately with the proxy port MAC and skip the slow
 // path entirely.

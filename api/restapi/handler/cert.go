@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// cert.go — Phase 77 Plan 07 (FR-05 residual, D-77-10..13/16): the certId TLS-material
+// cert.go — Plan 07 ( residual, -10..13/16): the certId TLS-material
 // management surface. The CANONICAL store for all TLS material (frontend certs, backend
 // client certs, CA bundles, CRLs) referenced by a short opaque certId.
 //
@@ -24,7 +24,7 @@
 //	GET    /config/cert[/{certId}]  — round-trip the metadata (id + derived hostnames)
 //
 // The handler persists the inline PEM to PROXY_SSL_CERTID_DIR/<certId>/ with restrictive
-// permissions (0700 dir, 0600 key — T-77-07-KAR, the in-scope key-at-rest mitigation;
+// permissions (0700 dir, 0600 key — -KAR, the in-scope key-at-rest mitigation;
 // encryption-at-rest is DEFERRED per CONTEXT), then drives the 77-02 C registry
 // (proxy_register_cert / proxy_rotate_cert / proxy_delete_cert) which auto-derives the
 // hostnames from the leaf SAN/CN and registers them into the proven hostname-keyed

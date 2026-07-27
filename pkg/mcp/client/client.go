@@ -109,7 +109,7 @@ func New(name string, o Options) (*Client, error) {
 // Name returns the configured target name.
 func (c *Client) Name() string { return c.name }
 
-// Base returns the target's base URL (targets_list, Phase 4).
+// Base returns the target's base URL (targets_list).
 func (c *Client) Base() string { return c.base }
 
 func (c *Client) getToken() string {

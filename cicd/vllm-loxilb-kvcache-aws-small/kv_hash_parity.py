@@ -5,7 +5,7 @@ Reference implementation: vLLM v0.17.0 module-level ``hash_block_tokens`` +
 ``maybe_convert_block_hash`` (vllm/v1/core/kv_cache_utils.py:71-74,532-559;
 NONE_HASH seed via ``init_none_hash`` L91-106). v0.17.0 exposes these as
 module-level functions (no wrapper class); the literal vendored copy lives
-at cicd/common/kv_hash/vllm_v0_17_0_blockhash.py (D-02a). The uint64
+at cicd/common/kv_hash/vllm_v0_17_0_blockhash.py. The uint64
 truncation is the LOW 64 bits of the full digest interpreted big-endian (i.e.
 ``digest[-8:]`` BE), NOT ``digest[:8]`` BE — the latter is what loxilb-C
 produced pre-44-04 and caused the TK27 parity diff (see 44-04 diagnosis).
@@ -14,7 +14,7 @@ produced pre-44-04 and caused the TK27 parity diff (see 44-04 diagnosis).
     digest     = hashlib.sha256(cbor_bytes).digest()         # or XXH3_128bits(...)
     hash_u64   = int.from_bytes(digest, 'big') & ((1 << 64) - 1)
 
-This script drives the three-layer regression gate for Phase 44:
+This script drives the three-layer regression gate for:
 
     1. vLLM v0.17.0 hash_block_tokens (source of truth, published via ZMQ).
     2. loxilb C-side ``kv_compute_block_hashes`` in sockproxy_kv_exact.c.

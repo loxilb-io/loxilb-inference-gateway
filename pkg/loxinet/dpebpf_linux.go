@@ -74,7 +74,7 @@ int proxy_update_mtls_config(struct proxy_ent *key,
 // Function to clean up mTLS configuration when rule is deleted
 int proxy_cleanup_mtls_config(struct proxy_ent *key);
 
-// Phase 77 FR-05 (D-77-10..13): certId registry entry points (declared in
+// (-10..13): certId registry entry points (declared in
 // loxilb-ebpf/common/sockproxy_ssl.h). Prototyped inline here — like struct proxy_ent
 // above — to avoid pulling sockproxy.h/uthash into this preamble. These persist-free
 // management calls layer over the hostname-keyed SNI store; the CGO layer (the cert.go
@@ -86,7 +86,7 @@ int proxy_rotate_cert(const char *certId);
 int proxy_delete_cert(const char *certId);
 
 // ---------------------------------------------------------------------------
-// Phase 75 L7 content-routing policy attach/detach.
+// L7 content-routing policy attach/detach.
 //
 // A SEPARATE CGO attach call carries the variable-length ordered route array to
 // the running sockproxy — NEVER inline on proxy_arg (the 4096-byte _Static_assert
@@ -99,7 +99,7 @@ int proxy_delete_cert(const char *certId);
 // embedded regex_t is the real type and the struct size matches the C side exactly.
 //
 // IMPORTANT: the Go side leaves every cond->re_valid == 0 and never compiles a
-// pattern — regcomp is the C attach's job (the single compile site, ReDoS T-75-07).
+// pattern — regcomp is the C attach's job (the single compile site, ReDoS).
 #include <regex.h>
 
 #define L7_MAX_CONDS_PER_SET   8
@@ -108,7 +108,7 @@ int proxy_delete_cert(const char *certId);
 #define L7_VALUE_MAX           256
 #define FILTER_RESERVED_BYTES  64
 #define L7_MAX_PROXY_EP        32   // == MAX_PROXY_EP (sockproxy.h)
-// FR-08/FR-10 — keep these byte-for-byte in lock-step with
+// / — keep these byte-for-byte in lock-step with
 // sockproxy_l7policy.h (the l7_route_t below grew by the insertHeaders filter
 // list + cookie_persist marker; the deep-copy ABI depends on identical layout).
 #define L7_HDR_NAME_MAX        64
@@ -172,9 +172,9 @@ typedef struct {
   l7_match_set_t  sets[L7_MAX_SETS_PER_ROUTE];
   uint8_t         n_sets;
   l7_action_t     action;
-  l7_hdr_filter_t hdr_filters[L7_MAX_HDR_FILTERS];  // FR-08
+ l7_hdr_filter_t hdr_filters[L7_MAX_HDR_FILTERS]; // 
   uint8_t         n_hdr_filters;
-  uint8_t         cookie_persist;                   // FR-10
+ uint8_t cookie_persist; // 
 } l7_route_t;
 
 // Attach the ordered route array (regcomp's each REGEX once, sets has_l7_policy);
@@ -1726,7 +1726,7 @@ func DpLBRuleMod(w *LBDpWorkQ) int {
 		C.strncpy(&dat.backend_client_cert_id[0], cID, 63)
 	}
 
-	// P/D disaggregation configuration (US-502)
+	// P/D disaggregation configuration 
 	if w.PDDisaggMode {
 		dat.pd_disagg_mode = 1
 		dat.ai_gw_mode = 1

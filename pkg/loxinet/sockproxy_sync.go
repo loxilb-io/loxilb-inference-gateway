@@ -7,7 +7,7 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Phase 70 — Sockproxy HA State Sync. SPEC.md req: A1-A7, D1.
+ * — Sockproxy HA State Sync. SPEC.md req: A1-A7, D1.
  *
  * Coordinator: drains the CGO event ring, batches outbound RPCs per peer,
  * subscribes to BFD state transitions, performs A-A conflict resolution

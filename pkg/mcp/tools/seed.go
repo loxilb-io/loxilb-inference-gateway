@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// Package tools implements the loxilb-mcp tool set. Phase 0 ships the five
+// Package tools implements the loxilb-mcp tool set. ships the five
 // seed tools (docs/MCP-DESIGN.md §4): version_get, health_overview, lb_list,
 // ct_list, metrics_snapshot. Later phases add the full domain files.
 package tools
@@ -63,7 +63,7 @@ type Deps struct {
 	// confirm-token step (§3.7 closed-loop hooks). nil = no autopilot tools.
 	Autopilot func(tool string) bool
 	// ResolveAll returns every configured target client, sorted by name
-	// (multi-target fan-out, Phase 4).
+	// (multi-target fan-out).
 	ResolveAll func() []*client.Client
 }
 

@@ -13,7 +13,7 @@ package loxinet
 #include <stdint.h>
 #include <stdbool.h>
 
-// L4 Tracing Runtime Control (Placeholder for Phase 1)
+// L4 Tracing Runtime Control (Placeholder for)
 // These will be implemented in loxilb-ebpf/liblxb/lxb_l4_trace.c
 
 // Enable/Disable L4 tracing at runtime

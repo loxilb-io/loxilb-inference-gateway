@@ -170,7 +170,7 @@ func TestRateLimiter(t *testing.T) {
 }
 
 // Role-scoped servers: a viewer server must not expose mutating tools once
-// later phases add them; for Phase 0 assert build succeeds per role and the
+// later phases add them; for assert build succeeds per role and the
 // read-only policy path works end-to-end via config.
 func TestBuildServerPerRole(t *testing.T) {
 	cfg := testConfig("http://127.0.0.1:11111")

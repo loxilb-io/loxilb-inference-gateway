@@ -25,7 +25,7 @@ type XSyncClient interface {
 	DpWorkOnCtGetGRPC(ctx context.Context, in *ConnGet, opts ...grpc.CallOption) (*XSyncReply, error)
 	DpWorkOnCtModGRPC(ctx context.Context, in *CtInfoMod, opts ...grpc.CallOption) (*XSyncReply, error)
 	DpWorkOnBlockCtModGRPC(ctx context.Context, in *BlockCtInfoMod, opts ...grpc.CallOption) (*XSyncReply, error)
-	// Phase 70 — sockproxy HA state sync (SPEC §Req 1, A2).
+	// sockproxy HA state sync (SPEC §Req 1, A2).
 	SockproxySessionMod(ctx context.Context, in *SockproxySessionModReq, opts ...grpc.CallOption) (*XSyncReply, error)
 	SockproxySessionBulkGet(ctx context.Context, in *SockproxyBulkReq, opts ...grpc.CallOption) (*SockproxySessionBulkReply, error)
 	RateLimiterSync(ctx context.Context, in *RateLimiterBatch, opts ...grpc.CallOption) (*XSyncReply, error)
@@ -110,7 +110,7 @@ type XSyncServer interface {
 	DpWorkOnCtGetGRPC(context.Context, *ConnGet) (*XSyncReply, error)
 	DpWorkOnCtModGRPC(context.Context, *CtInfoMod) (*XSyncReply, error)
 	DpWorkOnBlockCtModGRPC(context.Context, *BlockCtInfoMod) (*XSyncReply, error)
-	// Phase 70 — sockproxy HA state sync (SPEC §Req 1, A2).
+	// sockproxy HA state sync (SPEC §Req 1, A2).
 	SockproxySessionMod(context.Context, *SockproxySessionModReq) (*XSyncReply, error)
 	SockproxySessionBulkGet(context.Context, *SockproxyBulkReq) (*SockproxySessionBulkReply, error)
 	RateLimiterSync(context.Context, *RateLimiterBatch) (*XSyncReply, error)

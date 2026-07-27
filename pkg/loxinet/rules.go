@@ -504,7 +504,7 @@ type ruleLBEp struct {
 	xPort         uint16
 	weight        uint8
 	epRole        int    // P/D endpoint role: 0=normal, 1=prefill, 2=decode
-	nixlPort      uint16 // NIXL side-channel port (US-514); 0=use xPort
+	nixlPort      uint16 // NIXL side-channel port; 0=use xPort
 	inActTries    int
 	inActiveEP    bool
 	noService     bool
@@ -592,9 +592,9 @@ type ruleEnt struct {
 	tracingCatalogID            uint16                  // Resolved catalog_id for tracing (0 = no tracing)
 	backendProtocol             string                  // Backend protocol capability: "http1", "http2", or "both"
 	sessionHeaderName           string                  // Custom session header for persist mode (e.g., "mcp-session-id")
-	sseMode                     bool                    // SSE mode: suppress idle-timeout during streaming (US-401)
-	maxStreamDurationSec        uint32                  // Absolute wall-clock cap for SSE streams in seconds (US-401)
-	backendKeepaliveIntervalSec uint32                  // Backend SO_KEEPALIVE+TCP_KEEPIDLE interval in seconds (US-401)
+	sseMode                     bool                    // SSE mode: suppress idle-timeout during streaming 
+	maxStreamDurationSec        uint32                  // Absolute wall-clock cap for SSE streams in seconds 
+	backendKeepaliveIntervalSec uint32                  // Backend SO_KEEPALIVE+TCP_KEEPIDLE interval in seconds 
 	timeoutMemberConnectMs      uint32                  // backend connect-poll deadline in ms (0=500ms default)
 	timeoutMemberDataMs         uint32                  // member-side relay idle deadline in ms (0=existing idle)
 	timeoutTcpInspectMs         uint32                  // header-accumulation deadline in ms (0=bounded default)
@@ -606,7 +606,7 @@ type ruleEnt struct {
 	hstsPreload                 bool                    // "; preload"
 	backendCaCertId             string                  // backend CA certId (empty=system default)
 	backendClientCertId         string                  // backend client certId (empty=none)
-	pdDisaggMode                bool                    // P/D disaggregation mode: orchestrate prefill→decode flow (US-502)
+	pdDisaggMode                bool                    // P/D disaggregation mode: orchestrate prefill→decode flow 
 	pdCacheAwareMode            bool                    // P/D cache-aware routing: session + trie + min-load (US-PD801)
 	pdSessionTTLSec             uint32                  // Session stickiness TTL in seconds (0 = no expiry)
 	pdCacheThreshold            uint8                   // Cache match threshold (0-100, default 20)
@@ -1170,7 +1170,7 @@ func (R *RuleH) GetLBRule() ([]cmn.LbRuleMod, error) {
 		ret.Serv.TraceType = data.traceType                 // Tracing catalog
 		ret.Serv.BackendProtocol = data.backendProtocol     // Backend protocol capability
 		ret.Serv.SessionHeaderName = data.sessionHeaderName // Custom session header for persist mode
-		ret.Serv.SSEMode = data.sseMode                     // SSE streaming mode (US-401)
+		ret.Serv.SSEMode = data.sseMode                     // SSE streaming mode 
 		ret.Serv.MaxStreamDurationSec = data.maxStreamDurationSec
 		ret.Serv.BackendKeepaliveIntervalSec = data.backendKeepaliveIntervalSec
 		ret.Serv.TimeoutMemberConnect = data.timeoutMemberConnectMs // Octavia
@@ -1185,7 +1185,7 @@ func (R *RuleH) GetLBRule() ([]cmn.LbRuleMod, error) {
 		ret.Serv.HstsPreload = data.hstsPreload
 		ret.Serv.BackendCaCertId = data.backendCaCertId
 		ret.Serv.BackendClientCertId = data.backendClientCertId
-		ret.Serv.PDDisaggMode = data.pdDisaggMode         // P/D disaggregation mode (US-502)
+		ret.Serv.PDDisaggMode = data.pdDisaggMode         // P/D disaggregation mode 
 		ret.Serv.PDCacheAwareMode = data.pdCacheAwareMode // P/D cache-aware routing (US-PD801)
 		ret.Serv.PDSessionTTLSec = data.pdSessionTTLSec
 		ret.Serv.PDCacheThreshold = data.pdCacheThreshold
@@ -2868,7 +2868,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		}
 	}
 
-	// P/D disaggregation validation (US-502)
+	// P/D disaggregation validation 
 	if serv.PDDisaggMode {
 		if lBActs.mode != cmn.LBModeFullProxy {
 			return RuleUnknownServiceErr, errors.New("pd-disagg requires mode=fullproxy")
@@ -3359,7 +3359,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	// Store custom session header name for persist mode
 	r.sessionHeaderName = serv.SessionHeaderName
 
-	// Store SSE streaming configuration (US-401)
+	// Store SSE streaming configuration 
 	r.sseMode = serv.SSEMode
 	r.maxStreamDurationSec = serv.MaxStreamDurationSec
 	r.backendKeepaliveIntervalSec = serv.BackendKeepaliveIntervalSec
@@ -3379,7 +3379,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	r.backendCaCertId = serv.BackendCaCertId
 	r.backendClientCertId = serv.BackendClientCertId
 
-	// Store P/D disaggregation configuration (US-502)
+	// Store P/D disaggregation configuration 
 	r.pdDisaggMode = serv.PDDisaggMode
 
 	// Store P/D cache-aware routing configuration (US-PD801)
@@ -5076,7 +5076,7 @@ func (r *ruleEnt) LB2DP(work DpWorkT) int {
 	nWork.ModelName = r.tuples.modelName                              // AI model name for pool selection
 	nWork.BackendProtocol = r.backendProtocol                         // Backend protocol capability
 	nWork.SessionHeaderName = r.sessionHeaderName                     // Custom session header name for persist mode
-	nWork.SSEMode = r.sseMode                                         // SSE streaming mode (US-401)
+	nWork.SSEMode = r.sseMode                                         // SSE streaming mode 
 	nWork.MaxStreamDurationSec = r.maxStreamDurationSec               // SSE max stream duration cap
 	nWork.BackendKeepaliveIntervalSec = r.backendKeepaliveIntervalSec // SSE backend keepalive
 	nWork.TimeoutMemberConnect = r.timeoutMemberConnectMs             // connect ms
@@ -5091,7 +5091,7 @@ func (r *ruleEnt) LB2DP(work DpWorkT) int {
 	nWork.HstsPreload = r.hstsPreload
 	nWork.BackendCaCertId = r.backendCaCertId
 	nWork.BackendClientCertId = r.backendClientCertId
-	nWork.PDDisaggMode = r.pdDisaggMode         // P/D disaggregation mode (US-502)
+	nWork.PDDisaggMode = r.pdDisaggMode         // P/D disaggregation mode 
 	nWork.PDCacheAwareMode = r.pdCacheAwareMode // P/D cache-aware routing (US-PD801)
 	nWork.PDSessionTTLSec = r.pdSessionTTLSec
 	nWork.PDCacheThreshold = r.pdCacheThreshold

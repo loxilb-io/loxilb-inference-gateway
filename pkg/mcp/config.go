@@ -58,7 +58,7 @@ type Config struct {
 	Clients       []ClientToken     `yaml:"clients"`
 	AuditDir      string            `yaml:"audit_dir"`
 
-	// Optional observability backends (Phase 1).
+	// Optional observability backends.
 	PrometheusURL   string `yaml:"prometheus_url"`
 	AlertmanagerURL string `yaml:"alertmanager_url"`
 	// AlertRulesPath points at a Prometheus alerting-rules YAML

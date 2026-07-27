@@ -18,7 +18,7 @@
 // core (96-05 extraction, CTRL-02 substrate).
 //
 // The poll loop, in-flight dedup, LastUpdate stamping, and the narrow
-// 3-series lineparser (incl. the T-81-02-02 num_gpu_blocks label tolerance)
+// 3-series lineparser (incl. the num_gpu_blocks label tolerance)
 // moved verbatim to pkg/aimetrics so the CGO_ENABLED=0 global AI controller
 // can reuse them. What stays here is exactly the loxilb-side Sink: the two
 // cgo bridge calls (queue depth + advertised KV capacity) and the Go-side

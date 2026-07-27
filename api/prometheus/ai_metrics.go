@@ -149,7 +149,7 @@ var (
 	)
 
 	// ============================================================================
-	// P/D DISAGGREGATION METRICS (US-509)
+	// P/D DISAGGREGATION METRICS 
 	// ============================================================================
 
 	// aiPDPrefillDuration tracks prefill phase latency as a histogram.

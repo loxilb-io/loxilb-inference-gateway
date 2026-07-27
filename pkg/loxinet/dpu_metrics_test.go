@@ -174,7 +174,7 @@ func TestDocaOffloadDeferredRetryTotal_AllChildrenPreInstantiated(t *testing.T) 
 // TestDocaOffloadInstallErrorsTotal_42SeriesPreInstantiated — A2.
 // Asserts: after init, the doca_offload_install_errors_total CounterVec
 // has all 7 pipe × 6 reason = 42 children pre-instantiated at value 0.
-// This is the install-time visibility gate for REQ-55-06: rate(...)[5m]
+// This is the install-time visibility gate for -06: rate(...)[5m]
 // must produce a flat-line baseline from first scrape, never "no data",
 // for ALL 42 (pipe, reason) tuples.
 func TestDocaOffloadInstallErrorsTotal_42SeriesPreInstantiated(t *testing.T) {

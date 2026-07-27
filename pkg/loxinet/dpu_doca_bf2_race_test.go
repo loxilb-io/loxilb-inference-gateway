@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-// CR-01 race test (REQ-55-01).
+// CR-01 race test (-01).
 //
 // Pre-fix: this test triggers Go runtime
 //

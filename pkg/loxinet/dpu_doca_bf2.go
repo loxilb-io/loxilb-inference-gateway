@@ -290,7 +290,7 @@ type DpDocaBf2 struct {
 	// Lock-acquisition order (NEVER violate — deadlock prevention):
 	//   ctMtx → fdbMtx → userCtxMu → statsRWMu (writer paths)
 	//
-	// CR-01 read-path rule (REQ-55-01 — API p99 < 100ms under monitoring):
+	// CR-01 read-path rule (-01 — API p99 < 100ms under monitoring):
 	//   Stats functions (FlowStats, AllFlowStats, AllFdbStats, AllRouteStats,
 	//   AllAclStats, ActiveMeters) MUST take statsRWMu.RLock as the OUTER guard
 	//   (so Shutdown's statsRWMu.Lock still drains in-flight scrapes), then
@@ -302,7 +302,7 @@ type DpDocaBf2 struct {
 	//   serialize against ctMtx/fdbMtx writers, which causes Go runtime
 	//   `fatal error: concurrent map iteration and map write` panics.
 	//
-	// pairMu is INDEPENDENT (D-W-03 invariant — REQ-55-INV-02).
+	// pairMu is INDEPENDENT (D-W-03 invariant — -INV-02).
 	//
 	// NEVER hold any of these across DOCA submit / DocaEntryAddBasic /
 	// DocaEntryRemove — lesson; see anti-pattern doc at line 1193.
@@ -968,7 +968,7 @@ var neighListFn = func() ([]netlink.Neigh, error) {
 // In BF2 switchdev, ARP entries contain VF MACs (inside namespaces) which differ from DPDK representor MACs.
 // We use the ARP entry's LinkIndex (which interface the neighbor is reachable through) to determine the DPDK port.
 //
-// A4 (REQ-55-05): if SelfIPCache.Has(ip) reports the IP as
+// A4 (-05): if SelfIPCache.Has(ip) reports the IP as
 // loxilb-owned, return d.reversePortMap[0] (proxy port DPDK port_id 0 MAC)
 // for both src and dst MAC and SUPPRESS the "failed - no ifindex match"
 // log line. This eliminates the spam triggered by `iperf3 -P 10` against a
@@ -2532,7 +2532,7 @@ func (d *DpDocaBf2) handleAgedFdbEntry(macKey string, userCtx uint64) {
 
 // FlowStats queries DOCA hardware counters for a specific offloaded flow.
 //
-// CR-01 (REQ-55-01): statsRWMu.RLock is the outer drain guard;
+// CR-01 (-01): statsRWMu.RLock is the outer drain guard;
 // ctMtx is taken briefly to snapshot the entry handle, then released BEFORE
 // DocaEntryQuery so concurrent scrapes do not serialize on the DOCA query.
 // Holding only statsRWMu.RLock here would race against LBFlowOffload writers
@@ -2579,7 +2579,7 @@ func (d *DpDocaBf2) FlowStats(ct *DpCtInfo) (uint64, uint64, error) {
 // doca_pipe_hw_pkts_total{pipe="ct",direction="reply"} which uses
 // NON_SHARED counter monitor on each per-direction pipe.
 func (d *DpDocaBf2) AllFlowStats() []FlowHwStats {
-	// CR-01 (REQ-55-01): outer statsRWMu.RLock preserves Shutdown drain;
+	// CR-01 (-01): outer statsRWMu.RLock preserves Shutdown drain;
 	// ctMtx is the writer mutex for d.entries — held briefly to snapshot, then
 	// released BEFORE DocaEntryQuery (PATTERNS.md S3 anti-deadlock rule: never
 	// hold a domain mutex across DOCA submit calls). Holding only statsRWMu
@@ -2638,7 +2638,7 @@ func (d *DpDocaBf2) AllFlowStats() []FlowHwStats {
 // Each row carries MAC (stripped of "fdb:" prefix) and the DPDK forward-port ID
 // captured at FdbFlowOffload time.
 func (d *DpDocaBf2) AllFdbStats() []FdbHwStats {
-	// CR-01 (REQ-55-01): outer statsRWMu.RLock for Shutdown drain;
+	// CR-01 (-01): outer statsRWMu.RLock for Shutdown drain;
 	// fdbMtx is the writer mutex for d.fdbEntries — held briefly for snapshot,
 	// released BEFORE DocaEntryQuery.
 	d.statsRWMu.RLock()
@@ -2697,7 +2697,7 @@ func (d *DpDocaBf2) AllFdbStats() []FdbHwStats {
 // docaOffloadEntry today; populate with empty/zero values and let
 // (Prometheus wiring) extend the storage if fuller labeling is needed.
 func (d *DpDocaBf2) AllRouteStats() []RouteHwStats {
-	// CR-01 (REQ-55-01): outer statsRWMu.RLock for Shutdown drain;
+	// CR-01 (-01): outer statsRWMu.RLock for Shutdown drain;
 	// ctMtx is the writer mutex for d.entries — held briefly for snapshot,
 	// released BEFORE DocaEntryQuery.
 	d.statsRWMu.RLock()
@@ -2742,7 +2742,7 @@ func (d *DpDocaBf2) AllRouteStats() []RouteHwStats {
 // is the source of truth. Action label is "DROP" for DENY entries and
 // "ALLOW" for ALLOW entries.
 func (d *DpDocaBf2) AllAclStats() []AclHwStats {
-	// CR-01 (REQ-55-01): outer statsRWMu.RLock for Shutdown drain;
+	// CR-01 (-01): outer statsRWMu.RLock for Shutdown drain;
 	// fdbMtx is the writer mutex for d.aclDenyEntries / d.aclAllowEntries —
 	// held briefly for snapshot, released BEFORE DocaEntryQuery.
 	d.statsRWMu.RLock()
@@ -2924,7 +2924,7 @@ func (d *DpDocaBf2) QueryMeterStats(meterID uint32) (DocaMeterStats, error) {
 // ActiveMeters returns a snapshot of active meter IDs and names for stats collection.
 // Called from PolTicker (via DpuManager) without holding d.ctMtx -- takes its own lock.
 //
-// CR-01 (REQ-55-01): outer statsRWMu.RLock for Shutdown drain; ctMtx
+// CR-01 (-01): outer statsRWMu.RLock for Shutdown drain; ctMtx
 // is the writer mutex for d.meterMap (MeterAdd/MeterDel) — held briefly for
 // snapshot, released BEFORE returning. Result is a pure-Go map copy so no
 // DOCA call is needed outside the lock; the snapshot still happens under

@@ -647,7 +647,7 @@ func loxiNetInit() {
 		mh.bgp = GoBgpInit(opts.Opts.BgpPeerMode)
 	}
 
-	// CR-02 + REQ-55-05 (NLP-vs-Init startup race): bulk-load
+	// CR-02 + -05 (NLP-vs-Init startup race): bulk-load
 	// loxilb-owned IPs into the SelfIPCache BEFORE the REST API and NLP
 	// subscriber come online. Otherwise, an NLP NetAddrDel arriving in the
 	// window between NlpInit and Init would call Del on an empty cache

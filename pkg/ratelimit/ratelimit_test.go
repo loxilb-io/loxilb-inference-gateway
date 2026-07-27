@@ -171,7 +171,7 @@ func TestUpdateTenant(t *testing.T) {
 }
 
 // ============================================================================
-// AllowTokens unit tests (US-402)
+// AllowTokens unit tests 
 // ============================================================================
 
 // TestAllowTokensRefillRate verifies that tokens consumed in one window do not

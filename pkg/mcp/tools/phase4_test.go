@@ -18,7 +18,7 @@ package tools
 
 import "testing"
 
-// Phase 4: finishDiagnose stamps suggested actions with the bridge's
+// finishDiagnose stamps suggested actions with the bridge's
 // autopilot status so agents know which follow-ups skip the confirm token.
 func TestFinishDiagnoseAutopilotMark(t *testing.T) {
 	d := &Deps{Autopilot: func(n string) bool { return n == "endpoint_host_state_set" }}

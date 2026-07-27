@@ -164,7 +164,7 @@ func TestSelfIPCache_ConcurrentReadWrite(t *testing.T) {
 }
 
 // TestSelfIPCache_InitBulkLoad — Init must populate the cache from the
-// addrListFn injection point. Covers REQ-55-05 boot-time bulk-load.
+// addrListFn injection point. Covers -05 boot-time bulk-load.
 func TestSelfIPCache_InitBulkLoad(t *testing.T) {
 	c := newSelfIPCacheForTest()
 

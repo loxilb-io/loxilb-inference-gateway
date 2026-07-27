@@ -514,7 +514,7 @@ func TestFw2DP_HwOffload_PassThroughContract(t *testing.T) {
 	})
 }
 
-// TestFwRuleAdd_HwOffloadFalse_NoEbpfInstall_Negative — REQ-64-VAL-S3-F.
+// TestFwRuleAdd_HwOffloadFalse_NoEbpfInstall_Negative — -VAL-S3-F.
 //
 // The validateHwOffloadExpressible gate is called from AddFwRule when (and
 // ONLY when) FwRuleArg.HwOffload == true (per placement). A

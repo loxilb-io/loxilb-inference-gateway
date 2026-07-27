@@ -1062,7 +1062,7 @@ type LbEndPointArg struct {
 	Weight uint8 `json:"weight"`
 	// EpRole - P/D endpoint role: 0=normal (default), 1=prefill, 2=decode
 	EpRole int `json:"ep_role,omitempty"`
-	// NixlPort - NIXL side-channel port for KV cache transfer (US-514); 0=use targetPort
+	// NixlPort - NIXL side-channel port for KV cache transfer; 0=use targetPort
 	NixlPort uint16 `json:"nixl_port,omitempty"`
 	// Backup - Octavia standby member flag. A backup endpoint carries
 	// traffic ONLY when all primary endpoints are effectively unavailable, and auto-

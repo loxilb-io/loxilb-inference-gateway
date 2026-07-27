@@ -17,7 +17,7 @@
  */
 
 /*
- * dpu_doca_bf2_metrics.go -- Phase 65 Wave 2 (Plan 65-02) Go CGO scaffold
+ * dpu_doca_bf2_metrics.go -- Wave 2 (Plan 65-02) Go CGO scaffold
  * extended by Wave 3 (Plan 65-03) with Prometheus metrics, chunked walker,
  * ReconcileCtStats, and OffloadState enum.
  *
@@ -34,24 +34,24 @@
  *     simplified-math implementation, OffloadState enum, and the production
  *     noteDocaCollectorPanic helper. (The chunked-walker pipe surface was
  *     later removed in the metrics audit, D3 — it never ran in production.)
- *   - InvokeRegisteredDocaCollectors() is wired into the existing Phase 49
+ * - InvokeRegisteredDocaCollectors is wired into the existing 
  *     per-tick path at pkg/loxinet/dpu_metrics.go.
  *
- * D-05 amendment iter 2 (callback registry, NO goroutine spawn):
+ * amendment iter 2 (callback registry, NO goroutine spawn):
  *   - This file MUST NOT spawn a periodic-collection goroutine
- *     (the Phase 49 anti-pattern wrapper is intentionally absent).
+ * (the anti-pattern wrapper is intentionally absent).
  *   - This file MUST NOT create a polling ticker on the DOCA hot path.
  *   - This file MUST NOT bare-spawn a collection goroutine.
  *   - The chunked walker (Plan 65-03) runs in the existing DOCA worker
- *     thread context via d.bridge.submit; the Phase 49 per-tick context
+ * thread context via d.bridge.submit; the per-tick context
  *     drives the cadence.
  *
- * D-10 correction guard:
+ * correction guard:
  *   - This file MUST NOT consult the per-flow offload-active atomic
  *     (the field at pkg/loxinet/dpu_doca_bf2.go:317 continues to drive
  *     the existing docaOffloadActiveFlows gauge through the existing
  *     Add(+/-1) sites at dpu_doca_bf2.go:826,832,1220,1495,1574;
- *     Phase 65 reconciliation ignores it and computes
+ * reconciliation ignores it and computes
  *     total = ebpf + doca directly).
  */
 

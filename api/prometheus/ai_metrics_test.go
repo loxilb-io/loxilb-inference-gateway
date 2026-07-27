@@ -131,7 +131,7 @@ func TestRecordModelNotAllowed(t *testing.T) {
 }
 
 // ============================================================================
-// P/D DISAGGREGATION METRICS TESTS (US-509/US-510)
+// P/D DISAGGREGATION METRICS TESTS (/)
 // ============================================================================
 
 // getHistogramSampleCount reads the sample count from a HistogramVec for the

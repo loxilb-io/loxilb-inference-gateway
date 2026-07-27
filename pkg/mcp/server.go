@@ -148,7 +148,7 @@ func (b *Bridge) targetNames() []string {
 	return names
 }
 
-// resolveAll returns every target client sorted by name (fan-out, Phase 4).
+// resolveAll returns every target client sorted by name (fan-out).
 func (b *Bridge) resolveAll() []*client.Client {
 	names := b.targetNames()
 	out := make([]*client.Client, 0, len(names))

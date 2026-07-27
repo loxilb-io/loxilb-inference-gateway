@@ -338,7 +338,7 @@ type NatEP struct {
 	Weight   uint8
 	InActive bool
 	EpRole   int    // P/D endpoint role: 0=normal, 1=prefill, 2=decode
-	NixlPort uint16 // NIXL side-channel port (US-514); 0=use XPort
+	NixlPort uint16 // NIXL side-channel port; 0=use XPort
 }
 
 // SecT - type of SecT

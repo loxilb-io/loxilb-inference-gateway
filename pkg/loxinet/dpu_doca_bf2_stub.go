@@ -178,7 +178,7 @@ func (d *DpDocaBf2) DocaRebuildRootPipe() error { return ErrNotSupported }
 // in dpu_doca_bf2_helpers.go (invariants).
 //
 // A4: the SelfIPCache.Has fast path is mirrored here so unit tests
-// under !doca can validate the suppression contract (REQ-55-05). When
+// under !doca can validate the suppression contract (-05). When
 // SelfIPCache.Has reports ip as loxilb-owned the function returns
 // stubProxyPortMAC for both src and dst MAC and reports ok=true without
 // emitting any log line. d.reversePortMap is zero-length under !doca so we

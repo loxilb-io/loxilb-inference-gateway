@@ -155,7 +155,7 @@ func validateAPIKeyInternal(svc apiKeyValidator, rawKey, modelName string) (deci
 		}
 		if !allowed {
 			tk.LogIt(tk.LogWarning, "[AIGateway] llb_ai_validate_key: model %q not allowed for key %s\n", modelName, entry.KeyID)
-			// US-207: return tenantID on deny_403 so the caller can record
+			// return tenantID on deny_403 so the caller can record
 			// the metric with the correct tenant label.
 			return 2, entry.TenantID, "", "", "model_not_allowed"
 		}
@@ -226,7 +226,7 @@ func llb_ai_validate_key(rawKey *C.char, modelName *C.char, result *C.ai_gw_deci
 	}
 
 	cCopyStr((*C.char)(unsafe.Pointer(&result.error_code[0])), errorCode, 64)
-	// US-207: record 403 metric directly at the point of denial.
+	// record 403 metric directly at the point of denial.
 	if decision == 2 {
 		prom.RecordModelNotAllowed(tenantID, modelNameStr)
 	}
@@ -297,7 +297,7 @@ func llb_ai_ratelimit_check(keyID *C.char, tenantID *C.char, result *C.ai_gw_dec
 		result.decision = C.int(decision)
 		result.retry_after = C.int(retrySecs)
 		cCopyStr((*C.char)(unsafe.Pointer(&result.error_code[0])), errorCode, 64)
-		// US-207: record the 429 metric directly at the point of denial.
+		// record the 429 metric directly at the point of denial.
 		// RecordAIRequest is NOT called here — it is for response-complete events.
 		prom.RecordRateLimitHit(tenantIDStr, errorCode)
 		tk.LogIt(tk.LogWarning, "[AIGateway] llb_ai_ratelimit_check: denied key=%s tenant=%s error=%s\n", keyIDStr, tenantIDStr, errorCode)

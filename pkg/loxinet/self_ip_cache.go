@@ -19,7 +19,7 @@
 // Why: resolveFlowMACs (dpu_doca_bf2.go) was probing netlink.NeighList for
 // loxilb's OWN VIP-style IPs (e.g., 31.31.31.254), failing to find a neighbor
 // entry, logging a warn line, and falling through to slow-path. The fix is a
-// leading O(1) cache check before the neighbor probe — REQ-55-05.
+// leading O(1) cache check before the neighbor probe — -05.
 //
 // Cache freshness:
 // - Init bulk-loads via netlink.AddrList at startup (covers IPs added

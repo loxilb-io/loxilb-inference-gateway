@@ -141,7 +141,7 @@ func shutdownDoca(ctx context.Context) error {
 }
 
 // shutdownEbpf detaches eBPF programs and unmaps `/sys/fs/bpf` entries.
-// REQ-55-02 invariant: this MUST run on every shutdown path including
+// 02 invariant: this MUST run on every shutdown path including
 // the second-SIGINT hard-exit, otherwise stale TC progs / pinned maps
 // corrupt the next loxilb start.
 //

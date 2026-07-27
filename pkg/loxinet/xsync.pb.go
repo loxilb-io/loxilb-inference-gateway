@@ -697,7 +697,7 @@ func (x *SockproxySessionBulkReply) GetNextCursor() string {
 }
 
 // RateLimiterEntry — one token-bucket / quota-window record.
-// Phase 70-B owns the real semantics; declared here so the proto is stable
+// B owns the real semantics; declared here so the proto is stable
 // for both A (handlers stubbed) and B (handlers implemented).
 type RateLimiterEntry struct {
 	state         protoimpl.MessageState
@@ -710,7 +710,7 @@ type RateLimiterEntry struct {
 	CurrentTokens  float64 `protobuf:"fixed64,4,opt,name=current_tokens,json=currentTokens,proto3" json:"current_tokens,omitempty"` // unused; reserved -- DO NOT repurpose
 	EpochStartTs   int64   `protobuf:"varint,5,opt,name=epoch_start_ts,json=epochStartTs,proto3" json:"epoch_start_ts,omitempty"`
 	TokensConsumed int64   `protobuf:"varint,6,opt,name=tokens_consumed,json=tokensConsumed,proto3" json:"tokens_consumed,omitempty"`
-	Exceeded       bool    `protobuf:"varint,7,opt,name=exceeded,proto3" json:"exceeded,omitempty"` // CR-06: replaces sign-bit hack on tokens_consumed (D-07).
+	Exceeded       bool    `protobuf:"varint,7,opt,name=exceeded,proto3" json:"exceeded,omitempty"` // CR-06: replaces sign-bit hack on tokens_consumed.
 }
 
 func (x *RateLimiterEntry) Reset() {
@@ -852,7 +852,7 @@ func (x *RateLimiterBatch) GetEntries() []*RateLimiterEntry {
 
 // VllmWorkerMetrics — Phase C placeholder (queue depth, GPU cache %).
 // Field reserved by 70-A proto so the wire shape is committed to git; the
-// scraper exporter that populates it lands in 70-C (gated by D-06).
+// scraper exporter that populates it lands in 70-C (gated by).
 type VllmWorkerMetrics struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache

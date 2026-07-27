@@ -12,17 +12,17 @@
 //   GET/POST  /          -> 200; body reflects EVERY received request header as "Name: value" lines,
 //                           PLUS a leading "X-Echo-Backend: <ECHO_NAME or hostname>" line.
 //   any (Cookie: ...)    -> the received Cookie header is reflected verbatim in the body AND echoed
-//                           back as the X-Echoed-Cookie response header (FR-10 read-back observation).
+// back as the X-Echoed-Cookie response header ( read-back observation).
 //   HEAD/GET  /healthz   -> status controlled by HEALTHZ_CODE env (default 200; set 404 to drive the
-//                           FR-30 down-marking assert on the l3epHM backend).
+// down-marking assert on the l3epHM backend).
 //
 // Env knobs (identical names/semantics to the old server.py):
 //   ECHO_NAME    — backend identity emitted as `X-Echo-Backend` (defaults to the container hostname).
 //   HEALTHZ_CODE — status code returned for /healthz (default "200"; set "404" for the HM-down backend).
-//   SLOW_MS      — if >0, sleep this many ms before responding (FR-07 slow/blackhole backend).
+// SLOW_MS — if >0, sleep this many ms before responding ( slow/blackhole backend).
 //   LISTEN_PORT  — bind port (default 80).
 //
-// SECURITY NOTE (T-76-02-02): reflecting attacker-controlled headers into a response body is a test
+// SECURITY NOTE: reflecting attacker-controlled headers into a response body is a test
 // fixture convenience ONLY. This image is NEVER deployed to production — it exists solely as the
 // observation point inside the CICD netns. Do not reuse it as a real service.
 
@@ -100,7 +100,7 @@ func main() {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		maybeSlow()
 
-		// Echo received Cookie back as a response header (FR-10), mirroring the python X-Echoed-Cookie.
+		// Echo received Cookie back as a response header, mirroring the python X-Echoed-Cookie.
 		if c := r.Header.Get("Cookie"); c != "" {
 			w.Header().Set("X-Echoed-Cookie", c)
 		}

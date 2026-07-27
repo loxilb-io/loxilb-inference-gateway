@@ -37,7 +37,7 @@ typedef struct {
 static lxb_trace_stats_t lxb_trace_get_stats(void) {
     lxb_trace_stats_t stats;
     memset(&stats, 0, sizeof(stats));
-    // Phase 3 consumer will provide real statistics via GetStats()
+ // consumer will provide real statistics via GetStats
     return stats;
 }
 */

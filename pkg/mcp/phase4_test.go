@@ -28,7 +28,7 @@ import (
 	"github.com/loxilb-io/loxilb/pkg/mcp/guard"
 )
 
-// Phase 4: autopilot exact-name matching is deliberate — no globs on a
+// autopilot exact-name matching is deliberate — no globs on a
 // confirm-bypass surface.
 func TestAutopilotAllowedExactOnly(t *testing.T) {
 	var nilPol *guard.Policy
@@ -51,7 +51,7 @@ func TestAutopilotAllowedExactOnly(t *testing.T) {
 	}
 }
 
-// Phase 4: a destructive tool on the autopilot list executes without the
+// a destructive tool on the autopilot list executes without the
 // preview→confirm step, the bypass is audited, and non-listed destructive
 // tools still stop at the preview.
 func TestPhase4AutopilotBypass(t *testing.T) {
@@ -113,7 +113,7 @@ func TestPhase4AutopilotBypass(t *testing.T) {
 	}
 }
 
-// Phase 4: fan-out tools — targets_list marks the default target; a viewer
+// fan-out tools — targets_list marks the default target; a viewer
 // may call both; fleet_overview degrades per target instead of failing.
 func TestPhase4FleetTools(t *testing.T) {
 	mock := newMockLoxilb(t)
@@ -166,7 +166,7 @@ func TestPhase4FleetTools(t *testing.T) {
 	}
 }
 
-// Phase 4: autopilot list must not leak destructive tools to lower roles —
+// autopilot list must not leak destructive tools to lower roles —
 // the role tier check runs before any autopilot consideration.
 func TestPhase4AutopilotDoesNotWidenRoles(t *testing.T) {
 	mock := newMockLoxilb(t)

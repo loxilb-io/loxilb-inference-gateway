@@ -111,12 +111,12 @@ func ConfigPostLoadbalancer(params operations.PostConfigLoadbalancerParams, prin
 	// AI model name for pool selection (empty = wildcard, backward compatible)
 	lbRules.Serv.ModelName = params.Attr.ServiceArguments.ModelName
 
-	// SSE (Server-Sent Events) streaming configuration (US-401)
+	// SSE (Server-Sent Events) streaming configuration 
 	lbRules.Serv.SSEMode = params.Attr.ServiceArguments.SseMode
 	lbRules.Serv.MaxStreamDurationSec = uint32(params.Attr.ServiceArguments.MaxStreamDurationSec)
 	lbRules.Serv.BackendKeepaliveIntervalSec = uint32(params.Attr.ServiceArguments.BackendKeepaliveIntervalSec)
 
-	// P/D disaggregation mode (US-502)
+	// P/D disaggregation mode 
 	lbRules.Serv.PDDisaggMode = params.Attr.ServiceArguments.PdDisaggMode
 
 	// P/D cache-aware routing (US-PD801)
@@ -569,7 +569,7 @@ func serializeLBRule(lb cmn.LbRuleMod) *models.LoadbalanceEntry {
 		tmpSvc.SessionHeaderName = lb.Serv.SessionHeaderName
 	}
 
-	// SSE streaming configuration (US-401)
+	// SSE streaming configuration 
 	if lb.Serv.SSEMode {
 		tmpSvc.SseMode = lb.Serv.SSEMode
 	}
@@ -580,7 +580,7 @@ func serializeLBRule(lb cmn.LbRuleMod) *models.LoadbalanceEntry {
 		tmpSvc.BackendKeepaliveIntervalSec = int32(lb.Serv.BackendKeepaliveIntervalSec)
 	}
 
-	// P/D disaggregation mode (US-502)
+	// P/D disaggregation mode 
 	if lb.Serv.PDDisaggMode {
 		tmpSvc.PdDisaggMode = lb.Serv.PDDisaggMode
 	}
