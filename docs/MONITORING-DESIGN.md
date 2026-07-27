@@ -61,21 +61,34 @@
   Metrics collection must be enabled first (`POST /netlox/v1/config/metrics`); while disabled
   the endpoint returns **HTTP 503**, which Prometheus records as `up == 0` — this is by design
   and is what the scrape-down alert keys on.
-- **Scrape transport: TLS + mTLS client-cert auth** (decision §9.1). loxilb is started with
-  its TLS listener (`--tls --tls-port 8091 --tls-certificate/--tls-key`) **plus `--tls-ca`**,
-  which flips the server to `RequireAndVerifyClientCert` (`api/restapi/server.go`) — only
-  clients presenting a cert signed by our CA can reach the API at all. Prometheus scrapes
-  `scheme: https`, target `:8091`, with
-  `tls_config: {ca_file, cert_file, key_file, server_name}`. A self-signed **private CA**
-  issues both the loxilb server cert and the Prometheus client cert;
-  `deploy/monitoring/certs/gen-certs.sh` (openssl-based, no external deps) generates
-  CA + server + client keypairs with SANs for the target host/IP. mTLS doubles as the auth
-  mechanism — no token plumbing (loxilb's user-service tokens expire and don't suit an
-  unattended scraper). Caveat the README must state: `--tls` adds the HTTPS listener **in
-  addition to** the plain HTTP `:11111` listener — production guidance is to bind the plain
-  listener to localhost (`--host 127.0.0.1`) or firewall `:11111`, otherwise mTLS on `:8091`
-  protects nothing. On the testbed we keep `:11111` open because cicd scripts use it; the T0
-  mTLS matrix tests the `:8091` path specifically.
+- **Scrape access model** (revised 2026-07-27 — supersedes the original mTLS-auth decision
+  §9.1; see finding F11 in `MONITORING-EXECUTION.md`). The `/netlox/v1/metrics` endpoint is a
+  **control-plane REST route**, so it can only be secured by control-plane mechanisms — the
+  product's supported mTLS is the **data-path / per-LB-rule** feature (`sockproxy_mtls.*`,
+  `HAVE_MTLS`) and does **not** apply here. loxilb's REST API applies its app-auth
+  (go-swagger `Bearer` security scheme → `BearerAuthAuth`, `api/restapi/handler/auth.go`)
+  **in the handler, on every listener**, whenever an auth mode is enabled
+  (`--userservice`/`--oauth2`/manual-token); with none enabled the endpoint is open subject
+  only to network reach. Two facts follow: (a) mTLS on the API TLS listener is *transport*,
+  not authentication — the `Bearer` check still runs on top of it; (b) enabling
+  `--userservice` puts `/metrics` behind JWT on **both** `:11111` and `:8091`.
+  - **Default / recommended — same-host, network-isolated scrape.** Run Prometheus on the
+    loxilb host and scrape `http://127.0.0.1:11111/netlox/v1/metrics`; bind loxilb's plain
+    listener to localhost (`--host 127.0.0.1`) or firewall `:11111`. No certs, no auth
+    plumbing. This is the shipped default.
+  - **If app-auth is enabled** (userservice/oauth2), the scraper must send
+    `Authorization: Bearer <token>`. loxilb user JWTs are short-lived (~24 h) and there is no
+    long-lived service token today, so this is a **known operational constraint**: rely on
+    network isolation for the scrape, or accept token rotation, or add a service-token /
+    metrics-exempt feature in a future iteration (out of scope here — F11 is resolved as a
+    design revision, not a loxilb code change).
+  - **Optional — transport encryption across an untrusted network.** If you must scrape
+    across a network, start loxilb with `--tls` and scrape `https://<host>:8091`; this
+    encrypts the channel but does **not** authenticate the scraper (auth still follows the
+    rule above). The stock go-swagger `--tls-ca`/`RequireAndVerifyClientCert` client-cert
+    path is transport hardening, **not** a supported product auth mechanism — do not treat it
+    as the security boundary. `deploy/monitoring/certs/gen-certs.sh` remains as optional
+    tooling for this path only.
 - **Scrape interval: 10 s.** The loxilb stats sweep runs every 10 s; scraping faster only
   duplicates samples, slower halves the resolution of `loxilb_new_flows` (a per-sweep sampled
   gauge). `scrape_timeout: 5s`.
@@ -95,7 +108,7 @@ deploy/monitoring/
 │   ├── gen-certs.sh                # self-signed CA + loxilb server cert + prometheus client cert
 │   └── .gitignore                  # generated keys/certs never committed
 ├── prometheus/
-│   ├── prometheus.yml              # https/mTLS scrape config (target templated via env)
+│   ├── prometheus.yml              # default: http scrape of 127.0.0.1:11111 (TLS optional, commented)
 │   └── rules/
 │       └── loxilb-alerts.yml       # alert rules, §5
 └── grafana/
@@ -337,30 +350,27 @@ driven via cicd `common.sh`). Code synced from this Mac (not a git checkout ther
 scripts run **as kong, no leading sudo**; non-interactive ssh needs
 `export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin`.
 
-### T0 — Stack deployment + mTLS (no traffic)
+### T0 — Stack deployment (no traffic)
 
-1. Sync `deploy/monitoring/` to kv-loxilb; run `certs/gen-certs.sh` (self-signed CA, server
-   cert with SAN for the llb1 address, prometheus client cert).
-2. Restart `llb1` loxilb with `--tls --tls-port 8091 --tls-certificate ... --tls-key ...
-   --tls-ca <our CA>`; confirm the plain flow (`rmconfig/config/validation` of a trivial
-   scenario) still works so the TLS flags don't disturb cicd.
-3. `docker compose up -d` (certs bind-mounted read-only into the Prometheus container;
-   Grafana admin credentials from `.env`).
-4. **mTLS verification matrix**:
-   a. Prometheus target page: scrape over `https://...:8091` healthy (`up == 1` once metrics
-      enabled).
-   b. `curl --cacert CA https://<host>:8091/netlox/v1/metrics` **without** a client cert →
-      TLS handshake rejected (proves `RequireAndVerifyClientCert` is active).
-   c. `curl` **with** a cert signed by a different CA → rejected.
-   d. `curl` with the prometheus client cert → 200 (or 503 pre-enable).
-5. Verify 503-handling: with metrics disabled, `up{job="loxilb"} == 0` and
-   `LoxilbScrapeDown` reaches *firing* in Prometheus UI (this doubles as the first alert drill).
-6. Enable metrics (`POST /netlox/v1/config/metrics`, over mTLS); `up == 1` within one interval.
-7. Grafana reachable with the `.env` admin credential (anonymous access off); datasource
+Default path (network-isolated plaintext scrape — the shipped model, §2):
+
+1. Sync `deploy/monitoring/` to the host; copy `.env.example`→`.env` (Grafana admin creds).
+2. Confirm loxilb's plain listener is reachable to the host only (`--host 127.0.0.1` or
+   `:11111` firewalled); `prometheus.yml` target = `127.0.0.1:11111`, `scheme: http`.
+3. `docker compose up -d` (host network; no certs needed on this path).
+4. Verify 503-handling: with metrics disabled, `up{job="loxilb"} == 0` and `LoxilbScrapeDown`
+   reaches *firing* in Prometheus UI (this doubles as the first alert drill).
+5. Enable metrics (`POST /netlox/v1/config/metrics`); `up == 1` within one interval.
+6. Grafana reachable with the `.env` admin credential (anonymous access off); datasource
    healthy; all 5 dashboards auto-provisioned.
 
-**Pass**: all checks incl. the 4-row mTLS matrix; `promtool check rules` clean; scrape
-duration p99 < 1 s.
+Optional path (transport encryption across a network — §2): start loxilb with `--tls`, point
+the target at `:8091` `scheme: https` with `tls_config.ca_file`, and verify the channel is
+encrypted. Note this authenticates nothing by itself — if an app-auth mode is on, the scraper
+also needs a `Bearer` token (F11). The `--tls-ca` client-cert path is transport hardening
+only, not the auth boundary.
+
+**Pass**: all default-path checks; `promtool check rules` clean; scrape duration p99 < 1 s.
 
 ### T1 — Idle baseline (correctness gate)
 
@@ -479,8 +489,9 @@ Check after soak:
 ## 8. Rollout plan & risks
 
 **Implementation order** (each step is a review checkpoint):
-1. `deploy/monitoring/` skeleton: compose + `.env` + certs/gen-certs.sh + prometheus.yml
-   (mTLS) + rules → T0/T1 on testbed (incl. mTLS matrix).
+1. `deploy/monitoring/` skeleton: compose + `.env` + prometheus.yml (default plaintext
+   127.0.0.1:11111 scrape; certs/gen-certs.sh + TLS block optional per §2) + rules → T0/T1
+   on testbed.
 2. Exporter change: `loxilb_conntrack_max_entries` gauge (§5) + rebuild/redeploy llb1 image
    (cgo relink gotcha applies — see `METRICS-AUDIT-EXECUTION.md` Phase F).
 3. Overview + L4 dashboards (incl. conntrack utilization panel) → T2/T3.
@@ -505,11 +516,15 @@ metrics overhaul itself.
 
 ## 9. Review decisions (internal review, 2026-07-18 — LOCKED)
 
-1. **Scrape security → TLS + auth between Prometheus and loxilb, built and tested with a
-   self-signed CA.** Implemented as mTLS (loxilb `--tls ... --tls-ca` →
-   `RequireAndVerifyClientCert`; Prometheus `tls_config` with CA + client cert). Cert
-   tooling ships as `deploy/monitoring/certs/gen-certs.sh`; live-verified in T0's mTLS
-   matrix. See §2.
+1. ~~**Scrape security → TLS + mTLS client-cert auth.**~~ **SUPERSEDED 2026-07-27 (F11).**
+   The original decision used the stock go-swagger control-plane mTLS
+   (`--tls-ca` → `RequireAndVerifyClientCert`) as the scrape *auth* mechanism. That is a
+   transport layer, not authentication (the `Bearer` scheme still runs on top), and it
+   collides with `--userservice` (JWT → 401). Our supported mTLS is the data-path/LB-rule
+   feature, which does not apply to a control-plane REST route. **Revised model** (§2):
+   default to a same-host network-isolated plaintext scrape; app-auth token when an auth mode
+   is enabled (with the long-lived-token caveat); optional `--tls` for transport encryption
+   only. `gen-certs.sh` is retained as optional tooling for the transport-TLS path.
 2. **`LoxilbHighTTFB`: global-with-tunable accepted for v1.** 2 s default, tunable at the
    top of the rules file; per-route SLOs deferred.
 3. **`loxilb_conntrack_max_entries` gauge: approved, pulled into scope.** Exporter change +

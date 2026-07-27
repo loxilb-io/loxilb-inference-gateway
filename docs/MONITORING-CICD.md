@@ -186,21 +186,22 @@ These are the concrete numeric checks the manual run established; Tier 1/2 encod
 
 ---
 
-## 8. Prerequisites / blockers — the three open findings
+## 8. Prerequisites / blockers — the three findings
 
-These are **product-level correctness gaps**, verified still open in the tree (2026-07-27). They
-block the "production-ready" bar, and each becomes a permanent CI regression test once fixed:
+Product-level correctness gaps that block the "production-ready" bar. **F11 is resolved as a
+design revision (no code); F12 and F13 remain open** (verified in the tree 2026-07-27). Each
+becomes a permanent CI regression test:
 
-| # | Defect (open) | Production impact | Fix site | CI regression once fixed |
+| # | Defect | Production impact | Resolution | CI regression |
 |---|---|---|---|---|
-| **F11** | `--userservice` puts `/netlox/v1/metrics` behind JWT → mTLS scrape 401 | mTLS monitoring and the AI user-service **cannot coexist** | `api/restapi/` — let `/metrics` honor mTLS client-cert (or an allowlist) when both are on | userservice on + mTLS scrape → 200 |
-| **F12** | `llb_ai_record_request` has one callsite (SSE `[DONE]` only) → plain-JSON errors uncounted | `LoxilbAIErrorRatio` blind to the most common AI error shape | `loxilb-ebpf/common/sockproxy_http.c` — also record at non-SSE response-complete | plain-JSON 500 via AI rule → `Δai_requests_total{status="500"}` |
-| **F13** | mgmt-plane / short REST conns tick `l4_error_events{tcp,error}` (~3.5/call; drove 0.96/1.0) | any REST poller can **false-fire `LoxilbL4ErrorBurst`** | `loxilb-ebpf/kernel/llb_kern_ct.c` — reclassify normal short-close; exclude the API port | N REST polls → ≈0 `l4_error` Δ; only backend RSTs increment |
+| **F11** ✅ | `--userservice` puts `/netlox/v1/metrics` behind JWT → scrape 401 (control-plane `Bearer` runs on every listener; mTLS never bypasses it) | metrics endpoint can't be secured by the data-path mTLS we ship | **RESOLVED — design revision, no loxilb code** (2026-07-27): metrics is control-plane; supported mTLS is data-path only. Default = same-host network-isolated plaintext scrape; `Bearer` token when API auth is on (long-lived-token caveat); `--tls` = optional transport encryption only. See `MONITORING-DESIGN.md` §2 / §9.1. | Tier-1 mTLS matrix dropped; assert default `http://127.0.0.1:11111` scrape `up==1`; document (not assert) the userservice+token path |
+| **F12** | `llb_ai_record_request` has one callsite (SSE `[DONE]` only) → plain-JSON errors uncounted | `LoxilbAIErrorRatio` blind to the most common AI error shape | fix `loxilb-ebpf/common/sockproxy_http.c` — also record at non-SSE response-complete | plain-JSON 500 via AI rule → `Δai_requests_total{status="500"}` |
+| **F13** | mgmt-plane / short REST conns tick `l4_error_events{tcp,error}` (~3.5/call; drove 0.96/1.0) | any REST poller can **false-fire `LoxilbL4ErrorBurst`** | fix `loxilb-ebpf/kernel/llb_kern_ct.c` — reclassify normal short-close; exclude the API port | N REST polls → ≈0 `l4_error` Δ; only backend RSTs increment |
 
-Ordering note: the sharpest Tier-1/2 correctness tests (AI error-ratio, L4-error-burst, mTLS +
-userservice) depend on F11/F12/F13. Build Tier 1's harness against what already works
-(L4/L7/SSE ground-truth + fired-alert drills), and add the three regression guards as each fix
-lands.
+Ordering note: F11 is resolved in the design (no code). The remaining sharpest Tier-1/2
+correctness tests (AI error-ratio, L4-error-burst) depend on F12/F13. Build Tier 1's harness
+against what already works (L4/L7/SSE ground-truth + fired-alert drills), and add the two
+data-path regression guards as each fix lands.
 
 ---
 
@@ -214,7 +215,8 @@ lands.
    the L4 hold-driver; wire the PromQL-expr and Grafana-proxy sweeps.
 3. **Tier 1 workflow** — `.github/workflows/monitoring-e2e.yml` (build-from-source like
    `ai-gateway-sanity`, `ubuntu-22.04`); per-merge.
-4. **Fix F11 / F12 / F13**, adding each §8 regression guard to Tier 1 as it lands.
+4. **Fix F12 / F13** (F11 already resolved in the design), adding each §8 regression guard to
+   Tier 1 as it lands.
 5. **Tier 2** — nightly alert-drill + short-soak workflow (§6).
 6. **Exit** — record results in `MONITORING-EXECUTION.md`; the manual T-plan is now a CI job.
 

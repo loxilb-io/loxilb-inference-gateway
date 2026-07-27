@@ -1,5 +1,13 @@
 # Prometheus scrape config for LoxiLB Inference Gateway monitoring.
-# Design: docs/MONITORING-DESIGN.md §2 — mTLS scrape of the loxilb API TLS listener.
+# Design: docs/MONITORING-DESIGN.md §2 — scrape access model (revised, F11).
+#
+# DEFAULT: same-host, network-isolated plaintext scrape of loxilb's plain REST
+# listener. Run Prometheus on the loxilb host and bind loxilb's plain listener to
+# localhost (--host 127.0.0.1) or firewall :11111. The metrics endpoint is a
+# control-plane REST route: our supported mTLS is data-path only and does not
+# apply here, and TLS on the API listener is transport, not authentication.
+# If an API auth mode is enabled (--userservice/--oauth2), the scraper must also
+# send an Authorization: Bearer token — see MONITORING-DESIGN.md §2 (F11).
 global:
   scrape_interval: 10s      # aligned to loxilb's 10s stats sweep; do not lower
   scrape_timeout: 5s
@@ -10,16 +18,26 @@ rule_files:
 
 scrape_configs:
   - job_name: loxilb
-    scheme: https
+    scheme: http
     metrics_path: /netlox/v1/metrics
-    tls_config:
-      ca_file: /etc/prometheus/certs/rootCA.crt
-      cert_file: /etc/prometheus/certs/client.crt
-      key_file: /etc/prometheus/certs/client.key
     static_configs:
-      # loxilb API TLS listener (--tls-port, default 8091).
-      # Edit for your deployment; cert SAN must cover this address (gen-certs.sh).
-      - targets: ["172.17.0.2:8091"]
+      # loxilb plain REST listener (default :11111). Keep it host-local.
+      - targets: ["127.0.0.1:11111"]
+
+    # ---- OPTIONAL: transport encryption across an untrusted network ----------
+    # To scrape loxilb over TLS instead, start loxilb with --tls, uncomment the
+    # cert bind-mounts + `user: "0"` in docker-compose.yml, run certs/gen-certs.sh,
+    # and replace the block above with:
+    #   scheme: https
+    #   tls_config:
+    #     ca_file: /etc/prometheus/certs/rootCA.crt
+    #     # client cert = optional transport hardening only, NOT the auth boundary:
+    #     cert_file: /etc/prometheus/certs/client.crt
+    #     key_file: /etc/prometheus/certs/client.key
+    #   static_configs:
+    #     - targets: ["<loxilb-ip>:8091"]   # cert SAN must cover this address
+    # If app-auth is enabled, also add:
+    #   authorization: { type: Bearer, credentials: "<long-lived token>" }
 
   # Prometheus self-monitoring (soak checks use prometheus_tsdb_head_series).
   - job_name: prometheus

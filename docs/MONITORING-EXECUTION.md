@@ -588,6 +588,23 @@ JWT TTL ~24 h — a real deployment would need a long-lived service token or a
 metrics-exempt auth policy). Design question for review: should `/netlox/v1/metrics`
 honor mTLS client-cert auth (or an allowlist) instead of JWT when both are enabled?
 
+**F11 RESOLUTION (2026-07-27) — design revision, no loxilb code.** Reviewed with the
+user: the answer to that design question is **no**. `/netlox/v1/metrics` is a control-plane
+REST route; loxilb's supported mTLS is the **data-path / per-LB-rule** feature
+(`sockproxy_mtls.*`), which does not apply to a control-plane route. The control-plane
+`--tls-ca`/`RequireAndVerifyClientCert` path is stock go-swagger *transport* config, not a
+blessed auth mechanism, and the go-swagger `Bearer` scheme (`api/restapi/handler/auth.go`)
+runs in the handler on **every** listener — so `--userservice` puts `/metrics` behind JWT on
+both `:11111` and `:8091`; mTLS never bypasses it. Rather than legitimize the boilerplate with
+a metrics-exempt code path, the **monitoring design was revised** (see
+`MONITORING-DESIGN.md` §2, decision §9.1 superseded): default to a same-host,
+network-isolated plaintext scrape (`127.0.0.1:11111`); when an API auth mode is enabled the
+scraper carries a `Bearer` token (documented long-lived-token caveat); `--tls` is optional
+transport encryption only. Deploy artifacts updated to match (`prometheus.yml`,
+`docker-compose.yml`, `README.md`, `certs/gen-certs.sh` reframed as optional). The AI-drill
+bearer-token workaround remains valid for a userservice deployment; it is no longer presented
+as the mTLS story.
+
 Gateway behavior notes (drill smoke tests): no `X-Api-Key` → **401** at proxy;
 throttle key burst → **429** with `Retry-After`; request WITHOUT `X-Model` on a
 model-routed rule → `{"error":"no_route"}` **503** (model comes from `X-Model` header or

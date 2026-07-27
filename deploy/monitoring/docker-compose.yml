@@ -10,15 +10,17 @@ services:
     container_name: loxilb-prometheus
     network_mode: host
     restart: unless-stopped
-    # root: allows reading the 0600 client TLS key without chowning it to the
-    # image's nobody uid; see README "Security notes".
-    user: "0"
+    # OPTIONAL (transport-TLS scrape path only): uncomment `user: "0"` to let
+    # Prometheus read the 0600 client key bind-mount without chowning it.
+    # user: "0"
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/rules:/etc/prometheus/rules:ro
-      - ./certs/rootCA.crt:/etc/prometheus/certs/rootCA.crt:ro
-      - ./certs/client.crt:/etc/prometheus/certs/client.crt:ro
-      - ./certs/client.key:/etc/prometheus/certs/client.key:ro
+      # OPTIONAL (transport-TLS scrape path only — see prometheus.yml + README):
+      # run certs/gen-certs.sh first, then uncomment these + `user: "0"` above.
+      # - ./certs/rootCA.crt:/etc/prometheus/certs/rootCA.crt:ro
+      # - ./certs/client.crt:/etc/prometheus/certs/client.crt:ro
+      # - ./certs/client.key:/etc/prometheus/certs/client.key:ro
       - prometheus-data:/prometheus
     command:
       - --config.file=/etc/prometheus/prometheus.yml

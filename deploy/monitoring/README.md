@@ -3,7 +3,12 @@
 Operator monitoring for a loxilb-inference-gateway instance. Design and panel/alert
 rationale: [`docs/MONITORING-DESIGN.md`](../../docs/MONITORING-DESIGN.md).
 
-## Quick start
+## Quick start (default — same-host, network-isolated scrape)
+
+Run this stack **on the loxilb host** and scrape the plain REST listener over localhost.
+The metrics endpoint is a control-plane REST route: loxilb's supported mTLS is the
+**data-path / per-LB-rule** feature and does not apply here, so we don't use TLS as an auth
+mechanism (see [`docs/MONITORING-DESIGN.md`](../../docs/MONITORING-DESIGN.md) §2 / F11).
 
 ```bash
 cd deploy/monitoring
@@ -11,27 +16,12 @@ cd deploy/monitoring
 # 1. Grafana admin credentials
 cp .env.example .env            # then edit the password
 
-# 2. mTLS certificates — SANs must cover the address Prometheus scrapes
-./certs/gen-certs.sh <loxilb-ip> [more SANs...]
-#    e.g. ./certs/gen-certs.sh 172.17.0.2 10.10.10.254 llb1
-
-# 3. Install server cert + CA into the loxilb container and (re)start loxilb
-docker cp certs/server.crt llb1:/opt/loxilb/cert/server.crt
-docker cp certs/server.key llb1:/opt/loxilb/cert/server.key
-docker cp certs/rootCA.crt llb1:/opt/loxilb/cert/rootCA.crt
-docker exec llb1 pkill loxilb
-docker exec -dt -e TLS_CA_CERTIFICATE=/opt/loxilb/cert/rootCA.crt \
-  llb1 /root/loxilb-io/loxilb/loxilb --tls
-#    NOTE: --tls-ca only exists on the API sub-parser; always pass the CA via
-#    the TLS_CA_CERTIFICATE env var. With it set, the API requires a client
-#    cert signed by our CA (mutual TLS).
-
-# 4. Point prometheus/prometheus.yml `targets` at <loxilb-ip>:8091, then:
+# 2. Keep loxilb's plain listener host-local (bind to localhost or firewall :11111).
+#    prometheus.yml already targets 127.0.0.1:11111 over http.
 docker compose up -d
 
-# 5. Enable metrics collection (endpoint answers 503 until enabled)
-curl --cacert certs/rootCA.crt --cert certs/client.crt --key certs/client.key \
-  -X POST https://<loxilb-ip>:8091/netlox/v1/config/metrics
+# 3. Enable metrics collection (endpoint answers 503 until enabled)
+curl -X POST http://127.0.0.1:11111/netlox/v1/config/metrics
 ```
 
 - Prometheus: `http://<host>:9090` — Grafana: `http://<host>:3000` (credentials from `.env`).
@@ -39,18 +29,46 @@ curl --cacert certs/rootCA.crt --cert certs/client.crt --key certs/client.key \
 
 ## Security notes
 
-- **`--tls` keeps the plain HTTP listener (`:11111`) open.** mTLS on `:8091` protects
-  nothing if `:11111` is reachable — in production bind it to localhost
-  (`--host 127.0.0.1`) or firewall it. On the cicd testbed `:11111` stays open on
-  purpose (cicd scripts use it).
-- `certs/rootCA.key` signs everything: keep it out of images/repos (the whole certs
-  dir is git-ignored except `gen-certs.sh`). In production, generate on a trusted
-  host and distribute only the leaf certs + `rootCA.crt`.
-- The Prometheus container runs as root solely to read the 0600 `client.key`
-  bind-mount; alternatively `chown 65534 certs/client.key` and drop the
-  `user: "0"` line in `docker-compose.yml`.
-- Verify mTLS is actually enforced (T0 matrix): a curl **without** `--cert` must
-  fail the handshake; with a foreign-CA cert it must be rejected.
+- **The metrics endpoint is control-plane and shares loxilb's API auth.** When an API auth
+  mode is enabled (`--userservice`/`--oauth2`/manual-token), the go-swagger `Bearer` check
+  runs in the handler on **every** listener — so `/metrics` returns 401 on both `:11111` and
+  `:8091` without a token (finding F11). Our supported mTLS is data-path only and cannot
+  protect this route.
+- **Default posture = network isolation.** Bind loxilb's plain listener to localhost
+  (`--host 127.0.0.1`) or firewall `:11111`, and run Prometheus on the same host. No certs,
+  no tokens. (On the cicd testbed `:11111` stays open on purpose — cicd scripts use it.)
+- **If API auth is enabled**, the scraper must send `Authorization: Bearer <token>`. loxilb
+  user JWTs are short-lived (~24 h) and there is no long-lived service token today — rely on
+  network isolation, accept token rotation, or track a future service-token/metrics-exempt
+  feature. Do not enable auth and expect an unattended scrape to keep working.
+
+## Optional: transport encryption across a network
+
+Only if you must scrape loxilb across an untrusted network. This encrypts the channel; it
+does **not** authenticate the scraper (auth still follows the rule above). The `--tls-ca`
+client-cert path is stock go-swagger transport hardening, not a product auth boundary.
+
+```bash
+# 1. Certs — SANs must cover the address Prometheus scrapes
+./certs/gen-certs.sh <loxilb-ip> [more SANs...]
+
+# 2. Install server cert + CA and (re)start loxilb with --tls
+docker cp certs/server.crt llb1:/opt/loxilb/cert/server.crt
+docker cp certs/server.key llb1:/opt/loxilb/cert/server.key
+docker cp certs/rootCA.crt llb1:/opt/loxilb/cert/rootCA.crt
+docker exec llb1 pkill loxilb
+docker exec -dt -e TLS_CA_CERTIFICATE=/opt/loxilb/cert/rootCA.crt \
+  llb1 /root/loxilb-io/loxilb/loxilb --tls
+#    (--tls-ca is only on the API sub-parser; pass the CA via TLS_CA_CERTIFICATE.)
+
+# 3. In docker-compose.yml uncomment the cert bind-mounts + `user: "0"`, and in
+#    prometheus.yml switch to the commented https/:8091 block. Then:
+docker compose up -d
+```
+
+- `certs/rootCA.key` signs everything — keep it out of images/repos (the certs dir is
+  git-ignored except `gen-certs.sh`). Generate on a trusted host; distribute only leaf
+  certs + `rootCA.crt`.
 
 ## Operational notes
 

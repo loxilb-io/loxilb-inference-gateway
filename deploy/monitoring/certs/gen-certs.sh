@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
-# Generate a self-signed CA plus the loxilb API server cert and the Prometheus
-# scraper client cert for mTLS (docs/MONITORING-DESIGN.md §2 / §9.1).
+# OPTIONAL tooling — only for the transport-encryption scrape path
+# (docs/MONITORING-DESIGN.md §2 "Optional"). The default monitoring deployment
+# uses a same-host, network-isolated plaintext scrape and needs NO certs. TLS on
+# the loxilb API listener is transport encryption, not scraper authentication
+# (finding F11); the client cert below is transport hardening only.
+#
+# Generate a self-signed CA plus the loxilb API server cert and a Prometheus
+# scraper client cert.
 #
 # Usage:   ./gen-certs.sh <IP-or-DNS SAN> [more SANs...]
 # Example: ./gen-certs.sh 172.17.0.2 10.10.10.254 llb1
