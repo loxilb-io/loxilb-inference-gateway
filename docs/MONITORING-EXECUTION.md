@@ -231,7 +231,7 @@ scan — Grafana `/api/search` shows 6 dashboards in the LoxiLB folder (5 new +
 bootstrap), no provisioning errors in grafana logs. Prometheus spot-check on the idle
 tcplb topology: `up`=1, `loxilb_lb_rules`=4, `loxilb_healthy_endpoints`=3,
 `loxilb_conntrack_max_entries`=524288, CPU ≈1.9 %. Operator visual pass on
-http://61.107.201.161:3000 still worthwhile before T4.
+http://<testbed-host>:3000 still worthwhile before T4.
 
 ## Gotchas log
 
@@ -646,12 +646,12 @@ denial path = `rate_limit_exceeded` (per-key stage). Resolve pending drive stop 
 tcplb baseline restored on the F7 image (binary 95dd9441, 4 rules, mTLS takeover +
 metrics re-applied, scrape up, forwarding verified; AI-drill bearer-token patch REVERTED
 from the deployed prometheus.yml + HUP — back to pure mTLS scrape). Soak traffic: cron
-`* * * * * /home/kong/t7-soak-traffic.sh` (30 requests/min across the 3 VIPs from l3h1).
-Snapshot tool `/home/kong/t7-snapshot.sh`; **t0 (12:44:30 KST):** up=1,
+`* * * * * ~/t7-soak-traffic.sh` (30 requests/min across the 3 VIPs from l3h1).
+Snapshot tool `~/t7-snapshot.sh`; **t0 (12:44:30 KST):** up=1,
 `prometheus_tsdb_head_series`=1133, loxilb series=109, scrape 8.6 ms, RSS llb1 618 MiB /
 prometheus 53 MiB / grafana 80 MiB.
 
-**t+12 h check (≈ 2026-07-20 00:45 KST):** run `/home/kong/t7-snapshot.sh` and compare
+**t+12 h check (≈ 2026-07-20 00:45 KST):** run `~/t7-snapshot.sh` and compare
 against `~/t7-t0.txt` — pass criteria: `avg_over_time(up{job="loxilb"}[12h]) ≈ 1`
 (no scrape gaps), `tsdb_head_series` flat (no cardinality creep), container RSS stable
 (no leak trend), 0 active alerts. Then remove the cron

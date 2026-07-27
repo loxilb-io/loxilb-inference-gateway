@@ -344,7 +344,7 @@ panel spec against them:
 
 ## 7. Test plan — kv-loxilb testbed, real traffic
 
-Testbed: `kv-loxilb` (61.107.201.161, ssh alias, user `kong`; loxilb in docker `llb1`,
+Testbed: `kv-loxilb` (<testbed-host>, ssh alias, user `kong`; loxilb in docker `llb1`,
 image `latest-u24` = overhauled binary; traffic hosts are netns containers `l3h*`/`l3ep*`
 driven via cicd `common.sh`). Code synced from this Mac (not a git checkout there); cicd
 scripts run **as kong, no leading sudo**; non-interactive ssh needs
