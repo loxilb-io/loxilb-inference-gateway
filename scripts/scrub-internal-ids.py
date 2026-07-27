@@ -30,20 +30,36 @@ CODE_EXTS = (".go", ".c", ".h", ".py")
 SKIP_DIRS = {".git", "vendor", "node_modules", "libbpf", ".codegraph"}
 
 # --- ID token families (well-formed only) -----------------------------------
-ID_TOKEN = re.compile(
-    r"\b(?:"
-    r"US-\d+[a-z]?|US-ERR\d+|"                       # user stories
-    r"Phase \d+[A-Za-z]?(?:-\d+)?(?: M\d+)?|"        # phases incl. ""
-    r"D-\d+[a-z]?|"                                  # decisions
-    r"FR-\d+|REQ-M?\d+|FIX-\d+|"                     # requirements / fixes
-    r"T-\d+(?:-\d+)+|"                               # test ids like 
-    r"Bug [A-Z]"                                     # ""
-    r")\b"
+# Each family consumes its OWN natural numeric/dash/slash tail so a compound
+# citation is removed whole and never leaves an orphan fragment (e.g. the "/NN"
+# of "FR-NN/NN" or the "-NN/NN" of "D-NN-NN/NN"). Order matters: longer / more
+# specific alternatives first. Examples below use NN placeholders on purpose so
+# this file stays clean under its own --check gate.
+_FAMILY = (
+    r"US-ERR\d+|US-\d+[a-z]?|"                            # user stories
+    r"Phase \d+[A-Za-z]?(?:[-/]\d+)*(?: ?M\d+[a-z]?)?|"   # phases: "Phase NN-NN/NN", "Phase NN MN"
+    r"D-\d+[a-z]?(?:[-/]\d+[a-z]?)*|"                     # decisions: "D-NN-NN/NN", "D-NN-NN/NN/NNx"
+    r"FR-\d+(?:/\d+)*|"                                   # requirements: "FR-NN/NN", "FR-NN/NN/NN"
+    r"REQ-M?\d+(?:/\d+)*|FIX-\d+(?:/\d+)*|"               # requirements / fixes: "FIX-NN/NN/NN"
+    r"T-\d+(?:[-/]\d+)+(?:-[A-Z]{2,})?|"                  # test ids: "T-NN-NN/NN", "T-NN-NN-ROT"
+    r"Bug [A-Z]"                                          # bug labels
 )
+# A citation is one family, optionally chained to more via "/" or " / "
+# (mixed-family runs like "FR-NN / D-NN-NN / D-NN-NN" or "D-NN/D-NN/D-NN").
+ID_TOKEN = re.compile(r"\b(?:%s)(?:\s*/\s*(?:%s))*\b" % (_FAMILY, _FAMILY))
 
 _EMPTY_PARENS = re.compile(r"\(\s*(?:,\s*)*\)")
 _EMPTY_BRACKETS = re.compile(r"\[\s*\]")
-_LEADING_PUNCT = re.compile(r"^(\s*)[:\-—|,]\s*")
+# separators-only parens left after a whole citation was removed: "( / )", "( - )"
+_SEP_ONLY_PARENS = re.compile(r"\(\s*[/\-—,|\s]*\)")
+# a lone separator hugging "(" or ")" — spaces REQUIRED so real paths like
+# "(/etc/loxilb/certs)" (slash immediately followed by a word) are never touched.
+_LEAD_SEP_IN_PAREN = re.compile(r"\(\s+[/\-—|:,]\s+")
+_TIGHT_SEP_IN_PAREN = re.compile(r"\(\s*[—|]\s*")
+_TAIL_SEP_IN_PAREN = re.compile(r"\s+[/\-—|,]\s*\)")
+_LEADING_PUNCT = re.compile(r"^(\s*)[:\-—|,/]\s*")
+_LEADING_DOT = re.compile(r"^(\s*)\.\s+")                     # "(citation). text" -> "text"
+_LEADING_STAR_PUNCT = re.compile(r"^(\s*\*\s*)[:\-—|,/]\s*")  # block-comment "* : text" leader
 _MULTISPACE = re.compile(r"[ \t]{2,}")
 _SPACE_BEFORE_PUNCT = re.compile(r"(?<=\S)\s+([:.,;)])")
 
@@ -53,19 +69,29 @@ def _scrub_segment(seg):
     if not ID_TOKEN.search(seg):
         return seg
     out = ID_TOKEN.sub("", seg)
-    out = re.sub(r"\(\s*,\s*", "(", out)
-    out = re.sub(r",\s*,", ",", out)
-    out = re.sub(r",\s*\)", ")", out)
+    out = re.sub(r"\(\s*(?:,\s*)+", "(", out)    # "(, , RFC" / "(, RFC" -> "(RFC"
+    out = re.sub(r",(?:\s*,)+", ",", out)        # "a, , b" -> "a, b"
+    out = re.sub(r"(?:,\s*)+\)", ")", out)       # "a, , )" -> "a)"
+    out = _SEP_ONLY_PARENS.sub("", out)       # "( / )" -> removed
+    out = _LEAD_SEP_IN_PAREN.sub("(", out)    # "( / Pitfall" -> "(Pitfall"
+    out = _TIGHT_SEP_IN_PAREN.sub("(", out)   # "( — the"    -> "(the"
+    out = _TAIL_SEP_IN_PAREN.sub(")", out)    # "x / )"      -> "x)"
     out = _EMPTY_PARENS.sub("", out)
     out = _EMPTY_BRACKETS.sub("", out)
+    out = _LEADING_STAR_PUNCT.sub(r"\1", out)  # "* : text" -> "* text" (before space-before-punct)
+    out = _LEADING_PUNCT.sub(r"\1", out)       # leading "ID: " / "ID - " / "/: " scaffolding
+    out = _LEADING_DOT.sub(r"\1", out)         # leading ". text" left by "(citation)." at comment start
     out = _SPACE_BEFORE_PUNCT.sub(r"\1", out)
-    out = _LEADING_PUNCT.sub(r"\1", out)      # leading "ID: " / "ID - " scaffolding
     out = _MULTISPACE.sub(" ", out)
     return out
 
 
 def _scan_quote(line, i, quote):
-    """Return index just past the matching close quote (respecting \\ escapes)."""
+    """Return the index OF the matching close quote (respecting \\ escapes), or
+    -1 if the quote is unterminated on this line. Returning the close index (not
+    one-past) lets the caller distinguish 'closed at end-of-line' from
+    'unterminated' — conflating them truncated the last char and appended a
+    spurious closing quote on prose lines carrying a lone quote."""
     n = len(line)
     j = i + 1
     while j < n:
@@ -73,9 +99,9 @@ def _scan_quote(line, i, quote):
             j += 2
             continue
         if line[j] == quote:
-            return j + 1
+            return j
         j += 1
-    return n  # unterminated on this line
+    return -1  # unterminated on this line
 
 
 def _rewrite_line(line, state, lc):
@@ -137,17 +163,20 @@ def _rewrite_line(line, state, lc):
             continue
         if ch == '"':                                   # double-quoted string
             j = _scan_quote(line, i, '"')
-            out.append('"' + _scrub_segment(line[i + 1:j - 1]) + '"' if j <= n and j > i + 1
-                       else line[i:j])
-            i = j
+            if j == -1:                                 # unterminated: opaque tail, never corrupt
+                out.append(line[i:]); i = n; continue
+            out.append('"' + _scrub_segment(line[i + 1:j]) + '"')
+            i = j + 1
             continue
         if ch == "'":
             j = _scan_quote(line, i, "'")
-            if lc == "#":                               # python single-quoted string
-                out.append("'" + _scrub_segment(line[i + 1:j - 1]) + "'" if j > i + 1 else line[i:j])
+            if j == -1:                                 # unterminated: opaque tail, never corrupt
+                out.append(line[i:]); i = n; continue
+            if lc == "#":                               # python single-quoted string: scrub body
+                out.append("'" + _scrub_segment(line[i + 1:j]) + "'")
             else:                                       # go/c char literal: opaque
-                out.append(line[i:j])
-            i = j
+                out.append(line[i:j + 1])
+            i = j + 1
             continue
         out.append(ch)
         i += 1
