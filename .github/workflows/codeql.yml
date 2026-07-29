@@ -48,6 +48,11 @@ jobs:
           sudo apt-get install -y clang llvm libelf-dev gcc-multilib libpcap-dev \
             libbsd-dev build-essential elfutils dwarves bison flex pkg-config \
             libjson-c-dev libnghttp2-dev
+          # Pre-built libtokenizers static lib (KV router HF tokenizer backend),
+          # mirroring the Dockerfile so the cgo link resolves -ltokenizers.
+          arch=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+          wget -q "https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz" -O /tmp/libtokenizers.tar.gz
+          sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/
           sudo mkdir -p /opt/loxilb /usr/lib64
           sudo chown -R "$(id -u)" /opt/loxilb /usr/lib64
 
