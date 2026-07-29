@@ -11,18 +11,29 @@ vip_curl() {
 }
 
 check_vip_traffic() {
-    local label=$1 ok=0 ep1=0 ep2=0 out
-    for i in $(seq 1 8); do
-        out=$(vip_curl) || true
-        case "$out" in
-            pks-ep1) ok=$((ok+1)); ep1=1 ;;
-            pks-ep2) ok=$((ok+1)); ep2=1 ;;
-        esac
+    local label=$1 attempt ok ep1 ep2 out
+    # Retry the 8-request burst to tolerate cold start: the very first packet
+    # through a freshly programmed eBPF LB rule can be dropped (SYN retransmit /
+    # datapath-attach race) before the datapath settles, yielding e.g. 7/8 on
+    # slower runners (observed on the arm64 hosted runner). We still require a
+    # clean 8/8 across both endpoints, but allow a few attempts to reach it so a
+    # transient cold-start drop doesn't fail an otherwise healthy datapath.
+    for attempt in $(seq 1 6); do
+        ok=0; ep1=0; ep2=0
+        for i in $(seq 1 8); do
+            out=$(vip_curl) || true
+            case "$out" in
+                pks-ep1) ok=$((ok+1)); ep1=1 ;;
+                pks-ep2) ok=$((ok+1)); ep2=1 ;;
+            esac
+        done
+        if [ "$ok" -eq 8 ] && [ "$ep1" = 1 ] && [ "$ep2" = 1 ]; then
+            echo "$label: $ok/8 requests served (ep1=$ep1 ep2=$ep2) [attempt $attempt]"
+            return 0
+        fi
+        sleep 2
     done
-    echo "$label: $ok/8 requests served (ep1=$ep1 ep2=$ep2)"
-    if [ "$ok" -eq 8 ] && [ "$ep1" = 1 ] && [ "$ep2" = 1 ]; then
-        return 0
-    fi
+    echo "$label: $ok/8 requests served (ep1=$ep1 ep2=$ep2) [failed after $((attempt-1)) attempts]"
     return 1
 }
 

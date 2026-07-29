@@ -286,6 +286,11 @@ jobs:
     name: 'tier3: deb smoke ${{ matrix.runner }}'
     needs: [plan, obtain]
     runs-on: ${{ matrix.runner }}
+    # A healthy datapath smoke completes in ~1-2 min; cap the job so a wedged
+    # runner (observed: the hosted arm64 runner occasionally hangs the loxilb
+    # datapath and only surfaces as "runner lost communication" ~46 min later,
+    # which also corrupts this run's log upload) fails fast instead.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -332,6 +337,7 @@ jobs:
     needs: [plan, obtain]
     if: github.repository == 'loxilb-io/loxilb-inference-gateway' && vars.RH9_PKG_SMOKE == 'true'
     runs-on: [ self-hosted, redhat ]
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
