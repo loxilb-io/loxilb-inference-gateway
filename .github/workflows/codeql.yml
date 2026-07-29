@@ -46,7 +46,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y clang llvm libelf-dev gcc-multilib libpcap-dev \
-            libbsd-dev build-essential elfutils dwarves bison flex pkg-config
+            libbsd-dev build-essential elfutils dwarves bison flex pkg-config \
+            libjson-c-dev libnghttp2-dev
           sudo mkdir -p /opt/loxilb /usr/lib64
           sudo chown -R "$(id -u)" /opt/loxilb /usr/lib64
 
