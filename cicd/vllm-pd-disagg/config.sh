@@ -52,30 +52,50 @@ install_lb_rules() {
   local ep3="${EP3_IP:-33.33.33.1}"
   local ep4="${EP4_IP:-34.34.34.1}"
   # Port 2020 — P/D disaggregation (l3ep1=prefill, l3ep2=decode).
+  if [[ "$USE_CLI" == "1" ]]; then
+    create_lb_rule "$target" "$xip" --tcp=2020:8000 --mode=fullproxy --security=https --host="$xip" --pd-disagg --sse-mode --monitor --probetype=http --probeport=8000 --probereq=/health --probetimeout=5 --proberetries=2 --endpoints="$ep1:1,$ep2:1" --ep-role=prefill,decode --nixl-port=9001,9002
+  else
   $hexec "$target" curl -s -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
     -H 'Content-Type: application/json' \
     -d '{"serviceArguments":{"externalIP":"'"$xip"'","port":2020,"protocol":"tcp","sel":0,"mode":4,"security":1,"pd_disagg_mode":true,"sse_mode":true,"host":"'"$xip"'","monitor":true,"probetype":"http","probeport":8000,"probereq":"/health","probeTimeout":5,"probeRetries":2},"endpoints":[{"endpointIP":"'"$ep1"'","targetPort":8000,"weight":1,"ep_role":1,"nixl_port":9001},{"endpointIP":"'"$ep2"'","targetPort":8000,"weight":1,"ep_role":2,"nixl_port":9002}]}' >/dev/null
+  fi
   # Port 2021 — non-P/D baseline (round-robin).
+  if [[ "$USE_CLI" == "1" ]]; then
+    create_lb_rule "$target" "$xip" --tcp=2021:8000 --mode=fullproxy --security=https --host="$xip" --sse-mode --monitor --probetype=http --probeport=8000 --probereq=/health --probetimeout=5 --proberetries=2 --endpoints="$ep2:1"
+  else
   $hexec "$target" curl -s -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
     -H 'Content-Type: application/json' \
     -d '{"serviceArguments":{"externalIP":"'"$xip"'","port":2021,"protocol":"tcp","sel":0,"mode":4,"security":1,"pd_disagg_mode":false,"sse_mode":true,"host":"'"$xip"'","monitor":true,"probetype":"http","probeport":8000,"probereq":"/health","probeTimeout":5,"probeRetries":2},"endpoints":[{"endpointIP":"'"$ep2"'","targetPort":8000,"weight":1,"ep_role":0}]}' >/dev/null
+  fi
   # Port 2022 — 2P+2D P/D.
+  if [[ "$USE_CLI" == "1" ]]; then
+    create_lb_rule "$target" "$xip" --tcp=2022:8000 --mode=fullproxy --security=https --host="$xip" --pd-disagg --sse-mode --monitor --probetype=http --probeport=8000 --probereq=/health --probetimeout=5 --proberetries=2 --endpoints="$ep1:1,$ep3:1,$ep2:1,$ep4:1" --ep-role=prefill,prefill,decode,decode --nixl-port=9001,9003,9002,9004
+  else
   $hexec "$target" curl -s -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
     -H 'Content-Type: application/json' \
     -d '{"serviceArguments":{"externalIP":"'"$xip"'","port":2022,"protocol":"tcp","sel":0,"mode":4,"security":1,"pd_disagg_mode":true,"sse_mode":true,"host":"'"$xip"'","monitor":true,"probetype":"http","probeport":8000,"probereq":"/health","probeTimeout":5,"probeRetries":2},"endpoints":[{"endpointIP":"'"$ep1"'","targetPort":8000,"weight":1,"ep_role":1,"nixl_port":9001},{"endpointIP":"'"$ep3"'","targetPort":8000,"weight":1,"ep_role":1,"nixl_port":9003},{"endpointIP":"'"$ep2"'","targetPort":8000,"weight":1,"ep_role":2,"nixl_port":9002},{"endpointIP":"'"$ep4"'","targetPort":8000,"weight":1,"ep_role":2,"nixl_port":9004}]}' >/dev/null
+  fi
   # Port 2023 — 2P+2D cache-aware P/D.
+  if [[ "$USE_CLI" == "1" ]]; then
+    create_lb_rule "$target" "$xip" --tcp=2023:8000 --mode=fullproxy --security=https --host="$xip" --pd-disagg --pd-cache-aware --sse-mode --monitor --probetype=http --probeport=8000 --probereq=/health --probetimeout=5 --proberetries=2 --endpoints="$ep1:1,$ep3:1,$ep2:1,$ep4:1" --ep-role=prefill,prefill,decode,decode --nixl-port=9001,9003,9002,9004
+  else
   $hexec "$target" curl -s -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
     -H 'Content-Type: application/json' \
     -d '{"serviceArguments":{"externalIP":"'"$xip"'","port":2023,"protocol":"tcp","sel":0,"mode":4,"security":1,"pd_disagg_mode":true,"pd_cache_aware_mode":true,"sse_mode":true,"host":"'"$xip"'","monitor":true,"probetype":"http","probeport":8000,"probereq":"/health","probeTimeout":5,"probeRetries":2},"endpoints":[{"endpointIP":"'"$ep1"'","targetPort":8000,"weight":1,"ep_role":1,"nixl_port":9001},{"endpointIP":"'"$ep3"'","targetPort":8000,"weight":1,"ep_role":1,"nixl_port":9003},{"endpointIP":"'"$ep2"'","targetPort":8000,"weight":1,"ep_role":2,"nixl_port":9002},{"endpointIP":"'"$ep4"'","targetPort":8000,"weight":1,"ep_role":2,"nixl_port":9004}]}' >/dev/null
+  fi
   # Port 2024 — PLAIN session stickiness by X-Conversation-Id (NOT P/D). Exercises
   # conversation_mapping (conv_map): sel=rr + session_header_name pins each conv to
   # one backend; that binding is what sockproxy xSync replicates to the BACKUP, so a
   # conversation survives MASTER failover (validation-convsync.sh). l3ep1/l3ep2 act
   # as plain backends (ep_role=0). externalIP is $xip so the synced service_key
   # matches on both nodes (11.11.11.11 under vrrp).
+  if [[ "$USE_CLI" == "1" ]]; then
+    create_lb_rule "$target" "$xip" --tcp=2024:8000 --mode=fullproxy --security=https --host="$xip" --session-header-name=X-Conversation-Id --monitor --probetype=http --probeport=8000 --probereq=/health --probetimeout=5 --proberetries=2 --endpoints="$ep1:1,$ep2:1"
+  else
   $hexec "$target" curl -s -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
     -H 'Content-Type: application/json' \
     -d '{"serviceArguments":{"externalIP":"'"$xip"'","port":2024,"protocol":"tcp","sel":0,"mode":4,"security":1,"session_header_name":"X-Conversation-Id","host":"'"$xip"'","monitor":true,"probetype":"http","probeport":8000,"probereq":"/health","probeTimeout":5,"probeRetries":2},"endpoints":[{"endpointIP":"'"$ep1"'","targetPort":8000,"weight":1,"ep_role":0},{"endpointIP":"'"$ep2"'","targetPort":8000,"weight":1,"ep_role":0}]}' >/dev/null
+  fi
 }
 
 echo "#########################################"
@@ -234,6 +254,12 @@ echo "#########################################"
 echo "Installing P/D LB rules on llb1 (ports 2020/2021/2022/2023)"
 echo "#########################################"
 
+# D-5 config path: drive the inference-gateway loxicmd as the load-bearing config
+# path when present (subject-under-test); fall back to raw REST for old/absent CLI.
+# Computed once here (unconditionally, before any install_lb_rules call) so it is
+# also in scope for the Phase L HA re-installs (llb1 + llb2) further below.
+cli_preflight llb1 && USE_CLI=1 || USE_CLI=0
+
 # In VRRP mode the initial rules are skipped here — they are installed with the
 # correct VIP (11.11.11.11) and bridge EP IPs after the binary overlay + keepalived
 # sidecar spawn in the VRRP section below (Step 10).
@@ -244,7 +270,11 @@ echo "#########################################"
 echo "Enabling Prometheus metrics"
 echo "#########################################"
 
+if [[ "$USE_CLI" == "1" ]]; then
+  $dexec llb1 loxicmd set metrics --enable
+else
 $hexec llb1 curl -s -X POST http://localhost:11111/netlox/v1/config/metrics
+fi
 
 sleep 5
 
@@ -528,8 +558,13 @@ sleep 3  # VRRP adverts establish, election converges before LB rules install
 # above is still in scope so the helper POSTs externalIP=11.11.11.11.
 install_lb_rules llb1
 install_lb_rules llb2
+if [[ "$USE_CLI" == "1" ]]; then
+  $dexec llb1 loxicmd set metrics --enable >/dev/null || true
+  $dexec llb2 loxicmd set metrics --enable >/dev/null || true
+else
 $hexec llb1 curl -s -X POST http://localhost:11111/netlox/v1/config/metrics >/dev/null || true
 $hexec llb2 curl -s -X POST http://localhost:11111/netlox/v1/config/metrics >/dev/null || true
+fi
 
 # Step 11: cistate convergence poll. read_cistate helper
 # definition mirrors the bfd-arm helper at config.sh:353-365 byte-for-byte
@@ -679,7 +714,11 @@ sleep 3  # loxilb readiness (API up on 11111); cluster role convergence handled 
 # sync from 70-A would seed LB config too; in CICD we register them explicitly
 # so the test focuses on *session* sync, not control-plane sync.)
 install_lb_rules llb2
+if [[ "$USE_CLI" == "1" ]]; then
+  $dexec llb2 loxicmd set metrics --enable >/dev/null || true
+else
 $hexec llb2 curl -s -X POST http://localhost:11111/netlox/v1/config/metrics >/dev/null || true
+fi
 
 # Install master-routing on l3h1: iptables DNAT 10.10.10.99 → 10.10.10.254
 # initially, rewritten by validation.sh update_master_dnat after each failover.

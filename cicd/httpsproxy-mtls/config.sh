@@ -79,8 +79,15 @@ $dexec llb1 bash -c "apt update && apt install -y curl"
 
 sleep 5
 
+# D-5 config path: drive the inference-gateway loxicmd as the load-bearing config
+# path when present (subject-under-test); fall back to raw REST for old/absent CLI.
+cli_preflight llb1 && USE_CLI=1 || USE_CLI=0
+
 # Test 1: Frontend mTLS with required client certificate + CN pattern matching
 # Client must present valid certificate with CN matching "*.internal.corp.com"
+if [[ "$USE_CLI" == "1" ]]; then
+  create_lb_rule llb1 10.10.10.254 --tcp=2020:8080 --endpoints=31.31.31.1:1,32.32.32.1:1,33.33.33.1:1 --mode=fullproxy --security=https --name=mtls-required-service --host=10.10.10.254 --mtls-client-cert-mode=required --mtls-client-ca-path=/opt/loxilb/cert/client_ca.crt --mtls-require-client-cn --mtls-client-cn-pattern='*.internal.corp.com'
+else
 $dexec llb1 bash -c "curl -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
   -H 'Content-Type: application/json' \
   -d '{
@@ -117,8 +124,12 @@ $dexec llb1 bash -c "curl -X POST http://localhost:11111/netlox/v1/config/loadba
     }
   ]
 }'"
+fi
 
 # Test 2: Frontend mTLS with optional client certificate (backward compatibility)
+if [[ "$USE_CLI" == "1" ]]; then
+  create_lb_rule llb1 10.10.10.254 --tcp=2021:8080 --endpoints=31.31.31.1:1,32.32.32.1:1,33.33.33.1:1 --mode=fullproxy --security=https --name=mtls-optional-service --host=10.10.10.254 --mtls-client-cert-mode=optional --mtls-client-ca-path=/opt/loxilb/cert/client_ca.crt
+else
 $dexec llb1 bash -c "curl -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
   -H 'Content-Type: application/json' \
   -d '{
@@ -153,6 +164,7 @@ $dexec llb1 bash -c "curl -X POST http://localhost:11111/netlox/v1/config/loadba
     }
   ]
 }'"
+fi
 
 echo "#########################################"
 echo "mTLS configuration complete"

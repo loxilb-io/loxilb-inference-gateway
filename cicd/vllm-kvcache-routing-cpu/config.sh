@@ -214,9 +214,16 @@ read -r -d '' SEED_KVRULE <<JSON
 }
 JSON
 
-echo "Seeding KV-exact P/D service ${VIP}:${VPORT} (kvExactMode=1, 3 prefill + 3 decode) via REST..."
+# D-5 config path: drive the inference-gateway loxicmd as the load-bearing config
+# path when present (subject-under-test); fall back to raw REST for old/absent CLI.
+cli_preflight llb1 && USE_CLI=1 || USE_CLI=0
+echo "Seeding KV-exact P/D service ${VIP}:${VPORT} (kvExactMode=1, 3 prefill + 3 decode)..."
+if [[ "$USE_CLI" == "1" ]]; then
+  create_lb_rule llb1 "${VIP}" --tcp=${VPORT}:80 --mode=fullproxy --host="${VIP}" --pd-disagg --proberetries=1 --kv-exact-mode=1 --kv-zmq-port=${KV_ZMQ_PORT} --kv-hash-algo=${KV_HASH_ALGO} --kv-warmup=${KV_WARMUP_SEC} --kv-block-size=${KV_BLOCK_SIZE} --endpoints=31.31.31.1:1,32.32.32.1:1,33.33.33.1:1,34.34.34.1:1,35.35.35.1:1,36.36.36.1:1 --ep-role=prefill,decode,prefill,decode,prefill,decode
+else
 $hexec llb1 curl -s -o /dev/null -w "  POST /config/loadbalancer (KV-exact rule) -> HTTP %{http_code}\n" \
     -X POST "${LBBASE}" -H 'Content-Type: application/json' -d "${SEED_KVRULE}"
+fi
 
 sleep 3
 

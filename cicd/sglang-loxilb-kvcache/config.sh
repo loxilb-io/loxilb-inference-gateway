@@ -215,10 +215,18 @@ echo "Waiting for the restarted loxilb REST API..."
 # it, validation.sh's tier15_hits/metric_val reads all return 0 and every KV metric-delta
 # assert (L2/L3.2/L5 tier15 hits, L7 zero_hit_watchdog counter) FAILS even though the KV
 # routing itself works. Enable BEFORE seeding rules so the counters are exposed from t0.
+# D-5 config path: drive the inference-gateway loxicmd as the load-bearing config
+# path when present (subject-under-test); fall back to raw REST for old/absent CLI.
+cli_preflight llb1 && USE_CLI=1 || USE_CLI=0
 echo "Enabling Prometheus metrics (POST /config/metrics)..."
+if [[ "$USE_CLI" == "1" ]]; then
+  $dexec llb1 loxicmd set metrics --enable || \
+    echo "  WARN: enabling metrics failed — KV metric-delta asserts will read 0"
+else
 $hexec llb1 curl -s -o /dev/null -w "  POST /config/metrics -> HTTP %{http_code}\n" \
     -X POST "http://localhost:11111/netlox/v1/config/metrics" 2>/dev/null || \
     echo "  WARN: enabling metrics failed — KV metric-delta asserts will read 0"
+fi
 
 # ── Rule 1 of 2: VIP-A — the UNMODIFIED vLLM P/D mock shape ────────────────────────────────
 # Byte-for-byte the vllm-kvcache-routing-cpu rule template (kvExactMode=1 + pd_disagg over
@@ -251,8 +259,12 @@ read -r -d '' SEED_RULE_A <<JSON
 JSON
 
 echo "Seeding VIP-A (vLLM P/D mock) ${VIP}:${VPORT_A} (kvExactMode=1, 2 prefill + 2 decode)..."
+if [[ "$USE_CLI" == "1" ]]; then
+  create_lb_rule llb1 "${VIP}" --tcp=${VPORT_A}:80 --mode=fullproxy --host="${VIP}" --pd-disagg --proberetries=1 --kv-exact-mode=1 --kv-zmq-port=${KV_ZMQ_PORT_A} --kv-hash-algo=${KV_HASH_ALGO_A} --kv-warmup=${KV_WARMUP_SEC} --kv-block-size=${KV_BLOCK_SIZE} --endpoints=31.31.31.1:1,32.32.32.1:1,33.33.33.1:1,34.34.34.1:1 --ep-role=prefill,decode,prefill,decode
+else
 $hexec llb1 curl -s -o /dev/null -w "  POST /config/loadbalancer (VIP-A vLLM rule) -> HTTP %{http_code}\n" \
     -X POST "${LBBASE}" -H 'Content-Type: application/json' -d "${SEED_RULE_A}"
+fi
 
 # ── Rule 2 of 2: VIP-B — the SGLang single-role shape ──────────────────────────────────────
 # kvExactMode=3 (single-role, role-LESS EPs — no ep_role fields) + kvEngineType=sglang +
@@ -287,8 +299,12 @@ read -r -d '' SEED_RULE_B <<JSON
 JSON
 
 echo "Seeding VIP-B (SGLang single-role) ${VIP}:${VPORT_B} (kvExactMode=3, engine=sglang, dpRanks=${KV_DP_RANKS})..."
+if [[ "$USE_CLI" == "1" ]]; then
+  create_lb_rule llb1 "${VIP}" --tcp=${VPORT_B}:80 --mode=fullproxy --host="${VIP}" --proberetries=1 --kv-exact-mode=3 --kv-engine-type=sglang --kv-dp-ranks=${KV_DP_RANKS} --kv-zmq-port=${KV_ZMQ_PORT_B} --kv-warmup=${KV_WARMUP_SEC} --kv-block-size=${KV_BLOCK_SIZE} --endpoints=35.35.35.1:1,36.36.36.1:1,37.37.37.1:1
+else
 $hexec llb1 curl -s -o /dev/null -w "  POST /config/loadbalancer (VIP-B SGLang rule) -> HTTP %{http_code}\n" \
     -X POST "${LBBASE}" -H 'Content-Type: application/json' -d "${SEED_RULE_B}"
+fi
 
 sleep 3
 

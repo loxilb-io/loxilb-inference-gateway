@@ -22,29 +22,45 @@ vllm_fullproxy_install_lb_rules() {
     # REST API: sel=0=rr, sel=8=chwbl, mode=4=fullproxy, security=1=https
     # probetype=http probeTimeout=10 probeRetries=1: fast health detection (~10s failover)
     # Port 2020: round-robin, HTTPS fullproxy
+    if [[ "$USE_CLI" == "1" ]]; then
+        create_lb_rule "$target" 10.10.10.254 --tcp=2020:8000 --endpoints=31.31.31.1:1,32.32.32.1:1 --mode=fullproxy --security=https --host=10.10.10.254 --select=rr --monitor --probetype=http --probeport=8000 --probereq=/v1/models --probetimeout=10 --proberetries=1
+    else
     $dexec "$target" wget -qO- \
         --header='Content-Type: application/json' \
         --method=POST \
         --body-data='{"serviceArguments":{"externalIP":"10.10.10.254","port":2020,"protocol":"tcp","sel":0,"mode":4,"security":1,"monitor":true,"host":"10.10.10.254","probetype":"http","probeport":8000,"probereq":"/v1/models","probeTimeout":10,"probeRetries":1},"endpoints":[{"endpointIP":"31.31.31.1","targetPort":8000,"weight":1},{"endpointIP":"32.32.32.1","targetPort":8000,"weight":1}]}' \
         http://127.0.0.1:11111/netlox/v1/config/loadbalancer
+    fi
     # Port 2021: CHWBL Level1 (hash on model name only)
+    if [[ "$USE_CLI" == "1" ]]; then
+        create_lb_rule "$target" 10.10.10.254 --tcp=2021:8000 --endpoints=31.31.31.1:1,32.32.32.1:1 --mode=fullproxy --security=https --host=10.10.10.254 --select=chwbl --chwbl-hash-level=1 --monitor --probetype=http --probeport=8000 --probereq=/v1/models --probetimeout=10 --proberetries=1
+    else
     $dexec "$target" wget -qO- \
         --header='Content-Type: application/json' \
         --method=POST \
         --body-data='{"serviceArguments":{"externalIP":"10.10.10.254","port":2021,"protocol":"tcp","sel":8,"mode":4,"security":1,"monitor":true,"host":"10.10.10.254","chwbl_prefix_hash_level":1,"probetype":"http","probeport":8000,"probereq":"/v1/models","probeTimeout":10,"probeRetries":1},"endpoints":[{"endpointIP":"31.31.31.1","targetPort":8000,"weight":1},{"endpointIP":"32.32.32.1","targetPort":8000,"weight":1}]}' \
         http://127.0.0.1:11111/netlox/v1/config/loadbalancer
+    fi
     # Port 2022: CHWBL Level2 (model+prompt prefix, load-factor=125, replication=100)
+    if [[ "$USE_CLI" == "1" ]]; then
+        create_lb_rule "$target" 10.10.10.254 --tcp=2022:8000 --endpoints=31.31.31.1:1,32.32.32.1:1 --mode=fullproxy --security=https --host=10.10.10.254 --select=chwbl --chwbl-hash-level=2 --chwbl-load-factor=125 --chwbl-replication=100 --monitor --probetype=http --probeport=8000 --probereq=/v1/models --probetimeout=10 --proberetries=1
+    else
     $dexec "$target" wget -qO- \
         --header='Content-Type: application/json' \
         --method=POST \
         --body-data='{"serviceArguments":{"externalIP":"10.10.10.254","port":2022,"protocol":"tcp","sel":8,"mode":4,"security":1,"monitor":true,"host":"10.10.10.254","chwbl_prefix_hash_level":2,"chwbl_mean_load_factor":125,"chwbl_replication":100,"probetype":"http","probeport":8000,"probereq":"/v1/models","probeTimeout":10,"probeRetries":1},"endpoints":[{"endpointIP":"31.31.31.1","targetPort":8000,"weight":1},{"endpointIP":"32.32.32.1","targetPort":8000,"weight":1}]}' \
         http://127.0.0.1:11111/netlox/v1/config/loadbalancer
+    fi
     # Port 2023: CHWBL Level3 (full hash, load-factor=250, replication=200)
+    if [[ "$USE_CLI" == "1" ]]; then
+        create_lb_rule "$target" 10.10.10.254 --tcp=2023:8000 --endpoints=31.31.31.1:1,32.32.32.1:1 --mode=fullproxy --security=https --host=10.10.10.254 --select=chwbl --chwbl-hash-level=3 --chwbl-load-factor=250 --chwbl-replication=200 --monitor --probetype=http --probeport=8000 --probereq=/v1/models --probetimeout=10 --proberetries=1
+    else
     $dexec "$target" wget -qO- \
         --header='Content-Type: application/json' \
         --method=POST \
         --body-data='{"serviceArguments":{"externalIP":"10.10.10.254","port":2023,"protocol":"tcp","sel":8,"mode":4,"security":1,"monitor":true,"host":"10.10.10.254","chwbl_prefix_hash_level":3,"chwbl_mean_load_factor":250,"chwbl_replication":200,"probetype":"http","probeport":8000,"probereq":"/v1/models","probeTimeout":10,"probeRetries":1},"endpoints":[{"endpointIP":"31.31.31.1","targetPort":8000,"weight":1},{"endpointIP":"32.32.32.1","targetPort":8000,"weight":1}]}' \
         http://127.0.0.1:11111/netlox/v1/config/loadbalancer
+    fi
 }
 
 echo "#########################################"
@@ -168,6 +184,9 @@ echo "#########################################"
 echo "Creating LoxiLB load balancer rule"
 echo "#########################################"
 
+# D-5 config path: drive the inference-gateway loxicmd as the load-bearing config
+# path when present (subject-under-test); fall back to raw REST for old/absent CLI.
+cli_preflight llb1 && USE_CLI=1 || USE_CLI=0
 vllm_fullproxy_install_lb_rules llb1
 
 echo "#########################################"

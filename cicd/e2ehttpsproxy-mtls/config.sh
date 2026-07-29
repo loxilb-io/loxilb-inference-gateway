@@ -164,15 +164,23 @@ echo "#########################################"
 echo "Registering SNI certificate for VIP"
 echo "#########################################"
 
+# D-5 config path: drive the inference-gateway loxicmd as the load-bearing config
+# path when present (subject-under-test); fall back to raw REST for old/absent CLI.
+cli_preflight llb1 && USE_CLI=1 || USE_CLI=0
+
 # SNI certificates live in loxilb's GLOBAL SNI store and are NOT auto-created
 # by a security=2 LB rule — they must be registered explicitly via
 # POST /sni/certificates. validate_api.sh API-T3 asserts at least one entry
 # exists for the VIP. certPath is the directory holding server.crt/server.key
 # (installed above at /opt/loxilb/cert).
+if [[ "$USE_CLI" == "1" ]]; then
+  $dexec llb1 loxicmd create sni --hostname=10.10.10.254 --cert-path=/opt/loxilb/cert
+else
 docker exec llb1 curl -s -X POST http://localhost:11111/netlox/v1/sni/certificates \
   -H "Content-Type: application/json" \
   -d '{"hostname":"10.10.10.254","certPath":"/opt/loxilb/cert"}'
 echo
+fi
 
 echo "#########################################"
 echo "Creating end-to-end mTLS load balancer rules"
@@ -183,6 +191,9 @@ sleep 5
 # Test 1: Full end-to-end mTLS with required frontend client cert + backend mTLS verification
 # Frontend: Client must present valid cert with CN matching "*.internal.corp.com"
 # Backend: Verify backend server certificates and present loxilb client cert
+if [[ "$USE_CLI" == "1" ]]; then
+  create_lb_rule llb1 10.10.10.254 --tcp=2020:8443 --endpoints=31.31.31.1:1,32.32.32.1:1,33.33.33.1:1 --mode=fullproxy --security=e2ehttps --name=e2e-mtls-required-service --host=10.10.10.254 --mtls-client-cert-mode=required --mtls-client-ca-path=/opt/loxilb/cert/client_ca.crt --mtls-require-client-cn --mtls-client-cn-pattern='*.internal.corp.com' --mtls-backend-ca-path=/opt/loxilb/cert/backend_ca.crt --mtls-backend-cert-path=/opt/loxilb/cert/backend_client.crt --mtls-backend-key-path=/opt/loxilb/cert/backend_client.key --mtls-backend-verify-server
+else
 docker exec llb1 curl -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
   -H "Content-Type: application/json" \
   -d '{
@@ -225,8 +236,12 @@ docker exec llb1 curl -X POST http://localhost:11111/netlox/v1/config/loadbalanc
     }
   ]
 }'
+fi
 
 # Test 2: Frontend mTLS optional + Backend mTLS verification
+if [[ "$USE_CLI" == "1" ]]; then
+  create_lb_rule llb1 10.10.10.254 --tcp=2021:8443 --endpoints=31.31.31.1:1,32.32.32.1:1,33.33.33.1:1 --mode=fullproxy --security=e2ehttps --name=e2e-mtls-optional-service --host=10.10.10.254 --mtls-client-cert-mode=optional --mtls-client-ca-path=/opt/loxilb/cert/client_ca.crt --mtls-backend-ca-path=/opt/loxilb/cert/backend_ca.crt --mtls-backend-cert-path=/opt/loxilb/cert/backend_client.crt --mtls-backend-key-path=/opt/loxilb/cert/backend_client.key --mtls-backend-verify-server
+else
 docker exec llb1 curl -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
   -H "Content-Type: application/json" \
   -d '{
@@ -267,6 +282,7 @@ docker exec llb1 curl -X POST http://localhost:11111/netlox/v1/config/loadbalanc
     }
   ]
 }'
+fi
 
 echo "#########################################"
 echo "End-to-end mTLS configuration complete"

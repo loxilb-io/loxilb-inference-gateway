@@ -68,6 +68,10 @@ docker cp 10.10.10.254/certs/server.key llb1:/opt/loxilb/cert/server.key
 
 
 sleep 5
+cli_preflight llb1 && USE_CLI=1 || USE_CLI=0
+if [[ "$USE_CLI" == "1" ]]; then
+  create_lb_rule llb1 10.10.10.254 --tcp=2022:8082 --endpoints=31.31.31.1:1,32.32.32.1:1,33.33.33.1:1 --mode=fullproxy --security=e2ehttps --host=10.10.10.254 --backend-protocol=http2
+else
 $dexec llb1 curl -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
   -H "Content-Type: application/json" \
   -d '{
@@ -86,3 +90,4 @@ $dexec llb1 curl -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
     { "endpointIP": "33.33.33.1", "targetPort": 8082, "weight": 1 }
   ]
 }'
+fi

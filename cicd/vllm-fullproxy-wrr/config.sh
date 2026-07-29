@@ -128,6 +128,12 @@ echo "#########################################"
 # Create LB rule: HTTPS (frontend) -> HTTP (backend)
 # VIP: 10.10.10.254:2020 (HTTPS) - chwblwrr for general validation (weights 8:2)
 # Backends: 31.31.31.1:8000 (w=8), 32.32.32.1:8000 (w=2)
+# D-5 config path: drive the inference-gateway loxicmd as the load-bearing config
+# path when present (subject-under-test); fall back to raw REST for old/absent CLI.
+cli_preflight llb1 && USE_CLI=1 || USE_CLI=0
+if [[ "$USE_CLI" == "1" ]]; then
+  create_lb_rule llb1 10.10.10.254 --tcp=2020:8000 --endpoints=31.31.31.1:8,32.32.32.1:2 --mode=fullproxy --security=https --host=10.10.10.254 --select=chwbl-wrr --chwbl-hash-level=1
+else
 $dexec llb1 curl -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
   -H "Content-Type: application/json" \
   -d '{
@@ -146,7 +152,11 @@ $dexec llb1 curl -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
     { "endpointIP": "32.32.32.1", "targetPort": 8000, "weight": 2 }
   ]
 }'
+fi
 # Level1
+if [[ "$USE_CLI" == "1" ]]; then
+  create_lb_rule llb1 10.10.10.254 --tcp=2021:8000 --endpoints=31.31.31.1:8,32.32.32.1:2 --mode=fullproxy --security=https --host=10.10.10.254 --select=chwbl-wrr --chwbl-hash-level=1
+else
 $dexec llb1 curl -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
   -H "Content-Type: application/json" \
   -d '{
@@ -165,7 +175,11 @@ $dexec llb1 curl -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
     { "endpointIP": "32.32.32.1", "targetPort": 8000, "weight": 2 }
   ]
 }'
+fi
 # Level2
+if [[ "$USE_CLI" == "1" ]]; then
+  create_lb_rule llb1 10.10.10.254 --tcp=2022:8000 --endpoints=31.31.31.1:8,32.32.32.1:2 --mode=fullproxy --security=https --host=10.10.10.254 --select=chwbl-wrr --chwbl-hash-level=2 --chwbl-load-factor=125 --chwbl-replication=100
+else
 $dexec llb1 curl -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
   -H "Content-Type: application/json" \
   -d '{
@@ -186,7 +200,11 @@ $dexec llb1 curl -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
     { "endpointIP": "32.32.32.1", "targetPort": 8000, "weight": 2 }
   ]
 }'
+fi
 # Level3
+if [[ "$USE_CLI" == "1" ]]; then
+  create_lb_rule llb1 10.10.10.254 --tcp=2023:8000 --endpoints=31.31.31.1:8,32.32.32.1:2 --mode=fullproxy --security=https --host=10.10.10.254 --select=chwbl-wrr --chwbl-hash-level=3 --chwbl-load-factor=250 --chwbl-replication=200
+else
 $dexec llb1 curl -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
   -H "Content-Type: application/json" \
   -d '{
@@ -207,6 +225,7 @@ $dexec llb1 curl -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
     { "endpointIP": "32.32.32.1", "targetPort": 8000, "weight": 2 }
   ]
 }'
+fi
 echo "#########################################"
 echo "Configuration complete"
 echo "#########################################"
