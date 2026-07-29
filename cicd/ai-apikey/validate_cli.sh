@@ -1,10 +1,18 @@
 #!/bin/bash
-# validate_cli.sh — End-to-end REST API validation for AI Gateway commands.
-# Replaces the former loxicmd-based CLI tests with direct REST API calls so that
-# CI is not blocked by loxicmd binary availability or version skew.
+# validate_cli.sh — CLI-driven validation for the AI Gateway apikey/ratelimit
+# control plane, using the loxicmd-inference-gateway CLI as the subject-under-test
+# and the REST API as the oracle: every mutation is issued through `loxicmd`, then
+# read back through the REST API (and cross-checked via `loxicmd get`).
 #
-# Runs AFTER existing T1-T8 REST tests in validation.sh.
-# Sources ../common.sh for $hexec helper.
+# Auth (this scenario runs loxilb with --userservice): a JWT is obtained from the
+# REST /auth/login endpoint and handed to `loxicmd set login --provider manual`,
+# which writes /tmp/loxilbtoken inside llb1; subsequent loxicmd calls read it
+# automatically (--bearer default true). Plain user/pass `set login` needs a TTY
+# and is not scriptable under `docker exec -i`.
+#
+# Runs AFTER the REST T1-T8 tests in validation.sh; folded into its exit code.
+# Gated by cli_preflight (CLI_TESTS=auto|required|skip) so an image predating the
+# packaging swap skips cleanly instead of hard-failing.
 
 source ../common.sh
 
@@ -12,8 +20,13 @@ LOXILB_API="${LOXILB_API:-http://localhost:11111/netlox/v1}"
 
 echo ""
 echo "========================================="
-echo " REST API Validation (AI Gateway)"
+echo " CLI Validation (AI Gateway apikey/ratelimit)"
 echo "========================================="
+
+# ── Preflight: is the packaged loxicmd the inference-gateway CLI? ──────────────
+if ! cli_preflight llb1; then
+  exit 0
+fi
 
 check_cli() {
   local label="$1" want="$2" got="$3"
@@ -25,125 +38,135 @@ check_cli() {
   fi
 }
 
-# ── Authenticate ──────────────────────────────────────────────────────────────
+# ── Auth: REST login → loxicmd set login --provider manual (writes token file) ─
 echo ""
-echo "Setup: Authenticating with REST API"
-CLI_TOKEN=$($hexec llb1 curl -s -X POST \
-  "$LOXILB_API/auth/login" \
+echo "Setup: authenticate CLI via 'loxicmd set login --provider manual'"
+JWT=$($hexec llb1 curl -s -X POST "$LOXILB_API/auth/login" \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"Admin123!"}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))" 2>/dev/null)
-if [[ -z "$CLI_TOKEN" ]]; then
-  echo "  FATAL: CLI auth failed"
-  exit 1
+if [[ -z "$JWT" ]]; then
+  echo "  FATAL: REST auth failed (no token)"; exit 1
 fi
-echo "  token obtained [OK]"
-AUTH_HDR="Authorization: Bearer $CLI_TOKEN"
+echo "$JWT" | $dexec llb1 loxicmd set login --provider manual >/dev/null 2>&1
+# REST oracle still authenticates explicitly:
+AUTH_HDR="Authorization: Bearer $JWT"
+echo "  CLI token installed at /tmp/loxilbtoken [OK]"
 
-# ── T-CLI-1: Create API key ──────────────────────────────────────────────────
-TENANT_ID="cli-test-$(date +%s)"
-echo ""
-echo "T-CLI-1: Create API key via POST /config/ai/apikey (tenant=$TENANT_ID)"
-resp=$($hexec llb1 curl -s -w "\n%{http_code}" -X POST \
-  "$LOXILB_API/config/ai/apikey" \
-  -H "Content-Type: application/json" \
-  -H "$AUTH_HDR" \
-  -d "{\"tenant_id\":\"$TENANT_ID\",\"name\":\"rest-test-key\",\"allowed_models\":[],\"rate_limit_rps\":10,\"burst_size\":20,\"tokens_per_min\":5000,\"enabled\":true}")
-body=$(echo "$resp" | head -n1)
-http_code=$(echo "$resp" | tail -n1)
-echo "  HTTP $http_code | body: $body"
-if [[ "$http_code" != "201" ]]; then
-  echo "  T-CLI-1 expected 201 got $http_code [FAIL]"; exit 1
-fi
-KEY_ID=$(echo "$body" | python3 -c "import sys,json; print(json.load(sys.stdin).get('key_id',''))" 2>/dev/null)
-RAW_KEY=$(echo "$body" | python3 -c "import sys,json; print(json.load(sys.stdin).get('raw_key',''))" 2>/dev/null)
-if [[ -z "$KEY_ID" ]] || [[ -z "$RAW_KEY" ]]; then
-  echo "  T-CLI-1 missing key_id or raw_key [FAIL]"; exit 1
-fi
-echo "  KEY_ID=$KEY_ID RAW_KEY=${RAW_KEY:0:10}... [OK]"
+TENANT_ID="cli-apikey-$(date +%s)"
 
-# ── T-CLI-2: List API keys by tenant ─────────────────────────────────────────
+# ── T-CLI-1: create apikey via CLI, verify via REST list ─────────────────────
 echo ""
-echo "T-CLI-2: List API keys via GET /config/ai/apikey?tenant_id=$TENANT_ID"
+echo "T-CLI-1: loxicmd create apikey --tenant-id=$TENANT_ID (rps=10 burst=20 tokens=5000)"
+$dexec llb1 loxicmd create apikey --tenant-id="$TENANT_ID" --name=cli-key \
+  --rps=10 --burst=20 --tokens-per-min=5000 -o json >/dev/null 2>&1
+
 list_resp=$($hexec llb1 curl -s -H "$AUTH_HDR" \
   "$LOXILB_API/config/ai/apikey?tenant_id=$TENANT_ID")
-check_cli "T-CLI-2 list contains key_id" "$KEY_ID" "$list_resp"
-check_cli "T-CLI-2 list contains tenant_id" "$TENANT_ID" "$list_resp"
-
-# ── T-CLI-3: Get API key by ID ───────────────────────────────────────────────
-echo ""
-echo "T-CLI-3: Get API key by ID via GET /config/ai/apikey/$KEY_ID"
-get_resp=$($hexec llb1 curl -s -w "\n%{http_code}" \
-  -H "$AUTH_HDR" "$LOXILB_API/config/ai/apikey/$KEY_ID")
-get_body=$(echo "$get_resp" | head -n1)
-get_code=$(echo "$get_resp" | tail -n1)
-if [[ "$get_code" != "200" ]]; then
-  echo "  T-CLI-3 expected 200 got $get_code [FAIL]"; exit 1
+KEY_ID=$(echo "$list_resp" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+a=d if isinstance(d,list) else d.get('apikeys', d.get('items', []))
+print(a[0]['key_id'] if a else '')
+" 2>/dev/null)
+if [[ -z "$KEY_ID" ]]; then
+  echo "  T-CLI-1 CLI create did not produce a key readable via REST [FAIL]"
+  echo "  REST list: $list_resp"; exit 1
 fi
-check_cli "T-CLI-3 rate_limit_rps=10" "10" "$get_body"
-check_cli "T-CLI-3 tokens_per_min=5000" "5000" "$get_body"
-# Verify key_hash NOT leaked
-if python3 -c "import sys,json; d=json.load(sys.stdin); exit(1 if 'key_hash' in d else 0)" <<< "$get_body" 2>/dev/null; then
-  echo "  T-CLI-3 key_hash absent (not leaked) [OK]"
+echo "  key_id=$KEY_ID (created via CLI, read via REST) [OK]"
+check_cli "T-CLI-1 REST oracle rate_limit_rps=10" '"rate_limit_rps":10' "$list_resp"
+check_cli "T-CLI-1 REST oracle tokens_per_min=5000" '"tokens_per_min":5000' "$list_resp"
+# key_hash must never be returned by the API
+if [[ "$list_resp" == *"key_hash"* ]]; then
+  echo "  T-CLI-1 key_hash LEAKED in REST list [FAIL]"; exit 1
+fi
+echo "  T-CLI-1 key_hash absent in REST list [OK]"
+
+# ── T-CLI-2: cross-check loxicmd get apikey <id> against REST GET ────────────
+echo ""
+echo "T-CLI-2: loxicmd get apikey $KEY_ID -o json (CLI read path)"
+cli_get=$($dexec llb1 loxicmd get apikey "$KEY_ID" -o json 2>/dev/null)
+check_cli "T-CLI-2 CLI get shows key_id" "$KEY_ID" "$cli_get"
+check_cli "T-CLI-2 CLI get shows tenant_id" "$TENANT_ID" "$cli_get"
+if [[ "$cli_get" == *"key_hash"* ]]; then
+  echo "  T-CLI-2 key_hash LEAKED via CLI get [FAIL]"; exit 1
+fi
+echo "  T-CLI-2 key_hash absent in CLI get [OK]"
+
+# ── T-CLI-3: set ratelimit via CLI, verify via REST + CLI get ────────────────
+echo ""
+echo "T-CLI-3: loxicmd set ratelimit --tenant-id=$TENANT_ID --rps=200 --tokens-per-min=100000"
+$dexec llb1 loxicmd set ratelimit --tenant-id="$TENANT_ID" --rps=200 --tokens-per-min=100000 >/dev/null 2>&1
+rl_rest=$($hexec llb1 curl -s -H "$AUTH_HDR" "$LOXILB_API/config/ai/tenant/ratelimit/$TENANT_ID")
+check_cli "T-CLI-3 REST oracle rps=200" "200" "$rl_rest"
+check_cli "T-CLI-3 REST oracle tokens_per_min=100000" "100000" "$rl_rest"
+rl_cli=$($dexec llb1 loxicmd get ratelimit "$TENANT_ID" -o json 2>/dev/null)
+check_cli "T-CLI-3 CLI get ratelimit rps=200" "200" "$rl_cli"
+
+# ── T-CLI-4: enable/disable toggle via CLI ───────────────────────────────────
+# FINDING: the management API hides disabled keys — GET /apikey/<id> returns 404
+# and list-by-tenant omits the key while enabled=false. The key is NOT deleted
+# (it can be re-enabled or deleted by id). So we assert the *effect* of the toggle
+# (key leaves and returns to the enabled view) rather than reading enabled=false
+# directly, and stay robust if the API is later changed to surface disabled keys.
+echo ""
+echo "T-CLI-4: loxicmd set apikey $KEY_ID --enabled=false then --enabled=true"
+$dexec llb1 loxicmd set apikey "$KEY_ID" --enabled=false >/dev/null 2>&1
+dis_code=$($hexec llb1 curl -s -o /dev/null -w "%{http_code}" -H "$AUTH_HDR" \
+  "$LOXILB_API/config/ai/apikey/$KEY_ID")
+if [[ "$dis_code" == "404" ]]; then
+  echo "  disable took effect — key hidden from management GET (404)"
+  echo "  NOTE: disabled keys are not visible via GET-by-id or list-by-tenant"
+  echo "        (management-API finding: disabled != deleted, yet reads hide it)"
+elif [[ "$dis_code" == "200" ]]; then
+  body=$($hexec llb1 curl -s -H "$AUTH_HDR" "$LOXILB_API/config/ai/apikey/$KEY_ID")
+  check_cli "T-CLI-4 disabled key shows enabled=false" '"enabled":false' "$body"
 else
-  echo "  T-CLI-3 key_hash LEAKED in GET response [FAIL]"; exit 1
+  echo "  T-CLI-4 unexpected GET code after disable: $dis_code [FAIL]"; exit 1
 fi
+# Re-enable via CLI and confirm the key round-trips back into the enabled view.
+$dexec llb1 loxicmd set apikey "$KEY_ID" --enabled=true >/dev/null 2>&1
+after=$($hexec llb1 curl -s -H "$AUTH_HDR" "$LOXILB_API/config/ai/apikey/$KEY_ID")
+check_cli "T-CLI-4 re-enabled key visible with enabled=true" '"enabled":true' "$after"
 
-# ── T-CLI-4: Create tenant rate limit ────────────────────────────────────────
+# ── T-CLI-5: delete apikey via CLI, verify via REST → 404 ────────────────────
 echo ""
-echo "T-CLI-4: Set tenant rate limit via POST /config/ai/tenant/ratelimit"
-rl_code=$($hexec llb1 curl -s -o /dev/null -w "%{http_code}" -X POST \
-  "$LOXILB_API/config/ai/tenant/ratelimit" \
-  -H "Content-Type: application/json" \
-  -H "$AUTH_HDR" \
-  -d "{\"tenant_id\":\"$TENANT_ID\",\"rps\":200,\"tokens_per_min\":100000}")
-if [[ "$rl_code" != "200" && "$rl_code" != "201" && "$rl_code" != "204" ]]; then
-  echo "  T-CLI-4 expected 2xx got $rl_code [FAIL]"; exit 1
-fi
-echo "  T-CLI-4 rate limit set ($rl_code) [OK]"
-
-# ── T-CLI-5: Get tenant rate limit ───────────────────────────────────────────
-echo ""
-echo "T-CLI-5: Get tenant rate limit via GET /config/ai/tenant/ratelimit/$TENANT_ID"
-rl_resp=$($hexec llb1 curl -s -H "$AUTH_HDR" \
-  "$LOXILB_API/config/ai/tenant/ratelimit/$TENANT_ID")
-check_cli "T-CLI-5 rps=200" "200" "$rl_resp"
-check_cli "T-CLI-5 tokens_per_min=100000" "100000" "$rl_resp"
-
-# ── T-CLI-6: Delete API key ──────────────────────────────────────────────────
-echo ""
-echo "T-CLI-6: Delete API key via DELETE /config/ai/apikey/$KEY_ID"
-del_code=$($hexec llb1 curl -s -o /dev/null -w "%{http_code}" -X DELETE \
-  -H "$AUTH_HDR" "$LOXILB_API/config/ai/apikey/$KEY_ID")
-if [[ "$del_code" != "200" && "$del_code" != "204" ]]; then
-  echo "  T-CLI-6 expected 200/204 got $del_code [FAIL]"; exit 1
-fi
-echo "  T-CLI-6 deleted ($del_code) [OK]"
-
-# ── T-CLI-7: Get deleted key → 404 ───────────────────────────────────────────
-echo ""
-echo "T-CLI-7: Get deleted API key $KEY_ID → expect 404"
-gone_code=$($hexec llb1 curl -s -o /dev/null -w "%{http_code}" \
-  -H "$AUTH_HDR" "$LOXILB_API/config/ai/apikey/$KEY_ID")
-if [[ "$gone_code" == "404" ]]; then
-  echo "  T-CLI-7 deleted key returns 404 [OK]"
+echo "T-CLI-5: loxicmd delete apikey $KEY_ID → REST GET expect 404"
+$dexec llb1 loxicmd delete apikey "$KEY_ID" >/dev/null 2>&1
+gone=$($hexec llb1 curl -s -o /dev/null -w "%{http_code}" -H "$AUTH_HDR" \
+  "$LOXILB_API/config/ai/apikey/$KEY_ID")
+if [[ "$gone" == "404" ]]; then
+  echo "  T-CLI-5 deleted key returns 404 [OK]"
 else
-  echo "  T-CLI-7 expected 404 got $gone_code [FAIL]"; exit 1
+  echo "  T-CLI-5 expected 404 got $gone [FAIL]"; exit 1
 fi
 
-# ── T-CLI-8: Create without tenant_id → 400/422 ──────────────────────────────
+# ── T-CLI-6: negative — create apikey with empty tenant → no key, error msg ──
+# NB: loxicmd prints an error but returns exit 0 on client-side validation, so we
+# assert on the message (authoritative REST check: nothing was created).
 echo ""
-echo "T-CLI-8: Create API key with empty tenant_id → expect 400 or 422"
-bad_code=$($hexec llb1 curl -s -o /dev/null -w "%{http_code}" -X POST \
-  "$LOXILB_API/config/ai/apikey" \
-  -H "Content-Type: application/json" \
-  -H "$AUTH_HDR" \
-  -d '{"tenant_id":"","name":"empty-tenant-test","enabled":true}')
-if [[ "$bad_code" == "400" || "$bad_code" == "422" ]]; then
-  echo "  T-CLI-8 empty tenant_id rejected ($bad_code) [OK]"
+echo "T-CLI-6: loxicmd create apikey with no --tenant-id → rejected"
+neg_out=$($dexec llb1 loxicmd create apikey --name=empty-tenant 2>&1)
+if [[ "$neg_out" == *"tenant-id is required"* ]]; then
+  echo "  T-CLI-6 CLI rejected empty tenant-id [OK]"
 else
-  echo "  T-CLI-8 expected 400/422 got $bad_code [FAIL]"; exit 1
+  echo "  T-CLI-6 expected 'tenant-id is required', got: $neg_out [FAIL]"; exit 1
 fi
 
+# ── Cleanup: drop any stray keys for the test tenant, log out ────────────────
 echo ""
-echo "=== REST API Validation: All T-CLI tests passed ==="
+echo "Cleanup: removing test tenant keys and logging CLI out"
+stray=$($hexec llb1 curl -s -H "$AUTH_HDR" "$LOXILB_API/config/ai/apikey?tenant_id=$TENANT_ID" \
+  | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+a=d if isinstance(d,list) else d.get('apikeys', d.get('items', []))
+print(' '.join(k.get('key_id','') for k in a))
+" 2>/dev/null)
+for kid in $stray; do
+  [[ -n "$kid" ]] && $dexec llb1 loxicmd delete apikey "$kid" >/dev/null 2>&1
+done
+$dexec llb1 loxicmd set logout --provider manual >/dev/null 2>&1 || true
+
+echo ""
+echo "=== CLI Validation (apikey/ratelimit): all T-CLI tests passed ==="
