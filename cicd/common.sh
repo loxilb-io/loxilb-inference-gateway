@@ -632,6 +632,40 @@ function create_lb_rule() {
   fi
 }
 
+# cli_preflight — decide whether the packaged loxicmd is the inference-gateway CLI
+# (i.e. supports the AI subcommands) before a scenario drives it as the config path
+# or subject-under-test.
+#
+# Env knob CLI_TESTS (default "auto"):
+#   required -> loxicmd MUST exist & be AI-capable, else hard FAIL (exit 1)
+#   auto     -> use the CLI if capable; otherwise caller SKIPs (function returns 1)
+#   skip     -> always skip CLI testing (function returns 1)
+#
+# Arg1: container name (default llb1)
+# Returns 0 when the CLI is AI-capable (caller proceeds with loxicmd);
+#         1 when the caller should skip the CLI half (auto/skip paths).
+# The capability probe: the inference-gateway CLI adds `create apikey` and the
+# `--model-name` flag on `create lb` — both absent from the classic loxicmd.
+function cli_preflight() {
+  local cont="${1:-llb1}"
+  local mode="${CLI_TESTS:-auto}"
+  if [[ "$mode" == "skip" ]]; then
+    echo "  CLI preflight: CLI_TESTS=skip -> skipping CLI tests"
+    return 1
+  fi
+  if $dexec "$cont" loxicmd create apikey --help >/dev/null 2>&1 \
+     && $dexec "$cont" loxicmd create lb --help 2>&1 | grep -q -- '--model-name'; then
+    echo "  CLI preflight: loxicmd is AI-capable (CLI_TESTS=$mode) [OK]"
+    return 0
+  fi
+  if [[ "$mode" == "required" ]]; then
+    echo "  CLI preflight: CLI_TESTS=required but loxicmd lacks AI subcommands [FAIL]"
+    exit 1
+  fi
+  echo "  SKIP: loxicmd lacks AI subcommands (image predates packaging swap); set CLI_TESTS=required to enforce"
+  return 1
+}
+
 #Arg1: host name
 #Arg2: <prefix/mask>
 #Arg3: <nexthop-ip>
