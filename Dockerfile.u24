@@ -1,5 +1,5 @@
 # Download base image ubuntu 24.04 for build
-FROM ubuntu:24.04 as build
+FROM ubuntu:26.04 as build
 
 # Disable Prompt During Packages Installation
 ARG DEBIAN_FRONTEND=noninteractive
@@ -219,7 +219,7 @@ RUN echo "if [ -f /etc/bash_completion ] && ! shopt -oq posix; then" >> /root/.b
 # COPY ./llb_ebpf_main.o.rep* /opt/loxilb/llb_ebpf_main.o
 # COPY ./llb_xdp_main.o.rep* /opt/loxilb/llb_xdp_main.o
 
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 
 # LABEL about the loxilb image
 LABEL description="loxilb-inference-gateway official docker image"

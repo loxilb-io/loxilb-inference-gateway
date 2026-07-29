@@ -1,4 +1,4 @@
-FROM ubuntu:22.04 as build
+FROM ubuntu:26.04 as build
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG TAG=main
@@ -129,7 +129,7 @@ RUN set -eux; \
     echo "    . /etc/bash_completion" >> /root/.bashrc; \
     echo "fi" >> /root/.bashrc
 
-FROM ubuntu:22.04
+FROM ubuntu:26.04
 
 LABEL description="loxilb build-check debug docker image"
 

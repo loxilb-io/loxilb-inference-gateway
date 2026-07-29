@@ -1,5 +1,5 @@
 # Download base image ubuntu 22.04 for build
-FROM ubuntu:22.04 as build
+FROM ubuntu:26.04 as build
 
 # Disable Prompt During Packages Installation
 ARG DEBIAN_FRONTEND=noninteractive
@@ -82,7 +82,7 @@ RUN mkdir -p /opt/loxilb && \
 # COPY ./llb_ebpf_main.o.rep* /opt/loxilb/llb_ebpf_main.o
 # COPY ./llb_xdp_main.o.rep* /opt/loxilb/llb_xdp_main.o
 
-FROM ubuntu:22.04
+FROM ubuntu:26.04
 
 # LABEL about the loxilb image
 LABEL description="loxilb official docker image"

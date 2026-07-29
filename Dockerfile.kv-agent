@@ -9,7 +9,7 @@
 # Run:
 #   docker run --privileged --network host ghcr.io/loxilb-io/loxilb-kv-agent:latest
 
-FROM ubuntu:22.04 AS builder
+FROM ubuntu:26.04 AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG HAVE_DOCA=0
@@ -37,7 +37,7 @@ COPY . .
 RUN make kv-agent HAVE_DOCA=${HAVE_DOCA}
 
 # ---------- Runtime stage ----------
-FROM ubuntu:22.04
+FROM ubuntu:26.04
 
 ARG DEBIAN_FRONTEND=noninteractive
 
