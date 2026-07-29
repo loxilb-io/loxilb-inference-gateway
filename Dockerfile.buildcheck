@@ -2,6 +2,7 @@ FROM ubuntu:22.04 as build
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG TAG=main
+ARG LOXICMD_TAG=main
 
 ENV PATH="${PATH}:/usr/local/go/bin"
 ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/lib64/"
@@ -73,10 +74,10 @@ RUN set -eux; \
     rm -fr bpftool*
 
 RUN set -eux; \
-    git clone https://github.com/loxilb-io/loxicmd.git; \
+    git clone https://github.com/loxilb-io/loxicmd-inference-gateway.git loxicmd; \
     cd loxicmd; \
     git fetch --all --tags; \
-    git checkout "$TAG"; \
+    git checkout "$LOXICMD_TAG"; \
     go get .; \
     make; \
     cp ./loxicmd /usr/local/sbin/loxicmd; \

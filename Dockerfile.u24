@@ -5,6 +5,7 @@ FROM ubuntu:24.04 as build
 ARG DEBIAN_FRONTEND=noninteractive
 
 ARG TAG=main
+ARG LOXICMD_TAG=main
 
 # Env variables
 ENV PATH="${PATH}:/usr/local/go/bin"
@@ -97,9 +98,9 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 
-# Build and install loxicmd
-RUN git clone https://github.com/loxilb-io/loxicmd.git && cd loxicmd && git fetch --all --tags && \
-    git checkout $TAG && go get . && \
+# Build and install loxicmd (inference-gateway CLI)
+RUN git clone https://github.com/loxilb-io/loxicmd-inference-gateway.git loxicmd && cd loxicmd && git fetch --all --tags && \
+    git checkout $LOXICMD_TAG && go get . && \
     make && cp ./loxicmd /usr/local/sbin/loxicmd && cd - && rm -fr loxicmd && \
     /usr/local/sbin/loxicmd completion bash > /etc/bash_completion.d/loxi_completion
 

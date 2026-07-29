@@ -5,6 +5,7 @@ FROM ubuntu:22.04 as build
 ARG DEBIAN_FRONTEND=noninteractive
 
 ARG TAG=main
+ARG LOXICMD_TAG=main
 ARG OPENSSL_BUILD_CPUS=0
 ARG USE_DOCKER_BUILDX_ARM64=false
 
@@ -43,9 +44,9 @@ RUN mkdir -p /opt/loxilb && \
     tar -xvzf bpftool-libbpf-v7.2.0-sources.tar.gz && cd bpftool/src/ && \
     make clean && 	make -j $(nproc) && cp -f ./bpftool /usr/local/sbin/bpftool && \
     cd - && rm -fr bpftool* && \
-    # Install loxicmd
-    git clone https://github.com/loxilb-io/loxicmd.git && cd loxicmd && git fetch --all --tags && \
-    git checkout $TAG && go get . && \
+    # Install loxicmd (inference-gateway CLI)
+    git clone https://github.com/loxilb-io/loxicmd-inference-gateway.git loxicmd && cd loxicmd && git fetch --all --tags && \
+    git checkout $LOXICMD_TAG && go get . && \
     make && cp ./loxicmd /usr/local/sbin/loxicmd && cd - && rm -fr loxicmd && \
     /usr/local/sbin/loxicmd completion bash > /etc/bash_completion.d/loxi_completion && \
     # Pre-built libtokenizers static library (KV router HF tokenizer backend)
