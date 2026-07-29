@@ -17,6 +17,14 @@ for hveth in pksh1 pksep1 pksep2; do
 done
 
 sudo systemctl stop loxilb 2>/dev/null || true
+
+# Unmount the bpffs the service mounted at /opt/loxilb/dp (ExecStartPre=
+# mkllb-bpffs). systemctl stop kills loxilb but leaves this mount in place;
+# its pinned eBPF maps keep datapath objects alive and can wedge the hosted
+# runner's post-job cleanup ("Complete job" hang observed on the 22.04 runner).
+# Fall back to a lazy detach so a busy mount still leaves the tree clean.
+sudo umount /opt/loxilb/dp 2>/dev/null || sudo umount -l /opt/loxilb/dp 2>/dev/null || true
+
 sudo rm -f /etc/systemd/system/loxilb.service.d/pkg-smoke.conf
 sudo rmdir /etc/systemd/system/loxilb.service.d 2>/dev/null || true
 sudo systemctl daemon-reload 2>/dev/null || true
