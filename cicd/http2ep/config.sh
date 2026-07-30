@@ -59,20 +59,29 @@ $dexec llb1 ip link del llb0
 docker exec -dt llb1 /root/loxilb-io/loxilb/loxilb
 
 sleep 25
-$dexec llb1 curl -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
-  -H "Content-Type: application/json" \
-  -d '{
-  "serviceArguments": {
-    "externalIP": "20.20.20.1",
-    "port": 2020,
-    "protocol": "tcp",
-    "backend_protocol": "http2"
-  },
-  "endpoints": [
-    { "endpointIP": "31.31.31.1", "targetPort": 8080, "weight": 1 },
-    { "endpointIP": "32.32.32.1", "targetPort": 8080, "weight": 1 },
-    { "endpointIP": "33.33.33.1", "targetPort": 8080, "weight": 1 }
-  ]
-}'
+# D-5 config path: drive the inference-gateway loxicmd as the load-bearing config
+# path when present (subject-under-test); fall back to raw REST for old/absent CLI.
+# http2ep exercises an h2c backend behind a plain L4 TCP VIP (no fullproxy), so the
+# CLI must accept --backend-protocol without coercing --mode fullproxy.
+cli_preflight llb1 && USE_CLI=1 || USE_CLI=0
+if [[ "$USE_CLI" == "1" ]]; then
+  create_lb_rule llb1 20.20.20.1 --tcp=2020:8080 --endpoints=31.31.31.1:1,32.32.32.1:1,33.33.33.1:1 --backend-protocol=http2
+else
+  $dexec llb1 curl -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
+    -H "Content-Type: application/json" \
+    -d '{
+    "serviceArguments": {
+      "externalIP": "20.20.20.1",
+      "port": 2020,
+      "protocol": "tcp",
+      "backend_protocol": "http2"
+    },
+    "endpoints": [
+      { "endpointIP": "31.31.31.1", "targetPort": 8080, "weight": 1 },
+      { "endpointIP": "32.32.32.1", "targetPort": 8080, "weight": 1 },
+      { "endpointIP": "33.33.33.1", "targetPort": 8080, "weight": 1 }
+    ]
+  }'
+fi
 
 sleep 10
