@@ -1,6 +1,23 @@
 #!/bin/bash
 set -e
 
+# CLI validation as a first-class pre-release gate.
+#
+# The inference-gateway loxicmd CLI is exercised two ways, both keyed off the
+# CLI_TESTS knob consumed by cli_preflight() in common.sh:
+#   1. Config path — ~18 proxy/mcp/vllm/mtls scenarios drive `loxicmd` as the
+#      load-bearing config path in their config.sh (USE_CLI gate).
+#   2. Dedicated CLI tests — the ai-apikey / ai-model-routing / ai-sse-quota
+#      scenarios run validate_cli.sh (CLI mutation, REST oracle); each is folded
+#      into that scenario's validation.sh exit code.
+#
+# Default CLI_TESTS=auto SKIPS the CLI when the image predates the packaging swap.
+# For a release pre-flight we want the CLI actually validated, so default to
+# 'required' here: a missing/broken AI-capable loxicmd hard-fails the suite
+# instead of silently falling back to REST. Override for an old image with
+#   CLI_TESTS=auto ./run_local_cicd.sh   (or CLI_TESTS=skip to skip CLI entirely)
+export CLI_TESTS="${CLI_TESTS:-required}"
+
 cd sconnect/
 ./config.sh
 ./validation.sh
@@ -214,6 +231,18 @@ cd mcp-fullproxy/
 ./rmconfig.sh
 cd -
 
+cd mcp-httpproxy/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
+cd mcp-e2ehttps/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
 cd httpsproxy-mtls/
 ./config.sh
 ./validation.sh
@@ -226,6 +255,9 @@ cd e2ehttpsproxy-mtls/
 ./rmconfig.sh
 cd -
 
+# ai-apikey / ai-model-routing / ai-sse-quota: their validation.sh runs the REST
+# suite and then bash validate_cli.sh (CLI-driven, REST oracle). With the
+# CLI_TESTS=required default above, the CLI half is enforced, not skipped.
 cd ai-apikey/
 ./config.sh
 ./validation.sh
@@ -245,6 +277,12 @@ cd ai-sse-quota/
 cd -
 
 cd vllm-pd-disagg/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
+cd vllm-kvcache-routing-cpu/
 ./config.sh
 ./validation.sh
 ./rmconfig.sh
