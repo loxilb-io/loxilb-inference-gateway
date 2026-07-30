@@ -17,13 +17,31 @@ import sys
 MODULE = "github.com/loxilb-io/loxilb"
 
 
+def iter_messages(text):
+    """govulncheck -format json emits a stream of pretty-printed JSON objects
+    (not line-delimited, sometimes wrapped in a top-level array). Decode
+    concatenated JSON values robustly, flattening any arrays."""
+    dec = json.JSONDecoder()
+    i, n = 0, len(text)
+    while i < n:
+        while i < n and text[i] in " \t\r\n":
+            i += 1
+        if i >= n:
+            break
+        obj, i = dec.raw_decode(text, i)
+        if isinstance(obj, list):
+            yield from obj
+        else:
+            yield obj
+
+
 def main():
     if len(sys.argv) != 2:
         print("usage: govulncheck-gate.py <govulncheck.json>", file=sys.stderr)
         return 2
     try:
         with open(sys.argv[1]) as fh:
-            objs = [json.loads(l) for l in fh if l.strip()]
+            objs = list(iter_messages(fh.read()))
     except (OSError, json.JSONDecodeError) as e:
         print(f"govulncheck-gate: cannot read/parse output: {e}", file=sys.stderr)
         return 2
