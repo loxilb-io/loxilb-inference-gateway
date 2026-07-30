@@ -1726,6 +1726,14 @@ func (na *NetAPIStruct) NetAPIKeyRevoke(keyID string) error {
 	return mh.UserService.RevokeAPIKey(keyID)
 }
 
+// NetAPIKeyDelete - Permanently delete an API key and evict it from cache.
+func (na *NetAPIStruct) NetAPIKeyDelete(keyID string) error {
+	if mh.UserService == nil {
+		return errors.New("user service not initialized")
+	}
+	return mh.UserService.DeleteAPIKey(keyID)
+}
+
 // NetAPIKeyPatch - Update allowed_models and/or enabled for an API key.
 func (na *NetAPIStruct) NetAPIKeyPatch(keyID string, allowedModels []string, enabled *bool) error {
 	if mh.UserService == nil {

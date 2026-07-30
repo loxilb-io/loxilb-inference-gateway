@@ -9774,6 +9774,9 @@ func init() {
     },
     "ApiKeySummary": {
       "type": "object",
+      "required": [
+        "enabled"
+      ],
       "properties": {
         "allowed_models": {
           "description": "List of model identifiers this key may access",
@@ -25189,6 +25192,9 @@ func init() {
     },
     "ApiKeySummary": {
       "type": "object",
+      "required": [
+        "enabled"
+      ],
       "properties": {
         "allowed_models": {
           "description": "List of model identifiers this key may access",

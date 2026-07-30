@@ -37,25 +37,33 @@ const (
 		" rate_limit_rps, burst_size, tokens_per_min, created_at, expires_at, enabled)" +
 		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
+	// Auth path: only enabled keys may authenticate. This filter is a security
+	// invariant and must stay.
 	sqlSelectAPIKeyByHash = "SELECT key_id, key_hash, tenant_id, name, allowed_models," +
 		" rate_limit_rps, burst_size, tokens_per_min, created_at, expires_at, enabled" +
 		" FROM api_keys WHERE key_hash = ? AND enabled = 1"
 
+	// Management list/get paths: return keys regardless of enabled state so an
+	// operator can see, audit and re-enable a disabled key. The response carries
+	// the `enabled` field to distinguish them; filtering on enabled=1 here made a
+	// disabled key vanish entirely (list []/get 404) even though it still exists.
 	sqlSelectAPIKeysByTenant = "SELECT key_id, tenant_id, name, allowed_models," +
 		" rate_limit_rps, burst_size, tokens_per_min, created_at, expires_at, enabled" +
-		" FROM api_keys WHERE tenant_id = ? AND enabled = 1"
+		" FROM api_keys WHERE tenant_id = ?"
 
 	sqlSelectKeyHashByID = "SELECT key_hash FROM api_keys WHERE key_id = ?"
 
 	sqlSelectAPIKeyByID = "SELECT key_id, tenant_id, name, allowed_models," +
 		" rate_limit_rps, burst_size, tokens_per_min, created_at, expires_at, enabled" +
-		" FROM api_keys WHERE key_id = ? AND enabled = 1"
+		" FROM api_keys WHERE key_id = ?"
 
 	sqlSelectAllAPIKeys = "SELECT key_id, tenant_id, name, allowed_models," +
 		" rate_limit_rps, burst_size, tokens_per_min, created_at, expires_at, enabled" +
-		" FROM api_keys WHERE enabled = 1"
+		" FROM api_keys"
 
 	sqlUpdateAPIKeyEnabled = "UPDATE api_keys SET enabled = ? WHERE key_id = ?"
+
+	sqlDeleteAPIKeyByID = "DELETE FROM api_keys WHERE key_id = ?"
 
 	sqlReplaceIntoTenantRateLimit = "REPLACE INTO tenant_rate_limits" +
 		" (tenant_id, rps, tokens_per_min, updated_at) VALUES (?, ?, ?, ?)"
@@ -180,6 +188,37 @@ func (s *UserService) RevokeAPIKey(keyID string) error {
 	s.Cache.Delete("keyid:" + keyID)
 
 	tk.LogIt(tk.LogInfo, "[AIGateway] Revoked API key %s\n", keyID)
+	return nil
+}
+
+// DeleteAPIKey permanently removes the API key identified by keyID from the
+// database and synchronously evicts it from the cache. Unlike RevokeAPIKey,
+// which only flips enabled=false (a reversible soft-disable that stays visible
+// to the management endpoints), this is a hard delete: a subsequent lookup
+// returns "not found". This backs DELETE /config/ai/apikey/{key_id}.
+func (s *UserService) DeleteAPIKey(keyID string) error {
+	// Fetch the hash so we can evict the correct cache entry.
+	var keyHash string
+	err := s.DB.QueryRow(sqlSelectKeyHashByID, keyID).Scan(&keyHash)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			tk.LogIt(tk.LogWarning, "[AIGateway] API key not found for deletion: %s\n", keyID)
+			return errors.New("API key not found")
+		}
+		tk.LogIt(tk.LogError, "[AIGateway] Failed to fetch key hash for deletion: %v\n", err)
+		return err
+	}
+
+	if _, err = s.DB.Exec(sqlDeleteAPIKeyByID, keyID); err != nil {
+		tk.LogIt(tk.LogError, "[AIGateway] Failed to delete API key %s: %v\n", keyID, err)
+		return err
+	}
+
+	// Synchronous cache eviction — must complete before returning.
+	s.Cache.Delete(keyHash)
+	s.Cache.Delete("keyid:" + keyID)
+
+	tk.LogIt(tk.LogInfo, "[AIGateway] Deleted API key %s\n", keyID)
 	return nil
 }
 

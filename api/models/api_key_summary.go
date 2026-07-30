@@ -30,7 +30,7 @@ type APIKeySummary struct {
 	CreatedAt strfmt.DateTime `json:"created_at,omitempty"`
 
 	// Whether this key is currently active
-	Enabled bool `json:"enabled,omitempty"`
+	Enabled bool `json:"enabled"`
 
 	// Optional expiry timestamp (RFC3339)
 	// Format: date-time

@@ -104,32 +104,28 @@ rl_cli=$($dexec llb1 loxicmd get ratelimit "$TENANT_ID" -o json 2>/dev/null)
 check_cli "T-CLI-3 CLI get ratelimit rps=200" "200" "$rl_cli"
 
 # ── T-CLI-4: enable/disable toggle via CLI ───────────────────────────────────
-# FINDING: the management API hides disabled keys — GET /apikey/<id> returns 404
-# and list-by-tenant omits the key while enabled=false. The key is NOT deleted
-# (it can be re-enabled or deleted by id). So we assert the *effect* of the toggle
-# (key leaves and returns to the enabled view) rather than reading enabled=false
-# directly, and stay robust if the API is later changed to surface disabled keys.
+# A disabled key is a soft-disable, NOT a delete: it stays visible to the
+# management endpoints flagged enabled=false so an operator can audit and
+# re-enable it. Auth-time validation still rejects it (covered elsewhere);
+# re-enabling restores both the flag and the enabled view.
 echo ""
 echo "T-CLI-4: loxicmd set apikey $KEY_ID --enabled=false then --enabled=true"
 $dexec llb1 loxicmd set apikey "$KEY_ID" --enabled=false >/dev/null 2>&1
 dis_code=$($hexec llb1 curl -s -o /dev/null -w "%{http_code}" -H "$AUTH_HDR" \
   "$LOXILB_API/config/ai/apikey/$KEY_ID")
-if [[ "$dis_code" == "404" ]]; then
-  echo "  disable took effect — key hidden from management GET (404)"
-  echo "  NOTE: disabled keys are not visible via GET-by-id or list-by-tenant"
-  echo "        (management-API finding: disabled != deleted, yet reads hide it)"
-elif [[ "$dis_code" == "200" ]]; then
-  body=$($hexec llb1 curl -s -H "$AUTH_HDR" "$LOXILB_API/config/ai/apikey/$KEY_ID")
-  check_cli "T-CLI-4 disabled key shows enabled=false" '"enabled":false' "$body"
-else
-  echo "  T-CLI-4 unexpected GET code after disable: $dis_code [FAIL]"; exit 1
+if [[ "$dis_code" != "200" ]]; then
+  echo "  T-CLI-4 disabled key must remain visible (expect 200), got $dis_code [FAIL]"; exit 1
 fi
+body=$($hexec llb1 curl -s -H "$AUTH_HDR" "$LOXILB_API/config/ai/apikey/$KEY_ID")
+check_cli "T-CLI-4 disabled key shows enabled=false" '"enabled":false' "$body"
 # Re-enable via CLI and confirm the key round-trips back into the enabled view.
 $dexec llb1 loxicmd set apikey "$KEY_ID" --enabled=true >/dev/null 2>&1
 after=$($hexec llb1 curl -s -H "$AUTH_HDR" "$LOXILB_API/config/ai/apikey/$KEY_ID")
 check_cli "T-CLI-4 re-enabled key visible with enabled=true" '"enabled":true' "$after"
 
 # ── T-CLI-5: delete apikey via CLI, verify via REST → 404 ────────────────────
+# DELETE is a hard delete (distinct from the soft-disable in T-CLI-4): the row is
+# removed and a subsequent GET returns 404.
 echo ""
 echo "T-CLI-5: loxicmd delete apikey $KEY_ID → REST GET expect 404"
 $dexec llb1 loxicmd delete apikey "$KEY_ID" >/dev/null 2>&1

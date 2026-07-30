@@ -1845,6 +1845,7 @@ type NetHookInterface interface {
 	NetAPIKeyList(tenantID string) ([]ApiKeySummary, error)
 	NetAPIKeyGet(keyID string) (*ApiKeySummary, error)
 	NetAPIKeyRevoke(keyID string) error
+	NetAPIKeyDelete(keyID string) error
 	NetAPIKeyPatch(keyID string, allowedModels []string, enabled *bool) error
 	NetTenantRateLimitSet(tenantID string, rps, tokensPerMin int) error
 	NetTenantRateLimitGet(tenantID string) (*TenantRateLimitEntry, error)

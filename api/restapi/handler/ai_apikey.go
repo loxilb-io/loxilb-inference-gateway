@@ -119,13 +119,15 @@ func ConfigGetAIApikeyByID(params aiops.GetConfigAiApikeyKeyIDParams, principal 
 }
 
 // ConfigDeleteAIApikey - DELETE /config/ai/apikey/{key_id}
-// Revokes an API key; cache eviction completes before response is sent.
+// Permanently deletes an API key (hard delete); cache eviction completes before
+// the response is sent, and a subsequent GET returns 404. To disable a key
+// reversibly while keeping it visible, PATCH enabled=false instead.
 func ConfigDeleteAIApikey(params aiops.DeleteConfigAiApikeyKeyIDParams, principal interface{}) middleware.Responder {
 	tk.LogIt(tk.LogTrace, "api: AIApikey %s API called by IP: %s. url: %s\n",
 		params.HTTPRequest.Method, params.HTTPRequest.RemoteAddr, params.HTTPRequest.URL)
 
-	if err := ApiHooks.NetAPIKeyRevoke(params.KeyID); err != nil {
-		tk.LogIt(tk.LogError, "[AIApikey] Failed to revoke API key %s: %v\n", params.KeyID, err)
+	if err := ApiHooks.NetAPIKeyDelete(params.KeyID); err != nil {
+		tk.LogIt(tk.LogError, "[AIApikey] Failed to delete API key %s: %v\n", params.KeyID, err)
 		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
 

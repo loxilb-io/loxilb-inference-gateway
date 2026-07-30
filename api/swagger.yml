@@ -10964,6 +10964,12 @@ definitions:
 
   ApiKeySummary:
     type: object
+    required:
+      # enabled must always serialize: a disabled key (enabled=false) is still
+      # listed/returned by the management endpoints, and the operator relies on
+      # this flag to tell it apart. Without 'required', go-swagger emits
+      # omitempty and false would be dropped from the JSON.
+      - enabled
     properties:
       key_id:
         type: string

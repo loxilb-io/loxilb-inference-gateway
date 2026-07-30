@@ -226,6 +226,92 @@ func TestRevokeAPIKey_NotFound(t *testing.T) {
 	}
 }
 
+// TestDisabledKeyVisibleToManagement verifies that disabling a key (via revoke or
+// PATCH enabled=false) removes it from the auth path but keeps it visible to the
+// management list/get endpoints, flagged enabled=false. Regression guard for the
+// bug where a disabled key vanished entirely (list []/get 404) despite still
+// existing in the store.
+func TestDisabledKeyVisibleToManagement(t *testing.T) {
+	svc := newTestService(t)
+	rawKey, keyID, err := svc.CreateAPIKey(cmn.ApiKeyEntry{TenantID: "tenantDisabled", Name: "k1", Enabled: true})
+	if err != nil {
+		t.Fatalf("CreateAPIKey: %v", err)
+	}
+
+	// Disable the key via the PATCH soft-disable path (enabled=false).
+	disabled := false
+	if err := svc.PatchAPIKey(keyID, nil, &disabled); err != nil {
+		t.Fatalf("PatchAPIKey disable: %v", err)
+	}
+
+	// Auth path must reject it.
+	if _, err := svc.ValidateAPIKey(rawKey); err == nil {
+		t.Fatal("ValidateAPIKey should fail for a disabled key")
+	}
+
+	// Management get must still return it, flagged disabled.
+	got, err := svc.GetAPIKeyByID(keyID)
+	if err != nil {
+		t.Fatalf("GetAPIKeyByID should still find a disabled key: %v", err)
+	}
+	if got.Enabled {
+		t.Fatal("GetAPIKeyByID should report enabled=false for a disabled key")
+	}
+
+	// Management list (both all-keys and by-tenant) must still include it.
+	keys, err := svc.ListAPIKeys("tenantDisabled")
+	if err != nil {
+		t.Fatalf("ListAPIKeys: %v", err)
+	}
+	if len(keys) != 1 || keys[0].Enabled {
+		t.Fatalf("ListAPIKeys should return the disabled key with enabled=false, got %+v", keys)
+	}
+
+	// Re-enable and confirm it authenticates again.
+	enabled := true
+	if err := svc.PatchAPIKey(keyID, nil, &enabled); err != nil {
+		t.Fatalf("PatchAPIKey re-enable: %v", err)
+	}
+	if _, err := svc.ValidateAPIKey(rawKey); err != nil {
+		t.Fatalf("ValidateAPIKey should succeed after re-enable: %v", err)
+	}
+}
+
+// TestDeleteAPIKeyHardRemoves verifies that DeleteAPIKey (backing DELETE
+// /apikey/{id}) is a hard delete: the key is gone from every view, unlike a
+// soft-disable which stays visible. Distinguishes delete from revoke/disable.
+func TestDeleteAPIKeyHardRemoves(t *testing.T) {
+	svc := newTestService(t)
+	rawKey, keyID, err := svc.CreateAPIKey(cmn.ApiKeyEntry{TenantID: "tenantDelete", Name: "k1", Enabled: true})
+	if err != nil {
+		t.Fatalf("CreateAPIKey: %v", err)
+	}
+
+	if err := svc.DeleteAPIKey(keyID); err != nil {
+		t.Fatalf("DeleteAPIKey: %v", err)
+	}
+
+	// Gone from get-by-id (404 upstream), list, and auth.
+	if _, err := svc.GetAPIKeyByID(keyID); err == nil {
+		t.Fatal("GetAPIKeyByID should fail after hard delete")
+	}
+	keys, err := svc.ListAPIKeys("tenantDelete")
+	if err != nil {
+		t.Fatalf("ListAPIKeys: %v", err)
+	}
+	if len(keys) != 0 {
+		t.Fatalf("ListAPIKeys should be empty after hard delete, got %+v", keys)
+	}
+	if _, err := svc.ValidateAPIKey(rawKey); err == nil {
+		t.Fatal("ValidateAPIKey should fail after hard delete")
+	}
+
+	// Deleting an already-gone key is an error (drives the 404 path).
+	if err := svc.DeleteAPIKey(keyID); err == nil {
+		t.Fatal("DeleteAPIKey on a missing key should return an error")
+	}
+}
+
 // TestSetTenantRateLimit verifies that the rate limit is persisted in the DB.
 func TestSetTenantRateLimit(t *testing.T) {
 	svc := newTestService(t)
