@@ -44,6 +44,18 @@ jobs:
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
 
       - name: Run govulncheck
-        # -e so `go list` tolerates the cicd/common test package (bare .c files,
-        # no cgo) instead of aborting with an empty package set.
-        run: go list -e ./... | grep -v /cicd/ | xargs govulncheck
+        # Gate on FIXABLE reachable vulnerabilities only: run govulncheck in JSON
+        # mode and fail CI only when a reachable vuln has an available upstream fix.
+        # Advisories with no fix (Fixed: N/A) — e.g. GoBGP GO-2026-4736 (NEXT_HOP
+        # DoS), which has no fix in any gobgp major version — are reported but do
+        # not block. -e lets go list tolerate the C-only cicd/common package.
+        run: |
+          mapfile -t pkgs < <(go list -e ./... | grep -v /cicd/)
+          set +e
+          govulncheck -format json "${pkgs[@]}" > govulncheck.json 2> govulncheck.err
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ] && [ "$rc" -ne 3 ]; then
+            echo "govulncheck failed to run (exit $rc):"; cat govulncheck.err; exit 1
+          fi
+          python3 .github/scripts/govulncheck-gate.py govulncheck.json
