@@ -229,4 +229,18 @@ create_docker_host_vxlan --host1 llb1 --host2 l3vxh2 --id 60 --uif phy --lip 5.5
 create_docker_host_vxlan --host1 llb1 --host2 l3vxh2 --id 60 --ep 5.5.5.2
 config_docker_host --host1 llb1 --host2 l3vxh2 --ptype vlan --id 60 --addr 60.60.60.254/24
 
+# Hosted-runner kernels intermittently corrupt checksums when NIC offloads stay
+# on across the veth/VLAN/VxLAN legs, dropping the fragmented (>=1500 byte)
+# pings in the connectivity matrix. Force software checksums on every scenario
+# interface — the same idiom the tunnel scenarios use.
+for h in llb1 l3h1 l3h2 l3h3 l2h1 l2h2 l2h3 l2h4 l2h5 l2h6 \
+         l2vxh1 l2vxh2 l2vxh3 l2vxh4 l2vxh5 l2vxh6 l2vxh7 l2vxh8 l2vxh9 \
+         l3vxh1 l3vxh2 l3vxh3
+do
+  for ifc in $($hexec $h ls /sys/class/net 2>/dev/null | grep -v '^lo$'); do
+    $hexec $h ethtool --offload "$ifc" rx off tx off >/dev/null 2>&1
+    $hexec $h ethtool -K "$ifc" gso off tso off >/dev/null 2>&1
+  done
+done
+
 sleep 60
