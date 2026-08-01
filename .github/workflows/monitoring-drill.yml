@@ -1,0 +1,61 @@
+name: Monitoring-Drill-Nightly
+
+# Tier 2 of docs/MONITORING-CICD.md: nightly alert fire→resolve drills + short
+# soak on top of the Tier-1 scenario. Alert `for:` windows (1–10m) and the
+# soak make this too slow for per-merge, so it runs on a schedule (offset from
+# upstream's ~11:00 UTC nightly slots) and on demand.
+
+on:
+  schedule:
+    - cron: '30 15 * * *'
+  workflow_dispatch:
+    inputs:
+      soakMinutes:
+        description: 'Soak duration in minutes'
+        required: false
+        default: '30'
+
+jobs:
+  monitoring-drill:
+    name: monitoring-drill
+    runs-on: ubuntu-22.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
+      - uses: actions/setup-python@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '>=1.18.0'
+      - run: sudo apt-get update
+      - run: sudo apt-get -y install clang llvm libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip build-essential bison flex iperf iproute2 nodejs socat ethtool libjson-c-dev libnghttp2-dev
+      - name: Install libtokenizers (KV-router HF backend)
+        run: arch=$(dpkg --print-architecture) && wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz -O /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
+      - run: loxilb-ebpf/utils/mkllb_bpffs.sh
+      - run: sudo -E env "PATH=$PATH" make
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+      - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
+      - run: docker run -u root --cap-add SYS_ADMIN --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: pwd && ls && sudo -E env "PATH=$PATH" make docker-cp
+      - run: docker exec -dit loxilb mkllb_bpffs
+      - run: id=`docker ps -f name=loxilb | cut -d " " -f 1 | grep -iv "CONTAINER"` && docker commit $id ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: docker stop loxilb && docker rm loxilb
+
+      - name: Alert drills + soak + Tier-1 validation (Tier 2)
+        env:
+          SOAK_MINUTES: ${{ github.event.inputs.soakMinutes || '30' }}
+        run: |
+          cd cicd/monitoring/
+          ./config.sh
+          ./drill.sh
+          ./validation.sh
+          ./rmconfig.sh
+          cd -
+      - run: echo "Monitoring drill complete"
