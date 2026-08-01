@@ -22,7 +22,7 @@ jobs:
           password: ${{ secrets.GHCR_TOKEN }}
       - run: |
          echo "KUBECONFIG=--kubeconfig=/etc/rancher/k3s/k3s.yaml" >> $GITHUB_ENV
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
           token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}

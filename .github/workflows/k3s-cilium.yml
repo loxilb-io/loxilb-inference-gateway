@@ -24,7 +24,7 @@ jobs:
          echo "KUBECONFIG=--kubeconfig=/etc/rancher/k3s/k3s.yaml" >> $GITHUB_ENV
          echo "CILIUM_CLI_VERSION=v0.14.6" >> $GITHUB_ENV
          echo "CLI_ARCH=amd64" >> $GITHUB_ENV
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
           token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}

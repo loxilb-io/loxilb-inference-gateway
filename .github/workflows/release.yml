@@ -62,7 +62,7 @@ jobs:
           - { variant: u24, dockerfile: Dockerfile.u24, suffix: '-u24', arch: amd64, runner: ubuntu-24.04 }
           - { variant: u24, dockerfile: Dockerfile.u24, suffix: '-u24', arch: arm64, runner: ubuntu-24.04-arm }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.meta.outputs.tag }}
           submodules: recursive
@@ -145,7 +145,7 @@ jobs:
           - { arch: amd64, runner: ubuntu-22.04, formats: 'deb,rpm,tarball,monitoring' }
           - { arch: arm64, runner: ubuntu-24.04-arm, formats: 'deb,rpm,tarball' }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.meta.outputs.tag }}
           submodules: recursive

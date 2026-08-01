@@ -78,7 +78,7 @@ jobs:
           name: ${{ inputs.artifact_prefix }}${{ matrix.arch }}
           path: dist
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: inputs.artifact_prefix == ''
         with:
           submodules: recursive
@@ -306,7 +306,7 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.tier3) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/download-artifact@v4
         with:
@@ -349,7 +349,7 @@ jobs:
     runs-on: [ self-hosted, redhat ]
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/download-artifact@v4
         with:

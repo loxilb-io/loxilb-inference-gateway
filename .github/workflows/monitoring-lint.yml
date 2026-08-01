@@ -42,7 +42,7 @@ jobs:
     env:
       PROM_VERSION: 2.53.4   # keep in sync with deploy/monitoring/docker-compose.yml
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: false   # exporter metric names live in the main tree only
 

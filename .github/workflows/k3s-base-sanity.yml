@@ -18,7 +18,7 @@ jobs:
     name: k3s-base-sanity
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
           token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
@@ -50,7 +50,7 @@ jobs:
       - run: docker stop loxilb && docker rm loxilb
       - run: |
          echo "KUBECONFIG=--kubeconfig=/etc/rancher/k3s/k3s.yaml" >> $GITHUB_ENV
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
           token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}

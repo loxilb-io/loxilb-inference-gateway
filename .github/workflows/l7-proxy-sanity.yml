@@ -38,7 +38,7 @@ jobs:
     # Dependabot PRs have no submodule token; the private eBPF checkout fails.
     if: github.actor != 'dependabot[bot]'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
           token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
@@ -140,7 +140,7 @@ jobs:
     # Dependabot PRs have no submodule token; the private eBPF checkout fails.
     if: github.actor != 'dependabot[bot]'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
           token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
