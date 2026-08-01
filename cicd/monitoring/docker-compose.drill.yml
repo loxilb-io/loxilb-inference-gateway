@@ -1,0 +1,9 @@
+# Tier-2 override: swap the shipped alert rules for the drill copies with
+# shortened `for:` windows (docs/MONITORING-CICD.md §6 — threshold-lowered
+# drills are sanctioned for conditions CI cannot hold long enough to cross the
+# production windows; the rule *expressions* stay identical).
+services:
+  prometheus:
+    volumes:
+      - ./prometheus-ci.yml:/etc/prometheus/prometheus.yml:ro
+      - ./rules-drill:/etc/prometheus/rules:ro
