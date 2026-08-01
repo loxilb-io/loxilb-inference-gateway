@@ -21,7 +21,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jessevdk/go-flags v1.5.0
 	github.com/loxilb-io/ipvs v0.1.0
-	github.com/loxilb-io/loxilib v0.8.9-0.20241218081253-760c19357603
+	github.com/loxilb-io/loxilib v0.9.4
 	github.com/mattn/go-sqlite3 v1.14.29
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/osrg/gobgp/v3 v3.35.0
@@ -82,7 +82,6 @@ require (
 	github.com/imdario/mergo v0.3.6 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/loxilb-io/sctp v0.0.0-20241217032220-301b591b9ced // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.19 // indirect
 	github.com/moby/ipvs v1.1.0 // indirect
