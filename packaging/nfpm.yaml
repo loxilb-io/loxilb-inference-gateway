@@ -118,6 +118,15 @@ contents:
     file_info:
       mode: 0755
 
+  # Monitoring stack (Prometheus/Grafana configuration content: compose file,
+  # scrape config, alert rules, dashboards, provisioning). Runtime images are
+  # upstream's, version-pinned in the compose file — we ship configuration
+  # only. Reference material: users copy it out and run their copy, so it is
+  # NOT marked as config files and upgrades replace it wholesale.
+  - src: packaging/.staging-monitoring
+    dst: /usr/share/loxilb/monitoring
+    type: tree
+
 scripts:
   postinstall: packaging/scripts/postinstall.sh
   preremove: packaging/scripts/preremove.sh

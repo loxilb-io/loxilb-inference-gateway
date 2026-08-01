@@ -141,8 +141,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { arch: amd64, runner: ubuntu-22.04 }
-          - { arch: arm64, runner: ubuntu-24.04-arm }
+          # The monitoring tarball is arch-independent — built on the amd64 leg only.
+          - { arch: amd64, runner: ubuntu-22.04, formats: 'deb,rpm,tarball,monitoring' }
+          - { arch: arm64, runner: ubuntu-24.04-arm, formats: 'deb,rpm,tarball' }
     steps:
       - uses: actions/checkout@v4
         with:
@@ -161,7 +162,7 @@ jobs:
             --version "${{ needs.meta.outputs.tag }}" \
             --arch "${{ matrix.arch }}" \
             --from-docker \
-            --formats deb,rpm,tarball \
+            --formats "${{ matrix.formats }}" \
             --out dist
 
       - uses: actions/upload-artifact@v4

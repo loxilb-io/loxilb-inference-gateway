@@ -153,11 +153,18 @@ jobs:
           for path in ./usr/sbin/loxilb ./usr/lib/loxilb/loxilb ./usr/lib/loxilb/libssl.so.3 \
                       ./usr/lib/loxilb/libcrypto.so.3 \
                       ./usr/sbin/mkllb-bpffs ./lib/systemd/system/loxilb.service \
-                      ./opt/loxilb/llb_ebpf_main.o ./etc/loxilb/; do
+                      ./opt/loxilb/llb_ebpf_main.o ./etc/loxilb/ \
+                      ./usr/share/loxilb/monitoring/docker-compose.yml \
+                      ./usr/share/loxilb/monitoring/prometheus/prometheus.yml \
+                      ./usr/share/loxilb/monitoring/prometheus/rules/loxilb-alerts.yml \
+                      ./usr/share/loxilb/monitoring/grafana/dashboards/loxilb-overview.json; do
             dpkg-deb -c "$deb" | awk '{print $NF}' | grep -qx "$path" || { echo "deb missing $path"; exit 1; }
           done
           for path in /usr/sbin/loxilb /usr/lib/loxilb/loxilb /usr/lib/systemd/system/loxilb.service \
-                      /opt/loxilb/llb_ebpf_main.o /etc/loxilb; do
+                      /opt/loxilb/llb_ebpf_main.o /etc/loxilb \
+                      /usr/share/loxilb/monitoring/docker-compose.yml \
+                      /usr/share/loxilb/monitoring/prometheus/rules/loxilb-alerts.yml \
+                      /usr/share/loxilb/monitoring/grafana/dashboards/loxilb-overview.json; do
             rpm -qlp "$rpm" | grep -qx "$path" || { echo "rpm missing $path"; exit 1; }
           done
           echo "layout ok"

@@ -97,9 +97,19 @@ export PKG_VERSION PKG_RELEASE PKG_ARCH="$ARCH"
 rm -f packaging/.staging
 ln -s "$(cd "$STAGING" && pwd)" packaging/.staging
 
+# Monitoring stack payload: configuration content only (compose, scrape
+# config, alert rules, dashboards, provisioning). Ships in the packages at
+# /usr/share/loxilb/monitoring and, with --formats ...,monitoring, as an
+# arch-independent tarball. CI lint tooling is not user-facing — excluded.
+rm -rf packaging/.staging-monitoring
+mkdir -p packaging/.staging-monitoring
+tar -C deploy/monitoring --exclude=./ci --exclude='CLAUDE.md' --exclude='.gitignore' -cf - . \
+  | tar -C packaging/.staging-monitoring -xf -
+
 TARDIR=""
 cleanup() {
   rm -f packaging/.staging
+  rm -rf packaging/.staging-monitoring
   if [ -n "$TARDIR" ]; then rm -rf "$TARDIR"; fi
 }
 trap cleanup EXIT
@@ -145,6 +155,17 @@ README for the full quickstart and kernel baseline requirements.
 EOF
   tar -C "$TARDIR" -czf "$OUT/$TARNAME.tar.gz" "$TARNAME"
   echo ">> tarball written to $OUT/$TARNAME.tar.gz"
+;; esac
+
+# --- Monitoring tarball (arch-independent — build on one arch only) ---------
+case ",$FORMATS," in *,monitoring,*)
+  MONNAME="loxilb-inference-gateway-monitoring_${FULLVER}"
+  MONDIR=$(mktemp -d)
+  mkdir -p "$MONDIR/$MONNAME"
+  cp -r packaging/.staging-monitoring/. "$MONDIR/$MONNAME/"
+  tar -C "$MONDIR" -czf "$OUT/$MONNAME.tar.gz" "$MONNAME"
+  rm -rf "$MONDIR"
+  echo ">> monitoring tarball written to $OUT/$MONNAME.tar.gz"
 ;; esac
 
 # --- Checksums -------------------------------------------------------------
