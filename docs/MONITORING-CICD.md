@@ -1,6 +1,7 @@
 # LoxiLB Inference Gateway — Monitoring CI/CD Validation Plan
 
-> Status: **Tier 0 implemented & self-tested (2026-07-27); Tier 1 / Tier 2 specified, not yet built.**
+> Status: **Tier 0 implemented & self-tested (2026-07-27); Tier 1 / Tier 2 implemented
+> (2026-08-01: `cicd/monitoring` + `monitoring-e2e.yml` + `monitoring-drill.yml`), first CI run pending.**
 > Companion to `MONITORING-DESIGN.md` (what the stack is) and `MONITORING-EXECUTION.md`
 > (the one-shot manual validation on kv-loxilb). This doc turns that manual T0–T7 run into
 > **automated, repeatable, assertion-based CI** so correctness is protected on every change.
@@ -58,8 +59,8 @@ Three correctness surfaces, asserted at every tier that can reach them:
 | Tier | What | Cadence | Runner | Status |
 |---|---|---|---|---|
 | **0** | Hermetic static gate (no loxilb, no traffic) | every PR touching the stack or exporter | any (`ubuntu-latest`) | ✅ **built** (§4) |
-| **1** | Stack-up + mTLS + traffic correctness (ground-truth cross-checks) | per merge to main (opt: per PR) | `ubuntu-22.04` (eBPF-capable; **not** hosted u24 — E2BIG) | 📋 spec (§5) |
-| **2** | Alert fire→resolve drills + short soak | nightly / scheduled | `ubuntu-22.04` or self-hosted | 📋 spec (§6) |
+| **1** | Stack-up + traffic correctness (ground-truth cross-checks) | per merge to main (opt: per PR) | `ubuntu-22.04` (eBPF-capable; **not** hosted u24 — E2BIG) | ✅ **built** (§5 — `cicd/monitoring` + `monitoring-e2e.yml`) |
+| **2** | Alert fire→resolve drills + short soak | nightly / scheduled | `ubuntu-22.04` or self-hosted | ✅ **built** (§6 — `cicd/monitoring/drill.sh` + `monitoring-drill.yml`) |
 
 **Runner reality (hard constraint):** the hosted u24 runner (kernel 6.17-azure) rejects the
 loxilb eBPF program with `E2BIG` and lacks `bpftool`. Tiers 1–2 need the *real* DP metrics, so
@@ -195,8 +196,8 @@ becomes a permanent CI regression test:
 | # | Defect | Production impact | Resolution | CI regression |
 |---|---|---|---|---|
 | **F11** ✅ | `--userservice` puts `/netlox/v1/metrics` behind JWT → scrape 401 (control-plane `Bearer` runs on every listener; mTLS never bypasses it) | metrics endpoint can't be secured by the data-path mTLS we ship | **RESOLVED — design revision, no loxilb code** (2026-07-27): metrics is control-plane; supported mTLS is data-path only. Default = same-host network-isolated plaintext scrape; `Bearer` token when API auth is on (long-lived-token caveat); `--tls` = optional transport encryption only. See `MONITORING-DESIGN.md` §2 / §9.1. | Tier-1 mTLS matrix dropped; assert default `http://127.0.0.1:11111` scrape `up==1`; document (not assert) the userservice+token path |
-| **F12** | `llb_ai_record_request` has one callsite (SSE `[DONE]` only) → plain-JSON errors uncounted | `LoxilbAIErrorRatio` blind to the most common AI error shape | fix `loxilb-ebpf/common/sockproxy_http.c` — also record at non-SSE response-complete | plain-JSON 500 via AI rule → `Δai_requests_total{status="500"}` |
-| **F13** | mgmt-plane / short REST conns tick `l4_error_events{tcp,error}` (~3.5/call; drove 0.96/1.0) | any REST poller can **false-fire `LoxilbL4ErrorBurst`** | fix `loxilb-ebpf/kernel/llb_kern_ct.c` — reclassify normal short-close; exclude the API port | N REST polls → ≈0 `l4_error` Δ; only backend RSTs increment |
+| **F12** ✅ | `llb_ai_record_request` had one callsite (SSE `[DONE]` only) → plain-JSON errors uncounted | `LoxilbAIErrorRatio` blind to the most common AI error shape | **RESOLVED (2026-08-01)** — `sockproxy` now records non-SSE responses at response-complete (submodule fix landed; testbed A/B: 5→9 on 4 non-SSE requests) | Tier-1 T3: N non-SSE AI requests → `Δai_requests_total{model=…} == N` |
+| **F13** ✅ | mgmt-plane / short REST conns ticked `l4_error_events{tcp,error}` (~3.5/call; drove 0.96/1.0) | any REST poller could **false-fire `LoxilbL4ErrorBurst`** | **RESOLVED (2026-08-01)** — `llb_kern_ct.c` counts `CT_TCP_ERR` only on established/closing connections (testbed A/B: 30 REST calls +161→+0) | Tier-1 T6: 30 REST polls → ≈0 `l4_error` Δ; T7: server RSTs still increment |
 
 Ordering note: F11 is resolved in the design (no code). The remaining sharpest Tier-1/2
 correctness tests (AI error-ratio, L4-error-burst) depend on F12/F13. Build Tier 1's harness
@@ -209,16 +210,20 @@ data-path regression guards as each fix lands.
 
 0. **Tier 0** — ✅ done. Merge `monitoring-lint.yml` + the linter; it gates every stack/exporter
    change from now on.
-1. **Tier 1 scaffold** — create `cicd/monitoring/{config.sh,validation.sh,rmconfig.sh}` +
-   CI-profile compose; get the mTLS matrix + `up==1` green on `ubuntu-22.04`.
-2. **Tier 1 metrics** — add the §7 ground-truth cross-checks for `ai-sse-quota` + `httpsproxy` +
-   the L4 hold-driver; wire the PromQL-expr and Grafana-proxy sweeps.
-3. **Tier 1 workflow** — `.github/workflows/monitoring-e2e.yml` (build-from-source like
-   `ai-gateway-sanity`, `ubuntu-22.04`); per-merge.
-4. **Fix F12 / F13** (F11 already resolved in the design), adding each §8 regression guard to
-   Tier 1 as it lands.
-5. **Tier 2** — nightly alert-drill + short-soak workflow (§6).
-6. **Exit** — record results in `MONITORING-EXECUTION.md`; the manual T-plan is now a CI job.
+1. **Tier 1 scaffold** — ✅ done 2026-08-01: `cicd/monitoring/{config.sh,validation.sh,rmconfig.sh}` +
+   `docker-compose.ci.yml`; scrape matrix (disable→`up==0`→enable→`up==1`) per the F11 design
+   revision (plaintext host-local scrape; mTLS matrix dropped).
+2. **Tier 1 metrics** — ✅ done 2026-08-01: §7 ground-truth cross-checks (SSE, non-SSE, conntrack
+   hold-driver, server-RST) + PromQL-expr and Grafana-proxy sweeps
+   (`deploy/monitoring/ci/sweep-monitoring.py`).
+3. **Tier 1 workflow** — ✅ done 2026-08-01: `.github/workflows/monitoring-e2e.yml`
+   (build-from-source like `ai-gateway-sanity`, `ubuntu-22.04`); per-merge.
+4. **Fix F12 / F13** — ✅ landed 2026-08-01 (submodule); §8 regression guards live as Tier-1
+   T3 / T6 / T7.
+5. **Tier 2** — ✅ done 2026-08-01: `drill.sh` (ScrapeDown / L4ErrorBurst / UnhealthyEndpoints
+   fire→resolve with 30s drill windows, rules restored) + soak; nightly `monitoring-drill.yml`.
+6. **Exit** — ⬜ pending: first green CI runs of both workflows, then record results in
+   `MONITORING-EXECUTION.md`; the manual T-plan is now a CI job.
 
 ---
 
