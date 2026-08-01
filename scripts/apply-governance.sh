@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
-# apply-governance.sh — one-shot R4 governance hardening for the
-# loxilb-inference-gateway repositories (docs/internal/RELEASE-PLAN.md §R4).
+# apply-governance.sh — one-shot governance hardening for the
+# loxilb-inference-gateway repositories (maintainer release runbook,
+# repository-hardening stage).
 #
 # Mirrors the loxilb-io/loxilb baseline (audited 2026-08-01): PRs only into
 # main with 1 approving review + required status checks (strict), no force

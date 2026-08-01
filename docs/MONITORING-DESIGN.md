@@ -20,8 +20,8 @@
 - G3 — Alert rules that are actionable (each alert names the dashboard panel that explains it)
   and quiet (no flapping on idle systems).
 - G4 — Everything as code in this repo (`deploy/monitoring/`), deployable with one command,
-  identically on the kv-loxilb testbed and at a customer site.
-- G5 — Validated end-to-end on the **kv-loxilb testbed with real traffic** (cicd scenarios +
+  identically on the dev testbed and at a customer site.
+- G5 — Validated end-to-end on the **dev testbed with real traffic** (cicd scenarios +
   long-lived sessions for conntrack-derived metrics) before we call it done.
 
 **Non-goals (this iteration)**
@@ -39,7 +39,7 @@
 ## 2. Architecture
 
 ```
-┌──────────────────────────── kv-loxilb host ────────────────────────────┐
+┌──────────────────────────── monitoring host ───────────────────────────┐
 │                                                                        │
 │  ┌───────────────┐  scrape :11111/netlox/v1/metrics  ┌──────────────┐  │
 │  │ llb1 (docker) │ ◄─────────────────────────────────│  prometheus  │  │
@@ -342,9 +342,9 @@ panel spec against them:
 
 ---
 
-## 7. Test plan — kv-loxilb testbed, real traffic
+## 7. Test plan — dev testbed, real traffic
 
-Testbed: `kv-loxilb` (<testbed-host>, ssh alias, user `kong`; loxilb in docker `llb1`,
+Testbed: bare-metal dev host (loxilb in docker `llb1`,
 image `latest-u24` = overhauled binary; traffic hosts are netns containers `l3h*`/`l3ep*`
 driven via cicd `common.sh`). Code synced from this Mac (not a git checkout there); cicd
 scripts run **as kong, no leading sudo**; non-interactive ssh needs
@@ -510,7 +510,7 @@ metrics overhaul itself.
 | Alert thresholds wrong for real production scale (testbed ≠ prod traffic) | Tunables isolated at top of rules file with comments; ratios+guards preferred over absolute rates |
 | Grafana/Prometheus version drift at customer sites | Versions pinned in compose; dashboards use only core panel types (stat/timeseries/table/heatmap/bar-gauge), schema v39+, no plugins |
 | Dashboard JSON review is hard in PRs | Each JSON accompanied by this doc's panel table as the source of truth; reviewers review the table, spot-check the JSON |
-| kv-loxilb repo is rsync'd, not git — deploy dir could drift | `MONITORING-EXECUTION.md` records the exact sync command; rsync does not propagate deletions (known gotcha) — use `--delete` for `deploy/monitoring/` |
+| the testbed repo is rsync'd, not git — deploy dir could drift | `MONITORING-EXECUTION.md` records the exact sync command; rsync does not propagate deletions (known gotcha) — use `--delete` for `deploy/monitoring/` |
 
 ---
 

@@ -63,7 +63,7 @@ $dexec llb2 ip route add 32.32.32.0/24 via 10.10.10.59 dev ellb2llb1
 # GSO/tx-checksum offload (SCTP CRC32c offload is especially fragile here);
 # a corrupt checksum on the wire gets the packet silently dropped and the flow
 # wedges. This is intermittent on slow hosted CI runners (not on the faster
-# kv-loxilb testbed). Forcing software checksums avoids it and matches every
+# bare-metal testbeds). Forcing software checksums avoids it and matches every
 # other datapath scenario (nat66sctp, k3s-calico-dual-stack, ...).
 for hostiface in "llb1 ellb1h1" "llb1 ellb1h2" "llb1 ellb1llb2" "llb1 vxlan50" \
                  "llb2 ellb2llb1" "llb2 vxlan50" \

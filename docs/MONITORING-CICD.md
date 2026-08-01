@@ -3,7 +3,7 @@
 > Status: **Tier 0 implemented & self-tested (2026-07-27); Tier 1 / Tier 2 implemented
 > (2026-08-01: `cicd/monitoring` + `monitoring-e2e.yml` + `monitoring-drill.yml`), first CI run pending.**
 > Companion to `MONITORING-DESIGN.md` (what the stack is) and `MONITORING-EXECUTION.md`
-> (the one-shot manual validation on kv-loxilb). This doc turns that manual T0–T7 run into
+> (the one-shot manual validation on the dev testbed). This doc turns that manual T0–T7 run into
 > **automated, repeatable, assertion-based CI** so correctness is protected on every change.
 > Goal: production-ready **correctness** of metrics, Prometheus, and Grafana — the three
 > surfaces the user called out.
@@ -25,7 +25,7 @@ The stack is implemented and committed, and internally consistent (verified 2026
 - Every metric the committed dashboards/rules reference is emitted by the committed exporter
   (this is now enforced — Tier 0 §4).
 
-It was also **validated deeply, once, by hand**: T0–T7 passed on kv-loxilb with real traffic;
+It was also **validated deeply, once, by hand**: T0–T7 passed on the dev testbed with real traffic;
 18/21 alerts observed fire→resolve on live data; 16 h soak clean. That work was high quality —
 it *found and fixed* F4/F6/F7.
 

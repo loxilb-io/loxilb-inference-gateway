@@ -1,8 +1,8 @@
-# Monitoring Stack — Execution Record (kv-loxilb)
+# Monitoring Stack — Execution Record (dev testbed)
 
 > Companion to `MONITORING-DESIGN.md` (test plan §7). Format follows
 > `METRICS-AUDIT-EXECUTION.md`: per-phase record + gotchas + evidence commands.
-> Testbed: kv-loxilb, loxilb in container `llb1` (172.17.0.2, build `secfix2`
+> Testbed: dev host, loxilb in container `llb1` (172.17.0.2, build `secfix2`
 > 0.9.8.6-beta), stack in `deploy/monitoring/` (host-network compose).
 
 ## Phase T0 — Stack deployment + mTLS  ✅ PASS (2026-07-18)
@@ -61,7 +61,7 @@ Prep performed once on the host:
   (`SetConntrackMaxEntries`, lazy registration — absent unless a positive capacity is
   reported), wired from `DpEbpfInit` (`pkg/loxinet/dpebpf_linux.go`) with
   `C.LLB_CT_MAP_ENTRIES`.
-- Build on kv-loxilb (md5 verified changed), `docker cp` into `llb1`, committed as image
+- Build on the testbed (md5 verified changed), `docker cp` into `llb1`, committed as image
   `ctmax-e2e` and **retagged `latest-u24`** (previous `latest-u24` still reachable as
   `metrics-e2e`/`pre-secfix-backup`; the secfix binary base as `secfix-e2e`).
 - Live: `loxilb_conntrack_max_entries 524288` (256Ki × 2 nodes). Idle family diff vs T1:
@@ -132,7 +132,7 @@ Traffic: python asyncio echo servers on `l3ep1-3:8080` + clients on `l3h1` (all 
   undefined in default builds — relocated its definition to the always-compiled
   `sockproxy_metrics.c` (next to `record_latency_sample`) and left a pointer comment in
   `sockproxy_trace.c` to avoid a double-definition when HAVE_HTTP_TRACE is on.
-  **VALIDATED LIVE (2026-07-19):** rebuilt loxilb on kv-loxilb (`make build`, clean),
+  **VALIDATED LIVE (2026-07-19):** rebuilt loxilb on the testbed (`make build`, clean),
   `docker cp`'d the binary into `llb1` on the httpsproxy topology, re-ran the L7 scenario →
   `loxilb_proxy_http_ttfb_seconds_count` 0→12 (matches response count), sum 0.0447 s,
   Prometheus p50 = 3.4 ms / p95 = 8.5 ms (was NaN), buckets populated (le=0.005→10,
@@ -472,9 +472,9 @@ TTFB fix):
 
 **Validation status:** darwin `gofmt` clean on all Go files; `go vet ./common/` clean; alert
 YAML + dashboard JSON parse clean. Full cgo/eBPF compile + verifier + live drill still
-required on kv-loxilb (build only — not the denied binary swap) before this can be trusted.
+required on the testbed (build only — not the denied binary swap) before this can be trusted.
 
-## F7 build + deploy validation on kv-loxilb (2026-07-19)
+## F7 build + deploy validation on the testbed (2026-07-19)
 
 **BUILD — PASS.** Synced the 11 changed files; `make subsys` (eBPF) built clean under
 `-Werror` (default build does NOT define `HAVE_L4_TRACE`, confirming the error counters are
@@ -508,7 +508,7 @@ bake the F7 binary + `.o`s into the `latest-u24` image (or run loxilb as the con
 entrypoint) so ports attach on a clean bring-up; then drive **server-RST** traffic (backend
 with `SO_LINGER=0` abortive close) and confirm `loxilb_l4_error_events_total{reason="rst_server"}`
 increments and `LoxilbL4ErrorBurst` fires (>1/s for 10m), plus a client-RST run for
-`rst_client`. Scripts staged: `/tmp/rstserver.py`, `/tmp/rstdrive.py` on kv-loxilb.
+`rst_client`. Scripts staged: `/tmp/rstserver.py`, `/tmp/rstdrive.py` on the testbed.
 
 ## F7 LIVE drill — testbed restore + counter tick + alert lifecycle  ✅ PASS (2026-07-19)
 
@@ -567,7 +567,7 @@ resp-rate > 1/s) validated live.
 
 ## AI drills (F8) — ai-apikey-style topology, AIRateLimitSpike + AIErrorRatio — 2026-07-19
 
-Setup (adapted from `cicd/ai-apikey`, script `/tmp/ai-setup.sh` on kv-loxilb): llb1 spawned
+Setup (adapted from `cicd/ai-apikey`, script `/tmp/ai-setup.sh` on the testbed): llb1 spawned
 **FIRST** so it keeps docker-bridge IP `172.17.0.2` (Prometheus static target + cert SAN) —
 stock ai-apikey config.sh starts MariaDB first, which would steal `.2` and break both the
 scrape target and TLS SAN. MariaDB (`mysql-ai`, mariadb:10.11) started after topology config;

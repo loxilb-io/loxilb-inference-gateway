@@ -63,7 +63,7 @@ $dexec llb2 ip route add 32.32.32.0/24 via 10.10.10.59 dev ellb2llb1
 # for GSO/tx-checksum offload; VxLAN encapsulation over a veth then puts a
 # corrupt checksum on the wire, so the encapsulated 3-way-handshake ACK is
 # silently dropped and the flow wedges in sync-ack. This is intermittent on
-# slow hosted CI runners (not on the faster kv-loxilb testbed) and is why a
+# slow hosted CI runners (not on faster bare-metal testbeds) and is why a
 # single backend could never complete the VIP/tunnel handshake. Forcing
 # software checksums avoids it and matches every other datapath scenario
 # (nat66sctp, k3s-calico-dual-stack, ...).
