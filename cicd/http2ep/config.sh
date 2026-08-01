@@ -66,6 +66,11 @@ sleep 25
 cli_preflight llb1 && USE_CLI=1 || USE_CLI=0
 if [[ "$USE_CLI" == "1" ]]; then
   create_lb_rule llb1 20.20.20.1 --tcp=2020:8080 --endpoints=31.31.31.1:1,32.32.32.1:1,33.33.33.1:1 --backend-protocol=http2
+  # Log the rule the CLI actually created: a CLI regression here (e.g. an older
+  # build coercing --backend-protocol into a different proxy mode) otherwise
+  # only surfaces as opaque VIP timeouts much later in validation.
+  echo "http2ep: rule as created by loxicmd:"
+  $dexec llb1 curl -s http://localhost:11111/netlox/v1/config/loadbalancer/all; echo
 else
   $dexec llb1 curl -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
     -H "Content-Type: application/json" \
