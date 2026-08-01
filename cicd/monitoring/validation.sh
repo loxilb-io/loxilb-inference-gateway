@@ -5,8 +5,9 @@
 # T0:  Prometheus scrapes loxilb (up==1) within scrape-duration budget
 # T1:  metrics disable → up==0; re-enable → up==1 (scrape access matrix)
 # T2:  N SSE completions → Δ loxilb_ai_requests_total{model="sse-test",status="200"} == N
-# T3:  M non-SSE AI requests → Δ loxilb_ai_requests_total{model="nosse-test"} == M
-#      (regression guard: non-SSE responses must be recorded)
+# T3:  M plain-JSON 500s via the AI rule → Δ ai_requests_total{status="500"} == M
+#      (regression guard: non-SSE responses on AI rules must be recorded);
+#      T3b: a mode-4 rule without sse_mode/pd/apikey stays out of AI accounting
 # T4:  L7 traffic → loxilb_proxy_http_ttfb_seconds_count > 0 (TTFB recording guard)
 # T5:  C held L4 conns → Δ loxilb_active_conntrack_entries within [C, 3C]
 # T6:  30 mgmt-plane REST calls → Δ loxilb_l4_error_events_total{proto="tcp"} ≈ 0
@@ -81,8 +82,24 @@ d=$(awk "BEGIN {print $now_sse - $base_sse}")
 if intcmp "$d" == 3; then ok "Δ == 3"; else fail "Δ == $d (want 3; $base_sse → $now_sse)"; fi
 
 # ── T3: non-SSE recording guard ──────────────────────────────────────
+# Plain-JSON responses on an AI rule (the OpenAI error shape) must be recorded;
+# ai_gw_mode is derived from sse_mode/pd_disagg/apikey, so the SSE rule is the
+# AI rule and the sse_mode=false rule below is deliberately outside AI accounting.
 echo ""
-echo "T3: 4 non-SSE AI requests → Δ ai_requests_total{model=nosse-test} == 4"
+echo "T3: 4 plain-JSON 500s via the AI rule → Δ ai_requests_total{model=sse-test,status=500} == 4"
+base_json=$(pq 'loxilb_ai_requests_total{model="sse-test",status="500"}')
+for i in 1 2 3 4; do
+  $hexec l3h1 curl -s --max-time 8 -X POST \
+    -H "Content-Type: application/json" -H "X-Model: sse-test" \
+    -d '{"model":"sse-test","messages":[{"role":"user","content":"e"}]}' \
+    "http://10.10.10.254:2020/v1/error" >/dev/null 2>&1
+done
+sleep 25
+now_json=$(pq 'loxilb_ai_requests_total{model="sse-test",status="500"}')
+d=$(awk "BEGIN {print $now_json - $base_json}")
+if intcmp "$d" == 4; then ok "Δ == 4 (plain-JSON responses recorded)"; else fail "Δ == $d (want 4; $base_json → $now_json)"; fi
+
+echo "T3b: requests on a non-AI mode-4 rule stay out of AI accounting"
 base_nosse=$(pq 'loxilb_ai_requests_total{model="nosse-test"}')
 for i in 1 2 3 4; do
   $hexec l3h1 curl -s --max-time 8 -H "X-Model: nosse-test" \
@@ -91,7 +108,7 @@ done
 sleep 25
 now_nosse=$(pq 'loxilb_ai_requests_total{model="nosse-test"}')
 d=$(awk "BEGIN {print $now_nosse - $base_nosse}")
-if intcmp "$d" == 4; then ok "Δ == 4 (non-SSE responses recorded)"; else fail "Δ == $d (want 4; $base_nosse → $now_nosse)"; fi
+if intcmp "$d" == 0; then ok "Δ == 0 (sse_mode=false rule not AI-accounted, by design)"; else fail "Δ == $d (want 0; non-AI rule entered AI accounting)"; fi
 
 # ── T4: TTFB recording guard ─────────────────────────────────────────────
 echo ""

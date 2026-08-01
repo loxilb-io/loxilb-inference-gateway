@@ -59,6 +59,22 @@ class MockHandler(BaseHTTPRequestHandler):
         delay_secs = int(qs.get("delay_secs", ["0"])[0])
         frag_done = qs.get("frag_done", ["0"])[0] == "1"
 
+        # Plain-JSON (non-SSE) response path — the error shape OpenAI-compatible
+        # backends return even for streaming requests. Lets scenarios validate
+        # that non-SSE responses on an AI rule are recorded in the AI request
+        # metrics (cicd/monitoring) without a separate mock.
+        if parsed.path == "/v1/error":
+            status = int(qs.get("status", ["500"])[0])
+            body = json.dumps({"error": {"message": "mock backend error",
+                                         "type": "server_error"}}).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")

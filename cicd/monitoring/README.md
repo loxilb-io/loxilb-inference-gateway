@@ -10,7 +10,7 @@ alert behavior, and Grafana provisioning. This is Tier 1/2 of
 
 | Surface | Checks |
 |---|---|
-| Exporter | metric deltas equal driver-known ground truth: N SSE completions, M non-SSE AI requests, C held L4 connections, R server RSTs; TTFB histogram populated; management-plane REST traffic does **not** tick the L4 error signal |
+| Exporter | metric deltas equal driver-known ground truth: N SSE completions, M plain-JSON (non-SSE) responses on the AI rule, C held L4 connections, R server RSTs; TTFB histogram populated; management-plane REST traffic does **not** tick the L4 error signal |
 | Prometheus | `up==1`, scrape-duration budget, metrics disable→enable matrix, every shipped rule + dashboard PromQL expression executes, zero alerts firing on a healthy system |
 | Grafana | dashboards provisioned, datasource healthy, every panel target executes through the datasource proxy and returns data where traffic exists |
 

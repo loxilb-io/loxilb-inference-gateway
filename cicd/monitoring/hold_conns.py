@@ -21,6 +21,15 @@ for _ in range(count):
 print(f"READY {len(conns)}", flush=True)
 time.sleep(hold)
 for s in conns:
+    # Drain the pending response before closing: closing a socket with unread
+    # received data makes the kernel send RST instead of FIN, which would leak
+    # client-abort events into the L4 error counters the caller asserts on.
+    try:
+        s.settimeout(0.5)
+        while s.recv(4096):
+            pass
+    except OSError:
+        pass
     try:
         s.close()
     except OSError:
