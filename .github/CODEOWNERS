@@ -1,16 +1,43 @@
 # Code owners for loxilb-inference-gateway.
-# These owners are requested for review automatically on matching PRs.
-# See https://docs.github.com/articles/about-code-owners
+# These owners are requested for review automatically on matching PRs and are
+# enforced when branch protection requires code-owner review.
+# NOTE: GitHub reads .github/CODEOWNERS with precedence over a root CODEOWNERS —
+# this is the single authoritative file. Order matters: the LAST matching
+# pattern for a path wins. Every listed owner must have write access.
+# Handles per MAINTAINERS.md (maintainer council) + the fork release engineer.
 
-# Default owner for everything in the repo
-*                           @NLX-SeokHwanKong
+# ---------------------------------------------------------------------------
+# Default owners — the maintainer council (mirrors loxilb-io/loxilb)
+# ---------------------------------------------------------------------------
+*                                   @TrekkieCoder @UltraInstinct14 @backguynn @inhogog2 @NLX-SeokHwanKong
 
-# AI-gateway specific areas
-/cicd/vllm-**               @NLX-SeokHwanKong
-/cicd/sglang-**             @NLX-SeokHwanKong
-/cicd/ai-**                 @NLX-SeokHwanKong
-/cicd/mcp-**                @NLX-SeokHwanKong
-/docs/load-balancing/       @NLX-SeokHwanKong
+# ---------------------------------------------------------------------------
+# Inference-gateway (AI) control plane — added in this fork
+# ---------------------------------------------------------------------------
+/cmd/loxilb-ai-controller/          @NLX-SeokHwanKong @UltraInstinct14
+/cmd/loxilb-mcp/                    @NLX-SeokHwanKong @UltraInstinct14
+/cmd/loxilb-kv-agent/               @NLX-SeokHwanKong @UltraInstinct14
+/pkg/loxinet/ai_*                   @NLX-SeokHwanKong @UltraInstinct14
+/api/prometheus/                    @NLX-SeokHwanKong
+/deploy/monitoring/                 @NLX-SeokHwanKong
 
-# CI / release tooling
-/.github/                   @NLX-SeokHwanKong
+# AI-gateway CI and backend test scenarios
+/cicd/vllm-**                       @NLX-SeokHwanKong
+/cicd/sglang-**                     @NLX-SeokHwanKong
+/cicd/ai-**                         @NLX-SeokHwanKong
+/cicd/mcp-**                        @NLX-SeokHwanKong
+/cicd/monitoring/                   @NLX-SeokHwanKong
+
+# AI-gateway documentation
+/docs/                              @NLX-SeokHwanKong @UltraInstinct14
+
+# CI workflows, packaging, and release tooling
+/.github/                           @NLX-SeokHwanKong @TrekkieCoder
+/packaging/                         @NLX-SeokHwanKong
+/scripts/                           @NLX-SeokHwanKong
+
+# Release / community meta-files
+/NOTICE                             @TrekkieCoder @UltraInstinct14
+/CHANGELOG.md                       @NLX-SeokHwanKong @TrekkieCoder
+/ROADMAP.md                         @NLX-SeokHwanKong @TrekkieCoder
+/.github/CODEOWNERS                 @TrekkieCoder @NLX-SeokHwanKong
