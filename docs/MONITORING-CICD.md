@@ -1,7 +1,8 @@
 # LoxiLB Inference Gateway — Monitoring CI/CD Validation Plan
 
-> Status: **Tier 0 implemented & self-tested (2026-07-27); Tier 1 / Tier 2 implemented
-> (2026-08-01: `cicd/monitoring` + `monitoring-e2e.yml` + `monitoring-drill.yml`), first CI run pending.**
+> Status: **Tiers 0–2 implemented; Tier 1 GREEN in CI (2026-08-01, run 30694327968:
+> all ground-truth asserts exact, 124/124 PromQL exprs clean, 6/6 dashboards / 80 panels
+> live, 0 idle alerts). Tier 2 nightly awaits its first scheduled run.**
 > Companion to `MONITORING-DESIGN.md` (what the stack is) and `MONITORING-EXECUTION.md`
 > (the one-shot manual validation on the dev testbed). This doc turns that manual T0–T7 run into
 > **automated, repeatable, assertion-based CI** so correctness is protected on every change.
@@ -222,8 +223,11 @@ data-path regression guards as each fix lands.
    T3 / T6 / T7.
 5. **Tier 2** — ✅ done 2026-08-01: `drill.sh` (ScrapeDown / L4ErrorBurst / UnhealthyEndpoints
    fire→resolve with 30s drill windows, rules restored) + soak; nightly `monitoring-drill.yml`.
-6. **Exit** — ⬜ pending: first green CI runs of both workflows, then record results in
-   `MONITORING-EXECUTION.md`; the manual T-plan is now a CI job.
+6. **Exit** — ✅ Tier 1 green in CI 2026-08-01 (run 30694327968; the first run's two failures
+   were test defects, fixed: the non-SSE guard drove a rule outside AI accounting by design,
+   and the hold-driver's un-drained close leaked client-RST events into the mgmt-plane
+   assert). The manual T-plan is now a CI job. ⬜ remaining: first nightly
+   `monitoring-drill.yml` run (drills + soak).
 
 ---
 
