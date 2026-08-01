@@ -30,6 +30,8 @@ jobs:
   mcp-sanity:
     name: mcp-sanity
     runs-on: ubuntu-22.04
+    # Dependabot PRs have no submodule token; the private eBPF checkout fails.
+    if: github.actor != 'dependabot[bot]'
     steps:
       - uses: actions/checkout@v4
         with:

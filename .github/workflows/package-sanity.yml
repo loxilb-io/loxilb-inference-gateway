@@ -38,6 +38,9 @@ jobs:
   plan:
     name: plan matrix
     runs-on: ubuntu-latest
+    # Dependabot PRs have no submodule token; the private eBPF checkout fails
+    # downstream. Guarding the root job skips the whole dependent chain.
+    if: github.actor != 'dependabot[bot]'
     outputs:
       arches: ${{ steps.plan.outputs.arches }}
       tier3: ${{ steps.plan.outputs.tier3 }}

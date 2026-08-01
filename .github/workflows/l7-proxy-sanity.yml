@@ -35,6 +35,8 @@ jobs:
   l7-proxy-sanity:
     name: l7-proxy-sanity (h1/h2/https/mtls/prefix)
     runs-on: ubuntu-22.04
+    # Dependabot PRs have no submodule token; the private eBPF checkout fails.
+    if: github.actor != 'dependabot[bot]'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -135,6 +137,8 @@ jobs:
   grpc-h2-sanity:
     name: grpc-h2-sanity
     runs-on: ubuntu-22.04
+    # Dependabot PRs have no submodule token; the private eBPF checkout fails.
+    if: github.actor != 'dependabot[bot]'
     steps:
       - uses: actions/checkout@v4
         with:

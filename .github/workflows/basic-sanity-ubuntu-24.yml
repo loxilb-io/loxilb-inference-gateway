@@ -19,7 +19,8 @@ jobs:
   build:
     name: basic-sanity-ubuntu-24
     runs-on: ubuntu-24.04
-    if: github.repository == 'loxilb-io/loxilb-inference-gateway'
+    # Dependabot PRs have no submodule token; the private eBPF checkout fails.
+    if: github.repository == 'loxilb-io/loxilb-inference-gateway' && github.actor != 'dependabot[bot]'
     # Force the u22 :latest image on hosted ubuntu-24.04 (6.x-azure)
     # runners: the latest-u24 eBPF datapath trips the kernel BPF verifier
     # E2BIG limit and loxilb aborts. common.sh honors LOXILB_DOCKER_IMAGE.
