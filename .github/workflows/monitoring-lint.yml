@@ -46,7 +46,7 @@ jobs:
         with:
           submodules: false   # exporter metric names live in the main tree only
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.x'
 

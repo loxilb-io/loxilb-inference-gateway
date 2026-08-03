@@ -10,7 +10,7 @@ jobs:
     name: k3s-base-sanity
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
       - uses: actions/setup-go@v5
         with:
              go-version: '>=1.18.0'
