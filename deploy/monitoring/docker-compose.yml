@@ -29,7 +29,7 @@ services:
       - --web.listen-address=0.0.0.0:9090
 
   grafana:
-    image: grafana/grafana:11.6.0
+    image: grafana/grafana:11.6.16
     container_name: loxilb-grafana
     network_mode: host
     restart: unless-stopped
@@ -38,6 +38,7 @@ services:
       GF_SERVER_HTTP_PORT: "3000"
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
