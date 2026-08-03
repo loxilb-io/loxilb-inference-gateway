@@ -24,11 +24,13 @@ updates:
       day: monday
     open-pull-requests-limit: 5
     ignore:
-      # Base OS and Go toolchain are pinned to our stable set (ubuntu 20/22/24,
-      # go 1.25) and moved by hand, not by Dependabot. Freeze both here so the
-      # weekly run stops proposing ubuntu 26.x / go 1.26+ bumps.
+      # Base OS, Go toolchain, and the alpine runtime base are pinned to our
+      # stable set (ubuntu 20/22/24, go 1.25, alpine 3.20) and moved by hand,
+      # not by Dependabot. Freeze them so the weekly run stops proposing
+      # ubuntu 26.x / go 1.26+ / alpine 3.2x bumps.
       - dependency-name: "ubuntu"
       - dependency-name: "golang"
+      - dependency-name: "alpine"
 
   - package-ecosystem: docker
     directory: "/packaging"
