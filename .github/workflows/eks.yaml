@@ -46,7 +46,7 @@ jobs:
         
     # Setup terraform commands
     - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
+      uses: hashicorp/setup-terraform@v4
 
     # Version check of the terraform
     - name: Terraform version
