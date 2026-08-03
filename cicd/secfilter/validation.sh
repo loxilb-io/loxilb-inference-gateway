@@ -139,12 +139,148 @@ c=$(rest_code POST /config/securityrate '{"synEnabled":true,"synThreshold":200,"
 body=$(rest_body /config/securityrate/all)
 echo "$body" | grep -q '"synThreshold":200' && pass "GET reflects enforced threshold" || fail "GET config mismatch: $body"
 
+############################################################################
+# Enforcement legs (finding D4): the sections above only prove config
+# plumbing (400-rejects, GET round-trips). These legs prove the datapath
+# actually drops/limits AND that the exported counters account for it, using
+# the drill recipes live-verified exact on the reference testbed.
+# TRAP (by design, llb_kern_synflood.c): whitelisted sources are exempt from
+# ALL securityrate limiting - attack traffic must come from a NON-whitelisted
+# source, and leg 5 locks that exemption in as a positive test.
+############################################################################
+
+# Read an UNLABELED counter from /metrics (0 if absent).
+metric_val() { # metric_name
+    $dexec llb1 curl -s "$api/metrics" | awk -v m="$1" '$1==m {printf "%.0f", $2; f=1} END {if(!f) printf "0"}'
+}
+# Sum a LABELED counter's series whose labels contain a substring (0 if none).
+metric_labeled_val() { # metric_name label_substr
+    $dexec llb1 curl -s "$api/metrics" | awk -v m="$1" -v l="$2" \
+        'index($1, m"{")==1 && index($1, l)>0 {s+=$2} END {printf "%.0f", s+0}'
+}
+# Counters advance on the collector's 10s sweep: poll until the delta reaches
+# the target or the timeout, then echo the final delta (never fixed-sleep).
+poll_metric_delta() { # unlabeled|labeled metric prev want [label_substr]
+    local kind=$1 m=$2 prev=$3 want=$4 lbl=$5 now delta=0 t=0
+    while (( t < 45 )); do
+        if [[ $kind == labeled ]]; then now=$(metric_labeled_val "$m" "$lbl"); else now=$(metric_val "$m"); fi
+        delta=$((now - prev))
+        (( delta >= want )) && break
+        sleep 3; t=$((t+3))
+    done
+    echo "$delta"
+}
+
+# Reset securityrate to all-disabled so legs cannot interfere with each other.
+sec_reset='{"synEnabled":false,"synThreshold":100,"cookieThreshold":50,"connRateEnabled":false,"ratePerSec":50,"udpEnabled":false,"udpPktThreshold":1000,"udpBandwidthMB":100}'
+rest_code POST /config/securityrate "$sec_reset" >/dev/null
+
+echo "### enforcement 1/5 - firewall: every dropped SYN is counted (D4)"
+fw_before=$(metric_val loxilb_fw_drop_packets_total)
+c=$(rest_code POST /config/firewall '{"ruleArguments":{"sourceIP":"10.10.10.1/32","preference":500,"protocol":6},"opts":{"drop":true}}')
+[[ $c == 200 ]] && pass "fw drop rule installed" || fail "fw drop rule code=$c"
+sleep 1
+# --max-time 0.5 kills curl before the kernel's 1s SYN retransmit, so each
+# attempt is exactly one dropped SYN (drill-verified 20/20 exact).
+for i in $(seq 1 20); do
+    $hexec l3h1 curl --max-time 0.5 -s -o /dev/null 20.20.20.1:2020
+done
+delta=$(poll_metric_delta unlabeled loxilb_fw_drop_packets_total "$fw_before" 20)
+[[ $delta -ge 20 && $delta -le 30 ]] \
+    && pass "fw_drop_packets_total delta=$delta for 20 SYNs" \
+    || fail "fw drop counter delta=$delta (want 20..30)"
+rest_code DELETE '/config/firewall?sourceIP=10.10.10.1/32&preference=500&protocol=6' >/dev/null
+sleep 2
+res=$(reach)
+[[ $res == "server1" ]] && pass "reachable after fw rule delete" || fail "still blocked after fw delete ($res)"
+
+echo "### enforcement 2/5 - ipfilter: blacklist drops are counted per rule (D4)"
+# Secondary source IP so the primary client path stays observable in parallel.
+$hexec l3h1 ip addr add 10.10.10.99/24 dev el3h1llb1 2>/dev/null
+bl_before=$(metric_labeled_val loxilb_ipfilter_blacklist_packets_total 'cidr="10.10.10.99/32"')
+rest_code POST /config/ipfilter '{"filterType":"blacklist","cidr":"10.10.10.99/32","action":"drop","priority":210}' >/dev/null
+sleep 1
+for i in $(seq 1 10); do
+    $hexec l3h1 curl --interface 10.10.10.99 --max-time 0.5 -s -o /dev/null 20.20.20.1:2020
+done
+res=$(reach)
+[[ $res == "server1" ]] && pass "primary client unaffected by secondary blacklist" || fail "primary client blocked ($res)"
+delta=$(poll_metric_delta labeled loxilb_ipfilter_blacklist_packets_total "$bl_before" 10 'cidr="10.10.10.99/32"')
+[[ $delta -ge 10 ]] \
+    && pass "ipfilter_blacklist_packets_total delta=$delta for 10 SYNs (>=10)" \
+    || fail "blacklist counter delta=$delta (want >=10)"
+rest_code DELETE '/config/ipfilter?filterType=blacklist&cidr=10.10.10.99/32' >/dev/null
+
+echo "### enforcement 3/5 - securityrate: UDP flood threshold (D4)"
+rest_code POST /config/securityrate '{"synEnabled":false,"synThreshold":100,"cookieThreshold":50,"connRateEnabled":false,"ratePerSec":50,"udpEnabled":true,"udpPktThreshold":100,"udpBandwidthMB":100}' >/dev/null
+sleep 1
+udp_p_before=$(metric_val loxilb_security_udp_passed_total)
+udp_b_before=$(metric_val loxilb_security_udp_blocked_total)
+# 300 datagrams as fast as bash can emit them (<1s on the veth path); with a
+# 100 pkt/s threshold the drill split exactly 100 passed / 200 blocked.
+$hexec l3h1 bash -c 'for i in $(seq 1 300); do echo -n x > /dev/udp/20.20.20.1/9999; done' 2>/dev/null
+delta_b=$(poll_metric_delta unlabeled loxilb_security_udp_blocked_total "$udp_b_before" 100)
+udp_p_now=$(metric_val loxilb_security_udp_passed_total)
+delta_p=$((udp_p_now - udp_p_before))
+total=$((delta_p + delta_b))
+[[ $delta_b -ge 100 ]] \
+    && pass "udp_blocked delta=$delta_b (>=100; drill-exact was 200)" \
+    || fail "udp_blocked delta=$delta_b (want >=100)"
+[[ $total -ge 295 && $total -le 310 ]] \
+    && pass "passed+blocked=$total accounts for all 300 datagrams" \
+    || fail "passed($delta_p)+blocked($delta_b)=$total != 300"
+
+echo "### enforcement 4/5 - securityrate: connection-rate limiting (D4)"
+rest_code POST /config/securityrate '{"synEnabled":false,"synThreshold":100,"cookieThreshold":50,"connRateEnabled":true,"ratePerSec":5,"udpEnabled":false,"udpPktThreshold":1000,"udpBandwidthMB":100}' >/dev/null
+sleep 1
+cr_before=$(metric_val loxilb_security_conn_blocked_total)
+for i in $(seq 1 40); do
+    $hexec l3h1 curl --max-time 0.3 -s -o /dev/null 20.20.20.1:2020
+done
+delta=$(poll_metric_delta unlabeled loxilb_security_conn_blocked_total "$cr_before" 1)
+[[ $delta -ge 1 ]] \
+    && pass "conn_blocked delta=$delta for 40-conn burst at 5/s cap" \
+    || fail "conn-rate never blocked (delta=$delta)"
+
+echo "### enforcement 5/5 - securityrate: whitelist bypass exemption (D4)"
+# Whitelisted sources bypass ALL rate limiting by design - lock that in so a
+# future change to the shared ip_whitelist map cannot silently break it.
+rest_code POST /config/securityrate '{"synEnabled":false,"synThreshold":100,"cookieThreshold":50,"connRateEnabled":false,"ratePerSec":50,"udpEnabled":true,"udpPktThreshold":100,"udpBandwidthMB":100}' >/dev/null
+rest_code POST /config/ipfilter '{"filterType":"whitelist","cidr":"10.10.10.1/32","action":"allow","priority":220}' >/dev/null
+sleep 1
+udp_p_before=$(metric_val loxilb_security_udp_passed_total)
+udp_b_before=$(metric_val loxilb_security_udp_blocked_total)
+$hexec l3h1 bash -c 'for i in $(seq 1 300); do echo -n x > /dev/udp/20.20.20.1/9999; done' 2>/dev/null
+delta_p=$(poll_metric_delta unlabeled loxilb_security_udp_passed_total "$udp_p_before" 300)
+udp_b_now=$(metric_val loxilb_security_udp_blocked_total)
+delta_b=$((udp_b_now - udp_b_before))
+[[ $delta_b -eq 0 ]] \
+    && pass "whitelisted source: zero blocked under same flood" \
+    || fail "whitelisted source still blocked (delta=$delta_b)"
+[[ $delta_p -ge 295 ]] \
+    && pass "whitelisted source: all $delta_p datagrams passed" \
+    || fail "whitelisted passed only $delta_p of 300"
+rest_code DELETE '/config/ipfilter?filterType=whitelist&cidr=10.10.10.1/32' >/dev/null
+
+# Leave securityrate disabled and the topology clean for any later sections.
+rest_code POST /config/securityrate "$sec_reset" >/dev/null
+$hexec l3h1 ip addr del 10.10.10.99/24 dev el3h1llb1 2>/dev/null
+sleep 2
+res=$(reach)
+[[ $res == "server1" ]] && pass "baseline reachability restored after enforcement legs" || fail "unreachable after enforcement cleanup ($res)"
+
 echo "### metrics: security series present (needs loxilb -p; set in config.sh)"
 mbody=$($dexec llb1 curl -s "$api/metrics")
 echo "$mbody" | grep -qE 'loxilb_security_syn_blocked_total' \
     && pass "loxilb_security_* series exported" || fail "security metrics missing (is -p enabled?)"
 echo "$mbody" | grep -qE 'loxilb_ipfilter_rules' \
     && pass "loxilb_ipfilter_rules series exported" || fail "ipfilter metrics missing"
+# D1 regression: the VIP rule here is UNNAMED - traffic through it must never
+# emit placeholder per-service series (the DP reports unnamed rules as "-",
+# some paths as "": both rendered phantom rows on the L4 dashboard).
+echo "$mbody" | grep -qE 'service="(-)?"' \
+    && fail "placeholder service-label series exported (D1 regression)" \
+    || pass "no service=\"\"/service=\"-\" series for unnamed rule traffic (D1)"
 
 sudo killall -9 node 2>&1 >/dev/null
 if [[ $code == 0 ]]; then
