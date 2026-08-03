@@ -6,7 +6,7 @@
 # chains, so both services run on the host network (ports 9090 / 3000).
 services:
   prometheus:
-    image: prom/prometheus:v2.53.4
+    image: prom/prometheus:v3.13.2
     container_name: loxilb-prometheus
     network_mode: host
     restart: unless-stopped
