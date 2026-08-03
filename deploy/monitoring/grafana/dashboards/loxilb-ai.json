@@ -368,8 +368,8 @@
     },
     {
       "id": 7,
-      "type": "heatmap",
-      "title": "Duration heatmap",
+      "type": "timeseries",
+      "title": "Request duration distribution (p50/p90/p99)",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -383,17 +383,37 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (le) (increase(loxilb_ai_request_duration_seconds_bucket{instance=~\"$instance\"}[$__interval]))",
-          "format": "heatmap",
-          "legendFormat": "{{le}}"
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(loxilb_ai_request_duration_seconds_bucket{instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.90, sum by (le) (rate(loxilb_ai_request_duration_seconds_bucket{instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "p90"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(loxilb_ai_request_duration_seconds_bucket{instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "p99"
         }
       ],
       "fieldConfig": {
         "defaults": {
+          "unit": "s",
           "noValue": "No data"
         },
         "overrides": []
-      }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "description": "Latency spread from loxilb_ai_request_duration_seconds histogram. (Replaces the classic-histogram heatmap, which does not render reliably in Grafana 11.)"
     },
     {
       "id": 10,
