@@ -73,7 +73,13 @@ ensure_rule() { # port json
 
 ensure_rules() {
     echo "[2/5] ensuring extra LB rules (:2020 SSE, :2222 l4-echo)"
-    ensure_rule 2020 '{"serviceArguments":{"externalIP":"'$VIP'","port":2020,"protocol":"tcp","block":0,"sel":0,"mode":4,"host":"'$VIP'","monitor":false,"inactiveTimeout":240},"endpoints":[{"endpointIP":"32.32.32.1","targetPort":8080,"weight":1,"state":"active"}]}'
+    # sse_mode is LOAD-BEARING for the AI Gateway dashboard: sockproxy only
+    # accounts AI requests (loxilb_ai_requests_total etc.) on connections whose
+    # rule set ai_gw_mode - i.e. SSEMode or PDDisaggMode. A plain fullproxy
+    # rule serves the traffic but records nothing, and the whole dashboard
+    # stays empty. NOTE: `loxicmd get lb -o json` does NOT round-trip these
+    # AI attributes - snapshot rules via GET /config/loadbalancer/all instead.
+    ensure_rule 2020 '{"serviceArguments":{"externalIP":"'$VIP'","port":2020,"protocol":"tcp","block":0,"sel":0,"mode":4,"host":"'$VIP'","monitor":false,"inactiveTimeout":240,"sse_mode":true,"max_stream_duration_sec":300,"backend_keepalive_interval_sec":60},"endpoints":[{"endpointIP":"32.32.32.1","targetPort":8080,"weight":1,"state":"active"}]}'
     ensure_rule 2222 '{"serviceArguments":{"externalIP":"'$VIP'","port":2222,"protocol":"tcp","block":0,"sel":0,"mode":0,"name":"l4-echo","monitor":false,"inactiveTimeout":240},"endpoints":[{"endpointIP":"32.32.32.1","targetPort":80,"weight":1,"state":"active"},{"endpointIP":"34.34.34.1","targetPort":80,"weight":1,"state":"active"},{"endpointIP":"36.36.36.1","targetPort":80,"weight":1,"state":"active"}]}'
 }
 
