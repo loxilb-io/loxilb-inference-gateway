@@ -266,7 +266,7 @@ var (
 	processedBytes = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: MetricProcessedBytesTotal,
-			Help: "The total number of bytes processed by the load balancer, including protocol and IP headers.",
+			Help: "The total number of bytes processed by the load balancer, including protocol and IP headers. Fed from the cumulative data-plane rule counters (exact, includes flows of any lifetime).",
 		},
 	)
 	processedTCPBytes = promauto.NewCounter(
@@ -308,7 +308,7 @@ var (
 	processedPackets = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: MetricProcessedPacketsTotal,
-			Help: "The total number of packets processed by the load balancer.",
+			Help: "The total number of packets processed by the load balancer. Fed from the cumulative data-plane rule counters (exact, includes flows of any lifetime).",
 		},
 	)
 	// Processed bytes per LB rule PromQL : sum(rate(loxilb_lb_rule_interaction_bytes_total[1m])) by (service)
@@ -332,28 +332,28 @@ var (
 	serviceTrafficBytes = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: MetricServiceTrafficBytes,
-			Help: "Total bytes per service",
+			Help: "Total bytes per NAMED service, from the exact data-plane rule counters. Unnamed LB rules have no per-service series.",
 		},
 		[]string{"service"},
 	)
 	serviceTrafficPackets = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: MetricServiceTrafficPackets,
-			Help: "Total packets per service",
+			Help: "Total packets per NAMED service, from the exact data-plane rule counters. Unnamed LB rules have no per-service series.",
 		},
 		[]string{"service"},
 	)
 	endpointTrafficBytes = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: MetricEndpointTrafficBytes,
-			Help: "Total bytes per endpoint per service",
+			Help: "Total bytes per endpoint per service. PERSISTENT-FLOW VIEW: conntrack-sweep derived; flows shorter than one 10s sweep are not counted.",
 		},
 		[]string{"service", "dip"},
 	)
 	clientTrafficPackets = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: MetricClientTrafficPackets,
-			Help: "Total packets per client per service",
+			Help: "Total packets per client per service. PERSISTENT-FLOW VIEW: conntrack-sweep derived; flows shorter than one 10s sweep are not counted.",
 		},
 		[]string{"service", "sip"},
 	)
@@ -363,14 +363,14 @@ var (
 	totalRequests = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: MetricTotalRequests,
-			Help: "Total number of requests",
+			Help: "Sampled new sessions observed by the 10s conntrack sweep. Sessions born and closed within one sweep are not counted - treat as a trend indicator, not an exact request count.",
 		},
 	)
 
 	totalRequestsPerService = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: MetricTotalRequestsPerService,
-			Help: "Total number of requests per service",
+			Help: "Sampled new sessions per service observed by the 10s conntrack sweep. Sessions born and closed within one sweep are not counted.",
 		},
 		[]string{"service"},
 	)
@@ -436,6 +436,19 @@ var (
 	// Cumulative per-rule firewall drop baselines for delta computation, keyed by
 	// rule preference. Only touched by the RunGetFwRule goroutine.
 	prevFwRuleDrops = make(map[string]uint64)
+
+	// Cumulative per-LB-endpoint traffic baselines (from the data-plane rule
+	// counters) for delta computation, keyed by service tuple + endpoint. Only
+	// touched by the RunGetLBRule goroutine; reset in Init like the fw baselines.
+	// The DP counters — not the conntrack sweep — feed the aggregate processed_*
+	// and service_traffic_* counters, because the sweep misses every flow shorter
+	// than one collection period (finding D2: 869 DP packets vs 43 sweep-observed).
+	prevLbEpStats = make(map[string]Stats)
+
+	// lbStatsFirstCycle marks the first RunGetLBRule pass after Init: baselines
+	// are seeded without adding, so pre-existing cumulative DP totals do not
+	// appear as a phantom burst when metrics are (re-)enabled.
+	lbStatsFirstCycle = true
 
 	// Previous security stats for delta calculation (like conntrack overflow handling)
 	prevSecurityStats cmn.SecurityRateStats
@@ -710,6 +723,8 @@ func Init() {
 		Packets uint64
 		Bytes   uint64
 	})
+	prevLbEpStats = make(map[string]Stats)
+	lbStatsFirstCycle = true
 	conntrackRWMutex.Lock()
 	prevConntrackStats = make(map[ConntrackKey]Stats)
 	prevConntrackInfo = make(map[ConntrackKey]bool)
@@ -753,8 +768,17 @@ func toJSON(v interface{}) string {
 }
 
 func MakeConntrackKey(c cmn.CtInfo) (key ConntrackKey) {
+	// The data plane reports flows of UNNAMED lb rules with ServiceName "-"
+	// (and sometimes ""). Normalize to "" here — the single choke point every
+	// consumer parses the service name back out of — so the serviceName != ""
+	// guards keep placeholder per-service series ("-" or empty) out of every
+	// labeled metric (finding D1).
+	svc := c.ServiceName
+	if svc == "-" {
+		svc = ""
+	}
 	return ConntrackKey(fmt.Sprintf("%s|%05d|%s|%05d|%v|%s",
-		c.Sip, c.Sport, c.Dip, c.Dport, c.Proto, c.ServiceName))
+		c.Sip, c.Sport, c.Dip, c.Dport, c.Proto, svc))
 }
 
 func isErrorState(c cmn.CtInfo) bool {
@@ -875,9 +899,111 @@ func RunGetLBRule(ctx context.Context) {
 			SetSharedMetric("lb_rule_count", float64(len(info)))
 		}
 
+		collectLbRuleTraffic(info)
+
 		time.Sleep(PrometheusDefaultPeriod)
 		return nil
 	}, "lbrule_collection", ctx)
+}
+
+// collectLbRuleTraffic feeds the aggregate traffic counters (processed_* and
+// per-service service_traffic_*) from the CUMULATIVE data-plane per-endpoint
+// rule counters, using the same delta-accumulation idiom as RunGetFwRule.
+//
+// Rationale (finding D2): the conntrack-sweep path only ever sees flows alive
+// across a 10s sweep boundary, so with short-lived connections it undercounts
+// systematically (measured: DP rule counter +869 pkts vs +43 via the sweep).
+// The DP counters are exact. Flow-identity breakdowns (per-client sip /
+// per-endpoint dip) and the active-connection gauges necessarily stay
+// conntrack-derived — they are documented as a persistent-flow view.
+func collectLbRuleTraffic(info []cmn.LbRuleMod) {
+	seed := lbStatsFirstCycle
+
+	var totBytes, totPackets uint64
+	protoBytes := make(map[string]uint64, 3)
+	protoPackets := make(map[string]uint64, 3)
+	svcBytes := make(map[string]uint64)
+	svcPackets := make(map[string]uint64)
+
+	currentEps := make(map[string]bool, len(prevLbEpStats))
+	for i := range info {
+		rule := &info[i]
+		proto := strings.ToLower(rule.Serv.Proto)
+		svc := rule.Serv.Name
+		if svc == "-" { // placeholder for unnamed rules, same contract as MakeConntrackKey
+			svc = ""
+		}
+		ruleIdent := fmt.Sprintf("%s|%d|%d|%s", rule.Serv.ServIP, rule.Serv.ServPort, rule.Serv.BlockNum, proto)
+		for j := range rule.Eps {
+			ep := &rule.Eps[j]
+			pkts, bytes, ok := parseCounterPacketsBytes(ep.Counters)
+			if !ok {
+				continue
+			}
+			key := fmt.Sprintf("%s|%s|%d", ruleIdent, ep.EpIP, ep.EpPort)
+			currentEps[key] = true
+
+			// First sight or counter reset (rule/endpoint re-created with a
+			// fresh DP counter): the full current value is the delta
+			deltaPkts, deltaBytes := pkts, bytes
+			if prev, seen := prevLbEpStats[key]; seen && pkts >= prev.Packets && bytes >= prev.Bytes {
+				deltaPkts = pkts - prev.Packets
+				deltaBytes = bytes - prev.Bytes
+			}
+			prevLbEpStats[key] = Stats{Bytes: bytes, Packets: pkts}
+			if seed {
+				// Baseline-only: cumulative totals of pre-existing rules must
+				// not appear as a phantom burst on (re-)enable
+				continue
+			}
+
+			totBytes += deltaBytes
+			totPackets += deltaPkts
+			protoBytes[proto] += deltaBytes
+			protoPackets[proto] += deltaPkts
+			if svc != "" {
+				svcBytes[svc] += deltaBytes
+				svcPackets[svc] += deltaPkts
+			}
+		}
+	}
+
+	// Drop baselines for endpoints that no longer exist so rule churn cannot
+	// leak memory (same pattern as the firewall collector)
+	for key := range prevLbEpStats {
+		if !currentEps[key] {
+			delete(prevLbEpStats, key)
+		}
+	}
+
+	lbStatsFirstCycle = false
+	if seed {
+		return
+	}
+
+	processedBytes.Add(float64(totBytes))
+	processedPackets.Add(float64(totPackets))
+	processedTCPBytes.Add(float64(protoBytes["tcp"]))
+	processedUDPBytes.Add(float64(protoBytes["udp"]))
+	processedSCTPBytes.Add(float64(protoBytes["sctp"]))
+	processedTCPPackets.Add(float64(protoPackets["tcp"]))
+	processedUDPPackets.Add(float64(protoPackets["udp"]))
+	processedSCTPPackets.Add(float64(protoPackets["sctp"]))
+
+	for svc, b := range svcBytes {
+		serviceTrafficBytes.WithLabelValues(svc).Add(float64(b))
+	}
+	for svc, p := range svcPackets {
+		serviceTrafficPackets.WithLabelValues(svc).Add(float64(p))
+	}
+
+	if enableSharedMetrics {
+		AddSharedMetric("processed_bytes", float64(totBytes))
+		AddSharedMetric("processed_packets", float64(totPackets))
+		AddSharedMetric("processed_tcp_bytes", float64(protoBytes["tcp"]))
+		AddSharedMetric("processed_udp_bytes", float64(protoBytes["udp"]))
+		AddSharedMetric("processed_sctp_bytes", float64(protoBytes["sctp"]))
+	}
 }
 
 // RunActiveConntrackCount is the main entry point - delegates to optimized version
@@ -1278,28 +1404,31 @@ func processConntrackDataOptimized(info []cmn.CtInfo) {
 			// (serviceName from the KEY is always preserved; ct.ServiceName may be empty)
 			sip, _, dip, _, _, serviceName := parseConntrackKey(key)
 
-			// Accumulate per-service totals in unified metrics
+			// Accumulate per-service totals in unified metrics. Flows from
+			// unnamed LB rules have an empty serviceName in the conntrack key;
+			// skip them entirely (same contract as the closed-flow path) so no
+			// empty-`service`-label series are ever emitted (finding D1).
 			if serviceName != "" {
 				unified.ServiceBytes[serviceName] += diffBytes
 				unified.ServicePackets[serviceName] += diffPackets
-			}
 
-			// Per-service and per-endpoint traffic calculation for distribution ratios
-			if _, exists := unified.ServiceTraffic[serviceName]; !exists {
-				unified.ServiceTraffic[serviceName] = 0
-				unified.ServiceDipTraffic[serviceName] = make(map[string]float64)
-				unified.ServiceSipPackets[serviceName] = make(map[string]float64)
-			}
-			unified.ServiceTraffic[serviceName] += float64(diffBytes)
-			unified.ServiceDipTraffic[serviceName][dip] += float64(diffBytes)
-			unified.ServiceSipPackets[serviceName][sip] += float64(diffPackets)
+				// Per-service and per-endpoint traffic calculation for distribution ratios
+				if _, exists := unified.ServiceTraffic[serviceName]; !exists {
+					unified.ServiceTraffic[serviceName] = 0
+					unified.ServiceDipTraffic[serviceName] = make(map[string]float64)
+					unified.ServiceSipPackets[serviceName] = make(map[string]float64)
+				}
+				unified.ServiceTraffic[serviceName] += float64(diffBytes)
+				unified.ServiceDipTraffic[serviceName][dip] += float64(diffBytes)
+				unified.ServiceSipPackets[serviceName][sip] += float64(diffPackets)
 
-			// Update Prometheus counters for traffic visibility (every 10s for real-time monitoring)
-			lbRuleInteractionBytes.WithLabelValues(serviceName, sip, dip).Add(float64(diffBytes))
-			lbRuleInteractionPackets.WithLabelValues(serviceName, sip, dip).Add(float64(diffPackets))
-			if enableSharedMetrics {
-				AddLabeledMetric("lb_rule_interaction_bytes", map[string]string{"service": serviceName, "sip": sip, "dip": dip}, float64(diffBytes))
-				AddLabeledMetric("lb_rule_interaction_packets", map[string]string{"service": serviceName, "sip": sip, "dip": dip}, float64(diffPackets))
+				// Update Prometheus counters for traffic visibility (every 10s for real-time monitoring)
+				lbRuleInteractionBytes.WithLabelValues(serviceName, sip, dip).Add(float64(diffBytes))
+				lbRuleInteractionPackets.WithLabelValues(serviceName, sip, dip).Add(float64(diffPackets))
+				if enableSharedMetrics {
+					AddLabeledMetric("lb_rule_interaction_bytes", map[string]string{"service": serviceName, "sip": sip, "dip": dip}, float64(diffBytes))
+					AddLabeledMetric("lb_rule_interaction_packets", map[string]string{"service": serviceName, "sip": sip, "dip": dip}, float64(diffPackets))
+				}
 			}
 		}
 
@@ -1309,11 +1438,13 @@ func processConntrackDataOptimized(info []cmn.CtInfo) {
 	updateAllMetricSystems(unified, seedOnly)
 
 	if !seedOnly {
-		// Update Prometheus counters for real-time monitoring; per-service
-		// traffic counters advance in the same cycle as the totals
-		for service, traffic := range unified.ServiceTraffic {
-			serviceTrafficBytes.WithLabelValues(service).Add(traffic)
-
+		// Per-endpoint (dip) and per-client (sip) breakdowns stay
+		// conntrack-derived: flow identity only exists here. They are a
+		// PERSISTENT-FLOW VIEW — flows shorter than one 10s sweep are not
+		// visible (finding D2). The aggregate service_traffic_* and
+		// processed_* counters are fed from the exact DP rule counters in
+		// collectLbRuleTraffic instead, so they must NOT be added here.
+		for service := range unified.ServiceTraffic {
 			// Send raw endpoint traffic data per service
 			for dip, dipTraffic := range unified.ServiceDipTraffic[service] {
 				endpointTrafficBytes.WithLabelValues(service, dip).Add(dipTraffic)
@@ -1323,11 +1454,6 @@ func processConntrackDataOptimized(info []cmn.CtInfo) {
 			for sip, sipPackets := range unified.ServiceSipPackets[service] {
 				clientTrafficPackets.WithLabelValues(service, sip).Add(sipPackets)
 			}
-		}
-
-		// Update service packet counter (same pattern as bytes)
-		for service, packets := range unified.ServicePackets {
-			serviceTrafficPackets.WithLabelValues(service).Add(float64(packets))
 		}
 	}
 
@@ -1407,19 +1533,16 @@ func updateAllMetricSystems(unified *UnifiedMetrics, seedOnly bool) {
 
 	// 2. Update cumulative counters
 	// Request counting: unified exactly-once semantics (counted at creation, or
-	// at close for short-lived flows never seen active)
+	// at close for short-lived flows never seen active). SWEEP-SAMPLED (D2):
+	// sessions born and closed inside one 10s sweep are not observable here, so
+	// these are "sampled new sessions", not an exact request count. The DP rule
+	// counters cannot replace them — they count packets, not sessions — and the
+	// meaning is kept unchanged so existing consumers are not silently rescaled.
 	totalRequests.Add(float64(unified.NewFlows))
 	totalErrors.Add(float64(unified.ErrorCount))
 
-	// Update protocol-specific Prometheus metrics
-	processedBytes.Add(float64(unified.TotalBytes))
-	processedPackets.Add(float64(unified.TotalPackets))
-	processedTCPBytes.Add(float64(unified.TcpBytesProcessed))
-	processedUDPBytes.Add(float64(unified.UdpBytesProcessed))
-	processedSCTPBytes.Add(float64(unified.SctpBytesProcessed))
-	processedTCPPackets.Add(float64(unified.TcpPacketsProcessed))
-	processedUDPPackets.Add(float64(unified.UdpPacketsProcessed))
-	processedSCTPPackets.Add(float64(unified.SctpPacketsProcessed))
+	// NOTE: processed_* and service_traffic_* are fed from the exact DP rule
+	// counters in collectLbRuleTraffic (finding D2) — not added here anymore.
 
 	// Update per-service Prometheus metrics
 	for service, count := range unified.ServiceRequests {
@@ -1429,15 +1552,11 @@ func updateAllMetricSystems(unified *UnifiedMetrics, seedOnly bool) {
 		totalErrorsPerService.WithLabelValues(service).Add(float64(count))
 	}
 
-	// Mirror the cumulative counters into the shared-metrics store
+	// Mirror the cumulative counters into the shared-metrics store (the
+	// processed_* mirrors moved to collectLbRuleTraffic with their source)
 	if enableSharedMetrics {
 		AddSharedMetric("total_requests", float64(unified.NewFlows))
 		AddSharedMetric("total_errors", float64(unified.ErrorCount))
-		AddSharedMetric("processed_bytes", float64(unified.TotalBytes))
-		AddSharedMetric("processed_packets", float64(unified.TotalPackets))
-		AddSharedMetric("processed_tcp_bytes", float64(unified.TcpBytesProcessed))
-		AddSharedMetric("processed_udp_bytes", float64(unified.UdpBytesProcessed))
-		AddSharedMetric("processed_sctp_bytes", float64(unified.SctpBytesProcessed))
 		for service, count := range unified.ServiceRequests {
 			AddLabeledMetric("total_requests_per_service", map[string]string{"service": service}, float64(count))
 		}
@@ -1453,6 +1572,21 @@ func parseConntrackKey(key ConntrackKey) (sip, sport, dip, dport, proto, service
 		return parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]
 	}
 	return "", "", "", "", "", ""
+}
+
+// parseCounterPacketsBytes parses a data-plane counter string formatted as
+// "packets:bytes" (see pkg/loxinet/rules.go) into both components.
+func parseCounterPacketsBytes(counter string) (packets, bytes uint64, ok bool) {
+	fields := strings.SplitN(counter, ":", 2)
+	if len(fields) != 2 {
+		return 0, 0, false
+	}
+	p, errP := strconv.ParseUint(strings.TrimSpace(fields[0]), 10, 64)
+	b, errB := strconv.ParseUint(strings.TrimSpace(fields[1]), 10, 64)
+	if errP != nil || errB != nil {
+		return 0, 0, false
+	}
+	return p, b, true
 }
 
 // parseFwCounterPackets parses the data-plane rule counter string, formatted as
