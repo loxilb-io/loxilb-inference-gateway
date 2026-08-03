@@ -37,6 +37,24 @@ print(r[0]["value"][1] if r else 0)' 2>/dev/null || echo 0
 # Numeric comparison helper: intcmp <a> <op> <b> (awk, handles floats)
 intcmp() { awk "BEGIN {exit !($1 $2 $3)}"; }
 
+# Poll a counter/gauge query until (value - base) >= want, or the window
+# elapses; echoes the final delta. Replaces a single fixed sleep + one sample:
+# the loxilb 10s stats sweep and the 10s scrape interval land at unpredictable
+# offsets, so a lone sample often reads 0 while the sweep has not yet observed
+# the driver traffic. Polling stops the instant the expected delta is reached,
+# so it absorbs that timing jitter without hiding a genuine no-record regression
+# (which never reaches `want` and still fails downstream). tries*3s ≈ max wait.
+wait_delta() {
+  local q="$1" base="$2" want="$3" tries="${4:-14}" now d=0
+  for _ in $(seq 1 "$tries"); do
+    now=$(pq "$q")
+    d=$(awk "BEGIN {print $now - $base}")
+    intcmp "$d" ">=" "$want" && break
+    sleep 3
+  done
+  echo "$d"
+}
+
 fail() { echo "  $1 [FAILED]"; code=1; }
 ok()   { echo "  $1 [OK]"; }
 
@@ -76,10 +94,10 @@ for i in 1 2 3; do
     -d '{"model":"sse-test","messages":[{"role":"user","content":"m"}]}' \
     "http://10.10.10.254:2020/v1/chat/completions" >/dev/null 2>&1
 done
-sleep 25   # loxilb 10s stats sweep + 10s scrape interval + margin
-now_sse=$(pq 'loxilb_ai_requests_total{model="sse-test",status="200"}')
-d=$(awk "BEGIN {print $now_sse - $base_sse}")
-if intcmp "$d" == 3; then ok "Δ == 3"; else fail "Δ == $d (want 3; $base_sse → $now_sse)"; fi
+# Poll until the sweep+scrape observe all 3 (see wait_delta); avoids a lone
+# too-early sample reading 0 while the 10s stats sweep has not yet run.
+d=$(wait_delta 'loxilb_ai_requests_total{model="sse-test",status="200"}' "$base_sse" 3)
+if intcmp "$d" == 3; then ok "Δ == 3"; else fail "Δ == $d (want 3; base $base_sse)"; fi
 
 # ── T3: non-SSE recording guard ──────────────────────────────────────
 # Plain-JSON responses on an AI rule (the OpenAI error shape) must be recorded;
@@ -94,10 +112,8 @@ for i in 1 2 3 4; do
     -d '{"model":"sse-test","messages":[{"role":"user","content":"e"}]}' \
     "http://10.10.10.254:2020/v1/error" >/dev/null 2>&1
 done
-sleep 25
-now_json=$(pq 'loxilb_ai_requests_total{model="sse-test",status="500"}')
-d=$(awk "BEGIN {print $now_json - $base_json}")
-if intcmp "$d" == 4; then ok "Δ == 4 (plain-JSON responses recorded)"; else fail "Δ == $d (want 4; $base_json → $now_json)"; fi
+d=$(wait_delta 'loxilb_ai_requests_total{model="sse-test",status="500"}' "$base_json" 4)
+if intcmp "$d" == 4; then ok "Δ == 4 (plain-JSON responses recorded)"; else fail "Δ == $d (want 4; base $base_json)"; fi
 
 echo "T3b: requests on a non-AI mode-4 rule stay out of AI accounting"
 base_nosse=$(pq 'loxilb_ai_requests_total{model="nosse-test"}')
@@ -121,7 +137,8 @@ echo ""
 echo "T5: 10 held L4 conns reflected in loxilb_active_conntrack_entries"
 base_ct=$(pq 'loxilb_active_conntrack_entries')
 rm -f /tmp/monitoring-hold.log
-$hexec l3h1 python3 $(pwd)/hold_conns.py 10.10.10.254 2023 10 45 > /tmp/monitoring-hold.log &
+# Hold long enough (60s) to cover the polled settle window below.
+$hexec l3h1 python3 $(pwd)/hold_conns.py 10.10.10.254 2023 10 60 > /tmp/monitoring-hold.log &
 HOLD_PID=$!
 ready=0
 for i in $(seq 1 20); do
@@ -131,14 +148,15 @@ done
 if [ "$ready" != "1" ]; then
   fail "hold-driver never established its connections"
 else
-  sleep 22   # let the stats sweep + scrape observe the held connections
-  now_ct=$(pq 'loxilb_active_conntrack_entries')
-  d=$(awk "BEGIN {print $now_ct - $base_ct}")
+  # Poll (≤36s, within the 60s hold) until the sweep+scrape observe the held
+  # conns, rather than a single fixed sample that can land before the 10s
+  # stats sweep populates the gauge (the intermittent 0→0 conntrack failure).
+  d=$(wait_delta 'loxilb_active_conntrack_entries' "$base_ct" 10 12)
   # Each held conn contributes 1–2 entries (both NAT legs) → accept [10, 30]
   if intcmp "$d" ">=" 10 && intcmp "$d" "<=" 30; then
     ok "Δ conntrack == $d for 10 held conns (legs included)"
   else
-    fail "Δ conntrack == $d for 10 held conns (want 10–30; $base_ct → $now_ct)"
+    fail "Δ conntrack == $d for 10 held conns (want 10–30; base $base_ct)"
   fi
 fi
 wait $HOLD_PID 2>/dev/null
@@ -162,9 +180,7 @@ base_rst=$(pq 'loxilb_l4_error_events_total{proto="tcp"}')
 for i in 1 2 3 4 5; do
   $hexec l3h1 curl -s --max-time 5 http://10.10.10.254:2024/ >/dev/null 2>&1
 done
-sleep 25
-now_rst=$(pq 'loxilb_l4_error_events_total{proto="tcp"}')
-d=$(awk "BEGIN {print $now_rst - $base_rst}")
+d=$(wait_delta 'loxilb_l4_error_events_total{proto="tcp"}' "$base_rst" 5)
 if intcmp "$d" ">=" 5; then ok "Δ l4_error == $d after 5 server RSTs (≥5)"; else fail "Δ l4_error == $d after 5 server RSTs — established-conn errors lost"; fi
 
 # ── T8: PromQL expression sweep ───────────────────────────────────────────────
