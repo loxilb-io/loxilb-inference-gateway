@@ -1,18 +1,26 @@
 {
   "title": "LoxiLB / Security",
   "uid": "loxilb-security",
-  "tags": ["loxilb", "security"],
+  "tags": [
+    "loxilb",
+    "security"
+  ],
   "timezone": "browser",
   "schemaVersion": 39,
   "refresh": "10s",
-  "time": { "from": "now-1h", "to": "now" },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
   "editable": true,
   "graphTooltip": 1,
   "links": [
     {
       "type": "dashboards",
       "title": "LoxiLB dashboards",
-      "tags": ["loxilb"],
+      "tags": [
+        "loxilb"
+      ],
       "asDropdown": true,
       "includeVars": true,
       "keepTime": true,
@@ -27,12 +35,26 @@
         "name": "instance",
         "label": "Instance",
         "type": "query",
-        "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
-        "query": { "query": "label_values(up{job=\"loxilb\"}, instance)", "refId": "StandardVariableQuery" },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "loxilb-prom"
+        },
+        "query": {
+          "query": "label_values(up{job=\"loxilb\"}, instance)",
+          "refId": "StandardVariableQuery"
+        },
         "refresh": 2,
         "includeAll": true,
         "multi": true,
-        "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
         "sort": 1
       }
     ]
@@ -43,8 +65,16 @@
       "type": "stat",
       "title": "Blocked ratio (all L4 security, 5m)",
       "description": "Share of packets blocked by SYN-flood, conn-rate and UDP-flood limiters over the last 5m. Any non-zero value means a limiter is actively dropping.",
-      "gridPos": { "h": 4, "w": 12, "x": 0, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
       "targets": [
         {
           "refId": "A",
@@ -58,8 +88,14 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "#EAB839", "value": 0.000001 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "#EAB839",
+                "value": 1e-06
+              }
             ]
           }
         },
@@ -70,15 +106,39 @@
       "id": 2,
       "type": "stat",
       "title": "Firewall rules",
-      "gridPos": { "h": 4, "w": 3, "x": 12, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
-      "targets": [{ "refId": "A", "expr": "loxilb_firewall_rules{instance=~\"$instance\"}" }],
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 12,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "loxilb_firewall_rules{instance=~\"$instance\"}"
+        }
+      ],
       "fieldConfig": {
         "defaults": {
           "unit": "short",
           "noValue": "No data",
-          "color": { "mode": "fixed", "fixedColor": "blue" },
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
         },
         "overrides": []
       }
@@ -87,8 +147,16 @@
       "id": 3,
       "type": "stat",
       "title": "ipfilter rules",
-      "gridPos": { "h": 4, "w": 3, "x": 15, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 15,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
       "targets": [
         {
           "refId": "A",
@@ -100,8 +168,19 @@
         "defaults": {
           "unit": "short",
           "noValue": "No data",
-          "color": { "mode": "fixed", "fixedColor": "blue" },
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
         },
         "overrides": []
       }
@@ -110,15 +189,39 @@
       "id": 4,
       "type": "stat",
       "title": "OPA firewall rules",
-      "gridPos": { "h": 4, "w": 3, "x": 18, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
-      "targets": [{ "refId": "A", "expr": "loxilb_opa_firewall_rules{instance=~\"$instance\"}" }],
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 18,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "loxilb_opa_firewall_rules{instance=~\"$instance\"}"
+        }
+      ],
       "fieldConfig": {
         "defaults": {
           "unit": "short",
           "noValue": "No data",
-          "color": { "mode": "fixed", "fixedColor": "blue" },
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
         },
         "overrides": []
       }
@@ -127,15 +230,39 @@
       "id": 5,
       "type": "stat",
       "title": "LB rules",
-      "gridPos": { "h": 4, "w": 3, "x": 21, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
-      "targets": [{ "refId": "A", "expr": "loxilb_lb_rules{instance=~\"$instance\"}" }],
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 21,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "loxilb_lb_rules{instance=~\"$instance\"}"
+        }
+      ],
       "fieldConfig": {
         "defaults": {
           "unit": "short",
           "noValue": "No data",
-          "color": { "mode": "fixed", "fixedColor": "blue" },
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
         },
         "overrides": []
       }
@@ -144,8 +271,16 @@
       "id": 6,
       "type": "timeseries",
       "title": "SYN flood: passed vs blocked/s",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
       "targets": [
         {
           "refId": "A",
@@ -164,15 +299,34 @@
         }
       ],
       "options": {
-        "tooltip": { "mode": "multi" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "fieldConfig": {
-        "defaults": { "unit": "pps", "noValue": "No data" },
+        "defaults": {
+          "unit": "pps",
+          "noValue": "No data"
+        },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "blocked" },
-            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }]
+            "matcher": {
+              "id": "byName",
+              "options": "blocked"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
           }
         ]
       }
@@ -181,8 +335,16 @@
       "id": 7,
       "type": "timeseries",
       "title": "Conn-rate limiter: passed vs blocked/s",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
       "targets": [
         {
           "refId": "A",
@@ -196,15 +358,34 @@
         }
       ],
       "options": {
-        "tooltip": { "mode": "multi" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "fieldConfig": {
-        "defaults": { "unit": "pps", "noValue": "No data" },
+        "defaults": {
+          "unit": "pps",
+          "noValue": "No data"
+        },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "blocked" },
-            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }]
+            "matcher": {
+              "id": "byName",
+              "options": "blocked"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
           }
         ]
       }
@@ -213,8 +394,16 @@
       "id": 8,
       "type": "timeseries",
       "title": "UDP flood: passed vs blocked",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
       "targets": [
         {
           "refId": "A",
@@ -233,19 +422,46 @@
         }
       ],
       "options": {
-        "tooltip": { "mode": "multi" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "fieldConfig": {
-        "defaults": { "unit": "pps", "noValue": "No data" },
+        "defaults": {
+          "unit": "pps",
+          "noValue": "No data"
+        },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "blocked pps" },
-            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }]
+            "matcher": {
+              "id": "byName",
+              "options": "blocked pps"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
           },
           {
-            "matcher": { "id": "byName", "options": "blocked bps" },
-            "properties": [{ "id": "unit", "value": "bps" }]
+            "matcher": {
+              "id": "byName",
+              "options": "blocked bps"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bps"
+              }
+            ]
           }
         ]
       }
@@ -254,8 +470,16 @@
       "id": 9,
       "type": "timeseries",
       "title": "Unique source IPs",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
       "targets": [
         {
           "refId": "A",
@@ -264,11 +488,19 @@
         }
       ],
       "options": {
-        "tooltip": { "mode": "multi" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "fieldConfig": {
-        "defaults": { "unit": "short", "noValue": "No data" },
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
         "overrides": []
       }
     },
@@ -276,8 +508,16 @@
       "id": 10,
       "type": "table",
       "title": "ipfilter: blacklist hits",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 20
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
       "targets": [
         {
           "refId": "A",
@@ -287,16 +527,39 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "pps", "noValue": "No data" },
-        "overrides": []
+        "defaults": {
+          "noValue": "No data"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "pps"
+              }
+            ]
+          }
+        ]
       }
     },
     {
       "id": 11,
       "type": "timeseries",
       "title": "ipfilter: whitelist traffic",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 20
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
       "targets": [
         {
           "refId": "A",
@@ -305,11 +568,19 @@
         }
       ],
       "options": {
-        "tooltip": { "mode": "multi" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "fieldConfig": {
-        "defaults": { "unit": "pps", "noValue": "No data" },
+        "defaults": {
+          "unit": "pps",
+          "noValue": "No data"
+        },
         "overrides": []
       }
     },
@@ -317,8 +588,16 @@
       "id": 12,
       "type": "timeseries",
       "title": "OPA health",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 28
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
       "targets": [
         {
           "refId": "A",
@@ -337,11 +616,19 @@
         }
       ],
       "options": {
-        "tooltip": { "mode": "multi" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "fieldConfig": {
-        "defaults": { "unit": "short", "noValue": "No data" },
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
         "overrides": []
       }
     },
@@ -349,8 +636,16 @@
       "id": 13,
       "type": "timeseries",
       "title": "FW drops/s",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 28
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
       "targets": [
         {
           "refId": "A",
@@ -359,11 +654,19 @@
         }
       ],
       "options": {
-        "tooltip": { "mode": "multi" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "fieldConfig": {
-        "defaults": { "unit": "pps", "noValue": "No data" },
+        "defaults": {
+          "unit": "pps",
+          "noValue": "No data"
+        },
         "overrides": []
       }
     },
@@ -371,19 +674,47 @@
       "id": 14,
       "type": "table",
       "title": "Top dropping FW rules",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 36 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "description": "Total packets dropped per firewall rule over the dashboard time range. Uses increase() over the visible window so past drop episodes stay attributable; an instant rate() here would go blank within 5m of a burst ending.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 36
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(10, rate(loxilb_fw_rule_drop_packets_total{instance=~\"$instance\"}[5m]))",
+          "expr": "topk(10, round(increase(loxilb_fw_rule_drop_packets_total{instance=~\"$instance\"}[$__range])) > 0)",
           "format": "table",
           "instant": true
         }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "pps", "noValue": "No data" },
-        "overrides": []
+        "defaults": {
+          "noValue": "No data"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "displayName",
+                "value": "drops (range)"
+              }
+            ]
+          }
+        ]
       }
     }
   ]

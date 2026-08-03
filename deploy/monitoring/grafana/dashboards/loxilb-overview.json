@@ -144,7 +144,7 @@
       "id": 7,
       "type": "stat",
       "title": "Error rate",
-      "description": "Alert home: LoxilbL4ErrorBurst.",
+      "description": "Alert home: LoxilbL4ErrorBurst. CAVEAT (F13): normal short-lived and management-plane connection teardown is currently classified as reason=\"error\" by the CT state machine (~3.5 events per REST call), so this rate runs 6-30/s under benign traffic. Treat sustained large jumps, not the baseline, as signal until the kernel-side classification fix lands.",
       "gridPos": { "h": 4, "w": 3, "x": 18, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
       "targets": [{ "refId": "A", "expr": "sum(rate(loxilb_l4_error_events_total{reason!=\"rst_client\",instance=~\"$instance\"}[5m]))" }],

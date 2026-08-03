@@ -85,12 +85,18 @@ groups:
         # Benign client RSTs (reason="rst_client") are EXCLUDED: only backend RSTs,
         # TCP protocol errors, and SCTP abort/error indicate a real problem. Rate
         # threshold (not >0) so routine one-off backend resets don't page.
-        expr: sum(rate(loxilb_l4_error_events_total{reason!="rst_client"}[5m])) > 1
-        for: 10m
+        # INTERIM THRESHOLD (finding F13/D6): the CT state machine currently
+        # classifies normal short-lived / management-plane connection teardown as
+        # reason="error" (~3.5 events per REST call; 6-30/s under ordinary short-
+        # connection load), so the original >1/s threshold fires permanently.
+        # Held at >50/s until the llb_kern_ct.c classification fix lands, then
+        # restore to >1/s and for: 10m.
+        expr: sum(rate(loxilb_l4_error_events_total{reason!="rst_client"}[5m])) > 50
+        for: 15m
         labels: { severity: warning }
         annotations:
-          summary: "L4 backend-error burst (>1/s server-RST/proto-err/SCTP-abort for 10m)"
-          description: "Event-driven loxilb_l4_error_events_total (excl. benign client RSTs). A sustained burst points to backend resets, protocol errors, or SCTP aborts."
+          summary: "L4 backend-error burst (>50/s server-RST/proto-err/SCTP-abort for 15m)"
+          description: "Event-driven loxilb_l4_error_events_total (excl. benign client RSTs). A sustained burst points to backend resets, protocol errors, or SCTP aborts. CAVEAT (F13): short-lived/management-plane teardown currently also counts as reason=\"error\", inflating this rate; threshold is interim-raised until the kernel-side classification fix lands."
           dashboard: "LoxiLB / Overview"
           panel: "Error rate"
 

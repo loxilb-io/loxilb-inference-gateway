@@ -1,18 +1,26 @@
 {
   "title": "LoxiLB / L7 Proxy",
   "uid": "loxilb-l7",
-  "tags": ["loxilb", "l7"],
+  "tags": [
+    "loxilb",
+    "l7"
+  ],
   "timezone": "browser",
   "schemaVersion": 39,
   "refresh": "10s",
-  "time": { "from": "now-1h", "to": "now" },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
   "editable": true,
   "graphTooltip": 1,
   "links": [
     {
       "type": "dashboards",
       "title": "LoxiLB dashboards",
-      "tags": ["loxilb"],
+      "tags": [
+        "loxilb"
+      ],
       "asDropdown": true,
       "includeVars": true,
       "keepTime": true,
@@ -27,12 +35,26 @@
         "name": "instance",
         "label": "Instance",
         "type": "query",
-        "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
-        "query": { "query": "label_values(up{job=\"loxilb\"}, instance)", "refId": "StandardVariableQuery" },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "loxilb-prom"
+        },
+        "query": {
+          "query": "label_values(up{job=\"loxilb\"}, instance)",
+          "refId": "StandardVariableQuery"
+        },
         "refresh": 2,
         "includeAll": true,
         "multi": true,
-        "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
         "sort": 1
       }
     ]
@@ -42,13 +64,30 @@
       "id": 1,
       "type": "stat",
       "title": "Active connections",
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
       "targets": [
-        { "refId": "A", "expr": "loxilb_proxy_active_connections{instance=~\"$instance\"}" }
+        {
+          "refId": "A",
+          "expr": "loxilb_proxy_active_connections{instance=~\"$instance\"}"
+        }
       ],
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "colorMode": "none",
         "graphMode": "area",
         "justifyMode": "auto",
@@ -58,7 +97,15 @@
         "defaults": {
           "unit": "short",
           "noValue": "No data",
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
         },
         "overrides": []
       }
@@ -67,13 +114,30 @@
       "id": 2,
       "type": "stat",
       "title": "Active TLS connections",
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
       "targets": [
-        { "refId": "A", "expr": "loxilb_proxy_active_ssl_connections{instance=~\"$instance\"}" }
+        {
+          "refId": "A",
+          "expr": "loxilb_proxy_active_ssl_connections{instance=~\"$instance\"}"
+        }
       ],
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "colorMode": "none",
         "graphMode": "area",
         "justifyMode": "auto",
@@ -83,7 +147,15 @@
         "defaults": {
           "unit": "short",
           "noValue": "No data",
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
         },
         "overrides": []
       }
@@ -93,8 +165,16 @@
       "type": "stat",
       "title": "Session-affinity hit rate",
       "description": "Computed in PromQL from raw hit/miss counters (replaces deleted lifetime-ratio gauge).",
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
       "targets": [
         {
           "refId": "A",
@@ -102,7 +182,13 @@
         }
       ],
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "colorMode": "none",
         "graphMode": "area",
         "justifyMode": "auto",
@@ -112,7 +198,15 @@
         "defaults": {
           "unit": "percentunit",
           "noValue": "No data",
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
         },
         "overrides": []
       }
@@ -121,8 +215,16 @@
       "id": 4,
       "type": "timeseries",
       "title": "Responses/s by status class",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
       "targets": [
         {
           "refId": "A",
@@ -131,8 +233,13 @@
         }
       ],
       "options": {
-        "tooltip": { "mode": "multi" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "fieldConfig": {
         "defaults": {
@@ -141,20 +248,64 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "2xx" },
-            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }]
+            "matcher": {
+              "id": "byName",
+              "options": "2xx"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
           },
           {
-            "matcher": { "id": "byName", "options": "3xx" },
-            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } }]
+            "matcher": {
+              "id": "byName",
+              "options": "3xx"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
           },
           {
-            "matcher": { "id": "byName", "options": "4xx" },
-            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#EAB839" } }]
+            "matcher": {
+              "id": "byName",
+              "options": "4xx"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#EAB839"
+                }
+              }
+            ]
           },
           {
-            "matcher": { "id": "byName", "options": "5xx" },
-            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }]
+            "matcher": {
+              "id": "byName",
+              "options": "5xx"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
           }
         ]
       }
@@ -164,8 +315,16 @@
       "type": "timeseries",
       "title": "TTFB p50/p95/p99",
       "description": "Const-histogram synthesized from datapath buckets (accurate post-audit).",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
       "targets": [
         {
           "refId": "A",
@@ -184,8 +343,13 @@
         }
       ],
       "options": {
-        "tooltip": { "mode": "multi" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "fieldConfig": {
         "defaults": {
@@ -197,24 +361,50 @@
     },
     {
       "id": 6,
-      "type": "heatmap",
-      "title": "TTFB distribution",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "type": "timeseries",
+      "title": "TTFB share under threshold (SLO)",
+      "description": "Share of proxied HTTP requests whose TTFB fell under each latency threshold (from loxilb_proxy_http_ttfb_seconds classic-histogram buckets). Replaces the former TTFB-distribution heatmap: Grafana cannot render classic-histogram heatmaps from Prometheus cumulative le series (same defect fixed on the AI Gateway dashboard); the quantile view lives in 'TTFB p50/p95/p99'.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (le) (increase(loxilb_proxy_http_ttfb_seconds_bucket{instance=~\"$instance\"}[$__interval]))",
-          "format": "heatmap",
-          "legendFormat": "{{le}}"
+          "expr": "sum(rate(loxilb_proxy_http_ttfb_seconds_bucket{le=\"0.1\",instance=~\"$instance\"}[$__rate_interval])) / sum(rate(loxilb_proxy_http_ttfb_seconds_count{instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "< 100 ms"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(loxilb_proxy_http_ttfb_seconds_bucket{le=\"1\",instance=~\"$instance\"}[$__rate_interval])) / sum(rate(loxilb_proxy_http_ttfb_seconds_count{instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "< 1 s"
+        },
+        {
+          "refId": "C",
+          "expr": "sum(rate(loxilb_proxy_http_ttfb_seconds_bucket{le=\"5\",instance=~\"$instance\"}[$__rate_interval])) / sum(rate(loxilb_proxy_http_ttfb_seconds_count{instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "< 5 s"
         }
       ],
       "options": {
-        "calculate": false,
-        "yAxis": { "unit": "s" }
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "fieldConfig": {
         "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
           "noValue": "No data"
         },
         "overrides": []
@@ -224,9 +414,17 @@
       "id": 7,
       "type": "timeseries",
       "title": "HTTP/2 sessions created/s",
-      "description": "Counter of sessions created — NOT an active-sessions gauge (post-audit type change).",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "description": "Counter of sessions created \u2014 NOT an active-sessions gauge (post-audit type change).",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
       "targets": [
         {
           "refId": "A",
@@ -235,8 +433,13 @@
         }
       ],
       "options": {
-        "tooltip": { "mode": "multi" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "fieldConfig": {
         "defaults": {
@@ -250,8 +453,16 @@
       "id": 8,
       "type": "timeseries",
       "title": "Affinity hits vs misses/s",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 20
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
       "targets": [
         {
           "refId": "A",
@@ -265,8 +476,13 @@
         }
       ],
       "options": {
-        "tooltip": { "mode": "multi" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "fieldConfig": {
         "defaults": {
@@ -280,8 +496,16 @@
       "id": 9,
       "type": "timeseries",
       "title": "Conversation sessions / TTL expiries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 20
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
       "targets": [
         {
           "refId": "A",
@@ -295,8 +519,13 @@
         }
       ],
       "options": {
-        "tooltip": { "mode": "multi" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "fieldConfig": {
         "defaults": {
@@ -311,8 +540,16 @@
       "type": "timeseries",
       "title": "Cache backpressure",
       "description": "Sustained backpressure ratio > 0.8 = amber.",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 28
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
       "targets": [
         {
           "refId": "A",
@@ -331,8 +568,13 @@
         }
       ],
       "options": {
-        "tooltip": { "mode": "multi" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "fieldConfig": {
         "defaults": {
@@ -341,8 +583,16 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "backpressure ratio" },
-            "properties": [{ "id": "unit", "value": "percentunit" }]
+            "matcher": {
+              "id": "byName",
+              "options": "backpressure ratio"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              }
+            ]
           }
         ]
       }
@@ -351,8 +601,16 @@
       "id": 11,
       "type": "timeseries",
       "title": "Chunked responses / graceful closes",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 28
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
       "targets": [
         {
           "refId": "A",
@@ -366,8 +624,13 @@
         }
       ],
       "options": {
-        "tooltip": { "mode": "multi" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "fieldConfig": {
         "defaults": {

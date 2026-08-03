@@ -1,19 +1,27 @@
 {
   "title": "LoxiLB / L4 Load Balancer",
   "uid": "loxilb-l4",
-  "tags": ["loxilb", "l4"],
+  "tags": [
+    "loxilb",
+    "l4"
+  ],
   "description": "Where is traffic going, is it balanced? NOTE: per-service metrics only exist for NAMED lb rules (loxicmd create lb ... --name=...); unnamed rules produce no loxilb_service_* series (finding F1).",
   "timezone": "browser",
   "schemaVersion": 39,
   "refresh": "10s",
-  "time": { "from": "now-1h", "to": "now" },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
   "editable": true,
   "graphTooltip": 1,
   "links": [
     {
       "type": "dashboards",
       "title": "LoxiLB dashboards",
-      "tags": ["loxilb"],
+      "tags": [
+        "loxilb"
+      ],
       "asDropdown": true,
       "includeVars": true,
       "keepTime": true,
@@ -28,24 +36,52 @@
         "name": "instance",
         "label": "Instance",
         "type": "query",
-        "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
-        "query": { "query": "label_values(up{job=\"loxilb\"}, instance)", "refId": "StandardVariableQuery" },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "loxilb-prom"
+        },
+        "query": {
+          "query": "label_values(up{job=\"loxilb\"}, instance)",
+          "refId": "StandardVariableQuery"
+        },
         "refresh": 2,
         "includeAll": true,
         "multi": true,
-        "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
         "sort": 1
       },
       {
         "name": "service",
-        "label": "Service (NAMED lb rules only — finding F1)",
+        "label": "Service (NAMED lb rules only \u2014 finding F1)",
         "type": "query",
-        "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
-        "query": { "query": "label_values(loxilb_service_requests_total, service)", "refId": "StandardVariableQuery" },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "loxilb-prom"
+        },
+        "query": {
+          "query": "label_values(loxilb_service_requests_total, service)",
+          "refId": "StandardVariableQuery"
+        },
         "refresh": 2,
         "includeAll": true,
         "multi": true,
-        "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
         "sort": 1
       }
     ]
@@ -55,9 +91,17 @@
       "id": 1,
       "type": "timeseries",
       "title": "Requests/s per service",
-      "description": "Only NAMED lb rules export per-service series.",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "description": "Only NAMED lb rules export per-service series. SAMPLED (D2): counts new sessions seen by the 10s conntrack sweep; sessions born and closed within one sweep are missed - trend indicator, not an exact request rate.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
       "targets": [
         {
           "refId": "A",
@@ -66,8 +110,13 @@
         }
       ],
       "options": {
-        "tooltip": { "mode": "multi" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "fieldConfig": {
         "defaults": {
@@ -81,8 +130,16 @@
       "id": 2,
       "type": "timeseries",
       "title": "Errors/s per service",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
       "targets": [
         {
           "refId": "A",
@@ -91,8 +148,13 @@
         }
       ],
       "options": {
-        "tooltip": { "mode": "multi" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "fieldConfig": {
         "defaults": {
@@ -107,8 +169,16 @@
       "type": "timeseries",
       "title": "Endpoint load distribution",
       "description": "Per-SERVICE traffic share. A true per-endpoint split is blocked: the exporter's dip label carries VIP/client IP, never the endpoint IP (finding F2); the per-endpoint panel returns with the exporter attribution fix (rollout step 2b).",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
       "targets": [
         {
           "refId": "A",
@@ -117,8 +187,13 @@
         }
       ],
       "options": {
-        "tooltip": { "mode": "multi" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "fieldConfig": {
         "defaults": {
@@ -126,7 +201,9 @@
           "max": 1,
           "noValue": "No data",
           "custom": {
-            "stacking": { "mode": "normal" },
+            "stacking": {
+              "mode": "normal"
+            },
             "fillOpacity": 30
           }
         },
@@ -137,8 +214,17 @@
       "id": 4,
       "type": "timeseries",
       "title": "Service throughput",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "description": "From exact data-plane rule counters (D2 fix) - includes flows of any lifetime. Named rules only.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
       "targets": [
         {
           "refId": "A",
@@ -147,8 +233,13 @@
         }
       ],
       "options": {
-        "tooltip": { "mode": "multi" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "fieldConfig": {
         "defaults": {
@@ -162,8 +253,16 @@
       "id": 5,
       "type": "timeseries",
       "title": "Active flows by protocol",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
       "targets": [
         {
           "refId": "A",
@@ -182,8 +281,13 @@
         }
       ],
       "options": {
-        "tooltip": { "mode": "multi" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "fieldConfig": {
         "defaults": {
@@ -196,9 +300,17 @@
       "id": 6,
       "type": "timeseries",
       "title": "Conntrack entries",
-      "description": "Established sessions only; short-lived flows may never appear (design §6.1). Capacity = datapath map size.",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "description": "Established sessions only; short-lived flows may never appear (design \u00a76.1). Capacity = datapath map size.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
       "targets": [
         {
           "refId": "A",
@@ -212,8 +324,13 @@
         }
       ],
       "options": {
-        "tooltip": { "mode": "multi" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "fieldConfig": {
         "defaults": {
@@ -221,11 +338,32 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "capacity" },
+            "matcher": {
+              "id": "byName",
+              "options": "capacity"
+            },
             "properties": [
-              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } },
-              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 10] } },
-              { "id": "custom.fillOpacity", "value": 0 }
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    10
+                  ]
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
             ]
           }
         ]
@@ -235,9 +373,17 @@
       "id": 7,
       "type": "timeseries",
       "title": "New flows per sweep",
-      "description": "Sampled gauge per 10 s sweep — not an exact counter.",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "description": "Sampled gauge per 10 s sweep \u2014 not an exact counter.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
       "targets": [
         {
           "refId": "A",
@@ -246,8 +392,13 @@
         }
       ],
       "options": {
-        "tooltip": { "mode": "multi" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "fieldConfig": {
         "defaults": {
@@ -260,8 +411,17 @@
       "id": 8,
       "type": "table",
       "title": "Top clients (pkts/s)",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "description": "PERSISTENT-FLOW VIEW (D2): conntrack-sweep derived; clients whose flows live shorter than one 10s sweep are under-represented.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
       "targets": [
         {
           "refId": "A",
@@ -270,21 +430,45 @@
           "instant": true
         }
       ],
-      "transformations": [{ "id": "organize" }],
+      "transformations": [
+        {
+          "id": "organize"
+        }
+      ],
       "fieldConfig": {
         "defaults": {
-          "unit": "pps",
           "noValue": "No data"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "pps"
+              }
+            ]
+          }
+        ]
       }
     },
     {
       "id": 9,
       "type": "timeseries",
       "title": "Firewall drops/s",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
       "targets": [
         {
           "refId": "A",
@@ -293,8 +477,13 @@
         }
       ],
       "options": {
-        "tooltip": { "mode": "multi" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "fieldConfig": {
         "defaults": {
@@ -308,8 +497,16 @@
       "id": 10,
       "type": "table",
       "title": "Top dropping FW rules",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
-      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
       "targets": [
         {
           "refId": "A",
@@ -318,13 +515,29 @@
           "instant": true
         }
       ],
-      "transformations": [{ "id": "organize" }],
+      "transformations": [
+        {
+          "id": "organize"
+        }
+      ],
       "fieldConfig": {
         "defaults": {
-          "unit": "pps",
           "noValue": "No data"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "pps"
+              }
+            ]
+          }
+        ]
       }
     }
   ]
