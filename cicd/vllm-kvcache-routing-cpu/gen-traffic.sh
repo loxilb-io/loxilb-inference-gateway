@@ -27,7 +27,15 @@ kv() {
 }
 
 sse() {
-    echo "[sse] $N SSE streams to $VIP:2020 (model=sse-test)"
+    echo "[sse] $N SSE streams to $VIP:2020 (model=sse-test) + one 15s held stream"
+    # One long-held stream per burst (mock delay_secs keepalive): the
+    # loxilb_ai_active_streams gauge is instantaneous and the mock finishes
+    # normal streams in milliseconds, so without this no 10s scrape ever
+    # overlaps a live stream and the "Active SSE streams" panel reads 0
+    # forever. Real LLM streams last seconds-to-minutes.
+    docker exec -d l3h1 curl -s -N --max-time 20 -X POST "http://$VIP:2020/v1/chat/completions?delay_secs=15" \
+        -H "Content-Type: application/json" \
+        -d '{"model":"sse-test","messages":[{"role":"user","content":"held stream"}],"stream":true}'
     for i in $(seq 1 "$N"); do
         docker exec l3h1 curl -s -N --max-time 6 -X POST "http://$VIP:2020/v1/chat/completions" \
             -H "Content-Type: application/json" \

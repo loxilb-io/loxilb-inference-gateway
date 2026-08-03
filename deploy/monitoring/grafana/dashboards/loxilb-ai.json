@@ -162,6 +162,7 @@
       "id": 2,
       "type": "stat",
       "title": "Active SSE streams",
+      "description": "Streams open at the scrape instant (10s sampling). Short streams that start and finish between scrapes are not visible here - 0 is normal when the backend completes streams quickly; see the requests/s panels for volume and the trend panel for history.",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -419,6 +420,7 @@
       "id": 10,
       "type": "timeseries",
       "title": "Active SSE streams (trend)",
+      "description": "History of the instantaneous gauge (10s samples). Sub-second streams rarely overlap a scrape.",
       "gridPos": {
         "h": 8,
         "w": 24,
