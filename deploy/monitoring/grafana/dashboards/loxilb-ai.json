@@ -198,8 +198,8 @@
     {
       "id": 3,
       "type": "stat",
-      "title": "KV agent up",
-      "description": "loxilb-side gauge \u2014 the correct KV-agent liveness signal.",
+      "title": "KV subscribers up",
+      "description": "KV-cache routing health. ZMQ deployments: min(loxilb_kv_subscriber_connected) across prefill EPs (1=all connected, 0=any rebuilding). Falls back to loxilb_kv_agent_up for REST auto-discovery deployments. NOTE: loxilb_kv_agent_up alone reads DOWN on a ZMQ KV-exact deployment even when routing is fully healthy \u2014 subscriber_connected is the correct signal there.",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -213,7 +213,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "loxilb_kv_agent_up{instance=~\"$instance\"}"
+          "expr": "min(loxilb_kv_subscriber_connected{instance=~\"$instance\"}) or on() max(loxilb_kv_agent_up{instance=~\"$instance\"})"
         }
       ],
       "fieldConfig": {
@@ -396,89 +396,14 @@
       }
     },
     {
-      "id": 8,
-      "type": "timeseries",
-      "title": "Rate-limit hits/s",
-      "description": "Denied requests are NOT counted in loxilb_ai_requests_total \u2014 this is the only place throttling is visible.",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 20
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "loxilb-prom"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "rate(loxilb_ai_rate_limit_hits_total{instance=~\"$instance\"}[$__rate_interval])"
-        }
-      ],
-      "options": {
-        "tooltip": {
-          "mode": "multi"
-        },
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "noValue": "No data"
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 9,
-      "type": "timeseries",
-      "title": "Model-not-allowed/s",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 20
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "loxilb-prom"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "rate(loxilb_ai_model_not_allowed_total{instance=~\"$instance\"}[$__rate_interval])"
-        }
-      ],
-      "options": {
-        "tooltip": {
-          "mode": "multi"
-        },
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "noValue": "No data"
-        },
-        "overrides": []
-      }
-    },
-    {
       "id": 10,
       "type": "timeseries",
       "title": "Active SSE streams (trend)",
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 24,
         "x": 0,
-        "y": 28
+        "y": 20
       },
       "datasource": {
         "type": "prometheus",
@@ -508,44 +433,6 @@
       }
     },
     {
-      "id": 11,
-      "type": "timeseries",
-      "title": "TTFT prediction error p90",
-      "description": "Absent until the first prediction window completes \u2014 'No data' is NORMAL here.",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 28
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "loxilb-prom"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "aictrl_ttft_pred_err_ratio_p90{instance=~\"$instance\"}"
-        }
-      ],
-      "options": {
-        "tooltip": {
-          "mode": "multi"
-        },
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "noValue": "No data"
-        },
-        "overrides": []
-      }
-    },
-    {
       "id": 12,
       "type": "row",
       "collapsed": true,
@@ -554,7 +441,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 36
+        "y": 28
       },
       "panels": [
         {
@@ -679,7 +566,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 37
+        "y": 29
       },
       "panels": [
         {
@@ -749,6 +636,134 @@
               "refId": "A",
               "expr": "sum by (reason) (rate(loxilb_pd_kv_tier15_miss_reason_total{instance=~\"$instance\"}[$__rate_interval]))",
               "legendFormat": "{{reason}}"
+            }
+          ],
+          "options": {
+            "tooltip": {
+              "mode": "multi"
+            },
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data"
+            },
+            "overrides": []
+          }
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "type": "row",
+      "collapsed": true,
+      "title": "Requires AI controller / API-key security (not in pure-loxilb baseline)",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      },
+      "panels": [
+        {
+          "id": 11,
+          "type": "timeseries",
+          "title": "TTFT prediction error p90",
+          "description": "Emitted by the loxilb-ai-controller (aictrl_* metrics) \u2014 a SEPARATE component with its own metrics endpoint, NOT the loxilb data plane. 'No data' unless you deploy that controller AND add it as its own Prometheus scrape job (the $instance var only covers job=loxilb).",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 31
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "loxilb-prom"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "aictrl_ttft_pred_err_ratio_p90{instance=~\"$instance\"}"
+            }
+          ],
+          "options": {
+            "tooltip": {
+              "mode": "multi"
+            },
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 8,
+          "type": "timeseries",
+          "title": "Rate-limit hits/s",
+          "description": "Denied requests are NOT counted in loxilb_ai_requests_total \u2014 this is the only place throttling is visible. Requires an AI API key carrying rate_limit_rps (POST /config/ai/apikey); 'No data' without keyed quota configured.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 31
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "loxilb-prom"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "rate(loxilb_ai_rate_limit_hits_total{instance=~\"$instance\"}[$__rate_interval])"
+            }
+          ],
+          "options": {
+            "tooltip": {
+              "mode": "multi"
+            },
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 9,
+          "type": "timeseries",
+          "title": "Model-not-allowed/s",
+          "description": "Requires an AI API key with an allowed_models list (POST /config/ai/apikey); the request must carry that key so llb_ai_validate_key can reject a disallowed model. 'No data' without keyed allow-list. NOTE: the apikey REST endpoint is unimplemented on some images (returns 422/'not yet implemented').",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 39
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "loxilb-prom"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "rate(loxilb_ai_model_not_allowed_total{instance=~\"$instance\"}[$__rate_interval])"
             }
           ],
           "options": {
