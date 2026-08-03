@@ -595,6 +595,7 @@
           "id": 17,
           "type": "timeseries",
           "title": "Tier-1.5 hits vs spills vs fallthrough/s",
+          "description": "Aggregate comparison of tier-1.5 routing outcomes. hits/spills are summed across endpoints here (the underlying counters carry ep_idx); see 'Tier-1.5 hits by endpoint' for the per-endpoint split.",
           "gridPos": {
             "h": 8,
             "w": 12,
@@ -608,17 +609,17 @@
           "targets": [
             {
               "refId": "A",
-              "expr": "rate(loxilb_pd_kv_tier15_hits_total{instance=~\"$instance\"}[$__rate_interval])",
+              "expr": "sum(rate(loxilb_pd_kv_tier15_hits_total{instance=~\"$instance\"}[$__rate_interval]))",
               "legendFormat": "hits"
             },
             {
               "refId": "B",
-              "expr": "rate(loxilb_pd_kv_tier15_spills_total{instance=~\"$instance\"}[$__rate_interval])",
+              "expr": "sum(rate(loxilb_pd_kv_tier15_spills_total{instance=~\"$instance\"}[$__rate_interval]))",
               "legendFormat": "spills"
             },
             {
               "refId": "C",
-              "expr": "rate(loxilb_pd_kv_tier15_fallthrough_total{instance=~\"$instance\"}[$__rate_interval])",
+              "expr": "sum(rate(loxilb_pd_kv_tier15_fallthrough_total{instance=~\"$instance\"}[$__rate_interval]))",
               "legendFormat": "fallthrough"
             }
           ],
@@ -658,6 +659,50 @@
               "refId": "A",
               "expr": "sum by (reason) (rate(loxilb_pd_kv_tier15_miss_reason_total{instance=~\"$instance\"}[$__rate_interval]))",
               "legendFormat": "{{reason}}"
+            }
+          ],
+          "options": {
+            "tooltip": {
+              "mode": "multi"
+            },
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 20,
+          "type": "timeseries",
+          "title": "Tier-1.5 hits by endpoint",
+          "description": "Per-endpoint KV cache-hit routing decisions (ep_idx = endpoint index in the LB rule). Shows how tier-1.5 exact-match routing distributes prompts across the pool - distinct prompt prefixes should pin to distinct endpoints.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 46
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "loxilb-prom"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (ep_idx) (rate(loxilb_pd_kv_tier15_hits_total{instance=~\"$instance\"}[$__rate_interval]))",
+              "legendFormat": "hits ep{{ep_idx}}"
+            },
+            {
+              "refId": "B",
+              "expr": "sum by (ep_idx) (rate(loxilb_pd_kv_tier15_spills_total{instance=~\"$instance\"}[$__rate_interval]))",
+              "legendFormat": "spills ep{{ep_idx}}"
             }
           ],
           "options": {
