@@ -193,7 +193,7 @@ groups:
         annotations:
           summary: "KV agent down (loxilb-side liveness gauge)"
           dashboard: "LoxiLB / AI Gateway"
-          panel: "KV agent up"
+          panel: "KV subscribers up"
 
   - name: loxilb-security
     rules:
