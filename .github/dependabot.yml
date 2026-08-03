@@ -1,6 +1,18 @@
-# Dependabot: weekly dependency update PRs for Go modules, GitHub Actions,
-# and the container/package build bases. PRs only — nothing merges without
-# review and green CI.
+# Dependabot: version-update PRs are DISABLED (open-pull-requests-limit: 0).
+#
+# Rationale (2026-08-03): our dependency set is deliberately pinned to a
+# stable baseline (ubuntu 20/22/24, go 1.25, k8s.io 0.29, loxilib 0.8.9,
+# prometheus v2 / grafana 11) and moved by hand after testbed validation.
+# Dependabot's weekly PRs cannot be CI-verified here anyway — its PRs run
+# without the secrets needed to clone the private loxilb-ebpf submodule, so
+# every check is red regardless of the bump. Version bumps are done manually
+# on a branch where full Build-Check-CI can vet them.
+#
+# Security-advisory updates are still delivered (they are not governed by
+# open-pull-requests-limit's version-update scope when raised as security
+# updates via GitHub's alerts).
+#
+# To re-enable version PRs for an ecosystem, raise its open-pull-requests-limit.
 version: 2
 updates:
   - package-ecosystem: gomod
@@ -8,34 +20,34 @@ updates:
     schedule:
       interval: weekly
       day: monday
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
     ignore:
       # k8s.io/{client-go,api,apimachinery} >= 0.34 require the Go 1.26
       # toolchain, but we deliberately stay on Go 1.25. The pod-watcher in
       # api/k8s uses only stable core client-go APIs, so 0.29.x is sufficient.
-      # Bump these by hand if/when we move the Go toolchain.
       - dependency-name: "k8s.io/client-go"
       - dependency-name: "k8s.io/api"
       - dependency-name: "k8s.io/apimachinery"
+      # loxilib 0.9.x removes tk.IsNetIPv6 (used by pkg/utils/net.go) —
+      # breaking API change; adopt only with the code migration.
+      - dependency-name: "github.com/loxilb-io/loxilib"
 
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: weekly
       day: monday
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
 
   - package-ecosystem: docker
     directory: "/"
     schedule:
       interval: weekly
       day: monday
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
     ignore:
       # Base OS, Go toolchain, and the alpine runtime base are pinned to our
-      # stable set (ubuntu 20/22/24, go 1.25, alpine 3.20) and moved by hand,
-      # not by Dependabot. Freeze them so the weekly run stops proposing
-      # ubuntu 26.x / go 1.26+ / alpine 3.2x bumps.
+      # stable set (ubuntu 20/22/24, go 1.25, alpine 3.20) and moved by hand.
       - dependency-name: "ubuntu"
       - dependency-name: "golang"
       - dependency-name: "alpine"
@@ -45,17 +57,18 @@ updates:
     schedule:
       interval: weekly
       day: monday
-    open-pull-requests-limit: 2
+    open-pull-requests-limit: 0
     ignore:
       # Same policy as above for the packaging build base.
       - dependency-name: "ubuntu"
       - dependency-name: "golang"
 
   # Monitoring stack image pins (prom/prometheus, grafana/grafana) in the
-  # shipped compose file — bumps are gated by monitoring-lint + monitoring-e2e.
+  # shipped compose file — held at prometheus v2 / grafana 11; major bumps
+  # are a planned upgrade gated by monitoring-lint + monitoring-e2e.
   - package-ecosystem: docker-compose
     directory: "/deploy/monitoring"
     schedule:
       interval: weekly
       day: monday
-    open-pull-requests-limit: 2
+    open-pull-requests-limit: 0
