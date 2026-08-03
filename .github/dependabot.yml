@@ -9,6 +9,14 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    ignore:
+      # k8s.io/{client-go,api,apimachinery} >= 0.34 require the Go 1.26
+      # toolchain, but we deliberately stay on Go 1.25. The pod-watcher in
+      # api/k8s uses only stable core client-go APIs, so 0.29.x is sufficient.
+      # Bump these by hand if/when we move the Go toolchain.
+      - dependency-name: "k8s.io/client-go"
+      - dependency-name: "k8s.io/api"
+      - dependency-name: "k8s.io/apimachinery"
 
   - package-ecosystem: github-actions
     directory: "/"
