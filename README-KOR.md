@@ -129,6 +129,37 @@ loxilb는 기본적으로 L4 로드 밸런서/서비스 프록시로 작동합�
 - [블로그](https://www.loxilb.io/blog)
 - [데모 비디오](https://www.youtube.com/@loxilb697)
 
+## 모니터링 및 관측성 (Prometheus + Grafana)
+
+게이트웨이는 클래식 L4/L7 트래픽과 AI 추론(엔드포인트별 KV-cache 라우팅, P/D, SSE
+스트림, TTFT, API 키/속도 제한 적용) 모두에 대한 Prometheus 메트릭을 내보냅니다.
+바로 실행 가능한 모니터링 스택 — Prometheus, 알림 규칙, 프로비저닝된 6개의 Grafana
+대시보드 — 은 [`deploy/monitoring/`](deploy/monitoring/) 아래에 포함되어 있습니다.
+
+```bash
+cd deploy/monitoring
+cp .env.example .env                 # Grafana 관리자 비밀번호 설정
+docker compose up -d                 # Prometheus :9090 · Grafana :3000
+curl -X POST http://127.0.0.1:11111/netlox/v1/config/metrics   # 수집 활성화 (활성화 전까지 503)
+```
+
+Prometheus는 동일 호스트에서 localhost를 통해 loxilb의 `/netlox/v1/metrics` 경로를
+스크레이프하며, 대시보드는 Grafana의 **LoxiLB** 폴더에 로드됩니다. 메트릭 엔드포인트는
+컨트롤 플레인 REST 경로이므로 기본 보안 태세는 TLS가 아닌 **네트워크 격리**(plain 리스너를
+localhost에 바인딩하거나 `:11111` 방화벽 처리)입니다 — 인증/암호화 세부 사항은 설정
+가이드를 참조하십시오.
+
+프로비저닝된 대시보드 ([`grafana/dashboards/`](deploy/monitoring/grafana/dashboards/)):
+**Overview**, **L4**, **L7**, **AI Gateway**(KV 라우팅 / P·D / SSE / TTFT),
+**Security**(방화벽, 플러드/속도 제한), **Bootstrap**.
+
+| 가이드 | 내용 |
+|---|---|
+| [`deploy/monitoring/README.md`](deploy/monitoring/README.md) | 스택 설정 — 빠른 시작, 보안 태세, 네트워크 간 TLS, 운영 참고 사항 |
+| [`deploy/monitoring/TESTING.md`](deploy/monitoring/TESTING.md) | 라이브 테스트 가이드 — cicd 토폴로지로 실제 트래픽을 흘려보내고 데이터 플레인 실측값과 패널을 검증 |
+| [`docs/MONITORING-DESIGN.md`](docs/MONITORING-DESIGN.md) | 설계 근거 — 모든 패널, 알림, 메트릭과 그 배경이 된 발견 사항 |
+| [`docs/load-balancing/14-kv-cache-observability-design.md`](docs/load-balancing/14-kv-cache-observability-design.md) | AI/KV-cache 관측성 메트릭 및 트레이싱 설계 |
+
 ## 커뮤니티 
 
 ### Slack 
