@@ -88,11 +88,29 @@ else
 fi
 
 # 6. Private key material (belt-and-braces on top of gitleaks) ----------------
-if git grep -Iqn -E 'BEGIN (RSA |EC |OPENSSH |)PRIVATE KEY' HEAD 2>/dev/null; then
+# A PEM header alone is NOT a leak: docs and test fixtures legitimately carry
+# elided placeholders — e.g. "-----BEGIN PRIVATE KEY-----\n...\n-----END..."
+# or a truncated "MIIE...". Flag only when a real base64 key *body* accompanies
+# the header, in either form a genuine key takes:
+#   (a) embedded string literal — header immediately followed by >=40 base64
+#       chars (real PEM wraps at 64/line; placeholders have <=a few), or
+#   (b) a standalone PEM body line — a whole line of >=40 base64 chars, as in a
+#       committed multi-line .pem/.key file.
+# Placeholders match neither. gitleaks (step 7) stays the authoritative scanner.
+KEY_HDR='BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY'
+key_hits=""
+for f in $(git grep -IlE "$KEY_HDR" HEAD 2>/dev/null | sed 's/^HEAD://'); do
+  blob=$(git show "HEAD:$f" 2>/dev/null) || continue
+  if printf '%s' "$blob" | grep -Eq 'PRIVATE KEY-----\\n[A-Za-z0-9+/]{40,}' \
+     || printf '%s\n' "$blob" | grep -Eq '^[A-Za-z0-9+/]{40,}={0,2}$'; then
+    key_hits="$key_hits $f"
+  fi
+done
+if [ -n "$key_hits" ]; then
   fail "private key material in tracked files:"
-  git grep -In -E 'BEGIN (RSA |EC |OPENSSH |)PRIVATE KEY' HEAD | head -10
+  for f in $key_hits; do git grep -InE "$KEY_HDR" HEAD -- "$f" | head -3; done
 else
-  pass "no private key material"
+  pass "no private key material (headers present are elided placeholders)"
 fi
 
 # 7. Secrets — gitleaks over the published history ----------------------------
