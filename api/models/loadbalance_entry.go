@@ -710,7 +710,7 @@ type LoadbalanceEntryServiceArguments struct {
 	// Minimum: 0
 	MaxStreamDurationSec int32 `json:"max_stream_duration_sec,omitempty"`
 
-	// value for NAT mode (0-DNAT,1-onearm, 2-fullnat, 3-dsr, 4-fullproxy, 5-hostonearm, 6-aigw, 0-default)
+	// value for NAT mode (0-DNAT,1-onearm, 2-fullnat, 3-dsr, 4-fullproxy, 5-hostonearm, 0-default)
 	// Enum: [0 1 2 3 4 5 6]
 	Mode int32 `json:"mode,omitempty"`
 
@@ -1284,7 +1284,7 @@ var loadbalanceEntryServiceArgumentsTypeModePropEnum []interface{}
 
 func init() {
 	var res []int32
-	if err := json.Unmarshal([]byte(`[0,1,2,3,4,5,6]`), &res); err != nil {
+	if err := json.Unmarshal([]byte(`[0,1,2,3,4,5]`), &res); err != nil {
 		panic(err)
 	}
 	for _, v := range res {

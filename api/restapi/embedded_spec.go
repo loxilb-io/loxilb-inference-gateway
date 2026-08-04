@@ -13176,7 +13176,7 @@ func init() {
               "x-nullable": false
             },
             "mode": {
-              "description": "value for NAT mode (0-DNAT,1-onearm, 2-fullnat, 3-dsr, 4-fullproxy, 5-hostonearm, 6-aigw, 0-default)",
+              "description": "value for NAT mode (0-DNAT,1-onearm, 2-fullnat, 3-dsr, 4-fullproxy, 5-hostonearm, 0-default)",
               "type": "integer",
               "format": "int32",
               "enum": [
@@ -13185,8 +13185,7 @@ func init() {
                 2,
                 3,
                 4,
-                5,
-                6
+                5
               ]
             },
             "model_name": {
@@ -29069,7 +29068,7 @@ func init() {
               "x-nullable": false
             },
             "mode": {
-              "description": "value for NAT mode (0-DNAT,1-onearm, 2-fullnat, 3-dsr, 4-fullproxy, 5-hostonearm, 6-aigw, 0-default)",
+              "description": "value for NAT mode (0-DNAT,1-onearm, 2-fullnat, 3-dsr, 4-fullproxy, 5-hostonearm, 0-default)",
               "type": "integer",
               "format": "int32",
               "enum": [
@@ -29078,8 +29077,7 @@ func init() {
                 2,
                 3,
                 4,
-                5,
-                6
+                5
               ]
             },
             "model_name": {
@@ -29688,7 +29686,7 @@ func init() {
           "x-nullable": false
         },
         "mode": {
-          "description": "value for NAT mode (0-DNAT,1-onearm, 2-fullnat, 3-dsr, 4-fullproxy, 5-hostonearm, 6-aigw, 0-default)",
+          "description": "value for NAT mode (0-DNAT,1-onearm, 2-fullnat, 3-dsr, 4-fullproxy, 5-hostonearm, 0-default)",
           "type": "integer",
           "format": "int32",
           "enum": [
@@ -29697,8 +29695,7 @@ func init() {
             2,
             3,
             4,
-            5,
-            6
+            5
           ]
         },
         "model_name": {
