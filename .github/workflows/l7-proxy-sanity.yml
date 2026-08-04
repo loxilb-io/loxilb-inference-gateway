@@ -74,64 +74,86 @@ jobs:
       - name: HTTP proxy (h1)
         run: |
           cd cicd/httpproxy/
-          ./config.sh && ./validation.sh && ./rmconfig.sh
-          cd -
+          rc=0
+          ./config.sh && ./validation.sh || rc=$?
+          ./rmconfig.sh || true
+          exit $rc
       - name: HTTP proxy — URL-prefix routing
         run: |
           cd cicd/httpproxy-prefix/
-          ./config.sh && ./validation.sh && ./rmconfig.sh
-          cd -
+          rc=0
+          ./config.sh && ./validation.sh || rc=$?
+          ./rmconfig.sh || true
+          exit $rc
 
       # --- HTTPS termination (security:1) ---
       - name: HTTPS proxy (TLS termination)
         run: |
           cd cicd/httpsproxy/
-          ./config.sh && ./validation.sh && ./rmconfig.sh
-          cd -
+          rc=0
+          ./config.sh && ./validation.sh || rc=$?
+          ./rmconfig.sh || true
+          exit $rc
       - name: HTTPS proxy — mTLS client-cert
         run: |
           cd cicd/httpsproxy-mtls/
-          ./config.sh && ./validation.sh && ./rmconfig.sh
-          cd -
+          rc=0
+          ./config.sh && ./validation.sh || rc=$?
+          ./rmconfig.sh || true
+          exit $rc
       - name: HTTPS proxy — URL-prefix routing
         run: |
           cd cicd/httpsproxy-prefix/
-          ./config.sh && ./validation.sh && ./rmconfig.sh
-          cd -
+          rc=0
+          ./config.sh && ./validation.sh || rc=$?
+          ./rmconfig.sh || true
+          exit $rc
       - name: HTTPS host-header proxy
         run: |
           cd cicd/httpshostproxy/
-          ./config.sh && ./validation.sh && ./rmconfig.sh
-          cd -
+          rc=0
+          ./config.sh && ./validation.sh || rc=$?
+          ./rmconfig.sh || true
+          exit $rc
 
       # --- End-to-end HTTPS (security:2) ---
       - name: End-to-end HTTPS proxy (h1 + h2)
         run: |
           cd cicd/e2ehttpsproxy/
-          ./config.sh && ./validation-http1.sh && ./validation-http2.sh && ./rmconfig.sh
-          cd -
+          rc=0
+          ./config.sh && ./validation-http1.sh && ./validation-http2.sh || rc=$?
+          ./rmconfig.sh || true
+          exit $rc
       - name: End-to-end HTTPS — mTLS
         run: |
           cd cicd/e2ehttpsproxy-mtls/
-          ./config.sh && ./validation.sh && ./rmconfig.sh
-          cd -
+          rc=0
+          ./config.sh && ./validation.sh || rc=$?
+          ./rmconfig.sh || true
+          exit $rc
       - name: End-to-end HTTPS — URL-prefix routing (h1 + h2)
         run: |
           cd cicd/e2ehttpsproxy-prefix/
-          ./config.sh && ./validation-http1.sh && ./validation-http2.sh && ./rmconfig.sh
-          cd -
+          rc=0
+          ./config.sh && ./validation-http1.sh && ./validation-http2.sh || rc=$?
+          ./rmconfig.sh || true
+          exit $rc
 
       # --- HTTP/2 & backend TLS endpoints ---
       - name: HTTP/2 endpoint
         run: |
           cd cicd/http2ep/
-          ./config.sh && ./validation.sh && ./rmconfig.sh
-          cd -
+          rc=0
+          ./config.sh && ./validation.sh || rc=$?
+          ./rmconfig.sh || true
+          exit $rc
       - name: HTTPS endpoint (backend TLS probe)
         run: |
           cd cicd/httpsep/
-          ./config.sh && ./validation.sh && ./rmconfig.sh
-          cd -
+          rc=0
+          ./config.sh && ./validation.sh || rc=$?
+          ./rmconfig.sh || true
+          exit $rc
       - run: echo "L7 proxy sanity complete"
 
   grpc-h2-sanity:
@@ -166,6 +188,8 @@ jobs:
       - name: End-to-end HTTPS — gRPC over h2
         run: |
           cd cicd/e2ehttpsproxy-grpc/
-          ./config.sh && ./validation.sh && ./rmconfig.sh
-          cd -
+          rc=0
+          ./config.sh && ./validation.sh || rc=$?
+          ./rmconfig.sh || true
+          exit $rc
       - run: echo "gRPC h2 sanity complete"

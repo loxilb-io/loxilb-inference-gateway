@@ -130,7 +130,21 @@ spawn_docker_host() {
   esac
   done  
   set -- "${POSITIONAL_ARGS[@]}" # restore positional parameters
-  echo "Spawning $dname($dtype)" >&2 
+  echo "Spawning $dname($dtype)" >&2
+  # Idempotency guard: a prior scenario that failed to tear down (or a killed
+  # run) can leave a same-named container + stale netns registration behind.
+  # Reusing them silently corrupts this scenario (name/IP conflicts, a backend
+  # that never restarts) and shows up as a long hang rather than a clear error.
+  # Purge any stale namesake so every spawn starts from a clean slate; both
+  # commands are no-ops when the environment is already clean.
+  if docker inspect "$dname" >/dev/null 2>&1; then
+    echo "  (removing stale container $dname left by a previous run)" >&2
+    docker rm -f "$dname" >/dev/null 2>&1 || true
+  fi
+  if [ -f "$hexist/$dname" ]; then
+    $hns del "$dname" >/dev/null 2>&1 || true
+    sudo rm -f "$hexist/$dname" >/dev/null 2>&1 || true
+  fi
   if [[ "$dtype" == "loxilb" ]]; then
     loxilbs+=("$dname")
     if [[ "$pick_config" == "yes" ]]; then
