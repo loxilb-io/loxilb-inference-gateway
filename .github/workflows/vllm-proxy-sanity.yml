@@ -62,21 +62,29 @@ jobs:
       - name: vLLM HTTP proxy (rr + CHWBL L1/L2/L3)
         run: |
           cd cicd/vllm-httpproxy/
-          ./config.sh && ./validation.sh && ./rmconfig.sh
-          cd -
+          rc=0
+          ./config.sh && ./validation.sh || rc=$?
+          ./rmconfig.sh || true
+          exit $rc
       - name: vLLM HTTPS fullproxy (TLS termination + health probes)
         run: |
           cd cicd/vllm-fullproxy/
-          ./config.sh && ./validation.sh && ./rmconfig.sh
-          cd -
+          rc=0
+          ./config.sh && ./validation.sh || rc=$?
+          ./rmconfig.sh || true
+          exit $rc
       - name: vLLM HTTP proxy — weighted round-robin
         run: |
           cd cicd/vllm-httpproxy-wrr/
-          ./config.sh && ./validation.sh && ./rmconfig.sh
-          cd -
+          rc=0
+          ./config.sh && ./validation.sh || rc=$?
+          ./rmconfig.sh || true
+          exit $rc
       - name: vLLM HTTPS fullproxy — weighted round-robin
         run: |
           cd cicd/vllm-fullproxy-wrr/
-          ./config.sh && ./validation.sh && ./rmconfig.sh
-          cd -
+          rc=0
+          ./config.sh && ./validation.sh || rc=$?
+          ./rmconfig.sh || true
+          exit $rc
       - run: echo "vLLM proxy sanity complete"
