@@ -31,9 +31,20 @@ set -euo pipefail
 GATEWAY_REPO="loxilb-io/loxilb-inference-gateway"
 EBPF_REPO="loxilb-io/loxilb-ebpf-inference-gateway"
 
-# Required status checks per repo — must match check names as they appear on
-# commits (job names). Mirror of upstream's set, adapted to this fork's CI.
-GATEWAY_CHECKS='["build-check", "basic-sanity-ubuntu-22", "ai-gateway-sanity", "hygiene", "gitleaks"]'
+# Required status checks per repo — must match check-run context names EXACTLY
+# as they appear on a real PR head (verified against PR #26, 2026-08-04). These
+# five mirror upstream loxilb-io/loxilb's required set one-for-one and all run on
+# EVERY pull_request to main with no path filters, so they can never hang a
+# docs-/monitoring-only PR.
+#
+# Deliberately NOT required:
+#   - ai-gateway-sanity : path-filtered (cicd/vllm-**, pkg/**, api/**, ...), so it
+#     is skipped on non-code PRs. Requiring it would block those PRs forever.
+#     Promote it to a required check only behind a path-filter-safe shim job that
+#     always reports (GitHub "skipped == success" pattern).
+#   - hygiene gate / full-history secret scan / CodeQL / govulncheck : useful
+#     signal but either flaky, advisory, or (CodeQL) gated on GHAS while private.
+GATEWAY_CHECKS='["basic-sanity", "build-check-ci", "sctp-lb-sanity", "tcp-lb-sanity", "udp-lb-sanity"]'
 EBPF_CHECKS='[]'   # eBPF fork is consumed via submodule pin; gateway CI is the gate
 
 APPLY=0
@@ -82,10 +93,14 @@ secure_repo() {
   local repo="$1"
   echo ""
   echo "── $repo: security & analysis ──"
-  # Secret scanning needs Advanced Security while the repo is private; it is
-  # included for free once public. Push protection blocks pushes containing
-  # detected secrets.
-  run gh api -X PATCH "repos/$repo" --input - <<'EOF'
+  # Secret scanning + push protection need GitHub Advanced Security while the
+  # repo is private (paid) — the PATCH errors without a GHAS license. They are
+  # included for free once the repo is public, so only attempt them then. Run
+  # this stage again at the public-flip step.
+  local vis
+  vis="$(gh api "repos/$repo" --jq '.visibility' 2>/dev/null || echo unknown)"
+  if [ "$vis" = "public" ]; then
+    run gh api -X PATCH "repos/$repo" --input - <<'EOF'
 {
   "security_and_analysis": {
     "secret_scanning": { "status": "enabled" },
@@ -93,12 +108,22 @@ secure_repo() {
   }
 }
 EOF
+  else
+    echo "  (skip secret-scanning: repo is '$vis' — needs GHAS while private; re-run at public flip)"
+  fi
+  # Dependabot security fixes are free on private repos and safe to enable now.
+  # Vulnerability alerts are a hard prerequisite (else automated-security-fixes
+  # returns HTTP 422), so enable them first.
+  run gh api -X PUT "repos/$repo/vulnerability-alerts"
   run gh api -X PUT "repos/$repo/automated-security-fixes"
   echo ""
-  echo "── $repo: actions default permissions → contents:read ──"
-  run gh api -X PUT "repos/$repo/actions/permissions/workflow" \
-    -f default_workflow_permissions=read \
-    -F can_approve_pull_request_reviews=false
+  echo "── $repo: actions default workflow permissions ──"
+  # Upstream loxilb-io/loxilb keeps this at 'write'; we match that (NOT read).
+  # Downgrading to read is a valid future hardening, but only AFTER every
+  # image/release workflow that needs write declares its own permissions: block.
+  # As of 2026-08-04 these still lack one: docker-image.yml, docker-image-u24.yml,
+  # docker-multiarch.yml, release.yml — flipping to read now would break publishing.
+  echo "  (leaving default_workflow_permissions=write to match upstream; see note)"
 }
 
 audit() {
