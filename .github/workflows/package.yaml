@@ -47,9 +47,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-          # Full history so `git describe`/tag lookup can resolve the base
-          # version when no explicit --version is supplied.
+          # Full history AND tags so `git describe`/tag lookup can resolve the
+          # base version when no explicit --version is supplied. fetch-depth: 0
+          # alone does not pull tags in checkout@v4 (fetch-tags defaults false),
+          # which silently yields a 0.0.0 base — hence fetch-tags: true.
           fetch-depth: 0
+          fetch-tags: true
           token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
 
       - name: Resolve package version
