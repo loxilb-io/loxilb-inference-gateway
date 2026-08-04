@@ -130,16 +130,23 @@ echo "T7: CHWBL ROUTING CONSISTENCY"
 echo "    (same model+prompt must route to same backend)"
 echo "#########################################"
 
-EP1_BEFORE=$($dexec l3ep1 wc -l /tmp/vllm-server1.log 2>/dev/null | awk '{print $1}')
-EP1_BEFORE=${EP1_BEFORE:-0}
-EP2_BEFORE=$($dexec l3ep2 wc -l /tmp/vllm-server2.log 2>/dev/null | awk '{print $1}')
-EP2_BEFORE=${EP2_BEFORE:-0}
-echo "  Baseline: EP1=$EP1_BEFORE lines, EP2=$EP2_BEFORE lines"
+# Consistency MUST be tested against a CHWBL rule, NOT the round-robin VIP on
+# port 2020 (--select=rr), which alternates backends by design. Port 2021 is
+# the CHWBL Level-1 rule (hash on model name), so identical requests pin to a
+# single backend. (The old test hit $PORT=2020 and so "failed" on the expected
+# round-robin split.)
+CHWBL_PORT=2021
 
+# Attribute each request to the backend that actually served it via its
+# X-Request-Id, which vLLM records as its internal request id ("Received
+# request cmpl-<x-request-id>-0"). Raw log-line deltas are unusable here:
+# loxilb health-probes BOTH backends continuously (--monitor GET /v1/models)
+# and vLLM emits periodic background metric lines, so both logs grow regardless
+# of where the completions actually land.
 T7_OK=0
 for i in {1..5}; do
-  r=$($dexec l3h1 curl -sk -i \
-    http://10.10.10.254:$PORT/v1/completions \
+  r=$($dexec l3h1 curl -sk \
+    http://10.10.10.254:$CHWBL_PORT/v1/completions \
     -H "Content-Type: application/json" \
     -H "X-Request-Id: cicd-t7-consist-$i" \
     -d '{"model":"Qwen/Qwen3-0.6B","prompt":"CHWBL consistency probe","max_tokens":8,"temperature":0.0}' 2>&1)
@@ -149,17 +156,26 @@ done
 check "T7a: all 5 consistency requests succeeded ($T7_OK/5)" $([ "$T7_OK" -eq 5 ] && echo 0 || echo 1)
 
 sleep 2
-EP1_AFTER=$($dexec l3ep1 wc -l /tmp/vllm-server1.log 2>/dev/null | awk '{print $1}')
-EP1_AFTER=${EP1_AFTER:-0}
-EP2_AFTER=$($dexec l3ep2 wc -l /tmp/vllm-server2.log 2>/dev/null | awk '{print $1}')
-EP2_AFTER=${EP2_AFTER:-0}
-D1=$((EP1_AFTER - EP1_BEFORE))
-D2=$((EP2_AFTER - EP2_BEFORE))
-echo "  EP1 delta=$D1  EP2 delta=$D2"
-if ([ "$D1" -ge 5 ] && [ "$D2" -eq 0 ]) || ([ "$D2" -ge 5 ] && [ "$D1" -eq 0 ]); then
-  check "T7b: CHWBL consistency — all 5 requests to same backend (D1=$D1, D2=$D2)" 0
+# Count, per request, which backend logged its X-Request-Id. Presence-per-id
+# (not line count) so multiple log lines for one request still count once, and
+# health-probe / metrics lines (which never carry the tag) are ignored.
+EP1_HITS=0; EP2_HITS=0
+for i in {1..5}; do
+  if $dexec l3ep1 grep -q "cicd-t7-consist-$i" /tmp/vllm-server1.log 2>/dev/null; then
+    EP1_HITS=$((EP1_HITS + 1))
+  fi
+  if $dexec l3ep2 grep -q "cicd-t7-consist-$i" /tmp/vllm-server2.log 2>/dev/null; then
+    EP2_HITS=$((EP2_HITS + 1))
+  fi
+done
+echo "  Backend hits by request-id: EP1=$EP1_HITS  EP2=$EP2_HITS (attributed $((EP1_HITS + EP2_HITS))/5)"
+if [ "$((EP1_HITS + EP2_HITS))" -eq 0 ]; then
+  # No tag found in either backend log -> measurement gap, not a routing verdict.
+  check "T7b: CHWBL consistency — INDETERMINATE: no request-id found in backend logs" 1
+elif [ "$EP1_HITS" -eq 0 ] || [ "$EP2_HITS" -eq 0 ]; then
+  check "T7b: CHWBL consistency — all attributed requests to one backend (EP1=$EP1_HITS, EP2=$EP2_HITS)" 0
 else
-  check "T7b: CHWBL consistency — requests split (D1=$D1, D2=$D2)" 1
+  check "T7b: CHWBL consistency — requests split across backends (EP1=$EP1_HITS, EP2=$EP2_HITS)" 1
 fi
 
 echo "#########################################"
