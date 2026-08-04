@@ -1,0 +1,107 @@
+name: OS-Package-Nightly
+
+# Rolling .deb package channel.
+#
+# This is the schedule/manual counterpart to the tag-triggered release.yml.
+# release.yml only fires on a v<base>-igw.<n> tag and produces the full,
+# versioned artifact matrix (multi-arch images + .deb/.rpm + tarballs + a
+# published GitHub Release). Cutting such a tag is a deliberate act, so between
+# releases there is no fresh .deb to install — the Releases tab stays empty.
+#
+# This workflow fills that gap. It rebuilds the .deb every night (and on
+# demand) straight from source via the same packaging/build-pkgs.sh path
+# release.yml uses, and attaches it to a single rolling "vlatest" PRE-RELEASE.
+# It never moves any versioned tag, never touches the container images
+# (Docker-Multi-Arch / Build-CI-Ubuntu-24 already publish :latest / :latest-u24
+# on push-to-main), and never supersedes release.yml.
+#
+# Package version: <base>-igw.0~nightly.<YYYYMMDD>. The "~" sorts BEFORE the
+# corresponding igw.N release in both dpkg and rpm ordering, so an installed
+# nightly is always upgradeable to the real release, and the date keeps each
+# night's build monotonically newer than the last.
+
+on:
+  schedule:
+    # 23:00 UTC daily — after the image builders (10:00/11:00 UTC) so it never
+    # contends with them for hosted-runner capacity.
+    - cron: '0 23 * * *'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version tag to stamp (e.g. v0.9.8.6-igw.1). Blank = derive a nightly version from the latest tag.'
+        required: false
+        default: ''
+
+# One nightly at a time; a manual run supersedes an in-flight scheduled one.
+concurrency:
+  group: os-package-nightly
+  cancel-in-progress: true
+
+jobs:
+  build-deb:
+    name: build .deb (amd64)
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write   # create/update the rolling vlatest pre-release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          # Full history so `git describe`/tag lookup can resolve the base
+          # version when no explicit --version is supplied.
+          fetch-depth: 0
+          token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
+
+      - name: Resolve package version
+        id: ver
+        run: |
+          in="${{ github.event.inputs.version }}"
+          if [ -n "$in" ]; then
+            ver="$in"
+          else
+            # Prefer the newest igw release tag; fall back to the newest tag of
+            # any kind, then to v0.0.0. Strip any suffix to get the base version
+            # and craft a dated nightly revision below it.
+            base=$(git tag --list 'v*-igw.*' --sort=-v:refname | head -1)
+            [ -n "$base" ] || base=$(git describe --tags --abbrev=0 2>/dev/null || echo v0.0.0)
+            core=${base%%-*}
+            ver="${core}-igw.0~nightly.$(date -u +%Y%m%d)"
+          fi
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo ">> package version: $ver"
+
+      - name: Install nfpm
+        run: |
+          curl -sfL "https://github.com/goreleaser/nfpm/releases/download/v2.41.3/nfpm_2.41.3_$(dpkg --print-architecture).deb" -o /tmp/nfpm.deb
+          sudo dpkg -i /tmp/nfpm.deb
+
+      - name: Build .deb
+        run: |
+          packaging/build-pkgs.sh \
+            --version "${{ steps.ver.outputs.version }}" \
+            --arch amd64 \
+            --from-docker \
+            --formats deb \
+            --out dist
+          ls -l dist/
+
+      - name: Publish to rolling vlatest pre-release
+        if: github.repository == 'loxilb-io/loxilb-inference-gateway'
+        uses: ncipollo/release-action@v1
+        with:
+          tag: vlatest
+          name: Nightly packages (rolling)
+          prerelease: true
+          allowUpdates: true
+          makeLatest: false
+          # Keep only the newest nightly on the rolling release.
+          removeArtifacts: true
+          artifacts: "dist/*.deb"
+          token: ${{ secrets.GITHUB_TOKEN }}
+          body: |
+            Rolling nightly `.deb` packages for loxilb-inference-gateway,
+            rebuilt from `main` each night. **Not** a versioned release — for
+            official, supported artifacts see the tagged releases produced by
+            `release.yml`.
+
+            Current build: `${{ steps.ver.outputs.version }}`
