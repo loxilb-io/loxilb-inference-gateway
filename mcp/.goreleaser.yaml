@@ -1,7 +1,7 @@
 # GoReleaser config for loxilb-mcp — the standalone MCP bridge.
 # Runs from this directory (the nested Go module). Produces, for every
 # push of a `mcp/vX.Y.Z` tag: cross-platform static binaries + archives,
-# a SHA256SUMS file, a Homebrew formula, and a multi-arch GHCR image.
+# a SHA256SUMS file, a Homebrew cask, and a multi-arch GHCR image.
 #
 #   Local dry run:  cd mcp && goreleaser release --snapshot --clean
 #   Real release:   handled by .github/workflows/mcp-release.yml
@@ -75,10 +75,12 @@ homebrew_casks:
     description: "Standalone MCP bridge for loxilb-inference-gateway"
     license: "Apache-2.0"
     # The default URL is derived from the (prefix-stripped) version, which is
-    # not where the assets live — the release sits on the `mcp/vX.Y.Z` tag, and
-    # GitHub wants the slash percent-encoded in a download path.
+    # not where the assets live — the release sits on the `mcp/vX.Y.Z` tag. The
+    # slash stays literal: this is byte-for-byte the `browser_download_url`
+    # GitHub reports for these assets. (GoReleaser percent-encodes it when it
+    # builds the URL itself, which does NOT match what GitHub publishes.)
     url:
-      template: "https://github.com/loxilb-io/loxilb-inference-gateway/releases/download/mcp%2Fv{{ .Version }}/{{ .ArtifactName }}"
+      template: "https://github.com/loxilb-io/loxilb-inference-gateway/releases/download/mcp/v{{ .Version }}/{{ .ArtifactName }}"
     hooks:
       post:
         # The binaries are unsigned, so Gatekeeper would quarantine them.
@@ -100,7 +102,9 @@ dockers_v2:
       - "ghcr.io/loxilb-io/loxilb-mcp"
     tags:
       - "{{ .Version }}"
-      - "latest"
+      # `latest` must not follow a pre-release: `mcp/v1.2.0-rc.1` should publish
+      # its own tag and leave `latest` on the last stable image.
+      - "{{ if not .Prerelease }}latest{{ end }}"
     labels:
       org.opencontainers.image.title: loxilb-mcp
       org.opencontainers.image.version: "{{ .Version }}"
