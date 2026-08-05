@@ -27,9 +27,11 @@ under the `mcp/vX.Y.Z` tags, alongside `SHA256SUMS`.
 
 **Homebrew (recommended):**
 ```sh
-brew install loxilb-io/tap/loxilb-mcp
+brew install --cask loxilb-io/tap/loxilb-mcp
 loxilb-mcp --version
 ```
+The tap ships a cask, so it is macOS-only; on Linux use the tarball, the
+container image, or `go install`.
 
 **Or download the binary** (Apple Silicon = `arm64`, Intel = `amd64`):
 ```sh
@@ -161,7 +163,7 @@ git push origin mcp/v1.0.0        # mcp/v1.0.0-rc.1 → published as a pre-relea
 
 That single tag triggers GoReleaser to build all six binaries, write
 `SHA256SUMS`, publish a GitHub Release, push the `ghcr.io/loxilb-io/loxilb-mcp`
-multi-arch image, and update the Homebrew formula.
+multi-arch image, and update the Homebrew cask.
 
 **One-time prerequisites:** the repo is public (or GHCR/tap are otherwise
 reachable), the `loxilb-io/homebrew-tap` repository exists, and the

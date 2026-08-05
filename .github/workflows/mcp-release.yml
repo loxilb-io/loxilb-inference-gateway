@@ -4,7 +4,7 @@
 #   - static binaries + archives for linux/darwin/windows × amd64/arm64
 #   - SHA256SUMS
 #   - a GitHub Release (assets attached; -rc.N tags publish as pre-release)
-#   - a Homebrew formula pushed to loxilb-io/homebrew-tap
+#   - a Homebrew cask pushed to loxilb-io/homebrew-tap
 #   - a multi-arch image ghcr.io/loxilb-io/loxilb-mcp:{version,latest}
 #
 # Cut a release:
@@ -48,15 +48,53 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # GoReleaser OSS can't strip a tag prefix, so derive the semver from the
+      # mcp/vX.Y.Z tag and hand it over explicitly. `tag` keeps the leading v
+      # (GORELEASER_CURRENT_TAG wants a tag), `version` drops it.
+      - name: Derive version from tag
+        id: ver
+        run: |
+          tag="${GITHUB_REF_NAME#mcp/}"
+          {
+            echo "tag=${tag}"
+            echo "version=${tag#v}"
+          } >> "$GITHUB_OUTPUT"
+
+      # Publish the GitHub Release on the REAL tag first, so the cask/archive
+      # download URLs baked by GoReleaser resolve. GoReleaser itself has its
+      # release pipe disabled — see the comment in mcp/.goreleaser.yaml.
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          prerelease=""
+          case "${{ steps.ver.outputs.version }}" in
+            *-*) prerelease="--prerelease" ;;
+          esac
+          gh release create "$GITHUB_REF_NAME" \
+            --title "loxilb-mcp ${{ steps.ver.outputs.version }}" \
+            --notes "Standalone \`loxilb-mcp\` ${{ steps.ver.outputs.version }}. See [mcp/README.md](https://github.com/loxilb-io/loxilb-inference-gateway/blob/$GITHUB_REF_NAME/mcp/README.md) for install and configuration." \
+            $prerelease
+
       - name: GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
           version: '~> v2'
-          args: release --clean -f mcp/.goreleaser.yaml
-          workdir: .
+          # --skip=validate: the version handed over via GORELEASER_CURRENT_TAG
+          # is the prefix-stripped `vX.Y.Z`, which is deliberately not a real
+          # git tag (the real one is `mcp/vX.Y.Z`), so GoReleaser's "tag was not
+          # made against commit" check can't pass. The checks it covers — clean
+          # tree, tag on HEAD — are already guaranteed by a fresh tag checkout.
+          args: release --clean --skip=validate
+          workdir: mcp
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Optional: omit the tap push by leaving this unset — GoReleaser skips
-          # the brew step if the token is empty only when `skip_upload` is set,
-          # so keep the secret configured or remove the `brews:` block.
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ steps.ver.outputs.tag }}
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" --clobber \
+            mcp/dist/*.tar.gz mcp/dist/*.zip mcp/dist/SHA256SUMS
