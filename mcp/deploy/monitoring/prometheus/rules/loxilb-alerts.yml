@@ -1,0 +1,263 @@
+# LoxiLB Inference Gateway alert rules.
+#
+# Severity model: critical = page, warning = ticket, info = annotation only.
+# Every ratio alert carries a traffic guard so an idle system can never fire (0/0).
+#
+# SITE TUNABLES (reference-deployment defaults; adjust per site):
+#   TTFB p95 threshold ..................... 2s     (LoxilbHighTTFB)
+#   AI rate-limit spike .................... 10/s   (LoxilbAIRateLimitSpike)
+#   Firewall drop surge .................... 100/s  (LoxilbFwDropSurge)
+#   CPU/Mem high ........................... 90%    Disk high/critical ... 90% / 95%
+#   Conntrack utilization warn/critical .... 80% / 95%
+
+groups:
+  - name: loxilb-availability
+    rules:
+      - alert: LoxilbScrapeDown
+        expr: up{job="loxilb"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "loxilb metrics endpoint unreachable on {{ $labels.instance }}"
+          description: >-
+            Scrape failing for 1m. NOTE: loxilb answers 503 while Prometheus
+            collection is disabled — check POST /netlox/v1/config/metrics before
+            assuming a process/network failure. Also verify mTLS certs are valid.
+          dashboard: "LoxiLB / Overview"
+          panel: "Gateway up"
+
+      - alert: LoxilbNoHealthyEndpoints
+        expr: loxilb_healthy_endpoints == 0 and loxilb_lb_rules > 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "No healthy endpoints behind any LB rule"
+          description: "LB rules exist but every endpoint is unhealthy — traffic is being blackholed."
+          dashboard: "LoxiLB / Overview"
+          panel: "Healthy endpoints"
+
+      - alert: LoxilbUnhealthyEndpoints
+        expr: loxilb_unhealthy_endpoints > 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $value }} endpoint(s) unhealthy for 5m"
+          dashboard: "LoxiLB / L4 Load Balancer"
+          panel: "Endpoint load distribution"
+
+  - name: loxilb-errors
+    rules:
+      - alert: LoxilbHigh5xxRatio
+        expr: >-
+          (
+            sum(rate(loxilb_proxy_http_responses_by_status_total{status_class="5xx"}[5m]))
+            /
+            sum(rate(loxilb_proxy_http_responses_total[5m]))
+          ) > 0.05
+          and sum(rate(loxilb_proxy_http_responses_total[5m])) > 1
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "L7 5xx ratio above 5% for 5m"
+          dashboard: "LoxiLB / L7 Proxy"
+          panel: "Responses/s by status class"
+
+      - alert: LoxilbElevated5xxRatio
+        expr: >-
+          (
+            sum(rate(loxilb_proxy_http_responses_by_status_total{status_class="5xx"}[5m]))
+            /
+            sum(rate(loxilb_proxy_http_responses_total[5m]))
+          ) > 0.01
+          and sum(rate(loxilb_proxy_http_responses_total[5m])) > 1
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "L7 5xx ratio above 1% for 10m"
+          dashboard: "LoxiLB / L7 Proxy"
+          panel: "Responses/s by status class"
+
+      - alert: LoxilbL4ErrorBurst
+        # Event-driven, unsampled source (loxilb_l4_error_events_total) — bumped by
+        # the CT state machine on every error transition, independent of L4 trace.
+        # Supersedes the old loxilb_errors_total, which sweep-sampled conntrack
+        # state every 10s and missed short-lived error bursts entirely.
+        # Benign client RSTs (reason="rst_client") are EXCLUDED: only backend RSTs,
+        # TCP protocol errors, and SCTP abort/error indicate a real problem. Rate
+        # threshold (not >0) so routine one-off backend resets don't page.
+        # INTERIM THRESHOLD (finding F13/D6): the CT state machine currently
+        # classifies normal short-lived / management-plane connection teardown as
+        # reason="error" (~3.5 events per REST call; 6-30/s under ordinary short-
+        # connection load), so the original >1/s threshold fires permanently.
+        # Held at >50/s until the llb_kern_ct.c classification fix lands, then
+        # restore to >1/s and for: 10m.
+        expr: sum(rate(loxilb_l4_error_events_total{reason!="rst_client"}[5m])) > 50
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "L4 backend-error burst (>50/s server-RST/proto-err/SCTP-abort for 15m)"
+          description: "Event-driven loxilb_l4_error_events_total (excl. benign client RSTs). A sustained burst points to backend resets, protocol errors, or SCTP aborts. CAVEAT (F13): short-lived/management-plane teardown currently also counts as reason=\"error\", inflating this rate; threshold is interim-raised until the kernel-side classification fix lands."
+          dashboard: "LoxiLB / Overview"
+          panel: "Error rate"
+
+      - alert: LoxilbHighTTFB
+        expr: >-
+          histogram_quantile(0.95,
+            sum by (le) (rate(loxilb_proxy_http_ttfb_seconds_bucket[5m]))
+          ) > 2
+          and sum(rate(loxilb_proxy_http_responses_total[5m])) > 1
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "L7 TTFB p95 above 2s for 10m"
+          description: "Global threshold (v1, design decision 9.2) — tune per site."
+          dashboard: "LoxiLB / L7 Proxy"
+          panel: "TTFB p50/p95/p99"
+
+      - alert: LoxilbAIErrorRatio
+        expr: >-
+          (
+            sum(rate(loxilb_ai_requests_total{status!~"2.."}[5m]))
+            /
+            sum(rate(loxilb_ai_requests_total[5m]))
+          ) > 0.05
+          and sum(rate(loxilb_ai_requests_total[5m])) > 0.1
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "AI request non-2xx ratio above 5%"
+          description: "status label carries the real backend HTTP status (post-audit)."
+          dashboard: "LoxiLB / AI Gateway"
+          panel: "AI requests/s by status"
+
+      - alert: LoxilbAIRateLimitSpike
+        expr: sum(rate(loxilb_ai_rate_limit_hits_total[5m])) > 10
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "AI rate-limit denials above 10/s for 5m"
+          description: "Denials are NOT included in loxilb_ai_requests_total — this counter is the only signal."
+          dashboard: "LoxiLB / AI Gateway"
+          panel: "Rate-limit hits/s"
+
+  - name: loxilb-system
+    rules:
+      - alert: LoxilbCpuHigh
+        expr: loxilb_system_cpu_utilization_percent > 90
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "loxilb host CPU above 90% for 10m"
+          dashboard: "LoxiLB / Overview"
+          panel: "CPU / Memory / Disk"
+
+      - alert: LoxilbMemHigh
+        expr: loxilb_system_memory_utilization_percent > 90
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "loxilb host memory above 90% for 10m"
+          dashboard: "LoxiLB / Overview"
+          panel: "CPU / Memory / Disk"
+
+      - alert: LoxilbDiskHigh
+        expr: loxilb_system_disk_utilization_percent > 90
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "loxilb host disk above 90% for 10m"
+          dashboard: "LoxiLB / Overview"
+          panel: "CPU / Memory / Disk"
+
+      - alert: LoxilbDiskCritical
+        expr: loxilb_system_disk_utilization_percent > 95
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "loxilb host disk above 95%"
+          dashboard: "LoxiLB / Overview"
+          panel: "CPU / Memory / Disk"
+
+  - name: loxilb-ha
+    rules:
+      - alert: LoxilbHaSyncFailing
+        expr: rate(loxilb_sockproxy_sync_apply_errors_total[5m]) > 0
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "HA sockproxy sync apply errors"
+          description: "Peer state application is failing — HA correctness at risk."
+          dashboard: "LoxiLB / Overview"
+          panel: "HA sync errors/s"
+
+      - alert: LoxilbKvAgentDown
+        # Guard: the gauge registers 0 even on deployments with no KV agent at all
+        # (T1 finding) — only alert if the agent was seen up in the last hour.
+        expr: loxilb_kv_agent_up == 0 and max_over_time(loxilb_kv_agent_up[1h]) == 1
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "KV agent down (loxilb-side liveness gauge)"
+          dashboard: "LoxiLB / AI Gateway"
+          panel: "KV subscribers up"
+
+  - name: loxilb-security
+    rules:
+      - alert: LoxilbSynFloodActive
+        expr: rate(loxilb_security_syn_blocked_total[5m]) > 0
+        for: 2m
+        labels: { severity: info }
+        annotations:
+          summary: "SYN-flood mitigation actively blocking"
+          dashboard: "LoxiLB / Security"
+          panel: "SYN flood: passed vs blocked/s"
+
+      - alert: LoxilbUdpFloodActive
+        expr: rate(loxilb_security_udp_blocked_total[5m]) > 0
+        for: 2m
+        labels: { severity: info }
+        annotations:
+          summary: "UDP-flood mitigation actively blocking"
+          dashboard: "LoxiLB / Security"
+          panel: "UDP flood: passed vs blocked"
+
+      - alert: LoxilbFwDropSurge
+        expr: rate(loxilb_fw_drop_packets_total[5m]) > 100
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Firewall dropping more than 100 pkt/s for 5m"
+          dashboard: "LoxiLB / Security"
+          panel: "FW drops/s"
+
+  - name: loxilb-capacity
+    rules:
+      - alert: LoxilbConntrackStatResets
+        expr: rate(loxilb_conntrack_stat_resets_total[10m]) > 0
+        for: 10m
+        labels: { severity: info }
+        annotations:
+          summary: "Conntrack statistics resets occurring"
+          description: "Counter baselines are churning; L4 traffic counters may briefly under-report."
+          dashboard: "LoxiLB / Overview"
+          panel: "Conntrack stat resets/s"
+
+      # loxilb_conntrack_max_entries ships with rollout step 2 (design §5);
+      # until the gauge exists these two rules simply evaluate to no data.
+      - alert: LoxilbConntrackNearCapacity
+        expr: loxilb_active_conntrack_entries / loxilb_conntrack_max_entries > 0.8
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Conntrack table above 80% of capacity"
+          dashboard: "LoxiLB / L4 Load Balancer"
+          panel: "Conntrack entries"
+
+      - alert: LoxilbConntrackCapacityCritical
+        expr: loxilb_active_conntrack_entries / loxilb_conntrack_max_entries > 0.95
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "Conntrack table above 95% of capacity — new flows will be dropped soon"
+          dashboard: "LoxiLB / L4 Load Balancer"
+          panel: "Conntrack entries"

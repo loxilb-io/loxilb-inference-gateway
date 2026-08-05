@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/loxilb-io/loxilb/pkg/mcp/client"
+	"github.com/loxilb-io/loxilb-inference-gateway/mcp/internal/mcp/client"
 )
 
 func newDeps(t *testing.T, mux *http.ServeMux) *Deps {

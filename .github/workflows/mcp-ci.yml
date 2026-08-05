@@ -1,0 +1,74 @@
+# CI for the standalone loxilb-mcp module. Runs on PRs and pushes that touch
+# mcp/**: vet, test, cross-compile the full OS/arch matrix, and validate the
+# GoReleaser config with a snapshot build (no publish). This is what gates a
+# merge — the release workflow only runs once a tag is pushed.
+name: mcp-ci
+
+on:
+  push:
+    branches: [main]
+    paths: ['mcp/**', '.github/workflows/mcp-ci.yml']
+  pull_request:
+    paths: ['mcp/**', '.github/workflows/mcp-ci.yml']
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: mcp
+
+jobs:
+  test:
+    name: vet + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: mcp/go.mod
+          cache-dependency-path: mcp/go.sum
+      - run: go vet ./...
+      - run: go test -race ./...
+
+  crosscompile:
+    name: build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        goos: [linux, darwin, windows]
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: mcp/go.mod
+          cache-dependency-path: mcp/go.sum
+      - name: build
+        env:
+          CGO_ENABLED: '0'
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: go build -trimpath -o /tmp/loxilb-mcp ./cmd/loxilb-mcp
+
+  goreleaser-check:
+    name: goreleaser config + snapshot
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: mcp/go.mod
+          cache-dependency-path: mcp/go.sum
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: '~> v2'
+          args: check -f mcp/.goreleaser.yaml
+          workdir: .
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: '~> v2'
+          args: build --snapshot --clean -f mcp/.goreleaser.yaml
+          workdir: .

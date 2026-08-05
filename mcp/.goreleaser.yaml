@@ -1,0 +1,126 @@
+# GoReleaser config for loxilb-mcp — the standalone MCP bridge.
+# Runs from this directory (the nested Go module). Produces, for every
+# push of a `mcp/vX.Y.Z` tag: cross-platform static binaries + archives,
+# a SHA256SUMS file, a Homebrew formula, and a multi-arch GHCR image.
+#
+#   Local dry run:  cd mcp && goreleaser release --snapshot --clean
+#   Real release:   handled by .github/workflows/mcp-release.yml
+version: 2
+
+project_name: loxilb-mcp
+
+# This module lives in mcp/ of a monorepo and releases on its OWN tags,
+# `mcp/vX.Y.Z`, independent of the datapath's `vX.Y.Z-igw.N` tags. GoReleaser
+# is invoked from the repo root as: goreleaser release -f mcp/.goreleaser.yaml
+monorepo:
+  tag_prefix: mcp/
+  dir: mcp
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - id: loxilb-mcp
+    main: ./cmd/loxilb-mcp
+    binary: loxilb-mcp
+    env:
+      - CGO_ENABLED=0        # fully static — one binary per OS/arch, no libc dep
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/loxilb-io/loxilb-inference-gateway/mcp/internal/mcp.Version={{ .Version }}
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+
+archives:
+  - id: default
+    name_template: "loxilb-mcp_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - NOTICE
+      - README.md
+      - src: docs/**/*
+        strip_parent: false
+
+checksum:
+  name_template: "SHA256SUMS"
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-dev"
+
+changelog:
+  sort: asc
+  filters:
+    exclude: ["^docs:", "^test:", "^ci:", "^chore:"]
+
+# Homebrew formula published to the tap repo loxilb-io/homebrew-tap.
+# Requires: the tap repo to exist and secret HOMEBREW_TAP_TOKEN (a PAT with
+# contents:write on that repo) exported to the release job.
+brews:
+  - name: loxilb-mcp
+    repository:
+      owner: loxilb-io
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: "https://github.com/loxilb-io/loxilb-inference-gateway"
+    description: "Standalone MCP bridge for loxilb-inference-gateway"
+    license: "Apache-2.0"
+    directory: Formula
+    install: |
+      bin.install "loxilb-mcp"
+    test: |
+      system "#{bin}/loxilb-mcp", "--version"
+
+# Multi-arch container image on GitHub Packages (GHCR).
+dockers:
+  - id: amd64
+    goos: linux
+    goarch: amd64
+    dockerfile: Dockerfile
+    use: buildx
+    image_templates:
+      - "ghcr.io/loxilb-io/loxilb-mcp:{{ .Version }}-amd64"
+      - "ghcr.io/loxilb-io/loxilb-mcp:latest-amd64"
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.title=loxilb-mcp"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.source=https://github.com/loxilb-io/loxilb-inference-gateway"
+  - id: arm64
+    goos: linux
+    goarch: arm64
+    dockerfile: Dockerfile
+    use: buildx
+    image_templates:
+      - "ghcr.io/loxilb-io/loxilb-mcp:{{ .Version }}-arm64"
+      - "ghcr.io/loxilb-io/loxilb-mcp:latest-arm64"
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.title=loxilb-mcp"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.source=https://github.com/loxilb-io/loxilb-inference-gateway"
+
+docker_manifests:
+  - name_template: "ghcr.io/loxilb-io/loxilb-mcp:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/loxilb-io/loxilb-mcp:{{ .Version }}-amd64"
+      - "ghcr.io/loxilb-io/loxilb-mcp:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/loxilb-io/loxilb-mcp:latest"
+    image_templates:
+      - "ghcr.io/loxilb-io/loxilb-mcp:latest-amd64"
+      - "ghcr.io/loxilb-io/loxilb-mcp:latest-arm64"
+
+release:
+  github:
+    owner: loxilb-io
+    name: loxilb-inference-gateway
+  prerelease: auto        # tags like mcp/v1.2.0-rc.1 publish as pre-releases
+  name_template: "loxilb-mcp {{ .Version }}"

@@ -58,10 +58,8 @@ RUN cd /src && go get . && \
     # developer host against a newer glibc, which must not be linked here
     make clean && \
     if [ "$(arch)" = "aarch64" ] && [ "$USE_DOCKER_BUILDX_ARM64" = "true" ] ; then DOCKER_BUILDX_ARM64=true make; else make; fi && \
-    CGO_ENABLED=0 go build -o /src/loxilb-mcp ./cmd/loxilb-mcp && \
     mkdir -p /out/lib /out/ebpf && \
     cp /src/loxilb /out/loxilb && \
-    cp /src/loxilb-mcp /out/loxilb-mcp && \
     cp /opt/loxilb/*.o /out/ebpf/ && \
     # Normalize shared-library names to their sonames (no symlinks needed).
     # libbpf is usually linked statically; bundle it only when the binary

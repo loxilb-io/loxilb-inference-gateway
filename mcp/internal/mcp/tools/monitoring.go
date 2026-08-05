@@ -25,7 +25,7 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/loxilb-io/loxilb/pkg/mcp/guard"
+	"github.com/loxilb-io/loxilb-inference-gateway/mcp/internal/mcp/guard"
 )
 
 // legacyMetricPaths is the closed allowlist of GET /metrics/{name} JSON
@@ -152,7 +152,7 @@ type promqlRangeIn struct {
 }
 
 type promqlOut struct {
-	Data any `json:"data"`
+	Data any `json:"data" jsonschema:"Prometheus HTTP API response body (arbitrary JSON)"`
 }
 
 func promData(raw json.RawMessage) (promqlOut, error) {

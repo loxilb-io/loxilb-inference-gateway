@@ -26,7 +26,7 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/loxilb-io/loxilb/pkg/mcp/guard"
+	"github.com/loxilb-io/loxilb-inference-gateway/mcp/internal/mcp/guard"
 )
 
 // maxListItems caps loosely-typed arrays before they reach model context.
@@ -367,9 +367,9 @@ func (d *Deps) logArchiveGet() sdk.ToolHandlerFor[logArchiveIn, logArchiveOut] {
 
 type ipsecOut struct {
 	Target  string            `json:"target"`
-	Stats   any               `json:"stats,omitempty"`
-	Sas     any               `json:"sas,omitempty"`
-	Tunnels any               `json:"tunnels,omitempty"`
+	Stats   any               `json:"stats,omitempty" jsonschema:"IPsec statistics as returned by loxilb (arbitrary JSON)"`
+	Sas     any               `json:"sas,omitempty" jsonschema:"IPsec security associations (arbitrary JSON)"`
+	Tunnels any               `json:"tunnels,omitempty" jsonschema:"IPsec tunnel entries (arbitrary JSON)"`
 	Errors  map[string]string `json:"errors,omitempty"`
 }
 

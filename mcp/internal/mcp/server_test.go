@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/loxilb-io/loxilb/pkg/mcp/guard"
+	"github.com/loxilb-io/loxilb-inference-gateway/mcp/internal/mcp/guard"
 )
 
 const testToken = "0123456789abcdef0123456789abcdef"

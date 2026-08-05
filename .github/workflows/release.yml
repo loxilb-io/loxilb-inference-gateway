@@ -3,7 +3,7 @@ name: Release
 # Tag-triggered release pipeline. Produces the full artifact matrix:
 #   - multi-arch (amd64+arm64) container images: Ubuntu 22.04 default + -u24 variant
 #   - .deb / .rpm packages (amd64+arm64) via in-repo nfpm packaging
-#   - binary tarballs (loxilb + loxilb-mcp) per architecture
+#   - binary tarballs (loxilb) per architecture
 #   - SHA256SUMS over every non-image artifact
 # Packages are validated by package-sanity before anything is attached to the
 # GitHub release. Release-candidate tags (…-rc.N) publish as pre-releases and
