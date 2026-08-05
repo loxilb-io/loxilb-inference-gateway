@@ -25,4 +25,11 @@ paths = [
   '''^cicd/.*/ingress/loxilb-secret\.yml$''',  # test ingress TLS secret
   '''^cicd/ipsec[^/]*/config\.sh$''',          # IPsec test PSK values
   '''^api/certification/server\.key$''',       # swagger codegen self-signed test key
+  # release-hygiene.sh is itself the private-key DETECTION script: its step-6
+  # belt-and-braces embeds PEM header literals (-----BEGIN PRIVATE KEY-----)
+  # and base64 body regexes ([A-Za-z0-9+/]{40,}) as *match patterns*, which
+  # gitleaks' own private-key rule then flags on — a circular false positive.
+  # The script carries no key material. (PR #32 fixed the script's own
+  # self-check but not this scan of the script.)
+  '''^scripts/release-hygiene\.sh$''',
 ]
