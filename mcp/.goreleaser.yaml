@@ -102,7 +102,9 @@ dockers_v2:
       - "ghcr.io/loxilb-io/loxilb-mcp"
     tags:
       - "{{ .Version }}"
-      - "latest"
+      # `latest` must not follow a pre-release: `mcp/v1.2.0-rc.1` should publish
+      # its own tag and leave `latest` on the last stable image.
+      - "{{ if not .Prerelease }}latest{{ end }}"
     labels:
       org.opencontainers.image.title: loxilb-mcp
       org.opencontainers.image.version: "{{ .Version }}"
