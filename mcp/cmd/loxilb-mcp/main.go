@@ -33,12 +33,13 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"strings"
 	"syscall"
 
-	mcpbridge "github.com/loxilb-io/loxilb/pkg/mcp"
-	"github.com/loxilb-io/loxilb/pkg/mcp/guard"
+	mcpbridge "github.com/loxilb-io/loxilb-inference-gateway/mcp/internal/mcp"
+	"github.com/loxilb-io/loxilb-inference-gateway/mcp/internal/mcp/guard"
 )
 
 func main() {
@@ -139,6 +140,25 @@ func run(configPath, targetURL, transport, listen, tlsCert, tlsKey, tlsClientCA 
 		Deny:      splitCSV(denyTools),
 		Autopilot: append(splitCSV(autopilotTools), cfg.AutopilotTools...),
 	}
+	// Fail fast on malformed guard inputs instead of silently mis-gating tools.
+	// A bad --deny-tools glob would otherwise be dropped by path.Match (fail
+	// open, leaving a tool callable); a glob in --autopilot-tools would be a
+	// silent no-op on a confirm-bypass surface; an unknown --enable-domains
+	// value would silently hide tools (or, as the sole value, hide all of them).
+	if err := validateGlobs("--allow-tools", pol.Allow); err != nil {
+		return err
+	}
+	if err := validateGlobs("--deny-tools", pol.Deny); err != nil {
+		return err
+	}
+	for _, n := range pol.Autopilot {
+		if strings.ContainsAny(n, "*?[") {
+			return fmt.Errorf("autopilot tool %q looks like a glob: autopilot names must be exact tool names (globs are rejected on a confirm-bypass surface)", n)
+		}
+	}
+	if err := validateDomains(domains); err != nil {
+		return err
+	}
 	if len(pol.Autopilot) > 0 {
 		log.Printf("WARNING: autopilot tools execute WITHOUT confirm-token: %s",
 			strings.Join(pol.Autopilot, ", "))
@@ -186,6 +206,19 @@ func run(configPath, targetURL, transport, listen, tlsCert, tlsKey, tlsClientCA 
 	}
 	bridge.AllowImport = allowImport
 
+	if transport == "http" {
+		// mTLS needs a server certificate: --tls-client-ca without --tls-cert/
+		// --tls-key would start a plaintext server with client-cert verification
+		// silently discarded (RunHTTP only serves TLS when cert+key are set).
+		if tlsClientCA != "" && (tlsCert == "" || tlsKey == "") {
+			return fmt.Errorf("--tls-client-ca requires --tls-cert and --tls-key: refusing to start with client-certificate verification silently disabled")
+		}
+		// Roles come from client tokens in HTTP mode; --role is stdio-only.
+		if roleFlag != "admin" {
+			log.Printf("WARNING: --role %q is ignored in HTTP transport (roles come from client tokens)", roleFlag)
+		}
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -207,6 +240,32 @@ func run(configPath, targetURL, transport, listen, tlsCert, tlsKey, tlsClientCA 
 	default:
 		return fmt.Errorf("unknown transport %q (want stdio|http)", transport)
 	}
+}
+
+// validateGlobs rejects malformed tool-name globs at startup. path.Match's
+// matcher swallows ErrBadPattern (treating it as "no match"), so a bad
+// --deny-tools pattern would otherwise fail open and leave the tool callable.
+func validateGlobs(flagName string, globs []string) error {
+	for _, g := range globs {
+		if _, err := path.Match(g, ""); err != nil {
+			return fmt.Errorf("%s: invalid glob %q: %w", flagName, g, err)
+		}
+	}
+	return nil
+}
+
+var knownDomains = map[string]bool{"mgmt": true, "analysis": true, "monitoring": true, "ai": true}
+
+// validateDomains rejects unknown --enable-domains values. An unrecognized
+// name is otherwise inserted verbatim into the domain filter, silently hiding
+// the tools the operator meant to keep (or, as the only value, hiding all of them).
+func validateDomains(csv string) error {
+	for _, d := range splitCSV(csv) {
+		if !knownDomains[d] {
+			return fmt.Errorf("--enable-domains: unknown domain %q (valid: mgmt, analysis, monitoring, ai)", d)
+		}
+	}
+	return nil
 }
 
 func splitCSV(s string) []string {

@@ -5,7 +5,7 @@ loxilb-inference-gateway. It lets MCP clients (Claude Code, MCP Inspector,
 custom agents) observe, manage, and diagnose loxilb instances through guarded
 tools instead of raw REST.
 
-- Binary: `cmd/loxilb-mcp` (`go build ./cmd/loxilb-mcp`)
+- Binary: `mcp/cmd/loxilb-mcp` (standalone Go module; `cd mcp && go build ./cmd/loxilb-mcp`). Install/release: see `mcp/README.md`.
 - Talks to loxilb REST (`:11111 /netlox/v1`), optionally Prometheus and
   Alertmanager
 - No loxilb code changes; purely additive
@@ -50,15 +50,23 @@ only accepted `target` values in tool calls — URLs are rejected (anti-SSRF).
 
 ## Roles and tool tiers
 
-| Role | May call | Tool count (all domains on) |
+| Role | May call | Tool count (base) |
 |---|---|---|
-| viewer | read-only tools only | 49 |
-| operator | + non-destructive mutations | 72 |
-| admin | + destructive tools (confirm-token gated) | 76 (77 with `--allow-import`) |
+| viewer | read-only tools only | 51 |
+| operator | + non-destructive mutations | 74 |
+| admin | + destructive tools (confirm-token gated) | 78 (79 with `--allow-import`) |
+
+"Base" is with all four domains on and no external monitoring backends
+configured. A configured `prometheus_url` (`promql_query`, `promql_range`),
+`alertmanager_url` (`alerts_active`), and `alert_rules_path` (`alerts_catalog`)
+each register additional read-only tools that are visible to every role — up to
+four more, so a fully-wired admin sees 82 (83 with `--allow-import`). `--read-only`,
+`--enable-domains`, and `--allow-tools`/`--deny-tools` reduce the set further.
 
 Stdio sessions take the role from `--role` (default admin — stdio inherits
 the local user's authority). HTTP sessions take it from the bearer token.
-`tools/list` reflects exactly what the caller may do.
+`tools/list` reflects exactly what the caller may do — treat it, not this
+table, as authoritative for a given configuration.
 
 Additional gates, all composable: `--read-only`, `--allow-tools` /
 `--deny-tools` globs (deny wins), `--enable-domains mgmt,analysis,monitoring,ai`.
@@ -196,3 +204,31 @@ cd cicd/mcp && ./config.sh && ./validation.sh; ./rmconfig.sh
 
 The AI 429-under-load drill and the 12 h soak need an SSE
 backend and wall-clock time, so they run separately on a dedicated testbed.
+
+### On-demand E2E against a live target
+
+`cicd/mcp/live-e2e.sh` validates the bridge against an already-running loxilb
+deployment — no docker testbed, no LLM. It builds the bridge, opens a single
+persistent stdio JSON-RPC session, and asserts the observe/guardrail surface:
+
+```sh
+cd cicd/mcp
+./live-e2e.sh                                   # default target, read-only
+TARGET=http://<host>:11111 ./live-e2e.sh        # any live target
+./live-e2e.sh --mutate                          # + control-plane round-trip
+```
+
+Read-only mode (default) changes **nothing** on the target: it checks
+`version_get`/`health_overview` reachability, cross-checks `lb_list` against the
+target's REST `/config/loadbalancer/all`, verifies `metrics_snapshot`,
+`targets_list`, `fleet_overview`, `diagnose_l4_errors`, and the `ai_traffic_report`
+F12 caveat, then exercises the guardrails (URL-as-target rejected, unknown target
+rejected, unknown tool → JSON-RPC error, viewer role sees no `lb_create`).
+
+`--mutate` additionally runs an isolated `lb_create` → `lb_list` → confirm-token
+`lb_delete` round-trip on a TEST-NET-2 VIP (`198.51.100.7:19999`, override with
+`VIP`/`VPORT`/`VEP`) that will not collide with real services, checks the audit
+trail, and cleans up — including a `--no-confirm` safety-net delete if any step
+fails, so a run never leaves state on the target. The two-step confirm-token
+flow is why the harness holds one session open: the token is in-memory,
+single-use, and per process. Exit code 0 means every check passed.

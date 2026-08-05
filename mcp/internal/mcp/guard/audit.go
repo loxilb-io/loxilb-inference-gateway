@@ -25,7 +25,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/loxilb-io/loxilb/pkg/logrotate"
+	"github.com/loxilb-io/loxilb-inference-gateway/mcp/internal/logrotate"
 )
 
 // Event kinds recorded in the audit log.

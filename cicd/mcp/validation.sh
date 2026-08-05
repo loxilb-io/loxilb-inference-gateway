@@ -35,7 +35,7 @@ if [[ -z "$llbIP" ]]; then
 fi
 
 echo "building loxilb-mcp"
-if ! (cd ../.. && go build -o cicd/mcp/loxilb-mcp ./cmd/loxilb-mcp); then
+if ! (cd ../../mcp && go build -o ../cicd/mcp/loxilb-mcp ./cmd/loxilb-mcp); then
     echo "SCENARIO-mcp [FAILED] (build)"
     exit 1
 fi

@@ -33,13 +33,14 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/loxilb-io/loxilb/pkg/mcp/client"
-	"github.com/loxilb-io/loxilb/pkg/mcp/guard"
-	"github.com/loxilb-io/loxilb/pkg/mcp/tools"
+	"github.com/loxilb-io/loxilb-inference-gateway/mcp/internal/mcp/client"
+	"github.com/loxilb-io/loxilb-inference-gateway/mcp/internal/mcp/guard"
+	"github.com/loxilb-io/loxilb-inference-gateway/mcp/internal/mcp/tools"
 )
 
-// Version is the loxilb-mcp bridge version.
-const Version = "0.1.0"
+// Version is the loxilb-mcp bridge version. It is overridden at release time
+// via -ldflags "-X …/mcp/internal/mcp.Version=<tag>" (see .goreleaser.yaml).
+var Version = "0.1.0"
 
 const serverName = "loxilb-mcp"
 

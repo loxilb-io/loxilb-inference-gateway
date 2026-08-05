@@ -29,8 +29,8 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/loxilb-io/loxilb/pkg/mcp/client"
-	"github.com/loxilb-io/loxilb/pkg/mcp/guard"
+	"github.com/loxilb-io/loxilb-inference-gateway/mcp/internal/mcp/client"
+	"github.com/loxilb-io/loxilb-inference-gateway/mcp/internal/mcp/guard"
 )
 
 // Deps is what tool handlers need from the bridge.
@@ -234,9 +234,9 @@ type lbListIn struct {
 type lbRule struct {
 	Name          string `json:"name,omitempty"`
 	ExternalIP    string `json:"external_ip"`
-	Port          any    `json:"port"`
+	Port          any    `json:"port" jsonschema:"service port (number, or string for a port range)"`
 	Protocol      string `json:"protocol"`
-	Mode          any    `json:"mode,omitempty"`
+	Mode          any    `json:"mode,omitempty" jsonschema:"load-balancer mode as returned by loxilb (number or string)"`
 	EndpointCount int    `json:"endpoint_count"`
 	Endpoints     []any  `json:"endpoints,omitempty"`
 }

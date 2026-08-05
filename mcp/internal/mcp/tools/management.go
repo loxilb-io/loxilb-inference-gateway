@@ -27,7 +27,7 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/loxilb-io/loxilb/pkg/mcp/guard"
+	"github.com/loxilb-io/loxilb-inference-gateway/mcp/internal/mcp/guard"
 )
 
 // RegisterManagement adds the Phase-2 management CRUD tools
@@ -289,10 +289,10 @@ func RegisterManagement(s *sdk.Server, role guard.Role, pol *guard.Policy, deps 
 type mutOut struct {
 	Target            string `json:"target"`
 	Action            string `json:"action"` // preview | executed
-	Result            any    `json:"result,omitempty"`
+	Result            any    `json:"result,omitempty" jsonschema:"tool-specific result of an executed mutation (arbitrary JSON)"`
 	ConfirmToken      string `json:"confirm_token,omitempty"`
 	ConfirmExpiresSec int    `json:"confirm_expires_sec,omitempty"`
-	Preview           any    `json:"preview,omitempty"`
+	Preview           any    `json:"preview,omitempty" jsonschema:"object(s) a destructive call would change; present on action=preview (arbitrary JSON)"`
 	Warning           string `json:"warning,omitempty"`
 }
 

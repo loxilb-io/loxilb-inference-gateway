@@ -25,8 +25,8 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/loxilb-io/loxilb/pkg/mcp/client"
-	"github.com/loxilb-io/loxilb/pkg/mcp/guard"
+	"github.com/loxilb-io/loxilb-inference-gateway/mcp/internal/mcp/client"
+	"github.com/loxilb-io/loxilb-inference-gateway/mcp/internal/mcp/guard"
 )
 
 // RegisterDiagnose adds the Phase-3 composite diagnostics / RCA tools
@@ -144,7 +144,7 @@ func hostMatches(hostName, want string) bool {
 type epState struct {
 	Host  string `json:"host"`
 	State string `json:"state,omitempty"`
-	Extra any    `json:"detail,omitempty"`
+	Extra any    `json:"detail,omitempty" jsonschema:"additional endpoint detail (arbitrary JSON)"`
 }
 
 // fetchEndpointStates GETs /config/endpoint/all and aggregates probe states.

@@ -1,0 +1,62 @@
+# Release pipeline for the standalone loxilb-mcp module.
+# Triggered by pushing a tag `mcp/vX.Y.Z` (or a pre-release `mcp/vX.Y.Z-rc.N`).
+# Produces, in one GoReleaser run:
+#   - static binaries + archives for linux/darwin/windows × amd64/arm64
+#   - SHA256SUMS
+#   - a GitHub Release (assets attached; -rc.N tags publish as pre-release)
+#   - a Homebrew formula pushed to loxilb-io/homebrew-tap
+#   - a multi-arch image ghcr.io/loxilb-io/loxilb-mcp:{version,latest}
+#
+# Cut a release:
+#   git tag mcp/v1.0.0 && git push origin mcp/v1.0.0
+#
+# Prerequisites (one-time): repo public (or GHCR/tap reachable), the
+# loxilb-io/homebrew-tap repo exists, and secret HOMEBREW_TAP_TOKEN is set
+# (a PAT with contents:write on the tap repo). GHCR uses the built-in
+# GITHUB_TOKEN via packages:write below.
+name: mcp-release
+
+on:
+  push:
+    tags: ['mcp/v*']
+
+permissions:
+  contents: write     # create the GitHub Release
+  packages: write     # push to GHCR
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }     # GoReleaser needs full history + tags
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: mcp/go.mod
+          cache-dependency-path: mcp/go.sum
+
+      - name: Set up QEMU (multi-arch docker)
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: '~> v2'
+          args: release --clean -f mcp/.goreleaser.yaml
+          workdir: .
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Optional: omit the tap push by leaving this unset — GoReleaser skips
+          # the brew step if the token is empty only when `skip_upload` is set,
+          # so keep the secret configured or remove the `brews:` block.
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

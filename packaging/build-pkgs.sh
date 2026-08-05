@@ -12,7 +12,7 @@
 # Options:
 #   --version <tag>    release tag (vX.Y.Z[.W]-igw.N[-rc.M]); default: git describe
 #   --arch <arch>      amd64 | arm64 (default: host architecture)
-#   --staging <dir>    directory with staged artifacts (loxilb, loxilb-mcp,
+#   --staging <dir>    directory with staged artifacts (loxilb,
 #                      lib/, ebpf/); default dist/stage-<arch>
 #   --from-docker      build the staging directory via packaging/Dockerfile.build
 #   --formats <list>   comma-separated: deb,rpm,tarball (default: all)
@@ -85,7 +85,7 @@ if [ "$FROM_DOCKER" = 1 ]; then
     --target artifacts --output "type=local,dest=$STAGING" "${build_args[@]}" .
 fi
 
-for f in loxilb loxilb-mcp lib/libssl.so.3 lib/libcrypto.so.3; do
+for f in loxilb lib/libssl.so.3 lib/libcrypto.so.3; do
   [ -e "$STAGING/$f" ] || { echo "ERROR: missing staged artifact: $STAGING/$f" >&2; exit 1; }
 done
 ls "$STAGING"/ebpf/*.o >/dev/null 2>&1 || { echo "ERROR: no eBPF objects in $STAGING/ebpf/" >&2; exit 1; }
@@ -129,7 +129,7 @@ case ",$FORMATS," in *,tarball,*)
   TARNAME="loxilb-inference-gateway_${FULLVER}_linux_${ARCH}"
   TARDIR=$(mktemp -d)
   mkdir -p "$TARDIR/$TARNAME"
-  cp "$STAGING/loxilb" "$STAGING/loxilb-mcp" "$TARDIR/$TARNAME/"
+  cp "$STAGING/loxilb" "$TARDIR/$TARNAME/"
   cp -r "$STAGING/lib" "$STAGING/ebpf" "$TARDIR/$TARNAME/"
   cp packaging/loxilb.service packaging/mkllb-bpffs.sh LICENSE NOTICE "$TARDIR/$TARNAME/"
   cat > "$TARDIR/$TARNAME/README.txt" <<'EOF'
@@ -138,7 +138,6 @@ loxilb-inference-gateway binary tarball
 
 Contents:
   loxilb          the load-balancer binary (needs the bundled lib/ at runtime)
-  loxilb-mcp      standalone MCP bridge (static binary, no dependencies)
   lib/            bundled shared libraries (kTLS OpenSSL, libbpf)
   ebpf/           eBPF datapath objects, expected under /opt/loxilb
   loxilb.service  systemd unit (expects the .deb/.rpm file layout)

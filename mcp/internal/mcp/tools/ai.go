@@ -29,8 +29,8 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/loxilb-io/loxilb/pkg/mcp/client"
-	"github.com/loxilb-io/loxilb/pkg/mcp/guard"
+	"github.com/loxilb-io/loxilb-inference-gateway/mcp/internal/mcp/client"
+	"github.com/loxilb-io/loxilb-inference-gateway/mcp/internal/mcp/guard"
 )
 
 // f12Caveat is surfaced in every ai_traffic_report result (known caveat F12,

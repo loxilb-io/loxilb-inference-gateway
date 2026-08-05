@@ -24,7 +24,7 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/loxilb-io/loxilb/pkg/mcp/tools"
+	"github.com/loxilb-io/loxilb-inference-gateway/mcp/internal/mcp/tools"
 )
 
 // metricsReferenceDoc is the curated metric-family reference served as

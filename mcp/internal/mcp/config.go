@@ -27,7 +27,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/loxilb-io/loxilb/pkg/mcp/guard"
+	"github.com/loxilb-io/loxilb-inference-gateway/mcp/internal/mcp/guard"
 )
 
 // Target is one loxilb instance the bridge can talk to.

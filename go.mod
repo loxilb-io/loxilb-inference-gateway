@@ -23,7 +23,6 @@ require (
 	github.com/loxilb-io/ipvs v0.1.0
 	github.com/loxilb-io/loxilib v0.8.9-0.20241218081253-760c19357603
 	github.com/mattn/go-sqlite3 v1.14.29
-	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/osrg/gobgp/v3 v3.35.0
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/prometheus-community/pro-bing v0.1.0
@@ -77,7 +76,6 @@ require (
 	github.com/google/gnostic-models v0.6.8 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
-	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
 	github.com/imdario/mergo v0.3.6 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
@@ -90,11 +88,8 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/prometheus/procfs v0.12.0 // indirect
-	github.com/segmentio/asm v1.1.3 // indirect
-	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
-	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.43.0 // indirect
 	go.opentelemetry.io/otel/metric v1.43.0 // indirect
