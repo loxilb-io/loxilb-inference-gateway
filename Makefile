@@ -110,9 +110,6 @@ clean: subsys-clean
 test:
 	go test .
 
-test_sse:
-	$(MAKE) -C loxilb-ebpf/common test_sse
-
 test_request_id:
 	$(MAKE) -C loxilb-ebpf/common test_rid
 
