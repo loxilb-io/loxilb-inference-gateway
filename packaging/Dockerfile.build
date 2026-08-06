@@ -14,6 +14,12 @@ FROM ubuntu:20.04 AS build
 ARG DEBIAN_FRONTEND=noninteractive
 ARG USE_DOCKER_BUILDX_ARM64=false
 
+# Release identifier stamped into the packaged binary. .dockerignore strips
+# .git, so the Makefile's `git describe` cannot work in here; build-pkgs.sh
+# passes the tag it is packaging under. Without this the .deb/.rpm would carry
+# the right filename and a binary reporting "dev".
+ARG VERSION=dev
+
 ENV PATH="${PATH}:/usr/local/go/bin"
 ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/lib64/"
 
@@ -57,7 +63,7 @@ RUN cd /src && go get . && \
     # make clean first: the build context may carry objects compiled on the
     # developer host against a newer glibc, which must not be linked here
     make clean && \
-    if [ "$(arch)" = "aarch64" ] && [ "$USE_DOCKER_BUILDX_ARM64" = "true" ] ; then DOCKER_BUILDX_ARM64=true make; else make; fi && \
+    if [ "$(arch)" = "aarch64" ] && [ "$USE_DOCKER_BUILDX_ARM64" = "true" ] ; then DOCKER_BUILDX_ARM64=true make VERSION="$VERSION"; else make VERSION="$VERSION"; fi && \
     mkdir -p /out/lib /out/ebpf && \
     cp /src/loxilb /out/loxilb && \
     cp /opt/loxilb/*.o /out/ebpf/ && \

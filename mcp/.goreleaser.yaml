@@ -10,7 +10,7 @@ version: 2
 project_name: loxilb-mcp
 
 # This module lives in mcp/ and releases on its OWN tags, `mcp/vX.Y.Z`,
-# independent of the datapath's `vX.Y.Z-igw.N` tags. GoReleaser OSS has no
+# independent of the datapath's `vX.Y.Z[.W]` tags. GoReleaser OSS has no
 # monorepo tag-prefix support, so the workflows run it with working-directory
 # `mcp` and pass the prefix-stripped version via GORELEASER_CURRENT_TAG.
 before:

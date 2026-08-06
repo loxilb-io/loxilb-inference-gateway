@@ -4,9 +4,11 @@ All notable changes to loxilb-inference-gateway are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Because this is a fork of [loxilb](https://github.com/loxilb-io/loxilb), releases
-are tagged `v<upstream-loxilb-version>-igw.<n>` (e.g. `v0.9.8.6-igw.1`) so the
-upstream baseline is readable at a glance. Changes inherited from an upstream
-loxilb sync are summarized here by their upstream version; only the
+follow upstream's version scheme — `vMAJOR.MINOR.PATCH` with an optional fourth
+build component (e.g. `v0.9.8.7`), plus `-rc.N` for a release candidate — so the
+upstream baseline is readable at a glance. The reported version is derived from
+the release tag at build time, never pinned in source. Changes inherited from an
+upstream loxilb sync are summarized here by their upstream version; only the
 inference-gateway delta is enumerated in detail. See
 [docs/UPSTREAM-SYNC.md](docs/UPSTREAM-SYNC.md) for the sync and tagging model.
 
@@ -59,7 +61,7 @@ binary behaves exactly like upstream loxilb.
 <!--
 Template for future releases:
 
-## [vX.Y.Z-igw.N] - YYYY-MM-DD
+## [vX.Y.Z.W] - YYYY-MM-DD
 ### Added
 ### Changed
 ### Fixed

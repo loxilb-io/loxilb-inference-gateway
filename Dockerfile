@@ -9,6 +9,11 @@ ARG LOXICMD_TAG=main
 ARG OPENSSL_BUILD_CPUS=0
 ARG USE_DOCKER_BUILDX_ARM64=false
 
+# Release identifier stamped into the binary. .dockerignore strips .git, so the
+# Makefile's `git describe` cannot work in here and would silently fall back to
+# "dev" -- release.yml and packaging/build-pkgs.sh pass the tag explicitly.
+ARG VERSION=dev
+
 # Env variables
 ENV PATH="${PATH}:/usr/local/go/bin"
 ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/lib64/"
@@ -54,8 +59,8 @@ RUN mkdir -p /opt/loxilb && \
     tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz && \
     # Install loxilb
     cd /root/loxilb-io/loxilb/ && \
-    go get . && make clean && if [ "$arch" = "arm64" ] && [ "$USE_DOCKER_BUILDX_ARM64" = "true" ] ; then DOCKER_BUILDX_ARM64=true make; \
-    else make ;fi && cp loxilb-ebpf/utils/mkllb_bpffs.sh /usr/local/sbin/mkllb_bpffs && \
+    go get . && make clean && if [ "$arch" = "arm64" ] && [ "$USE_DOCKER_BUILDX_ARM64" = "true" ] ; then DOCKER_BUILDX_ARM64=true make VERSION="$VERSION"; \
+    else make VERSION="$VERSION" ;fi && cp loxilb-ebpf/utils/mkllb_bpffs.sh /usr/local/sbin/mkllb_bpffs && \
     cp tools/k8s/mkllb-url /usr/local/sbin/mkllb-url && \
     cp loxilb-ebpf/utils/mkllb_cgroup.sh /usr/local/sbin/mkllb_cgroup && \
     cp /root/loxilb-io/loxilb/loxilb-ebpf/kernel/loxilb_dp_debug  /usr/local/sbin/loxilb_dp_debug && \
@@ -84,8 +89,13 @@ RUN mkdir -p /opt/loxilb && \
 
 FROM ubuntu:22.04
 
+# Re-declared because ARG is scoped per stage. Same value as the build stage,
+# so the label always matches the version compiled into the binary.
+ARG VERSION=dev
+
 # LABEL about the loxilb image
 LABEL description="loxilb official docker image"
+LABEL org.opencontainers.image.version="${VERSION}"
 
 # Disable Prompt During Packages Installation
 ARG DEBIAN_FRONTEND=noninteractive
