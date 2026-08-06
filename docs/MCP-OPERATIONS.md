@@ -5,7 +5,11 @@ loxilb-inference-gateway. It lets MCP clients (Claude Code, MCP Inspector,
 custom agents) observe, manage, and diagnose loxilb instances through guarded
 tools instead of raw REST.
 
-- Binary: `mcp/cmd/loxilb-mcp` (standalone Go module; `cd mcp && go build ./cmd/loxilb-mcp`). Install/release: see `mcp/README.md`.
+- Install: `brew install --cask loxilb-io/tap/loxilb-mcp` (macOS), the
+  `ghcr.io/loxilb-io/loxilb-mcp` container image, `go install`, or a tarball from
+  the `mcp/vX.Y.Z` releases — per-OS steps and MCP-client wiring in
+  [`../mcp/README.md`](../mcp/README.md). From source: `cd mcp && go build ./cmd/loxilb-mcp`
+  (it is a standalone Go module, released independently of the datapath).
 - Talks to loxilb REST (`:11111 /netlox/v1`), optionally Prometheus and
   Alertmanager
 - No loxilb code changes; purely additive
