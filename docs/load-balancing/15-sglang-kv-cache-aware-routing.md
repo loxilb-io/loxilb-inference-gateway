@@ -234,6 +234,18 @@ the eRule lookup so they cover create *and* update):
 |---|---|
 | `kvExactMode=3` + `PDDisaggMode` | `kv-exact single-role mode is incompatible with pd-disagg (use kvExactMode=1 for P/D)` |
 | `kvExactMode=3` without fullproxy | `kv-exact single-role mode requires mode=fullproxy` |
+| `kvExactMode=1` without `PDDisaggMode` | `kv-exact zmq mode requires pd_disagg_mode=true (use kvExactMode=3 for a single pool)` |
+| `kvHashAlgo` contradicting `kvEngineType` | `kv-hash-algo "<algo>" is incompatible with kv-engine-type "<engine>" (omit kvHashAlgo to take the engine default "<default>")` |
+
+The last two are the **mode-1 sibling guards**. `kvExactMode=1` without pd-disagg used to be
+accepted and silently inert (Tier 1.5 for mode 1 is reachable only from `pd_select_prefill()`,
+which the C selector calls only inside its `pd_disagg_enabled` branch), so it populated
+inventories and held a subscriber goroutine per prefill EP while never influencing selection.
+The hash-algo guard closes the mirror-image trap: the C hasher picks its contract from
+`kv_hash_algo` alone, so `kvEngineType:"sglang"` pinned to `"sha256_cbor"` missed **every**
+published block with no config-time signal — only the `[KV_ZEROHIT]` watchdog eventually warned.
+Omitting `kvHashAlgo` (the recommended shape) always passes; the engine default is derived by
+`kvHashAlgoEffective`, which mirrors `dpebpf_linux.go`'s resolution order exactly.
 
 The second one exists because the Tier-1.5 hot path lives in the sockproxy, which only
 fullproxy rules reach — mode 3 must never be creatable in a topology where the seam

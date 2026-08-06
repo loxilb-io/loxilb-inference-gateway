@@ -125,11 +125,11 @@ picks the endpoint-selection policy.
 | `pd_cache_aware_mode` | `true` = cache-affinity prefill selection (trie-based) |
 | `ep_role` *(per endpoint)* | `1` = prefill pool · `2` = decode pool · omit/`0` = plain |
 | `nixl_port` *(per endpoint)* | That worker's NIXL side channel — must equal its `VLLM_NIXL_SIDE_CHANNEL_PORT` |
-| `kvExactMode` | Engine-exact KV routing: `1` = P/D topology (vLLM) · `3` = single pool (SGLang) |
-| `kvZmqPort` | Base port of the engine's KV-cache event stream (`--kv-events-config` endpoint) |
+| `kvExactMode` | Engine-exact KV routing **topology** (not the engine — that's `kvEngineType`): `1` = P/D pool, requires `pd_disagg_mode: true` · `3` = single role-less pool, requires `mode: 4` and no P/D |
+| `kvZmqPort` | Base port of the engine's KV-cache event stream (`--kv-events-config` endpoint); rank *N* at `kvZmqPort`+*N* |
 | `kvBlockSize` | Must equal vLLM `--block-size` / SGLang `--page-size` |
-| `kvHashAlgo` | Block-hash contract; `"sha256_cbor"` for vLLM, omit for SGLang (engine default) |
-| `kvEngineType` | `"sglang"` selects the SGLang contract (immutable after create) |
+| `kvHashAlgo` | Block-hash contract — **omit it**; the engine default applies (`vllm` ⇒ `sha256_cbor`, `sglang` ⇒ `sha256_sglang`). Set it only to pin vLLM's `"xxhash_cbor"`; a value that contradicts `kvEngineType` is rejected |
+| `kvEngineType` | `"vllm"` (default) or `"sglang"` — picks the block-hash contract (immutable after create) |
 | `kvDpRankCount` | SGLang data-parallel ranks (= `--dp-size`); rank *N* publishes at `kvZmqPort`+*N* |
 | `kvWarmupSec` | Grace period before KV-exact selection engages |
 | `sse_mode` | `true` = SSE-aware streaming (streams survive idle timeout, `[DONE]` detection); also arms AI-gateway key/limit enforcement |
@@ -177,9 +177,11 @@ GPUs); add `"security": 1` to terminate TLS at the gateway; add `"monitor": true
 
 ▶ Runnable: [`cicd/vllm-httpproxy`](cicd/vllm-httpproxy) · [`cicd/vllm-fullproxy`](cicd/vllm-fullproxy) · WRR variants — real CPU-vLLM backends, no GPU needed.
 📖 Deep dive: [AI gateway L7](docs/load-balancing/04-ai-gateway-l7.md), [KV-cache-aware routing](docs/load-balancing/08-kv-cache-aware-routing.md).
-For **engine-exact** KV routing (fed by vLLM's KV-cache event stream instead of prefix
-hashing), see use case 2 — it engages with the P/D topology; SGLang offers it single-pool
-(use case 3).
+For **engine-exact** KV routing (fed by the engine's KV-cache event stream instead of prefix
+hashing), see use case 2 for the P/D topology (`kvExactMode: 1`) and use case 3 for a single
+role-less pool (`kvExactMode: 3`). The two modes are topologies, not engines — either one
+accepts `kvEngineType: "vllm"` or `"sglang"` — but the shipped, CI-validated pairings are
+vLLM on mode 1 and SGLang on mode 3.
 
 ### Use case 2 — vLLM Prefill/Decode (P/D) disaggregation
 
@@ -214,7 +216,8 @@ vllm serve <MODEL> --port 8000 \
 
 Level up per rule: `"pd_cache_aware_mode": true` adds cache-affinity prefill selection;
 `"kvExactMode": 1, "kvZmqPort": 5557, "kvHashAlgo": "sha256_cbor", "kvBlockSize": 16`
-enables **engine-exact KV routing** from the ZMQ event stream (requires
+enables **engine-exact KV routing** from the ZMQ event stream (`kvExactMode: 1` is valid
+only on this `pd_disagg_mode: true` shape — on a single pool use `kvExactMode: 3`; requires
 `--prefix-caching-hash-algo sha256_cbor`, `--block-size` = `kvBlockSize`, and
 `PYTHONHASHSEED=0` parity on every worker); `"session_header_name": "X-Conversation-Id"`
 pins conversations.
@@ -225,9 +228,10 @@ pins conversations.
 ### Use case 3 — SGLang cache-aware routing
 
 Engine-exact KV routing against SGLang's radix-tree cache, on a plain single pool — no
-P/D roles needed. `kvExactMode: 3` selects the single-pool path, `kvEngineType: "sglang"`
-sets the SGLang hash contract, and `kvDpRankCount` fans in one ZMQ feed per data-parallel
-rank (`kvZmqPort + rank`):
+P/D roles needed. `kvExactMode: 3` selects the single-pool **topology** (rejected unless
+`mode: 4` and `pd_disagg_mode` is off), `kvEngineType: "sglang"` selects the **SGLang hash
+contract**, and `kvDpRankCount` fans in one ZMQ feed per data-parallel rank
+(`kvZmqPort + rank`):
 
 ```bash
 curl -s -X POST http://127.0.0.1:11111/netlox/v1/config/loadbalancer \
@@ -249,8 +253,9 @@ python3 -m sglang.launch_server --model <MODEL> --page-size 16 --dp-size 3 \
 ```
 
 Parity rules: `--page-size` ⇔ `kvBlockSize`, `--dp-size` ⇔ `kvDpRankCount`, event port ⇔
-`kvZmqPort`. Omit `kvHashAlgo` — the SGLang engine default applies. vLLM and SGLang VIPs
-coexist on one gateway.
+`kvZmqPort`. Omit `kvHashAlgo` — the SGLang engine default (`sha256_sglang`) applies;
+pinning vLLM's `"sha256_cbor"` here is rejected, because that contract would miss every
+block SGLang publishes. vLLM and SGLang VIPs coexist on one gateway.
 
 ▶ Runnable: [`cicd/sglang-loxilb-kvcache`](cicd/sglang-loxilb-kvcache).
 📖 Deep dive: [SGLang routing](docs/load-balancing/15-sglang-kv-cache-aware-routing.md) · [vs vLLM](docs/load-balancing/16-sglang-vs-vllm-routing-differences.md) · [config & tuning](docs/load-balancing/17-sglang-config-tuning.md).

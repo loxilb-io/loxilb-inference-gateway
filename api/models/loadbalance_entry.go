@@ -672,7 +672,7 @@ type LoadbalanceEntryServiceArguments struct {
 	// value for inactivity timeout (in seconds)
 	InactiveTimeOut int32 `json:"inactiveTimeOut,omitempty"`
 
-	// Token block size for KV hash computation. Must match vLLM's block_size configuration.
+	// Token block size for KV hash computation. Must match the engine's block granularity - vLLM --block-size, SGLang --page-size. A mismatch makes every hash miss.
 	// Minimum: 1
 	KvBlockSize int64 `json:"kvBlockSize,omitempty"`
 
@@ -685,20 +685,20 @@ type LoadbalanceEntryServiceArguments struct {
 	// Enum: [vllm sglang]
 	KvEngineType string `json:"kvEngineType,omitempty"`
 
-	// KV-cache exact routing mode: 0=off, 1=zmq (P/D role-partitioned), 2=nats(reserved), 3=zmq single-role (— all EPs subscribed, no P/D role split). Enables Tier 1.5 block-hash routing between Tier 1 (trie) and Tier 2 (min-load).
+	// KV-cache exact (Tier 1.5) routing mode. Selects the ENDPOINT TOPOLOGY only — the serving framework is chosen independently by kvEngineType, and every mode below works with either engine. 0 = off. 1 = zmq over a P/D role-partitioned pool: requires pd_disagg_mode=true (rejected otherwise) and endpoints tagged ep_role 1/2; only ep_role=1 (prefill) endpoints are subscribed and scored, and Tier 1.5 sits between Tier 1 (trie) and Tier 2 (min-load) in the P/D ladder. 2 = nats (reserved, not implemented). 3 = zmq single-role over a role-less pool: requires mode=4 (fullproxy) and pd_disagg_mode=false (both rejected otherwise); ALL endpoints are subscribed and scored. Mode 3 does NOT reproduce the P/D ladder — there is no Tier-0 session stickiness, no Tier-1 trie and no admission gate on this path; a Tier-1.5 miss falls back to the rule's own sel selector (CHWBL/RR/persist).
 	// Maximum: 3
 	// Minimum: 0
 	KvExactMode int64 `json:"kvExactMode,omitempty"`
 
-	// Hash algorithm for KV block matching. Must match vLLM's configured hash algorithm.
-	// Enum: [sha256_cbor xxhash_cbor]
+	// Block-hash contract used to match the prompt against the engine-published KV inventory. PREFER OMITTING THIS FIELD — when absent, the contract is derived from kvEngineType (vllm => sha256_cbor, sglang => sha256_sglang), which is always the coherent choice. An explicit value overrides that default and MUST match the engine, or every computed hash misses and Tier 1.5 is silently dead; incoherent pairs are therefore rejected at config time. vLLM engines: "sha256_cbor" (must equal --prefix-caching-hash-algo) or "xxhash_cbor". SGLang engines: "sha256_sglang" only — SGLang hashes parent||tokens raw (no CBOR, no NONE seed) and truncates to the FIRST 8 digest bytes, where vLLM CBOR-encodes and truncates to the LAST 8.
+	// Enum: [sha256_cbor xxhash_cbor sha256_sglang]
 	KvHashAlgo string `json:"kvHashAlgo,omitempty"`
 
 	// Seconds to wait after ZMQ subscriber connects before activating Tier 1.5 routing. Allows inventory to populate.
 	// Minimum: 0
 	KvWarmupSec int64 `json:"kvWarmupSec,omitempty"`
 
-	// ZMQ PUB socket port on vLLM prefill endpoints for KV cache events.
+	// Base ZMQ PUB socket port on the endpoints publishing KV-cache events. Which endpoints are subscribed depends on kvExactMode - mode 1 subscribes ep_role=1 (prefill) endpoints only, mode 3 subscribes every endpoint. With kvDpRankCount > 1, data-parallel rank N is subscribed at kvZmqPort+N.
 	// Maximum: 65535
 	// Minimum: 1
 	KvZmqPort int64 `json:"kvZmqPort,omitempty"`
@@ -711,7 +711,7 @@ type LoadbalanceEntryServiceArguments struct {
 	MaxStreamDurationSec int32 `json:"max_stream_duration_sec,omitempty"`
 
 	// value for NAT mode (0-DNAT,1-onearm, 2-fullnat, 3-dsr, 4-fullproxy, 5-hostonearm, 0-default)
-	// Enum: [0 1 2 3 4 5 6]
+	// Enum: [0 1 2 3 4 5]
 	Mode int32 `json:"mode,omitempty"`
 
 	// LB endpoint pool selection key for AI model routing (e.g. "llama-70b"); empty = wildcard pool (backward compatible)
@@ -1202,7 +1202,7 @@ var loadbalanceEntryServiceArgumentsTypeKvHashAlgoPropEnum []interface{}
 
 func init() {
 	var res []string
-	if err := json.Unmarshal([]byte(`["sha256_cbor","xxhash_cbor"]`), &res); err != nil {
+	if err := json.Unmarshal([]byte(`["sha256_cbor","xxhash_cbor","sha256_sglang"]`), &res); err != nil {
 		panic(err)
 	}
 	for _, v := range res {
@@ -1217,6 +1217,9 @@ const (
 
 	// LoadbalanceEntryServiceArgumentsKvHashAlgoXxhashCbor captures enum value "xxhash_cbor"
 	LoadbalanceEntryServiceArgumentsKvHashAlgoXxhashCbor string = "xxhash_cbor"
+
+	// LoadbalanceEntryServiceArgumentsKvHashAlgoSha256Sglang captures enum value "sha256_sglang"
+	LoadbalanceEntryServiceArgumentsKvHashAlgoSha256Sglang string = "sha256_sglang"
 )
 
 // prop value enum

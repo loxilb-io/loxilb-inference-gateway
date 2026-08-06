@@ -2614,6 +2614,53 @@ func kvEngineConfigValidate(engine string, dpRankCount uint16) error {
 	return nil
 }
 
+// kvHashAlgoEffective resolves the block-hash contract a rule actually runs.
+// It mirrors dpebpf_linux.go's resolution order EXACTLY (the single source of
+// truth for what the C data plane hashes with): an explicit kvHashAlgo always
+// wins; an absent one takes the engine default — "sglang" ⇒ "sha256_sglang",
+// "vllm"/absent ⇒ "sha256_cbor". Kept here so the config-time guard, the
+// subscriber's self-describing inventory dump and the data plane cannot drift.
+func kvHashAlgoEffective(algo, engine string) string {
+	if algo != "" {
+		return algo
+	}
+	if kvEngineEffective(engine) == "sglang" {
+		return "sha256_sglang"
+	}
+	return "sha256_cbor"
+}
+
+// kvHashAlgoValidate rejects a kvHashAlgo that cannot serve the rule's engine.
+//
+// The failure this prevents is silent and total: the C hasher picks its
+// contract from kv_hash_algo alone, so an engine/algo mismatch (e.g. an SGLang
+// rule pinned to "sha256_cbor" because the API spec used to advertise it as the
+// default) makes EVERY computed block hash miss the engine-published inventory.
+// Tier 1.5 then scores zero forever with no config-time signal — only the
+// [KV_ZEROHIT] watchdog eventually warns. The contracts are mutually exclusive:
+// sha256_sglang hashes parent||tokens raw and truncates to the FIRST 8 digest
+// bytes, where the vLLM cbor family CBOR-encodes and truncates to the LAST 8.
+//
+// An ABSENT algo is always accepted — that is the recommended shape, and
+// kvHashAlgoEffective derives the coherent contract from the engine.
+//
+// Pure function: unit-testable without a rule fixture (pkg/loxinet is CGO —
+// tests execute at the remote gate; kvEngineConfigValidate precedent).
+func kvHashAlgoValidate(algo, engine string) error {
+	switch algo {
+	case "":
+		return nil // engine default — coherent by construction
+	case "sha256_cbor", "xxhash_cbor", "sha256_sglang":
+	default:
+		return errors.New("kv-hash-algo must be one of \"sha256_cbor\", \"xxhash_cbor\", \"sha256_sglang\"")
+	}
+	if (kvEngineEffective(engine) == "sglang") != (algo == "sha256_sglang") {
+		return fmt.Errorf("kv-hash-algo %q is incompatible with kv-engine-type %q (omit kvHashAlgo to take the engine default %q)",
+			algo, kvEngineEffective(engine), kvHashAlgoEffective("", engine))
+	}
+	return nil
+}
+
 // kvEngineImmutabilityCheck is guard: kvEngineType on an existing
 // rule is IMMUTABLE — delete+recreate is the sanctioned path (a live engine
 // flip would silently re-key the whole Tier-1.5 hash space).
@@ -2911,9 +2958,28 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		}
 	}
 
+	// Mode-1 precondition, the sibling of the two mode-3 guards above. Tier 1.5
+	// for kv_exact_mode==1 is reachable ONLY from pd_select_prefill(), whose
+	// every call site sits inside the pd_disagg_enabled branch of the C endpoint
+	// selector — so on a rule without pd-disagg, mode 1 populates inventories and
+	// burns a subscriber goroutine per prefill EP while never influencing
+	// selection. Rejecting it at config time turns a silent no-op (the "legacy
+	// bring-up tooling" shape, doc 10 §6) into an actionable error.
+	if serv.KvExactMode == 1 && !serv.PDDisaggMode {
+		return RuleUnknownServiceErr, errors.New("kv-exact zmq mode requires pd_disagg_mode=true (use kvExactMode=3 for a single pool)")
+	}
+
 	// engine allowlist + DP rank bounds — covers
 	// both the create and update paths (everything below flows through here).
 	if err := kvEngineConfigValidate(serv.KvEngineType, serv.KvDpRankCount); err != nil {
+		return RuleUnknownServiceErr, err
+	}
+
+	// engine ⇔ hash-algo coherence. Placed beside the engine allowlist so create
+	// and update are both covered, and BEFORE the eRule lookup so an incoherent
+	// pair can never reach the data plane. An absent kvHashAlgo (the recommended
+	// shape) always passes.
+	if err := kvHashAlgoValidate(serv.KvHashAlgo, serv.KvEngineType); err != nil {
 		return RuleUnknownServiceErr, err
 	}
 
@@ -3560,7 +3626,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 			// Start subscriber for prefill EPs only (epRole == 1)
 			if ep.epRole == 1 {
 				for rank := uint16(0); rank < dpRanks; rank++ {
-					KvSubscriberStartRank(serviceID, i, rank, ep.xIP.String(), zmqPort+rank, r.kvHashAlgo)
+					KvSubscriberStartRank(serviceID, i, rank, ep.xIP.String(), zmqPort+rank, kvHashAlgoEffective(r.kvHashAlgo, r.kvEngineType))
 				}
 			}
 		}
@@ -3584,7 +3650,11 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		}
 		for _, i := range kvSubscriberTargets(serv.KvExactMode, lBActs.endPoints) {
 			for rank := uint16(0); rank < dpRanks; rank++ {
-				KvSubscriberStartRank(serviceID, i, rank, lBActs.endPoints[i].xIP.String(), zmqPort+rank, r.kvHashAlgo)
+				// The RESOLVED contract, not the raw field: an SGLang rule takes
+				// the documented shape (kvHashAlgo omitted), which would
+				// otherwise leave svc.algo empty and make the KV-inventory
+				// audit API self-describe as vLLM "sha256_cbor".
+				KvSubscriberStartRank(serviceID, i, rank, lBActs.endPoints[i].xIP.String(), zmqPort+rank, kvHashAlgoEffective(r.kvHashAlgo, r.kvEngineType))
 			}
 		}
 	}
