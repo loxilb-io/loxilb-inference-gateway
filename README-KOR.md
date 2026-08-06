@@ -128,11 +128,11 @@ docker run -u root --cap-add SYS_ADMIN --restart unless-stopped --privileged \
 | `pd_cache_aware_mode` | `true` = 캐시 어피니티 prefill 선택(트라이 기반) |
 | `ep_role` *(엔드포인트별)* | `1` = prefill 풀 · `2` = decode 풀 · 생략/`0` = 일반 |
 | `nixl_port` *(엔드포인트별)* | 해당 워커의 NIXL 사이드 채널 — 워커의 `VLLM_NIXL_SIDE_CHANNEL_PORT`와 일치해야 함 |
-| `kvExactMode` | 엔진 정확 KV 라우팅: `1` = P/D 토폴로지(vLLM) · `3` = 단일 풀(SGLang) |
-| `kvZmqPort` | 엔진 KV-cache 이벤트 스트림의 베이스 포트(`--kv-events-config` 엔드포인트) |
+| `kvExactMode` | 엔진 정확 KV 라우팅의 **토폴로지**(엔진이 아님 — 엔진은 `kvEngineType`): `1` = P/D 풀, `pd_disagg_mode: true` 필수 · `3` = 역할 없는 단일 풀, `mode: 4` 및 P/D 비활성 필수 |
+| `kvZmqPort` | 엔진 KV-cache 이벤트 스트림의 베이스 포트(`--kv-events-config` 엔드포인트); 랭크 *N*은 `kvZmqPort`+*N* |
 | `kvBlockSize` | vLLM `--block-size` / SGLang `--page-size`와 같아야 함 |
-| `kvHashAlgo` | block-hash 계약; vLLM은 `"sha256_cbor"`, SGLang은 생략(엔진 기본값) |
-| `kvEngineType` | `"sglang"`은 SGLang 계약을 선택(생성 후 불변) |
+| `kvHashAlgo` | block-hash 계약 — **생략하세요**. 엔진 기본값이 적용됩니다(`vllm` ⇒ `sha256_cbor`, `sglang` ⇒ `sha256_sglang`). vLLM의 `"xxhash_cbor"`를 고정할 때만 지정하며, `kvEngineType`과 모순되는 값은 거부됩니다 |
+| `kvEngineType` | `"vllm"`(기본값) 또는 `"sglang"` — block-hash 계약을 선택(생성 후 불변) |
 | `kvDpRankCount` | SGLang 데이터 병렬 랭크(= `--dp-size`); 랭크 *N*은 `kvZmqPort`+*N*에서 게시 |
 | `kvWarmupSec` | KV-exact 선택이 동작하기 전의 유예 기간 |
 | `sse_mode` | `true` = SSE 인식 스트리밍(스트림이 유휴 타임아웃을 견디고 `[DONE]` 감지); AI 게이트웨이 키/제한 적용도 활성화 |
@@ -180,9 +180,11 @@ TLS를 종료하려면 `"security": 1` 추가; HTTP 상태 프로브는 `"monito
 
 ▶ 실행 가능: [`cicd/vllm-httpproxy`](cicd/vllm-httpproxy) · [`cicd/vllm-fullproxy`](cicd/vllm-fullproxy) · WRR 변형 — 실제 CPU-vLLM 백엔드, GPU 불필요.
 📖 심화: [AI 게이트웨이 L7](docs/load-balancing/04-ai-gateway-l7.md), [KV-cache 인식 라우팅](docs/load-balancing/08-kv-cache-aware-routing.md).
-prefix 해싱 대신 vLLM의 KV-cache 이벤트 스트림으로 구동되는 **엔진 정확** KV 라우팅은
-사용 사례 2를 참조하세요 — P/D 토폴로지와 함께 동작합니다; SGLang은 단일 풀로 제공합니다
-(사용 사례 3).
+prefix 해싱 대신 엔진의 KV-cache 이벤트 스트림으로 구동되는 **엔진 정확** KV 라우팅은
+P/D 토폴로지(`kvExactMode: 1`)의 경우 사용 사례 2를, 역할 없는 단일 풀
+(`kvExactMode: 3`)의 경우 사용 사례 3을 참조하세요. 두 모드는 엔진이 아니라 토폴로지이며
+어느 쪽이든 `kvEngineType: "vllm"` 또는 `"sglang"`을 받습니다. 다만 실제 제공되고 CI로
+검증된 조합은 모드 1의 vLLM과 모드 3의 SGLang입니다.
 
 ### 사용 사례 2 — vLLM Prefill/Decode (P/D) 분리
 
@@ -218,8 +220,9 @@ vllm serve <MODEL> --port 8000 \
 
 규칙별 심화: `"pd_cache_aware_mode": true`는 캐시 어피니티 prefill 선택을 추가하고,
 `"kvExactMode": 1, "kvZmqPort": 5557, "kvHashAlgo": "sha256_cbor", "kvBlockSize": 16`은
-ZMQ 이벤트 스트림으로부터 **엔진 정확 KV 라우팅**을 활성화합니다(모든 워커에서
-`--prefix-caching-hash-algo sha256_cbor`, `--block-size` = `kvBlockSize`,
+ZMQ 이벤트 스트림으로부터 **엔진 정확 KV 라우팅**을 활성화합니다(`kvExactMode: 1`은 이
+`pd_disagg_mode: true` 형태에서만 유효합니다 — 단일 풀에서는 `kvExactMode: 3`을 사용하세요.
+모든 워커에서 `--prefix-caching-hash-algo sha256_cbor`, `--block-size` = `kvBlockSize`,
 `PYTHONHASHSEED=0` 패리티 필요). `"session_header_name": "X-Conversation-Id"`는 대화를
 고정합니다.
 
@@ -229,9 +232,9 @@ ZMQ 이벤트 스트림으로부터 **엔진 정확 KV 라우팅**을 활성화�
 ### 사용 사례 3 — SGLang 캐시 인식 라우팅
 
 P/D 역할이 필요 없는 평범한 단일 풀에서, SGLang의 radix-tree 캐시에 대한 엔진 정확 KV
-라우팅. `kvExactMode: 3`은 단일 풀 경로를 선택하고, `kvEngineType: "sglang"`은 SGLang
-해시 계약을 설정하며, `kvDpRankCount`는 데이터 병렬 랭크당 하나의 ZMQ 피드
-(`kvZmqPort + rank`)를 팬인합니다:
+라우팅. `kvExactMode: 3`은 단일 풀 **토폴로지**를 선택하고(`mode: 4`이고 `pd_disagg_mode`가
+꺼져 있지 않으면 거부됩니다), `kvEngineType: "sglang"`은 **SGLang 해시 계약**을 설정하며,
+`kvDpRankCount`는 데이터 병렬 랭크당 하나의 ZMQ 피드(`kvZmqPort + rank`)를 팬인합니다:
 
 ```bash
 curl -s -X POST http://127.0.0.1:11111/netlox/v1/config/loadbalancer \
@@ -253,8 +256,9 @@ python3 -m sglang.launch_server --model <MODEL> --page-size 16 --dp-size 3 \
 ```
 
 패리티 규칙: `--page-size` ⇔ `kvBlockSize`, `--dp-size` ⇔ `kvDpRankCount`, 이벤트 포트 ⇔
-`kvZmqPort`. `kvHashAlgo`는 생략하세요 — SGLang 엔진 기본값이 적용됩니다. vLLM과 SGLang
-VIP는 하나의 게이트웨이에서 공존합니다.
+`kvZmqPort`. `kvHashAlgo`는 생략하세요 — SGLang 엔진 기본값(`sha256_sglang`)이 적용됩니다.
+여기에 vLLM의 `"sha256_cbor"`를 지정하면 거부됩니다. 그 계약으로는 SGLang이 게시하는 모든
+블록을 놓치기 때문입니다. vLLM과 SGLang VIP는 하나의 게이트웨이에서 공존합니다.
 
 ▶ 실행 가능: [`cicd/sglang-loxilb-kvcache`](cicd/sglang-loxilb-kvcache).
 📖 심화: [SGLang 라우팅](docs/load-balancing/15-sglang-kv-cache-aware-routing.md) · [vLLM과의 비교](docs/load-balancing/16-sglang-vs-vllm-routing-differences.md) · [구성 및 튜닝](docs/load-balancing/17-sglang-config-tuning.md).

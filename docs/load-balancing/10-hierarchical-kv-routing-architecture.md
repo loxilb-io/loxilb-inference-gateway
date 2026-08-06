@@ -389,8 +389,11 @@ staging, no hash-contract parity), which is exactly the trade. Choose single-poo
 cannot run P/D disaggregation; choose the P/D ladder with Tier 1.5 when you can.
 
 > **Legacy note:** older single-pool bring-up tooling registered rules with `kvExactMode:1`.
-> On the current tree that populates inventories but cannot influence selection (§2).
-> Use `sel:8`/`sel:10` for single-pool cache affinity.
+> That populated inventories but could not influence selection (§2), so it is now **rejected
+> at rule POST time** — `kv-exact zmq mode requires pd_disagg_mode=true (use kvExactMode=3
+> for a single pool)`. For a role-less pool use `kvExactMode:3` (engine-exact,
+> [doc 15](15-sglang-kv-cache-aware-routing.md)) or `sel:8`/`sel:10` for approximate
+> prefix-hash cache affinity.
 
 ---
 

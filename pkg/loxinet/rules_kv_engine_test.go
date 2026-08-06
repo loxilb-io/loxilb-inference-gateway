@@ -165,3 +165,84 @@ func TestKvEngineMixDetect(t *testing.T) {
 		t.Errorf("sglang vs none: want no mix, got (%q,%v)", other, mixed)
 	}
 }
+
+// TestKvHashAlgoEffective pins the engine⇒hash-algo default resolution against
+// dpebpf_linux.go's branch order, which is the single source of truth for what
+// the C hasher actually runs. If the two ever drift, an SGLang rule silently
+// hashes with the vLLM CBOR contract and Tier 1.5 scores zero forever.
+func TestKvHashAlgoEffective(t *testing.T) {
+	cases := []struct {
+		algo, engine, want string
+	}{
+		// Absent algo takes the engine default ("" ≡ "vllm").
+		{"", "", "sha256_cbor"},
+		{"", "vllm", "sha256_cbor"},
+		{"", "sglang", "sha256_sglang"},
+		// An explicit algo always wins over the engine default.
+		{"xxhash_cbor", "vllm", "xxhash_cbor"},
+		{"sha256_cbor", "", "sha256_cbor"},
+		{"sha256_sglang", "sglang", "sha256_sglang"},
+	}
+	for _, c := range cases {
+		if got := kvHashAlgoEffective(c.algo, c.engine); got != c.want {
+			t.Errorf("kvHashAlgoEffective(%q, %q) = %q, want %q", c.algo, c.engine, got, c.want)
+		}
+	}
+}
+
+// TestKvHashAlgoValidateCoherence — an explicit kvHashAlgo that contradicts
+// kvEngineType must be REJECTED at config time. Before this guard the pair was
+// accepted and every computed block hash missed the engine-published inventory,
+// with no signal until the [KV_ZEROHIT] watchdog fired. The contracts are
+// mutually exclusive: sha256_sglang hashes parent||tokens raw and truncates to
+// the FIRST 8 digest bytes; the cbor family CBOR-encodes and takes the LAST 8.
+func TestKvHashAlgoValidateCoherence(t *testing.T) {
+	// Accepted — including every shape the shipped cicd scenarios POST.
+	accept := []struct{ algo, engine string }{
+		{"", ""},                    // default rule, no KV fields
+		{"", "vllm"},                // explicit vllm, engine default
+		{"", "sglang"},              // cicd/sglang-loxilb-kvcache rule B
+		{"sha256_cbor", ""},         // cicd/vllm-kvcache-routing-cpu
+		{"sha256_cbor", "vllm"},     // same, engine spelled out
+		{"xxhash_cbor", "vllm"},     // vLLM's other contract
+		{"sha256_sglang", "sglang"}, // SGLang contract pinned explicitly
+	}
+	for _, c := range accept {
+		if err := kvHashAlgoValidate(c.algo, c.engine); err != nil {
+			t.Errorf("algo=%q engine=%q: want accept, got %v", c.algo, c.engine, err)
+		}
+	}
+
+	// Rejected — the incoherent pairs, and the rejection must name BOTH the
+	// offending algo and the engine so the operator can act on it.
+	reject := []struct{ algo, engine string }{
+		{"sha256_cbor", "sglang"}, // the API-spec-default trap
+		{"xxhash_cbor", "sglang"}, // the other cbor contract
+		{"sha256_sglang", "vllm"}, // mirror image
+		{"sha256_sglang", ""},     // "" ≡ vllm
+	}
+	for _, c := range reject {
+		err := kvHashAlgoValidate(c.algo, c.engine)
+		if err == nil {
+			t.Fatalf("algo=%q engine=%q: want reject, got nil", c.algo, c.engine)
+		}
+		if !strings.Contains(err.Error(), c.algo) ||
+			!strings.Contains(err.Error(), kvEngineEffective(c.engine)) {
+			t.Errorf("algo=%q engine=%q: rejection must name both, got %q", c.algo, c.engine, err.Error())
+		}
+	}
+}
+
+// TestKvHashAlgoValidateAllowlist — an unknown kvHashAlgo is rejected outright
+// (never silently coerced), mirroring the kvEngineType allowlist.
+func TestKvHashAlgoValidateAllowlist(t *testing.T) {
+	for _, algo := range []string{"sha256", "SHA256_CBOR", "sha256_cbor ", "md5", "xxhash"} {
+		err := kvHashAlgoValidate(algo, "vllm")
+		if err == nil {
+			t.Fatalf("algo %q: want reject, got nil", algo)
+		}
+		if !strings.Contains(err.Error(), "sha256_sglang") {
+			t.Errorf("algo %q: rejection must name the allowed values, got %q", algo, err.Error())
+		}
+	}
+}

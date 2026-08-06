@@ -123,8 +123,9 @@ Key design properties:
 
 ### 3.1 Control path — rule creation
 
-1. Operator POSTs a loadbalancer rule with `kvExactMode: 1` plus endpoints carrying
-   `epRole: 1` (prefill) / `epRole: 2` (decode) (§6).
+1. Operator POSTs a loadbalancer rule with `kvExactMode: 1` and `pd_disagg_mode: true`
+   (required — mode 1 is the P/D entry into Tier 1.5 and is rejected without it), plus
+   endpoints carrying `epRole: 1` (prefill) / `epRole: 2` (decode) (§6).
 2. `pkg/loxinet/rules.go:3410-3415` — for every `epRole==1` endpoint, calls
    `KvSubscriberStart(serviceID=ruleNum, epIdx, epIP, kvZmqPort, kvHashAlgo)`.
 3. `pkg/loxinet/dpebpf_linux.go` copies `kv_exact_mode / kv_hash_algo / kv_block_size /
@@ -434,9 +435,11 @@ flowchart TD
 ```jsonc
 {
   "serviceArguments": {
-    "kvExactMode": 1,            // 0=off, 1=zmq (2=nats reserved)
+    "mode": 4,                   // fullproxy — required
+    "pd_disagg_mode": true,      // REQUIRED for kvExactMode 1 (validated); use mode 3 for a single pool
+    "kvExactMode": 1,            // 0=off, 1=zmq P/D, 2=nats (reserved), 3=zmq single-role
     "kvZmqPort": 5557,           // vLLM KV-event PUB port (default 5557)
-    "kvHashAlgo": "sha256_cbor", // or "xxhash_cbor" — MUST match vLLM
+    "kvHashAlgo": "sha256_cbor", // or "xxhash_cbor" — MUST match vLLM (omit to take the engine default)
     "kvBlockSize": 16,           // MUST match vLLM --block-size
     "kvWarmupSec": 30            // Guard-B window after subscriber start
   },
@@ -504,6 +507,8 @@ build flags — `max_jobs=4`, `VLLM_CPU_AMXBF16=0`, `--dtype=float32`, `tcp://*:
    ```jsonc
    {
      "serviceArguments": {
+       "mode": 4,
+       "pd_disagg_mode": true,       // REQUIRED for kvExactMode 1 (validated)
        "kvExactMode": 1,
        "kvZmqPort": 5558,            // this model's vLLM PUB port (distinct per deployment)
        "kvHashAlgo": "sha256_cbor",  // MUST match this vLLM version's hashing
