@@ -575,6 +575,38 @@ make build          # eBPF dataplane (submodule) + swagger models (first run, vi
 `api/models`/`api/restapi` from `api/swagger.yml` with dockerized go-swagger 0.30.3 — only
 when missing), then `go build` → the `./loxilb` binary.
 
+#### Full inference-gateway feature build
+
+A plain `make build` produces a working gateway, but several inference-gateway features are
+compiled **out**. The official Ubuntu 24.04 image ([`Dockerfile.u24`](Dockerfile.u24)) builds
+with:
+
+```bash
+make HAVE_HTTP_TRACE=1 HAVE_L4_TRACE=1 HAVE_MTLS=1 EXTRA_CFLAGS="-DHAVE_L4_TRACE"
+```
+
+| Flag | Enables | Default |
+|---|---|---|
+| `HAVE_MTLS=1` | Frontend/backend mTLS — Go tag `mtls` + `-DHAVE_MTLS=1` | **on** (`HAVE_MTLS ?= 1`); opt out with `make HAVE_MTLS=` |
+| `HAVE_HTTP_TRACE=1` | HTTP/HTTPS request tracing (`lxb_ring` transport in the C data path) | off |
+| `HAVE_L4_TRACE=1` **and** `EXTRA_CFLAGS="-DHAVE_L4_TRACE"` | L4 flow tracing and span assembly — Go tag `l4trace` | off |
+| `HAVE_DOCA=1` | BlueField DPU offload — Go tag `doca` (see also `make dpu`) | off |
+| `HAVE_DP_DPU_SLIM=1` | DPU slim `dp_proxy_tacts` layout | off |
+
+Two things that are easy to get wrong:
+
+- **L4 tracing needs both halves.** `HAVE_L4_TRACE=1` sets the Go build tag; `EXTRA_CFLAGS="-DHAVE_L4_TRACE"` turns it on in the C data path. Setting only one yields a half-enabled build.
+- **Always set feature flags on the top-level `make`.** `HAVE_MTLS` is deliberately exported to the `loxilb-ebpf` sub-make because it changes the `dp_proxy_tacts` layout shared by the cgo Go binary and `libloxilbdp.a`. Building the submodule separately with different flags gives a silent ABI mismatch that no `_Static_assert` can catch.
+
+To confirm what actually got compiled in, `make` echoes the resulting Go build tags on the
+last line of the build:
+
+```
+Built with tags: -tags l4trace,mtls
+```
+
+A plain `make build` prints `Built with tags: -tags mtls` — mTLS only.
+
 Run it directly on the host:
 
 ```bash
@@ -614,15 +646,6 @@ make docker-rp      # docker-run + build + docker cp ./loxilb into the running c
 ```
 
 ### Tests
-
-```bash
-make test                      # Go unit tests
-go test ./pkg/loxinet/         # control-plane tests (KV routing, P/D, subscriber, …)
-make test_pd                   # P/D sockproxy dataplane suite (C)
-make test_pd_cache_aware       # cache-aware P/D suite
-make test_sse test_request_id  # SSE / request-id dataplane suites
-make -C loxilb-ebpf/common test_kv   # KV block-hash parity vectors (vLLM + SGLang)
-```
 
 The self-contained AI scenarios under [`cicd/`](cicd/) (previous section) are the
 integration layer — CI runs them in

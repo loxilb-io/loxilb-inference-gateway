@@ -570,7 +570,7 @@ make test                      # Go unit tests
 go test ./pkg/loxinet/         # control-plane tests (KV routing, P/D, subscriber, …)
 make test_pd                   # P/D sockproxy dataplane suite (C)
 make test_pd_cache_aware       # cache-aware P/D suite
-make test_sse test_request_id  # SSE / request-id dataplane suites
+make test_request_id           # request-id dataplane suite
 make -C loxilb-ebpf/common test_kv   # KV block-hash parity vectors (vLLM + SGLang)
 ```
 
