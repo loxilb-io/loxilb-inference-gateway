@@ -172,9 +172,12 @@ func driveSubscriberLoop(t *testing.T, svc *kvServiceState, epIdx int, steps []r
 	fake := &fakeKvSub{t: t, steps: steps, cancel: cancel}
 
 	done := make(chan struct{})
+	// Resolved in the parent, as production does under svc.mu (#42).
+	inv := svc.inventories[epIdx]
+	serviceID := svc.serviceID
 	go func() {
 		// replay=nil mirrors the production call site exactly (: no replay client).
-		runKvSubscriberLoop(ctx, epIdx, svc, fake, nil, "inproc://test")
+		runKvSubscriberLoop(ctx, epIdx, serviceID, inv, fake, nil, "inproc://test")
 		close(done)
 	}()
 

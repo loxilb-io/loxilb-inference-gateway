@@ -132,9 +132,15 @@ func (c *chanKvSub) feed(t *testing.T, step recvStep) {
 // teardown observable).
 func startRankLoop(ctx context.Context, svc *kvServiceState, epIdx int, rank uint16, sub KvEventSource) chan struct{} {
 	done := make(chan struct{})
+	// Resolve the inventory in the PARENT goroutine, mirroring production
+	// (KvSubscriberStartRank looks it up under svc.mu before spawning). Reading
+	// svc.inventories inside the goroutine instead is the data race in #42:
+	// it runs concurrently with the delete in KvSubscriberStopAll.
+	inv := svc.inventories[epIdx]
+	serviceID := svc.serviceID
 	go func() {
 		// replay=nil mirrors production (: no replay client).
-		runKvSubscriberLoopRank(ctx, epIdx, rank, svc, sub, nil, "inproc://multirank")
+		runKvSubscriberLoopRank(ctx, epIdx, rank, serviceID, inv, sub, nil, "inproc://multirank")
 		close(done)
 	}()
 	return done
