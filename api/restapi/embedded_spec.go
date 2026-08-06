@@ -13104,7 +13104,7 @@ func init() {
               "format": "int32"
             },
             "kvBlockSize": {
-              "description": "Token block size for KV hash computation. Must match vLLM's block_size configuration.",
+              "description": "Token block size for KV hash computation. Must match the engine's block granularity - vLLM --block-size, SGLang --page-size. A mismatch makes every hash miss.",
               "type": "integer",
               "format": "int64",
               "default": 16,
@@ -13131,7 +13131,7 @@ func init() {
               "x-nullable": false
             },
             "kvExactMode": {
-              "description": "KV-cache exact routing mode: 0=off, 1=zmq (P/D role-partitioned), 2=nats(reserved), 3=zmq single-role (— all EPs subscribed, no P/D role split). Enables Tier 1.5 block-hash routing between Tier 1 (trie) and Tier 2 (min-load).",
+              "description": "KV-cache exact (Tier 1.5) routing mode. Selects the ENDPOINT TOPOLOGY only — the serving framework is chosen independently by kvEngineType, and every mode below works with either engine. 0 = off. 1 = zmq over a P/D role-partitioned pool: requires pd_disagg_mode=true (rejected otherwise) and endpoints tagged ep_role 1/2; only ep_role=1 (prefill) endpoints are subscribed and scored, and Tier 1.5 sits between Tier 1 (trie) and Tier 2 (min-load) in the P/D ladder. 2 = nats (reserved, not implemented). 3 = zmq single-role over a role-less pool: requires mode=4 (fullproxy) and pd_disagg_mode=false (both rejected otherwise); ALL endpoints are subscribed and scored. Mode 3 does NOT reproduce the P/D ladder — there is no Tier-0 session stickiness, no Tier-1 trie and no admission gate on this path; a Tier-1.5 miss falls back to the rule's own sel selector (CHWBL/RR/persist).",
               "type": "integer",
               "format": "int64",
               "default": 0,
@@ -13139,12 +13139,12 @@ func init() {
               "x-nullable": false
             },
             "kvHashAlgo": {
-              "description": "Hash algorithm for KV block matching. Must match vLLM's configured hash algorithm.",
+              "description": "Block-hash contract used to match the prompt against the engine-published KV inventory. PREFER OMITTING THIS FIELD — when absent, the contract is derived from kvEngineType (vllm =\u003e sha256_cbor, sglang =\u003e sha256_sglang), which is always the coherent choice. An explicit value overrides that default and MUST match the engine, or every computed hash misses and Tier 1.5 is silently dead; incoherent pairs are therefore rejected at config time. vLLM engines: \"sha256_cbor\" (must equal --prefix-caching-hash-algo) or \"xxhash_cbor\". SGLang engines: \"sha256_sglang\" only — SGLang hashes parent||tokens raw (no CBOR, no NONE seed) and truncates to the FIRST 8 digest bytes, where vLLM CBOR-encodes and truncates to the LAST 8.",
               "type": "string",
-              "default": "sha256_cbor",
               "enum": [
                 "sha256_cbor",
-                "xxhash_cbor"
+                "xxhash_cbor",
+                "sha256_sglang"
               ],
               "x-nullable": false
             },
@@ -13156,7 +13156,7 @@ func init() {
               "x-nullable": false
             },
             "kvZmqPort": {
-              "description": "ZMQ PUB socket port on vLLM prefill endpoints for KV cache events.",
+              "description": "Base ZMQ PUB socket port on the endpoints publishing KV-cache events. Which endpoints are subscribed depends on kvExactMode - mode 1 subscribes ep_role=1 (prefill) endpoints only, mode 3 subscribes every endpoint. With kvDpRankCount \u003e 1, data-parallel rank N is subscribed at kvZmqPort+N.",
               "type": "integer",
               "format": "int64",
               "default": 5557,
@@ -28993,7 +28993,7 @@ func init() {
               "format": "int32"
             },
             "kvBlockSize": {
-              "description": "Token block size for KV hash computation. Must match vLLM's block_size configuration.",
+              "description": "Token block size for KV hash computation. Must match the engine's block granularity - vLLM --block-size, SGLang --page-size. A mismatch makes every hash miss.",
               "type": "integer",
               "format": "int64",
               "default": 16,
@@ -29020,7 +29020,7 @@ func init() {
               "x-nullable": false
             },
             "kvExactMode": {
-              "description": "KV-cache exact routing mode: 0=off, 1=zmq (P/D role-partitioned), 2=nats(reserved), 3=zmq single-role (— all EPs subscribed, no P/D role split). Enables Tier 1.5 block-hash routing between Tier 1 (trie) and Tier 2 (min-load).",
+              "description": "KV-cache exact (Tier 1.5) routing mode. Selects the ENDPOINT TOPOLOGY only — the serving framework is chosen independently by kvEngineType, and every mode below works with either engine. 0 = off. 1 = zmq over a P/D role-partitioned pool: requires pd_disagg_mode=true (rejected otherwise) and endpoints tagged ep_role 1/2; only ep_role=1 (prefill) endpoints are subscribed and scored, and Tier 1.5 sits between Tier 1 (trie) and Tier 2 (min-load) in the P/D ladder. 2 = nats (reserved, not implemented). 3 = zmq single-role over a role-less pool: requires mode=4 (fullproxy) and pd_disagg_mode=false (both rejected otherwise); ALL endpoints are subscribed and scored. Mode 3 does NOT reproduce the P/D ladder — there is no Tier-0 session stickiness, no Tier-1 trie and no admission gate on this path; a Tier-1.5 miss falls back to the rule's own sel selector (CHWBL/RR/persist).",
               "type": "integer",
               "format": "int64",
               "default": 0,
@@ -29029,12 +29029,12 @@ func init() {
               "x-nullable": false
             },
             "kvHashAlgo": {
-              "description": "Hash algorithm for KV block matching. Must match vLLM's configured hash algorithm.",
+              "description": "Block-hash contract used to match the prompt against the engine-published KV inventory. PREFER OMITTING THIS FIELD — when absent, the contract is derived from kvEngineType (vllm =\u003e sha256_cbor, sglang =\u003e sha256_sglang), which is always the coherent choice. An explicit value overrides that default and MUST match the engine, or every computed hash misses and Tier 1.5 is silently dead; incoherent pairs are therefore rejected at config time. vLLM engines: \"sha256_cbor\" (must equal --prefix-caching-hash-algo) or \"xxhash_cbor\". SGLang engines: \"sha256_sglang\" only — SGLang hashes parent||tokens raw (no CBOR, no NONE seed) and truncates to the FIRST 8 digest bytes, where vLLM CBOR-encodes and truncates to the LAST 8.",
               "type": "string",
-              "default": "sha256_cbor",
               "enum": [
                 "sha256_cbor",
-                "xxhash_cbor"
+                "xxhash_cbor",
+                "sha256_sglang"
               ],
               "x-nullable": false
             },
@@ -29047,7 +29047,7 @@ func init() {
               "x-nullable": false
             },
             "kvZmqPort": {
-              "description": "ZMQ PUB socket port on vLLM prefill endpoints for KV cache events.",
+              "description": "Base ZMQ PUB socket port on the endpoints publishing KV-cache events. Which endpoints are subscribed depends on kvExactMode - mode 1 subscribes ep_role=1 (prefill) endpoints only, mode 3 subscribes every endpoint. With kvDpRankCount \u003e 1, data-parallel rank N is subscribed at kvZmqPort+N.",
               "type": "integer",
               "format": "int64",
               "default": 5557,
@@ -29611,7 +29611,7 @@ func init() {
           "format": "int32"
         },
         "kvBlockSize": {
-          "description": "Token block size for KV hash computation. Must match vLLM's block_size configuration.",
+          "description": "Token block size for KV hash computation. Must match the engine's block granularity - vLLM --block-size, SGLang --page-size. A mismatch makes every hash miss.",
           "type": "integer",
           "format": "int64",
           "default": 16,
@@ -29638,7 +29638,7 @@ func init() {
           "x-nullable": false
         },
         "kvExactMode": {
-          "description": "KV-cache exact routing mode: 0=off, 1=zmq (P/D role-partitioned), 2=nats(reserved), 3=zmq single-role (— all EPs subscribed, no P/D role split). Enables Tier 1.5 block-hash routing between Tier 1 (trie) and Tier 2 (min-load).",
+          "description": "KV-cache exact (Tier 1.5) routing mode. Selects the ENDPOINT TOPOLOGY only — the serving framework is chosen independently by kvEngineType, and every mode below works with either engine. 0 = off. 1 = zmq over a P/D role-partitioned pool: requires pd_disagg_mode=true (rejected otherwise) and endpoints tagged ep_role 1/2; only ep_role=1 (prefill) endpoints are subscribed and scored, and Tier 1.5 sits between Tier 1 (trie) and Tier 2 (min-load) in the P/D ladder. 2 = nats (reserved, not implemented). 3 = zmq single-role over a role-less pool: requires mode=4 (fullproxy) and pd_disagg_mode=false (both rejected otherwise); ALL endpoints are subscribed and scored. Mode 3 does NOT reproduce the P/D ladder — there is no Tier-0 session stickiness, no Tier-1 trie and no admission gate on this path; a Tier-1.5 miss falls back to the rule's own sel selector (CHWBL/RR/persist).",
           "type": "integer",
           "format": "int64",
           "default": 0,
@@ -29647,12 +29647,12 @@ func init() {
           "x-nullable": false
         },
         "kvHashAlgo": {
-          "description": "Hash algorithm for KV block matching. Must match vLLM's configured hash algorithm.",
+          "description": "Block-hash contract used to match the prompt against the engine-published KV inventory. PREFER OMITTING THIS FIELD — when absent, the contract is derived from kvEngineType (vllm =\u003e sha256_cbor, sglang =\u003e sha256_sglang), which is always the coherent choice. An explicit value overrides that default and MUST match the engine, or every computed hash misses and Tier 1.5 is silently dead; incoherent pairs are therefore rejected at config time. vLLM engines: \"sha256_cbor\" (must equal --prefix-caching-hash-algo) or \"xxhash_cbor\". SGLang engines: \"sha256_sglang\" only — SGLang hashes parent||tokens raw (no CBOR, no NONE seed) and truncates to the FIRST 8 digest bytes, where vLLM CBOR-encodes and truncates to the LAST 8.",
           "type": "string",
-          "default": "sha256_cbor",
           "enum": [
             "sha256_cbor",
-            "xxhash_cbor"
+            "xxhash_cbor",
+            "sha256_sglang"
           ],
           "x-nullable": false
         },
@@ -29665,7 +29665,7 @@ func init() {
           "x-nullable": false
         },
         "kvZmqPort": {
-          "description": "ZMQ PUB socket port on vLLM prefill endpoints for KV cache events.",
+          "description": "Base ZMQ PUB socket port on the endpoints publishing KV-cache events. Which endpoints are subscribed depends on kvExactMode - mode 1 subscribes ep_role=1 (prefill) endpoints only, mode 3 subscribes every endpoint. With kvDpRankCount \u003e 1, data-parallel rank N is subscribed at kvZmqPort+N.",
           "type": "integer",
           "format": "int64",
           "default": 5557,

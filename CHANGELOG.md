@@ -21,9 +21,11 @@ binary behaves exactly like upstream loxilb.
 - **KV-cache-aware routing** for LLM serving fleets: cache-locality-aware
   endpoint selection driven by the serving engines' native contracts
   (vLLM `--kv-events-config` ZMQ events; SGLang radix-cache semantics).
-- **Prefill/decode (P·D) disaggregation** routing, including vLLM KV-exact
-  mode over a prefill/decode topology (`kvExactMode:1` + endpoint role) and
-  single-role KV-exact for SGLang (`kvExactMode:3`).
+- **Prefill/decode (P·D) disaggregation** routing, including KV-exact mode over
+  a prefill/decode topology (`kvExactMode:1` + endpoint role, as shipped for
+  vLLM) and single-role KV-exact over a role-less pool (`kvExactMode:3`, as
+  shipped for SGLang). `kvExactMode` selects the topology; the serving engine
+  and its block-hash contract are selected independently by `kvEngineType`.
 - **Consistent-hash cache routing** (CHWBL) for aggregated vLLM pools.
 - **MCP gateway** support: session-sticky routing for Model Context Protocol
   server pools.
