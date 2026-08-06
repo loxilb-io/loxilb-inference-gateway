@@ -565,11 +565,11 @@ const kvReconnectFailBackoff = 5 * time.Second
 //	loxilb_kv_subscriber_connected{service,ep}     — 1 when connected, 0 during rebuild.
 //	loxilb_kv_subscriber_recv_error_total{...}     — every recv error.
 //	loxilb_kv_subscriber_reconnect_total{...}      — every successful rebuild.
-func runKvSubscriberLoop(ctx context.Context, epIdx int, svcState *kvServiceState,
+func runKvSubscriberLoop(ctx context.Context, epIdx int, serviceID uint32, inv *kvInventory,
 	sub KvEventSource, replay kvZmqReplayRequester, endpoint string) {
 	// thin rank-0 wrapper — every pre- caller and test
 	// drives the single-rank path byte-identically through the rank loop.
-	runKvSubscriberLoopRank(ctx, epIdx, 0, svcState, sub, replay, endpoint)
+	runKvSubscriberLoopRank(ctx, epIdx, 0, serviceID, inv, sub, replay, endpoint)
 }
 
 // runKvSubscriberLoopRank is the per-(EP, DP rank) subscriber loop body
@@ -583,14 +583,22 @@ func runKvSubscriberLoop(ctx context.Context, epIdx int, svcState *kvServiceStat
 //     (rebuildKvSubscriber's informational log, seed helpers).
 //   - ranks >0 start cold at -1 and never touch inv.lastSeq — their decisions
 //     key exclusively on their own stream.
-func runKvSubscriberLoopRank(ctx context.Context, epIdx int, rank uint16, svcState *kvServiceState,
-	sub KvEventSource, replay kvZmqReplayRequester, endpoint string) {
-	inv := svcState.inventories[epIdx]
+// The loop deliberately takes the resolved inventory and the serviceID rather
+// than the *kvServiceState it belongs to. It used to do `svcState.inventories[epIdx]`
+// here, which is an unsynchronized map read racing `delete(svc.inventories, ...)`
+// in KvSubscriberStopAll — the goroutine is SPAWNED under svc.mu but never takes
+// the lock itself, so there is no happens-before with a concurrent teardown.
+// Resolving the inventory at the call site (which already holds svc.mu and has
+// already looked it up) keeps the hot path lock-free and leaves this goroutine
+// holding no reference to shared mutable service state at all, so the race is
+// structurally impossible rather than merely avoided.
+func runKvSubscriberLoopRank(ctx context.Context, epIdx int, rank uint16, serviceID uint32,
+	inv *kvInventory, sub KvEventSource, replay kvZmqReplayRequester, endpoint string) {
 	if inv == nil {
 		return
 	}
 
-	svcLabel := fmt.Sprintf("%d", svcState.serviceID)
+	svcLabel := fmt.Sprintf("%d", serviceID)
 	epLabel := fmt.Sprintf("%d", epIdx)
 
 	// Initial connected state — the caller already dialed successfully.
@@ -1004,7 +1012,9 @@ func KvSubscriberStartRank(serviceID uint32, epIdx int, rank uint16, epIP string
 		// `addr` is passed for on-recv-error socket rebuild — go-zeromq/zmq4
 		// does not auto-reconnect after publisher restart, so the loop needs
 		// the endpoint to redial when it detects a dead socket.
-		runKvSubscriberLoopRank(ctx, epIdx, rank, svc, sub, nil, addr)
+		// inv was resolved above under svc.mu, before this goroutine was
+		// spawned — passing it in keeps the teardown-racy map read out of here.
+		runKvSubscriberLoopRank(ctx, epIdx, rank, serviceID, inv, sub, nil, addr)
 	}()
 }
 
