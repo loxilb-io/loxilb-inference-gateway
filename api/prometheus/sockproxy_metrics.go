@@ -906,6 +906,35 @@ func KvTier15SpillValue(epIdx string) float64 {
 	return *m.Counter.Value
 }
 
+// KvSubscriberSeriesCount returns how many loxilb_kv_subscriber_connected
+// children currently exist for the given service label. Test-only getter
+// (mirrors KvTier15SpillValue) — reads via Collect/dto.Metric.Write to keep
+// prometheus/testutil out of the loxinet import graph.
+//
+// Exists to pin the series-lifecycle guarantee: after a service is torn down,
+// ZERO children may remain. A resurrected connected=0 child is invisible to
+// every other assertion but permanently reds out the "KV subscribers up" panel.
+func KvSubscriberSeriesCount(service string) int {
+	ch := make(chan prometheus.Metric, 256)
+	go func() {
+		kvSubscriberConnected.Collect(ch)
+		close(ch)
+	}()
+	n := 0
+	for metric := range ch {
+		m := &dto.Metric{}
+		if err := metric.Write(m); err != nil {
+			continue
+		}
+		for _, l := range m.Label {
+			if l.GetName() == "service" && l.GetValue() == service {
+				n++
+			}
+		}
+	}
+	return n
+}
+
 // SetKvSubscriberConnected sets the subscriber-connected gauge for (service, ep).
 // connected=1 when the ZMQ SUB socket is up and ingesting events; 0 during
 // disconnect/rebuild. Called from ai_kv_subscriber.go on socket lifecycle

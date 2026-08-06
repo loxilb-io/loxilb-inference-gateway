@@ -594,8 +594,8 @@ func runKvSubscriberLoopRank(ctx context.Context, epIdx int, rank uint16, svcSta
 	epLabel := fmt.Sprintf("%d", epIdx)
 
 	// Initial connected state — the caller already dialed successfully.
-	prom.SetKvSubscriberConnected(svcLabel, epLabel, 1)
-	defer prom.SetKvSubscriberConnected(svcLabel, epLabel, 0)
+	setKvConnectedIfLive(ctx, svcLabel, epLabel, 1)
+	defer setKvConnectedIfLive(ctx, svcLabel, epLabel, 0)
 
 	// rankLastSeq is the per-rank seq gap detector. It
 	// replaces inv.lastSeq as the decision input: the shared field cannot
@@ -775,6 +775,30 @@ func runKvSubscriberLoopRank(ctx context.Context, epIdx int, rank uint16, svcSta
 	}
 }
 
+// setKvConnectedIfLive writes the subscriber-liveness gauge ONLY while the
+// subscriber is still live, i.e. its ctx has not been cancelled.
+//
+// Teardown (KvSubscriberStopAll / KvSubscriberStop) cancels ctx and then calls
+// prom.ClearKvEpSeries, which DELETES this (service, ep) child. cancel() only
+// signals — it does not wait — so every write this goroutine performs afterwards
+// lands AFTER the delete and RESURRECTS the child. The deferred write below is
+// the worst case: it re-creates the series at 0 on literally every teardown, and
+// nothing ever removes it again, so `min(loxilb_kv_subscriber_connected)` (the
+// "KV subscribers up" panel) reads 0 forever once any KV service has been torn
+// down. Measured 15/15 teardowns leaking before this guard.
+//
+// The guard is one-directional and cannot deadlock: it never blocks, so the
+// rule-delete path stays synchronous. Waiting for the goroutine instead (a
+// WaitGroup around ClearKvEpSeries) is NOT viable — the loop blocks in
+// sub.RecvMultipart(), which does not observe ctx cancellation until a message
+// arrives, so an idle EP would hang rule deletion indefinitely.
+func setKvConnectedIfLive(ctx context.Context, svcLabel, epLabel string, connected int) {
+	if ctx.Err() != nil {
+		return
+	}
+	prom.SetKvSubscriberConnected(svcLabel, epLabel, connected)
+}
+
 // rebuildKvSubscriber closes the current SUB socket and redials the same
 // endpoint. On success it clears the inventory (the remote publisher's block
 // IDs are fresh after restart — old hashes would mis-route Tier 1.5) and
@@ -789,7 +813,7 @@ func rebuildKvSubscriber(ctx context.Context, sub kvZmqSubscriber, inv *kvInvent
 	endpoint string, epIdx int, svcLabel, epLabel string) bool {
 
 	log.Warnf("kv-subscriber: ep %d rebuilding ZMQ socket (endpoint=%s)", epIdx, endpoint)
-	prom.SetKvSubscriberConnected(svcLabel, epLabel, 0)
+	setKvConnectedIfLive(ctx, svcLabel, epLabel, 0)
 
 	_ = sub.Close()
 
@@ -830,7 +854,7 @@ func rebuildKvSubscriber(ctx context.Context, sub kvZmqSubscriber, inv *kvInvent
 	log.Infof("kv-subscriber: ep %d reconnected to %s — deferring KEEP/CLEAR resync to first post-reconnect message (lastSeq=%d preserved)",
 		epIdx, endpoint, inv.lastSeq)
 
-	prom.SetKvSubscriberConnected(svcLabel, epLabel, 1)
+	setKvConnectedIfLive(ctx, svcLabel, epLabel, 1)
 	prom.IncKvSubscriberReconnect(svcLabel, epLabel)
 	return true
 }
