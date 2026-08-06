@@ -5,12 +5,12 @@
 # the artifacts first via packaging/Dockerfile.build.
 #
 # Usage (from the repository root):
-#   packaging/build-pkgs.sh --version v0.9.8.6-igw.1 --arch amd64 --from-docker
-#   packaging/build-pkgs.sh --version v0.9.8.6-igw.1-rc.1 --arch arm64 \
+#   packaging/build-pkgs.sh --version v0.9.8.7 --arch amd64 --from-docker
+#   packaging/build-pkgs.sh --version v0.9.8.7-rc.1 --arch arm64 \
 #       --staging dist/stage-arm64 --formats deb,rpm,tarball --checksums
 #
 # Options:
-#   --version <tag>    release tag (vX.Y.Z[.W]-igw.N[-rc.M]); default: git describe
+#   --version <tag>    release tag (vX.Y.Z[.W][-rc.M]); default: git describe
 #   --arch <arch>      amd64 | arm64 (default: host architecture)
 #   --staging <dir>    directory with staged artifacts (loxilb,
 #                      lib/, ebpf/); default dist/stage-<arch>
@@ -19,10 +19,13 @@
 #   --out <dir>        output directory (default: dist)
 #   --checksums        write SHA256SUMS over the produced artifacts in --out
 #
+# The gateway follows loxilb-io/loxilb's tag scheme: vMAJOR.MINOR.PATCH with an
+# optional fourth build component, plus an optional -rc.N prerelease suffix.
+#
 # Version mapping (deb revision / rpm Release both handle the pre-release
-# ordering via "~"):
-#   v0.9.8.6-igw.1       -> version 0.9.8.6, release igw.1
-#   v0.9.8.6-igw.1-rc.1  -> version 0.9.8.6, release igw.1~rc.1
+# ordering via "~", which sorts before everything including the empty string):
+#   v0.9.8.7        -> version 0.9.8.7, release 1
+#   v0.9.8.7-rc.1   -> version 0.9.8.7, release 1~rc.1   (upgrades to -1)
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -49,7 +52,10 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -z "$VERSION_TAG" ]; then
-  VERSION_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0-dev.0")
+  # --match is load-bearing: loxilb-mcp is released from this same repo under
+  # `mcp/vX.Y.Z` tags, and a bare `git describe --tags` will happily return one
+  # of those, packaging the datapath under the MCP bridge's version.
+  VERSION_TAG=$(git describe --tags --match 'v[0-9]*' --abbrev=0 2>/dev/null || echo "v0.0.0")
   echo ">> no --version given, using $VERSION_TAG"
 fi
 if [ -z "$ARCH" ]; then
@@ -61,12 +67,24 @@ fi
 [ -n "$STAGING" ] || STAGING="dist/stage-$ARCH"
 
 # --- Version parsing -------------------------------------------------------
+# Reject anything that is not the documented scheme, so a stray tag cannot
+# produce a package with a nonsense version. Nightly builds append a
+# -nightly.<date> suffix, which is accepted as a prerelease like -rc.N.
+if ! printf '%s' "$VERSION_TAG" | grep -Eq '^v[0-9]+(\.[0-9]+){2,3}(-[A-Za-z0-9.]+)?$'; then
+  echo "ERROR: '$VERSION_TAG' is not a valid version tag." >&2
+  echo "       expected vMAJOR.MINOR.PATCH[.BUILD][-rc.N]  (e.g. v0.9.8.7, v0.9.8.7-rc.1)" >&2
+  exit 2
+fi
+
 FULLVER=${VERSION_TAG#v}
 PKG_VERSION=${FULLVER%%-*}
 if [ "$FULLVER" = "$PKG_VERSION" ]; then
   PKG_RELEASE="1"
 else
-  PKG_RELEASE=${FULLVER#*-}
+  # Prerelease: hold the revision at 1 and hang the suffix off a "~", which
+  # sorts before the bare revision. So 0.9.8.7-1~rc.1 upgrades cleanly to the
+  # final 0.9.8.7-1, in both dpkg and rpm ordering.
+  PKG_RELEASE="1~${FULLVER#*-}"
   PKG_RELEASE=${PKG_RELEASE//-/\~}
 fi
 echo ">> tag=$VERSION_TAG version=$PKG_VERSION release=$PKG_RELEASE arch=$ARCH"
@@ -81,7 +99,11 @@ if [ "$FROM_DOCKER" = 1 ]; then
     [ "$ARCH" = "arm64" ] && build_args+=(--build-arg USE_DOCKER_BUILDX_ARM64=true)
   fi
   rm -rf "$STAGING"
+  # VERSION must be passed explicitly: .dockerignore strips .git, so the
+  # Makefile's `git describe` cannot resolve the tag inside the builder and the
+  # packaged binary would report "dev" while the package filename said 0.9.8.7.
   DOCKER_BUILDKIT=1 docker build -f packaging/Dockerfile.build \
+    --build-arg VERSION="$VERSION_TAG" \
     --target artifacts --output "type=local,dest=$STAGING" "${build_args[@]}" .
 fi
 

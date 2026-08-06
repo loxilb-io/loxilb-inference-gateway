@@ -165,7 +165,7 @@ claude mcp list        # or /mcp inside a session
 ## Releasing (maintainers)
 
 Releases are fully automated by [`../.github/workflows/mcp-release.yml`](../.github/workflows/mcp-release.yml)
-and are **independent** of the datapath's `vX.Y.Z-igw.N` releases. To cut one:
+and are **independent** of the datapath's `vX.Y.Z[.W]` releases. To cut one:
 
 ```sh
 git tag mcp/v1.0.0

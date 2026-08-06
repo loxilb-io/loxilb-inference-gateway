@@ -7,6 +7,39 @@ TAG?=latest
 ARM64_TAG?=$(TAG)-arm64
 BRANCH_NAME:=$(shell git rev-parse --is-inside-work-tree >/dev/null 2>&1 && git branch --show-current || echo nogit)
 
+# ── Version ──────────────────────────────────────────────────────────────────
+# The release identifier stamped into common.Version. It is DERIVED, never
+# pinned in-tree: a tagged build reports the tag verbatim (v0.9.8.7), and a
+# working build reports its distance from the last tag
+# (v0.9.8.7-3-gabc1234[-dirty]) so it can never be mistaken for a release.
+#
+# The gateway follows loxilb-io/loxilb's scheme, vMAJOR.MINOR.PATCH with an
+# optional fourth build component, plus an optional -rc.N prerelease suffix.
+#
+# "dev" appears only when there is no git metadata AND no override — notably
+# inside container builds, because .dockerignore strips .git. Every Dockerfile
+# therefore takes a VERSION build-arg and passes it through to here.
+#
+# The --match is load-bearing: loxilb-mcp is released from this same repo under
+# `mcp/vX.Y.Z` tags, and a bare `git describe --tags` happily returns one of
+# those, which would stamp the datapath binary with the MCP bridge's version.
+#
+# The dirty check is deliberately NOT `git describe --dirty`: building
+# populates the nested libbpf submodule, which marks loxilb-ebpf modified and
+# so the parent too, making every build after the first report -dirty.
+# --ignore-submodules scopes it to this repo's own tracked files, so -dirty
+# keeps meaning "someone edited the source" rather than "you have built once".
+#
+# Override for a one-off build:  make build VERSION=v0.9.8.7
+GIT_DESCRIBE := $(shell git describe --tags --match 'v[0-9]*' 2>/dev/null)
+GIT_DIRTY    := $(shell git diff --quiet --ignore-submodules HEAD 2>/dev/null || echo -dirty)
+VERSION      ?= $(if $(GIT_DESCRIBE),$(GIT_DESCRIBE)$(GIT_DIRTY),dev)
+
+# Stamp the version and the build provenance. Keep these in one place: the
+# release, package and image builds must all produce the same string.
+LDFLAGS = -X 'github.com/loxilb-io/loxilb/common.Version=$(VERSION)' \
+          -X 'github.com/loxilb-io/loxilb/common.BuildInfo=$(shell date '+%Y_%m_%d_%Hh:%Mm')-$(BRANCH_NAME)'
+
 loxilbid=$(shell docker ps -f name=$(dock) | grep -w $(dock) | cut  -d " "  -f 1 | grep -iv  "CONTAINER")
 
 # Check if L4 trace is enabled (from environment or make args)
@@ -99,11 +132,18 @@ api-models:
 	fi
 
 build: subsys api-models
-	@go build $(GO_BUILD_TAGS) -o ${bin} -ldflags="-X 'github.com/loxilb-io/loxilb/common.BuildInfo=${shell date '+%Y_%m_%d_%Hh:%Mm'}-${shell git branch --show-current}'"
+	@go build $(GO_BUILD_TAGS) -o ${bin} -ldflags="$(LDFLAGS)"
+	@echo "Built version: $(VERSION)"
 	@if [ -n "$(GO_BUILD_TAGS)" ]; then \
 		echo "Built with tags: $(GO_BUILD_TAGS)"; \
 	fi
-	
+
+# Print the version this tree builds as. Scripts and CI consume this instead of
+# re-deriving it, so there is exactly one definition of the version.
+.PHONY: version
+version:
+	@echo $(VERSION)
+
 clean: subsys-clean
 	go clean
 

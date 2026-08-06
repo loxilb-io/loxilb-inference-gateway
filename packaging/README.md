@@ -40,12 +40,27 @@ loxilb-inference-gateway. `release.yml` runs this on every release tag;
 
 ```sh
 # amd64 packages + tarball + checksums, building the payload in Docker
-packaging/build-pkgs.sh --version v0.9.8.6-igw.1 --arch amd64 --from-docker --checksums
+packaging/build-pkgs.sh --version v0.9.8.7 --arch amd64 --from-docker --checksums
 
 # arm64 cross-build (QEMU) from an amd64 host
-packaging/build-pkgs.sh --version v0.9.8.6-igw.1 --arch arm64 --from-docker
+packaging/build-pkgs.sh --version v0.9.8.7 --arch arm64 --from-docker
 ```
 
-Output lands in `dist/`. Version mapping: `v0.9.8.6-igw.1-rc.1` →
-package version `0.9.8.6`, revision `igw.1~rc.1` (the `~` sorts release
-candidates before the final package in both dpkg and rpm).
+Omit `--version` and the script derives it from the newest `v*` tag.
+
+Output lands in `dist/`. Version mapping:
+
+| tag | package version | revision |
+| --- | --- | --- |
+| `v0.9.8.7` | `0.9.8.7` | `1` |
+| `v0.9.8.7-rc.1` | `0.9.8.7` | `1~rc.1` |
+| `v0.9.8.7-nightly.20260806` | `0.9.8.7` | `1~nightly.20260806` |
+
+The `~` sorts release candidates and nightlies before the final package in both
+dpkg and rpm, so either upgrades cleanly to the release.
+
+The tag is also passed to the builder as a `VERSION` build-arg and stamped into
+the binary, so `loxilb -version` inside the package matches the package version.
+This matters because `.dockerignore` strips `.git` — without the explicit
+build-arg the Makefile's `git describe` finds nothing and the binary would
+report `dev`.

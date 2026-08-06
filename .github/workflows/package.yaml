@@ -3,7 +3,7 @@ name: OS-Package-Nightly
 # Rolling .deb package channel.
 #
 # This is the schedule/manual counterpart to the tag-triggered release.yml.
-# release.yml only fires on a v<base>-igw.<n> tag and produces the full,
+# release.yml only fires on a vMAJOR.MINOR.PATCH[.BUILD] tag and produces the full,
 # versioned artifact matrix (multi-arch images + .deb/.rpm + tarballs + a
 # published GitHub Release). Cutting such a tag is a deliberate act, so between
 # releases there is no fresh .deb to install — the Releases tab stays empty.
@@ -15,10 +15,11 @@ name: OS-Package-Nightly
 # (Docker-Multi-Arch / Build-CI-Ubuntu-24 already publish :latest / :latest-u24
 # on push-to-main), and never supersedes release.yml.
 #
-# Package version: <base>-igw.0~nightly.<YYYYMMDD>. The "~" sorts BEFORE the
-# corresponding igw.N release in both dpkg and rpm ordering, so an installed
-# nightly is always upgradeable to the real release, and the date keeps each
-# night's build monotonically newer than the last.
+# Package version: <base>-nightly.<YYYYMMDD>, which build-pkgs.sh renders as
+# revision 1~nightly.<YYYYMMDD>. The "~" sorts BEFORE the corresponding
+# release revision in both dpkg and rpm ordering, so an installed nightly is
+# always upgradeable to the real release, and the date keeps each night's
+# build monotonically newer than the last.
 
 on:
   schedule:
@@ -28,7 +29,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Package version tag to stamp (e.g. v0.9.8.6-igw.1). Blank = derive a nightly version from the latest tag.'
+        description: 'Package version tag to stamp (e.g. v0.9.8.7). Blank = derive a nightly version from the latest tag.'
         required: false
         default: ''
 
@@ -62,13 +63,15 @@ jobs:
           if [ -n "$in" ]; then
             ver="$in"
           else
-            # Prefer the newest igw release tag; fall back to the newest tag of
-            # any kind, then to v0.0.0. Strip any suffix to get the base version
-            # and craft a dated nightly revision below it.
-            base=$(git tag --list 'v*-igw.*' --sort=-v:refname | head -1)
-            [ -n "$base" ] || base=$(git describe --tags --abbrev=0 2>/dev/null || echo v0.0.0)
+            # Newest release tag, then v0.0.0 if the repo has none yet.
+            #
+            # The 'v[0-9]*' match is load-bearing: loxilb-mcp is released from
+            # this same repo under `mcp/vX.Y.Z` tags, and an unfiltered tag
+            # lookup would base the datapath nightly on the MCP bridge version.
+            base=$(git tag --list 'v[0-9]*' --sort=-v:refname | head -1)
+            [ -n "$base" ] || base=v0.0.0
             core=${base%%-*}
-            ver="${core}-igw.0~nightly.$(date -u +%Y%m%d)"
+            ver="${core}-nightly.$(date -u +%Y%m%d)"
           fi
           echo "version=$ver" >> "$GITHUB_OUTPUT"
           echo ">> package version: $ver"

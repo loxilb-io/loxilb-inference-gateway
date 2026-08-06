@@ -3,8 +3,8 @@
 # Built by packaging/build-pkgs.sh, which stages the binaries and exports the
 # environment variables referenced below:
 #
-#   PKG_VERSION  upstream version part of the tag        (e.g. 0.9.8.6)
-#   PKG_RELEASE  package revision part of the tag        (e.g. igw.1, igw.1~rc.1)
+#   PKG_VERSION  upstream version part of the tag        (e.g. 0.9.8.7)
+#   PKG_RELEASE  package revision part of the tag        (e.g. 1, 1~rc.1)
 #   PKG_ARCH     GOARCH-style target architecture        (amd64 | arm64)
 #   (packaging/.staging is a symlink to the staging directory, created by build-pkgs.sh)
 #

@@ -7,6 +7,11 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG TAG=main
 ARG LOXICMD_TAG=main
 
+# Release identifier stamped into the binary. .dockerignore strips .git, so the
+# Makefile's `git describe` cannot work in here and would silently fall back to
+# "dev" -- release.yml and packaging/build-pkgs.sh pass the tag explicitly.
+ARG VERSION=dev
+
 # Env variables
 ENV PATH="${PATH}:/usr/local/go/bin"
 ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/lib64/"
@@ -150,9 +155,9 @@ RUN cd /root/loxilb-io/loxilb/ && go get .
 RUN cd /root/loxilb-io/loxilb/ && \
     arch=$(arch | sed s/aarch64/arm64/ | sed s/x86_64/amd64/) && \
     if [ "$arch" = "arm64" ]; then \
-        DOCKER_BUILDX_ARM64=true make HAVE_HTTP_TRACE=1 HAVE_L4_TRACE=1 HAVE_MTLS=1 EXTRA_CFLAGS="-DHAVE_L4_TRACE"; \
+        DOCKER_BUILDX_ARM64=true make VERSION="$VERSION" HAVE_HTTP_TRACE=1 HAVE_L4_TRACE=1 HAVE_MTLS=1 EXTRA_CFLAGS="-DHAVE_L4_TRACE"; \
     else \
-        make HAVE_HTTP_TRACE=1 HAVE_L4_TRACE=1 HAVE_MTLS=1 EXTRA_CFLAGS="-DHAVE_L4_TRACE"; \
+        make VERSION="$VERSION" HAVE_HTTP_TRACE=1 HAVE_L4_TRACE=1 HAVE_MTLS=1 EXTRA_CFLAGS="-DHAVE_L4_TRACE"; \
     fi
 
 # Build loxilb - Step 3: Install utilities
@@ -221,8 +226,13 @@ RUN echo "if [ -f /etc/bash_completion ] && ! shopt -oq posix; then" >> /root/.b
 
 FROM ubuntu:24.04
 
+# Re-declared because ARG is scoped per stage. Same value as the build stage,
+# so the label always matches the version compiled into the binary.
+ARG VERSION=dev
+
 # LABEL about the loxilb image
 LABEL description="loxilb-inference-gateway official docker image"
+LABEL org.opencontainers.image.version="${VERSION}"
 
 # Disable Prompt During Packages Installation
 ARG DEBIAN_FRONTEND=noninteractive

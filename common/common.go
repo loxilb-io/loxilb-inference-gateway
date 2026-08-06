@@ -21,9 +21,20 @@ import (
 	"time"
 )
 
-const (
-	Version = "0.9.8.6-beta"
-)
+// Version is the release identifier, stamped at link time by the build:
+//
+//	go build -ldflags "-X github.com/loxilb-io/loxilb/common.Version=v0.9.8.7"
+//
+// The Makefile derives it from `git describe --tags`, so a tagged build
+// reports the tag verbatim and a working build reports its distance from the
+// last tag (e.g. v0.9.8.7-3-gabc1234-dirty). It must stay a var, not a const:
+// -ldflags -X cannot write to a const, which is why this used to be pinned to
+// a stale literal that disagreed with the tag it shipped under.
+//
+// "dev" is only ever seen when the tree has no git metadata and no VERSION was
+// passed in — notably inside container builds, since .dockerignore strips
+// .git. Those pass VERSION explicitly as a build-arg.
+var Version = "dev"
 
 var BuildInfo string = ""
 
