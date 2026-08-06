@@ -371,6 +371,7 @@ Classic L4 load balancing and general L7 policy routing are inherited from
 | [16 — SGLang vs vLLM routing](docs/load-balancing/16-sglang-vs-vllm-routing-differences.md) | Engine differences |
 | [17 — SGLang config tuning](docs/load-balancing/17-sglang-config-tuning.md) | SGLang tuning |
 | [18 — MCP gateway](docs/load-balancing/18-mcp-gateway.md) | Load-balancing MCP servers |
+| [loxilb-mcp](mcp/README.md) · [operations](docs/MCP-OPERATIONS.md) | Managing the gateway *from* an MCP client (see [loxilb-mcp](#manage-the-gateway-from-an-mcp-client-loxilb-mcp)) |
 | [19 — AI gateway controls](docs/load-balancing/19-ai-gateway-controls.md) | API keys, rate limits, model routing, SSE quotas |
 
 ## Configuration persistence & snapshots
@@ -447,6 +448,55 @@ Provisioned dashboards ([`grafana/dashboards/`](deploy/monitoring/grafana/dashbo
 | [`deploy/monitoring/TESTING.md`](deploy/monitoring/TESTING.md) | Live-test guide — drive real traffic through the cicd topology and verify panels against data-plane ground truth |
 | [`docs/MONITORING-DESIGN.md`](docs/MONITORING-DESIGN.md) | Design rationale — every panel, alert and metric, and the findings behind them |
 | [`docs/load-balancing/14-kv-cache-observability-design.md`](docs/load-balancing/14-kv-cache-observability-design.md) | AI/KV-cache observability metrics & tracing design |
+
+## Manage the gateway from an MCP client (loxilb-mcp)
+
+[`loxilb-mcp`](mcp/) is a standalone **MCP (Model Context Protocol) bridge**. It exposes the
+gateway to MCP clients — Claude Desktop, Claude Code, MCP Inspector or any custom agent — as
+guarded tools, so an operator (or an agent) can inspect load balancers, endpoints, AI-gateway
+policy and metrics, and run diagnostics, without hand-rolling REST calls.
+
+> Not to be confused with [use case 4 — MCP gateway](#use-case-4--mcp-gateway). That one puts a
+> fleet of *MCP servers* behind the data path; this one lets an MCP client *operate the gateway
+> itself*. They are independent, and compose fine.
+
+It lives in [`mcp/`](mcp/) as its own Go module and releases on its own `mcp/vX.Y.Z` tags,
+independent of the datapath: one static, cgo-free binary for macOS, Linux and Windows on
+amd64/arm64. The same Linux binary runs on Ubuntu and Rocky/RHEL alike — nothing is linked
+against glibc.
+
+```sh
+# macOS — the tap ships a cask, so it is macOS-only
+brew install --cask loxilb-io/tap/loxilb-mcp
+
+# any OS, nothing installed locally (-i keeps stdin open for the stdio transport)
+docker run -i --rm ghcr.io/loxilb-io/loxilb-mcp:latest --target-url http://YOUR_LOXILB_HOST:11111
+
+# with the Go toolchain
+go install github.com/loxilb-io/loxilb-inference-gateway/mcp/cmd/loxilb-mcp@latest
+```
+
+Linux and Windows tarballs/zips, plus `SHA256SUMS`, are attached to each
+[release](https://github.com/loxilb-io/loxilb-inference-gateway/releases) under its `mcp/vX.Y.Z`
+tag. The `:latest` image tracks the newest **stable** release — pre-releases publish only their
+own version tag, so `latest` never lands on a release candidate.
+
+Point a client at a gateway:
+
+```sh
+claude mcp add loxilb -- /usr/local/bin/loxilb-mcp \
+  --target-url http://YOUR_LOXILB_HOST:11111 --read-only
+```
+
+`--read-only` registers only the observe/diagnose tools and is the right default for a chat
+session. Without it the guarded management tools are available too, and destructive ones still
+require a two-step confirm-token flow; sessions carry a `viewer`/`operator`/`admin` role and
+every call is written to a JSONL audit log.
+
+| Guide | What it covers |
+|---|---|
+| [`mcp/README.md`](mcp/README.md) | Per-OS install, Claude Desktop / Claude Code wiring, cutting a release |
+| [`docs/MCP-OPERATIONS.md`](docs/MCP-OPERATIONS.md) | Tool catalog, roles & guardrails, confirm-token flow, multi-target config, security posture |
 
 ## Try it — runnable CICD scenarios
 

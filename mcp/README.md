@@ -23,6 +23,12 @@ Pick one. `X.Y.Z` = the release version; the download assets are named
 each [GitHub Release](https://github.com/loxilb-io/loxilb-inference-gateway/releases)
 under the `mcp/vX.Y.Z` tags, alongside `SHA256SUMS`.
 
+To verify a download, fetch `SHA256SUMS` into the same directory and run:
+```sh
+shasum -a 256 -c SHA256SUMS --ignore-missing     # macOS/Linux
+# → loxilb-mcp_X.Y.Z_darwin_arm64.tar.gz: OK
+```
+
 ### macOS
 
 **Homebrew (recommended):**
@@ -79,6 +85,11 @@ docker pull ghcr.io/loxilb-io/loxilb-mcp:latest
 docker run -i --rm ghcr.io/loxilb-io/loxilb-mcp --target-url http://YOUR_LOXILB_HOST:11111
 ```
 The `-i` flag is required — the stdio MCP transport needs stdin kept open.
+
+The image is multi-arch (`linux/amd64` + `linux/arm64`); Docker picks the right
+one. `:latest` tracks the newest **stable** release — a pre-release publishes
+only its own `:X.Y.Z-rc.N` tag and never moves `:latest`, so pin the version tag
+if you want to try one.
 
 ---
 
@@ -161,9 +172,18 @@ git tag mcp/v1.0.0
 git push origin mcp/v1.0.0        # mcp/v1.0.0-rc.1 → published as a pre-release
 ```
 
-That single tag triggers GoReleaser to build all six binaries, write
-`SHA256SUMS`, publish a GitHub Release, push the `ghcr.io/loxilb-io/loxilb-mcp`
-multi-arch image, and update the Homebrew cask.
+That single tag triggers the workflow to build all six binaries, write
+`SHA256SUMS`, publish a GitHub Release on the `mcp/vX.Y.Z` tag, push the
+`ghcr.io/loxilb-io/loxilb-mcp` multi-arch image, and update the Homebrew cask.
+A tag carrying a pre-release suffix publishes its own image tag but does **not**
+move `:latest`, which stays on the last stable release.
+
+Two implementation notes, since GoReleaser OSS has no monorepo support: the
+workflow runs it from `mcp/` and passes the prefix-stripped version via
+`GORELEASER_CURRENT_TAG`, and GoReleaser's own release pipe is disabled — it
+would derive a bare `vX.Y.Z` tag and mint it inside the datapath's tag
+namespace, so the workflow creates the Release with `gh release create` on the
+real tag instead.
 
 **One-time prerequisites:** the repo is public (or GHCR/tap are otherwise
 reachable), the `loxilb-io/homebrew-tap` repository exists, and the
