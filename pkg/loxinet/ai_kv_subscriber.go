@@ -583,6 +583,7 @@ func runKvSubscriberLoop(ctx context.Context, epIdx int, serviceID uint32, inv *
 //     (rebuildKvSubscriber's informational log, seed helpers).
 //   - ranks >0 start cold at -1 and never touch inv.lastSeq — their decisions
 //     key exclusively on their own stream.
+//
 // The loop deliberately takes the resolved inventory and the serviceID rather
 // than the *kvServiceState it belongs to. It used to do `svcState.inventories[epIdx]`
 // here, which is an unsynchronized map read racing `delete(svc.inventories, ...)`
@@ -739,6 +740,24 @@ func runKvSubscriberLoopRank(ctx context.Context, epIdx int, rank uint16, servic
 					inv.ClearAll()
 				}
 			}
+		}
+
+		// FO-5: live-stream seq REGRESSION — a fast engine restart behind a
+		// transparent ZMQ SUB auto-reconnect: Recv never errors, resyncPending
+		// never arms, and the fresh publisher process restarts its seq low.
+		// Without this branch the regression was silently absorbed by the
+		// rankLastSeq = seq update below, so the dead engine's warm inventory
+		// survived as phantom hashes and Tier-1.5 kept routing long prompts to
+		// the cold restarted EP (herding + stealing traffic from the real cache
+		// owners). Same rule kvResyncDecision already encodes for the explicit
+		// paths (seq < lastSeq ⇒ restart ⇒ CLEAR), applied per live message.
+		// The CLEAR runs BEFORE this message's events so the fresh publisher's
+		// first blocks land in a clean inventory. justResynced guards the
+		// explicit-reconnect path, whose decision already ran on this pair.
+		if rankLastSeq >= 0 && seq < rankLastSeq && !justResynced {
+			log.Infof("kv-subscriber: ep %d rank %d live-stream seq REGRESSION %d -> %d decision=CLEAR — publisher restarted behind transparent reconnect; clearing stale inventory (size=%d)",
+				epIdx, rank, rankLastSeq, seq, inv.Size())
+			inv.ClearAll()
 		}
 
 		// Decode and apply events from payload (frame 2)
