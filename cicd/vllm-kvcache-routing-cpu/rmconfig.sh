@@ -38,8 +38,10 @@ delete_docker_host l3ep4
 delete_docker_host l3ep5
 delete_docker_host l3ep6
 
-# Clean up any temp per-EP corpus files the publisher driver dropped in this dir.
-rm -f "$(dirname "$0")"/.kvpub-*.json "$(dirname "$0")"/.kvpub-baseline.log >/dev/null 2>&1 || true
+# Clean up any temp per-EP corpus files the publisher driver dropped in this dir,
+# plus the scenario-5 long-context runtime artifacts (merged corpus + request/response files).
+rm -f "$(dirname "$0")"/.kvpub-*.json "$(dirname "$0")"/.kvpub-baseline.log \
+      "$(dirname "$0")"/.corpus-longctx.json "$(dirname "$0")"/.longctx-* >/dev/null 2>&1 || true
 
 echo "#########################################"
 echo "Deleted vllm-kvcache-routing-cpu testbed (6 EPs + client + llb1; publisher tag=${PUB_TAG} killed)"
