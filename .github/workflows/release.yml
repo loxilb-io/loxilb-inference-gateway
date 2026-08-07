@@ -115,13 +115,17 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push per-arch image
+      # Build WITHOUT pushing so the CVE gate below can reject the image before
+      # it exists in the registry. Each matrix leg builds its own native
+      # architecture, so `load: true` works without emulation.
+      - name: Build per-arch image (load for scan)
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ${{ matrix.dockerfile }}
           platforms: linux/${{ matrix.arch }}
-          push: true
+          push: false
+          load: true
           tags: ${{ env.IMAGE }}:${{ needs.meta.outputs.tag }}${{ matrix.suffix }}-${{ matrix.arch }}
           # .dockerignore strips .git, so the Makefile cannot derive the version
           # inside the build. Without this the image would ship a binary
@@ -131,6 +135,30 @@ jobs:
           cache-from: type=gha,scope=release-${{ matrix.variant }}-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=release-${{ matrix.variant }}-${{ matrix.arch }}
 
+      - name: Trivy gate (CRITICAL + fixable) — blocks publish
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: ${{ env.IMAGE }}:${{ needs.meta.outputs.tag }}${{ matrix.suffix }}-${{ matrix.arch }}
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+      # Cache-warm rebuild of the identical image; every layer is a cache hit,
+      # so this is a re-export rather than a second compile.
+      - name: Push per-arch image
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/${{ matrix.arch }}
+          push: true
+          tags: ${{ env.IMAGE }}:${{ needs.meta.outputs.tag }}${{ matrix.suffix }}-${{ matrix.arch }}
+          build-args: |
+            VERSION=${{ needs.meta.outputs.tag }}
+          cache-from: type=gha,scope=release-${{ matrix.variant }}-${{ matrix.arch }}
+
   merge-image:
     name: manifest ${{ matrix.variant }}
     needs: [meta, build-image]
@@ -138,6 +166,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write # keyless Cosign signing + attestation OIDC
+      attestations: write # record build-provenance / SBOM attestations
     strategy:
       matrix:
         include:
@@ -155,6 +185,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Create and push multi-arch manifest
+        id: manifest
         env:
           TAG: ${{ needs.meta.outputs.tag }}
           SUFFIX: ${{ matrix.suffix }}
@@ -172,6 +203,61 @@ jobs:
               "${IMAGE}:${TAG}${SUFFIX}-arm64"
           fi
           docker buildx imagetools inspect "${IMAGE}:${TAG}${SUFFIX}"
+          # Digest of the manifest list — the thing users actually pull, and so
+          # the thing the signature and attestations must be bound to.
+          DIGEST="$(docker buildx imagetools inspect "${IMAGE}:${TAG}${SUFFIX}" \
+                     --format '{{.Manifest.Digest}}')"
+          case "$DIGEST" in
+            sha256:*) ;;
+            *) echo "::error::could not resolve manifest digest (got '${DIGEST}')"; exit 1 ;;
+          esac
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign manifest (keyless)
+        env:
+          DIGEST: ${{ steps.manifest.outputs.digest }}
+        run: cosign sign --yes "${IMAGE}@${DIGEST}"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.manifest.outputs.digest }}
+          push-to-registry: true
+
+      - name: Generate SBOM (SPDX)
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.IMAGE }}@${{ steps.manifest.outputs.digest }}
+          # Auth forces syft's `registry:` source so it pulls the pushed digest
+          # straight from GHCR rather than falling through to the docker daemon.
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
+          format: spdx-json
+          output-file: sbom-${{ matrix.variant }}.spdx.json
+          # The action would otherwise try to attach the SBOM to the release by
+          # re-downloading its own workflow artifact, which needs `actions: read`
+          # — a permission this job does not hold. It fails only once a release
+          # exists for the tag, i.e. on re-runs. Leave it off.
+          upload-release-assets: false
+
+      - name: Attest SBOM
+        uses: actions/attest-sbom@v2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.manifest.outputs.digest }}
+          sbom-path: sbom-${{ matrix.variant }}.spdx.json
+          push-to-registry: true
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ matrix.variant }}
+          path: sbom-${{ matrix.variant }}.spdx.json
+          if-no-files-found: error
 
   build-packages:
     name: packages ${{ matrix.arch }}
@@ -262,6 +348,15 @@ jobs:
           sha256sum -- * > SHA256SUMS
           cat SHA256SUMS
 
+      # Kept out of dist/ on purpose: SHA256SUMS above covers the installable
+      # artifacts, and folding the SBOMs into it would change what that file
+      # has always meant.
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: sbom-*
+          merge-multiple: true
+          path: sbom
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
@@ -270,6 +365,7 @@ jobs:
           generate_release_notes: true
           files: |
             dist/*
+            sbom/*
           body: |
             LoxiLB Inference Gateway `${{ needs.meta.outputs.tag }}`.
 
@@ -278,9 +374,20 @@ jobs:
             - `${{ env.IMAGE }}:${{ needs.meta.outputs.tag }}-u24` (Ubuntu 24.04 base)
 
             Attached artifacts: `.deb` (Ubuntu 20.04/22.04/24.04), `.rpm`
-            (RHEL/Rocky/Alma 9), binary tarballs, and `SHA256SUMS`. See the
-            README for install instructions and the kernel baseline required
-            by the eBPF datapath.
+            (RHEL/Rocky/Alma 9), binary tarballs, `SHA256SUMS`, and an SPDX
+            SBOM per image variant. See the README for install instructions
+            and the kernel baseline required by the eBPF datapath.
+
+            Images are scanned for fixable CRITICAL CVEs before they are
+            published, signed with Cosign (keyless), and carry SLSA build
+            provenance and SBOM attestations. Verify with:
+
+            ```
+            cosign verify ${{ env.IMAGE }}:${{ needs.meta.outputs.tag }} \
+              --certificate-identity-regexp '^https://github\.com/loxilb-io/loxilb-inference-gateway/' \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com
+            gh attestation verify oci://${{ env.IMAGE }}:${{ needs.meta.outputs.tag }} --owner loxilb-io
+            ```
 
             This is a fork of [loxilb-io/loxilb](https://github.com/loxilb-io/loxilb)
             with inference-aware L4/L7 routing for LLM serving fleets.
