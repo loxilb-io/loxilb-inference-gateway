@@ -644,7 +644,7 @@ func runKvSubscriberLoopRank(ctx context.Context, epIdx int, rank uint16, servic
 			default:
 			}
 
-			prom.IncKvSubscriberRecvError(svcLabel, epLabel)
+			incKvRecvErrorIfLive(ctx, svcLabel, epLabel)
 
 			// go-zeromq/zmq4 returns a connection-lost error (typically io.EOF)
 			// EXACTLY ONCE when the remote publisher dies — subsequent Recv
@@ -783,28 +783,63 @@ func runKvSubscriberLoopRank(ctx context.Context, epIdx int, rank uint16, servic
 	}
 }
 
+// kvSeriesMu serializes subscriber-goroutine metric writes against teardown's
+// cancel()+ClearKvEpSeries. The bare ctx.Err() guard alone is a TOCTOU: a writer
+// that passes the check can be descheduled, teardown cancels AND deletes the
+// series, and the write then lands after the delete — resurrecting the child.
+// That residual window was real, not theoretical: on an 8-core host the
+// lifecycle test leaked 1-4 series in ~80% of runs (first caught by the GPU
+// testbed CI 2026-08-07; the original 15/15→0/15 fix had only narrowed the
+// race). Both critical sections are short and non-blocking, so the rule-delete
+// path stays effectively synchronous. Lock order: svc.mu → kvSeriesMu (writers
+// never take svc.mu, so no cycle).
+var kvSeriesMu sync.Mutex
+
 // setKvConnectedIfLive writes the subscriber-liveness gauge ONLY while the
 // subscriber is still live, i.e. its ctx has not been cancelled.
 //
 // Teardown (KvSubscriberStopAll / KvSubscriberStop) cancels ctx and then calls
 // prom.ClearKvEpSeries, which DELETES this (service, ep) child. cancel() only
-// signals — it does not wait — so every write this goroutine performs afterwards
-// lands AFTER the delete and RESURRECTS the child. The deferred write below is
-// the worst case: it re-creates the series at 0 on literally every teardown, and
-// nothing ever removes it again, so `min(loxilb_kv_subscriber_connected)` (the
-// "KV subscribers up" panel) reads 0 forever once any KV service has been torn
-// down. Measured 15/15 teardowns leaking before this guard.
+// signals — it does not wait — so a write that slips past the ctx check after
+// the delete RESURRECTS the child at 0, and nothing ever removes it again:
+// `min(loxilb_kv_subscriber_connected)` (the "KV subscribers up" panel) reads 0
+// forever once any KV service has been torn down. kvSeriesMu makes the
+// check+write atomic against teardown's cancel+delete, closing the window.
 //
-// The guard is one-directional and cannot deadlock: it never blocks, so the
-// rule-delete path stays synchronous. Waiting for the goroutine instead (a
-// WaitGroup around ClearKvEpSeries) is NOT viable — the loop blocks in
-// sub.RecvMultipart(), which does not observe ctx cancellation until a message
-// arrives, so an idle EP would hang rule deletion indefinitely.
+// Waiting for the goroutine instead (a WaitGroup around ClearKvEpSeries) is NOT
+// viable — the loop blocks in sub.RecvMultipart(), which does not observe ctx
+// cancellation until a message arrives, so an idle EP would hang rule deletion
+// indefinitely.
 func setKvConnectedIfLive(ctx context.Context, svcLabel, epLabel string, connected int) {
+	kvSeriesMu.Lock()
+	defer kvSeriesMu.Unlock()
 	if ctx.Err() != nil {
 		return
 	}
 	prom.SetKvSubscriberConnected(svcLabel, epLabel, connected)
+}
+
+// incKvReconnectIfLive / incKvRecvErrorIfLive: the counter children
+// (kv_subscriber_reconnect_total / kv_subscriber_recv_error_total) have the
+// exact same resurrect-after-delete race as the connected gauge — the loop can
+// return from RecvMultipart (message or error) AFTER teardown cancelled and
+// reaped the series, and a bare Inc() would recreate the child. Same guard.
+func incKvReconnectIfLive(ctx context.Context, svcLabel, epLabel string) {
+	kvSeriesMu.Lock()
+	defer kvSeriesMu.Unlock()
+	if ctx.Err() != nil {
+		return
+	}
+	prom.IncKvSubscriberReconnect(svcLabel, epLabel)
+}
+
+func incKvRecvErrorIfLive(ctx context.Context, svcLabel, epLabel string) {
+	kvSeriesMu.Lock()
+	defer kvSeriesMu.Unlock()
+	if ctx.Err() != nil {
+		return
+	}
+	prom.IncKvSubscriberRecvError(svcLabel, epLabel)
 }
 
 // rebuildKvSubscriber closes the current SUB socket and redials the same
@@ -863,7 +898,7 @@ func rebuildKvSubscriber(ctx context.Context, sub kvZmqSubscriber, inv *kvInvent
 		epIdx, endpoint, inv.lastSeq)
 
 	setKvConnectedIfLive(ctx, svcLabel, epLabel, 1)
-	prom.IncKvSubscriberReconnect(svcLabel, epLabel)
+	incKvReconnectIfLive(ctx, svcLabel, epLabel)
 	return true
 }
 
@@ -1033,6 +1068,10 @@ func KvSubscriberStop(serviceID uint32, epIdx int) {
 	svc.mu.Lock()
 	defer svc.mu.Unlock()
 
+	// cancel+clear must be atomic against the guarded writers (kvSeriesMu):
+	// otherwise a writer that already passed its ctx check re-creates the
+	// series right after the delete (the ghost-series TOCTOU).
+	kvSeriesMu.Lock()
 	for key, cancel := range svc.cancelFns {
 		if key.epIdx == epIdx {
 			cancel()
@@ -1045,6 +1084,7 @@ func KvSubscriberStop(serviceID uint32, epIdx int) {
 	// liveness/reconnect/error, tier15 hit/spill, ep_idx->IP identity) so a
 	// decommissioned EP does not linger as stale series on /metrics.
 	prom.ClearKvEpSeries(fmt.Sprintf("%d", serviceID), fmt.Sprintf("%d", epIdx))
+	kvSeriesMu.Unlock()
 }
 
 // KvSubscriberStopAll stops all ZMQ subscribers for the given service.
@@ -1063,6 +1103,10 @@ func KvSubscriberStopAll(serviceID uint32) {
 	svc.mu.Lock()
 	defer svc.mu.Unlock()
 
+	// cancel+clear under kvSeriesMu: atomic against the guarded writers, so a
+	// writer that raced past its ctx check cannot resurrect a reaped series
+	// (the ghost-series TOCTOU — see kvSeriesMu doc).
+	kvSeriesMu.Lock()
 	// cancelFns is keyed by (epIdx, rank) — ranging over the
 	// composite keys cancels EVERY rank goroutine of every EP (: a
 	// multi-rank EP owns N entries; the single service-scoped call must tear
@@ -1080,6 +1124,7 @@ func KvSubscriberStopAll(serviceID uint32) {
 		delete(svc.inventories, epIdx)
 	}
 	prom.ClearKvServiceSeries(svcLabel)
+	kvSeriesMu.Unlock()
 }
 
 // ---------- : Tier-1.5 zero-hit watchdog ----------

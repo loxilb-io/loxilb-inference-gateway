@@ -935,6 +935,37 @@ func KvSubscriberSeriesCount(service string) int {
 	return n
 }
 
+// KvEpCounterSeriesCount returns how many kv_subscriber_reconnect_total plus
+// kv_subscriber_recv_error_total children currently exist for the given service
+// label. Test-only getter (mirrors KvSubscriberSeriesCount). Exists because the
+// counter children have the same resurrect-after-delete lifecycle hazard as the
+// connected gauge: an unguarded Inc() landing after ClearKvEpSeries silently
+// re-creates the child.
+func KvEpCounterSeriesCount(service string) int {
+	n := 0
+	for _, vec := range []*prometheus.CounterVec{
+		kvSubscriberReconnectTotal, kvSubscriberRecvErrorTotal,
+	} {
+		ch := make(chan prometheus.Metric, 256)
+		go func(v *prometheus.CounterVec) {
+			v.Collect(ch)
+			close(ch)
+		}(vec)
+		for metric := range ch {
+			m := &dto.Metric{}
+			if err := metric.Write(m); err != nil {
+				continue
+			}
+			for _, l := range m.Label {
+				if l.GetName() == "service" && l.GetValue() == service {
+					n++
+				}
+			}
+		}
+	}
+	return n
+}
+
 // SetKvSubscriberConnected sets the subscriber-connected gauge for (service, ep).
 // connected=1 when the ZMQ SUB socket is up and ingesting events; 0 during
 // disconnect/rebuild. Called from ai_kv_subscriber.go on socket lifecycle
