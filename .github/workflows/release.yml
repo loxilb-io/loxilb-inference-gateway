@@ -10,6 +10,11 @@ name: Release
 # do NOT move the `latest` / `latest-u24` image tags.
 #
 # Tag scheme: vMAJOR.MINOR.PATCH[.BUILD][-rc.N], e.g. v0.9.8.7 or v0.9.8.7-rc.1
+#
+# AUTHORIZATION: the `authorize` job below targets the `release` Environment,
+# which carries required reviewers. Every publishing job depends on it, so a
+# tag push alone cannot ship anything — nothing reaches GHCR or the releases
+# page until a maintainer approves the run.
 
 on:
   push:
@@ -20,6 +25,12 @@ on:
       tagName:
         description: 'Existing tag to rebuild (images/packages only, no release page)'
         required: true
+
+# One release at a time. Two tags in flight would race on the `latest` /
+# `latest-u24` manifests, and the winner would be whichever finished last.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   IMAGE: ghcr.io/loxilb-io/loxilb-inference-gateway
@@ -58,9 +69,23 @@ jobs:
             *)      echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
           esac
 
+  # Single approval choke point. Deliberately a standalone no-op job rather
+  # than `environment:` on the build jobs themselves: those are matrices, and
+  # gating each leg would demand repeated approvals and litter the Deployments
+  # page with one record per leg. One gate, one record, one approval.
+  authorize:
+    name: authorize release
+    needs: meta
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: release
+    steps:
+      - name: Approved
+        run: echo "Publishing ${{ needs.meta.outputs.tag }} approved by ${{ github.actor }}."
+
   build-image:
     name: image ${{ matrix.variant }} ${{ matrix.arch }}
-    needs: meta
+    needs: [meta, authorize]
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -150,7 +175,7 @@ jobs:
 
   build-packages:
     name: packages ${{ matrix.arch }}
-    needs: meta
+    needs: [meta, authorize]
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -195,6 +220,10 @@ jobs:
     name: package sanity
     needs: build-packages
     uses: ./.github/workflows/package-sanity.yml
+    # Required: a called workflow gets NO secrets unless they are passed. Its
+    # `plan` job logs in to GHCR with secrets.GHCR_TOKEN, which resolves empty
+    # without this and fails the login — taking the whole gate down with it.
+    secrets: inherit
     with:
       artifact_prefix: packages-
 
@@ -202,6 +231,11 @@ jobs:
     name: image CVE gate
     needs: [meta, merge-image]
     uses: ./.github/workflows/trivy-image.yml
+    # Same as above: trivy-image.yml's first step is a GHCR login using
+    # secrets.GHCR_TOKEN. Without `secrets: inherit` the CVE gate cannot run
+    # at all — and since the images are already pushed by then, a silent
+    # failure here means published-but-unscanned images.
+    secrets: inherit
     permissions:
       contents: read
       packages: read
