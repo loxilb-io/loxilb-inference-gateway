@@ -880,9 +880,9 @@ func TestKvTokenCacheLRU(t *testing.T) {
 	if len(kvTokenCache) != 3 {
 		t.Errorf("cache size after eviction = %d, want 3", len(kvTokenCache))
 	}
-	// Check that "A" was evicted
+	// Check that "A" was evicted (full-text-identity key — see tokenCacheKey)
 	slug := kvModelSlug("test-model")
-	keyA := tokenCacheKey{modelSlug: slug, prefixKey: "A"}
+	keyA := kvTokenCacheKeyFor(slug, "A")
 	if _, ok := kvTokenCache[keyA]; ok {
 		t.Error("expected key A to be evicted from cache")
 	}
@@ -1738,4 +1738,94 @@ func TestKvAdaptiveCapNormClampGuard(t *testing.T) {
 			t.Errorf("factor-1: λ=%d, want raw-identical %d", lam, wantLam)
 		}
 	})
+}
+
+// ============================================================================
+// Long-context token-cache identity (D-LC1)
+// ============================================================================
+// The cache key MUST identify the FULL text. The original key (modelSlug +
+// text[:512]) collided for the long-context coding-assistant workload: two
+// prompts sharing a >=512-byte preamble (same system prompt + repo header,
+// divergent tail) returned each other's token ids, so the block-hash chain
+// hashed the WRONG request and Tier-1.5 mis-routed. This test drives two such
+// prompts through kvTokenizeWithCache with a content-sensitive tokenizer and
+// requires distinct ids (it FAILS against the prefix key: the second lookup
+// hits the first entry and returns identical ids).
+
+// contentTokenizer derives ids from the text bytes, so two different texts can
+// never legitimately produce the same id stream (unlike mockTokenizer's fixed
+// ids, which would mask a cache-identity collision).
+type contentTokenizer struct{}
+
+func (c *contentTokenizer) Encode(text string) []uint32 {
+	sum := sha256.Sum256([]byte(text))
+	ids := make([]uint32, 8)
+	for i := range ids {
+		ids[i] = binary.BigEndian.Uint32(sum[i*4 : i*4+4])
+	}
+	return ids
+}
+
+func (c *contentTokenizer) Close() {}
+
+type contentBackend struct{}
+
+func (b *contentBackend) LoadModel(tokenizerPath string) KvTokenizer { return &contentTokenizer{} }
+func (b *contentBackend) Name() string                               { return "content-mock" }
+
+func TestKvTokenCacheLongPromptNoCollision(t *testing.T) {
+	KvTokenCacheReset()
+	KvTokenizerPoolReset()
+	defer KvTokenCacheReset()
+	defer KvTokenizerPoolReset()
+
+	KvRegisterTokenizerBackend(&contentBackend{})
+	defer KvRegisterTokenizerBackend(nil)
+
+	// Shared 600-byte preamble (> the old 512-byte key window), divergent tails —
+	// the coding-assistant shared-prefix shape.
+	head := make([]byte, 600)
+	for i := range head {
+		head[i] = byte('a' + i%26)
+	}
+	textA := string(head) + "\nfunc tailA() { return 1 }\n"
+	textB := string(head) + "\nfunc tailB() { completely different suffix }\n"
+
+	idsA := kvTokenizeWithCache(textA, "test-model", 100)
+	idsB := kvTokenizeWithCache(textB, "test-model", 100)
+	if idsA == nil || idsB == nil {
+		t.Fatal("tokenize returned nil")
+	}
+
+	same := len(idsA) == len(idsB)
+	if same {
+		for i := range idsA {
+			if idsA[i] != idsB[i] {
+				same = false
+				break
+			}
+		}
+	}
+	if same {
+		t.Fatalf("cache-identity collision: two long prompts sharing a 600-byte head returned IDENTICAL token ids (%v) — the cache key does not cover the full text", idsA)
+	}
+
+	// Both texts must occupy distinct cache entries.
+	kvTokenCacheMu.RLock()
+	n := len(kvTokenCache)
+	kvTokenCacheMu.RUnlock()
+	if n != 2 {
+		t.Errorf("cache entries = %d, want 2 (one per distinct full text)", n)
+	}
+
+	// And a genuine repeat must still HIT (identical ids for identical text).
+	idsA2 := kvTokenizeWithCache(textA, "test-model", 100)
+	if len(idsA2) != len(idsA) {
+		t.Fatalf("repeat lookup length mismatch: %d vs %d", len(idsA2), len(idsA))
+	}
+	for i := range idsA {
+		if idsA2[i] != idsA[i] {
+			t.Fatalf("repeat lookup returned different ids at %d", i)
+		}
+	}
 }
