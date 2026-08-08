@@ -33,6 +33,14 @@ do
 done
 
 
+# Reset the rule to the config.sh baseline (single endpoint) before asserting on
+# it. The last step below leaves TWO endpoints registered, so a second run of
+# this script without an intervening rmconfig.sh + config.sh would fail its very
+# first expectation against a healthy datapath. Output is dropped because an
+# already-single-endpoint rule answers this identical create with a 409.
+$dexec llb1 loxicmd create lb 20.20.20.1 --tcp=2020:8080 --endpoints=31.31.31.1:1 >/dev/null 2>&1
+sleep 5
+
 echo "Expecting server1"
 
 for j in {0..3}
