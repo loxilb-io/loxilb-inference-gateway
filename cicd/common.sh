@@ -282,7 +282,7 @@ delete_docker_host() {
     fi
   fi
   if [ -f "$hexist/$1" ]; then
-    $hns del $1
+    $hns del $1 >/dev/null 2>&1 || true
     sudo rm -fr "$hexist/$1" >/dev/null 2>&1
   fi
   docker rm $1 >/dev/null 2>&1 || true
