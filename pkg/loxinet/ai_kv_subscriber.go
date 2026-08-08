@@ -47,6 +47,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 	"unsafe"
@@ -1062,6 +1063,32 @@ func KvSubscriberStartRank(serviceID uint32, epIdx int, rank uint16, epIP string
 			}
 		}
 
+		// Inventory replay on fresh subscribe: engine prefix caches survive a
+		// gateway restart, but engines publish BlockStored only on NEW stores,
+		// so a fresh subscriber stays blind to every block cached before it
+		// connected (cold-herding until natural churn). When the publisher
+		// exposes a replay endpoint (fixed port offset from the PUB endpoint),
+		// request the buffered event history once before entering the live
+		// loop. Fail-open on every edge: no replay listener (engines without
+		// replay_endpoint configured), parse failure, or a hung replay (the
+		// bounded context unblocks Recv) all leave the inventory to warm
+		// organically, exactly as before. The live loop still gets replay=nil
+		// — its KEEP/CLEAR gap heuristics stay the shipped behavior.
+		if raddr := kvReplayEndpoint(addr); raddr != "" {
+			rctx, rcancel := context.WithTimeout(ctx, 15*time.Second)
+			rc := newPureGoZmqReplayClient(rctx)
+			if err := rc.Connect(raddr); err != nil {
+				log.Infof("kv-subscriber: ep %d rank %d no replay listener at %s (%v) — inventory warms organically",
+					epIdx, rank, raddr, err)
+			} else {
+				replayKvEvents(inv, rc, 0)
+				log.Infof("kv-subscriber: ep %d rank %d replayed buffered KV events from %s (inventory size=%d)",
+					epIdx, rank, raddr, inv.Size())
+			}
+			_ = rc.Close()
+			rcancel()
+		}
+
 		// Run the subscriber loop (reuses existing tested logic).
 		// `addr` is passed for on-recv-error socket rebuild — go-zeromq/zmq4
 		// does not auto-reconnect after publisher restart, so the loop needs
@@ -1623,6 +1650,97 @@ func (s *pureGoZmqSubscriber) RecvMultipart() ([][]byte, error) {
 func (s *pureGoZmqSubscriber) Close() error {
 	if s.sub != nil {
 		return s.sub.Close()
+	}
+	return nil
+}
+
+// kvReplayPortOffset is the fixed port offset between an engine's KV-event
+// PUB endpoint and its replay endpoint: PUB on port P ⇒ replay on P+offset.
+// +1000 (5557 → 6557) keeps clear of SGLang data-parallel rank ports, which
+// occupy P+1..P+rankCount on the PUB side. Override with
+// LLB_KV_REPLAY_PORT_OFFSET; 0 disables replay entirely.
+const kvReplayPortOffsetDefault = 1000
+
+func kvReplayPortOffset() int {
+	if v := os.Getenv("LLB_KV_REPLAY_PORT_OFFSET"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return kvReplayPortOffsetDefault
+}
+
+// kvReplayEndpoint derives the replay endpoint from a PUB endpoint
+// ("tcp://host:port"). Returns "" when replay is disabled or the address
+// cannot be parsed (caller skips replay — fail-open).
+func kvReplayEndpoint(addr string) string {
+	off := kvReplayPortOffset()
+	if off == 0 {
+		return ""
+	}
+	i := strings.LastIndex(addr, ":")
+	if i < 0 {
+		return ""
+	}
+	port, err := strconv.Atoi(addr[i+1:])
+	if err != nil || port+off <= 0 || port+off > 65535 {
+		return ""
+	}
+	return fmt.Sprintf("%s:%d", addr[:i], port+off)
+}
+
+// pureGoZmqReplayClient implements kvZmqReplayRequester over a DEALER socket
+// against the engine publisher's ROUTER replay endpoint (vLLM
+// KVEventsConfig.replay_endpoint). Wire format: request is a single 8-byte
+// big-endian start sequence (preceded by the explicit empty delimiter a
+// DEALER must send to a ROUTER peer); each reply is (seq, payload) frames,
+// terminated by a marker whose seq is negative or whose payload is empty.
+type pureGoZmqReplayClient struct {
+	ctx    context.Context
+	dealer zmq4.Socket
+}
+
+func newPureGoZmqReplayClient(ctx context.Context) *pureGoZmqReplayClient {
+	return &pureGoZmqReplayClient{ctx: ctx}
+}
+
+func (r *pureGoZmqReplayClient) Connect(endpoint string) error {
+	r.dealer = zmq4.NewDealer(r.ctx)
+	if err := r.dealer.Dial(endpoint); err != nil {
+		return fmt.Errorf("zmq replay dial %s: %w", endpoint, err)
+	}
+	return nil
+}
+
+func (r *pureGoZmqReplayClient) SendStartSeq(seq int64) error {
+	var b [8]byte
+	binary.BigEndian.PutUint64(b[:], uint64(seq))
+	return r.dealer.SendMulti(zmq4.NewMsgFrom([]byte{}, b[:]))
+}
+
+func (r *pureGoZmqReplayClient) RecvReplay() (int64, []byte, bool, error) {
+	msg, err := r.dealer.Recv()
+	if err != nil {
+		return 0, nil, false, err
+	}
+	frames := msg.Frames
+	// Strip the ROUTER-side empty delimiter when present.
+	if len(frames) > 0 && len(frames[0]) == 0 {
+		frames = frames[1:]
+	}
+	if len(frames) < 1 || len(frames[0]) < 8 {
+		return 0, nil, true, nil // malformed — treat as end of replay
+	}
+	seq := int64(binary.BigEndian.Uint64(frames[0]))
+	if seq < 0 || len(frames) < 2 || len(frames[1]) == 0 {
+		return seq, nil, true, nil // end-of-replay marker
+	}
+	return seq, frames[1], false, nil
+}
+
+func (r *pureGoZmqReplayClient) Close() error {
+	if r.dealer != nil {
+		return r.dealer.Close()
 	}
 	return nil
 }
