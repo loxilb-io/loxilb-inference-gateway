@@ -623,6 +623,9 @@ type LoadbalanceEntryServiceArguments struct {
 	// block-number if any of this LB entry
 	Block uint32 `json:"block,omitempty"`
 
+	// Enable the per-endpoint circuit breaker for full-proxy rules. After 5 consecutive backend connect failures an endpoint is skipped by all selection paths until a 30s open-timeout expires and a half-open probe succeeds. Complements the liveness probe (probetype) - the breaker reacts within one failed request, the probe within one probe interval.
+	CbEnable bool `json:"cb_enable,omitempty"`
+
 	// Require cache_salt field in requests for CHWBL/WRR_HASH (sel=8 or sel=10) - enforces strict multi-tenant isolation. If false, cache_salt is optional. Only used when sel=8 or sel=10
 	ChwblEnableCacheSalt *bool `json:"chwbl_enable_cache_salt,omitempty"`
 

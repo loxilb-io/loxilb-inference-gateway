@@ -125,6 +125,9 @@ func ConfigPostLoadbalancer(params operations.PostConfigLoadbalancerParams, prin
 	lbRules.Serv.PDCacheThreshold = uint8(params.Attr.ServiceArguments.PdCacheThreshold)
 	lbRules.Serv.PDBalanceAbsThreshold = uint8(params.Attr.ServiceArguments.PdBalanceAbsThreshold)
 
+	// Per-endpoint circuit breaker
+	lbRules.Serv.CbEnable = params.Attr.ServiceArguments.CbEnable
+
 	// KV-Cache Exact Routing
 	lbRules.Serv.KvExactMode = uint8(params.Attr.ServiceArguments.KvExactMode)
 	lbRules.Serv.KvBlockSize = uint32(params.Attr.ServiceArguments.KvBlockSize)
@@ -597,6 +600,11 @@ func serializeLBRule(lb cmn.LbRuleMod) *models.LoadbalanceEntry {
 	}
 	if lb.Serv.PDBalanceAbsThreshold != 0 {
 		tmpSvc.PdBalanceAbsThreshold = int32(lb.Serv.PDBalanceAbsThreshold)
+	}
+
+	// Per-endpoint circuit breaker
+	if lb.Serv.CbEnable {
+		tmpSvc.CbEnable = lb.Serv.CbEnable
 	}
 
 	// KV-Cache Exact Routing
