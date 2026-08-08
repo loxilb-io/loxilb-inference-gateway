@@ -68,6 +68,15 @@ typedef struct proxy_metrics_snapshot {
     uint64_t pd_cb_proactive_heal;
     uint64_t pd_admission_shed;
     uint64_t pd_admission_queued;
+
+    // Failover observability counters. TAIL-APPEND ONLY — twin-declared in
+    // loxilb-ebpf/common/sockproxy_metrics.h and proxy_metrics_stub.c; keep
+    // ALL THREE in lockstep, same commit.
+    uint64_t pd_prefill_ep_died;
+    uint64_t pd_decode_ep_died;
+    uint64_t pd_decode_zero_byte_eof;
+    uint64_t pd_connect_failover;
+    uint64_t lb_select_failure_shutdown;
 } proxy_metrics_snapshot_t;
 
 // C function from sockproxy.c
@@ -471,6 +480,46 @@ var (
 			Help: "Total circuit-breaker OPEN->HALF_OPEN transitions driven proactively by the 1Hz health pass (self-heal) without organic traffic. Sibling of loxilb_pd_cb_flips_total (which counts ALL CB state transitions).",
 		},
 	)
+
+	// Metric #29: prefill endpoint deaths (Counter)
+	pdPrefillEpDiedTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "loxilb_pd_prefill_ep_died_total",
+			Help: "Prefill backend connections that died mid-request (client received 503). Counts endpoint-death EVENTS as detected per connection, complementing the request-outcome view in loxilb_ai_pd_requests_total.",
+		},
+	)
+
+	// Metric #30: decode endpoint deaths (Counter)
+	pdDecodeEpDiedTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "loxilb_pd_decode_ep_died_total",
+			Help: "Decode endpoint failures detected: connect failure at decode initiation (after prefill completed) or backend EOF before any response byte was relayed.",
+		},
+	)
+
+	// Metric #31: decode zero-byte EOFs (Counter)
+	pdDecodeZeroByteEofTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "loxilb_pd_decode_zero_byte_eof_total",
+			Help: "Decode backend EOF with ZERO response bytes relayed to the client (client received 502). Subset of loxilb_pd_decode_ep_died_total; the signature of an async connect to a dead decode endpoint.",
+		},
+	)
+
+	// Metric #32: prefill connect failovers (Counter)
+	pdConnectFailoverTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "loxilb_pd_connect_failover_total",
+			Help: "Successful prefill connect failovers: the initially selected endpoint's TCP connect failed mid-health-cycle and a retry against another healthy prefill endpoint succeeded (client saw no error).",
+		},
+	)
+
+	// Metric #33: raw shutdowns on selection failure (Counter)
+	lbSelectFailureShutdownTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "loxilb_lb_select_failure_shutdown_total",
+			Help: "Full-proxy client connections shut down raw (TCP reset, no HTTP error body) because backend selection or connect failed on a non-P/D path. Nonzero means clients are seeing connection resets instead of 502/503 during endpoint outages.",
+		},
+	)
 )
 
 // pdKvT15MissReasonLabels enumerates the canonical guard reasons used by the
@@ -813,6 +862,28 @@ func RunSockproxyMetrics(ctx context.Context) {
 		if current.pd_cb_proactive_heal >= prevSockproxyMetrics.pd_cb_proactive_heal {
 			delta := current.pd_cb_proactive_heal - prevSockproxyMetrics.pd_cb_proactive_heal
 			pdCbProactiveHealTotal.Add(float64(delta))
+		}
+
+		// 3g. Failover observability counters (endpoint-death / failover events).
+		if current.pd_prefill_ep_died >= prevSockproxyMetrics.pd_prefill_ep_died {
+			delta := current.pd_prefill_ep_died - prevSockproxyMetrics.pd_prefill_ep_died
+			pdPrefillEpDiedTotal.Add(float64(delta))
+		}
+		if current.pd_decode_ep_died >= prevSockproxyMetrics.pd_decode_ep_died {
+			delta := current.pd_decode_ep_died - prevSockproxyMetrics.pd_decode_ep_died
+			pdDecodeEpDiedTotal.Add(float64(delta))
+		}
+		if current.pd_decode_zero_byte_eof >= prevSockproxyMetrics.pd_decode_zero_byte_eof {
+			delta := current.pd_decode_zero_byte_eof - prevSockproxyMetrics.pd_decode_zero_byte_eof
+			pdDecodeZeroByteEofTotal.Add(float64(delta))
+		}
+		if current.pd_connect_failover >= prevSockproxyMetrics.pd_connect_failover {
+			delta := current.pd_connect_failover - prevSockproxyMetrics.pd_connect_failover
+			pdConnectFailoverTotal.Add(float64(delta))
+		}
+		if current.lb_select_failure_shutdown >= prevSockproxyMetrics.lb_select_failure_shutdown {
+			delta := current.lb_select_failure_shutdown - prevSockproxyMetrics.lb_select_failure_shutdown
+			lbSelectFailureShutdownTotal.Add(float64(delta))
 		}
 
 		// 4. Save state for next cycle
