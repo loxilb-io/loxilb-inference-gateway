@@ -41,16 +41,24 @@ echo "Testing Service IP: ${servIP[k]}"
 lcode=0
 for i in {1..4}
 do
+round=""
 for j in {0..2}
 do
     res=$($hexec l3h1 curl --max-time 10 -s ${servIP[k]}:${servPort[k]})
     echo $res
-    if [[ $res != "${servArr[j]}" ]]
-    then
-        lcode=1
-    fi
+    round="$round $res"
     sleep 1
 done
+# Assert round-robin per 3-request WINDOW, not as a fixed sequence. The rule's
+# rotation continues from wherever earlier traffic left it, so demanding the
+# window BEGIN at server1 fails a perfectly balanced datapath whenever the rule
+# has served a non-multiple of 3 (and any concurrent client shifts it too).
+# Each window must still contain all three servers exactly once.
+got=$(printf '%s\n' $round | sort | tr '\n' ' ')
+if [[ "$got" != "server1 server2 server3 " ]]
+then
+    lcode=1
+fi
 done
 if [[ $lcode == 0 ]]
 then

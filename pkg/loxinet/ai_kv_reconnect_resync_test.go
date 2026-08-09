@@ -372,3 +372,102 @@ func TestKvReconnectKeepConverge(t *testing.T) {
 			mc, len(present))
 	}
 }
+
+// ---------- TestKvLiveStreamSeqRegression (FO-5) ----------
+
+// driveSubscriberLoopLive is driveSubscriberLoop for PURE live-stream scripts:
+// no recv error, so no rebuild and no Connect call — the FO-5 scenario is a
+// fast engine restart behind a TRANSPARENT ZMQ SUB auto-reconnect, where the
+// Go loop never observes an error and resyncPending never arms.
+func driveSubscriberLoopLive(t *testing.T, svc *kvServiceState, epIdx int, steps []recvStep) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	fake := &fakeKvSub{t: t, steps: steps, cancel: cancel}
+
+	done := make(chan struct{})
+	inv := svc.inventories[epIdx]
+	serviceID := svc.serviceID
+	go func() {
+		runKvSubscriberLoop(ctx, epIdx, serviceID, inv, fake, nil, "inproc://test")
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(15 * time.Second):
+		cancel()
+		t.Fatal("runKvSubscriberLoop did not exit within timeout — possible wedge")
+	}
+}
+
+// TestKvLiveStreamSeqRegression pins the FO-5 fix: a seq REGRESSION on the
+// LIVE stream (no recv error, no rebuild — the transparent-reconnect shape)
+// must CLEAR the stale inventory before applying the regressed message's own
+// events. Pre-fix the regression was silently absorbed (rankLastSeq = seq), so
+// the dead engine's warm blocks survived as phantom hashes and Tier-1.5 kept
+// routing to the cold restarted EP.
+func TestKvLiveStreamSeqRegression(t *testing.T) {
+	const (
+		serviceID = uint32(7003)
+		epIdx     = 0
+		lastSeq   = int64(100)
+	)
+	warm := []uint64{0xA1, 0xA2, 0xA3} // pre-restart blocks (must NOT survive a regression)
+	live1 := []uint64{0xB1}            // live continuation before the restart
+	fresh := []uint64{0xC1, 0xC2}      // first blocks from the RESTARTED publisher (low seq)
+
+	t.Run("live_regression_CLEAR", func(t *testing.T) {
+		KvResetAll()
+		defer KvResetAll()
+		svc := seedLoopService(t, serviceID, epIdx, warm, lastSeq)
+
+		steps := []recvStep{
+			// live continuation: seq advances normally, block applied on top of warm.
+			{frames: kvFrames(lastSeq+1, kvBlockStoredBatch(t, live1))},
+			// TRANSPARENT engine restart: same socket, seq restarts low.
+			// The regression must CLEAR (warm + live1 dropped), THEN apply fresh.
+			{frames: kvFrames(2, kvBlockStoredBatch(t, fresh))},
+			{cancel: true},
+		}
+		driveSubscriberLoopLive(t, svc, epIdx, steps)
+
+		inv := KvGetInventory(serviceID, epIdx)
+		if inv == nil {
+			t.Fatalf("KvGetInventory(%d, %d) returned nil", serviceID, epIdx)
+		}
+		if got, want := inv.Size(), len(fresh); got != want {
+			t.Errorf("after live regression: Size()=%d, want %d (stale inventory must be cleared)", got, want)
+		}
+		if mc := inv.MatchCount(append(append([]uint64{}, warm...), live1...)); mc != 0 {
+			t.Errorf("phantom hashes survived the live-stream regression: MatchCount=%d, want 0", mc)
+		}
+		if mc := inv.MatchCount(fresh); mc != len(fresh) {
+			t.Errorf("restarted publisher's blocks missing: MatchCount=%d, want %d (events must apply AFTER the clear)",
+				mc, len(fresh))
+		}
+	})
+
+	t.Run("duplicate_seq_not_a_regression", func(t *testing.T) {
+		KvResetAll()
+		defer KvResetAll()
+		svc := seedLoopService(t, serviceID, epIdx, warm, lastSeq)
+
+		steps := []recvStep{
+			{frames: kvFrames(lastSeq+1, kvBlockStoredBatch(t, live1))},
+			// duplicate delivery of the SAME seq — strict '<' must not clear.
+			{frames: kvFrames(lastSeq+1, kvBlockStoredBatch(t, fresh))},
+			{cancel: true},
+		}
+		driveSubscriberLoopLive(t, svc, epIdx, steps)
+
+		inv := KvGetInventory(serviceID, epIdx)
+		if inv == nil {
+			t.Fatalf("KvGetInventory(%d, %d) returned nil", serviceID, epIdx)
+		}
+		want := len(warm) + len(live1) + len(fresh)
+		if got := inv.Size(); got != want {
+			t.Errorf("duplicate seq must not clear: Size()=%d, want %d", got, want)
+		}
+	})
+}

@@ -9,7 +9,16 @@ $dexec l3ep3 pkill -f 'mock_vllm.py' 2>/dev/null
 $dexec l3ep4 pkill -f 'mock_vllm.py' 2>/dev/null
 
 # Flush iptables DNAT on client (no-op if rule was never installed).
-$dexec l3h1 iptables -t nat -F OUTPUT 2>/dev/null || true
+# The `host` image (ghcr.io/loxilb-io/nettest) does NOT ship iptables — config.sh apt-installs it
+# only on the Phase-L/VRRP path and already guards its own calls with `which iptables` (see
+# update_master_dnat). Guard here the same way: without it, `docker exec` fails with
+#   OCI runtime exec failed: ... exec: "iptables": executable file not found in $PATH
+# on EVERY bfd-mode teardown. That message is printed by the docker CLI on **stdout**, not
+# stderr, so the `2>/dev/null` that used to be here could never suppress it — the noise was
+# unsuppressable by redirection alone and had to be fixed at the source.
+if $dexec l3h1 which iptables >/dev/null 2>&1; then
+    $dexec l3h1 iptables -t nat -F OUTPUT >/dev/null 2>&1 || true
+fi
 
 disconnect_docker_hosts l3h1  llb1
 disconnect_docker_hosts l3ep1 llb1
