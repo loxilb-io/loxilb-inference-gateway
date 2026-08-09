@@ -23,7 +23,6 @@ package snapshot
 import (
 	"bytes"
 	"fmt"
-	"strings"
 	"time"
 )
 
@@ -110,6 +109,13 @@ type Result struct {
 	// left inconsistent; a dry-run that fails VALIDATE reports "" with
 	// Errors populated).
 	Result string `json:"result,omitempty"`
+	// Warnings reports non-fatal anomalies the pipeline tolerated -- today,
+	// document items skipped during a boot apply because a byte-identical
+	// item already existed (a duplicate entry inside the document). Kept
+	// separate from Errors: warnings never change Result or trigger
+	// rollback, and callers that pattern-match Errors (e.g. the boot
+	// loader's subsystem-startup retry check) must not see them.
+	Warnings []string `json:"warnings,omitempty"`
 	// PreRestoreSnapshotPersisted is the on-disk path of the PRESERVE-stage
 	// snapshot (§5.3 step 4), empty for dry-run, failed-before-PRESERVE, and
 	// Boot (which never captures one) cases.
@@ -266,12 +272,23 @@ func (e *Engine) restore(raw []byte, opts RestoreOptions) (*Result, error) {
 	}
 
 	// 5. APPLY -- wipe (unless Boot) then apply forward-order; any error
-	// aborts remaining domains and falls through to ROLLBACK.
-	applyErrs := e.stageApply(doc, selected, opts.Boot)
+	// aborts remaining domains and falls through to ROLLBACK. A Boot apply
+	// tolerates idempotent already-exists items (skip, don't roll back):
+	// the datapath starts empty at boot, so an "exists" there is a
+	// duplicate entry within the document itself -- a no-op, not a reason
+	// to throw away the whole boot config. Non-boot commits stay strict:
+	// they run after a wipe, so "exists" means the wipe failed.
+	applyErrs, skipped := e.stageApply(doc, selected, opts.Boot)
+	for domain, count := range skipped {
+		result.Warnings = append(result.Warnings, fmt.Sprintf(
+			"apply %s: skipped %d already-existing identical item(s) (duplicate document entries)", domain, count))
+	}
 
-	// 6. VERIFY -- only meaningful if APPLY fully succeeded.
+	// 6. VERIFY -- only meaningful if APPLY fully succeeded. Skipped
+	// duplicates lower the expected live count: the item exists exactly
+	// once no matter how many document entries named it.
 	if len(applyErrs) == 0 {
-		applyErrs = append(applyErrs, e.stageVerify(doc, plan, selected)...)
+		applyErrs = append(applyErrs, e.stageVerify(doc, plan, selected, skipped)...)
 	}
 
 	if len(applyErrs) == 0 {
@@ -457,10 +474,13 @@ func (e *Engine) persistPreRestore(doc *Document) (string, error) {
 // stageApply implements §5.3 step 5: delete existing (reverse domain
 // order, via Wipe/G-6) then apply the document (forward order). Per-item
 // apply errors (returned by DomainEntry.Apply, which itself already stops
-// at the first failing item within a domain) abort remaining DOMAINS too --
-// stageApply returns immediately on the first domain-level error rather
-// than continuing to apply further domains onto a known-inconsistent
-// state. skipWipe is true for the Boot variant (§6.2: nothing live to wipe).
+// at the first fatally-failing item within a domain) abort remaining
+// DOMAINS too -- stageApply returns immediately on the first domain-level
+// error rather than continuing to apply further domains onto a
+// known-inconsistent state. skipWipe is true for the Boot variant (§6.2:
+// nothing live to wipe); the Boot variant also tolerates idempotent
+// already-exists items (see DomainEntry.Apply), reporting them in the
+// returned per-domain skip counts instead of failing the domain.
 //
 // Wipe's own contract (wipe.go) is "attempt every domain, collect errors,
 // never abort mid-wipe" -- that contract is unchanged and still honored
@@ -469,22 +489,30 @@ func (e *Engine) persistPreRestore(doc *Document) (string, error) {
 // stage as a whole and skip the forward-apply phase entirely, since
 // applying the new document on top of a partially-wiped, unknown state
 // would compound the inconsistency rather than resolve it.
-func (e *Engine) stageApply(doc *Document, selected []DomainEntry, skipWipe bool) []error {
-	if !skipWipe {
+func (e *Engine) stageApply(doc *Document, selected []DomainEntry, boot bool) ([]error, map[string]int) {
+	if !boot {
 		_, wipeErr := Wipe(e.Hooks, entryNames(selected))
 		if wipeErr != nil {
-			return []error{fmt.Errorf("wipe: %w", wipeErr)}
+			return []error{fmt.Errorf("wipe: %w", wipeErr)}, nil
 		}
 	}
 
 	var errs []error
+	var skipped map[string]int
 	for _, entry := range selected {
-		if _, err := entry.Apply(e.Hooks, doc); err != nil {
+		_, nskip, err := entry.Apply(e.Hooks, doc, boot)
+		if nskip > 0 {
+			if skipped == nil {
+				skipped = make(map[string]int)
+			}
+			skipped[entry.Name] = nskip
+		}
+		if err != nil {
 			errs = append(errs, fmt.Errorf("apply %s: %w", entry.Name, err))
 			break // abort remaining domains (§5.3: "abort remaining items")
 		}
 	}
-	return errs
+	return errs, skipped
 }
 
 // ---------------------------------------------------------------------
@@ -492,12 +520,14 @@ func (e *Engine) stageApply(doc *Document, selected []DomainEntry, skipWipe bool
 // ---------------------------------------------------------------------
 
 // stageVerify re-Gets each selected domain and compares its live count
-// against the plan's to_apply value (§5.3 step 6). It is only reached when
-// stageApply reported zero errors, at which point every selected domain's
-// Apply necessarily added exactly its full doc-side item count -- so a
-// mismatch here means the backend silently didn't persist what it
-// acknowledged, not a normal apply failure.
-func (e *Engine) stageVerify(doc *Document, plan []PlanItem, selected []DomainEntry) []error {
+// against the plan's to_apply value (§5.3 step 6), minus any items the
+// apply stage skipped as idempotent duplicates (a duplicate document entry
+// materializes once, not twice). It is only reached when stageApply
+// reported zero errors, at which point every selected domain's Apply
+// necessarily added exactly its full doc-side item count -- so a mismatch
+// here means the backend silently didn't persist what it acknowledged, not
+// a normal apply failure.
+func (e *Engine) stageVerify(doc *Document, plan []PlanItem, selected []DomainEntry, skipped map[string]int) []error {
 	var errs []error
 	for i, entry := range selected {
 		scratch := &Document{}
@@ -506,7 +536,7 @@ func (e *Engine) stageVerify(doc *Document, plan []PlanItem, selected []DomainEn
 			continue
 		}
 		got := countDomain(entry.Name, &scratch.Domains)
-		want := plan[i].ToApply
+		want := plan[i].ToApply - skipped[entry.Name]
 		if got != want {
 			errs = append(errs, fmt.Errorf("verify: %s: expected %d item(s) after apply, found %d", entry.Name, want, got))
 		}
@@ -527,10 +557,12 @@ func (e *Engine) stageVerify(doc *Document, plan []PlanItem, selected []DomainEn
 // against silently leaving partial state (§5.3: "Never silently leave
 // partial state"), so it maximizes how much of the pre-restore state it
 // manages to restore before reporting ROLLBACK-FAILED, rather than
-// stopping at the first domain that won't cooperate. "already exists"
-// apply errors are tolerated as warnings (not collected as failures),
-// per §5.3's item-level idempotency note -- only during rollback, not
-// during the forward APPLY stage.
+// stopping at the first domain that won't cooperate. Idempotent "already
+// exists" apply errors are tolerated per ITEM (tolerateExists inside
+// DomainEntry.Apply, §5.3's item-level idempotency note), so one
+// still-live duplicate no longer aborts the rest of its domain's
+// re-apply -- previously tolerance acted at domain level and silently
+// dropped every item after the duplicate.
 func (e *Engine) rollback(preDoc *Document, selected []DomainEntry) []error {
 	var errs []error
 
@@ -539,22 +571,11 @@ func (e *Engine) rollback(preDoc *Document, selected []DomainEntry) []error {
 	}
 
 	for _, entry := range selected {
-		if _, err := entry.Apply(e.Hooks, preDoc); err != nil {
-			if isAlreadyExists(err) {
-				continue // tolerated: item-level idempotency (§5.3)
-			}
+		if _, _, err := entry.Apply(e.Hooks, preDoc, true); err != nil {
 			errs = append(errs, fmt.Errorf("rollback apply %s: %w", entry.Name, err))
 		}
 	}
 	return errs
-}
-
-// isAlreadyExists reports whether err looks like an idempotent "already
-// exists" condition (the loxinet convention, e.g. ipsec.go's `tunnel %s
-// already exists`, `certificate %s already exists`, session.go's `%s:%s
-// already exists`) -- tolerated during rollback re-apply only (§5.3).
-func isAlreadyExists(err error) bool {
-	return err != nil && strings.Contains(strings.ToLower(err.Error()), "already exists")
 }
 
 // entryNames extracts DomainEntry.Name in order, for passing a selected

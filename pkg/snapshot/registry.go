@@ -17,6 +17,7 @@
 package snapshot
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -128,14 +129,27 @@ type DomainEntry struct {
 	// corresponding Domains field of doc.
 	Get func(hooks Hooks, doc *Document) error
 	// Apply reads the corresponding Domains field of doc and adds each item
-	// via hooks. Returns the count of items successfully applied and the
-	// first error encountered; per §5.3 step 5 an error aborts remaining
-	// items in the domain (the caller decides whether/how to proceed with
-	// other domains and whether to roll back).
-	Apply func(hooks Hooks, doc *Document) (applied int, err error)
+	// via hooks. Returns the count of items successfully applied, the count
+	// of items skipped as idempotent duplicates, and the first fatal error
+	// encountered; per §5.3 step 5 a fatal error aborts remaining items in
+	// the domain (the caller decides whether/how to proceed with other
+	// domains and whether to roll back). When tolerateExists is true, an
+	// item whose Add fails with the backend's idempotent "already exists"
+	// convention (isIdempotentExists) is counted in skipped and the loop
+	// continues -- the item's config is already live, so treating it as
+	// fatal would throw away an entire domain over a no-op. Boot restores
+	// and rollback re-applies set it; a post-wipe commit apply does not
+	// (after a wipe, "exists" means the wipe failed and must surface).
+	Apply func(hooks Hooks, doc *Document, tolerateExists bool) (applied int, skipped int, err error)
 	// Delete fetches every item currently live for this domain (via hooks)
-	// and deletes it. Returns the count deleted and the first error
-	// encountered. Used for both the pre-restore wipe and rollback (§5.3).
+	// and deletes it. Returns the count deleted and the per-item delete
+	// errors joined (nil on full success). Every item is attempted even
+	// after an earlier item fails -- aborting a domain's teardown at the
+	// first failing item leaves every item after it live while its
+	// dependents may already be gone, a partial state that then poisons
+	// both re-applies (spurious "exists") and dependent-domain deletes
+	// ("still referred"). Used for both the pre-restore wipe and rollback
+	// (§5.3).
 	Delete func(hooks Hooks) (deleted int, err error)
 }
 
@@ -216,6 +230,43 @@ func Select(components []string) ([]DomainEntry, error) {
 	return out, nil
 }
 
+// isIdempotentExists reports whether err is the backend saying "this exact
+// item already exists" -- a no-op duplicate, not a conflict. Two loxinet
+// conventions cover it: the generic "already exists" texts (ipsec tunnels/
+// certificates, endpoint hosts) and the per-domain "<kind>-exists error"
+// sentinels returned when an Add finds a byte-identical item and short-
+// circuits (e.g. pkg/loxinet/rules.go AddLbRule's "lbrule-exists error"
+// when nothing about the rule changed). Deliberately NOT matched: the
+// "-exist error: cant modify ..." texts (same key but DIFFERENT config --
+// a real conflict) and anything carrying "not-exists" (delete-side "no
+// such item" errors).
+func isIdempotentExists(err error) bool {
+	if err == nil {
+		return false
+	}
+	m := strings.ToLower(err.Error())
+	if strings.Contains(m, "not-exists") {
+		return false
+	}
+	if strings.Contains(m, "already exists") {
+		return true
+	}
+	for _, sentinel := range []string{
+		"lbrule-exists error",
+		"fwrule-exists error",
+		"mirr-exists error",
+		"pol-exists error",
+		"sess-exists error",
+		"ulcl-exists error",
+		"prop-exists error",
+	} {
+		if strings.Contains(m, sentinel) {
+			return true
+		}
+	}
+	return false
+}
+
 // isSubsystemUnavailable reports whether err is an optional subsystem
 // (BFD, BGP, IPsec) telling us it is not running/enabled on this gateway
 // (loxinet nil-guard convention: "bfd session not running", "loxilb BGP
@@ -262,16 +313,20 @@ func getEndpoint(hooks Hooks, doc *Document) error {
 	return nil
 }
 
-func applyEndpoint(hooks Hooks, doc *Document) (int, error) {
-	n := 0
+func applyEndpoint(hooks Hooks, doc *Document, tolerateExists bool) (int, int, error) {
+	n, skipped := 0, 0
 	for i := range doc.Domains.Endpoint {
 		ep := &doc.Domains.Endpoint[i]
 		if _, err := hooks.NetEpHostAdd(ep); err != nil {
-			return n, fmt.Errorf("apply endpoint %q: %w", ep.Name, err)
+			if tolerateExists && isIdempotentExists(err) {
+				skipped++
+				continue
+			}
+			return n, skipped, fmt.Errorf("apply endpoint %q: %w", ep.Name, err)
 		}
 		n++
 	}
-	return n, nil
+	return n, skipped, nil
 }
 
 func deleteEndpoint(hooks Hooks) (int, error) {
@@ -280,14 +335,24 @@ func deleteEndpoint(hooks Hooks) (int, error) {
 		return 0, fmt.Errorf("delete endpoint: get: %w", err)
 	}
 	n := 0
+	var errs []error
 	for i := range eps {
 		ep := &eps[i]
+		// Rule-managed end-points live and die with the LB rule that
+		// references them (deleting that rule removes them); deleting them
+		// here fails with "rule-referred" while the rule exists and is a
+		// double-delete once it is gone. The capture side filters them for
+		// the same reason (getEndpoint above).
+		if ep.RuleManaged {
+			continue
+		}
 		if _, err := hooks.NetEpHostDel(ep); err != nil {
-			return n, fmt.Errorf("delete endpoint %q: %w", ep.Name, err)
+			errs = append(errs, fmt.Errorf("delete endpoint %q: %w", ep.Name, err))
+			continue
 		}
 		n++
 	}
-	return n, nil
+	return n, errors.Join(errs...)
 }
 
 // ---------------------------------------------------------------------
@@ -303,16 +368,20 @@ func getLoadBalancer(hooks Hooks, doc *Document) error {
 	return nil
 }
 
-func applyLoadBalancer(hooks Hooks, doc *Document) (int, error) {
-	n := 0
+func applyLoadBalancer(hooks Hooks, doc *Document, tolerateExists bool) (int, int, error) {
+	n, skipped := 0, 0
 	for i := range doc.Domains.LoadBalancer {
 		lb := &doc.Domains.LoadBalancer[i]
 		if _, err := hooks.NetLbRuleAdd(lb); err != nil {
-			return n, fmt.Errorf("apply loadbalancer %q: %w", lb.Serv.ServIP, err)
+			if tolerateExists && isIdempotentExists(err) {
+				skipped++
+				continue
+			}
+			return n, skipped, fmt.Errorf("apply loadbalancer %q: %w", lb.Serv.ServIP, err)
 		}
 		n++
 	}
-	return n, nil
+	return n, skipped, nil
 }
 
 func deleteLoadBalancer(hooks Hooks) (int, error) {
@@ -321,14 +390,16 @@ func deleteLoadBalancer(hooks Hooks) (int, error) {
 		return 0, fmt.Errorf("delete loadbalancer: get: %w", err)
 	}
 	n := 0
+	var errs []error
 	for i := range rules {
 		lb := &rules[i]
 		if _, err := hooks.NetLbRuleDel(lb); err != nil {
-			return n, fmt.Errorf("delete loadbalancer %q: %w", lb.Serv.ServIP, err)
+			errs = append(errs, fmt.Errorf("delete loadbalancer %q: %w", lb.Serv.ServIP, err))
+			continue
 		}
 		n++
 	}
-	return n, nil
+	return n, errors.Join(errs...)
 }
 
 // ---------------------------------------------------------------------
@@ -363,16 +434,20 @@ func getFirewall(hooks Hooks, doc *Document) error {
 	return nil
 }
 
-func applyFirewall(hooks Hooks, doc *Document) (int, error) {
-	n := 0
+func applyFirewall(hooks Hooks, doc *Document, tolerateExists bool) (int, int, error) {
+	n, skipped := 0, 0
 	for i := range doc.Domains.Firewall {
 		fw := &doc.Domains.Firewall[i]
 		if _, err := hooks.NetFwRuleAdd(fw); err != nil {
-			return n, fmt.Errorf("apply firewall rule: %w", err)
+			if tolerateExists && isIdempotentExists(err) {
+				skipped++
+				continue
+			}
+			return n, skipped, fmt.Errorf("apply firewall rule: %w", err)
 		}
 		n++
 	}
-	return n, nil
+	return n, skipped, nil
 }
 
 func deleteFirewall(hooks Hooks) (int, error) {
@@ -382,14 +457,16 @@ func deleteFirewall(hooks Hooks) (int, error) {
 	}
 	rules = filterSrcChkRules(rules)
 	n := 0
+	var errs []error
 	for i := range rules {
 		fw := &rules[i]
 		if _, err := hooks.NetFwRuleDel(fw); err != nil {
-			return n, fmt.Errorf("delete firewall rule: %w", err)
+			errs = append(errs, fmt.Errorf("delete firewall rule: %w", err))
+			continue
 		}
 		n++
 	}
-	return n, nil
+	return n, errors.Join(errs...)
 }
 
 // ---------------------------------------------------------------------
@@ -405,16 +482,20 @@ func getPolicy(hooks Hooks, doc *Document) error {
 	return nil
 }
 
-func applyPolicy(hooks Hooks, doc *Document) (int, error) {
-	n := 0
+func applyPolicy(hooks Hooks, doc *Document, tolerateExists bool) (int, int, error) {
+	n, skipped := 0, 0
 	for i := range doc.Domains.Policy {
 		p := &doc.Domains.Policy[i]
 		if _, err := hooks.NetPolicerAdd(p); err != nil {
-			return n, fmt.Errorf("apply policy %q: %w", p.Ident, err)
+			if tolerateExists && isIdempotentExists(err) {
+				skipped++
+				continue
+			}
+			return n, skipped, fmt.Errorf("apply policy %q: %w", p.Ident, err)
 		}
 		n++
 	}
-	return n, nil
+	return n, skipped, nil
 }
 
 func deletePolicy(hooks Hooks) (int, error) {
@@ -423,14 +504,16 @@ func deletePolicy(hooks Hooks) (int, error) {
 		return 0, fmt.Errorf("delete policy: get: %w", err)
 	}
 	n := 0
+	var errs []error
 	for i := range pols {
 		p := &pols[i]
 		if _, err := hooks.NetPolicerDel(p); err != nil {
-			return n, fmt.Errorf("delete policy %q: %w", p.Ident, err)
+			errs = append(errs, fmt.Errorf("delete policy %q: %w", p.Ident, err))
+			continue
 		}
 		n++
 	}
-	return n, nil
+	return n, errors.Join(errs...)
 }
 
 // ---------------------------------------------------------------------
@@ -454,15 +537,19 @@ func getMirror(hooks Hooks, doc *Document) error {
 	return nil
 }
 
-func applyMirror(hooks Hooks, doc *Document) (int, error) {
-	n := 0
+func applyMirror(hooks Hooks, doc *Document, tolerateExists bool) (int, int, error) {
+	n, skipped := 0, 0
 	for _, m := range doc.Domains.Mirror {
 		if _, err := hooks.NetMirrorAdd(mirrGetToMod(m)); err != nil {
-			return n, fmt.Errorf("apply mirror %q: %w", m.Ident, err)
+			if tolerateExists && isIdempotentExists(err) {
+				skipped++
+				continue
+			}
+			return n, skipped, fmt.Errorf("apply mirror %q: %w", m.Ident, err)
 		}
 		n++
 	}
-	return n, nil
+	return n, skipped, nil
 }
 
 func deleteMirror(hooks Hooks) (int, error) {
@@ -471,13 +558,15 @@ func deleteMirror(hooks Hooks) (int, error) {
 		return 0, fmt.Errorf("delete mirror: get: %w", err)
 	}
 	n := 0
+	var errs []error
 	for _, m := range mirrs {
 		if _, err := hooks.NetMirrorDel(mirrGetToMod(m)); err != nil {
-			return n, fmt.Errorf("delete mirror %q: %w", m.Ident, err)
+			errs = append(errs, fmt.Errorf("delete mirror %q: %w", m.Ident, err))
+			continue
 		}
 		n++
 	}
-	return n, nil
+	return n, errors.Join(errs...)
 }
 
 // ---------------------------------------------------------------------
@@ -493,16 +582,20 @@ func getSession(hooks Hooks, doc *Document) error {
 	return nil
 }
 
-func applySession(hooks Hooks, doc *Document) (int, error) {
-	n := 0
+func applySession(hooks Hooks, doc *Document, tolerateExists bool) (int, int, error) {
+	n, skipped := 0, 0
 	for i := range doc.Domains.Session {
 		s := &doc.Domains.Session[i]
 		if _, err := hooks.NetSessionAdd(s); err != nil {
-			return n, fmt.Errorf("apply session %q: %w", s.Ident, err)
+			if tolerateExists && isIdempotentExists(err) {
+				skipped++
+				continue
+			}
+			return n, skipped, fmt.Errorf("apply session %q: %w", s.Ident, err)
 		}
 		n++
 	}
-	return n, nil
+	return n, skipped, nil
 }
 
 func deleteSession(hooks Hooks) (int, error) {
@@ -511,14 +604,16 @@ func deleteSession(hooks Hooks) (int, error) {
 		return 0, fmt.Errorf("delete session: get: %w", err)
 	}
 	n := 0
+	var errs []error
 	for i := range sess {
 		s := &sess[i]
 		if _, err := hooks.NetSessionDel(s); err != nil {
-			return n, fmt.Errorf("delete session %q: %w", s.Ident, err)
+			errs = append(errs, fmt.Errorf("delete session %q: %w", s.Ident, err))
+			continue
 		}
 		n++
 	}
-	return n, nil
+	return n, errors.Join(errs...)
 }
 
 // ---------------------------------------------------------------------
@@ -535,16 +630,20 @@ func getSessionUlCl(hooks Hooks, doc *Document) error {
 	return nil
 }
 
-func applySessionUlCl(hooks Hooks, doc *Document) (int, error) {
-	n := 0
+func applySessionUlCl(hooks Hooks, doc *Document, tolerateExists bool) (int, int, error) {
+	n, skipped := 0, 0
 	for i := range doc.Domains.SessionUlCl {
 		s := &doc.Domains.SessionUlCl[i]
 		if _, err := hooks.NetSessionUlClAdd(s); err != nil {
-			return n, fmt.Errorf("apply sessionulcl %q: %w", s.Ident, err)
+			if tolerateExists && isIdempotentExists(err) {
+				skipped++
+				continue
+			}
+			return n, skipped, fmt.Errorf("apply sessionulcl %q: %w", s.Ident, err)
 		}
 		n++
 	}
-	return n, nil
+	return n, skipped, nil
 }
 
 func deleteSessionUlCl(hooks Hooks) (int, error) {
@@ -553,14 +652,16 @@ func deleteSessionUlCl(hooks Hooks) (int, error) {
 		return 0, fmt.Errorf("delete sessionulcl: get: %w", err)
 	}
 	n := 0
+	var errs []error
 	for i := range ulcl {
 		s := &ulcl[i]
 		if _, err := hooks.NetSessionUlClDel(s); err != nil {
-			return n, fmt.Errorf("delete sessionulcl %q: %w", s.Ident, err)
+			errs = append(errs, fmt.Errorf("delete sessionulcl %q: %w", s.Ident, err))
+			continue
 		}
 		n++
 	}
-	return n, nil
+	return n, errors.Join(errs...)
 }
 
 // ---------------------------------------------------------------------
@@ -580,16 +681,20 @@ func getIPFilter(hooks Hooks, doc *Document) error {
 	return nil
 }
 
-func applyIPFilter(hooks Hooks, doc *Document) (int, error) {
-	n := 0
+func applyIPFilter(hooks Hooks, doc *Document, tolerateExists bool) (int, int, error) {
+	n, skipped := 0, 0
 	for i := range doc.Domains.IPFilter {
 		mod := doc.Domains.IPFilter[i].IPFilterMod
 		if _, err := hooks.NetIPFilterAdd(&mod); err != nil {
-			return n, fmt.Errorf("apply ipfilter %s: %w", mod.CIDR, err)
+			if tolerateExists && isIdempotentExists(err) {
+				skipped++
+				continue
+			}
+			return n, skipped, fmt.Errorf("apply ipfilter %s: %w", mod.CIDR, err)
 		}
 		n++
 	}
-	return n, nil
+	return n, skipped, nil
 }
 
 func deleteIPFilter(hooks Hooks) (int, error) {
@@ -598,14 +703,16 @@ func deleteIPFilter(hooks Hooks) (int, error) {
 		return 0, fmt.Errorf("delete ipfilter: get: %w", err)
 	}
 	n := 0
+	var errs []error
 	for i := range entries {
 		mod := entries[i].IPFilterMod
 		if _, err := hooks.NetIPFilterDel(&mod); err != nil {
-			return n, fmt.Errorf("delete ipfilter %s: %w", mod.CIDR, err)
+			errs = append(errs, fmt.Errorf("delete ipfilter %s: %w", mod.CIDR, err))
+			continue
 		}
 		n++
 	}
-	return n, nil
+	return n, errors.Join(errs...)
 }
 
 // ---------------------------------------------------------------------
@@ -628,15 +735,17 @@ func getSecurityRate(hooks Hooks, doc *Document) error {
 	return nil
 }
 
-func applySecurityRate(hooks Hooks, doc *Document) (int, error) {
+func applySecurityRate(hooks Hooks, doc *Document, _ bool) (int, int, error) {
+	// Singleton with Set (overwrite) semantics: there is no "exists"
+	// failure mode to tolerate.
 	if doc.Domains.SecurityRate == nil {
-		return 0, nil
+		return 0, 0, nil
 	}
 	cfg := doc.Domains.SecurityRate.Config
 	if _, err := hooks.NetSecurityRateSet(&cfg); err != nil {
-		return 0, fmt.Errorf("apply securityrate: %w", err)
+		return 0, 0, fmt.Errorf("apply securityrate: %w", err)
 	}
-	return 1, nil
+	return 1, 0, nil
 }
 
 func deleteSecurityRate(hooks Hooks) (int, error) {
@@ -665,16 +774,20 @@ func getBFD(hooks Hooks, doc *Document) error {
 	return nil
 }
 
-func applyBFD(hooks Hooks, doc *Document) (int, error) {
-	n := 0
+func applyBFD(hooks Hooks, doc *Document, tolerateExists bool) (int, int, error) {
+	n, skipped := 0, 0
 	for i := range doc.Domains.BFD {
 		b := &doc.Domains.BFD[i]
 		if _, err := hooks.NetBFDAdd(b); err != nil {
-			return n, fmt.Errorf("apply bfd %q: %w", b.Instance, err)
+			if tolerateExists && isIdempotentExists(err) {
+				skipped++
+				continue
+			}
+			return n, skipped, fmt.Errorf("apply bfd %q: %w", b.Instance, err)
 		}
 		n++
 	}
-	return n, nil
+	return n, skipped, nil
 }
 
 func deleteBFD(hooks Hooks) (int, error) {
@@ -686,14 +799,16 @@ func deleteBFD(hooks Hooks) (int, error) {
 		return 0, fmt.Errorf("delete bfd: get: %w", err)
 	}
 	n := 0
+	var errs []error
 	for i := range bfd {
 		b := &bfd[i]
 		if _, err := hooks.NetBFDDel(b); err != nil {
-			return n, fmt.Errorf("delete bfd %q: %w", b.Instance, err)
+			errs = append(errs, fmt.Errorf("delete bfd %q: %w", b.Instance, err))
+			continue
 		}
 		n++
 	}
-	return n, nil
+	return n, errors.Join(errs...)
 }
 
 // ---------------------------------------------------------------------
@@ -773,41 +888,53 @@ func getBGP(hooks Hooks, doc *Document) error {
 	return nil
 }
 
-func applyBGP(hooks Hooks, doc *Document) (int, error) {
-	n := 0
+func applyBGP(hooks Hooks, doc *Document, tolerateExists bool) (int, int, error) {
+	n, skipped := 0, 0
 	for _, nb := range doc.Domains.BGP.Neighbors {
 		if _, err := hooks.NetGoBGPNeighAdd(bgpNeighGetModToMod(nb)); err != nil {
-			return n, fmt.Errorf("apply bgp neighbor %s: %w", nb.Addr, err)
+			if tolerateExists && isIdempotentExists(err) {
+				skipped++
+				continue
+			}
+			return n, skipped, fmt.Errorf("apply bgp neighbor %s: %w", nb.Addr, err)
 		}
 		n++
 	}
 	for i := range doc.Domains.BGP.DefinedSets {
 		ds := &doc.Domains.BGP.DefinedSets[i]
 		if _, err := hooks.NetGoBGPPolicyDefinedSetAdd(ds); err != nil {
-			return n, fmt.Errorf("apply bgp defined_set %q: %w", ds.Name, err)
+			if tolerateExists && isIdempotentExists(err) {
+				skipped++
+				continue
+			}
+			return n, skipped, fmt.Errorf("apply bgp defined_set %q: %w", ds.Name, err)
 		}
 		n++
 	}
 	for i := range doc.Domains.BGP.PolicyDefinitions {
 		pd := &doc.Domains.BGP.PolicyDefinitions[i]
 		if _, err := hooks.NetGoBGPPolicyDefinitionAdd(pd); err != nil {
-			return n, fmt.Errorf("apply bgp policy_definition %q: %w", pd.Name, err)
+			if tolerateExists && isIdempotentExists(err) {
+				skipped++
+				continue
+			}
+			return n, skipped, fmt.Errorf("apply bgp policy_definition %q: %w", pd.Name, err)
 		}
 		n++
 	}
 	if doc.Domains.BGP.GlobalConfig != nil {
-		// Forward-compatible: nothing populates this today (TODO(G-7)), but
-		// once a Get hook exists and a document carries it, apply it.
+		// Set-semantics singleton (overwrite): no "exists" to tolerate.
 		if _, err := hooks.NetGoBGPGCAdd(doc.Domains.BGP.GlobalConfig); err != nil {
-			return n, fmt.Errorf("apply bgp global_config: %w", err)
+			return n, skipped, fmt.Errorf("apply bgp global_config: %w", err)
 		}
 		n++
 	}
-	return n, nil
+	return n, skipped, nil
 }
 
 func deleteBGP(hooks Hooks) (int, error) {
 	n := 0
+	var errs []error
 
 	neighbors, err := hooks.NetGoBGPNeighGet()
 	if isSubsystemUnavailable(err) {
@@ -818,7 +945,8 @@ func deleteBGP(hooks Hooks) (int, error) {
 	}
 	for _, nb := range neighbors {
 		if _, err := hooks.NetGoBGPNeighDel(bgpNeighGetModToMod(nb)); err != nil {
-			return n, fmt.Errorf("delete bgp neighbor %s: %w", nb.Addr, err)
+			errs = append(errs, fmt.Errorf("delete bgp neighbor %s: %w", nb.Addr, err))
+			continue
 		}
 		n++
 	}
@@ -826,12 +954,14 @@ func deleteBGP(hooks Hooks) (int, error) {
 	for _, ts := range bgpDefinedSetTypes {
 		sets, err := hooks.NetGoBGPPolicyDefinedSetGet("all", ts)
 		if err != nil {
-			return n, fmt.Errorf("delete bgp: get defined_sets (%s): %w", ts, err)
+			errs = append(errs, fmt.Errorf("delete bgp: get defined_sets (%s): %w", ts, err))
+			continue
 		}
 		for i := range sets {
 			ds := &sets[i]
 			if _, err := hooks.NetGoBGPPolicyDefinedSetDel(ds); err != nil {
-				return n, fmt.Errorf("delete bgp defined_set %q: %w", ds.Name, err)
+				errs = append(errs, fmt.Errorf("delete bgp defined_set %q: %w", ds.Name, err))
+				continue
 			}
 			n++
 		}
@@ -839,12 +969,14 @@ func deleteBGP(hooks Hooks) (int, error) {
 
 	policyDefs, err := hooks.NetGoBGPPolicyDefinitionsGet()
 	if err != nil {
-		return n, fmt.Errorf("delete bgp: get policy_definitions: %w", err)
+		errs = append(errs, fmt.Errorf("delete bgp: get policy_definitions: %w", err))
+		return n, errors.Join(errs...)
 	}
 	for i := range policyDefs {
 		pd := &policyDefs[i]
 		if _, err := hooks.NetGoBGPPolicyDefinitionDel(pd); err != nil {
-			return n, fmt.Errorf("delete bgp policy_definition %q: %w", pd.Name, err)
+			errs = append(errs, fmt.Errorf("delete bgp policy_definition %q: %w", pd.Name, err))
+			continue
 		}
 		n++
 	}
@@ -852,7 +984,7 @@ func deleteBGP(hooks Hooks) (int, error) {
 	// No delete hook exists for BGP global config (NetGoBGPGCAdd has no
 	// counterpart) -- nothing to do here even once TODO(G-7) lands, unless a
 	// future hook adds one.
-	return n, nil
+	return n, errors.Join(errs...)
 }
 
 // ---------------------------------------------------------------------
@@ -913,11 +1045,12 @@ func getIPsec(hooks Hooks, doc *Document) error {
 	return nil
 }
 
-func applyIPsec(hooks Hooks, doc *Document) (int, error) {
-	n := 0
+func applyIPsec(hooks Hooks, doc *Document, tolerateExists bool) (int, int, error) {
+	n, skipped := 0, 0
 	if doc.Domains.IPsec.Config != nil {
+		// Set-semantics singleton (overwrite): no "exists" to tolerate.
 		if _, err := hooks.NetIPsecConfigSet(ipsecConfigToMod(*doc.Domains.IPsec.Config)); err != nil {
-			return n, fmt.Errorf("apply ipsec config: %w", err)
+			return n, skipped, fmt.Errorf("apply ipsec config: %w", err)
 		}
 		n++
 	}
@@ -927,13 +1060,21 @@ func applyIPsec(hooks Hooks, doc *Document) (int, error) {
 	// (passphrase is never persisted -- see IPsecDomain doc comment).
 	for _, ca := range doc.Domains.IPsec.CACertificates {
 		if _, err := hooks.NetIPsecCACertificateAdd(&ca); err != nil {
-			return n, fmt.Errorf("apply ipsec ca_certificate %q: %w", ca.Name, err)
+			if tolerateExists && isIdempotentExists(err) {
+				skipped++
+				continue
+			}
+			return n, skipped, fmt.Errorf("apply ipsec ca_certificate %q: %w", ca.Name, err)
 		}
 		n++
 	}
 	for _, c := range doc.Domains.IPsec.Certificates {
 		if _, err := hooks.NetIPsecCertificateAdd(&c); err != nil {
-			return n, fmt.Errorf("apply ipsec certificate %q: %w", c.Name, err)
+			if tolerateExists && isIdempotentExists(err) {
+				skipped++
+				continue
+			}
+			return n, skipped, fmt.Errorf("apply ipsec certificate %q: %w", c.Name, err)
 		}
 		n++
 	}
@@ -943,15 +1084,20 @@ func applyIPsec(hooks Hooks, doc *Document) (int, error) {
 		}
 		mod := t.IPsecTunnelMod
 		if _, err := hooks.NetIPsecTunnelAdd(&mod); err != nil {
-			return n, fmt.Errorf("apply ipsec tunnel %q: %w", t.Name, err)
+			if tolerateExists && isIdempotentExists(err) {
+				skipped++
+				continue
+			}
+			return n, skipped, fmt.Errorf("apply ipsec tunnel %q: %w", t.Name, err)
 		}
 		n++
 	}
-	return n, nil
+	return n, skipped, nil
 }
 
 func deleteIPsec(hooks Hooks) (int, error) {
 	n := 0
+	var errs []error
 
 	tunnels, err := hooks.NetIPsecTunnelGetAll()
 	if isSubsystemUnavailable(err) {
@@ -965,7 +1111,8 @@ func deleteIPsec(hooks Hooks) (int, error) {
 			continue
 		}
 		if _, err := hooks.NetIPsecTunnelDel(t.Name); err != nil {
-			return n, fmt.Errorf("delete ipsec tunnel %q: %w", t.Name, err)
+			errs = append(errs, fmt.Errorf("delete ipsec tunnel %q: %w", t.Name, err))
+			continue
 		}
 		n++
 	}
@@ -975,28 +1122,32 @@ func deleteIPsec(hooks Hooks) (int, error) {
 	// data) -- see the Apply-side gap note above.
 	certs, err := hooks.NetIPsecCertificateGetAll()
 	if err != nil {
-		return n, fmt.Errorf("delete ipsec: get certificates: %w", err)
+		errs = append(errs, fmt.Errorf("delete ipsec: get certificates: %w", err))
+		return n, errors.Join(errs...)
 	}
 	for _, c := range certs {
 		if c == nil {
 			continue
 		}
 		if _, err := hooks.NetIPsecCertificateDel(c.Name); err != nil {
-			return n, fmt.Errorf("delete ipsec certificate %q: %w", c.Name, err)
+			errs = append(errs, fmt.Errorf("delete ipsec certificate %q: %w", c.Name, err))
+			continue
 		}
 		n++
 	}
 
 	caCerts, err := hooks.NetIPsecCACertificateGetAll()
 	if err != nil {
-		return n, fmt.Errorf("delete ipsec: get ca_certificates: %w", err)
+		errs = append(errs, fmt.Errorf("delete ipsec: get ca_certificates: %w", err))
+		return n, errors.Join(errs...)
 	}
 	for _, c := range caCerts {
 		if c == nil {
 			continue
 		}
 		if _, err := hooks.NetIPsecCACertificateDel(c.Name); err != nil {
-			return n, fmt.Errorf("delete ipsec ca_certificate %q: %w", c.Name, err)
+			errs = append(errs, fmt.Errorf("delete ipsec ca_certificate %q: %w", c.Name, err))
+			continue
 		}
 		n++
 	}
@@ -1007,5 +1158,5 @@ func deleteIPsec(hooks Hooks) (int, error) {
 	// mirroring securityrate's own singleton caveat but without even a
 	// zero-value Set to fall back on (IPsecConfigMod's pointer fields would
 	// need real default values, not just zero values, to be safe).
-	return n, nil
+	return n, errors.Join(errs...)
 }

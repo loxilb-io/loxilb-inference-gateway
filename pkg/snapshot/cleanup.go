@@ -37,10 +37,12 @@ const staleTempAge = time.Hour
 
 // PruneArtifacts removes surplus snapshot artifacts from dir: pre-restore
 // safety snapshots beyond the newest `keep` (the "pre-restore-<ts>.json"
-// timestamp format is name-sortable), and orphaned writeAtomic temp files
-// older than an hour. Best-effort by design — it returns the paths it
-// removed and skips (never fails on) entries it cannot stat or delete, so
-// callers on the restore path can invoke it without risking the restore.
+// timestamp format is name-sortable), quarantined failed-boot snapshots
+// ("snapshot.json.failed-<ts>", same name-sortable convention) beyond the
+// newest `keep`, and orphaned writeAtomic temp files older than an hour.
+// Best-effort by design — it returns the paths it removed and skips (never
+// fails on) entries it cannot stat or delete, so callers on the restore
+// path can invoke it without risking the restore.
 func PruneArtifacts(dir string, keep int, now time.Time) []string {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -49,6 +51,7 @@ func PruneArtifacts(dir string, keep int, now time.Time) []string {
 
 	var removed []string
 	var preRestores []string
+	var quarantined []string
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -57,6 +60,8 @@ func PruneArtifacts(dir string, keep int, now time.Time) []string {
 		switch {
 		case strings.HasPrefix(name, "pre-restore-") && strings.HasSuffix(name, ".json"):
 			preRestores = append(preRestores, name)
+		case strings.HasPrefix(name, PersistFileName+".failed-"):
+			quarantined = append(quarantined, name)
 		case strings.HasPrefix(name, ".") && strings.HasSuffix(name, ".tmp"):
 			info, ierr := entry.Info()
 			if ierr != nil || now.Sub(info.ModTime()) < staleTempAge {
@@ -72,9 +77,12 @@ func PruneArtifacts(dir string, keep int, now time.Time) []string {
 	if keep < 0 {
 		keep = 0
 	}
-	if len(preRestores) > keep {
-		sort.Strings(preRestores) // timestamped names sort oldest-first
-		for _, name := range preRestores[:len(preRestores)-keep] {
+	for _, group := range [][]string{preRestores, quarantined} {
+		if len(group) <= keep {
+			continue
+		}
+		sort.Strings(group) // timestamped names sort oldest-first
+		for _, name := range group[:len(group)-keep] {
 			path := filepath.Join(dir, name)
 			if os.Remove(path) == nil {
 				removed = append(removed, path)
