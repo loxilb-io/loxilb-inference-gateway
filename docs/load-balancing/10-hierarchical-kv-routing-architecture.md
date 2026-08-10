@@ -61,18 +61,19 @@ The hierarchy behaves differently depending on whether the service is **P/D-disa
 
 **The load-bearing constraint:** Tier 1.5 KV-exact block-hash routing is reachable **only inside
 the P/D ladder**. The gate in the data plane
-(`loxilb-ebpf/common/sockproxy_ep.c:632`) is:
+(the P/D gate in `loxilb-ebpf/common/sockproxy_ep.c`) is:
 
 ```c
 if (tepval->pd_disagg_enabled && tepval->n_prefill_eps > 0 && tepval->n_decode_eps > 0)
 ```
 
-A single-pool rule never invokes `pd_select_prefill()`, so `kvExactMode` on a non-P/D rule
-starts the ZMQ inventory subscribers (the control plane starts them for every `epRole:1`
-endpoint whenever `KvExactMode==1`, independent of `pd_disagg_mode` —
-`pkg/loxinet/rules.go:3401-3413`) but **no selection path consumes that inventory**. For
+A single-pool rule never invokes `pd_select_prefill()`, so a `kvExactMode:1` rule without
+`pd_disagg_mode` would populate inventories that no selection path consumes — it is therefore
+**rejected at POST time** with `kv-exact zmq mode requires pd_disagg_mode=true (use
+kvExactMode=3 for a single pool)` (see the legacy note in §6). For
 single-pool deployments, cache-aware routing is delivered by the **prefix-hash CHWBL family**
-(§6), which approximates cache locality without mirroring vLLM's cache. See
+(§6), which approximates cache locality without mirroring vLLM's cache, or by the single-role
+KV-exact mode `kvExactMode:3`. See
 [09 §1](09-kv-cache-aware-routing-aws-pd-deep-dive.md) for the same rule stated operationally.
 
 ---
@@ -80,8 +81,8 @@ single-pool deployments, cache-aware routing is delivered by the **prefix-hash C
 ## 3. The P/D tier ladder — one request, top to bottom
 
 All of the ladder logic below lives in `pd_select_prefill()`
-(`loxilb-ebpf/common/sockproxy_pd.c:1186`), invoked from the connection-setup path at
-`sockproxy_ep.c:657` (and again at `:828` on force-connect retry). Architecture split: the tier
+(`loxilb-ebpf/common/sockproxy_pd.c`), invoked from the connection-setup path in
+`sockproxy_ep.c` (and again on force-connect retry). Architecture split: the tier
 *sequencing, guards, admission and Tier-2 load scoring* are C; the *Tier-1.5 overlap argmax and
 the unified CHWBL/soft/adaptive blend* are Go (`pkg/loxinet/ai_kv_unified.go`,
 `ai_kv_subscriber.go`), reached through one CGO crossing (`llb_ai_kv_best_worker`).
@@ -90,40 +91,40 @@ the unified CHWBL/soft/adaptive blend* are Go (`pkg/loxinet/ai_kv_unified.go`,
             client request (OpenAI JSON) on a P/D rule
                               │
       ┌───────────────────────▼──────────────────────────┐
-      │ excluded_mask seeding (sockproxy_ep.c:644-650)   │  health/CB pre-filter
+      │ excluded_mask seeding (sockproxy_ep.c)           │  health/CB pre-filter
       │  every inv or CB-OPEN EP is masked out of ALL    │
       │  tiers below                                     │
       └───────────────────────┬──────────────────────────┘
       ┌───────────────────────▼──────────────────────────┐
       │ Controller fold-in │ pd_ctrl DISABLED EPs → mask
-      │ sockproxy_pd.c:1203-1228                         │  DRAINING collected
+      │ (sockproxy_pd.c)                                 │  DRAINING collected
       └───────────────────────┬──────────────────────────┘
       ┌───────────────────────▼──────────────────────────┐
       │ Admission gate (default-OFF) │ per-EP in-flight caps
-      │ sockproxy_pd.c:1234-1315                         │  all capped → park (hold) or
+      │ (sockproxy_pd.c)                                 │  all capped → park (hold) or
       │                                                  │  shed 429; global valve at accept()
       └───────────────────────┬──────────────────────────┘
-   ┌──▶ Tier 0  session stickiness      sockproxy_pd.c:1317-1360
+   ┌──▶ Tier 0  session stickiness      pd_session_lookup
    │      key: user_id / X-Conversation-Id → pinned (prefill, decode) pair
    │      miss / unhealthy pin → evict + fall through
-   ├──▶ Tier 1  radix-trie prefix affinity   sockproxy_pd.c:1362-1403
+   ├──▶ Tier 1  radix-trie prefix affinity   pd_trie_match
    │      pd_cache_aware_mode only; match_rate ≥ pd_cache_threshold
    │      AND load-imbalance guard (pd_balance_abs_threshold)
-   ├──▶ Tier 1.5  KV-exact block-hash        sockproxy_pd.c:1405-1450
+   ├──▶ Tier 1.5  KV-exact block-hash        pd_kv_exact_select
    │      tokenize → vLLM-contract block hashes → CGO argmax over
    │      per-EP inventories, blended by the unified CHWBL law (§4)
    │      any GUARD A–G miss → fall through
-   └──▶ Tier 2  min-load + RR tie-break      sockproxy_pd.c:1452-1551
+   └──▶ Tier 2  min-load + RR tie-break      (inline in pd_select_prefill)
           score = active_conns + queued_requests (lower wins)
           RR counter advanced only on a genuine tie
                               │
       ┌───────────────────────▼──────────────────────────┐
-      │ Decode selection      sockproxy_pd.c:1564-1598   │
+      │ Decode selection      pd_select_decode           │
       │  session-pinned decode hint, else min-load + RR  │
       └───────────────────────┬──────────────────────────┘
       ┌───────────────────────▼──────────────────────────┐
       │ Both fail → pd_select_any_healthy (role-0 EPs,   │
-      │ normal mode) → else 503 (sockproxy_ep.c:69) │
+      │ normal mode) → else 503 (sockproxy_ep.c)         │
       └──────────────────────────────────────────────────┘
 ```
 
@@ -131,15 +132,15 @@ the unified CHWBL/soft/adaptive blend* are Go (`pkg/loxinet/ai_kv_unified.go`,
 
 | Stage | Purpose | Code | Falls through when |
 |---|---|---|---|
-| excluded_mask seeding | Skip down/CB-open EPs in **every** tier (so an excluded Tier-1.5 winner falls to the 2nd-best *prefill*, never straight to RR) | `sockproxy_ep.c:644-650` | — (always runs) |
-| Controller fold-in | OR controller-DISABLED EPs into the mask; collect DRAINING set | `sockproxy_pd.c:1203-1228` | no-op when `pd_ctrl_mode==0` (no controller) |
-| Admission gate | Per-EP in-flight caps; park or shed when all capped | `sockproxy_pd.c:1234-1315` | cap unset (`LLB_PD_MAX_INFLIGHT_PER_EP=0`, default) → byte-identical skip |
-| **Tier 0** | Sticky `(prefill, decode)` pair per conversation | `pd_session_lookup`, `sockproxy_pd.c:1317-1360` | no key; pin unhealthy/excluded/CB-open/stale (evicted) |
-| **Tier 1** | Radix-trie prefix affinity (heuristic — LoxiLB's own trie of observed prefixes, not vLLM state) | `pd_trie_match`, `sockproxy_pd.c:1362-1403` | `pd_cache_aware_mode` off; empty prefix; imbalance guard; `match_rate < pd_cache_threshold` |
-| **Tier 1.5** | KV-exact: route to the prefill EP whose *actual* vLLM prefix cache best overlaps the prompt, bounded by load (§4) | `pd_kv_exact_select`, `sockproxy_kv_exact.c:557`; Go blend `ai_kv_unified.go` | `kv_exact_mode != 1`; any guard A–G miss (see [08 §5](08-kv-cache-aware-routing.md)) |
-| **Tier 2** | Min-load fallback | inline, `sockproxy_pd.c:1452-1551` | terminal (−1 only if no healthy candidate) |
-| Decode select | Pick decode EP | `pd_select_decode`, `sockproxy_pd.c:1564-1598` | pinned hint invalid → min-load + RR among `ep_role:2` |
-| Any-healthy | Non-P/D "normal mode" rescue using role-0 EPs | `pd_select_any_healthy`, called at `sockproxy_ep.c:689` | none healthy → 503 `pd_pool_unavailable` |
+| excluded_mask seeding | Skip down/CB-open EPs in **every** tier (so an excluded Tier-1.5 winner falls to the 2nd-best *prefill*, never straight to RR) | excluded_mask seeding in `sockproxy_ep.c` | — (always runs) |
+| Controller fold-in | OR controller-DISABLED EPs into the mask; collect DRAINING set | controller fold-in block in `sockproxy_pd.c` | no-op when `pd_ctrl_mode==0` (no controller) |
+| Admission gate | Per-EP in-flight caps; park or shed when all capped | admission gate in `sockproxy_pd.c` | cap unset (`LLB_PD_MAX_INFLIGHT_PER_EP=0`, default) → byte-identical skip |
+| **Tier 0** | Sticky `(prefill, decode)` pair per conversation | `pd_session_lookup` (`sockproxy_pd.c`) | no key; pin unhealthy/excluded/CB-open/stale (evicted) |
+| **Tier 1** | Radix-trie prefix affinity (heuristic — LoxiLB's own trie of observed prefixes, not vLLM state) | `pd_trie_match` (`sockproxy_pd.c`) | `pd_cache_aware_mode` off; empty prefix; imbalance guard; `match_rate < pd_cache_threshold` |
+| **Tier 1.5** | KV-exact: route to the prefill EP whose *actual* vLLM prefix cache best overlaps the prompt, bounded by load (§4) | `pd_kv_exact_select` (`sockproxy_kv_exact.c`); Go blend `ai_kv_unified.go` | `kv_exact_mode != 1`; any guard A–G miss (see [08 §5](08-kv-cache-aware-routing.md)) |
+| **Tier 2** | Min-load fallback | inline in `pd_select_prefill` (`sockproxy_pd.c`) | terminal (−1 only if no healthy candidate) |
+| Decode select | Pick decode EP | `pd_select_decode` (`sockproxy_pd.c`) | pinned hint invalid → min-load + RR among `ep_role:2` |
+| Any-healthy | Non-P/D "normal mode" rescue using role-0 EPs | `pd_select_any_healthy`, called from `sockproxy_ep.c` | none healthy → 503 `pd_pool_unavailable` |
 
 > **There is no data-path "Tier 3."** Below Tier 2 is only the any-healthy rescue. What operators
 > sometimes call layer 3 is the control loop of §7, which biases the ladder instead of selecting.
@@ -149,9 +150,9 @@ the unified CHWBL/soft/adaptive blend* are Go (`pkg/loxinet/ai_kv_unified.go`,
 Session key = the request's `user_id` JSON field if present, **overridden** by a client-supplied
 `X-Conversation-Id` header — unless that header value begins with `auto-` (LoxiLB's own
 auto-generated conversation IDs are deliberately *not* used as stickiness keys)
-(`sockproxy_pd.c:1318-1330`). A hit pins the full `(prefill_ep, decode_ep)` pair for
+(`sockproxy_pd.c`). A hit pins the full `(prefill_ep, decode_ep)` pair for
 `pd_session_ttl_sec` (REST default 0 → data-plane default `PD_SESSION_DEFAULT_TTL` = 300 s,
-`sockproxy_pd.c:472`). The table is TTL-evicted and LRU-capped; a pinned EP that is unhealthy,
+`sockproxy_pd.c`). The table is TTL-evicted and LRU-capped; a pinned EP that is unhealthy,
 masked, or CB-open causes the key to be evicted and the ladder to continue — stickiness never
 overrides health.
 
@@ -163,7 +164,7 @@ strongest cache-affinity signal available, and it costs nothing to evaluate.
 
 Enabled by `pd_cache_aware_mode:true`. LoxiLB maintains its **own** radix trie of prompt
 prefixes it has routed before (capacity 8192 entries, LRU-evicted — the trie is *updated* after
-Tier-2 decisions too, `sockproxy_pd.c:1543-1550`). On a request, `pd_trie_match` looks up the
+Tier-2 decisions too). On a request, `pd_trie_match` looks up the
 prompt prefix; the trie leaf remembers which EP last served that prefix.
 
 Two guards keep the heuristic honest (both REST-tunable):
@@ -194,32 +195,38 @@ substance. What has evolved since doc 08 was written is *what happens after the 
 are computed*: the selection is no longer a bare argmax but a load- and capacity-aware blend
 (§4), optionally retuned at runtime (§7).
 
+Operational prerequisite alongside the parity triad: the served model's HuggingFace fast
+`tokenizer.json` must be pre-staged on the LoxiLB host at
+`/etc/loxilb/tokenizers/<model-slug>/tokenizer.json` (slug = model id with `/` → `__`) —
+see [08 §6.3](08-kv-cache-aware-routing.md) for the download and container-mount procedure. A
+missing tokenizer fails silently (Guard E → lower tiers).
+
 An optional pre-guard exists on the C side: `LLB_KV_LOADGUARD` (env, default off) applies a
-hard load-imbalance check before Tier 1.5 runs (`sockproxy_pd.c:876`).
+hard load-imbalance check before Tier 1.5 runs (`pd_kv_loadguard_enabled` in `sockproxy_pd.c`).
 
 ### 3.5 Tier 2 — min-load with RR tie-break
 
 Despite its historical name ("Tier-2 RR"), the current Tier 2 is a **min-load scorer**
-(`sockproxy_pd.c:1461-1522`):
+(the Tier-2 block in `pd_select_prefill`):
 
 - **Default arm (C1):** `score = active_conns + queued_requests`, lower wins.
 - **Capacity-blend arm (C2):** engaged **only** when the rule's selector is GPU-aware
   (`sel:9` → `PROXY_SEL_GPU_AWARE`): `pd_capacity_blend_score()` weighs
-  `active_conns·20 + queued·50 + swap·30` (weights at `sockproxy.h:904`) normalized by
-  per-EP capacity (`sockproxy_kv_exact.h:150-173`).
+  `active_conns·20 + queued·50 + swap·30` (weights in `sockproxy.h`) normalized by
+  per-EP capacity (the `pd_capacity_weighted_cap` helpers in `sockproxy_kv_exact.h`).
 
-The round-robin counter `pd_tier2_rr` advances **only on a genuine tie** (`sockproxy_pd.c:1538`)
+The round-robin counter `pd_tier2_rr` advances **only on a genuine tie**,
 so it is a tie-breaker, not the algorithm.
 
 ### 3.6 Decode selection
 
-After the prefill EP is chosen, `pd_select_decode` (`sockproxy_pd.c:1564-1598`) picks the decode
+After the prefill EP is chosen, `pd_select_decode` (`sockproxy_pd.c`) picks the decode
 EP: (1) the Tier-0 session-pinned decode hint if valid (role 2, healthy, CB closed); else
 (2) min-load (`active_conns + queued_requests`) among decode EPs with its own RR tie-break
 counter (`pd_decode_rr`). Decode EPs are **never** KV-selection candidates — they publish no KV
 events and hold no scored inventory.
 
-### 3.7 The admission gate (— default-OFF)
+### 3.7 The admission gate (default-OFF)
 
 Before any tier body runs, the admission gate can exclude prefill EPs at their in-flight cap and,
 when **all** are capped, either **park** the request (hold-don't-drop: enqueue on the shortest
@@ -230,17 +237,21 @@ converting overload into TCP backlog backpressure. All four knobs (`LLB_PD_MAX_I
 off, and the A/B campaign that shipped it concluded **NO-SHIP as a default** (FIFO admission
 regressed saturated-rate goodput) — treat it as an opt-in protection for latency-SLO fleets, not
 a throughput optimizer. Return-code plumbing: `PD_PREFILL_PARKED → PD_SETUP_PARKED` (suspend),
-`PD_PREFILL_NO_CAPACITY → 429` (`sockproxy_ep.c:658-684`).
+`PD_PREFILL_NO_CAPACITY → 429` (`sockproxy_ep.c`). When a parked request's EP later becomes
+ineligible (CB-open or otherwise), that EP's parked FIFO is drained by `pd_parked_drain_ep()`
+(invoked from the health pass in `sockproxy_health.c`) and the parked requests are resumed
+against a healthy EP via `pd_resume_parked()` rather than being left to reap at the park
+deadline.
 
 ---
 
 ## 4. The unified selection law (Tier 1.5's blend modes)
 
 Raw overlap-argmax is load-blind: 50 clients sharing one hot preamble would all route to the
-same prefill EP. The **unified mode** (shipped default since) bounds cache affinity by a
+same prefill EP. The **unified mode** (the shipped default) bounds cache affinity by a
 capacity-weighted load cap, in the spirit of CHWBL (consistent hashing with bounded loads). All
 of this executes in Go inside `llb_ai_kv_best_worker` → `kvSelectArm`
-(`ai_kv_unified.go:82`); mode selection via `LOXILB_KV_LB_MODE`.
+(`ai_kv_unified.go`); mode selection via `LOXILB_KV_LB_MODE`.
 
 ### 4.1 The candidate set
 
@@ -249,13 +260,13 @@ Each prefill EP *i* contributes a candidate carrying:
 - `overlap_i` — matched block-hash count against the prompt's hash chain;
 - `load_i` — LoxiLB's **own** per-EP `active_conns` (not vLLM's view);
 - `capacity_i` — the EP's advertised KV-block capacity (`num_gpu_blocks`), clamped to
-  `[1, 8_000_000]` (`kvClampCapacity`, `ai_kv_unified.go:653-661`), optionally scaled by the
+  `[1, 8_000_000]` (`kvClampCapacity`, `ai_kv_unified.go`), optionally scaled by the
   controller weight (§7.2).
 
 ### 4.2 `hard` mode (default) — capacity-weighted bounded load
 
-Per-EP cap (`kvCapFor`, `ai_kv_unified.go:669-682`; C mirror `pd_capacity_weighted_cap`,
-`sockproxy_kv_exact.h:110-127` — the two constants must stay numerically identical):
+Per-EP cap (`kvCapFor`, `ai_kv_unified.go`; C mirror `pd_capacity_weighted_cap`,
+`sockproxy_kv_exact.h` — the two constants must stay numerically identical):
 
 ```
 cap_i = ceil( (1+ε) · totalLoad · capacity_i / totalCap )
@@ -263,7 +274,7 @@ cap_i = ceil( (1+ε) · totalLoad · capacity_i / totalCap )
 
 with `ε` expressed as `mean_load_factor_pct = (1+ε)·100`, default **175 ⇒ ε = 0.75**, and
 `totalLoad = Σ load_i`, `totalCap = Σ capacity_i` over the candidate set. Selection
-(`kvUnifiedSelect`, `ai_kv_unified.go:701-826`):
+(`kvUnifiedSelect`, `ai_kv_unified.go`):
 
 1. **Argmax overlap among under-cap EPs** (`load_i < cap_i`); ties → least load → lowest index.
 2. If the global overlap winner was over its cap and selection moved off it, that is a **spill**
@@ -278,12 +289,12 @@ capacity-fair share of the current total load; beyond that, the excess spills to
 
 An optional refinement, `LOXILB_KV_SPILL_RELIEF` (default OFF), redirects hot-prefix spills to
 the *least-loaded under-cap* EP rather than the next-best-overlap EP, for faster pressure relief
-(`ai_kv_unified.go:539`).
+(`kvSpillReliefSetting`, `ai_kv_unified.go`).
 
 ### 4.3 `soft` mode — continuous cost blend
 
 No hard cutoff; argmin of a cost that prices both the cache miss and the queue
-(`kvSoftBlendSelect`, `ai_kv_unified.go:946-1004`):
+(`kvSoftBlendSelect`, `ai_kv_unified.go`):
 
 ```
 cost_i = uncached_blocks_i · 1000  +  (λ · load_i) / capacity_i
@@ -305,7 +316,7 @@ L        = Σ active_conns over the candidate set (the selector's own totalLoad)
 λ_eff(L) = clamp( 50000 + 5000·(L−16) , 50000, 100000 ) // adaptive-soft
 ```
 
-(`kvAdaptiveMeanLoadFactor` `ai_kv_unified.go:330-345`, `kvAdaptiveLoadPenalty` `:356-370`;
+(`kvAdaptiveMeanLoadFactor` / `kvAdaptiveLoadPenalty` in `ai_kv_unified.go`;
 anchors: floor at L≤16 — the calibrated rate-1.0 operating point — cap at L≥26 — saturation.)
 Below the anchor the behavior is byte-identical to static hard/soft; the law only loosens the
 bound where the sweep showed loosening wins. `adaptive` runs the §4.2 selector with `ε_eff`;
@@ -313,19 +324,19 @@ bound where the sweep showed loosening wins. `adaptive` runs the §4.2 selector 
 
 Two supporting facts to know:
 
-- **Capacity normalization :** the anchors above were calibrated on one fleet's absolute
+- **Capacity normalization:** the anchors above were calibrated on one fleet's absolute
   Σcapacity. On a resized fleet, set `LOXILB_KV_CAP_SUM_MILLI` so the law normalizes
-  `L′ = L · capRef / capActual` (sanity-clamped to `[1/8, 8]`; `ai_kv_unified.go:230-318`).
+  `L′ = L · capRef / capActual` (sanity-clamped to `[1/8, 8]`; `ai_kv_unified.go`).
   Unset ⇒ normalization off ⇒ the law mis-keys on fleets much larger/smaller than the
   calibration fleet.
 - **EWMA smoothing exists but is not wired:** `kvAdaptiveEwmaLoad` (α=1/k=4,
-  `ai_kv_unified.go:401-413`) is implemented and unit-tested, but the live path currently feeds
-  the **raw** per-request totalLoad (`ai_kv_subscriber.go:1029-1039`). Expect per-request law
+  `ai_kv_unified.go`) is implemented and unit-tested, but the live path currently feeds
+  the **raw** per-request totalLoad (`ai_kv_subscriber.go`). Expect per-request law
   jitter at noisy load; do not document-or-depend on smoothing being active.
 
 ### 4.5 Mode resolution and precedence
 
-`kvLbMode()` (`ai_kv_unified.go:469-504`): a valid `LOXILB_KV_LB_MODE`
+`kvLbMode()` (`ai_kv_unified.go`): a valid `LOXILB_KV_LB_MODE`
 (`off|hard|soft|adaptive|adaptive-soft`) wins outright. Unset → legacy `LOXILB_KV_UNIFIED_MODE`
 mapping (an explicit disable value → `off`, anything else/unset → `hard`). Garbage → warn +
 `hard`. So the **out-of-box default is `hard` with ε=0.75** and `off` restores the pre-blend pure
@@ -335,20 +346,35 @@ overlap-argmax.
 
 ## 5. Resilience semantics of the ladder
 
-- **Health/CB pre-filter:** the excluded_mask seeded at `sockproxy_ep.c:644-650` guarantees the
+- **Health/CB pre-filter:** the excluded_mask seeded in `sockproxy_ep.c` guarantees the
   documented failover contract — *an excluded Tier-1.5 winner falls to the 2nd-best-overlap
   prefill EP, never to a decode EP and never straight to RR* (CICD scenario.3).
-- **Circuit breaker:** per-EP `CLOSED → OPEN → HALF_OPEN`. For P/D services the control plane
+- **Circuit breaker:** per-EP `CLOSED → OPEN → HALF_OPEN`, gated by the per-rule REST knob
+  `cb_enable` (which gates all circuit-breaker checks). For P/D services the control plane
   auto-enables it with **threshold 3 consecutive failures, 30 s open window**
-  (`pkg/loxinet/rules.go:3388`); the C-side default of 5 (`sockproxy.h:383`) applies only where
-  no explicit configuration lands. CB state is local-only, never HA-synced.
+  (the P/D CB auto-enable block in `pkg/loxinet/rules.go`); the C-side default of 5
+  (`sockproxy.h`) applies only where no explicit configuration lands. CB state is local-only,
+  never HA-synced.
 - **Exclusion is reactive:** REST health-probe state does not reach the data plane's `eps[].inv`;
-  real exclusion comes from connect-failure retry (`excluded_mask`), admin down, or an open CB
-  (design record: [08 §10.8](08-kv-cache-aware-routing.md)).
-- **Inventory staleness degrades, never mis-routes:** a subscriber reconnect clears that EP's
-  inventory (publisher may have restarted); an empty inventory scores 0 → Tier-1.5 `no_worker`
-  miss → Tier 2. Per-EP inventory is FIFO-capped at `LOXILB_KV_MAX_BLOCKS` (default 1,000,000)
-  with evictions counted in `loxilb_kv_inv_cap_evictions_total`.
+  real exclusion comes from observed failure — connect-failure retry (`excluded_mask`), admin
+  down, or an open CB (design record: [08 §10.8](08-kv-cache-aware-routing.md)).
+- **Mid-request failover is shipped:** a prefill EP that dies mid-request is retried once by
+  `pd_retry_prefill()` (saved headers/body re-driven, receipt rewritten via
+  `pd_receipt_rewrite()` to the EP that actually served); a decode zero-byte EOF becomes an HTTP
+  502 `{"error":"pd_decode_backend_died"}`; non-P/D services get a generalized mid-cycle connect
+  failover in `sockproxy_ep.c` (RR walk over healthy EPs; exhausted → 502 `backend_unreachable`,
+  all-down → 503 `no_healthy_backend`); and a CB-open/ineligible EP's parked admission FIFO is
+  drained (`pd_parked_drain_ep()` from `sockproxy_health.c`, resumed via `pd_resume_parked()`).
+  Counters: `loxilb_pd_prefill_ep_died_total`, `loxilb_pd_decode_ep_died_total`,
+  `loxilb_pd_decode_zero_byte_eof_total`, `loxilb_pd_connect_failover_total`, and the tripwire
+  `loxilb_lb_select_failure_shutdown_total` (counts silent TCP resets — must stay flat).
+- **Inventory staleness degrades, never mis-routes:** a subscriber reconnect runs a KEEP/CLEAR
+  resync decision on the first post-reconnect message — the warm inventory is KEPT when the seq
+  resumes near the preserved `lastSeq` (transient blip) and CLEARED on a seq regression or large
+  forward jump (publisher restart / ambiguous); a fresh subscribe backfills once from the
+  engine's replay endpoint before the live loop. An empty inventory scores 0 → Tier-1.5
+  `no_worker` miss → Tier 2. Per-EP inventory is FIFO-capped at `LOXILB_KV_MAX_BLOCKS`
+  (default 1,000,000) with evictions counted in `loxilb_kv_inv_cap_evictions_total`.
 - **Controller staleness glides to neutral:** if the external controller (§7) goes stale or its
   gRPC stream is evicted, per-EP weights decay toward the neutral 100 — capacity scaling relaxes
   back to unweighted; EPs are never zero-filled or dropped by staleness alone.
@@ -358,20 +384,20 @@ overlap-argmax.
 ## 6. The single-pool (non-disaggregated) hierarchy
 
 For a plain fullproxy pool (no `pd_disagg_mode`), the request path selects via the rule's
-**selector algorithm** in `sockproxy_ep.c` (the switch ending at `:613`), *before* the P/D gate.
+**selector algorithm** (the selector switch in `sockproxy_ep.c`), *before* the P/D gate.
 The cache-aware members of that family:
 
 | REST `sel` | C selector | Mechanism |
 |---|---|---|
 | `8` (chwbl) | `PROXY_SEL_CHWBL` | Consistent Hash with Bounded Loads over a hash ring, keyed by **prefix_hash** |
-| `9` (gpuaware) | `PROXY_SEL_GPU_AWARE` | `prefix_hash % n_eps` placement only on the single-pool path (`sockproxy_ep.c:552-561`). The capacity-weighted 20/50/30 scoring is a **P/D Tier-2 C2** feature, not applied here |
+| `9` (gpuaware) | `PROXY_SEL_GPU_AWARE` | `prefix_hash % n_eps` placement only on the single-pool path (the selector switch in `sockproxy_ep.c`). The capacity-weighted 20/50/30 scoring is a **P/D Tier-2 C2** feature, not applied here |
 | `10` (wrr-hash) | `PROXY_SEL_WRR_HASH` | CHWBL with endpoint **weights** folded into the ring (capacity-weighted bounded load) |
 
-The routing key priority is identical for all three (`sockproxy_ep.c:520-607`):
+The routing key priority is identical for all three (the selector switch in `sockproxy_ep.c`):
 
 1. **`prefix_hash`** — XXH64 over the request's extracted LLM prefix: prompt prefix + model,
    plus (per `chwbl_prefix_hash_level` and presence flags) LoRA adapter, image/audio hashes,
-   `cache_salt`, tool-schema hash (`compute_prefix_hash`, `common/sockproxy_json.c:736`).
+   `cache_salt`, tool-schema hash (`compute_prefix_hash`, `common/sockproxy_json.c`).
    Level 1 = global prefix fields only; levels 2/3 fold in progressively more context.
 2. **`conv_id`** — fallback session stickiness (XXH64 of the conversation ID).
 3. **RR** — last resort.
@@ -437,14 +463,14 @@ bounded-load cap and sheds traffic *proportionally*, without being removed. DISA
 folded into the excluded_mask (§3 table). Observability: `loxilb_pd_ctrl_*` gauges on the
 LoxiLB side, `aictrl_*` on the controller side.
 
-### 7.3 The Expected-TTFT term (— default-OFF)
+### 7.3 The Expected-TTFT term (default-OFF)
 
 A model-based refinement *inside the controller's weight computation* (no C-side counterpart;
 it reaches the data plane only through the §7.2 weights). Per epoch, per EP, the controller
 predicts log-TTFT from a fitted linear model over features
 `{intercept, log_prompt_tokens, waiting_over_capacity, kv_cache_usage_perc, fetch_cost,
 matched_prefix_sat}` (`pkg/aictrl/engine/ttft.go`), then biases the EP weight
-(`engine.go:547-593`):
+(`engine.go`):
 
 ```
 rel = clamp( mean_pred − pred_i , −1, 1 )        // lower predicted TTFT ⇒ bonus
@@ -481,17 +507,21 @@ that lets all of this run in the serving path of production traffic.
 
 | Area | Files |
 |---|---|
-| P/D ladder + admission + decode | `loxilb-ebpf/common/sockproxy_pd.c` (`pd_select_prefill` :1186, `pd_select_decode` :1564) |
-| P/D gate + excluded_mask + 429/parked plumbing | `loxilb-ebpf/common/sockproxy_ep.c` (:632–:709) |
+| P/D ladder + admission + decode | `loxilb-ebpf/common/sockproxy_pd.c` (`pd_select_prefill`, `pd_select_decode`) |
+| P/D gate + excluded_mask + 429/parked plumbing | `loxilb-ebpf/common/sockproxy_ep.c` |
 | Tier 1.5 C side (guards, hashing, CGO) | `loxilb-ebpf/common/sockproxy_kv_exact.c`, `sockproxy_kv_exact.h` |
+| Mid-request failover (prefill retry + receipt rewrite) | `loxilb-ebpf/common/sockproxy_http.c` (`pd_retry_prefill`, `pd_receipt_rewrite`) |
+| Generalized connect failover (non-P/D) | `loxilb-ebpf/common/sockproxy_ep.c` |
+| Parked-FIFO drain on EP ineligibility | `loxilb-ebpf/common/sockproxy_health.c` (`pd_parked_drain_ep` → `pd_resume_parked`) |
 | Unified/soft/adaptive blend + env parsing | `pkg/loxinet/ai_kv_unified.go` |
 | Inventory subscribers + best-worker CGO export | `pkg/loxinet/ai_kv_subscriber.go` |
 | Tokenizer pool | `pkg/loxinet/ai_kv_router.go`, `ai_kv_tokenizer_hf.go` |
-| Single-pool selectors (CHWBL/WRR-hash/GPU-aware) | `loxilb-ebpf/common/sockproxy_ep.c` (:520–:613), `sockproxy_json.c` (`compute_prefix_hash` :736) |
+| Chat-template registry (chat KV-exact) | `pkg/loxinet/ai_kv_chat_template.go` |
+| Single-pool selectors (CHWBL/WRR-hash/GPU-aware) | `loxilb-ebpf/common/sockproxy_ep.c`, `sockproxy_json.c` (`compute_prefix_hash`) |
 | Controller engine / proto / decay / TTFT | `pkg/aictrl/` (`engine/`, `aictrl.proto`, `decay.go`), `cmd/loxilb-ai-controller/` |
 | Applier (controller → C atomics) | `pkg/loxinet/ai_ctrl_applier.go` |
 | Fleet metrics scraper | `pkg/aimetrics/` |
-| Rule plumbing (REST → DP) | `pkg/loxinet/rules.go`, `pkg/loxinet/dpebpf_linux.go` (:1747-1781) |
+| Rule plumbing (REST → DP) | `pkg/loxinet/rules.go`, `pkg/loxinet/dpebpf_linux.go` |
 | Metrics export | `api/prometheus/sockproxy_metrics.go`, `ai_metrics.go`, `aictrl_metrics.go` |
 
 Configuration reference and tuning playbook: [doc 11](11-hierarchical-kv-routing-config-tuning.md).

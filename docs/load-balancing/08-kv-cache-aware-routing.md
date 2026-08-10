@@ -1,14 +1,13 @@
 # KV-Cache-Aware AI Routing (Tier-1.5) — Deep Dive
 
 > **Audience:** AI/vLLM platform engineers, QA engineers, and control-plane / data-plane developers.
-> **Scope:** The Tier-1.5 KV-cache-aware routing path shipped in **phases 42–44** (feature) and
-> brought to the production CICD bar in **phase 80** (harness). Covers architecture, the end-to-end
+> **Scope:** The Tier-1.5 KV-cache-aware routing path as shipped and hardened to the production
+> CICD bar. Covers architecture, the end-to-end
 > call flow, the vLLM block-hash contract, configuration, observability/log tracing, the full
-> test & validation matrix, and the limitation/bottleneck analysis behind –83
+> test & validation matrix, and the limitation/bottleneck analysis behind the
 > enhancement roadmap (§10).
 > **Status:** Shipped and gate-verified — authoritative paid AWS exit gate GREEN 2026-06-11
 > (`SCENARIO-vllm-kvcache-routing-cpu [OK]` with `RUN_FR9=1`, `run-20260611T194404Z.log`).
-> Last updated 2026-06-12 against branch ``.
 
 Related: [AI-Gateway L7 proxy & HA](04-ai-gateway-l7.md) (the P/D routing tiers this slots into),
 [Developer guide](07-developer-guide.md) (build gates), [Troubleshooting](06-troubleshooting.md).
@@ -28,12 +27,12 @@ each request **recomputes the same block hashes vLLM would compute** for the pro
 the prefill endpoint with the highest block overlap.
 
 In the P/D routing tier ladder (see [04 §2.1](04-ai-gateway-l7.md)) this is **Tier 1.5** — between
-exact conversation stickiness and the Tier-2 round-robin fallback:
+exact conversation stickiness and the Tier-2 min-load (RR tie-break) fallback:
 
 ```
 Tier 1   conversation stickiness (exact session mapping)
 Tier 1.5 KV-cache overlap argmax  ← this document
-Tier 2   round-robin over prefill EPs (fallthrough when any Tier-1.5 guard fires)
+Tier 2   min-load (RR tie-break) over prefill EPs (fallthrough when any Tier-1.5 guard fires)
 ```
 
 Everything is **fail-open**: any guard failure falls through to Tier 2. Tier 1.5 can never make a
@@ -104,7 +103,7 @@ flowchart LR
 |---|---|---|
 | **Inventory ingest** (Go) | `pkg/loxinet/ai_kv_subscriber.go` | One goroutine per prefill EP subscribes to that EP's ZMQ KV-event stream, maintains a flat `map[uint64]struct{}` block-hash set per EP, handles reconnect/seq-gap/clear semantics |
 | **Request decision** (C) | `loxilb-ebpf/common/sockproxy_kv_exact.c` | On each proxied request: extract prompt+model, tokenize (CGO), compute the vLLM-contract block hashes, query the Go inventory for the best-overlap prefill EP through the guard ladder |
-| **Selection + tokenize** (Go, called from C) | `pkg/loxinet/ai_kv_subscriber.go:644-707` (`llb_ai_kv_best_worker`), `pkg/loxinet/ai_kv_router.go` (`llb_ai_kv_tokenize`) | Argmax overlap scoring across per-EP inventories honoring prefill/excluded masks; tokenizer pool keyed by model slug |
+| **Selection + tokenize** (Go, called from C) | `llb_ai_kv_best_worker` in `pkg/loxinet/ai_kv_subscriber.go`, `llb_ai_kv_tokenize` in `pkg/loxinet/ai_kv_router.go` | Argmax overlap scoring across per-EP inventories honoring prefill/excluded masks; tokenizer pool keyed by model slug |
 
 Key design properties:
 
@@ -126,34 +125,43 @@ Key design properties:
 1. Operator POSTs a loadbalancer rule with `kvExactMode: 1` and `pd_disagg_mode: true`
    (required — mode 1 is the P/D entry into Tier 1.5 and is rejected without it), plus
    endpoints carrying `epRole: 1` (prefill) / `epRole: 2` (decode) (§6).
-2. `pkg/loxinet/rules.go:3410-3415` — for every `epRole==1` endpoint, calls
-   `KvSubscriberStart(serviceID=ruleNum, epIdx, epIP, kvZmqPort, kvHashAlgo)`.
+2. The `KvExactMode==1` block in `pkg/loxinet/rules.go` — for every `epRole==1` endpoint, calls
+   `KvSubscriberStartRank(serviceID=ruleNum, epIdx, epIP, kvZmqPort, kvHashAlgo)` once per
+   data-parallel rank (rank N subscribes at `kvZmqPort+N`; see `kvDpRankCount`, §6.1).
 3. `pkg/loxinet/dpebpf_linux.go` copies `kv_exact_mode / kv_hash_algo / kv_block_size /
    kv_warmup_sec` into the C `proxy_epval_t`, and `kv_warmup_start` is stamped — the warmup
    window (Guard B) starts counting.
 4. Each subscriber goroutine dials `tcp://<epIP>:<kvZmqPort>`. Initial dial failure does **not**
-   kill the subscriber — it retries every 5 s (`ai_kv_subscriber.go:578-591`), so the rule can be
-   created before vLLM is up.
+   kill the subscriber — the dial-retry loop in `KvSubscriberStartRank` retries every 5 s, so the
+   rule can be created before vLLM is up.
 
 ### 3.2 Ingest path — vLLM event → inventory
 
 1. vLLM (with `--kv-events-config '{"enable_kv_cache_events":true, "publisher":"zmq", ...}'` and
    `VLLM_KV_EVENTS_USE_INT_BLOCK_HASHES=1`) publishes a 3-frame multipart message:
    `[topic | seq u64 BE | msgpack(KVEventBatch)]`.
-2. The subscriber parses the seq (`ai_kv_subscriber.go:31`). If `seq > lastSeq+1` it logs
-   `seq gap detected` and requests replay from `lastSeq+1` (`:403-409`) — vLLM's publisher keeps a
-   replay buffer on a paired ROUTER socket.
-3. `BlockStored` → `extractBlockHashes` (`:259-285`, accepts msgpack int types only — this is why
-   `VLLM_KV_EVENTS_USE_INT_BLOCK_HASHES=1` is mandatory) → `inv.AddBlocks`.
+2. On a fresh subscribe, the subscriber first performs a **one-shot replay backfill**
+   (`replayKvEvents`) against the engine's replay endpoint — vLLM keeps a replay buffer on a
+   paired ROUTER socket — so a rule created against an already-warm engine starts with a
+   populated inventory (fail-open: no replay listener ⇒ the inventory warms organically). The
+   live loop then runs with **no replay client**; it parses the seq frame of every message. A
+   forward seq gap in the live stream is resolved by `kvResyncDecision`: **KEEP** the warm
+   inventory on a small hop within the resume window, **CLEAR** on a large jump. A seq
+   **regression** (publisher restarted with a fresh cache) triggers `inv.ClearAll()`.
+3. `BlockStored` → `extractBlockHashes` (`ai_kv_subscriber.go`, accepts msgpack int types only —
+   this is why `VLLM_KV_EVENTS_USE_INT_BLOCK_HASHES=1` is mandatory) → `inv.AddBlocks`.
    `BlockRemoved` → `inv.RemoveBlocks`. `AllBlocksCleared` → `inv.ClearAll`.
-4. On any recv error the socket is rebuilt; on successful reconnect the inventory is **cleared**
-   (`:475-483`) — the publisher may have restarted with a fresh prefix cache, so stale hashes
-   would mis-route. `loxilb_kv_subscriber_reconnect_total` increments.
+4. On any recv error the socket is rebuilt; on successful reconnect the subscriber does **not**
+   blind-clear the inventory. The first post-reconnect message runs `kvResyncDecision`, which
+   **KEEPs** the warm inventory when the seq resumes near the preserved `lastSeq` (transient
+   blip, same running engine) and **CLEARs** it when the seq went backwards or jumped far ahead
+   (publisher restart / ambiguous — stale hashes would mis-route).
+   `loxilb_kv_subscriber_reconnect_total` increments.
 
 ### 3.3 Request path — client request → routed worker
 
 For each proxied request on a `kvExactMode=1` rule, `pd_kv_exact_select`
-(`sockproxy_kv_exact.c:522-682`) runs the guard ladder (full table in §5):
+(`sockproxy_kv_exact.c`) runs the guard ladder (full table in §5):
 
 1. **Extract** prompt text from the parsed OpenAI JSON body (`pfe->prefix_key.prefix`; raw
    `rcvbuf` as fallback) and model from the `X-Model` header or JSON `model` field.
@@ -163,20 +171,20 @@ For each proxied request on a `kvExactMode=1` rule, `pd_kv_exact_select`
 2. **Tokenize** via CGO `llb_ai_kv_tokenize(text, model, ...)` — the daulet/tokenizers
    (HuggingFace-compatible) path, loading `/etc/loxilb/tokenizers/<model-slug>/tokenizer.json`
    (slug: `/` → `__`, e.g. `Qwen/Qwen3-0.6B` → `Qwen__Qwen3-0.6B`). Tokenizers are cached per
-   model; load failures are negative-cached (`ai_kv_router.go:116-164`).
-3. **Hash** via `kv_compute_block_hashes` (`sockproxy_kv_exact.c:420-514`): for each
+   model; load failures are negative-cached (`kvLoadTokenizer` in `ai_kv_router.go`).
+3. **Hash** via `kv_compute_block_hashes` (`sockproxy_kv_exact.c`): for each
    `kv_block_size`-token block, canonical-CBOR-encode `[parent_hash, [token_ids...], null]`,
    hash with SHA-256 or XXH3-128, truncate to `BE(digest[-8:])` as the uint64, and chain the
    **full** digest as the next block's parent (§4).
 4. **Select** via CGO `llb_ai_kv_best_worker(hashes, n, model, prefill_mask, excluded_mask)`:
    argmax of `inv.MatchCount(hashes)` over prefill EPs not in `excluded_mask`
-   (`ai_kv_subscriber.go:644-707`). Ties resolve by EP iteration order.
+   (`llb_ai_kv_best_worker` in `ai_kv_subscriber.go`). Ties resolve by EP iteration order.
 5. **Post-filter** (Guard G): the winner must not be in `excluded_mask`, not have
    `eps[best_ep].inv` set (admin/maintenance down), and not have an **open circuit breaker**.
    If excluded, Tier 1.5 returns -1; the caller retries with `excluded_mask |= (1<<best_ep)` on
    connect failure, so the *second-best* overlap EP wins — never a decode EP, never plain RR
    (proven by CICD scenario.3).
-6. On any guard miss → return -1 → **Tier-2 round-robin** over prefill EPs;
+6. On any guard miss → return -1 → **Tier-2 min-load (RR tie-break)** over prefill EPs;
    `loxilb_pd_kv_tier15_fallthrough_total` and the matching `tier15_miss_reason{reason}` increment.
    On success → `loxilb_pd_kv_tier15_hits_total{ep_idx}` increments and the request is proxied
    to the chosen prefill EP (then the P/D flow continues to a decode EP as usual — see
@@ -187,8 +195,9 @@ For each proxied request on a `kvExactMode=1` rule, `pd_kv_exact_select`
 
 The C side passes the **absolute endpoint index** within the rule (0..n-1, mixed prefill+decode);
 `prefill_mask` is built from `ep_role[i]==1` at those absolute positions
-(`sockproxy_kv_exact.c:637-640`). The Go inventories are keyed by the same absolute index given to
-`KvSubscriberStart`. fixed the historical bug where the two sides disagreed on indexing
+(the `prefill_mask` build loop in `sockproxy_kv_exact.c`). The Go inventories are keyed by the
+same absolute index given to `KvSubscriberStartRank`. This shared absolute indexing fixed the
+historical bug where the two sides disagreed on indexing
 for non-contiguous prefill sets (e.g. prefill at indices 0/2/4); CICD scenario.2 pins this.
 
 ### 3.5 What exactly is synced — and why it is tiny
@@ -200,7 +209,7 @@ therefore means: *mirroring the set of block hashes each prefill worker currentl
 nothing more.
 
 **Wire anatomy of one sync message** (3-frame ZMQ multipart; shapes per
-`ai_kv_subscriber.go:23-31` and the synthetic publisher, live-verified against real vLLM v0.17.0
+`ai_kv_subscriber.go` and the synthetic publisher, live-verified against real vLLM v0.17.0
 in `FR9_SMOKE.md`):
 
 ```
@@ -219,7 +228,7 @@ where a BlockStored event is the tagged array:
 ```
 
 The hash values above are real ones captured from CPU vLLM v0.17.0 in smoke. Note that
-`extractBlockHashes` (`ai_kv_subscriber.go:259-285`) pulls **only the hash array**; the token ids
+`extractBlockHashes` (`ai_kv_subscriber.go`) pulls **only the hash array**; the token ids
 that vLLM includes are discarded — loxilb's inventory never stores prompt content.
 
 **Where the "compression" is.** There is deliberately *no* transport compression (no
@@ -249,22 +258,27 @@ terabytes of worker-side KV state.
   optimization is lost. This is why eventual consistency is acceptable here at all.
 - **Reconciliation events**: `BlockRemoved` (worker evicted blocks), `AllBlocksCleared` (worker
   reset its cache) keep the mirror honest in the shrinking direction.
-- **Gap recovery**: the seq frame makes loss detectable — `seq > lastSeq+1` triggers a replay
-  request from `lastSeq+1` against vLLM's replay buffer (`ai_kv_subscriber.go:403-409`).
-- **Restart recovery**: a reconnect clears the whole per-EP inventory (the publisher may have
-  restarted with an empty cache), trading a brief `no_worker` window for never routing on a
-  phantom inventory.
+- **Gap recovery**: the seq frame makes loss detectable. A fresh subscribe performs a one-shot
+  replay backfill (`replayKvEvents`) against the engine's replay endpoint before entering the
+  live loop; in the live stream (which runs with no replay client) a forward gap is resolved by
+  `kvResyncDecision` — KEEP the warm inventory on a small hop within the resume window, CLEAR on
+  a large jump.
+- **Restart recovery**: a seq regression, or a post-reconnect seq that does not resume near the
+  preserved `lastSeq`, clears the per-EP inventory (the publisher restarted with an empty
+  cache), trading a brief `no_worker` window for never routing on a phantom inventory. A
+  transient blip that resumes near `lastSeq` KEEPs the warm inventory instead.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Dialing: KvSubscriberStart (rule POST with epRole=1)
-    Dialing --> Connected: zmq connect ok — "zmq connected to …"
+    [*] --> Dialing: KvSubscriberStartRank (rule POST with epRole=1)
+    Dialing --> Backfill: zmq connect ok — "zmq connected to …"
     Dialing --> Dialing: dial fail — retry 5 s (rule may pre-date vLLM)
+    Backfill --> Connected: one-shot replay backfill (replayKvEvents)<br/>— skipped fail-open if no replay listener
     Connected --> Connected: event, seq == lastSeq+1<br/>AddBlocks / RemoveBlocks / ClearAll
-    Connected --> Replaying: seq gap (seq > lastSeq+1)<br/>"seq gap detected"
-    Replaying --> Connected: replay from lastSeq+1
+    Connected --> Connected: forward seq gap → kvResyncDecision<br/>KEEP (small hop) / CLEAR (large jump)
+    Connected --> Connected: seq regression (publisher restart)<br/>→ ClearAll
     Connected --> Rebuilding: recv error — "rebuilding socket"<br/>recv_error_total++
-    Rebuilding --> Connected: reconnect ok — CLEAR inventory,<br/>lastSeq = −1, reconnect_total++
+    Rebuilding --> Connected: reconnect ok — resync deferred to first message:<br/>kvResyncDecision KEEP / CLEAR, reconnect_total++
     Rebuilding --> Rebuilding: connect fail — retry 5 s
 ```
 
@@ -300,8 +314,8 @@ sequenceDiagram
     LB->>GO: llb_ai_kv_tokenize → 40 tokens
     LB->>LB: kv_compute_block_hashes → h1,h2,h3
     LB->>GO: llb_ai_kv_best_worker(h1..h3) → score 0 on EP0 and EP2
-    Note over LB: [KV_T15] GUARD_G no_worker → Tier-2 RR (miss_reason{no_worker}++)
-    LB->>P0: proxy Prompt A (RR picked EP0)
+    Note over LB: [KV_T15] GUARD_G no_worker → Tier-2 min-load (miss_reason{no_worker}++)
+    LB->>P0: proxy Prompt A (all EPs idle — the RR tie-break picked EP0)
     P0->>P0: prefill: compute KV for all 40 tokens,<br/>store full blocks B1,B2 in prefix cache
     P0->>D: KV handoff (vLLM's own connector — not loxilb)
     D-->>CA: generated reply (streams back through LB)
@@ -323,8 +337,8 @@ Step-by-step commentary (numbers match the diagram):
 1–5 **Cold request.** Prompt A tokenizes to 40 tokens. loxilb computes `h1,h2,h3` (note: loxilb
 hashes the partial block B3 too — `kv_compute_block_hashes` never skips the final partial block —
 while vLLM only *stores* full blocks. The asymmetry is harmless: scoring is overlap *count*, and
-`h3` simply never matches anything). Inventories are empty → `GUARD_G no_worker` → Tier-2 RR
-happens to pick EP0.
+`h3` simply never matches anything). Inventories are empty → `GUARD_G no_worker` → Tier-2
+min-load; all EPs are idle, so the RR tie-break happens to pick EP0.
 
 6–9 **First inference + reply.** EP0's prefill computes KV for all 40 tokens and caches blocks
 B1,B2. In a P/D topology the KV then moves prefill→decode over **vLLM's own connector** (NIXL
@@ -343,15 +357,19 @@ is the **delivery** proof — the harness asserts both, §8.4).
 from a cache — every reply is generated fresh by vLLM. The win is *inside* EP0: its prefix cache
 is keyed by the same hash chain, so B1,B2 KV is reused and prefill runs only over the 6-token
 suffix instead of 38 tokens (~84% of prefill compute skipped for this request). Lower TTFT,
-freed prefill capacity. Had the request gone to EP2 (RR could have), EP2 would have recomputed
-everything — correct but slow. That delta is exactly what b ("warm-route") measures against
-real vLLM in the exit gate.
+freed prefill capacity. Had the request gone to EP2 (the tie-break could have picked it), EP2
+would have recomputed everything — correct but slow. That delta is exactly what the exit gate's
+warm-route assertion measures against real vLLM.
 
-**Failure-mode coda:** if EP0's vLLM restarts between steps 11 and 12, the subscriber's reconnect
-clears `{h1,h2}` (§3.5), Prompt B takes the honest `no_worker` → RR path, and the inventory
-repopulates from EP whichever serves it. If instead EP0 is up but its `:80` refuses connections,
+**Failure-mode coda:** if EP0's vLLM restarts between steps 11 and 12, the subscriber's resync
+decision clears `{h1,h2}` (§3.5 — the post-restart seq does not resume near `lastSeq`), Prompt B
+takes the honest `no_worker` → Tier-2 path, and the inventory
+repopulates from whichever EP serves it. If instead EP0 is up but its `:80` refuses connections,
 all guards pass, the connect fails, and the retry re-enters Tier-1.5 with `excluded_mask=0x1` —
-landing on the *next-best overlap* prefill EP, never a decode EP (§5, scenario.3).
+landing on the *next-best overlap* prefill EP, never a decode EP (§5, scenario.3). And if EP0
+dies *mid-request* while serving the prefill leg, `pd_retry_prefill()` re-drives the saved
+request to another healthy prefill EP under a one-retry budget, and `pd_receipt_rewrite()`
+rewrites the receipt to the EP that actually served (§5.1).
 
 ---
 
@@ -363,12 +381,12 @@ and line ranges; `--self-check` self-asserts against the golden vectors on every
 
 | Contract element | Definition | loxilb implementation |
 |---|---|---|
-| Block input | `(parent_hash, tuple(token_ids), extra)` per `kv_block_size` tokens | `kv_cbor_encode_block_input` — canonical CBOR (RFC 7049 §3.9), definite-length arrays (`sockproxy_kv_exact.c:113-151`) |
-| Hash algorithms | `sha256_cbor` (32-byte digest) or `xxhash_cbor` (XXH3-128, 16-byte) | `kv_hash_algo` 0/1 (`:40`) |
-| uint64 truncation | `int.from_bytes(digest, 'big') & ((1<<64)-1)` ⇒ **last 8 bytes, big-endian** | `memcpy(out, digest_full + digest_len - 8, 8)` (`:48`) — must be the **last** 8 bytes; an earlier `digest[:8]` mis-slice produced 0% overlap |
-| Parent chaining | next block's parent = **full** digest of previous block (not the truncated u64) | `memcpy(parent_hash, digest_full, digest_len)` (`:507-510`) |
+| Block input | `(parent_hash, tuple(token_ids), extra)` per `kv_block_size` tokens | `kv_cbor_encode_block_input` — canonical CBOR (RFC 7049 §3.9), definite-length arrays (`sockproxy_kv_exact.c`) |
+| Hash algorithms | `sha256_cbor` (32-byte digest) or `xxhash_cbor` (XXH3-128, 16-byte) | `kv_hash_algo` 0/1 |
+| uint64 truncation | `int.from_bytes(digest, 'big') & ((1<<64)-1)` ⇒ **last 8 bytes, big-endian** | the truncation step in `kv_hash_block`: `memcpy(out, digest_full + digest_len - 8, 8)` — must be the **last** 8 bytes; an earlier `digest[:8]` mis-slice produced 0% overlap |
+| Parent chaining | next block's parent = **full** digest of previous block (not the truncated u64) | the parent-chain step: `memcpy(parent_hash, digest_full, digest_len)` |
 | `NONE_HASH` (first parent) | derived from `PYTHONHASHSEED` via `init_none_hash` | `LLB_KV_NONE_HASH_SEED` env var; **must equal vLLM's `PYTHONHASHSEED`** (e.g. both `0`). Unset ⇒ all-zero NONE_HASH, which diverges from a seeded vLLM on *every* chained hash (live-proven failure mode) |
-| Wire encoding of hashes | msgpack **ints** (uint64), requires `VLLM_KV_EVENTS_USE_INT_BLOCK_HASHES=1` on vLLM | `extractBlockHashes` accepts int types only (`ai_kv_subscriber.go:259-285`) |
+| Wire encoding of hashes | msgpack **ints** (uint64), requires `VLLM_KV_EVENTS_USE_INT_BLOCK_HASHES=1` on vLLM | `extractBlockHashes` accepts int types only (`ai_kv_subscriber.go`) |
 | Block size | must match vLLM's `--block-size` | `kvBlockSize` REST field (default 16). ⚠ **CPU vLLM defaults to 128** — it emits zero `BlockStored` events for prompts shorter than 128 tokens; run CPU vLLM with `--block-size 16` |
 
 **Contract drift policy:** the hard gate is pinned to v0.17.0. A separate, *non-gating* drift
@@ -379,14 +397,14 @@ divergence without ever turning the gate red.
 
 ## 5. Guard ladder reference (Tier-1.5 miss reasons)
 
-All guards live in `pd_kv_exact_select` (`loxilb-ebpf/common/sockproxy_kv_exact.c:522-682`).
+All guards live in `pd_kv_exact_select` (`loxilb-ebpf/common/sockproxy_kv_exact.c`).
 Every miss increments exactly one atomic counter, surfaced as
 `loxilb_pd_kv_tier15_miss_reason_total{reason}`.
 
 ```mermaid
 flowchart TD
     REQ["request on kvExactMode=1 rule"] --> A{"A: kv_exact_mode ≠ 0?"}
-    A -- no --> MISS["Tier-2 RR fallthrough<br/>tier15_miss_reason{…}++ · t15_fallthrough++"]
+    A -- no --> MISS["Tier-2 fallthrough (min-load)<br/>tier15_miss_reason{…}++ · t15_fallthrough++"]
     A -- yes --> B{"B: warmup window elapsed?"}
     B -- no --> MISS
     B -- yes --> C{"C: prompt text present?"}
@@ -406,25 +424,52 @@ flowchart TD
     RETRY --> G1
 ```
 
-| Guard | Check (fires when…) | `reason` label | Log marker | Line |
-|---|---|---|---|---|
-| A | `kv_exact_mode == 0` (feature off) | `mode_off` | `GUARD_A mode_off` | :526 |
-| B | inside `kv_warmup_start + kv_warmup_sec` window (inventory still populating) | `warmup` | `GUARD_B warmup_remaining=` | :538 |
-| C | no prompt text (`prefix_key.prefix` empty and `rcvbuf` fallback empty) | `text_empty` | `GUARD_C text_empty` | :550 |
-| D | no model (`X-Model` header and JSON `model` both empty — e.g. non-JSON body) | `model_empty` | `GUARD_D model_empty` | :575 |
-| E | `llb_ai_kv_tokenize` returned ≤0 (tokenizer missing/failed for model slug) | `tokenize` | `GUARD_E tokenize_fail` | :598 |
-| F | `kv_compute_block_hashes` returned ≤0 (e.g. invalid algo) | `hashes` | `GUARD_F no_hashes` | :610 |
-| G1 | best_ep < 0 or score ≤ 0 (no inventory overlap anywhere) | `no_worker` | `GUARD_G no_worker` | :651 |
-| G2 | winner bit set in `excluded_mask` (caller-driven retry exclusion) | `excluded` | `GUARD_G excluded … reason=excluded_mask` | :660 |
-| G3 | `eps[best_ep].inv` (endpoint administratively down) | `excluded` | `GUARD_G excluded … reason=ep_inv` | :666 |
-| G4 | circuit breaker OPEN for winner (`cb_enabled && CB_STATE_OPEN`) | `excluded` | `GUARD_G excluded … reason=cb_open` | :672 |
+| Guard | Check (fires when…) | `reason` label | Log marker |
+|---|---|---|---|
+| A | `kv_exact_mode == 0` (feature off) | `mode_off` | `GUARD_A mode_off` |
+| B | inside `kv_warmup_start + kv_warmup_sec` window (inventory still populating) | `warmup` | `GUARD_B warmup_remaining=` |
+| C | no prompt text (`prefix_key.prefix` empty and `rcvbuf` fallback empty) | `text_empty` | `GUARD_C text_empty` |
+| D | no model (`X-Model` header and JSON `model` both empty — e.g. non-JSON body) | `model_empty` | `GUARD_D model_empty` |
+| E | `llb_ai_kv_tokenize` returned ≤0 (tokenizer missing/failed for model slug) | `tokenize` | `GUARD_E tokenize_fail` |
+| F | `kv_compute_block_hashes` returned ≤0 (e.g. invalid algo) | `hashes` | `GUARD_F no_hashes` |
+| G1 | best_ep < 0 or score ≤ 0 (no inventory overlap anywhere) | `no_worker` | `GUARD_G no_worker` |
+| G2 | winner bit set in `excluded_mask` (caller-driven retry exclusion) | `excluded` | `GUARD_G excluded … reason=excluded_mask` |
+| G3 | `eps[best_ep].inv` (endpoint administratively down) | `excluded` | `GUARD_G excluded … reason=ep_inv` |
+| G4 | circuit breaker OPEN for winner (`cb_enabled && CB_STATE_OPEN`) | `excluded` | `GUARD_G excluded … reason=cb_open` |
 
-> **Operational note on G2 vs G3/G4 (learned live in phase 80):** REST health-probe state does
+> **Operational note on G2 vs G3/G4 (learned live on the paid gate):** REST health-probe state does
 > **not** propagate to the data plane's `eps[].inv` — marking an EP "down" via probe failure will
 > not by itself exclude it from Tier 1.5. Real exclusion comes from (a) connect-failure retry
 > setting `excluded_mask`, (b) admin `inv`, or (c) an open circuit breaker. This is why the CICD
 > failover scenario injects a TCP RST (instant connect failure → retry with the winner excluded)
-> rather than relying on probes.
+> rather than relying on probes. What happens *after* a failure is observed is covered by the
+> mid-request failover set in §5.1.
+
+### 5.1 Mid-request failover (beyond the guard ladder)
+
+The guard ladder governs *selection*; a separate set of shipped mechanisms governs what happens
+when the selected backend fails during the request:
+
+- **Prefill connect failure** — the connect-failure retry re-enters Tier-1.5 with the failed
+  winner in `excluded_mask`, landing on the next-best-overlap prefill EP (proven by CICD
+  scenario.3). A retry that succeeds silently increments `loxilb_pd_connect_failover_total`.
+- **Prefill dies mid-request** — `pd_retry_prefill()` (`sockproxy_http.c`) re-drives the request
+  under a **one-retry budget**: the saved request headers and body are replayed against another
+  healthy prefill EP, and `pd_receipt_rewrite()` rewrites the receipt (completion id) to name
+  the EP that actually served. Death events are counted in `loxilb_pd_prefill_ep_died_total`;
+  an exhausted retry budget surfaces to the client as a 502.
+- **Decode dies** — a decode-backend EOF with zero response bytes relayed becomes an HTTP 502
+  `{"error":"pd_decode_backend_died"}` instead of a silent truncation; counted in
+  `loxilb_pd_decode_ep_died_total` and `loxilb_pd_decode_zero_byte_eof_total`.
+- **Non-P/D services** — a generalized mid-cycle connect failover in `sockproxy_ep.c` walks the
+  remaining healthy EPs round-robin; if every candidate fails, the client receives a 502
+  `backend_unreachable`, and if no healthy backend exists at all, a 503 `no_healthy_backend`.
+  The tripwire counter `loxilb_lb_select_failure_shutdown_total` counts connections shut down
+  raw (silent TCP reset instead of an HTTP error body) and must stay flat.
+- **Parked-admission drain** — when an EP goes CB-open or otherwise ineligible, its parked
+  admission FIFO is drained by `pd_parked_drain_ep()` (called from the health pass in
+  `sockproxy_health.c`), and the parked requests are resumed against a healthy EP via
+  `pd_resume_parked()` rather than being left to time out.
 
 ---
 
@@ -438,6 +483,9 @@ flowchart TD
     "mode": 4,                   // fullproxy — required
     "pd_disagg_mode": true,      // REQUIRED for kvExactMode 1 (validated); use mode 3 for a single pool
     "kvExactMode": 1,            // 0=off, 1=zmq P/D, 2=nats (reserved), 3=zmq single-role
+    "kvEngineType": "vllm",      // "vllm" (default) or "sglang" — picks the hash contract; immutable after create
+    "kvDpRankCount": 1,          // data-parallel ranks: rank N subscribes at kvZmqPort+N
+    "cb_enable": true,           // gates all circuit-breaker checks for the rule
     "kvZmqPort": 5557,           // vLLM KV-event PUB port (default 5557)
     "kvHashAlgo": "sha256_cbor", // or "xxhash_cbor" — MUST match vLLM (omit to take the engine default)
     "kvBlockSize": 16,           // MUST match vLLM --block-size
@@ -456,15 +504,50 @@ flowchart TD
 |---|---|
 | `LLB_KV_NONE_HASH_SEED` | NONE_HASH seed; **must equal vLLM's `PYTHONHASHSEED`** (≤23 bytes). Unset ⇒ zero NONE_HASH (only correct if vLLM is also unseeded) |
 | `LLB_KV_HASH_DEBUG=1` | Emit one `[KV_HASH]` log per computed block (hash + CBOR hex). Zero cost when unset |
-| `LOXILB_KV_UNIFIED_MODE` | The unified prefix-CHWBL **capacity-weighted bounded-load blend**. **ON by default (the shipped default since)** — Tier-1.5 keeps the cache-affinity (overlap) winner while it is under its capacity-weighted cap and *spills* CHWBL-style when it is over, so a hot prefix can no longer herd every request onto one prefill EP. Set `LOXILB_KV_UNIFIED_MODE=0` (or `false`/`off`/`no`) to **explicitly disable** it and restore the legacy pure overlap-argmax selector (byte-identical to the pre- W3 baseline). Why it is the default: replicated A/B testing showed the blend is the only mode where KV-exact beats round-robin at the loose SLO — it cuts the prefill hot-spot's TTFT p90 from ~15.9 s to ~10.0 s. |
+| `LOXILB_KV_LB_MODE` | Tier-1.5 selection-law **mode selector**: `off`\|`hard`\|`soft`\|`adaptive`\|`adaptive-soft` (unset ⇒ `hard`; garbage ⇒ warn + `hard`) — see [doc 10 §4](10-hierarchical-kv-routing-architecture.md) |
+| `LOXILB_KV_UNIFIED_MODE` | **Legacy fallback toggle**, consulted only when `LOXILB_KV_LB_MODE` is unset. The unified prefix-CHWBL **capacity-weighted bounded-load blend** is **ON by default (the shipped default)** — Tier-1.5 keeps the cache-affinity (overlap) winner while it is under its capacity-weighted cap and *spills* CHWBL-style when it is over, so a hot prefix can no longer herd every request onto one prefill EP. Set `LOXILB_KV_UNIFIED_MODE=0` (or `false`/`off`/`no`) to **explicitly disable** it and restore the legacy pure overlap-argmax selector (byte-identical to the pre-blend baseline). Why it is the default: replicated A/B testing showed the blend is the only mode where KV-exact beats round-robin at the loose SLO — it cuts the prefill hot-spot's TTFT p90 from ~15.9 s to ~10.0 s. |
 | `LOXILB_KV_MEAN_LOAD_FACTOR` | The blend's bounded-load slack `c = (1+ε)·100`; valid `[100, 1000]` (ε ∈ [0, 9]); default `175` (ε = 0.75). Higher ⇒ more affinity-preserving (looser cap); lower ⇒ more aggressive spilling. Out-of-range/garbage ⇒ default. |
+| `LOXILB_KV_LOAD_PENALTY` | Static λ for the `soft` blend mode (default 32) |
+| `LOXILB_KV_SPILL_RELIEF` | Opt-in: redirect hot-prefix spills to the least-loaded under-cap EP instead of the next-best-overlap EP (default off) |
+| `LOXILB_KV_CAP_SUM_MILLI` | Deployment Σcapacity (milli-units) for the capacity-normalized adaptive law (unset ⇒ normalization off) |
+| `LOXILB_KV_TLOAD_LOG` | Promote per-selection `[KV_INV] totalLoad=` diagnostics to Info level |
+| `LOXILB_KV_MAX_BLOCKS` | Per-EP inventory cap: default 1,000,000, range 1000–100,000,000; FIFO eviction counted in `loxilb_kv_inv_cap_evictions_total{service,ep}` |
+| `LOXILB_KV_ZERO_HIT_N` | Consecutive-zero-hit watchdog threshold (default 50; positive integers only — cannot be disabled) |
+| `LLB_KV_LOADGUARD` | Hard load-imbalance pre-guard applied before Tier 1.5 runs (default off) |
 
 ### 6.3 Tokenizer staging
 
-Stage the model's HuggingFace `tokenizer.json` at
-`/etc/loxilb/tokenizers/<model-slug>/tokenizer.json` where `<model-slug>` replaces `/` with `__`
-(e.g. `/etc/loxilb/tokenizers/Qwen__Qwen3-0.6B/tokenizer.json`). No network fetch happens at
-runtime; a missing tokenizer means Guard E fires for that model (fail-open to RR).
+The gateway tokenizes prompts itself — **no network fetch happens at runtime** — so for every
+model served through a KV-exact rule the model's HuggingFace **fast** `tokenizer.json` must be
+pre-staged at `/etc/loxilb/tokenizers/<model-slug>/tokenizer.json`, where `<model-slug>` is the
+client-visible model name with every `/` replaced by `__` (e.g. `Qwen/Qwen2.5-7B-Instruct` →
+`Qwen__Qwen2.5-7B-Instruct`).
+
+Download it from Hugging Face:
+```bash
+MODEL=Qwen/Qwen2.5-7B-Instruct ; SLUG=${MODEL//\//__}
+sudo mkdir -p /etc/loxilb/tokenizers/$SLUG
+sudo curl -L -o /etc/loxilb/tokenizers/$SLUG/tokenizer.json \
+  "https://huggingface.co/$MODEL/resolve/main/tokenizer.json"
+# or, with huggingface_hub installed:
+huggingface-cli download "$MODEL" tokenizer.json --local-dir /tmp/tok-$SLUG \
+  && sudo install -D /tmp/tok-$SLUG/tokenizer.json /etc/loxilb/tokenizers/$SLUG/tokenizer.json
+```
+Gated models (e.g. Llama) need `huggingface-cli login` or `HF_TOKEN` set for the download; the
+gateway itself never needs credentials.
+
+Containers: stage under the host path mounted at `/etc/loxilb` — with the standard
+`-v /opt/loxilb/config:/etc/loxilb` run flags that is
+`/opt/loxilb/config/tokenizers/<slug>/tokenizer.json` on the host (or add a dedicated
+`-v .../tokenizers:/etc/loxilb/tokenizers` mount).
+
+A missing/unreadable tokenizer fails **silently**: warn-once log
+`kv-router: tokenizer not available for model …` and Guard E fires for that model (fail-open to
+lower tiers — KV-exact never engages). On success the gateway logs
+`kv-router: loaded tokenizer for model …` at first use; verify it after deploying a new model.
+
+For `/v1/chat/completions` there is a second prerequisite: a registered chat template (see §6.5
+prerequisites).
 
 ### 6.4 vLLM side (must match)
 
@@ -510,6 +593,9 @@ build flags — `max_jobs=4`, `VLLM_CPU_AMXBF16=0`, `--dtype=float32`, `tcp://*:
        "mode": 4,
        "pd_disagg_mode": true,       // REQUIRED for kvExactMode 1 (validated)
        "kvExactMode": 1,
+       "kvEngineType": "vllm",       // engine family — picks the hash contract (immutable after create)
+       "kvDpRankCount": 1,           // data-parallel ranks (rank N subscribes at kvZmqPort+N)
+       "cb_enable": true,            // circuit-breaker checks for this rule
        "kvZmqPort": 5558,            // this model's vLLM PUB port (distinct per deployment)
        "kvHashAlgo": "sha256_cbor",  // MUST match this vLLM version's hashing
        "kvBlockSize": 16,            // MUST match this deployment's vLLM --block-size
@@ -536,6 +622,7 @@ build flags — `max_jobs=4`, `VLLM_CPU_AMXBF16=0`, `--dtype=float32`, `tcp://*:
 | 4 | `kvHashAlgo` + vLLM **version** match loxilb's vendored contract (v0.17.0, §4) | Different vLLM hash scheme → hashes never match → **silent** Tier-2 (cross-version drift — keep KV-exact backends on a contract-matching vLLM) |
 | 5 | `LLB_KV_NONE_HASH_SEED` == vLLM `PYTHONHASHSEED` | Seed mismatch corrupts NONE_HASH-seeded blocks → partial silent miss |
 | 6 | Prefill endpoint marked `epRole: 1` | Only prefill EPs are subscribed for KV events; no subscription → empty inventory → Tier-2 |
+| 7 | For `/v1/chat/completions`: a **chat template** registered in the gateway (`pkg/loxinet/ai_kv_chat_template.go`) | v1 ships only the Qwen2.5/ChatML family (any `Qwen__*` slug). For other models, chat requests miss at Guard E and silently route via lower tiers — `/v1/completions` is unaffected |
 
 **Verify it engaged (don't assume — the failure is silent):**
 
@@ -560,17 +647,28 @@ build flags — `max_jobs=4`, `VLLM_CPU_AMXBF16=0`, `--dtype=float32`, `tcp://*:
 
 ## 7. Observability — metrics, logs, and trace recipes
 
-### 7.1 Prometheus metrics (the 9 routing counters + subscriber health)
+### 7.1 Prometheus metrics (routing, inventory, failover, subscriber health)
 
 | Metric | Labels | Type | Meaning |
 |---|---|---|---|
 | `loxilb_pd_kv_tier15_hits_total` | `ep_idx` | counter | Tier-1.5 selected this EP (the **decision** proof) |
 | `loxilb_pd_kv_tier15_miss_reason_total` | `reason` ∈ {mode_off, warmup, text_empty, model_empty, tokenize, hashes, no_worker, excluded} | counter | One increment per guard miss (one CounterVec, 8 labels) |
-| `loxilb_pd_kv_tier15_fallthrough_total` | — | counter | Requests that fell through to Tier-2 RR |
-| `loxilb_pd_kv_blocks` | `endpoint` | gauge | Inventory size per EP (10 s bridge) |
+| `loxilb_pd_kv_tier15_fallthrough_total` | — | counter | Requests that fell through to Tier-2 min-load |
+| `loxilb_pd_kv_tier15_spills_total` | `ep_idx` | counter | Unified-blend spills past the affinity winner (capacity-weighted cap enforcement) |
+| `loxilb_pd_kv_zero_hit_watchdog_total` | `service_id` | counter | Lookups at/past the consecutive-zero-hit threshold against a non-empty inventory — the authoritative silent hash-parity-failure signal |
+| `loxilb_pd_kv_blocks` | `service`,`ep_idx` | gauge | Inventory size per EP (10 s bridge); `ep_idx` is the 0-based absolute endpoint index — join to the EP address via `loxilb_pd_ep_info` |
+| `loxilb_pd_ep_info` | `service`,`ep_idx`,`ep` | gauge (info) | Maps `ep_idx` → endpoint IP for all per-EP series; value is always 1 |
 | `loxilb_kv_subscriber_connected` | `service`,`ep` | gauge | ZMQ socket up (1) / down (0) |
-| `loxilb_kv_subscriber_reconnect_total` | `service`,`ep` | counter | Successful socket rebuilds (inventory cleared each time) |
+| `loxilb_kv_subscriber_reconnect_total` | `service`,`ep` | counter | Successful socket rebuilds (the KEEP/CLEAR resync decision runs on the first post-reconnect message) |
 | `loxilb_kv_subscriber_recv_error_total` | `service`,`ep` | counter | Recv errors (precede rebuilds) |
+| `loxilb_kv_inv_cap_evictions_total` | `service`,`ep` | counter | Blocks FIFO-evicted at the `LOXILB_KV_MAX_BLOCKS` cap (nonzero ⇒ misbehaving publisher) |
+| `loxilb_pd_prefill_ep_died_total` | — | counter | Prefill backends that died mid-request (§5.1) |
+| `loxilb_pd_decode_ep_died_total` | — | counter | Decode endpoint failures (connect failure or EOF before any response byte) |
+| `loxilb_pd_decode_zero_byte_eof_total` | — | counter | Decode EOF with zero bytes relayed (client received 502 `pd_decode_backend_died`) |
+| `loxilb_pd_connect_failover_total` | — | counter | Prefill connect failovers that succeeded silently (client saw no error) |
+| `loxilb_lb_select_failure_shutdown_total` | — | counter | Non-P/D connections shut down raw (TCP reset, no HTTP error body) — tripwire, must stay flat |
+| `loxilb_pd_admission_shed_total` / `loxilb_pd_admission_queued_total` | — | counter | Admission-gate sheds (429) / parked requests |
+| `loxilb_pd_cb_flips_total` / `loxilb_pd_cb_proactive_heal_total` | — | counter | Circuit-breaker state flips / proactive OPEN→HALF_OPEN heals |
 
 There is also an admin inspection endpoint: `GET /netlox/v1/config/ai/kv/inventory`
 (`api/restapi/handler/ai_kv_inventory.go`) returning live per-EP inventory sizes.
@@ -579,7 +677,7 @@ There is also an admin inspection endpoint: `GET /netlox/v1/config/ai/kv/invento
 
 | Prefix | Source | What it traces |
 |---|---|---|
-| `kv-subscriber:` | Go, `ai_kv_subscriber.go` | lifecycle: `starting EP`, `zmq connected`, `seq gap detected`, `BlockStored N block(s)`, `AllBlocksCleared`, `recv error … rebuilding socket`, `reconnected … clearing stale inventory` |
+| `kv-subscriber:` | Go, `ai_kv_subscriber.go` | lifecycle: `starting EP`, `zmq connected`, `replayed buffered KV events`, `seq gap`, `BlockStored N block(s)`, `AllBlocksCleared`, `recv error … rebuilding socket`, `reconnected … deferring KEEP/CLEAR resync`, `resync KEEP …` / `resync CLEAR …` |
 | `[KV_INV]` | Go inventory ops | `AddBlocks n_added= total= sample_hash=`, `RemoveBlocks`, `ClearAll` |
 | `kv-router:` | Go tokenizer pool | `loaded tokenizer for model`, `tokenizer not available for model %q at %s` |
 | `[KV_T15]` | C, per-request decision | `PRE_TOKENIZE`, every `GUARD_*` miss with full context (fd, masks, scores), `FALLBACK_TEXT_RCVBUF` |
@@ -632,9 +730,12 @@ metrics: tier15_miss_reason{reason="excluded"} +1, then tier15_hits{ep_idx="0"} 
 ```
 kv-subscriber: ep 0 recv error: … — rebuilding socket
 kv-subscriber: ep 0 rebuilding ZMQ socket (endpoint=tcp://10.0.0.11:5557)
-kv-subscriber: ep 0 reconnected to tcp://10.0.0.11:5557 — clearing stale inventory (publisher may have restarted)
+kv-subscriber: ep 0 reconnected to tcp://10.0.0.11:5557 — deferring KEEP/CLEAR resync to first post-reconnect message (lastSeq=41 preserved)
+kv-subscriber: ep 0 rank 0 resync CLEAR — first post-reconnect seq=3 vs lastSeq=41 indicates publisher restart/ambiguous; clearing stale inventory
 metrics: kv_subscriber_reconnect_total +1; loxilb_pd_kv_blocks{service,ep_idx} drops to 0, refills on next BlockStored
 ```
+(A transient blip whose first post-reconnect seq resumes near `lastSeq` logs `resync KEEP` instead
+and the warm inventory is retained — no `no_worker` window.)
 
 **E. Silent-RR diagnosis (the #1 field gotcha):** if `tier15_hits` never moves and
 `tier15_miss_reason{reason="model_empty"}` climbs request-for-request, the client is not sending
@@ -685,15 +786,15 @@ backends whose banner identifies the delivering server (the delivery half of the
 
 | Assert | Proves |
 |---|---|
-| .1 / | Partial-overlap **argmax** picks EP-A (banner AND `tier15_hits{0}`), then an inventory **mutation flips** the same re-issued prompt to EP-B (`tier15_hits{2}`) |
+| .1 | Partial-overlap **argmax** picks EP-A (banner AND `tier15_hits{0}`), then an inventory **mutation flips** the same re-issued prompt to EP-B (`tier15_hits{2}`) |
 | .2 | **Non-contiguous prefill bitmask**: prompt published only to abs idx 4 routes there (C↔Go index translation) |
 | .3 | **Excluded winner → 2nd-best prefill** (never decode/RR): netns-injected `iptables REJECT --reject-with tcp-reset` on the winner's :80 → instant connect failure → retry with `excluded_mask` → genuine 2nd-best |
-| .4 | Fresh no-overlap prompt → Tier-2 RR + `tier15_miss_reason` + `t15_fallthrough` increments |
-| | Dual-algo hash parity vs the promoted golden vectors (offline) |
-| | All 9 routing counters surface non-zero deltas |
-| | Publisher kill/restart → `kv_subscriber_reconnect_total` increments; `--seq-jump` → replay |
-| | `kvExactMode: 1` live on the rule (REST read-back) |
-| | `vllm-pd-disagg` byte-for-byte `[PASS]` re-run (backward compat; runs LAST — its pre-clean destroys the topology by design) |
+| .4 | Fresh no-overlap prompt → Tier-2 min-load fallthrough + `tier15_miss_reason` + `t15_fallthrough` increments |
+| .5 | Dual-algo hash parity vs the promoted golden vectors (offline) |
+| .6 | The routing counters surface non-zero deltas |
+| .7 | Publisher kill/restart → `kv_subscriber_reconnect_total` increments; `--seq-jump` → gap-recovery path exercised |
+| .8 | `kvExactMode: 1` live on the rule (REST read-back) |
+| .9 | `vllm-pd-disagg` byte-for-byte `[PASS]` re-run (backward compat; runs LAST — its pre-clean destroys the topology by design) |
 
 ### 8.5 Two-tier gate (how to run)
 
@@ -709,7 +810,7 @@ cd cicd/vllm-kvcache-routing-cpu-aws/
 ./teardown-aws-testbed.sh --yes        # ALWAYS — billable runner
 ```
 
- (exit gate only) boots **real** CPU vLLM v0.17.0 (Qwen3-0.6B, no GPU) and asserts
+The exit gate additionally boots **real** CPU vLLM v0.17.0 (Qwen3-0.6B, no GPU) and asserts
 (a) the live ZMQ hash stream **intersects** loxilb's computed hashes (contract parity against the
 real thing, not the mock) and (b) a follow-up request **warm-routes** to the warmed worker.
 Evidence and reproduce steps: `cicd/vllm-kvcache-routing-cpu/FR9_SMOKE.md`.
@@ -726,13 +827,19 @@ gate doesn't need them.
 ## 9. Known limits & operational gotchas
 
 1. **Hash parity is all-or-nothing.** Any mismatch in `NONE_HASH` seed, block size, hash algo, or
-   tokenizer produces *zero* overlap — the feature silently degrades to RR (fail-open). Watch
-   `tier15_miss_reason{reason="no_worker"}` against a non-empty `loxilb_pd_kv_blocks`.
-2. **OpenAI JSON bodies required.** Non-JSON bodies → Guard D (`model_empty`) → silent RR.
-3. **Reconnect clears inventory.** Every subscriber rebuild empties that EP's inventory by design
-   (publisher may have restarted). Expect a brief `no_worker` window until events repopulate.
-4. **Inventory is unbounded** (`map[uint64]struct{}`). Sizing is governed by vLLM's own cache
-   limits + `BlockRemoved`/`AllBlocksCleared`; there is no loxilb-side eviction.
+   tokenizer produces *zero* overlap — the feature silently degrades to Tier-2 min-load
+   (fail-open). Watch `tier15_miss_reason{reason="no_worker"}` against a non-empty
+   `loxilb_pd_kv_blocks`, and `loxilb_pd_kv_zero_hit_watchdog_total` as the authoritative signal.
+2. **OpenAI JSON bodies required.** Non-JSON bodies → Guard D (`model_empty`) → silent Tier-2
+   fallthrough.
+3. **Reconnect may clear inventory.** After a subscriber rebuild, `kvResyncDecision` KEEPs the
+   warm inventory only when the first post-reconnect seq resumes near the preserved `lastSeq`;
+   a seq regression or large forward jump (publisher restart / ambiguous) CLEARs it. Expect a
+   brief `no_worker` window after a real publisher restart until events repopulate.
+4. **Inventory is capped per EP** at `LOXILB_KV_MAX_BLOCKS` (default 1,000,000; range
+   1000–100,000,000) with FIFO eviction; evictions are counted in
+   `loxilb_kv_inv_cap_evictions_total{service,ep}` — nonzero means a publisher outran the cap
+   and overlap accuracy for that EP is degraded.
 5. **Probe-down ≠ excluded.** REST health-probe state does not reach `eps[].inv` in the data
    plane (§5 note). Exclusion requires connect-failure retry, admin `inv`, or an open CB.
 6. **CPU vLLM defaults `--block-size 128`** — emits no events for short prompts; always set 16.
@@ -786,28 +893,36 @@ requests.
 
 ### 10.4 Robustness & memory
 
-- **Unbounded inventory** — `map[uint64]struct{}` with no cap or eviction (§9.4); a misbehaving
-  publisher grows loxilb memory without limit (~50 B/entry of map overhead).
-- **Reconnect = total amnesia** — correct but maximally pessimistic (§9.3); no snapshot/resync
-  handshake exists, so every blip buys a full cold `no_worker` window.
+- **Inventory growth is bounded** — the per-EP cap (`LOXILB_KV_MAX_BLOCKS`, FIFO eviction, §9.4)
+  limits a misbehaving publisher to roughly 8 MB of hashes per EP at the default 1M-block cap;
+  the residual cost is degraded overlap accuracy for that EP once eviction starts.
+- **Reconnect is no longer total amnesia** — the seq-keyed resync decision (§3.5) KEEPs the warm
+  inventory across transient blips and clears only on restart/ambiguous signals, and a fresh
+  subscribe backfills from the engine's replay endpoint. The residual gap: there is no
+  engine-identity field on the KV-event wire, so a large forward seq jump must still be treated
+  conservatively as a restart (CLEAR).
 - **Gauge accuracy unverified** — known open item: `loxilb_pd_kv_blocks` deltas did not
   match observed inventory in earlier testing; the observability you'd use to diagnose the above
   is itself unconfirmed.
 
 ### 10.5 Routing-quality limitations (subtle, surfaced 2026-06-12)
 
-- **Argmax is load-blind.** Score = raw overlap count, nothing else. If 50 clients share one hot
-  preamble, all 50 route to the same prefill EP while siblings idle — cache affinity actively
-  fights load balancing. Mature prefix-aware routers blend a cost function
-  (overlap × load/queue-depth). Likely matters more in production than any µs-level optimization.
+- **Argmax load-blindness — solved by the shipped unified blend.** The legacy pure
+  overlap-argmax scored raw overlap count only, so 50 clients sharing one hot preamble would all
+  route to the same prefill EP while siblings idled. The shipped default (`LOXILB_KV_LB_MODE`
+  unset ⇒ `hard`, §6.2) bounds cache affinity by a capacity-weighted load cap and spills
+  CHWBL-style when the winner is over cap. The load-blind behavior now exists only when
+  explicitly running `LOXILB_KV_LB_MODE=off`.
 - **No model filtering in scoring** (to verify): `best_worker` receives the model name but scores
   inventories purely by hash overlap. On an EP serving multiple models with the same tokenizer,
   cross-model overlap could false-positive; the planned benchmark stage includes a verify
   scenario.
 - **Warmup is a dumb timer** (§9.7): Tier-1.5 is suppressed for `kvWarmupSec` regardless of
   whether the inventory is actually populated; could be readiness-based.
-- **Exclusion is reactive only** (§9.5): probe-down never reaches `eps[].inv`, so an
-  unhealthy-but-accepting EP keeps winning argmax until connects actually fail.
+- **Probe-driven exclusion is still absent** (§9.5): probe-down never reaches `eps[].inv`, so an
+  unhealthy-but-*accepting* EP keeps winning argmax until a connect or mid-request failure is
+  actually observed — at which point the shipped failover set takes over (§5.1: connect-failover
+  retry, `pd_retry_prefill()`, decode-death 502).
 
 ### 10.6 Architectural reachability
 
@@ -822,24 +937,28 @@ vLLM and other engines is roadmap work (§10.7).
 | Track | Owns | Key items |
 |---|---|---|
 | **KV-routing performance** | §10.1–10.3, §10.5 | First a benchmark stage on a CPU rig — per-stage latency breakdown (hit AND miss paths), head-of-line effect, EP load-skew under shared-prefix traffic, cross-model false-positive check. Then: prefix→hash cache, fewer/cheaper CGO crossings, best_worker scaling, partial-block skip, blended overlap×load scoring, model-filtered scoring, readiness-based warmup — each change gated on its measured baseline |
-| **Inventory robustness** | §10.4 + probe propagation | Cap/eviction + REST knob, reconnect resync-instead-of-clear, inventory-gauge accuracy, probe→`eps[].inv` propagation decision, gate extensions |
+| **Inventory robustness** | §10.4 + probe propagation | Cap/eviction and reconnect resync-instead-of-clear have **shipped** (§3.5, §9.3–9.4). Remaining: inventory-gauge accuracy, probe→`eps[].inv` propagation decision, gate extensions |
 | **Single-role decoupling** | §10.6 | KV-exact seam for single-role endpoint sets beyond SGLang, feature-gated default-off; non-P/D CICD scenario; existing P/D behavior byte-for-byte unchanged |
 
-### 10.8 Known limitation — EP exclusion is reactive by design
+### 10.8 Known limitation — probe state does not drive EP exclusion
 
-**Decision : reactive (connect-failure-driven) endpoint exclusion is intended
-behavior for this phase, not a defect.** It is documented here as a known limitation with a clear
-upgrade path, rather than being "fixed" inside the robustness phase.
+**Reactive (failure-driven) endpoint exclusion is intended behavior, not a defect.** It is
+documented here as a known limitation with a clear upgrade path.
 
 **What "reactive" means here.** REST health-probe state (the control plane's view of an EP's health)
 **does not propagate into the sockproxy data plane's `eps[].inv`** structure that Tier-1.5 argmax
 scores against (§3.4, §5 note, §9.5). So an EP that is *unhealthy but still accepting TCP* keeps
-winning argmax on its warm inventory — it is **only** dropped once a real prefill-leg connect
-actually fails and the mid-cycle failover retry seeds `excluded_mask`, picking the genuine next-best
-prefill EP. Exclusion is therefore driven by observed connect failure, not by proactive probe state.
+winning argmax on its warm inventory — it is dropped only once a real failure is observed. The
+shipped failure-driven mechanisms (§5.1) then take over: a failed prefill-leg connect seeds
+`excluded_mask` and the mid-cycle retry picks the genuine next-best prefill EP; a prefill death
+mid-request triggers the one-retry `pd_retry_prefill()` re-drive with the receipt rewritten via
+`pd_receipt_rewrite()` to the EP that actually served; a decode death surfaces as a 502
+`pd_decode_backend_died`; and a CB-open transition drains that EP's parked admission FIFO
+(`pd_parked_drain_ep()` / `pd_resume_parked()`). Exclusion is therefore driven by observed
+failure, not by proactive probe state.
 
-**This is the architecture's real, live-proven exclusion mechanism, not a theory.**
-**.3** finding nailed down exactly why probe-state propagation cannot be relied on, after two
+**This is the architecture's real, live-proven exclusion mechanism, not a theory.** The failover
+investigation nailed down exactly why probe-state propagation cannot be relied on, after two
 exclusion variants were live-disproven on the 2026-06-11 paid gate:
 
 - *Probe-misdirection* (point the REST probe at a dead port so probe-state goes `nok`): the "down"
@@ -849,23 +968,24 @@ exclusion variants were live-disproven on the 2026-06-11 paid gate:
   the request merely stalls to the client timeout.
 
 Only `iptables REJECT --reject-with tcp-reset` on the winner's `:80` produced an **instant connect
-RST → mid-cycle failover → `excluded_mask` → genuine 2nd-best prefill** (the assertion.3 ships
-with, §8.4). That confirms connect-failure-driven exclusion is the dependable path, and proactive
-probe→data-plane exclusion is **absent**, not merely untested.
+RST → mid-cycle failover → `excluded_mask` → genuine 2nd-best prefill** (the assertion CICD
+scenario.3 ships with, §8.4). That confirms failure-driven exclusion is the dependable path, and
+proactive probe→data-plane exclusion is **absent**, not merely untested.
 
-**Why this is safe to ship as-is.** The phase's fail-open posture is the safety net: under *any*
+**Why this is safe to ship as-is.** The fail-open posture is the safety net: under *any*
 inventory failure (empty / stale / down publisher) the data plane degrades to Tier-2 min-load and
-never breaks (the load-bearing invariant of). The ** chaos matrix**
+never breaks — the load-bearing invariant of the design. The harness's chaos matrix
 (`cicd/vllm-kvcache-routing-cpu/validation.sh` — down-at-startup / mid-stream death / partial
-outage) exists precisely to *prove* that posture end-to-end. Combined with mid-cycle connect-failure
-failover, an unhealthy EP's worst case is a few retried connects, never a wrong-EP routing loop or a
-crash. (See also §9.5 and the §10.5 routing-quality note, which this subsection supersedes as the
-authoritative record.)
+outage) exists precisely to *prove* that posture end-to-end. Combined with the shipped failover
+set (§5.1) — mid-cycle connect failover, the one-retry `pd_retry_prefill()` re-drive budget,
+decode-death 502s, and the raw-reset tripwire `loxilb_lb_select_failure_shutdown_total` — an
+unhealthy EP's worst case is a few retried connects or one re-driven prefill, never a wrong-EP
+routing loop or a crash. (See also §9.5 and the §10.5 note, which this subsection supersedes as
+the authoritative record.)
 
-**Future work (candidate phase).** Wiring REST health-probe state into `eps[].inv` so an
-unhealthy-but-accepting EP is dropped from argmax *before* connects fail is a real improvement, but
-it is a control-plane → data-plane state-sync change with a materially larger blast radius than a
-robustness phase should absorb. It is deferred to its own future phase (/ the CONTEXT
-"Deferred Ideas: proactive probe→data-plane health exclusion"); the §10.7 roadmap row
-already lists "probe→`eps[].inv` propagation **decision**" — that decision is recorded here as:
-**not this phase.**
+**Future work.** Wiring REST health-probe state into `eps[].inv` so an unhealthy-but-accepting EP
+is dropped from argmax *before* failures are observed is a real improvement, but it is a
+control-plane → data-plane state-sync change with a materially larger blast radius than a
+robustness change should absorb. It is deferred to its own future work item; the §10.7 roadmap
+row already lists "probe→`eps[].inv` propagation **decision**" — that decision is recorded here
+as: **deferred.**

@@ -10,12 +10,12 @@
 > **Prerequisite reading:** [15 — SGLang architecture & integration](15-sglang-kv-cache-aware-routing.md)
 > for what each piece does; [11 — Hierarchical KV routing config & tuning](11-hierarchical-kv-routing-config-tuning.md)
 > for the shared (engine-agnostic) knob families this doc does not repeat.
-> **Last verified** against branch `` (2026-07-12).
+> **Last verified** against the committed code (2026-07-12).
 
-> ⚠ **Validation status (read §11 before relying on live behavior).** This guide was authored
->  waves 1–4: every flag, default, bound, and error string here is verified against
-> the committed code, but the **binding remote gates (plan)** and the **live SGLang fleet
-> window (plan)** had **not yet run** at the time of writing.
+> ⚠ **Validation status (read §11 before relying on live behavior).** Every flag, default,
+> bound, and error string here is verified against the committed code, but the **binding
+> remote gates** and the **live SGLang fleet window** had **not yet run** at the time of
+> writing (the §7.7 spill-relief screen is the one measured exception).
 
 ---
 
@@ -32,7 +32,8 @@ The SGLang path is configured in **three planes**; each row maps to specific kno
 | Silent-failure tripwire | LoxiLB env | `LOXILB_KV_ZERO_HIT_N` (watchdog threshold, default 50) |
 | Blend law / inventory caps | LoxiLB env (shared) | `LOXILB_KV_LB_MODE`, `LOXILB_KV_MAX_BLOCKS`, … — **process-global across vLLM and SGLang VIPs** ([11 §3.1](11-hierarchical-kv-routing-config-tuning.md)) |
 | SGLang server | container launch flags | `--kv-events-config`, `--page-size` (model-dependent default), `--dp-size`, `--mem-fraction-static` |
-| Co-residency (optional) | provisioning env | `SGLANG_ZMQ_PORT`, `VLLM_GPU_UTIL`/`SGLANG_MEM_FRAC` split, `VLLM_NGB` pin |
+| Tokenizer staging | LoxiLB host filesystem | the served model's HF `tokenizer.json` at `/etc/loxilb/tokenizers/<model-slug>/tokenizer.json` (slug = model id with `/` → `__`) — missing ⇒ Tier 1.5 **silently off** ([08 §6.3](08-kv-cache-aware-routing.md)) |
+| Co-residency (optional) | deployment tooling | SGLang publisher-port choice (free-port check with `ss -tln`), vLLM/SGLang GPU memory split, uniform `--num-gpu-blocks-override` pin |
 
 **Environment variables are read once at process start** — changing any `LOXILB_*`/`LLB_*`
 value requires recreating the LoxiLB container. REST rules can be re-posted at runtime —
@@ -44,14 +45,15 @@ What the SGLang path deliberately does **not** have (all vLLM/P/D-only — see
 - No `pd_disagg_mode`, no `ep_role` tags, no NIXL ports — mode 3 is **rejected** with P/D.
 - No `LLB_KV_NONE_HASH_SEED` / `PYTHONHASHSEED` parity leg — SGLang block 0 has no parent hash.
 - No admission gate / 429 / park logic — a Tier-1.5 miss falls to the rule's **own selector**.
-- `kvWarmupSec` is accepted but **currently inert in production** (both engines — A1 finding).
+- `kvWarmupSec` is accepted but **currently inert in production** (both engines).
 
 ---
 
 ## 2. REST rule fields (SGLang mode)
 
 Endpoint: `POST http://<loxilb>:11111/netlox/v1/config/loadbalancer`. Schema:
-`api/swagger.yml:7077-7126`; validation: `pkg/loxinet/rules.go`.
+the `kv*` fields under `serviceArguments` in `api/swagger.yml`; validation:
+`pkg/loxinet/rules.go`.
 
 There is **no loxicmd flag for any `kv*` field** — the SGLang surface is REST-only, exactly
 like the vLLM `kv*` family ([11 §2](11-hierarchical-kv-routing-config-tuning.md)). All
@@ -63,12 +65,12 @@ like the vLLM `kv*` family ([11 §2](11-hierarchical-kv-routing-config-tuning.md
 |---|---|---|---|---|
 | `mode` | int | 0 | must be **4** | fullproxy — **required** for `kvExactMode:3` (validated, §3) |
 | `sel` | int | 0 (rr) | 0–10 | the **miss-path selector**: on a Tier-1.5 miss the rule's own selector routes (no P/D Tier-2). For cache-friendly misses pair with `sel:8` (prefix-hash CHWBL, doc 10 §6) |
-| `kvExactMode` | int | 0 | 0–3 | **3 = zmq single-role** (`KV_EXACT_MODE_SINGLE_ROLE`, `sockproxy.h:435`). 0 off, 1 zmq P/D (vLLM), 2 NATS (reserved) |
+| `kvExactMode` | int | 0 | 0–3 | endpoint-**topology** selector only, orthogonal to `kvEngineType`: 0 off, **1 = zmq over a role-partitioned P/D pool (any engine)**, 2 NATS (reserved), **3 = zmq over a role-less pool (any engine)** (`KV_EXACT_MODE_SINGLE_ROLE` in `sockproxy.h`) |
 | `kvEngineType` | string | `"vllm"` | `"vllm"`\|`"sglang"` | KV-event engine behind this rule. **Immutable after create** (§3); drives the hash-algo default; one framework per VIP:port |
 | `kvDpRankCount` | int | 1 | 1–8 (0 ⇒ 1) | SGLang data-parallel rank count. Rank N subscribes at `kvZmqPort+N`; all ranks union into **one** per-EP inventory. Must equal SGLang `--dp-size` |
 | `kvBlockSize` | int | 16 | ≥1 | **Must equal SGLang `--page-size`** — which is *model-dependent*; read it back from `/get_server_info` (§5.2). A mismatch is **silent** (the watchdog is the tripwire) |
 | `kvZmqPort` | int | 5557 | 1–65535 | SGLang KV-events PUB base port (rank 0). 5557 is the canonical contract port; co-resident fleets shift it (§5.3) |
-| `kvHashAlgo` | string | — | **omit** | **OMIT for SGLang rules.** The swagger enum is `["sha256_cbor","xxhash_cbor"]` — there is no `sha256_sglang` value; engine default (`dpebpf_linux.go:1773-1789`) maps `sglang`+unset ⇒ `kv_hash_algo=2` (`KV_HASH_SHA256_SGLANG`). An explicit algo always wins — and never matches SGLang hashes |
+| `kvHashAlgo` | string | engine-derived | **omit** (recommended) \| `"sha256_sglang"` | `"sha256_sglang"` is in the swagger enum and accepted by `kvHashAlgoValidate`; omitting takes the engine default (the engine→algo mapping in `DpLBRuleMod` maps `sglang`+unset ⇒ `kv_hash_algo=2`, `KV_HASH_SHA256_SGLANG`). A contradictory algo (`sha256_cbor`/`xxhash_cbor` on an sglang rule) is **rejected at config time** (§3) |
 | `kvWarmupSec` | int | 30 | ≥0 | accepted, **currently a no-op** in production (GUARD_B has no production writer — [15 §3.3](15-sglang-kv-cache-aware-routing.md)) |
 | `host` | string | — | — | host key (the reference configs set it to the VIP) |
 | `probeRetries` | int | 0 | — | health-probe retries (probe state does not feed exclusion — doc 10 §5) |
@@ -85,7 +87,7 @@ like the vLLM `kv*` family ([11 §2](11-hierarchical-kv-routing-config-tuning.md
 
 ### 2.3 Worked example — single-role SGLang service
 
-The fleet shape (example P/D provisioning, verbatim structure):
+An example deployment shape:
 VIP `10.0.0.12:9010` in front of three SGLang EPs at `:30000`, KV events at `:5561`
 (co-resident port shift), page size read back from the server (here: 64).
 
@@ -113,9 +115,9 @@ curl -s -X POST http://127.0.0.1:11111/netlox/v1/config/loadbalancer \
 JSON
 ```
 
-Notes: no `pd_disagg_mode`, no `ep_role`, `kvHashAlgo` omitted (the only correct spelling
-via REST). `kvBlockSize: 64` is **illustrative** — always substitute the value your own
-`/get_server_info` reports. Delete with:
+Notes: no `pd_disagg_mode`, no `ep_role`, `kvHashAlgo` omitted (the recommended spelling —
+an explicit `"sha256_sglang"` is also accepted). `kvBlockSize: 64` is **illustrative** —
+always substitute the value your own `/get_server_info` reports. Delete with:
 
 ```bash
 curl -s -X DELETE \
@@ -173,8 +175,10 @@ threading ([15 §6](15-sglang-kv-cache-aware-routing.md)) — no operator knob n
 
 ## 3. Config-time validation guards
 
-Every rejection below happens at rule POST time (`rules.go:2867-2885`, `:2885`, `:3023`) —
-before the eRule lookup, so create **and** update are both covered. What the operator sees
+Every rejection below happens at rule POST time (the `kvExactMode`/`kvEngineConfigValidate`/
+`kvHashAlgoValidate` block in `AddLbRule`, plus `kvEngineImmutabilityCheck` at the
+rule-exists branch — all in `pkg/loxinet/rules.go`) — before the eRule lookup, so create
+**and** update are both covered. What the operator sees
 is the exact error string.
 
 | Rejected config | Exact error returned | Why it exists |
@@ -185,7 +189,7 @@ is the exact error string.
 | `kvHashAlgo` contradicting `kvEngineType` | `kv-hash-algo "<algo>" is incompatible with kv-engine-type "<engine>" (omit kvHashAlgo to take the engine default "<default>")` | the C hasher picks its contract from `kv_hash_algo` alone, so an `sglang` rule pinned to `"sha256_cbor"` (or a `vllm` rule pinned to `"sha256_sglang"`) missed **every** published block, with no signal until the `[KV_ZEROHIT]` watchdog fired. Omitting `kvHashAlgo` always passes and is the recommended shape |
 | `kvHashAlgo` outside {`""`,`"sha256_cbor"`,`"xxhash_cbor"`,`"sha256_sglang"`} | `kv-hash-algo must be one of "sha256_cbor", "xxhash_cbor", "sha256_sglang"` | allowlist, mirroring the engine allowlist below |
 | `kvEngineType` outside {`""`,`"vllm"`,`"sglang"`} | `kv-engine-type must be one of "vllm", "sglang"` | allowlist — an unknown engine is rejected, never silently treated as vllm |
-| `kvDpRankCount` > 8 | `kv-dp-rank-count must be within 18 (0 = default 1)` | rank N subscribes at `kvZmqPort+N` on every EP host — the cap bounds the port-range walk. 0 is accepted and defaults to 1 downstream |
+| `kvDpRankCount` > 8 | `kv-dp-rank-count must be within 1..8 (0 = default 1)` | rank N subscribes at `kvZmqPort+N` on every EP host — the cap bounds the port-range walk. 0 is accepted and defaults to 1 downstream |
 | `kvEngineType` changed on a live rule (PUT/re-POST) | `lbrule-exist error: cant modify rule kv engine type (delete and recreate)` | immutability: a live engine flip would silently re-key the whole Tier-1.5 hash space. `""`≡`"vllm"` is honored (setting `"vllm"` on a default-engine rule is not a change). The check sits before the change-detect short-circuit, so an engine-only update gets this exact message — never a silent delete+re-add |
 | Two rules on one VIP IP with different engines | **ACCEPTED** + one WARN naming both engines | that IS the multi-framework coexistence story (§2.4); the WARN keeps it observable |
 
@@ -217,8 +221,8 @@ within the window KEEPs the warm inventory, a larger jump CLEARs it (§8).
 
 ## 5. SGLang server-side configuration
 
-Fleet reference: your provisioning tooling (a scripted, repeatable recipe —
-never improvise it at a console) and the internal A/B runbook.
+Keep the server-side launch a scripted, repeatable recipe — never improvise it at a
+console.
 Image pin: **`lmsysorg/sglang:v0.5.9`** — the nearest release to the hash-contract-pinned
 sglang commit `d8ef76682e`. Do not update the image mid-deployment without re-checking the
 hash contract (a drift shows up as a zero-hit watchdog fire, not a crash).
@@ -242,7 +246,8 @@ docker run -d --name sglang --gpus all --network host --ipc=host --shm-size 16g 
 - Gate readiness on **both** surfaces: `/health` (process up) then `/health_generate`
   (a real generation completes — model loaded, KV cache allocated).
 - Self-confirm the publisher actually bound: `ss -tln | grep :5561` on the EP must show a
-  listener. **This failure is otherwise silent** — the provisioning script hard-fails on it.
+  listener. **This failure is otherwise silent** — make the listener check a hard
+  precondition in your launch tooling.
 - `PYTHONHASHSEED=0` is harmless but not load-bearing here (no NONE_HASH on the SGLang path).
 
 ### 5.2 `--page-size` parity (the deadliest knob)
@@ -272,28 +277,31 @@ rank 0 → kvZmqPort      rank 1 → kvZmqPort+1   …   rank N−1 → kvZmqPor
   subscriber goroutine per `(ep, rank)`; all ranks union into one per-EP inventory.
 - **Do not undercount:** ZMQ connect does not fail on a missing endpoint, so a
   too-small rank count silently drops the higher ranks' warmth (this is why auto-probing
-  was rejected —). Do not overcount either: extra subscribers spin on reconnect.
+  was rejected). Do not overcount either: extra subscribers spin on reconnect.
 - **The `:5557` collision (co-resident hosts):** 5557 is the canonical KV-events contract
   port, but on a host where a vLLM KV-events publisher already runs (`--network host`),
-  it is taken. The provisioning script's collision preflight **hard-refuses** launch if the
-  chosen port is bound; the pre-resolved co-residency value is `SGLANG_ZMQ_PORT=5561`
+  it is taken. Verify the chosen port — and the whole rank range `[kvZmqPort,
+  kvZmqPort+N)` — is free with `ss -tln` before launch, and hard-fail if it is bound;
+  a common co-residency choice is base port `5561`
   (leaving room for ranks at 5562/5563…). LoxiLB subscribes per-rule `kvZmqPort`, so any
   free port works — just keep the rule and the server config equal, and **never kill the
   vLLM publisher to free the port**.
 
 ### 5.4 Co-residency memory split (the 0.55/0.35 lesson)
 
-The fleet runs SGLang **beside** vLLM prefills on 24 GB L4 GPUs. The validated
-split: vLLM `--gpu-memory-utilization 0.55` + SGLang `--mem-fraction-static 0.35`
-(the remainder is headroom). Two coupled cautions when you shrink a co-resident vLLM:
+An **example deployment** runs SGLang **beside** vLLM prefills on 24 GB L4-class GPUs.
+The split validated there: vLLM `--gpu-memory-utilization 0.55` + SGLang
+`--mem-fraction-static 0.35` (the remainder is headroom). Two coupled cautions when you
+shrink a co-resident vLLM:
 
 1. **Uniform block-count pin.** Reducing vLLM's split changes its `num_gpu_blocks`; a
    NIXL P/D mesh must agree on block count (heterogeneous counts trip the
-   `num_external_tokens` assert). The script probes one EP at the reduced split
-   (`VLLM_NGB` unset ⇒ auto-probe) and pins the probed value **fleet-wide**.
-2. **If two weight copies don't fit,** fall back to a smaller SGLang model
-   (`USE_FALLBACK_MODEL=1`) — and switch the gateway's staged tokenizer to match, or
-   KV-exact hashing silently never matches (the watchdog will tell you).
+   `num_external_tokens` assert). Probe one EP at the reduced split to learn the new
+   block count, then pin the probed value **fleet-wide** via
+   `--num-gpu-blocks-override`.
+2. **If two weight copies don't fit,** fall back to a smaller SGLang model — and switch
+   the gateway's staged tokenizer to match, or KV-exact hashing silently never matches
+   (the watchdog will tell you).
 
 Tokenizer staging is engine-agnostic and unchanged from doc 08 §6: the served model's HF
 `tokenizer.json` at `/etc/loxilb/tokenizers/<model-slug>/tokenizer.json` (slug = model id
@@ -309,6 +317,7 @@ What turns each piece on, and the fastest check that it engaged
 | Layer | Enable | Verify |
 |---|---|---|
 | Single-role Tier 1.5 | rule: `mode:4` + `kvExactMode:3` + `kvEngineType:"sglang"` | `loxilb_pd_kv_tier15_hits_total{ep_idx}` advances on a shared-prefix burst; `[KV_SR] … single-role Tier-1.5 HIT -> EP<n>` in the C log |
+| Tokenizer staging (Tier-1.5 prerequisite) | served model's HF `tokenizer.json` at `/etc/loxilb/tokenizers/<model-slug>/tokenizer.json` (slug = model id with `/` → `__`; [08 §6.3](08-kv-cache-aware-routing.md)) | no warn-once `kv-router: tokenizer not available` in the log; Guard E `tokenize` absent from `loxilb_pd_kv_tier15_miss_reason_total`. A missing tokenizer is **silent** — Tier 1.5 is quietly off |
 | Hash contract | omit `kvHashAlgo` on an sglang rule | `[KV_CONFIG]` line shows the rule landing with `kv_engine_type=1`; `[KV_HASH] … algo=sha256_sglang` with `LLB_KV_HASH_DEBUG=1` |
 | Event feed | SGLang `--kv-events-config` + rule `kvZmqPort` | `loxilb_kv_subscriber_connected{service,ep}` = 1 per EP; `loxilb_pd_kv_blocks{service,ep_idx}` > 0 after traffic |
 | Multi-rank fan-out | `kvDpRankCount` = `--dp-size` | inventory (REST `GET /netlox/v1/config/ai/kv/inventory?service_id=<id>&ep_idx=<n>`) grows past any single rank's contribution; `kv-subscriber: ep N rank R …` lines for every rank |
@@ -375,13 +384,17 @@ On a Tier-1.5 miss the rule's **own selector** routes. `sel:0` (RR) is a fine ba
 inventory-cap tuning is identical to vLLM — follow [11 §6.1/§6.5](11-hierarchical-kv-routing-config-tuning.md),
 remembering those env knobs are shared by every KV VIP on the process.
 
-### 7.7 Spill relief + saturation ε (live-validated 2026-07-14 §9)
+### 7.7 Spill relief + saturation ε (live-validated 2026-07-14)
+
+The numbers in this subsection were measured on a **single internal validation fleet**
+(24 GB L4-class GPUs, co-resident SGLang + vLLM) — they are indicative for similar
+capacity-bound shapes, not a general benchmark.
 
 Two findings from the post-fix competitive campaign change the single-role tuning defaults:
 
 1. **Fleet spill relief is the single-role default** (commit `7ac66196`).
    `LOXILB_KV_SPILL_RELIEF` is tri-state: unset ⇒ relief ON for `kvExactMode:3` services and
-   OFF for P/D (the verdict there); explicit `1`/`0` forces globally. Do NOT turn it
+   OFF for P/D (unchanged behavior there); explicit `1`/`0` forces globally. Do NOT turn it
    off for SGLang fleets: a hot single-cached prefix produces a *singleton* candidate set that
    can never spill on its own cap at any ε — relief is the only unpin mechanism (pre-relief:
    1041/13/0 routing decisions across 3 EPs and goodput 0.21 at rate 2.0; with relief + the
@@ -423,10 +436,10 @@ Inventory snapshot: `GET /netlox/v1/config/ai/kv/inventory?service_id=<rule#>&ep
 |---|---|---|
 | `loxilb_pd_kv_zero_hit_watchdog_total` | `service_id` | **the** silent-parity-failure signal. `service_id` = the rule number, so two-VIP setups attribute per arm. Nonzero delta during a measurement window ⇒ the window is void |
 | `loxilb_pd_kv_tier15_hits_total` | `ep_idx` | Tier-1.5 hits — increments for single-role hits too. `ep_idx` is per-rule-opaque and carries **no service label**: for cross-VIP attribution, steer test traffic to numerically disjoint indexes per VIP (the CICD pattern) |
-| `loxilb_pd_kv_tier15_miss_reason_total` / `loxilb_pd_kv_tier15_fallthrough_total` | `reason` / — | guard-ladder misses (note the abbreviated `t15_` prefix — doc 11 §7). On a mode-3 rule a fallthrough lands in the rule's own selector |
+| `loxilb_pd_kv_tier15_miss_reason_total` / `loxilb_pd_kv_tier15_fallthrough_total` | `reason` / — | guard-ladder misses. On a mode-3 rule a fallthrough lands in the rule's own selector |
 | `loxilb_kv_subscriber_connected` / `…_reconnect_total` / `…_recv_error_total` | `service`,`ep` | subscriber health. **All DP ranks of an EP share one label pair** — the gauge is over-conservative during a single-rank rebuild |
-| `loxilb_pd_kv_blocks` | `endpoint` | the shared per-EP union inventory size |
-| `loxilb_kv_inv_cap_evictions_total` | — | `LOXILB_KV_MAX_BLOCKS` cap pressure (union of all ranks) |
+| `loxilb_pd_kv_blocks` | `service`,`ep_idx` | the shared per-EP union inventory size |
+| `loxilb_kv_inv_cap_evictions_total` | `service`,`ep` | `LOXILB_KV_MAX_BLOCKS` cap pressure (union of all ranks) |
 
 **Log markers (grep keys):**
 
@@ -471,12 +484,12 @@ stdout log as usual.
 | Zero Tier-1.5 hits; traffic works but `tier15_hits_total` flat and `zero_hit_watchdog_total` climbing | **`kvBlockSize` ≠ SGLang `--page-size`** (the deadliest, fully silent misconfig) — or an explicit `kvHashAlgo` on the sglang rule | `curl <ep>:30000/get_server_info \| grep page_size` vs the rule; `[KV_CONFIG]` line for the algo that actually landed | recreate the rule with `kvBlockSize` = the read-back page size and `kvHashAlgo` omitted |
 | Inventory empty (`blocks_total` = 0) on all EPs; subscriber connected | wrong `kvZmqPort` (ZMQ connect never fails), server launched without `--kv-events-config`, or connect-mode endpoint (`tcp://127.0.0.1:…`) | `ss -tln \| grep <port>` on the EP (must show a listener); the server's launch flags; `kv-subscriber:` lines | fix the server flag to `tcp://*:<port>` and/or set the rule `kvZmqPort` to the bound port |
 | Inventory empty AND no subscribers started | rule shape wrong for the gate: `kvExactMode` ≠ 3 on a role-less rule (mode 1 subscribes only `ep_role:1` EPs — a single-role rule gets none), or mode 0 | `[KV_CONFIG]` for the mode that landed; `loxilb_kv_subscriber_connected` series count | set `kvExactMode:3` (single-role) — or add proper `ep_role` tags if you meant a vLLM P/D rule |
-| One DP rank silent — warmth lower than expected, one rank never appears in the log | rank port collision on the EP host (another service owns `kvZmqPort+k`), or `kvDpRankCount` < `--dp-size` | `ss -tln` on the EP for every port in `[kvZmqPort, kvZmqPort+N)`; count distinct `rank R` log lines | move the whole base port to a free range (e.g. `SGLANG_ZMQ_PORT=5561`) and recreate the rule to match; set `kvDpRankCount` = `--dp-size` |
+| One DP rank silent — warmth lower than expected, one rank never appears in the log | rank port collision on the EP host (another service owns `kvZmqPort+k`), or `kvDpRankCount` < `--dp-size` | `ss -tln` on the EP for every port in `[kvZmqPort, kvZmqPort+N)`; count distinct `rank R` log lines | move the whole base port to a free range (e.g. base port 5561) and recreate the rule to match; set `kvDpRankCount` = `--dp-size` |
 | Suspected cross-VIP contamination (two KV rules on one gateway) | (should be impossible — `kv_svc_id` scoping) | drive traffic to ONE VIP only; the other VIP's `tier15_hits` (its ep_idx set) and inventory deltas must stay 0 — the CICD L3/L4 legs are the reference procedure | if a delta appears, capture logs + rule numbers and file it — that is a product bug, not a config issue |
 | Rule update rejected: `lbrule-exist error: cant modify rule kv engine type (delete and recreate)` | attempted in-place `kvEngineType` change (immutability) | — expected behavior | `DELETE` the rule, then `POST` the new engine's rule (teardown cleans subscribers + inventory) |
 | Rule POST rejected with a `kv-exact single-role…` or `kv-engine-type…` error | one of the §3 guards | match the exact string against the §3 table | fix the named field (`mode:4`, drop `pd_disagg_mode`, engine spelling, rank ≤ 8) |
-| EP restarted; inventory dropped to 0 | **working as designed** : a large seq gap or `AllBlocksCleared` clears stale inventory instead of routing on phantom hashes | `kv-subscriber: … decision=CLEAR` or `AllBlocksCleared received for ep N` marker; inventory re-grows under fresh traffic | none — expect a brief warmth loss; alert only if it does NOT re-grow (then check the feed, row 2) |
-| `[KV_ZEROHIT]` mid measurement window | parity drifted mid-run (server relaunch changed page size / model / image) | re-read `/get_server_info` on every EP; compare against the rule | fix parity, then **re-run the window** — a watchdog-fired window is void (the A/B runbook makes this a hard gate) |
+| EP restarted; inventory dropped to 0 | **working as designed**: a large seq gap or `AllBlocksCleared` clears stale inventory instead of routing on phantom hashes | `kv-subscriber: … decision=CLEAR` or `AllBlocksCleared received for ep N` marker; inventory re-grows under fresh traffic | none — expect a brief warmth loss; alert only if it does NOT re-grow (then check the feed, row 2) |
+| `[KV_ZEROHIT]` mid measurement window | parity drifted mid-run (server relaunch changed page size / model / image) | re-read `/get_server_info` on every EP; compare against the rule | fix parity, then **re-run the window** — a watchdog-fired window is void (treat this as a hard gate on any measurement window) |
 | Go-side markers absent entirely (`kv-subscriber:` never appears) | stderr discarded by the container launch | `docker logs` shows only C/entrypoint output | relaunch loxilb with `>>/var/log/loxilb-go.log 2>&1` (§8) |
 
 When results look wrong, check the harness/client first, then the §8 metrics, then the
@@ -517,26 +530,29 @@ Run it after any change to the KV subscriber, the hash arms, or the rule-validat
 
 ## 11. Validation status (honesty note)
 
-This guide was authored during ** waves 1–4** (plans, all committed).
-Every field name, default, bound, and error string above was verified against the code on
-branch ``. However, at the time of writing:
+Every field name, default, bound, and error string above was verified against the
+committed code. However, at the time of writing:
 
 - the **binding remote gates** — a Linux-controller `make clean && make`, the
   `test_pd`/`test_kv` rosters, the scoped `go test ./pkg/loxinet/` suites, and the §10
   coexistence scenario itself — had **not yet run**;
-- the **live SGLang fleet window (plan)** — real SGLang servers, the TK-equivalent
-  live checks, and the 3-arm competitive A/B — had **not yet opened**.
+- the **live SGLang fleet window** — real SGLang servers, the live smoke checks
+  (inventory grows under traffic, a Tier-1.5 hit fires, an EP restart clears the
+  inventory), and the **full** 3-arm competitive A/B — had **not yet opened**.
 
-Treat behavioral claims as **code-verified, not fleet-verified**, and check the phase
-record () or [15 §10](15-sglang-kv-cache-aware-routing.md) for the
-current gate status before relying on this in production.
+**The one measured exception is §7.7**: the spill-relief / saturation-ε screen was run
+live on a single internal validation fleet (L4-class GPUs) — indicative for similar
+capacity-bound shapes, not a general benchmark. Everything else remains unmeasured
+design intent. Treat other behavioral claims as **code-verified, not fleet-verified**,
+and check [15 §10](15-sglang-kv-cache-aware-routing.md) for the current gate status
+before relying on this in production.
 
 ---
 
 ## 12. See also
 
 - [08 — KV-cache-aware routing (Tier-1.5 internals)](08-kv-cache-aware-routing.md) — the
-  vLLM hash contract, guard ladder, and per-model onboarding runbook (§6) this path reuses.
+  vLLM hash contract, guard ladder, and per-model onboarding guide (§6) this path reuses.
 - [10 — Hierarchical KV routing architecture](10-hierarchical-kv-routing-architecture.md) —
   the tier ladder and the single-pool selector family that serves as the mode-3 miss fallback.
 - [11 — Hierarchical KV routing config & tuning](11-hierarchical-kv-routing-config-tuning.md)
@@ -547,5 +563,3 @@ current gate status before relying on this in production.
   multi-rank subscriber, `kv_svc_id` isolation, and watchdog internals.
 - [16 — SGLang vs vLLM KV-routing differences](16-sglang-vs-vllm-routing-differences.md) — the
   contract-by-contract comparison behind §7.1's triad.
-- the internal A/B runbook — the live A/B execution checklist
-  (provisioning invocation, TK-equivalent live checks, per-window self-confirm gates).

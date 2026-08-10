@@ -17,8 +17,10 @@ authoritative on the live wire/operational behavior observed on a real GPU fleet
 
 ## 1. The one thing to internalize first: KV-aware routing ONLY runs in P/D mode
 
-loxilb's Tier-1.5 KV-exact selector (`pd_select_prefill`, `loxilb-ebpf/common/sockproxy_ep.c:632`)
-is invoked **only** when the service is a P/D-disaggregated rule:
+loxilb's P/D prefill selector `pd_select_prefill()` (`loxilb-ebpf/common/sockproxy_pd.c`),
+invoked from the P/D gate in `sockproxy_ep.c`, runs **only** when the service is a
+P/D-disaggregated rule (its Tier-1.5 KV-exact stage is `pd_kv_exact_select` in
+`sockproxy_kv_exact.c`):
 
 ```
 tepval->pd_disagg_enabled && n_prefill_eps > 0 && n_decode_eps > 0
@@ -114,7 +116,7 @@ nodes don't publish; they're never KV-selection candidates).
 | `--prefix-caching-hash-algo sha256_cbor` | vLLM's **default is pickle-`"sha256"`** (non-portable, NOT what loxilb computes). loxilb computes CBOR. | 0% hash intersection → every request falls through to round-robin (silent). |
 | `PYTHONHASHSEED=0` | Seeds vLLM's `NONE_HASH` (first-block parent) deterministically; must match loxilb's `LLB_KV_NONE_HASH_SEED=0`. | First block never matches → broken affinity. |
 | `--block-size 16` | Must equal the rule's `kvBlockSize`. | Hashes computed over different token spans → no match. |
-| `--kv-events-config endpoint tcp://*:5557` | `*` binds PUB mode; `127.0.0.1` puts ZMQ in connect mode and **nothing is published**. | `blocks_total` stays 0 forever. |
+| `--kv-events-config endpoint tcp://*:5557` | `*` binds PUB mode; `127.0.0.1` puts ZMQ in connect mode and **nothing is published**. | `loxilb_pd_kv_blocks` stays 0 forever. |
 
 ---
 
@@ -187,7 +189,14 @@ load-bearing knobs — the **parity triad** — must agree on both sides:
 Plus loxilb needs the **same tokenizer** staged at
 `/etc/loxilb/tokenizers/<model-slug>/tokenizer.json`, where `<model-slug>` is the model id with `/`
 → `__` (e.g. `Qwen/Qwen2.5-7B-Instruct` → `Qwen__Qwen2.5-7B-Instruct`). A missing/mismatched
-tokenizer produces different token ids → different hashes → no matches.
+tokenizer produces different token ids → different hashes → no matches. See
+[08 §6.3](08-kv-cache-aware-routing.md) for how to obtain and stage the file (download commands
+and container mount paths).
+
+For `/v1/chat/completions` there is an additional prerequisite: KV-exact routing of chat requests
+requires a **chat template** registered in the gateway (`pkg/loxinet/ai_kv_chat_template.go`).
+v1 ships only the Qwen2.5/ChatML family (any `Qwen__*` slug); for other models, chat requests
+miss at Guard E and silently route via lower tiers — `/v1/completions` is unaffected.
 
 **If any leg disagrees, there is no error — every request just falls through to round-robin.** This is
 the single most common "it's not working" cause. Detection in §9.
@@ -203,7 +212,7 @@ Observed flow for a request whose prefix is already cached on prefill `.5` (3 pr
 CLIENT            loxilb VIP :9003 (eBPF fullproxy, mode 4)        PREFILL .5:8100      DECODE .3:8200
   │  TCP SYN ───────────►│ (eBPF intercept; L7 proxy terminates)        │                   │
   │  POST /v1/completions│                                              │                   │
-  │  {model,prompt} ────►│ TIER-1.5 SELECT (sockproxy_ep.c:632):        │                   │
+  │  {model,prompt} ────►│ TIER-1.5 SELECT (pd_kv_exact_select):        │                   │
   │                      │  1. tokenize(prompt) via staged tokenizer    │                   │
   │                      │  2. block-hash (cbor+sha256, blk16, seed0)   │                   │
   │                      │  3. overlap vs inventory: .4=0 .5=5 .6=0     │                   │
@@ -220,7 +229,10 @@ CLIENT            loxilb VIP :9003 (eBPF fullproxy, mode 4)        PREFILL .5:81
 
 **Operator gold:** loxilb stamps the chosen pair into the completion `id`:
 `cmpl-___prefill_addr_192.168.0.5:5600___decode_addr_192.168.0.3:5600_…`. You can read routing
-decisions per-request straight off the response — no instrumentation needed.
+decisions per-request straight off the response — no instrumentation needed. One caveat: if the
+prefill leg failed over mid-request (`pd_retry_prefill()`), the receipt is rewritten
+(`pd_receipt_rewrite()`) so the `id` names the prefill EP that **actually served** — it always
+reflects the true server, not the first selection.
 
 ---
 
@@ -240,17 +252,25 @@ counter was missing.) Also note the **`loxilb_` prefix** — code/harnesses that
 
 ```
 # --- routing decisions ---
-loxilb_pd_kv_tier15_hits_total{ep_idx="N"}        COUNTER  KV-exact HITS, per prefill EP index (1-based)
-loxilb_pd_kv_tier15_fallthrough_total                COUNTER  requests that skipped Tier-1.5 → Tier-2 RR
+loxilb_pd_kv_tier15_hits_total{ep_idx="N"}        COUNTER  KV-exact HITS, per prefill EP index
+loxilb_pd_kv_tier15_fallthrough_total                COUNTER  requests that skipped Tier-1.5 → Tier-2
 loxilb_pd_kv_tier15_miss_reason_total{reason="..."}  COUNTER  misses by guard reason:
                                                            mode_off, warmup, text_empty, model_empty,
                                                            tokenize, hashes, no_worker, excluded  (08 §5)
 loxilb_pd_fallback_to_normal_total                COUNTER  P/D selection failed → fell back to normal LB
 loxilb_pd_cb_flips_total                          COUNTER  per-EP circuit-breaker state flips
+# --- failover / endpoint death ---
+loxilb_pd_prefill_ep_died_total                   COUNTER  prefill backends that died mid-request
+loxilb_pd_decode_ep_died_total                    COUNTER  decode failures (connect fail / EOF before 1st byte)
+loxilb_pd_decode_zero_byte_eof_total              COUNTER  decode EOF w/ zero bytes relayed (client got 502)
+loxilb_pd_connect_failover_total                  COUNTER  silent successful prefill connect failovers
+loxilb_lb_select_failure_shutdown_total           COUNTER  raw TCP resets on non-P/D selection failure
+                                                           (tripwire — must stay flat)
 # --- inventory / subscriber health ---
 loxilb_pd_kv_blocks{service="<svc>",ep_idx="<ep_idx>"}   GAUGE  blocks held per prefill EP (the inventory)
 loxilb_kv_subscriber_connected{service,ep}             GAUGE  1 = loxilb's ZMQ SUB is connected to that prefill EP
-loxilb_kv_agent_up                                     GAUGE  KV agent liveness
+loxilb_kv_agent_up                                     GAUGE  KV agent liveness (present only when the
+                                                              separate KV agent is deployed)
 # --- P/D serving + capacity ---
 loxilb_ai_pd_requests_total                       COUNTER  total P/D requests
 loxilb_ai_pd_kv_params_found_total                COUNTER  requests carrying kv_transfer_params
@@ -260,18 +280,22 @@ loxilb_pd_sessions_active / loxilb_pd_trie_nodes  GAUGE    session-affinity + Ti
 loxilb_proxy_pd_kv_params_overflow_total                 COUNTER  kv_params buffer overflow (should stay 0)
 ```
 
-`blocks_total` endpoint label `<svc>:<ep_idx>` is 1-based per service (`1:1/1:2/1:3` = 1st/2nd/3rd
-prefill EP in registration order); `tier15_hits_total` uses `ep_idx="N"` for the same index.
+The `ep_idx` label on `loxilb_pd_kv_blocks` (and on `tier15_hits_total`/`tier15_spills_total`) is
+the **0-based absolute endpoint index** within the rule, in registration order. It is an opaque
+integer — join it to an endpoint address via the info metric
+`loxilb_pd_ep_info{service,ep_idx,ep}` (value always 1):
+`loxilb_pd_kv_tier15_hits_total * on(ep_idx) group_left(ep) loxilb_pd_ep_info`.
 
 ### 8.2 "Is KV-exact routing engaged?" — the three checks
 
 1. `loxilb_kv_subscriber_connected{...} == 1` for **every** prefill EP (ZMQ plane healthy), AND
-2. `loxilb_pd_kv_blocks > 0` on prefill EPs (inventory ingested ⇒ ZMQ + **parity** OK), AND
+2. `loxilb_pd_kv_blocks` > 0 on prefill EPs (inventory ingested ⇒ ZMQ + **parity** OK), AND
 3. under same-prefix load, `loxilb_pd_kv_tier15_hits_total` **advances** while `t15_fallthrough_total`
    stays flat (the only expected miss is the first request to a *cold* prefix).
 
-**Live reference (from the §10 probe):** `subscriber_connected{1,2,3}=1`; `blocks_total{1:2}=13`;
-`tier15_hits_total{ep_idx="2"}=8` (the 8 same-prefix requests, all to the 2nd prefill EP);
+**Live reference (from the §10 probe):** `loxilb_kv_subscriber_connected=1` for all three prefill
+EPs; `loxilb_pd_kv_blocks`=13 on the cached prefill EP's `ep_idx`; `tier15_hits_total`=8 on that
+same `ep_idx` (the 8 same-prefix requests, all to the cached prefill EP);
 `t15_fallthrough_total=8` (`no_worker=7` cold + `model_empty=1`). Hits pinned to one `ep_idx` = correct
 affinity.
 
@@ -286,13 +310,16 @@ Log markers (with `LLB_KV_HASH_DEBUG=1`): `[KV_HASH]` (hash forensics), `[KV_T15
 |---------|-------------|-----------------|
 | `curl VIP:9003` → connection refused | loxilb running **natively**, not as a container | `pgrep -a loxilb`; if native, kill it and run the container (§5.1). |
 | Requests succeed but **always round-robin** (`t15_fallthrough_total` climbs 1:1 with traffic) | **parity triad broken** or tokenizer missing | Confirm all 3 legs (§6) on both sides; confirm `/etc/loxilb/tokenizers/<slug>/tokenizer.json` is staged + mounted. Enable `LLB_KV_HASH_DEBUG=1`, compare `[KV_HASH]` vs a published block. |
-| `blocks_total` stays **0** for all prefill EPs | ZMQ not flowing | First check `loxilb_kv_subscriber_connected{ep=...}`: **0** ⇒ loxilb's SUB can't reach that prefill's `:5557` (security groups / netns / wrong IP). **1** but blocks still 0 ⇒ either (a) prefill `--kv-events-config endpoint` is `127.0.0.1` not `tcp://*:5557` (connect-mode, publishes nothing), or (b) all test prompts are shorter than `block_size` (16) so no full block is ever cached/published — use a ≥16-token prefix. |
+| `loxilb_pd_kv_blocks` stays **0** for all prefill EPs | ZMQ not flowing | First check `loxilb_kv_subscriber_connected{ep=...}`: **0** ⇒ loxilb's SUB can't reach that prefill's `:5557` (security groups / netns / wrong IP). **1** but blocks still 0 ⇒ either (a) prefill `--kv-events-config endpoint` is `127.0.0.1` not `tcp://*:5557` (connect-mode, publishes nothing), or (b) all test prompts are shorter than `block_size` (16) so no full block is ever cached/published — use a ≥16-token prefix. |
 | `tier15_hits_total` **absent** from `/metrics` on a fresh deploy | Prometheus lazy-emission (zero observations) | Not a fault — drive a few same-prefix requests, then re-scrape (§8 gotcha). |
+| Occasional 502, or silent prefill retries in logs | prefill EP died mid-request | `pd_retry_prefill()` re-drives once against another healthy prefill EP. `loxilb_pd_prefill_ep_died_total` counts death events; `loxilb_pd_connect_failover_total` advancing means failovers are succeeding **silently** (clients see no error). Client-visible `502 pd_prefill_failed` means the one-retry budget was exhausted (multiple EPs failing per request). |
+| `502 {"error":"pd_decode_backend_died"}` | decode backend died before relaying any response byte | Check the decode EP's health/NIXL plane; `loxilb_pd_decode_zero_byte_eof_total` advances 1:1 with these 502s (subset of `loxilb_pd_decode_ep_died_total`). |
+| `429 pd_overloaded` | admission gate shedding (every healthy prefill EP at its in-flight cap, no park room) | Retriable by the client. Watch `loxilb_pd_admission_shed_total`; raise `LLB_PD_MAX_INFLIGHT_PER_EP` / queue depth or add capacity. |
 | vLLM container **exits immediately** at startup | NIXL/UCX crash | `docker logs vllm`; ensure `kv_buffer_device:"cpu"` + `UCX_TLS=tcp` (§4.3). |
 | `503 {"error":"pd_pool_unavailable"}` | no healthy prefill **or** decode | check all EP `/health`; a P/D rule needs ≥1 healthy of **each** role. |
 | Decode hangs / request times out after prefill | NIXL side-channel unreachable | `VLLM_NIXL_SIDE_CHANNEL_HOST` must be the node IP (not 0.0.0.0); `:5600` open between prefill↔decode. |
 | loxilb **image build fails**: `undefined reference to bpf_object__next_map/next_program` | system `libbpf-dev` (Ubuntu 22.04 = libbpf 0.5.0) hijacked the link | Do **not** install system `libbpf-dev`. loxilb vendors libbpf 1.5.0 — stage it post-`make`: `cp -a loxilb-ebpf/libbpf/src/libbpf.so* /usr/lib64/` + soname symlinks (already in `Dockerfile`). Build with `docker build --network=host` if the build container's apt DNS is flaky. |
-| `kv inventory` REST query → `invalid service_id` | the inventory endpoint needs a `service_id` param | cosmetic; use the Prometheus `blocks_total` gauge instead. |
+| `kv inventory` REST query → `invalid service_id` | the inventory endpoint needs a `service_id` param | cosmetic; use the Prometheus `loxilb_pd_kv_blocks` gauge instead. |
 
 ---
 
@@ -304,14 +331,14 @@ requests pin to the cached prefill EP and inventory grew. (Full script:
 
 ```python
 # warm a ~70-token shared prefix, then 8 same-prefix follow-ups; read prefill_addr from each id.
-# EXPECT: blocks_total{<cached-ep>} jumps 0→N after warm; all 8 follow-ups route to that EP;
+# EXPECT: loxilb_pd_kv_blocks{<cached-ep>} jumps 0→N after warm; all 8 follow-ups route to that EP;
 #         fallthrough/miss increment by exactly 1 (the cold warm request only).
 ```
 
 Reference live result (3 prefill + 1 decode, Qwen2.5-7B):
 
 ```
-WARM routed to prefill .5  →  blocks_total{1:2}: 0 → 5
+WARM routed to prefill .5  →  loxilb_pd_kv_blocks (cached EP): 0 → 5
 SAME-PREFIX routes = [.5,.5,.5,.5,.5,.5,.5,.5]   (8/8 pinned)
 fallthrough_delta = 1   miss_delta = 1           (the warm request only)
 ```

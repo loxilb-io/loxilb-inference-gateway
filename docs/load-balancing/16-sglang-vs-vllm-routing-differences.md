@@ -9,19 +9,19 @@
 > **compares and guides**; the mechanism deep-dive lives in
 > [15 — SGLang KV-cache-aware routing](15-sglang-kv-cache-aware-routing.md) — cross-referenced
 > per section, never duplicated here.
-> **Status:** describes integration (plans committed). **Not yet CICD-gate-verified** — see §9.
+> **Status:** describes the committed integration. **Not yet CICD-gate-verified** — see §9.
 
 Related: [08 — KV-cache-aware routing (vLLM Tier-1.5 internals)](08-kv-cache-aware-routing.md),
 [10 — Hierarchical KV routing architecture](10-hierarchical-kv-routing-architecture.md),
 [11 — Configuration & tuning](11-hierarchical-kv-routing-config-tuning.md),
 [15 — SGLang KV routing architecture](15-sglang-kv-cache-aware-routing.md),
-[17 — SGLang configuration & tuning](17-sglang-config-tuning.md),
-the internal A/B runbook.
+[17 — SGLang configuration & tuning](17-sglang-config-tuning.md).
 
 > ⚠ **Validation status (read this first).** Everything here is **code-verified, not
-> gate-verified**: the binding remote gates are plan the live fleet bring-up +
-> 3-arm competitive A/B are plan — neither had run when this doc was written. This
-> document contains **zero performance claims** for the SGLang path. Details in §9.
+> gate-verified**: neither the binding remote gates nor the live fleet bring-up and the
+> full 3-arm competitive A/B had run when this doc was written. The one exception is the
+> spill-relief / saturation-ε screen in [17 §7.7](17-sglang-config-tuning.md) — measured
+> on a single internal validation fleet. Details in §9.
 
 ---
 
@@ -30,7 +30,7 @@ the internal A/B runbook.
 | Dimension | vLLM (docs 08–11) | SGLang (doc 15, this doc) |
 |---|---|---|
 | **Serving topology** | P/D disaggregation: `ep_role:1` prefill + `ep_role:2` decode, KV handoff over vLLM's own NIXL connector | **Single-role**: one flat worker pool, no roles, no handoff (SGLang's own P/D is bootstrap-server + gRPC — out of scope) |
-| **loxilb entry point** | `kvExactMode: 1` inside the P/D tier ladder (`pd_select_prefill`) | `kvExactMode: 3` (`KV_EXACT_MODE_SINGLE_ROLE`) — the sibling branch on plain fullproxy rules ([15 §3](15-sglang-kv-cache-aware-routing.md)) |
+| **loxilb entry point** | `kvExactMode: 1` inside the P/D tier ladder (`pd_select_prefill`) | `kvExactMode: 3` (`KV_EXACT_MODE_SINGLE_ROLE`) — the sibling branch on plain fullproxy rules ([15 §3](15-sglang-kv-cache-aware-routing.md)). Note `kvExactMode` selects the endpoint **topology** only; the engine is chosen by `kvEngineType` — this column shows the conventional pairing |
 | **KV event transport** | ZMQ PUB, one socket per prefill EP, conventionally `:5557`; 3-frame msgpack envelope | **Byte-identical wire format**; one PUB **per DP rank** at `kvZmqPort + rank`; port is deployment-chosen (`:5561` on the co-resident fleet — §5) |
 | **Hash algorithm** | SHA-256 or XXH3-128 over **canonical CBOR** `[parent, [tokens], null]` (`sha256_cbor` / `xxhash_cbor`) | **SHA-256 only**, over **raw bytes** `parent_digest(32) ‖ token₀_LE4 ‖ token₁_LE4 …` — no CBOR envelope (`KV_HASH_SHA256_SGLANG`, algo 2) |
 | **uint64 truncation** | **last** 8 digest bytes, big-endian (`digest[-8:]` — an earlier `digest[:8]` mis-slice produced 0% overlap before this fix) | **first** 8 digest bytes, big-endian (`digest[:8]`) — the exact inverse |
@@ -39,8 +39,8 @@ the internal A/B runbook.
 | **Parent chaining** | parent = previous block's **full digest** (32 or 16 B) | same idea: parent = previous block's **full 32-byte digest** (raw, not hex, not truncated) |
 | **Block/page granularity knob** | vLLM `--block-size` (default 16) ↔ rule `kvBlockSize` | SGLang `--page-size` — **model-dependent default, never assume 16**; read back from `/get_server_info` ↔ rule `kvBlockSize` |
 | **DP ranks** | n/a (one publisher per prefill EP) | `--dp-size N` ⇒ N publishers per EP; rule `kvDpRankCount` (1..8, 0 ⇒ 1) fans out N subscribers per EP, unioned into one inventory (§6) |
-| **Router ecosystem competitor** | `vllm-router` (prefix-aware / kv-aware modes) | `sgl-model-gateway` v0.3.2 — `cache_aware` (approximate router-side radix tree) / `round_robin` (§7) |
-| **loxilb rule config** | `mode:4` + `pd_disagg_mode` + `ep_role` tags + `kvExactMode:1` + `kvHashAlgo:"sha256_cbor"` | `mode:4` fullproxy + `kvExactMode:3` + `kvEngineType:"sglang"` + `kvDpRankCount` + **`kvHashAlgo` omitted** (engine default — [15 §8.1](15-sglang-kv-cache-aware-routing.md)) |
+| **Router ecosystem competitor** | `vllm-router` (prefix-aware / kv-aware modes) | `sgl-model-gateway` (external project; v0.3.2 at the time of comparison — no in-repo pin) — `cache_aware` (approximate router-side radix tree) / `round_robin` (§7) |
+| **loxilb rule config** (conventional pairings — `kvExactMode` is topology-only and orthogonal to `kvEngineType`) | `mode:4` + `pd_disagg_mode` + `ep_role` tags + `kvExactMode:1` + `kvHashAlgo:"sha256_cbor"` | `mode:4` fullproxy + `kvExactMode:3` + `kvEngineType:"sglang"` + `kvDpRankCount` + **`kvHashAlgo` omitted** (recommended; engine default — [15 §8.1](15-sglang-kv-cache-aware-routing.md)) |
 
 Everything not listed is **shared**: the guard ladder A–G, the tokenizer pool and staging
 path, the Go inventory plane (`map[uint64]struct{}` per EP, `LOXILB_KV_MAX_BLOCKS` cap),
@@ -61,7 +61,7 @@ publish KV events and hold scored inventories.
 
 **SGLang** workers behind loxilb are **single-role**: every EP serves the whole request
 (prefill + decode in one process, radix cache local to it). There are no `ep_role` tags, no
-NIXL, no decode-selection stage. opened `kvExactMode=3` precisely because
+NIXL, no decode-selection stage. The integration opened `kvExactMode=3` precisely because
 [doc 10 §2](10-hierarchical-kv-routing-architecture.md)'s load-bearing constraint — *Tier 1.5
 is reachable only inside the P/D ladder* — would otherwise have left SGLang with nothing but
 the approximate prefix-hash CHWBL family. How the three gates opened (C selection mode, Go
@@ -70,7 +70,10 @@ subscriber gate, single-role `active_conns` accounting) is [15 §3](15-sglang-kv
 ### 2.2 Which tiers apply in each shape
 
 The [doc 10 §3](10-hierarchical-kv-routing-architecture.md) ladder is a **P/D structure**;
-mode 3 deliberately does **not** clone it (design decision):
+mode 3 deliberately does **not** clone it (design decision). Remember that `kvExactMode`
+selects the endpoint topology only — mode 1 = zmq over a role-partitioned P/D pool (any
+engine), mode 3 = zmq over a role-less pool (any engine); the columns below are the
+conventional engine pairings:
 
 | Ladder stage (doc 10) | vLLM P/D (`kvExactMode=1`) | SGLang single-role (`kvExactMode=3`) |
 |---|---|---|
@@ -120,10 +123,10 @@ between the two arms produces 0% overlap and a *silent* fallback (§4).
 
 ### 3.1 Worked example — real committed vector values
 
-From the committed parity vectors (`chain3_bs16`, regenerated from the pinned sglang
-checkout `d8ef76682e` by `scripts/compute_sglang_hash_refs.py`; asserted bit-for-bit in
-`loxilb-ebpf/common/test_kv_exact.c` and
-`pkg/loxinet/ai_kv_subscriber_hash_vectors_test.go`).
+From the committed parity vectors (`chain3_bs16`, derived from the pinned sglang
+checkout `d8ef76682e` via `cicd/vllm-kvcache-routing-cpu/sglang_hash_core.py`; asserted
+bit-for-bit in `test_sglang_parity_vectors()` in `loxilb-ebpf/common/test_kv_exact.c` and
+in `pkg/loxinet/ai_kv_subscriber_hash_vectors_test.go`).
 
 Tokens `1..48`, page size 16 ⇒ 3 full blocks. The **SGLang** side computes:
 
@@ -180,8 +183,8 @@ no seed leg, but the block-size leg has a model-dependent default:
 | # | SGLang / loxilb setting | Must match | Failure mode if wrong |
 |---|---|---|---|
 | 1 | SGLang `--page-size` (effective value — **model-dependent default, never assume 16**; read `GET /get_server_info` back) | rule `kvBlockSize` | **Silent.** loxilb chunks tokens at the wrong stride → every hash wrong → 0 overlap → all traffic takes the fallback selector while labeled "KV-exact" |
-| 2 | The model's HF `tokenizer.json` + chat template staged for the exact model string clients send (`/etc/loxilb/tokenizers/<slug>/`, [08 §6.3/§6.5](08-kv-cache-aware-routing.md)) | what SGLang tokenizes server-side | Missing ⇒ loud-ish (Guard E `tokenize` misses); **wrong-but-loading** (e.g. fallback-model swap without switching the tokenizer warning in `sglang-provision.sh`) ⇒ silent 0 overlap |
-| 3 | rule `kvEngineType: "sglang"` with **`kvHashAlgo` omitted** | default at the single dpebpf mapping site (`dpebpf_linux.go:1773-1789`): `algo=="" && engine=="sglang"` ⇒ `kv_hash_algo=2` | An explicit algo **always wins** — `"xxhash_cbor"` + engine sglang is honored as algo 1 and never matches anything. The swagger enum has no `sha256_sglang` value; omission is currently the only correct REST spelling ([15 §8.1](15-sglang-kv-cache-aware-routing.md)) |
+| 2 | The model's HF `tokenizer.json` + chat template staged for the exact model string clients send (`/etc/loxilb/tokenizers/<slug>/`, [08 §6.3/§6.5](08-kv-cache-aware-routing.md)) | what SGLang tokenizes server-side | Missing ⇒ loud-ish (Guard E `tokenize` misses); **wrong-but-loading** (e.g. swapping to a fallback model without switching the staged tokenizer) ⇒ silent 0 overlap |
+| 3 | rule `kvEngineType: "sglang"` with **`kvHashAlgo` omitted** (recommended) | default at the single dpebpf mapping site (the `kv_hash_algo`/`kv_engine_type` mapping block in `DpLBRuleMod`, `pkg/loxinet/dpebpf_linux.go`): `algo=="" && engine=="sglang"` ⇒ `kv_hash_algo=2` | `sha256_sglang` is in the swagger enum and an explicit `"sha256_sglang"` is accepted; an algo that *contradicts* the engine (`"sha256_cbor"`/`"xxhash_cbor"` on an sglang rule) is **rejected at config time** by `kvHashAlgoValidate` — it can no longer be silently honored ([15 §8.1](15-sglang-kv-cache-aware-routing.md)) |
 
 **What silent failure looks like** (identical symptom signature to
 [doc 11 §7.1](11-hierarchical-kv-routing-config-tuning.md) pattern 1): `tier15_hits_total`
@@ -190,15 +193,16 @@ flat, `tier15_miss_reason{reason="no_worker"}` climbing request-for-request,
 touch it. Requests keep completing (fail-open), latency looks "fine-ish", and an A/B run in
 this state would *measure the fallback selector and call it KV-exact*.
 
-**The upgrade: the failure is no longer runbook-only.** The zero-hit
+**The upgrade: the failure is no longer detectable only by manual checks.** The zero-hit
 watchdog ([15 §7](15-sglang-kv-cache-aware-routing.md)) counts consecutive zero-hit lookups
 against a non-empty eligible inventory; at `LOXILB_KV_ZERO_HIT_N` (default 50) it emits one
 `[KV_ZEROHIT]` WARN per transition edge and increments
 `loxilb_pd_kv_zero_hit_watchdog_total{service_id}` on every at-or-past-threshold lookup.
-The A/B runbook makes this a **HARD per-window gate**: `tier15_hits` delta ≠ 0 AND
-`zero_hit_watchdog` delta == 0, else the arm is VOID
-(the internal A/B runbook). The watchdog is engine-agnostic — it
-retro-covers the vLLM path too, which never had a runtime tripwire for this class.
+Treat this as a **HARD per-window gate** in any comparative measurement: the window is
+valid only if the `loxilb_pd_kv_tier15_hits_total` delta ≠ 0 AND the
+`loxilb_pd_kv_zero_hit_watchdog_total` delta == 0; otherwise the arm is VOID.
+The watchdog is engine-agnostic — it retro-covers the vLLM path too, which never had a
+runtime tripwire for this class.
 
 ---
 
@@ -212,20 +216,19 @@ differs:
 
 | Aspect | vLLM | SGLang |
 |---|---|---|
-| Port convention | `:5557` (the canonical contract port, one PUB per prefill EP) | `kvZmqPort + rank` per DP rank; base port is free-form (see collision note) |
+| Port convention | `:5557` (the canonical contract port, one PUB per prefill EP) | `kvZmqPort + rank` per DP rank; the base port is free-form (see the collision note) |
 | Publisher count per EP | 1 | `--dp-size` N (rank N binds base+N) |
 | Seq counters | one per EP | **one per rank**, independent — the reason for per-rank seq state ([15 §5.2](15-sglang-kv-cache-aware-routing.md)) |
 | Hash wire type | unsigned ints (with `VLLM_KV_EVENTS_USE_INT_BLOCK_HASHES=1`) | signed int64s (§3) |
 | Enable flag | `--kv-events-config '{"enable_kv_cache_events":true,"publisher":"zmq","endpoint":"tcp://*:5557"}'` | `--kv-events-config '{"publisher":"zmq","endpoint":"tcp://*:<port>"}'` |
 
-### 5.1 The `:5557` co-residency collision (and `SGLANG_ZMQ_PORT`)
+### 5.1 The `:5557` co-residency collision
 
-On co-resident fleet, SGLang lands on the **same `--network host` boxes** as
-the vLLM prefills (`.7/.8/.9`) — and vLLM already owns `:5557` there. The provisioning
-provisioning script parameterizes the SGLang publisher port as
-`SGLANG_ZMQ_PORT` with a **collision preflight that hard-refuses** if the chosen port is
-bound; the runbook pre-resolves `SGLANG_ZMQ_PORT=5561` for the window, and the rule the
-script creates carries `kvZmqPort: 5561` to match. Rules of thumb:
+In a co-resident example deployment, SGLang lands on the **same `--network host` boxes**
+as the vLLM prefills — and vLLM already owns `:5557` there. Pick a distinct SGLang
+publisher port (e.g. `:5561`), **verify it is free with `ss -tln` before launch and
+hard-fail if it is bound**, and create the rule with the matching `kvZmqPort` (e.g.
+`kvZmqPort: 5561`). Rules of thumb:
 
 - loxilb subscribes per-rule `kvZmqPort` — **any free port works**; there is no magic in
   5557 beyond convention.
@@ -236,16 +239,16 @@ script creates carries `kvZmqPort: 5561` to match. Rules of thumb:
 ### 5.2 Seq gaps, replay, and decision
 
 The subscriber's replay hook (`kvZmqReplayRequester`) exists for vLLM's paired
-replay/ROUTER socket, but **production passes `replay=nil` for both engines** — the pre-99
+replay/ROUTER socket, but **production passes `replay=nil` for both engines** — the earlier
 loop therefore *silently ignored* mid-stream seq gaps, leaving phantom hashes after missed
-`BlockRemoved`/`AllBlocksCleared` events (the folded "subscriber does not recover from EP
-restart" todo). closes this for both engines, per rank
+`BlockRemoved`/`AllBlocksCleared` events (the long-standing "subscriber does not recover
+from EP restart" defect). The staleness fix closes this for both engines, per rank
 ([15 §5.3](15-sglang-kv-cache-aware-routing.md)): a gap within the forward tolerance
 (`kvSeqResumeWindow = 64`) **KEEPs** the warm inventory (stale entries are harmless by
 construction — [08 §3.5](08-kv-cache-aware-routing.md)); a larger jump **CLEARs** (the
 publisher likely restarted). Both decisions emit a structured
 `kv-subscriber: ep N rank R seq gap A -> B … decision=KEEP|CLEAR` marker — the CICD and
-live-check anchor (RUNBOOK §3 check 3 asserts it on a real SGLang EP restart).
+live-check anchor (assert it on a real SGLang EP restart as part of any live bring-up).
 
 ---
 
@@ -264,8 +267,8 @@ seq counter. Two facts shape loxilb's design:
 2. **Rule `kvDpRankCount` must equal the server's `--dp-size`** (valid 1..8, `0 ⇒ 1`;
    values > 8 are rejected at config time). Too small ⇒ some ranks' events are never
    subscribed (invisible warmth, depressed hit-rate); too large ⇒ dead subscribers
-   endlessly retrying non-existent ports (noise, no correctness impact). The provisioning
-   script sets both from one `SGLANG_DP` variable so they cannot drift.
+   endlessly retrying non-existent ports (noise, no correctness impact). Drive both
+   values from one variable in your deployment tooling so they cannot drift.
 
 Union semantics to expect in operation ([15 §5.4](15-sglang-kv-cache-aware-routing.md)):
 `AllBlocksCleared` from **any** rank clears the **whole** shared EP inventory (over-clear
@@ -278,7 +281,7 @@ behavior byte-identically — vLLM deployments are untouched by the fan-out mach
 
 ## 7. Router ecosystem: loxilb vs `sgl-model-gateway`
 
-The honest 3-arm framing from the A/B runbook (the internal A/B runbook):
+The honest 3-arm framing for any competitive comparison:
 
 | Arm | Router | Cache signal | Trust model |
 |---|---|---|---|
@@ -301,10 +304,10 @@ Structural (not measured — §9) expectations for when each wins:
   cache-aware arm misconfigured into silence (which is why the §4 watchdog gate exists:
   a voided arm is neither a win nor a loss).
 
-The differentiator statement, verbatim intent from the phase context: *`cache_aware` is an
+The differentiator statement: *`cache_aware` is an
 approximate router-side radix tree with no event subscription — loxilb's exact-hash,
 event-driven routing over unmodified servers is what arm A must demonstrate.* Whether it
-does is plan job, not this document's (§9).
+does is a measurement question, not this document's (§9).
 
 ### 7.1 The three radix trees — and why "syncing" them is the wrong integration
 
@@ -333,7 +336,7 @@ transfer of state that matters already happens through the block-hash event stre
 3. **Events beat snapshots on the axis that decides A/B outcomes: eviction truth.**
    `BlockRemoved`/`AllBlocksCleared` arrive as the worker prunes RadixAttention leaves, so
    the Tier-1.5 inventory tracks cache *departures*, not just arrivals. This is the
-   structural edge over any simulated tree (§7 table) and the reason treats an
+   structural edge over any simulated tree (§7 table) and the reason loxilb treats an
    unexplained seq gap as a KEEP/CLEAR decision rather than trusting stale state.
 
 **The equivalence worth internalizing:** loxilb's Tier-1 trie is, in spirit, what
@@ -355,8 +358,9 @@ either.
 
 ## 8. Optimizing SGLang behind loxilb
 
-All of this is configuration guidance grounded in the shipped mechanism and the
-provisioning constants — **not** measured tuning (§9). The operator-facing knob reference
+All of this is configuration guidance grounded in the shipped mechanism — **not**
+measured tuning (§9; the one measured exception is the spill-relief screen in
+[17 §7.7](17-sglang-config-tuning.md)). The operator-facing knob reference
 is [doc 17](17-sglang-config-tuning.md); this section is the *reasoning*.
 
 ### 8.1 Page size (`--page-size` ↔ `kvBlockSize`)
@@ -374,13 +378,14 @@ back from `/get_server_info`** — the default is model-dependent and the mismat
   shared prefix that ends mid-page contributes nothing for that page, and short shared
   preambles may round down to zero scored blocks. The `chain2_bs32` parity vector exists
   precisely so 32 is a first-class, contract-safe choice.
-- Whatever you choose, **all EPs behind one rule must agree** — the provisioning script
-  hard-fails on a cross-EP page-size mismatch (homogeneous EPs).
+- Whatever you choose, **all EPs behind one rule must agree** — verify every EP reports
+  the same page size before creating the rule, and hard-fail your deployment tooling on a
+  cross-EP mismatch (homogeneous EPs required).
 
 ### 8.2 DP rank count
 
 Set `kvDpRankCount` = `--dp-size`, always, and prefer driving both from one variable
-(`SGLANG_DP` in the provisioning script). When *choosing* `--dp-size`: more ranks = more
+in your deployment tooling. When *choosing* `--dp-size`: more ranks = more
 independent KV pools per EP, which **dilutes per-rank warmth while the union inventory
 still reports the block as present** — loxilb can route to the right EP and SGLang's
 scheduler can still land the request on a cold rank. Tier-1.5's signal is therefore
@@ -389,18 +394,18 @@ affinity is the goal, and treat high-DP EPs as coarser routing targets.
 
 ### 8.3 Co-residency memory split (the 0.55/0.35 lesson)
 
-The fleet runs SGLang **beside** the vLLM prefills on 24 GB L4s:
-`--gpu-memory-utilization 0.55` (vLLM, down from 0.90) + `--mem-fraction-static 0.35`
-(SGLang), image `lmsysorg/sglang:v0.5.9`, same model (`Qwen/Qwen2.5-7B-Instruct`).
-What the split teaches:
+An **example deployment** runs SGLang **beside** the vLLM prefills on 24 GB L4-class
+GPUs: `--gpu-memory-utilization 0.55` (vLLM, down from 0.90) + `--mem-fraction-static
+0.35` (SGLang), image `lmsysorg/sglang:v0.5.9`, same model
+(`Qwen/Qwen2.5-7B-Instruct`). What the split teaches:
 
 - **Reducing the vLLM split changes `num_gpu_blocks`** — the NIXL mesh needs a *uniform*
   `--num-gpu-blocks-override` pin (heterogeneous block counts trip the
   `num_external_tokens` assert), and the ai-controller's calibration fingerprints then
   **mismatch by design** (prior fallback fires visibly; never suppress, never recalibrate
   mid-window).
-- **If two weight copies don't fit**, the pre-authorized fallback is a smaller model
-  (`Qwen/Qwen2.5-1.5B-Instruct`) — and the gateway's tokenizer/chat-template config is
+- **If two weight copies don't fit**, a practical fallback is a smaller model
+  (e.g. `Qwen/Qwen2.5-1.5B-Instruct`) — and the gateway's tokenizer/chat-template config is
   MODEL-specific: switch it too, or hashing silently never matches (the watchdog fires).
 - Gate readiness on **both** `/health` (process up) and `/health_generate` (a real
   generation completed — model loaded, KV cache allocated); `/health` alone passes long
@@ -422,41 +427,44 @@ parity-failure signal (§4).
 |---|---|
 | Mixing engines behind one rule | Structurally impossible — a rule carries exactly one `kvEngineType`. Split frameworks across rules/VIPs (that *is* the coexistence design; two same-VIP rules with different engines are accepted with a WARN) |
 | PUT-ing a different `kvEngineType` onto a live rule | Rejected with the exact error `lbrule-exist error: cant modify rule kv engine type (delete and recreate)` — the engine is **immutable**; delete and recreate the rule |
-| Setting `kvHashAlgo` explicitly on an SGLang rule | An explicit algo always wins over the engine default — `sha256_cbor`/`xxhash_cbor` on an SGLang rule scores 0 forever. Omit the field (§4 leg 3) |
+| Setting an engine-incoherent `kvHashAlgo` on an SGLang rule | **Rejected at config time** (`kvHashAlgoValidate`): `sha256_cbor`/`xxhash_cbor` on an sglang rule returns the exact `kv-hash-algo … is incompatible with kv-engine-type …` error instead of being silently honored. Omit the field (recommended) or set `"sha256_sglang"` explicitly (§4 leg 3) |
 | Unknown engine strings (`"sgl"`, `"SGLang "`, …) | Rejected at config time (allowlist `""`/`"vllm"`/`"sglang"`) — never silently treated as vLLM |
 | `kvExactMode: 3` + `pd_disagg_mode`, or without `mode:4` | Both rejected at config time with exact messages ([15 §3.2](15-sglang-kv-cache-aware-routing.md)) |
-| Assuming `kvWarmupSec` protects the cold window | GUARD_B warmup is currently **inert in production** on both paths (A1 finding, [15 §3.3](15-sglang-kv-cache-aware-routing.md)) — don't design procedures around it |
+| Assuming `kvWarmupSec` protects the cold window | GUARD_B warmup is currently **inert in production** on both paths ([15 §3.3](15-sglang-kv-cache-aware-routing.md)) — don't design procedures around it |
 | Designing around per-rule blend knobs | The `LOXILB_KV_*` env family (mode, ε/λ, caps) is **process-global across all KV VIPs**, vLLM and SGLang alike ([15 §8.3](15-sglang-kv-cache-aware-routing.md)) |
 
 ---
 
-## 9. Validation status — no numbers exist yet
+## 9. Validation status — almost no numbers exist yet
 
 **Be precise about this when quoting the doc.** As of writing:
 
-- Plans are committed; the local, non-binding gates passed (single-TU C
+- The changes are committed; the local, non-binding gates passed (single-TU C
   harness 153/153, `gofmt`, shellcheck, mock-publisher self-checks —
   [15 §10.1](15-sglang-kv-cache-aware-routing.md)).
 - The **binding** gates — a Linux `make clean && make`, the `test_pd`/`test_kv`
   rosters, scoped `go test`, and the two-VIP coexistence CICD scenario
   (`cicd/sglang-loxilb-kvcache/`) — are listed in
   [doc 15 §10.2](15-sglang-kv-cache-aware-routing.md); run them on your build.
-- The **3-arm competitive A/B has not been run** — it requires a live GPU fleet.
-  There are **no measured hit-rates, no TTFT/goodput
-  numbers, and no win/loss verdicts** for loxilb-vs-`sgl-model-gateway` anywhere in the
-  tree. §7's "when each wins" is structural reasoning, and §8 is mechanism-grounded
-  guidance — neither is a benchmark result.
+- The **full 3-arm competitive A/B has not been run** — it requires a live GPU fleet.
+  The only measured data published anywhere in the tree is the **spill-relief /
+  saturation-ε screen in [17 §7.7](17-sglang-config-tuning.md)**, measured on a single
+  internal validation fleet (L4-class GPUs) — indicative, not a general benchmark.
+  Beyond that there are **no measured hit-rates, no TTFT/goodput numbers, and no
+  win/loss verdicts** for loxilb-vs-`sgl-model-gateway`. §7's "when each wins" is
+  structural reasoning, and §8 is mechanism-grounded guidance — neither is a benchmark
+  result.
 
-When lands, its pooled results (block-campaign methodology, N≥3 blocks, CV≤10%,
-per-window self-confirm gates) supersede §7's expectations; publish any verdict only with
-the SLO stated and the §4 gate evidence attached (RUNBOOK §6 discipline).
+If you run such an A/B yourself, use a pooled methodology (N≥3 blocks, CV≤10%,
+per-window self-confirm gates); publish any verdict only with the SLO stated and the §4
+gate evidence attached.
 
 ---
 
 ## 10. See also
 
 - [08 — KV-cache-aware routing (Tier-1.5 internals)](08-kv-cache-aware-routing.md) — the
-  vLLM hash contract (§4), guard ladder (§5), and configuration/onboarding runbook (§6)
+  vLLM hash contract (§4), guard ladder (§5), and configuration/onboarding guide (§6)
   this doc contrasts against.
 - [10 — Hierarchical KV routing architecture](10-hierarchical-kv-routing-architecture.md) —
   the P/D tier ladder and single-pool selector family; §2's deployment shapes are the
@@ -467,6 +475,4 @@ the SLO stated and the §4 gate evidence attached (RUNBOOK §6 discipline).
   mechanism deep-dive behind every SGLang-side row in this doc (gates, hash arm,
   multi-rank subscriber, svc-id isolation, watchdog, source map).
 - [17 — SGLang configuration & tuning](17-sglang-config-tuning.md) — the operator-facing
-  knob-by-knob companion to §8 (being written in parallel with this doc).
-- the internal A/B runbook — the 3-arm A/B execution checklist: arms,
-  HARD self-confirm gates, co-residency reinit wrapper, restore decision point.
+  knob-by-knob companion to §8.

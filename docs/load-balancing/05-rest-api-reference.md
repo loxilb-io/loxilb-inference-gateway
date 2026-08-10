@@ -4,7 +4,8 @@
 > Base URL: `http://<host>:11111/netlox/v1`. Authoritative schema: `api/swagger.yml`
 > (code-generated surface) plus `api/swagger-extras.yml` (raw configuration/debug
 > endpoints — DPU debug and hardware counters, AI KV inventory, OPA policy watcher —
-> served by the API middleware outside go-swagger codegen).
+> served by the API middleware outside go-swagger codegen). Note: the AI API-key `PATCH`
+> operation also lives in `api/swagger-extras.yml` (hand-maintained extras), not the main spec.
 > Auth is **off in CICD**; production applies LoxiLB's auth middleware (token / OAuth2).
 
 When in doubt about a field name for a specific build, grep `api/swagger.yml` — this page summarizes
@@ -25,6 +26,14 @@ the stable surface but the spec is canonical.
 | `PATCH` | `…/protocol/{proto}` | RFC 7386 merge-patch (in-place mutation) |
 | `DELETE` | `…/protocol/{proto}` | Delete (drops in-flight) |
 
+Instance-wide snapshot / persistence surface (all config domains, not just LB):
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/config/snapshot` | Download the versioned, checksummed instance snapshot document |
+| `POST` | `/config/persist` | Dump live config to `{config-path}/snapshot.json` (atomic write; survives daemon restart) |
+| `POST` | `/config/restore` | Staged restore of a snapshot document — dry-run by default, commit is explicit (rollback on failure) |
+
 IPv6 in the path: bracket the literal — `…/externalipaddress/[2001:db8:aa::1]/port/2020/protocol/tcp`
 (use `curl -g`).
 
@@ -37,11 +46,11 @@ IPv6 in the path: bracket the literal — `…/externalipaddress/[2001:db8:aa::1
 | `security` | int | ❌ | `1` = TLS termination · `2` = end-to-end HTTPS (backend re-encrypt) |
 | `id` | string | ❌ | client-supplied or minted UUIDv4 |
 | `name` | string | ✅ | |
-| `sel` | int | ✅ | LB algorithm: `0` rr · `3` persist · `8` CHWBL · `10` CHWBL-WRR |
+| `sel` | int | ✅ | LB algorithm: `0` rr · `3` persist · `8` CHWBL · `10` wrr-hash (weighted CHWBL) |
 | `adminStateUp` | `*bool` | ✅ | absent→enabled; `false`→drain |
 | `connectionLimit` | uint32 | ✅ | per-rule concurrent ceiling; `0`=unlimited |
-| `inactiveTimeout`, `persistTimeout` | uint32 | ✅ | seconds |
-| `probeRetries`, `probeTimeout`, `probeReq`, `probeResp` | — | ✅ | health probe |
+| `inactiveTimeOut` | uint32 | ✅ | seconds |
+| `probeRetries`, `probeTimeout`, `probereq`, `proberesp` | — | ✅ | health probe (`probereq`/`proberesp` are lowercase here; the camelCase `probeReq`/`probeResp` forms belong to the `/config/endpoint` model only) |
 | `allowedSources` | array | ✅ | |
 | `projectId` | string | — | tenant/project; filterable |
 | `annotations` | map | — | opaque; ≤32 keys / ≤256-char values |
@@ -54,9 +63,10 @@ IPv6 in the path: bracket the literal — `…/externalipaddress/[2001:db8:aa::1
 | `hsts_max_age` | uint32 | — | seconds; `0`=off |
 | `hsts_include_subdomains`, `hsts_preload` | bool | — | |
 | `vip_qos_policy_id` | string | — | ref to `/config/policy` |
-| `cert_id` | string | — | listener TLS material by certId |
 | `backend_ca_cert_id`, `backend_client_cert_id` | string | — | backend re-encryption |
-| `mtls_frontend` | object | — | `mode`/`client_ca_path`/`client_crl_path`/`client_cn_pattern`/`require_client_cn` |
+| `mtls_frontend` | object | — | frontend (client → gateway) mTLS: client-cert mode, CA/CRL paths, CN/SAN pattern |
+| `mtls_backend` | object | — | backend (gateway → backend) mTLS: server-cert verification, CA bundle, client cert/key |
+| `backend_protocol` | string | — | backend ALPN capability: `http1` (default) · `http2` · `both` |
 
 ### `serviceArguments` — AI gateway fields
 
@@ -69,6 +79,8 @@ snake_case (`pd_disagg_mode`, `sse_mode`, `model_name`, …) vs camelCase (`kvEx
 | Field | Type | Notes |
 |---|---|---|
 | `chwbl_prefix_hash_level` | int | prompt-prefix hash depth (`1`–`3`); used with `sel: 8`/`10` |
+| `chwbl_prefix_hash_flags` | int | bitmask of optional fields folded into the prefix hash (LoRA / image / audio / cache_salt / tools / session / RAG); `0` = auto-detect |
+| `chwbl_enable_cache_salt` | bool | require a `cache_salt` field in requests (strict multi-tenant isolation) |
 | `chwbl_mean_load_factor` | int | bounded-load spill threshold, % of mean (`125` = spill at 1.25×) |
 | `chwbl_replication` | int | virtual nodes per endpoint on the hash ring |
 
@@ -78,6 +90,15 @@ snake_case (`pd_disagg_mode`, `sse_mode`, `model_name`, …) vs camelCase (`kvEx
 |---|---|---|
 | `pd_disagg_mode` | bool | split requests into prefill + decode legs (roles via `endpoints[].ep_role`) |
 | `pd_cache_aware_mode` | bool | trie-based cache-affinity prefill selection |
+| `pd_session_ttl_sec` | int | session-stickiness TTL (seconds) for P/D cache-aware routing; `0` = no automatic expiry |
+| `pd_cache_threshold` | int | cache-match threshold `0`–`100`; lower = more aggressive cache routing (default `20`) |
+| `pd_balance_abs_threshold` | int | if max−min active connections exceeds this, bypass cache affinity (default `3`) |
+
+**Resilience**
+
+| Field | Type | Notes |
+|---|---|---|
+| `cb_enable` | bool | per-endpoint circuit breaker (fullproxy): 5 consecutive backend connect failures skip the endpoint until a 30s open-timeout expires and a half-open probe succeeds |
 
 **Engine-exact KV routing (ZMQ KV-cache events)**
 
@@ -120,11 +141,10 @@ Guides: [KV/P·D tuning](11-hierarchical-kv-routing-config-tuning.md) ·
 | `backup` | bool | backup tier — active only when all primaries down |
 | `monitorAddress` | string | probe a different address than traffic IP |
 | `subnetId` | string | opaque round-trip |
-| `probeType` | string | `ping`/`tcp`/`http`/`https`/`tls-hello` |
-| `probePort` | int | |
-| `probeCAPath` | `*string` | custom CA for this probe |
-| `probeVerify` | `*bool` | `nil`/`true`=verify; `false`=skip |
 | `httpMethod`, `urlPath`, `expectedCodes`, `httpVersion`, `domainName` | string | content health monitor |
+
+Per-endpoint probe type/port (including `tls-hello`) are configured on the separate
+`/config/endpoint` resource (`probeType`, `probePort`), not on the LB `endpoints[]` item.
 
 ### `secondaryVIPs[]`
 
@@ -148,24 +168,23 @@ in-memory (reset on restart).
 
 | Method | Path | Purpose |
 |---|---|---|
-| `POST` | `/config/cert` | Upload PEM under a certId (certId optional → minted) |
+| `POST` | `/config/cert` | Upload PEM under a certId (certId optional → minted); returns `201 Created` |
 | `PUT` | `/config/cert/{certId}` | Atomic zero-downtime rotation |
-| `GET` | `/config/cert` | List (metadata only) |
 | `GET` | `/config/cert/{certId}` | One cert's metadata + public cert/chain (never the key) |
 | `DELETE` | `/config/cert/{certId}` | Remove material + SNI registration |
 
 ```jsonc
 // POST/PUT body — model: Cert
 { "certId": "my-tls-cert",          // 1-63 chars, no path traversal
-  "certPEM": "-----BEGIN CERTIFICATE-----\n...",
-  "keyPEM":  "-----BEGIN PRIVATE KEY-----\n...",
-  "chainPEM": "..." }               // optional intermediates
-// response adds output-only:
+  "certPem": "-----BEGIN CERTIFICATE-----\n...",
+  "keyPem":  "-----BEGIN PRIVATE KEY-----\n...",
+  "chainPem": "..." }               // optional intermediates
+// GET /config/cert/{certId} adds output-only:
 //   "hostnames": ["example.com","*.example.com"]   (auto-derived from SAN/CN)
 ```
 
-Errors: `400` malformed PEM / bad certId · `404` unknown certId (PUT/GET/DELETE) · `409` already
-exists (POST — use PUT to rotate) · `503` registry/rotate CGO failure.
+Errors: `400` malformed PEM / bad certId / rotation failure · `404` unknown certId
+(PUT/GET/DELETE). A `POST` with an existing certId silently overwrites the stored material.
 
 ---
 
@@ -174,12 +193,16 @@ exists (POST — use PUT to rotate) · `503` registry/rotate CGO failure.
 | Code | Meaning |
 |---|---|
 | `200` | OK |
+| `201` | Created (`POST /config/cert`, `POST /config/ai/apikey`) |
 | `204` | Deleted |
 | `400` | Validation error / immutable field / malformed body |
 | `401` | Auth (production) |
 | `404` | Resource not found |
-| `409` | Conflict (cert already exists) |
-| `503` | Backend/CGO operation failed |
+| `503` | Backend/CGO operation failed — **or** the boot-config gate (below) |
+
+**Boot-config gate:** after a gateway restart, **all mutating REST calls** return `503` with a
+`Retry-After: 5` header until the boot snapshot replay settles. This is expected, not an
+outage — retry after the indicated interval; read-only GETs are unaffected.
 
 ---
 

@@ -7,7 +7,7 @@
 > **Prerequisite reading:** [10 — Architecture & concepts](10-hierarchical-kv-routing-architecture.md)
 > for what each layer does; [08 §6](08-kv-cache-aware-routing.md) for Tier-1.5 onboarding
 > (tokenizer staging, per-model runbook).
-> **Last verified** against branch `` (2026-07-06).
+> **Last verified** 2026-07-06.
 
 ---
 
@@ -52,20 +52,24 @@ Endpoint: `POST http://<loxilb>:11111/netlox/v1/config/loadbalancer`. Schema:
 | `sel` | int | 0 (rr) | 0–10 | Selector. Single-pool cache affinity: **8 = chwbl, 9 = gpuaware, 10 = wrr-hash**. Under P/D, `sel` matters only for the Tier-2 C2 arm (9 enables capacity-blend scoring) |
 | `security` | int | 0 | 0/1/2 | 0 plain, 1 HTTPS/TLS termination, 2 end-to-end HTTPS |
 | `host` | string | — | — | Host key for L7/HTTPS rules; **HTTPS rules are keyed by it — deletion must repeat `--host`** |
-| `sse_mode` | bool | false | — | Marks an SSE/streaming AI service (suppresses idle timeouts mid-stream). Set explicitly — `pd_disagg_mode` does **not** turn it on. (Both `pd_disagg_mode` and `sse_mode` independently enable the internal `ai_gw_mode` datapath, `dpebpf_linux.go:1748-1780`, but the `sse_mode` idle-timeout behavior is gated on this field only.) |
+| `sse_mode` | bool | false | — | Marks an SSE/streaming AI service (suppresses idle timeouts mid-stream). Set explicitly — `pd_disagg_mode` does **not** turn it on. (Both `pd_disagg_mode` and `sse_mode` independently enable the internal `ai_gw_mode` datapath — the `ai_gw_mode` plumbing in `dpebpf_linux.go` — but the `sse_mode` idle-timeout behavior is gated on this field only.) |
 | `pd_disagg_mode` | bool | false | — | Enables P/D disaggregation and the full tier ladder |
 | `pd_session_ttl_sec` | int32 | 0 | ≥0 | Tier-0 pin TTL. 0 ⇒ data-plane default 300 s |
 | `pd_cache_aware_mode` | bool | false | — | Enables Tier 1 (radix-trie affinity) |
 | `pd_cache_threshold` | int32 | 20 | 0–100 | Tier-1 minimum prefix match-rate (%); lower = more aggressive affinity |
 | `pd_balance_abs_threshold` | int32 | 3 | ≥0 | Tier-1 load-imbalance bypass: skip affinity when max−min active conns exceeds this |
-| `kvExactMode` | int | 0 | 0/1/(2) | Tier 1.5: 0 off, 1 ZMQ inventory (2 = NATS, reserved) |
+| `kvExactMode` | int | 0 | 0/1/2/3 | Tier 1.5 topology: 0 off, 1 ZMQ over a P/D role-partitioned pool (requires `pd_disagg_mode:true`), 2 NATS (reserved), 3 ZMQ single-role over a role-less pool |
+| `kvEngineType` | string | `vllm` | `vllm`\|`sglang` | Serving-engine family — picks the hash contract; immutable after rule create |
+| `kvDpRankCount` | int32 | 1 | 1–8 | Data-parallel ranks per endpoint: rank N is subscribed at `kvZmqPort+N` |
+| `cb_enable` | bool | false | — | Per-EP circuit breaker for full-proxy rules; gates all circuit-breaker checks (auto-enabled for P/D services) |
 | `kvZmqPort` | int | 5557 | 1–65535 | vLLM KV-events PUB port (prefill EPs) |
 | `kvHashAlgo` | string | `sha256_cbor` | `sha256_cbor`\|`xxhash_cbor` | Must match the vLLM fleet's `--prefix-caching-hash-algo` |
 | `kvBlockSize` | int | 16 | ≥1 | Must equal vLLM `--block-size` |
 | `kvWarmupSec` | int | 30 | ≥0 | Guard-B window after subscriber start before Tier 1.5 activates |
 | `probeRetries` | int | 0 | — | Health-probe retry count (probe state does **not** feed data-plane exclusion — see [10 §5](10-hierarchical-kv-routing-architecture.md)) |
 | `chwbl_prefix_hash_level` | int | 1 | 1–3 | Single-pool prefix-hash depth: 1 = prefix+model (+present L1 fields), 2/3 fold in more context |
-| `chwbl_mean_load_factor` | int | **175** (effective) | 100–300 | Single-pool bounded-load cap = factor/100 × mean load (175 ⇒ 1.75×). ⚠ swagger annotates `default:125` but that value is **not applied** — the handler overrides only on a non-zero field (`loadbalancer.go:155`), so an omitted field falls to the C-side init of 175 (`sockproxy_http.c`, `dpbroker.go:402`). Set it explicitly if you want 125 |
+| `chwbl_mean_load_factor` | int | **175** (effective) | 100–300 | Single-pool bounded-load cap = factor/100 × mean load (175 ⇒ 1.75×). ⚠ swagger annotates `default:125` but that value is **not applied** — the LB POST handler's non-zero-field override (`loadbalancer.go`) means an omitted field falls to the C-side init of 175 (`sockproxy_http.c`, `dpbroker.go`). Set it explicitly if you want 125 |
+| `chwbl_prefix_hash_flags` | int | 0 (auto-detect) | 0–255 | Optional-field inclusion bitmask for the CHWBL prefix hash (bit 0 LoRA, 1 image, 2 audio, 3 cache_salt, 4 tools, 5 session, 6 RAG template, 7 RAG docs) |
 | `chwbl_replication` | int | 100 | — | Hash-ring vnodes per EP |
 | `chwbl_enable_cache_salt` | bool | false | — | Fold the request `cache_salt` into the prefix hash |
 | `model_name` | string | "" | — | Pool-selection key for model-routed multi-pool setups (empty = wildcard) |
@@ -81,7 +85,7 @@ Endpoint: `POST http://<loxilb>:11111/netlox/v1/config/loadbalancer`. Schema:
 | `nixl_port` | int32 | 0 | vLLM NIXL side-channel port (0 ⇒ targetPort); required for the P/D KV handoff, conventionally 5600 |
 
 There is **no loxicmd flag** for the P/D, `kv*` fields — those are REST-only.
-`cmd/loxicmd-enterprise/cmd/create/create_lb.go:201-215` (the source in *this* repo) exposes
+`cmd/loxicmd-enterprise/cmd/create/create_lb.go` (the source in *this* repo) exposes
 `--tcp/--udp/--sctp`, `--mode`, `--security`, `--host`, `--path-prefix`, `--path-match-mode`,
 `--model-name`, `--endpoints`, `--sse-mode`, `--max-stream-duration-sec`,
 `--backend-keepalive-interval-sec`, `--backend-protocol`, and `--inactive-timeout`.
@@ -112,6 +116,7 @@ Set with `docker run -e …`; all read once at startup.
 | `LOXILB_KV_CAP_SUM_MILLI` | 0 (off) | positive int | Deployment Σcapacity (milli-units) for capacity-normalized adaptive law; factor sanity-clamped [1/8, 8] |
 | `LOXILB_KV_TLOAD_LOG` | off | `1` | Promote per-selection `[KV_INV] totalLoad=` diagnostics to Info |
 | `LOXILB_KV_MAX_BLOCKS` | 1,000,000 | int 1000–100,000,000 | Per-EP inventory cap (FIFO eviction; watch `loxilb_kv_inv_cap_evictions_total`) |
+| `LOXILB_KV_ZERO_HIT_N` | 50 | positive int only | Consecutive-zero-hit watchdog threshold (`loxilb_pd_kv_zero_hit_watchdog_total`); cannot be disabled — invalid values fall back to 50 |
 | `LOXILB_AI_CTRL_ADDR` | unset (no controller) | `host:port` | Master gate for the controller applier; e.g. `10.0.0.13:18856` |
 | `LOXILB_AI_CTRL_DECAY_WINDOW_SEC` | 30 | int >0 | α(t) decay window after staleness deadline |
 | `LOXILB_AI_CTRL_HYSTERESIS_SEC` | 5 | int >0 | Apply hysteresis |
@@ -143,8 +148,12 @@ Set with `docker run -e …`; all read once at startup.
 
 Plus tokenizer staging on the LoxiLB host: the served model's HF `tokenizer.json` at
 `/etc/loxilb/tokenizers/<model-slug>/tokenizer.json`, slug = model id with `/` → `__`
-(e.g. `Qwen__Qwen2.5-7B-Instruct`). Missing tokenizer ⇒ Guard-E `tokenize` misses ⇒ silent
-fall-through (per-model onboarding checklist: [08 §6.5](08-kv-cache-aware-routing.md)).
+(e.g. `Qwen__Qwen2.5-7B-Instruct`). When LoxiLB runs as a container, stage under the host path
+bind-mounted at `/etc/loxilb` — with the standard `-v /opt/loxilb/config:/etc/loxilb` run flags
+that is `/opt/loxilb/config/tokenizers/<slug>/tokenizer.json` on the host (or add a dedicated
+`-v .../tokenizers:/etc/loxilb/tokenizers` mount). Missing tokenizer ⇒ Guard-E `tokenize`
+misses ⇒ silent fall-through (download procedure: [08 §6.3](08-kv-cache-aware-routing.md);
+per-model onboarding checklist: [08 §6.5](08-kv-cache-aware-routing.md)).
 
 ---
 
@@ -187,7 +196,7 @@ What turns each layer on, and the *fastest* check that it engaged:
 | P/D ladder | rule: `mode:4`, `pd_disagg_mode:true`, ≥1 `ep_role:1` + ≥1 `ep_role:2` | `loxilb_ai_pd_requests_total` advances; response `X-Request-Id` carries `___prefill_addr_…___decode_addr_…___` |
 | Tier 0 | on by default under P/D (`pd_session_ttl_sec`) | `loxilb_ai_pd_session_hits_total` advances on repeat `X-Conversation-Id` |
 | Tier 1 | rule: `pd_cache_aware_mode:true` | repeat-prefix requests pin; imbalance bypass visible in logs |
-| Tier 1.5 | rule: `kvExactMode:1` + triad + tokenizer + warmup elapsed | `loxilb_pd_kv_tier15_hits_total{ep_idx}` advances; `loxilb_pd_kv_blocks` > 0; `loxilb_kv_subscriber_connected` = 1 |
+| Tier 1.5 | rule: `kvExactMode:1` + triad + tokenizer + warmup elapsed. For `/v1/chat/completions` workloads additionally a registered chat template (`pkg/loxinet/ai_kv_chat_template.go`; v1 ships only the Qwen2.5/ChatML family — other models' chat requests silently route via lower tiers, `/v1/completions` unaffected) | `loxilb_pd_kv_tier15_hits_total{ep_idx}` advances; `loxilb_pd_kv_blocks` > 0; `loxilb_kv_subscriber_connected` = 1 |
 | Blend law | `LOXILB_KV_LB_MODE` (default `hard`) | `loxilb_pd_kv_tier15_spills_total` under hot-prefix load; `LOXILB_KV_TLOAD_LOG=1` shows `[KV_INV] totalLoad=` |
 | Admission | `LLB_PD_MAX_INFLIGHT_PER_EP` > 0 (+ queue/park knobs) | `loxilb_pd_admission_queued_total` / `loxilb_pd_admission_shed_total` (also emitted in docker logs) |
 | Controller | `LOXILB_AI_CTRL_ADDR` + controller running | `loxilb_pd_ctrl_mode` = 2 (Smart), `loxilb_pd_ctrl_alpha` = 1, `loxilb_pd_ctrl_effective_weight` per EP; controller side `aictrl_watchers_connected` ≥ 1 |
@@ -200,7 +209,7 @@ What turns each layer on, and the *fastest* check that it engaged:
 
 ### 6.1 Choosing the Tier-1.5 mode
 
-Grounded in /92 sweeps (goodput@SLO, N=6, live GPU fleet):
+Grounded in replicated goodput@SLO sweeps (N=6, live GPU fleet):
 
 | Situation | Recommendation |
 |---|---|
@@ -239,7 +248,7 @@ Enable only with a latency SLO to protect. Starting points measured on the refer
 (from a per-EP calibration ramp), `LLB_PD_QUEUE_DEPTH_PER_EP` 8–16,
 `LLB_PD_MAX_PARK_SEC` ≤ your client timeout minus p99 prefill. Watch
 `loxilb_pd_admission_shed_total` — a steadily climbing shed count means the cap is below fleet
-capacity. Remember verdict: FIFO admission **regressed** goodput at saturation on
+capacity. Remember the A/B verdict: FIFO admission **regressed** goodput at saturation on
 the reference fleet; it exists for tail-latency control.
 
 ### 6.5 Inventory sizing
@@ -281,6 +290,16 @@ Inventory snapshot: `GET /netlox/v1/config/ai/kv/inventory`.
 `loxilb_ai_pd_decode_ttft_seconds` · `loxilb_ai_pd_session_hits_total` ·
 `loxilb_pd_admission_shed_total` / `loxilb_pd_admission_queued_total`.
 
+**Failover & endpoint death:**
+`loxilb_pd_prefill_ep_died_total` (prefill died mid-request) ·
+`loxilb_pd_decode_ep_died_total` / `loxilb_pd_decode_zero_byte_eof_total` (decode deaths; the
+zero-byte-EOF subset maps 1:1 to client 502 `pd_decode_backend_died`) ·
+`loxilb_pd_connect_failover_total` (silent successful prefill connect failovers) ·
+`loxilb_lb_select_failure_shutdown_total` (tripwire — counts raw TCP resets on non-P/D
+selection failure; must stay flat) · `loxilb_pd_cb_proactive_heal_total` ·
+`loxilb_pd_cb_flips_total` · `loxilb_pd_kv_zero_hit_watchdog_total` (authoritative silent
+hash-parity-failure signal).
+
 **Controller influence (LoxiLB side):**
 `loxilb_pd_ctrl_mode` (0 autonomous / 1 stale / 2 smart) · `loxilb_pd_ctrl_alpha` ·
 `loxilb_pd_ctrl_effective_weight{ep}` · `loxilb_pd_ctrl_state{ep}` ·
@@ -299,10 +318,13 @@ and (with `LOXILB_KV_TLOAD_LOG=1`) per-selection totalLoad · `kv-subscriber:` l
 ### 7.1 The three silent-degradation patterns to alert on
 
 1. **Silent RR (hash-contract mismatch):** `tier15_hits` flat + `misses{reason="no_worker"}`
-   climbing + `blocks_total` **non-empty** ⇒ parity triad broken (seed / block size / algo /
-   tokenizer / vLLM version). See the decoder table in [08 §6.5](08-kv-cache-aware-routing.md).
-2. **Silent RR (no inventory):** `blocks_total` = 0 + `kv_subscriber_connected` = 1 ⇒ vLLM not
-   publishing (missing `--kv-events-config`, wrong bind, or decode EP mistagged `ep_role:1`).
+   climbing + `loxilb_pd_kv_blocks` **non-empty** ⇒ parity triad broken (seed / block size /
+   algo / tokenizer / vLLM version). `loxilb_pd_kv_zero_hit_watchdog_total` advancing is the
+   **authoritative** silent-parity signal — alert on it directly. See the decoder table in
+   [08 §6.5](08-kv-cache-aware-routing.md).
+2. **Silent RR (no inventory):** `loxilb_pd_kv_blocks` = 0 + `kv_subscriber_connected` = 1 ⇒
+   vLLM not publishing (missing `--kv-events-config`, wrong bind, or decode EP mistagged
+   `ep_role:1`).
 3. **Controller neutralized:** `loxilb_pd_ctrl_mode` stuck at 0/1 with the controller up ⇒
    stream evicted or staleness — check `aictrl_watcher_dropped_snapshots_total` and the
    controller's `aictrl_source_stale`.

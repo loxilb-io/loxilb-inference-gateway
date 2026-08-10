@@ -2,9 +2,7 @@
 
 > For control-plane (Go) and data-plane (C/eBPF + sockproxy) developers.
 > Code map, build & test workflow, and concrete extension recipes for each feature area.
->
-> Use **Serena (gopls-backed) or codegraph** for navigation — see the repo `CLAUDE.md`. The file:line
-> pointers here are entry points, not exhaustive.
+> The file pointers here are entry points, not exhaustive.
 
 ---
 
@@ -18,8 +16,8 @@
             cert.go                         GetLBRuleBy*                                     (userspace fullproxy)
 ```
 
-- **L4 features (72–74)** live in the Go control plane + the eBPF L4 dataplane. No sockproxy.
-- **L7 + TLS + AI features (75–77, 67–70)** live in the Go control plane (config/REST) + the
+- **L4 features** live in the Go control plane + the eBPF L4 dataplane. No sockproxy.
+- **L7 + TLS + AI features** live in the Go control plane (config/REST) + the
   **userspace sockproxy** (C, in `loxilb-ebpf/common/`). The sockproxy engages only for fullproxy
   rules (`mode=4`).
 
@@ -36,6 +34,12 @@
 | `sockproxy_sync.go` | HA coordinator: drain/batch/push of sockproxy state |
 | `loxinet.go`, `cluster.go` | Coordinator wiring (`NewSockproxySync`, `peersFn`, `Start`, `OnStateChange`) |
 | `xsync.proto` | gRPC sync service + messages |
+
+### Snapshot / persistence (`pkg/snapshot/`)
+| File | Responsibility |
+|---|---|
+| `pkg/snapshot/` | Boot-config gate (mutating REST 503 + `Retry-After` until replay settles), auto-persist to `snapshot.json`, capture/cleanup. **Mandatory hop:** any new mutating config field must be added to the snapshot schema here or it will not survive a restart |
+| `api/restapi/handler/snapshot.go` | `GET /config/snapshot`, `POST /config/persist`, `POST /config/restore` handlers |
 
 ### REST (`api/`)
 | File | Responsibility |
@@ -56,7 +60,9 @@
 | `sockproxy_h2.c` | H2 dispatch + nghttp2 emitters (`proxy_h2_send_l7_synthetic`, `proxy_h2_inject_resp_headers`, `proxy_h2_build_l7_req_headers`) |
 | `sockproxy_ssl.{c,h}` | ALPN, version/cipher pinning, certId registry |
 | `sockproxy_mtls.c` | client-cert verify, CRL, SAN/CN matching, backend cert resolution |
-| `sockproxy_pd.c` | P/D session mapping, cache-aware trie |
+| `sockproxy_pd.c` | P/D session mapping, prefill/decode leg orchestration |
+| `sockproxy_pd_trie.c` | cache-aware radix trie (Tier 1 prefix matching) |
+| `sockproxy_kv_exact.{c,h}` | KV-exact (Tier 1.5) routing: KV-event inventory, block-hash lookup |
 | `sockproxy.h` | `proxy_arg`, `proxy_fd_ent`, `proxy_epval_t`, P/D & conversation structs |
 
 ---
@@ -88,8 +94,7 @@ make docker-u24
 ```bash
 cd api && ./build_api.sh   # regenerates operations/ + models/ + embedded_spec.go
 ```
-Commit the regenerated `embedded_spec.go` and `models/` at merge so the tree stays self-consistent
-(hygiene; left it as a known non-blocking warning).
+Commit the regenerated `embedded_spec.go` and `models/` at merge so the tree stays self-consistent.
 
 **Lint:** `golangci-lint run --enable-all` (or `make lint`).
 
@@ -99,7 +104,7 @@ Commit the regenerated `embedded_spec.go` and `models/` at merge so the tree sta
 
 1. **L7 gating.** Every new sockproxy data-plane seam must be gated like
    `if (node && node->has_l7_policy) { ... }`. The AI/vLLM path (`has_l7_policy==0`) and plain L4 must
-   stay byte-for-byte unchanged. This is the entire basis of the 66–70 no-regression guarantee.
+   stay byte-for-byte unchanged. This is the entire basis of the no-regression guarantee.
 2. **H1/H2 parity.** The policy engine runs at two seams (`sockproxy_ep.c` for H1, `sockproxy_h2.c`
    for H2). Any new match field, action, or header behavior must be implemented/verified on **both**,
    and every CICD assert runs on `--http1.1` and `--http2-prior-knowledge`.
@@ -178,14 +183,14 @@ To add a new synced state type, follow the full chain:
 6. **Tests + metrics:** unit tests (`sockproxy_sync_test.go`) + Prometheus counters (overflow,
    conflict, restore, health-reject).
 
-Validate wiring end-to-end with `scripts/probe-sockproxy-sync-wiring.sh` (expect
-`consumerLoop start peer=` within ~10s of MASTER promotion).
+Validate wiring end-to-end by grepping the gateway log for
+`[SOCKPROXY_SYNC] consumerLoop start peer=` (expected within ~10s of MASTER promotion).
 
 ---
 
 ## 6. Test & scenario coverage
 
-The **L4/L7 lifecycle, data-model, content-routing, and TLS** behaviors (feature areas 72–77) are
+The **L4/L7 lifecycle, data-model, content-routing, and TLS** behaviors are
 covered by unit tests in `api/restapi/handler/` — run them on a Linux testbed with:
 
 ```bash
@@ -198,17 +203,14 @@ proxy scenarios include:
 
 | Scenario | Feature area |
 |---|---|
-| `vllm-fullproxy` (+ `-wrr`) | AI fullproxy (67) |
+| `vllm-fullproxy` (+ `-wrr`) | AI fullproxy |
 | `vllm-httpproxy` (+ `-wrr`) | AI HTTP proxy |
-| `vllm-pd-disagg` | AI P/D + HA (68–70) |
+| `vllm-pd-disagg` | AI P/D + HA |
 | `vllm-kvcache-routing-cpu` | AI KV-cache routing |
-| `mcp-fullproxy`, `mcp-httpproxy` | MCP proxy |
-
----
-
-## 7. Where the history lives
-
-Decision logs, research, verification reports, and per-plan summaries for every feature are in
-. When a behavior here surprises you, the `*-DISCUSSION-LOG.md`,
-`*-LEARNINGS.md`, and `*-VERIFICATION.md` files usually explain *why*. This guide is the production
-contract; those are the provenance.
+| `vllm-loxilb-kvcache-aws-small` | KV-cache-aware routing (AWS small topology) |
+| `ai-apikey` | API-key lifecycle & `X-Api-Key` enforcement |
+| `ai-model-routing` | Model-name routing (`model_name` / `path_prefix`) |
+| `ai-sse-quota` | SSE stream quotas (`sse_mode`, `max_stream_duration_sec`) |
+| `mcp-fullproxy`, `mcp-httpproxy` | MCP proxy (TLS-terminating / plain HTTP) |
+| `mcp-e2ehttps` | MCP end-to-end HTTPS (`security: 2`) |
+| `mcp-direct-test`, `mcp-direct-test-https` | Raw MCP client↔server connectivity (no LB rule) |

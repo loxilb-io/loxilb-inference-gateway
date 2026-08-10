@@ -28,7 +28,7 @@ routing issues - an unsustainable workflow for production fleets.
 **Design objectives:**
 - Close the three missing metric exports with zero behavioral change.
 - Design a Grafana dashboard that gives operators actionability in under 30 seconds.
-- Follow the existing twin-struct lockstep pattern (precedent).
+- Follow the twin-struct lockstep pattern already used by the existing exports.
 - No changes to hot paths. No new CGO crossings. Pure export plumbing.
 
 ---
@@ -38,7 +38,7 @@ routing issues - an unsustainable workflow for production fleets.
 ### 2.1. Export Architecture - Twin-Struct Lockstep
 
 The C-to-Go metric bridge uses a single flat struct (`proxy_metrics_snapshot_t`) copied every 10
-seconds. The pattern (established):
+seconds. The established pattern:
 
 ```
 C data plane                                    Go control plane
@@ -76,7 +76,7 @@ C data plane                                    Go control plane
 
 **Rationale:** Operators need the real-time load carried by loxilb for P/D workloads. This is the input for capacity planning and admission cap tuning. Unlike per-EP counters (shed/queued), this is a global view.
 
-**Source:** `global_stats.pd_admission_total_inflight` (`_Atomic uint64_t` in `sockproxy.h:133`)
+**Source:** the `pd_admission_total_inflight` atomic in `global_stats` (`_Atomic uint64_t`, `sockproxy.h`)
 
 **File changes:**
 
@@ -100,7 +100,7 @@ C data plane                                    Go control plane
 
 **Rationale:** When the global cap is hit, the request never enters loxilb - rejected at the socket accept level. This is an early-warning signal for over-subscription. Operators need it to size `LLB_PD_MAX_TOTAL_INFLIGHT`.
 
-**Source:** `global_stats.pd_admission_total_blocked` (`_Atomic uint64_t` in `sockproxy.h:134`)
+**Source:** the `pd_admission_total_blocked` atomic in `global_stats` (`_Atomic uint64_t`, `sockproxy.h`)
 
 **File changes:**
 
@@ -128,7 +128,8 @@ C data plane                                    Go control plane
 
 **Rationale:** This is THE diagnostic metric for "why is KV routing slow?" Without it, operators see a slow request but cannot tell whether tokenization, hashing, CGO crossing, or the scan is the bottleneck. The hit/miss split reveals whether the cost is worth the TTFT savings.
 
-**Source:** Three 3D/2D atomics in `sockproxy.h:155-157`:
+**Source:** the `kv_stage_buckets` / `kv_stage_sum_us` / `kv_stage_count` atomics in
+`proxy_global_stats_t` (`sockproxy.h`):
 - `kv_stage_buckets[4][2][12]` - cumulative per-bucket counts
 - `kv_stage_sum_us[4][2]` - cumulative us sums
 - `kv_stage_count[4][2]` - cumulative sample counts
@@ -224,7 +225,7 @@ at 6KB copied once per 10 seconds - negligible.
 
 ### 3.2. Dashboard Philosophy
 
-**V1 ships 12 panels across 3 rows.** That is the entire visible dashboard. Operators open Grafana during a page - they get one minute, not 20 panels.
+**V1 ships 11 panels across 3 rows.** That is the entire visible dashboard. Operators open Grafana during a page - they get one minute, not 20 panels.
 
 Panels that are valuable but diagnostic (miss reasons, controller alpha, stage latency, eviction rate, trie nodes) are documented here in **V2** but deliberately excluded from the initial release. V2 adds only when operators ask "can you also show me X?" - that's faster than designing 25 panels upfront and shipping a dashboard nobody reads.
 
@@ -232,7 +233,7 @@ Panels that are valuable but diagnostic (miss reasons, controller alpha, stage l
 
 ---
 
-### 3.3. V1 - Production Dashboard (12 panels, 3 rows)
+### 3.3. V1 - Production Dashboard (11 panels, 3 rows)
 
 #### Row 1: Fleet Health (6 panels)
 
@@ -245,9 +246,9 @@ Panels that are valuable but diagnostic (miss reasons, controller alpha, stage l
 | **Active Streams** | Stat | `sum(loxilb_ai_active_streams)` | - |
 | **KV Hit Rate** | Stat | `rate(loxilb_pd_kv_tier15_hits_total[5m]) / (rate(loxilb_pd_kv_tier15_hits_total[5m]) + rate(loxilb_pd_kv_tier15_fallthrough_total[5m])) * 100` | - |
 | **KV Sub Uptime** | Stat | `avg(loxilb_kv_subscriber_connected) * 100` % | Critical: < 100% |
-| **HTTP 5xx %** | Stat | `rate(loxilb_http_status_5xx_total[1m]) / rate(loxilb_http_responses_total[1m]) * 100` | Critical: > 1% |
+| **HTTP 5xx %** | Stat | `rate(loxilb_proxy_http_responses_by_status_total{status="5xx"}[1m]) / rate(loxilb_proxy_http_responses_total[1m]) * 100` | Critical: > 1% |
 
-#### Row 2: Latency (3 panels)
+#### Row 2: Latency (2 panels)
 
 *Question: "Where is latency coming from?"*
 
@@ -255,7 +256,10 @@ Panels that are valuable but diagnostic (miss reasons, controller alpha, stage l
 |-------|------|-------|
 | **Prefill p95** | Time series | `histogram_quantile(0.95, rate(loxilb_ai_pd_prefill_duration_seconds_bucket[5m]))` - p50/p95/p99 lines |
 | **Decode TTFT p95** | Time series | `histogram_quantile(0.95, rate(loxilb_ai_pd_decode_ttft_seconds_bucket[5m]))` - p50/p95/p99 lines |
-| **Per-EP Prefill** | Time series | `histogram_quantile(0.95, rate(loxilb_ai_pd_prefill_duration_per_ep_seconds_bucket[5m]))` per endpoint |
+
+A per-EP prefill-latency panel is **not possible today**: only the aggregate
+`loxilb_ai_pd_prefill_duration_seconds` histogram exists — there is no per-EP variant. It is
+tracked as a V2 gap (see §4, Medium-Priority Gaps).
 
 #### Row 3: Rejection and Pressure (3 panels)
 
@@ -279,7 +283,7 @@ These panels are fully specified, queries are ready. Add them as collapsible row
 
 | Panel | Type | Query |
 |-------|------|-------|
-| **Blocks per EP** | Bars | `loxilb_pd_kv_blocks` grouped by ep |
+| **Blocks per EP** | Bars | `loxilb_pd_kv_blocks` grouped by `ep_idx` (join to the EP address via `loxilb_pd_ep_info` on `(service, ep_idx)`) |
 | **Eviction Rate** | Stat | `sum(rate(loxilb_kv_inv_cap_evictions_total[5m]))` |
 | **Trie Nodes** | Stat | `loxilb_pd_trie_nodes` |
 
@@ -331,6 +335,10 @@ These panels are fully specified, queries are ready. Add them as collapsible row
 | **Admission Saturated** | `loxilb_pd_admission_inflight > 800` for > 1m (adjust to `LLB_PD_MAX_TOTAL_INFLIGHT * 0.8`) | Warning | 5min |
 | **Global Valve Blocking** | `rate(loxilb_pd_admission_total_blocked_total[1m]) > 10` | Critical | 10min |
 | **CB Flapping** | `rate(loxilb_pd_cb_flips_total[5m]) > 2` | Warning | 10min |
+| **Prefill EP Dying** | `rate(loxilb_pd_prefill_ep_died_total[5m]) > 0` for > 5m (mid-request prefill deaths; clients are shielded while `loxilb_pd_connect_failover_total` advances in step) | Warning | 10min |
+| **Decode EP Dying** | `rate(loxilb_pd_decode_ep_died_total[5m]) > 0` for > 5m — `loxilb_pd_decode_zero_byte_eof_total` advancing means clients are receiving 502 `pd_decode_backend_died` | Warning | 10min |
+| **Connect Failover Surge** | `rate(loxilb_pd_connect_failover_total[5m]) > 1` (silent failovers masking a flapping backend) | Warning | 10min |
+| **Raw Resets (tripwire)** | `increase(loxilb_lb_select_failure_shutdown_total[5m]) > 0` — clients are seeing raw TCP resets instead of HTTP 502/503; must stay flat | Critical | 5min |
 
 ### 3.6. Alerts (V2 - add as needed)
 
@@ -346,14 +354,12 @@ These panels are fully specified, queries are ready. Add them as collapsible row
 
 ### Before this work
 
-| Category | Count |
-|----------|-------|
-| AI Gateway (`ai_metrics.go`) | 14 |
-| Sockproxy P/D (`sockproxy_metrics.go`) | 22 |
-| KV Subscriber | 4 |
-| KV Agent | 1 |
-| AI Controller (`aictrl_metrics.go`) | 8 |
-| **Total** | **~49** |
+The per-file metric counts previously tabulated here went stale as the exported set grew
+(failover counters, KV watchdog, cap-eviction counters, and more have landed since). For the
+authoritative list of currently exported metrics, see `api/prometheus/sockproxy_metrics.go`
+(the sockproxy / P-D / KV set), `api/prometheus/ai_metrics.go`,
+`api/prometheus/aictrl_metrics.go`, and `pkg/loxinet/kv_agent_client.go` (`loxilb_kv_agent_up` —
+present only when the separate KV agent is deployed).
 
 ### After M1+M2+M3
 
@@ -370,6 +376,7 @@ These panels are fully specified, queries are ready. Add them as collapsible row
 |-----|-----------|
 | LMCache locality metrics (hit/match rates) | No C-side atomic exists yet; requires upstream LMCache integration |
 | KV block utilization % gauge | Requires knowing per-EP block capacity; not currently tracked as atomic |
+| Per-EP prefill-duration histogram | Does not exist — only the aggregate `loxilb_ai_pd_prefill_duration_seconds` is exported; a per-EP variant needs new per-EP histogram atomics plus export plumbing (the V1 dashboard's Row 2 was scoped down accordingly) |
 
 ---
 
@@ -381,20 +388,20 @@ These panels are fully specified, queries are ready. Add them as collapsible row
 3. **Registration tests** - verify all 3 new metrics appear in `DefaultGatherer.Gather()`
 
 ### Dashboard (phased)
-4. **V1 dashboard** (12 panels, 3 rows, 4 alerts) - ship with metrics. Fleet health, latency, and rejection/pressure only.
+4. **V1 dashboard** (11 panels, 3 rows, 8 alerts) - ship with metrics. Fleet health, latency, and rejection/pressure only.
 5. **V2 panels** - trigger based on operator feedback. Add V2 rows when someone asks "can you also show me..." - faster than designing upfront.
 
-### V1 Dashboard Summary (12 panels, 3 rows)
+### V1 Dashboard Summary (11 panels, 3 rows)
 
 Mirrors Section 3.3 layout:
 
 | Row | Panels |
 |-----|--------|
 | **Fleet Health** (6) | RPS, In-Flight (M1), Active Streams, KV Hit Rate, KV Sub Uptime, HTTP 5xx% |
-| **Latency** (3) | Prefill p95, Decode TTFT p95, Per-EP Prefill |
+| **Latency** (2) | Prefill p95, Decode TTFT p95 |
 | **Rejection and Pressure** (3) | Blocked at Global (M2), CB Flips, Subscriber State |
 
-**V2 deferred (13 panels):** Miss reasons, Spills, Per-EP shed/parked, Eviction rate, Trie nodes, Reconnect rate, Alpha decay, Ctrl mode, Stage latency heatmap, Stage throughput, Hit vs miss cost
+**V2 deferred (13 panels):** Miss reasons, Spills, Per-EP shed/parked, Eviction rate, Trie nodes, Reconnect rate, Alpha decay, Ctrl mode, Stage latency heatmap, Stage throughput, Hit vs miss cost, plus the per-EP prefill-latency panel (blocked on a per-EP histogram export — §4 gap row)
 
 ---
 
@@ -418,6 +425,8 @@ Mirrors Section 3.3 layout:
 - Grafana requires Prometheus datasource configured
 - C atomics `pd_admission_total_inflight`, `pd_admission_total_blocked` must be actively mutated by C code
 - `record_kv_stage()` calls must be active in `sockproxy_metrics.c` to populate stage histograms
+- For the KV-routing panels to show hits, the served model's fast `tokenizer.json` must be staged at `/etc/loxilb/tokenizers/<model-slug>/tokenizer.json` (download/staging procedure: [08 §6.3](08-kv-cache-aware-routing.md)) — a missing tokenizer fails silently to lower tiers
+- For `/v1/chat/completions` traffic, KV-exact routing additionally requires a chat template registered in the gateway (`pkg/loxinet/ai_kv_chat_template.go`); v1 ships only the Qwen2.5/ChatML family (any `Qwen__*` slug) — other models' chat requests silently route via lower tiers (`/v1/completions` unaffected)
 
 ---
 

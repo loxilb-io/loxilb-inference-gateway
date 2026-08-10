@@ -70,13 +70,13 @@ bpftool map list  | head
 | Symptom | Cause | Fix |
 |---|---|---|
 | Revoked client cert still accepted | Signing CA lacks `cRLSign` | Use CA with `keyUsage=critical,keyCertSign,cRLSign`; sign leaves **and** CRL with it. Check: `openssl x509 -in ca.crt -text \| grep -A1 'Key Usage'` |
-| SAN-only client cert rejected | Old CN-only matching | Use a post-77 build (SAN-DNS-first) |
+| SAN-only client cert rejected | Old CN-only matching | Current builds match SAN-DNS first; upgrade if you still see this |
 | TLSv1.1 / weak cipher not rejected | `tls_versions`/`tls_ciphers` not applied | Confirm fields on listener; build applies `proxy_apply_tls_version_cipher` |
 | ALPN h2 negotiated but empty body | h1-only backend | h2c backend or `alpn_protocols:["http/1.1"]` |
 | HSTS header absent | Not HTTPS / `have_ssl=0` / no L7 policy / `hsts_max_age=0` | Need `security=1` + L7 policy + `hsts_max_age>0` |
 | HSTS absent only on H2 | Raw bytes on h2 | nghttp2 injector (`proxy_h2_inject_resp_headers`) |
 | `tls-hello` always DOWN | Wrong port / handshake fails | `openssl s_client -connect <ep>:<port>`; fix `probePort` |
-| Cert `PUT` → `503` | certId absent or bad PEM | `POST` before `PUT`; `openssl x509 -text` to validate |
+| Cert `PUT` → `404` or `400` | `404` = unknown certId; `400` = bad PEM / rotation failure | `POST` before `PUT`; `openssl x509 -text` to validate |
 | Per-probe CA ignored | File missing/unreadable | Ensure readable by loxilb |
 | mTLS probe can't see cert in netns | Cert not visible to `ip netns exec` probe | Place fixtures where the netns probe reads them |
 
@@ -86,11 +86,16 @@ bpftool map list  | head
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| EP death undetected | No `--probe` on rule | `--probe=tcp --probetimeout=5 --proberetries=3` |
-| SSE cuts off / client hangs | `[DONE]` stripped/double-counted (pre-67) | Post-67 build; `validation-resilience.sh` R4a |
-| `restore_rate = 0/100` | Pre-70.2 consumer gap / single-host `/sys/fs/bpf` stomping / stale binary | Post-70.2 build on a 2-host testbed; `docker cp` your binary |
+| EP death undetected | No probe on rule | `"probetype":"tcp", "probeTimeout":5, "probeRetries":3` |
+| `502 {"error":"backend_unreachable"}` | Connect failover retried every healthy EP and all failed | Check backend reachability from the gateway node and probe/health state |
+| `503 {"error":"no_healthy_backend"}` | Entire pool marked down | Fix the backends or the probe config marking them down — the rule is fine |
+| `502 {"error":"pd_decode_backend_died"}` | Decode worker died mid-stream (KV state lost; prefill death is retried transparently) | Client retries the request; investigate the decode worker crash |
+| Mutating REST → `503` + `Retry-After: 5` after gateway restart | Boot-config gate: mutations refused until boot snapshot replay settles | Expected — retry after the interval; not an outage |
+| `loxilb_lb_select_failure_shutdown_total` increasing | Requests dropped with a silent TCP reset instead of an HTTP error | Should stay flat — growth means a failover path regressed; capture logs and file a bug |
+| SSE cuts off / client hangs | `[DONE]` stripped/double-counted (older builds) | Use a current build; `validation-resilience.sh` R4a |
+| `restore_rate = 0/100` | Consumer-respawn gap (older builds) / single-host `/sys/fs/bpf` stomping / stale binary | Current build on a 2-host testbed; `docker cp` your binary |
 | `restore_rate` low non-zero | Health-gate rejecting on new master | `loxilb_sockproxy_sync_health_reject_total`; verify EP reachability |
-| No replication to backup | Consumers not spawned on master | `grep consumerLoop start peer=`; absent ⇒ pre-70.2 |
+| No replication to backup | Consumers not spawned on master | `grep consumerLoop start peer=`; absent ⇒ the coordinator never started consumers |
 | WRR weights ignored | P/D mode active | Expected — roles drive P/D, not weights |
 | `Killed node …` log line | End-of-test cleanup | Not an OOM |
 
@@ -121,7 +126,6 @@ filing a bug.
 | **Counting log lines with `wc -l`** | Routing counts off | Count real traffic (`grep -c`), warm up first |
 | **Concurrent gate runs** | netns collision; teardown wipes an active run | One gate at a time; don't background them |
 | **CRL CA without `cRLSign`** | Revocation silently ineffective | Dedicated client CA with `cRLSign` |
-| **Shared/reserved testbeds** | Someone else's box gets disturbed | Always use your own provisioned runner; never target a machine you don't own |
 
 > Keep this hard-won catalog of gate gotchas in mind (netns pre-clean, API readiness, in-container
 > logs, spurious harness flakes) when diagnosing intermittent test failures.
@@ -131,5 +135,4 @@ filing a bug.
 ## 7. Where to look next
 
 - Build/test commands and the developer workflow: [Developer guide](07-developer-guide.md).
-- Feature-specific behavior and field semantics: the four feature docs (01–04).
-- Original decision rationale / verification evidence: .
+- Feature-specific behavior and field semantics: the feature docs (03–04).

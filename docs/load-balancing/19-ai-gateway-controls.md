@@ -15,7 +15,7 @@
 
 | Control | What it does | Config surface | CICD scenario |
 |---|---|---|---|
-| **API keys** | Issue/revoke `lxb_…` keys; clients authenticate with `X-Api-Key`; per-key model allow-list + rate/burst/token limits | `POST/GET/PATCH/DELETE /netlox/v1/config/ai/apikey` | [`cicd/ai-apikey`](../../cicd/ai-apikey) |
+| **API keys** | Issue/revoke `lxb_…` keys; clients authenticate with `X-Api-Key`; per-key model allow-list + rate/burst/token limits | `POST/GET/PATCH/DELETE /netlox/v1/config/ai/apikey` (`PATCH` is defined in `api/swagger-extras.yml`, not the main spec) | [`cicd/ai-apikey`](../../cicd/ai-apikey) |
 | **Tenant rate limits** | Aggregate RPS / tokens-per-minute ceiling across all keys of a tenant | `POST/GET /netlox/v1/config/ai/tenant/ratelimit` | [`cicd/ai-apikey`](../../cicd/ai-apikey) |
 | **Model-name routing** | Route by the request's model (`X-Model` header or JSON body `model`) to different endpoint pools | `model_name` + `path_prefix` + `path_match_mode` on the LB rule | [`cicd/ai-model-routing`](../../cicd/ai-model-routing) |
 | **SSE stream quotas** | Keep streams alive past idle timeouts, cap runaway streams, backend keepalive | `sse_mode`, `max_stream_duration_sec`, `backend_keepalive_interval_sec` on the LB rule | [`cicd/ai-sse-quota`](../../cicd/ai-sse-quota) |
@@ -103,6 +103,11 @@ curl -s http://10.10.10.254:2020/v1/chat/completions \
 | Missing/unknown key | `401` `invalid_api_key` |
 | Model not in the key's `allowed_models` | `403` `model_not_allowed` |
 | Per-key or per-tenant rate/token limit exceeded | `429` |
+
+Backend connectivity failures surface through the same VIP and are easy to mistake for
+quota errors: `502 backend_unreachable` / `503 no_healthy_backend` come from the proxy's
+connect-failover path, not from key enforcement — see the
+[troubleshooting guide](06-troubleshooting.md) §5.
 
 ## 3. Per-tenant rate limiting
 
@@ -200,6 +205,7 @@ cd ../ai-apikey            # full key lifecycle + 401/403/429 enforcement (bring
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | `POST /config/ai/apikey` fails | loxilb started without `--userservice --databasehost` | Restart with both flags + reachable MySQL/MariaDB |
+| Mutating calls return `503` + `Retry-After: 5` right after a gateway restart | Boot-config gate: writes are held until the boot snapshot replay settles | Expected — retry after the `Retry-After` interval; not an outage |
 | Keys accepted but not enforced at the VIP | Rule lacks `sse_mode: true` / not `mode: 4` | Enforcement runs in the fullproxy AI path only |
 | Requests hit the wrong model pool | Field casing | `model_name`, `path_prefix`, `path_match_mode` are snake_case — a mis-cased field is silently dropped |
 | Streams cut at ~`inactiveTimeOut` | `sse_mode` not set | Set `sse_mode: true` on streaming rules |
