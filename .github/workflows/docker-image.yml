@@ -54,10 +54,15 @@ jobs:
           &&  github.event.inputs.tagName != ''
       run: docker push ghcr.io/loxilb-io/loxilb-inference-gateway:${{ github.event.inputs.tagName }} 
       
-    # This is currently not supported yet for docker packages
-    - name: Cleanup old Docker packages
-      uses: actions/delete-package-versions@v5
-      with:
-          package-name: 'loxilb-inference-gateway'
-          package-type: 'container'
-          num-old-versions-to-delete: 3
+    # DISABLED. Unlike the two publish steps above, this step carried no
+    # repository guard and no tag filter, so every dispatch of this workflow
+    # deleted the three oldest versions of the container package — which, once
+    # releases exist, are published release images. Anyone pinning an older
+    # tag would get a 404, with nothing in the release history to explain it.
+    # Re-enable only with a filter that can never match a release tag.
+    # - name: Cleanup old Docker packages
+    #   uses: actions/delete-package-versions@v5
+    #   with:
+    #       package-name: 'loxilb-inference-gateway'
+    #       package-type: 'container'
+    #       num-old-versions-to-delete: 3
