@@ -1748,6 +1748,11 @@ func DpLBRuleMod(w *LBDpWorkQ) int {
 	dat.pd_cache_threshold = C.uint8_t(cacheThreshold)
 	dat.pd_balance_abs_threshold = C.uint8_t(balanceThreshold)
 
+	// Per-endpoint circuit breaker (opt-in per rule)
+	if w.CbEnable {
+		dat.cb_enable = 1
+	}
+
 	// KV-Cache Exact Routing (: wire KV config through dp_proxy_tacts)
 	dat.kv_exact_mode = C.uint8_t(w.KvExactMode)
 	if w.KvHashAlgo == "xxhash_cbor" {

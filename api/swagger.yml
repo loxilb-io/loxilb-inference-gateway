@@ -7248,6 +7248,11 @@ definitions:
             minimum: 0
             default: 0
             description: Sets SO_KEEPALIVE + TCP_KEEPIDLE on backend socket in seconds. Keeps TCP CT entries alive through cloud NAT during long SSE streams. 0 = disabled. Recommended value 60 for most cloud environments.
+          cb_enable:
+            type: boolean
+            x-nullable: false
+            default: false
+            description: Enable the per-endpoint circuit breaker for full-proxy rules. After 5 consecutive backend connect failures an endpoint is skipped by all selection paths until a 30s open-timeout expires and a half-open probe succeeds. Complements the liveness probe (probetype) - the breaker reacts within one failed request, the probe within one probe interval.
           pd_disagg_mode:
             type: boolean
             x-nullable: false

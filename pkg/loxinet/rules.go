@@ -611,6 +611,7 @@ type ruleEnt struct {
 	pdSessionTTLSec             uint32                  // Session stickiness TTL in seconds (0 = no expiry)
 	pdCacheThreshold            uint8                   // Cache match threshold (0-100, default 20)
 	pdBalanceAbsThreshold       uint8                   // Load imbalance threshold (default 3)
+	cbEnable                    bool                    // per-endpoint circuit breaker for full-proxy rules
 	kvExactMode                 uint8                   // KV-cache exact routing: 0=off, 1=zmq P/D, 2=nats (reserved), 3=zmq single-role
 	kvBlockSize                 uint32                  // Token block size for KV hash computation
 	kvHashAlgo                  string                  // "sha256_cbor" or "xxhash_cbor"
@@ -1190,6 +1191,7 @@ func (R *RuleH) GetLBRule() ([]cmn.LbRuleMod, error) {
 		ret.Serv.PDSessionTTLSec = data.pdSessionTTLSec
 		ret.Serv.PDCacheThreshold = data.pdCacheThreshold
 		ret.Serv.PDBalanceAbsThreshold = data.pdBalanceAbsThreshold
+		ret.Serv.CbEnable = data.cbEnable
 		ret.Serv.KvExactMode = data.kvExactMode // KV-cache exact routing
 		ret.Serv.KvBlockSize = data.kvBlockSize
 		ret.Serv.KvHashAlgo = data.kvHashAlgo
@@ -3060,6 +3062,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 			eRule.pdSessionTTLSec != serv.PDSessionTTLSec ||
 			(serv.PDCacheThreshold != 0 && eRule.pdCacheThreshold != serv.PDCacheThreshold) ||
 			(serv.PDBalanceAbsThreshold != 0 && eRule.pdBalanceAbsThreshold != serv.PDBalanceAbsThreshold) ||
+			eRule.cbEnable != serv.CbEnable ||
 			eRule.kvExactMode != serv.KvExactMode ||
 			eRule.kvBlockSize != serv.KvBlockSize ||
 			eRule.kvHashAlgo != serv.KvHashAlgo ||
@@ -3221,6 +3224,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		if serv.PDBalanceAbsThreshold != 0 {
 			eRule.pdBalanceAbsThreshold = serv.PDBalanceAbsThreshold
 		}
+		eRule.cbEnable = serv.CbEnable
 		eRule.kvExactMode = serv.KvExactMode
 		eRule.kvBlockSize = serv.KvBlockSize
 		eRule.kvHashAlgo = serv.KvHashAlgo
@@ -3453,6 +3457,9 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	r.pdSessionTTLSec = serv.PDSessionTTLSec
 	r.pdCacheThreshold = serv.PDCacheThreshold
 	r.pdBalanceAbsThreshold = serv.PDBalanceAbsThreshold
+
+	// Store the per-endpoint circuit-breaker enable
+	r.cbEnable = serv.CbEnable
 
 	// Store KV-cache exact routing configuration
 	r.kvExactMode = serv.KvExactMode
@@ -5166,6 +5173,7 @@ func (r *ruleEnt) LB2DP(work DpWorkT) int {
 	nWork.PDSessionTTLSec = r.pdSessionTTLSec
 	nWork.PDCacheThreshold = r.pdCacheThreshold
 	nWork.PDBalanceAbsThreshold = r.pdBalanceAbsThreshold
+	nWork.CbEnable = r.cbEnable
 	nWork.KvExactMode = r.kvExactMode // KV-cache exact routing
 	nWork.KvBlockSize = r.kvBlockSize
 	nWork.KvHashAlgo = r.kvHashAlgo

@@ -13313,6 +13313,12 @@ func init() {
               "maximum": 100,
               "x-nullable": false
             },
+            "cb_enable": {
+              "description": "Enable the per-endpoint circuit breaker for full-proxy rules. After 5 consecutive backend connect failures an endpoint is skipped by all selection paths until a 30s open-timeout expires and a half-open probe succeeds. Complements the liveness probe (probetype) - the breaker reacts within one failed request, the probe within one probe interval.",
+              "type": "boolean",
+              "default": false,
+              "x-nullable": false
+            },
             "pd_disagg_mode": {
               "description": "Enable vLLM prefill/decode disaggregation mode. When true, the proxy orchestrates a two-phase flow - prefill request to a prefill endpoint, then decode request to a decode endpoint using KV transfer parameters from the prefill response.",
               "type": "boolean",
@@ -29207,7 +29213,19 @@ func init() {
               "minimum": 0,
               "x-nullable": false
             },
-            "pd_disagg_mode": {
+            "cb_enable": {
+              "description": "Enable the per-endpoint circuit breaker for full-proxy rules. After 5 consecutive backend connect failures an endpoint is skipped by all selection paths until a 30s open-timeout expires and a half-open probe succeeds. Complements the liveness probe (probetype) - the breaker reacts within one failed request, the probe within one probe interval.",
+              "type": "boolean",
+              "default": false,
+              "x-nullable": false
+            },
+            "cb_enable": {
+          "description": "Enable the per-endpoint circuit breaker for full-proxy rules. After 5 consecutive backend connect failures an endpoint is skipped by all selection paths until a 30s open-timeout expires and a half-open probe succeeds. Complements the liveness probe (probetype) - the breaker reacts within one failed request, the probe within one probe interval.",
+          "type": "boolean",
+          "default": false,
+          "x-nullable": false
+        },
+        "pd_disagg_mode": {
               "description": "Enable vLLM prefill/decode disaggregation mode. When true, the proxy orchestrates a two-phase flow - prefill request to a prefill endpoint, then decode request to a decode endpoint using KV transfer parameters from the prefill response.",
               "type": "boolean",
               "default": false,

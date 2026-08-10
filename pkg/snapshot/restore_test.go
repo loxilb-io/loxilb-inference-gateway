@@ -229,7 +229,7 @@ func TestStageApplyOrdering(t *testing.T) {
 	doc := restoreDoc("0.9.8.6-beta")
 
 	e := &Engine{Hooks: hooks}
-	errs := e.stageApply(doc, ApplyOrder(), false)
+	errs, _ := e.stageApply(doc, ApplyOrder(), false)
 	if len(errs) != 0 {
 		t.Fatalf("stageApply: %v", errs)
 	}
@@ -504,15 +504,40 @@ func TestRollbackCollectsNonIdempotentErrors(t *testing.T) {
 	}
 }
 
-func TestIsAlreadyExistsCaseInsensitive(t *testing.T) {
-	if !isAlreadyExists(errors.New("Tunnel tun1 ALREADY EXISTS")) {
-		t.Fatalf("expected case-insensitive match")
+func TestIsIdempotentExists(t *testing.T) {
+	if !isIdempotentExists(errors.New("Tunnel tun1 ALREADY EXISTS")) {
+		t.Fatalf("expected case-insensitive match on the generic convention")
 	}
-	if isAlreadyExists(nil) {
+	if isIdempotentExists(nil) {
 		t.Fatalf("nil error must not match")
 	}
-	if isAlreadyExists(errors.New("some other failure")) {
+	if isIdempotentExists(errors.New("some other failure")) {
 		t.Fatalf("unrelated error must not match")
+	}
+	// The per-domain identical-item sentinels (wrapped, as the apply loop
+	// sees them).
+	for _, msg := range []string{
+		"apply loadbalancer \"10.0.0.12\": lbrule-exists error",
+		"fwrule-exists error",
+		"mirr-exists error",
+		"pol-exists error",
+		"sess-exists error",
+		"ulcl-exists error",
+	} {
+		if !isIdempotentExists(errors.New(msg)) {
+			t.Fatalf("expected idempotent-exists match for %q", msg)
+		}
+	}
+	// Same key but DIFFERENT config -- real conflicts, never tolerated.
+	for _, msg := range []string{
+		"lbrule-exist error: cant modify rule security mode",
+		"lbrule-exist error: cant modify rule egress mode",
+		"lbrule-exist error: cant modify fullproxy rule mode",
+		"lbrule not-exists error",
+	} {
+		if isIdempotentExists(errors.New(msg)) {
+			t.Fatalf("conflict/absence error %q must not be treated as idempotent", msg)
+		}
 	}
 }
 

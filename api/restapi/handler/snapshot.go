@@ -56,11 +56,28 @@ func SnapshotRestoreActive() bool {
 // while a snapshot/restore holds the gate, so restore stages 4-7 run against
 // a frozen config (§5.3). Reads pass through; the snapshot/restore endpoints
 // themselves pass through to get the gate's own 409 instead.
+//
+// It also holds mutating calls until the BOOT config replay has settled:
+// the API server starts serving before the boot restore runs, and a write
+// landing mid-restore both races the restore (it can fail on state it did
+// not create and roll back the whole boot config) and, via auto-persist,
+// can overwrite snapshot.json with that half-applied state. No path is
+// exempt during the boot window -- a restore/persist racing boot is
+// exactly the interleaving being prevented. Boot replay is seconds-scale
+// (worst case ~30s when optional subsystems are slow to start); clients
+// retry per Retry-After.
 func SnapshotFreezeMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet, http.MethodHead, http.MethodOptions:
 			next.ServeHTTP(w, r)
+			return
+		}
+		if !snapshot.BootConfigSettled() {
+			w.Header().Set("Retry-After", "5")
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"code":503,"message":"Maintenance mode","result":"configuration writes are rejected until the boot config replay settles"}`))
 			return
 		}
 		if SnapshotRestoreActive() &&
@@ -321,8 +338,18 @@ func InitAutoPersist() {
 
 // autoPersistFire is the debouncer callback: write through unless a
 // snapshot/restore holds the gate, in which case retry a quiet period
-// later (a restore commit does its own write-through anyway).
+// later (a restore commit does its own write-through anyway). It also
+// refuses to write before the boot config replay settles -- a persist in
+// that window would capture a partially-replayed (or, after a failed boot
+// restore, empty) state over snapshot.json, turning a transient boot
+// problem into durable config loss. The freeze middleware already rejects
+// the mutating calls that kick the debouncer during boot, so this is a
+// second, independent layer.
 func autoPersistFire() {
+	if !snapshot.BootConfigSettled() {
+		autoPersist.Kick()
+		return
+	}
 	if !snapshotGate.CompareAndSwap(false, true) {
 		autoPersist.Kick()
 		return
