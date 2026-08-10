@@ -172,7 +172,7 @@ get_llb_peerIP() {
         llb1IP="172.17.0.2"
       else
         read A B C D <<<"${llb2IP//./ }"
-        llb1IP="$A.$B.$C.$"
+        llb1IP="$A.$B.$C.$((D-1))"
       fi
       cluster_opts=" --cluster=$llb1IP --self=1"
       ka_opts=" --ka=$llb1IP:$llb2IP"
