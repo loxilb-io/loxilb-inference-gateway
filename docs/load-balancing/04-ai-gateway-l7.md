@@ -266,6 +266,6 @@ Go RPC → tests + metrics path in [Developer guide §AI/HA recipes](07-develope
 | P/D mid-request failover (prefill one-retry with receipt rewrite; decode death → `502 pd_decode_backend_died`) | ✅ Shipped |
 | xSync proto + HA coordinator (incl. consumer respawn on promotion) | ✅ Shipped |
 | Rate-limiter sync | ✅ Shipped |
-| HA (Phase L) harness | ✅ Shipped |
+| HA failover harness | ✅ Shipped |
 | Failover warmup — KV/metrics snapshot | ⏸ Deferred (needs 2-host testbed) |
 | Tier 1.5 ZMQ KV-exact routing | ✅ Shipped — see [KV-exact deep dive](08-kv-cache-aware-routing.md) and [SGLang](15-sglang-kv-cache-aware-routing.md) |
