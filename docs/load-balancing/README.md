@@ -72,6 +72,7 @@ it*, *how to test it*, and *how to extend it*.
 | Feature | Status |
 |---|---|
 | vLLM fullproxy L7 (failover / error pass-through / concurrency / resilience) | ✅ |
+| Mid-request / connect failover (retry across healthy EPs → `502 backend_unreachable`; pool down → `503 no_healthy_backend`; prefill death retried transparently; decode death → `502 pd_decode_backend_died`) | ✅ |
 | Prefill/Decode (P/D) disaggregation routing + body rewriting | ✅ |
 | Conversation stickiness (Tier 0) | ✅ |
 | Cache-aware trie routing (Tier 1, CHWBL) | ✅ |
@@ -108,8 +109,12 @@ These apply across every feature below — read them once.
    attach silently report zero entries. CICD scenarios use the loxilb node's own address as the VIP.
 
 6. **In-memory vs persisted.** `/stats` counters and circuit-breaker state are
-   in-memory and reset on restart. Rule config (ids, members, TLS fields) is persisted to
-   `lbconfig.txt` and replayed on boot.
+   in-memory and reset on restart. Rule config (ids, members, TLS fields) is persisted —
+   the primary artifact is `snapshot.json` under the gateway's config path (written by
+   `POST /config/persist` and auto-persist); the legacy `lbconfig.txt` is still honored, with
+   newest-wins arbitration between the two on boot. While the boot snapshot replay is settling
+   after a restart, **all mutating REST calls return `503` with `Retry-After: 5`** — this is
+   expected; retry through it rather than treating it as an outage.
 
 7. **C/eBPF changes need a real Linux testbed.** macOS cannot build Go+eBPF+CGO. Build and run the
    scenarios under [`cicd/`](../../cicd/) on a real Linux host — each scenario brings up loxilb plus

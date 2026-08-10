@@ -13400,7 +13400,7 @@ func init() {
               "type": "boolean"
             },
             "security": {
-              "description": "value for Security mode (0-Plain, 1-https, 2-tls, 3-e2ehttps, 0-default)",
+              "description": "0 - plain HTTP, 1 - TLS terminated at the gateway (https), 2 - end-to-end HTTPS (re-encrypt to backend). 3 is reserved/unused.",
               "type": "integer",
               "format": "int32",
               "enum": [
@@ -29307,7 +29307,7 @@ func init() {
               "type": "boolean"
             },
             "security": {
-              "description": "value for Security mode (0-Plain, 1-https, 2-tls, 3-e2ehttps, 0-default)",
+              "description": "0 - plain HTTP, 1 - TLS terminated at the gateway (https), 2 - end-to-end HTTPS (re-encrypt to backend). 3 is reserved/unused.",
               "type": "integer",
               "format": "int32",
               "enum": [
@@ -29925,7 +29925,7 @@ func init() {
           "type": "boolean"
         },
         "security": {
-          "description": "value for Security mode (0-Plain, 1-https, 2-tls, 3-e2ehttps, 0-default)",
+          "description": "0 - plain HTTP, 1 - TLS terminated at the gateway (https), 2 - end-to-end HTTPS (re-encrypt to backend). 3 is reserved/unused.",
           "type": "integer",
           "format": "int32",
           "enum": [

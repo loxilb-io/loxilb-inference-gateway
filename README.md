@@ -76,7 +76,7 @@ guide set for L4/L7/TLS, the AI gateway, KV-cache-aware routing and SGLang confi
   SGLang, not heuristics
 - Every AI feature is `opt-in per LB rule` — adopt incrementally, roll back per service
 - Works with `any` Kubernetes distribution/CNI (k8s / k3s / k0s / kind / OpenShift + Calico,
-  Flannel, Cilium, Weave, Multus, etc)
+  Flannel, Cilium, Weave, Multus, etc) — inherited from upstream loxilb
 - Runs in `any` cloud (public cloud / on-prem) or `standalone` environments
 
 ## Getting started by use case
@@ -86,7 +86,7 @@ your use case:
 
 ```bash
 docker run -u root --cap-add SYS_ADMIN --restart unless-stopped --privileged \
-  -dit -v /dev/log:/dev/log -v /opt/loxilb/config:/etc/loxilb \
+  -dit --net=host -v /dev/log:/dev/log -v /opt/loxilb/config:/etc/loxilb \
   --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest
 ```
 
@@ -215,12 +215,31 @@ vllm serve <MODEL> --port 8000 \
 ```
 
 Level up per rule: `"pd_cache_aware_mode": true` adds cache-affinity prefill selection;
-`"kvExactMode": 1, "kvZmqPort": 5557, "kvHashAlgo": "sha256_cbor", "kvBlockSize": 16`
+`"kvExactMode": 1, "kvZmqPort": 5557, "kvBlockSize": 16`
 enables **engine-exact KV routing** from the ZMQ event stream (`kvExactMode: 1` is valid
 only on this `pd_disagg_mode: true` shape — on a single pool use `kvExactMode: 3`; requires
 `--prefix-caching-hash-algo sha256_cbor`, `--block-size` = `kvBlockSize`, and
 `PYTHONHASHSEED=0` parity on every worker); `"session_header_name": "X-Conversation-Id"`
 pins conversations.
+
+> ⚠️ **KV-exact prerequisite — stage the model's tokenizer.** The gateway tokenizes prompts
+> itself and never fetches from the network at runtime: for every model served through a
+> `kvExactMode` rule, pre-stage the model's HuggingFace `tokenizer.json` at
+> `/etc/loxilb/tokenizers/<model-slug>/tokenizer.json`, where `<model-slug>` is the
+> client-visible model name with `/` replaced by `__`:
+>
+> ```bash
+> MODEL=Qwen/Qwen2.5-7B-Instruct ; SLUG=${MODEL//\//__}   # → Qwen__Qwen2.5-7B-Instruct
+> # with the documented -v /opt/loxilb/config:/etc/loxilb mount, stage on the host:
+> sudo mkdir -p /opt/loxilb/config/tokenizers/$SLUG
+> sudo curl -L -o /opt/loxilb/config/tokenizers/$SLUG/tokenizer.json \
+>   "https://huggingface.co/$MODEL/resolve/main/tokenizer.json"
+> ```
+>
+> A missing tokenizer fails **silently**: the gateway logs `kv-router: tokenizer not
+> available…` once and the rule quietly falls back to load-based routing — KV-exact never
+> engages. Download details, gated-model auth and the per-model onboarding checklist:
+> [08 §6.3–6.5](docs/load-balancing/08-kv-cache-aware-routing.md).
 
 ▶ Runnable: [`cicd/vllm-pd-disagg`](cicd/vllm-pd-disagg) (mock vLLM, no GPU) · [`cicd/vllm-kvcache-routing-cpu`](cicd/vllm-kvcache-routing-cpu) (KV-exact, echo backends).
 📖 Deep dive: [P/D deploy & debug on AWS](docs/load-balancing/09-kv-cache-aware-routing-aws-pd-deep-dive.md), [architecture](docs/load-balancing/10-hierarchical-kv-routing-architecture.md), [tuning](docs/load-balancing/11-hierarchical-kv-routing-config-tuning.md).
@@ -255,7 +274,8 @@ python3 -m sglang.launch_server --model <MODEL> --page-size 16 --dp-size 3 \
 Parity rules: `--page-size` ⇔ `kvBlockSize`, `--dp-size` ⇔ `kvDpRankCount`, event port ⇔
 `kvZmqPort`. Omit `kvHashAlgo` — the SGLang engine default (`sha256_sglang`) applies;
 pinning vLLM's `"sha256_cbor"` here is rejected, because that contract would miss every
-block SGLang publishes. vLLM and SGLang VIPs coexist on one gateway.
+block SGLang publishes. vLLM and SGLang VIPs coexist on one gateway. The tokenizer-staging
+prerequisite from use case 2 applies here identically.
 
 ▶ Runnable: [`cicd/sglang-loxilb-kvcache`](cicd/sglang-loxilb-kvcache).
 📖 Deep dive: [SGLang routing](docs/load-balancing/15-sglang-kv-cache-aware-routing.md) · [vs vLLM](docs/load-balancing/16-sglang-vs-vllm-routing-differences.md) · [config & tuning](docs/load-balancing/17-sglang-config-tuning.md).
@@ -294,7 +314,7 @@ the gateway, not in every engine:
 ```bash
 # issue a key (loxilb started with --userservice --databasehost <mysql-ip>)
 curl -s -X POST http://127.0.0.1:11111/netlox/v1/config/ai/apikey \
-  -H "Authorization: Bearer $TOKEN" -d '{
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{
   "tenant_id": "team-a", "name": "prod-key", "allowed_models": ["llama-70b"],
   "rate_limit_rps": 50, "tokens_per_min": 100000, "enabled": true }'
 # → returns "raw_key": "lxb_…" (shown once); clients send it as  X-Api-Key: lxb_…
@@ -319,7 +339,8 @@ docker exec loxilb loxicmd create lb 10.10.10.254 --tcp=2020:8000 \
   --select=rr --endpoints=31.31.31.1:1,32.32.32.1:1
 ```
 
-All upstream deployment modes work with this image — follow the
+All upstream deployment modes are inherited unchanged (the K8s integration matrix has not
+yet been re-validated in this repo's own CI) — follow the
 [upstream getting-started guides](https://loxilb-io.github.io/loxilbdocs/#getting-started)
 ([kube-loxilb](https://github.com/loxilb-io/loxilbdocs/blob/main/docs/kube-loxilb.md) ·
 [HA](https://github.com/loxilb-io/loxilbdocs/blob/main/docs/ha-deploy.md) ·
@@ -592,6 +613,7 @@ make HAVE_HTTP_TRACE=1 HAVE_L4_TRACE=1 HAVE_MTLS=1 EXTRA_CFLAGS="-DHAVE_L4_TRACE
 | `HAVE_L4_TRACE=1` **and** `EXTRA_CFLAGS="-DHAVE_L4_TRACE"` | L4 flow tracing and span assembly — Go tag `l4trace` | off |
 | `HAVE_DOCA=1` | BlueField DPU offload — Go tag `doca` (see also `make dpu`) | off |
 | `HAVE_DP_DPU_SLIM=1` | DPU slim `dp_proxy_tacts` layout | off |
+| `HAVE_PII_DETECTION=1` | PII detection — Go tag `piidetection` | off |
 
 Two things that are easy to get wrong:
 
@@ -632,7 +654,8 @@ make kv-agent HAVE_DOCA=0     # → loxilb-kv-agent (KV-cache offload agent; HAV
 | [`Dockerfile.kv-agent`](Dockerfile.kv-agent) | `loxilb-kv-agent` image |
 
 Image name/tag come from `IMAGE?=ghcr.io/loxilb-io/loxilb-inference-gateway` and
-`TAG?=latest` in the [`Makefile`](Makefile):
+`TAG?=latest` in the [`Makefile`](Makefile); the u20/u24 variants append `-u20`/`-u24`
+to the tag (`make docker` picks the suffix from the host OS):
 
 ```bash
 make docker IMAGE=myrepo/loxilb-inference-gateway TAG=dev
@@ -642,7 +665,8 @@ Fast iteration without a full image rebuild — run the published image and over
 built binary into it:
 
 ```bash
-make docker-rp      # docker-run + build + docker cp ./loxilb into the running container
+make docker-rp      # docker-run + build + docker cp ./loxilb, then docker-commit back to
+                    # $(IMAGE):$(TAG) — the scratch container is stopped and removed
 ```
 
 ### Tests
@@ -660,7 +684,8 @@ AI code lives in new files so untouched upstream files merge cleanly.
 Kubernetes defines many service constructs like cluster-ip, node-port, load-balancer, ingress
 etc. for pod to pod, pod to service and outside-world to service communication. **loxilb
 provides service type load-balancer as its main use-case**, and can be run in-cluster or
-ext-to-cluster as per user need. loxilb-inference-gateway inherits all of it:
+ext-to-cluster as per user need. loxilb-inference-gateway inherits all of it (functionality
+validated upstream; this repo's own K8s CI matrix is not enabled yet):
 
 - [x] Service type load-balancer (in-cluster / ext-cluster)
 - [x] kube-proxy replacement with eBPF (full cluster-mesh implementation for Kubernetes)
@@ -687,7 +712,7 @@ upstream README's [telco-cloud section](https://github.com/loxilb-io/loxilb#telc
 - Extensive and scalable end-point liveness probes for cloud-native environments
 - Stateful firewalling and IPSEC/Wireguard support
 - Full compatibility for ipvs (ipvs policies can be auto inherited)
-- Policy oriented L7 proxy support - HTTP1.0, 1.1, 2.0, 3.0
+- Policy oriented L7 proxy support - HTTP 1.0, 1.1, 2.0 (QUIC/HTTP-3 passes through at L4)
 
 ## Components
 
@@ -741,32 +766,18 @@ board and [issues](https://github.com/loxilb-io/loxilb/issues).
 
 ### Classic LB sanity (inherited from loxilb)
 
-| Features(Ubuntu20.04) | Features(Ubuntu22.04)| Features(Ubuntu24.04)| Features(RedHat9)|
-|:----------|:-------------|:-------------|:-------------|
-| [![simple workflow](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/basic-sanity.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/basic-sanity.yml)  | [![Sanity-CI-Ubuntu-22](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/basic-sanity-ubuntu-22.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/basic-sanity-ubuntu-22.yml) | [![Sanity-CI-Ubuntu-24](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/basic-sanity-ubuntu-24.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/basic-sanity-ubuntu-24.yml) | [![Sanity-CI-RH9](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/basic-sanity-rh9.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/basic-sanity-rh9.yml) |
-| [![tcp-lb-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/tcp-sanity.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/tcp-sanity.yml) | [![tcp-lb-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/tcp-sanity-ubuntu-22.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/tcp-sanity-ubuntu-22.yml)   | [![tcp-lb-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/tcp-sanity-ubuntu-24.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/tcp-sanity-ubuntu-24.yml)   | [![TCP-LB-Sanity-CI-RH9](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/tcp-sanity-rh9.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/tcp-sanity-rh9.yml) |
-| [![udp-lb-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/udp-sanity.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/udp-sanity.yml) | [![udp-lb-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/udp-sanity-ubuntu-22.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/udp-sanity-ubuntu-22.yml) | [![udp-lb-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/udp-sanity-ubuntu-24.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/udp-sanity-ubuntu-24.yml) | [![UDP-LB-Sanity-CI-RH9](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/udp-sanity-rh9.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/udp-sanity-rh9.yml) |
-| [![sctp-lb-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/sctp-sanity.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/sctp-sanity.yml)  | [![SCTP-LB-Sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/sctp-sanity-ubuntu-22.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/sctp-sanity-ubuntu-22.yml)  | [![SCTP-LB-Sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/sctp-sanity-ubuntu-24.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/sctp-sanity-ubuntu-24.yml) |[![SCTP-LB-Sanity-CI-RH9](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/sctp-sanity-rh9.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/sctp-sanity-rh9.yml)  |
-|  [![extlb workflow](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/advanced-lb-sanity.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/advanced-lb-sanity.yml)|  [![extlb workflow](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/advanced-lb-sanity-ubuntu-22.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/advanced-lb-sanity-ubuntu-22.yml) |  [![extlb workflow](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/advanced-lb-sanity-ubuntu-24.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/advanced-lb-sanity-ubuntu-24.yml) | [![Adv-LB-Sanity-CI-RH9](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/advanced-lb-sanity-rh9.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/advanced-lb-sanity-rh9.yml)|
-| [![nat66-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/nat66-sanity.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/nat66-sanity.yml)   | [![nat66-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/nat66-sanity-ubuntu-22.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/nat66-sanity-ubuntu-22.yml)  |  [![nat66-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/nat66-sanity-ubuntu-24.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/nat66-sanity-ubuntu-24.yml)  | [![NAT66-LB-Sanity-CI-RH9](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/nat66-sanity-rh9.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/nat66-sanity-rh9.yml) |
-|  [![ipsec-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/ipsec-sanity.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/ipsec-sanity.yml)   | [![ipsec-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/ipsec-sanity-ubuntu-22.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/ipsec-sanity-ubuntu-22.yml)  |  [![ipsec-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/ipsec-sanity-ubuntu-24.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/ipsec-sanity-ubuntu-24.yml)  | [![IPsec-Sanity-CI-RH9](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/ipsec-sanity-rh9.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/ipsec-sanity-rh9.yml) |
-| [![liveness-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/liveness-sanity.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/liveness-sanity.yml)  | [![liveness-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/liveness-sanity-ubuntu-22.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/liveness-sanity-ubuntu-22.yml)  |  [![liveness-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/liveness-sanity-ubuntu-24.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/liveness-sanity-ubuntu-24.yml)   | [![liveness-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/liveness-sanity-rh9.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/liveness-sanity-rh9.yml) |
-|![scale-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/scale-sanity.yml/badge.svg)  | [![Scale-Sanity-CI-Ubuntu-22](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/scale-sanity-ubuntu-22.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/scale-sanity-ubuntu-22.yml) |  [![Scale-Sanity-CI-Ubuntu-24](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/scale-sanity-ubuntu-24.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/scale-sanity-ubuntu-24.yml)  | [![Scale-Sanity-CI-RH9](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/scale-sanity-rh9.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/scale-sanity-rh9.yml) |
-|[![perf-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/perf.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/perf.yml) | [![perf-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/perf.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/perf.yml) |[![perf-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/perf.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/perf.yml) | |
-
-### K8s tests
-
-| K8s Base Tests | K8s Adv Tests | EKS Test |
-|:-------------|:-------------|:-------------|
-|[![K3s-Base-Sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k3s-base-sanity.yml/badge.svg?branch=main)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k3s-base-sanity.yml) | [![K8s-Calico-Cluster-IPVS-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k8s-calico-ipvs.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k8s-calico-ipvs.yml) | [![EKS](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/eks.yaml/badge.svg?branch=main)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/eks.yaml)|
-| [![k3s-flannel-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k3s-flannel.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k3s-flannel.yml) | [![K8s-Calico-Cluster-IPVS2-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k8s-calico-ipvs2.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k8s-calico-ipvs2.yml) | |
-| [![k3s-flannel-ubuntu22-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k3s-flannel-ubuntu-22.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k3s-flannel-ubuntu-22.yml) | [![K8s-Calico-Cluster-IPVS3-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k8s-calico-ipvs3.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k8s-calico-ipvs3.yml) | |
-|[![k3s-flannel-cluster-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k3s-flannel-cluster.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k3s-flannel-cluster.yml) | [![K8s-Calico-Cluster-IPVS3-HA-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k8s-calico-ipvs3-ha.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k8s-calico-ipvs3-ha.yml) | |
-| [![k3s-calico-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k3s-calico.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k3s-calico.yml)  | [![k3s-flannel-incluster-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k3s-flannel-incluster.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k3s-flannel-incluster.yml) | |
-| [![k3s-cilium-cluster-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k3s-cilium-cluster.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k3s-cilium-cluster.yml) | [![k3s-flannel-incluster-l2-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k3s-flannel-incluster-l2.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k3s-flannel-incluster-l2.yml) | |
-| [![k3s-sctpmh-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k3s-sctpmh.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k3s-sctpmh.yml)  | [![K3s-Dual-Stack-Sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/dual-stack.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/dual-stack.yml) | |
-| [![k3s-sctpmh-ubuntu22-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k3s-sctpmh-ubuntu-22.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k3s-sctpmh-ubuntu-22.yml) | [![K3s-Loxi-GWAPI-Sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k3s-loxi-gwapi.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k3s-loxi-gwapi.yml) | |
-| [![k3s-sctpmh-2-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k3s-sctpmh-2.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k3s-sctpmh-2.yml)  | [![K3s-Loxi-Ingress-Sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k3s-loxi-ingress.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/k3s-loxi-ingress.yml) | |
+| Features(Ubuntu20.04) | Features(Ubuntu22.04)| Features(Ubuntu24.04)|
+|:----------|:-------------|:-------------|
+| [![simple workflow](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/basic-sanity.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/basic-sanity.yml)  | [![Sanity-CI-Ubuntu-22](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/basic-sanity-ubuntu-22.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/basic-sanity-ubuntu-22.yml) | [![Sanity-CI-Ubuntu-24](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/basic-sanity-ubuntu-24.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/basic-sanity-ubuntu-24.yml) |
+| [![tcp-lb-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/tcp-sanity.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/tcp-sanity.yml) | [![tcp-lb-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/tcp-sanity-ubuntu-22.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/tcp-sanity-ubuntu-22.yml)   | [![tcp-lb-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/tcp-sanity-ubuntu-24.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/tcp-sanity-ubuntu-24.yml)   |
+| [![udp-lb-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/udp-sanity.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/udp-sanity.yml) | [![udp-lb-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/udp-sanity-ubuntu-22.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/udp-sanity-ubuntu-22.yml) | [![udp-lb-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/udp-sanity-ubuntu-24.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/udp-sanity-ubuntu-24.yml) |
+| [![sctp-lb-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/sctp-sanity.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/sctp-sanity.yml)  | [![SCTP-LB-Sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/sctp-sanity-ubuntu-22.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/sctp-sanity-ubuntu-22.yml)  | [![SCTP-LB-Sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/sctp-sanity-ubuntu-24.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/sctp-sanity-ubuntu-24.yml) |
+|  [![extlb workflow](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/advanced-lb-sanity.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/advanced-lb-sanity.yml)|  [![extlb workflow](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/advanced-lb-sanity-ubuntu-22.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/advanced-lb-sanity-ubuntu-22.yml) |  [![extlb workflow](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/advanced-lb-sanity-ubuntu-24.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/advanced-lb-sanity-ubuntu-24.yml) |
+| [![nat66-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/nat66-sanity.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/nat66-sanity.yml)   | [![nat66-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/nat66-sanity-ubuntu-22.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/nat66-sanity-ubuntu-22.yml)  |  [![nat66-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/nat66-sanity-ubuntu-24.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/nat66-sanity-ubuntu-24.yml)  |
+|  [![ipsec-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/ipsec-sanity.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/ipsec-sanity.yml)   | [![ipsec-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/ipsec-sanity-ubuntu-22.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/ipsec-sanity-ubuntu-22.yml)  |  [![ipsec-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/ipsec-sanity-ubuntu-24.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/ipsec-sanity-ubuntu-24.yml)  |
+| [![liveness-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/liveness-sanity.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/liveness-sanity.yml)  | [![liveness-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/liveness-sanity-ubuntu-22.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/liveness-sanity-ubuntu-22.yml)  |  [![liveness-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/liveness-sanity-ubuntu-24.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/liveness-sanity-ubuntu-24.yml)   |
+|![scale-sanity-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/scale-sanity.yml/badge.svg)  | [![Scale-Sanity-CI-Ubuntu-22](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/scale-sanity-ubuntu-22.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/scale-sanity-ubuntu-22.yml) |  [![Scale-Sanity-CI-Ubuntu-24](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/scale-sanity-ubuntu-24.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/scale-sanity-ubuntu-24.yml)  |
+|[![perf-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/perf.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/perf.yml) | [![perf-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/perf.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/perf.yml) |[![perf-CI](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/perf.yml/badge.svg)](https://github.com/loxilb-io/loxilb-inference-gateway/actions/workflows/perf.yml) |
 
 ## License
 

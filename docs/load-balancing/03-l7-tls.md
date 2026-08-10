@@ -7,8 +7,6 @@
 >
 > TLS termination runs in the userspace sockproxy (`mode=4`, `security=1`). All fields below are
 > **additive/optional** — omitting them preserves prior behavior (TLS 1.2–1.3, no HSTS, no mTLS).
->
-> **Verification:** 14/14 checks passing (2026-06-08).
 
 ---
 
@@ -136,8 +134,13 @@ Resolved at backend `SSL_CTX` build time by the certId registry.
 A handshake-only liveness probe: completes a TLS handshake (ClientHello→ServerHello) but **does not
 validate** the server chain. SNI is taken from the member's `domainName`.
 
+`tls-hello` is a value of the **`/config/endpoint` model's `probeType`** enum
+(`tcp/udp/sctp/ping/http/https/none/tls-hello`). It is *not* accepted by the LB-rule
+`serviceArguments.probetype` field, whose enum is `tcp/udp/sctp/http/https/ping/none`:
+
 ```json
-{ "probeType": "tls-hello", "probePort": 443, "domainName": "example.com" }
+// POST /config/endpoint
+{ "hostName": "31.31.31.1", "probeType": "tls-hello", "probePort": 443, "domainName": "example.com" }
 ```
 
 - **UP** if the handshake completes (any cert).
@@ -147,18 +150,12 @@ Lighter than a full HTTPS content probe; good for "is TLS alive on this port" ch
 
 ### 5.2 Per-probe CA override & verify toggle
 
-For HTTPS content probes (control-plane only — no dataplane change):
-
-| Field | Type | Meaning |
-|---|---|---|
-| `probeCAPath` | `*string` | Custom CA bundle for this probe; empty → system default |
-| `probeVerify` | `*bool` | `nil`/`true` = full chain validation (default); `false` = `InsecureSkipVerify` |
-
-`probeVerify` is a pointer so `nil` ("use default", verify ON) is distinct from explicit `false`.
-
-```json
-{ "probeType": "https", "probeCAPath": "/etc/tls/backend-ca.pem", "probeVerify": false }
-```
+HTTPS content probes support a per-probe CA override (`ProbeCAPath`) and a chain-verification
+toggle (`ProbeVerify`) on the internal endpoint model (`EndPointMod` in `common/common.go`).
+These are **internal control-plane fields with no REST surface**: verification defaults to ON
+(full chain validation against the configured or system CA bundle), and `ProbeVerify` is a
+pointer so "unset" (verify ON) is distinct from an explicit `false`
+(`InsecureSkipVerify`).
 
 ---
 
@@ -168,13 +165,12 @@ A certId is an **opaque management handle** for TLS material. Material persists 
 `/etc/loxilb/certs/<certId>/` (dir `0700`, key `0600`) and is registered in the SNI store; the
 registry auto-derives hostnames from the leaf cert's SAN (DNS) or CN.
 
-Resource: **`/config/cert`** (swagger lines 701 / 735).
+Resource: **`/config/cert`**.
 
 | Method | Path | Purpose |
 |---|---|---|
 | `POST` | `/config/cert` | Upload inline PEM under a certId (certId optional — minted if absent) |
 | `PUT` | `/config/cert/{certId}` | Atomic zero-downtime rotation |
-| `GET` | `/config/cert` | List all (metadata only — keys never returned) |
 | `GET` | `/config/cert/{certId}` | One cert's metadata (id + derived hostnames + public cert/chain) |
 | `DELETE` | `/config/cert/{certId}` | Remove material + SNI registration |
 
@@ -185,13 +181,14 @@ curl -X POST http://localhost:11111/netlox/v1/config/cert \
   -H "Content-Type: application/json" \
   -d '{
     "certId": "my-tls-cert",
-    "certPEM": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----",
-    "keyPEM":  "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
+    "certPem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----",
+    "keyPem":  "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
   }'
-# → { "certId": "my-tls-cert", "hostnames": ["example.com","*.example.com"] }
+# → 201 Created (no body). Fetch metadata (id + derived hostnames) with:
+#   GET /config/cert/my-tls-cert
 ```
 
-The `Cert` model (swagger ~line 9998): `certId`, `certPEM`, `keyPEM`, optional `chainPEM`; output-only
+The `Cert` model in `api/swagger.yml`: `certId`, `certPem`, `keyPem`, optional `chainPem`; output-only
 `hostnames`. `certId` must be 1–63 chars with no path-traversal (`/`, `\`, `..` rejected).
 
 ### 6.2 Rotate (zero-downtime)
@@ -199,13 +196,18 @@ The `Cert` model (swagger ~line 9998): `certId`, `certPEM`, `keyPEM`, optional `
 ```bash
 curl -X PUT http://localhost:11111/netlox/v1/config/cert/my-tls-cert \
   -H "Content-Type: application/json" \
-  -d '{ "certPEM": "...(new)...", "keyPEM": "...(new)..." }'
+  -d '{ "certPem": "...(new)...", "keyPem": "...(new)..." }'
 ```
 
 The new material swaps in under the SNI lock; in-flight TLS connections keep the old context until they
 close. Unknown certId → `404`; malformed PEM → `400`.
 
-### 6.3 Reference a certId from a listener
+### 6.3 How a listener picks its certificate
+
+There is **no per-rule `cert_id` field**. Uploaded certificates are registered in the SNI store
+under the hostnames auto-derived from the leaf cert's SAN (DNS) / CN, and the listener selects
+the certificate at handshake time by SNI hostname. Just create the TLS listener; the matching
+cert is served automatically:
 
 ```bash
 curl -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
@@ -213,7 +215,6 @@ curl -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
   -d '{ "serviceArguments": {
           "externalIP":"10.0.0.1", "port":443, "protocol":"tcp",
           "mode":4, "security":1,
-          "cert_id":"my-tls-cert",
           "alpn_protocols":["h2","http/1.1"],
           "tls_versions":["TLSv1.2","TLSv1.3"],
           "hsts_max_age":31536000 } }'
@@ -263,12 +264,12 @@ generate the test cert material.
 |---|---|---|
 | ALPN negotiates h2 but body is empty | h2 client + h1-only backend, no downgrade | h2c backend, or `alpn_protocols:["http/1.1"]` |
 | Revoked client cert still accepted | Signing CA lacks `cRLSign` | Use a CA with `keyUsage=critical,keyCertSign,cRLSign`; sign leaves *and* CRL with it |
-| SAN-only client cert rejected | Old CN-only matching | Fixed (SAN-DNS first) — confirm you're on a post-77 build |
+| SAN-only client cert rejected | Old CN-only matching | Current builds match SAN-DNS first; upgrade if you still see this |
 | TLSv1.1 not rejected despite pinning | `tls_versions` not applied to the SSL_CTX | Confirm the field is on the listener and the build applies `proxy_apply_tls_version_cipher` |
 | HSTS header missing | Plain-HTTP listener, `have_ssl=0`, `has_l7_policy=0`, or `hsts_max_age=0` | Need `security=1` + an L7 policy + `hsts_max_age>0` |
 | HSTS missing only on H2 | Raw `\r\n` write on h2 socket | Use the nghttp2 injector (`proxy_h2_inject_resp_headers`) |
 | `tls-hello` always DOWN | Probing the wrong (non-TLS) port, or handshake fails | Verify with `openssl s_client -connect <ep>:<port>`; fix `probePort` |
-| Cert rotation `PUT` → 503 | CGO `proxy_rotate_cert` failed (certId absent / bad PEM) | `POST` before `PUT`; validate PEM with `openssl x509 -text` |
+| Cert rotation `PUT` → 404 or 400 | `404` = unknown certId; `400` = bad PEM / rotation failure | `POST` before `PUT`; validate PEM with `openssl x509 -text` |
 | Per-probe CA ignored | `probeCAPath` file missing/unreadable | Ensure the file exists and is readable by the loxilb process |
 
 ---
@@ -280,17 +281,13 @@ generate the test cert material.
 | ALPN | `loxilb-ebpf/common/sockproxy_ssl.c` (`alpn_select_callback`, `proxy_client_ssl_ctx_init`) |
 | Version/cipher pinning | `sockproxy_ssl.c` (`proxy_tls_proto_from_ordinal`, `proxy_apply_tls_version_cipher`) |
 | HSTS | `sockproxy_l7policy.c` (synthesize), `sockproxy_http.c` (H1), `sockproxy_h2.c` (H2 nghttp2) |
-| mTLS SAN/CN + CRL | `loxilb-ebpf/common/sockproxy_mtls.c` (`mtls_match_cn_pattern`, CRL load + `X509_V_FLAG_CRL_CHECK`, `proxy_certid_resolve_backend`) |
+| mTLS SAN/CN + CRL | `loxilb-ebpf/common/sockproxy_mtls.c` (`mtls_match_cn_pattern`, CRL load + `X509_V_FLAG_CRL_CHECK`); backend certId resolution: `proxy_certid_resolve_backend` in `sockproxy_ssl.c` (called from `sockproxy_mtls.c`) |
 | certId registry (C) | `sockproxy_ssl.c` (`proxy_register_cert` / `proxy_rotate_cert` / `proxy_delete_cert`), `sockproxy_ssl.h` |
 | `proxy_arg` TLS carrier | `loxilb-ebpf/common/sockproxy.h` (tls version/cipher scalars, `client_cn_pattern`, `client_crl_path`, `backend_*_cert_id`) — `_Static_assert(sizeof <= 4096)` |
 | `tls-hello` probe (Go) | `pkg/loxinet/rules.go` (`HostProbeTLSHello`, `tlsHelloProbe`) |
 | Per-probe CA/verify (Go) | `pkg/loxinet/rules.go` (`httpsContentProbe`), `common/common.go` (`EndPointMod.ProbeVerify`/`ProbeCAPath`) |
 | VIP QoS | `pkg/loxinet/qospol.go` (`PolAssociateLbRule`), `rules.go`, `common.go` (`VipQosPolicyId`) |
 | Cert REST | `api/restapi/handler/cert.go`; `api/swagger.yml` (`/config/cert`, `Cert` model) |
-
-> **Note for maintainers:** the tree-committed `api/restapi/embedded_spec.go` / `api/models/cert.go`
-> can lag `swagger.yml` between phases (regenerated at build time). Regenerate via
-> `api/build_api.sh` and commit at merge for tree self-consistency.
 
 To extend TLS handling (new cipher option, per-pool SSL_CTX cache, hot listener override), see
 [Developer guide §TLS recipes](07-developer-guide.md#tls-extension-recipes).

@@ -84,7 +84,7 @@ curl -s -X POST http://127.0.0.1:11111/netlox/v1/config/loadbalancer \
   ]}'
 ```
 
-The equivalent `loxicmd` form:
+The equivalent `loxicmd` form (loxicmd — separate repository):
 
 ```bash
 loxicmd create lb 10.10.10.254 --tcp=2020:8080 --select=rr --mode=fullproxy \
@@ -92,7 +92,9 @@ loxicmd create lb 10.10.10.254 --tcp=2020:8080 --select=rr --mode=fullproxy \
   --endpoints=31.31.31.1:1,32.32.32.1:1
 ```
 
-The frontend certificate is served from the gateway's certificate store — see
+The frontend certificate is served from the gateway's certificate store. There is **no per-rule
+certificate field**: uploaded certs are registered under hostnames auto-derived from the leaf
+cert's SAN/CN, and the listener selects the matching certificate at handshake time by SNI. See
 [L7 TLS](03-l7-tls.md) for certificate upload/rotation (`certId` management).
 
 ### 2.3 End-to-end HTTPS (HTTPS in, HTTPS out)

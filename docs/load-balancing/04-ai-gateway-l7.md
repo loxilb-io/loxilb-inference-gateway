@@ -26,7 +26,11 @@ Client  ──►  VIP (e.g. 10.10.10.254:2020)  ──►  [LoxiLB sockproxy]  
 Two deployment shapes:
 
 - **Fullproxy :** every endpoint handles a full request. Health failover, HTTP error
-  pass-through, concurrency, and resilience are the GA-hardened behaviors.
+  pass-through, concurrency, and resilience are the GA-hardened behaviors. Backend **connect
+  failures fail over transparently**: if the selected endpoint refuses the connection, the
+  proxy retries the request across the remaining healthy endpoints; only when every candidate
+  fails does the client see `502 {"error":"backend_unreachable"}`. If the whole pool is down,
+  the proxy answers `503 {"error":"no_healthy_backend"}` instead of resetting the connection.
 - **Prefill/Decode disaggregation:** the request is split into a short *prefill* leg
   and a streaming *decode* leg routed to different workers, with KV-cache state handed between them.
 
@@ -65,7 +69,23 @@ The `remote_block_ids` come from the prefill response; LoxiLB relays them so the
 the KV state from the prefill worker. The decode SSE stream — including the terminal `data: [DONE]` —
 is proxied **as-is** (never strip or double-count `[DONE]`).
 
-### 2.3 Circuit breaker
+### 2.3 Mid-request failover (P/D)
+
+Endpoint death **during** a P/D request is handled per leg:
+
+- **Prefill worker dies mid-request:** the prefill leg is transparently retried **once** on
+  another healthy prefill endpoint, and the `X-Request-Id` receipt is rewritten so the decode
+  leg pulls KV state from the endpoint that actually served the prefill. The client never sees
+  the failure.
+- **Decode worker dies mid-stream:** the stream cannot be resumed (KV state lives on the dead
+  worker); the client receives `502 {"error":"pd_decode_backend_died"}` and should retry the
+  request.
+
+The `loxilb_lb_select_failure_shutdown_total` metric counts requests that were dropped with a
+silent TCP reset instead of an HTTP error — it must stay **flat** in normal operation; any
+growth means a failover path regressed.
+
+### 2.4 Circuit breaker
 
 Per-endpoint, local-only (`CLOSED → OPEN → HALF_OPEN`): 5 consecutive failures open the breaker;
 after a ~30s open window it probes `HALF_OPEN`. While open, traffic diverts to healthy siblings. **Not
@@ -102,19 +122,13 @@ The HA goal is **`restore_rate ≥ 0.90`**: after a master fails over, ≥90% of
 sessions resume on the *same* `(prefill_ep, decode_ep)` pair. Measured by the HA stage of the
 P/D CICD scenario (`run-pd-cicd.sh --phase=L`).
 
-### 3.4 Wiring history (important for anyone reading old logs)
+### 3.4 Consumer wiring (what to expect in the logs)
 
-The coordinator wiring took three steps — know which build you're on:
-
-- **Initial delivery:** shipped the coordinator, the xSync proto extension, the C event bridge, and
-  the HA CICD harness.
-- **Startup wiring:** wired `mh.sockproxySync` into loxinet startup and spawned per-peer consumer
-  goroutines. A post-merge wiring probe found a gap: consumers were spawned only at boot (`Start()`),
-  *before* keepalived elected a master — so the role-gated peer list was empty and **no consumers ran
-  on the elected master**. Symptom: `restore_rate = 0/100`.
-- **Promotion fix (current):** `OnStateChange` now calls `spawnConsumersForKnownPeers` on
-  MASTER promotion. Expect a `[SOCKPROXY_SYNC] consumerLoop start peer=` log line within ~10s of
-  the MASTER transition.
+The coordinator is wired into loxinet startup, and `OnStateChange` calls
+`spawnConsumersForKnownPeers` on MASTER promotion, so per-peer consumer goroutines run on the
+elected master even when the election happens after boot. Expect a
+`[SOCKPROXY_SYNC] consumerLoop start peer=` log line within ~10s of the MASTER transition — if
+it never appears, replication to the backup is not running.
 
 ### 3.5 Rolling-upgrade safety
 
@@ -144,8 +158,10 @@ circuit-breaker thresholds, cache-aware mode). **Use the working scenario config
 
 Two essentials that are easy to miss:
 
-1. **Always set a health probe** — `--probe=tcp --probetimeout=5 --proberetries=3`. Without it,
-   endpoint death is never detected (this was a real bug). Effective down-detection ≈ 4–6s.
+1. **Always set a health probe** — REST: `"probetype":"tcp", "probeTimeout":5, "probeRetries":3`
+   in `serviceArguments` (loxicmd equivalent, separate repository:
+   `--probe=tcp --probetimeout=5 --proberetries=3`). Without it, endpoint death is never
+   detected (this was a real bug). Effective down-detection ≈ 4–6s.
 2. **VIP must be local** to the loxilb node (fullproxy binds it).
 
 REST CRUD works the same as any LB rule — see [REST reference](05-rest-api-reference.md). Inspect a
@@ -190,11 +206,15 @@ cd cicd/vllm-pd-disagg && PHASE_L_HA=1 bash config.sh && ./run-pd-cicd.sh --phas
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Endpoint death never detected | No `--probe` on the rule | Add `--probe=tcp --probetimeout=5 --proberetries=3` |
-| SSE stream cuts off / client hangs | `[DONE]` stripped or double-counted (pre-67 bug) | Use a post-67 build; `validation-resilience.sh` R4a asserts `data: [DONE]` |
-| Failover test: `restore_rate = 0/100` | Pre-70.2 consumer-respawn gap, OR single-host `/sys/fs/bpf` map stomping, OR stale binary | Use a post-70.2 build on a 2-host testbed; `docker cp` your binary |
+| Endpoint death never detected | No probe on the rule | Add `"probetype":"tcp", "probeTimeout":5, "probeRetries":3` |
+| `502 {"error":"backend_unreachable"}` | Connect failover exhausted every healthy endpoint | Check backend reachability from the gateway node; inspect endpoint health/probe state |
+| `503 {"error":"no_healthy_backend"}` | Whole pool marked down | Fix the backends (or the probe config marking them down); the rule itself is fine |
+| `502 {"error":"pd_decode_backend_died"}` | Decode worker died mid-stream (KV state lost) | Retry the request; investigate the decode worker crash |
+| Mutating REST calls → `503` + `Retry-After: 5` right after a gateway restart | Boot-config gate: mutations are refused until the boot snapshot replay settles | Expected, not an outage — retry after the `Retry-After` interval |
+| SSE stream cuts off / client hangs | `[DONE]` stripped or double-counted (bug in older builds) | Use a current build; `validation-resilience.sh` R4a asserts `data: [DONE]` |
+| Failover test: `restore_rate = 0/100` | Consumers not respawned on promotion (older builds), OR single-host `/sys/fs/bpf` map stomping, OR stale binary | Use a current build on a 2-host testbed; `docker cp` your binary |
 | `restore_rate` low but non-zero | Health gate rejecting (target EP unhealthy on new master) | Check `loxilb_sockproxy_sync_health_reject_total`; verify EPs reachable from the backup |
-| Sessions never replicate to backup | Consumers not spawned on master | Grep for `consumerLoop start peer=`; if absent, you're pre-70.2 |
+| Sessions never replicate to backup | Consumers not spawned on master | Grep for `consumerLoop start peer=`; if absent, the coordinator never started consumers |
 | Cluster split after upgrade | (Should not happen) | Rolling-upgrade degrades gracefully — check the WARN-once `Unimplemented` log |
 | `Killed node …` in logs | Normal end-of-test cleanup | Not an OOM |
 
@@ -219,7 +239,7 @@ docker exec llb2 curl -s http://31.31.31.1:8000/v1/models                       
 | Sockproxy L7 / P/D (C) | `loxilb-ebpf/common/sockproxy_ep.c`, `sockproxy_pd.c`, `sockproxy_http.c` (circuit breaker), `sockproxy.h` (`pd_session_mapping_t`, `conversation_mapping_t`, `proxy_epval_t`, `pd_trie`) |
 | HA coordinator (Go) | `pkg/loxinet/sockproxy_sync.go` (drain/batch/push), `xsync.proto` (RPCs + messages) |
 | Startup wiring | `pkg/loxinet/loxinet.go` (`NewSockproxySync`, `peersFn`, `Start`), `cluster.go` (`OnStateChange`) |
-| Tests | `pkg/loxinet/sockproxy_sync_test.go`; probe `scripts/probe-sockproxy-sync-wiring.sh` |
+| Tests | `pkg/loxinet/sockproxy_sync_test.go`; wiring check: grep the gateway log for `consumerLoop start peer=` after MASTER promotion |
 
 **Invariants to preserve when extending sync:**
 
@@ -240,13 +260,12 @@ Go RPC → tests + metrics path in [Developer guide §AI/HA recipes](07-develope
 
 | Item | Status |
 |---|---|
-| Fullproxy GA (67) | ✅ Shipped 2026-05-20 |
-| P/D harness A–K (68) | ✅ Shipped 2026-05-21 |
-| P/D live QA (69) | ✅ Shipped 2026-05-25 (52 PASS / 0 FAIL) |
-| xSync proto + coordinator (70-A) | ✅ Shipped |
-| Rate-limiter sync (70-B) | ✅ Shipped |
-| Phase L HA harness (70-L) | ✅ Shipped |
-| Startup wiring (70.1) | ✅ Shipped (exposed consumer gap) |
-| Consumer respawn on promotion (70.2) | ✅ Shipped (closes the gap) |
+| Fullproxy GA (failover / errors / concurrency / resilience) | ✅ Shipped |
+| P/D disaggregation + CICD harness | ✅ Shipped |
+| Generalized connect failover (retry across EPs → `502 backend_unreachable`; pool down → `503 no_healthy_backend`) | ✅ Shipped |
+| P/D mid-request failover (prefill one-retry with receipt rewrite; decode death → `502 pd_decode_backend_died`) | ✅ Shipped |
+| xSync proto + HA coordinator (incl. consumer respawn on promotion) | ✅ Shipped |
+| Rate-limiter sync | ✅ Shipped |
+| HA (Phase L) harness | ✅ Shipped |
 | Failover warmup — KV/metrics snapshot | ⏸ Deferred (needs 2-host testbed) |
-| Tier 1.5 ZMQ KV-exact routing | ⏸ Deferred (needs GPU testbed) |
+| Tier 1.5 ZMQ KV-exact routing | ✅ Shipped — see [KV-exact deep dive](08-kv-cache-aware-routing.md) and [SGLang](15-sglang-kv-cache-aware-routing.md) |
