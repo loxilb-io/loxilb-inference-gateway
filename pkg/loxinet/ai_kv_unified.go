@@ -19,7 +19,7 @@
 // in isolation on any host and so llb_ai_kv_best_worker (cgo export in
 // ai_kv_subscriber.go) merely gathers candidates and delegates here.
 //
-// Design (RESEARCH Pattern 2 / 81-PATTERNS.md Analog B — PORTED from the C
+// Design (PORTED from the C
 // bounded-load cap in loxilb-ebpf/common/sockproxy_lb.c:531-558, NOT
 // re-derived):
 //
@@ -56,7 +56,7 @@ import (
 )
 
 // kvCapacityClampMax bounds each advertised NumGPUBlocks before it enters the
-// cap division (V5 guard, 81-PATTERNS.md). 8M is ~13× the largest realistic
+// cap division (overflow guard). 8M is ~13× the largest realistic
 // vLLM num_gpu_blocks (~600k); anything beyond is clamped so the weighted sum
 // cannot overflow the uint64 accumulator regardless of how many EPs report it.
 const kvCapacityClampMax = 8_000_000
@@ -203,18 +203,13 @@ const (
 // re-expressed per unit of fleet capacity and resized/heterogeneous fleets
 // stop mis-firing (memo).
 //
-// PROVENANCE (plan calibration sweep, 2026-07-06): Σ calibrated
-// prefill capacities of the anchor-fleet composition (3×L4 + 1×L40S — the
-// same prefill candidate set the 2026-06-28 anchors were re-fit on), in
-// milli-(prompt-tokens/s):
-//
-//	10.0.0.7  L4   2356.91 tok/s (RD p98-calibrate-10.0.0.7-20260706T061604Z)
-//	10.0.0.8  L4   2326.51 tok/s (RD p98-calibrate-10.0.0.8-20260706T072513Z)
-//	10.0.0.9  L4   2347.11 tok/s (RD p98-calibrate-10.0.0.9-20260706T083447Z)
-//	10.0.0.11 L40S 8253.78 tok/s (RD p98-calibrate-10.0.0.11-20260706T094454Z)
-//	Σ = 15284.31 tok/s → 15284310 milli. Today's deployment IS the anchor
-//	fleet, so LOXILB_KV_CAP_SUM_MILLI=15284310 yields factor exactly 1.0;
-//	the mechanism's value appears when the fleet resizes.
+// PROVENANCE (calibration sweep, 2026-07-06): Σ of the calibrated prefill
+// capacities of the anchor fleet the constants were fit on (3×L4 + 1×L40S
+// GPUs, per-EP p98-calibrated prompt-token throughput), in
+// milli-(prompt-tokens/s): Σ = 15284.31 tok/s → 15284310 milli. On a
+// deployment matching the anchor fleet, LOXILB_KV_CAP_SUM_MILLI=15284310
+// yields factor exactly 1.0; the mechanism's value appears when the fleet
+// resizes.
 const kvAdaptiveCapRefMilli uint64 = 15284310
 
 // kvCapRefMilli is the EFFECTIVE calibration reference, seeded from the const.

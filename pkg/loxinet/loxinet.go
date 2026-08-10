@@ -564,7 +564,7 @@ func loxiNetInit() {
 			}
 		}
 
-		// / CR-01: wire the sockproxy HA state-sync coordinator
+		// : wire the sockproxy HA state-sync coordinator
 		// into the production startup path. Without this assignment the
 		// gate at cluster.go:548 (`if mh.sockproxySync != nil`) is always
 		// false, so the entire HA push surface is dead code and the
@@ -588,7 +588,7 @@ func loxiNetInit() {
 		mh.sockproxySync = NewSockproxySync()
 		peersFn := func() []DpPeer {
 			// Role gate: only the MASTER pushes (CONTEXT). Mirrors
-			// the CR-03 master-count idiom at sockproxy_sync.go:344-358
+			// the master-count idiom at sockproxy_sync.go:344-358
 			// — same lock discipline (mh.mtx.RLock + range ClusterMap +
 			// CIMasterStateString check) but sets a boolean instead of
 			// counting instances. mh.has nil-guard matches OnStateChange.
@@ -648,7 +648,7 @@ func loxiNetInit() {
 		mh.bgp = GoBgpInit(opts.Opts.BgpPeerMode)
 	}
 
-	// CR-02 + -05 (NLP-vs-Init startup race): bulk-load
+	// + -05 (NLP-vs-Init startup race): bulk-load
 	// loxilb-owned IPs into the SelfIPCache BEFORE the REST API and NLP
 	// subscriber come online. Otherwise, an NLP NetAddrDel arriving in the
 	// window between NlpInit and Init would call Del on an empty cache

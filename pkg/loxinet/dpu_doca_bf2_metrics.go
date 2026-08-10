@@ -414,7 +414,7 @@ func (d *DpDocaBf2) ReconcileCtStats(ct *DpCtInfo) ReconciledStats {
 
 	// Look up the DOCA entry handle from the in-process registry.
 	// ctMtx guard: snapshot under lock, release before CGO (anti-deadlock
-	// pattern from PATTERNS.md S3 / CR-01).
+	// pattern).
 	d.ctMtx.Lock()
 	oe, exists := d.entries[ct.Key()]
 	var entryHandle unsafe.Pointer

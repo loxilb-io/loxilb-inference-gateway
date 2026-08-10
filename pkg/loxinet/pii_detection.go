@@ -392,7 +392,7 @@ func llb_presidio_scan(content *C.char, language *C.char, catalogID C.int) unsaf
 	// Set success
 	result.error_code = 0
 	result.entity_count = C.int(reply.EntityCount)
-	result.latency_ms = 0.0 // TODO: track actual latency
+	result.latency_ms = 0.0 // per-request latency tracking not implemented yet
 
 	if reply.EntityCount > 0 {
 		// Allocate entities array

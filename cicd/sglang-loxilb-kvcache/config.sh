@@ -215,7 +215,7 @@ echo "Waiting for the restarted loxilb REST API..."
 # it, validation.sh's tier15_hits/metric_val reads all return 0 and every KV metric-delta
 # assert (L2/L3.2/L5 tier15 hits, L7 zero_hit_watchdog counter) FAILS even though the KV
 # routing itself works. Enable BEFORE seeding rules so the counters are exposed from t0.
-# D-5 config path: drive the inference-gateway loxicmd as the load-bearing config
+# config path: drive the inference-gateway loxicmd as the load-bearing config
 # path when present (subject-under-test); fall back to raw REST for old/absent CLI.
 cli_preflight llb1 && USE_CLI=1 || USE_CLI=0
 echo "Enabling Prometheus metrics (POST /config/metrics)..."

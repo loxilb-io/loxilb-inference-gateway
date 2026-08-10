@@ -234,7 +234,7 @@ type SockproxySync struct {
 	// idempotent.
 	startOnce sync.Once
 
-	// / CR-02: peerConsumerStarted tracks which peer keys
+	// : peerConsumerStarted tracks which peer keys
 	// already have a per-peer consumer goroutine running. Mirrors
 	// rlPushLoopStarted; eager-spawn at Start time (RESEARCH
 	// — lazy spawn would drop the very first batch before the dispatcher
@@ -333,7 +333,7 @@ func NewSockproxySync() *SockproxySync {
 //
 // Per-peer consumer goroutines are eagerly spawned on every Start call
 // for every peer returned by peersFn that does not already have one
-// running (CR-02). Repeat Start calls (e.g., after a
+// running. Repeat Start calls (e.g., after a
 // peer-add) safely fan out to the newly-discovered peers without
 // re-spawning consumers for existing peers (guard via peerConsumerStarted
 // sync.Map).
@@ -411,7 +411,7 @@ func (s *SockproxySync) spawnConsumersForKnownPeers() {
 }
 
 // consumerLoop is the per-peer SockproxySessionMod dispatcher
-// CR-02). Drains the peer's outbound queue and issues sendOnce-wrapped
+// ). Drains the peer's outbound queue and issues sendOnce-wrapped
 // gRPC calls with exponential-backoff retry semantics:
 //
 //   - 3 retries on transient gRPC error (initial attempt + 3 retries = 4
@@ -588,7 +588,7 @@ func (s *SockproxySync) OnStateChange(instance, state string) {
 	tk.LogIt(tk.LogInfo, "[SOCKPROXY_SYNC] OnStateChange instance=%s state=%s\n", instance, state)
 	// Mode re-evaluation: more than one master ⇒ A-A, exactly one master ⇒ A-P.
 	//
-	// CR-03: count cluster *instances* in MASTER state via ClusterMap, NOT
+	// count cluster *instances* in MASTER state via ClusterMap, NOT
 	// cluster nodes via NodeMap. NodeMap entries have no MASTER/BACKUP
 	// field — they just enumerate the cluster's nodes — so the old loop
 	// incremented nMaster for every entry (including BACKUP), flipping a
@@ -935,7 +935,7 @@ func (s *SockproxySync) PullSnapshot(ctx context.Context, client XSyncClient) (i
 			break
 		}
 		for _, e := range reply.Sessions {
-			// CR-05: symmetric nil-check with xsync_server.go ApplyOne loop.
+			// symmetric nil-check with xsync_server.go ApplyOne loop.
 			// A malformed protobuf reply with a nil element must not panic
 			// the master-promotion bulk-pull caller.
 			if e == nil {
@@ -1254,7 +1254,7 @@ func (s *SockproxySync) ApplyRateLimiterBatch(m *RateLimiterBatch) error {
 // reserved for a future Phase-C-style live-bucket transfer. DO NOT
 // repurpose field 4 (wire-incompat per proto3 field-number stability).
 //
-// CR-06 / (.1-03): The previous encoding rode Exceeded on the
+// The previous encoding rode Exceeded on the
 // sign bit of tokens_consumed via a two's-complement negate-and-decrement
 // sentinel. That hack corrupted Consumed == math.MinInt64 because the
 // negate-and-decrement step overflowed int64, and any legitimate negative
@@ -1279,7 +1279,7 @@ func rlGoEntryToProto(e *rl.RateLimiterEntry) *RateLimiterEntry {
 
 // rlProtoEntryToGo inverts rlGoEntryToProto. Reads the explicit `exceeded`
 // field directly — no sign-bit gymnastics. See rlGoEntryToProto for the
-// CR-06 cutover rationale.
+// cutover rationale.
 func rlProtoEntryToGo(p *RateLimiterEntry) rl.RateLimiterEntry {
 	return rl.RateLimiterEntry{
 		KeyID:        p.KeyId,

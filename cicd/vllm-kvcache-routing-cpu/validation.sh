@@ -683,13 +683,16 @@ assert "routing counters: all 5 pre-chaos families present + non-zero tier15_hit
 #     deliberately "JSON-escape-clean and <= MAX_PREFIX_LEN" — i.e. it DODGED the
 #     regime a real coding assistant lives in (kilobytes of \n/\t/\"-laden code).
 #     Detection provenance (A/B-proven against the pre-fix image):
-#       5a/5b/5c FAIL pre-D-LC2 (selector tokenized RAW escaped bytes -> zero
-#                block parity -> silent Tier-2 RR on every code prompt);
-#       5a-resp FAILS pre-D-LC5 (a >=64KB response overflowed the 64KB PREFILL
+#       5a/5b/5c FAIL without the escape-parity fix (selector tokenized RAW
+#                escaped bytes -> zero block parity -> silent Tier-2 RR on every
+#                code prompt);
+#       5a-resp FAILS without the prefill-response-buffer fix (a >=64KB response
+#                overflowed the 64KB PREFILL
 #                response buffer -> completion check could never fire -> the flow
 #                sat in PREFILL_WAITING forever; client got NOTHING, http=000.
 #                Live-proven threshold: resp<=32KB fine, >=64KB total wedge);
-#       5d      FAILS pre-D-LC3 (>1MB JSON hit the 95% rcvbuf guard -> the
+#       5d      FAILS without the oversize-JSON stream fallback (>1MB JSON hit
+#                the 95% rcvbuf guard -> the
 #                connection was RESET instead of served).
 #################################################################################
 echo "=== (scenario 5) long-context coding-assistant suite (escape parity + fragmentation + fail-open) ==="

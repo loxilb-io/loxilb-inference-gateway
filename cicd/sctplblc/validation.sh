@@ -47,7 +47,7 @@ do
     sleep 1
 done
 
-# --- Phase 1 (informational): on a fully idle fleet, least-conn tie-breaks
+# -- (informational): on a fully idle fleet, least-conn tie-breaks
 # deterministically to the same endpoint every time. Reported but NOT fatal. ---
 echo -e "\nPhase 1: idle-fleet stability (informational)"
 idleEp=""
@@ -67,7 +67,7 @@ if [[ -z "$idleEp" ]]; then
 fi
 sleep $SETTLE
 
-# --- Phase 2 (authoritative): hold ONE long-lived, ACTIVE connection (1 pps so
+# -- (authoritative): hold ONE long-lived, ACTIVE connection (1 pps so
 # loxilb keeps its conntrack/least-conn count fresh -- an idle hold gets aged out
 # of the active count and defeats the test). Whatever endpoint it lands on now
 # carries the most active connections, so under least-conn EVERY new connection

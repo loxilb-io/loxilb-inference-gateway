@@ -40,7 +40,7 @@ message BlockCtInfoMod {
     repeated CtInfo ct = 2;
 }
 
-// Phase 70 — sockproxy HA state sync messages (SPEC §Req 1).
+// sockproxy HA state sync messages (SPEC §Req 1).
 // Wire shape verbatim from PRD §xSync Proto Extensions (lines 117-167).
 
 // SockproxySessionEntry — one row in the synced session table.
@@ -84,8 +84,8 @@ message SockproxySessionBulkReply {
 }
 
 // RateLimiterEntry — one token-bucket / quota-window record.
-// Phase 70-B owns the real semantics; declared here so the proto is stable
-// for both A (handlers stubbed) and B (handlers implemented).
+// The rate-limiter sync feature owns the real semantics; declared here so the
+// proto shape is stable whether the handlers are stubbed or implemented.
 message RateLimiterEntry {
     string key_id = 1;
     bool   is_tenant = 2;
@@ -93,7 +93,7 @@ message RateLimiterEntry {
     double current_tokens = 4;        // unused; reserved -- DO NOT repurpose
     int64  epoch_start_ts = 5;
     int64  tokens_consumed = 6;
-    bool   exceeded = 7;              // CR-06: replaces sign-bit hack on tokens_consumed (D-07).
+    bool   exceeded = 7;              // replaces an earlier sign-bit hack on tokens_consumed.
 }
 
 // RateLimiterBatch — push payload for RateLimiterSync RPC.
@@ -102,9 +102,9 @@ message RateLimiterBatch {
     repeated RateLimiterEntry entries = 2;
 }
 
-// VllmWorkerMetrics — Phase C placeholder (queue depth, GPU cache %).
-// Field reserved by 70-A proto so the wire shape is committed to git; the
-// scraper exporter that populates it lands in 70-C (gated by D-06).
+// VllmWorkerMetrics — placeholder (queue depth, GPU cache %).
+// Reserved here so the wire shape is committed to git; the scraper
+// exporter that populates it is not implemented yet.
 message VllmWorkerMetrics {
     string service_key = 1;
     int32  ep_idx = 2;
@@ -130,7 +130,7 @@ service XSync {
     rpc DpWorkOnCtModGRPC (CtInfoMod) returns (XSyncReply) {}
     rpc DpWorkOnBlockCtModGRPC (BlockCtInfoMod) returns (XSyncReply) {}
 
-    // Phase 70 — sockproxy HA state sync (SPEC §Req 1, A2).
+    // sockproxy HA state sync (SPEC §Req 1, A2).
     rpc SockproxySessionMod     (SockproxySessionModReq) returns (XSyncReply) {}
     rpc SockproxySessionBulkGet (SockproxyBulkReq)    returns (SockproxySessionBulkReply) {}
     rpc RateLimiterSync         (RateLimiterBatch)    returns (XSyncReply) {}

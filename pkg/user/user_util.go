@@ -185,7 +185,7 @@ func (s *UserService) validatePassword(username, password string) error {
 		return err
 	}
 
-	// FIXME: Check if the password is the same as the previous password
+	// Reject reuse of the previous password.
 	var previousPassword string
 	query := db.SelectUserPasswordQuery
 	err := s.DB.QueryRow(query, username).Scan(&previousPassword)

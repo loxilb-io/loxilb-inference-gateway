@@ -42,7 +42,7 @@ type gRPCClient struct {
 	xclient XSyncClient
 }
 
-// XSyncClient returns the underlying XSyncClient. / CR-02
+// XSyncClient returns the underlying XSyncClient.
 // per-peer consumer goroutine needs to invoke SockproxySessionMod on the
 // peer's gRPC client; the DpPeer.Client field is interface{} typed and
 // this method provides a structural-typed accessor without forcing the

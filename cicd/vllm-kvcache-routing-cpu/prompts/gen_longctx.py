@@ -4,9 +4,9 @@
 The long-context legs (validation.sh scenario 5) need prompts that look like what
 a coding assistant actually sends — kilobytes of source code full of newlines,
 tabs, and quotes — NOT the short single-line escape-clean strings the base corpus
-deliberately restricted itself to (the pre-D-LC2 selector tokenized RAW
-JSON-escaped bytes, so any escape broke publisher parity; the base corpus dodged
-that; these prompts exist to PIN the fix).
+deliberately restricted itself to (before the escape-parity fix the selector
+tokenized RAW JSON-escaped bytes, so any escape broke publisher parity; the base
+corpus dodged that; these prompts exist to PIN the fix).
 
 Everything here is a pure function of the constants below (no randomness, no
 time), so the publisher (which tokenizes the text it reads from the generated
@@ -34,7 +34,8 @@ import sys
 # the selector (by design; see the README's long-context notes).
 #
 # CRITICAL detection property: the preambles open with CODE — a JSON escape
-# (`\n`, `\"`) lands INSIDE the very first 16-token block. Pre-D-LC2 the
+# (`\n`, `\"`) lands INSIDE the very first 16-token block. Before the
+# escape-parity fix the
 # selector tokenized RAW escaped bytes, so block 1 already mismatched the
 # publisher chain -> ZERO overlap -> no_worker -> silent Tier-2 RR (the clean
 # A/B FAIL signature). A prose-only opening would leave the first ~3 blocks
@@ -94,7 +95,7 @@ def emit_corpus(base_path, out_path):
             "prompt": gen_prompt(PREAMBLE_REVIEW, "review", 12 * 1024),
             "drives": (
                 "Scenario 5a/5b (long-context hit + slow-writer). ~12KB of real "
-                "code text (newlines/tabs/quotes throughout — the D-LC2 escape "
+                "code text (newlines/tabs/quotes throughout — the escape-parity "
                 "regression detector) published to EP-B; the selector must still "
                 "match via its decoded, escape/UTF-8-safe truncated prefix, over "
                 "a request body that spans many TCP segments."

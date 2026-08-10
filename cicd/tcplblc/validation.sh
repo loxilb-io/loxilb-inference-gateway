@@ -51,7 +51,7 @@ do
     sleep 1
 done
 
-# --- Phase 1 (informational): on a fully idle fleet, least-conn tie-breaks
+# -- (informational): on a fully idle fleet, least-conn tie-breaks
 # deterministically to the same endpoint every time. Reported but NOT fatal. ---
 echo -e "\nPhase 1: idle-fleet stability (informational)"
 idleEp=""
@@ -70,7 +70,7 @@ if [[ -z "$idleEp" ]]; then
     code=1
 fi
 
-# --- Phase 2 (authoritative): build a load gradient one hold at a time and
+# -- (authoritative): build a load gradient one hold at a time and
 # verify least-conn at every step. Each hold lands on whatever endpoint the
 # preceding probe reported as least-loaded, so we can track the exact active
 # count per endpoint and assert that every NEW connection is routed to a

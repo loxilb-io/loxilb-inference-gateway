@@ -48,7 +48,7 @@ func effectiveReanchor(reanchorSec int, epochPeriod time.Duration) (time.Duratio
 // SECURITY: --grpc-addr must bind the PRIVATE bus in production —
 // the deploy script passes 10.0.0.13:18856 and the container publishes ports
 // on 10.0.0.13 only, NEVER 0.0.0.0 on a public interface. mTLS is a
-// documented deferral to GA-03.
+// documented deferral to.
 type CtrlOptions struct {
 	GrpcAddr    string `long:"grpc-addr" env:"AICTRL_GRPC_ADDR" default:":18856" description:"gRPC snapshot-bus listen address (private bus bind in production)"`
 	MetricsAddr string `long:"metrics-addr" env:"AICTRL_METRICS_ADDR" default:":18857" description:"Prometheus /metrics listen address (CTRL-05)"`
