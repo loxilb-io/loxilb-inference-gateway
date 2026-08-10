@@ -78,7 +78,7 @@ type Config struct {
 	// Now is the clock (default time.Now; fake-clock in tests).
 	Now func() time.Time
 	// Dial opens the client connection (default insecure lazy dial-out;
-	// bufconn dialer in tests). mTLS is deferred to (GA-03) —
+	// bufconn dialer in tests). mTLS is deferred to —
 	// documented accepted interim risk (operator-set address on the
 	// private bus; loxilb opens NO new inbound listener).
 	Dial func(ctx context.Context, addr string) (*grpc.ClientConn, error)
@@ -459,7 +459,7 @@ func (s *Session) logf(format string, args ...interface{}) {
 
 // defaultDial is the production dial-out: lazy connect, NO grpc.WithBlock —
 // the Run retry loop owns reconnection. Plaintext on the private bus for the
-// MVP; mTLS deferred to GA-03 (accepted interim risk).
+// MVP; mTLS deferred to (accepted interim risk).
 func defaultDial(ctx context.Context, addr string) (*grpc.ClientConn, error) {
 	return grpc.DialContext(ctx, addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()))

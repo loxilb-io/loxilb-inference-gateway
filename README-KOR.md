@@ -536,6 +536,11 @@ sudo tar -xzf libtokenizers.linux-${arch}.tar.gz -C /usr/local/lib/
 
 ### 게이트웨이 바이너리 빌드
 
+> ℹ️ 루트 Go 모듈은 업스트림 병합을 깔끔하게 유지하기 위해 의도적으로 업스트림 모듈
+> 경로(`github.com/loxilb-io/loxilb`)를 사용합니다 — 이 저장소 URL로는 `go install`이
+> 되지 않습니다. 게이트웨이는 `make` 또는 Dockerfile로 빌드하세요. [`mcp/`](mcp/) 모듈은
+> 이 저장소 경로를 사용하므로 go install이 가능합니다.
+
 ```bash
 git clone --recurse-submodules https://github.com/loxilb-io/loxilb-inference-gateway.git
 cd loxilb-inference-gateway
@@ -714,6 +719,6 @@ loxilb-inference-gateway는 업스트림 loxilb와 동일하게 [Apache License 
 ## 📚 자세한 정보는 loxilb [웹사이트](https://www.loxilb.io)를 확인하십시오.
 
 [docs-shield]: https://img.shields.io/badge/info-docs-blue
-[docs-url]: https://loxilb-io.github.io/loxilbdocs/
+[docs-url]: https://loxilb-io.github.io/loxilbdocs-inference-gateway/
 [slack=shield]: https://img.shields.io/badge/Community-Join%20Slack-blue
 [slack-url]: https://www.loxilb.io/members

@@ -38,9 +38,9 @@
 // - Validate the BidirEnabled / GetBidirEnabled / ShadowPairOrDispatch
 //     plumbing on a constructed DpDocaBf2 + DpuManager instance with
 //     bidirEnabled set directly — this is the dispatch contract that
-//     goCtHwOffloadHandler depends on (per 51-PATTERNS.md "manager-level seam").
+//     goCtHwOffloadHandler depends on (the "manager-level seam").
 //
-// The plan (51-05-PLAN.md) explicitly notes: "Test 3 instead exercises
+// Design note: "Test 3 instead exercises
 // the manager-level seam (ShadowPairOrDispatch + GetBidirEnabled) which is the
 // dispatch contract goCtHwOffloadHandler relies on."
 
@@ -55,8 +55,7 @@ import (
 // dpu_doca_bf2.go:432 — `os.Getenv("BF2_BIDIR_OFFLOAD") != "0"`. Test-only
 // reproduction so we can exercise the env-var contract under !doca without
 // running the DOCA-build Init body. Any drift between this expression and
-// production Init must be caught by the static-analysis grep gate documented
-// in 51-05-PLAN.md acceptance criteria
+// production Init must be caught by the static-analysis grep gate
 // (`grep -c 'os.Getenv.*BF2_BIDIR_OFFLOAD' pkg/loxinet/dpu_doca_bf2.go == 1`).
 func readBidirEnv() bool {
 	return os.Getenv("BF2_BIDIR_OFFLOAD") != "0"
@@ -139,7 +138,7 @@ func TestPhase51_KillSwitch_LegacyPath(t *testing.T) {
 // exercises the GetBidirEnabled == false case at the manager seam (which
 // would otherwise dispatch through ShadowPairOrDispatch in the bidir branch).
 //
-// Per 51-PATTERNS.md: "Test 3 instead exercises the manager-level seam
+// Design note: "Test 3 instead exercises the manager-level seam
 // (ShadowPairOrDispatch + GetBidirEnabled) which is the dispatch contract
 // goCtHwOffloadHandler relies on."
 func TestPhase51_KillSwitch_DispatchBranch(t *testing.T) {

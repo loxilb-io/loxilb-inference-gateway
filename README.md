@@ -598,6 +598,12 @@ when missing), then `go build` → the `./loxilb` binary.
 
 #### Full inference-gateway feature build
 
+> ℹ️ The root Go module deliberately keeps the upstream module path
+> (`github.com/loxilb-io/loxilb`) so upstream merges stay clean — it is **not**
+> `go install`-able from this repo's URL. Build the gateway with `make` or the
+> Dockerfiles below. The [`mcp/`](mcp/) module uses this repo's path and *is*
+> go-installable (see [loxilb-mcp](#manage-the-gateway-from-an-mcp-client-loxilb-mcp)).
+
 A plain `make build` produces a working gateway, but several inference-gateway features are
 compiled **out**. The official Ubuntu 24.04 image ([`Dockerfile.u24`](Dockerfile.u24)) builds
 with:
@@ -787,6 +793,6 @@ upstream loxilb.
 ## 📚 Please check the loxilb [website](https://www.loxilb.io) for more detailed info.
 
 [docs-shield]: https://img.shields.io/badge/info-docs-blue
-[docs-url]: https://loxilb-io.github.io/loxilbdocs/
+[docs-url]: https://loxilb-io.github.io/loxilbdocs-inference-gateway/
 [slack=shield]: https://img.shields.io/badge/Community-Join%20Slack-blue
 [slack-url]: https://www.loxilb.io/members

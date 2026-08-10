@@ -373,10 +373,10 @@ func TestKvReconnectKeepConverge(t *testing.T) {
 	}
 }
 
-// ---------- TestKvLiveStreamSeqRegression (FO-5) ----------
+// ---------- TestKvLiveStreamSeqRegression ----------
 
 // driveSubscriberLoopLive is driveSubscriberLoop for PURE live-stream scripts:
-// no recv error, so no rebuild and no Connect call — the FO-5 scenario is a
+// no recv error, so no rebuild and no Connect call — the scenario under test is a
 // fast engine restart behind a TRANSPARENT ZMQ SUB auto-reconnect, where the
 // Go loop never observes an error and resyncPending never arms.
 func driveSubscriberLoopLive(t *testing.T, svc *kvServiceState, epIdx int, steps []recvStep) {
@@ -401,7 +401,7 @@ func driveSubscriberLoopLive(t *testing.T, svc *kvServiceState, epIdx int, steps
 	}
 }
 
-// TestKvLiveStreamSeqRegression pins the FO-5 fix: a seq REGRESSION on the
+// TestKvLiveStreamSeqRegression pins the phantom-inventory fix: a seq REGRESSION on the
 // LIVE stream (no recv error, no rebuild — the transparent-reconnect shape)
 // must CLEAR the stale inventory before applying the regressed message's own
 // events. Pre-fix the regression was silently absorbed (rankLastSeq = seq), so

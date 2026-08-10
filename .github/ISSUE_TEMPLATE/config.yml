@@ -1,14 +1,8 @@
 blank_issues_enabled: true
 contact_links:
-  - name: 💬 LoxiLB Slack community
+  - name: Question / discussion
     url: https://www.loxilb.io/members
-    about: Ask questions and chat with LoxiLB developers and users.
-  - name: 📖 Inference Gateway documentation
-    url: https://github.com/loxilb-io/loxilb-inference-gateway/blob/main/docs/load-balancing/README.md
-    about: L4/L7, AI gateway, KV-cache-aware routing and SGLang guides.
-  - name: 🧩 Upstream LoxiLB (core load balancer)
-    url: https://github.com/loxilb-io/loxilb
-    about: For questions about core LoxiLB (non-inference) features, use the upstream project.
-  - name: 🗨️ Upstream LoxiLB discussions
-    url: https://github.com/loxilb-io/loxilb/discussions
-    about: General LoxiLB Q&A and design discussion.
+    about: Join the loxilb Slack to ask questions and discuss usage.
+  - name: Security vulnerability
+    url: https://github.com/loxilb-io/loxilb-inference-gateway/security/policy
+    about: Please report security issues privately via the security policy, not as public issues.

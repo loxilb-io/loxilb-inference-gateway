@@ -1,0 +1,40 @@
+name: Bug report
+description: Something in the inference gateway is broken
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: |
+        The LB rule JSON (or loxicmd command), the request you sent, and the
+        topology (engines, roles, ports). A failing curl beats a description.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Gateway version
+      description: "`loxilb --version` output or the image tag (e.g. v0.9.8.7-u24)"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: "OS/kernel, deployment shape (docker/k8s/bare), engine + version (vLLM/SGLang)"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs / metrics
+      description: |
+        Gateway logs around the failure, and any relevant counters from
+        `GET /netlox/v1/metrics` (e.g. the `loxilb_pd_*` failover counters).
+      render: shell

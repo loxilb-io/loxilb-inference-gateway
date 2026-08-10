@@ -11,7 +11,7 @@ debugging section here. Where the two overlap, 08 is authoritative on internals;
 authoritative on the live wire/operational behavior observed on a real GPU fleet.
 
 > **Verified live 2026-06-16** on a 3×prefill + 1×decode fleet (the evidence in §7/§9 is from a real
-> run, not a mock). The reference AWS testbed is `cicd/vllm-loxilb-kvcache-aws-small/` (2P+1D).
+> run, not a mock, on a 2-prefill + 1-decode AWS reference testbed).
 
 ---
 
@@ -43,8 +43,8 @@ This also means the backing vLLM instances must run **real disaggregation** (NIX
 
 ## 2. Reference AWS topology (2P+1D)
 
-From `cicd/vllm-loxilb-kvcache-aws-small/bench/TOPOLOGY.md`. All nodes in one `/24`, one AWS
-**cluster placement group** (low-latency intra-node traffic for NIXL KV transfer + ZMQ events).
+All nodes in one `/24`, one AWS **cluster placement group** (low-latency intra-node traffic
+for NIXL KV transfer + ZMQ events).
 
 | Node  | Instance     | Role                    | Ports                                  |
 |-------|--------------|-------------------------|----------------------------------------|
@@ -55,8 +55,7 @@ From `cicd/vllm-loxilb-kvcache-aws-small/bench/TOPOLOGY.md`. All nodes in one `/
 | l3ep3 | g5.xlarge    | **Decode-1** (kv_consumer)  | vLLM `:8200`, NIXL `:5600`             |
 
 > **BYO/on-prem fleets are identical** minus the provisioning layer — drop the terraform; supply an
-> SSH inventory of `{ip, role, gpu_type, vllm_port}` and the same deploy logic applies. See
-> `cicd/vllm-kvcache-routing-byo/` (`deploy-byo-pd.sh`) for the SSH-inventory port of this testbed.
+> SSH inventory of `{ip, role, gpu_type, vllm_port}` and the same deploy logic applies.
 
 **Port discipline is baked into the scripts and LB rules — do not change without updating both
 sides:** prefill vLLM `:8100`, decode vLLM `:8200`, ZMQ KV events `:5557` (prefill only), NIXL
@@ -80,8 +79,8 @@ round-robin (see §9), while a broken KV-transfer plane fails requests outright 
 
 ## 4. vLLM configuration (the part most people get wrong)
 
-Source of truth: `cicd/vllm-loxilb-kvcache-aws-small/vllm-run-args.sh` + `vllm-run-args-kvcache.sh`
-(BYO equivalent: `cicd/vllm-kvcache-routing-byo/pd_vllm_args.sh`).
+The flag sets below are the source of truth — every engine in the pool must launch with
+exactly these (wrapped in whatever deployment tooling you use).
 
 ### 4.1 Prefill node (kv_producer + KV-event publish)
 
@@ -326,8 +325,7 @@ Log markers (with `LLB_KV_HASH_DEBUG=1`): `[KV_HASH]` (hash forensics), `[KV_T15
 ## 10. Verification recipe (copy/paste)
 
 A ~30-second probe proving the whole path. Warms one long-prefix request, then confirms same-prefix
-requests pin to the cached prefill EP and inventory grew. (Full script:
-`cicd/vllm-kvcache-routing-byo` history / adapt the snippet below.)
+requests pin to the cached prefill EP and inventory grew. (Adapt the snippet below.)
 
 ```python
 # warm a ~70-token shared prefix, then 8 same-prefix follow-ups; read prefill_addr from each id.
@@ -349,10 +347,10 @@ That is the correct signature: **1 cold miss (expected), then 100% affinity to t
 
 ## 11. AWS lifecycle
 
-`cicd/vllm-loxilb-kvcache-aws-small/`: `provision-aws-infra.sh` → `deploy-vllm.sh` (rules 9000–9002)
-→ `deploy-kvcache.sh` (tokenizer + rule 9003 + KV-events) → `run-aws-cicd.sh` /
-`run-aws-validation-kvcache.sh` → `teardown-aws-testbed.sh`. ~$3.08/hr (3× g5.xlarge + 2× t3).
-A full sweep run is ~2–3 hrs. **Tear down after every run — these instances bill by the second.**
+The reference lifecycle: provision the instances → deploy the vLLM engines (plain rules) →
+deploy the KV-cache rule (tokenizer staging + KV-events) → run the validation sweep → tear
+down. ~$3.08/hr (3× g5.xlarge + 2× t3); a full sweep run is ~2–3 hrs. **Tear down after
+every run — these instances bill by the second.**
 (BYO/on-prem: no terraform; release your own hardware + stop the containers.)
 
 ---
@@ -361,5 +359,3 @@ A full sweep run is ~2–3 hrs. **Tear down after every run — these instances 
 - [`08-kv-cache-aware-routing.md`](08-kv-cache-aware-routing.md) — mechanism/internals, block-hash
   contract (§4), guard ladder (§5), sync format, known limits (§9/§10).
 - [`06-troubleshooting.md`](06-troubleshooting.md) — general LB troubleshooting.
-- `cicd/vllm-loxilb-kvcache-aws-small/bench/{TOPOLOGY,MEASUREMENT_PLAN,WBS}.md` — the AWS testbed spec.
-- `cicd/vllm-kvcache-routing-byo/` — the SSH-inventory (BYO) port of this testbed.

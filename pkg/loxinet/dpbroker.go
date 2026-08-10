@@ -768,7 +768,9 @@ func (dp *DpH) DpXsyncRPC(op DpSyncOpT, arg interface{}) int {
 				} else {
 					tmpCti = cti
 				}
-				// FIXME - There is a race condition here
+				// NOTE: the cluster-instance state is read without synchronizing
+				// against concurrent HA transitions — a racing failover can observe
+				// a stale state for one cycle; the next sync pass converges it.
 				cIState, _ := mh.has.CIStateGetInst(tmpCti.CI)
 				if cIState != cmn.CIMasterStateString {
 					return 0

@@ -436,8 +436,8 @@ func HealthCheck() *LlamaFirewallHealthResult {
 	}
 	result.ServerURL = config.ServerURL
 
-	// For now, return basic status
-	// TODO: Integrate with actual health check through CGO
+	// This reports the tracked connection state, not a live probe of the
+	// scanner server — a request-driven health check is not implemented yet.
 	if globalStatus.Connected {
 		result.Healthy = true
 		result.Message = "LlamaFirewall server is connected"

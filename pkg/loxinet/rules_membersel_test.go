@@ -205,7 +205,7 @@ func TestMemberSelectionAdminPauseDownsEverything(t *testing.T) {
 // TestMemberSelectionNeverMutatesMembership: applyMemberSelection must NEVER mutate
 // inActiveEP (membership/persistence) — only the transient selInactive flag. A
 // weight=0/backup-standby EP that stays inActiveEP=false continues to round-trip on GET
-// (: the GET serializer skips inActiveEP EPs).
+// (the GET serializer skips inActiveEP EPs).
 func TestMemberSelectionNeverMutatesMembership(t *testing.T) {
 	eps := []ruleLBEp{
 		mkEP("10.0.0.1", 0, false, false, false), // weight=0 primary

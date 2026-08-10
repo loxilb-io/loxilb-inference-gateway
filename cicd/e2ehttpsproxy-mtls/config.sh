@@ -164,7 +164,7 @@ echo "#########################################"
 echo "Registering SNI certificate for VIP"
 echo "#########################################"
 
-# D-5 config path: drive the inference-gateway loxicmd as the load-bearing config
+# config path: drive the inference-gateway loxicmd as the load-bearing config
 # path when present (subject-under-test); fall back to raw REST for old/absent CLI.
 cli_preflight llb1 && USE_CLI=1 || USE_CLI=0
 

@@ -743,7 +743,7 @@ func runKvSubscriberLoopRank(ctx context.Context, epIdx int, rank uint16, servic
 			}
 		}
 
-		// FO-5: live-stream seq REGRESSION — a fast engine restart behind a
+		// Live-stream seq REGRESSION — a fast engine restart behind a
 		// transparent ZMQ SUB auto-reconnect: Recv never errors, resyncPending
 		// never arms, and the fresh publisher process restarts its seq low.
 		// Without this branch the regression was silently absorbed by the

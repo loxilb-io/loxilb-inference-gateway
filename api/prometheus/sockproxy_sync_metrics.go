@@ -151,7 +151,7 @@ func SockproxySyncInflightRpcDec(peer string) {
 }
 
 // SockproxySyncDropInc increments the per-reason drop counter
-// / CR-02 retry-exhaustion path).
+// retry-exhaustion path).
 func SockproxySyncDropInc(reason string) {
 	sockproxySyncDropTotal.WithLabelValues(reason).Inc()
 }
