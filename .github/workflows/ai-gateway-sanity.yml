@@ -67,15 +67,15 @@ jobs:
       # minica (github.com/jsha/minica) is fetched on demand by the TLS scenarios' config.sh
       - run: sudo -E env "PATH=$PATH" GOBIN=/usr/local/bin go install github.com/jsha/minica@latest
       # Gateway image: pull the published one, or build locally when not yet published
-      # Authenticate to GHCR so the private image pull below succeeds; without
-      # this the pull is 'unauthorized' and CI falls back to a fragile full
-      # from-source docker build.
+      # The GHCR image is public; authenticate anyway (GHCR_TOKEN when present,
+      # else the built-in token) to avoid anonymous pull rate limits and the
+      # fragile full from-source docker build fallback.
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_TOKEN }}
+          password: ${{ secrets.GHCR_TOKEN || github.token }}
       - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
       # reflect-echo backend image (KV-cache scenarios) — always built from the local context
       - run: bash cicd/common/reflect-echo/docker-build.sh
@@ -88,8 +88,8 @@ jobs:
       # --- Self-contained scenarios (loxilb + local mock/echo backends) ---
       # NOTE: cicd/vllm-kvcache-routing-cpu is intentionally NOT gated here. Its
       # strict fixture-driven asserts (exact tokenizer-overlap fallthrough timing)
-      # are sensitive to hosted-runner state and better exercised by the
-      # authoritative real-vLLM exit gate (cicd/vllm-kvcache-routing-cpu-aws).
+      # are sensitive to hosted-runner state; that real-vLLM CPU harness is
+      # exercised out-of-band (manual runs) rather than in this workflow.
       # The stable CI set below mirrors cicd/run_local_cicd.sh.
       - name: Prefill/Decode disaggregation (mock vLLM)
         run: |

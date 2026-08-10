@@ -46,7 +46,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_TOKEN }}
+          password: ${{ secrets.GHCR_TOKEN || github.token }}
       - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
       - run: docker run -u root --cap-add SYS_ADMIN   --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest
       - run: pwd && ls && sudo -E env "PATH=$PATH" make docker-cp-ebpf

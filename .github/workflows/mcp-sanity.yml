@@ -57,7 +57,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_TOKEN }}
+          password: ${{ secrets.GHCR_TOKEN || github.token }}
       - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
       # MCP backend images from the local build context
       - run: bash cicd/common/mcp/docker-build.sh
