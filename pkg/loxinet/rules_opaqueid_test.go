@@ -166,7 +166,7 @@ func TestLastUpdatedInMemoryOnly(t *testing.T) {
 		t.Fatalf("lastUpdated in-memory field not settable")
 	}
 	// LbServiceArg carries Id + AdminStateUp. It also carries a TRANSIENT LastUpdated
-	// (CR-02: plumbed through the read path so GET .../status reports the real
+	// (plumbed through the read path so GET .../status reports the real
 	// last-mutation time), but that field is json:"-" and must NEVER serialize to
 	// lbconfig.txt (keeps lastUpdated in memory only).
 	var serv cmn.LbServiceArg

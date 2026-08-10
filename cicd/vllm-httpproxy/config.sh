@@ -127,7 +127,7 @@ echo "#########################################"
 # Create LB rule: HTTP (frontend) -> HTTP (backend)
 # VIP: 10.10.10.254:2020 (HTTP) - round-robin for general validation
 # Backends: 31.31.31.1:8000, 32.32.32.1:8000 (HTTP)
-# D-5 config path: drive the inference-gateway loxicmd as the load-bearing config
+# config path: drive the inference-gateway loxicmd as the load-bearing config
 # path when present (subject-under-test); fall back to raw REST for old/absent CLI.
 cli_preflight llb1 && USE_CLI=1 || USE_CLI=0
 if [[ "$USE_CLI" == "1" ]]; then

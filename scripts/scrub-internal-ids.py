@@ -26,7 +26,7 @@ import os
 import re
 import sys
 
-CODE_EXTS = (".go", ".c", ".h", ".py")
+CODE_EXTS = (".go", ".c", ".h", ".py", ".proto", ".sh", ".md")
 SKIP_DIRS = {".git", "vendor", "node_modules", "libbpf", ".codegraph"}
 
 # --- ID token families (well-formed only) -----------------------------------
@@ -38,6 +38,11 @@ SKIP_DIRS = {".git", "vendor", "node_modules", "libbpf", ".codegraph"}
 _FAMILY = (
     r"US-ERR\d+|US-\d+[a-z]?|"                            # user stories
     r"Phase \d+[A-Za-z]?(?:[-/]\d+)*(?: ?M\d+[a-z]?)?|"   # phases: "Phase NN-NN/NN", "Phase NN MN"
+    r"D-LC\d+(?:\.\.D-LC\d+)?|"                           # long-context defects (incl. "..D-LCN" ranges)
+    r"FO-\d+(?:[-/]\d+)*|"                                # failover work items
+    r"CR-\d+(?:[-/]\d+)*|"                                # review comment resolutions
+    r"GA-\d+(?:[-/]\d+)*|"                                # GA-gate items
+    r"T-96-\d+(?:[-/]\d+)*|"                              # controller-phase test ids
     r"D-\d+[a-z]?(?:[-/]\d+[a-z]?)*|"                     # decisions: "D-NN-NN/NN", "D-NN-NN/NN/NNx"
     r"FR-\d+(?:/\d+)*|"                                   # requirements: "FR-NN/NN", "FR-NN/NN/NN"
     r"REQ-M?\d+(?:/\d+)*|FIX-\d+(?:/\d+)*|"               # requirements / fixes: "FIX-NN/NN/NN"
@@ -201,12 +206,16 @@ def process(path):
             lines = fh.readlines()
     except (OSError, UnicodeDecodeError):
         return None
-    lc = "#" if path.endswith(".py") else "//"
+    lc = "#" if path.endswith((".py", ".sh")) else "//"
+    prose = path.endswith(".md")  # markdown: no comment syntax — scrub whole lines
     state = None
     changed, new_lines = [], []
     for idx, line in enumerate(lines):
         nl = line.rstrip("\n")
-        rewritten, state = _rewrite_line(nl, state, lc)
+        if prose:
+            rewritten = _scrub_segment(nl)
+        else:
+            rewritten, state = _rewrite_line(nl, state, lc)
         if rewritten != nl:
             changed.append((idx + 1, nl, rewritten))
         new_lines.append(rewritten + ("\n" if line.endswith("\n") else ""))

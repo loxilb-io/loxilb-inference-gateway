@@ -365,11 +365,11 @@ fi
 sleep 2
 
 echo "#########################################"
-echo "T9: NIXL PORT IN X-REQUEST-ID (US-514)"
+echo "T9: NIXL PORT IN X-REQUEST-ID"
 echo "#########################################"
 
 # Send a P/D request and verify X-Request-Id embeds NIXL ports (9001, 9002), NOT HTTP port (8000).
-# This is the end-to-end test for US-514 nixl_port support:
+# This is the end-to-end test for nixl_port support:
 #   - l3ep1 is configured with nixl_port=9001  (VLLM_NIXL_SIDE_CHANNEL_PORT for prefill)
 #   - l3ep2 is configured with nixl_port=9002  (VLLM_NIXL_SIDE_CHANNEL_PORT for decode)
 # Correct X-Request-Id format: ___prefill_addr_31.31.31.1:9001___decode_addr_32.32.32.1:9002_<uuid>

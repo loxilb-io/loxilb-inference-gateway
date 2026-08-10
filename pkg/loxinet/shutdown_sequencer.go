@@ -41,8 +41,7 @@ import (
 // sequencer is to be bounded so the caller (loxinet.go SIGINT handler)
 // always advances to the next stage and ultimately to `os.Exit`.
 //
-// Pattern source: 55-PATTERNS.md §Pattern 1 (synthesized from
-// 55-RESEARCH.md §Pattern 1 + Go stdlib `context.WithTimeout` idiom).
+// Pattern source: the Go stdlib `context.WithTimeout` idiom.
 //
 // NOTE: this helper is unexported; tests in the same package
 // (shutdown_sequencer_test.go) exercise it directly.

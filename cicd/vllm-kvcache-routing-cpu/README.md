@@ -68,16 +68,17 @@ request path always agree byte-for-byte):
 
 | Leg | What it proves | Defect it detects (A/B-proven vs the pre-fix image) |
 | --- | -------------- | ---------------------------------------------------- |
-| 5a | 12KB real-code prompt (escapes everywhere, body spans many TCP segments) routes Tier-1.5 to the published EP; 256KB `?resp_bytes` response arrives byte-exact (count + tail cycle) | **D-LC2**: the selector tokenized RAW JSON-escaped bytes → zero block parity → silent Tier-2 RR on every code prompt. **D-LC5** (response half): a ≥64KB response overflowed the P/D **prefill response buffer** and the flow wedged in PREFILL_WAITING forever — client got NOTHING (live threshold: ≤32KB fine, ≥64KB dead) |
+| 5a | 12KB real-code prompt (escapes everywhere, body spans many TCP segments) routes Tier-1.5 to the published EP; 256KB `?resp_bytes` response arrives byte-exact (count + tail cycle) | **Escape-parity defect**: the selector tokenized RAW JSON-escaped bytes → zero block parity → silent Tier-2 RR on every code prompt. **Response half**: a ≥64KB response overflowed the P/D **prefill response buffer** and the flow wedged in PREFILL_WAITING forever — client got NOTHING (live threshold: ≤32KB fine, ≥64KB dead) |
 | 5b | the same prompt via `--limit-rate 8k` (slow fragmented writer, multi-read rcvbuf assembly) routes identically | request-fragmentation regression canary |
 | 5c | 40KB deep-context prompt: publisher hashes the FULL chain, loxilb only the `MAX_PREFIX_LEN`-truncated head — leading blocks still match (BPE prefix stability) and select the publisher EP | truncation-parity regression canary |
-| 5d | ~1.3MB JSON (beyond the 1MB rcvbuf) is SERVED fail-open via the stream fallback — HTTP 200 + `[JSON_STREAM_FALLBACK]` structured marker | **D-LC3**: oversize JSON hit the 95% rcvbuf guard and the connection was RESET |
+| 5d | ~1.3MB JSON (beyond the 1MB rcvbuf) is SERVED fail-open via the stream fallback — HTTP 200 + `[JSON_STREAM_FALLBACK]` structured marker | **Oversize-JSON defect**: oversize JSON hit the 95% rcvbuf guard and the connection was RESET |
 
-Related fixes pinned at the unit layers: **D-LC1** (token-cache key was `text[:512]` — two
-long prompts sharing a 512-byte preamble returned each other's token ids; Go unit
-`TestKvTokenCacheLongPromptNoCollision`, layer 2) and **D-LC2**'s decode/truncation table
-(`test_json_unescape`, layer 1). **D-LC4** (chat body not NUL-bounded before
-`llb_ai_kv_tokenize_chat` — keep-alive stale-tail leak) is fixed in
+Related fixes pinned at the unit layers: the **token-cache key collision** (the key was
+`text[:512]` — two long prompts sharing a 512-byte preamble returned each other's token
+ids; Go unit `TestKvTokenCacheLongPromptNoCollision`, layer 2) and the escape-parity
+fix's decode/truncation table
+(`test_json_unescape`, layer 1). The **chat-path stale-tail leak** (chat body not NUL-bounded before
+`llb_ai_kv_tokenize_chat` on a keep-alive connection) is fixed in
 `sockproxy_kv_exact.c`; it is chat-path-only and not E2E-drivable here because the harness
 model (Qwen3-0.6B) has no registered chat template.
 

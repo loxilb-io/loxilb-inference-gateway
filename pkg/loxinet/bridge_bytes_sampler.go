@@ -6,7 +6,7 @@
  * and publish as a Prometheus gauge. Stays flat when DOCA ASIC carries traffic —
  * proves HW offload engagement (ground truth independent of DOCA counter quirks,
  * including the BF2 silicon caveat where FWD_PORT counters may stay at 0 even
- * though packets are offloaded; see 49-RESEARCH.md §BF2 silicon caveat).
+ * though packets are offloaded; a BF2 silicon caveat).
  */
 
 package loxinet

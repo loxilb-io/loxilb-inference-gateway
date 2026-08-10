@@ -338,7 +338,7 @@ func (P *PolH) PolTicker() {
 // All CGO calls go through DocaBridge.submit (never direct C calls from PolTicker goroutine).
 // P49-R2/R3: also drives the per-pipe HW counter collector and the
 // kernel-bridge byte sampler — both piggyback the existing 10s PolTicker tick
-// rather than spawning new goroutines (49-PATTERNS.md §20 dpu_metrics.go analog).
+// rather than spawning new goroutines (same pattern as dpu_metrics.go).
 func (P *PolH) polTickerDocaMeterStats() {
 	if mh.dpuMgr == nil {
 		return

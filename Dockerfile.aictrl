@@ -1,10 +1,10 @@
-# Dockerfile.aictrl — the standalone global AI controller image (96-07, D-02).
+# Dockerfile.aictrl — the standalone global AI controller image.
 # ============================================================================
-# PURE-GO, CGO_ENABLED=0 (CTRL-01): no pkg/loxinet, no eBPF, no cgo — the
-# image is a PLAIN container (no host networking, no XDP risk) and therefore
-# the fleet's SAFE FAULT TARGET (the only container 96-08 fault actions may
-# touch). Runtime binds are the deployer's job: publish ports on the PRIVATE
-# bus address only (10.0.0.13), never 0.0.0.0 on a public iface (T-96-23).
+# PURE-GO, CGO_ENABLED=0: no pkg/loxinet, no eBPF, no cgo — the
+# image is a PLAIN container (no host networking, no XDP risk), safe to
+# restart or fault-inject independently of the datapath. Runtime binds are
+# the deployer's job: publish ports on a private/management address only,
+# never 0.0.0.0 on a public interface.
 #
 # Build (repo root):  docker build -f Dockerfile.aictrl -t loxilb-ai-controller .
 # ============================================================================

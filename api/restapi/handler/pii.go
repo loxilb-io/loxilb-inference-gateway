@@ -262,8 +262,8 @@ func ConfigGetPIIStats(params operations.GetConfigPiiStatsParams, principal inte
 	tk.LogIt(tk.LogTrace, "api: PII Stats %s API called by IP: %s. url : %s\n",
 		params.HTTPRequest.Method, params.HTTPRequest.RemoteAddr, params.HTTPRequest.URL)
 
-	// TODO: Implement statistics retrieval from C layer
-	// For now, return placeholder values
+	// Aggregated statistics retrieval from the C layer is not implemented
+	// yet; the fields below report zeros.
 
 	response := &models.PIIStatsResponse{
 		TotalScans:  0,

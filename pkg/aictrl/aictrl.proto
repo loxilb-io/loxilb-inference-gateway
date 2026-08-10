@@ -1,4 +1,4 @@
-// loxilb.aictrl.v1 — FROZEN controller→loxilb snapshot contract (SNAP-01, Phase 96 Wave 2).
+// loxilb.aictrl.v1 — FROZEN controller→loxilb snapshot contract (SNAP-01, Wave 2).
 //
 // CODEGEN PROVENANCE (regenerate ONLY with these exact pins — house pattern:
 // generated .pb.go files are committed in-tree, xsync style):
@@ -27,7 +27,7 @@
 // and FAILS on forbidden name substrings. Contrast xsync.proto VllmWorkerMetrics
 // — that shape is exactly what this contract must NOT contain.
 //
-// EPOCH ACCEPTANCE RULE (T-96-04, enforced by the Wave-4 applier):
+// EPOCH ACCEPTANCE RULE (enforced by the applier):
 //   accept iff (boot_id != last_boot_id) || (epoch > last_epoch)
 // Replays and lower epochs on the same boot_id are NACKed (ACK_STATUS_REJECTED);
 // a rejected snapshot leaves last-good state applied and the staleness clock
@@ -35,8 +35,8 @@
 //
 // DEFAULT CONTROLLER gRPC PORT: 18856
 // (chosen != 22222 xSync and != fleet ports 8100/8200/9000/9003/9444/11111/5557/5600).
-// loxilb DIALS OUT to the controller (interim security posture, 96-07); mTLS is
-// deferred to Phase 100 (GA-03) per roadmap — T-96-06 accepted interim deferral.
+// loxilb DIALS OUT to the controller (interim security posture); mTLS is
+// deferred to a later release — an accepted interim deferral.
 
 syntax = "proto3";
 
@@ -66,7 +66,7 @@ message Snapshot {
   // last-good — forward-compat gate for future semantic additions.
   uint32 min_applier_version = 5;
   // Opaque per-snapshot token echoed back in Ack.nonce for end-to-end
-  // apply-confirmation correlation (T-96-04 replay evidence).
+  // apply-confirmation correlation (and replay evidence).
   string nonce = 6;
 }
 
@@ -134,7 +134,7 @@ message WatchRequest {
 message Ack {
   // Epoch of the snapshot this Ack refers to.
   uint64 epoch = 1;
-  // Echo of Snapshot.nonce (end-to-end correlation, T-96-04).
+  // Echo of Snapshot.nonce (end-to-end correlation).
   string nonce = 2;
   // Apply outcome.
   AckStatus status = 3;

@@ -70,7 +70,7 @@ type DpuDebugResponse struct {
 	Enabled bool `json:"enabled"`
 
 	// Legacy scalars (+). Preserved EXACTLY for backward-compat with
-	// the 5 CICD consumers inventoried in 49-RESEARCH.md §Schema Backward-Compat:
+	// the 5 CICD consumers of this schema:
 	// cicd/dpu-l4-lb/validation.sh, cicd/dpu-failover/validation.sh,
 	// cicd/dpu-combined/validation.sh, cicd/dpu-nat-modes/validation.sh,
 	// cicd/bf2-perf/common_bf2.sh — all parse these as integers.

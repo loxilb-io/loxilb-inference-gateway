@@ -166,7 +166,7 @@ func TestAdminStateUpLastUpdatedAdvancesOnToggle(t *testing.T) {
 	}
 }
 
-// adminStateRuleChg mirrors the CR-01 ruleChg predicate added to AddLbRule's
+// adminStateRuleChg mirrors the ruleChg predicate added to AddLbRule's
 // existing-rule branch (rules.go): an EXPLICIT admin_state that differs from the
 // current effective state is itself a rule change. An admin_state-only PATCH carries
 // every other field identical to current, so this predicate is the ONLY thing that
@@ -178,7 +178,7 @@ func adminStateRuleChg(reqAdmin *bool, currentEffective bool) bool {
 	return reqAdmin != nil && resolveAdminStateUp(reqAdmin) != currentEffective
 }
 
-// TestAdminStateOnlyDeltaTriggersRuleChg: the headline CR-01 fix. An admin_state-only
+// TestAdminStateOnlyDeltaTriggersRuleChg: the headline fix. An admin_state-only
 // PATCH (pause: explicit false against a currently-enabled rule; resume: explicit true
 // against a currently-paused rule) MUST be detected as a rule change so AddLbRule does
 // not return RuleExistsErr before reaching the admin_state apply. Absent (nil) admin_state

@@ -254,7 +254,7 @@ echo "#########################################"
 echo "Installing P/D LB rules on llb1 (ports 2020/2021/2022/2023)"
 echo "#########################################"
 
-# D-5 config path: drive the inference-gateway loxicmd as the load-bearing config
+# config path: drive the inference-gateway loxicmd as the load-bearing config
 # path when present (subject-under-test); fall back to raw REST for old/absent CLI.
 # Computed once here (unconditionally, before any install_lb_rules call) so it is
 # also in scope for the Phase L HA re-installs (llb1 + llb2) further below.

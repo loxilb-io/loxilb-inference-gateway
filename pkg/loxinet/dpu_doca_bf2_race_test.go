@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-// CR-01 race test (-01).
+// race test.
 //
 // Pre-fix: this test triggers Go runtime
 //
@@ -89,7 +89,7 @@ var dummyEntryPtr = unsafe.Pointer(&struct{ _ uint8 }{})
 // TestStatsConcurrentMapRace exercises the 6 stats functions concurrently
 // with their respective writer paths to verify the snapshot-then-release
 // pattern eliminates the Go runtime "concurrent map iteration and map write"
-// race introduced identified in 55-VERIFICATION.md CR-01.
+// race identified during offload verification.
 //
 // The test PRE-FIX expected behaviour: the process panics with
 // "fatal error: concurrent map iteration and map write" within ~50ms of

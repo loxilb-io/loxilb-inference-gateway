@@ -418,7 +418,7 @@ func TestSockproxySyncRollingUpgrade(t *testing.T) {
 	}
 }
 
-// ---------- tests (CR-01 + CR-02) ----------
+// --------- tests ( +) ----------
 //
 // TestSockproxySyncStartIdempotent verifies / RESEARCH
 // Start(peersFn) must be idempotent in BOTH peersFn-set and
@@ -498,7 +498,7 @@ func (m *mockSockproxyServer) SockproxySessionMod(ctx context.Context, req *Sock
 	return &XSyncReply{Response: 0}, nil
 }
 
-// TestPeerConsumerDrainsQueue verifies / CR-02: a per-peer
+// TestPeerConsumerDrainsQueue verifies /: a per-peer
 // consumer goroutine spawned in Start drains the SockproxySessionMod
 // peerQueue and issues sendOnce-wrapped gRPC calls to the peer.
 //
@@ -680,7 +680,7 @@ func startMockSockproxyServerForTest(t *testing.T, m *mockSockproxyServer) (XSyn
 	return NewXSyncClient(conn), cleanup
 }
 
-// ---------- CR-06 (.1-03): RateLimiterEntry round-trip tests ----------
+// ---------- RateLimiterEntry round-trip tests ----------
 //
 // These tests assert that cutover replacing -B
 // sign-bit hack with explicit `bool exceeded = 7;` preserves correctness
@@ -799,8 +799,8 @@ func (b *syncBuffer) String() string {
 // It does NOT use the `s.wg.Add(1); go s.consumerLoop(...)` test seam that
 // hid this gap in TestPeerConsumerDrainsQueue / TestPeerConsumerRetriesAndDrops.
 //
-// Deviation from PLAN/RESEARCH: the plan (RESEARCH.md §"Code Examples →
-// Example 2") was written against loxilib v0.9.0 which exposes LogItInfo /
+// Deviation from the original design sketch: it was written against
+// loxilib v0.9.0 which exposes LogItInfo /
 // CurrLogLevel / LOG_INFO as package-level globals. This repo's go.mod
 // pins loxilib v0.8.9-0.20241218081253-760c19357603 which uses a single
 // `DefaultLogger *Logger` package-global with LogItInfo / CurrLogLevel as
@@ -820,8 +820,8 @@ func TestPeerConsumerRespawnOnMasterPromotion(t *testing.T) {
 	// so tk.LogIt emissions land somewhere the test can grep. Save and
 	// restore the previous loxilib.DefaultLogger via defer. Setting both
 	// LogItInfo (the destination *log.Logger) AND CurrLogLevel = LogInfo
-	// (the gate at logger.go:) is REQUIRED — setting only one
-	// silently drops the log line (in 70.2-RESEARCH.md).
+	// (the gate in logger.go) is REQUIRED — setting only one
+	// silently drops the log line.
 	//
 	// The buffer MUST be mutex-guarded: tk.LogIt fires from the spawned
 	// consumer goroutine (sockproxy_sync.go:383) while the test's main

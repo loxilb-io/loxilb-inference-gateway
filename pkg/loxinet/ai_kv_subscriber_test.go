@@ -190,7 +190,7 @@ func TestKvBestWorkerNonContiguousPrefill(t *testing.T) {
 // TestKvBestWorkerExcludedMaskComposition verifies that excludedMask is
 // honored pre-scoring: bit-2 excluded → EP 2 is skipped even when it would
 // otherwise match, falling through to the best NON-excluded prefill EP (bit-4).
-// This is the RESEARCH.md Open Question #3 coverage: the new design pre-filters
+// This covers the open design question: the new design pre-filters
 // excludedMask in Go so second-best prefill beats Tier-2 random.
 func TestKvBestWorkerExcludedMaskComposition(t *testing.T) {
 	KvResetAll()

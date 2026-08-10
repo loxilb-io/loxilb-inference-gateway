@@ -1741,7 +1741,7 @@ func TestKvAdaptiveCapNormClampGuard(t *testing.T) {
 }
 
 // ============================================================================
-// Long-context token-cache identity (D-LC1)
+// Long-context token-cache identity
 // ============================================================================
 // The cache key MUST identify the FULL text. The original key (modelSlug +
 // text[:512]) collided for the long-context coding-assistant workload: two

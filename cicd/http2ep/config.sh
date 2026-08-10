@@ -59,7 +59,7 @@ $dexec llb1 ip link del llb0
 docker exec -dt llb1 /root/loxilb-io/loxilb/loxilb
 
 sleep 25
-# D-5 config path: drive the inference-gateway loxicmd as the load-bearing config
+# config path: drive the inference-gateway loxicmd as the load-bearing config
 # path when present (subject-under-test); fall back to raw REST for old/absent CLI.
 # http2ep exercises an h2c backend behind a plain L4 TCP VIP (no fullproxy), so the
 # CLI must accept --backend-protocol without coercing --mode fullproxy.

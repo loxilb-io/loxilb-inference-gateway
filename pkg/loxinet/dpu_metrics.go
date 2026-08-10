@@ -92,9 +92,9 @@ var (
 const docaDefaultTCPPipeCapacityAggregate = 32768
 
 // ---------------------------------------------------------------------------
-// P49-R2 — per-pipe HW counter surface.
-// Labels: fixed 5-value pipe enum. Cardinality bounded per 49-RESEARCH.md
-// §Prometheus Label Cardinality Analysis.
+// Per-pipe HW counter surface.
+// Labels: fixed 5-value pipe enum, so the Prometheus label cardinality is
+// bounded by construction.
 // ---------------------------------------------------------------------------
 
 // docaPipeHwPktsTotal: cumulative-increments counter, per-pipe hw_pkts sum across all entries.
@@ -263,7 +263,7 @@ var lastFdbPorts = map[uint16]bool{}
 
 func init() {
 	// Pre-instantiate all 5 pipe x 3 direction = 15 label children so rate
-	// has a t0 sample (49-RESEARCH.md §Pre-instantiation discipline). Grafana
+	// has a t0 sample (pre-instantiation discipline). Grafana
 	// panels that graph rate(doca_pipe_hw_pkts_total[5m]) show a flat line
 	// from first scrape rather than "no data" until the first non-zero traffic
 	// event. The empty-string direction child is required so legacy /
@@ -384,8 +384,8 @@ func SetMeterOffloadActive(meterID uint32, name string, active bool) {
 // AllFdbStats / AllRouteStats / AllAclStats are CUMULATIVE totals since start.
 // We sum across entries per pipe family, track the last-seen aggregate, and
 // call counter.Add(delta). NEVER counter.Add(cumulative) — that was the
-// historical UpdateMeterStats bug (49-RESEARCH.md line 262, fixed in C-4:
-// UpdateMeterStats above now uses the same delta discipline).
+// historical UpdateMeterStats bug (fixed: UpdateMeterStats above now uses
+// the same delta discipline).
 //
 // If the delta would be negative (cumulative shrunk because entries were
 // deleted between ticks), we Add 0 to avoid the prometheus client panic on

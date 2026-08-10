@@ -35,7 +35,7 @@ config_docker_host --host1 llb1 --host2 l3ep2 --ptype phy --addr 32.32.32.254/24
 config_docker_host --host1 llb1 --host2 l3ep3 --ptype phy --addr 33.33.33.254/24
 
 sleep 5
-# D-5 config path: drive the inference-gateway loxicmd as the load-bearing config
+# config path: drive the inference-gateway loxicmd as the load-bearing config
 # path when present (subject-under-test); fall back to raw REST for old/absent CLI.
 cli_preflight llb1 && USE_CLI=1 || USE_CLI=0
 create_lb_rule llb1 10.10.10.254 --tcp=2020:8080 --endpoints=31.31.31.1:1,32.32.32.1:1,33.33.33.1:1 --mode=fullproxy --host=10.10.10.254

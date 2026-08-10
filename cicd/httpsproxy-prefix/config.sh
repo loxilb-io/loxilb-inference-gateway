@@ -47,7 +47,7 @@ docker cp 10.10.10.254/cert.pem llb1:/opt/loxilb/cert/server.crt
 docker cp 10.10.10.254/key.pem llb1:/opt/loxilb/cert/server.key
 
 sleep 5
-# D-5 config path: drive the inference-gateway loxicmd as the load-bearing config
+# config path: drive the inference-gateway loxicmd as the load-bearing config
 # path when present (subject-under-test); fall back to raw REST for old/absent CLI.
 cli_preflight llb1 && USE_CLI=1 || USE_CLI=0
 # port 2020 -> /v1/users (endpoints 31/32)
