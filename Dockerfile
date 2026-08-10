@@ -68,10 +68,13 @@ RUN mkdir -p /opt/loxilb && \
     rm -fr /root/loxilb-io/loxilb/* && rm -fr /root/loxilb-io/loxilb/.git && \
     rm -fr /root/loxilb-io/loxilb/.github && mkdir -p /root/loxilb-io/loxilb/ && \
     cp /usr/local/sbin/loxilb /root/loxilb-io/loxilb/loxilb && rm /usr/local/sbin/loxilb && \
-    # Install gobgp
-    wget https://github.com/osrg/gobgp/releases/download/v3.29.0/gobgp_3.29.0_linux_${arch}.tar.gz && \
-    tar -xzf gobgp_3.29.0_linux_${arch}.tar.gz &&  rm gobgp_3.29.0_linux_${arch}.tar.gz && \
-    mv gobgp* /usr/sbin/ && rm LICENSE README.md && \
+    # Build gobgp from source: the upstream prebuilt v3.29.0 binaries carry a
+    # vulnerable Go stdlib and grpc; building with the toolchain above and a
+    # patched grpc keeps the exact gobgp version while clearing both CVEs.
+    git clone --depth 1 --branch v3.29.0 https://github.com/osrg/gobgp.git /tmp/gobgp && \
+    cd /tmp/gobgp && go get google.golang.org/grpc@v1.82.1 && go mod tidy && \
+    go build -o /usr/sbin/gobgp ./cmd/gobgp && go build -o /usr/sbin/gobgpd ./cmd/gobgpd && \
+    cd / && rm -rf /tmp/gobgp /root/go/pkg /root/.cache/go-build && \
     apt-get purge -y clang-14 llvm libelf-dev libpcap-dev libbsd-dev build-essential \
     elfutils dwarves git bison flex wget unzip && apt-get -y autoremove && \
     apt-get install -y libllvm14 && \

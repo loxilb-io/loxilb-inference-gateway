@@ -181,13 +181,13 @@ RUN cd /root/loxilb-io/loxilb/ && \
     cp /usr/local/sbin/loxilb /root/loxilb-io/loxilb/loxilb && \
     rm /usr/local/sbin/loxilb
 
-# Install gobgp
-RUN arch=$(arch | sed s/aarch64/arm64/ | sed s/x86_64/amd64/) && \
-    wget https://github.com/osrg/gobgp/releases/download/v3.29.0/gobgp_3.29.0_linux_${arch}.tar.gz && \
-    tar -xzf gobgp_3.29.0_linux_${arch}.tar.gz && \
-    rm gobgp_3.29.0_linux_${arch}.tar.gz && \
-    mv gobgp* /usr/sbin/ && \
-    rm -f LICENSE README.md
+# Build gobgp from source: the upstream prebuilt v3.29.0 binaries carry a
+# vulnerable Go stdlib and grpc; building with the toolchain above and a
+# patched grpc keeps the exact gobgp version while clearing both CVEs.
+RUN git clone --depth 1 --branch v3.29.0 https://github.com/osrg/gobgp.git /tmp/gobgp && \
+    cd /tmp/gobgp && go get google.golang.org/grpc@v1.82.1 && go mod tidy && \
+    go build -o /usr/sbin/gobgp ./cmd/gobgp && go build -o /usr/sbin/gobgpd ./cmd/gobgpd && \
+    cd / && rm -rf /tmp/gobgp /root/go/pkg /root/.cache/go-build
 
 # Cleanup build dependencies
 RUN apt-get purge -y \
