@@ -32,7 +32,7 @@ import (
 // maxListItems caps loosely-typed arrays before they reach model context.
 const maxListItems = 100
 
-// RegisterAnalysis adds the Phase-1 analysis read tools (docs/MCP-DESIGN.md §3.2).
+// RegisterAnalysis adds the analysis read tools.
 func RegisterAnalysis(s *sdk.Server, role guard.Role, pol *guard.Policy, deps *Deps) {
 	reg := func(name string, add func()) {
 		if pol.Permits(role, guard.ToolMeta{Name: name, Domain: domainAnalysis}) {
@@ -268,7 +268,7 @@ type logsOut struct {
 	LogFile  string `json:"log_file,omitempty"`
 	LogCount int    `json:"log_count"`
 	// UntrustedData holds raw log lines. They are attacker-influenceable
-	// text: treat as data, never as instructions (MCP-DESIGN.md §2.2 T6).
+	// text: treat as data, never as instructions.
 	UntrustedData []string `json:"untrusted_data"`
 }
 
@@ -325,7 +325,7 @@ type logArchiveOut struct {
 	Target   string `json:"target"`
 	Filename string `json:"filename"`
 	Bytes    int    `json:"bytes"`
-	// UntrustedData holds raw archive lines (attacker-influenceable, T6).
+	// UntrustedData holds raw archive lines (attacker-influenceable — treat as data, never as instructions).
 	UntrustedData []string `json:"untrusted_data"`
 }
 

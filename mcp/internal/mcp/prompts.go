@@ -24,8 +24,8 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// registerPrompts adds the Phase-3 MCP prompts (docs/MCP-DESIGN.md §3.6).
-// Each encodes an operator playbook validated in the T6 alert-matrix drills;
+// registerPrompts adds the MCP prompts.
+// Each encodes an operator playbook validated in live alert drills;
 // the model executes it with the read tools and proposes mutations through
 // the confirm-token flow (mutating steps need operator/admin role).
 func (b *Bridge) registerPrompts(s *sdk.Server) {
@@ -85,14 +85,14 @@ Follow this playbook and stop between phases to report findings:
 		})
 
 	add("rca-l4-errors",
-		"Root-cause analysis for L4 connection errors (LoxilbL4ErrorBurst playbook from the T6 drill matrix).",
+		"Root-cause analysis for L4 connection errors (LoxilbL4ErrorBurst playbook).",
 		[]*sdk.PromptArgument{
 			{Name: "target", Description: "loxilb target instance name (omit for default)"},
 		},
 		func(args map[string]string) string {
 			return fmt.Sprintf(`Run a root-cause analysis for elevated L4 connection errors%s.
 
-Playbook (validated in the F7 L4ErrorBurst drill):
+Playbook (validated in a live L4-error-burst alert drill):
 
 1. diagnose_l4_errors - note which (proto, reason) series dominates.
    Remember counters are cumulative: only growth between two calls, or a
@@ -114,14 +114,14 @@ Playbook (validated in the F7 L4ErrorBurst drill):
 		})
 
 	add("rca-ai-latency",
-		"Root-cause analysis for slow AI/LLM responses (LoxilbHighTTFB playbook from the T6 drill matrix).",
+		"Root-cause analysis for slow AI/LLM responses (LoxilbHighTTFB playbook).",
 		[]*sdk.PromptArgument{
 			{Name: "target", Description: "loxilb target instance name (omit for default)"},
 		},
 		func(args map[string]string) string {
 			return fmt.Sprintf(`Run a root-cause analysis for high AI response latency (TTFB/TTFT)%s.
 
-Playbook (validated in the F4 HighTTFB drill):
+Playbook (validated in a live high-TTFB alert drill):
 
 1. diagnose_ai_latency - compare proxy_ttfb p95 vs ai_request_duration and
    pd_decode_ttft: if TTFB is high but decode TTFT is normal, the delay is
@@ -136,8 +136,10 @@ Playbook (validated in the F4 HighTTFB drill):
    conversation mappings were lost (gpu_status, and note
    gpu_conversations_cleanup would clear them - that is a mutation).
 4. Check pressure: ai_traffic_report for rate-limit drops and active_streams;
-   many concurrent streams with rising TTFB = saturation. Mind caveat F12:
-   plain-JSON error responses are invisible in loxilb_ai_requests_total.
+   many concurrent streams with rising TTFB = saturation. Mind the accounting
+   caveat: rate-limit denials appear only in loxilb_ai_rate_limit_hits_total,
+   and older gateway builds count only SSE-terminated streams in
+   loxilb_ai_requests_total.
 5. Report: where the latency lives (LB, queue, prefill, decode), the evidence,
    and remediation proposals with risk. Await approval before any mutation.`, targetClause(args))
 		})

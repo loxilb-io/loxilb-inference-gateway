@@ -2,7 +2,7 @@
  * Copyright (c) 2026 NetLOX Inc
  * SPDX-License-Identifier: Apache-2.0
  *
- * Phase-2 gate tests: role visibility of management CRUD tools (§5.4 T3),
+ * Gate tests: role visibility of management CRUD tools,
  * the confirm-token preview/execute flow end-to-end (T4), config_export
  * secret masking (T5), and filename traversal rejection (T10).
  */

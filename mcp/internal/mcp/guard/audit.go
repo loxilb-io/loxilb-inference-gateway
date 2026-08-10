@@ -76,8 +76,8 @@ func OpenAuditor(dir string) (*Auditor, error) {
 	return &Auditor{f: f}, nil
 }
 
-// Log writes one event; failures are silent (auditing must not break serving,
-// but see docs/MCP-DESIGN.md §2.2 for the off-host syslog tee option).
+// Log writes one event; failures are silent (auditing must not break serving;
+// for tamper resistance, tee the audit file to off-host syslog).
 func (a *Auditor) Log(e Event) {
 	if a == nil {
 		return

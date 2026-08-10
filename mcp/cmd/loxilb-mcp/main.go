@@ -15,7 +15,7 @@
  */
 
 // loxilb-mcp is the standalone MCP bridge for loxilb management, analysis,
-// monitoring, and AI-gateway operations. See docs/MCP-DESIGN.md.
+// monitoring, and AI-gateway operations. See docs/MCP-OPERATIONS.md.
 //
 // Examples:
 //

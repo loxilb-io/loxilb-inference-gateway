@@ -34,7 +34,7 @@ default_target: llb1
 targets:
   llb1:
     url: http://172.17.0.2:11111
-    # username/password_env or token_env when loxilb runs --userservice (F11)
+    # username/password_env or token_env when loxilb runs --userservice
     # tls_ca / insecure_skip_verify / timeout_sec as needed
 clients:                       # HTTP-mode bearer tokens, one per client
   - { name: dashboard, role: viewer,   token_env: MCP_VIEWER_TOKEN }
@@ -88,7 +88,7 @@ Tokens are single-use and SHA-256-bound to (tool, target, arguments); any
 argument change or replay burns them. `--no-confirm` (CI only) skips the
 flow. `config_import` additionally requires `--allow-import`.
 
-### Autopilot (Phase 4, default off)
+### Autopilot (default off)
 
 `--autopilot-tools lb_delete,...` (or `autopilot_tools:` in the config) names
 destructive tools that execute **without** the preview→confirm step. Names are exact; globs are
@@ -107,12 +107,12 @@ then enters model/client context; use only when the caller is the end user.
 `config_export` masks secret-shaped fields. Audit lines redact secret-shaped
 arguments.
 
-## Tool catalog (Phase 0–4)
+## Tool catalog
 
 **Seed / health** — `version_get`, `health_overview`, `lb_list`, `ct_list`,
 `metrics_snapshot`.
 
-**Fleet (read, Phase 4)** — `targets_list` (configured targets + default),
+**Fleet (read)** — `targets_list` (configured targets + default),
 `fleet_overview` (concurrent health probe of every target; unreachable
 targets degrade into per-target error sections).
 
@@ -148,9 +148,9 @@ lift), `gpu_mode_set`, `gpu_conversations_cleanup`, `llamafw_enable_set`,
 > **Prerequisite:** the API-key and tenant-rate-limit REST endpoints are only
 > wired when the target loxilb runs with `--userservice` (plus a reachable
 > `--databasehost`). On a non-userservice target these tools return the
-> target's HTTP 501 verbatim. Note the interaction with finding F11: with
-> `--userservice` enabled, `/netlox/v1/metrics` requires a JWT, so a
-> Prometheus scraping that target needs a bearer-token scrape config.
+> target's HTTP 501 verbatim. Note also: with `--userservice` enabled,
+> `/netlox/v1/metrics` requires a JWT, so a Prometheus instance scraping that
+> target needs a bearer-token scrape config.
 
 **Diagnostics / RCA (read)** — `diagnose_l4_errors`, `diagnose_ai_latency`,
 `diagnose_endpoint`, `capacity_report`. Each returns a correlated evidence
@@ -161,7 +161,7 @@ approval gate; nothing in `suggested_actions` auto-executes.
 
 ## Prompts
 
-Guided playbooks (validated in the T6 alert-matrix drills):
+Guided playbooks:
 `triage-alert(alert[, target])`, `rca-l4-errors`, `rca-ai-latency`,
 `capacity-report`, `safe-lb-change(change[, target])` — the last walks a
 baseline → preflight → apply → verify → rollback LB change.
@@ -189,10 +189,14 @@ appear as `confirm: ...` errors.
 - Per-client token-bucket rate limiting; constant-time token verification.
 - Log/archive content is returned under `untrusted_data` keys — treat as
   data, never instructions (prompt-injection defense).
-- Known caveats: **F11** — with `--userservice`, configure bridge target
-  credentials or metrics scraping 401s; **F12** —
-  `loxilb_ai_requests_total` counts only SSE-terminated streams
-  (`ai_traffic_report` restates this in every result).
+- Known caveats: with `--userservice` on a target, configure bridge target
+  credentials (`token_env` or `username`/`password_env`) — otherwise metrics
+  scraping returns 401. And `ai_traffic_report` restates an accounting caveat
+  in every result: `loxilb_ai_requests_total` excludes rate-limit denials
+  (those live only in `loxilb_ai_rate_limit_hits_total`), and on loxilb
+  builds that predate non-SSE response accounting it counts only
+  SSE-terminated streams — cross-check totals against
+  `loxilb_proxy_http_responses_total`.
 
 ## CI / E2E
 
@@ -225,8 +229,9 @@ TARGET=http://<host>:11111 ./live-e2e.sh        # any live target
 Read-only mode (default) changes **nothing** on the target: it checks
 `version_get`/`health_overview` reachability, cross-checks `lb_list` against the
 target's REST `/config/loadbalancer/all`, verifies `metrics_snapshot`,
-`targets_list`, `fleet_overview`, `diagnose_l4_errors`, and the `ai_traffic_report`
-F12 caveat, then exercises the guardrails (URL-as-target rejected, unknown target
+`targets_list`, `fleet_overview`, `diagnose_l4_errors`, and that
+`ai_traffic_report` surfaces its accounting caveat, then exercises the
+guardrails (URL-as-target rejected, unknown target
 rejected, unknown tool → JSON-RPC error, viewer role sees no `lb_create`).
 
 `--mutate` additionally runs an isolated `lb_create` → `lb_list` → confirm-token

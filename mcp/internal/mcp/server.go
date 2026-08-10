@@ -127,7 +127,7 @@ func NewBridge(cfg *Config, pol *guard.Policy, aud *guard.Auditor) (*Bridge, err
 
 // resolve maps a tool-supplied target name to a client. Only names present in
 // the config resolve — URL-shaped or unknown values are rejected (anti-SSRF,
-// docs/MCP-DESIGN.md §2.2 T7).
+// docs/MCP-OPERATIONS.md).
 func (b *Bridge) resolve(name string) (*client.Client, error) {
 	if name == "" {
 		name = b.cfg.DefaultTarget
@@ -273,8 +273,7 @@ func (b *Bridge) HTTPHandler() (http.Handler, error) {
 }
 
 // RunHTTP serves streamable MCP over HTTP(S) until ctx is cancelled.
-// Plaintext on a non-loopback bind is refused unless InsecureHTTP is set
-// (docs/MCP-DESIGN.md §2.2 T2).
+// Plaintext on a non-loopback bind is refused unless InsecureHTTP is set.
 func (b *Bridge) RunHTTP(ctx context.Context, opts HTTPOptions) error {
 	useTLS := opts.TLSCert != "" || opts.TLSKey != ""
 	if useTLS && (opts.TLSCert == "" || opts.TLSKey == "") {

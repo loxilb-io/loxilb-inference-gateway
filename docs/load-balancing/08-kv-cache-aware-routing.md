@@ -310,7 +310,7 @@ sequenceDiagram
     participant D as vLLM decode EP1
 
     Note over GO,P2: cold start — all inventories empty
-    CA->>LB: POST {"model":"Qwen/Qwen3-0.6B","prompt":"<preamble>+Q_A"}
+    CA->>LB: POST {"model":"Qwen/Qwen3-0.6B","prompt":"[preamble]+Q_A"}
     LB->>GO: llb_ai_kv_tokenize → 40 tokens
     LB->>LB: kv_compute_block_hashes → h1,h2,h3
     LB->>GO: llb_ai_kv_best_worker(h1..h3) → score 0 on EP0 and EP2
@@ -321,7 +321,7 @@ sequenceDiagram
     D-->>CA: generated reply (streams back through LB)
     P0--)GO: ZMQ [b"kv" | seq=7 | BlockStored [h1,h2]]
     GO->>GO: EP0 inventory={h1,h2} — [KV_INV] AddBlocks n_added=2<br/>loxilb_pd_kv_blocks{EP0}=2
-    CB->>LB: POST {"model":"Qwen/Qwen3-0.6B","prompt":"<preamble>+Q_B"}
+    CB->>LB: POST {"model":"Qwen/Qwen3-0.6B","prompt":"[preamble]+Q_B"}
     LB->>GO: tokenize → 38 tokens
     LB->>LB: hashes → h1,h2 (identical chain) + h3'
     LB->>GO: best_worker → EP0 score=2, EP2 score=0 → argmax EP0
@@ -420,7 +420,7 @@ flowchart TD
     G1 -- yes --> G234{"G2–G4: winner excluded_mask’d /<br/>eps[].inv / circuit-breaker OPEN?"}
     G234 -- yes --> MISS
     G234 -- no --> HIT(["route to best_ep<br/>tier15_hits_total{ep_idx}++"])
-    HIT -. "connect fails (RST/refused)" .-> RETRY["retry with<br/>excluded_mask |= 1<<best_ep"]
+    HIT -. "connect fails (RST/refused)" .-> RETRY["retry with best_ep<br/>added to excluded_mask"]
     RETRY --> G1
 ```
 
@@ -710,7 +710,7 @@ Verify with the **dual proof**: the response banner identifies the served backen
 `tier15_hits{ep_idx}` incremented for the expected EP (decision). Never trust either alone — a
 metrics-only check can't catch a proxy that decides correctly but delivers elsewhere.
 
-**B. Expected miss → RR fallthrough (fresh prompt):**
+**B. Expected miss → Tier-2 fallthrough (fresh prompt):**
 
 ```
 [KV_T15] fd=43 GUARD_G no_worker best_ep=-1 score=0 excluded_mask=0x0 prefill_mask=0x15 n_prefill_eps=3

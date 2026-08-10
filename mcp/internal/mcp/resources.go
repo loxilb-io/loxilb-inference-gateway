@@ -29,7 +29,7 @@ import (
 
 // metricsReferenceDoc is the curated metric-family reference served as
 // loxilb://docs/metrics. Keep the caveats section in sync with
-// docs/MCP-DESIGN.md §6.
+// docs/MCP-OPERATIONS.md
 const metricsReferenceDoc = `# loxilb metric family reference (curated)
 
 Scrape endpoint: GET /netlox/v1/metrics (Prometheus exposition text).
@@ -49,15 +49,16 @@ Prometheus server is configured.
 
 ## Known caveats
 
-- F11: when loxilb runs --userservice, the metrics endpoint requires a
-  bearer token; unauthenticated Prometheus scrapes receive 401. The bridge
+- When loxilb runs --userservice, the metrics endpoint requires a bearer
+  token; unauthenticated Prometheus scrapes receive 401. The bridge
   authenticates automatically, but external scrapers must be configured.
-- F12: loxilb_ai_requests_total counts only SSE-terminated streams; plain
-  JSON error responses are invisible in it. Cross-check with L7 error
-  counters until fixed.
+- Rate-limit denials are counted only in loxilb_ai_rate_limit_hits_total,
+  not in loxilb_ai_requests_total. On gateway builds predating the non-SSE
+  accounting fix, loxilb_ai_requests_total counts only SSE-terminated
+  streams — cross-check with the L7 response counters.
 `
 
-// registerResources adds the Phase-1 MCP resources (docs/MCP-DESIGN.md §3.6).
+// registerResources adds the MCP resources.
 func (b *Bridge) registerResources(s *sdk.Server) {
 	if len(b.alertRules) > 0 {
 		s.AddResource(&sdk.Resource{

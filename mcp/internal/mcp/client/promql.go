@@ -27,8 +27,7 @@ import (
 	"time"
 )
 
-// PromClient queries an external Prometheus server's HTTP API
-// (docs/MCP-DESIGN.md §3.3; optional, enabled via prometheus_url).
+// PromClient queries an external Prometheus server's HTTP API.
 type PromClient struct {
 	base string
 	hc   *http.Client

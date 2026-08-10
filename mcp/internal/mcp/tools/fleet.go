@@ -25,8 +25,8 @@ import (
 	"github.com/loxilb-io/loxilb-inference-gateway/mcp/internal/mcp/guard"
 )
 
-// RegisterFleet adds the Phase-4 multi-target fan-out tools
-// (docs/MCP-DESIGN.md §4 phase 4): targets_list and fleet_overview.
+// RegisterFleet adds the multi-target fan-out tools: targets_list and
+// fleet_overview.
 func RegisterFleet(s *sdk.Server, role guard.Role, pol *guard.Policy, deps *Deps) {
 	if deps.ResolveAll == nil {
 		return
