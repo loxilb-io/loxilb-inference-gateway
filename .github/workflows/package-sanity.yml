@@ -292,9 +292,24 @@ jobs:
           test -f /etc/loxilb/snapshot.json
           echo "remove ok"
 
+  # deb functional smoke is opt-in for the same reason the rpm one below is:
+  # it needs a runner whose kernel we control. On GitHub-hosted runners the
+  # loxilb datapath leaves eBPF references on the scenario's veths, so removing
+  # them parks the kernel in an uninterruptible
+  #
+  #   unregister_netdevice: waiting for <dev> to become free
+  #
+  # wait. That state cannot be killed, so it defeats both the step and job
+  # timeouts (jobs burn the 20m cap plus GitHub's 5m force-kill grace, exactly
+  # 25m00s) and corrupts the runner's log upload on the way out -- the failure
+  # destroys its own evidence, which is why it went undiagnosed for so long.
+  # Tier 2 lifecycle across 8 distro/arch combinations is the deb floor until a
+  # self-hosted runner is registered. Enable by setting the repository variable
+  # DEB_PKG_SMOKE=true.
   tier3-deb-smoke:
     name: 'tier3: deb smoke ${{ matrix.runner }}'
     needs: [plan, obtain]
+    if: github.repository == 'loxilb-io/loxilb-inference-gateway' && vars.DEB_PKG_SMOKE == 'true'
     runs-on: ${{ matrix.runner }}
     # A healthy datapath smoke completes in ~1-2 min; cap the job so a wedged
     # runner (observed: the hosted arm64 runner occasionally hangs the loxilb

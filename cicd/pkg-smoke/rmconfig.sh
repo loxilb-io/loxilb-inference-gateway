@@ -67,12 +67,28 @@ sudo timeout -k 5 30 umount /opt/loxilb/dp 2>/dev/null \
     || sudo timeout -k 5 30 umount -l /opt/loxilb/dp 2>/dev/null \
     || true
 
-# 4. Now the topology is safe to remove: nothing holds references to it.
-for ns in pks-h1 pks-ep1 pks-ep2; do
-    try 30 ip netns del "$ns"
+# 4. Drop any eBPF still attached to the veths, explicitly. Stopping the
+#    service is supposed to do this via DpEbpfUnInit(), but that detach is
+#    best-effort: it can fail silently, it is skipped entirely if systemd
+#    reaches TimeoutStopSec and SIGKILLs loxilb mid-cleanup, and programs
+#    pinned under /opt/loxilb/dp outlive the process regardless. Any leftover
+#    TC filter or XDP program holds a reference to the netdev and turns the
+#    delete below into an unkillable unregister_netdevice wait, so tear the
+#    attachments down here rather than trusting the datapath to have done it.
+for hveth in pksh1 pksep1 pksep2; do
+    ip link show "$hveth" >/dev/null 2>&1 || continue
+    try 15 tc qdisc del dev "$hveth" clsact
+    try 15 ip link set dev "$hveth" xdp off
 done
+
+# 5. Now the topology is safe to remove. Delete the host-side veth first: that
+#    removes its peer inside the netns too, so the netns is empty by the time
+#    we drop it.
 for hveth in pksh1 pksep1 pksep2; do
     try 30 ip link del "$hveth"
+done
+for ns in pks-h1 pks-ep1 pks-ep2; do
+    try 30 ip netns del "$ns"
 done
 
 sudo rm -f /etc/systemd/system/loxilb.service.d/pkg-smoke.conf
