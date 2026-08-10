@@ -719,6 +719,6 @@ loxilb-inference-gateway는 업스트림 loxilb와 동일하게 [Apache License 
 ## 📚 자세한 정보는 loxilb [웹사이트](https://www.loxilb.io)를 확인하십시오.
 
 [docs-shield]: https://img.shields.io/badge/info-docs-blue
-[docs-url]: https://loxilb-io.github.io/loxilbdocs/
+[docs-url]: https://loxilb-io.github.io/loxilbdocs-inference-gateway/
 [slack=shield]: https://img.shields.io/badge/Community-Join%20Slack-blue
 [slack-url]: https://www.loxilb.io/members

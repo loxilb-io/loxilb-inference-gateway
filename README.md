@@ -793,6 +793,6 @@ upstream loxilb.
 ## 📚 Please check the loxilb [website](https://www.loxilb.io) for more detailed info.
 
 [docs-shield]: https://img.shields.io/badge/info-docs-blue
-[docs-url]: https://loxilb-io.github.io/loxilbdocs/
+[docs-url]: https://loxilb-io.github.io/loxilbdocs-inference-gateway/
 [slack=shield]: https://img.shields.io/badge/Community-Join%20Slack-blue
 [slack-url]: https://www.loxilb.io/members
