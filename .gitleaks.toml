@@ -10,6 +10,10 @@ description = "Unit-test fixtures with dummy credentials"
 paths = [
   '''mcp/internal/mcp/phase3_test\.go''',
   '''mcp/internal/mcp/server_test\.go''',
+  # The same fixture files lived at pkg/mcp/ before loxilb-mcp was extracted
+  # into a standalone module; the full-history scan still sees them there.
+  '''pkg/mcp/phase3_test\.go''',
+  '''pkg/mcp/server_test\.go''',
   # Upstream loxilb cicd/ test fixtures surfaced by the full-history scan:
   # ephemeral throwaway CI clusters, Vagrant well-known insecure keys,
   # minica-generated self-signed test certs, and kubeadm bootstrap tokens for
