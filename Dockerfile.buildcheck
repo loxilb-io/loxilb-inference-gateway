@@ -103,13 +103,14 @@ RUN set -eux; \
     cp /usr/local/sbin/loxilb /root/loxilb-io/loxilb/loxilb; \
     rm /usr/local/sbin/loxilb
 
+# Build gobgp from source (same recipe as the release Dockerfiles — the
+# prebuilt v3.29.0 binaries carry a vulnerable Go stdlib and grpc).
 RUN set -eux; \
-    arch=$(arch | sed s/aarch64/arm64/ | sed s/x86_64/amd64/); \
-    wget "https://github.com/osrg/gobgp/releases/download/v3.29.0/gobgp_3.29.0_linux_${arch}.tar.gz"; \
-    tar -xzf "gobgp_3.29.0_linux_${arch}.tar.gz"; \
-    rm "gobgp_3.29.0_linux_${arch}.tar.gz"; \
-    mv gobgp* /usr/sbin/; \
-    rm LICENSE README.md
+    git clone --depth 1 --branch v3.29.0 https://github.com/osrg/gobgp.git /tmp/gobgp; \
+    cd /tmp/gobgp; go get google.golang.org/grpc@v1.82.1; go mod tidy; \
+    go build -o /usr/sbin/gobgp ./cmd/gobgp; \
+    go build -o /usr/sbin/gobgpd ./cmd/gobgpd; \
+    cd /; rm -rf /tmp/gobgp /root/go/pkg /root/.cache/go-build
 
 RUN set -eux; \
     arch=$(arch | sed s/aarch64/arm64/ | sed s/x86_64/amd64/); \
