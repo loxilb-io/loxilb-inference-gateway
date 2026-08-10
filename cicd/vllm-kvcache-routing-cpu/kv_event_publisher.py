@@ -11,7 +11,7 @@ mock harness. This publisher fills that gap with a HIGH-FIDELITY stream:
     (Qwen/Qwen3-0.6B) — identical token IDs to loxilb's CGO daulet path
     → genuine, non-empty inventory intersection.
   * It recomputes vLLM v0.17.0 block hashes via the REUSED hash core from
-    `cicd/vllm-loxilb-kvcache-aws-small/kv_hash_parity.py`. The hash math
+    `cicd/common/kv_hash/kv_hash_parity.py`. The hash math
     is NOT re-implemented here — re-deriving it risks reintroducing the
     `digest[:8]`-vs-`digest[-8:]` drift fixed upstream. `kv_hash_parity.py` remains
     the single Python source of record; this module imports it (read-dependency).
@@ -78,13 +78,13 @@ import time
 # ----------------------------------------------------------------------------
 # Hash-core reuse — import the SINGLE Python source of record.
 # NOT a re-implementation, NOT an inline copy: this is a sys.path read-dependency
-# on cicd/vllm-loxilb-kvcache-aws-small/kv_hash_parity.py.
+# on cicd/common/kv_hash/kv_hash_parity.py.
 # The C/Go/Python golden-vector chain keeps exactly one hash core.
 # ----------------------------------------------------------------------------
 _HERE = os.path.dirname(os.path.abspath(__file__))
-# kv_hash_parity.py lives in the sibling GPU scenario dir.
+# kv_hash_parity.py lives in the shared cicd/common/kv_hash dir.
 _HASH_CORE_DIR = os.path.normpath(
-    os.path.join(_HERE, "..", "vllm-loxilb-kvcache-aws-small")
+    os.path.join(_HERE, "..", "common", "kv_hash")
 )
 if _HASH_CORE_DIR not in sys.path:
     sys.path.insert(0, _HASH_CORE_DIR)
@@ -107,7 +107,7 @@ except ImportError as exc:  # pragma: no cover — guarded per harness conventio
         "ERROR: cannot import the kv_hash_parity hash core from "
         f"{_HASH_CORE_DIR} ({exc}). This publisher REUSES that module's "
         "hash functions and must not re-implement them; ensure "
-        "the hash-core scenario dir is present.",
+        "cicd/common/kv_hash/kv_hash_parity.py is present.",
         file=sys.stderr,
     )
     sys.exit(2)

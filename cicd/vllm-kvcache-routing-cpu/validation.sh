@@ -73,7 +73,7 @@ TOKENIZER_SRC="${CFGDIR}/../common/kv_hash/fixtures/tokenizers/${KV_MODEL_SLUG}/
 VECTORS_SRC="${CFGDIR}/../common/kv_hash/fixtures/kv_hash_vectors.json"
 PUBLISHER="${CFGDIR}/kv_event_publisher.py"
 CORPUS="${CFGDIR}/prompts/corpus.json"
-PARITY="${CFGDIR}/../vllm-loxilb-kvcache-aws-small/kv_hash_parity.py"
+PARITY="${CFGDIR}/../common/kv_hash/kv_hash_parity.py"
 PUB_TAG="kvpub80"
 # `$hexec` (sudo ip netns exec) runs python3 AS ROOT, which cannot see the ubuntu user's
 # pip --user site-packages and sudo env-resets the caller env — resolve the user-site dir
