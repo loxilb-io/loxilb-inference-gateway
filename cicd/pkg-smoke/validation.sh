@@ -63,7 +63,15 @@ echo "#########################################"
 echo "3. Restart drill: service survives, config reloads"
 echo "#########################################"
 
-sudo systemctl restart loxilb
+# Bounded: the stop half of a restart runs DpEbpfUnInit(), which detaches
+# TC/XDP from every interface. If that stalls in CGO the unit never reaches
+# TimeoutStopSec and `systemctl restart` blocks forever, burning the whole job
+# timeout and corrupting the log upload. Fail loudly instead.
+if ! sudo timeout -k 10 180 systemctl restart loxilb; then
+    echo "pkg-smoke restart: systemctl restart did not complete within 180s" >&2
+    sudo systemctl status loxilb --no-pager 2>&1 | tail -30 >&2 || true
+    code=1
+fi
 
 up=0
 for i in $(seq 1 60); do
