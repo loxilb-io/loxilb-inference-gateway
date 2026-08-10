@@ -15,7 +15,7 @@
  */
 
 // Package tools implements the loxilb-mcp tool set. ships the five
-// seed tools (docs/MCP-DESIGN.md §4): version_get, health_overview, lb_list,
+// seed tools: version_get, health_overview, lb_list,
 // ct_list, metrics_snapshot. Later phases add the full domain files.
 package tools
 
@@ -108,7 +108,7 @@ func destAnnotations(title string) *sdk.ToolAnnotations {
 }
 
 // clean sanitizes remote-originated strings before they reach model context:
-// control characters stripped, length capped (docs/MCP-DESIGN.md §2.2 T6).
+// control characters stripped, length capped.
 func clean(s string) string {
 	const maxLen = 256
 	var b strings.Builder
@@ -129,7 +129,7 @@ func targetDesc(targets []string) string {
 		strings.Join(targets, ", ")
 }
 
-// RegisterSeed adds every Phase-0 tool permitted by the policy for the role.
+// RegisterSeed adds every seed tool permitted by the policy for the role.
 func RegisterSeed(s *sdk.Server, role guard.Role, pol *guard.Policy, deps *Deps) {
 	tdesc := targetDesc(deps.Targets)
 

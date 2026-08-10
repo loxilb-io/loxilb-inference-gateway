@@ -29,8 +29,8 @@ import (
 	"github.com/loxilb-io/loxilb-inference-gateway/mcp/internal/mcp/guard"
 )
 
-// RegisterDiagnose adds the Phase-3 composite diagnostics / RCA tools
-// (docs/MCP-DESIGN.md §3.5). Each orchestrates several read endpoints and
+// RegisterDiagnose adds the composite diagnostics / RCA tools
+// . Each orchestrates several read endpoints and
 // returns a correlated evidence bundle plus machine-readable
 // suggested_actions[] (§3.7): the tool gathers, the model concludes, a human
 // approves any mutation via the confirm-token flow.
@@ -407,7 +407,7 @@ func (d *Deps) diagnoseAILatency() sdk.ToolHandlerFor[targetIn, diagnoseOut] {
 		}
 		out.Caveats = []string{
 			"histogram quantiles are estimated from cumulative lifetime buckets, not a recent window",
-			f12Caveat,
+			trafficReportCaveat,
 		}
 		d.finishDiagnose(&out)
 		d.audit("diagnose_ai_latency", c.Name(), true, "")

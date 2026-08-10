@@ -16,7 +16,7 @@
 
 // Package guard implements the server-side security policy layer of
 // loxilb-mcp: client roles, tool gating (read-only mode, allow/deny lists,
-// per-domain enablement) and token verification. See docs/MCP-DESIGN.md §2.2.
+// per-domain enablement) and token verification. See docs/MCP-OPERATIONS.md
 package guard
 
 import (
@@ -78,8 +78,7 @@ type Policy struct {
 	Deny     []string        // glob patterns; deny wins over allow
 	Domains  map[string]bool // nil means all domains enabled
 	// Autopilot names destructive tools that may execute WITHOUT the
-	// preview→confirm-token step (docs/MCP-DESIGN.md §3.7 closed-loop
-	// tuning). Exact tool names only — globs are deliberately not
+	// preview→confirm-token step. Exact tool names only — globs are deliberately not
 	// supported for a confirm-bypass surface. Role tiers still apply.
 	Autopilot []string
 }

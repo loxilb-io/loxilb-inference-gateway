@@ -46,8 +46,8 @@ var legacyMetricPaths = map[string]string{
 	"servicedisttraffic": "/metrics/servicedisttraffic",
 }
 
-// RegisterMonitoring adds the Phase-1 monitoring read tools
-// (docs/MCP-DESIGN.md §3.3). PromQL/Alertmanager tools register only when the
+// RegisterMonitoring adds the monitoring read tools. PromQL/Alertmanager
+// tools register only when the
 // corresponding backends are configured; alerts_catalog only when the rules
 // file is loadable.
 func RegisterMonitoring(s *sdk.Server, role guard.Role, pol *guard.Policy, deps *Deps) {

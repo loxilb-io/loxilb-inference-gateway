@@ -16,7 +16,7 @@
 
 // Package client is the thin, hand-rolled loxilb REST client used by
 // loxilb-mcp. It intentionally does not import pkg/loxinet: the bridge
-// consumes only the public REST surface (docs/MCP-DESIGN.md §2).
+// consumes only the public REST surface.
 package client
 
 import (
@@ -128,7 +128,8 @@ func (c *Client) setToken(t string) {
 func (c *Client) login(ctx context.Context) error {
 	if c.user == "" {
 		return errors.New("received 401 and no credentials configured for target " +
-			c.name + " (is loxilb running --userservice? see MCP-DESIGN.md F11 note)")
+			c.name + " (is loxilb running --userservice? configure username/password_env " +
+			"or token_env for this target — see docs/MCP-OPERATIONS.md)")
 	}
 	body, _ := json.Marshal(map[string]string{"username": c.user, "password": c.pass})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
@@ -310,7 +311,7 @@ func (c *Client) MetricsText(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("target %s: GET /metrics: read: %w", c.name, err)
 	}
 	if resp.StatusCode == http.StatusUnauthorized {
-		// F11: metrics endpoint 401s when --userservice is on; re-auth and retry once.
+		// The metrics endpoint 401s when --userservice is on; re-auth and retry once.
 		if err := c.login(ctx); err != nil {
 			return "", err
 		}

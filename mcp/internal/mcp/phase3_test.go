@@ -2,9 +2,9 @@
  * Copyright (c) 2026 NetLOX Inc
  * SPDX-License-Identifier: Apache-2.0
  *
- * Phase-3 gate tests: role visibility of the AI-ops and diagnose tools,
+ * Gate tests: role visibility of the AI-ops and diagnose tools,
  * the ai_apikey_create secrets-to-file flow (§5.4 T5: no key material in the
- * response, 0600 file), the ai_apikey_delete confirm-token flow, the F12
+ * response, 0600 file), the ai_apikey_delete confirm-token flow, the accounting
  * caveat surfaced by ai_traffic_report, the diagnose evidence bundles against
  * a mock loxilb, and prompts list/get.
  */
@@ -30,7 +30,7 @@ import (
 const testRawKey = "sk-live-verysecret-1234567890"
 
 // aiMetricsText is a minimal exposition slice covering the families the
-// Phase-3 composites consume.
+// the composite diagnostics consume.
 const aiMetricsText = `# TYPE loxilb_ai_requests_total counter
 loxilb_ai_requests_total{model="llama3",tenant="t1",status="200"} 90
 loxilb_ai_requests_total{model="llama3",tenant="t1",status="500"} 10
@@ -56,7 +56,7 @@ loxilb_active_conntrack_entries 850
 loxilb_conntrack_max_entries 1000
 `
 
-// newAIMock is a loxilb REST stand-in for the Phase-3 AI/diagnose surface.
+// newAIMock is a loxilb REST stand-in for the AI/diagnose surface.
 func newAIMock(t *testing.T) *mockLoxilb {
 	t.Helper()
 	m := &mockLoxilb{}
@@ -275,7 +275,7 @@ func TestPhase3ApikeyDeleteConfirmFlow(t *testing.T) {
 	}
 }
 
-// ai_traffic_report aggregates the metric families and surfaces caveat F12.
+// ai_traffic_report aggregates the metric families and surfaces the accounting caveat.
 func TestPhase3AITrafficReport(t *testing.T) {
 	mock := newAIMock(t)
 	b := aiTestBridge(t, mock)
@@ -295,8 +295,8 @@ func TestPhase3AITrafficReport(t *testing.T) {
 		t.Errorf("rate_limit_drops_total = %v, want 7", got)
 	}
 	caveats, _ := json.Marshal(out["caveats"])
-	if !strings.Contains(string(caveats), "F12") {
-		t.Error("F12 caveat missing from ai_traffic_report")
+	if !strings.Contains(string(caveats), "SSE-terminated") {
+		t.Error("accounting caveat missing from ai_traffic_report")
 	}
 	dur, _ := out["request_duration"].(map[string]any)
 	if dur == nil {

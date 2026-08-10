@@ -16,7 +16,7 @@
 
 // Package mcp assembles the loxilb-mcp bridge: configuration, MCP server
 // construction, and the stdio / streamable-HTTP transports with the security
-// posture defined in docs/MCP-DESIGN.md §2.2.
+// posture defined in docs/MCP-OPERATIONS.md.
 package mcp
 
 import (

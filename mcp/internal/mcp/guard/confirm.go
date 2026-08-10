@@ -28,8 +28,7 @@ import (
 	"time"
 )
 
-// DefaultConfirmTTL is how long an issued confirm token stays redeemable
-// (docs/MCP-DESIGN.md §2.2 "Confirm-token flow").
+// DefaultConfirmTTL is how long an issued confirm token stays redeemable.
 const DefaultConfirmTTL = 120 * time.Second
 
 // Confirm-flow errors. Redeem never reveals which pending token (if any)

@@ -135,8 +135,8 @@ func TestAlertsDocResourceContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(mref.Contents[0].Text, "F12") {
-		t.Error("metrics reference missing F12 caveat")
+	if !strings.Contains(mref.Contents[0].Text, "SSE-terminated") {
+		t.Error("metrics reference missing the accounting caveat")
 	}
 }
 

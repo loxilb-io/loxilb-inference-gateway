@@ -99,7 +99,7 @@ func TestClientNoCredentials401IsActionable(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error without credentials")
 	}
-	// The F11 hint must be present so operators know what to fix.
+	// The userservice hint must be present so operators know what to fix.
 	if want := "userservice"; !contains(err.Error(), want) {
 		t.Errorf("error %q should mention %q", err, want)
 	}

@@ -30,10 +30,9 @@ import (
 	"github.com/loxilb-io/loxilb-inference-gateway/mcp/internal/mcp/guard"
 )
 
-// RegisterManagement adds the Phase-2 management CRUD tools
-// (docs/MCP-DESIGN.md §3.1). Read tools are viewer+, non-destructive
-// mutations operator+, destructive tools admin-only behind the
-// confirm-token flow (§2.2).
+// RegisterManagement adds the management CRUD tools. Read tools are
+// viewer+, non-destructive mutations operator+, destructive tools
+// admin-only behind the confirm-token flow.
 func RegisterManagement(s *sdk.Server, role guard.Role, pol *guard.Policy, deps *Deps) {
 	reg := func(meta guard.ToolMeta, add func()) {
 		meta.Domain = domainMgmt

@@ -13,7 +13,7 @@
 #   4 ai ops         ai_apikey create(file)/list/update/delete confirm flow,
 #                    ai_ratelimit_set/get
 #   5 rca            diagnose_l4_errors / capacity_report evidence bundles,
-#                    ai_traffic_report F12 caveat
+#                    ai_traffic_report accounting caveat
 # The AI 429-under-traffic drill and the 12h soak need an SSE backend and
 # wall-clock time — they run separately on a dedicated testbed, not here.
 source ../common.sh
@@ -211,7 +211,7 @@ echo "$res" | grep -q '"evidence"' && pass "diagnose_l4_errors returns evidence"
 res=$(mcp_call "$ATOKEN" capacity_report)
 echo "$res" | grep -q '"evidence"' && pass "capacity_report returns evidence" || fail "capacity_report: $res"
 res=$(mcp_call "$ATOKEN" ai_traffic_report)
-echo "$res" | grep -q 'F12' && pass "ai_traffic_report surfaces F12 caveat" || fail "F12 caveat missing: $res"
+echo "$res" | grep -q 'SSE-terminated' && pass "ai_traffic_report surfaces the accounting caveat" || fail "accounting caveat missing: $res"
 res=$(mcp_rpc "$ATOKEN" prompts/list)
 echo "$res" | grep -q 'triage-alert' && pass "prompts registered" || fail "prompts/list: $res"
 

@@ -33,15 +33,15 @@ import (
 	"github.com/loxilb-io/loxilb-inference-gateway/mcp/internal/mcp/guard"
 )
 
-// f12Caveat is surfaced in every ai_traffic_report result (known caveat F12,
-// docs/MCP-DESIGN.md §6): the request counter only sees SSE-terminated
-// streams.
-const f12Caveat = "F12: loxilb_ai_requests_total counts only SSE-terminated streams; " +
-	"plain-JSON error responses are invisible in it. Rate-limit denials are only in " +
-	"loxilb_ai_rate_limit_hits_total. Cross-check with loxilb_proxy_http_responses_total."
+// trafficReportCaveat is surfaced in every ai_traffic_report result so the
+// numbers are read with the right accounting model in mind.
+const trafficReportCaveat = "accounting caveat: rate-limit denials are counted only in " +
+	"loxilb_ai_rate_limit_hits_total, not in loxilb_ai_requests_total; on gateway builds " +
+	"predating the non-SSE accounting fix, loxilb_ai_requests_total counts only " +
+	"SSE-terminated streams. Cross-check with loxilb_proxy_http_responses_total."
 
-// RegisterAI adds the Phase-3 AI-gateway operation tools
-// (docs/MCP-DESIGN.md §3.4). Read tools are viewer+, non-destructive
+// RegisterAI adds the AI-gateway operation tools. Read tools are
+// viewer+, non-destructive
 // mutations operator+, ai_apikey_delete admin-only behind the confirm-token
 // flow. Raw API-key material never enters model context by default (T5):
 // ai_apikey_create writes the key to SecretsDir unless reveal=true.
@@ -1066,7 +1066,7 @@ func (d *Deps) aiTrafficReport() sdk.ToolHandlerFor[trafficReportIn, trafficRepo
 		out := trafficReportOut{
 			Target: c.Name(),
 			Caveats: []string{
-				f12Caveat,
+				trafficReportCaveat,
 				"all values are cumulative since loxilb start; for rates use promql_query with rate()",
 			},
 		}
