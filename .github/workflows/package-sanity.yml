@@ -319,13 +319,33 @@ jobs:
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "$PWD"/dist/loxilb-inference-gateway_*.deb
 
       - name: pkg-smoke scenario
+        # Below the job cap so a stall is reported by the step (log intact)
+        # rather than by the job timeout, whose force-kill grace corrupts the
+        # log upload and leaves the failure undiagnosable.
+        timeout-minutes: 12
         working-directory: cicd/pkg-smoke
         run: |
           ./config.sh
           ./validation.sh
 
+      # A netdev wedge takes the runner's log upload down with it, so dump the
+      # state that identifies it while the runner can still talk to us.
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          echo "--- dmesg (netdev) ---"
+          sudo dmesg 2>/dev/null | grep -iE 'unregister_netdevice|bpf|loxilb' | tail -40 || true
+          echo "--- links ---"
+          ip -br link show || true
+          echo "--- netns ---"
+          sudo ip netns list || true
+          echo "--- loxilb unit ---"
+          sudo systemctl status loxilb --no-pager 2>&1 | tail -40 || true
+          sudo journalctl -u loxilb --no-pager -n 100 2>&1 | tail -100 || true
+
       - name: Teardown scenario
         if: always()
+        timeout-minutes: 5
         working-directory: cicd/pkg-smoke
         run: ./rmconfig.sh
 
@@ -360,13 +380,33 @@ jobs:
         run: sudo dnf install -y "$PWD"/dist/loxilb-inference-gateway-*.rpm
 
       - name: pkg-smoke scenario
+        # Below the job cap so a stall is reported by the step (log intact)
+        # rather than by the job timeout, whose force-kill grace corrupts the
+        # log upload and leaves the failure undiagnosable.
+        timeout-minutes: 12
         working-directory: cicd/pkg-smoke
         run: |
           ./config.sh
           ./validation.sh
 
+      # A netdev wedge takes the runner's log upload down with it, so dump the
+      # state that identifies it while the runner can still talk to us.
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          echo "--- dmesg (netdev) ---"
+          sudo dmesg 2>/dev/null | grep -iE 'unregister_netdevice|bpf|loxilb' | tail -40 || true
+          echo "--- links ---"
+          ip -br link show || true
+          echo "--- netns ---"
+          sudo ip netns list || true
+          echo "--- loxilb unit ---"
+          sudo systemctl status loxilb --no-pager 2>&1 | tail -40 || true
+          sudo journalctl -u loxilb --no-pager -n 100 2>&1 | tail -100 || true
+
       - name: Teardown scenario
         if: always()
+        timeout-minutes: 5
         working-directory: cicd/pkg-smoke
         run: ./rmconfig.sh
 
