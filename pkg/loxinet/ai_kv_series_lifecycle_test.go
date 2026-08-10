@@ -52,16 +52,34 @@ func TestKvSubscriberTeardownLeavesNoSeries(t *testing.T) {
 	svc := newKvServiceState(serviceID)
 	svc.algo = "sha256_cbor"
 
+	// Leak hygiene: EVERY exit path (including a t.Fatalf before StopAll) must
+	// cancel the writers and wait them out, or they outlive the iteration with
+	// LIVE contexts and legitimately resurrect the cleared series — which then
+	// fails every later -count iteration with "N survived" (a cascade first
+	// seen under -race, where the slower warm-up tripped the vacuous-guard
+	// Fatalf and orphaned that iteration's writers).
 	var wg sync.WaitGroup
+	var cancels []context.CancelFunc
+	t.Cleanup(func() {
+		for _, c := range cancels {
+			c()
+		}
+		wg.Wait()
+	})
+
 	for ep := 0; ep < nEps; ep++ {
 		epIdx := ep
 		ctx, cancel := context.WithCancel(context.Background())
+		cancels = append(cancels, cancel)
 		svc.inventories[epIdx] = newKvInventory()
 		svc.cancelFns[kvEpRankKey{epIdx: epIdx, rank: 0}] = cancel
 
 		epLabel := fmt.Sprintf("%d", epIdx)
 		// Stand-in for runKvSubscriberLoopRank: mark connected, churn the gauge
-		// the way a reconnecting subscriber does, and zero it on exit.
+		// AND the reconnect/recv-error counters the way a reconnecting
+		// subscriber does, and zero the gauge on exit. The counters share the
+		// same resurrect-after-delete hazard as the gauge, so they must churn
+		// here too or the test would under-constrain the fix.
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -74,6 +92,8 @@ func TestKvSubscriberTeardownLeavesNoSeries(t *testing.T) {
 				default:
 				}
 				setKvConnectedIfLive(ctx, svcLabel, epLabel, 1)
+				incKvReconnectIfLive(ctx, svcLabel, epLabel)
+				incKvRecvErrorIfLive(ctx, svcLabel, epLabel)
 			}
 		}()
 	}
@@ -90,8 +110,13 @@ func TestKvSubscriberTeardownLeavesNoSeries(t *testing.T) {
 		}
 	})
 
-	// Let the writers get going so the teardown genuinely races them.
-	time.Sleep(5 * time.Millisecond)
+	// Let the writers get going so the teardown genuinely races them. Poll
+	// rather than a fixed sleep: under -race, goroutine startup is slow enough
+	// that a 5ms sleep intermittently saw only 3/4 writers up.
+	deadline := time.Now().Add(2 * time.Second)
+	for prom.KvSubscriberSeriesCount(svcLabel) != nEps && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
 	if got := prom.KvSubscriberSeriesCount(svcLabel); got != nEps {
 		t.Fatalf("pre-teardown: %d series, want %d — writers never started, test would pass vacuously", got, nEps)
 	}
@@ -103,5 +128,9 @@ func TestKvSubscriberTeardownLeavesNoSeries(t *testing.T) {
 	// have come back.
 	if got := prom.KvSubscriberSeriesCount(svcLabel); got != 0 {
 		t.Fatalf("post-teardown: %d kv_subscriber_connected series for service %s survived, want 0", got, svcLabel)
+	}
+	if got := prom.KvEpCounterSeriesCount(svcLabel); got != 0 {
+		t.Fatalf("post-teardown: %d reconnect/recv-error counter series for service %s survived, want 0 "+
+			"(unguarded Inc() after ClearKvEpSeries resurrects the child)", got, svcLabel)
 	}
 }

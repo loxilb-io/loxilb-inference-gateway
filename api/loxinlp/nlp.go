@@ -1819,6 +1819,12 @@ func applySnapshotBoot() bool {
 		if result.Result == snapshot.ResultOK {
 			tk.LogIt(tk.LogInfo, "nlp: boot snapshot: %s applied (%d domains planned, attempt %d)\n",
 				snapshot.PersistFileName, len(result.Plan), attempt)
+			// Tolerated anomalies (e.g. duplicate document entries skipped
+			// as already-existing) still deserve a loud trace: the snapshot
+			// should not normally contain duplicates.
+			for _, w := range result.Warnings {
+				tk.LogIt(tk.LogWarning, "nlp: boot snapshot: %s\n", w)
+			}
 			return true
 		}
 		if attempt < bootRetries && subsystemStartupErrors(result.Errors) {
@@ -1829,8 +1835,28 @@ func applySnapshotBoot() bool {
 		}
 		tk.LogIt(tk.LogError, "nlp: boot snapshot: restore failed (result=%q errors=%v); falling back to legacy config replay\n",
 			result.Result, result.Errors)
+		quarantineBootSnapshot()
 		return false
 	}
+}
+
+// quarantineBootSnapshot renames a snapshot.json whose boot restore failed
+// to snapshot.json.failed-<ts>. Leaving it in place is how a failed boot
+// becomes a durable config wipe: the boot restore rolls back to empty, and
+// the next successful persist (auto-persist after any client write, or an
+// explicit save) then overwrites the snapshot with that empty state --
+// destroying both the config and the only forensic copy of the document
+// that failed. Renaming preserves the evidence, and the next boot goes
+// straight to the legacy replay instead of re-failing on a document
+// already known not to apply. The operator can inspect the quarantined
+// file and re-apply it via POST /config/restore once the cause is fixed.
+func quarantineBootSnapshot() {
+	path, err := snapshot.QuarantinePersisted(opt.Opts.ConfigPath, time.Now())
+	if err != nil {
+		tk.LogIt(tk.LogError, "nlp: boot snapshot: quarantine failed: %v (a later persist may overwrite the failing snapshot)\n", err)
+		return
+	}
+	tk.LogIt(tk.LogCritical, "nlp: boot snapshot: restore failed; snapshot preserved at %s (will not be retried or overwritten)\n", path)
 }
 
 // legacyConfigFiles are the boot-replay *.txt artifacts that §6.2 newest-wins
@@ -1841,6 +1867,21 @@ func applySnapshotBoot() bool {
 var legacyConfigFiles = []string{
 	"EPconfig.txt", "lbconfig.txt", "sessionconfig.txt", "sessionulclconfig.txt",
 	"FWconfig.txt", "IPFilterconfig.txt", "SecurityRateconfig.txt", "BFDconfig.txt",
+}
+
+// BootReplayExpected reports whether this process will run a boot config
+// replay at all: a persisted snapshot.json or any legacy *.txt artifact
+// exists. Called by loxinet init BEFORE the REST API starts serving, to
+// decide whether the boot-config gate needs to hold mutating calls -- a
+// fresh node with nothing to replay must accept writes immediately (the
+// gate would otherwise 503 deployment tooling for the several seconds the
+// netlink dump takes before LbSessionGet even starts).
+func BootReplayExpected() bool {
+	if _, err := os.Stat(opt.Opts.ConfigPath + "/" + snapshot.PersistFileName); err == nil {
+		return true
+	}
+	_, txtExists := newestLegacyConfigMtime()
+	return txtExists
 }
 
 // newestLegacyConfigMtime returns the newest mtime across the legacy *.txt
@@ -1894,6 +1935,14 @@ func subsystemStartupErrors(errs []string) bool {
 }
 
 func LbSessionGet(done bool) int {
+
+	// The REST API server is already serving when this boot config replay
+	// runs; the freeze middleware rejects mutating config calls until the
+	// gate opens (a write racing the boot restore can make the restore
+	// fail on state it did not create and roll back everything). Open the
+	// gate on every exit path -- including replay failures -- or the API
+	// would stay read-only forever.
+	defer snapshot.MarkBootConfigSettled()
 
 	if done {
 

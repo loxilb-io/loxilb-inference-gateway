@@ -22,8 +22,8 @@
 #   check 8  vllm-pd-disagg byte-for-byte re-run [PASS] AFTER the l3ep1/l3ep2 collision pre-clean.
 #
 # Metric source-of-truth (api/prometheus/sockproxy_metrics.go):
-#   loxilb_pd_kv_tier15_hits_total{ep_idx}        loxilb_pd_kv_t15_miss_reason_total{reason}
-#   loxilb_pd_kv_t15_fallthrough_total            loxilb_kv_subscriber_connected{service,ep}
+#   loxilb_pd_kv_tier15_hits_total{ep_idx}        loxilb_pd_kv_tier15_miss_reason_total{reason}
+#   loxilb_pd_kv_tier15_fallthrough_total         loxilb_kv_subscriber_connected{service,ep}
 #   loxilb_kv_subscriber_reconnect_total{...}     loxilb_kv_subscriber_recv_error_total{...}
 # Inventory: GET /netlox/v1/config/ai/kv/inventory?service_id=<id>&ep_idx=<idx>.
 #
@@ -447,6 +447,24 @@ else
     # Non-login shells (detached CICD runs) often lack the Go toolchain on PATH —
     # a missing binary must not read as a product FAIL (false-negative).
     command -v go >/dev/null 2>&1 || export PATH=/usr/local/go/bin:$PATH
+    # PREREQUISITE: pkg/loxinet is a cgo package that links the eBPF datapath static
+    # archive (`-l:libloxilbdp.a`, produced by loxilb-ebpf/kernel). On a freshly-cloned or
+    # `make clean`-ed tree that archive does not exist and the go LINKER fails with
+    #   /usr/bin/ld: cannot find -l:libloxilbdp.a
+    # — which reads as a KV unit-test FAIL but is really a missing build artifact (the
+    # containers under test come from the prebuilt image, so nothing else in this suite
+    # needs the host tree built). Build the prerequisite ONCE when absent; a FAILED
+    # prerequisite build is still a HARD sentinel failure — never a silent skip.
+    DP_ARCHIVE="${REPO_ROOT}/loxilb-ebpf/kernel/libloxilbdp.a"
+    if [[ ! -f "${DP_ARCHIVE}" ]]; then
+        echo "  prerequisite: ${DP_ARCHIVE} absent — building loxilb-ebpf (one-off, needed to LINK the cgo test binary)..."
+        if ( cd "${REPO_ROOT}/loxilb-ebpf" && make ) >"${CFGDIR}/.ebpf_build.log" 2>&1 && [[ -f "${DP_ARCHIVE}" ]]; then
+            echo "  prerequisite: libloxilbdp.a built [OK]"
+        else
+            echo "  prerequisite: loxilb-ebpf build FAILED — layer 2 cannot link (tail below)"
+            tail -20 "${CFGDIR}/.ebpf_build.log" 2>/dev/null | sed 's/^/    /' || true
+        fi
+    fi
     if ( cd "${REPO_ROOT}" && go test ./pkg/loxinet -run 'Kv|KV' -count=1 ) >"${gotest_log}" 2>&1; then
         gotest_ok=1
     else
@@ -590,13 +608,13 @@ sleep 3   # let EP-B's probes/CB settle back to UP before the next leg
 #################################################################################
 # (scenario 4) warmup grace + tokenize/no-worker miss -> Tier-2 RR fallthrough + miss-reason{reason}
 #     warmup-miss-fresh is NEVER pre-published (zero overlap). KV selection must FALL THROUGH to Tier-2
-#     RR and the corresponding loxilb_pd_kv_t15_miss_reason_total{reason} + fallthrough counter must
+#     RR and the corresponding loxilb_pd_kv_tier15_miss_reason_total{reason} + fallthrough counter must
 #     increment. The exact warmup-expiry moment is timing-sensitive -> soft(); the miss-reason +
 #     fallthrough increment is HARD.
 #################################################################################
 echo "=== (scenario 4) fresh no-overlap prompt -> Tier-2 RR fallthrough + miss-reason increments ==="
-miss_before=$(metric_val "loxilb_pd_kv_t15_miss_reason_total")
-fall_before=$(metric_val "loxilb_pd_kv_t15_fallthrough_total")
+miss_before=$(metric_val "loxilb_pd_kv_tier15_miss_reason_total")
+fall_before=$(metric_val "loxilb_pd_kv_tier15_fallthrough_total")
 banner5=$(request_and_banner "warmup-miss-fresh")
 # BRIDGE LATENCY: tier15_hits increments in Go instantly, but miss_reason/fallthrough are
 # C-side atomics bridged into prometheus by a 10s TICKER (StartKvMetricsBridge) — an
@@ -604,8 +622,8 @@ banner5=$(request_and_banner "warmup-miss-fresh")
 # seconds later showed fallthrough=1). Poll past the tick for the delta (cap 15s).
 miss_after="${miss_before}"; fall_after="${fall_before}"
 for _ in $(seq 1 15); do
-    miss_after=$(metric_val "loxilb_pd_kv_t15_miss_reason_total")
-    fall_after=$(metric_val "loxilb_pd_kv_t15_fallthrough_total")
+    miss_after=$(metric_val "loxilb_pd_kv_tier15_miss_reason_total")
+    fall_after=$(metric_val "loxilb_pd_kv_tier15_fallthrough_total")
     [[ "$miss_after" -gt "$miss_before" && "$fall_after" -gt "$fall_before" ]] && break
     sleep 1
 done
@@ -613,10 +631,24 @@ s4_miss=$([[ "$miss_after" -gt "$miss_before" ]] && echo 1 || echo 0)
 s4_fall=$([[ "$fall_after" -gt "$fall_before" ]] && echo 1 || echo 0)
 echo "  fresh-prompt: banner=${banner5} ; miss_reason ${miss_before}->${miss_after} ; fallthrough ${fall_before}->${fall_after}"
 s4_ok=$([[ "$s4_miss" == 1 && "$s4_fall" == 1 ]] && echo 1 || echo 0)
-assert "(scenario 4) no-overlap -> Tier-2 RR fallthrough + t15_miss_reason{reason} increments" "$s4_ok"
-# Exact warmup-expiry-moment behaviour is inherently timing-sensitive (guard B window) -> soft.
-warm_ok=$([[ "$fall_after" -ge "$fall_before" ]] && echo 1 || echo 0)
-soft "(scenario 4) warmup-window (guard B) fallthrough timing" "$warm_ok"
+assert "(scenario 4) no-overlap -> Tier-2 RR fallthrough + tier15_miss_reason{reason} increments" "$s4_ok"
+# MISS ATTRIBUTION (was: `fall_after -ge fall_before`, a TAUTOLOGY — a prometheus counter can
+# only ever go up, so that sub-check passed unconditionally and proved nothing). What actually
+# matters is WHICH guard the miss is attributed to: a no-overlap prompt must miss on
+# `no_worker` (no EP inventory matches) or `warmup` (guard B window). A miss attributed to
+# model_empty / text_empty / tokenize / hashes means the request never reached the selector
+# with a usable prefix key — the silent-Tier-2-RR failure mode documented at request_and_banner
+# (a bare text/plain POST produced miss_reason{model_empty}=5, tier15_hits=0, and every routing
+# number below then measured RR instead of KV routing). That is a real regression -> HARD.
+s4_expected=$(( $(metric_val 'loxilb_pd_kv_tier15_miss_reason_total\{reason="no_worker"') \
+              + $(metric_val 'loxilb_pd_kv_tier15_miss_reason_total\{reason="warmup"') ))
+s4_shape=$(( $(metric_val 'loxilb_pd_kv_tier15_miss_reason_total\{reason="model_empty"') \
+            + $(metric_val 'loxilb_pd_kv_tier15_miss_reason_total\{reason="text_empty"') \
+            + $(metric_val 'loxilb_pd_kv_tier15_miss_reason_total\{reason="tokenize"') \
+            + $(metric_val 'loxilb_pd_kv_tier15_miss_reason_total\{reason="hashes"') ))
+echo "  miss attribution: expected-guard(no_worker+warmup)=${s4_expected} ; request-shape(model_empty+text_empty+tokenize+hashes)=${s4_shape}"
+s4_attr_ok=$([[ "$s4_expected" -gt 0 && "$s4_shape" == 0 ]] && echo 1 || echo 0)
+assert "(scenario 4) miss attributed to an EXPECTED guard (no_worker/warmup), NOT a request-shape guard" "$s4_attr_ok"
 
 #################################################################################
 # /metrics counter deltas for the 9 routing counters (miss-reason is ONE CounterVec{reason})
@@ -624,13 +656,145 @@ soft "(scenario 4) warmup-window (guard B) fallthrough timing" "$warm_ok"
 #     kv_subscriber_connected{service,ep}, kv_subscriber_reconnect_total{...}, kv_subscriber_recv_error_total{...}.
 #     Assert the routing-decision counters MOVED across the scenarios above (non-zero hits + fallthrough).
 #################################################################################
-echo "=== /metrics surfaces the 9 routing counters with non-zero deltas ==="
+echo "=== /metrics surfaces the routing counters with non-zero deltas ==="
 m_hits=$(metric_val "loxilb_pd_kv_tier15_hits_total")
-m_fall=$(metric_val "loxilb_pd_kv_t15_fallthrough_total")
+m_fall=$(metric_val "loxilb_pd_kv_tier15_fallthrough_total")
 m_conn=$(llb_curl "${METRICS}" 2>/dev/null | grep -cE "loxilb_kv_subscriber_connected")
-echo "  tier15_hits(sum)=${m_hits} ; t15_fallthrough=${m_fall} ; subscriber_connected lines=${m_conn}"
-fr5_ok=$([[ "$m_hits" -gt 0 && "$m_fall" -gt 0 && "$m_conn" -ge 1 ]] && echo 1 || echo 0)
-assert "9 routing counters present + non-zero tier15_hits/fallthrough deltas" "$fr5_ok"
+echo "  tier15_hits(sum)=${m_hits} ; tier15_fallthrough=${m_fall} ; subscriber_connected lines=${m_conn}"
+# PRESENCE, not just values: the previous form claimed "9 routing counters present" but only
+# ever read 3 numbers — a renamed/unregistered metric family surfaced as a 0 value, never as a
+# missing family. Enumerate the families that MUST exist by this point (the scenarios above
+# have exercised every one) and NAME the missing ones on failure.
+metrics_snapshot=$(llb_curl "${METRICS}" 2>/dev/null)
+fr5_missing=""
+for _fam in loxilb_pd_kv_tier15_hits_total loxilb_pd_kv_tier15_miss_reason_total \
+            loxilb_pd_kv_tier15_fallthrough_total loxilb_kv_subscriber_connected \
+            loxilb_pd_kv_blocks; do
+    echo "${metrics_snapshot}" | grep -qE "^${_fam}[ {]" || fr5_missing="${fr5_missing} ${_fam}"
+done
+[[ -n "${fr5_missing}" ]] && echo "  MISSING metric families:${fr5_missing}"
+fr5_ok=$([[ "$m_hits" -gt 0 && "$m_fall" -gt 0 && "$m_conn" -ge 1 && -z "${fr5_missing}" ]] && echo 1 || echo 0)
+assert "routing counters: all 5 pre-chaos families present + non-zero tier15_hits/fallthrough deltas" "$fr5_ok"
+
+#################################################################################
+# (scenario 5) LONG-CONTEXT / coding-assistant suite — escape parity, TCP
+#     fragmentation, deep-context truncation parity, oversize fail-open, and
+#     long-response integrity. These legs exist because the base corpus was
+#     deliberately "JSON-escape-clean and <= MAX_PREFIX_LEN" — i.e. it DODGED the
+#     regime a real coding assistant lives in (kilobytes of \n/\t/\"-laden code).
+#     Detection provenance (A/B-proven against the pre-fix image):
+#       5a/5b/5c FAIL pre-D-LC2 (selector tokenized RAW escaped bytes -> zero
+#                block parity -> silent Tier-2 RR on every code prompt);
+#       5a-resp FAILS pre-D-LC5 (a >=64KB response overflowed the 64KB PREFILL
+#                response buffer -> completion check could never fire -> the flow
+#                sat in PREFILL_WAITING forever; client got NOTHING, http=000.
+#                Live-proven threshold: resp<=32KB fine, >=64KB total wedge);
+#       5d      FAILS pre-D-LC3 (>1MB JSON hit the 95% rcvbuf guard -> the
+#                connection was RESET instead of served).
+#################################################################################
+echo "=== (scenario 5) long-context coding-assistant suite (escape parity + fragmentation + fail-open) ==="
+LONGCTX_CORPUS="${CFGDIR}/.corpus-longctx.json"
+python3 "${CFGDIR}/prompts/gen_longctx.py" --emit-corpus "${CORPUS}" "${LONGCTX_CORPUS}" >/dev/null
+CORPUS_SAVED="${CORPUS}"
+CORPUS="${LONGCTX_CORPUS}"   # publish/request helpers read ${CORPUS} at call time
+
+# longctx_body_file <prompt-id> <outfile> — full /v1/completions request body as a
+# FILE: the long prompts (12KB/40KB) stay off argv, and curl --data-binary @file
+# is byte-exact (no shell mangling of the code text).
+longctx_body_file() {
+    python3 - "$1" "$2" "${CORPUS}" "${KV_MODEL}" <<'PYBODY'
+import json, sys
+pid, out, corpus, model = sys.argv[1:5]
+d = json.load(open(corpus))
+for p in d["prompts"]:
+    if p["id"] == pid:
+        json.dump({"model": model, "prompt": p["prompt"], "max_tokens": 8},
+                  open(out, "w"))
+        break
+PYBODY
+}
+
+# ── (5a) 12KB real-code prompt (escapes everywhere) -> published EP-B wins the
+#        argmax over a request body spanning many TCP segments, AND a 256KB
+#        response rides back byte-exact (?resp_bytes long-response canary). ──
+publish_prompt_to_ep "longctx-code-review" "${EP_B_IP}"
+lc5a_hits_before=$(tier15_hits "${EP_B_IDX}")
+lc5a_body="${CFGDIR}/.longctx-req-5a.json"
+lc5a_resp="${CFGDIR}/.longctx-resp-5a.bin"
+longctx_body_file "longctx-code-review" "${lc5a_body}"
+LC5A_FILL=262144
+lc5a_stat=$($hexec l3h1 curl -s -o "${lc5a_resp}" -w '%{http_code} %{size_download}' \
+    --max-time 30 -X POST "http://${VIP}:${VPORT}/v1/completions?resp_bytes=${LC5A_FILL}" \
+    -H 'Content-Type: application/json' --data-binary @"${lc5a_body}" 2>/dev/null)
+lc5a_code="${lc5a_stat%% *}"; lc5a_dl="${lc5a_stat##* }"
+lc5a_banner=$(head -c 200 "${lc5a_resp}" 2>/dev/null | grep -Eo 'server[PD][0-9]' | head -1)
+sleep 2
+lc5a_hits_after=$(tier15_hits "${EP_B_IDX}")
+echo "  5a: http=${lc5a_code} banner=${lc5a_banner} tier15_hits{${EP_B_IDX}} ${lc5a_hits_before}->${lc5a_hits_after} dl=${lc5a_dl}B"
+lc5a_ok=$([[ "${lc5a_code}" == "200" && "${lc5a_banner}" == serverD* && \
+             "${lc5a_hits_after}" -gt "${lc5a_hits_before}" ]] && echo 1 || echo 0)
+assert "(scenario 5a) 12KB code prompt (\\n/\\t/\\\" escapes) routes Tier-1.5 to the published EP-B" "$lc5a_ok"
+# Long-response integrity: full filler arrived AND the trailing 26 bytes are the
+# exact cycle the backend generates (a truncated/torn response breaks both).
+lc5a_tail_want=$(python3 -c "n=${LC5A_FILL}; print(''.join(chr(ord('A')+i%26) for i in range(n-26,n)))")
+lc5a_tail_got=$(tail -c 26 "${lc5a_resp}" 2>/dev/null)
+lc5a_resp_ok=$([[ "${lc5a_dl}" -ge "${LC5A_FILL}" && "${lc5a_tail_got}" == "${lc5a_tail_want}" ]] && echo 1 || echo 0)
+echo "  5a-resp: size_download=${lc5a_dl} (want >=${LC5A_FILL}) tail26=$([[ ${lc5a_resp_ok} == 1 ]] && echo match || echo MISMATCH)"
+assert "(scenario 5a) 256KB response through the fullproxy arrives byte-exact (count + tail)" "$lc5a_resp_ok"
+
+# ── (5b) SAME 12KB prompt via a slow fragmented writer (--limit-rate 8k => the
+#        body dribbles in over ~1.5s across many reads) -> identical routing.
+#        Pins the multi-read rcvbuf accumulation + parse-after-complete path. ──
+lc5b_hits_before=$(tier15_hits "${EP_B_IDX}")
+lc5b_banner=$($hexec l3h1 curl -s --max-time 60 --limit-rate 8k \
+    -X POST "http://${VIP}:${VPORT}/v1/completions" \
+    -H 'Content-Type: application/json' --data-binary @"${lc5a_body}" 2>/dev/null \
+    | grep -Eo 'server[PD][0-9]' | head -1)
+sleep 2
+lc5b_hits_after=$(tier15_hits "${EP_B_IDX}")
+echo "  5b: banner=${lc5b_banner} tier15_hits{${EP_B_IDX}} ${lc5b_hits_before}->${lc5b_hits_after} (slow fragmented writer)"
+lc5b_ok=$([[ "${lc5b_banner}" == serverD* && "${lc5b_hits_after}" -gt "${lc5b_hits_before}" ]] && echo 1 || echo 0)
+assert "(scenario 5b) slow fragmented delivery (multi-read assembly) routes identically" "$lc5b_ok"
+
+# ── (5c) 40KB deep-context prompt -> truncation parity: the publisher hashes the
+#        FULL chain (~10K tokens), loxilb only the MAX_PREFIX_LEN-truncated head —
+#        the leading blocks must still match and route to the publisher EP-C. ──
+publish_prompt_to_ep "longctx-deep-context" "${EP_C_IP}"
+lc5c_hits_before=$(tier15_hits "${EP_C_IDX}")
+lc5c_body="${CFGDIR}/.longctx-req-5c.json"
+longctx_body_file "longctx-deep-context" "${lc5c_body}"
+lc5c_banner=$($hexec l3h1 curl -s --max-time 30 \
+    -X POST "http://${VIP}:${VPORT}/v1/completions" \
+    -H 'Content-Type: application/json' --data-binary @"${lc5c_body}" 2>/dev/null \
+    | grep -Eo 'server[PD][0-9]' | head -1)
+sleep 2
+lc5c_hits_after=$(tier15_hits "${EP_C_IDX}")
+echo "  5c: banner=${lc5c_banner} tier15_hits{${EP_C_IDX}} ${lc5c_hits_before}->${lc5c_hits_after} (40KB deep context)"
+lc5c_ok=$([[ "${lc5c_banner}" == serverD* && "${lc5c_hits_after}" -gt "${lc5c_hits_before}" ]] && echo 1 || echo 0)
+assert "(scenario 5c) 40KB deep-context prompt: truncated-head parity still selects the publisher EP" "$lc5c_ok"
+
+# ── (5d) ~1.3MB oversize JSON (beyond the 1MB rcvbuf) -> MUST be served
+#        fail-open via the stream fallback, NEVER connection-reset. Dual proof:
+#        HTTP 200 + banner (served) AND the structured [JSON_STREAM_FALLBACK]
+#        marker in the loxilb log (the specific code path, not incidental RR). ──
+lc5d_body="${CFGDIR}/.longctx-req-5d.json"
+python3 "${CFGDIR}/prompts/gen_longctx.py" --emit-oversize-body 1258291 "${lc5d_body}" \
+    --model "${KV_MODEL}" >/dev/null
+lc5d_stat=$($hexec l3h1 curl -s -o "${CFGDIR}/.longctx-resp-5d.bin" -w '%{http_code}' \
+    --max-time 60 -X POST "http://${VIP}:${VPORT}/v1/completions" \
+    -H 'Content-Type: application/json' --data-binary @"${lc5d_body}" 2>/dev/null)
+lc5d_banner=$(head -c 200 "${CFGDIR}/.longctx-resp-5d.bin" 2>/dev/null | grep -Eo 'server[PD][0-9]' | head -1)
+# NB: the log dir holds MULTIPLE loxilb*.log files (rotation) — `grep -c` on a
+# multi-file glob prints per-file `path:count` lines, which breaks the numeric
+# compare below. `grep -h | wc -l` yields one plain total across all files.
+lc5d_marker=$(docker exec llb1 sh -c \
+    'grep -h "JSON_STREAM_FALLBACK" /var/log/loxilb*.log 2>/dev/null | wc -l' 2>/dev/null | tr -dc 0-9)
+lc5d_marker="${lc5d_marker:-0}"
+echo "  5d: http=${lc5d_stat} banner=${lc5d_banner} JSON_STREAM_FALLBACK markers=${lc5d_marker} (1.3MB oversize)"
+lc5d_ok=$([[ "${lc5d_stat}" == "200" && -n "${lc5d_banner}" && "${lc5d_marker}" -ge 1 ]] && echo 1 || echo 0)
+assert "(scenario 5d) oversize (1.3MB) JSON served fail-open via stream fallback (200 + marker), not reset" "$lc5d_ok"
+
+CORPUS="${CORPUS_SAVED}"   # later legs read the base corpus again
 
 #################################################################################
 # publisher --kill/restart -> subscriber_connected transition + inventory clear + replay
@@ -653,8 +817,11 @@ fr6_reconn=$([[ "$reconn_after" -gt "$reconn_before" ]] && echo 1 || echo 0)
 echo "  reconnect_total ${reconn_before}->${reconn_after} ; connected(sum)=${conn_now}"
 fr6_ok=$([[ "$fr6_reconn" == 1 ]] && echo 1 || echo 0)
 assert "publisher restart drives subscriber rebuild (reconnect_total increments)" "$fr6_ok"
-# Exact reconnect latency is inherently non-deterministic -> soft.
-soft "subscriber reconnect latency window" "$([[ "$conn_now" -ge 0 ]] && echo 1 || echo 0)"
+# Exact reconnect latency is inherently non-deterministic -> soft. (`conn_now -ge 0` was a
+# TAUTOLOGY: metric_val floors at 0, so it could never be false. The real signal is that the
+# subscriber came back UP within the settle window — connected gauge sum >= 1.)
+soft "subscriber reconnected within the settle window (connected gauge sum >= 1)" \
+     "$([[ "$conn_now" -ge 1 ]] && echo 1 || echo 0)"
 
 #################################################################################
 # (chaos matrix + cap/eviction + resync) — the final validation stage for the
@@ -848,12 +1015,37 @@ assert "(resync) transient blip KEEPs warm inventory AND a low-seq restart CLEAR
 echo "=== KV-T15 evidence (selector decisions + per-reason miss breakdown) ==="
 docker exec llb1 sh -c 'grep -h "KV_T15" /var/log/loxilb*.log 2>/dev/null | tail -20' \
     | sed 's/^/  [KV_T15] /' || echo "  (no in-container loxilb log access)"
-llb_curl "${METRICS}" 2>/dev/null | grep -E "t15_miss_reason|t15_fallthrough|tier15_hits" \
+llb_curl "${METRICS}" 2>/dev/null | grep -E "tier15_miss_reason|tier15_fallthrough|tier15_hits" \
     | grep -v '^#' | sed 's/^/  [metric] /' || true
 for _pl in "${CFGDIR}"/.kvpub-d05-*.log; do
     [[ -e "${_pl}" ]] || continue
     echo "  [publisher ${_pl##*/}] $(tail -2 "${_pl}" | head -1)"
 done
+
+#################################################################################
+# FULL routing/liveness metric-family presence — the LAZY families only exist once
+#     exercised, so this must run AFTER the reconnect + cap/eviction legs (a check placed
+#     earlier could only ever assert the eager subset). This is the gate that catches a
+#     metric being renamed or dropped from registration: a family that vanishes reads as a
+#     value of 0 everywhere else in this file, which is exactly how the whole
+#     loxilb_pd_kv_t15_* -> loxilb_pd_kv_tier15_* rename went unnoticed.
+#################################################################################
+echo "=== metric-family registration gate (all 8 KV routing/liveness families) ==="
+fam_snapshot=$(llb_curl "${METRICS}" 2>/dev/null)
+fam_missing=""
+for _fam in loxilb_pd_kv_tier15_hits_total loxilb_pd_kv_tier15_miss_reason_total \
+            loxilb_pd_kv_tier15_fallthrough_total loxilb_pd_kv_blocks \
+            loxilb_kv_subscriber_connected loxilb_kv_subscriber_reconnect_total \
+            loxilb_kv_subscriber_recv_error_total loxilb_kv_inv_cap_evictions_total; do
+    if echo "${fam_snapshot}" | grep -qE "^${_fam}[ {]"; then
+        echo "  [family] ${_fam} present"
+    else
+        fam_missing="${fam_missing} ${_fam}"
+    fi
+done
+[[ -n "${fam_missing}" ]] && echo "  MISSING metric families:${fam_missing}"
+fam_ok=$([[ -z "${fam_missing}" ]] && echo 1 || echo 0)
+assert "all 8 KV routing/liveness metric families registered + emitted on /metrics" "$fam_ok"
 
 # NOTE: the backward-compat re-run is DELIBERATELY the LAST stage (after the exit gate): it
 # docker-rm's THIS scenario's llb1/l3ep* (collision pre-clean) and replaces the topology
@@ -1122,12 +1314,12 @@ publish_prompt_to_ep "shared-prefix-base" "${EP_A_IP}"
 # a few and require tier15_hits to advance while no_worker stays flat. If parity is broken
 # every number below would measure RR, so this is a HARD precondition.
 w1_hits_before=$(metric_val "loxilb_pd_kv_tier15_hits_total")
-w1_nowork_before=$(metric_val "loxilb_pd_kv_t15_miss_reason_total\{reason=\"no_worker\"")
+w1_nowork_before=$(metric_val "loxilb_pd_kv_tier15_miss_reason_total\{reason=\"no_worker\"")
 for _ in 1 2 3 4; do request_and_banner "shared-prefix-base" >/dev/null; done
 w1_hits_after="${w1_hits_before}"; w1_nowork_after="${w1_nowork_before}"
 for _ in $(seq 1 15); do
     w1_hits_after=$(metric_val "loxilb_pd_kv_tier15_hits_total")
-    w1_nowork_after=$(metric_val "loxilb_pd_kv_t15_miss_reason_total\{reason=\"no_worker\"")
+    w1_nowork_after=$(metric_val "loxilb_pd_kv_tier15_miss_reason_total\{reason=\"no_worker\"")
     [[ "$w1_hits_after" -gt "$w1_hits_before" ]] && break
     sleep 1
 done

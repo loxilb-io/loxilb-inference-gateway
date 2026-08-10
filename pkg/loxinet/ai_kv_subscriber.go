@@ -47,6 +47,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 	"unsafe"
@@ -583,6 +584,7 @@ func runKvSubscriberLoop(ctx context.Context, epIdx int, serviceID uint32, inv *
 //     (rebuildKvSubscriber's informational log, seed helpers).
 //   - ranks >0 start cold at -1 and never touch inv.lastSeq — their decisions
 //     key exclusively on their own stream.
+//
 // The loop deliberately takes the resolved inventory and the serviceID rather
 // than the *kvServiceState it belongs to. It used to do `svcState.inventories[epIdx]`
 // here, which is an unsynchronized map read racing `delete(svc.inventories, ...)`
@@ -644,7 +646,7 @@ func runKvSubscriberLoopRank(ctx context.Context, epIdx int, rank uint16, servic
 			default:
 			}
 
-			prom.IncKvSubscriberRecvError(svcLabel, epLabel)
+			incKvRecvErrorIfLive(ctx, svcLabel, epLabel)
 
 			// go-zeromq/zmq4 returns a connection-lost error (typically io.EOF)
 			// EXACTLY ONCE when the remote publisher dies — subsequent Recv
@@ -741,6 +743,24 @@ func runKvSubscriberLoopRank(ctx context.Context, epIdx int, rank uint16, servic
 			}
 		}
 
+		// FO-5: live-stream seq REGRESSION — a fast engine restart behind a
+		// transparent ZMQ SUB auto-reconnect: Recv never errors, resyncPending
+		// never arms, and the fresh publisher process restarts its seq low.
+		// Without this branch the regression was silently absorbed by the
+		// rankLastSeq = seq update below, so the dead engine's warm inventory
+		// survived as phantom hashes and Tier-1.5 kept routing long prompts to
+		// the cold restarted EP (herding + stealing traffic from the real cache
+		// owners). Same rule kvResyncDecision already encodes for the explicit
+		// paths (seq < lastSeq ⇒ restart ⇒ CLEAR), applied per live message.
+		// The CLEAR runs BEFORE this message's events so the fresh publisher's
+		// first blocks land in a clean inventory. justResynced guards the
+		// explicit-reconnect path, whose decision already ran on this pair.
+		if rankLastSeq >= 0 && seq < rankLastSeq && !justResynced {
+			log.Infof("kv-subscriber: ep %d rank %d live-stream seq REGRESSION %d -> %d decision=CLEAR — publisher restarted behind transparent reconnect; clearing stale inventory (size=%d)",
+				epIdx, rank, rankLastSeq, seq, inv.Size())
+			inv.ClearAll()
+		}
+
 		// Decode and apply events from payload (frame 2)
 		events, err := decodeKVEventBatch(frames[2])
 		if err != nil {
@@ -783,28 +803,63 @@ func runKvSubscriberLoopRank(ctx context.Context, epIdx int, rank uint16, servic
 	}
 }
 
+// kvSeriesMu serializes subscriber-goroutine metric writes against teardown's
+// cancel()+ClearKvEpSeries. The bare ctx.Err() guard alone is a TOCTOU: a writer
+// that passes the check can be descheduled, teardown cancels AND deletes the
+// series, and the write then lands after the delete — resurrecting the child.
+// That residual window was real, not theoretical: on an 8-core host the
+// lifecycle test leaked 1-4 series in ~80% of runs (first caught by the GPU
+// testbed CI 2026-08-07; the original 15/15→0/15 fix had only narrowed the
+// race). Both critical sections are short and non-blocking, so the rule-delete
+// path stays effectively synchronous. Lock order: svc.mu → kvSeriesMu (writers
+// never take svc.mu, so no cycle).
+var kvSeriesMu sync.Mutex
+
 // setKvConnectedIfLive writes the subscriber-liveness gauge ONLY while the
 // subscriber is still live, i.e. its ctx has not been cancelled.
 //
 // Teardown (KvSubscriberStopAll / KvSubscriberStop) cancels ctx and then calls
 // prom.ClearKvEpSeries, which DELETES this (service, ep) child. cancel() only
-// signals — it does not wait — so every write this goroutine performs afterwards
-// lands AFTER the delete and RESURRECTS the child. The deferred write below is
-// the worst case: it re-creates the series at 0 on literally every teardown, and
-// nothing ever removes it again, so `min(loxilb_kv_subscriber_connected)` (the
-// "KV subscribers up" panel) reads 0 forever once any KV service has been torn
-// down. Measured 15/15 teardowns leaking before this guard.
+// signals — it does not wait — so a write that slips past the ctx check after
+// the delete RESURRECTS the child at 0, and nothing ever removes it again:
+// `min(loxilb_kv_subscriber_connected)` (the "KV subscribers up" panel) reads 0
+// forever once any KV service has been torn down. kvSeriesMu makes the
+// check+write atomic against teardown's cancel+delete, closing the window.
 //
-// The guard is one-directional and cannot deadlock: it never blocks, so the
-// rule-delete path stays synchronous. Waiting for the goroutine instead (a
-// WaitGroup around ClearKvEpSeries) is NOT viable — the loop blocks in
-// sub.RecvMultipart(), which does not observe ctx cancellation until a message
-// arrives, so an idle EP would hang rule deletion indefinitely.
+// Waiting for the goroutine instead (a WaitGroup around ClearKvEpSeries) is NOT
+// viable — the loop blocks in sub.RecvMultipart(), which does not observe ctx
+// cancellation until a message arrives, so an idle EP would hang rule deletion
+// indefinitely.
 func setKvConnectedIfLive(ctx context.Context, svcLabel, epLabel string, connected int) {
+	kvSeriesMu.Lock()
+	defer kvSeriesMu.Unlock()
 	if ctx.Err() != nil {
 		return
 	}
 	prom.SetKvSubscriberConnected(svcLabel, epLabel, connected)
+}
+
+// incKvReconnectIfLive / incKvRecvErrorIfLive: the counter children
+// (kv_subscriber_reconnect_total / kv_subscriber_recv_error_total) have the
+// exact same resurrect-after-delete race as the connected gauge — the loop can
+// return from RecvMultipart (message or error) AFTER teardown cancelled and
+// reaped the series, and a bare Inc() would recreate the child. Same guard.
+func incKvReconnectIfLive(ctx context.Context, svcLabel, epLabel string) {
+	kvSeriesMu.Lock()
+	defer kvSeriesMu.Unlock()
+	if ctx.Err() != nil {
+		return
+	}
+	prom.IncKvSubscriberReconnect(svcLabel, epLabel)
+}
+
+func incKvRecvErrorIfLive(ctx context.Context, svcLabel, epLabel string) {
+	kvSeriesMu.Lock()
+	defer kvSeriesMu.Unlock()
+	if ctx.Err() != nil {
+		return
+	}
+	prom.IncKvSubscriberRecvError(svcLabel, epLabel)
 }
 
 // rebuildKvSubscriber closes the current SUB socket and redials the same
@@ -863,7 +918,7 @@ func rebuildKvSubscriber(ctx context.Context, sub kvZmqSubscriber, inv *kvInvent
 		epIdx, endpoint, inv.lastSeq)
 
 	setKvConnectedIfLive(ctx, svcLabel, epLabel, 1)
-	prom.IncKvSubscriberReconnect(svcLabel, epLabel)
+	incKvReconnectIfLive(ctx, svcLabel, epLabel)
 	return true
 }
 
@@ -1008,6 +1063,32 @@ func KvSubscriberStartRank(serviceID uint32, epIdx int, rank uint16, epIP string
 			}
 		}
 
+		// Inventory replay on fresh subscribe: engine prefix caches survive a
+		// gateway restart, but engines publish BlockStored only on NEW stores,
+		// so a fresh subscriber stays blind to every block cached before it
+		// connected (cold-herding until natural churn). When the publisher
+		// exposes a replay endpoint (fixed port offset from the PUB endpoint),
+		// request the buffered event history once before entering the live
+		// loop. Fail-open on every edge: no replay listener (engines without
+		// replay_endpoint configured), parse failure, or a hung replay (the
+		// bounded context unblocks Recv) all leave the inventory to warm
+		// organically, exactly as before. The live loop still gets replay=nil
+		// — its KEEP/CLEAR gap heuristics stay the shipped behavior.
+		if raddr := kvReplayEndpoint(addr); raddr != "" {
+			rctx, rcancel := context.WithTimeout(ctx, 15*time.Second)
+			rc := newPureGoZmqReplayClient(rctx)
+			if err := rc.Connect(raddr); err != nil {
+				log.Infof("kv-subscriber: ep %d rank %d no replay listener at %s (%v) — inventory warms organically",
+					epIdx, rank, raddr, err)
+			} else {
+				replayKvEvents(inv, rc, 0)
+				log.Infof("kv-subscriber: ep %d rank %d replayed buffered KV events from %s (inventory size=%d)",
+					epIdx, rank, raddr, inv.Size())
+			}
+			_ = rc.Close()
+			rcancel()
+		}
+
 		// Run the subscriber loop (reuses existing tested logic).
 		// `addr` is passed for on-recv-error socket rebuild — go-zeromq/zmq4
 		// does not auto-reconnect after publisher restart, so the loop needs
@@ -1033,6 +1114,10 @@ func KvSubscriberStop(serviceID uint32, epIdx int) {
 	svc.mu.Lock()
 	defer svc.mu.Unlock()
 
+	// cancel+clear must be atomic against the guarded writers (kvSeriesMu):
+	// otherwise a writer that already passed its ctx check re-creates the
+	// series right after the delete (the ghost-series TOCTOU).
+	kvSeriesMu.Lock()
 	for key, cancel := range svc.cancelFns {
 		if key.epIdx == epIdx {
 			cancel()
@@ -1045,6 +1130,7 @@ func KvSubscriberStop(serviceID uint32, epIdx int) {
 	// liveness/reconnect/error, tier15 hit/spill, ep_idx->IP identity) so a
 	// decommissioned EP does not linger as stale series on /metrics.
 	prom.ClearKvEpSeries(fmt.Sprintf("%d", serviceID), fmt.Sprintf("%d", epIdx))
+	kvSeriesMu.Unlock()
 }
 
 // KvSubscriberStopAll stops all ZMQ subscribers for the given service.
@@ -1063,6 +1149,10 @@ func KvSubscriberStopAll(serviceID uint32) {
 	svc.mu.Lock()
 	defer svc.mu.Unlock()
 
+	// cancel+clear under kvSeriesMu: atomic against the guarded writers, so a
+	// writer that raced past its ctx check cannot resurrect a reaped series
+	// (the ghost-series TOCTOU — see kvSeriesMu doc).
+	kvSeriesMu.Lock()
 	// cancelFns is keyed by (epIdx, rank) — ranging over the
 	// composite keys cancels EVERY rank goroutine of every EP (: a
 	// multi-rank EP owns N entries; the single service-scoped call must tear
@@ -1080,6 +1170,7 @@ func KvSubscriberStopAll(serviceID uint32) {
 		delete(svc.inventories, epIdx)
 	}
 	prom.ClearKvServiceSeries(svcLabel)
+	kvSeriesMu.Unlock()
 }
 
 // ---------- : Tier-1.5 zero-hit watchdog ----------
@@ -1559,6 +1650,97 @@ func (s *pureGoZmqSubscriber) RecvMultipart() ([][]byte, error) {
 func (s *pureGoZmqSubscriber) Close() error {
 	if s.sub != nil {
 		return s.sub.Close()
+	}
+	return nil
+}
+
+// kvReplayPortOffset is the fixed port offset between an engine's KV-event
+// PUB endpoint and its replay endpoint: PUB on port P ⇒ replay on P+offset.
+// +1000 (5557 → 6557) keeps clear of SGLang data-parallel rank ports, which
+// occupy P+1..P+rankCount on the PUB side. Override with
+// LLB_KV_REPLAY_PORT_OFFSET; 0 disables replay entirely.
+const kvReplayPortOffsetDefault = 1000
+
+func kvReplayPortOffset() int {
+	if v := os.Getenv("LLB_KV_REPLAY_PORT_OFFSET"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return kvReplayPortOffsetDefault
+}
+
+// kvReplayEndpoint derives the replay endpoint from a PUB endpoint
+// ("tcp://host:port"). Returns "" when replay is disabled or the address
+// cannot be parsed (caller skips replay — fail-open).
+func kvReplayEndpoint(addr string) string {
+	off := kvReplayPortOffset()
+	if off == 0 {
+		return ""
+	}
+	i := strings.LastIndex(addr, ":")
+	if i < 0 {
+		return ""
+	}
+	port, err := strconv.Atoi(addr[i+1:])
+	if err != nil || port+off <= 0 || port+off > 65535 {
+		return ""
+	}
+	return fmt.Sprintf("%s:%d", addr[:i], port+off)
+}
+
+// pureGoZmqReplayClient implements kvZmqReplayRequester over a DEALER socket
+// against the engine publisher's ROUTER replay endpoint (vLLM
+// KVEventsConfig.replay_endpoint). Wire format: request is a single 8-byte
+// big-endian start sequence (preceded by the explicit empty delimiter a
+// DEALER must send to a ROUTER peer); each reply is (seq, payload) frames,
+// terminated by a marker whose seq is negative or whose payload is empty.
+type pureGoZmqReplayClient struct {
+	ctx    context.Context
+	dealer zmq4.Socket
+}
+
+func newPureGoZmqReplayClient(ctx context.Context) *pureGoZmqReplayClient {
+	return &pureGoZmqReplayClient{ctx: ctx}
+}
+
+func (r *pureGoZmqReplayClient) Connect(endpoint string) error {
+	r.dealer = zmq4.NewDealer(r.ctx)
+	if err := r.dealer.Dial(endpoint); err != nil {
+		return fmt.Errorf("zmq replay dial %s: %w", endpoint, err)
+	}
+	return nil
+}
+
+func (r *pureGoZmqReplayClient) SendStartSeq(seq int64) error {
+	var b [8]byte
+	binary.BigEndian.PutUint64(b[:], uint64(seq))
+	return r.dealer.SendMulti(zmq4.NewMsgFrom([]byte{}, b[:]))
+}
+
+func (r *pureGoZmqReplayClient) RecvReplay() (int64, []byte, bool, error) {
+	msg, err := r.dealer.Recv()
+	if err != nil {
+		return 0, nil, false, err
+	}
+	frames := msg.Frames
+	// Strip the ROUTER-side empty delimiter when present.
+	if len(frames) > 0 && len(frames[0]) == 0 {
+		frames = frames[1:]
+	}
+	if len(frames) < 1 || len(frames[0]) < 8 {
+		return 0, nil, true, nil // malformed — treat as end of replay
+	}
+	seq := int64(binary.BigEndian.Uint64(frames[0]))
+	if seq < 0 || len(frames) < 2 || len(frames[1]) == 0 {
+		return seq, nil, true, nil // end-of-replay marker
+	}
+	return seq, frames[1], false, nil
+}
+
+func (r *pureGoZmqReplayClient) Close() error {
+	if r.dealer != nil {
+		return r.dealer.Close()
 	}
 	return nil
 }

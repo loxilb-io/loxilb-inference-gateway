@@ -126,6 +126,21 @@ func main() {
 		}
 
 		body := []byte(reflectBody(r))
+		// Long-response mode (?resp_bytes=N): append N deterministic filler
+		// bytes ('A'..'Z' cycling) after the reflect block. The KV long-context
+		// legs use this to drive a large response THROUGH the fullproxy and
+		// assert byte-exact arrival (count + tail pattern) — a response-side
+		// truncation/fragmentation canary. Cap 8MB so a bad query can't OOM
+		// the backend.
+		if n := r.URL.Query().Get("resp_bytes"); n != "" {
+			if v, err := strconv.Atoi(n); err == nil && v > 0 && v <= 8<<20 {
+				filler := make([]byte, v)
+				for i := range filler {
+					filler[i] = byte('A' + i%26)
+				}
+				body = append(body, filler...)
+			}
+		}
 		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(body)

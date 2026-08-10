@@ -264,21 +264,28 @@ delete_docker_host() {
   if [[ $1 == "llb"* ]] || [[ $1 == "loxilb"* ]]; then
     dcmd="stop"
   fi
-  if docker $dcmd $1 2>&1 >> /dev/null
+  # `cmd 2>&1 >> /dev/null` is the WRONG redirect order: it first points stderr at the
+  # CURRENT stdout (the terminal / the caller's capture) and only THEN sends stdout to
+  # /dev/null — so stderr leaks onto stdout and an outer `2>/dev/null` on the call site
+  # cannot suppress it either. That is why an idempotent teardown printed
+  #   Error response from daemon: cannot kill container: r1: No such container: r1
+  # on every run where the optional (vrrp/HA) hosts were never spawned. `>/dev/null 2>&1`
+  # is the intended order and keeps the same exit status the `if` below tests.
+  if docker $dcmd $1 >/dev/null 2>&1
   then
     hd="true"
     ka=`docker ps -f name=ka_$1| grep -w ka_$1 | cut  -d " "  -f 1 | grep -iv  "CONTAINER"`
     loxilbs=( "${loxilbs[@]/$1}" )
     if [ "$ka" != "" ]; then
-      docker kill ka_$1 2>&1 >> /dev/null
-      docker rm ka_$1 2>&1 >> /dev/null
+      docker kill ka_$1 >/dev/null 2>&1
+      docker rm ka_$1 >/dev/null 2>&1
     fi
   fi
   if [ -f "$hexist/$1" ]; then
-    $hns del $1
-    sudo rm -fr "$hexist/$1" 2>&1 >> /dev/null
+    $hns del $1 >/dev/null 2>&1 || true
+    sudo rm -fr "$hexist/$1" >/dev/null 2>&1
   fi
-  docker rm $1 2>&1 >> /dev/null || true
+  docker rm $1 >/dev/null 2>&1 || true
 }
 
 ## Connects two docker hosts

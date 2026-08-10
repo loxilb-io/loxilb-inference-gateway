@@ -51,6 +51,7 @@ import (
 	"github.com/loxilb-io/loxilb/pkg/logrotate"
 	"github.com/loxilb-io/loxilb/pkg/loxilog"
 	"github.com/loxilb-io/loxilb/pkg/presidio"
+	"github.com/loxilb-io/loxilb/pkg/snapshot"
 	"github.com/loxilb-io/loxilb/pkg/user"
 	utils "github.com/loxilb-io/loxilb/pkg/utils"
 	tk "github.com/loxilb-io/loxilib"
@@ -660,6 +661,21 @@ func loxiNetInit() {
 	// NetAddrAdd/NetAddrDel hooks (apiclient.go) if Init fails.
 	if err := SelfIPCache.Init(); err != nil {
 		tk.LogIt(tk.LogWarning, "self-ip cache init failed: %v\n", err)
+	}
+
+	// The boot-config gate: mutating REST calls are held (503) while the
+	// boot config replay is pending, because a write racing the replay can
+	// make the restore fail on state it did not create, roll back the whole
+	// boot config, and then auto-persist the empty result. Decide BEFORE
+	// the API server starts: only a node that actually has something to
+	// replay (snapshot.json or legacy *.txt) gets a freeze window -- a
+	// fresh node, or a mode that never replays (no-NLP, BGP-peer), accepts
+	// writes immediately. If a client write lands on a fresh node and
+	// auto-persists just before LbSessionGet stats the disk, the replay it
+	// triggers re-applies the same items and skips them as idempotent
+	// duplicates -- benign by design.
+	if opts.Opts.NoNlp || opts.Opts.BgpPeerMode || !nlp.BootReplayExpected() {
+		snapshot.MarkBootConfigSettled()
 	}
 
 	// Initialize and spawn the api server subsystem

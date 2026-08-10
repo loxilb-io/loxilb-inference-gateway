@@ -969,6 +969,12 @@ type LbServiceArg struct {
 	PDCacheThreshold uint8 `json:"pd_cache_threshold,omitempty"`
 	// PDBalanceAbsThreshold - Load imbalance threshold (default 3)
 	PDBalanceAbsThreshold uint8 `json:"pd_balance_abs_threshold,omitempty"`
+	// CbEnable - Enable the per-endpoint circuit breaker for full-proxy rules.
+	// After 5 consecutive backend connect failures an endpoint is skipped by all
+	// selection paths until a 30s open-timeout expires and a half-open probe
+	// succeeds. Complements (does not replace) the liveness prober: the breaker
+	// reacts within one failed request, the prober within one probe interval.
+	CbEnable bool `json:"cb_enable,omitempty"`
 
 	// KV-Cache Exact Routing configuration
 	// KvExactMode - KV-cache exact routing mode: 0=off, 1=zmq

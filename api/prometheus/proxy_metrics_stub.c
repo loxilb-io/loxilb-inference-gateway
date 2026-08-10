@@ -62,6 +62,20 @@ typedef struct proxy_metrics_snapshot {
     uint64_t pd_kv_t15_miss_no_worker;
     uint64_t pd_kv_t15_miss_excluded;
     uint64_t pd_kv_t15_fallthrough_total;
+
+    /* Keep in lockstep with loxilb-ebpf/common/sockproxy_metrics.h and the
+     * cgo preamble in sockproxy_metrics.go — a size mismatch corrupts the
+     * by-value return when the weak stub is linked. */
+    uint64_t pd_cb_proactive_heal;
+    uint64_t pd_admission_shed;
+    uint64_t pd_admission_queued;
+
+    /* Failover observability counters */
+    uint64_t pd_prefill_ep_died;
+    uint64_t pd_decode_ep_died;
+    uint64_t pd_decode_zero_byte_eof;
+    uint64_t pd_connect_failover;
+    uint64_t lb_select_failure_shutdown;
 } proxy_metrics_snapshot_t;
 
 __attribute__((weak))

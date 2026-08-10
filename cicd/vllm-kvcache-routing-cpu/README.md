@@ -43,7 +43,7 @@ the `cicd/vllm-kvcache-routing-cpu-aws/` provisioning rig). No GPU is used anywh
 | 2  | argmax-overlap selection (highest-overlap prefill EP serves)                       | argmax: banner==serverP0 AND tier15_hits{0}++ (dual proof)          |
 | 3  | guards F/G (no_hashes / no_worker / excluded / cb_open) — C unit `make test_kv`    | C-side `test_kv_exact.c` (layered into the gate)           |
 | 4  | hash parity vs the PROMOTED golden vectors for BOTH algos                          | kv_hash_parity self-check `--algo sha256_cbor` + `--algo xxhash_cbor --vectors cicd/common/kv_hash/fixtures/kv_hash_vectors.json` |
-| 5  | the 9 routing counters surface non-zero deltas (miss-reason is ONE CounterVec)     | `GET /metrics` tier15_hits / t15_fallthrough / t15_miss_reason / subscriber_connected |
+| 5  | the 9 routing counters surface non-zero deltas (miss-reason is ONE CounterVec)     | `GET /metrics` tier15_hits / tier15_fallthrough / tier15_miss_reason / subscriber_connected |
 | 6  | subscriber liveness — publisher kill/restart → reconnect + inventory clear + replay | publisher `--kill`/restart → loxilb_kv_subscriber_reconnect_total increments     |
 | 7  | feature-enable live — kvExactMode active on the rule                               | `GET /config/loadbalancer/all` shows `kvExactMode:1`                            |
 | 8  | backward-compat — vllm-pd-disagg byte-for-byte unchanged on the same build         | re-run `cicd/vllm-pd-disagg` → `SCENARIO-vllm-pd-disagg [PASS]` after collision pre-clean |
@@ -54,10 +54,39 @@ The four **REQUIRED overlap scenarios** map onto checks 1/2 and the guard ladder
 1. **two-EP partial-overlap argmax + mutation flip** (checks 1/2).
 2. **non-contiguous prefill bitmask** — best EP at abs idx 4 (EP-C) still selected.
 3. **excluded / circuit-broken winner → 2nd-best PREFILL EP** (never Tier-2 RR).
-4. **warmup grace + tokenize/no-worker miss → Tier-2 RR fallthrough** + `t15_miss_reason{reason}`.
+4. **warmup grace + tokenize/no-worker miss → Tier-2 RR fallthrough** + `tier15_miss_reason{reason}`.
 
 Every functional assert is **HARD/FATAL** under `SKELETON_STRICT=1`. Only the inherently
 non-deterministic timing windows (exact warmup-expiry moment, reconnect latency) are `soft()`.
+
+## Scenario 5 — long-context / coding-assistant suite
+
+The base corpus is deliberately short and "JSON-escape-clean" — it dodges the regime a real
+coding assistant lives in (kilobytes of `\n`/`\t`/`\"`-laden code). Scenario 5 pins that
+regime with prompts generated deterministically by `prompts/gen_longctx.py` (publisher and
+request path always agree byte-for-byte):
+
+| Leg | What it proves | Defect it detects (A/B-proven vs the pre-fix image) |
+| --- | -------------- | ---------------------------------------------------- |
+| 5a | 12KB real-code prompt (escapes everywhere, body spans many TCP segments) routes Tier-1.5 to the published EP; 256KB `?resp_bytes` response arrives byte-exact (count + tail cycle) | **D-LC2**: the selector tokenized RAW JSON-escaped bytes → zero block parity → silent Tier-2 RR on every code prompt. **D-LC5** (response half): a ≥64KB response overflowed the P/D **prefill response buffer** and the flow wedged in PREFILL_WAITING forever — client got NOTHING (live threshold: ≤32KB fine, ≥64KB dead) |
+| 5b | the same prompt via `--limit-rate 8k` (slow fragmented writer, multi-read rcvbuf assembly) routes identically | request-fragmentation regression canary |
+| 5c | 40KB deep-context prompt: publisher hashes the FULL chain, loxilb only the `MAX_PREFIX_LEN`-truncated head — leading blocks still match (BPE prefix stability) and select the publisher EP | truncation-parity regression canary |
+| 5d | ~1.3MB JSON (beyond the 1MB rcvbuf) is SERVED fail-open via the stream fallback — HTTP 200 + `[JSON_STREAM_FALLBACK]` structured marker | **D-LC3**: oversize JSON hit the 95% rcvbuf guard and the connection was RESET |
+
+Related fixes pinned at the unit layers: **D-LC1** (token-cache key was `text[:512]` — two
+long prompts sharing a 512-byte preamble returned each other's token ids; Go unit
+`TestKvTokenCacheLongPromptNoCollision`, layer 2) and **D-LC2**'s decode/truncation table
+(`test_json_unescape`, layer 1). **D-LC4** (chat body not NUL-bounded before
+`llb_ai_kv_tokenize_chat` — keep-alive stale-tail leak) is fixed in
+`sockproxy_kv_exact.c`; it is chat-path-only and not E2E-drivable here because the harness
+model (Qwen3-0.6B) has no registered chat template.
+
+Documented limitations (fail-open, not bugs — asserted only as far as "served"):
+- **chunked TE** (no Content-Length) skips prefix extraction entirely → Tier-2 RR.
+- `/v1/completions` routes on only the first **511 decoded bytes** (`MAX_PREFIX_LEN`);
+  two prompts sharing that head are indistinguishable to the selector. Raising the window
+  (compile-time `-DMAX_PREFIX_LEN=…`) or a raw-body completions bridge (like the chat
+  path's) is the follow-up feature, tracked outside this suite.
 
 ## Fixtures + feature-enable (config.sh)
 

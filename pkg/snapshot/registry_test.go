@@ -199,7 +199,7 @@ func TestEndpointGetApplyDelete(t *testing.T) {
 	}
 
 	fresh := newMockHooks()
-	n, err := applyEndpoint(fresh, doc)
+	n, _, err := applyEndpoint(fresh, doc, false)
 	if err != nil || n != 1 {
 		t.Fatalf("applyEndpoint: n=%d err=%v", n, err)
 	}
@@ -260,7 +260,7 @@ func TestSecurityRateSingletonApplyAndDelete(t *testing.T) {
 		},
 	}
 
-	n, err := applySecurityRate(hooks, doc)
+	n, _, err := applySecurityRate(hooks, doc, false)
 	if err != nil || n != 1 {
 		t.Fatalf("applySecurityRate: n=%d err=%v", n, err)
 	}
@@ -281,7 +281,7 @@ func TestSecurityRateSingletonApplyAndDelete(t *testing.T) {
 func TestSecurityRateApplyNilIsNoop(t *testing.T) {
 	hooks := newMockHooks()
 	doc := &Document{}
-	n, err := applySecurityRate(hooks, doc)
+	n, _, err := applySecurityRate(hooks, doc, false)
 	if err != nil || n != 0 {
 		t.Fatalf("applySecurityRate with nil SecurityRate should no-op, got n=%d err=%v", n, err)
 	}
@@ -302,7 +302,7 @@ func TestMirrorGetModConvertsToMirrModForApplyAndDelete(t *testing.T) {
 	}
 
 	fresh := newMockHooks()
-	if _, err := applyMirror(fresh, doc); err != nil {
+	if _, _, err := applyMirror(fresh, doc, false); err != nil {
 		t.Fatalf("applyMirror: %v", err)
 	}
 	found := false
@@ -382,7 +382,7 @@ func TestApplyBGPGlobalConfigForwardCompat(t *testing.T) {
 			BGP: BGPDomain{GlobalConfig: &cmn.GoBGPGlobalConfig{LocalAs: 65000, RouterID: "1.1.1.1"}},
 		},
 	}
-	n, err := applyBGP(hooks, doc)
+	n, _, err := applyBGP(hooks, doc, false)
 	if err != nil {
 		t.Fatalf("applyBGP: %v", err)
 	}
@@ -416,7 +416,7 @@ func TestGetBGPGlobalConfigRoundTrip(t *testing.T) {
 	}
 
 	fresh := newMockHooks()
-	if _, err := applyBGP(fresh, doc); err != nil {
+	if _, _, err := applyBGP(fresh, doc, false); err != nil {
 		t.Fatalf("applyBGP: %v", err)
 	}
 	if fresh.bgpGC == nil || *fresh.bgpGC != *gc {
@@ -441,7 +441,7 @@ func TestIPsecTunnelGetApplyDelete(t *testing.T) {
 	}
 
 	fresh := newMockHooks()
-	n, err := applyIPsec(fresh, doc)
+	n, _, err := applyIPsec(fresh, doc, false)
 	if err != nil {
 		t.Fatalf("applyIPsec: %v", err)
 	}
@@ -495,7 +495,7 @@ func TestIPsecCertificateRoundTripWithPEM(t *testing.T) {
 	}
 
 	fresh := newMockHooks()
-	if _, err := applyIPsec(fresh, doc); err != nil {
+	if _, _, err := applyIPsec(fresh, doc, false); err != nil {
 		t.Fatalf("applyIPsec: %v", err)
 	}
 	restored, err := fresh.NetIPsecCertificateExportAll()
@@ -522,7 +522,7 @@ func TestIPsecApplyOrderCertsBeforeTunnels(t *testing.T) {
 			},
 		},
 	}
-	if _, err := applyIPsec(hooks, doc); err != nil {
+	if _, _, err := applyIPsec(hooks, doc, false); err != nil {
 		t.Fatalf("applyIPsec: %v", err)
 	}
 	order := map[string]int{}

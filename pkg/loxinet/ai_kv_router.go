@@ -35,6 +35,7 @@ package loxinet
 import "C"
 
 import (
+	"crypto/sha256"
 	"sync"
 	"unsafe"
 
@@ -93,9 +94,25 @@ var (
 	kvTokenCacheMax = 4096 // max entries
 )
 
+// tokenCacheKey identifies a cached tokenization by the FULL text, not a prefix.
+// The previous key (modelSlug + first 512 bytes of text) collided for the
+// long-context coding-assistant workload: two prompts sharing a >=512-byte
+// preamble (same system prompt + repo header, divergent tail — the defining
+// shared-prefix shape) returned EACH OTHER's token ids, so the block-hash chain
+// hashed the wrong request and Tier-1.5 mis-routed. The chat path feeds the full
+// rendered template through this cache (kvTokenizeChatBody), so texts far beyond
+// 512 bytes are the NORM there, not the exception. len+sha256 keeps the key
+// fixed-size (long prompts must not become map keys) while making a collision
+// require a sha256 collision at equal length.
 type tokenCacheKey struct {
 	modelSlug string
-	prefixKey string // first 512 bytes of prompt text
+	textLen   int
+	textSum   [sha256.Size]byte
+}
+
+// kvTokenCacheKeyFor builds the full-text-identity cache key for (text, slug).
+func kvTokenCacheKeyFor(slug, text string) tokenCacheKey {
+	return tokenCacheKey{modelSlug: slug, textLen: len(text), textSum: sha256.Sum256([]byte(text))}
 }
 
 // kvModelSlug normalizes a model name for filesystem lookup.
@@ -167,12 +184,8 @@ func kvLoadTokenizer(modelName string) KvTokenizer {
 func kvTokenizeWithCache(text, modelName string, maxTokens int) []uint32 {
 	slug := kvModelSlug(modelName)
 
-	// Compute cache key: slug + first 512 chars of text
-	prefixLen := len(text)
-	if prefixLen > 512 {
-		prefixLen = 512
-	}
-	key := tokenCacheKey{modelSlug: slug, prefixKey: text[:prefixLen]}
+	// Cache key = full-text identity (slug + len + sha256) — see tokenCacheKey.
+	key := kvTokenCacheKeyFor(slug, text)
 
 	// Check cache under read lock
 	kvTokenCacheMu.RLock()

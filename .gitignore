@@ -74,6 +74,10 @@ claude-agents/
 # never published to the public OSS repo; relocate to a private repo/wiki as needed.
 docs/internal/
 
+# Private testbed CI/CD (references private fleet topology; never published)
+cicd/private-*/
+cicd/vllm-loxilb-kvcache-aws-small/
+
 # Kernel Module Compile Results
 *.mod*
 *.cmd

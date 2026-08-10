@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // PersistFileName is the basename of the write-through snapshot (§6):
@@ -81,6 +82,23 @@ func WriteThrough(hooks Hooks, gatewayVersion, hostname, dir string) (string, st
 		return "", "", err
 	}
 	return Persist(doc, dir)
+}
+
+// QuarantinePersisted renames dir/snapshot.json to
+// snapshot.json.failed-<ts> after a failed boot restore. Two reasons: the
+// failing document is preserved for diagnosis instead of being overwritten
+// by the next write-through persist (which, after a rolled-back boot
+// restore, would capture a state missing everything the snapshot carried
+// and make the loss durable), and the next boot no longer retries a
+// snapshot that is already known not to apply. Returns the quarantine path.
+func QuarantinePersisted(dir string, now time.Time) (string, error) {
+	src := filepath.Join(dir, PersistFileName)
+	dst := filepath.Join(dir, fmt.Sprintf("%s.failed-%s", PersistFileName,
+		now.UTC().Format("20060102-150405.000000000")))
+	if err := os.Rename(src, dst); err != nil {
+		return "", err
+	}
+	return dst, nil
 }
 
 // LoadPersisted reads dir/snapshot.json, returning (nil, nil) when the file
