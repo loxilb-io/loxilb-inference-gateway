@@ -13400,14 +13400,13 @@ func init() {
               "type": "boolean"
             },
             "security": {
-              "description": "0 - plain HTTP, 1 - TLS terminated at the gateway (https), 2 - end-to-end HTTPS (re-encrypt to backend). 3 is reserved/unused.",
+              "description": "0 - plain HTTP, 1 - TLS terminated at the gateway (https), 2 - end-to-end HTTPS (re-encrypt to backend). Matches common.LBSec; the datapath has no mode beyond 2, so any other value must be rejected here rather than silently serving plaintext.",
               "type": "integer",
               "format": "int32",
               "enum": [
                 0,
                 1,
-                2,
-                3
+                2
               ]
             },
             "sel": {
@@ -29305,14 +29304,13 @@ func init() {
               "type": "boolean"
             },
             "security": {
-              "description": "0 - plain HTTP, 1 - TLS terminated at the gateway (https), 2 - end-to-end HTTPS (re-encrypt to backend). 3 is reserved/unused.",
+              "description": "0 - plain HTTP, 1 - TLS terminated at the gateway (https), 2 - end-to-end HTTPS (re-encrypt to backend). Matches common.LBSec; the datapath has no mode beyond 2, so any other value must be rejected here rather than silently serving plaintext.",
               "type": "integer",
               "format": "int32",
               "enum": [
                 0,
                 1,
-                2,
-                3
+                2
               ]
             },
             "sel": {
@@ -29929,14 +29927,13 @@ func init() {
           "type": "boolean"
         },
         "security": {
-          "description": "0 - plain HTTP, 1 - TLS terminated at the gateway (https), 2 - end-to-end HTTPS (re-encrypt to backend). 3 is reserved/unused.",
+          "description": "0 - plain HTTP, 1 - TLS terminated at the gateway (https), 2 - end-to-end HTTPS (re-encrypt to backend). Matches common.LBSec; the datapath has no mode beyond 2, so any other value must be rejected here rather than silently serving plaintext.",
           "type": "integer",
           "format": "int32",
           "enum": [
             0,
             1,
-            2,
-            3
+            2
           ]
         },
         "sel": {

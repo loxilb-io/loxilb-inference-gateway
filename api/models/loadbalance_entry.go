@@ -800,8 +800,8 @@ type LoadbalanceEntryServiceArguments struct {
 	// flag to enable proxy protocol v2
 	Proxyprotocolv2 bool `json:"proxyprotocolv2,omitempty"`
 
-	// value for Security mode (0-Plain, 1-https, 2-tls, 3-e2ehttps, 0-default)
-	// Enum: [0 1 2 3]
+	// 0 - plain HTTP, 1 - TLS terminated at the gateway (https), 2 - end-to-end HTTPS (re-encrypt to backend). Matches common.LBSec; the datapath has no mode beyond 2, so any other value must be rejected here rather than silently serving plaintext.
+	// Enum: [0 1 2]
 	Security int32 `json:"security,omitempty"`
 
 	// value for load balance algorithim(0-rr, 1-hash, 2-priority/wrr, 3-persist, 4-lc, 5-n2, 6-n3, 7-reserved, 8-chwbl, 9-gpuaware, 10-wrr-hash, 0-default)
@@ -1584,7 +1584,7 @@ var loadbalanceEntryServiceArgumentsTypeSecurityPropEnum []interface{}
 
 func init() {
 	var res []int32
-	if err := json.Unmarshal([]byte(`[0,1,2,3]`), &res); err != nil {
+	if err := json.Unmarshal([]byte(`[0,1,2]`), &res); err != nil {
 		panic(err)
 	}
 	for _, v := range res {
