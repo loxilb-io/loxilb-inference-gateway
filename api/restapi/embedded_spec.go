@@ -13028,6 +13028,12 @@ func init() {
               "type": "integer",
               "format": "uint32"
             },
+            "cb_enable": {
+              "description": "Enable the per-endpoint circuit breaker for full-proxy rules. After 5 consecutive backend connect failures an endpoint is skipped by all selection paths until a 30s open-timeout expires and a half-open probe succeeds. Complements the liveness probe (probetype) - the breaker reacts within one failed request, the probe within one probe interval.",
+              "type": "boolean",
+              "default": false,
+              "x-nullable": false
+            },
             "chwbl_enable_cache_salt": {
               "description": "Require cache_salt field in requests for CHWBL/WRR_HASH (sel=8 or sel=10) - enforces strict multi-tenant isolation. If false, cache_salt is optional. Only used when sel=8 or sel=10",
               "type": "boolean",
@@ -13311,12 +13317,6 @@ func init() {
               "format": "int32",
               "default": 20,
               "maximum": 100,
-              "x-nullable": false
-            },
-            "cb_enable": {
-              "description": "Enable the per-endpoint circuit breaker for full-proxy rules. After 5 consecutive backend connect failures an endpoint is skipped by all selection paths until a 30s open-timeout expires and a half-open probe succeeds. Complements the liveness probe (probetype) - the breaker reacts within one failed request, the probe within one probe interval.",
-              "type": "boolean",
-              "default": false,
               "x-nullable": false
             },
             "pd_disagg_mode": {
@@ -15244,6 +15244,10 @@ func init() {
       "properties": {
         "buildInfo": {
           "description": "build info",
+          "type": "string"
+        },
+        "product": {
+          "description": "Product identifier for API flavor detection. This gateway reports \"loxilb-inference-gateway\"; upstream loxilb (and gateway builds predating the field) omit it, which clients treat as plain loxilb.",
           "type": "string"
         },
         "version": {
@@ -28922,6 +28926,12 @@ func init() {
               "type": "integer",
               "format": "uint32"
             },
+            "cb_enable": {
+              "description": "Enable the per-endpoint circuit breaker for full-proxy rules. After 5 consecutive backend connect failures an endpoint is skipped by all selection paths until a 30s open-timeout expires and a half-open probe succeeds. Complements the liveness probe (probetype) - the breaker reacts within one failed request, the probe within one probe interval.",
+              "type": "boolean",
+              "default": false,
+              "x-nullable": false
+            },
             "chwbl_enable_cache_salt": {
               "description": "Require cache_salt field in requests for CHWBL/WRR_HASH (sel=8 or sel=10) - enforces strict multi-tenant isolation. If false, cache_salt is optional. Only used when sel=8 or sel=10",
               "type": "boolean",
@@ -29213,19 +29223,7 @@ func init() {
               "minimum": 0,
               "x-nullable": false
             },
-            "cb_enable": {
-              "description": "Enable the per-endpoint circuit breaker for full-proxy rules. After 5 consecutive backend connect failures an endpoint is skipped by all selection paths until a 30s open-timeout expires and a half-open probe succeeds. Complements the liveness probe (probetype) - the breaker reacts within one failed request, the probe within one probe interval.",
-              "type": "boolean",
-              "default": false,
-              "x-nullable": false
-            },
-            "cb_enable": {
-          "description": "Enable the per-endpoint circuit breaker for full-proxy rules. After 5 consecutive backend connect failures an endpoint is skipped by all selection paths until a 30s open-timeout expires and a half-open probe succeeds. Complements the liveness probe (probetype) - the breaker reacts within one failed request, the probe within one probe interval.",
-          "type": "boolean",
-          "default": false,
-          "x-nullable": false
-        },
-        "pd_disagg_mode": {
+            "pd_disagg_mode": {
               "description": "Enable vLLM prefill/decode disaggregation mode. When true, the proxy orchestrates a two-phase flow - prefill request to a prefill endpoint, then decode request to a decode endpoint using KV transfer parameters from the prefill response.",
               "type": "boolean",
               "default": false,
@@ -29551,6 +29549,12 @@ func init() {
           "description": "block-number if any of this LB entry",
           "type": "integer",
           "format": "uint32"
+        },
+        "cb_enable": {
+          "description": "Enable the per-endpoint circuit breaker for full-proxy rules. After 5 consecutive backend connect failures an endpoint is skipped by all selection paths until a 30s open-timeout expires and a half-open probe succeeds. Complements the liveness probe (probetype) - the breaker reacts within one failed request, the probe within one probe interval.",
+          "type": "boolean",
+          "default": false,
+          "x-nullable": false
         },
         "chwbl_enable_cache_salt": {
           "description": "Require cache_salt field in requests for CHWBL/WRR_HASH (sel=8 or sel=10) - enforces strict multi-tenant isolation. If false, cache_salt is optional. Only used when sel=8 or sel=10",
@@ -32197,6 +32201,10 @@ func init() {
       "properties": {
         "buildInfo": {
           "description": "build info",
+          "type": "string"
+        },
+        "product": {
+          "description": "Product identifier for API flavor detection. This gateway reports \"loxilb-inference-gateway\"; upstream loxilb (and gateway builds predating the field) omit it, which clients treat as plain loxilb.",
           "type": "string"
         },
         "version": {

@@ -38,6 +38,12 @@ var Version = "dev"
 
 var BuildInfo string = ""
 
+// Product is the flavor identifier surfaced on GET /version so shared
+// clients (loxilb-ui) can distinguish this gateway from plain upstream
+// loxilb, which never sets the field. Clients treat an absent product as
+// upstream loxilb, so this must ship in any release the UI flavor-gates on.
+const Product = "loxilb-inference-gateway"
+
 // This file defines the go interface implementation needed to interact with loxinet go module
 
 const (
