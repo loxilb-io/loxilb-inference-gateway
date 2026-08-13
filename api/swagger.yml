@@ -9620,6 +9620,9 @@ definitions:
       buildInfo:
         type: string
         description: build info
+      product:
+        type: string
+        description: Product identifier for API flavor detection. This gateway reports "loxilb-inference-gateway"; upstream loxilb (and gateway builds predating the field) omit it, which clients treat as plain loxilb.
 
   BfdEntry:
     type: object

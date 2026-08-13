@@ -20,6 +20,9 @@ type VersionGetEntry struct {
 	// build info
 	BuildInfo string `json:"buildInfo,omitempty"`
 
+	// Product identifier for API flavor detection. This gateway reports "loxilb-inference-gateway"; upstream loxilb (and gateway builds predating the field) omit it, which clients treat as plain loxilb.
+	Product string `json:"product,omitempty"`
+
 	// Instance name
 	Version string `json:"version,omitempty"`
 }
