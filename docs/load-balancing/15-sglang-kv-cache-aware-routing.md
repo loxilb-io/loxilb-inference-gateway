@@ -39,7 +39,7 @@ tokens) and publishes **KV cache events** (`BlockStored` / `BlockRemoved` /
 
 | Difference | vLLM (doc 08) | SGLang (this doc) |
 |---|---|---|
-| Deployment shape | P/D disaggregation (`ep_role` 1/2, NIXL) | **Single-role** — plain fullproxy pool, no P/D (SGLang P/D is bootstrap-server + gRPC, out of scope) |
+| Deployment shape | P/D disaggregation (`ep_role` 1/2, NIXL) | **Single-role** converged pool (this doc). SGLang's own P/D disaggregation is ALSO supported — `pd_disagg_mode` + `kvEngineType:"sglang"` runs a concurrent dual-dispatch orchestrator (bootstrap triple injection, drain leg, pair retry); Tier-1.5 then subscribes the prefill EPs with the same hash contract described here |
 | Block hash | SHA-256/XXH3 over canonical **CBOR** `[parent, tokens, extra]` | SHA-256 over **raw** `parent‖tokens_LE4`, no CBOR (§4) |
 | First-block parent | `NONE_HASH` seeded from `PYTHONHASHSEED` | **No parent at all** — block 0 hashes bare tokens |
 | uint64 truncation | **last** 8 digest bytes, BE | **first** 8 digest bytes, BE (§4) |

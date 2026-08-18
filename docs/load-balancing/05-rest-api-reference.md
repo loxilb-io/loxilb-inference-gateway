@@ -88,7 +88,8 @@ snake_case (`pd_disagg_mode`, `sse_mode`, `model_name`, …) vs camelCase (`kvEx
 
 | Field | Type | Notes |
 |---|---|---|
-| `pd_disagg_mode` | bool | split requests into prefill + decode legs (roles via `endpoints[].ep_role`) |
+| `pd_disagg_mode` | bool | split requests into prefill + decode legs (roles via `endpoints[].ep_role`). The orchestration flavor derives from `kvEngineType`: empty/`"vllm"` = sequential vLLM machine (prefill → extract `kv_transfer_params` → decode); `"sglang"` = concurrent dual-dispatch (bootstrap triple injected, same body to both legs, decode streamed to the client, prefill drained) |
+| `pdBootstrapPort` | int | SGLang P/D only: the `--disaggregation-bootstrap-port` on every prefill EP; `0` = SGLang's default `8998`. Rejected unless `pd_disagg_mode` + `kvEngineType:"sglang"` |
 | `pd_cache_aware_mode` | bool | trie-based cache-affinity prefill selection |
 | `pd_session_ttl_sec` | int | session-stickiness TTL (seconds) for P/D cache-aware routing; `0` = no automatic expiry |
 | `pd_cache_threshold` | int | cache-match threshold `0`–`100`; lower = more aggressive cache routing (default `20`) |
@@ -104,7 +105,7 @@ snake_case (`pd_disagg_mode`, `sse_mode`, `model_name`, …) vs camelCase (`kvEx
 
 | Field | Type | Notes |
 |---|---|---|
-| `kvExactMode` | int | `1` = P/D topology (vLLM) · `3` = single pool (SGLang) |
+| `kvExactMode` | int | `1` = P/D topology (vLLM, or SGLang P/D with `kvEngineType:"sglang"`) · `3` = single pool (SGLang converged) |
 | `kvZmqPort` | int | base port of the engine's `--kv-events-config` publisher |
 | `kvBlockSize` | int | must equal vLLM `--block-size` / SGLang `--page-size` |
 | `kvHashAlgo` | string | `"sha256_cbor"` for vLLM; omit for SGLang (engine default) |

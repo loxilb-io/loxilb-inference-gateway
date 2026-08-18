@@ -56,7 +56,7 @@ The hierarchy behaves differently depending on whether the service is **P/D-disa
 
 | Shape | Rule shape | Selection hierarchy |
 |---|---|---|
-| **P/D disaggregation** | `mode:4` (fullproxy) + `pd_disagg_mode:true`, endpoints tagged `ep_role:1` (prefill) / `ep_role:2` (decode), ≥1 of each | The full P/D tier ladder (§3–§5): admission → Tier 0 → Tier 1 → Tier 1.5 → Tier 2, then decode selection |
+| **P/D disaggregation** | `mode:4` (fullproxy) + `pd_disagg_mode:true`, endpoints tagged `ep_role:1` (prefill) / `ep_role:2` (decode), ≥1 of each. The *orchestration flavor* follows `kvEngineType`: empty/`"vllm"` = the sequential vLLM machine; `"sglang"` = the concurrent dual-dispatch machine (bootstrap triple injection + `pdBootstrapPort`, [doc 16 §1](16-sglang-vs-vllm-routing-differences.md)). The selection ladder is identical in both flavors | The full P/D tier ladder (§3–§5): admission → Tier 0 → Tier 1 → Tier 1.5 → Tier 2, then decode selection |
 | **Single pool (non-disaggregated)** | `mode:4` fullproxy, one endpoint pool (no `pd_disagg_mode`) | The **selector-algorithm** path (§6): prefix-hash CHWBL (`sel:8`) or weighted CHWBL (`sel:10`), else sticky/WRR/RR |
 
 **The load-bearing constraint:** Tier 1.5 KV-exact block-hash routing is reachable **only inside
