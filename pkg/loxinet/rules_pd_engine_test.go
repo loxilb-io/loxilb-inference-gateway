@@ -14,48 +14,31 @@
  * limitations under the License.
  */
 
-// Regression tests for the P/D engine-orchestration guard: pd_disagg_mode
-// with kvEngineType="sglang" must be a config-time rejection, because the
-// P/D state machine speaks the vLLM disaggregation dialect (max_tokens=1
-// prefill rewrite + kv_transfer_params relay) which SGLang servers silently
-// mis-serve as truncated single-token output.
+// Regression tests for the SGLang P/D rule-level config surface.
 //
-// The guard is exercised through the extracted pure helper (the
+// History note: this file originally pinned a config-time REJECTION of
+// pd_disagg_mode + kvEngineType="sglang" (the pre-dual-dispatch guard, when
+// the P/D state machine spoke only the vLLM dialect). The SGLang concurrent
+// dual-dispatch orchestrator now serves that pair, the guard was removed,
+// and acceptance is the absence of any engine/orchestration validator —
+// kvEngineConfigValidate's engine allowlist plus pdBootstrapPortValidate
+// below are the whole rule-level surface.
+//
+// The guards are exercised through extracted pure helpers (the
 // kvEngineConfigValidate precedent): AddLbRule needs a full CGO datapath
-// which does not exist under `go test`, while the helper IS the production
-// decision logic, called from exactly one AddLbRule site — the error text
-// and semantics pinned here are the wire-visible ones.
+// which does not exist under `go test`, while the helpers ARE the production
+// decision logic — the error text and semantics pinned here are the
+// wire-visible ones.
 //
 // Validated on a remote GPU testbed:
 //
-//	go test ./pkg/loxinet/ -run 'TestPdEngine' -count=1
+//	go test ./pkg/loxinet/ -run 'TestPd' -count=1
 package loxinet
 
 import (
 	"strings"
 	"testing"
 )
-
-// TestPdEngineOrchestrationValidateAccepts — every pair the datapath serves
-// today stays accepted: vLLM P/D (explicit or default engine) and any
-// non-P/D rule regardless of engine (sglang single-role included).
-func TestPdEngineOrchestrationValidateAccepts(t *testing.T) {
-	cases := []struct {
-		pdDisagg bool
-		engine   string
-	}{
-		{true, ""},        // today's vLLM P/D, default-spelled
-		{true, "vllm"},    // today's vLLM P/D, explicit
-		{false, ""},       // plain rule
-		{false, "vllm"},   // vLLM converged
-		{false, "sglang"}, // SGLang single-role pool (kvExactMode=3 shape)
-	}
-	for _, c := range cases {
-		if err := pdEngineOrchestrationValidate(c.pdDisagg, c.engine); err != nil {
-			t.Errorf("pdDisagg=%v engine=%q: want accept, got %v", c.pdDisagg, c.engine, err)
-		}
-	}
-}
 
 // TestPdBootstrapPortValidate — pdBootstrapPort is dead config anywhere but
 // an sglang P/D rule: absent (0) always passes; a non-zero port passes ONLY
@@ -91,18 +74,5 @@ func TestPdBootstrapPortValidate(t *testing.T) {
 		if !strings.Contains(err.Error(), "pd_disagg_mode") || !strings.Contains(err.Error(), "sglang") {
 			t.Errorf("rejection must name both preconditions, got %q", err.Error())
 		}
-	}
-}
-
-// TestPdEngineOrchestrationValidateRejectsSglangPD — behavior case: the
-// defective pair is rejected, and the error must point the operator at the
-// supported SGLang shape (kvExactMode=3) instead of a bare "no".
-func TestPdEngineOrchestrationValidateRejectsSglangPD(t *testing.T) {
-	err := pdEngineOrchestrationValidate(true, "sglang")
-	if err == nil {
-		t.Fatal("pd_disagg_mode+sglang: want reject, got nil")
-	}
-	if !strings.Contains(err.Error(), "kvExactMode=3") {
-		t.Errorf("rejection must name the supported alternative (kvExactMode=3), got %q", err.Error())
 	}
 }
