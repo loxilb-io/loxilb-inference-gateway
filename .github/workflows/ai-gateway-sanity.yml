@@ -98,6 +98,13 @@ jobs:
           ./validation.sh
           ./rmconfig.sh
           cd -
+      - name: SGLang P/D dual-dispatch disaggregation (mock SGLang)
+        run: |
+          cd cicd/sglang-pd-disagg/
+          ./config.sh
+          ./validation.sh
+          ./rmconfig.sh
+          cd -
       - name: SGLang KV-cache-aware routing (echo backends)
         run: |
           cd cicd/sglang-loxilb-kvcache/
