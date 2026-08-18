@@ -169,9 +169,10 @@ func RunSystemUtilization(ctx context.Context) {
 			// Normal shutdown - the outer loop exits on the next iteration
 			return nil
 		case <-ticker.C:
-			if cpu, err := readCPUUtilization(); err == nil {
+			if cpu, host, err := sampleCPUUtilization(); err == nil {
 				lastSystemCPU = cpu
 				systemCPUUtilization.Set(cpu)
+				hostCPUUtilization.Set(host)
 			} else {
 				return fmt.Errorf("CPU util read error: %v", err)
 			}
@@ -481,7 +482,16 @@ var (
 	systemCPUUtilization = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: MetricSystemCPUUtilization,
-			Help: "Total system CPU utilization percentage [0-100]",
+			Help: "CPU utilization percentage [0-100] of the scope loxilb runs in: " +
+				"this container's share of its CPU allowance when containerized, " +
+				"the whole machine otherwise",
+		},
+	)
+	hostCPUUtilization = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: MetricHostCPUUtilization,
+			Help: "Whole-machine CPU utilization percentage [0-100], including " +
+				"processes outside this container",
 		},
 	)
 	systemMemoryUtilization = promauto.NewGauge(

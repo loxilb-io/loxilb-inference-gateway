@@ -50,6 +50,7 @@ const (
 	MetricSystemCPUUtilization    = "loxilb_system_cpu_utilization_percent"
 	MetricSystemMemoryUtilization = "loxilb_system_memory_utilization_percent"
 	MetricSystemDiskUtilization   = "loxilb_system_disk_utilization_percent"
+	MetricHostCPUUtilization      = "loxilb_host_cpu_utilization_percent"
 
 	// Security rate limiting metrics
 	MetricSecuritySYNBlocked      = "loxilb_security_syn_blocked_total"
