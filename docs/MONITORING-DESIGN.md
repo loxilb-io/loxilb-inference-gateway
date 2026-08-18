@@ -187,6 +187,26 @@ Row 3 — System & HA:
 | HA sync push latency p95 | [TS] | `histogram_quantile(0.95, sum by (le) (rate(loxilb_sockproxy_sync_push_latency_seconds_bucket[$__rate_interval])))` | site-tunable |
 | Conntrack stat resets/s | [TS] | `rate(loxilb_conntrack_stat_resets_total[$__rate_interval])` | 0 green; >0 sustained amber (counter-baseline churn — see panel description) |
 
+**CPU utilization scope.** `loxilb_system_cpu_utilization_percent` reports the
+scope loxilb runs in, not always the machine:
+
+| Deployment | Source | Denominator |
+|---|---|---|
+| Container | cgroup v2 `cpu.stat`, or v1 `cpuacct.usage` | the cgroup's CPU quota (`cpu.max`, `cpu.cfs_quota_us`), or the affinity-constrained core count when unlimited |
+| Bare metal | `/proc/stat` idle/total delta | all cores |
+
+Docker does not namespace `/proc/stat`, so a containerized loxilb reading it
+measures the whole host: anything else on the box that saturates the CPUs pins
+the gauge at 100 while loxilb itself is idle, and the gauge stops describing the
+gateway at all. Containerized deployments therefore read cgroup accounting,
+which is scoped to the container.
+
+`loxilb_host_cpu_utilization_percent` is always whole-machine. It exists so a
+saturated host stays visible after the primary gauge stops reporting it — the
+two disagreeing (host near 100, system near 0) means the pressure is coming from
+outside the container, which is a real condition worth alerting on and not a
+loxilb problem. On bare metal the two gauges are identical by construction.
+
 ### 4.2 `LoxiLB / L4 Load Balancer` — "Where is traffic going, is it balanced?"
 
 Variable: `$service` from `label_values(loxilb_service_requests_total, service)`.
