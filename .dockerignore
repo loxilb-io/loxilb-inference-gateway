@@ -1,2 +1,28 @@
 .git
 **/.git
+
+# Build artifacts must never enter the image build context.
+#
+# The Dockerfile does `COPY . /root/loxilb-io/loxilb/` and then runs the eBPF
+# subsystem build with HAVE_HTTP_TRACE=1 HAVE_L4_TRACE=1 HAVE_MTLS=1. A plain
+# host-side `make build` sets none of those, so its objects are compiled from
+# the same sources with a different feature set. Copied in, they look newer
+# than their sources, `make` reports "Nothing to be done", and the image links
+# a mix of flag-on and flag-off objects.
+#
+# That fails as undefined references to the HAVE_HTTP_TRACE-only half of
+# sockproxy_trace.c (is_tracing_enabled, emit_trace_event, lxb_should_sample,
+# lxb_capture_body_to_tmpfs, lxb_lookup_service_catalog,
+# g_catalog_sample_rates) — symbols that have no #else stubs — while
+# sockproxy_http.o, which does get rebuilt, references all of them.
+#
+# Nothing here is tracked in either repo; the container builds all of it from
+# source. Excluding it also keeps a ~900 MB working tree from being tarred up
+# and shipped to the daemon on every build.
+**/*.o
+**/*.d
+**/*.a
+loxilb-ebpf/kernel/loxilb_dp_debug
+
+# The host-built binary; the image builds its own.
+/loxilb
