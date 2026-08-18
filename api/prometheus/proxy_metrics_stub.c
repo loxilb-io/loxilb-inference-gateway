@@ -76,6 +76,11 @@ typedef struct proxy_metrics_snapshot {
     uint64_t pd_decode_zero_byte_eof;
     uint64_t pd_connect_failover;
     uint64_t lb_select_failure_shutdown;
+
+    /* SGLang P/D dual-dispatch counters (tail-append, three-way lockstep) */
+    uint64_t pd_sg_prefill_abort_decode;
+    uint64_t pd_sg_decode_close_drain;
+    uint64_t pd_sg_room_retry;
 } proxy_metrics_snapshot_t;
 
 __attribute__((weak))

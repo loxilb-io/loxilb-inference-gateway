@@ -77,6 +77,13 @@ typedef struct proxy_metrics_snapshot {
     uint64_t pd_decode_zero_byte_eof;
     uint64_t pd_connect_failover;
     uint64_t lb_select_failure_shutdown;
+
+    // SGLang P/D dual-dispatch counters. TAIL-APPEND ONLY — twin-declared in
+    // loxilb-ebpf/common/sockproxy_metrics.h and proxy_metrics_stub.c; keep
+    // ALL THREE in lockstep, same commit.
+    uint64_t pd_sg_prefill_abort_decode;
+    uint64_t pd_sg_decode_close_drain;
+    uint64_t pd_sg_room_retry;
 } proxy_metrics_snapshot_t;
 
 // C function from sockproxy.c
@@ -520,6 +527,30 @@ var (
 			Help: "Full-proxy client connections shut down raw (TCP reset, no HTTP error body) because backend selection or connect failed on a non-P/D path. Nonzero means clients are seeing connection resets instead of 502/503 during endpoint outages.",
 		},
 	)
+
+	// Metric #34: SGLang prefill-failure decode aborts (Counter)
+	pdSgPrefillAbortDecodeTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "loxilb_pd_sg_prefill_abort_decode_total",
+			Help: "SGLang P/D dual dispatch: prefill drain-leg failure (error status, transport death, or rendezvous timeout) forced an abort of the in-flight decode leg (client received 502/504). A storm here means prefill endpoints or the bootstrap rendezvous are unhealthy.",
+		},
+	)
+
+	// Metric #35: SGLang decode-failure drain closes (Counter)
+	pdSgDecodeCloseDrainTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "loxilb_pd_sg_decode_close_drain_total",
+			Help: "SGLang P/D dual dispatch: a decode-leg failure closed the still-open prefill drain leg so it is not orphaned at the engine until the disaggregation timeout.",
+		},
+	)
+
+	// Metric #36: SGLang pair retries with a fresh room (Counter)
+	pdSgRoomRetryTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "loxilb_pd_sg_room_retry_total",
+			Help: "SGLang P/D dual dispatch: the whole (prefill, decode) pair was re-dispatched with a fresh bootstrap room after a retriable failure.",
+		},
+	)
 )
 
 // pdKvT15MissReasonLabels enumerates the canonical guard reasons used by the
@@ -884,6 +915,18 @@ func RunSockproxyMetrics(ctx context.Context) {
 		if current.lb_select_failure_shutdown >= prevSockproxyMetrics.lb_select_failure_shutdown {
 			delta := current.lb_select_failure_shutdown - prevSockproxyMetrics.lb_select_failure_shutdown
 			lbSelectFailureShutdownTotal.Add(float64(delta))
+		}
+		if current.pd_sg_prefill_abort_decode >= prevSockproxyMetrics.pd_sg_prefill_abort_decode {
+			delta := current.pd_sg_prefill_abort_decode - prevSockproxyMetrics.pd_sg_prefill_abort_decode
+			pdSgPrefillAbortDecodeTotal.Add(float64(delta))
+		}
+		if current.pd_sg_decode_close_drain >= prevSockproxyMetrics.pd_sg_decode_close_drain {
+			delta := current.pd_sg_decode_close_drain - prevSockproxyMetrics.pd_sg_decode_close_drain
+			pdSgDecodeCloseDrainTotal.Add(float64(delta))
+		}
+		if current.pd_sg_room_retry >= prevSockproxyMetrics.pd_sg_room_retry {
+			delta := current.pd_sg_room_retry - prevSockproxyMetrics.pd_sg_room_retry
+			pdSgRoomRetryTotal.Add(float64(delta))
 		}
 
 		// 4. Save state for next cycle
