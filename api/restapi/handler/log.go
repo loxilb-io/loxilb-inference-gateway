@@ -16,8 +16,10 @@
 package handler
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/base64"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -30,6 +32,7 @@ import (
 
 	"github.com/go-openapi/runtime"
 	"github.com/go-openapi/runtime/middleware"
+	"github.com/go-openapi/strfmt"
 	"github.com/loxilb-io/loxilb/api/models"
 	"github.com/loxilb-io/loxilb/api/restapi/operations"
 	tk "github.com/loxilb-io/loxilib"
@@ -40,6 +43,35 @@ var (
 	logFileKey  = "loxilb"
 	archivePath = "/var/log/" // Path where rotated logs are stored
 	mu          sync.Mutex
+)
+
+const (
+	minLogReadChunk = 4096
+	maxLogReadChunk = 4 << 20
+
+	// maxFilterScanBytes bounds how far back a single filtered request scans,
+	// so a keyword that matches nothing cannot pin a CPU on a multi-gigabyte
+	// log. Reaching the cap is reported as has_more plus a cursor, so the
+	// client resumes where the scan stopped instead of starting over.
+	maxFilterScanBytes = 32 << 20
+
+	// filterScanBatchLines is the read granularity while searching. Reading
+	// more lines per pass than the page needs keeps a sparse keyword from
+	// costing one read per matching line.
+	filterScanBatchLines = 1000
+
+	// maxArchiveInflateBytes bounds the in-memory expansion of a rotated
+	// .log.gz. Backwards paging needs random access, which a compressed
+	// stream cannot offer, so the archive is inflated first; a log that
+	// expands beyond this is refused rather than silently truncated.
+	maxArchiveInflateBytes = 64 << 20
+)
+
+var (
+	errInvalidLogFilename = errors.New("invalid log file name")
+	errLogFileNotFound    = errors.New("log file not found")
+	errArchiveTooLarge    = errors.New("archive too large to read; download it from /log-archives/{filename} instead")
+	errArchiveCorrupt     = errors.New("archive is not a valid gzip stream")
 )
 
 // LogCursor represents a stateless cursor for log pagination
@@ -99,163 +131,223 @@ func decodeCursor(cursorStr string) (*LogCursor, error) {
 	}, nil
 }
 
-// validateCursor checks if the cursor is still valid (file hasn't been rotated/modified)
-func validateCursor(cursor *LogCursor) bool {
+// cursorValid reports whether a cursor still addresses the file it was minted
+// against. Growth is expected and harmless: the log is appended to while the
+// operator reads it, and paging runs backwards, so bytes added at the end never
+// move an older offset. A file that has shrunk past the cursor was rotated or
+// truncated and the offset now points into unrelated content.
+//
+// The recorded mtime is deliberately not compared. An active log file's mtime
+// changes between any two requests, so requiring it to match invalidated every
+// cursor on a busy system and silently restarted paging from the tail — which
+// made "load more" return the newest page over and over.
+func cursorValid(cursor *LogCursor, filename string, size int64) bool {
 	if cursor == nil {
-		return true // No cursor means start from beginning
+		return true // No cursor means start from the newest lines
 	}
-
-	filePath := filepath.Join(logFilePath, cursor.Filename)
-	fileInfo, err := os.Stat(filePath)
-	if err != nil {
-		return false // File doesn't exist anymore
-	}
-
-	// Check if file was modified (rotated) or truncated
-	if !fileInfo.ModTime().Equal(cursor.ModTime) || fileInfo.Size() < cursor.FileSize {
-		return false
-	}
-
-	return true
+	return cursor.Filename == filename && size >= cursor.Offset
 }
 
-// Reads the next N lines starting from a given cursor position
-// If startPos is -1, starts from the end of file (latest logs first)
-func readNextLines(file *os.File, startPos int64, numLines int) ([]string, int64) {
-	fileInfo, err := file.Stat()
-	if err != nil {
-		return []string{}, 0
+// readChunkFor sizes the backwards read so a typical page is satisfied by one
+// or two syscalls instead of hundreds of 4 KiB steps.
+func readChunkFor(numLines int) int64 {
+	chunk := int64(minLogReadChunk)
+	if want := int64(numLines) * 256; want > chunk {
+		chunk = want
 	}
-	fileSize := fileInfo.Size()
-
-	// If startPos is -1, we want to start from the end (latest logs first)
-	if startPos == -1 {
-		return readLastLines(file, fileSize, numLines)
+	if chunk > maxLogReadChunk {
+		chunk = maxLogReadChunk
 	}
-
-	// Normal forward reading from cursor position
-	bufferSize := 4096
-	buffer := make([]byte, bufferSize)
-
-	var lines []string
-	var line string
-	currentPos := startPos
-
-	file.Seek(startPos, os.SEEK_SET) // Start reading from the stored cursor position
-
-	for len(lines) < numLines {
-		n, err := file.Read(buffer)
-		if err != nil {
-			break
-		}
-
-		for i := 0; i < n; i++ {
-			if buffer[i] == '\n' {
-				lines = append(lines, strings.TrimSpace(line))
-				line = ""
-
-				if len(lines) >= numLines {
-					currentPos += int64(i + 1)
-					break
-				}
-			} else {
-				line += string(buffer[i])
-			}
-		}
-		currentPos += int64(n)
-	}
-
-	if line != "" && len(lines) < numLines {
-		lines = append(lines, strings.TrimSpace(line))
-	}
-
-	return lines, currentPos
+	return chunk
 }
 
-// readLastLines reads the last N lines from the file (newest first)
-// Returns lines in reverse chronological order (newest first)
-func readLastLines(file *os.File, fileSize int64, numLines int) ([]string, int64) {
-	if fileSize == 0 {
-		return []string{}, 0
+// logLine is one log record together with the absolute offset at which it
+// starts, so a page can be bounded by the exact line it ended on rather than
+// by the read window that happened to contain it.
+type logLine struct {
+	offset int64
+	text   string
+}
+
+// readLinesBefore reads up to numLines whole lines ending at endPos and returns
+// them newest-first, along with the absolute offset at which the oldest
+// returned line starts. That offset is the cursor for the next, older page; a
+// zero offset means the beginning of the file has been reached.
+//
+// Paging runs backwards in both directions of travel. The previous code read
+// the first page backwards from EOF but then followed the cursor *forwards*,
+// which re-served the page just returned, in the opposite order, and could not
+// reach older history at all.
+func readLinesBefore(src io.ReaderAt, endPos int64, numLines int) ([]string, int64) {
+	records, next := readRecordsBefore(src, endPos, numLines)
+	if len(records) == 0 {
+		return nil, next
+	}
+	lines := make([]string, 0, len(records))
+	for _, rec := range records {
+		lines = append(lines, rec.text)
+	}
+	return lines, next
+}
+
+// readRecordsBefore is readLinesBefore with the per-line offsets retained. It
+// takes an io.ReaderAt rather than an *os.File so an inflated .log.gz archive
+// can be paged from memory by the same code that pages a live file.
+func readRecordsBefore(src io.ReaderAt, endPos int64, numLines int) ([]logLine, int64) {
+	if endPos <= 0 || numLines <= 0 {
+		return nil, 0
 	}
 
-	bufferSize := int64(4096)
-	var allContent []byte
-	pos := fileSize
+	chunk := readChunkFor(numLines)
 
-	// Read backwards in chunks to build the content
-	for pos > 0 {
-		chunkSize := bufferSize
-		if pos < bufferSize {
-			chunkSize = pos
+	var content []byte
+	start := endPos // absolute offset of content[0]
+
+	for start > 0 {
+		n := chunk
+		if start < n {
+			n = start
 		}
+		start -= n
 
-		pos -= chunkSize
-		chunk := make([]byte, chunkSize)
+		buf := make([]byte, n)
+		if _, err := src.ReadAt(buf, start); err != nil {
+			return nil, 0
+		}
+		content = append(buf, content...)
 
-		file.Seek(pos, os.SEEK_SET)
-		n, err := file.Read(chunk)
-		if err != nil {
+		// One newline more than the number of lines wanted proves the oldest
+		// candidate line is whole rather than clipped by the chunk boundary.
+		if bytes.Count(content, []byte{'\n'}) > numLines {
 			break
 		}
+	}
 
-		// Prepend to content (we're reading backwards)
-		allContent = append(chunk[:n], allContent...)
-
-		// Check if we have enough newlines to get numLines
-		newlineCount := 0
-		for _, b := range allContent {
-			if b == '\n' {
-				newlineCount++
-			}
+	// When the scan stopped short of the file start, the leading fragment is
+	// the tail of a line belonging to an older page — drop it.
+	scanFrom := 0
+	if start > 0 {
+		nl := bytes.IndexByte(content, '\n')
+		if nl < 0 {
+			return nil, start
 		}
+		scanFrom = nl + 1
+	}
 
-		// If we have enough lines, we can stop reading
-		if newlineCount >= numLines {
+	var found []logLine
+	for i := scanFrom; i < len(content); {
+		end := len(content)
+		nl := bytes.IndexByte(content[i:], '\n')
+		if nl >= 0 {
+			end = i + nl
+		}
+		if text := strings.TrimSpace(string(content[i:end])); text != "" {
+			found = append(found, logLine{offset: start + int64(i), text: text})
+		}
+		if nl < 0 {
 			break
 		}
+		i = end + 1
 	}
 
-	// Split content into lines
-	allLines := strings.Split(string(allContent), "\n")
-
-	// Remove empty lines and get the last numLines (excluding the last empty line)
-	var validLines []string
-	for i := len(allLines) - 1; i >= 0; i-- {
-		line := strings.TrimSpace(allLines[i])
-		if line != "" {
-			validLines = append(validLines, line)
-			if len(validLines) >= numLines {
-				break
-			}
-		}
+	if len(found) == 0 {
+		return nil, start
+	}
+	if len(found) > numLines {
+		found = found[len(found)-numLines:]
 	}
 
-	// Calculate the position where the oldest line in our result starts
-	// This will be used as the cursor for the next request
-	if len(validLines) > 0 {
-		oldestLine := validLines[len(validLines)-1]
-		content := string(allContent)
-		oldestLineIdx := strings.Index(content, oldestLine)
-		if oldestLineIdx >= 0 {
-			nextCursor := pos + int64(oldestLineIdx)
-			return validLines, nextCursor
-		}
+	// Hand back newest-first, which is the order the page is served in.
+	records := make([]logLine, 0, len(found))
+	for i := len(found) - 1; i >= 0; i-- {
+		records = append(records, found[i])
 	}
 
-	return validLines, pos
+	// The oldest line handed out this page bounds the next one. Deriving it by
+	// byte offset rather than by searching the buffer for the line's text also
+	// removes a mis-seek when an identical line appears earlier in the window.
+	return records, found[0].offset
+}
+
+// lineMatches reports whether a line satisfies the level and keyword filters.
+// Both are plain substring tests, which is what the level filter has always
+// been: levels are not parsed out of the line.
+func lineMatches(line, level, keyword string) bool {
+	return (level == "" || strings.Contains(line, level)) &&
+		(keyword == "" || strings.Contains(line, keyword))
 }
 
 // Filters logs based on level and keyword
 func filterLogs(lines []string, level, keyword string) []string {
-	var filtered []string
+	// Never nil: a page that filters down to nothing must still serialize as
+	// "logs": [] so clients can read the pagination fields beside it.
+	filtered := []string{}
 	for _, line := range lines {
-		if (level == "" || strings.Contains(line, level)) &&
-			(keyword == "" || strings.Contains(line, keyword)) {
+		if lineMatches(line, level, keyword) {
 			filtered = append(filtered, line) // No additional quotes
 		}
 	}
 	return filtered
+}
+
+// collectPage gathers up to numLines lines matching level and keyword, reading
+// backwards from endPos. It returns the page newest-first, the offset the next
+// (older) page should read back from — zero once the start of the file has been
+// reached — and the number of bytes examined.
+//
+// Filtering used to be applied to a single page-sized window, which made
+// has_more mean "more bytes exist" rather than "more matches exist": a keyword
+// absent from the newest page came back as zero lines beside has_more: true,
+// and a client had to walk the entire file one page at a time to discover where
+// the matches were. The search now runs server-side and stops on one of three
+// conditions — the page is full, the start of the file is reached, or the scan
+// cap is hit — so a filtered request answers in one round trip instead of N.
+//
+// scanCap bounds the backwards search in bytes; it is a parameter rather than a
+// constant so the cap behaviour is testable without writing a 32 MiB fixture.
+func collectPage(src io.ReaderAt, endPos int64, numLines int, level, keyword string, scanCap int64) ([]string, int64, int64) {
+	page := []string{}
+	if numLines <= 0 || endPos <= 0 {
+		return page, 0, 0
+	}
+
+	filtering := level != "" || keyword != ""
+	batch := numLines
+	if filtering && batch < filterScanBatchLines {
+		batch = filterScanBatchLines
+	}
+
+	pos := endPos
+	for pos > 0 {
+		records, stop := readRecordsBefore(src, pos, batch)
+		for _, rec := range records { // newest-first
+			if !lineMatches(rec.text, level, keyword) {
+				continue
+			}
+			page = append(page, rec.text)
+			if len(page) == numLines {
+				// Resume immediately older than the last line handed out, so
+				// the non-matching lines between it and the batch boundary are
+				// re-examined by the next page rather than skipped.
+				return page, rec.offset, endPos - rec.offset
+			}
+		}
+
+		if stop >= pos {
+			// No backwards progress: treat as the start of the file rather
+			// than spin.
+			pos = 0
+			break
+		}
+		pos = stop
+
+		// Unfiltered, one batch is the whole page by construction.
+		if !filtering || endPos-pos >= scanCap {
+			break
+		}
+	}
+
+	return page, pos, endPos - pos
 }
 
 func derefString(s *string) string {
@@ -323,6 +415,63 @@ func getAvailableLogFiles() ([]map[string]interface{}, error) {
 	return allLogFiles, nil
 }
 
+// resolveLogFile turns a client-supplied ?file= into a path on disk. Rotated
+// logs are moved into the archive directories, so a name that is valid but
+// absent from the live log directory is looked for there too — otherwise every
+// rotated file the /log-archives listing advertises would 404 when opened.
+func resolveLogFile(name string) (string, error) {
+	// Traversal first: a name containing a separator must never be joined to
+	// a directory, whatever else is wrong with it.
+	if strings.Contains(name, "..") || strings.Contains(name, "/") || strings.Contains(name, "\\") {
+		return "", errInvalidLogFilename
+	}
+	if !strings.HasPrefix(name, logFileKey) ||
+		(!strings.HasSuffix(name, ".log") && !strings.HasSuffix(name, ".log.gz")) {
+		return "", errInvalidLogFilename
+	}
+
+	dirs := append([]string{logFilePath}, archiveDirs()...)
+	for _, dir := range dirs {
+		path := filepath.Join(dir, filepath.Base(name))
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			return path, nil
+		}
+	}
+	return "", errLogFileNotFound
+}
+
+// inflateArchive decompresses a rotated .log.gz into memory so it can be paged
+// backwards. A compressed stream cannot be seeked, and the alternative — the
+// handler opening it raw — returned compressed bytes that parsed to zero lines
+// and rendered as an empty table with no error.
+//
+// The read is bounded: an archive that expands past the cap is refused with a
+// message pointing at the download endpoint, rather than truncated into a
+// half-line or allowed to exhaust memory.
+func inflateArchive(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		return nil, errArchiveCorrupt
+	}
+	defer zr.Close()
+
+	// One byte past the cap distinguishes "exactly at the cap" from "over it".
+	data, err := io.ReadAll(io.LimitReader(zr, maxArchiveInflateBytes+1))
+	if err != nil {
+		return nil, errArchiveCorrupt
+	}
+	if int64(len(data)) > maxArchiveInflateBytes {
+		return nil, errArchiveTooLarge
+	}
+	return data, nil
+}
+
 // Fetch logs using stateless cursor
 func ConfigGetLogs(params operations.GetLogsParams, principal interface{}) middleware.Responder {
 	var result models.Logs
@@ -332,41 +481,27 @@ func ConfigGetLogs(params operations.GetLogsParams, principal interface{}) middl
 		lines, _ = strconv.Atoi(*params.Lines)
 	}
 
-	// Parse cursor from query parameter - temporary workaround
-	var cursor *LogCursor
-	cursorParam := params.HTTPRequest.URL.Query().Get("cursor")
-	if cursorParam != "" {
-		var err error
-		cursor, err = decodeCursor(cursorParam)
-		if err != nil {
-			return operations.NewGetLogsBadRequest().WithPayload(&models.Error{Message: "Invalid cursor format"})
-		}
+	cursor, err := decodeCursor(derefString(params.Cursor))
+	if err != nil {
+		return operations.NewGetLogsBadRequest().WithPayload(&models.Error{Message: "Invalid cursor format"})
 	}
 
 	// Check if a specific log file is requested
-	requestedFile := params.HTTPRequest.URL.Query().Get("file")
+	requestedFile := derefString(params.File)
 
 	var logFile string
 	var currentLogFilename string
 
 	if requestedFile != "" {
-		// Validate and use the requested file
-		if !strings.HasPrefix(requestedFile, logFileKey) || !strings.HasSuffix(requestedFile, ".log") {
+		path, err := resolveLogFile(requestedFile)
+		switch {
+		case errors.Is(err, errInvalidLogFilename):
 			return operations.NewGetLogsBadRequest().WithPayload(&models.Error{Message: "Invalid log file name"})
-		}
-
-		// Security check for path traversal
-		if strings.Contains(requestedFile, "..") || strings.Contains(requestedFile, "/") || strings.Contains(requestedFile, "\\") {
-			return operations.NewGetLogsBadRequest().WithPayload(&models.Error{Message: "Invalid filename"})
-		}
-
-		logFile = filepath.Join(logFilePath, requestedFile)
-		currentLogFilename = requestedFile
-
-		// Check if file exists
-		if _, err := os.Stat(logFile); err != nil {
+		case err != nil:
 			return operations.NewGetLogsInternalServerError().WithPayload(&models.Error{Message: "Requested log file not found"})
 		}
+		logFile = path
+		currentLogFilename = requestedFile
 	} else {
 		// Find the current log file with specific priority:
 		// 1st Priority: loxilb{hostname}.log (most recent)
@@ -422,94 +557,83 @@ func ConfigGetLogs(params operations.GetLogsParams, principal interface{}) middl
 		return operations.NewGetLogsInternalServerError().WithPayload(&models.Error{Message: "Log file not found"})
 	}
 
-	// If cursor exists but points to different file or is invalid, start fresh
-	if cursor != nil && (cursor.Filename != currentLogFilename || !validateCursor(cursor)) {
-		cursor = nil // Start from beginning of current file
+	// Rotated archives are gzipped. Backwards paging needs random access, so a
+	// .gz is inflated up front and paged from memory; everything downstream is
+	// offset arithmetic over an io.ReaderAt and does not care which it has.
+	var (
+		src     io.ReaderAt
+		srcSize int64
+		modTime time.Time
+	)
+
+	if strings.HasSuffix(currentLogFilename, ".gz") {
+		info, err := os.Stat(logFile)
+		if err != nil {
+			return operations.NewGetLogsInternalServerError().WithPayload(&models.Error{Message: "Failed to get file info"})
+		}
+		data, err := inflateArchive(logFile)
+		switch {
+		case errors.Is(err, errArchiveTooLarge), errors.Is(err, errArchiveCorrupt):
+			return operations.NewGetLogsBadRequest().WithPayload(&models.Error{Message: err.Error()})
+		case err != nil:
+			return operations.NewGetLogsInternalServerError().WithPayload(&models.Error{Message: "Failed to read log archive"})
+		}
+		src = bytes.NewReader(data)
+		srcSize = int64(len(data))
+		modTime = info.ModTime()
+	} else {
+		file, err := os.Open(logFile)
+		if err != nil {
+			return operations.NewGetLogsInternalServerError().WithPayload(&models.Error{Message: "Failed to open log file"})
+		}
+		defer file.Close()
+
+		fileInfo, err := file.Stat()
+		if err != nil {
+			return operations.NewGetLogsInternalServerError().WithPayload(&models.Error{Message: "Failed to get file info"})
+		}
+		src = file
+		srcSize = fileInfo.Size()
+		modTime = fileInfo.ModTime()
 	}
 
-	file, err := os.Open(logFile)
-	if err != nil {
-		return operations.NewGetLogsInternalServerError().WithPayload(&models.Error{Message: "Failed to open log file"})
-	}
-	defer file.Close()
-
-	fileInfo, err := file.Stat()
-	if err != nil {
-		return operations.NewGetLogsInternalServerError().WithPayload(&models.Error{Message: "Failed to get file info"})
+	// Without a usable cursor, serve the newest lines. A cursor for another
+	// file, or for a file that has since rotated, restarts from the tail
+	// rather than reading from a meaningless offset.
+	endPos := srcSize
+	if cursor != nil && cursorValid(cursor, currentLogFilename, srcSize) {
+		endPos = cursor.Offset
 	}
 
-	// Determine starting position
-	// For latest-first behavior: start from end if no cursor provided
-	startPos := int64(-1) // -1 means start from end
-	if cursor != nil {
-		startPos = cursor.Offset
-	}
-
-	// Read the next batch of lines
-	nextLines, nextOffset := readNextLines(file, startPos, lines)
-
-	// Apply filtering if required
+	// Collect a page of matching lines. Filtering happens inside the backwards
+	// scan, not on the page it returns, so has_more reflects the search rather
+	// than the read window.
 	level := derefString(params.Level)
 	keyword := derefString(params.Keyword)
-	filteredLines := filterLogs(nextLines, level, keyword)
+	pageLines, nextOffset, scanned := collectPage(src, endPos, lines, level, keyword, maxFilterScanBytes)
 
-	// Check if there are more logs available
-	// For reverse reading: hasMore if nextOffset > 0
-	// For forward reading: hasMore if nextOffset < fileSize
-	var hasMore bool
-	if startPos == -1 {
-		// Reading from end - more logs available if cursor > 0
-		hasMore = nextOffset > 0
-	} else {
-		// Reading forward - more logs available if cursor < file size
-		hasMore = nextOffset < fileInfo.Size()
-	}
+	// Older lines remain whenever this page did not reach the file start.
+	hasMore := nextOffset > 0
+	logCount := int64(len(pageLines))
+	totalSize := srcSize
+	scannedBytes := scanned
 
-	// Create next cursor only if there are more logs
-	var nextCursorStr string
+	result.Logs = pageLines
+	result.LogFile = currentLogFilename
+	result.LogCount = &logCount
+	result.TotalSize = &totalSize
+	result.HasMore = &hasMore
+	result.ScannedBytes = &scannedBytes
 	if hasMore {
-		nextCursor := LogCursor{
+		result.NextCursor = encodeCursor(LogCursor{
 			Filename: currentLogFilename,
 			Offset:   nextOffset,
-			ModTime:  fileInfo.ModTime(),
-			FileSize: fileInfo.Size(),
-		}
-		nextCursorStr = encodeCursor(nextCursor)
+			ModTime:  modTime,
+			FileSize: srcSize,
+		})
 	}
 
-	// Populate the response with logs and metadata
-	result.Logs = filteredLines
-
-	// Set pagination metadata directly in response body
-	// Note: These fields need to be added to models.Logs struct after API regeneration
-	// For now, we'll use reflection or custom response until models are updated
-
-	// Create a custom response structure
-	response := map[string]interface{}{
-		"logs":       filteredLines,
-		"log_file":   currentLogFilename,
-		"log_count":  len(filteredLines),
-		"total_size": fileInfo.Size(),
-		"has_more":   hasMore,
-	}
-
-	if hasMore {
-		response["next_cursor"] = nextCursorStr
-	}
-
-	// Return as custom JSON response
-	return middleware.ResponderFunc(func(w http.ResponseWriter, producer runtime.Producer) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-
-		// Write custom JSON response
-		if producer != nil {
-			producer.Produce(w, response)
-		} else {
-			// Fallback JSON encoding
-			json.NewEncoder(w).Encode(response)
-		}
-	})
+	return operations.NewGetLogsOK().WithPayload(&result)
 }
 
 //----------------------------------------------
@@ -526,12 +650,20 @@ func ConfigGetLogFiles(params operations.GetLogArchivesParams, principal interfa
 	// Use the same response structure as archives for now
 	var result models.LogArchives
 	var fileNames []string
+	var info []*models.LogArchiveInfo
 
 	for _, logFile := range logFiles {
-		fileNames = append(fileNames, logFile["filename"].(string))
+		name := logFile["filename"].(string)
+		fileNames = append(fileNames, name)
+		info = append(info, &models.LogArchiveInfo{
+			Name:      name,
+			SizeBytes: logFile["size"].(int64),
+			Modified:  strfmt.DateTime(time.Unix(logFile["modified"].(int64), 0).UTC()),
+		})
 	}
 
 	result.Archives = fileNames
+	result.ArchiveInfo = info
 	return operations.NewGetLogArchivesOK().WithPayload(&result)
 }
 
@@ -551,6 +683,7 @@ func ConfigGetLogArchives(params operations.GetLogArchivesParams, principal inte
 
 	seen := map[string]bool{}
 	var archives []string
+	var info []*models.LogArchiveInfo
 	listed := false
 	for _, dir := range archiveDirs() {
 		files, err := os.ReadDir(dir)
@@ -566,6 +699,7 @@ func ConfigGetLogArchives(params operations.GetLogArchivesParams, principal inte
 			if strings.HasPrefix(name, "loxilb") && (strings.HasSuffix(name, ".log") || strings.HasSuffix(name, ".log.gz")) {
 				seen[name] = true
 				archives = append(archives, name)
+				info = append(info, archiveInfoFor(name, file))
 			}
 		}
 	}
@@ -574,7 +708,24 @@ func ConfigGetLogArchives(params operations.GetLogArchivesParams, principal inte
 	}
 
 	result.Archives = archives
+	result.ArchiveInfo = info
 	return operations.NewGetLogArchivesOK().WithPayload(&result)
+}
+
+// archiveInfoFor describes one archive. Size and mtime are what an operator
+// actually chooses on: a name like loxilb958f33103408.log carries no timestamp,
+// so a bare list of names offers nothing to pick between. Metadata that cannot
+// be stat'd is left zero rather than dropping the entry — the name still has to
+// line up positionally with the archives array.
+func archiveInfoFor(name string, entry os.DirEntry) *models.LogArchiveInfo {
+	out := &models.LogArchiveInfo{Name: name}
+	stat, err := entry.Info()
+	if err != nil {
+		return out
+	}
+	out.SizeBytes = stat.Size()
+	out.Modified = strfmt.DateTime(stat.ModTime().UTC())
+	return out
 }
 
 // API to download a specific log archive
