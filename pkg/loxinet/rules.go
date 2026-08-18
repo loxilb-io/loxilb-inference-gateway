@@ -2663,6 +2663,27 @@ func kvHashAlgoValidate(algo, engine string) error {
 	return nil
 }
 
+// pdEngineOrchestrationValidate rejects the engine/orchestration pair the
+// datapath cannot serve yet: pd_disagg_mode=true with kvEngineType="sglang".
+//
+// The failure this prevents is silent and total: the P/D state machine in
+// sockproxy speaks the vLLM disaggregation dialect — it rewrites the prefill
+// body to max_tokens=1 and injects kv_transfer_params, fields SGLang ignores.
+// An SGLang fleet behind such a rule returns truncated single-token output
+// with no error anywhere. SGLang's own P/D contract (bootstrap host/port/room
+// injection + concurrent dual dispatch) is a different orchestration flavor;
+// until it ships, the pair must be a config-time rejection, not a runtime
+// surprise. SGLang serving works today as a single-role pool (kvExactMode=3).
+//
+// Pure function: unit-testable without a rule fixture (pkg/loxinet is CGO —
+// tests execute at the remote gate; kvEngineConfigValidate precedent).
+func pdEngineOrchestrationValidate(pdDisagg bool, engine string) error {
+	if pdDisagg && kvEngineEffective(engine) == "sglang" {
+		return errors.New("sglang P/D orchestration not yet supported (the P/D state machine speaks the vLLM dialect); use kvExactMode=3 for a single-role sglang pool")
+	}
+	return nil
+}
+
 // kvEngineImmutabilityCheck is guard: kvEngineType on an existing
 // rule is IMMUTABLE — delete+recreate is the sanctioned path (a live engine
 // flip would silently re-key the whole Tier-1.5 hash space).
@@ -2982,6 +3003,14 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	// pair can never reach the data plane. An absent kvHashAlgo (the recommended
 	// shape) always passes.
 	if err := kvHashAlgoValidate(serv.KvHashAlgo, serv.KvEngineType); err != nil {
+		return RuleUnknownServiceErr, err
+	}
+
+	// engine ⇔ orchestration coherence: the P/D state machine speaks the vLLM
+	// dialect only — an sglang engine behind pd_disagg_mode would get its
+	// prefill bodies rewritten to max_tokens=1 (silently truncated output).
+	// Rejected here until the SGLang dual-dispatch orchestrator lands.
+	if err := pdEngineOrchestrationValidate(serv.PDDisaggMode, serv.KvEngineType); err != nil {
 		return RuleUnknownServiceErr, err
 	}
 
