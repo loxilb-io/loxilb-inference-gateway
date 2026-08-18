@@ -1778,6 +1778,10 @@ func DpLBRuleMod(w *LBDpWorkQ) int {
 		rankCount = 1
 	}
 	dat.kv_dp_rank_count = C.uint8_t(rankCount)
+	// SGLang P/D bootstrap port. 0 rides through unchanged — the 8998 default
+	// is applied at proxy_add (pd_cache_threshold defaulting idiom lives C-side
+	// here so the wire value stays the operator's literal config).
+	dat.pd_bootstrap_port = C.uint16_t(w.PDBootstrapPort)
 
 	// ai_gw_mode also derived from SSE mode (for non-P/D AI Gateway services)
 	if w.SSEMode && dat.ai_gw_mode == 0 {

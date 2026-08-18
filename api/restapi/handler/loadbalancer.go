@@ -138,6 +138,7 @@ func ConfigPostLoadbalancer(params operations.PostConfigLoadbalancerParams, prin
 	// values ⇒ byte-identical vLLM behavior (default-OFF additive chain).
 	lbRules.Serv.KvEngineType = params.Attr.ServiceArguments.KvEngineType
 	lbRules.Serv.KvDpRankCount = uint16(params.Attr.ServiceArguments.KvDpRankCount)
+	lbRules.Serv.PDBootstrapPort = uint16(params.Attr.ServiceArguments.PdBootstrapPort)
 
 	// Custom session header configuration - supports both RR and Persist modes
 	lbRules.Serv.SessionHeaderName = params.Attr.ServiceArguments.SessionHeaderName
@@ -630,6 +631,9 @@ func serializeLBRule(lb cmn.LbRuleMod) *models.LoadbalanceEntry {
 	}
 	if lb.Serv.KvDpRankCount != 0 {
 		tmpSvc.KvDpRankCount = int32(lb.Serv.KvDpRankCount)
+	}
+	if lb.Serv.PDBootstrapPort != 0 {
+		tmpSvc.PdBootstrapPort = int32(lb.Serv.PDBootstrapPort)
 	}
 
 	// CHWBL configuration (present when sel=8 CHWBL or sel=10 WRR_HASH)

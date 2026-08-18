@@ -997,6 +997,10 @@ type LbServiceArg struct {
 	// One framework per VIP; immutable after create (delete+recreate to change).
 	// Drives the hash-algo default: sglang ⇒ sha256_sglang when KvHashAlgo is unset.
 	KvEngineType string `json:"kvEngineType,omitempty"`
+	// PDBootstrapPort - SGLang disaggregation bootstrap port on every prefill EP
+	// (0 ⇒ SGLang's default 8998). Only meaningful with PDDisaggMode=true and
+	// KvEngineType="sglang"; rejected on any other rule shape.
+	PDBootstrapPort uint16 `json:"pdBootstrapPort,omitempty"`
 	// KvDpRankCount - SGLang data-parallel rank count (18, 0 ⇒ default 1).
 	// Rank N publishes KV events at KvZmqPort+N; all ranks union into one per-EP inventory.
 	KvDpRankCount uint16 `json:"kvDpRankCount,omitempty"`

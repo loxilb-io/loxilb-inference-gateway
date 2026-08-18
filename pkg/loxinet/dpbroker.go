@@ -389,6 +389,7 @@ type LBDpWorkQ struct {
 	KvWarmupSec                 uint32                  // Warmup seconds before Tier 1.5 activates
 	KvEngineType                string                  // KV-event engine: ""/"vllm" (default) or "sglang" (SGL-03)
 	KvDpRankCount               uint16                  // SGLang DP rank count (1..8, 0 ⇒ 1)
+	PDBootstrapPort             uint16                  // SGLang P/D bootstrap port on prefill EPs (0 ⇒ 8998 at proxy_add)
 	MTLSFrontend                *cmn.MTLSFrontendConfig // mTLS frontend configuration
 	MTLSBackend                 *cmn.MTLSBackendConfig  // mTLS backend configuration
 	// TLS-hardening scalars. All additive/default-off — empty/0
