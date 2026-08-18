@@ -99,6 +99,12 @@ ARG VERSION=dev
 # LABEL about the loxilb image
 LABEL description="loxilb official docker image"
 LABEL org.opencontainers.image.version="${VERSION}"
+# GHCR links a container package to its repository via this label, and only
+# this label. Without it the package stays an orphaned org-level entry that
+# does not appear under the repo's Packages -- which is why the gateway image
+# was missing there while loxilb-mcp (which sets it in .goreleaser.yaml) was
+# not. Linking also gives the package the repo's README and visibility.
+LABEL org.opencontainers.image.source="https://github.com/loxilb-io/loxilb-inference-gateway"
 
 # Disable Prompt During Packages Installation
 ARG DEBIAN_FRONTEND=noninteractive
