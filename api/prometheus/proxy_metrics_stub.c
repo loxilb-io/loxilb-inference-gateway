@@ -82,6 +82,8 @@ typedef struct proxy_metrics_snapshot {
     uint64_t pd_sg_prefill_abort_decode;
     uint64_t pd_sg_decode_close_drain;
     uint64_t pd_sg_room_retry;
+    uint64_t pd_sg_prefill_reject_relay;
+    uint64_t pd_sg_oversize_reject;
 } proxy_metrics_snapshot_t;
 
 __attribute__((weak))

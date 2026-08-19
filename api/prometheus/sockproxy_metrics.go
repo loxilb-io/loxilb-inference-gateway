@@ -85,6 +85,8 @@ typedef struct proxy_metrics_snapshot {
     uint64_t pd_sg_prefill_abort_decode;
     uint64_t pd_sg_decode_close_drain;
     uint64_t pd_sg_room_retry;
+    uint64_t pd_sg_prefill_reject_relay;
+    uint64_t pd_sg_oversize_reject;
 } proxy_metrics_snapshot_t;
 
 // C function from sockproxy.c
@@ -552,6 +554,22 @@ var (
 			Help: "SGLang P/D dual dispatch: the whole (prefill, decode) pair was re-dispatched with a fresh bootstrap room after a retriable failure.",
 		},
 	)
+
+	// Metric #37: SGLang prefill 4xx relayed verbatim (Counter)
+	pdSgPrefillRejectRelayTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "loxilb_pd_sg_prefill_reject_relay_total",
+			Help: "SGLang P/D dual dispatch: the prefill engine answered a complete 4xx before decode produced output; the origin response was relayed to the client verbatim and the decode leg aborted. A client error, not an endpoint fault — a storm here means clients are sending unservable requests (for example prompts over the model context window).",
+		},
+	)
+
+	// Metric #38: SGLang oversize fail-closed rejects (Counter)
+	pdSgOversizeRejectTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "loxilb_pd_sg_oversize_reject_total",
+			Help: "SGLang P/D: a streamable request (body above the gateway JSON inspection window) on a disaggregation rule was refused fail-closed with a 503 before contacting any engine, because bootstrap injection is impossible for an unbuffered body and disaggregation-mode engines cannot serve a bootstrap-less relay.",
+		},
+	)
 )
 
 // pdKvT15MissReasonLabels enumerates the canonical guard reasons used by the
@@ -931,6 +949,14 @@ func RunSockproxyMetrics(ctx context.Context) {
 		if current.pd_sg_room_retry >= prevSockproxyMetrics.pd_sg_room_retry {
 			delta := current.pd_sg_room_retry - prevSockproxyMetrics.pd_sg_room_retry
 			pdSgRoomRetryTotal.Add(float64(delta))
+		}
+		if current.pd_sg_prefill_reject_relay >= prevSockproxyMetrics.pd_sg_prefill_reject_relay {
+			delta := current.pd_sg_prefill_reject_relay - prevSockproxyMetrics.pd_sg_prefill_reject_relay
+			pdSgPrefillRejectRelayTotal.Add(float64(delta))
+		}
+		if current.pd_sg_oversize_reject >= prevSockproxyMetrics.pd_sg_oversize_reject {
+			delta := current.pd_sg_oversize_reject - prevSockproxyMetrics.pd_sg_oversize_reject
+			pdSgOversizeRejectTotal.Add(float64(delta))
 		}
 
 		// 4. Save state for next cycle
