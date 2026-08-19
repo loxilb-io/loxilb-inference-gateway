@@ -12,6 +12,10 @@
 #      with DIFFERENT rooms
 #   F  decode-death -> 502 + the prefill drain leg is closed (not orphaned)
 #   G  coexistence: vLLM P/D rule and SGLang P/D rule on one gateway
+#   I  prefill-400 -> the origin CLIENT error is relayed to the client
+#      VERBATIM (not masked as a gateway 502), decode leg still closed fast
+#   J  streamable JSON (body over the inspect cap) -> fail-closed 503
+#      pd_sg_oversize_unroutable BEFORE any engine sees a byte
 #   H  hygiene: no mock-side contract violations, pd_sg_* metrics exported
 
 source ../common.sh
@@ -287,6 +291,81 @@ G3_ST=$(status_of "$G3")
 check "G3: SGLang P/D rule still healthy after vLLM traffic (both flavors coexist)" $?
 
 ############################################################################
+echo "Leg I: prefill client-error status -> origin 4xx relayed verbatim"
+############################################################################
+
+disarm_all
+I_RELAY_BASE=$(mget loxilb_pd_sg_prefill_reject_relay_total)
+I_ABORT_BASE=$(mget loxilb_pd_sg_prefill_abort_decode_total)
+arm l3ep1 reject-next
+I_HIT=""
+for i in $(seq 1 8); do
+  I_RESP=$(chat "$RUN-leg-i-$i" false 2030)
+  I_ST=$(status_of "$I_RESP")
+  if [ "$I_ST" = "400" ]; then
+    I_HIT="$RUN-leg-i-$i"
+    echo "$I_RESP" | grep -q "mock_client_reject"
+    check "I1: injected prefill 400 relayed VERBATIM to the client (origin body intact, request $I_HIT)" $?
+    break
+  fi
+  [ "$I_ST" = "200" ] || { echo "  FAIL: I-pre: request $RUN-leg-i-$i expected 200 or 400, got $I_ST"; code=1; }
+done
+[ -n "$I_HIT" ]
+check "I2: reject-next consumed within 8 requests (hit=$I_HIT)" $?
+
+I_RELAY_NOW=$(mwait loxilb_pd_sg_prefill_reject_relay_total "$I_RELAY_BASE" 20)
+[ "$I_RELAY_NOW" -gt "$I_RELAY_BASE" ]
+check "I3: pd_sg_prefill_reject_relay ticked ($I_RELAY_BASE -> $I_RELAY_NOW)" $?
+
+# A client error must not be misclassified as a prefill abort (502 family).
+I_ABORT_NOW=$(mget loxilb_pd_sg_prefill_abort_decode_total)
+[ "$I_ABORT_NOW" = "$I_ABORT_BASE" ]
+check "I4: pd_sg_prefill_abort_decode FLAT across the reject ($I_ABORT_BASE)" $?
+
+# The decode leg (parked pre-output in its KV wait) is still torn down fast.
+I_ROOM=$(room_of "$(eplog l3ep1 sglang-prefill1.log)" "INJECT-400" "$I_HIT")
+I_CLOSED=1
+for i in $(seq 1 10); do
+  if [ -n "$I_ROOM" ] && eplog l3ep3 sglang-decode3.log | grep -q "DECODE-CONN-CLOSED room=$I_ROOM"; then
+    I_CLOSED=0; break
+  fi
+  sleep 1
+done
+check "I5: decode leg closed by the gateway (DECODE-CONN-CLOSED room=$I_ROOM)" $I_CLOSED
+
+############################################################################
+echo "Leg J: streamable JSON over the inspect cap -> fail-closed 503"
+############################################################################
+
+J_OVR_BASE=$(mget loxilb_pd_sg_oversize_reject_total)
+# ~900KB JSON body: over the gateway JSON inspection cap (3/4 of the 1MB
+# sock buffer), so body buffering — and with it bootstrap injection — is
+# impossible. Built inside the client container with shell only.
+$dexec l3h1 sh -c 'printf "{\"model\":\"'"$MODEL"'\",\"messages\":[{\"role\":\"user\",\"content\":\"" > /tmp/leg-j.json;
+  head -c 900000 /dev/zero | tr "\0" "x" >> /tmp/leg-j.json;
+  printf "\"}],\"max_tokens\":16,\"stream\":false}" >> /tmp/leg-j.json'
+J_RESP=$($dexec l3h1 curl -sk --cacert "$CACERT" -m 30 \
+  "https://$VIP:2030/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "X-Request-Id: $RUN-leg-j-1" \
+  -d @/tmp/leg-j.json \
+  -w "\nHTTPSTATUS:%{http_code}" 2>&1)
+J_ST=$(status_of "$J_RESP")
+[ "$J_ST" = "503" ] && echo "$J_RESP" | grep -q "pd_sg_oversize_unroutable"
+check "J1: oversize JSON refused fail-closed 503 pd_sg_oversize_unroutable (got $J_ST)" $?
+
+J_OVR_NOW=$(mwait loxilb_pd_sg_oversize_reject_total "$J_OVR_BASE" 20)
+[ "$J_OVR_NOW" -gt "$J_OVR_BASE" ]
+check "J2: pd_sg_oversize_reject ticked ($J_OVR_BASE -> $J_OVR_NOW)" $?
+
+# Fail-closed means REFUSED BEFORE BACKEND BYTES: no mock may have seen it.
+J_ALL_LOGS="$(eplog l3ep1 sglang-prefill1.log)
+$(eplog l3ep2 sglang-prefill2.log)
+$(eplog l3ep3 sglang-decode3.log)"
+! echo "$J_ALL_LOGS" | grep -q "$RUN-leg-j-1"
+check "J3: no engine observed the oversize request (refused pre-dispatch)" $?
+
+############################################################################
 echo "Leg H: hygiene — no mock-side contract violations, metrics exported"
 ############################################################################
 
@@ -299,7 +378,9 @@ check "H1: zero bootstrap-contract violations across all mock logs" $?
 H_METRICS=$($hexec llb1 curl -s http://localhost:11111/netlox/v1/metrics 2>/dev/null)
 echo "$H_METRICS" | grep -q "loxilb_pd_sg_room_retry_total" && \
   echo "$H_METRICS" | grep -q "loxilb_pd_sg_prefill_abort_decode_total" && \
-  echo "$H_METRICS" | grep -q "loxilb_pd_sg_decode_close_drain_total"
+  echo "$H_METRICS" | grep -q "loxilb_pd_sg_decode_close_drain_total" && \
+  echo "$H_METRICS" | grep -q "loxilb_pd_sg_prefill_reject_relay_total" && \
+  echo "$H_METRICS" | grep -q "loxilb_pd_sg_oversize_reject_total"
 check "H2: pd_sg_* counter family present on the metrics endpoint" $?
 
 echo "#########################################"

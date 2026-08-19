@@ -21,10 +21,14 @@ pin the gateway's CONCURRENT dual-dispatch contract:
   coupling and pair retry are specified against.
 
 Fault knobs (admin server, loopback :9100, one-shot each):
-  POST /admin/fail-next  -> next chat request answers HTTP 500 immediately
-  POST /admin/die-next   -> next chat request closes the TCP connection
-                            without any response (transport death)
-  GET  /admin/status     -> armed flags + request count
+  POST /admin/fail-next   -> next chat request answers HTTP 500 immediately
+  POST /admin/die-next    -> next chat request closes the TCP connection
+                             without any response (transport death)
+  POST /admin/reject-next -> next chat request answers HTTP 400 immediately
+                             (origin-computed CLIENT error, e.g. a prompt
+                             over the context window — the gateway must
+                             relay this body verbatim, not mask it as 502)
+  GET  /admin/status      -> armed flags + request count
 
 Log grammar (validation.sh greps these; keep stable):
   BOOTSTRAP reqid=<id> room=<room> host=<h> port=<p>
@@ -35,6 +39,7 @@ Log grammar (validation.sh greps these; keep stable):
   DECODE-SERVED room=<room> mode=<sse|json>
   INJECT-500 reqid=<id> room=<room>
   INJECT-DIE reqid=<id> room=<room>
+  INJECT-400 reqid=<id> room=<room>
   errors: TRIPLE-MISSING / PORT-MISMATCH / HOST-MISMATCH / ROOM-RANGE-ERROR /
           TRIPLE-MISMATCH / JOIN-FAILED
 
@@ -61,6 +66,7 @@ _args = None
 _request_count = 0
 _fail_next = False
 _die_next = False
+_reject_next = False
 _knob_lock = threading.Lock()
 
 # Prefill-side rendezvous state: room -> {"join": <decode triple dict>|None,
@@ -172,8 +178,8 @@ class MockSGLangHandler(BaseHTTPRequestHandler):
                 "bootstrap_room": room}
 
     def _consume_knobs(self, req_id, room):
-        """One-shot fault injection. Returns 'fail'|'die'|None."""
-        global _fail_next, _die_next
+        """One-shot fault injection. Returns 'fail'|'die'|'reject'|None."""
+        global _fail_next, _die_next, _reject_next
         with _knob_lock:
             if _fail_next:
                 _fail_next = False
@@ -183,6 +189,10 @@ class MockSGLangHandler(BaseHTTPRequestHandler):
                 _die_next = False
                 _log(f"INJECT-DIE reqid={req_id} room={room}")
                 return "die"
+            if _reject_next:
+                _reject_next = False
+                _log(f"INJECT-400 reqid={req_id} room={room}")
+                return "reject"
         return None
 
     def _handle_chat(self, req):
@@ -195,6 +205,14 @@ class MockSGLangHandler(BaseHTTPRequestHandler):
         knob = self._consume_knobs(req_id, room)
         if knob == "fail":
             self._send_json(500, {"error": "injected_fault"})
+            return
+        if knob == "reject":
+            # Shaped like a real engine validation error (over-context-window
+            # 400) — the distinctive marker is what validation greps for on
+            # the CLIENT side to prove verbatim relay.
+            self._send_json(400, {"object": "error",
+                                  "message": "mock_client_reject: prompt over context window",
+                                  "type": "BadRequestError"})
             return
         if knob == "die":
             # Transport death: no response bytes at all.
@@ -432,7 +450,7 @@ class AdminHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_POST(self):
-        global _fail_next, _die_next
+        global _fail_next, _die_next, _reject_next
         if self.path == "/admin/fail-next":
             with _knob_lock:
                 _fail_next = True
@@ -443,12 +461,19 @@ class AdminHandler(BaseHTTPRequestHandler):
                 _die_next = True
             _log("admin: die-next ARMED")
             self._reply({"die_next": True})
+        elif self.path == "/admin/reject-next":
+            with _knob_lock:
+                _reject_next = True
+            _log("admin: reject-next ARMED")
+            self._reply({"reject_next": True})
         elif self.path == "/admin/reset":
             with _knob_lock:
                 _fail_next = False
                 _die_next = False
+                _reject_next = False
             _log("admin: knobs RESET")
-            self._reply({"fail_next": False, "die_next": False})
+            self._reply({"fail_next": False, "die_next": False,
+                         "reject_next": False})
         else:
             self.send_response(404)
             self.end_headers()
