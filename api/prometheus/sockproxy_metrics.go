@@ -440,6 +440,21 @@ var (
 		[]string{"ep_idx"},
 	)
 
+	// Tier-1.5 cold-start seed counter. Incremented by ai_kv_subscriber.go
+	// llb_ai_kv_best_worker when the bounded cold-start compensation diverts a
+	// Tier-1.5 hit to a healthy EMPTY-inventory prefill EP (every Nth hit per
+	// service while such an EP exists, LOXILB_KV_COLDSTART_SEED_N). Labeled by
+	// the EP that RECEIVED the seed. Nonzero ⇒ a cold EP was re-admitted to
+	// exact-mode traffic; the series goes quiet again once its inventory fills.
+	// Sibling of pd_kv_tier15_spills_total.
+	kvTier15ColdSeedsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "loxilb_pd_kv_tier15_cold_seeds_total",
+			Help: "Total Tier-1.5 hits diverted to a healthy empty-inventory prefill EP by the bounded cold-start compensation (every Nth hit per service while a cold EP exists).",
+		},
+		[]string{"ep_idx"},
+	)
+
 	// Tier-1.5 zero-hit watchdog counter. Incremented by
 	// ai_kv_subscriber.go kvZeroHitWatchdog on EVERY lookup at-or-past the
 	// LOXILB_KV_ZERO_HIT_N (default 50) consecutive-zero-hit threshold for a
@@ -988,6 +1003,14 @@ func IncKvTier15SpillCounter(epIdx string) {
 	kvTier15SpillsTotal.WithLabelValues(epIdx).Inc()
 }
 
+// IncKvTier15ColdSeedCounter increments pd_kv_tier15_cold_seeds_total for the
+// EP that received a cold-start seed. Called from llb_ai_kv_best_worker when
+// the bounded cold-start compensation diverts a Tier-1.5 hit to a healthy
+// empty-inventory prefill EP.
+func IncKvTier15ColdSeedCounter(epIdx string) {
+	kvTier15ColdSeedsTotal.WithLabelValues(epIdx).Inc()
+}
+
 // SetKvEpInfo records the ep_idx->IP identity for a P/D endpoint (info metric).
 // Called from KvSubscriberStart, where the endpoint IP is known, for EVERY EP —
 // so an ep_idx that has not yet emitted a (lazy) tier15_hits series is still
@@ -1040,6 +1063,21 @@ func ClearKvServiceSeries(serviceID string) {
 // to keep prometheus/testutil out of the loxinet import graph.
 func KvTier15SpillValue(epIdx string) float64 {
 	c := kvTier15SpillsTotal.WithLabelValues(epIdx)
+	m := &dto.Metric{}
+	if err := c.Write(m); err != nil {
+		return 0
+	}
+	if m.Counter == nil || m.Counter.Value == nil {
+		return 0
+	}
+	return *m.Counter.Value
+}
+
+// KvTier15ColdSeedValue returns the current cold-seed-counter value for epIdx.
+// Test-only getter (mirrors KvTier15SpillValue) — reads via dto.Metric.Write
+// to keep prometheus/testutil out of the loxinet import graph.
+func KvTier15ColdSeedValue(epIdx string) float64 {
+	c := kvTier15ColdSeedsTotal.WithLabelValues(epIdx)
 	m := &dto.Metric{}
 	if err := c.Write(m); err != nil {
 		return 0
