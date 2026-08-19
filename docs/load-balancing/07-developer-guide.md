@@ -60,7 +60,10 @@
 | `sockproxy_h2.c` | H2 dispatch + nghttp2 emitters (`proxy_h2_send_l7_synthetic`, `proxy_h2_inject_resp_headers`, `proxy_h2_build_l7_req_headers`) |
 | `sockproxy_ssl.{c,h}` | ALPN, version/cipher pinning, certId registry |
 | `sockproxy_mtls.c` | client-cert verify, CRL, SAN/CN matching, backend cert resolution |
-| `sockproxy_pd.c` | P/D session mapping, prefill/decode leg orchestration |
+| `sockproxy_pd.c` | P/D shared services: body rewriting, session mapping, admission control |
+| `sockproxy_pd_core.c` | engine-neutral P/D dispatch core; dialect resolution via the ops table (`sockproxy_pd.h`) |
+| `sockproxy_pd_vllm.c` | vLLM sequential P/D machine (prefill → extract → decode re-dispatch, prefill retry) |
+| `sockproxy_pd_sglang.c` | SGLang dual-dispatch P/D machine (bootstrap injection, drain leg, pair retry) |
 | `sockproxy_pd_trie.c` | cache-aware radix trie (Tier 1 prefix matching) |
 | `sockproxy_kv_exact.{c,h}` | KV-exact (Tier 1.5) routing: KV-event inventory, block-hash lookup |
 | `sockproxy.h` | `proxy_arg`, `proxy_fd_ent`, `proxy_epval_t`, P/D & conversation structs |

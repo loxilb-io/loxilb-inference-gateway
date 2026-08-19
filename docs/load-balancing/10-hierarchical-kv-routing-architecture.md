@@ -510,7 +510,7 @@ that lets all of this run in the serving path of production traffic.
 | P/D ladder + admission + decode | `loxilb-ebpf/common/sockproxy_pd.c` (`pd_select_prefill`, `pd_select_decode`) |
 | P/D gate + excluded_mask + 429/parked plumbing | `loxilb-ebpf/common/sockproxy_ep.c` |
 | Tier 1.5 C side (guards, hashing, CGO) | `loxilb-ebpf/common/sockproxy_kv_exact.c`, `sockproxy_kv_exact.h` |
-| Mid-request failover (prefill retry + receipt rewrite) | `loxilb-ebpf/common/sockproxy_http.c` (`pd_retry_prefill`, `pd_receipt_rewrite`) |
+| Mid-request failover (prefill retry + receipt rewrite) | `loxilb-ebpf/common/sockproxy_pd_vllm.c` (`pd_retry_prefill`, `pd_receipt_rewrite`) |
 | Generalized connect failover (non-P/D) | `loxilb-ebpf/common/sockproxy_ep.c` |
 | Parked-FIFO drain on EP ineligibility | `loxilb-ebpf/common/sockproxy_health.c` (`pd_parked_drain_ep` → `pd_resume_parked`) |
 | Unified/soft/adaptive blend + env parsing | `pkg/loxinet/ai_kv_unified.go` |
