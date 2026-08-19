@@ -1239,6 +1239,34 @@ func kvZeroHitN() uint64 {
 // 16 exact-mode hits even at concurrency 1.
 const kvColdSeedNDefault = 16
 
+// kvColdSeedMinBlocksDefault: an inventory BELOW this many blocks counts as
+// cold. Strictly-empty is too brittle on real engines — a flushed SGLang
+// engine leaves/re-publishes a trace block (live evidence: 1 of 12062 blocks
+// back within seconds of the flush, with zero requests served), and one
+// stray block must not disqualify a starved EP. 16 matches the default
+// minimum-match depth in tokens: at block size 1 an inventory under 16
+// blocks can never score past the shallow-match guard, so the EP is
+// provably unselectable — cold in the exact sense that matters.
+const kvColdSeedMinBlocksDefault = 16
+
+// kvColdSeedMinBlocksEnvWarnOnce rate-limits the invalid-env WARN.
+var kvColdSeedMinBlocksEnvWarnOnce sync.Once
+
+// kvColdSeedMinBlocks resolves LOXILB_KV_COLDSTART_MIN_BLOCKS: unset ⇒
+// default 16; explicit 0 ⇒ strict empty-only; invalid ⇒ default + WARN.
+func kvColdSeedMinBlocks() int {
+	if v := os.Getenv("LOXILB_KV_COLDSTART_MIN_BLOCKS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			return n
+		}
+		kvColdSeedMinBlocksEnvWarnOnce.Do(func() {
+			log.Warnf("[KV_COLDSEED] invalid LOXILB_KV_COLDSTART_MIN_BLOCKS=%q (want int >= 0), using default %d",
+				v, kvColdSeedMinBlocksDefault)
+		})
+	}
+	return kvColdSeedMinBlocksDefault
+}
+
 // kvColdSeedEnvWarnOnce rate-limits the invalid-env WARN to one shot (the
 // accessor runs on the lookup hot path).
 var kvColdSeedEnvWarnOnce sync.Once
@@ -1288,13 +1316,20 @@ func kvColdStartSeed(svcID uint32, prefillMask, excludedMask uint32, bestEp int)
 	if svc.coldSeedTick%n != 0 {
 		return bestEp, false
 	}
+	// warm floor: an inventory at/above this size disqualifies the EP as a
+	// seed target. Explicit 0 degrades to 1 (strict empty-only) — a floor of
+	// 0 would mark every EP warm and silently disable seeding.
+	floor := kvColdSeedMinBlocks()
+	if floor < 1 {
+		floor = 1
+	}
 	for ep := 0; ep < 32; ep++ {
 		bit := uint32(1) << uint(ep)
 		if prefillMask&bit == 0 || excludedMask&bit != 0 {
 			continue
 		}
-		if inv, ok := svc.inventories[ep]; ok && inv.Size() > 0 {
-			continue // warm — has published blocks
+		if inv, ok := svc.inventories[ep]; ok && inv.Size() >= floor {
+			continue // warm — enough published blocks to be selectable
 		}
 		if ep == bestEp {
 			continue // defensive: a cold EP can never be the positive-score winner
