@@ -60,6 +60,7 @@ typedef struct proxy_metrics_snapshot {
     uint64_t pd_kv_t15_miss_hashes;
     uint64_t pd_kv_t15_miss_no_worker;
     uint64_t pd_kv_t15_miss_excluded;
+    uint64_t pd_kv_t15_miss_shallow;
     uint64_t pd_kv_t15_fallthrough_total;
 
     // CB proactive heal + per-EP admission layer
@@ -354,7 +355,7 @@ var (
 			Namespace: "loxilb",
 			Subsystem: "pd_kv",
 			Name:      "tier15_miss_reason_total",
-			Help:      "Total Tier-1.5 KV-exact routing misses by guard reason (mode_off,warmup,text_empty,model_empty,tokenize,hashes,no_worker,excluded).",
+			Help:      "Total Tier-1.5 KV-exact routing misses by guard reason (mode_off,warmup,text_empty,model_empty,tokenize,hashes,no_worker,excluded,shallow).",
 		},
 		[]string{"reason"},
 	)
@@ -567,6 +568,7 @@ var pdKvT15MissReasonLabels = []string{
 	"hashes",
 	"no_worker",
 	"excluded",
+	"shallow",
 }
 
 // init pre-creates every reason child so the CounterVec appears in
@@ -849,7 +851,7 @@ func RunSockproxyMetrics(ctx context.Context) {
 
 		// 3e. : KV Tier 1.5 routing diagnostics (per-guard miss + fallthrough)
 		// Delta pattern matches existing counters; fields populate in plan 42-02.
-		t15MissCurrent := [8]C.uint64_t{
+		t15MissCurrent := [9]C.uint64_t{
 			current.pd_kv_t15_miss_mode_off,
 			current.pd_kv_t15_miss_warmup,
 			current.pd_kv_t15_miss_text_empty,
@@ -858,8 +860,9 @@ func RunSockproxyMetrics(ctx context.Context) {
 			current.pd_kv_t15_miss_hashes,
 			current.pd_kv_t15_miss_no_worker,
 			current.pd_kv_t15_miss_excluded,
+			current.pd_kv_t15_miss_shallow,
 		}
-		t15MissPrev := [8]C.uint64_t{
+		t15MissPrev := [9]C.uint64_t{
 			prevSockproxyMetrics.pd_kv_t15_miss_mode_off,
 			prevSockproxyMetrics.pd_kv_t15_miss_warmup,
 			prevSockproxyMetrics.pd_kv_t15_miss_text_empty,
@@ -868,6 +871,7 @@ func RunSockproxyMetrics(ctx context.Context) {
 			prevSockproxyMetrics.pd_kv_t15_miss_hashes,
 			prevSockproxyMetrics.pd_kv_t15_miss_no_worker,
 			prevSockproxyMetrics.pd_kv_t15_miss_excluded,
+			prevSockproxyMetrics.pd_kv_t15_miss_shallow,
 		}
 		for i, reason := range pdKvT15MissReasonLabels {
 			if t15MissCurrent[i] >= t15MissPrev[i] {

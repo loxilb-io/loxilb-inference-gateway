@@ -61,6 +61,7 @@ typedef struct proxy_metrics_snapshot {
     uint64_t pd_kv_t15_miss_hashes;
     uint64_t pd_kv_t15_miss_no_worker;
     uint64_t pd_kv_t15_miss_excluded;
+    uint64_t pd_kv_t15_miss_shallow;
     uint64_t pd_kv_t15_fallthrough_total;
 
     /* Keep in lockstep with loxilb-ebpf/common/sockproxy_metrics.h and the
