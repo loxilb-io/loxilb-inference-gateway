@@ -105,6 +105,13 @@ jobs:
           ./validation.sh
           ./rmconfig.sh
           cd -
+      - name: TRT-LLM P/D rewriter-dialect disaggregation (mock TRT-LLM)
+        run: |
+          cd cicd/trtllm-pd-disagg/
+          ./config.sh
+          ./validation.sh
+          ./rmconfig.sh
+          cd -
       - name: SGLang KV-cache-aware routing (echo backends)
         run: |
           cd cicd/sglang-loxilb-kvcache/

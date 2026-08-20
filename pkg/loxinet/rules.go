@@ -2618,12 +2618,12 @@ func kvEngineConfigValidate(engine string, dpRankCount uint16) error {
 	return nil
 }
 
-// kvTrtllmFeatureGuard rejects TRT-LLM rule shapes whose orchestration has not
-// shipped yet, and the knobs that are structurally meaningless for the engine.
-// Plain L7 LB and single-role Tier-1.5 (kvExactMode=3, the HTTP-polled event
-// plane in ai_kv_trtllm_source.go) are accepted; the P/D-coupled shapes
-// (kvExactMode=1, pd_disagg_mode) stay rejected until the disaggregation
-// dialect lands and validates on the GPU testbed.
+// kvTrtllmFeatureGuard rejects the TRT-LLM rule shapes the engine cannot
+// speak, and the knobs that are structurally meaningless for it. Plain L7
+// LB, single-role Tier-1.5 (kvExactMode=3) and P/D disaggregation with the
+// P/D-coupled KV plane (pd_disagg_mode, kvExactMode=1 — both over the
+// HTTP-polled event drain in ai_kv_trtllm_source.go, orchestrated by the
+// pd_dialect_trtllm rewriter table in the C data plane) are accepted.
 //
 // The meaningless-knob rejections are deliberate loud failures: TRT-LLM KV
 // events ride the EP's own serving port (no ZMQ, so kvZmqPort would be dead
@@ -2638,14 +2638,11 @@ func kvTrtllmFeatureGuard(engine string, kvExactMode uint8, pdDisagg bool, zmqPo
 	if kvEngineEffective(engine) != "trtllm" {
 		return nil
 	}
-	if kvExactMode > 0 && kvExactMode != KvExactModeSingleRole {
-		// Mode 3 (single-role Tier-1.5 over the polled event drain) is the
-		// shipped TRT-LLM KV shape; mode 1 is P/D-coupled and stays rejected
-		// with pd_disagg below until the disaggregation dialect lands.
-		return errors.New("kv-engine-type trtllm supports kvExactMode=3 only (single-role Tier-1.5)")
-	}
-	if pdDisagg {
-		return errors.New("kv-engine-type trtllm does not support pd_disagg_mode yet")
+	if kvExactMode != 0 && kvExactMode != 1 &&
+		kvExactMode != KvExactModeSingleRole {
+		// Mode 2 (nats) is reserved; only the polled-drain shapes exist for
+		// this engine.
+		return errors.New("kv-engine-type trtllm supports kvExactMode 1 or 3 (HTTP-polled event plane)")
 	}
 	// 0 = absent; 5557 = the swagger default the API layer may materialize.
 	if zmqPort != 0 && zmqPort != 5557 {
@@ -3735,7 +3732,15 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 			// Start subscriber for prefill EPs only (epRole == 1)
 			if ep.epRole == 1 {
 				for rank := uint16(0); rank < dpRanks; rank++ {
-					KvSubscriberStartRank(serviceID, i, rank, ep.xIP.String(), zmqPort+rank,
+					// TRT-LLM events ride the EP's own SERVING port (HTTP
+					// drain, no separate event port — kvZmqPort is rejected
+					// non-default at validation), so the subscriber dials
+					// xPort there. Mirrors the single-role gate below.
+					subPort := zmqPort + rank
+					if r.kvEngineType == "trtllm" {
+						subPort = ep.xPort
+					}
+					KvSubscriberStartRank(serviceID, i, rank, ep.xIP.String(), subPort,
 						kvHashAlgoEffective(r.kvHashAlgo, r.kvEngineType), r.kvEngineType, r.kvBlockSize)
 				}
 			}

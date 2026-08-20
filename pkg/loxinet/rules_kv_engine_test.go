@@ -62,10 +62,11 @@ func TestKvEngineConfigValidateAllowlist(t *testing.T) {
 	}
 }
 
-// TestKvTrtllmFeatureGuard — TRT-LLM plain LB is accepted today; the not-yet-
-// shipped orchestration modes and the structurally meaningless knobs are
-// rejected loudly at config time (the G1-pattern fix: never let a rule shape
-// we can't orchestrate reach the data plane).
+// TestKvTrtllmFeatureGuard — TRT-LLM plain LB, single-role Tier-1.5 and P/D
+// disaggregation (the pd_dialect_trtllm rewriter table) are accepted; the
+// reserved mode and the structurally meaningless knobs are rejected loudly
+// at config time (the G1-pattern fix: never let a rule shape we can't
+// orchestrate reach the data plane).
 func TestKvTrtllmFeatureGuard(t *testing.T) {
 	// Non-trtllm engines: the guard is a no-op whatever the other fields say.
 	for _, engine := range []string{"", "vllm", "sglang"} {
@@ -74,12 +75,16 @@ func TestKvTrtllmFeatureGuard(t *testing.T) {
 		}
 	}
 
-	// trtllm plain LB and single-role Tier-1.5 (mode 3, the polled-events
-	// shape): accepted, including the swagger-materialized 5557 default.
+	// trtllm plain LB, both polled-drain KV shapes (mode 1 P/D-coupled,
+	// mode 3 single-role) and pd_disagg: accepted, including the
+	// swagger-materialized 5557 default.
 	for _, zmq := range []uint16{0, 5557} {
-		for _, mode := range []uint8{0, KvExactModeSingleRole} {
-			if err := kvTrtllmFeatureGuard("trtllm", mode, false, zmq, 1); err != nil {
-				t.Errorf("trtllm mode=%d (zmq=%d): want accept, got %v", mode, zmq, err)
+		for _, mode := range []uint8{0, 1, KvExactModeSingleRole} {
+			for _, disagg := range []bool{false, true} {
+				if err := kvTrtllmFeatureGuard("trtllm", mode, disagg, zmq, 1); err != nil {
+					t.Errorf("trtllm mode=%d (zmq=%d disagg=%v): want accept, got %v",
+						mode, zmq, disagg, err)
+				}
 			}
 		}
 	}
@@ -93,9 +98,7 @@ func TestKvTrtllmFeatureGuard(t *testing.T) {
 		dpRank   uint16
 		wantIn   string
 	}{
-		{"kvExactMode=1", 1, false, 0, 0, "kvExactMode"},
 		{"kvExactMode=2", 2, false, 0, 0, "kvExactMode"},
-		{"pd_disagg", 0, true, 0, 0, "pd_disagg_mode"},
 		{"zmq port", 0, false, 5561, 0, "kvZmqPort"},
 		{"dp ranks", 0, false, 0, 2, "kvDpRankCount"},
 	}
