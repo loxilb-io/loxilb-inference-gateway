@@ -366,6 +366,76 @@ $(eplog l3ep3 sglang-decode3.log)"
 check "J3: no engine observed the oversize request (refused pre-dispatch)" $?
 
 ############################################################################
+echo "Leg K: consecutive prefill 5xx -> origin-error demotion (breaker opens)"
+############################################################################
+
+# The breaker's connect-level failure_count is reset by every connect
+# success, so an EP that accepts TCP but keeps answering 5xx never trips it
+# — warm KV affinity then re-pins the erroring EP indefinitely. The origin
+# streak (default threshold 3, LLB_PD_ORIGIN_ERR_THRESHOLD) is immune to
+# that reset: three consecutive origin 5xx must open the breaker, selection
+# must avoid the EP while it is OPEN, and the standard heal cycle must
+# re-admit it afterwards.
+disarm_all
+cb_origin_count() {  # C-side sockproxy log lives in the dp log file, not docker logs
+  docker exec llb1 sh -c "grep -c CB_ORIGIN /var/log/loxilbdp.log 2>/dev/null || true" 2>/dev/null || echo 0
+}
+K_FLIPS_BASE=$(mget loxilb_pd_cb_flips_total)
+K_MARK_BASE=$(cb_origin_count)
+K_HITS=0
+for k in 1 2 3; do
+  arm l3ep1 fail-next
+  K_HIT=""
+  for i in $(seq 1 8); do
+    K_RESP=$(chat "$RUN-leg-k$k-$i" false 2030)
+    K_ST=$(status_of "$K_RESP")
+    if [ "$K_ST" = "502" ]; then
+      K_HIT="$RUN-leg-k$k-$i"; K_HITS=$((K_HITS+1)); break
+    fi
+    [ "$K_ST" = "200" ] || { echo "  FAIL: K-pre: request $RUN-leg-k$k-$i expected 200 or 502, got $K_ST"; code=1; }
+  done
+  [ -n "$K_HIT" ] || break
+done
+[ "$K_HITS" = "3" ]
+check "K1: three armed prefill 500s each drew a 502 (streak staged)" $?
+
+K_MARK_NOW=$(cb_origin_count)
+[ "$K_MARK_NOW" -gt "$K_MARK_BASE" ]
+check "K2: origin-error demotion tripped (CB_ORIGIN marker $K_MARK_BASE -> $K_MARK_NOW)" $?
+
+K_FLIPS_NOW=$(mwait loxilb_pd_cb_flips_total "$K_FLIPS_BASE" 20)
+[ "$K_FLIPS_NOW" -gt "$K_FLIPS_BASE" ]
+check "K3: pd_cb_flips ticked ($K_FLIPS_BASE -> $K_FLIPS_NOW)" $?
+
+# While the breaker is OPEN every request must succeed on the OTHER prefill
+# — the tripped EP serves nothing (this is the pin the demotion breaks).
+K_EP1_BEFORE=$(eplog l3ep1 sglang-prefill1.log | grep -c "BOOTSTRAP" || true)
+K_OPEN_BAD=0
+for i in $(seq 1 6); do
+  K_RESP=$(chat "$RUN-leg-k-open-$i" false 2030)
+  [ "$(status_of "$K_RESP")" = "200" ] || K_OPEN_BAD=$((K_OPEN_BAD+1))
+done
+K_EP1_AFTER=$(eplog l3ep1 sglang-prefill1.log | grep -c "BOOTSTRAP" || true)
+[ "$K_OPEN_BAD" = "0" ]
+check "K4: 6/6 requests 200 while the tripped prefill is OPEN (failover held)" $?
+[ "$K_EP1_AFTER" = "$K_EP1_BEFORE" ]
+check "K5: tripped prefill served ZERO requests while OPEN (bootstrap lines $K_EP1_BEFORE flat)" $?
+
+# Recovery: the 1 Hz health pass drives OPEN->HALF_OPEN after the 30 s
+# open timeout; genuine successes then close the breaker and the EP serves
+# again — no operator action.
+echo "  sitting out the breaker open timeout (35s)..."
+sleep 35
+K_RECOVERED=1
+for i in $(seq 1 20); do
+  chat "$RUN-leg-k-rec-$i" false 2030 > /dev/null
+  K_EP1_REC=$(eplog l3ep1 sglang-prefill1.log | grep -c "BOOTSTRAP" || true)
+  if [ "$K_EP1_REC" -gt "$K_EP1_AFTER" ]; then K_RECOVERED=0; break; fi
+  sleep 2
+done
+check "K6: tripped prefill re-admitted after the heal cycle (bootstrap lines $K_EP1_AFTER -> ${K_EP1_REC:-?})" $K_RECOVERED
+
+############################################################################
 echo "Leg H: hygiene — no mock-side contract violations, metrics exported"
 ############################################################################
 

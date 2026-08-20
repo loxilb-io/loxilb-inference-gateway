@@ -138,7 +138,7 @@ echo "#########################################"
 # not carry kvEngineType/pdBootstrapPort flags yet.
 $hexec llb1 curl -s -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
   -H 'Content-Type: application/json' \
-  -d '{"serviceArguments":{"externalIP":"'"$VIP"'","port":2030,"protocol":"tcp","sel":0,"mode":4,"security":1,"pd_disagg_mode":true,"kvEngineType":"sglang","pdBootstrapPort":9998,"sse_mode":true,"host":"'"$VIP"'","monitor":true,"probetype":"http","probeport":8100,"probereq":"/health","probeTimeout":5,"probeRetries":2},"endpoints":[{"endpointIP":"31.31.31.1","targetPort":8100,"weight":1,"ep_role":1},{"endpointIP":"32.32.32.1","targetPort":8100,"weight":1,"ep_role":1},{"endpointIP":"33.33.33.1","targetPort":8100,"weight":1,"ep_role":2}]}'
+  -d '{"serviceArguments":{"externalIP":"'"$VIP"'","port":2030,"protocol":"tcp","sel":0,"mode":4,"security":1,"pd_disagg_mode":true,"kvEngineType":"sglang","pdBootstrapPort":9998,"sse_mode":true,"host":"'"$VIP"'","monitor":true,"cb_enable":true,"probetype":"http","probeport":8100,"probereq":"/health","probeTimeout":5,"probeRetries":2},"endpoints":[{"endpointIP":"31.31.31.1","targetPort":8100,"weight":1,"ep_role":1},{"endpointIP":"32.32.32.1","targetPort":8100,"weight":1,"ep_role":1},{"endpointIP":"33.33.33.1","targetPort":8100,"weight":1,"ep_role":2}]}'
 echo ""
 
 # Port 2031 — vLLM P/D coexistence rule (default engine).
