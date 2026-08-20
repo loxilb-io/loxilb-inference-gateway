@@ -136,6 +136,14 @@ connect_docker_hosts l3ep3 llb1
 connect_docker_hosts l3ep4 llb1
 fi
 
+# Phase L rewrites l3h1's master-DNAT with iptables. Install it (if absent)
+# BEFORE the route configuration below: l3h1's default route moves to the
+# VIP gateway there, after which the container has no internet egress and
+# apt grinds against unreachable mirrors before failing.
+if [ "${PHASE_L_HA:-0}" = "1" ] && ! $dexec l3h1 bash -c 'command -v iptables' >/dev/null 2>&1; then
+  $dexec l3h1 bash -c "sed -i 's|//archive.ubuntu.com|//kr.archive.ubuntu.com|g' /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true; apt-get update > /dev/null 2>&1 && apt-get install -y iptables > /dev/null 2>&1" || true
+fi
+
 echo "#########################################"
 echo "Configuring IP addresses and routes"
 echo "#########################################"
@@ -722,8 +730,10 @@ fi
 
 # Install master-routing on l3h1: iptables DNAT 10.10.10.99 → 10.10.10.254
 # initially, rewritten by validation.sh update_master_dnat after each failover.
-$dexec l3h1 bash -c 'apt-get update >/dev/null 2>&1 && apt-get install -y iptables >/dev/null 2>&1' || \
-  echo "WARN: iptables install on l3h1 failed; Phase L will fall back to direct curls to current-master IP"
+# iptables itself was installed before the route configuration (no egress
+# from here on) — only probe for it now.
+$dexec l3h1 bash -c 'command -v iptables >/dev/null 2>&1' || \
+  echo "WARN: iptables missing on l3h1; Phase L will fall back to direct curls to current-master IP"
 $dexec l3h1 iptables -t nat -A OUTPUT -d 10.10.10.99 -j DNAT --to-destination 10.10.10.254 2>/dev/null || \
   echo "WARN: iptables DNAT not installed on l3h1; Phase L will use direct-IP fallback"
 
