@@ -516,17 +516,24 @@ type KvEventSource interface {
 	kvZmqSubscriber
 }
 
-// newKvEventSource is the engine→transport factory (SGL-03). Both
-// supported engines ("vllm"/"" default and "sglang") share the identical
-// ZMQ SUB transport and msgpack KVEventBatch wire format, so today every
-// engine resolves to the pure-Go ZMQ source. Unknown engine strings are
-// rejected at config time (kvEngineConfigValidate); the defensive
-// default here keeps the subscriber alive on the shared transport rather than
-// wedging an EP on a string that already passed validation upstream.
-func newKvEventSource(ctx context.Context, engine string, addr string) KvEventSource {
+// newKvEventSource is the engine→transport factory (SGL-03). The ZMQ
+// engines ("vllm"/"" default and "sglang") share the identical ZMQ SUB
+// transport and msgpack KVEventBatch wire format and resolve to the pure-Go
+// ZMQ source; "trtllm" resolves to the HTTP drain poller
+// (ai_kv_trtllm_source.go), which synthesizes the same 3-frame messages so
+// the subscriber loop is transport-blind. blockSize is the rule's
+// kvBlockSize, consumed only by the trtllm poller (its event decoder indexes
+// exactly full blocks); ZMQ engines carry hashes on the wire and ignore it.
+// Unknown engine strings are rejected at config time
+// (kvEngineConfigValidate); the defensive default here keeps the subscriber
+// alive on the shared transport rather than wedging an EP on a string that
+// already passed validation upstream.
+func newKvEventSource(ctx context.Context, engine string, addr string, blockSize int) KvEventSource {
 	switch engine {
 	case "", "vllm", "sglang":
 		return newPureGoZmqSubscriber(ctx, addr)
+	case "trtllm":
+		return newTrtllmEventPoller(ctx, addr, blockSize)
 	default:
 		log.Warnf("kv-subscriber: unknown engine %q — using default ZMQ event source", engine)
 		return newPureGoZmqSubscriber(ctx, addr)
@@ -974,7 +981,7 @@ func replayKvEvents(inv *kvInventory, replay kvZmqReplayRequester, startSeq int6
 // existing caller and test keeps its shipped single-rank behavior
 // byte-identically (: default rank count 1 ≡ today's single-port path).
 func KvSubscriberStart(serviceID uint32, epIdx int, epIP string, zmqPort uint16, algo string) {
-	KvSubscriberStartRank(serviceID, epIdx, 0, epIP, zmqPort, algo)
+	KvSubscriberStartRank(serviceID, epIdx, 0, epIP, zmqPort, algo, "", 0)
 }
 
 // KvSubscriberStartRank starts a ZMQ subscriber goroutine for one (EP, DP
@@ -985,7 +992,13 @@ func KvSubscriberStart(serviceID uint32, epIdx int, epIP string, zmqPort uint16,
 // (union) into one inventory via the RWMutex-safe AddBlocks/RemoveBlocks.
 // Dedup and teardown are keyed by (epIdx, rank) so N rank goroutines can
 // coexist per EP and a rule delete cancels ALL of them.
-func KvSubscriberStartRank(serviceID uint32, epIdx int, rank uint16, epIP string, port uint16, algo string) {
+//
+// engine selects the event transport via newKvEventSource ("" ≡ the shared
+// ZMQ default); for "trtllm" the caller passes the EP's own SERVING port
+// (events ride it — there is no separate event port) and blockSize carries
+// the rule's kvBlockSize for the poller's full-block decoder.
+func KvSubscriberStartRank(serviceID uint32, epIdx int, rank uint16, epIP string, port uint16, algo string,
+	engine string, blockSize uint32) {
 	kvServicesMu.Lock()
 	defer kvServicesMu.Unlock()
 
@@ -1041,11 +1054,12 @@ func KvSubscriberStartRank(serviceID uint32, epIdx int, rank uint16, epIP string
 	StartKvMetricsBridge(mh.shutdownCtx)
 
 	// Start the subscriber goroutine using the interface-based subscriber loop.
-	// The engine→transport factory (newKvEventSource) resolves BOTH supported
-	// engines (vllm, sglang) to the pure-Go ZMQ source today — the engine string
-	// is threaded once a non-ZMQ transport exists; "" ≡ the shared ZMQ default.
+	// The engine→transport factory (newKvEventSource) resolves the ZMQ
+	// engines (vllm, sglang, "" default) to the pure-Go ZMQ source and
+	// trtllm to the HTTP drain poller; both speak the same 3-frame message
+	// shape to the loop.
 	go func() {
-		sub := newKvEventSource(ctx, "", addr)
+		sub := newKvEventSource(ctx, engine, addr, int(blockSize))
 		defer sub.Close()
 
 		// KV-12/: the publisher may not be bound yet when the rule lands (a
@@ -1081,7 +1095,10 @@ func KvSubscriberStartRank(serviceID uint32, epIdx int, rank uint16, epIP string
 		// bounded context unblocks Recv) all leave the inventory to warm
 		// organically, exactly as before. The live loop still gets replay=nil
 		// — its KEEP/CLEAR gap heuristics stay the shipped behavior.
-		if raddr := kvReplayEndpoint(addr); raddr != "" {
+		// The ZMQ replay port-offset probe only makes sense for ZMQ engines;
+		// the trtllm drain has no replay channel at all, so its cold-start
+		// posture is always organic warmup.
+		if raddr := kvReplayEndpoint(addr); raddr != "" && engine != "trtllm" {
 			rctx, rcancel := context.WithTimeout(ctx, 15*time.Second)
 			rc := newPureGoZmqReplayClient(rctx)
 			if err := rc.Connect(raddr); err != nil {

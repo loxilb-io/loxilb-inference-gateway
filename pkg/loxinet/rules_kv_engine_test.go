@@ -74,10 +74,13 @@ func TestKvTrtllmFeatureGuard(t *testing.T) {
 		}
 	}
 
-	// trtllm plain LB: accepted, including the swagger-materialized 5557 default.
+	// trtllm plain LB and single-role Tier-1.5 (mode 3, the polled-events
+	// shape): accepted, including the swagger-materialized 5557 default.
 	for _, zmq := range []uint16{0, 5557} {
-		if err := kvTrtllmFeatureGuard("trtllm", 0, false, zmq, 1); err != nil {
-			t.Errorf("trtllm plain LB (zmq=%d): want accept, got %v", zmq, err)
+		for _, mode := range []uint8{0, KvExactModeSingleRole} {
+			if err := kvTrtllmFeatureGuard("trtllm", mode, false, zmq, 1); err != nil {
+				t.Errorf("trtllm mode=%d (zmq=%d): want accept, got %v", mode, zmq, err)
+			}
 		}
 	}
 
@@ -91,7 +94,7 @@ func TestKvTrtllmFeatureGuard(t *testing.T) {
 		wantIn   string
 	}{
 		{"kvExactMode=1", 1, false, 0, 0, "kvExactMode"},
-		{"kvExactMode=3", 3, false, 0, 0, "kvExactMode"},
+		{"kvExactMode=2", 2, false, 0, 0, "kvExactMode"},
 		{"pd_disagg", 0, true, 0, 0, "pd_disagg_mode"},
 		{"zmq port", 0, false, 5561, 0, "kvZmqPort"},
 		{"dp ranks", 0, false, 0, 2, "kvDpRankCount"},

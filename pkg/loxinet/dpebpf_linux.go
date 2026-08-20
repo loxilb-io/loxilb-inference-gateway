@@ -1760,17 +1760,21 @@ func DpLBRuleMod(w *LBDpWorkQ) int {
 	} else if w.KvHashAlgo == "sha256_sglang" {
 		dat.kv_hash_algo = 2
 	} else if w.KvHashAlgo == "blockhash_trtllm" {
-		// KV_HASH_TRTLLM (3) — the C arm ships with the conditional Option-B
-		// phase; unreachable until then because the trtllm feature guard
-		// rejects kvExactMode>0 at config time.
-		dat.kv_hash_algo = 3
+		// The TRT-LLM contract is the token re-hash design: the gateway
+		// event decoder re-hashes stored-event token lists with the raw
+		// chained-SHA256 the KV_HASH_SHA256_SGLANG (2) arm already computes
+		// over request tokens, so both sides key the inventory with the
+		// same self-owned function and the engine's unversioned native
+		// hash never enters the datapath. No dedicated C arm exists.
+		dat.kv_hash_algo = 2
 	} else if w.KvHashAlgo == "" && w.KvEngineType == "sglang" {
 		// engine drives the hash-algo default — sglang with
 		// kvHashAlgo unset defaults to KV_HASH_SHA256_SGLANG (2). An explicit
 		// kvHashAlgo always wins (the branches above); vllm/absent keeps 0.
 		dat.kv_hash_algo = 2
 	} else if w.KvHashAlgo == "" && w.KvEngineType == "trtllm" {
-		dat.kv_hash_algo = 3
+		// blockhash_trtllm engine default — same arm as the explicit branch.
+		dat.kv_hash_algo = 2
 	}
 	dat.kv_zmq_port = C.uint16_t(w.KvZmqPort)
 	dat.kv_block_size = C.uint32_t(w.KvBlockSize)
