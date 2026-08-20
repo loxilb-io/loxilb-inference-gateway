@@ -12,6 +12,14 @@ ARG LOXICMD_TAG=main
 # "dev" -- release.yml and packaging/build-pkgs.sh pass the tag explicitly.
 ARG VERSION=dev
 
+# Optional apt mirror override (e.g. --build-arg APT_MIRROR=mirror.kakao.com)
+# for build hosts far from / flaky to archive.ubuntu.com. Empty = default
+# Ubuntu archives. Ubuntu 24.04 uses the deb822 ubuntu.sources file.
+ARG APT_MIRROR=
+RUN if [ -n "$APT_MIRROR" ]; then \
+      sed -i "s|http://archive.ubuntu.com/ubuntu|http://$APT_MIRROR/ubuntu|g; s|http://security.ubuntu.com/ubuntu|http://$APT_MIRROR/ubuntu|g" /etc/apt/sources.list.d/ubuntu.sources; \
+    fi
+
 # Env variables
 ENV PATH="${PATH}:/usr/local/go/bin"
 ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/lib64/"

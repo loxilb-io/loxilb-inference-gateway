@@ -619,6 +619,7 @@ type ruleEnt struct {
 	kvWarmupSec                 uint32                  // Warmup seconds before Tier 1.5 activates
 	kvEngineType                string                  // KV-event engine: ""/"vllm" (default) or "sglang" — immutable after create
 	kvDpRankCount               uint16                  // SGLang DP rank count (1..8, 0 ⇒ 1; rank N publishes at kvZmqPort+N)
+	pdBootstrapPort             uint16                  // SGLang P/D bootstrap port on prefill EPs (0 ⇒ 8998 downstream)
 	chwblPrefixHashLevel        int                     // CHWBL prefix hash level: 1, 2, or 3
 	chwblPrefixHashFlags        int                     // CHWBL optional field flags bitfield
 	chwblMeanLoadFactor         int                     // CHWBL max load factor percentage (100-300)
@@ -1199,6 +1200,7 @@ func (R *RuleH) GetLBRule() ([]cmn.LbRuleMod, error) {
 		ret.Serv.KvWarmupSec = data.kvWarmupSec
 		ret.Serv.KvEngineType = data.kvEngineType // zero value ⇒ omitempty ⇒ absent on legacy rules
 		ret.Serv.KvDpRankCount = data.kvDpRankCount
+		ret.Serv.PDBootstrapPort = data.pdBootstrapPort // zero value ⇒ omitempty ⇒ absent on legacy rules
 		// CHWBL configuration (sel=8)
 		ret.Serv.CHWBLPrefixHashLevel = data.chwblPrefixHashLevel
 		ret.Serv.CHWBLPrefixHashFlags = data.chwblPrefixHashFlags
@@ -2663,6 +2665,23 @@ func kvHashAlgoValidate(algo, engine string) error {
 	return nil
 }
 
+// pdBootstrapPortValidate bounds the SGLang bootstrap-port knob to the only
+// shape it means anything in: pdBootstrapPort is the disaggregation bootstrap
+// port on every prefill EP, consumed exclusively by the SGLang P/D
+// orchestrator when it injects the bootstrap triple. On a vLLM rule or a
+// non-P/D rule the value would be silently dead config — reject it so a
+// mis-pasted rule fails loudly at create time. Absent (0) always passes and
+// defaults to SGLang's 8998 downstream.
+//
+// Pure function: unit-testable without a rule fixture (the
+// kvEngineConfigValidate precedent).
+func pdBootstrapPortValidate(port uint16, pdDisagg bool, engine string) error {
+	if port != 0 && !(pdDisagg && kvEngineEffective(engine) == "sglang") {
+		return errors.New("pd-bootstrap-port requires pd_disagg_mode=true and kv-engine-type sglang")
+	}
+	return nil
+}
+
 // kvEngineImmutabilityCheck is guard: kvEngineType on an existing
 // rule is IMMUTABLE — delete+recreate is the sanctioned path (a live engine
 // flip would silently re-key the whole Tier-1.5 hash space).
@@ -2985,6 +3004,12 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		return RuleUnknownServiceErr, err
 	}
 
+	// pdBootstrapPort is meaningful only on an sglang P/D rule — anywhere else
+	// it would be silently dead config.
+	if err := pdBootstrapPortValidate(serv.PDBootstrapPort, serv.PDDisaggMode, serv.KvEngineType); err != nil {
+		return RuleUnknownServiceErr, err
+	}
+
 	sort.SliceStable(lBActs.endPoints, func(i, j int) bool {
 		a := tk.IPtonl(lBActs.endPoints[i].xIP)
 		b := tk.IPtonl(lBActs.endPoints[j].xIP)
@@ -3071,6 +3096,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 			// kvEngineType is deliberately ABSENT here — an engine
 			// change must REJECT (RuleExistsErr below), never ruleChg delete+re-add.
 			eRule.kvDpRankCount != serv.KvDpRankCount ||
+			eRule.pdBootstrapPort != serv.PDBootstrapPort ||
 			eRule.chwblPrefixHashLevel != serv.CHWBLPrefixHashLevel ||
 			eRule.chwblPrefixHashFlags != serv.CHWBLPrefixHashFlags ||
 			eRule.chwblMeanLoadFactor != serv.CHWBLMeanLoadFactor ||
@@ -3232,6 +3258,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		eRule.kvWarmupSec = serv.KvWarmupSec
 		eRule.kvEngineType = serv.KvEngineType // immutability enforced above
 		eRule.kvDpRankCount = serv.KvDpRankCount
+		eRule.pdBootstrapPort = serv.PDBootstrapPort
 		eRule.chwblPrefixHashLevel = serv.CHWBLPrefixHashLevel
 		eRule.chwblPrefixHashFlags = serv.CHWBLPrefixHashFlags
 		eRule.chwblMeanLoadFactor = serv.CHWBLMeanLoadFactor
@@ -3469,6 +3496,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	r.kvWarmupSec = serv.KvWarmupSec
 	r.kvEngineType = serv.KvEngineType // engine + DP rank count
 	r.kvDpRankCount = serv.KvDpRankCount
+	r.pdBootstrapPort = serv.PDBootstrapPort
 
 	// Store CHWBL configuration (sel=8)
 	r.chwblPrefixHashLevel = serv.CHWBLPrefixHashLevel
@@ -5181,6 +5209,7 @@ func (r *ruleEnt) LB2DP(work DpWorkT) int {
 	nWork.KvWarmupSec = r.kvWarmupSec
 	nWork.KvEngineType = r.kvEngineType // engine + DP rank count
 	nWork.KvDpRankCount = r.kvDpRankCount
+	nWork.PDBootstrapPort = r.pdBootstrapPort
 	nWork.CatalogID = r.tracingCatalogID // Tracing catalog ID for deep inspection
 	nWork.MTLSFrontend = r.mtlsFrontend  // mTLS frontend configuration
 	nWork.MTLSBackend = r.mtlsBackend    // mTLS backend configuration

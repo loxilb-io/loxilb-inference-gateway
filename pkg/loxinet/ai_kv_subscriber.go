@@ -319,6 +319,13 @@ type kvServiceState struct {
 	// carries the volume). A single hit resets the streak AND re-arms the WARN.
 	zeroHitStreak uint64
 	zeroHitWarned bool
+
+	// cold-start seed tick (guarded by mu, WRITE lock): counts Tier-1.5 HITS
+	// for this service; every Nth hit (LOXILB_KV_COLDSTART_SEED_N) is diverted
+	// to a healthy empty-inventory prefill EP while one exists. Ticks on every
+	// hit — cold or not — so the re-admission bound holds from the moment an
+	// EP goes cold (worst-case gap ≤ N hits).
+	coldSeedTick uint64
 }
 
 func newKvServiceState(serviceID uint32) *kvServiceState {
@@ -1206,6 +1213,132 @@ func kvZeroHitN() uint64 {
 	return kvZeroHitNDefault
 }
 
+// ---------- Tier-1.5 cold-start seeding ----------
+//
+// With small block sizes (SGLang page_size=1 ⇒ kvBlockSize=1) any prompt that
+// shares a deep-enough head with cached traffic is a Tier-1.5 HIT, and the
+// selector only ever ranks positive-overlap candidates — an EMPTY-inventory
+// (flushed/rebooted) EP has overlap 0 for every request, never enters the
+// candidate set, and is starved of exact-mode traffic indefinitely at low
+// concurrency (live evidence: 0/160 probes to a 0-block EP; the spill/relief
+// paths need over-cap load that never materializes when load ≈ 0-1).
+//
+// The compensation is a deterministic bounded seed, applied AFTER the normal
+// selection so the warm path is untouched: every Nth Tier-1.5 hit per service
+// is diverted to the lowest-index healthy (prefill-mask, not excluded)
+// empty-inventory EP while one exists. The diverted request prefills there,
+// its BlockStored events fill the inventory, the EP stops being cold and the
+// diversion stops — self-limiting, so steady-state warm traffic is
+// byte-identical. The returned score is the DISPLACED hit's depth, so the
+// C-side GUARD_H/GUARD_G post-checks accept the seed exactly when they would
+// have accepted the hit (a cb-open/invalid seed target falls back to a
+// Tier-2 miss C-side, which is safe).
+
+// kvColdSeedNDefault: divert 1 of every 16 Tier-1.5 hits while a cold EP
+// exists — ≤6.25% short-lived diversion, and a cold EP is re-admitted within
+// 16 exact-mode hits even at concurrency 1.
+const kvColdSeedNDefault = 16
+
+// kvColdSeedMinBlocksDefault: an inventory BELOW this many blocks counts as
+// cold. Strictly-empty is too brittle on real engines — a flushed SGLang
+// engine leaves/re-publishes a trace block (live evidence: 1 of 12062 blocks
+// back within seconds of the flush, with zero requests served), and one
+// stray block must not disqualify a starved EP. 16 matches the default
+// minimum-match depth in tokens: at block size 1 an inventory under 16
+// blocks can never score past the shallow-match guard, so the EP is
+// provably unselectable — cold in the exact sense that matters.
+const kvColdSeedMinBlocksDefault = 16
+
+// kvColdSeedMinBlocksEnvWarnOnce rate-limits the invalid-env WARN.
+var kvColdSeedMinBlocksEnvWarnOnce sync.Once
+
+// kvColdSeedMinBlocks resolves LOXILB_KV_COLDSTART_MIN_BLOCKS: unset ⇒
+// default 16; explicit 0 ⇒ strict empty-only; invalid ⇒ default + WARN.
+func kvColdSeedMinBlocks() int {
+	if v := os.Getenv("LOXILB_KV_COLDSTART_MIN_BLOCKS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			return n
+		}
+		kvColdSeedMinBlocksEnvWarnOnce.Do(func() {
+			log.Warnf("[KV_COLDSEED] invalid LOXILB_KV_COLDSTART_MIN_BLOCKS=%q (want int >= 0), using default %d",
+				v, kvColdSeedMinBlocksDefault)
+		})
+	}
+	return kvColdSeedMinBlocksDefault
+}
+
+// kvColdSeedEnvWarnOnce rate-limits the invalid-env WARN to one shot (the
+// accessor runs on the lookup hot path).
+var kvColdSeedEnvWarnOnce sync.Once
+
+// kvColdSeedN resolves LOXILB_KV_COLDSTART_SEED_N: unset/empty ⇒ default 16
+// (compensation ON, conservative); explicit 0 ⇒ disabled (pure-selector A/B
+// runs); invalid/negative ⇒ default + one-shot WARN.
+func kvColdSeedN() uint64 {
+	if v := os.Getenv("LOXILB_KV_COLDSTART_SEED_N"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			return uint64(n)
+		}
+		kvColdSeedEnvWarnOnce.Do(func() {
+			log.Warnf("[KV_COLDSEED] invalid LOXILB_KV_COLDSTART_SEED_N=%q (want int >= 0, 0=off), using default %d",
+				v, kvColdSeedNDefault)
+		})
+	}
+	return kvColdSeedNDefault
+}
+
+// kvColdSeedCounterFn is the Prometheus seam for the cold-seed counter
+// (loxilb_pd_kv_tier15_cold_seeds_total{ep_idx}). Default = the real counter;
+// unit tests override it (kvZeroHitCounterFn precedent).
+var kvColdSeedCounterFn = prom.IncKvTier15ColdSeedCounter
+
+// kvColdStartSeed evaluates the cold-start seed for ONE Tier-1.5 hit about to
+// be returned as bestEp. It ticks the per-service hit counter and, on every
+// Nth tick, returns (seedEp, true) for the lowest-index healthy
+// empty-inventory prefill EP — (bestEp, false) otherwise. svcID==0 (the
+// legacy all-services scan) is skipped: the tick and the cold scan are
+// per-service state. An EP with NO inventory entry at all counts as cold
+// (a just-registered or flushed-and-quiet EP has no map entry yet).
+func kvColdStartSeed(svcID uint32, prefillMask, excludedMask uint32, bestEp int) (int, bool) {
+	n := kvColdSeedN()
+	if n == 0 || svcID == 0 {
+		return bestEp, false
+	}
+	kvServicesMu.RLock()
+	svc := kvServices[svcID]
+	kvServicesMu.RUnlock()
+	if svc == nil {
+		return bestEp, false
+	}
+	svc.mu.Lock()
+	defer svc.mu.Unlock()
+	svc.coldSeedTick++
+	if svc.coldSeedTick%n != 0 {
+		return bestEp, false
+	}
+	// warm floor: an inventory at/above this size disqualifies the EP as a
+	// seed target. Explicit 0 degrades to 1 (strict empty-only) — a floor of
+	// 0 would mark every EP warm and silently disable seeding.
+	floor := kvColdSeedMinBlocks()
+	if floor < 1 {
+		floor = 1
+	}
+	for ep := 0; ep < 32; ep++ {
+		bit := uint32(1) << uint(ep)
+		if prefillMask&bit == 0 || excludedMask&bit != 0 {
+			continue
+		}
+		if inv, ok := svc.inventories[ep]; ok && inv.Size() >= floor {
+			continue // warm — enough published blocks to be selectable
+		}
+		if ep == bestEp {
+			continue // defensive: a cold EP can never be the positive-score winner
+		}
+		return ep, true
+	}
+	return bestEp, false
+}
+
 // kvZeroHitCounterFn is the Prometheus seam for the watchdog counter
 // (loxilb_pd_kv_zero_hit_watchdog_total{service_id}). Default = the real
 // counter; unit tests override it to count occurrences (the kvWorkerMetricsFn
@@ -1524,6 +1657,19 @@ func llb_ai_kv_best_worker(blockHashes *C.uint8_t, hashSize C.int,
 				prom.IncKvTier15SpillCounter(fmt.Sprintf("%d", bestEp))
 			}
 		}
+	}
+
+	// bounded cold-start seeding (all modes — the starvation is
+	// mode-independent): every Nth per-service hit is diverted to a healthy
+	// empty-inventory prefill EP while one exists. outScore keeps the
+	// DISPLACED hit's depth so the C-side guards treat the seed exactly like
+	// the hit they displaced. Disable with LOXILB_KV_COLDSTART_SEED_N=0.
+	if seedEp, seeded := kvColdStartSeed(uint32(svcID), uint32(prefillMask),
+		uint32(excludedMask), bestEp); seeded {
+		log.Infof("[KV_COLDSEED] svc=%d seeding cold ep=%d (displaced hit ep=%d score=%d)",
+			uint32(svcID), seedEp, bestEp, bestScore)
+		bestEp = seedEp
+		kvColdSeedCounterFn(fmt.Sprintf("%d", seedEp))
 	}
 
 	// Phase K: Increment Tier-1.5 cache-hit counter (makes TK17/TK21 assert-able).

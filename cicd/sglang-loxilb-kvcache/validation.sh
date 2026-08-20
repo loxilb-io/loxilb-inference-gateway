@@ -31,6 +31,10 @@
 #   L7  ZERO-HIT WATCHDOG — a throwaway third rule with a DELIBERATELY wrong kvBlockSize
 #       fires [KV_ZEROHIT] exactly once + loxilb_pd_kv_zero_hit_watchdog_total{service_id}
 #       delta > 0 within ~8 lookups (LOXILB_KV_ZERO_HIT_N=5 injected by config.sh); rule deleted.
+#   L8  COLD-START SEED — a throwaway fourth rule (correct kvBlockSize) with ONE publishing
+#       EP: 20 hit-requests must divert exactly the 16th (default LOXILB_KV_COLDSTART_SEED_N)
+#       to the LOWEST empty-inventory EP — [KV_COLDSEED] marker +
+#       loxilb_pd_kv_tier15_cold_seeds_total{ep_idx} + the cold EP's banner; rule deleted.
 #
 # Metric source-of-truth (api/prometheus/sockproxy_metrics.go):
 #   loxilb_pd_kv_tier15_hits_total{ep_idx}                (NO service label — see ep_idx note)
@@ -793,13 +797,108 @@ kill_publisher_port "${KV_ZMQ_PORT_C}"
 assert "(L7) throwaway rule deleted (2xx)" "$([[ "${del_c_rc}" == 2* ]] && echo 1 || echo 0)"
 
 #################################################################################
+# (L8) COLD-START SEED — a fourth throwaway rule (CORRECT kvBlockSize this
+#     time) whose idx-1 EP carries the only publisher: idx 0/2 subscribe but
+#     never receive, so their inventories exist EMPTY (cold). Every request is
+#     a deep tier15 hit on idx 1; at the built-in default
+#     LOXILB_KV_COLDSTART_SEED_N=16 the 16th hit must divert to the LOWEST
+#     cold index (0): [KV_COLDSEED] marker + cold_seeds{ep_idx=0} counter + a
+#     serverS0 banner (the datapath receipt), while idx 2 gets nothing and the
+#     other 19 requests keep their idx-1 affinity.
+#################################################################################
+echo "=== (L8) cold-start seed: warm idx-1 + empty idx-0/2 -> the 16th hit re-admits the lowest cold EP ==="
+VPORT_D=9092
+KV_ZMQ_PORT_D=5572
+CS_PROMPT="sgl99 cold start seed anchor prompt the sglang endpoint at index one is the only publisher on this throwaway rule so every lookup is a deep hit there while index zero and index two stay empty and starved abbot breeze cobalt drift ember frost gully harbor inlet juniper knoll lagoon meadow nectar orchard prairie quarry ridge summit thicket upland valley willow xanadu yarrow zenith"
+read -r -d '' RULE_D_JSON <<JSON
+{
+  "serviceArguments": {
+    "externalIP": "${VIP}", "port": ${VPORT_D}, "protocol": "tcp", "sel": 0, "mode": 4,
+    "host": "${VIP}", "probeRetries": 1,
+    "kvExactMode": 3, "kvEngineType": "sglang", "kvDpRankCount": 1,
+    "kvZmqPort": ${KV_ZMQ_PORT_D}, "kvWarmupSec": ${KV_WARMUP_SEC}, "kvBlockSize": ${KV_BLOCK_SIZE}
+  },
+  "endpoints": [
+    { "endpointIP": "${EP_B0_IP}", "targetPort": 80, "weight": 1 },
+    { "endpointIP": "${EP_B1_IP}", "targetPort": 80, "weight": 1 },
+    { "endpointIP": "${EP_B2_IP}", "targetPort": 80, "weight": 1 }
+  ]
+}
+JSON
+add_d_rc=$(llb_curl -o /dev/null -w "%{http_code}" -X POST "${LBBASE}" \
+    -H 'Content-Type: application/json' -d "${RULE_D_JSON}" 2>/dev/null)
+sleep 3
+# Resolve SID_D by novelty (VIP-C is deleted; its state is gone, so the scan
+# lands on the one live sid that is neither A nor B).
+SID_D=""
+for sid in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    [[ "${sid}" == "${SID_A}" || "${sid}" == "${SID_B}" ]] && continue
+    [[ "$(inv_exists "${sid}" 0)" == 1 ]] && SID_D="${sid}" && break
+done
+echo "  VIP-D created rc=${add_d_rc} (want 2xx) ; resolved SID_D=${SID_D:-UNRESOLVED}"
+assert "(L8) throwaway rule created (2xx) + serviceID resolved" \
+    "$([[ "${add_d_rc}" == 2* && -n "${SID_D}" ]] && echo 1 || echo 0)"
+# idx-1 is the ONLY feeder; idx 0/2 inventories must stay empty (the cold set).
+L8_CORPUS="${CFGDIR}/.kvpub-l8-cs.json"; write_corpus_single "${L8_CORPUS}" "${CS_PROMPT}"
+kill_publisher_port "${KV_ZMQ_PORT_D}"; sleep 1
+launch_publisher "${EP_B1_IP}" "${KV_ZMQ_PORT_D}" "sha256_sglang" 1 \
+    "${L8_CORPUS}" "${CFGDIR}/.kvpub-l8-cs.log" --repeat 8 --repeat-interval 4
+l8_warm=$(wait_inv "${SID_D:-0}" 1 -gt 0 30)
+l8_cold0=$(inv_total "${SID_D:-0}" 0); l8_cold2=$(inv_total "${SID_D:-0}" 2)
+echo "  precondition: inv(D,1)=$(inv_total "${SID_D:-0}" 1) (want >0) ; inv(D,0)=${l8_cold0} inv(D,2)=${l8_cold2} (want both 0)"
+assert "(L8) stimulus precondition: idx-1 warm, idx-0/idx-2 EMPTY (the cold set exists)" \
+    "$([[ "${l8_warm}" == 1 && "${l8_cold0}" == 0 && "${l8_cold2}" == 0 ]] && echo 1 || echo 0)"
+sleep $((KV_WARMUP_SEC + 2))   # let the rule's kvWarmupSec elapse so hits count
+l8_seed0_before=$(metric_val "loxilb_pd_kv_tier15_cold_seeds_total\{ep_idx=\"0\"\}")
+l8_seed2_before=$(metric_val "loxilb_pd_kv_tier15_cold_seeds_total\{ep_idx=\"2\"\}")
+l8_hits1_before=$(tier15_hits 1)
+l8_marker_before=$(go_log_count "\[KV_COLDSEED\] svc=${SID_D:-999} ")
+l8_s0=0; l8_s1=0; l8_s2=0; l8_served=0
+for _ in $(seq 1 20); do
+    cb=$(req_banner "${VPORT_D}" "${CS_PROMPT}")
+    case "${cb}" in
+        serverS0) l8_s0=$((l8_s0 + 1)) ;;
+        serverS1) l8_s1=$((l8_s1 + 1)) ;;
+        serverS2) l8_s2=$((l8_s2 + 1)) ;;
+    esac
+    [[ -n "${cb}" ]] && l8_served=$((l8_served + 1))
+done
+assert "(L8) stimulus FIRED: 20/20 requests served (data plane never breaks)" \
+    "$([[ "${l8_served}" -eq 20 ]] && echo 1 || echo 0)"
+l8_seed0_after="${l8_seed0_before}"; l8_marker_after="${l8_marker_before}"
+for _ in $(seq 1 15); do
+    l8_seed0_after=$(metric_val "loxilb_pd_kv_tier15_cold_seeds_total\{ep_idx=\"0\"\}")
+    l8_marker_after=$(go_log_count "\[KV_COLDSEED\] svc=${SID_D:-999} ")
+    [[ "${l8_seed0_after}" -gt "${l8_seed0_before}" && "${l8_marker_after}" -gt "${l8_marker_before}" ]] && break
+    sleep 1
+done
+l8_seed2_after=$(metric_val "loxilb_pd_kv_tier15_cold_seeds_total\{ep_idx=\"2\"\}")
+l8_hits1_after=$(tier15_hits 1)
+l8_seed0_delta=$((l8_seed0_after - l8_seed0_before))
+echo "  seed: cold_seeds{0} ${l8_seed0_before}->${l8_seed0_after} (want delta>0) ; cold_seeds{2} ${l8_seed2_before}->${l8_seed2_after} (want unchanged) ; [KV_COLDSEED] svc=${SID_D:-?} markers ${l8_marker_before}->${l8_marker_after}"
+echo "  banners: S0=${l8_s0} S1=${l8_s1} S2=${l8_s2} ; tier15_hits{1} ${l8_hits1_before}->${l8_hits1_after}"
+assert "(L8) [KV_COLDSEED] marker + cold_seeds{ep_idx=0} delta > 0 (the cold EP was re-admitted)" \
+    "$([[ "${l8_seed0_delta}" -gt 0 && "${l8_marker_after}" -gt "${l8_marker_before}" ]] && echo 1 || echo 0)"
+assert "(L8) lowest cold index wins: cold_seeds{ep_idx=2} unchanged AND zero S2 banners" \
+    "$([[ "${l8_seed2_after}" == "${l8_seed2_before}" && "${l8_s2}" -eq 0 ]] && echo 1 || echo 0)"
+assert "(L8) datapath receipt: serverS0 banners == cold_seeds{0} delta (each seed actually served by the cold EP)" \
+    "$([[ "${l8_s0}" -eq "${l8_seed0_delta}" ]] && echo 1 || echo 0)"
+assert "(L8) warm affinity undisturbed: tier15_hits{1} delta >= 15 of 20 (only the seeded ticks diverted)" \
+    "$([[ $((l8_hits1_after - l8_hits1_before)) -ge 15 ]] && echo 1 || echo 0)"
+# Teardown the throwaway rule + its feeder (paired-resource discipline).
+del_d_rc=$(llb_curl -o /dev/null -w "%{http_code}" -X DELETE \
+    "${LBBASE}/hosturl/${VIP}/externalipaddress/${VIP}/port/${VPORT_D}/protocol/tcp" 2>/dev/null)
+kill_publisher_port "${KV_ZMQ_PORT_D}"
+assert "(L8) throwaway rule deleted (2xx)" "$([[ "${del_d_rc}" == 2* ]] && echo 1 || echo 0)"
+
+#################################################################################
 # EVIDENCE DUMP (non-assert) — captured BEFORE the sentinel so a FAIL always ships
 # its decision trail (a FAIL is guilty until an experiment proves innocent).
 #################################################################################
 echo "=== evidence: structured Go-log markers + KV metrics ==="
-docker exec llb1 sh -c "grep -hE 'kv-subscriber: (ep [0-9]+ rank [0-9]+ (resync|seq gap)|AllBlocksCleared received)|KV_ZEROHIT' ${GO_LOG} 2>/dev/null | tail -25" \
+docker exec llb1 sh -c "grep -hE 'kv-subscriber: (ep [0-9]+ rank [0-9]+ (resync|seq gap)|AllBlocksCleared received)|KV_ZEROHIT|KV_COLDSEED' ${GO_LOG} 2>/dev/null | tail -25" \
     | sed 's/^/  [go-log] /' || echo "  (no Go-log access)"
-llb_curl "${METRICS}" 2>/dev/null | grep -E "tier15_hits|zero_hit_watchdog|kv_subscriber_connected|kv_subscriber_reconnect" \
+llb_curl "${METRICS}" 2>/dev/null | grep -E "tier15_hits|tier15_cold_seeds|zero_hit_watchdog|kv_subscriber_connected|kv_subscriber_reconnect" \
     | grep -v '^#' | sed 's/^/  [metric] /' || true
 for _pl in "${CFGDIR}"/.kvpub-l*.log; do
     [[ -e "${_pl}" ]] || continue

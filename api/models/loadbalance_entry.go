@@ -743,6 +743,11 @@ type LoadbalanceEntryServiceArguments struct {
 	// URL path prefix for L7 routing (e.g., /v1/users). Optional - empty means hostname-only matching (backward compatible)
 	PathPrefix string `json:"path_prefix,omitempty"`
 
+	// SGLang disaggregation bootstrap port on every prefill endpoint (the port passed to --disaggregation-bootstrap-port). 0 = SGLang's default 8998. Only meaningful with pd_disagg_mode=true and kvEngineType=sglang; rejected on any other rule shape so dead config fails loudly at create time.
+	// Maximum: 65535
+	// Minimum: 0
+	PdBootstrapPort int32 `json:"pdBootstrapPort,omitempty"`
+
 	// Load imbalance threshold for P/D cache-aware routing. If max-min active connections exceeds this, bypass cache affinity.
 	// Minimum: 0
 	PdBalanceAbsThreshold int32 `json:"pd_balance_abs_threshold,omitempty"`
@@ -940,6 +945,10 @@ func (m *LoadbalanceEntryServiceArguments) Validate(formats strfmt.Registry) err
 	}
 
 	if err := m.validatePathMatchMode(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validatePdBootstrapPort(formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -1429,6 +1438,22 @@ func (m *LoadbalanceEntryServiceArguments) validatePathMatchMode(formats strfmt.
 
 	// value enum
 	if err := m.validatePathMatchModeEnum("serviceArguments"+"."+"path_match_mode", "body", *m.PathMatchMode); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *LoadbalanceEntryServiceArguments) validatePdBootstrapPort(formats strfmt.Registry) error {
+	if swag.IsZero(m.PdBootstrapPort) { // not required
+		return nil
+	}
+
+	if err := validate.MinimumInt("serviceArguments"+"."+"pdBootstrapPort", "body", int64(m.PdBootstrapPort), 0, false); err != nil {
+		return err
+	}
+
+	if err := validate.MaximumInt("serviceArguments"+"."+"pdBootstrapPort", "body", int64(m.PdBootstrapPort), 65535, false); err != nil {
 		return err
 	}
 

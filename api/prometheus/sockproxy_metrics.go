@@ -60,6 +60,7 @@ typedef struct proxy_metrics_snapshot {
     uint64_t pd_kv_t15_miss_hashes;
     uint64_t pd_kv_t15_miss_no_worker;
     uint64_t pd_kv_t15_miss_excluded;
+    uint64_t pd_kv_t15_miss_shallow;
     uint64_t pd_kv_t15_fallthrough_total;
 
     // CB proactive heal + per-EP admission layer
@@ -77,6 +78,15 @@ typedef struct proxy_metrics_snapshot {
     uint64_t pd_decode_zero_byte_eof;
     uint64_t pd_connect_failover;
     uint64_t lb_select_failure_shutdown;
+
+    // SGLang P/D dual-dispatch counters. TAIL-APPEND ONLY — twin-declared in
+    // loxilb-ebpf/common/sockproxy_metrics.h and proxy_metrics_stub.c; keep
+    // ALL THREE in lockstep, same commit.
+    uint64_t pd_sg_prefill_abort_decode;
+    uint64_t pd_sg_decode_close_drain;
+    uint64_t pd_sg_room_retry;
+    uint64_t pd_sg_prefill_reject_relay;
+    uint64_t pd_sg_oversize_reject;
 } proxy_metrics_snapshot_t;
 
 // C function from sockproxy.c
@@ -347,7 +357,7 @@ var (
 			Namespace: "loxilb",
 			Subsystem: "pd_kv",
 			Name:      "tier15_miss_reason_total",
-			Help:      "Total Tier-1.5 KV-exact routing misses by guard reason (mode_off,warmup,text_empty,model_empty,tokenize,hashes,no_worker,excluded).",
+			Help:      "Total Tier-1.5 KV-exact routing misses by guard reason (mode_off,warmup,text_empty,model_empty,tokenize,hashes,no_worker,excluded,shallow).",
 		},
 		[]string{"reason"},
 	)
@@ -426,6 +436,21 @@ var (
 		prometheus.CounterOpts{
 			Name: "loxilb_pd_kv_tier15_spills_total",
 			Help: "Total Tier-1.5 unified-mode spills past the affinity-preferred EP because it exceeded its capacity-weighted bounded-load cap (C4 cap enforcement).",
+		},
+		[]string{"ep_idx"},
+	)
+
+	// Tier-1.5 cold-start seed counter. Incremented by ai_kv_subscriber.go
+	// llb_ai_kv_best_worker when the bounded cold-start compensation diverts a
+	// Tier-1.5 hit to a healthy EMPTY-inventory prefill EP (every Nth hit per
+	// service while such an EP exists, LOXILB_KV_COLDSTART_SEED_N). Labeled by
+	// the EP that RECEIVED the seed. Nonzero ⇒ a cold EP was re-admitted to
+	// exact-mode traffic; the series goes quiet again once its inventory fills.
+	// Sibling of pd_kv_tier15_spills_total.
+	kvTier15ColdSeedsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "loxilb_pd_kv_tier15_cold_seeds_total",
+			Help: "Total Tier-1.5 hits diverted to a healthy empty-inventory prefill EP by the bounded cold-start compensation (every Nth hit per service while a cold EP exists).",
 		},
 		[]string{"ep_idx"},
 	)
@@ -520,6 +545,46 @@ var (
 			Help: "Full-proxy client connections shut down raw (TCP reset, no HTTP error body) because backend selection or connect failed on a non-P/D path. Nonzero means clients are seeing connection resets instead of 502/503 during endpoint outages.",
 		},
 	)
+
+	// Metric #34: SGLang prefill-failure decode aborts (Counter)
+	pdSgPrefillAbortDecodeTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "loxilb_pd_sg_prefill_abort_decode_total",
+			Help: "SGLang P/D dual dispatch: prefill drain-leg failure (error status, transport death, or rendezvous timeout) forced an abort of the in-flight decode leg (client received 502/504). A storm here means prefill endpoints or the bootstrap rendezvous are unhealthy.",
+		},
+	)
+
+	// Metric #35: SGLang decode-failure drain closes (Counter)
+	pdSgDecodeCloseDrainTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "loxilb_pd_sg_decode_close_drain_total",
+			Help: "SGLang P/D dual dispatch: a decode-leg failure closed the still-open prefill drain leg so it is not orphaned at the engine until the disaggregation timeout.",
+		},
+	)
+
+	// Metric #36: SGLang pair retries with a fresh room (Counter)
+	pdSgRoomRetryTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "loxilb_pd_sg_room_retry_total",
+			Help: "SGLang P/D dual dispatch: the whole (prefill, decode) pair was re-dispatched with a fresh bootstrap room after a retriable failure.",
+		},
+	)
+
+	// Metric #37: SGLang prefill 4xx relayed verbatim (Counter)
+	pdSgPrefillRejectRelayTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "loxilb_pd_sg_prefill_reject_relay_total",
+			Help: "SGLang P/D dual dispatch: the prefill engine answered a complete 4xx before decode produced output; the origin response was relayed to the client verbatim and the decode leg aborted. A client error, not an endpoint fault — a storm here means clients are sending unservable requests (for example prompts over the model context window).",
+		},
+	)
+
+	// Metric #38: SGLang oversize fail-closed rejects (Counter)
+	pdSgOversizeRejectTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "loxilb_pd_sg_oversize_reject_total",
+			Help: "SGLang P/D: a streamable request (body above the gateway JSON inspection window) on a disaggregation rule was refused fail-closed with a 503 before contacting any engine, because bootstrap injection is impossible for an unbuffered body and disaggregation-mode engines cannot serve a bootstrap-less relay.",
+		},
+	)
 )
 
 // pdKvT15MissReasonLabels enumerates the canonical guard reasons used by the
@@ -536,6 +601,7 @@ var pdKvT15MissReasonLabels = []string{
 	"hashes",
 	"no_worker",
 	"excluded",
+	"shallow",
 }
 
 // init pre-creates every reason child so the CounterVec appears in
@@ -818,7 +884,7 @@ func RunSockproxyMetrics(ctx context.Context) {
 
 		// 3e. : KV Tier 1.5 routing diagnostics (per-guard miss + fallthrough)
 		// Delta pattern matches existing counters; fields populate in plan 42-02.
-		t15MissCurrent := [8]C.uint64_t{
+		t15MissCurrent := [9]C.uint64_t{
 			current.pd_kv_t15_miss_mode_off,
 			current.pd_kv_t15_miss_warmup,
 			current.pd_kv_t15_miss_text_empty,
@@ -827,8 +893,9 @@ func RunSockproxyMetrics(ctx context.Context) {
 			current.pd_kv_t15_miss_hashes,
 			current.pd_kv_t15_miss_no_worker,
 			current.pd_kv_t15_miss_excluded,
+			current.pd_kv_t15_miss_shallow,
 		}
-		t15MissPrev := [8]C.uint64_t{
+		t15MissPrev := [9]C.uint64_t{
 			prevSockproxyMetrics.pd_kv_t15_miss_mode_off,
 			prevSockproxyMetrics.pd_kv_t15_miss_warmup,
 			prevSockproxyMetrics.pd_kv_t15_miss_text_empty,
@@ -837,6 +904,7 @@ func RunSockproxyMetrics(ctx context.Context) {
 			prevSockproxyMetrics.pd_kv_t15_miss_hashes,
 			prevSockproxyMetrics.pd_kv_t15_miss_no_worker,
 			prevSockproxyMetrics.pd_kv_t15_miss_excluded,
+			prevSockproxyMetrics.pd_kv_t15_miss_shallow,
 		}
 		for i, reason := range pdKvT15MissReasonLabels {
 			if t15MissCurrent[i] >= t15MissPrev[i] {
@@ -885,6 +953,26 @@ func RunSockproxyMetrics(ctx context.Context) {
 			delta := current.lb_select_failure_shutdown - prevSockproxyMetrics.lb_select_failure_shutdown
 			lbSelectFailureShutdownTotal.Add(float64(delta))
 		}
+		if current.pd_sg_prefill_abort_decode >= prevSockproxyMetrics.pd_sg_prefill_abort_decode {
+			delta := current.pd_sg_prefill_abort_decode - prevSockproxyMetrics.pd_sg_prefill_abort_decode
+			pdSgPrefillAbortDecodeTotal.Add(float64(delta))
+		}
+		if current.pd_sg_decode_close_drain >= prevSockproxyMetrics.pd_sg_decode_close_drain {
+			delta := current.pd_sg_decode_close_drain - prevSockproxyMetrics.pd_sg_decode_close_drain
+			pdSgDecodeCloseDrainTotal.Add(float64(delta))
+		}
+		if current.pd_sg_room_retry >= prevSockproxyMetrics.pd_sg_room_retry {
+			delta := current.pd_sg_room_retry - prevSockproxyMetrics.pd_sg_room_retry
+			pdSgRoomRetryTotal.Add(float64(delta))
+		}
+		if current.pd_sg_prefill_reject_relay >= prevSockproxyMetrics.pd_sg_prefill_reject_relay {
+			delta := current.pd_sg_prefill_reject_relay - prevSockproxyMetrics.pd_sg_prefill_reject_relay
+			pdSgPrefillRejectRelayTotal.Add(float64(delta))
+		}
+		if current.pd_sg_oversize_reject >= prevSockproxyMetrics.pd_sg_oversize_reject {
+			delta := current.pd_sg_oversize_reject - prevSockproxyMetrics.pd_sg_oversize_reject
+			pdSgOversizeRejectTotal.Add(float64(delta))
+		}
 
 		// 4. Save state for next cycle
 		prevSockproxyMetrics = current
@@ -913,6 +1001,14 @@ func IncKvTier15HitCounter(epIdx string) {
 // selector off the highest-overlap EP. Nonzero ⇒ cap enforcement fired.
 func IncKvTier15SpillCounter(epIdx string) {
 	kvTier15SpillsTotal.WithLabelValues(epIdx).Inc()
+}
+
+// IncKvTier15ColdSeedCounter increments pd_kv_tier15_cold_seeds_total for the
+// EP that received a cold-start seed. Called from llb_ai_kv_best_worker when
+// the bounded cold-start compensation diverts a Tier-1.5 hit to a healthy
+// empty-inventory prefill EP.
+func IncKvTier15ColdSeedCounter(epIdx string) {
+	kvTier15ColdSeedsTotal.WithLabelValues(epIdx).Inc()
 }
 
 // SetKvEpInfo records the ep_idx->IP identity for a P/D endpoint (info metric).
@@ -967,6 +1063,21 @@ func ClearKvServiceSeries(serviceID string) {
 // to keep prometheus/testutil out of the loxinet import graph.
 func KvTier15SpillValue(epIdx string) float64 {
 	c := kvTier15SpillsTotal.WithLabelValues(epIdx)
+	m := &dto.Metric{}
+	if err := c.Write(m); err != nil {
+		return 0
+	}
+	if m.Counter == nil || m.Counter.Value == nil {
+		return 0
+	}
+	return *m.Counter.Value
+}
+
+// KvTier15ColdSeedValue returns the current cold-seed-counter value for epIdx.
+// Test-only getter (mirrors KvTier15SpillValue) — reads via dto.Metric.Write
+// to keep prometheus/testutil out of the loxinet import graph.
+func KvTier15ColdSeedValue(epIdx string) float64 {
+	c := kvTier15ColdSeedsTotal.WithLabelValues(epIdx)
 	m := &dto.Metric{}
 	if err := c.Write(m); err != nil {
 		return 0

@@ -13298,6 +13298,14 @@ func init() {
               "description": "URL path prefix for L7 routing (e.g., /v1/users). Optional - empty means hostname-only matching (backward compatible)",
               "type": "string"
             },
+            "pdBootstrapPort": {
+              "description": "SGLang disaggregation bootstrap port on every prefill endpoint (the port passed to --disaggregation-bootstrap-port). 0 = SGLang's default 8998. Only meaningful with pd_disagg_mode=true and kvEngineType=sglang; rejected on any other rule shape so dead config fails loudly at create time.",
+              "type": "integer",
+              "format": "int32",
+              "default": 0,
+              "maximum": 65535,
+              "x-nullable": false
+            },
             "pd_balance_abs_threshold": {
               "description": "Load imbalance threshold for P/D cache-aware routing. If max-min active connections exceeds this, bypass cache affinity.",
               "type": "integer",
@@ -29236,6 +29244,15 @@ func init() {
               "description": "URL path prefix for L7 routing (e.g., /v1/users). Optional - empty means hostname-only matching (backward compatible)",
               "type": "string"
             },
+            "pdBootstrapPort": {
+              "description": "SGLang disaggregation bootstrap port on every prefill endpoint (the port passed to --disaggregation-bootstrap-port). 0 = SGLang's default 8998. Only meaningful with pd_disagg_mode=true and kvEngineType=sglang; rejected on any other rule shape so dead config fails loudly at create time.",
+              "type": "integer",
+              "format": "int32",
+              "default": 0,
+              "maximum": 65535,
+              "minimum": 0,
+              "x-nullable": false
+            },
             "pd_balance_abs_threshold": {
               "description": "Load imbalance threshold for P/D cache-aware routing. If max-min active connections exceeds this, bypass cache affinity.",
               "type": "integer",
@@ -29858,6 +29875,15 @@ func init() {
         "path_prefix": {
           "description": "URL path prefix for L7 routing (e.g., /v1/users). Optional - empty means hostname-only matching (backward compatible)",
           "type": "string"
+        },
+        "pdBootstrapPort": {
+          "description": "SGLang disaggregation bootstrap port on every prefill endpoint (the port passed to --disaggregation-bootstrap-port). 0 = SGLang's default 8998. Only meaningful with pd_disagg_mode=true and kvEngineType=sglang; rejected on any other rule shape so dead config fails loudly at create time.",
+          "type": "integer",
+          "format": "int32",
+          "default": 0,
+          "maximum": 65535,
+          "minimum": 0,
+          "x-nullable": false
         },
         "pd_balance_abs_threshold": {
           "description": "Load imbalance threshold for P/D cache-aware routing. If max-min active connections exceeds this, bypass cache affinity.",

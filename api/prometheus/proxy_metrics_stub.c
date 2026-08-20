@@ -61,6 +61,7 @@ typedef struct proxy_metrics_snapshot {
     uint64_t pd_kv_t15_miss_hashes;
     uint64_t pd_kv_t15_miss_no_worker;
     uint64_t pd_kv_t15_miss_excluded;
+    uint64_t pd_kv_t15_miss_shallow;
     uint64_t pd_kv_t15_fallthrough_total;
 
     /* Keep in lockstep with loxilb-ebpf/common/sockproxy_metrics.h and the
@@ -76,6 +77,13 @@ typedef struct proxy_metrics_snapshot {
     uint64_t pd_decode_zero_byte_eof;
     uint64_t pd_connect_failover;
     uint64_t lb_select_failure_shutdown;
+
+    /* SGLang P/D dual-dispatch counters (tail-append, three-way lockstep) */
+    uint64_t pd_sg_prefill_abort_decode;
+    uint64_t pd_sg_decode_close_drain;
+    uint64_t pd_sg_room_retry;
+    uint64_t pd_sg_prefill_reject_relay;
+    uint64_t pd_sg_oversize_reject;
 } proxy_metrics_snapshot_t;
 
 __attribute__((weak))

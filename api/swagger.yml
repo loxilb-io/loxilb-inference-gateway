@@ -7366,6 +7366,14 @@ definitions:
             maximum: 8
             default: 1
             description: "SGLang data-parallel rank count. Rank N publishes KV events at kvZmqPort+N; all ranks union into one per-EP inventory."
+          pdBootstrapPort:
+            type: integer
+            format: int32
+            x-nullable: false
+            minimum: 0
+            maximum: 65535
+            default: 0
+            description: "SGLang disaggregation bootstrap port on every prefill endpoint (the port passed to --disaggregation-bootstrap-port). 0 = SGLang's default 8998. Only meaningful with pd_disagg_mode=true and kvEngineType=sglang; rejected on any other rule shape so dead config fails loudly at create time."
           session_header_name:
             type: string
             description: |

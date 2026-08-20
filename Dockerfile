@@ -9,6 +9,14 @@ ARG LOXICMD_TAG=main
 ARG OPENSSL_BUILD_CPUS=0
 ARG USE_DOCKER_BUILDX_ARM64=false
 
+# Optional apt mirror override (e.g. --build-arg APT_MIRROR=mirror.kakao.com)
+# for build hosts far from / flaky to archive.ubuntu.com. Empty = default
+# Ubuntu archives.
+ARG APT_MIRROR=
+RUN if [ -n "$APT_MIRROR" ]; then \
+      sed -i "s|http://archive.ubuntu.com/ubuntu|http://$APT_MIRROR/ubuntu|g; s|http://security.ubuntu.com/ubuntu|http://$APT_MIRROR/ubuntu|g" /etc/apt/sources.list; \
+    fi
+
 # Release identifier stamped into the binary. .dockerignore strips .git, so the
 # Makefile's `git describe` cannot work in here and would silently fall back to
 # "dev" -- release.yml and packaging/build-pkgs.sh pass the tag explicitly.
