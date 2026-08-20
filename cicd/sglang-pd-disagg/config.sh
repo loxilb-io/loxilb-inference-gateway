@@ -54,6 +54,22 @@ connect_docker_hosts l3ep2 llb1
 connect_docker_hosts l3ep3 llb1
 
 echo "#########################################"
+echo "Installing python3 in endpoint containers"
+echo "#########################################"
+
+# Must run BEFORE the EP default routes move to llb1 below: the --gw config
+# replaces the docker-bridge default route, after which the EPs have no
+# internet egress and apt hangs until timeout.
+for ep in l3ep1 l3ep2 l3ep3; do
+  # Prefer the image-baked python3; apt only as fallback with the Korean
+  # mirror (recurring archive.ubuntu.com flakiness on this infra).
+  if ! $dexec $ep python3 --version > /dev/null 2>&1; then
+    $dexec $ep bash -c "sed -i 's|//archive.ubuntu.com|//kr.archive.ubuntu.com|g' /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true; apt-get update > /dev/null 2>&1 && apt-get install -y python3 > /dev/null 2>&1"
+  fi
+  $dexec $ep python3 --version || { echo "FATAL: python3 install failed on $ep"; exit 1; }
+done
+
+echo "#########################################"
 echo "Configuring IP addresses and routes"
 echo "#########################################"
 
@@ -80,19 +96,6 @@ docker cp minica.pem llb1:/opt/loxilb/cert/rootCA.crt
 docker cp 10.10.10.254/cert.pem llb1:/opt/loxilb/cert/server.crt
 docker cp 10.10.10.254/key.pem  llb1:/opt/loxilb/cert/server.key
 docker cp minica.pem l3h1:/tmp/minica.pem
-
-echo "#########################################"
-echo "Installing python3 in endpoint containers"
-echo "#########################################"
-
-for ep in l3ep1 l3ep2 l3ep3; do
-  # Prefer the image-baked python3; apt only as fallback with the Korean
-  # mirror (recurring archive.ubuntu.com flakiness on this infra).
-  if ! $dexec $ep python3 --version > /dev/null 2>&1; then
-    $dexec $ep bash -c "sed -i 's|//archive.ubuntu.com|//kr.archive.ubuntu.com|g' /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true; apt-get update > /dev/null 2>&1 && apt-get install -y python3 > /dev/null 2>&1"
-  fi
-  $dexec $ep python3 --version || { echo "FATAL: python3 install failed on $ep"; exit 1; }
-done
 
 echo "#########################################"
 echo "Starting mock SGLang P/D servers"
