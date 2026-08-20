@@ -87,6 +87,9 @@ typedef struct proxy_metrics_snapshot {
     uint64_t pd_sg_room_retry;
     uint64_t pd_sg_prefill_reject_relay;
     uint64_t pd_sg_oversize_reject;
+
+    // TRT-LLM sequential-dialect counters (tail-append, three-way lockstep)
+    uint64_t pd_trt_ctx_early_exit;
 } proxy_metrics_snapshot_t;
 
 // C function from sockproxy.c
@@ -585,6 +588,14 @@ var (
 			Help: "SGLang P/D: a streamable request (body above the gateway JSON inspection window) on a disaggregation rule was refused fail-closed with a 503 before contacting any engine, because bootstrap injection is impossible for an unbuffered body and disaggregation-mode engines cannot serve a bootstrap-less relay.",
 		},
 	)
+
+	// Metric #39: TRT-LLM context early exits (Counter)
+	pdTrtCtxEarlyExitTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "loxilb_pd_trt_ctx_early_exit_total",
+			Help: "TRT-LLM P/D: the context response finished the request in one step (finish_reason neither length nor not_finished) — the buffered response was relayed to the client and the generation leg skipped. A success outcome, not an error; a sustained high rate means prompts are completing within the context token cap.",
+		},
+	)
 )
 
 // pdKvT15MissReasonLabels enumerates the canonical guard reasons used by the
@@ -972,6 +983,10 @@ func RunSockproxyMetrics(ctx context.Context) {
 		if current.pd_sg_oversize_reject >= prevSockproxyMetrics.pd_sg_oversize_reject {
 			delta := current.pd_sg_oversize_reject - prevSockproxyMetrics.pd_sg_oversize_reject
 			pdSgOversizeRejectTotal.Add(float64(delta))
+		}
+		if current.pd_trt_ctx_early_exit >= prevSockproxyMetrics.pd_trt_ctx_early_exit {
+			delta := current.pd_trt_ctx_early_exit - prevSockproxyMetrics.pd_trt_ctx_early_exit
+			pdTrtCtxEarlyExitTotal.Add(float64(delta))
 		}
 
 		// 4. Save state for next cycle

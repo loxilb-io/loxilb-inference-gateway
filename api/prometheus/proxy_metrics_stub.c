@@ -84,6 +84,9 @@ typedef struct proxy_metrics_snapshot {
     uint64_t pd_sg_room_retry;
     uint64_t pd_sg_prefill_reject_relay;
     uint64_t pd_sg_oversize_reject;
+
+    /* TRT-LLM sequential-dialect counters (tail-append, three-way lockstep) */
+    uint64_t pd_trt_ctx_early_exit;
 } proxy_metrics_snapshot_t;
 
 __attribute__((weak))
