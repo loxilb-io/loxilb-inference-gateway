@@ -48,6 +48,7 @@ it*, *how to test it*, and *how to extend it*.
 | [`17-sglang-config-tuning.md`](17-sglang-config-tuning.md) | **SGLang configuration, tuning & troubleshooting**: REST fields (`kvEngineType`, `kvDpRankCount`), validation guard table, env vars (`LOXILB_KV_ZERO_HIT_N`), SGLang server flags (`--kv-events-config`, `--page-size` parity), worked single-role + two-VIP coexistence examples, troubleshooting playbook, CICD scenario guide |
 | [`18-mcp-gateway.md`](18-mcp-gateway.md) | **MCP gateway user guide**: load-balancing Model Context Protocol servers — session stickiness (`session_header_name: mcp-session-id`), the three deployment shapes (HTTP / TLS-terminating / end-to-end HTTPS), MCP trace tagging, troubleshooting |
 | [`19-ai-gateway-controls.md`](19-ai-gateway-controls.md) | **AI gateway controls user guide**: API-key lifecycle & `X-Api-Key` enforcement (401/403/429), per-tenant rate limits, model-name routing (`model_name`/`path_prefix`), SSE stream quotas (`sse_mode`, `max_stream_duration_sec`) |
+| [`20-tensorrt-llm-kv-cache-aware-routing.md`](20-tensorrt-llm-kv-cache-aware-routing.md) | **TensorRT-LLM integration**: HTTP-drain KV event plane (sole-consumer rule), token re-hash strategy, `/server_info` admission guard (`tokens_per_block` enforcement), sequential `context_only`/`generation_only` P/D dialect with context early-exit, converged `kvExactMode=3`, validation status |
 
 ---
 

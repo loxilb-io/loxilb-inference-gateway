@@ -474,5 +474,11 @@ gate evidence attached.
 - [15 — SGLang KV-cache-aware routing](15-sglang-kv-cache-aware-routing.md) — the
   mechanism deep-dive behind every SGLang-side row in this doc (gates, hash arm,
   multi-rank subscriber, svc-id isolation, watchdog, source map).
+- [20 — TensorRT-LLM KV-cache-aware routing & P/D](20-tensorrt-llm-kv-cache-aware-routing.md) —
+  the third engine: HTTP-drain event plane (no ZMQ), token re-hash instead of an
+  engine-hash arm, `/server_info` admission, and the sequential
+  `context_only`/`generation_only` P/D dialect. Where this doc says "the two
+  engines", TensorRT-LLM lands closest to the vLLM column topologically (sequential
+  P/D machine) and the SGLang column hash-wise (chained SHA-256 re-hash).
 - [17 — SGLang configuration & tuning](17-sglang-config-tuning.md) — the operator-facing
   knob-by-knob companion to §8.
