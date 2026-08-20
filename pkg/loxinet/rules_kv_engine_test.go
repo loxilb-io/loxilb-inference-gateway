@@ -41,21 +41,68 @@ import (
 // naming the allowed values; unknown strings are never silently treated as
 // vllm.
 func TestKvEngineConfigValidateAllowlist(t *testing.T) {
-	// Accepted: absent (vllm), explicit vllm, explicit sglang.
-	for _, engine := range []string{"", "vllm", "sglang"} {
+	// Accepted: absent (vllm), explicit vllm, explicit sglang, explicit trtllm
+	// (plain LB — the per-feature guards live in kvTrtllmFeatureGuard).
+	for _, engine := range []string{"", "vllm", "sglang", "trtllm"} {
 		if err := kvEngineConfigValidate(engine, 1); err != nil {
 			t.Errorf("engine %q: want accept, got %v", engine, err)
 		}
 	}
 
 	// Rejected: anything else — and the error must NAME the allowed values.
-	for _, engine := range []string{"tensorrt", "VLLM", "sglang ", "trtllm", "nats"} {
+	for _, engine := range []string{"tensorrt", "VLLM", "sglang ", "trtllm ", "tensorrt-llm", "nats"} {
 		err := kvEngineConfigValidate(engine, 1)
 		if err == nil {
 			t.Fatalf("engine %q: want reject, got nil", engine)
 		}
-		if !strings.Contains(err.Error(), "vllm") || !strings.Contains(err.Error(), "sglang") {
+		if !strings.Contains(err.Error(), "vllm") || !strings.Contains(err.Error(), "sglang") ||
+			!strings.Contains(err.Error(), "trtllm") {
 			t.Errorf("engine %q: rejection must name the allowed values, got %q", engine, err.Error())
+		}
+	}
+}
+
+// TestKvTrtllmFeatureGuard — TRT-LLM plain LB is accepted today; the not-yet-
+// shipped orchestration modes and the structurally meaningless knobs are
+// rejected loudly at config time (the G1-pattern fix: never let a rule shape
+// we can't orchestrate reach the data plane).
+func TestKvTrtllmFeatureGuard(t *testing.T) {
+	// Non-trtllm engines: the guard is a no-op whatever the other fields say.
+	for _, engine := range []string{"", "vllm", "sglang"} {
+		if err := kvTrtllmFeatureGuard(engine, 3, true, 5561, 4); err != nil {
+			t.Errorf("engine %q: guard must be a no-op, got %v", engine, err)
+		}
+	}
+
+	// trtllm plain LB: accepted, including the swagger-materialized 5557 default.
+	for _, zmq := range []uint16{0, 5557} {
+		if err := kvTrtllmFeatureGuard("trtllm", 0, false, zmq, 1); err != nil {
+			t.Errorf("trtllm plain LB (zmq=%d): want accept, got %v", zmq, err)
+		}
+	}
+
+	// Rejected shapes, each naming the offending surface.
+	reject := []struct {
+		name     string
+		kvExact  uint8
+		pdDisagg bool
+		zmqPort  uint16
+		dpRank   uint16
+		wantIn   string
+	}{
+		{"kvExactMode=1", 1, false, 0, 0, "kvExactMode"},
+		{"kvExactMode=3", 3, false, 0, 0, "kvExactMode"},
+		{"pd_disagg", 0, true, 0, 0, "pd_disagg_mode"},
+		{"zmq port", 0, false, 5561, 0, "kvZmqPort"},
+		{"dp ranks", 0, false, 0, 2, "kvDpRankCount"},
+	}
+	for _, c := range reject {
+		err := kvTrtllmFeatureGuard("trtllm", c.kvExact, c.pdDisagg, c.zmqPort, c.dpRank)
+		if err == nil {
+			t.Fatalf("%s: want reject, got nil", c.name)
+		}
+		if !strings.Contains(err.Error(), c.wantIn) {
+			t.Errorf("%s: rejection must name %q, got %q", c.name, c.wantIn, err.Error())
 		}
 	}
 }
@@ -178,10 +225,12 @@ func TestKvHashAlgoEffective(t *testing.T) {
 		{"", "", "sha256_cbor"},
 		{"", "vllm", "sha256_cbor"},
 		{"", "sglang", "sha256_sglang"},
+		{"", "trtllm", "blockhash_trtllm"},
 		// An explicit algo always wins over the engine default.
 		{"xxhash_cbor", "vllm", "xxhash_cbor"},
 		{"sha256_cbor", "", "sha256_cbor"},
 		{"sha256_sglang", "sglang", "sha256_sglang"},
+		{"blockhash_trtllm", "trtllm", "blockhash_trtllm"},
 	}
 	for _, c := range cases {
 		if got := kvHashAlgoEffective(c.algo, c.engine); got != c.want {
@@ -199,13 +248,15 @@ func TestKvHashAlgoEffective(t *testing.T) {
 func TestKvHashAlgoValidateCoherence(t *testing.T) {
 	// Accepted — including every shape the shipped cicd scenarios POST.
 	accept := []struct{ algo, engine string }{
-		{"", ""},                    // default rule, no KV fields
-		{"", "vllm"},                // explicit vllm, engine default
-		{"", "sglang"},              // cicd/sglang-loxilb-kvcache rule B
-		{"sha256_cbor", ""},         // cicd/vllm-kvcache-routing-cpu
-		{"sha256_cbor", "vllm"},     // same, engine spelled out
-		{"xxhash_cbor", "vllm"},     // vLLM's other contract
-		{"sha256_sglang", "sglang"}, // SGLang contract pinned explicitly
+		{"", ""},                       // default rule, no KV fields
+		{"", "vllm"},                   // explicit vllm, engine default
+		{"", "sglang"},                 // cicd/sglang-loxilb-kvcache rule B
+		{"sha256_cbor", ""},            // cicd/vllm-kvcache-routing-cpu
+		{"sha256_cbor", "vllm"},        // same, engine spelled out
+		{"xxhash_cbor", "vllm"},        // vLLM's other contract
+		{"sha256_sglang", "sglang"},    // SGLang contract pinned explicitly
+		{"", "trtllm"},                 // trtllm rule, engine default
+		{"blockhash_trtllm", "trtllm"}, // TRT-LLM contract pinned explicitly
 	}
 	for _, c := range accept {
 		if err := kvHashAlgoValidate(c.algo, c.engine); err != nil {
@@ -216,10 +267,14 @@ func TestKvHashAlgoValidateCoherence(t *testing.T) {
 	// Rejected — the incoherent pairs, and the rejection must name BOTH the
 	// offending algo and the engine so the operator can act on it.
 	reject := []struct{ algo, engine string }{
-		{"sha256_cbor", "sglang"}, // the API-spec-default trap
-		{"xxhash_cbor", "sglang"}, // the other cbor contract
-		{"sha256_sglang", "vllm"}, // mirror image
-		{"sha256_sglang", ""},     // "" ≡ vllm
+		{"sha256_cbor", "sglang"},      // the API-spec-default trap
+		{"xxhash_cbor", "sglang"},      // the other cbor contract
+		{"sha256_sglang", "vllm"},      // mirror image
+		{"sha256_sglang", ""},          // "" ≡ vllm
+		{"blockhash_trtllm", "vllm"},   // trtllm hash on a vllm rule
+		{"blockhash_trtllm", "sglang"}, // and on an sglang rule
+		{"sha256_cbor", "trtllm"},      // cbor contract on a trtllm rule
+		{"sha256_sglang", "trtllm"},    // sglang contract on a trtllm rule
 	}
 	for _, c := range reject {
 		err := kvHashAlgoValidate(c.algo, c.engine)

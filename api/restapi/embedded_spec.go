@@ -13110,7 +13110,7 @@ func init() {
               "format": "int32"
             },
             "kvBlockSize": {
-              "description": "Token block size for KV hash computation. Must match the engine's block granularity - vLLM --block-size, SGLang --page-size. A mismatch makes every hash miss.",
+              "description": "Token block size for KV hash computation. Must match the engine's block granularity - vLLM --block-size, SGLang --page-size, TRT-LLM tokens_per_block (whose engine default is 32, NOT this field's 16). A mismatch makes every hash miss.",
               "type": "integer",
               "format": "int64",
               "default": 16,
@@ -13127,12 +13127,13 @@ func init() {
               "x-nullable": false
             },
             "kvEngineType": {
-              "description": "KV-event engine behind this rule. One framework per VIP; immutable after create (delete+recreate to change). Drives hash-algo default: sglang =\u003e sha256_sglang. NOTE: LOXILB_KV_* env knobs (unified mode, eps/lambda, cap-sum, max-blocks) are process-global and shared across all KV VIPs (accepted limitation).",
+              "description": "KV-event engine behind this rule. One framework per VIP; immutable after create (delete+recreate to change). Drives hash-algo default: sglang =\u003e sha256_sglang, trtllm =\u003e blockhash_trtllm. trtllm currently supports plain LB only: kvExactMode\u003e0 and pd_disagg_mode are rejected until the TRT-LLM KV/P-D phases ship, and kvZmqPort/kvDpRankCount are meaningless for it (rejected when set — TRT-LLM KV events ride the endpoint's own serving port and expose no client-visible DP ranks). NOTE: LOXILB_KV_* env knobs (unified mode, eps/lambda, cap-sum, max-blocks) are process-global and shared across all KV VIPs (accepted limitation).",
               "type": "string",
               "default": "vllm",
               "enum": [
                 "vllm",
-                "sglang"
+                "sglang",
+                "trtllm"
               ],
               "x-nullable": false
             },
@@ -13145,12 +13146,13 @@ func init() {
               "x-nullable": false
             },
             "kvHashAlgo": {
-              "description": "Block-hash contract used to match the prompt against the engine-published KV inventory. PREFER OMITTING THIS FIELD — when absent, the contract is derived from kvEngineType (vllm =\u003e sha256_cbor, sglang =\u003e sha256_sglang), which is always the coherent choice. An explicit value overrides that default and MUST match the engine, or every computed hash misses and Tier 1.5 is silently dead; incoherent pairs are therefore rejected at config time. vLLM engines: \"sha256_cbor\" (must equal --prefix-caching-hash-algo) or \"xxhash_cbor\". SGLang engines: \"sha256_sglang\" only — SGLang hashes parent||tokens raw (no CBOR, no NONE seed) and truncates to the FIRST 8 digest bytes, where vLLM CBOR-encodes and truncates to the LAST 8.",
+              "description": "Block-hash contract used to match the prompt against the engine-published KV inventory. PREFER OMITTING THIS FIELD — when absent, the contract is derived from kvEngineType (vllm =\u003e sha256_cbor, sglang =\u003e sha256_sglang, trtllm =\u003e blockhash_trtllm), which is always the coherent choice. An explicit value overrides that default and MUST match the engine, or every computed hash misses and Tier 1.5 is silently dead; incoherent pairs are therefore rejected at config time. vLLM engines: \"sha256_cbor\" (must equal --prefix-caching-hash-algo) or \"xxhash_cbor\". SGLang engines: \"sha256_sglang\" only — SGLang hashes parent||tokens raw (no CBOR, no NONE seed) and truncates to the FIRST 8 digest bytes, where vLLM CBOR-encodes and truncates to the LAST 8. TRT-LLM engines: \"blockhash_trtllm\" only — the engine's native uint64 mixing hash (whole value, no digest).",
               "type": "string",
               "enum": [
                 "sha256_cbor",
                 "xxhash_cbor",
-                "sha256_sglang"
+                "sha256_sglang",
+                "blockhash_trtllm"
               ],
               "x-nullable": false
             },
@@ -29053,7 +29055,7 @@ func init() {
               "format": "int32"
             },
             "kvBlockSize": {
-              "description": "Token block size for KV hash computation. Must match the engine's block granularity - vLLM --block-size, SGLang --page-size. A mismatch makes every hash miss.",
+              "description": "Token block size for KV hash computation. Must match the engine's block granularity - vLLM --block-size, SGLang --page-size, TRT-LLM tokens_per_block (whose engine default is 32, NOT this field's 16). A mismatch makes every hash miss.",
               "type": "integer",
               "format": "int64",
               "default": 16,
@@ -29070,12 +29072,13 @@ func init() {
               "x-nullable": false
             },
             "kvEngineType": {
-              "description": "KV-event engine behind this rule. One framework per VIP; immutable after create (delete+recreate to change). Drives hash-algo default: sglang =\u003e sha256_sglang. NOTE: LOXILB_KV_* env knobs (unified mode, eps/lambda, cap-sum, max-blocks) are process-global and shared across all KV VIPs (accepted limitation).",
+              "description": "KV-event engine behind this rule. One framework per VIP; immutable after create (delete+recreate to change). Drives hash-algo default: sglang =\u003e sha256_sglang, trtllm =\u003e blockhash_trtllm. trtllm currently supports plain LB only: kvExactMode\u003e0 and pd_disagg_mode are rejected until the TRT-LLM KV/P-D phases ship, and kvZmqPort/kvDpRankCount are meaningless for it (rejected when set — TRT-LLM KV events ride the endpoint's own serving port and expose no client-visible DP ranks). NOTE: LOXILB_KV_* env knobs (unified mode, eps/lambda, cap-sum, max-blocks) are process-global and shared across all KV VIPs (accepted limitation).",
               "type": "string",
               "default": "vllm",
               "enum": [
                 "vllm",
-                "sglang"
+                "sglang",
+                "trtllm"
               ],
               "x-nullable": false
             },
@@ -29089,12 +29092,13 @@ func init() {
               "x-nullable": false
             },
             "kvHashAlgo": {
-              "description": "Block-hash contract used to match the prompt against the engine-published KV inventory. PREFER OMITTING THIS FIELD — when absent, the contract is derived from kvEngineType (vllm =\u003e sha256_cbor, sglang =\u003e sha256_sglang), which is always the coherent choice. An explicit value overrides that default and MUST match the engine, or every computed hash misses and Tier 1.5 is silently dead; incoherent pairs are therefore rejected at config time. vLLM engines: \"sha256_cbor\" (must equal --prefix-caching-hash-algo) or \"xxhash_cbor\". SGLang engines: \"sha256_sglang\" only — SGLang hashes parent||tokens raw (no CBOR, no NONE seed) and truncates to the FIRST 8 digest bytes, where vLLM CBOR-encodes and truncates to the LAST 8.",
+              "description": "Block-hash contract used to match the prompt against the engine-published KV inventory. PREFER OMITTING THIS FIELD — when absent, the contract is derived from kvEngineType (vllm =\u003e sha256_cbor, sglang =\u003e sha256_sglang, trtllm =\u003e blockhash_trtllm), which is always the coherent choice. An explicit value overrides that default and MUST match the engine, or every computed hash misses and Tier 1.5 is silently dead; incoherent pairs are therefore rejected at config time. vLLM engines: \"sha256_cbor\" (must equal --prefix-caching-hash-algo) or \"xxhash_cbor\". SGLang engines: \"sha256_sglang\" only — SGLang hashes parent||tokens raw (no CBOR, no NONE seed) and truncates to the FIRST 8 digest bytes, where vLLM CBOR-encodes and truncates to the LAST 8. TRT-LLM engines: \"blockhash_trtllm\" only — the engine's native uint64 mixing hash (whole value, no digest).",
               "type": "string",
               "enum": [
                 "sha256_cbor",
                 "xxhash_cbor",
-                "sha256_sglang"
+                "sha256_sglang",
+                "blockhash_trtllm"
               ],
               "x-nullable": false
             },
@@ -29685,7 +29689,7 @@ func init() {
           "format": "int32"
         },
         "kvBlockSize": {
-          "description": "Token block size for KV hash computation. Must match the engine's block granularity - vLLM --block-size, SGLang --page-size. A mismatch makes every hash miss.",
+          "description": "Token block size for KV hash computation. Must match the engine's block granularity - vLLM --block-size, SGLang --page-size, TRT-LLM tokens_per_block (whose engine default is 32, NOT this field's 16). A mismatch makes every hash miss.",
           "type": "integer",
           "format": "int64",
           "default": 16,
@@ -29702,12 +29706,13 @@ func init() {
           "x-nullable": false
         },
         "kvEngineType": {
-          "description": "KV-event engine behind this rule. One framework per VIP; immutable after create (delete+recreate to change). Drives hash-algo default: sglang =\u003e sha256_sglang. NOTE: LOXILB_KV_* env knobs (unified mode, eps/lambda, cap-sum, max-blocks) are process-global and shared across all KV VIPs (accepted limitation).",
+          "description": "KV-event engine behind this rule. One framework per VIP; immutable after create (delete+recreate to change). Drives hash-algo default: sglang =\u003e sha256_sglang, trtllm =\u003e blockhash_trtllm. trtllm currently supports plain LB only: kvExactMode\u003e0 and pd_disagg_mode are rejected until the TRT-LLM KV/P-D phases ship, and kvZmqPort/kvDpRankCount are meaningless for it (rejected when set — TRT-LLM KV events ride the endpoint's own serving port and expose no client-visible DP ranks). NOTE: LOXILB_KV_* env knobs (unified mode, eps/lambda, cap-sum, max-blocks) are process-global and shared across all KV VIPs (accepted limitation).",
           "type": "string",
           "default": "vllm",
           "enum": [
             "vllm",
-            "sglang"
+            "sglang",
+            "trtllm"
           ],
           "x-nullable": false
         },
@@ -29721,12 +29726,13 @@ func init() {
           "x-nullable": false
         },
         "kvHashAlgo": {
-          "description": "Block-hash contract used to match the prompt against the engine-published KV inventory. PREFER OMITTING THIS FIELD — when absent, the contract is derived from kvEngineType (vllm =\u003e sha256_cbor, sglang =\u003e sha256_sglang), which is always the coherent choice. An explicit value overrides that default and MUST match the engine, or every computed hash misses and Tier 1.5 is silently dead; incoherent pairs are therefore rejected at config time. vLLM engines: \"sha256_cbor\" (must equal --prefix-caching-hash-algo) or \"xxhash_cbor\". SGLang engines: \"sha256_sglang\" only — SGLang hashes parent||tokens raw (no CBOR, no NONE seed) and truncates to the FIRST 8 digest bytes, where vLLM CBOR-encodes and truncates to the LAST 8.",
+          "description": "Block-hash contract used to match the prompt against the engine-published KV inventory. PREFER OMITTING THIS FIELD — when absent, the contract is derived from kvEngineType (vllm =\u003e sha256_cbor, sglang =\u003e sha256_sglang, trtllm =\u003e blockhash_trtllm), which is always the coherent choice. An explicit value overrides that default and MUST match the engine, or every computed hash misses and Tier 1.5 is silently dead; incoherent pairs are therefore rejected at config time. vLLM engines: \"sha256_cbor\" (must equal --prefix-caching-hash-algo) or \"xxhash_cbor\". SGLang engines: \"sha256_sglang\" only — SGLang hashes parent||tokens raw (no CBOR, no NONE seed) and truncates to the FIRST 8 digest bytes, where vLLM CBOR-encodes and truncates to the LAST 8. TRT-LLM engines: \"blockhash_trtllm\" only — the engine's native uint64 mixing hash (whole value, no digest).",
           "type": "string",
           "enum": [
             "sha256_cbor",
             "xxhash_cbor",
-            "sha256_sglang"
+            "sha256_sglang",
+            "blockhash_trtllm"
           ],
           "x-nullable": false
         },
