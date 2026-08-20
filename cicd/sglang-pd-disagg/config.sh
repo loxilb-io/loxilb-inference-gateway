@@ -19,14 +19,15 @@
 #
 # Mocks per EP (two processes where coexistence needs both flavors):
 #   l3ep1: mock_sglang_pd --role prefill :8100 (bootstrap :9998)  +  mock_vllm --role prefill :8000 (nixl 9001)
-#   l3ep2: mock_sglang_pd --role prefill :8100 (bootstrap :9998)
+#   l3ep2: mock_sglang_pd --role prefill :8100 (bootstrap :9998)  +  mock_vllm --role prefill :8000 (nixl 9003)
 #   l3ep3: mock_sglang_pd --role decode  :8100                    +  mock_vllm --role decode  :8000 (nixl 9002)
 #
 # LB rules (installed via REST — loxicmd has no --pd-bootstrap-port flag yet):
 #   Port 2030 — SGLang P/D: pd_disagg_mode + kvEngineType=sglang +
 #               pdBootstrapPort=9998 (NON-default on purpose: proves the knob
 #               plumbs through; SGLang's default is 8998), eps 2P+1D on :8100.
-#   Port 2031 — vLLM P/D coexistence rule: default engine, eps 1P+1D on :8000.
+#   Port 2031 — vLLM P/D coexistence rule: default engine, eps 2P+1D on :8000
+#               (two prefills so the origin-demotion leg can show failover).
 
 source ../common.sh
 exec < /dev/null
@@ -110,14 +111,16 @@ echo "Starting mock vLLM servers (coexistence rule)"
 echo "#########################################"
 
 docker cp "$(dirname "$0")/../vllm-pd-disagg/mock_vllm.py" l3ep1:/tmp/mock_vllm.py
+docker cp "$(dirname "$0")/../vllm-pd-disagg/mock_vllm.py" l3ep2:/tmp/mock_vllm.py
 docker cp "$(dirname "$0")/../vllm-pd-disagg/mock_vllm.py" l3ep3:/tmp/mock_vllm.py
 # mock_vllm admin binds 127.0.0.1:9000 (fixed); mock_sglang_pd admin uses
 # 9100 — no collision inside the shared containers.
 $dexec l3ep1 bash -c "nohup python3 /tmp/mock_vllm.py --role prefill --port 8000 --nixl-port 9001 --ep-idx 1 > /tmp/vllm-prefill1.log 2>&1 &"
+$dexec l3ep2 bash -c "nohup python3 /tmp/mock_vllm.py --role prefill --port 8000 --nixl-port 9003 --ep-idx 2 > /tmp/vllm-prefill2.log 2>&1 &"
 $dexec l3ep3 bash -c "nohup python3 /tmp/mock_vllm.py --role decode --port 8000 --nixl-port 9002 --ep-idx 3 > /tmp/vllm-decode3.log 2>&1 &"
 
 echo "Waiting for mock servers to answer /health..."
-for spec in "l3ep1 8100" "l3ep2 8100" "l3ep3 8100" "l3ep1 8000" "l3ep3 8000"; do
+for spec in "l3ep1 8100" "l3ep2 8100" "l3ep3 8100" "l3ep1 8000" "l3ep2 8000" "l3ep3 8000"; do
   set -- $spec
   ep="$1"; port="$2"
   ok=0
@@ -144,7 +147,7 @@ echo ""
 # Port 2031 — vLLM P/D coexistence rule (default engine).
 $hexec llb1 curl -s -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
   -H 'Content-Type: application/json' \
-  -d '{"serviceArguments":{"externalIP":"'"$VIP"'","port":2031,"protocol":"tcp","sel":0,"mode":4,"security":1,"pd_disagg_mode":true,"sse_mode":true,"host":"'"$VIP"'","monitor":true,"probetype":"http","probeport":8000,"probereq":"/health","probeTimeout":5,"probeRetries":2},"endpoints":[{"endpointIP":"31.31.31.1","targetPort":8000,"weight":1,"ep_role":1,"nixl_port":9001},{"endpointIP":"33.33.33.1","targetPort":8000,"weight":1,"ep_role":2,"nixl_port":9002}]}'
+  -d '{"serviceArguments":{"externalIP":"'"$VIP"'","port":2031,"protocol":"tcp","sel":0,"mode":4,"security":1,"pd_disagg_mode":true,"sse_mode":true,"host":"'"$VIP"'","monitor":true,"cb_enable":true,"probetype":"http","probeport":8000,"probereq":"/health","probeTimeout":5,"probeRetries":2},"endpoints":[{"endpointIP":"31.31.31.1","targetPort":8000,"weight":1,"ep_role":1,"nixl_port":9001},{"endpointIP":"32.32.32.1","targetPort":8000,"weight":1,"ep_role":1,"nixl_port":9003},{"endpointIP":"33.33.33.1","targetPort":8000,"weight":1,"ep_role":2,"nixl_port":9002}]}'
 echo ""
 
 echo "#########################################"
@@ -171,4 +174,4 @@ echo "#########################################"
 echo "Configuration complete"
 echo "#########################################"
 echo "  Port 2030: SGLang P/D (l3ep1+l3ep2 prefill :8100 bootstrap :9998, l3ep3 decode :8100)"
-echo "  Port 2031: vLLM P/D coexistence (l3ep1 prefill :8000/nixl 9001, l3ep3 decode :8000/nixl 9002)"
+echo "  Port 2031: vLLM P/D coexistence (l3ep1+l3ep2 prefill :8000/nixl 9001+9003, l3ep3 decode :8000/nixl 9002)"

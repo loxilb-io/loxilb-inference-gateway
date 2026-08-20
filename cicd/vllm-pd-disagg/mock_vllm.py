@@ -34,6 +34,10 @@ _request_count = 0      # Incremented per POST request; used by --fail-every.
                         # the read-modulo-write of --fail-every becomes
                         # non-deterministic. Lock is cheap; harden now.
 _request_count_lock = threading.Lock()
+_fail_next = False      # One-shot: next inference request answers HTTP 500
+                        # (origin-computed error — the connection stays up).
+                        # Armed via POST /admin/fail-next, cleared on consume
+                        # or /admin/reset; mirrors the mock_sglang_pd.py knob.
 _args = None            # Set by main(); allows handlers to access parsed args
 
 
@@ -115,7 +119,20 @@ class MockVLLMHandler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": "Invalid JSON"})
             return
 
-        # --fail-every fault injection (HTTP 500; does NOT trigger CB — CB requires TCP failure)
+        # One-shot fail-next fault injection (origin-computed HTTP 500 with the
+        # TCP connection healthy — the exact shape the breaker's origin-error
+        # streak demotes on; connect-level failure_count never sees it).
+        global _fail_next
+        if _fail_next and self.path in ("/v1/chat/completions", "/v1/completions"):
+            _fail_next = False
+            print(f"[{SERVER_ROLE}] FAIL-NEXT consumed reqid={self.headers.get('X-Request-Id', '-')}",
+                  flush=True)
+            self._send_json(500, {"error": "injected_fault_oneshot"})
+            return
+
+        # --fail-every fault injection (HTTP 500; an isolated 5xx does not trip
+        # the breaker — the origin-error streak needs consecutive 5xx, and the
+        # interleaved successes here keep resetting it)
         global _request_count
         if _args is not None and _args.fail_every > 0:
             # WR-07: atomic increment + modulo under a lock so the
@@ -325,13 +342,29 @@ class AdminHandler(BaseHTTPRequestHandler):
             return True
         return self.headers.get("X-Admin-Token", "") == expected
 
+    def _reply_json(self, obj):
+        data = json.dumps(obj).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
     def do_POST(self):
-        global _health_ok
+        global _health_ok, _fail_next
         if not self._auth_ok():
             self.send_response(401)
             self.end_headers()
             return
-        if self.path == "/admin/health-fail":
+        if self.path == "/admin/fail-next":
+            _fail_next = True
+            self._reply_json({"fail_next": True})
+            print(f"[{SERVER_ROLE}] [admin] fail-next ARMED", flush=True)
+        elif self.path == "/admin/reset":
+            _fail_next = False
+            self._reply_json({"fail_next": False})
+            print(f"[{SERVER_ROLE}] [admin] knobs RESET", flush=True)
+        elif self.path == "/admin/health-fail":
             _health_ok = False
             data = json.dumps({"health_ok": False}).encode()
             self.send_response(200)
@@ -361,6 +394,7 @@ class AdminHandler(BaseHTTPRequestHandler):
         if self.path == "/admin/status":
             data = json.dumps({
                 "health_ok": _health_ok,
+                "fail_next": _fail_next,
                 "role": SERVER_ROLE,
                 "request_count": _request_count,
             }).encode()
@@ -438,7 +472,8 @@ def main():
     _args = args
 
     # Start admin HTTP server on loopback (127.0.0.1:9000) as daemon thread.
-    # Provides /admin/health-fail, /admin/health-ok, /admin/status endpoints.
+    # Provides /admin/health-fail, /admin/health-ok, /admin/fail-next,
+    # /admin/reset, /admin/status endpoints.
     admin_thread = threading.Thread(target=_start_admin_server, daemon=True)
     admin_thread.start()
 

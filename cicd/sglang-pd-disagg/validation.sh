@@ -92,6 +92,22 @@ disarm_all() {  # clear any leftover one-shot fault knobs on every mock
   arm l3ep3 reset
 }
 
+varm() {  # varm <ep> <knob> — one-shot fault injection on a vLLM mock (admin :9000)
+  $dexec "$1" curl -s -X POST "http://127.0.0.1:9000/admin/$2" > /dev/null
+}
+
+vdisarm_all() {  # clear any leftover one-shot fault knobs on the vLLM prefill mocks
+  varm l3ep1 reset
+  varm l3ep2 reset
+}
+
+vllm_reqs() {  # vllm_reqs <ep> — inference requests served by <ep>'s vLLM prefill mock
+  case "$1" in
+    l3ep1) eplog l3ep1 vllm-prefill1.log ;;
+    l3ep2) eplog l3ep2 vllm-prefill2.log ;;
+  esac | grep -c "X-Request-Id:" || true
+}
+
 eplog() {  # eplog <ep> <logfile>
   $dexec "$1" cat "/tmp/$2" 2>/dev/null
 }
@@ -434,6 +450,91 @@ for i in $(seq 1 20); do
   sleep 2
 done
 check "K6: tripped prefill re-admitted after the heal cycle (bootstrap lines $K_EP1_AFTER -> ${K_EP1_REC:-?})" $K_RECOVERED
+
+############################################################################
+echo "Leg L: vLLM dialect — swallowed prefill 5xx still feeds the origin demotion"
+############################################################################
+
+# The vLLM sequential machine swallows the prefill response: a prefill 5xx
+# degrades to decode-recompute and the client still gets its 200, so nothing
+# client-visible ever flags an up-but-erroring vLLM prefill — warm selection
+# re-pins it indefinitely (leg K's defect in its silent variant). Three
+# consecutive origin 500s from the pinned prefill must open its breaker
+# (dp-log marker + pd_cb_flips) with ZERO client-visible errors, the tripped
+# EP must serve nothing while OPEN, and the heal cycle must re-admit it.
+vdisarm_all
+
+# Discover which prefill the vLLM rule pins repeat traffic onto — that is
+# the EP the demotion must break away from.
+L_P1_0=$(vllm_reqs l3ep1)
+chat "$RUN-leg-l-probe" false 2031 > /dev/null
+if [ "$(vllm_reqs l3ep1)" -gt "$L_P1_0" ]; then
+  L_EP=l3ep1; L_LOG=vllm-prefill1.log; L_EPNAME="l3ep1"
+else
+  L_EP=l3ep2; L_LOG=vllm-prefill2.log; L_EPNAME="l3ep2"
+fi
+echo "  pinned vLLM prefill = $L_EPNAME"
+
+fail_next_count() { eplog "$L_EP" "$L_LOG" | grep -c "FAIL-NEXT consumed" || true; }
+
+L_FLIPS_BASE=$(mget loxilb_pd_cb_flips_total)
+L_MARK_BASE=$(cb_origin_count)
+L_CONSUMED=0
+L_CLIENT_BAD=0
+for k in 1 2 3; do
+  varm "$L_EP" fail-next
+  L_INJ_BASE=$(fail_next_count)
+  L_HIT=0
+  for i in $(seq 1 10); do
+    L_RESP=$(chat "$RUN-leg-l$k-$i" false 2031)
+    L_ST=$(status_of "$L_RESP")
+    [ "$L_ST" = "200" ] || { L_CLIENT_BAD=$((L_CLIENT_BAD+1)); echo "  FAIL: L-pre: request $RUN-leg-l$k-$i expected 200, got $L_ST"; }
+    if [ "$(fail_next_count)" -gt "$L_INJ_BASE" ]; then
+      L_HIT=1; L_CONSUMED=$((L_CONSUMED+1)); break
+    fi
+  done
+  [ "$L_HIT" = "1" ] || break
+done
+[ "$L_CONSUMED" = "3" ]
+check "L1: three armed vLLM prefill 500s consumed by $L_EPNAME (streak staged)" $?
+[ "$L_CLIENT_BAD" = "0" ]
+check "L2: every request stayed 200 — the prefill 5xx degraded to decode-recompute (the silent pin)" $?
+
+L_MARK_NOW=$(cb_origin_count)
+[ "$L_MARK_NOW" -gt "$L_MARK_BASE" ]
+check "L3: origin-error demotion tripped on the vLLM rule (CB_ORIGIN marker $L_MARK_BASE -> $L_MARK_NOW)" $?
+
+L_FLIPS_NOW=$(mwait loxilb_pd_cb_flips_total "$L_FLIPS_BASE" 20)
+[ "$L_FLIPS_NOW" -gt "$L_FLIPS_BASE" ]
+check "L4: pd_cb_flips ticked ($L_FLIPS_BASE -> $L_FLIPS_NOW)" $?
+
+# While the breaker is OPEN every request must succeed on the OTHER prefill
+# — the tripped EP serves nothing (this is the pin the demotion breaks).
+L_SERVED_OPEN_BASE=$(vllm_reqs "$L_EP")
+L_OPEN_BAD=0
+for i in $(seq 1 6); do
+  L_RESP=$(chat "$RUN-leg-l-open-$i" false 2031)
+  [ "$(status_of "$L_RESP")" = "200" ] || L_OPEN_BAD=$((L_OPEN_BAD+1))
+done
+L_SERVED_OPEN_NOW=$(vllm_reqs "$L_EP")
+[ "$L_OPEN_BAD" = "0" ]
+check "L5: 6/6 requests 200 while the tripped vLLM prefill is OPEN (failover held)" $?
+[ "$L_SERVED_OPEN_NOW" = "$L_SERVED_OPEN_BASE" ]
+check "L6: tripped vLLM prefill served ZERO requests while OPEN (request lines $L_SERVED_OPEN_BASE flat)" $?
+
+# Recovery: the 1 Hz health pass drives OPEN->HALF_OPEN after the 30 s open
+# timeout; genuine successes then close the breaker and the EP serves again.
+echo "  sitting out the breaker open timeout (35s)..."
+sleep 35
+L_RECOVERED=1
+for i in $(seq 1 20); do
+  chat "$RUN-leg-l-rec-$i" false 2031 > /dev/null
+  L_SERVED_REC=$(vllm_reqs "$L_EP")
+  if [ "$L_SERVED_REC" -gt "$L_SERVED_OPEN_NOW" ]; then L_RECOVERED=0; break; fi
+  sleep 2
+done
+check "L7: tripped vLLM prefill re-admitted after the heal cycle (request lines $L_SERVED_OPEN_NOW -> ${L_SERVED_REC:-?})" $L_RECOVERED
+vdisarm_all
 
 ############################################################################
 echo "Leg H: hygiene — no mock-side contract violations, metrics exported"
