@@ -1059,6 +1059,19 @@ func KvSubscriberStartRank(serviceID uint32, epIdx int, rank uint16, epIP string
 	// trtllm to the HTTP drain poller; both speak the same 3-frame message
 	// shape to the loop.
 	go func() {
+		// TRT-LLM endpoints pass the /server_info admission gate BEFORE the
+		// event poller exists: a contract-mismatched endpoint (wrong
+		// tokens_per_block, non-v1 event hashing) gets no poller — its
+		// inventory stays empty and Tier-1.5 can never route to it — and
+		// never touches the sole-consumer event drain either. The gate
+		// blocks through boot-time unreachability and re-checks refusals,
+		// so it only returns false on teardown.
+		if engine == "trtllm" {
+			if !kvTrtllmAdmissionGate(ctx, addr, serviceID, epIdx, int(blockSize)) {
+				return
+			}
+		}
+
 		sub := newKvEventSource(ctx, engine, addr, int(blockSize))
 		defer sub.Close()
 
@@ -1155,6 +1168,10 @@ func KvSubscriberStop(serviceID uint32, epIdx int) {
 	// decommissioned EP does not linger as stale series on /metrics.
 	prom.ClearKvEpSeries(fmt.Sprintf("%d", serviceID), fmt.Sprintf("%d", epIdx))
 	kvSeriesMu.Unlock()
+
+	// Drop the EP's trtllm admission verdict (no-op for ZMQ engines) so the
+	// audit API never shows a stale verdict for a decommissioned EP.
+	kvTrtllmAdmissionForget(serviceID, epIdx)
 }
 
 // KvSubscriberStopAll stops all ZMQ subscribers for the given service.
@@ -1195,6 +1212,9 @@ func KvSubscriberStopAll(serviceID uint32) {
 	}
 	prom.ClearKvServiceSeries(svcLabel)
 	kvSeriesMu.Unlock()
+
+	// Drop the service's trtllm admission verdicts (no-op for ZMQ engines).
+	kvTrtllmAdmissionForgetAll(serviceID)
 }
 
 // ---------- : Tier-1.5 zero-hit watchdog ----------
@@ -2021,6 +2041,11 @@ func (p *kvInventoryProviderImpl) DumpKvInventory(serviceID uint32, epIdx int) (
 		ServiceID: serviceID,
 		EpIdx:     epIdx,
 		HashAlgo:  algo,
+		// TRT-LLM /server_info admission verdict for this EP — "" (omitted)
+		// for ZMQ engines and for gates that haven't reached a first
+		// /server_info answer; "admitted..." or a refusal reason otherwise.
+		// This is the operator's "why is Tier-1.5 off for this EP" answer.
+		Admission: kvTrtllmAdmissionVerdict(serviceID, epIdx),
 		Blocks:    make([]handler.KvInventoryBlock, 0),
 	}
 

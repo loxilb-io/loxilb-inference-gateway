@@ -610,6 +610,215 @@ func (p *trtllmEventPoller) noopMessage(eventID uint64) [][]byte {
 	return [][]byte{kvTrtllmTopic, seq, payload}
 }
 
+// ---------- /server_info admission guard ----------
+
+// The worst silent failure in this integration is a hash/paging contract
+// mismatch that produces a permanently zero-hit Tier-1.5 with no error
+// anywhere: the engine's tokens_per_block differing from the rule's
+// kvBlockSize (16-vs-32), or the engine configured for the v2 SHA-256 event
+// hashing while the rule speaks v1-token re-hash. TRT-LLM exposes both knobs
+// at runtime on GET /server_info (fields live-confirmed on 1.3.0rc24:
+// kv_cache_hash_algo, tokens_per_block), so admission is checked against the
+// ENGINE's own answer before an endpoint's event poller ever starts:
+//
+//   - tokens_per_block present and != the rule's kvBlockSize  => refuse
+//   - kv_cache_hash_algo present and != "v1_block_key"        => refuse
+//   - neither field present => admit with a warning (older engine builds,
+//     <= 1.3.0rc9 NGC containers, don't serve these fields; they default to
+//     the v1 contract, and the poller's exact-block-length skip counter is
+//     the loud backstop if the block size still disagrees)
+//
+// A refused endpoint gets NO event poller — its inventory stays empty, so
+// Tier-1.5 can never route to it and placement falls back to the load
+// selector; plain-LB forwarding is untouched. Refusals are sticky but
+// re-checked periodically (an operator fixing the engine config and
+// restarting it heals without touching the rule), and the current verdict
+// per (service, endpoint) is surfaced in the KV inventory audit API.
+//
+// The design also calls for refusing mixed hash algorithms across one
+// rule's endpoints; since anything other than v1_block_key is already
+// refused per-endpoint, two admitted endpoints cannot disagree — the mix
+// check is subsumed until a v2 arm ever lands.
+
+// kvTrtllmServerInfo mirrors the admission-relevant /server_info fields.
+// Pointer/zero-value distinguish "absent" from a real value.
+type kvTrtllmServerInfo struct {
+	KvCacheHashAlgo string `json:"kv_cache_hash_algo"`
+	TokensPerBlock  *int64 `json:"tokens_per_block"`
+}
+
+const (
+	// kvTrtllmAdmissionFetchTimeout caps one /server_info request.
+	kvTrtllmAdmissionFetchTimeout = 5 * time.Second
+	// kvTrtllmAdmissionVerdictOK / ...LegacyOK are the admitted verdicts
+	// surfaced in the audit API; anything else stored is a refusal reason.
+	kvTrtllmAdmissionVerdictOK       = "admitted"
+	kvTrtllmAdmissionVerdictLegacyOK = "admitted (legacy engine: /server_info exposes no kv fields; v1 contract assumed)"
+)
+
+// kvTrtllmAdmissionRetry / kvTrtllmAdmissionRecheck pace the gate loop:
+// retry = endpoint unreachable (engine still booting — same posture as the
+// subscriber connect retry), recheck = endpoint answered with a refusal
+// (config error; re-probe slowly so a fixed+restarted engine self-heals).
+// Vars, not consts, so tests can compress the schedule.
+var (
+	kvTrtllmAdmissionRetry   = 5 * time.Second
+	kvTrtllmAdmissionRecheck = 60 * time.Second
+)
+
+// kvTrtllmSvcEp keys the admission registry.
+type kvTrtllmSvcEp struct {
+	svc uint32
+	ep  int
+}
+
+// kvTrtllmAdmissionReg is the process-wide admission verdict registry,
+// written by the gate goroutines and read by the audit API. Entries are
+// dropped on subscriber teardown (KvSubscriberStop/StopAll) so a deleted
+// rule leaves no stale verdicts behind.
+var kvTrtllmAdmissionReg = struct {
+	sync.Mutex
+	verdict  map[kvTrtllmSvcEp]string
+	refusals uint64
+}{verdict: make(map[kvTrtllmSvcEp]string)}
+
+func kvTrtllmAdmissionRecord(serviceID uint32, epIdx int, verdict string, refused bool) {
+	kvTrtllmAdmissionReg.Lock()
+	kvTrtllmAdmissionReg.verdict[kvTrtllmSvcEp{svc: serviceID, ep: epIdx}] = verdict
+	if refused {
+		kvTrtllmAdmissionReg.refusals++
+	}
+	kvTrtllmAdmissionReg.Unlock()
+}
+
+// kvTrtllmAdmissionVerdict returns the audit-API string for (service, ep):
+// "" when no gate has run (non-trtllm services, or the gate hasn't reached
+// its first /server_info answer yet).
+func kvTrtllmAdmissionVerdict(serviceID uint32, epIdx int) string {
+	kvTrtllmAdmissionReg.Lock()
+	defer kvTrtllmAdmissionReg.Unlock()
+	return kvTrtllmAdmissionReg.verdict[kvTrtllmSvcEp{svc: serviceID, ep: epIdx}]
+}
+
+// kvTrtllmAdmissionForget drops one EP's verdict (per-EP teardown).
+func kvTrtllmAdmissionForget(serviceID uint32, epIdx int) {
+	kvTrtllmAdmissionReg.Lock()
+	delete(kvTrtllmAdmissionReg.verdict, kvTrtllmSvcEp{svc: serviceID, ep: epIdx})
+	kvTrtllmAdmissionReg.Unlock()
+}
+
+// kvTrtllmAdmissionForgetAll drops a whole service's verdicts (rule delete).
+func kvTrtllmAdmissionForgetAll(serviceID uint32) {
+	kvTrtllmAdmissionReg.Lock()
+	for k := range kvTrtllmAdmissionReg.verdict {
+		if k.svc == serviceID {
+			delete(kvTrtllmAdmissionReg.verdict, k)
+		}
+	}
+	kvTrtllmAdmissionReg.Unlock()
+}
+
+// kvTrtllmServerInfoURL derives the admission probe URL from the same
+// subscriber address the poller uses.
+func kvTrtllmServerInfoURL(addr string) string {
+	a := strings.TrimPrefix(addr, "tcp://")
+	if !strings.HasPrefix(a, "http://") && !strings.HasPrefix(a, "https://") {
+		a = "http://" + a
+	}
+	return strings.TrimSuffix(a, "/") + "/server_info"
+}
+
+// kvTrtllmAdmissionEvaluate applies the admission rules to one
+// /server_info answer. Returns (verdict, admitted).
+func kvTrtllmAdmissionEvaluate(info *kvTrtllmServerInfo, blockSize int) (string, bool) {
+	if info.KvCacheHashAlgo != "" && info.KvCacheHashAlgo != kvTrtllmHashAlgoV1 {
+		return fmt.Sprintf("refused: endpoint kv_cache_hash_algo %q is not %q — the token re-hash contract cannot key this endpoint's cache",
+			info.KvCacheHashAlgo, kvTrtllmHashAlgoV1), false
+	}
+	if info.TokensPerBlock != nil && *info.TokensPerBlock != int64(blockSize) {
+		return fmt.Sprintf("refused: endpoint tokens_per_block %d != rule kvBlockSize %d — every hash would silently miss",
+			*info.TokensPerBlock, blockSize), false
+	}
+	if info.KvCacheHashAlgo == "" && info.TokensPerBlock == nil {
+		return kvTrtllmAdmissionVerdictLegacyOK, true
+	}
+	return kvTrtllmAdmissionVerdictOK, true
+}
+
+// kvTrtllmAdmissionGate blocks until the endpoint is admitted or ctx is
+// cancelled. Returns true on admission. Runs in the subscriber goroutine
+// BEFORE the event poller exists, so a refused endpoint never touches the
+// sole-consumer drain either.
+func kvTrtllmAdmissionGate(ctx context.Context, addr string, serviceID uint32, epIdx int, blockSize int) bool {
+	client := &http.Client{Timeout: kvTrtllmAdmissionFetchTimeout}
+	url := kvTrtllmServerInfoURL(addr)
+	warnedUnreachable := false
+	for {
+		info, err := kvTrtllmFetchServerInfo(ctx, client, url)
+		var wait time.Duration
+		if err != nil {
+			// Unreachable/undecodable — engine still booting, or down. Same
+			// fail-open-retry posture as the subscriber's initial connect.
+			if !warnedUnreachable {
+				log.Infof("[KV_TRT] admission ep %d svc %d: /server_info not answering (%v) — retrying every %v",
+					epIdx, serviceID, err, kvTrtllmAdmissionRetry)
+				warnedUnreachable = true
+			}
+			wait = kvTrtllmAdmissionRetry
+		} else {
+			verdict, admitted := kvTrtllmAdmissionEvaluate(info, blockSize)
+			kvTrtllmAdmissionRecord(serviceID, epIdx, verdict, !admitted)
+			if admitted {
+				if verdict == kvTrtllmAdmissionVerdictLegacyOK {
+					log.Warnf("[KV_TRT] admission ep %d svc %d: %s", epIdx, serviceID, verdict)
+				} else {
+					tpb := "absent"
+					if info.TokensPerBlock != nil {
+						tpb = strconv.FormatInt(*info.TokensPerBlock, 10)
+					}
+					log.Infof("[KV_TRT] admission ep %d svc %d: %s (algo=%q tokens_per_block=%s)",
+						epIdx, serviceID, verdict, info.KvCacheHashAlgo, tpb)
+				}
+				return true
+			}
+			log.Warnf("[KV_TRT] admission ep %d svc %d: %s — Tier-1.5 disabled for this endpoint, re-checking every %v",
+				epIdx, serviceID, verdict, kvTrtllmAdmissionRecheck)
+			wait = kvTrtllmAdmissionRecheck
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(wait):
+		}
+	}
+}
+
+// kvTrtllmFetchServerInfo performs one admission probe.
+func kvTrtllmFetchServerInfo(ctx context.Context, client *http.Client, url string) (*kvTrtllmServerInfo, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("status %d", resp.StatusCode)
+	}
+	var info kvTrtllmServerInfo
+	if err := json.Unmarshal(body, &info); err != nil {
+		return nil, fmt.Errorf("decode: %w", err)
+	}
+	return &info, nil
+}
+
 // ---------- self-owned block hashing ----------
 
 // kvSglangRehashBlock computes one block of the self-owned chained-SHA256

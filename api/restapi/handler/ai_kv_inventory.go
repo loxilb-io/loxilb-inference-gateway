@@ -46,9 +46,12 @@ type KvInventoryBlock struct {
 // /netlox/v1/config/ai/kv/inventory?service_id=<id>&ep_idx=<idx>.
 // HashAlgo is a top-level field (single algo per service), not repeated per-block.
 type KvInventoryResponse struct {
-	ServiceID uint32             `json:"service_id"`
-	EpIdx     int                `json:"ep_idx"`
-	HashAlgo  string             `json:"hash_algo"`
+	ServiceID uint32 `json:"service_id"`
+	EpIdx     int    `json:"ep_idx"`
+	HashAlgo  string `json:"hash_algo"`
+	// Admission is the TRT-LLM /server_info admission verdict for this EP:
+	// omitted for ZMQ engines, "admitted..." or a refusal reason otherwise.
+	Admission string             `json:"admission,omitempty"`
 	Blocks    []KvInventoryBlock `json:"blocks"`
 	Total     int                `json:"total"`
 }

@@ -396,6 +396,158 @@ func TestTrtllmBlockCleanGates(t *testing.T) {
 	}
 }
 
+// ---------- /server_info admission guard ----------
+
+// trtllmFixtureServerInfo is the VERBATIM live /server_info kv surface from
+// the converged 1.3.0rc24 fleet (plus the two fields admission ignores).
+const trtllmFixtureServerInfo = `{"disaggregated_params": null, "max_batch_size": 2048, "kv_cache_hash_algo": "v1_block_key", "tokens_per_block": 32}`
+
+// TestTrtllmAdmissionEvaluate pins the admission rules against the live
+// answer shape and its mutations: the contract mismatches that would
+// otherwise be silent zero-hit failures must refuse; the legacy shape
+// (no kv fields — older engine builds) must admit with the warning verdict.
+func TestTrtllmAdmissionEvaluate(t *testing.T) {
+	decode := func(raw string) *kvTrtllmServerInfo {
+		t.Helper()
+		var info kvTrtllmServerInfo
+		if err := json.Unmarshal([]byte(raw), &info); err != nil {
+			t.Fatalf("fixture decode: %v", err)
+		}
+		return &info
+	}
+
+	cases := []struct {
+		name      string
+		raw       string
+		blockSize int
+		admit     bool
+		verdictIn string
+	}{
+		{"live shape, matching block size", trtllmFixtureServerInfo, 32, true, kvTrtllmAdmissionVerdictOK},
+		{"block size mismatch 16-vs-32", trtllmFixtureServerInfo, 16, false, "tokens_per_block"},
+		{"v2 hashing", `{"kv_cache_hash_algo": "v2_sha256", "tokens_per_block": 32}`, 32, false, "kv_cache_hash_algo"},
+		{"v2 truncated hashing", `{"kv_cache_hash_algo": "v2_sha256_64", "tokens_per_block": 32}`, 32, false, "kv_cache_hash_algo"},
+		{"legacy shape (no kv fields)", `{"disaggregated_params": null}`, 32, true, "legacy"},
+		{"algo only", `{"kv_cache_hash_algo": "v1_block_key"}`, 32, true, kvTrtllmAdmissionVerdictOK},
+		{"tokens only, matching", `{"tokens_per_block": 32}`, 32, true, kvTrtllmAdmissionVerdictOK},
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			verdict, admitted := kvTrtllmAdmissionEvaluate(decode(c.raw), c.blockSize)
+			if admitted != c.admit {
+				t.Fatalf("admitted=%v, want %v (verdict %q)", admitted, c.admit, verdict)
+			}
+			if !strings.Contains(verdict, c.verdictIn) {
+				t.Errorf("verdict %q must name %q", verdict, c.verdictIn)
+			}
+		})
+	}
+}
+
+// TestTrtllmAdmissionGateLifecycle drives the full gate loop against a
+// scripted endpoint: unreachable (retry), then a refusal (verdict recorded,
+// Tier-1.5 stays off), then a fixed config (recheck admits — the operator
+// heals the engine without touching the rule). Teardown must drop the
+// verdict from the registry.
+func TestTrtllmAdmissionGateLifecycle(t *testing.T) {
+	// Compress the gate's schedule so the whole lifecycle runs in tens of
+	// milliseconds; restore for other tests.
+	oldRetry, oldRecheck := kvTrtllmAdmissionRetry, kvTrtllmAdmissionRecheck
+	kvTrtllmAdmissionRetry, kvTrtllmAdmissionRecheck = 10*time.Millisecond, 10*time.Millisecond
+	defer func() { kvTrtllmAdmissionRetry, kvTrtllmAdmissionRecheck = oldRetry, oldRecheck }()
+
+	var call atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/server_info" {
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+		switch call.Add(1) {
+		case 1:
+			w.WriteHeader(http.StatusInternalServerError) // engine booting
+		case 2:
+			w.Write([]byte(`{"kv_cache_hash_algo": "v1_block_key", "tokens_per_block": 16}`)) // misconfigured
+		default:
+			w.Write([]byte(trtllmFixtureServerInfo)) // fixed + restarted
+		}
+	}))
+	defer srv.Close()
+
+	const svcID, epIdx = 990001, 3
+	defer kvTrtllmAdmissionForget(svcID, epIdx)
+
+	done := make(chan bool, 1)
+	go func() {
+		done <- kvTrtllmAdmissionGate(context.Background(), srv.Listener.Addr().String(), svcID, epIdx, 32)
+	}()
+
+	select {
+	case ok := <-done:
+		if !ok {
+			t.Fatal("gate returned false without ctx cancel")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("gate did not admit within 10s")
+	}
+	if got := kvTrtllmAdmissionVerdict(svcID, epIdx); got != kvTrtllmAdmissionVerdictOK {
+		t.Errorf("final verdict %q, want %q", got, kvTrtllmAdmissionVerdictOK)
+	}
+	if n := call.Load(); n < 3 {
+		t.Errorf("endpoint probed %d times, want >=3 (retry + refusal + admit)", n)
+	}
+
+	kvTrtllmAdmissionForget(svcID, epIdx)
+	if got := kvTrtllmAdmissionVerdict(svcID, epIdx); got != "" {
+		t.Errorf("verdict %q after forget, want empty", got)
+	}
+}
+
+// TestTrtllmAdmissionGateCancel: a gate blocked on an unreachable endpoint
+// must exit false on teardown, not spin forever.
+func TestTrtllmAdmissionGateCancel(t *testing.T) {
+	oldRetry := kvTrtllmAdmissionRetry
+	kvTrtllmAdmissionRetry = 10 * time.Millisecond
+	defer func() { kvTrtllmAdmissionRetry = oldRetry }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan bool, 1)
+	go func() {
+		// 192.0.2.0/24 is TEST-NET — guaranteed unreachable.
+		done <- kvTrtllmAdmissionGate(ctx, "192.0.2.1:8355", 990002, 0, 32)
+	}()
+	time.Sleep(30 * time.Millisecond)
+	cancel()
+	select {
+	case ok := <-done:
+		if ok {
+			t.Fatal("cancelled gate returned true")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("cancelled gate did not exit")
+	}
+	kvTrtllmAdmissionForget(990002, 0)
+}
+
+// TestTrtllmAdmissionForgetAll: rule teardown drops every EP verdict of the
+// service and nothing else.
+func TestTrtllmAdmissionForgetAll(t *testing.T) {
+	kvTrtllmAdmissionRecord(990003, 0, kvTrtllmAdmissionVerdictOK, false)
+	kvTrtllmAdmissionRecord(990003, 1, "refused: x", true)
+	kvTrtllmAdmissionRecord(990004, 0, kvTrtllmAdmissionVerdictOK, false)
+	defer kvTrtllmAdmissionForget(990004, 0)
+
+	kvTrtllmAdmissionForgetAll(990003)
+	if v := kvTrtllmAdmissionVerdict(990003, 0); v != "" {
+		t.Errorf("svc 990003 ep 0 verdict %q after ForgetAll, want empty", v)
+	}
+	if v := kvTrtllmAdmissionVerdict(990003, 1); v != "" {
+		t.Errorf("svc 990003 ep 1 verdict %q after ForgetAll, want empty", v)
+	}
+	if v := kvTrtllmAdmissionVerdict(990004, 0); v == "" {
+		t.Error("other service's verdict must survive ForgetAll")
+	}
+}
+
 // TestTrtllmPollerHTTP drives the poller against a scripted drain: an idle
 // [] (backoff), then the live-captured restart pair, then a failing drain.
 // The synthesized message stream must carry the engine's event_ids as seqs
