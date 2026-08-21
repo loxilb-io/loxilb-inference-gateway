@@ -87,6 +87,21 @@ else
   pass "no docs/internal references"
 fi
 
+# 5b. References into never-published trees -----------------------------------
+# .gitignore keeps the private testbed harnesses out of the public repo; a
+# tracked file citing a path inside one sends readers to a tree they can never
+# have. (.gitignore and this script name the patterns themselves, so both are
+# allowlisted, as in checks 3 and 5.)
+PRIVTREE_RE='cicd/private-[a-z0-9-]+|cicd/vllm-loxilb-kvcache-aws-small'
+if git grep -Iqn -E "$PRIVTREE_RE" HEAD -- \
+     ':(exclude).gitignore' ':(exclude)scripts/release-hygiene.sh' 2>/dev/null; then
+  fail "tracked files reference never-published private trees:"
+  git grep -In -E "$PRIVTREE_RE" HEAD -- \
+     ':(exclude).gitignore' ':(exclude)scripts/release-hygiene.sh' | head -20
+else
+  pass "no references into never-published trees"
+fi
+
 # 6. Private key material (belt-and-braces on top of gitleaks) ----------------
 # A PEM header alone is NOT a leak: docs and test fixtures legitimately carry
 # elided placeholders — e.g. "-----BEGIN PRIVATE KEY-----\n...\n-----END..."

@@ -162,7 +162,7 @@ func TestLoadAlertRulesRealFile(t *testing.T) {
 		t.Fatalf("parse repo rules file: %v", err)
 	}
 	if len(rules) < 14 {
-		t.Errorf("got %d rules, want >= 14 (T6 drill matrix)", len(rules))
+		t.Errorf("got %d rules, want >= 14 (one per shipped alert)", len(rules))
 	}
 	found := false
 	for _, r := range rules {
