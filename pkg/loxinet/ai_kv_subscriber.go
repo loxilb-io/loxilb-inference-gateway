@@ -1991,11 +1991,11 @@ func (p *kvInventoryProviderImpl) DumpKvInventory(serviceID uint32, epIdx int) (
 		return nil, false
 	}
 
-	// Default algo per cicd/vllm-loxilb-kvcache-aws-small/VALIDATION_GUIDE.md
-	// (sha256_cbor is vLLM v0.17.0's default). Empty only happens when the
-	// subscriber started without algo propagated — harmless for parity tests
-	// because the harness also defaults when the field is missing, but we
-	// surface our best guess here so the Admin API response is self-describing.
+	// Default algo is sha256_cbor, vLLM v0.17.0's own default. Empty only
+	// happens when the subscriber started without algo propagated — harmless
+	// for parity tests because the harness also defaults when the field is
+	// missing, but we surface our best guess here so the Admin API response
+	// is self-describing.
 	if algo == "" {
 		algo = "sha256_cbor"
 	}
