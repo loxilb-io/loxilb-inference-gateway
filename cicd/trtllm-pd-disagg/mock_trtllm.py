@@ -70,6 +70,8 @@ _ctx_served = 0
 _gen_served = 0
 _early_exits_scripted = 0
 _event_id = 0
+_push_salt = 0            # bumped per admin push so injected blocks are new
+PUSH_SALT_STRIDE = 7919   # prime stride: salted ranges cannot overlap
 _event_queue = []              # KVEventBatch-shaped dicts awaiting drain
 _block_hash_seq = 1000
 
@@ -106,21 +108,36 @@ def _push_created():
     })
 
 
-def _push_stored_for_tokens(n_tokens):
+def _push_stored_for_tokens(n_tokens, fresh=False):
     """Emit one `stored` event covering the full blocks of an n_tokens
-    prompt (Option A: per-block token lists present)."""
-    global _block_hash_seq
+    prompt (Option A: per-block token lists present).
+
+    Token content is derived from position, so the same prompt length always
+    yields the same tokens. That is deliberate and matches a real engine:
+    re-serving an identical prompt re-stores identical blocks, and a gateway
+    that keys on token content (Option A re-hash) correctly dedupes them
+    instead of growing its inventory.
+
+    `fresh` salts the token ids so the event carries genuinely NEW blocks.
+    The admin push knob uses it: its purpose is to inject new cache content,
+    and without the salt a second push of the same size is a no-op on
+    inventory depth and cannot demonstrate that ingest is still working.
+    """
+    global _block_hash_seq, _push_salt
     n_blocks = n_tokens // TOKENS_PER_BLOCK
     if n_blocks <= 0:
         return
     blocks = []
     with _lock:
+        if fresh:
+            _push_salt += 1
+        salt = _push_salt * PUSH_SALT_STRIDE if fresh else 0
         parent = None
         for b in range(n_blocks):
             _block_hash_seq += 1
             blocks.append({
                 "block_hash": _block_hash_seq,
-                "tokens": [{"token_id": (b * TOKENS_PER_BLOCK + i) % 32000,
+                "tokens": [{"token_id": (salt + b * TOKENS_PER_BLOCK + i) % 32000,
                             "token_extra_id": 0}
                            for i in range(TOKENS_PER_BLOCK)],
             })
@@ -403,7 +420,8 @@ class AdminHandler(BaseHTTPRequestHandler):
             _next_event_id(skip)   # burn ids — the next event opens a gap
             self._reply({"event_id_advanced_by": skip + 1})
         elif self.path == "/admin/event-push":
-            _push_stored_for_tokens(int(body.get("tokens", TOKENS_PER_BLOCK)))
+            _push_stored_for_tokens(int(body.get("tokens", TOKENS_PER_BLOCK)),
+                                    fresh=True)
             self._reply({"pushed": True})
         elif self.path == "/admin/reset":
             with _lock:

@@ -292,7 +292,10 @@ for i in $(seq 1 15); do
 done
 # An emptied queue is not proof of ingest: a gateway that drained every event
 # and discarded it would satisfy the drain check. Require the inventory itself
-# to grow before calling the resync self-healed.
+# to grow before calling the resync self-healed. This depends on the admin
+# push emitting FRESH blocks (mock_trtllm.py `fresh=True`) — the gateway keys
+# the inventory on token content, so re-pushing identical tokens correctly
+# dedupes and would leave the depth flat with nothing wrong.
 G_INV_POST=$G_INV_PRE
 G_INGESTED=1
 if [ "$G_DRAINED2" = "0" ]; then
