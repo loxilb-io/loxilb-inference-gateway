@@ -592,9 +592,9 @@ type ruleEnt struct {
 	tracingCatalogID            uint16                  // Resolved catalog_id for tracing (0 = no tracing)
 	backendProtocol             string                  // Backend protocol capability: "http1", "http2", or "both"
 	sessionHeaderName           string                  // Custom session header for persist mode (e.g., "mcp-session-id")
-	sseMode                     bool                    // SSE mode: suppress idle-timeout during streaming 
-	maxStreamDurationSec        uint32                  // Absolute wall-clock cap for SSE streams in seconds 
-	backendKeepaliveIntervalSec uint32                  // Backend SO_KEEPALIVE+TCP_KEEPIDLE interval in seconds 
+	sseMode                     bool                    // SSE mode: suppress idle-timeout during streaming
+	maxStreamDurationSec        uint32                  // Absolute wall-clock cap for SSE streams in seconds
+	backendKeepaliveIntervalSec uint32                  // Backend SO_KEEPALIVE+TCP_KEEPIDLE interval in seconds
 	timeoutMemberConnectMs      uint32                  // backend connect-poll deadline in ms (0=500ms default)
 	timeoutMemberDataMs         uint32                  // member-side relay idle deadline in ms (0=existing idle)
 	timeoutTcpInspectMs         uint32                  // header-accumulation deadline in ms (0=bounded default)
@@ -606,7 +606,7 @@ type ruleEnt struct {
 	hstsPreload                 bool                    // "; preload"
 	backendCaCertId             string                  // backend CA certId (empty=system default)
 	backendClientCertId         string                  // backend client certId (empty=none)
-	pdDisaggMode                bool                    // P/D disaggregation mode: orchestrate prefill→decode flow 
+	pdDisaggMode                bool                    // P/D disaggregation mode: orchestrate prefill→decode flow
 	pdCacheAwareMode            bool                    // P/D cache-aware routing: session + trie + min-load (US-PD801)
 	pdSessionTTLSec             uint32                  // Session stickiness TTL in seconds (0 = no expiry)
 	pdCacheThreshold            uint8                   // Cache match threshold (0-100, default 20)
@@ -1172,7 +1172,7 @@ func (R *RuleH) GetLBRule() ([]cmn.LbRuleMod, error) {
 		ret.Serv.TraceType = data.traceType                 // Tracing catalog
 		ret.Serv.BackendProtocol = data.backendProtocol     // Backend protocol capability
 		ret.Serv.SessionHeaderName = data.sessionHeaderName // Custom session header for persist mode
-		ret.Serv.SSEMode = data.sseMode                     // SSE streaming mode 
+		ret.Serv.SSEMode = data.sseMode                     // SSE streaming mode
 		ret.Serv.MaxStreamDurationSec = data.maxStreamDurationSec
 		ret.Serv.BackendKeepaliveIntervalSec = data.backendKeepaliveIntervalSec
 		ret.Serv.TimeoutMemberConnect = data.timeoutMemberConnectMs // Octavia
@@ -1187,7 +1187,7 @@ func (R *RuleH) GetLBRule() ([]cmn.LbRuleMod, error) {
 		ret.Serv.HstsPreload = data.hstsPreload
 		ret.Serv.BackendCaCertId = data.backendCaCertId
 		ret.Serv.BackendClientCertId = data.backendClientCertId
-		ret.Serv.PDDisaggMode = data.pdDisaggMode         // P/D disaggregation mode 
+		ret.Serv.PDDisaggMode = data.pdDisaggMode         // P/D disaggregation mode
 		ret.Serv.PDCacheAwareMode = data.pdCacheAwareMode // P/D cache-aware routing (US-PD801)
 		ret.Serv.PDSessionTTLSec = data.pdSessionTTLSec
 		ret.Serv.PDCacheThreshold = data.pdCacheThreshold
@@ -1733,9 +1733,9 @@ func (R *RuleH) GetLBRuleByServArgs(serv cmn.LbServiceArg) *ruleEnt {
 		l4Dst:         l4dst,
 		pref:          serv.BlockNum,
 		path:          serv.HostUrl,
-		pathPrefix:    serv.PathPrefix,    // P6: Path prefix routing
+		pathPrefix:    serv.PathPrefix,                     // P6: Path prefix routing
 		pathMatchMode: lbPathMatchMode(serv.PathMatchMode), // P6: Path match mode (canonicalized)
-		modelName:     serv.ModelName,     // AI model name for pool selection
+		modelName:     serv.ModelName,                      // AI model name for pool selection
 	}
 	return R.tables[RtLB].eMap[rt.ruleKey()]
 }
@@ -1770,9 +1770,9 @@ func (R *RuleH) GetLBRuleSecIPs(serv cmn.LbServiceArg) []string {
 		l4Dst:         l4dst,
 		pref:          serv.BlockNum,
 		path:          serv.HostUrl,
-		pathPrefix:    serv.PathPrefix,    // P6: Path prefix routing
+		pathPrefix:    serv.PathPrefix,                     // P6: Path prefix routing
 		pathMatchMode: lbPathMatchMode(serv.PathMatchMode), // P6: Path match mode (canonicalized)
-		modelName:     serv.ModelName,     // AI model name for pool selection
+		modelName:     serv.ModelName,                      // AI model name for pool selection
 	}
 	if R.tables[RtLB].eMap[rt.ruleKey()] != nil {
 		for _, ip := range R.tables[RtLB].eMap[rt.ruleKey()].secIP {
@@ -2597,8 +2597,8 @@ func kvEngineEqual(a, b string) bool {
 
 // kvEngineConfigValidate is (SGL-04) config-time input validation
 // for the per-rule KV engine surface (ASVS V4/V5):
-//   - kvEngineType allowlist: "", "vllm", "sglang" — unknown strings are
-//     REJECTED, never silently treated as vllm.
+//   - kvEngineType allowlist: "", "vllm", "sglang", "trtllm" — unknown strings
+//     are REJECTED, never silently treated as vllm.
 //   - kvDpRankCount bounds: 0 (default 1 downstream) or 18. Values >8
 //     are rejected — rank N subscribes kvZmqPort+N on every EP host, so the
 //     cap bounds the port-range walk.
@@ -2608,12 +2608,48 @@ func kvEngineEqual(a, b string) bool {
 // precedent).
 func kvEngineConfigValidate(engine string, dpRankCount uint16) error {
 	switch engine {
-	case "", "vllm", "sglang":
+	case "", "vllm", "sglang", "trtllm":
 	default:
-		return errors.New("kv-engine-type must be one of \"vllm\", \"sglang\"")
+		return errors.New("kv-engine-type must be one of \"vllm\", \"sglang\", \"trtllm\"")
 	}
 	if dpRankCount > 8 {
 		return errors.New("kv-dp-rank-count must be within 1..8 (0 = default 1)")
+	}
+	return nil
+}
+
+// kvTrtllmFeatureGuard rejects the TRT-LLM rule shapes the engine cannot
+// speak, and the knobs that are structurally meaningless for it. Plain L7
+// LB, single-role Tier-1.5 (kvExactMode=3) and P/D disaggregation with the
+// P/D-coupled KV plane (pd_disagg_mode, kvExactMode=1 — both over the
+// HTTP-polled event drain in ai_kv_trtllm_source.go, orchestrated by the
+// pd_dialect_trtllm rewriter table in the C data plane) are accepted.
+//
+// The meaningless-knob rejections are deliberate loud failures: TRT-LLM KV
+// events ride the EP's own serving port (no ZMQ, so kvZmqPort would be dead
+// config) and expose no client-visible DP-rank concept (kvDpRankCount likewise
+// — and its event_id sequences are per-attention-DP-rank, so accepting >1 here
+// would arm a permanent gap-resync failure the rank-blind poller cannot
+// survive).
+//
+// Pure function: unit-testable without a rule fixture (kvEngineConfigValidate
+// precedent).
+func kvTrtllmFeatureGuard(engine string, kvExactMode uint8, pdDisagg bool, zmqPort uint16, dpRankCount uint16) error {
+	if kvEngineEffective(engine) != "trtllm" {
+		return nil
+	}
+	if kvExactMode != 0 && kvExactMode != 1 &&
+		kvExactMode != KvExactModeSingleRole {
+		// Mode 2 (nats) is reserved; only the polled-drain shapes exist for
+		// this engine.
+		return errors.New("kv-engine-type trtllm supports kvExactMode 1 or 3 (HTTP-polled event plane)")
+	}
+	// 0 = absent; 5557 = the swagger default the API layer may materialize.
+	if zmqPort != 0 && zmqPort != 5557 {
+		return errors.New("kvZmqPort is meaningless for kv-engine-type trtllm (events ride the endpoint's serving port)")
+	}
+	if dpRankCount > 1 {
+		return errors.New("kvDpRankCount is meaningless for kv-engine-type trtllm (no client-visible DP ranks)")
 	}
 	return nil
 }
@@ -2628,10 +2664,32 @@ func kvHashAlgoEffective(algo, engine string) string {
 	if algo != "" {
 		return algo
 	}
-	if kvEngineEffective(engine) == "sglang" {
+	switch kvEngineEffective(engine) {
+	case "sglang":
 		return "sha256_sglang"
+	case "trtllm":
+		return "blockhash_trtllm"
 	}
 	return "sha256_cbor"
+}
+
+// kvEngineAlgoTable is the engine → allowed-hash-algo coherence table (the
+// structural replacement for the old boolean-XOR check, which could not admit
+// a third engine). Every algo is exclusive to one engine family because the
+// wire contracts are mutually exclusive: the vLLM cbor family CBOR-encodes and
+// truncates to the LAST 8 digest bytes, and sha256_sglang hashes
+// parent||tokens raw and takes the FIRST 8. blockhash_trtllm names the
+// TRT-LLM binding of that same raw chained-SHA256 function, applied on BOTH
+// sides by us — the C pager over request tokens and the event decoder over
+// each stored block's token list (the engine's own unversioned uint64 mixing
+// hash is deliberately never consumed as a routing key; it serves only as
+// the decoder's local translation handle). A distinct name rather than
+// "sha256_sglang" because the ENGINE binding differs (HTTP-drain events,
+// full-block-only indexing) even though the digest math is shared.
+var kvEngineAlgoTable = map[string]map[string]bool{
+	"vllm":   {"sha256_cbor": true, "xxhash_cbor": true},
+	"sglang": {"sha256_sglang": true},
+	"trtllm": {"blockhash_trtllm": true},
 }
 
 // kvHashAlgoValidate rejects a kvHashAlgo that cannot serve the rule's engine.
@@ -2651,14 +2709,20 @@ func kvHashAlgoEffective(algo, engine string) string {
 // Pure function: unit-testable without a rule fixture (pkg/loxinet is CGO —
 // tests execute at the remote gate; kvEngineConfigValidate precedent).
 func kvHashAlgoValidate(algo, engine string) error {
-	switch algo {
-	case "":
+	if algo == "" {
 		return nil // engine default — coherent by construction
-	case "sha256_cbor", "xxhash_cbor", "sha256_sglang":
-	default:
-		return errors.New("kv-hash-algo must be one of \"sha256_cbor\", \"xxhash_cbor\", \"sha256_sglang\"")
 	}
-	if (kvEngineEffective(engine) == "sglang") != (algo == "sha256_sglang") {
+	known := false
+	for _, algos := range kvEngineAlgoTable {
+		if algos[algo] {
+			known = true
+			break
+		}
+	}
+	if !known {
+		return errors.New("kv-hash-algo must be one of \"sha256_cbor\", \"xxhash_cbor\", \"sha256_sglang\", \"blockhash_trtllm\"")
+	}
+	if !kvEngineAlgoTable[kvEngineEffective(engine)][algo] {
 		return fmt.Errorf("kv-hash-algo %q is incompatible with kv-engine-type %q (omit kvHashAlgo to take the engine default %q)",
 			algo, kvEngineEffective(engine), kvHashAlgoEffective("", engine))
 	}
@@ -2936,7 +3000,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		}
 	}
 
-	// P/D disaggregation validation 
+	// P/D disaggregation validation
 	if serv.PDDisaggMode {
 		if lBActs.mode != cmn.LBModeFullProxy {
 			return RuleUnknownServiceErr, errors.New("pd-disagg requires mode=fullproxy")
@@ -3010,6 +3074,13 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		return RuleUnknownServiceErr, err
 	}
 
+	// TRT-LLM per-feature guards: plain LB is accepted today; KV-exact and P/D
+	// stay rejected until their phases land, and the engine's meaningless knobs
+	// (kvZmqPort, kvDpRankCount) fail loudly instead of riding as dead config.
+	if err := kvTrtllmFeatureGuard(serv.KvEngineType, serv.KvExactMode, serv.PDDisaggMode, serv.KvZmqPort, serv.KvDpRankCount); err != nil {
+		return RuleUnknownServiceErr, err
+	}
+
 	sort.SliceStable(lBActs.endPoints, func(i, j int) bool {
 		a := tk.IPtonl(lBActs.endPoints[i].xIP)
 		b := tk.IPtonl(lBActs.endPoints[j].xIP)
@@ -3029,9 +3100,9 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		l4Dst:         l4dst,
 		pref:          serv.BlockNum,
 		path:          serv.HostUrl,
-		pathPrefix:    serv.PathPrefix,    // P6: Include path prefix in rule key
+		pathPrefix:    serv.PathPrefix,                     // P6: Include path prefix in rule key
 		pathMatchMode: lbPathMatchMode(serv.PathMatchMode), // P6: Include path match mode in rule key (canonicalized)
-		modelName:     serv.ModelName,     // AI model name for pool selection
+		modelName:     serv.ModelName,                      // AI model name for pool selection
 	}
 	tk.LogIt(tk.LogDebug, "lb-rule key (add): %q\n", rt.ruleKey())
 
@@ -3456,7 +3527,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	// Store custom session header name for persist mode
 	r.sessionHeaderName = serv.SessionHeaderName
 
-	// Store SSE streaming configuration 
+	// Store SSE streaming configuration
 	r.sseMode = serv.SSEMode
 	r.maxStreamDurationSec = serv.MaxStreamDurationSec
 	r.backendKeepaliveIntervalSec = serv.BackendKeepaliveIntervalSec
@@ -3476,7 +3547,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	r.backendCaCertId = serv.BackendCaCertId
 	r.backendClientCertId = serv.BackendClientCertId
 
-	// Store P/D disaggregation configuration 
+	// Store P/D disaggregation configuration
 	r.pdDisaggMode = serv.PDDisaggMode
 
 	// Store P/D cache-aware routing configuration (US-PD801)
@@ -3661,7 +3732,16 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 			// Start subscriber for prefill EPs only (epRole == 1)
 			if ep.epRole == 1 {
 				for rank := uint16(0); rank < dpRanks; rank++ {
-					KvSubscriberStartRank(serviceID, i, rank, ep.xIP.String(), zmqPort+rank, kvHashAlgoEffective(r.kvHashAlgo, r.kvEngineType))
+					// TRT-LLM events ride the EP's own SERVING port (HTTP
+					// drain, no separate event port — kvZmqPort is rejected
+					// non-default at validation), so the subscriber dials
+					// xPort there. Mirrors the single-role gate below.
+					subPort := zmqPort + rank
+					if r.kvEngineType == "trtllm" {
+						subPort = ep.xPort
+					}
+					KvSubscriberStartRank(serviceID, i, rank, ep.xIP.String(), subPort,
+						kvHashAlgoEffective(r.kvHashAlgo, r.kvEngineType), r.kvEngineType, r.kvBlockSize)
 				}
 			}
 		}
@@ -3689,7 +3769,15 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 				// the documented shape (kvHashAlgo omitted), which would
 				// otherwise leave svc.algo empty and make the KV-inventory
 				// audit API self-describe as vLLM "sha256_cbor".
-				KvSubscriberStartRank(serviceID, i, rank, lBActs.endPoints[i].xIP.String(), zmqPort+rank, kvHashAlgoEffective(r.kvHashAlgo, r.kvEngineType))
+				// TRT-LLM events ride the EP's own SERVING port (HTTP drain,
+				// no separate event port — kvZmqPort is rejected non-default
+				// at validation), so the subscriber dials xPort there.
+				subPort := zmqPort + rank
+				if r.kvEngineType == "trtllm" {
+					subPort = lBActs.endPoints[i].xPort
+				}
+				KvSubscriberStartRank(serviceID, i, rank, lBActs.endPoints[i].xIP.String(), subPort,
+					kvHashAlgoEffective(r.kvHashAlgo, r.kvEngineType), r.kvEngineType, r.kvBlockSize)
 			}
 		}
 	}
@@ -3817,9 +3905,9 @@ func (R *RuleH) DeleteLbRule(serv cmn.LbServiceArg) (int, error) {
 		l4Dst:         l4dst,
 		pref:          serv.BlockNum,
 		path:          serv.HostUrl,
-		pathPrefix:    serv.PathPrefix,    // P6: Include path prefix in rule key
+		pathPrefix:    serv.PathPrefix,                     // P6: Include path prefix in rule key
 		pathMatchMode: lbPathMatchMode(serv.PathMatchMode), // P6: Include path match mode in rule key (canonicalized)
-		modelName:     serv.ModelName,     // AI model name for pool selection
+		modelName:     serv.ModelName,                      // AI model name for pool selection
 	}
 	tk.LogIt(tk.LogDebug, "lb-rule key (del): %q\n", rt.ruleKey())
 
@@ -5181,7 +5269,7 @@ func (r *ruleEnt) LB2DP(work DpWorkT) int {
 	nWork.ModelName = r.tuples.modelName                              // AI model name for pool selection
 	nWork.BackendProtocol = r.backendProtocol                         // Backend protocol capability
 	nWork.SessionHeaderName = r.sessionHeaderName                     // Custom session header name for persist mode
-	nWork.SSEMode = r.sseMode                                         // SSE streaming mode 
+	nWork.SSEMode = r.sseMode                                         // SSE streaming mode
 	nWork.MaxStreamDurationSec = r.maxStreamDurationSec               // SSE max stream duration cap
 	nWork.BackendKeepaliveIntervalSec = r.backendKeepaliveIntervalSec // SSE backend keepalive
 	nWork.TimeoutMemberConnect = r.timeoutMemberConnectMs             // connect ms
@@ -5196,7 +5284,7 @@ func (r *ruleEnt) LB2DP(work DpWorkT) int {
 	nWork.HstsPreload = r.hstsPreload
 	nWork.BackendCaCertId = r.backendCaCertId
 	nWork.BackendClientCertId = r.backendClientCertId
-	nWork.PDDisaggMode = r.pdDisaggMode         // P/D disaggregation mode 
+	nWork.PDDisaggMode = r.pdDisaggMode         // P/D disaggregation mode
 	nWork.PDCacheAwareMode = r.pdCacheAwareMode // P/D cache-aware routing (US-PD801)
 	nWork.PDSessionTTLSec = r.pdSessionTTLSec
 	nWork.PDCacheThreshold = r.pdCacheThreshold

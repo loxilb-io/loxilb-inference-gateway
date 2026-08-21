@@ -288,6 +288,12 @@ cd sglang-pd-disagg/
 ./rmconfig.sh
 cd -
 
+cd trtllm-pd-disagg/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
 cd vllm-kvcache-routing-cpu/
 ./config.sh
 ./validation.sh

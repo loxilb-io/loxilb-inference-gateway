@@ -68,7 +68,13 @@ RUN mkdir -p /opt/loxilb && \
     # Install loxilb
     cd /root/loxilb-io/loxilb/ && \
     go get . && make clean && if [ "$arch" = "arm64" ] && [ "$USE_DOCKER_BUILDX_ARM64" = "true" ] ; then DOCKER_BUILDX_ARM64=true make VERSION="$VERSION"; \
-    else make VERSION="$VERSION" ;fi && cp loxilb-ebpf/utils/mkllb_bpffs.sh /usr/local/sbin/mkllb_bpffs && \
+    else make VERSION="$VERSION" ;fi && \
+    # Stage the libbpf runtime artifacts the final stage COPYs: the eBPF make
+    # installs libbpf only into the submodule's build/ tree (DESTDIR=build),
+    # so /usr/lib64 stays empty in this stage and the later
+    # `COPY --from=build /usr/lib64/libbpf*` fails on a clean build.
+    cp -a /root/loxilb-io/loxilb/loxilb-ebpf/libbpf/src/build/usr/lib64/. /usr/lib64/ && \
+    cp loxilb-ebpf/utils/mkllb_bpffs.sh /usr/local/sbin/mkllb_bpffs && \
     cp tools/k8s/mkllb-url /usr/local/sbin/mkllb-url && \
     cp loxilb-ebpf/utils/mkllb_cgroup.sh /usr/local/sbin/mkllb_cgroup && \
     cp /root/loxilb-io/loxilb/loxilb-ebpf/kernel/loxilb_dp_debug  /usr/local/sbin/loxilb_dp_debug && \
@@ -126,7 +132,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends sudo wget \
     rm -rf /var/lib/apt/lists/* && apt clean
 
 COPY --from=build /usr/lib64/libbpf* /usr/lib64/
-COPY --from=build /usr/local/build/lib/* /usr/lib64
+COPY --from=build /usr/local/build/lib/* /usr/lib64/
 COPY --from=build /usr/local/go/bin /usr/local/go/bin
 COPY --from=build /usr/local/sbin/mkllb_bpffs /usr/local/sbin/mkllb_bpffs
 COPY --from=build /usr/local/sbin/mkllb-url /usr/local/sbin/mkllb-url

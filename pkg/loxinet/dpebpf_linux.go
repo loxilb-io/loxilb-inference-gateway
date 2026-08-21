@@ -172,9 +172,9 @@ typedef struct {
   l7_match_set_t  sets[L7_MAX_SETS_PER_ROUTE];
   uint8_t         n_sets;
   l7_action_t     action;
- l7_hdr_filter_t hdr_filters[L7_MAX_HDR_FILTERS]; // 
+ l7_hdr_filter_t hdr_filters[L7_MAX_HDR_FILTERS]; //
   uint8_t         n_hdr_filters;
- uint8_t cookie_persist; // 
+ uint8_t cookie_persist; //
 } l7_route_t;
 
 // Attach the ordered route array (regcomp's each REGEX once, sets has_l7_policy);
@@ -1726,7 +1726,7 @@ func DpLBRuleMod(w *LBDpWorkQ) int {
 		C.strncpy(&dat.backend_client_cert_id[0], cID, 63)
 	}
 
-	// P/D disaggregation configuration 
+	// P/D disaggregation configuration
 	if w.PDDisaggMode {
 		dat.pd_disagg_mode = 1
 		dat.ai_gw_mode = 1
@@ -1759,10 +1759,21 @@ func DpLBRuleMod(w *LBDpWorkQ) int {
 		dat.kv_hash_algo = 1
 	} else if w.KvHashAlgo == "sha256_sglang" {
 		dat.kv_hash_algo = 2
+	} else if w.KvHashAlgo == "blockhash_trtllm" {
+		// The TRT-LLM contract is the token re-hash design: the gateway
+		// event decoder re-hashes stored-event token lists with the raw
+		// chained-SHA256 the KV_HASH_SHA256_SGLANG (2) arm already computes
+		// over request tokens, so both sides key the inventory with the
+		// same self-owned function and the engine's unversioned native
+		// hash never enters the datapath. No dedicated C arm exists.
+		dat.kv_hash_algo = 2
 	} else if w.KvHashAlgo == "" && w.KvEngineType == "sglang" {
 		// engine drives the hash-algo default — sglang with
 		// kvHashAlgo unset defaults to KV_HASH_SHA256_SGLANG (2). An explicit
 		// kvHashAlgo always wins (the branches above); vllm/absent keeps 0.
+		dat.kv_hash_algo = 2
+	} else if w.KvHashAlgo == "" && w.KvEngineType == "trtllm" {
+		// blockhash_trtllm engine default — same arm as the explicit branch.
 		dat.kv_hash_algo = 2
 	}
 	dat.kv_zmq_port = C.uint16_t(w.KvZmqPort)
@@ -1770,8 +1781,13 @@ func DpLBRuleMod(w *LBDpWorkQ) int {
 	dat.kv_warmup_sec = C.uint32_t(w.KvWarmupSec)
 	// per-rule engine + SGLang DP rank count. "vllm"/"" ⇒ 0
 	// (byte-identical default); rank 0 ⇒ 1 (PDCacheThreshold defaulting idiom).
+	// "trtllm" ⇒ 2 matches PD_ENGINE_TRTLLM in the C dialect resolver, whose
+	// table entry is a vLLM placeholder until the dedicated dialect lands —
+	// safe because the feature guard keeps trtllm off every P/D path.
 	if w.KvEngineType == "sglang" {
 		dat.kv_engine_type = 1
+	} else if w.KvEngineType == "trtllm" {
+		dat.kv_engine_type = 2
 	}
 	rankCount := w.KvDpRankCount
 	if rankCount == 0 {

@@ -23,6 +23,10 @@
 **/*.d
 **/*.a
 loxilb-ebpf/kernel/loxilb_dp_debug
+# The libbpf DESTDIR install tree from host builds: stale host artifacts in
+# the context would mask a broken in-image libbpf build (the image rebuilds
+# and reinstalls this tree from source every time).
+loxilb-ebpf/libbpf/src/build
 
 # The host-built binary; the image builds its own.
 /loxilb

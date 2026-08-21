@@ -767,3 +767,7 @@ Until that lands, treat every behavioral claim in this document as
   contract-by-contract comparison this doc's §1/§4 tables summarize.
 - [17 — SGLang configuration & tuning](17-sglang-config-tuning.md) — the operator-facing
   companion to §8 (page-size discovery, DP-rank sizing, co-residency splits).
+- [20 — TensorRT-LLM KV-cache-aware routing & P/D](20-tensorrt-llm-kv-cache-aware-routing.md)
+  — the third engine, which lands on the same subscriber/decoder machinery via an
+  HTTP-drain event source and a token re-hash of the same chained-SHA-256 family
+  this doc's §4 defines.

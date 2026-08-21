@@ -88,7 +88,7 @@ snake_case (`pd_disagg_mode`, `sse_mode`, `model_name`, …) vs camelCase (`kvEx
 
 | Field | Type | Notes |
 |---|---|---|
-| `pd_disagg_mode` | bool | split requests into prefill + decode legs (roles via `endpoints[].ep_role`). The orchestration flavor derives from `kvEngineType`: empty/`"vllm"` = sequential vLLM machine (prefill → extract `kv_transfer_params` → decode); `"sglang"` = concurrent dual-dispatch (bootstrap triple injected, same body to both legs, decode streamed to the client, prefill drained) |
+| `pd_disagg_mode` | bool | split requests into prefill + decode legs (roles via `endpoints[].ep_role`). The orchestration flavor derives from `kvEngineType`: empty/`"vllm"` = sequential vLLM machine (prefill → extract `kv_transfer_params` → decode); `"sglang"` = concurrent dual-dispatch (bootstrap triple injected, same body to both legs, decode streamed to the client, prefill drained); `"trtllm"` = sequential TensorRT-LLM machine (`context_only` prefill → extract `disaggregated_params` → `generation_only` decode, with context early-exit — [doc 20](20-tensorrt-llm-kv-cache-aware-routing.md)) |
 | `pdBootstrapPort` | int | SGLang P/D only: the `--disaggregation-bootstrap-port` on every prefill EP; `0` = SGLang's default `8998`. Rejected unless `pd_disagg_mode` + `kvEngineType:"sglang"` |
 | `pd_cache_aware_mode` | bool | trie-based cache-affinity prefill selection |
 | `pd_session_ttl_sec` | int | session-stickiness TTL (seconds) for P/D cache-aware routing; `0` = no automatic expiry |
@@ -101,16 +101,16 @@ snake_case (`pd_disagg_mode`, `sse_mode`, `model_name`, …) vs camelCase (`kvEx
 |---|---|---|
 | `cb_enable` | bool | per-endpoint circuit breaker (fullproxy): 5 consecutive backend connect failures skip the endpoint until a 30s open-timeout expires and a half-open probe succeeds |
 
-**Engine-exact KV routing (ZMQ KV-cache events)**
+**Engine-exact KV routing (KV-cache events — ZMQ for vLLM/SGLang, HTTP drain for TensorRT-LLM)**
 
 | Field | Type | Notes |
 |---|---|---|
-| `kvExactMode` | int | `1` = P/D topology (vLLM, or SGLang P/D with `kvEngineType:"sglang"`) · `3` = single pool (SGLang converged) |
-| `kvZmqPort` | int | base port of the engine's `--kv-events-config` publisher |
-| `kvBlockSize` | int | must equal vLLM `--block-size` / SGLang `--page-size` |
-| `kvHashAlgo` | string | `"sha256_cbor"` for vLLM; omit for SGLang (engine default) |
-| `kvEngineType` | string | `"sglang"` selects the SGLang contract; immutable after create |
-| `kvDpRankCount` | int | SGLang DP ranks (= `--dp-size`); rank *N* subscribes at `kvZmqPort`+*N* |
+| `kvExactMode` | int | `1` = P/D topology (vLLM, or SGLang/TensorRT-LLM P/D with the matching `kvEngineType`) · `3` = single pool (SGLang or TensorRT-LLM converged) |
+| `kvZmqPort` | int | base port of the engine's `--kv-events-config` publisher (vLLM/SGLang only; rejected for `"trtllm"`, whose events drain over HTTP on the serving port) |
+| `kvBlockSize` | int | must equal vLLM `--block-size` / SGLang `--page-size` / TensorRT-LLM `tokens_per_block` (default 32; enforced per endpoint via `/server_info` admission) |
+| `kvHashAlgo` | string | `"sha256_cbor"` for vLLM; omit for SGLang and TensorRT-LLM (engine defaults — `"blockhash_trtllm"` is implied by `kvEngineType:"trtllm"`) |
+| `kvEngineType` | string | `"sglang"` or `"trtllm"` selects that engine's contract; empty = vLLM. Immutable after create |
+| `kvDpRankCount` | int | SGLang DP ranks (= `--dp-size`); rank *N* subscribes at `kvZmqPort`+*N*. Must be 1 for `"trtllm"` |
 | `kvWarmupSec` | int | grace period before KV-exact selection engages |
 
 **Streaming, sessions & model routing**

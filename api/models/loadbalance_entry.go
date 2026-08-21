@@ -675,7 +675,7 @@ type LoadbalanceEntryServiceArguments struct {
 	// value for inactivity timeout (in seconds)
 	InactiveTimeOut int32 `json:"inactiveTimeOut,omitempty"`
 
-	// Token block size for KV hash computation. Must match the engine's block granularity - vLLM --block-size, SGLang --page-size. A mismatch makes every hash miss.
+	// Token block size for KV hash computation. Must match the engine's block granularity - vLLM --block-size, SGLang --page-size, TRT-LLM tokens_per_block (whose engine default is 32, NOT this field's 16). A mismatch makes every hash miss.
 	// Minimum: 1
 	KvBlockSize int64 `json:"kvBlockSize,omitempty"`
 
@@ -684,8 +684,8 @@ type LoadbalanceEntryServiceArguments struct {
 	// Minimum: 1
 	KvDpRankCount int32 `json:"kvDpRankCount,omitempty"`
 
-	// KV-event engine behind this rule. One framework per VIP; immutable after create (delete+recreate to change). Drives hash-algo default: sglang => sha256_sglang. NOTE: LOXILB_KV_* env knobs (unified mode, eps/lambda, cap-sum, max-blocks) are process-global and shared across all KV VIPs (accepted limitation).
-	// Enum: [vllm sglang]
+	// KV-event engine behind this rule. One framework per VIP; immutable after create (delete+recreate to change). Drives hash-algo default: sglang => sha256_sglang, trtllm => blockhash_trtllm. trtllm supports plain LB and kvExactMode=3 (single-role Tier 1.5 over HTTP-polled KV events on each endpoint's own serving port — the gateway must be the SOLE consumer of /kv_cache_events per endpoint); kvExactMode=1 and pd_disagg_mode are rejected until the TRT-LLM P/D dialect ships, and kvZmqPort/kvDpRankCount are meaningless for it (rejected when set — no ZMQ, no client-visible DP ranks). NOTE: LOXILB_KV_* env knobs (unified mode, eps/lambda, cap-sum, max-blocks) are process-global and shared across all KV VIPs (accepted limitation).
+	// Enum: [vllm sglang trtllm]
 	KvEngineType string `json:"kvEngineType,omitempty"`
 
 	// KV-cache exact (Tier 1.5) routing mode. Selects the ENDPOINT TOPOLOGY only — the serving framework is chosen independently by kvEngineType, and every mode below works with either engine. 0 = off. 1 = zmq over a P/D role-partitioned pool: requires pd_disagg_mode=true (rejected otherwise) and endpoints tagged ep_role 1/2; only ep_role=1 (prefill) endpoints are subscribed and scored, and Tier 1.5 sits between Tier 1 (trie) and Tier 2 (min-load) in the P/D ladder. 2 = nats (reserved, not implemented). 3 = zmq single-role over a role-less pool: requires mode=4 (fullproxy) and pd_disagg_mode=false (both rejected otherwise); ALL endpoints are subscribed and scored. Mode 3 does NOT reproduce the P/D ladder — there is no Tier-0 session stickiness, no Tier-1 trie and no admission gate on this path; a Tier-1.5 miss falls back to the rule's own sel selector (CHWBL/RR/persist).
@@ -693,8 +693,8 @@ type LoadbalanceEntryServiceArguments struct {
 	// Minimum: 0
 	KvExactMode int64 `json:"kvExactMode,omitempty"`
 
-	// Block-hash contract used to match the prompt against the engine-published KV inventory. PREFER OMITTING THIS FIELD — when absent, the contract is derived from kvEngineType (vllm => sha256_cbor, sglang => sha256_sglang), which is always the coherent choice. An explicit value overrides that default and MUST match the engine, or every computed hash misses and Tier 1.5 is silently dead; incoherent pairs are therefore rejected at config time. vLLM engines: "sha256_cbor" (must equal --prefix-caching-hash-algo) or "xxhash_cbor". SGLang engines: "sha256_sglang" only — SGLang hashes parent||tokens raw (no CBOR, no NONE seed) and truncates to the FIRST 8 digest bytes, where vLLM CBOR-encodes and truncates to the LAST 8.
-	// Enum: [sha256_cbor xxhash_cbor sha256_sglang]
+	// Block-hash contract used to match the prompt against the engine-published KV inventory. PREFER OMITTING THIS FIELD — when absent, the contract is derived from kvEngineType (vllm => sha256_cbor, sglang => sha256_sglang, trtllm => blockhash_trtllm), which is always the coherent choice. An explicit value overrides that default and MUST match the engine, or every computed hash misses and Tier 1.5 is silently dead; incoherent pairs are therefore rejected at config time. vLLM engines: "sha256_cbor" (must equal --prefix-caching-hash-algo) or "xxhash_cbor". SGLang engines: "sha256_sglang" only — SGLang hashes parent||tokens raw (no CBOR, no NONE seed) and truncates to the FIRST 8 digest bytes, where vLLM CBOR-encodes and truncates to the LAST 8. TRT-LLM engines: "blockhash_trtllm" only — the same raw chained-SHA256 contract applied on both sides by the gateway itself (requests and the token lists carried in stored KV events); the engine's own unversioned uint64 mixing hash is never used as a routing key.
+	// Enum: [sha256_cbor xxhash_cbor sha256_sglang blockhash_trtllm]
 	KvHashAlgo string `json:"kvHashAlgo,omitempty"`
 
 	// Seconds to wait after ZMQ subscriber connects before activating Tier 1.5 routing. Allows inventory to populate.
@@ -1156,7 +1156,7 @@ var loadbalanceEntryServiceArgumentsTypeKvEngineTypePropEnum []interface{}
 
 func init() {
 	var res []string
-	if err := json.Unmarshal([]byte(`["vllm","sglang"]`), &res); err != nil {
+	if err := json.Unmarshal([]byte(`["vllm","sglang","trtllm"]`), &res); err != nil {
 		panic(err)
 	}
 	for _, v := range res {
@@ -1171,6 +1171,9 @@ const (
 
 	// LoadbalanceEntryServiceArgumentsKvEngineTypeSglang captures enum value "sglang"
 	LoadbalanceEntryServiceArgumentsKvEngineTypeSglang string = "sglang"
+
+	// LoadbalanceEntryServiceArgumentsKvEngineTypeTrtllm captures enum value "trtllm"
+	LoadbalanceEntryServiceArgumentsKvEngineTypeTrtllm string = "trtllm"
 )
 
 // prop value enum
@@ -1214,7 +1217,7 @@ var loadbalanceEntryServiceArgumentsTypeKvHashAlgoPropEnum []interface{}
 
 func init() {
 	var res []string
-	if err := json.Unmarshal([]byte(`["sha256_cbor","xxhash_cbor","sha256_sglang"]`), &res); err != nil {
+	if err := json.Unmarshal([]byte(`["sha256_cbor","xxhash_cbor","sha256_sglang","blockhash_trtllm"]`), &res); err != nil {
 		panic(err)
 	}
 	for _, v := range res {
@@ -1232,6 +1235,9 @@ const (
 
 	// LoadbalanceEntryServiceArgumentsKvHashAlgoSha256Sglang captures enum value "sha256_sglang"
 	LoadbalanceEntryServiceArgumentsKvHashAlgoSha256Sglang string = "sha256_sglang"
+
+	// LoadbalanceEntryServiceArgumentsKvHashAlgoBlockhashTrtllm captures enum value "blockhash_trtllm"
+	LoadbalanceEntryServiceArgumentsKvHashAlgoBlockhashTrtllm string = "blockhash_trtllm"
 )
 
 // prop value enum
