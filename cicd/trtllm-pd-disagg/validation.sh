@@ -35,6 +35,21 @@ MODEL="Qwen/Qwen2.5-7B-Instruct"
 echo SCENARIO-trtllm-pd-disagg
 
 RUN="r$$-$RANDOM"
+
+# Prompt corpus for the P/D legs. Length is load-bearing: the mock tokenizer is
+# len(text)/4 and it emits a `stored` event only for COMPLETE blocks
+# (n_tokens / TOKENS_PER_BLOCK, 32 by default), so a prompt that lands under one
+# full block produces NO event at all and leg G3 then reads an empty inventory.
+# The old corpus sat at 30-32 tokens, i.e. either side of the first block
+# boundary depending on how many digits $$ and $RANDOM happened to have. This
+# corpus is ~935 chars = ~233 tokens = 7 whole blocks, so the handful of
+# characters RUN varies by shifts the token count by one at most and can
+# never change how many complete blocks are emitted.
+CORPUS="The prefix corpus for run $RUN block filling."
+for _seg in 111 222 333 444 555 666 777 888 999 000 aaa bbb ccc ddd eee fff; do
+  CORPUS="$CORPUS Segment $_seg carries filler tokens for block occupancy;"
+done
+
 code=0
 
 check() {
@@ -75,7 +90,7 @@ completion() {  # completion <reqid> <stream> <port> [extra-json-fields]
     "https://$VIP:$port/v1/completions" \
     -H "Content-Type: application/json" \
     -H "X-Request-Id: $reqid" \
-    -d '{"model":"'"$MODEL"'","prompt":"The prefix corpus for run '"$RUN"' block filling: 111 222 333 444 555 666 777 888 999 000 aaa bbb ccc ddd eee fff. Question:","max_tokens":16,"temperature":0,"stream":'"$stream"''"$extra"'}' \
+    -d '{"model":"'"$MODEL"'","prompt":"'"$CORPUS"' Question:","max_tokens":16,"temperature":0,"stream":'"$stream"''"$extra"'}' \
     -w "\nHTTPSTATUS:%{http_code}" 2>&1
 }
 
@@ -240,14 +255,22 @@ done
 [ "$G_ADM" = "2" ]
 check "G2: both CONTEXT EPs admitted via /server_info (v1_block_key/32)" $?
 
-# stored events from the leg-B/C traffic must have drained + ingested
-G_INV=0
-for ep in 0 1; do
-  T=$($hexec llb1 curl -s "http://localhost:11111/netlox/v1/config/ai/kv/inventory?service_id=${G_SVC:-1}&ep_idx=$ep" 2>/dev/null | \
-    python3 -c "import json,sys; print(json.load(sys.stdin).get('total',0))" 2>/dev/null)
-  G_INV=$(( G_INV + ${T:-0} ))
-done
-[ "$G_INV" -gt 0 ]
+# summed inventory depth across the CONTEXT EPs (needs G_SVC)
+inv_total() {
+  local t sum=0 ep
+  for ep in 0 1; do
+    t=$($hexec llb1 curl -s "http://localhost:11111/netlox/v1/config/ai/kv/inventory?service_id=${G_SVC:-1}&ep_idx=$ep" 2>/dev/null | \
+      python3 -c "import json,sys; print(json.load(sys.stdin).get('total',0))" 2>/dev/null)
+    sum=$(( sum + ${t:-0} ))
+  done
+  echo "$sum"
+}
+
+# stored events from the leg-B/C traffic must have drained + ingested. CORPUS is
+# sized to several whole blocks precisely so this leg tests ingest rather than
+# the mock's block-boundary arithmetic.
+G_INV=$(inv_total)
+[ "${G_INV:-0}" -gt 0 ]
 check "G3: stored events ingested into the inventory ($G_INV blocks)" $?
 
 # gap -> resync -> continued ingest (poller survives, queue keeps draining)
@@ -260,13 +283,26 @@ for i in $(seq 1 15); do
 done
 check "G4: poller kept draining across an event_id gap of 100 (queue empty again)" $G_DRAINED
 sleep 2
+G_INV_PRE=$(inv_total)
 tarm l3ep1 event-push '{"tokens":64}'
 G_DRAINED2=1
 for i in $(seq 1 15); do
   [ "$(tstatus l3ep1 events_queued)" = "0" ] && { G_DRAINED2=0; break; }
   sleep 1
 done
-check "G5: post-resync ingest continues (self-heal, no permanent wedge)" $G_DRAINED2
+# An emptied queue is not proof of ingest: a gateway that drained every event
+# and discarded it would satisfy the drain check. Require the inventory itself
+# to grow before calling the resync self-healed.
+G_INV_POST=$G_INV_PRE
+G_INGESTED=1
+if [ "$G_DRAINED2" = "0" ]; then
+  for i in $(seq 1 10); do
+    G_INV_POST=$(inv_total)
+    [ "${G_INV_POST:-0}" -gt "${G_INV_PRE:-0}" ] && { G_INGESTED=0; break; }
+    sleep 1
+  done
+fi
+check "G5: post-resync ingest continues — inventory ${G_INV_PRE}->${G_INV_POST} (self-heal, no permanent wedge)" $G_INGESTED
 
 ############################################################################
 echo "Leg H: tri-engine coexistence on one gateway"
