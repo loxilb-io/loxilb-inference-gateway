@@ -44,10 +44,16 @@ mock_sglang_pd (admin `:9100`), `:8000` mock_vllm (admin `:9000`).
 
 ```bash
 cd cicd/trtllm-pd-disagg
-./config.sh        # topology + mocks + rules
+./config.sh        # topology + mocks + rules   (LOXILB_DOCKER_IMAGE=<tag> to pin the image)
 ./validation.sh    # legs below; exits non-zero on any FAIL
 ./rmconfig.sh      # teardown
 ```
+
+The gateway image must carry the trtllm P/D admission (leg A posts a
+`kvEngineType=trtllm` + `pd_disagg_mode` rule). When validating a not-yet-
+published gateway build, pin `LOXILB_DOCKER_IMAGE` to the locally-built
+image — the harness default is the public tag, and a pre-flip public image
+fails every leg from A1 in a way that masquerades as a total regression.
 
 ## Legs
 
