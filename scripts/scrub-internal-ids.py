@@ -24,6 +24,7 @@
 import argparse
 import os
 import re
+import subprocess
 import sys
 
 CODE_EXTS = (".go", ".c", ".h", ".py", ".proto", ".sh", ".md")
@@ -47,6 +48,15 @@ _FAMILY = (
     r"FR-\d+(?:/\d+)*|"                                   # requirements: "FR-NN/NN", "FR-NN/NN/NN"
     r"REQ-M?\d+(?:/\d+)*|FIX-\d+(?:/\d+)*|"               # requirements / fixes: "FIX-NN/NN/NN"
     r"T-\d+(?:[-/]\d+)+(?:-[A-Z]{2,})?|"                  # test ids: "T-NN-NN/NN", "T-NN-NN-ROT"
+    r"WI-R?\d+[a-z]?(?:[-/]\d+)*|"                        # work items: "WI-NN", "WI-RN", "WI-NNb"
+    r"F-[A-Z]{2,}-\d+(?:[-/]\d+)*|"                       # per-campaign findings: "F-AAA-NN"
+    r"(?:SGF|RF)-\d+(?:[-/]\d+)*|"                        # campaign legs / refactor findings
+    # campaign test/leg ids. The DOTTED form is unambiguous. The bare form is
+    # matched only before campaign vocabulary, so protocol timer names that
+    # share the shape (SCTP TN-init / TN-rtx) are never touched.
+    r"T\d+(?:\.\d+)+[a-z]?|"
+    r"T\d+[a-z]?(?=\s+(?:suite|leg|legs|drill|drills|gate|grid|ladder|matrix|"
+    r"regression|parity|scenario|benchmark|preflight|run|green))|"
     r"Bug [A-Z]"                                          # bug labels
 )
 # A citation is one family, optionally chained to more via "/" or " / "
@@ -188,10 +198,37 @@ def _rewrite_line(line, state, lc):
     return "".join(out), None
 
 
+def _tracked_files(path):
+    """Files git tracks under path, or None when git cannot answer.
+
+    Only tracked files are published, so only they can leak an internal ID.
+    Walking the raw filesystem instead makes a local run trip over ignored
+    trees -- the private docs tree above all -- and bury the findings that
+    matter, right when the gate is most useful: locally, before a push.
+    In CI the checkout holds nothing but tracked files, so this is a no-op.
+    """
+    try:
+        out = subprocess.run(["git", "ls-files", "-z", "--", path],
+                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                             check=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return [f for f in out.decode("utf-8", "replace").split("\0") if f]
+
+
 def iter_files(paths):
     for p in paths:
         if os.path.isfile(p):
             yield p
+            continue
+        tracked = _tracked_files(p)
+        if tracked is not None:
+            for f in tracked:
+                parts = f.split(os.sep)
+                if any(d in SKIP_DIRS for d in parts[:-1]):
+                    continue
+                if f.endswith(CODE_EXTS):
+                    yield f
             continue
         for dp, dns, fns in os.walk(p):
             dns[:] = [d for d in dns if d not in SKIP_DIRS]
