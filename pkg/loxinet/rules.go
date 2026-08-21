@@ -3840,6 +3840,18 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		}
 	}
 
+	// llama.cpp typed rules run no subscribers (guards force kvExactMode=0) —
+	// their admission surface is the soft /props consistency probe: warn +
+	// counter on model/build/slot skew or a sleeping endpoint, never refuse.
+	// Bounded goroutine (probe-internal deadline), so no teardown coupling.
+	if r.kvEngineType == "llamacpp" {
+		probeEps := make([]llamacppProbeEp, 0, len(lBActs.endPoints))
+		for _, ep := range lBActs.endPoints {
+			probeEps = append(probeEps, llamacppProbeEp{IP: ep.xIP.String(), Port: ep.xPort})
+		}
+		go LlamacppAdmissionProbe(uint32(r.ruleNum), probeEps)
+	}
+
 	// COMP-01 : Start vLLM metrics scraper for queue-depth routing
 	if r.pdDisaggMode {
 		endpoints := make(map[int]string)

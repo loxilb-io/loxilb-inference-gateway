@@ -346,6 +346,30 @@ var (
 		[]string{"service", "ep_idx", "ep"},
 	)
 
+	// AI engine identity per rule (info metric): which inference engine a
+	// typed rule fronts, so per-engine dashboards can slice without parsing
+	// rule config. Value is always 1. Set on rule admission for engines with
+	// an admission/consistency probe (currently llamacpp).
+	aiEngineInfo = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "loxilb_ai_engine_info",
+			Help: "AI rule engine identity: maps a service to its kvEngineType. Value is always 1.",
+		},
+		[]string{"service", "engine"},
+	)
+
+	// llama.cpp admission-probe advisory findings. The probe never refuses an
+	// endpoint (plain-LB fleets have no routing correctness to protect) — a
+	// non-zero rate here means a skewed fleet: mixed models/builds/slot
+	// counts behind one rule, or a sleeping endpoint behind the VIP.
+	llamacppProbeWarnTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "loxilb_ai_llamacpp_probe_warnings_total",
+			Help: "Total llama.cpp /props admission-probe advisory warnings by kind (model_mismatch, build_mismatch, slots_mismatch, sleeping, unanswered).",
+		},
+		[]string{"service", "kind"},
+	)
+
 	// ========================================================================
 	// KV Tier 1.5 routing diagnostics
 	// ========================================================================
@@ -1032,6 +1056,18 @@ func IncKvTier15ColdSeedCounter(epIdx string) {
 // discoverable. Value is always 1.
 func SetKvEpInfo(service, epIdx, ep string) {
 	pdEpInfo.WithLabelValues(service, epIdx, ep).Set(1)
+}
+
+// SetAiEngineInfo records a rule's engine identity (value always 1). Called
+// from pkg/loxinet on admission of an engine-typed rule.
+func SetAiEngineInfo(service, engine string) {
+	aiEngineInfo.WithLabelValues(service, engine).Set(1)
+}
+
+// IncLlamacppProbeWarning counts one llama.cpp admission-probe advisory
+// finding. Called from pkg/loxinet/ai_llamacpp_probe.go.
+func IncLlamacppProbeWarning(service, kind string) {
+	llamacppProbeWarnTotal.WithLabelValues(service, kind).Inc()
 }
 
 // ClearKvEpInfo removes the identity series for an EP when its subscriber stops,
