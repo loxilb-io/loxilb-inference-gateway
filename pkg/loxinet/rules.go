@@ -2597,8 +2597,8 @@ func kvEngineEqual(a, b string) bool {
 
 // kvEngineConfigValidate is (SGL-04) config-time input validation
 // for the per-rule KV engine surface (ASVS V4/V5):
-//   - kvEngineType allowlist: "", "vllm", "sglang", "trtllm" — unknown strings
-//     are REJECTED, never silently treated as vllm.
+//   - kvEngineType allowlist: "", "vllm", "sglang", "trtllm", "llamacpp" —
+//     unknown strings are REJECTED, never silently treated as vllm.
 //   - kvDpRankCount bounds: 0 (default 1 downstream) or 18. Values >8
 //     are rejected — rank N subscribes kvZmqPort+N on every EP host, so the
 //     cap bounds the port-range walk.
@@ -2608,9 +2608,9 @@ func kvEngineEqual(a, b string) bool {
 // precedent).
 func kvEngineConfigValidate(engine string, dpRankCount uint16) error {
 	switch engine {
-	case "", "vllm", "sglang", "trtllm":
+	case "", "vllm", "sglang", "trtllm", "llamacpp":
 	default:
-		return errors.New("kv-engine-type must be one of \"vllm\", \"sglang\", \"trtllm\"")
+		return errors.New("kv-engine-type must be one of \"vllm\", \"sglang\", \"trtllm\", \"llamacpp\"")
 	}
 	if dpRankCount > 8 {
 		return errors.New("kv-dp-rank-count must be within 1..8 (0 = default 1)")
@@ -2654,6 +2654,45 @@ func kvTrtllmFeatureGuard(engine string, kvExactMode uint8, pdDisagg bool, zmqPo
 	return nil
 }
 
+// kvLlamacppFeatureGuard rejects every KV/P/D rule shape for llama.cpp,
+// because the engine has neither surface: no KV/cache event plane of any
+// kind (nothing for a Tier-1.5 subscriber to consume — prompt caching is
+// per-slot contiguous-prefix state plus a host-RAM store, not a
+// content-addressed block pool) and no P/D disaggregation (the upstream
+// design direction is server-internal, so the gateway will never need an
+// orchestration dialect for it). The supported shape is plain L7 LB with
+// CHWBL/session affinity — the engine-agnostic ladder, no engine-specific
+// fields at all.
+//
+// The knob rejections are deliberate loud failures over silently-dead
+// config: kvZmqPort/kvDpRankCount/kvBlockSize configure subscribers and
+// hashing that can never run for this engine. 0 always passes; so do the
+// swagger-materialized defaults (5557, 16) that the API layer may fill in.
+//
+// Pure function: unit-testable without a rule fixture (kvEngineConfigValidate
+// precedent).
+func kvLlamacppFeatureGuard(engine string, kvExactMode uint8, pdDisagg bool, zmqPort uint16, dpRankCount uint16, blockSize uint32) error {
+	if kvEngineEffective(engine) != "llamacpp" {
+		return nil
+	}
+	if kvExactMode != 0 {
+		return errors.New("kvExactMode is unsupported for kv-engine-type llamacpp (no KV event plane; use select=chwbl for prefix affinity)")
+	}
+	if pdDisagg {
+		return errors.New("pd_disagg_mode is unsupported for kv-engine-type llamacpp (engine has no P/D disaggregation)")
+	}
+	if zmqPort != 0 && zmqPort != 5557 {
+		return errors.New("kvZmqPort is meaningless for kv-engine-type llamacpp (no KV event transport)")
+	}
+	if dpRankCount > 1 {
+		return errors.New("kvDpRankCount is meaningless for kv-engine-type llamacpp (no client-visible DP ranks)")
+	}
+	if blockSize != 0 && blockSize != 16 {
+		return errors.New("kvBlockSize is meaningless for kv-engine-type llamacpp (no block table, no gateway-side hashing)")
+	}
+	return nil
+}
+
 // kvHashAlgoEffective resolves the block-hash contract a rule actually runs.
 // It mirrors dpebpf_linux.go's resolution order EXACTLY (the single source of
 // truth for what the C data plane hashes with): an explicit kvHashAlgo always
@@ -2690,6 +2729,11 @@ var kvEngineAlgoTable = map[string]map[string]bool{
 	"vllm":   {"sha256_cbor": true, "xxhash_cbor": true},
 	"sglang": {"sha256_sglang": true},
 	"trtllm": {"blockhash_trtllm": true},
+	// llamacpp: EMPTY on purpose — the engine exports no block-hash contract
+	// to mirror (no event plane, no block table), so no explicit kvHashAlgo
+	// can ever be coherent. kvHashAlgoValidate turns the empty set into a
+	// dedicated rejection message.
+	"llamacpp": {},
 }
 
 // kvHashAlgoValidate rejects a kvHashAlgo that cannot serve the rule's engine.
@@ -2722,7 +2766,14 @@ func kvHashAlgoValidate(algo, engine string) error {
 	if !known {
 		return errors.New("kv-hash-algo must be one of \"sha256_cbor\", \"xxhash_cbor\", \"sha256_sglang\", \"blockhash_trtllm\"")
 	}
-	if !kvEngineAlgoTable[kvEngineEffective(engine)][algo] {
+	allowed := kvEngineAlgoTable[kvEngineEffective(engine)]
+	if len(allowed) == 0 {
+		// engines with an empty row (llamacpp) have NO hash contract at all —
+		// "take the engine default" would be misleading advice here.
+		return fmt.Errorf("kv-hash-algo %q is meaningless for kv-engine-type %q (no KV-exact tier; omit it)",
+			algo, kvEngineEffective(engine))
+	}
+	if !allowed[algo] {
 		return fmt.Errorf("kv-hash-algo %q is incompatible with kv-engine-type %q (omit kvHashAlgo to take the engine default %q)",
 			algo, kvEngineEffective(engine), kvHashAlgoEffective("", engine))
 	}
@@ -3078,6 +3129,13 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	// stay rejected until their phases land, and the engine's meaningless knobs
 	// (kvZmqPort, kvDpRankCount) fail loudly instead of riding as dead config.
 	if err := kvTrtllmFeatureGuard(serv.KvEngineType, serv.KvExactMode, serv.PDDisaggMode, serv.KvZmqPort, serv.KvDpRankCount); err != nil {
+		return RuleUnknownServiceErr, err
+	}
+
+	// llama.cpp per-feature guards: plain LB (+ CHWBL/session affinity) is the
+	// whole supported surface — the engine has no KV event plane and no P/D,
+	// so every kv*/pd* shape fails loudly instead of riding as dead config.
+	if err := kvLlamacppFeatureGuard(serv.KvEngineType, serv.KvExactMode, serv.PDDisaggMode, serv.KvZmqPort, serv.KvDpRankCount, serv.KvBlockSize); err != nil {
 		return RuleUnknownServiceErr, err
 	}
 

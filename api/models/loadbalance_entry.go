@@ -684,8 +684,8 @@ type LoadbalanceEntryServiceArguments struct {
 	// Minimum: 1
 	KvDpRankCount int32 `json:"kvDpRankCount,omitempty"`
 
-	// KV-event engine behind this rule. One framework per VIP; immutable after create (delete+recreate to change). Drives hash-algo default: sglang => sha256_sglang, trtllm => blockhash_trtllm. trtllm supports plain LB and kvExactMode=3 (single-role Tier 1.5 over HTTP-polled KV events on each endpoint's own serving port — the gateway must be the SOLE consumer of /kv_cache_events per endpoint); kvExactMode=1 and pd_disagg_mode are rejected until the TRT-LLM P/D dialect ships, and kvZmqPort/kvDpRankCount are meaningless for it (rejected when set — no ZMQ, no client-visible DP ranks). NOTE: LOXILB_KV_* env knobs (unified mode, eps/lambda, cap-sum, max-blocks) are process-global and shared across all KV VIPs (accepted limitation).
-	// Enum: [vllm sglang trtllm]
+	// KV-event engine behind this rule. One framework per VIP; immutable after create (delete+recreate to change). Drives hash-algo default: sglang => sha256_sglang, trtllm => blockhash_trtllm. trtllm supports plain LB, kvExactMode=3 (single-role Tier 1.5 over HTTP-polled KV events on each endpoint's own serving port — the gateway must be the SOLE consumer of /kv_cache_events per endpoint) and pd_disagg_mode with kvExactMode=1 (sequential P/D dialect); kvZmqPort/kvDpRankCount are meaningless for it (rejected when set — no ZMQ, no client-visible DP ranks). llamacpp supports plain LB with CHWBL/session affinity ONLY — the engine has no KV event plane and no P/D disaggregation, so kvExactMode, pd_disagg_mode, kvHashAlgo and non-default kvZmqPort/kvDpRankCount/kvBlockSize are all rejected. NOTE: LOXILB_KV_* env knobs (unified mode, eps/lambda, cap-sum, max-blocks) are process-global and shared across all KV VIPs (accepted limitation).
+	// Enum: [vllm sglang trtllm llamacpp]
 	KvEngineType string `json:"kvEngineType,omitempty"`
 
 	// KV-cache exact (Tier 1.5) routing mode. Selects the ENDPOINT TOPOLOGY only — the serving framework is chosen independently by kvEngineType, and every mode below works with either engine. 0 = off. 1 = zmq over a P/D role-partitioned pool: requires pd_disagg_mode=true (rejected otherwise) and endpoints tagged ep_role 1/2; only ep_role=1 (prefill) endpoints are subscribed and scored, and Tier 1.5 sits between Tier 1 (trie) and Tier 2 (min-load) in the P/D ladder. 2 = nats (reserved, not implemented). 3 = zmq single-role over a role-less pool: requires mode=4 (fullproxy) and pd_disagg_mode=false (both rejected otherwise); ALL endpoints are subscribed and scored. Mode 3 does NOT reproduce the P/D ladder — there is no Tier-0 session stickiness, no Tier-1 trie and no admission gate on this path; a Tier-1.5 miss falls back to the rule's own sel selector (CHWBL/RR/persist).
@@ -1156,7 +1156,7 @@ var loadbalanceEntryServiceArgumentsTypeKvEngineTypePropEnum []interface{}
 
 func init() {
 	var res []string
-	if err := json.Unmarshal([]byte(`["vllm","sglang","trtllm"]`), &res); err != nil {
+	if err := json.Unmarshal([]byte(`["vllm","sglang","trtllm","llamacpp"]`), &res); err != nil {
 		panic(err)
 	}
 	for _, v := range res {
@@ -1174,6 +1174,9 @@ const (
 
 	// LoadbalanceEntryServiceArgumentsKvEngineTypeTrtllm captures enum value "trtllm"
 	LoadbalanceEntryServiceArgumentsKvEngineTypeTrtllm string = "trtllm"
+
+	// LoadbalanceEntryServiceArgumentsKvEngineTypeLlamacpp captures enum value "llamacpp"
+	LoadbalanceEntryServiceArgumentsKvEngineTypeLlamacpp string = "llamacpp"
 )
 
 // prop value enum

@@ -13127,13 +13127,14 @@ func init() {
               "x-nullable": false
             },
             "kvEngineType": {
-              "description": "KV-event engine behind this rule. One framework per VIP; immutable after create (delete+recreate to change). Drives hash-algo default: sglang =\u003e sha256_sglang, trtllm =\u003e blockhash_trtllm. trtllm supports plain LB and kvExactMode=3 (single-role Tier 1.5 over HTTP-polled KV events on each endpoint's own serving port — the gateway must be the SOLE consumer of /kv_cache_events per endpoint); kvExactMode=1 and pd_disagg_mode are rejected until the TRT-LLM P/D dialect ships, and kvZmqPort/kvDpRankCount are meaningless for it (rejected when set — no ZMQ, no client-visible DP ranks). NOTE: LOXILB_KV_* env knobs (unified mode, eps/lambda, cap-sum, max-blocks) are process-global and shared across all KV VIPs (accepted limitation).",
+              "description": "KV-event engine behind this rule. One framework per VIP; immutable after create (delete+recreate to change). Drives hash-algo default: sglang =\u003e sha256_sglang, trtllm =\u003e blockhash_trtllm. trtllm supports plain LB, kvExactMode=3 (single-role Tier 1.5 over HTTP-polled KV events on each endpoint's own serving port — the gateway must be the SOLE consumer of /kv_cache_events per endpoint) and pd_disagg_mode with kvExactMode=1 (sequential P/D dialect); kvZmqPort/kvDpRankCount are meaningless for it (rejected when set — no ZMQ, no client-visible DP ranks). llamacpp supports plain LB with CHWBL/session affinity ONLY — the engine has no KV event plane and no P/D disaggregation, so kvExactMode, pd_disagg_mode, kvHashAlgo and non-default kvZmqPort/kvDpRankCount/kvBlockSize are all rejected. NOTE: LOXILB_KV_* env knobs (unified mode, eps/lambda, cap-sum, max-blocks) are process-global and shared across all KV VIPs (accepted limitation).",
               "type": "string",
               "default": "vllm",
               "enum": [
                 "vllm",
                 "sglang",
-                "trtllm"
+                "trtllm",
+                "llamacpp"
               ],
               "x-nullable": false
             },
@@ -29072,13 +29073,14 @@ func init() {
               "x-nullable": false
             },
             "kvEngineType": {
-              "description": "KV-event engine behind this rule. One framework per VIP; immutable after create (delete+recreate to change). Drives hash-algo default: sglang =\u003e sha256_sglang, trtllm =\u003e blockhash_trtllm. trtllm supports plain LB and kvExactMode=3 (single-role Tier 1.5 over HTTP-polled KV events on each endpoint's own serving port — the gateway must be the SOLE consumer of /kv_cache_events per endpoint); kvExactMode=1 and pd_disagg_mode are rejected until the TRT-LLM P/D dialect ships, and kvZmqPort/kvDpRankCount are meaningless for it (rejected when set — no ZMQ, no client-visible DP ranks). NOTE: LOXILB_KV_* env knobs (unified mode, eps/lambda, cap-sum, max-blocks) are process-global and shared across all KV VIPs (accepted limitation).",
+              "description": "KV-event engine behind this rule. One framework per VIP; immutable after create (delete+recreate to change). Drives hash-algo default: sglang =\u003e sha256_sglang, trtllm =\u003e blockhash_trtllm. trtllm supports plain LB, kvExactMode=3 (single-role Tier 1.5 over HTTP-polled KV events on each endpoint's own serving port — the gateway must be the SOLE consumer of /kv_cache_events per endpoint) and pd_disagg_mode with kvExactMode=1 (sequential P/D dialect); kvZmqPort/kvDpRankCount are meaningless for it (rejected when set — no ZMQ, no client-visible DP ranks). llamacpp supports plain LB with CHWBL/session affinity ONLY — the engine has no KV event plane and no P/D disaggregation, so kvExactMode, pd_disagg_mode, kvHashAlgo and non-default kvZmqPort/kvDpRankCount/kvBlockSize are all rejected. NOTE: LOXILB_KV_* env knobs (unified mode, eps/lambda, cap-sum, max-blocks) are process-global and shared across all KV VIPs (accepted limitation).",
               "type": "string",
               "default": "vllm",
               "enum": [
                 "vllm",
                 "sglang",
-                "trtllm"
+                "trtllm",
+                "llamacpp"
               ],
               "x-nullable": false
             },
@@ -29706,13 +29708,14 @@ func init() {
           "x-nullable": false
         },
         "kvEngineType": {
-          "description": "KV-event engine behind this rule. One framework per VIP; immutable after create (delete+recreate to change). Drives hash-algo default: sglang =\u003e sha256_sglang, trtllm =\u003e blockhash_trtllm. trtllm supports plain LB and kvExactMode=3 (single-role Tier 1.5 over HTTP-polled KV events on each endpoint's own serving port — the gateway must be the SOLE consumer of /kv_cache_events per endpoint); kvExactMode=1 and pd_disagg_mode are rejected until the TRT-LLM P/D dialect ships, and kvZmqPort/kvDpRankCount are meaningless for it (rejected when set — no ZMQ, no client-visible DP ranks). NOTE: LOXILB_KV_* env knobs (unified mode, eps/lambda, cap-sum, max-blocks) are process-global and shared across all KV VIPs (accepted limitation).",
+          "description": "KV-event engine behind this rule. One framework per VIP; immutable after create (delete+recreate to change). Drives hash-algo default: sglang =\u003e sha256_sglang, trtllm =\u003e blockhash_trtllm. trtllm supports plain LB, kvExactMode=3 (single-role Tier 1.5 over HTTP-polled KV events on each endpoint's own serving port — the gateway must be the SOLE consumer of /kv_cache_events per endpoint) and pd_disagg_mode with kvExactMode=1 (sequential P/D dialect); kvZmqPort/kvDpRankCount are meaningless for it (rejected when set — no ZMQ, no client-visible DP ranks). llamacpp supports plain LB with CHWBL/session affinity ONLY — the engine has no KV event plane and no P/D disaggregation, so kvExactMode, pd_disagg_mode, kvHashAlgo and non-default kvZmqPort/kvDpRankCount/kvBlockSize are all rejected. NOTE: LOXILB_KV_* env knobs (unified mode, eps/lambda, cap-sum, max-blocks) are process-global and shared across all KV VIPs (accepted limitation).",
           "type": "string",
           "default": "vllm",
           "enum": [
             "vllm",
             "sglang",
-            "trtllm"
+            "trtllm",
+            "llamacpp"
           ],
           "x-nullable": false
         },

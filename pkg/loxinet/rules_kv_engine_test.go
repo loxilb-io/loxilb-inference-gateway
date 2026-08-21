@@ -41,22 +41,23 @@ import (
 // naming the allowed values; unknown strings are never silently treated as
 // vllm.
 func TestKvEngineConfigValidateAllowlist(t *testing.T) {
-	// Accepted: absent (vllm), explicit vllm, explicit sglang, explicit trtllm
-	// (plain LB — the per-feature guards live in kvTrtllmFeatureGuard).
-	for _, engine := range []string{"", "vllm", "sglang", "trtllm"} {
+	// Accepted: absent (vllm), explicit vllm, explicit sglang, explicit trtllm,
+	// explicit llamacpp (plain LB — the per-feature guards live in
+	// kvTrtllmFeatureGuard / kvLlamacppFeatureGuard).
+	for _, engine := range []string{"", "vllm", "sglang", "trtllm", "llamacpp"} {
 		if err := kvEngineConfigValidate(engine, 1); err != nil {
 			t.Errorf("engine %q: want accept, got %v", engine, err)
 		}
 	}
 
 	// Rejected: anything else — and the error must NAME the allowed values.
-	for _, engine := range []string{"tensorrt", "VLLM", "sglang ", "trtllm ", "tensorrt-llm", "nats"} {
+	for _, engine := range []string{"tensorrt", "VLLM", "sglang ", "trtllm ", "tensorrt-llm", "nats", "llama.cpp", "ggml", "llamacpp "} {
 		err := kvEngineConfigValidate(engine, 1)
 		if err == nil {
 			t.Fatalf("engine %q: want reject, got nil", engine)
 		}
 		if !strings.Contains(err.Error(), "vllm") || !strings.Contains(err.Error(), "sglang") ||
-			!strings.Contains(err.Error(), "trtllm") {
+			!strings.Contains(err.Error(), "trtllm") || !strings.Contains(err.Error(), "llamacpp") {
 			t.Errorf("engine %q: rejection must name the allowed values, got %q", engine, err.Error())
 		}
 	}
@@ -110,6 +111,64 @@ func TestKvTrtllmFeatureGuard(t *testing.T) {
 		if !strings.Contains(err.Error(), c.wantIn) {
 			t.Errorf("%s: rejection must name %q, got %q", c.name, c.wantIn, err.Error())
 		}
+	}
+}
+
+// TestKvLlamacppFeatureGuard — llama.cpp plain LB is accepted (incl. the
+// swagger-materialized defaults); EVERY kv*/pd* shape is rejected loudly at
+// config time, because the engine has no KV event plane and no P/D
+// disaggregation — the whole supported surface is the engine-agnostic
+// CHWBL/session-affinity ladder (verified against a live converged fleet).
+func TestKvLlamacppFeatureGuard(t *testing.T) {
+	// Non-llamacpp engines: the guard is a no-op whatever the other fields say.
+	for _, engine := range []string{"", "vllm", "sglang", "trtllm"} {
+		if err := kvLlamacppFeatureGuard(engine, 3, true, 5561, 4, 32); err != nil {
+			t.Errorf("engine %q: guard must be a no-op, got %v", engine, err)
+		}
+	}
+
+	// llamacpp plain LB: accepted, including the swagger-materialized
+	// defaults (kvZmqPort 5557, kvBlockSize 16) the API layer may fill in.
+	for _, zmq := range []uint16{0, 5557} {
+		for _, bs := range []uint32{0, 16} {
+			if err := kvLlamacppFeatureGuard("llamacpp", 0, false, zmq, 1, bs); err != nil {
+				t.Errorf("llamacpp plain (zmq=%d bs=%d): want accept, got %v", zmq, bs, err)
+			}
+		}
+	}
+
+	// Rejected shapes, each naming the offending surface.
+	reject := []struct {
+		name     string
+		kvExact  uint8
+		pdDisagg bool
+		zmqPort  uint16
+		dpRank   uint16
+		blockSz  uint32
+		wantIn   string
+	}{
+		{"kvExactMode=1", 1, false, 0, 0, 0, "kvExactMode"},
+		{"kvExactMode=2", 2, false, 0, 0, 0, "kvExactMode"},
+		{"kvExactMode=3", KvExactModeSingleRole, false, 0, 0, 0, "kvExactMode"},
+		{"pd_disagg", 0, true, 0, 0, 0, "pd_disagg_mode"},
+		{"zmq port", 0, false, 5561, 0, 0, "kvZmqPort"},
+		{"dp ranks", 0, false, 0, 2, 0, "kvDpRankCount"},
+		{"block size", 0, false, 0, 0, 32, "kvBlockSize"},
+	}
+	for _, c := range reject {
+		err := kvLlamacppFeatureGuard("llamacpp", c.kvExact, c.pdDisagg, c.zmqPort, c.dpRank, c.blockSz)
+		if err == nil {
+			t.Fatalf("%s: want reject, got nil", c.name)
+		}
+		if !strings.Contains(err.Error(), c.wantIn) {
+			t.Errorf("%s: rejection must name %q, got %q", c.name, c.wantIn, err.Error())
+		}
+	}
+
+	// pdBootstrapPort on a llamacpp rule is covered by the existing
+	// engine-scoped validator (nonzero requires pd_disagg + sglang).
+	if err := pdBootstrapPortValidate(8998, false, "llamacpp"); err == nil {
+		t.Fatalf("pdBootstrapPort + llamacpp: want reject, got nil")
 	}
 }
 
@@ -263,6 +322,7 @@ func TestKvHashAlgoValidateCoherence(t *testing.T) {
 		{"sha256_sglang", "sglang"},    // SGLang contract pinned explicitly
 		{"", "trtllm"},                 // trtllm rule, engine default
 		{"blockhash_trtllm", "trtllm"}, // TRT-LLM contract pinned explicitly
+		{"", "llamacpp"},               // llamacpp rule — NO algo is the only shape
 	}
 	for _, c := range accept {
 		if err := kvHashAlgoValidate(c.algo, c.engine); err != nil {
@@ -281,6 +341,12 @@ func TestKvHashAlgoValidateCoherence(t *testing.T) {
 		{"blockhash_trtllm", "sglang"}, // and on an sglang rule
 		{"sha256_cbor", "trtllm"},      // cbor contract on a trtllm rule
 		{"sha256_sglang", "trtllm"},    // sglang contract on a trtllm rule
+		// llamacpp has an EMPTY algo row — every explicit algo is rejected
+		// with the dedicated no-KV-exact-tier message.
+		{"sha256_cbor", "llamacpp"},
+		{"xxhash_cbor", "llamacpp"},
+		{"sha256_sglang", "llamacpp"},
+		{"blockhash_trtllm", "llamacpp"},
 	}
 	for _, c := range reject {
 		err := kvHashAlgoValidate(c.algo, c.engine)
