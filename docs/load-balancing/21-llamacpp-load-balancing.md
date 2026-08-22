@@ -27,9 +27,32 @@ prompt into a consistent-hash ring with bounded loads.
 The division of labor is measurable per request: llama.cpp returns
 `usage.prompt_tokens_details.cached_tokens` on every response (add
 `stream_options: {"include_usage": true}` for streams), and exports a
-`llamacpp:prompt_tokens_cached_total` Prometheus counter. On a converged
-multi-endpoint fleet, CHWBL routing raises the fleet-wide cached-token rate
-by an order of magnitude over round-robin for prefix-heavy workloads.
+`llamacpp:prompt_tokens_cached_total` Prometheus counter. Live-measured on
+a 5-endpoint converged fleet: round-robin **never** re-lands a repeating
+prefix family (fleet cached-token delta literally +0 across every run),
+while CHWBL keeps families warm — repeat-prompt TTFT 92 ms vs 4.4 s at
+16k-token prompts (~48×), 42 ms vs 513 ms at 1.8k (~12×). Benchmarked
+against a perfect single-server co-location oracle, CHWBL captures
+essentially all of the achievable affinity (within measurement noise),
+including workloads where families share a common system-prompt preamble —
+no finer-grained gateway tier could do measurably better.
+
+### CHWBL keys on the SYSTEM prompt — carry one
+
+The gateway's content hash is computed from the request's **system
+message** (plus the model). This is deliberate: the system prompt is the
+stable, shared prefix that makes cache affinity worth routing on, while
+user turns diverge per request.
+
+The operational consequence: **requests without a system message get no
+content affinity** — they fall back to connection-spread balancing, and on
+a multi-endpoint fleet their repeats will usually land cold. If your
+clients send user-only chat payloads (or raw `/v1/completions` prompts
+with no shared prefix discipline), either add a system message carrying
+the shared context, or use session-header stickiness instead of CHWBL.
+The gateway logs a `[PREFIX_EXTRACTED]` debug receipt when it hashes a
+request's content — its absence under debug logging is the tell that
+traffic is not shaped for content affinity.
 
 ## Deployment recipe (per endpoint)
 
@@ -40,6 +63,37 @@ llama-server -m <model.gguf> \
   --cache-ram <MiB>              # host-RAM prompt cache; default 8192
   --metrics                      # observability is OPT-IN — always pass this
 ```
+
+**Long-context shape.** With the default split KV pool, each of the `-np`
+slots gets `ctx/np` context — a `-np 4 -c 32768` server rejects any prompt
+over 8192 tokens with a clean 400. To accept prompts near the full model
+context while keeping slot concurrency, add `--kv-unified`:
+
+```
+llama-server ... -np 4 -c 32768 --kv-unified
+```
+
+Live-measured trade-offs of the unified shape: single-request cold prefill
+throughput is identical to a split pool, warm repeats stay in the
+100–130 ms range, and 4-way concurrent bursts pay roughly +16 % contention
+versus split slots — a good default for fleets that must accept
+long-context requests.
+
+**Host prompt-cache limits at long context.** `--cache-ram` restores an
+evicted prefix family only when enough KV cells are free up front — it
+does not purge idle slots to make room. Near the full `-c`, restores fail
+(the engine logs `failed to find … available cells`) and the request pays
+a full recompute; short states (a few thousand tokens) restore reliably.
+At long context, gateway-side CHWBL affinity is therefore not an
+optimization but **the only warm path** — an endpoint switch costs a full
+prefill that the host cache cannot buy back.
+
+**`--cache-reuse` (chunk reuse) — leave off by default.** It earns its
+keep only for deletion-shaped edits (dropping a middle chunk lets the
+tail shift left and be reused); replacement or insertion edits still get
+prefix-only reuse, because the engine only shifts matching chunks toward
+lower positions. Enable it for RAG-compaction workloads; otherwise the
+default (off) is correct.
 
 Rails:
 
@@ -128,3 +182,9 @@ so no adapter is needed.
 - Requests with no free slot are deferred in an unbounded engine-side
   queue (`llamacpp:requests_deferred` gauge); the gateway's admission
   gate remains the bounded backpressure layer in front of it.
+- The per-endpoint circuit breaker on plain rules trips on **connect-level
+  failures**; origin-computed 5xx responses are relayed to the client
+  as-is and do not demote the endpoint (origin-5xx demotion is currently a
+  P/D-pipeline feature). An endpoint that accepts TCP but persistently
+  errors stays in rotation — alert on the engine's own error metrics for
+  that failure mode.

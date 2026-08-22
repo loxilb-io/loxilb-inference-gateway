@@ -771,3 +771,7 @@ Until that lands, treat every behavioral claim in this document as
   — the third engine, which lands on the same subscriber/decoder machinery via an
   HTTP-drain event source and a token re-hash of the same chained-SHA-256 family
   this doc's §4 defines.
+- [21 — llama.cpp load balancing](21-llamacpp-load-balancing.md) — the fourth engine,
+  which deliberately has NONE of this machinery: no event plane, no P/D, no Tier-1.5 —
+  its cache-affinity tier is CHWBL over the system prompt, and the typed guards reject
+  every `kv*`/`pd*` rule shape.
