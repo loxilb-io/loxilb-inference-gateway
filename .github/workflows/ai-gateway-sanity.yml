@@ -112,6 +112,13 @@ jobs:
           ./validation.sh
           ./rmconfig.sh
           cd -
+      - name: llama.cpp typed plain-LB affinity + guards (mock llama.cpp)
+        run: |
+          cd cicd/llamacpp-lb/
+          ./config.sh
+          ./validation.sh
+          ./rmconfig.sh
+          cd -
       - name: SGLang KV-cache-aware routing (echo backends)
         run: |
           cd cicd/sglang-loxilb-kvcache/

@@ -294,6 +294,12 @@ cd trtllm-pd-disagg/
 ./rmconfig.sh
 cd -
 
+cd llamacpp-lb/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
 cd vllm-kvcache-routing-cpu/
 ./config.sh
 ./validation.sh
