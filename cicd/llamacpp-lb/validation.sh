@@ -13,11 +13,11 @@
 #      client THROUGH the relay, then finish the stream + [DONE] (pins the
 #      relay + idle-clock behavior the GPU fleet could never exhibit —
 #      prefill there outruns any sane ping interval)
-#   D  CHWBL system-prompt affinity (F-LCP-2 positive): two system-prompt
+#   D  CHWBL system-prompt affinity (system-prompt keying, positive): two system-prompt
 #      families -> each family consistently lands ONE EP; repeats carry
 #      cached_tokens>0 receipts; [PREFIX_EXTRACTED] receipts appear in the
 #      dp log
-#   E  F-LCP-2 negative: user-only payloads (no system message) produce NO
+#   E  system-prompt keying, negative: user-only payloads (no system message) produce NO
 #      prefix extraction — the documented ep_sel spray, pinned as such
 #   F  session-header stickiness on the RR rule: same x-session-id ->
 #      one EP across differing bodies; a second session stays consistent
@@ -27,7 +27,7 @@
 #   H  origin-5xx taxonomy on plain LB: engine 500s are RELAYED (error obj
 #      intact, not masked); the EP stays in rotation (plain-LB rules have
 #      NO origin-5xx demotion — that plane is P/D-only; pinned as
-#      documented behavior, see the design doc's §8.3 follow-up note)
+#      documented behavior)
 #   I  quad-engine coexistence: llamacpp + trtllm + sglang + vllm rules all
 #      serving on ONE gateway
 #   J  hygiene: loxilb_ai_engine_info{engine="llamacpp"} exported; the
@@ -199,7 +199,7 @@ check "C1: $C_PINGS bare ':' ping frames relayed mid-stream, stream still comple
 ldisarm_all
 
 ############################################################################
-echo "Leg D: CHWBL system-prompt affinity + receipts (F-LCP-2 positive)"
+echo "Leg D: CHWBL system-prompt affinity + receipts (positive)"
 ############################################################################
 
 D_PFX_BASE=$(prefix_count)
@@ -227,7 +227,7 @@ D_PFX_NOW=$(prefix_count)
 check "D2: [PREFIX_EXTRACTED] receipts in the dp log ($D_PFX_BASE -> $D_PFX_NOW) — CHWBL routed on content, not spray" $?
 
 ############################################################################
-echo "Leg E: user-only payloads get NO content affinity (F-LCP-2 negative)"
+echo "Leg E: user-only payloads get NO content affinity (negative)"
 ############################################################################
 
 sleep 2

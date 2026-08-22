@@ -64,16 +64,18 @@ build, pin `LOXILB_DOCKER_IMAGE` to the locally-built image.
 | A | typed rules accepted; every KV/P/D shape rejected for llamacpp (`kvExactMode`, `pd_disagg_mode`, non-default `kvZmqPort`/`kvDpRankCount`/`kvBlockSize`, any explicit `kvHashAlgo`) |
 | B | non-stream + stream happy path with receipts and `[DONE]`; unknown fields tolerated (200); malformed JSON relayed as the engine's **500** |
 | C | ping-through-VIP: `":"` comment frames relayed mid-stream during a scripted stall, stream completes |
-| D | **F-LCP-2 positive**: system-prompt families pin to one EP each, warm `cached_tokens` receipts, `[PREFIX_EXTRACTED]` in the dp log |
-| E | **F-LCP-2 negative**: user-only payloads → zero new extractions — the documented spray; production rail = carry a system prompt |
+| D | **system-prompt keying, positive**: system-prompt families pin to one EP each, warm `cached_tokens` receipts, `[PREFIX_EXTRACTED]` in the dp log |
+| E | **system-prompt keying, negative**: user-only payloads → zero new extractions — the documented spray; production rail = carry a system prompt |
 | F | session-header stickiness (`x-session-id` on the RR rule) |
 | G | 503-`Loading model` window → health-probe hold-out (zero serves) → re-admission |
 | H | origin-5xx taxonomy: engine 500s relayed intact; EP stays in rotation (plain-LB rules have **no origin-5xx demotion** — that plane is P/D-only; documented-behavior pin) |
 | I | quad-engine coexistence: llamacpp + trtllm + sglang + vllm rules serving on one gateway |
 | J | hygiene: `loxilb_ai_engine_info{engine="llamacpp"}` + `loxilb_ai_llamacpp_probe_warnings_total` ticked by the scripted build skew |
 
-What mocks cannot cover — real cached-token affinity magnitudes, long-context
-behavior, `--cache-ram`/`--cache-reuse` semantics — lives in the GPU-fleet
-characterization (design doc §8–§8.3): CHWBL vs RR repeat-TTFT 92 ms vs
-4419 ms at 16k tokens, and the T6 SLO-grid verdict that CHWBL already
-captures ~100 % of achievable affinity.
+What mocks cannot cover — real cached-token affinity magnitudes,
+long-context behavior, `--cache-ram`/`--cache-reuse` semantics — was
+measured on a live GPU fleet and is summarized in
+[doc 21](../../docs/load-balancing/21-llamacpp-load-balancing.md): CHWBL
+vs round-robin repeat-TTFT 92 ms vs 4.4 s at 16k tokens, with CHWBL
+capturing essentially all achievable affinity against a co-location
+oracle.
