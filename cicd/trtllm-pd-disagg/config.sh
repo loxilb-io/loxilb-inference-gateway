@@ -168,7 +168,7 @@ sleep 5
 echo "Waiting for health probes to mark all endpoints active (up to 60s)..."
 for i in $(seq 1 60); do
   INACTIVE_COUNT=$($hexec llb1 curl -s "http://localhost:11111/netlox/v1/config/loadbalancer/all" 2>/dev/null | \
-    grep -c '"inActiveEP":true' 2>/dev/null || echo "999")
+    grep -c '"state":"inactive"' 2>/dev/null || echo "999")
   if [ "$INACTIVE_COUNT" = "0" ]; then
     echo "  All endpoints active after ${i}s"
     break
