@@ -13,6 +13,8 @@ on:
     paths:
       - 'cicd/vllm-**'
       - 'cicd/sglang-**'
+      - 'cicd/trtllm-**'
+      - 'cicd/llamacpp-**'
       - 'cicd/ai-**'
       - 'cicd/common/reflect-echo/**'
       - 'pkg/**'
@@ -23,6 +25,8 @@ on:
     paths:
       - 'cicd/vllm-**'
       - 'cicd/sglang-**'
+      - 'cicd/trtllm-**'
+      - 'cicd/llamacpp-**'
       - 'cicd/ai-**'
       - 'cicd/common/reflect-echo/**'
       - 'pkg/**'
