@@ -17,17 +17,22 @@
 #      families -> each family consistently lands ONE EP; repeats carry
 #      cached_tokens>0 receipts; [PREFIX_EXTRACTED] receipts appear in the
 #      dp log
-#   E  system-prompt keying, negative: user-only payloads (no system message) produce NO
-#      prefix extraction — the documented ep_sel spray, pinned as such
+#   E  user-only affinity fallback: payloads with NO system message hash a
+#      BOUNDED prefix of the first user message ([PREFIX_USER_FALLBACK]
+#      receipts) — a shared opening co-locates on ONE EP with warm
+#      cached_tokens receipts; bodies with no user message at all (empty
+#      messages / assistant-only) still spray (negative stays pinned)
 #   F  session-header stickiness on the RR rule: same x-session-id ->
 #      one EP across differing bodies; a second session stays consistent
 #   G  503-loading window: an EP answering the "Loading model" 503 is
 #      health-probed out (zero serves while out), then re-admitted after
 #      the window clears
-#   H  origin-5xx taxonomy on plain LB: engine 500s are RELAYED (error obj
-#      intact, not masked); the EP stays in rotation (plain-LB rules have
-#      NO origin-5xx demotion — that plane is P/D-only; pinned as
-#      documented behavior)
+#   H  origin-5xx demotion on plain LB: the first streak of engine 500s is
+#      RELAYED (error obj intact, not masked — demotion is not retry), then
+#      the breaker opens on the origin streak ([CB_ORIGIN] + pd_cb_flips);
+#      the 5xx EP serves ZERO while OPEN and is re-admitted only after a
+#      HALF_OPEN probe draws an ORIGIN success (a connect success alone
+#      must not close an origin-tripped breaker)
 #   I  quad-engine coexistence: llamacpp + trtllm + sglang + vllm rules all
 #      serving on ONE gateway
 #   J  hygiene: loxilb_ai_engine_info{engine="llamacpp"} exported; the
@@ -116,6 +121,10 @@ except Exception:
 
 prefix_count() {  # [PREFIX_EXTRACTED] receipts in the dp log so far
   $dexec llb1 sh -c "grep -c 'PREFIX_EXTRACTED' /var/log/loxilbdp.log 2>/dev/null || echo 0"
+}
+
+fallback_count() {  # [PREFIX_USER_FALLBACK] receipts in the dp log so far
+  $dexec llb1 sh -c "grep -c 'PREFIX_USER_FALLBACK' /var/log/loxilbdp.log 2>/dev/null || echo 0"
 }
 
 post_neg() {  # post_neg <json> — expect the rule POST to be REJECTED
@@ -227,20 +236,46 @@ D_PFX_NOW=$(prefix_count)
 check "D2: [PREFIX_EXTRACTED] receipts in the dp log ($D_PFX_BASE -> $D_PFX_NOW) — CHWBL routed on content, not spray" $?
 
 ############################################################################
-echo "Leg E: user-only payloads get NO content affinity (negative)"
+echo "Leg E: user-only affinity fallback (bounded first-user-message prefix)"
 ############################################################################
 
 sleep 2
-E_PFX_BASE=$(prefix_count)
+E_FB_BASE=$(fallback_count)
+# shared opening deliberately LONGER than the 256B fallback bound, with a
+# divergent tail per rep — co-location must key on the bounded opening only
+E_OPEN=$(python3 -c "print(('user-only $RUN corpus opening sentence for the fallback affinity leg. ' * 6).strip())")
 E_BAD=0
+E_CT_LAST=-1
+E_BEFORE=$(served_snapshot)
 for rep in 1 2 3; do
-  E_OUT=$(chat "$RUN-leg-e-$rep" false 2044 - "user-only $RUN payload rep $rep with no system message at all")
+  E_OUT=$(chat "$RUN-leg-e-$rep" false 2044 - "$E_OPEN divergent tail rep $rep")
   [ "$(status_of "$E_OUT")" = "200" ] || E_BAD=$((E_BAD+1))
+  E_CT_LAST=$(cached_of "$E_OUT")
+done
+E_AFTER=$(served_snapshot)
+E_MOVED=$(eps_advanced "$E_BEFORE" "$E_AFTER")
+sleep 3
+E_FB_NOW=$(fallback_count)
+[ "$E_BAD" = "0" ] && [ "$E_FB_NOW" -gt "$E_FB_BASE" ]
+check "E1: 3/3 user-only requests served WITH [PREFIX_USER_FALLBACK] receipts ($E_FB_BASE -> $E_FB_NOW) — no-system bodies now hash the bounded user opening" $?
+[ "$E_MOVED" = "1" ] && [ "$E_CT_LAST" -gt 0 ] 2>/dev/null
+check "E2: shared >256B opening with divergent tails co-located on ONE EP ($E_BEFORE -> $E_AFTER) with warm cached_tokens (rep-3: $E_CT_LAST) — the spray is gone" $?
+
+# negative stays pinned: bodies with NO user message at all still spray
+E_FB_NEG_BASE=$(fallback_count)
+E_PFX_NEG_BASE=$(prefix_count)
+E_NEG_BAD=0
+for body in '{"model":"m","messages":[],"max_tokens":8,"stream":false}' \
+            '{"model":"m","messages":[{"role":"assistant","content":"prior answer only"}],"max_tokens":8,"stream":false}'; do
+  E_OUT=$($dexec l3h1 curl -sk --cacert "$CACERT" -m 30 \
+    "https://$VIP:2044/v1/chat/completions" -H "Content-Type: application/json" \
+    -d "$body" -w "\nHTTPSTATUS:%{http_code}" 2>&1)
+  [ "$(status_of "$E_OUT")" = "200" ] || E_NEG_BAD=$((E_NEG_BAD+1))
 done
 sleep 3
-E_PFX_NOW=$(prefix_count)
-[ "$E_BAD" = "0" ] && [ "$E_PFX_NOW" = "$E_PFX_BASE" ]
-check "E1: 3/3 user-only requests served BUT zero new [PREFIX_EXTRACTED] ($E_PFX_BASE -> $E_PFX_NOW) — the documented ep_sel spray, pinned (production rail: carry a system prompt)" $?
+[ "$E_NEG_BAD" = "0" ] && [ "$(fallback_count)" = "$E_FB_NEG_BASE" ] && \
+  [ "$(prefix_count)" = "$E_PFX_NEG_BASE" ]
+check "E3: empty-messages + assistant-only bodies served with ZERO new extraction/fallback receipts — the no-user spray path stays pinned" $?
 
 ############################################################################
 echo "Leg F: session-header stickiness (:2045, x-session-id)"
@@ -293,13 +328,14 @@ done
 check "G3: EP re-admitted after the loading window cleared" $G_READMIT
 
 ############################################################################
-echo "Leg H: origin-5xx taxonomy on plain LB (relayed, not masked; no demotion)"
+echo "Leg H: origin-5xx demotion on plain LB (relay intact, then breaker opens)"
 ############################################################################
 
-larm l3ep2 fail-count '{"count":3}'
+H_FLIPS_BASE=$(msum loxilb_pd_cb_flips_total)
+larm l3ep2 fail-count '{"count":30}'
 H_SAW_500=0
 H_MASKED=0
-for i in $(seq 1 9); do
+for i in $(seq 1 12); do
   H_OUT=$(chat "$RUN-leg-h-$i" false 2045 - "storm probe $i")
   H_ST=$(status_of "$H_OUT")
   if [ "$H_ST" = "500" ]; then
@@ -308,13 +344,38 @@ for i in $(seq 1 9); do
   fi
 done
 [ "$H_SAW_500" -ge 1 ] && [ "$H_MASKED" = "0" ]
-check "H1: engine 500s relayed with the error obj intact ($H_SAW_500 seen, none masked/retried away)" $?
+check "H1: the first origin-5xx streak relayed with the error obj intact ($H_SAW_500 seen, none masked — demotion is not retry)" $?
+
+H_FLIPS_NOW=$H_FLIPS_BASE
+for i in $(seq 1 20); do
+  H_FLIPS_NOW=$(msum loxilb_pd_cb_flips_total)
+  [ "$H_FLIPS_NOW" -gt "$H_FLIPS_BASE" ] 2>/dev/null && break
+  sleep 1
+done
+[ "$H_FLIPS_NOW" -gt "$H_FLIPS_BASE" ]
+check "H2: breaker flipped on the origin streak (pd_cb_flips $H_FLIPS_BASE -> $H_FLIPS_NOW)" $?
+$dexec llb1 grep -q 'CB_ORIGIN' /var/log/loxilbdp.log
+check "H3: [CB_ORIGIN] demotion marker in the dp log" $?
+
+H_EP2_OPEN=$(lstatus l3ep2 served)
+H_OPEN_BAD=0
+for i in $(seq 1 6); do
+  H_OUT=$(chat "$RUN-leg-h-open-$i" false 2045 - "post-trip probe $i")
+  [ "$(status_of "$H_OUT")" = "200" ] || H_OPEN_BAD=$((H_OPEN_BAD+1))
+done
+[ "$H_OPEN_BAD" = "0" ] && [ "$(lstatus l3ep2 served)" = "$H_EP2_OPEN" ]
+check "H4: 6/6 requests 200 while the demoted EP served ZERO (families re-homed off the 5xx EP)" $?
 ldisarm_all
 
-H_EP2_BASE=$(lstatus l3ep2 served)
-for i in $(seq 1 6); do chat "$RUN-leg-h-post-$i" false 2045 - "post-storm $i" > /dev/null; done
-[ "$(lstatus l3ep2 served)" -gt "$H_EP2_BASE" ]
-check "H2: the 5xx EP stayed in rotation (plain-LB rules have NO origin-5xx demotion — P/D-only plane; documented-behavior pin)" $?
+echo "  sitting out the breaker open timeout (35s)..."
+sleep 35
+H_RECOVERED=1
+for i in $(seq 1 20); do
+  chat "$RUN-leg-h-rec-$i" false 2045 - "readmit probe $i" > /dev/null
+  [ "$(lstatus l3ep2 served)" -gt "$H_EP2_OPEN" ] 2>/dev/null && { H_RECOVERED=0; break; }
+  sleep 2
+done
+check "H5: EP re-admitted after a HALF_OPEN probe drew an ORIGIN success (connect success alone must not close an origin-tripped breaker)" $H_RECOVERED
 
 ############################################################################
 echo "Leg I: quad-engine coexistence on one gateway"
