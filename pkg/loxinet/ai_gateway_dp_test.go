@@ -38,11 +38,12 @@ func (m *mockAPIKeyValidator) ValidateAPIKey(_ string) (*cmn.ApiKeyEntry, error)
 // mockRateLimitService implements rateLimitService for unit tests.
 type mockRateLimitService struct {
 	tenantRPS int
+	tenantTPM int
 	keyByID   map[string]*cmn.ApiKeySummary
 }
 
 func (m *mockRateLimitService) GetTenantRateLimit(_ string) (int, int) {
-	return m.tenantRPS, 0
+	return m.tenantRPS, m.tenantTPM
 }
 
 func (m *mockRateLimitService) GetAPIKeyByID(keyID string) (*cmn.ApiKeySummary, error) {
@@ -144,6 +145,78 @@ func TestRateLimitCheckInternalTenantErrorCode(t *testing.T) {
 	}
 	if errCode != "tenant_quota_exceeded" {
 		t.Errorf("expected error_code %q, got %q", "tenant_quota_exceeded", errCode)
+	}
+}
+
+// TestTokenQuotaConsumeInternal verifies the response-side token charge:
+// within-quota charges pass, the charge that tips the tenant over latches the
+// exceeded flag, and the NEXT request is denied 429 with
+// token_quota_exceeded by the rate-limit gate's stage 3.
+func TestTokenQuotaConsumeInternal(t *testing.T) {
+	store := rl.New()
+	svc := &mockRateLimitService{
+		tenantRPS: 1000, // stage-1/2 must not interfere
+		tenantTPM: 100,
+		keyByID: map[string]*cmn.ApiKeySummary{
+			"key-tpm": {KeyID: "key-tpm", RateLimitRPS: 0, BurstSize: 0},
+		},
+	}
+
+	// Charge 60 of 100: allowed, gate stays open.
+	allowed, _ := tokenQuotaConsumeInternal(svc, store, "tenant-tpm", 60)
+	if !allowed {
+		t.Fatalf("charge 60/100: expected allowed")
+	}
+	if decision, _, _ := rateLimitCheckInternal(svc, store, "key-tpm", "tenant-tpm"); decision != 0 {
+		t.Fatalf("gate after 60/100: expected allow, got decision=%d", decision)
+	}
+
+	// Charge 50 more (110 > 100): denied, exceeded flag latches.
+	allowed, retrySecs := tokenQuotaConsumeInternal(svc, store, "tenant-tpm", 50)
+	if allowed {
+		t.Fatalf("charge 110/100: expected denied")
+	}
+	if retrySecs <= 0 {
+		t.Errorf("expected positive retrySecs, got %d", retrySecs)
+	}
+
+	// The NEXT request must be denied 429 with token_quota_exceeded.
+	decision, _, errCode := rateLimitCheckInternal(svc, store, "key-tpm", "tenant-tpm")
+	if decision != 3 {
+		t.Fatalf("gate after quota trip: expected deny_429 (decision=3), got decision=%d", decision)
+	}
+	if errCode != "token_quota_exceeded" {
+		t.Errorf("expected error_code %q, got %q", "token_quota_exceeded", errCode)
+	}
+}
+
+// TestTokenQuotaConsumeInternalUnlimited verifies that tokens_per_min=0
+// (unlimited), a nil service, and non-positive counts all pass without
+// latching the quota.
+func TestTokenQuotaConsumeInternalUnlimited(t *testing.T) {
+	store := rl.New()
+
+	// tokens_per_min=0 → unlimited: huge charges pass.
+	svc := &mockRateLimitService{tenantTPM: 0}
+	if allowed, _ := tokenQuotaConsumeInternal(svc, store, "tenant-unlim", 1<<30); !allowed {
+		t.Fatalf("unlimited tenant: expected allowed")
+	}
+	if store.IsTokenQuotaExceeded("tenant-unlim") {
+		t.Errorf("unlimited tenant: exceeded flag must not latch")
+	}
+
+	// nil service (userservice disabled) → allowed.
+	if allowed, _ := tokenQuotaConsumeInternal(nil, store, "tenant-nosvc", 500); !allowed {
+		t.Fatalf("nil service: expected allowed")
+	}
+
+	// Non-positive count / empty tenant → allowed no-ops.
+	svc2 := &mockRateLimitService{tenantTPM: 10}
+	if allowed, _ := tokenQuotaConsumeInternal(svc2, store, "tenant-x", 0); !allowed {
+		t.Fatalf("count 0: expected allowed")
+	}
+	if allowed, _ := tokenQuotaConsumeInternal(svc2, store, "", 50); !allowed {
+		t.Fatalf("empty tenant: expected allowed")
 	}
 }
 

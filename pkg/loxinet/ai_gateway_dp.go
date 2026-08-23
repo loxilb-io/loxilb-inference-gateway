@@ -340,17 +340,72 @@ func llb_ai_ratelimit_check(keyID *C.char, tenantID *C.char, result *C.ai_gw_dec
 	return 0
 }
 
-// llb_ai_token_quota_consume is a retained ABI stub for the C sockproxy call
-// site (sockproxy_http.c). The C side does not extract token counts yet — it
-// always passes promptTokens=0 and completTokens=0 — so the token metrics and
-// the per-minute token quota path built on them were removed (metrics audit
-// D3/D4). When real token extraction lands in C (Phase E), token accounting
-// and quota enforcement can be rebuilt here on top of real counts.
+// tokenQuotaConsumeInternal is the pure-Go token accounting logic, separated
+// from the CGO export so that unit tests can exercise it without C types.
+// It charges count tokens against the tenant's per-minute quota
+// (tokens_per_min from the tenant's rate-limit config; 0 = unlimited).
 //
-// Returns 0 always; never sets result->decision.
+// Returns (allowed, retrySecs). allowed=false means the charge tipped the
+// tenant over quota: the store's exceeded flag is now latched, so the NEXT
+// request's rateLimitCheckInternal stage 3 returns deny_429
+// ("token_quota_exceeded") — the already-served response is never affected.
+func tokenQuotaConsumeInternal(svc rateLimitService, store *rl.RateLimiterStore, tenantID string, count int) (allowed bool, retrySecs int) {
+	if count <= 0 || tenantID == "" {
+		return true, 0
+	}
+	tokensPerMin := 0
+	if svc != nil {
+		_, tokensPerMin = svc.GetTenantRateLimit(tenantID)
+	}
+	if tokensPerMin <= 0 {
+		return true, 0
+	}
+	return store.AllowTokens(tenantID, count, tokensPerMin)
+}
+
+// llb_ai_token_quota_consume charges a completed response's token usage
+// (extracted by the C sockproxy from the final SSE chunk or the JSON body)
+// against the tenant's per-minute token quota.
+//
+// The C caller invokes this at response completion with result=NULL: the
+// served response is never interrupted. When the charge exceeds
+// tokens_per_min the quota's exceeded flag latches and the NEXT request is
+// denied 429 at the rate-limit gate.
 //
 //export llb_ai_token_quota_consume
-func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, promptTokens C.int, completTokens C.int, result *C.ai_gw_decision_t) C.int {
+func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, promptTokens C.int, completTokens C.int, result *C.ai_gw_decision_t) (ret C.int) {
+	// Fail-open on panic: the response is already served, so accounting must
+	// never take down the datapath — the quota simply misses this response.
+	defer func() {
+		if r := recover(); r != nil {
+			tk.LogIt(tk.LogCritical, "[AIGateway] llb_ai_token_quota_consume: recovered panic: %v\n", r)
+			ret = 0
+		}
+	}()
+
+	count := int(promptTokens) + int(completTokens)
+	tenant := C.GoString(tenantID)
+	if count <= 0 || tenant == "" {
+		return 0
+	}
+
+	var svc rateLimitService
+	if us := mh.UserService; us != nil {
+		svc = us
+	}
+
+	store := getGlobalRL()
+	allowed, retrySecs := tokenQuotaConsumeInternal(svc, store, tenant, count)
+	if !allowed {
+		if result != nil {
+			result.decision = 3
+			result.retry_after = C.int(retrySecs)
+			cCopyStr((*C.char)(unsafe.Pointer(&result.error_code[0])), "token_quota_exceeded", 64)
+		}
+		tk.LogIt(tk.LogWarning, "[AIGateway] llb_ai_token_quota_consume: tenant %s over token quota (charged %d, model %s)\n",
+			tenant, count, C.GoString(modelName))
+		return -1
+	}
 	return 0
 }
 
