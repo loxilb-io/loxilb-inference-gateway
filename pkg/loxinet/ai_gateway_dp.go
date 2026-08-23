@@ -165,6 +165,15 @@ func validateAPIKeyInternal(svc apiKeyValidator, rawKey, modelName string) (deci
 	return 0, entry.TenantID, entry.KeyID, modelName, ""
 }
 
+// cgoRecover logs and absorbs a panic at a CGO export boundary. A Go panic
+// unwinding into the C sockproxy thread aborts the whole process, so every
+// //export below defers either this or a fail-closed variant of it.
+func cgoRecover(fn string) {
+	if r := recover(); r != nil {
+		tk.LogIt(tk.LogCritical, "[AIGateway] %s: recovered panic: %v\n", fn, r)
+	}
+}
+
 // cCopyStr safely copies a Go string into a fixed-size C char array.
 // At most maxLen-1 bytes are written; the destination is always NUL-terminated.
 func cCopyStr(dst *C.char, src string, maxLen int) {
@@ -192,7 +201,18 @@ func cCopyStr(dst *C.char, src string, maxLen int) {
 //	2 – deny with 403 (model not allowed)
 //
 //export llb_ai_validate_key
-func llb_ai_validate_key(rawKey *C.char, modelName *C.char, result *C.ai_gw_decision_t) C.int {
+func llb_ai_validate_key(rawKey *C.char, modelName *C.char, result *C.ai_gw_decision_t) (ret C.int) {
+	// Fail closed on panic: deny with 401 rather than crashing the datapath.
+	defer func() {
+		if r := recover(); r != nil {
+			tk.LogIt(tk.LogCritical, "[AIGateway] llb_ai_validate_key: recovered panic: %v\n", r)
+			if result != nil {
+				result.decision = 1
+				cCopyStr((*C.char)(unsafe.Pointer(&result.error_code[0])), "internal_error", 64)
+			}
+			ret = -1
+		}
+	}()
 	if result == nil {
 		tk.LogIt(tk.LogError, "[AIGateway] llb_ai_validate_key: nil result pointer\n")
 		return -1
@@ -277,7 +297,20 @@ func getGlobalRL() *rl.RateLimiterStore {
 // result->retry_after is set to the recommended retry delay in seconds).
 //
 //export llb_ai_ratelimit_check
-func llb_ai_ratelimit_check(keyID *C.char, tenantID *C.char, result *C.ai_gw_decision_t) C.int {
+func llb_ai_ratelimit_check(keyID *C.char, tenantID *C.char, result *C.ai_gw_decision_t) (ret C.int) {
+	// Fail closed on panic: deny with a short retry rather than crashing the
+	// datapath or silently disabling the limiter.
+	defer func() {
+		if r := recover(); r != nil {
+			tk.LogIt(tk.LogCritical, "[AIGateway] llb_ai_ratelimit_check: recovered panic: %v\n", r)
+			if result != nil {
+				result.decision = 3
+				result.retry_after = 1
+				cCopyStr((*C.char)(unsafe.Pointer(&result.error_code[0])), "internal_error", 64)
+			}
+			ret = -1
+		}
+	}()
 	if result == nil {
 		tk.LogIt(tk.LogError, "[AIGateway] llb_ai_ratelimit_check: nil result pointer\n")
 		return -1
@@ -337,6 +370,7 @@ func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, promptToken
 //
 //export llb_ai_ratelimit_update
 func llb_ai_ratelimit_update(keyID *C.char, tenantID *C.char, rps C.int, burst C.int) C.int {
+	defer cgoRecover("llb_ai_ratelimit_update")
 	keyIDStr := C.GoString(keyID)
 	tenantIDStr := C.GoString(tenantID)
 	rpsInt := int(rps)
@@ -380,6 +414,7 @@ func getSSECounter(model string) *int64 {
 //
 //export llb_ai_stream_start
 func llb_ai_stream_start(tenantID *C.char, modelName *C.char) C.int {
+	defer cgoRecover("llb_ai_stream_start")
 	modelStr := C.GoString(modelName)
 	tenantStr := C.GoString(tenantID)
 
@@ -407,6 +442,7 @@ func llb_ai_stream_start(tenantID *C.char, modelName *C.char) C.int {
 //
 //export llb_ai_stream_end
 func llb_ai_stream_end(tenantID *C.char, modelName *C.char) C.int {
+	defer cgoRecover("llb_ai_stream_end")
 	modelStr := C.GoString(modelName)
 	tenantStr := C.GoString(tenantID)
 
@@ -446,6 +482,7 @@ func llb_ai_stream_end(tenantID *C.char, modelName *C.char) C.int {
 //
 //export llb_ai_record_request
 func llb_ai_record_request(tenantID *C.char, modelName *C.char, statusCode C.int, latencyMs C.int64_t, promptTokens C.int, completTokens C.int, streamStart C.int, streamEnd C.int, errorCode *C.char) {
+	defer cgoRecover("llb_ai_record_request")
 	tenantIDStr := C.GoString(tenantID)
 	modelNameStr := C.GoString(modelName)
 
@@ -467,6 +504,7 @@ func llb_ai_record_request(tenantID *C.char, modelName *C.char, statusCode C.int
 //
 //export llb_ai_pd_record
 func llb_ai_pd_record(modelName *C.char, prefillLatencyMs C.int64_t, decodeLatencyMs C.int64_t, kvParamsFound C.int, errorPhase C.int) {
+	defer cgoRecover("llb_ai_pd_record")
 	modelNameStr := C.GoString(modelName)
 	prom.RecordPDRequest(modelNameStr, int64(prefillLatencyMs), int64(decodeLatencyMs), int(kvParamsFound), int(errorPhase))
 }
@@ -478,6 +516,7 @@ func llb_ai_pd_record(modelName *C.char, prefillLatencyMs C.int64_t, decodeLaten
 //
 //export llb_ai_pd_session_hit
 func llb_ai_pd_session_hit(modelName *C.char) {
+	defer cgoRecover("llb_ai_pd_session_hit")
 	modelNameStr := C.GoString(modelName)
 	prom.RecordPDSessionHit(modelNameStr)
 }
@@ -489,6 +528,7 @@ func llb_ai_pd_session_hit(modelName *C.char) {
 //
 //export llb_ai_normal_session_hit
 func llb_ai_normal_session_hit(modelName *C.char) {
+	defer cgoRecover("llb_ai_normal_session_hit")
 	modelNameStr := C.GoString(modelName)
 	prom.RecordNormalSessionHit(modelNameStr)
 }

@@ -82,6 +82,9 @@ type rateLimitCacheEntry struct {
 // and returns the raw key once to the caller. The entry provides metadata (TenantID,
 // Name, AllowedModels, etc.); KeyID and raw key are generated internally.
 func (s *UserService) CreateAPIKey(entry cmn.ApiKeyEntry) (string, string, error) {
+	if err := s.dbReady(); err != nil {
+		return "", "", err
+	}
 	// Generate 32 cryptographically random bytes.
 	rawBytes := make([]byte, 32)
 	if _, err := rand.Read(rawBytes); err != nil {
@@ -130,7 +133,11 @@ func (s *UserService) ValidateAPIKey(rawKey string) (*cmn.ApiKeyEntry, error) {
 		}
 	}
 
-	// Layer 2: database fallback.
+	// Layer 2: database fallback. Fails closed (401 upstream) when the DB is
+	// unavailable — a cache hit above still validates during a short outage.
+	if err := s.dbReady(); err != nil {
+		return nil, err
+	}
 	var entry cmn.ApiKeyEntry
 	var allowedModels string
 	var expiresAt sql.NullTime
@@ -165,6 +172,9 @@ func (s *UserService) ValidateAPIKey(rawKey string) (*cmn.ApiKeyEntry, error) {
 // RevokeAPIKey disables the API key identified by keyID in the database and
 // synchronously evicts it from the cache before returning.
 func (s *UserService) RevokeAPIKey(keyID string) error {
+	if err := s.dbReady(); err != nil {
+		return err
+	}
 	// Fetch the hash so we can evict the correct cache entry.
 	var keyHash string
 	err := s.DB.QueryRow(sqlSelectKeyHashByID, keyID).Scan(&keyHash)
@@ -197,6 +207,9 @@ func (s *UserService) RevokeAPIKey(keyID string) error {
 // to the management endpoints), this is a hard delete: a subsequent lookup
 // returns "not found". This backs DELETE /config/ai/apikey/{key_id}.
 func (s *UserService) DeleteAPIKey(keyID string) error {
+	if err := s.dbReady(); err != nil {
+		return err
+	}
 	// Fetch the hash so we can evict the correct cache entry.
 	var keyHash string
 	err := s.DB.QueryRow(sqlSelectKeyHashByID, keyID).Scan(&keyHash)
@@ -225,6 +238,9 @@ func (s *UserService) DeleteAPIKey(keyID string) error {
 // PatchAPIKey updates allowed_models and/or enabled for an existing API key.
 // Only non-nil fields are updated. Cache is evicted after a successful DB update.
 func (s *UserService) PatchAPIKey(keyID string, allowedModels []string, enabled *bool) error {
+	if err := s.dbReady(); err != nil {
+		return err
+	}
 	// Fetch hash for cache eviction.
 	var keyHash string
 	err := s.DB.QueryRow(sqlSelectKeyHashByID, keyID).Scan(&keyHash)
@@ -262,6 +278,9 @@ func (s *UserService) PatchAPIKey(keyID string, allowedModels []string, enabled 
 // table and refreshes the in-memory cache so that subsequent GetTenantRateLimit
 // calls return the new values without a round-trip to the database.
 func (s *UserService) SetTenantRateLimit(tenantID string, rps, tokensPerMin int) error {
+	if err := s.dbReady(); err != nil {
+		return err
+	}
 	now := time.Now().UTC()
 	if _, err := s.DB.Exec(sqlReplaceIntoTenantRateLimit, tenantID, rps, tokensPerMin, now); err != nil {
 		tk.LogIt(tk.LogError, "[AIGateway] Failed to set rate limit for tenant %s: %v\n", tenantID, err)
@@ -284,6 +303,12 @@ func (s *UserService) GetTenantRateLimit(tenantID string) (rps, tokensPerMin int
 		}
 	}
 
+	// No configured-limit signal is distinguishable from DB-unavailable here;
+	// (0, 0) means "no limit", matching the no-row case. The datapath key check
+	// has already failed closed by this point if the DB is down and uncached.
+	if s.dbReady() != nil {
+		return 0, 0
+	}
 	var r, t int
 	err := s.DB.QueryRow(sqlSelectTenantRateLimit, tenantID).Scan(&r, &t)
 	if err != nil {
@@ -309,6 +334,9 @@ func (s *UserService) GetAPIKeyByID(keyID string) (*cmn.ApiKeySummary, error) {
 		}
 	}
 
+	if err := s.dbReady(); err != nil {
+		return nil, err
+	}
 	var key cmn.ApiKeySummary
 	var allowedModels string
 	var expiresAt sql.NullTime
@@ -342,6 +370,9 @@ func (s *UserService) GetAPIKeyByID(keyID string) (*cmn.ApiKeySummary, error) {
 // ListAPIKeys returns a summary of API keys. If tenantID is non-empty, filters
 // by tenant; if empty, returns all keys across all tenants.
 func (s *UserService) ListAPIKeys(tenantID string) ([]cmn.ApiKeySummary, error) {
+	if err := s.dbReady(); err != nil {
+		return nil, err
+	}
 	var (
 		rows *sql.Rows
 		err  error
@@ -394,6 +425,9 @@ func (s *UserService) ListAPIKeys(tenantID string) ([]cmn.ApiKeySummary, error) 
 // GetTenantRateLimitEntry returns the full rate limit entry (including updated_at) for a tenant.
 // Returns nil, error if not found.
 func (s *UserService) GetTenantRateLimitEntry(tenantID string) (*cmn.TenantRateLimitEntry, error) {
+	if err := s.dbReady(); err != nil {
+		return nil, err
+	}
 	var entry cmn.TenantRateLimitEntry
 	entry.TenantID = tenantID
 

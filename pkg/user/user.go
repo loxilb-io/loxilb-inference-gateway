@@ -53,20 +53,54 @@ type UserService struct {
 	Cache *cache.Cache
 }
 
-// NewUserService creates a new UserService instance.
-func NewUserService() *UserService {
-	// Initialize the in-memory cache with expiration and cleanup intervals from the config
-	userDB, err := db.InitDB()
-	if err != nil {
-		tk.LogIt(tk.LogCritical, "Failed to initialize database: %v\n", err)
+// ErrDBUnavailable is returned by UserService methods when the backing
+// database is not initialised or the connection has been lost. The message
+// is matched by the REST error translator and maps to HTTP 503.
+var ErrDBUnavailable = errors.New("user database unavailable")
+
+// dbReady reports whether the backing database is usable. DB must only ever
+// be assigned a non-nil *sql.DB — storing a typed-nil pointer in the
+// interface would make this check pass and every query panic instead.
+func (s *UserService) dbReady() error {
+	if s == nil || s.DB == nil {
+		return ErrDBUnavailable
 	}
-	c := cache.New(time.Duration(CacheExpirationTime)*time.Minute, time.Duration(CacheCleanupInterval)*time.Minute)
-	return &UserService{DB: userDB, Cache: c}
+	return nil
+}
+
+// NewUserService creates a new UserService instance. InitDB is retried to
+// ride out a database that is still starting: a cold MySQL 8 accepts
+// authenticated TCP connections only several seconds after it first answers
+// pings. On persistent failure the service is returned in a degraded state
+// together with the error — DB stays nil, DB-backed methods return
+// ErrDBUnavailable (HTTP 503), and UserServiceTicker keeps reconnecting.
+func NewUserService() (*UserService, error) {
+	svc := &UserService{
+		Cache: cache.New(time.Duration(CacheExpirationTime)*time.Minute, time.Duration(CacheCleanupInterval)*time.Minute),
+	}
+	var lastErr error
+	for i := 0; i < db.DbMaxRetries; i++ {
+		if i > 0 {
+			time.Sleep(db.DbRetryDelay)
+		}
+		userDB, err := db.InitDB()
+		if err == nil && userDB != nil {
+			svc.DB = userDB
+			return svc, nil
+		}
+		lastErr = err
+		tk.LogIt(tk.LogError, "Failed to initialize database (attempt %d/%d): %v\n", i+1, db.DbMaxRetries, err)
+	}
+	tk.LogIt(tk.LogCritical, "Database unavailable after %d attempts, user service degraded: %v\n", db.DbMaxRetries, lastErr)
+	return svc, lastErr
 }
 
 // ValidateUser validates the user credentials.
 // It returns the user's role if the credentials are valid, or an error if the credentials are invalid.
 func (s *UserService) AddUser(user cmn.User) (int, error) {
+	if err := s.dbReady(); err != nil {
+		return 0, err
+	}
 	var userID int
 	err := RetryOperation(func() error {
 		if err := s.validatePassword(user.Username, user.Password); err != nil {
@@ -113,6 +147,9 @@ func (s *UserService) AddUser(user cmn.User) (int, error) {
 
 // GetUsers returns all users from the database.
 func (s *UserService) GetUsers() ([]cmn.User, error) {
+	if err := s.dbReady(); err != nil {
+		return nil, err
+	}
 	var users []cmn.User
 	err := RetryOperation(func() error {
 		query := db.SelectAllUsersQuery
@@ -152,6 +189,9 @@ func (s *UserService) GetUsers() ([]cmn.User, error) {
 
 // DeleteUser deletes a user from the database.
 func (s *UserService) DeleteUser(id int) error {
+	if err := s.dbReady(); err != nil {
+		return err
+	}
 	return RetryOperation(func() error {
 		query := db.DeleteUserQuery
 		_, err := s.DB.Exec(query, id)
@@ -164,6 +204,9 @@ func (s *UserService) DeleteUser(id int) error {
 
 // UpdateUser updates a user in the database.
 func (s *UserService) UpdateUser(user cmn.User) error {
+	if err := s.dbReady(); err != nil {
+		return err
+	}
 	return RetryOperation(func() error {
 		// Check if the user exists
 		var existingUser cmn.User
@@ -210,6 +253,9 @@ func (s *UserService) UpdateUser(user cmn.User) error {
 }
 
 func (s *UserService) Login(username, password string) (string, bool, error) {
+	if err := s.dbReady(); err != nil {
+		return "", false, err
+	}
 	// User check
 	role, vaild, err := s.ValidateUser(username, password)
 	if err != nil {
@@ -241,6 +287,11 @@ func (s *UserService) Login(username, password string) (string, bool, error) {
 
 // Logout deletes the token from the cache and the database.
 func (s *UserService) Logout(tokenString string) error {
+	// The API server starts before the user service finishes initialising, so
+	// this can be called on a nil receiver during startup.
+	if s == nil {
+		return ErrDBUnavailable
+	}
 	// Recover username from cache before deletion (for safe logging)
 	var username string
 	if val, found := s.Cache.Get(tokenString); found {
@@ -254,6 +305,9 @@ func (s *UserService) Logout(tokenString string) error {
 	// Remove the token from the cache
 	s.Cache.Delete(tokenString)
 
+	if err := s.dbReady(); err != nil {
+		return err
+	}
 	return RetryOperation(func() error {
 		query := db.DeleteTokenQuery
 		_, err := s.DB.Exec(query, tokenString)
@@ -288,11 +342,17 @@ func (s *UserService) UserServiceTicker() {
 	s.cleanupExpiredTokens()
 }
 
-// reconnectDB reconnects to the database.
+// reconnectDB re-establishes the database connection. InitDB is used rather
+// than a bare reconnect so that a service that started degraded (database down
+// at boot, tables never created) becomes fully functional on heal — the
+// CREATE TABLE IF NOT EXISTS statements are no-ops on an intact schema.
 func (s *UserService) reconnectDB() error {
-	tempDB, err := db.ConnectWithRetry(1, 2*time.Second)
-	if err != nil {
+	tempDB, err := db.InitDB()
+	if err != nil || tempDB == nil {
 		tk.LogIt(tk.LogCritical, "Failed to reconnect to the database: %v\n", err)
+		if err == nil {
+			err = ErrDBUnavailable
+		}
 		return err
 	}
 	s.DB = tempDB

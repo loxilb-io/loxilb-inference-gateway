@@ -62,6 +62,9 @@ func RetryOperation(operation func() error, maxRetries int, retryDelay time.Dura
 
 // UserService provides user-related operations such as user validation and token generation.
 func (s *UserService) ValidateUser(username, password string) (string, bool, error) {
+	if err := s.dbReady(); err != nil {
+		return "", false, err
+	}
 	var hashedPasswordBase64 string
 	var role string
 	// Query the database for the hashed password
@@ -218,12 +221,20 @@ func (s *UserService) ValidatePassword(username, password string) error {
 
 // ValidateToken validates a token using the in-memory cache and the database as a fallback.
 func (s *UserService) ValidateToken(token string) (interface{}, error) {
+	// The API server starts before the user service finishes initialising, so
+	// this can be called on a nil receiver during startup.
+	if s == nil {
+		return nil, ErrDBUnavailable
+	}
 	// Check the cache first
 	if caches, found := s.Cache.Get(token); found {
 		return caches, nil
 	}
 
 	// If not found in cache, check the database
+	if err := s.dbReady(); err != nil {
+		return nil, err
+	}
 	var username string
 	var role string
 	err := RetryOperation(func() error {
