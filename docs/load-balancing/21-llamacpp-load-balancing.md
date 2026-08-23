@@ -37,22 +37,28 @@ essentially all of the achievable affinity (within measurement noise),
 including workloads where families share a common system-prompt preamble —
 no finer-grained gateway tier could do measurably better.
 
-### CHWBL keys on the SYSTEM prompt — carry one
+### CHWBL keys on the SYSTEM prompt — with a bounded user-prefix fallback
 
 The gateway's content hash is computed from the request's **system
 message** (plus the model). This is deliberate: the system prompt is the
 stable, shared prefix that makes cache affinity worth routing on, while
-user turns diverge per request.
+user turns diverge per request. A system prompt remains the preferred way
+to shape traffic for affinity.
 
-The operational consequence: **requests without a system message get no
-content affinity** — they fall back to connection-spread balancing, and on
-a multi-endpoint fleet their repeats will usually land cold. If your
-clients send user-only chat payloads (or raw `/v1/completions` prompts
-with no shared prefix discipline), either add a system message carrying
-the shared context, or use session-header stickiness instead of CHWBL.
-The gateway logs a `[PREFIX_EXTRACTED]` debug receipt when it hashes a
-request's content — its absence under debug logging is the tell that
-traffic is not shaped for content affinity.
+Chat payloads with **no system message** no longer spray: the gateway
+falls back to hashing a **bounded prefix of the first user message**
+(default 256 bytes, `LLB_LLM_USER_PREFIX_FALLBACK_LEN` overrides; `0`
+disables the fallback and restores pure connection-spread for such
+bodies). The bound is what makes multi-turn conversations co-locate:
+later turns share their opening, so turn N hashes to the same endpoint
+as turn 1 even as the transcript grows. Bodies with no user message at
+all (empty `messages`, assistant-only) still get no content affinity.
+
+Observability: the gateway logs a `[PREFIX_EXTRACTED]` debug receipt when
+it hashes a request's content, and a `[PREFIX_USER_FALLBACK]` receipt when
+the bounded user-prefix fallback supplied the hash input — the latter is
+the tell that traffic is running on fallback affinity rather than a shared
+system prompt.
 
 ## Deployment recipe (per endpoint)
 
@@ -144,6 +150,26 @@ Guard behavior for `kvEngineType: "llamacpp"`:
   `pdBootstrapPort` → rejected as meaningless knobs (loud beats
   silently-dead config).
 
+### Placement spread on small fleets
+
+CHWBL places each prefix family on the hash ring, so with only a handful of
+distinct families on a small fleet the spread is ring-hash-bound: a few
+families can land on the same endpoint by hash collision, leaving others
+idle. This evens out as the number of distinct families grows past the
+endpoint count — measured spread across a 5-endpoint fleet is near-uniform
+once families comfortably outnumber endpoints. Two knobs exist but rarely
+need tuning:
+
+- `chwbl_replication` (virtual nodes per endpoint, default 100) smooths ring
+  placement; raising it has only a marginal, non-monotonic effect on real
+  fleets, so the default is a fine starting point.
+- `chwbl_mean_load_factor` (default 125) bounds per-endpoint load and
+  spills to the next endpoint above the bound — but this rescue only engages
+  under genuine **concurrency**; a sequential, one-request-at-a-time workload
+  never trips it, so placement there is pure ring hashing. If you see skew
+  under real concurrent load, lowering the factor spreads more aggressively
+  at the cost of cache affinity.
+
 ## Admission probe & observability
 
 On admission of a `llamacpp`-typed rule, the gateway probes each
@@ -182,9 +208,18 @@ so no adapter is needed.
 - Requests with no free slot are deferred in an unbounded engine-side
   queue (`llamacpp:requests_deferred` gauge); the gateway's admission
   gate remains the bounded backpressure layer in front of it.
-- The per-endpoint circuit breaker on plain rules trips on **connect-level
-  failures**; origin-computed 5xx responses are relayed to the client
-  as-is and do not demote the endpoint (origin-5xx demotion is currently a
-  P/D-pipeline feature). An endpoint that accepts TCP but persistently
-  errors stays in rotation — alert on the engine's own error metrics for
-  that failure mode.
+- The per-endpoint circuit breaker on plain rules trips on connect-level
+  failures **and on origin-computed 5xx streaks**: a configurable run of
+  consecutive 5xx responses (`LLB_PD_ORIGIN_ERR_THRESHOLD`, default 3,
+  `0` disables) opens the breaker (`[CB_ORIGIN]` in the dataplane log)
+  and takes the endpoint out of rotation. The erroring streak itself is
+  still relayed to clients as-is — demotion is not retry or masking.
+  Because such an endpoint accepts TCP fine, recovery requires a
+  half-open probe to draw a real origin success (status < 400); a mere
+  connect success does not re-admit it. Note that 4xx responses neither
+  extend nor reset the streak — this engine answers 500 (not 400) to
+  malformed request JSON, so a burst of client-fault errors interleaved
+  with successes cannot demote a healthy endpoint, but three back-to-back
+  client-fault 500s with no interleaved success on one endpoint can; keep
+  the threshold comfortably above your worst-case burst if your clients
+  send malformed bodies at volume.
