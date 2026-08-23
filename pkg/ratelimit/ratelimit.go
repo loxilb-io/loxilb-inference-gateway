@@ -81,6 +81,7 @@ type RateLimiterStore struct {
 type tokenWindowEntry struct {
 	windowEpoch int64 // floor(unixSeconds / 60), updated via CAS
 	consumed    int64 // tokens consumed in current window, updated via Add
+	limitTokens int64 // tokens-per-minute quota seen on the last charge; read by TokenQuotaSnapshot
 	exceeded    int32 // 1 = quota exceeded for this window, 0 = within quota
 }
 
@@ -173,6 +174,11 @@ func (s *RateLimiterStore) AllowTokens(tenantID string, count, tokensPerMin int)
 	}
 	e := v.(*tokenWindowEntry)
 
+	// Publish the limit for scrape-time utilization reads. Plain store: the
+	// last charge's view of the config is exactly what the collector should
+	// report, and a racing config change resolves on the next charge.
+	atomic.StoreInt64(&e.limitTokens, int64(tokensPerMin))
+
 	// Read the pre-computed epoch from the atomic counter updated by the init
 	// goroutine every epochInterval. This avoids a time.Now syscall on every
 	// hot-path invocation, satisfying (no syscall per call).
@@ -226,6 +232,52 @@ func (s *RateLimiterStore) IsTokenQuotaExceeded(tenantID string) bool {
 		return true
 	}
 	return false
+}
+
+// TokenQuotaUsage is a point-in-time view of one tenant's token-quota window,
+// returned by TokenQuotaSnapshot for scrape-time metric export.
+type TokenQuotaUsage struct {
+	TenantID string
+	// Consumed is the token count charged in the CURRENT accounting window.
+	// An entry whose window has rolled over since the tenant's last charge
+	// reads 0: the quota has refilled even though AllowTokens (the only
+	// writer that resets the counter) has not run again.
+	Consumed int64
+	// Limit is the tokens-per-minute quota observed on the tenant's most
+	// recent charge. A config change surfaces here on the next charge.
+	Limit int64
+}
+
+// TokenQuotaSnapshot walks the per-tenant quota map and returns one entry per
+// tenant with a known quota limit. It is the read side of the same atomic
+// fields the AllowTokens hot path writes — no mutex, the same point-in-time
+// semantics as ExportState's quotaMap walk. Entries created by peer-state
+// import have no recorded limit until their first local charge and are
+// skipped: a utilization ratio cannot be computed without a denominator.
+func (s *RateLimiterStore) TokenQuotaSnapshot() []TokenQuotaUsage {
+	epoch := currentQuotaEpoch.Load()
+	var out []TokenQuotaUsage
+	s.quotaMap.Range(func(k, v any) bool {
+		tenantID, ok := k.(string)
+		if !ok {
+			return true
+		}
+		e, ok := v.(*tokenWindowEntry)
+		if !ok {
+			return true
+		}
+		limit := atomic.LoadInt64(&e.limitTokens)
+		if limit <= 0 {
+			return true
+		}
+		consumed := atomic.LoadInt64(&e.consumed)
+		if atomic.LoadInt64(&e.windowEpoch) < epoch {
+			consumed = 0
+		}
+		out = append(out, TokenQuotaUsage{TenantID: tenantID, Consumed: consumed, Limit: limit})
+		return true
+	})
+	return out
 }
 
 // Cleanup runs in a loop and removes entries that have been inactive for longer

@@ -273,6 +273,21 @@ func getGlobalRL() *rl.RateLimiterStore {
 		// their ticker until rlStore is non-nil, so this registration
 		// can happen at any point in the loxilb startup sequence.
 		NewSockproxySync().SetRateLimiterStore(globalRL)
+		// Back the scrape-time token-quota utilization/limit series with
+		// the shared store. Registered here (not init) so the collector
+		// can never observe a nil store.
+		prom.RegisterTokenQuotaSource(func() []prom.TokenQuotaState {
+			usages := globalRL.TokenQuotaSnapshot()
+			out := make([]prom.TokenQuotaState, 0, len(usages))
+			for _, u := range usages {
+				out = append(out, prom.TokenQuotaState{
+					Tenant:   u.TenantID,
+					Consumed: u.Consumed,
+					Limit:    u.Limit,
+				})
+			}
+			return out
+		})
 	})
 	return globalRL
 }
@@ -333,6 +348,9 @@ func llb_ai_ratelimit_check(keyID *C.char, tenantID *C.char, result *C.ai_gw_dec
 		// record the 429 metric directly at the point of denial.
 		// RecordAIRequest is NOT called here — it is for response-complete events.
 		prom.RecordRateLimitHit(tenantIDStr, errorCode)
+		if errorCode == "token_quota_exceeded" {
+			prom.RecordTokenQuotaDenied(tenantIDStr)
+		}
 		tk.LogIt(tk.LogWarning, "[AIGateway] llb_ai_ratelimit_check: denied key=%s tenant=%s error=%s\n", keyIDStr, tenantIDStr, errorCode)
 		return -1
 	}
@@ -372,11 +390,17 @@ func tokenQuotaConsumeInternal(svc rateLimitService, store *rl.RateLimiterStore,
 // tokens_per_min the quota's exceeded flag latches and the NEXT request is
 // denied 429 at the rate-limit gate.
 //
+// This is also the feed for the token-accounting Prometheus series
+// (loxilb_ai_tokens_consumed_total and friends): the counts recorded there
+// are exactly the counts charged, which the response-complete recorder
+// cannot guarantee (its non-streaming leg misses usage objects that arrive
+// after the response headers' segment).
+//
 // estimated=1 marks counts from the data plane's estimate net (request-size
 // prompt estimate + SSE chunk count; no usage object materialized): the
 // charge proceeds identically but the tokens also feed the
-// loxilb_ai_tokens_estimated_total split so estimated accounting stays
-// distinguishable from exact.
+// loxilb_ai_tokens_estimated_total / loxilb_ai_tokens_missing_total split so
+// estimated accounting stays distinguishable from exact.
 //
 //export llb_ai_token_quota_consume
 func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, promptTokens C.int, completTokens C.int, estimated C.int, result *C.ai_gw_decision_t) (ret C.int) {
@@ -395,9 +419,8 @@ func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, promptToken
 		return 0
 	}
 
-	if estimated != 0 {
-		prom.AddTokensEstimated(C.GoString(modelName), tenant, count)
-	}
+	prom.RecordTokenUsage(C.GoString(modelName), tenant, int(promptTokens),
+		int(completTokens), estimated != 0)
 
 	var svc rateLimitService
 	if us := mh.UserService; us != nil {
@@ -534,9 +557,11 @@ func llb_ai_stream_end(tenantID *C.char, modelName *C.char) C.int {
 // C sockproxy calls this once on response completion. It translates C types to
 // Go and delegates to prom.RecordAIRequest (request counter + latency
 // histogram). The token, stream-lifecycle, and errorCode parameters are kept
-// for C ABI compatibility but are unused: token metrics were removed (metrics
-// audit D3), stream lifecycle is tracked by llb_ai_stream_start/_end, and
-// 429/403 denials are recorded at the point of denial.
+// for C ABI compatibility but are unused: token series are fed from
+// llb_ai_token_quota_consume (whose counts always match the charge — the
+// counts passed here can lag on split non-streaming bodies), stream lifecycle
+// is tracked by llb_ai_stream_start/_end, and 429/403 denials are recorded at
+// the point of denial.
 //
 // Parameters:
 //

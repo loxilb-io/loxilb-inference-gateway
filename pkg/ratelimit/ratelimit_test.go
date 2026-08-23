@@ -394,3 +394,50 @@ func TestCleanupRemovesInactive(t *testing.T) {
 		t.Fatal("inactive entry should have been removed by cleanup")
 	}
 }
+
+// TestTokenQuotaSnapshot verifies the scrape-time view of the quota map:
+// consumed/limit per tenant, no entry for unlimited tenants, limit refresh on
+// the next charge, and consumed reading 0 once the window has rolled over
+// with no further charges (the idle/denied-tenant case the collector exists
+// to report truthfully).
+func TestTokenQuotaSnapshot(t *testing.T) {
+	s := &RateLimiterStore{entries: make(map[string]*limiterEntry)}
+
+	if snap := s.TokenQuotaSnapshot(); len(snap) != 0 {
+		t.Fatalf("expected empty snapshot before any charge, got %d entries", len(snap))
+	}
+
+	s.AllowTokens("tenant1", 30, 100)
+	s.AllowTokens("tenant1", 20, 100)
+	// tokensPerMin=0 skips the quota map entirely — no entry to report.
+	s.AllowTokens("tenant2", 500, 0)
+
+	snap := s.TokenQuotaSnapshot()
+	if len(snap) != 1 {
+		t.Fatalf("expected 1 snapshot entry, got %d", len(snap))
+	}
+	if snap[0].TenantID != "tenant1" || snap[0].Consumed != 50 || snap[0].Limit != 100 {
+		t.Fatalf("unexpected snapshot entry: %+v", snap[0])
+	}
+
+	// A quota config change surfaces on the tenant's next charge.
+	s.AllowTokens("tenant1", 10, 200)
+	snap = s.TokenQuotaSnapshot()
+	if snap[0].Consumed != 60 || snap[0].Limit != 200 {
+		t.Fatalf("expected consumed=60 limit=200 after config change, got %+v", snap[0])
+	}
+
+	// Window rollover with NO further charges: consumed must read 0 (the
+	// quota refilled) while the limit stays known.
+	v, ok := s.quotaMap.Load("tenant1")
+	if !ok {
+		t.Fatal("entry not found in quotaMap")
+	}
+	e := v.(*tokenWindowEntry)
+	atomic.StoreInt64(&e.windowEpoch, atomic.LoadInt64(&e.windowEpoch)-1)
+
+	snap = s.TokenQuotaSnapshot()
+	if len(snap) != 1 || snap[0].Consumed != 0 || snap[0].Limit != 200 {
+		t.Fatalf("expected consumed=0 limit=200 after rollover, got %+v", snap)
+	}
+}
