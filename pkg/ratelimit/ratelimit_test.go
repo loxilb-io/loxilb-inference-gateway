@@ -244,6 +244,45 @@ func TestAllowTokensQuotaExceededDetection(t *testing.T) {
 	}
 }
 
+// TestTokenQuotaExceededClearsOnRollover pins the read-side staleness rule:
+// once a tenant is over quota, EVERY subsequent request is denied at the gate,
+// so AllowTokens — the only writer that clears the exceeded flag — never runs
+// again. IsTokenQuotaExceeded itself must therefore report false as soon as
+// the window epoch advances, or one trip denies the tenant forever.
+func TestTokenQuotaExceededClearsOnRollover(t *testing.T) {
+	s := &RateLimiterStore{entries: make(map[string]*limiterEntry)}
+
+	const tokensPerMin = 100
+
+	// Trip the quota.
+	s.AllowTokens("tenant1", 100, tokensPerMin)
+	if allowed, _ := s.AllowTokens("tenant1", 10, tokensPerMin); allowed {
+		t.Fatal("should be denied over quota")
+	}
+	if !s.IsTokenQuotaExceeded("tenant1") {
+		t.Fatal("exceeded flag should be latched")
+	}
+
+	// Simulate the epoch advancing with NO further AllowTokens calls (the
+	// denied-tenant reality: requests bounce at the gate before any response
+	// could consume tokens).
+	v, ok := s.quotaMap.Load("tenant1")
+	if !ok {
+		t.Fatal("entry not found in quotaMap")
+	}
+	e := v.(*tokenWindowEntry)
+	atomic.StoreInt64(&e.windowEpoch, atomic.LoadInt64(&e.windowEpoch)-1)
+
+	if s.IsTokenQuotaExceeded("tenant1") {
+		t.Fatal("exceeded flag must read stale (false) after window rollover")
+	}
+
+	// The next consume in the new window resets cleanly and is allowed.
+	if allowed, _ := s.AllowTokens("tenant1", 50, tokensPerMin); !allowed {
+		t.Fatal("fresh window should allow within-quota consumption")
+	}
+}
+
 // TestAllowTokensPerTenantIsolation verifies that exhausting tenant A's quota
 // does not affect tenant B's independent budget.
 func TestAllowTokensPerTenantIsolation(t *testing.T) {

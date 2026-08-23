@@ -206,10 +206,24 @@ func (s *RateLimiterStore) AllowTokens(tenantID string, count, tokensPerMin int)
 // currently exceeded. Called by the request-path gate (llb_ai_ratelimit_check)
 // to block the next request when the previous response consumed too many tokens.
 //
+// The exceeded latch belongs to ONE quota window: when the epoch has advanced
+// past the window that set it, the quota has refilled and the latch is stale.
+// The staleness check must live HERE, on the read side — a tenant whose every
+// request is denied at the gate never completes a response, so AllowTokens
+// (the only writer that clears the flag) never runs again and the tenant
+// would otherwise stay denied forever after one trip.
+//
 // This function uses only atomic operations (no mutex) to satisfy.
 func (s *RateLimiterStore) IsTokenQuotaExceeded(tenantID string) bool {
 	if v, ok := s.quotaMap.Load(tenantID); ok {
-		return atomic.LoadInt32(&v.(*tokenWindowEntry).exceeded) == 1
+		e := v.(*tokenWindowEntry)
+		if atomic.LoadInt32(&e.exceeded) != 1 {
+			return false
+		}
+		if currentQuotaEpoch.Load() > atomic.LoadInt64(&e.windowEpoch) {
+			return false
+		}
+		return true
 	}
 	return false
 }
