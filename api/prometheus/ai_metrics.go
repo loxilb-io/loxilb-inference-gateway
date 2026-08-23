@@ -148,6 +148,19 @@ var (
 		[]string{"model", "tenant"},
 	)
 
+	// aiTokensEstimatedTotal counts quota-charged tokens whose counts came
+	// from the data plane's estimate net (request-size prompt estimate +
+	// SSE chunk count) rather than an extracted usage object. A non-zero
+	// rate means some responses complete without a readable usage chunk —
+	// the split keeps estimated accounting distinguishable from exact.
+	aiTokensEstimatedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "loxilb_ai_tokens_estimated_total",
+			Help: "Total tokens charged against tenant quotas from the estimate net (no usage object in the response), by model and tenant.",
+		},
+		[]string{"model", "tenant"},
+	)
+
 	// ============================================================================
 	// P/D DISAGGREGATION METRICS 
 	// ============================================================================
@@ -242,6 +255,18 @@ func RecordRateLimitHit(tenantID, reason string) {
 // when decision == 2 (HTTP 403 / model not in key's allowed list).
 func RecordModelNotAllowed(tenantID, model string) {
 	aiModelNotAllowedTotal.WithLabelValues(boundModelLabel(model), sanitizeLabel(tenantID)).Inc()
+}
+
+// AddTokensEstimated adds estimate-net token counts to the
+// loxilb_ai_tokens_estimated_total counter. Call this from
+// llb_ai_token_quota_consume when the data plane flags the charge as
+// estimated (no usage object materialized in the response).
+func AddTokensEstimated(modelName, tenantID string, tokens int) {
+	if tokens <= 0 {
+		return
+	}
+	aiTokensEstimatedTotal.WithLabelValues(boundModelLabel(modelName),
+		sanitizeLabel(tenantID)).Add(float64(tokens))
 }
 
 // RecordPDRequest records a P/D disaggregation lifecycle event for Prometheus metrics.

@@ -372,8 +372,14 @@ func tokenQuotaConsumeInternal(svc rateLimitService, store *rl.RateLimiterStore,
 // tokens_per_min the quota's exceeded flag latches and the NEXT request is
 // denied 429 at the rate-limit gate.
 //
+// estimated=1 marks counts from the data plane's estimate net (request-size
+// prompt estimate + SSE chunk count; no usage object materialized): the
+// charge proceeds identically but the tokens also feed the
+// loxilb_ai_tokens_estimated_total split so estimated accounting stays
+// distinguishable from exact.
+//
 //export llb_ai_token_quota_consume
-func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, promptTokens C.int, completTokens C.int, result *C.ai_gw_decision_t) (ret C.int) {
+func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, promptTokens C.int, completTokens C.int, estimated C.int, result *C.ai_gw_decision_t) (ret C.int) {
 	// Fail-open on panic: the response is already served, so accounting must
 	// never take down the datapath — the quota simply misses this response.
 	defer func() {
@@ -387,6 +393,10 @@ func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, promptToken
 	tenant := C.GoString(tenantID)
 	if count <= 0 || tenant == "" {
 		return 0
+	}
+
+	if estimated != 0 {
+		prom.AddTokensEstimated(C.GoString(modelName), tenant, count)
 	}
 
 	var svc rateLimitService
