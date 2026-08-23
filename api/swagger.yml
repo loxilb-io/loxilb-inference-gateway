@@ -5334,6 +5334,7 @@ paths:
   '/metrics':
     get:
       summary: Scrape metrics from the cache
+      security: [] # Overrides global security: Prometheus scrapers don't carry a bearer
       responses:
         '200':
           description: Metrics in prometheus text format

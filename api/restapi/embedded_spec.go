@@ -8953,6 +8953,7 @@ func init() {
     },
     "/metrics": {
       "get": {
+        "security": [],
         "summary": "Scrape metrics from the cache",
         "responses": {
           "200": {
@@ -24441,6 +24442,7 @@ func init() {
     },
     "/metrics": {
       "get": {
+        "security": [],
         "summary": "Scrape metrics from the cache",
         "responses": {
           "200": {
