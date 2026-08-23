@@ -61,7 +61,7 @@ const (
 		`key_hash VARCHAR(64) NOT NULL,` +
 		`tenant_id VARCHAR(128) NOT NULL,` +
 		`name VARCHAR(255) NOT NULL DEFAULT '',` +
-		`allowed_models TEXT NOT NULL DEFAULT '',` +
+		`allowed_models TEXT NOT NULL,` +
 		`rate_limit_rps INT DEFAULT 0,` +
 		`burst_size INT DEFAULT 0,` +
 		`tokens_per_min INT DEFAULT 0,` +
