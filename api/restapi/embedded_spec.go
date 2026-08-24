@@ -15079,12 +15079,33 @@ func init() {
         }
       }
     },
+    "TenantModelRateLimit": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "description": "Model name the quota applies to",
+          "type": "string"
+        },
+        "tokens_per_min": {
+          "description": "Maximum LLM tokens per minute for this tenant and model; 0 removes the model quota",
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
     "TenantRateLimitEntry": {
       "type": "object",
       "required": [
         "tenant_id"
       ],
       "properties": {
+        "model_limits": {
+          "description": "Per-model token quotas for the tenant",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/TenantModelRateLimit"
+          }
+        },
         "rps": {
           "description": "Maximum requests per second for the tenant",
           "type": "integer",
@@ -15112,6 +15133,13 @@ func init() {
         "tenant_id"
       ],
       "properties": {
+        "model_limits": {
+          "description": "Per-model token quotas for the tenant",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/TenantModelRateLimit"
+          }
+        },
         "rps": {
           "description": "Maximum requests per second for the tenant",
           "type": "integer",
@@ -32096,12 +32124,33 @@ func init() {
         }
       }
     },
+    "TenantModelRateLimit": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "description": "Model name the quota applies to",
+          "type": "string"
+        },
+        "tokens_per_min": {
+          "description": "Maximum LLM tokens per minute for this tenant and model; 0 removes the model quota",
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
     "TenantRateLimitEntry": {
       "type": "object",
       "required": [
         "tenant_id"
       ],
       "properties": {
+        "model_limits": {
+          "description": "Per-model token quotas for the tenant",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/TenantModelRateLimit"
+          }
+        },
         "rps": {
           "description": "Maximum requests per second for the tenant",
           "type": "integer",
@@ -32129,6 +32178,13 @@ func init() {
         "tenant_id"
       ],
       "properties": {
+        "model_limits": {
+          "description": "Per-model token quotas for the tenant",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/TenantModelRateLimit"
+          }
+        },
         "rps": {
           "description": "Maximum requests per second for the tenant",
           "type": "integer",

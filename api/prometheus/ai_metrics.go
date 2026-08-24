@@ -216,7 +216,7 @@ var (
 	)
 
 	// ============================================================================
-	// P/D DISAGGREGATION METRICS 
+	// P/D DISAGGREGATION METRICS
 	// ============================================================================
 
 	// aiPDPrefillDuration tracks prefill phase latency as a histogram.
@@ -351,11 +351,14 @@ func RecordTokenQuotaDenied(tenantID string) {
 	aiTokenQuotaDeniedTotal.WithLabelValues(sanitizeLabel(tenantID)).Inc()
 }
 
-// TokenQuotaState is one tenant's live quota-window state as supplied by the
+// TokenQuotaState is one quota bucket's live state as supplied by the
 // snapshot source registered via RegisterTokenQuotaSource (the rate-limiter
-// store, adapted in pkg/loxinet).
+// store, adapted in pkg/loxinet). Model is empty for the tenant aggregate
+// bucket and set for a tenant|model bucket; the collector routes the two to
+// separate series so the aggregate's labels stay unchanged.
 type TokenQuotaState struct {
 	Tenant   string
+	Model    string
 	Consumed int64
 	Limit    int64
 }
@@ -363,13 +366,23 @@ type TokenQuotaState struct {
 var (
 	tokenQuotaUtilizationDesc = prometheus.NewDesc(
 		"loxilb_ai_token_quota_utilization",
-		"Fraction of the per-tenant tokens-per-minute quota consumed in the current window, computed at scrape time. May exceed 1.0 when the tipping charge overshoots the limit; reads 0 after a window rollover.",
+		"Fraction of the per-tenant tokens-per-minute quota currently spent and not yet refilled, computed at scrape time. May exceed 1.0 while the bucket is in post-hoc debt; decays continuously as the bucket refills.",
 		[]string{"tenant"}, nil,
 	)
 	tokenQuotaLimitDesc = prometheus.NewDesc(
 		"loxilb_ai_token_quota_limit_tokens",
 		"Per-tenant tokens-per-minute quota as of the tenant's most recent charge. Headroom in tokens = limit * (1 - utilization).",
 		[]string{"tenant"}, nil,
+	)
+	tokenQuotaModelUtilizationDesc = prometheus.NewDesc(
+		"loxilb_ai_token_quota_model_utilization",
+		"Fraction of a tenant's per-model tokens-per-minute quota currently spent and not yet refilled, computed at scrape time. Same semantics as loxilb_ai_token_quota_utilization, keyed tenant+model.",
+		[]string{"tenant", "model"}, nil,
+	)
+	tokenQuotaModelLimitDesc = prometheus.NewDesc(
+		"loxilb_ai_token_quota_model_limit_tokens",
+		"Per-model tokens-per-minute quota for a tenant as of the pair's most recent charge.",
+		[]string{"tenant", "model"}, nil,
 	)
 )
 
@@ -387,18 +400,32 @@ type tokenQuotaCollector struct {
 func (c *tokenQuotaCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- tokenQuotaUtilizationDesc
 	ch <- tokenQuotaLimitDesc
+	ch <- tokenQuotaModelUtilizationDesc
+	ch <- tokenQuotaModelLimitDesc
 }
 
 func (c *tokenQuotaCollector) Collect(ch chan<- prometheus.Metric) {
-	// Distinct tenant IDs can sanitize to the same label value; emitting
-	// both would fail the scrape with a duplicate-series error, so only the
-	// first snapshot entry per sanitized label is exported.
+	// Distinct tenant/model IDs can sanitize to the same label value;
+	// emitting both would fail the scrape with a duplicate-series error, so
+	// only the first snapshot entry per sanitized label set is exported.
 	seen := make(map[string]struct{})
 	for _, st := range c.snapshot() {
 		if st.Limit <= 0 {
 			continue
 		}
 		tenant := sanitizeLabel(st.Tenant)
+		if st.Model != "" {
+			model := sanitizeLabel(st.Model)
+			if _, dup := seen[tenant+"|"+model]; dup {
+				continue
+			}
+			seen[tenant+"|"+model] = struct{}{}
+			ch <- prometheus.MustNewConstMetric(tokenQuotaModelUtilizationDesc,
+				prometheus.GaugeValue, float64(st.Consumed)/float64(st.Limit), tenant, model)
+			ch <- prometheus.MustNewConstMetric(tokenQuotaModelLimitDesc,
+				prometheus.GaugeValue, float64(st.Limit), tenant, model)
+			continue
+		}
 		if _, dup := seen[tenant]; dup {
 			continue
 		}

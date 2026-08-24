@@ -21,6 +21,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -70,6 +71,12 @@ const (
 	sqlUpdateAPIKeyAllowedModels = "UPDATE api_keys SET allowed_models = ? WHERE key_id = ?"
 	sqlSelectTenantRateLimit     = "SELECT rps, tokens_per_min FROM tenant_rate_limits WHERE tenant_id = ?"
 	sqlSelectTenantRateLimitFull = "SELECT rps, tokens_per_min, updated_at FROM tenant_rate_limits WHERE tenant_id = ?"
+
+	sqlReplaceIntoTenantModelRateLimit = "REPLACE INTO tenant_model_rate_limits" +
+		" (tenant_id, model, tokens_per_min, updated_at) VALUES (?, ?, ?, ?)"
+	sqlDeleteTenantModelRateLimit  = "DELETE FROM tenant_model_rate_limits WHERE tenant_id = ? AND model = ?"
+	sqlSelectTenantModelRateLimit  = "SELECT tokens_per_min FROM tenant_model_rate_limits WHERE tenant_id = ? AND model = ?"
+	sqlSelectTenantModelRateLimits = "SELECT model, tokens_per_min FROM tenant_model_rate_limits WHERE tenant_id = ?"
 )
 
 // rateLimitCacheEntry holds tenant rate limit values cached in memory.
@@ -322,6 +329,95 @@ func (s *UserService) GetTenantRateLimit(tenantID string) (rps, tokensPerMin int
 	return r, t
 }
 
+// SetTenantModelRateLimit upserts one per-model token quota for a tenant
+// into the tenant_model_rate_limits table. tokensPerMin <= 0 removes the
+// row: the model falls back to the tenant-level quota alone. The cache is
+// refreshed so subsequent GetTenantModelRateLimit calls see the new value
+// without a database round-trip.
+func (s *UserService) SetTenantModelRateLimit(tenantID, model string, tokensPerMin int) error {
+	if err := s.dbReady(); err != nil {
+		return err
+	}
+	if model == "" || strings.ContainsAny(tenantID+model, "|") {
+		// "|" is the composite quota-key delimiter (tenant|model): a name
+		// containing it would alias another tenant/model pair's bucket.
+		return fmt.Errorf("invalid tenant/model name for model rate limit (%q/%q)", tenantID, model)
+	}
+	cacheKey := "rlm:" + tenantID + "|" + model
+	if tokensPerMin <= 0 {
+		if _, err := s.DB.Exec(sqlDeleteTenantModelRateLimit, tenantID, model); err != nil {
+			tk.LogIt(tk.LogError, "[AIGateway] Failed to clear model rate limit for %s/%s: %v\n", tenantID, model, err)
+			return err
+		}
+		s.Cache.Delete(cacheKey)
+		tk.LogIt(tk.LogInfo, "[AIGateway] Cleared model rate limit for tenant %s model %s\n", tenantID, model)
+		return nil
+	}
+	now := time.Now().UTC()
+	if _, err := s.DB.Exec(sqlReplaceIntoTenantModelRateLimit, tenantID, model, tokensPerMin, now); err != nil {
+		tk.LogIt(tk.LogError, "[AIGateway] Failed to set model rate limit for %s/%s: %v\n", tenantID, model, err)
+		return err
+	}
+	s.Cache.Set(cacheKey, &rateLimitCacheEntry{tokensPerMin: tokensPerMin}, CacheExpirationTime*time.Minute)
+	tk.LogIt(tk.LogInfo, "[AIGateway] Set model rate limit for tenant %s model %s: tokensPerMin=%d\n", tenantID, model, tokensPerMin)
+	return nil
+}
+
+// GetTenantModelRateLimit returns the per-model token quota for a tenant,
+// or 0 when the pair has no model-specific limit configured (the tenant
+// aggregate quota, if any, still applies). Cache-first, same posture as
+// GetTenantRateLimit: no-row and DB-unavailable both read as "no limit".
+func (s *UserService) GetTenantModelRateLimit(tenantID, model string) (tokensPerMin int) {
+	if model == "" {
+		return 0
+	}
+	cacheKey := "rlm:" + tenantID + "|" + model
+	if cached, found := s.Cache.Get(cacheKey); found {
+		if entry, ok := cached.(*rateLimitCacheEntry); ok {
+			return entry.tokensPerMin
+		}
+	}
+	if s.dbReady() != nil {
+		return 0
+	}
+	var t int
+	err := s.DB.QueryRow(sqlSelectTenantModelRateLimit, tenantID, model).Scan(&t)
+	if err != nil {
+		if err != sql.ErrNoRows {
+			tk.LogIt(tk.LogError, "[AIGateway] Failed to get model rate limit for %s/%s: %v\n", tenantID, model, err)
+			return 0
+		}
+		// Cache the miss too: an unlimited model on a busy tenant would
+		// otherwise pay one DB round-trip per request.
+		t = 0
+	}
+	s.Cache.Set(cacheKey, &rateLimitCacheEntry{tokensPerMin: t}, CacheExpirationTime*time.Minute)
+	return t
+}
+
+// GetTenantModelRateLimits returns every configured per-model quota for a
+// tenant, for the config GET surface. Reads the database directly (config
+// reads are not on the datapath).
+func (s *UserService) GetTenantModelRateLimits(tenantID string) ([]cmn.TenantModelRateLimit, error) {
+	if err := s.dbReady(); err != nil {
+		return nil, err
+	}
+	rows, err := s.DB.Query(sqlSelectTenantModelRateLimits, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []cmn.TenantModelRateLimit
+	for rows.Next() {
+		var m cmn.TenantModelRateLimit
+		if err := rows.Scan(&m.Model, &m.TokensPerMin); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
 // GetAPIKeyByID retrieves API key metadata by key ID (without the hash).
 // The in-memory cache is checked first (cache key "keyid:<keyID>"); the DB
 // is queried only on a miss, and the result is cached before returning.
@@ -433,13 +529,22 @@ func (s *UserService) GetTenantRateLimitEntry(tenantID string) (*cmn.TenantRateL
 
 	err := s.DB.QueryRow(sqlSelectTenantRateLimitFull, tenantID).Scan(
 		&entry.RPS, &entry.TokensPerMin, &entry.UpdatedAt)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			tk.LogIt(tk.LogWarning, "[AIGateway] Rate limit not found for tenant: %s\n", tenantID)
-			return nil, errors.New("tenant rate limit not found")
-		}
+	noTenantRow := err == sql.ErrNoRows
+	if err != nil && !noTenantRow {
 		tk.LogIt(tk.LogError, "[AIGateway] Failed to get rate limit entry for tenant %s: %v\n", tenantID, err)
 		return nil, err
+	}
+
+	entry.ModelLimits, err = s.GetTenantModelRateLimits(tenantID)
+	if err != nil {
+		tk.LogIt(tk.LogError, "[AIGateway] Failed to get model rate limits for tenant %s: %v\n", tenantID, err)
+		return nil, err
+	}
+	// A tenant configured only with per-model quotas has no aggregate row —
+	// still a real configuration worth returning.
+	if noTenantRow && len(entry.ModelLimits) == 0 {
+		tk.LogIt(tk.LogWarning, "[AIGateway] Rate limit not found for tenant: %s\n", tenantID)
+		return nil, errors.New("tenant rate limit not found")
 	}
 
 	return &entry, nil

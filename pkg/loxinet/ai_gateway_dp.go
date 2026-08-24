@@ -37,6 +37,7 @@ import "C"
 import (
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -59,7 +60,16 @@ type apiKeyValidator interface {
 // It is satisfied by *user.UserService and by test mocks.
 type rateLimitService interface {
 	GetTenantRateLimit(tenantID string) (rps, tokensPerMin int)
+	GetTenantModelRateLimit(tenantID, model string) (tokensPerMin int)
 	GetAPIKeyByID(keyID string) (*cmn.ApiKeySummary, error)
+}
+
+// modelQuotaKey is the composite quota-map key for a tenant's per-model
+// token bucket. The "|" delimiter matches the sync layer's "tm:" wire-scope
+// convention (rl.QuotaWireKey); tenant and model names containing "|" are
+// rejected at config time so the key can never alias another pair.
+func modelQuotaKey(tenantID, model string) string {
+	return tenantID + "|" + model
 }
 
 // rateLimitCheckInternal is the pure-Go rate limit logic, separated from the
@@ -74,8 +84,9 @@ type rateLimitService interface {
 //   - "tenant_quota_exceeded" – per-tenant token bucket denied
 //   - "token_quota_warming"   – quota state cold after restart; peer warm-up
 //     still inside its bounded deadline
-//   - "token_quota_exceeded"  – per-tenant token quota flag set
-func rateLimitCheckInternal(svc rateLimitService, store *rl.RateLimiterStore, keyIDStr, tenantIDStr string) (decision, retrySecs int, errorCode string) {
+//   - "token_quota_exceeded"  – tenant aggregate or tenant|model token bucket
+//     in debt
+func rateLimitCheckInternal(svc rateLimitService, store *rl.RateLimiterStore, keyIDStr, tenantIDStr, modelName string) (decision, retrySecs int, errorCode string) {
 	// Stage 1: per-key check with key-specific RPS and burst values.
 	if keyIDStr != "" {
 		keyRPS := 0
@@ -110,20 +121,29 @@ func rateLimitCheckInternal(svc rateLimitService, store *rl.RateLimiterStore, ke
 			return 3, retrySec, "tenant_quota_exceeded"
 		}
 
-		// Stage 3: per-tenant token quota checks — only meaningful for
-		// tenants that HAVE a token quota configured.
-		//
+		// Stage 3: token quota checks — only meaningful for tenants that
+		// HAVE a token quota configured, at the aggregate level or for the
+		// request's model.
+		modelTPM := 0
+		if svc != nil && modelName != "" {
+			modelTPM = svc.GetTenantModelRateLimit(tenantIDStr, modelName)
+		}
+
 		// Warming gate first: after a cold start the consumed counters are
-		// empty until a peer re-teaches them, so neither the exceeded latch
+		// empty until a peer re-teaches them, so neither the debt check
 		// nor a pre-admission reservation can be decided truthfully yet.
 		// Deny with a short retry for the bounded warmup window rather than
 		// silently admitting against a zeroed quota.
-		if tenantTPM > 0 && store.QuotaWarming() {
+		if (tenantTPM > 0 || modelTPM > 0) && store.QuotaWarming() {
 			tk.LogIt(tk.LogWarning, "[AIGateway] rateLimitCheckInternal: tenant %s denied during token-quota warmup\n", tenantIDStr)
 			return 3, 1, "token_quota_warming"
 		}
 		if store.IsTokenQuotaExceeded(tenantIDStr) {
 			tk.LogIt(tk.LogWarning, "[AIGateway] rateLimitCheckInternal: tenant %s token quota exceeded\n", tenantIDStr)
+			return 3, 60, "token_quota_exceeded"
+		}
+		if modelTPM > 0 && store.IsTokenQuotaExceeded(modelQuotaKey(tenantIDStr, modelName)) {
+			tk.LogIt(tk.LogWarning, "[AIGateway] rateLimitCheckInternal: tenant %s model %s token quota exceeded\n", tenantIDStr, modelName)
 			return 3, 60, "token_quota_exceeded"
 		}
 	}
@@ -334,8 +354,16 @@ func getGlobalRL() *rl.RateLimiterStore {
 			usages := globalRL.TokenQuotaSnapshot()
 			out := make([]prom.TokenQuotaState, 0, len(usages))
 			for _, u := range usages {
+				// Composite tenant|model keys carry the per-model buckets;
+				// split them so the collector can export them on the
+				// model-labelled series instead of mangling the tenant label.
+				tenant, model := u.TenantID, ""
+				if i := strings.IndexByte(u.TenantID, '|'); i >= 0 {
+					tenant, model = u.TenantID[:i], u.TenantID[i+1:]
+				}
 				out = append(out, prom.TokenQuotaState{
-					Tenant:   u.TenantID,
+					Tenant:   tenant,
+					Model:    model,
 					Consumed: u.Consumed,
 					Limit:    u.Limit,
 				})
@@ -360,13 +388,15 @@ func getGlobalRL() *rl.RateLimiterStore {
 //
 //	keyID    – the validated API key's key_id string
 //	tenantID – the validated API key's tenant_id string
+//	model    – the request's body-bound model name (may be empty); selects
+//	           the tenant|model token bucket for the stage-3 debt check
 //	result   – output decision structure; decision is set to 3 on denial
 //
 // Returns 0 when allowed; -1 when rate-limited (result->decision == 3 and
 // result->retry_after is set to the recommended retry delay in seconds).
 //
 //export llb_ai_ratelimit_check
-func llb_ai_ratelimit_check(keyID *C.char, tenantID *C.char, result *C.ai_gw_decision_t) (ret C.int) {
+func llb_ai_ratelimit_check(keyID *C.char, tenantID *C.char, model *C.char, result *C.ai_gw_decision_t) (ret C.int) {
 	// Fail closed on panic: deny with a short retry rather than crashing the
 	// datapath or silently disabling the limiter.
 	defer func() {
@@ -387,6 +417,7 @@ func llb_ai_ratelimit_check(keyID *C.char, tenantID *C.char, result *C.ai_gw_dec
 
 	keyIDStr := C.GoString(keyID)
 	tenantIDStr := C.GoString(tenantID)
+	modelStr := C.GoString(model)
 
 	var svc rateLimitService
 	if us := mh.UserService; us != nil {
@@ -394,7 +425,7 @@ func llb_ai_ratelimit_check(keyID *C.char, tenantID *C.char, result *C.ai_gw_dec
 	}
 
 	store := getGlobalRL()
-	decision, retrySecs, errorCode := rateLimitCheckInternal(svc, store, keyIDStr, tenantIDStr)
+	decision, retrySecs, errorCode := rateLimitCheckInternal(svc, store, keyIDStr, tenantIDStr, modelStr)
 	if decision != 0 {
 		result.decision = C.int(decision)
 		result.retry_after = C.int(retrySecs)
@@ -415,24 +446,54 @@ func llb_ai_ratelimit_check(keyID *C.char, tenantID *C.char, result *C.ai_gw_dec
 // tokenQuotaReserveInternal is the pure-Go pre-admission logic, separated
 // from the CGO export so that unit tests can exercise it without C types.
 // It claims want tokens (the request's prompt estimate + declared max_tokens
-// ceiling) against the tenant's per-minute quota BEFORE the request is
-// dispatched, so an over-quota request is denied while it is still cheap.
+// ceiling) against the tenant's aggregate per-minute quota AND, when one is
+// configured, the tenant|model quota — both must admit, so a model with a
+// tight budget cannot ride the tenant's generous ceiling. A claim admitted
+// by the first bucket is rolled back when the second denies: a half-held
+// reservation would leak headroom until the epoch expires it.
 //
 // Returns (allowed, retrySecs, resEpoch). resEpoch tags the reservation's
-// window and must travel with the request to settlement; 0 means nothing was
-// reserved (no quota configured) and settlement is a plain charge.
-func tokenQuotaReserveInternal(svc rateLimitService, store *rl.RateLimiterStore, tenantID string, want int) (allowed bool, retrySecs int, resEpoch int64) {
+// epoch and must travel with the request to settlement; 0 means nothing was
+// reserved (no quota configured) and settlement is a plain charge. Both
+// buckets share one epoch tag: reservations are taken back-to-back, so they
+// land in the same minute except across a boundary race, where the stale
+// tag makes settlement skip a release the epoch advance already performed —
+// the standard orphan self-heal.
+func tokenQuotaReserveInternal(svc rateLimitService, store *rl.RateLimiterStore, tenantID, modelName string, want int) (allowed bool, retrySecs int, resEpoch int64) {
 	if want <= 0 || tenantID == "" {
 		return true, 0, 0
 	}
-	tokensPerMin := 0
+	tenantTPM := 0
+	modelTPM := 0
 	if svc != nil {
-		_, tokensPerMin = svc.GetTenantRateLimit(tenantID)
+		_, tenantTPM = svc.GetTenantRateLimit(tenantID)
+		if modelName != "" {
+			modelTPM = svc.GetTenantModelRateLimit(tenantID, modelName)
+		}
 	}
-	if tokensPerMin <= 0 {
+	if tenantTPM <= 0 && modelTPM <= 0 {
 		return true, 0, 0
 	}
-	return store.ReserveTokens(tenantID, want, tokensPerMin)
+
+	allowed, retrySecs, resEpoch = store.ReserveTokens(tenantID, want, tenantTPM)
+	if !allowed {
+		return false, retrySecs, 0
+	}
+	if modelTPM > 0 {
+		mAllowed, mRetry, mEpoch := store.ReserveTokens(modelQuotaKey(tenantID, modelName), want, modelTPM)
+		if !mAllowed {
+			// Give the aggregate claim back (epoch-tagged, clamped release;
+			// nothing charged).
+			if resEpoch != 0 {
+				store.SettleTokens(tenantID, 0, want, resEpoch, tenantTPM)
+			}
+			return false, mRetry, 0
+		}
+		if resEpoch == 0 {
+			resEpoch = mEpoch
+		}
+	}
+	return true, 0, resEpoch
 }
 
 // tokenQuotaConsumeInternal is the pure-Go token accounting logic, separated
@@ -444,24 +505,39 @@ func tokenQuotaReserveInternal(svc rateLimitService, store *rl.RateLimiterStore,
 //
 // The reservation must be released even when the response produced no
 // countable tokens (count 0) or the quota config was removed mid-flight —
-// an unreleased claim denies the tenant's admissions until window rollover.
+// an unreleased claim denies the tenant's admissions until the epoch
+// expires it. Settlement mirrors reservation's dual-bucket shape: the
+// charge lands on the tenant aggregate AND, when configured, the
+// tenant|model bucket, and the claim is released from both.
 //
-// Returns (allowed, retrySecs). allowed=false means the charge tipped the
-// tenant over quota: the store's exceeded flag is now latched, so the NEXT
-// request's rateLimitCheckInternal stage 3 returns deny_429
-// ("token_quota_exceeded") — the already-served response is never affected.
-func tokenQuotaConsumeInternal(svc rateLimitService, store *rl.RateLimiterStore, tenantID string, count, reservedAmt int, resEpoch int64) (allowed bool, retrySecs int) {
+// Returns (allowed, retrySecs). allowed=false means the charge put either
+// bucket into debt: the NEXT request's rateLimitCheckInternal stage 3
+// returns deny_429 ("token_quota_exceeded") — the already-served response
+// is never affected.
+func tokenQuotaConsumeInternal(svc rateLimitService, store *rl.RateLimiterStore, tenantID, modelName string, count, reservedAmt int, resEpoch int64) (allowed bool, retrySecs int) {
 	if tenantID == "" {
 		return true, 0
 	}
-	tokensPerMin := 0
+	tenantTPM := 0
+	modelTPM := 0
 	if svc != nil {
-		_, tokensPerMin = svc.GetTenantRateLimit(tenantID)
+		_, tenantTPM = svc.GetTenantRateLimit(tenantID)
+		if modelName != "" {
+			modelTPM = svc.GetTenantModelRateLimit(tenantID, modelName)
+		}
 	}
-	if reservedAmt <= 0 && (count <= 0 || tokensPerMin <= 0) {
+	if reservedAmt <= 0 && (count <= 0 || (tenantTPM <= 0 && modelTPM <= 0)) {
 		return true, 0
 	}
-	return store.SettleTokens(tenantID, count, reservedAmt, resEpoch, tokensPerMin)
+	allowed, retrySecs = store.SettleTokens(tenantID, count, reservedAmt, resEpoch, tenantTPM)
+	if modelTPM > 0 {
+		mAllowed, mRetry := store.SettleTokens(modelQuotaKey(tenantID, modelName), count, reservedAmt, resEpoch, modelTPM)
+		if !mAllowed {
+			allowed = false
+			retrySecs = max(retrySecs, mRetry)
+		}
+	}
+	return allowed, retrySecs
 }
 
 // llb_ai_token_quota_reserve claims a request's worst-case token spend
@@ -521,7 +597,7 @@ func llb_ai_token_quota_reserve(tenantID *C.char, modelName *C.char, promptEst C
 	}
 
 	store := getGlobalRL()
-	allowed, retrySecs, epoch := tokenQuotaReserveInternal(svc, store, tenant, want)
+	allowed, retrySecs, epoch := tokenQuotaReserveInternal(svc, store, tenant, C.GoString(modelName), want)
 	if !allowed {
 		if result != nil {
 			result.decision = 3
@@ -597,7 +673,7 @@ func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, promptToken
 	}
 
 	store := getGlobalRL()
-	allowed, retrySecs := tokenQuotaConsumeInternal(svc, store, tenant, count,
+	allowed, retrySecs := tokenQuotaConsumeInternal(svc, store, tenant, C.GoString(modelName), count,
 		int(reservedToks), int64(resEpoch))
 	if !allowed {
 		if result != nil {

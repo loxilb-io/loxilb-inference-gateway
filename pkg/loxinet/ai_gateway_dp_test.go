@@ -39,11 +39,16 @@ func (m *mockAPIKeyValidator) ValidateAPIKey(_ string) (*cmn.ApiKeyEntry, error)
 type mockRateLimitService struct {
 	tenantRPS int
 	tenantTPM int
+	modelTPM  map[string]int // per-model tokens_per_min; nil = no model quotas
 	keyByID   map[string]*cmn.ApiKeySummary
 }
 
 func (m *mockRateLimitService) GetTenantRateLimit(_ string) (int, int) {
 	return m.tenantRPS, m.tenantTPM
+}
+
+func (m *mockRateLimitService) GetTenantModelRateLimit(_, model string) int {
+	return m.modelTPM[model]
 }
 
 func (m *mockRateLimitService) GetAPIKeyByID(keyID string) (*cmn.ApiKeySummary, error) {
@@ -80,14 +85,14 @@ func TestRateLimitCheckInternalPerKeyThrottling(t *testing.T) {
 
 	// First two requests must be allowed (burst=2 initial tokens).
 	for i := 1; i <= 2; i++ {
-		decision, _, errCode := rateLimitCheckInternal(svc, store, "key-limited", "tenant-1")
+		decision, _, errCode := rateLimitCheckInternal(svc, store, "key-limited", "tenant-1", "")
 		if decision != 0 {
 			t.Fatalf("request %d: expected allow (decision=0), got decision=%d errorCode=%q", i, decision, errCode)
 		}
 	}
 
 	// Third request must be rate-limited.
-	decision, retrySecs, errCode := rateLimitCheckInternal(svc, store, "key-limited", "tenant-1")
+	decision, retrySecs, errCode := rateLimitCheckInternal(svc, store, "key-limited", "tenant-1", "")
 	if decision != 3 {
 		t.Fatalf("request 3: expected deny_429 (decision=3), got decision=%d", decision)
 	}
@@ -113,7 +118,7 @@ func TestRateLimitCheckInternalUnlimitedKey(t *testing.T) {
 
 	// Any number of requests must be allowed when RateLimitRPS=0.
 	for i := 1; i <= 100; i++ {
-		decision, _, errCode := rateLimitCheckInternal(svc, store, "key-unlimited", "tenant-2")
+		decision, _, errCode := rateLimitCheckInternal(svc, store, "key-unlimited", "tenant-2", "")
 		if decision != 0 {
 			t.Fatalf("request %d: expected allow (decision=0), got decision=%d errorCode=%q", i, decision, errCode)
 		}
@@ -133,13 +138,13 @@ func TestRateLimitCheckInternalTenantErrorCode(t *testing.T) {
 	}
 
 	// First request allowed (burst=1).
-	decision, _, _ := rateLimitCheckInternal(svc, store, "key-norlimit", "tenant-3")
+	decision, _, _ := rateLimitCheckInternal(svc, store, "key-norlimit", "tenant-3", "")
 	if decision != 0 {
 		t.Fatalf("request 1: expected allow, got decision=%d", decision)
 	}
 
 	// Second request must be tenant-rate-limited with tenant_quota_exceeded.
-	decision, _, errCode := rateLimitCheckInternal(svc, store, "key-norlimit", "tenant-3")
+	decision, _, errCode := rateLimitCheckInternal(svc, store, "key-norlimit", "tenant-3", "")
 	if decision != 3 {
 		t.Fatalf("request 2: expected deny_429 (decision=3), got decision=%d", decision)
 	}
@@ -163,16 +168,16 @@ func TestTokenQuotaConsumeInternal(t *testing.T) {
 	}
 
 	// Charge 60 of 100: allowed, gate stays open.
-	allowed, _ := tokenQuotaConsumeInternal(svc, store, "tenant-tpm", 60, 0, 0)
+	allowed, _ := tokenQuotaConsumeInternal(svc, store, "tenant-tpm", "", 60, 0, 0)
 	if !allowed {
 		t.Fatalf("charge 60/100: expected allowed")
 	}
-	if decision, _, _ := rateLimitCheckInternal(svc, store, "key-tpm", "tenant-tpm"); decision != 0 {
+	if decision, _, _ := rateLimitCheckInternal(svc, store, "key-tpm", "tenant-tpm", ""); decision != 0 {
 		t.Fatalf("gate after 60/100: expected allow, got decision=%d", decision)
 	}
 
 	// Charge 50 more (110 > 100): denied, exceeded flag latches.
-	allowed, retrySecs := tokenQuotaConsumeInternal(svc, store, "tenant-tpm", 50, 0, 0)
+	allowed, retrySecs := tokenQuotaConsumeInternal(svc, store, "tenant-tpm", "", 50, 0, 0)
 	if allowed {
 		t.Fatalf("charge 110/100: expected denied")
 	}
@@ -181,7 +186,7 @@ func TestTokenQuotaConsumeInternal(t *testing.T) {
 	}
 
 	// The NEXT request must be denied 429 with token_quota_exceeded.
-	decision, _, errCode := rateLimitCheckInternal(svc, store, "key-tpm", "tenant-tpm")
+	decision, _, errCode := rateLimitCheckInternal(svc, store, "key-tpm", "tenant-tpm", "")
 	if decision != 3 {
 		t.Fatalf("gate after quota trip: expected deny_429 (decision=3), got decision=%d", decision)
 	}
@@ -198,7 +203,7 @@ func TestTokenQuotaConsumeInternalUnlimited(t *testing.T) {
 
 	// tokens_per_min=0 → unlimited: huge charges pass.
 	svc := &mockRateLimitService{tenantTPM: 0}
-	if allowed, _ := tokenQuotaConsumeInternal(svc, store, "tenant-unlim", 1<<30, 0, 0); !allowed {
+	if allowed, _ := tokenQuotaConsumeInternal(svc, store, "tenant-unlim", "", 1<<30, 0, 0); !allowed {
 		t.Fatalf("unlimited tenant: expected allowed")
 	}
 	if store.IsTokenQuotaExceeded("tenant-unlim") {
@@ -206,16 +211,16 @@ func TestTokenQuotaConsumeInternalUnlimited(t *testing.T) {
 	}
 
 	// nil service (userservice disabled) → allowed.
-	if allowed, _ := tokenQuotaConsumeInternal(nil, store, "tenant-nosvc", 500, 0, 0); !allowed {
+	if allowed, _ := tokenQuotaConsumeInternal(nil, store, "tenant-nosvc", "", 500, 0, 0); !allowed {
 		t.Fatalf("nil service: expected allowed")
 	}
 
 	// Non-positive count / empty tenant → allowed no-ops.
 	svc2 := &mockRateLimitService{tenantTPM: 10}
-	if allowed, _ := tokenQuotaConsumeInternal(svc2, store, "tenant-x", 0, 0, 0); !allowed {
+	if allowed, _ := tokenQuotaConsumeInternal(svc2, store, "tenant-x", "", 0, 0, 0); !allowed {
 		t.Fatalf("count 0: expected allowed")
 	}
-	if allowed, _ := tokenQuotaConsumeInternal(svc2, store, "", 50, 0, 0); !allowed {
+	if allowed, _ := tokenQuotaConsumeInternal(svc2, store, "", "", 50, 0, 0); !allowed {
 		t.Fatalf("empty tenant: expected allowed")
 	}
 }
@@ -380,13 +385,13 @@ func TestTokenQuotaReserveInternal(t *testing.T) {
 	}
 
 	// Reserve 700 of 1000 (prompt est 200 + max_tokens 500): admitted.
-	allowed, _, ep := tokenQuotaReserveInternal(svc, store, "tenant-resv", 700)
+	allowed, _, ep := tokenQuotaReserveInternal(svc, store, "tenant-resv", "", 700)
 	if !allowed || ep == 0 {
 		t.Fatalf("reserve 700/1000: expected admitted with epoch, got allowed=%v ep=%d", allowed, ep)
 	}
 
 	// A second 700 cannot fit: pre-admission deny...
-	allowed, retrySecs, _ := tokenQuotaReserveInternal(svc, store, "tenant-resv", 700)
+	allowed, retrySecs, _ := tokenQuotaReserveInternal(svc, store, "tenant-resv", "", 700)
 	if allowed {
 		t.Fatalf("reserve 1400/1000: expected pre-admission deny")
 	}
@@ -394,21 +399,21 @@ func TestTokenQuotaReserveInternal(t *testing.T) {
 		t.Errorf("pre-admission deny: expected positive retrySecs, got %d", retrySecs)
 	}
 	// ...that must NOT latch: the stage-3 gate stays open for the tenant.
-	if decision, _, _ := rateLimitCheckInternal(svc, store, "key-resv", "tenant-resv"); decision != 0 {
+	if decision, _, _ := rateLimitCheckInternal(svc, store, "key-resv", "tenant-resv", ""); decision != 0 {
 		t.Fatalf("gate after reserve-deny: expected allow (no latch), got decision=%d", decision)
 	}
 	// A smaller request still fits alongside the standing reservation.
-	if allowed, _, _ := tokenQuotaReserveInternal(svc, store, "tenant-resv", 300); !allowed {
+	if allowed, _, _ := tokenQuotaReserveInternal(svc, store, "tenant-resv", "", 300); !allowed {
 		t.Fatalf("reserve 300 with 700 standing: expected admitted")
 	}
 
 	// Settle the first request: actual 100 of the 700 ceiling. The freed 600
 	// plus the released 300-claim window must admit a 600 reservation
 	// (consumed 100 + standing 300 + 600 = 1000).
-	if allowed, _ := tokenQuotaConsumeInternal(svc, store, "tenant-resv", 100, 700, ep); !allowed {
+	if allowed, _ := tokenQuotaConsumeInternal(svc, store, "tenant-resv", "", 100, 700, ep); !allowed {
 		t.Fatalf("settlement 100/1000: expected allowed")
 	}
-	if allowed, _, _ := tokenQuotaReserveInternal(svc, store, "tenant-resv", 600); !allowed {
+	if allowed, _, _ := tokenQuotaReserveInternal(svc, store, "tenant-resv", "", 600); !allowed {
 		t.Fatalf("reserve 600 after settlement: expected admitted (100 consumed + 300 + 600 = 1000)")
 	}
 }
@@ -420,17 +425,17 @@ func TestTokenQuotaReserveInternalSkips(t *testing.T) {
 	store := rl.New()
 
 	svc := &mockRateLimitService{tenantTPM: 0}
-	if allowed, _, ep := tokenQuotaReserveInternal(svc, store, "tenant-unlim", 1<<30); !allowed || ep != 0 {
+	if allowed, _, ep := tokenQuotaReserveInternal(svc, store, "tenant-unlim", "", 1<<30); !allowed || ep != 0 {
 		t.Fatalf("unlimited tenant: expected admit with epoch 0")
 	}
-	if allowed, _, ep := tokenQuotaReserveInternal(nil, store, "tenant-nosvc", 500); !allowed || ep != 0 {
+	if allowed, _, ep := tokenQuotaReserveInternal(nil, store, "tenant-nosvc", "", 500); !allowed || ep != 0 {
 		t.Fatalf("nil service: expected admit with epoch 0")
 	}
 	svc2 := &mockRateLimitService{tenantTPM: 100}
-	if allowed, _, ep := tokenQuotaReserveInternal(svc2, store, "tenant-y", 0); !allowed || ep != 0 {
+	if allowed, _, ep := tokenQuotaReserveInternal(svc2, store, "tenant-y", "", 0); !allowed || ep != 0 {
 		t.Fatalf("want 0: expected admit with epoch 0")
 	}
-	if allowed, _, ep := tokenQuotaReserveInternal(svc2, store, "", 50); !allowed || ep != 0 {
+	if allowed, _, ep := tokenQuotaReserveInternal(svc2, store, "", "", 50); !allowed || ep != 0 {
 		t.Fatalf("empty tenant: expected admit with epoch 0")
 	}
 }
@@ -443,16 +448,16 @@ func TestTokenQuotaConsumeReleasesOnZeroCount(t *testing.T) {
 	store := rl.New()
 	svc := &mockRateLimitService{tenantTPM: 1000}
 
-	allowed, _, ep := tokenQuotaReserveInternal(svc, store, "tenant-rel", 900)
+	allowed, _, ep := tokenQuotaReserveInternal(svc, store, "tenant-rel", "", 900)
 	if !allowed {
 		t.Fatalf("reserve 900/1000: expected admitted")
 	}
 	// Settle with count 0 — the release must still run.
-	if allowed, _ := tokenQuotaConsumeInternal(svc, store, "tenant-rel", 0, 900, ep); !allowed {
+	if allowed, _ := tokenQuotaConsumeInternal(svc, store, "tenant-rel", "", 0, 900, ep); !allowed {
 		t.Fatalf("zero-count settlement: expected allowed")
 	}
 	// Full headroom must be back.
-	if allowed, _, _ := tokenQuotaReserveInternal(svc, store, "tenant-rel", 1000); !allowed {
+	if allowed, _, _ := tokenQuotaReserveInternal(svc, store, "tenant-rel", "", 1000); !allowed {
 		t.Fatalf("reserve 1000 after zero-count release: expected admitted")
 	}
 }
@@ -467,7 +472,7 @@ func TestRateLimitCheckInternalQuotaWarming(t *testing.T) {
 	store.StartQuotaWarmup(time.Hour, func(bool) {})
 
 	quotaSvc := &mockRateLimitService{tenantRPS: 0, tenantTPM: 100}
-	decision, retrySecs, errCode := rateLimitCheckInternal(quotaSvc, store, "", "tenant-warm")
+	decision, retrySecs, errCode := rateLimitCheckInternal(quotaSvc, store, "", "tenant-warm", "")
 	if decision != 3 || errCode != "token_quota_warming" {
 		t.Fatalf("warming store must deny a quota tenant with token_quota_warming, got decision=%d errCode=%q", decision, errCode)
 	}
@@ -477,13 +482,91 @@ func TestRateLimitCheckInternalQuotaWarming(t *testing.T) {
 
 	// No token quota configured: warming must not block the tenant.
 	freeSvc := &mockRateLimitService{tenantRPS: 0, tenantTPM: 0}
-	if decision, _, errCode := rateLimitCheckInternal(freeSvc, store, "", "tenant-free"); decision != 0 {
+	if decision, _, errCode := rateLimitCheckInternal(freeSvc, store, "", "tenant-free", ""); decision != 0 {
 		t.Fatalf("warming must not deny a tenant without a token quota, got decision=%d errCode=%q", decision, errCode)
 	}
 
 	// First peer batch warms the store; the quota tenant serves again.
 	store.ImportState([]rl.RateLimiterEntry{{KeyID: "t:tenant-warm", IsTenant: true}})
-	if decision, _, errCode := rateLimitCheckInternal(quotaSvc, store, "", "tenant-warm"); decision != 0 {
+	if decision, _, errCode := rateLimitCheckInternal(quotaSvc, store, "", "tenant-warm", ""); decision != 0 {
 		t.Fatalf("warmed store must admit the quota tenant, got decision=%d errCode=%q", decision, errCode)
+	}
+}
+
+// TestTokenQuotaModelKeying pins the G6 contract: a model with its own
+// tight quota trips independently — the same tenant's OTHER models and the
+// aggregate stay admitted — and the model check only engages for requests
+// that name the limited model.
+func TestTokenQuotaModelKeying(t *testing.T) {
+	store := rl.New()
+	svc := &mockRateLimitService{
+		tenantRPS: 0,
+		tenantTPM: 100000, // generous aggregate
+		modelTPM:  map[string]int{"expensive": 100},
+	}
+
+	// Overrun the expensive model's budget; the aggregate barely notices.
+	if allowed, _ := tokenQuotaConsumeInternal(svc, store, "tenant-mk", "expensive", 150, 0, 0); allowed {
+		t.Fatalf("charge 150/100 on the model bucket: expected denied")
+	}
+
+	// Requests for the expensive model are now denied at the gate...
+	decision, _, errCode := rateLimitCheckInternal(svc, store, "", "tenant-mk", "expensive")
+	if decision != 3 || errCode != "token_quota_exceeded" {
+		t.Fatalf("gate for tripped model: expected deny token_quota_exceeded, got decision=%d errCode=%q", decision, errCode)
+	}
+	// ...while a cheap model under the same tenant serves on.
+	if decision, _, errCode := rateLimitCheckInternal(svc, store, "", "tenant-mk", "cheap"); decision != 0 {
+		t.Fatalf("gate for other model: expected allow, got decision=%d errCode=%q", decision, errCode)
+	}
+	// A request naming no model sees only the (healthy) aggregate.
+	if decision, _, _ := rateLimitCheckInternal(svc, store, "", "tenant-mk", ""); decision != 0 {
+		t.Fatalf("gate without model: expected allow")
+	}
+}
+
+// TestTokenQuotaModelReserveRollback pins the dual-reservation atomicity:
+// when the model bucket denies a reservation the aggregate claim taken a
+// moment earlier must be released, or the tenant leaks admission headroom
+// on every model-denied request.
+func TestTokenQuotaModelReserveRollback(t *testing.T) {
+	store := rl.New()
+	svc := &mockRateLimitService{
+		tenantTPM: 1000,
+		modelTPM:  map[string]int{"tight": 100},
+	}
+
+	// Wants 500: fits the aggregate (1000), exceeds the model bucket (100).
+	allowed, retrySecs, ep := tokenQuotaReserveInternal(svc, store, "tenant-rb", "tight", 500)
+	if allowed || ep != 0 {
+		t.Fatalf("model-bucket deny expected (allowed=%v ep=%d)", allowed, ep)
+	}
+	if retrySecs <= 0 {
+		t.Errorf("model-bucket deny must advise a retry, got %d", retrySecs)
+	}
+
+	// The aggregate claim must have been rolled back: a 1000-token
+	// reservation for a model with no quota of its own still fits.
+	if allowed, _, _ := tokenQuotaReserveInternal(svc, store, "tenant-rb", "free", 1000); !allowed {
+		t.Fatal("aggregate claim leaked: full-quota reservation no longer fits")
+	}
+}
+
+// TestTokenQuotaModelWarming pins the cold-start interaction: a tenant with
+// ONLY a model quota (no aggregate TPM) is still held during warmup for
+// requests naming that model, and unaffected for models without quotas.
+func TestTokenQuotaModelWarming(t *testing.T) {
+	store := rl.New()
+	store.StartQuotaWarmup(time.Hour, func(bool) {})
+	svc := &mockRateLimitService{
+		tenantTPM: 0,
+		modelTPM:  map[string]int{"metered": 100},
+	}
+
+	if decision, _, errCode := rateLimitCheckInternal(svc, store, "", "tenant-mw", "metered"); decision != 3 || errCode != "token_quota_warming" {
+		t.Fatalf("warming store must hold a model-quota tenant, got decision=%d errCode=%q", decision, errCode)
+	}
+	if decision, _, _ := rateLimitCheckInternal(svc, store, "", "tenant-mw", "unmetered"); decision != 0 {
+		t.Fatal("warming must not hold a model without a quota")
 	}
 }

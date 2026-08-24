@@ -11111,6 +11111,22 @@ definitions:
         type: integer
         format: int64
         description: Maximum LLM tokens per minute for the tenant
+      model_limits:
+        type: array
+        description: Per-model token quotas for the tenant
+        items:
+          $ref: '#/definitions/TenantModelRateLimit'
+
+  TenantModelRateLimit:
+    type: object
+    properties:
+      model:
+        type: string
+        description: Model name the quota applies to
+      tokens_per_min:
+        type: integer
+        format: int64
+        description: Maximum LLM tokens per minute for this tenant and model; 0 removes the model quota
 
   TenantRateLimitEntry:
     type: object
@@ -11128,6 +11144,11 @@ definitions:
         type: integer
         format: int64
         description: Maximum LLM tokens per minute for the tenant
+      model_limits:
+        type: array
+        description: Per-model token quotas for the tenant
+        items:
+          $ref: '#/definitions/TenantModelRateLimit'
       updated_at:
         type: string
         format: date-time

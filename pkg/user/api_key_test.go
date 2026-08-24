@@ -63,6 +63,16 @@ func setupTestDB(t *testing.T) *sql.DB {
 	if err != nil {
 		t.Fatalf("create tenant_rate_limits table: %v", err)
 	}
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS tenant_model_rate_limits (
+		tenant_id TEXT,
+		model TEXT,
+		tokens_per_min INTEGER DEFAULT 0,
+		updated_at DATETIME,
+		PRIMARY KEY (tenant_id, model)
+	)`)
+	if err != nil {
+		t.Fatalf("create tenant_model_rate_limits table: %v", err)
+	}
 	return db
 }
 
@@ -517,5 +527,84 @@ func BenchmarkValidateAPIKey(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		svc.ValidateAPIKey(rawKey) //nolint:errcheck
+	}
+}
+
+// TestTenantModelRateLimit_SetGet covers the per-model quota CRUD: upsert,
+// cache-backed read, update, zero-TPM removal, and the no-limit default.
+func TestTenantModelRateLimit_SetGet(t *testing.T) {
+	svc := newTestService(t)
+
+	if got := svc.GetTenantModelRateLimit("t1", "m1"); got != 0 {
+		t.Fatalf("unset model limit must read 0, got %d", got)
+	}
+
+	if err := svc.SetTenantModelRateLimit("t1", "m1", 500); err != nil {
+		t.Fatalf("set model limit: %v", err)
+	}
+	if got := svc.GetTenantModelRateLimit("t1", "m1"); got != 500 {
+		t.Fatalf("expected 500, got %d", got)
+	}
+
+	// Upsert overwrites.
+	if err := svc.SetTenantModelRateLimit("t1", "m1", 900); err != nil {
+		t.Fatalf("upsert model limit: %v", err)
+	}
+	if got := svc.GetTenantModelRateLimit("t1", "m1"); got != 900 {
+		t.Fatalf("expected 900 after upsert, got %d", got)
+	}
+
+	// Another model on the same tenant is independent.
+	if err := svc.SetTenantModelRateLimit("t1", "m2", 100); err != nil {
+		t.Fatalf("set second model limit: %v", err)
+	}
+	if got := svc.GetTenantModelRateLimit("t1", "m1"); got != 900 {
+		t.Fatalf("m1 must be unaffected by m2, got %d", got)
+	}
+
+	// tokens_per_min<=0 removes the row and the cache entry.
+	if err := svc.SetTenantModelRateLimit("t1", "m1", 0); err != nil {
+		t.Fatalf("clear model limit: %v", err)
+	}
+	if got := svc.GetTenantModelRateLimit("t1", "m1"); got != 0 {
+		t.Fatalf("cleared model limit must read 0, got %d", got)
+	}
+}
+
+// TestTenantModelRateLimit_RejectsDelimiter pins the composite-key guard:
+// names containing '|' would alias another tenant|model bucket and must be
+// rejected at config time.
+func TestTenantModelRateLimit_RejectsDelimiter(t *testing.T) {
+	svc := newTestService(t)
+	if err := svc.SetTenantModelRateLimit("t1", "bad|model", 100); err == nil {
+		t.Fatal("model name containing '|' must be rejected")
+	}
+	if err := svc.SetTenantModelRateLimit("bad|tenant", "m", 100); err == nil {
+		t.Fatal("tenant name containing '|' must be rejected")
+	}
+	if err := svc.SetTenantModelRateLimit("t1", "", 100); err == nil {
+		t.Fatal("empty model name must be rejected")
+	}
+}
+
+// TestGetTenantRateLimitEntry_ModelLimits verifies the GET surface carries
+// the per-model quotas, including for a tenant that has ONLY model quotas.
+func TestGetTenantRateLimitEntry_ModelLimits(t *testing.T) {
+	svc := newTestService(t)
+
+	if err := svc.SetTenantModelRateLimit("t-models-only", "m1", 250); err != nil {
+		t.Fatalf("set model limit: %v", err)
+	}
+	entry, err := svc.GetTenantRateLimitEntry("t-models-only")
+	if err != nil {
+		t.Fatalf("entry for model-only tenant must exist: %v", err)
+	}
+	if len(entry.ModelLimits) != 1 || entry.ModelLimits[0].Model != "m1" || entry.ModelLimits[0].TokensPerMin != 250 {
+		t.Fatalf("unexpected model limits: %+v", entry.ModelLimits)
+	}
+
+	// A tenant with neither aggregate nor model limits stays not-found.
+	if _, err := svc.GetTenantRateLimitEntry("t-none"); err == nil {
+		t.Fatal("tenant with no limits at all must read not-found")
 	}
 }

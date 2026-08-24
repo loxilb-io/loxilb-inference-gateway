@@ -1879,7 +1879,7 @@ type NetHookInterface interface {
 	NetAPIKeyRevoke(keyID string) error
 	NetAPIKeyDelete(keyID string) error
 	NetAPIKeyPatch(keyID string, allowedModels []string, enabled *bool) error
-	NetTenantRateLimitSet(tenantID string, rps, tokensPerMin int) error
+	NetTenantRateLimitSet(tenantID string, rps, tokensPerMin int, modelLimits []TenantModelRateLimit) error
 	NetTenantRateLimitGet(tenantID string) (*TenantRateLimitEntry, error)
 
 	// Bridge-VID allocator indirection.
@@ -2116,10 +2116,18 @@ type ApiKeySummary struct {
 	Enabled       bool       `json:"enabled"`
 }
 
+// TenantModelRateLimit - one model's token quota inside a tenant's rate
+// limit configuration
+type TenantModelRateLimit struct {
+	Model        string `json:"model"`
+	TokensPerMin int    `json:"tokens_per_min"`
+}
+
 // TenantRateLimitEntry - per-tenant rate limit configuration with metadata
 type TenantRateLimitEntry struct {
-	TenantID     string    `json:"tenant_id"`
-	RPS          int       `json:"rps"`
-	TokensPerMin int       `json:"tokens_per_min"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	TenantID     string                 `json:"tenant_id"`
+	RPS          int                    `json:"rps"`
+	TokensPerMin int                    `json:"tokens_per_min"`
+	ModelLimits  []TenantModelRateLimit `json:"model_limits,omitempty"`
+	UpdatedAt    time.Time              `json:"updated_at"`
 }
