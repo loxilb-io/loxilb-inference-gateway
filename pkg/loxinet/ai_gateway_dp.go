@@ -358,27 +358,132 @@ func llb_ai_ratelimit_check(keyID *C.char, tenantID *C.char, result *C.ai_gw_dec
 	return 0
 }
 
-// tokenQuotaConsumeInternal is the pure-Go token accounting logic, separated
+// tokenQuotaReserveInternal is the pure-Go pre-admission logic, separated
 // from the CGO export so that unit tests can exercise it without C types.
-// It charges count tokens against the tenant's per-minute quota
-// (tokens_per_min from the tenant's rate-limit config; 0 = unlimited).
+// It claims want tokens (the request's prompt estimate + declared max_tokens
+// ceiling) against the tenant's per-minute quota BEFORE the request is
+// dispatched, so an over-quota request is denied while it is still cheap.
 //
-// Returns (allowed, retrySecs). allowed=false means the charge tipped the
-// tenant over quota: the store's exceeded flag is now latched, so the NEXT
-// request's rateLimitCheckInternal stage 3 returns deny_429
-// ("token_quota_exceeded") — the already-served response is never affected.
-func tokenQuotaConsumeInternal(svc rateLimitService, store *rl.RateLimiterStore, tenantID string, count int) (allowed bool, retrySecs int) {
-	if count <= 0 || tenantID == "" {
-		return true, 0
+// Returns (allowed, retrySecs, resEpoch). resEpoch tags the reservation's
+// window and must travel with the request to settlement; 0 means nothing was
+// reserved (no quota configured) and settlement is a plain charge.
+func tokenQuotaReserveInternal(svc rateLimitService, store *rl.RateLimiterStore, tenantID string, want int) (allowed bool, retrySecs int, resEpoch int64) {
+	if want <= 0 || tenantID == "" {
+		return true, 0, 0
 	}
 	tokensPerMin := 0
 	if svc != nil {
 		_, tokensPerMin = svc.GetTenantRateLimit(tenantID)
 	}
 	if tokensPerMin <= 0 {
+		return true, 0, 0
+	}
+	return store.ReserveTokens(tenantID, want, tokensPerMin)
+}
+
+// tokenQuotaConsumeInternal is the pure-Go token accounting logic, separated
+// from the CGO export so that unit tests can exercise it without C types.
+// It settles the request's admission-time reservation (reservedAmt tagged
+// with resEpoch; 0/0 when none was made) and charges count tokens against
+// the tenant's per-minute quota (tokens_per_min from the tenant's rate-limit
+// config; 0 = unlimited).
+//
+// The reservation must be released even when the response produced no
+// countable tokens (count 0) or the quota config was removed mid-flight —
+// an unreleased claim denies the tenant's admissions until window rollover.
+//
+// Returns (allowed, retrySecs). allowed=false means the charge tipped the
+// tenant over quota: the store's exceeded flag is now latched, so the NEXT
+// request's rateLimitCheckInternal stage 3 returns deny_429
+// ("token_quota_exceeded") — the already-served response is never affected.
+func tokenQuotaConsumeInternal(svc rateLimitService, store *rl.RateLimiterStore, tenantID string, count, reservedAmt int, resEpoch int64) (allowed bool, retrySecs int) {
+	if tenantID == "" {
 		return true, 0
 	}
-	return store.AllowTokens(tenantID, count, tokensPerMin)
+	tokensPerMin := 0
+	if svc != nil {
+		_, tokensPerMin = svc.GetTenantRateLimit(tenantID)
+	}
+	if reservedAmt <= 0 && (count <= 0 || tokensPerMin <= 0) {
+		return true, 0
+	}
+	return store.SettleTokens(tenantID, count, reservedAmt, resEpoch, tokensPerMin)
+}
+
+// llb_ai_token_quota_reserve claims a request's worst-case token spend
+// (prompt estimate + declared max_tokens ceiling) against the tenant's
+// per-minute quota at the admission gate, BEFORE the request is dispatched
+// to a backend — an over-quota request is denied as a cheap 429 instead of
+// burning GPU prefill and then tripping the post-hoc latch.
+//
+// The C caller stashes *resEpoch and the reserved amount on the connection
+// and echoes them to llb_ai_token_quota_consume, which releases the claim
+// and replaces it with the real extracted charge. A denial does NOT latch
+// the tenant's exceeded flag: it is sized to THIS request, and a smaller
+// request may still fit the window.
+//
+// Returns 0 when admitted (*resEpoch tags the reservation window; 0 = no
+// quota configured, nothing reserved). Returns -1 on denial with
+// result->decision=3, retry_after set and error_code
+// "token_quota_would_exceed" — distinguishable from the post-hoc
+// "token_quota_exceeded" so operators (and the acceptance harness) can tell
+// a pre-admission deny from a latched one.
+//
+//export llb_ai_token_quota_reserve
+func llb_ai_token_quota_reserve(tenantID *C.char, modelName *C.char, promptEst C.int, maxTokens C.int, resEpoch *C.longlong, result *C.ai_gw_decision_t) (ret C.int) {
+	// Fail closed on panic, matching the other gate decisions: deny with a
+	// short retry rather than crashing the datapath or silently admitting.
+	defer func() {
+		if r := recover(); r != nil {
+			tk.LogIt(tk.LogCritical, "[AIGateway] llb_ai_token_quota_reserve: recovered panic: %v\n", r)
+			if result != nil {
+				result.decision = 3
+				result.retry_after = 1
+				cCopyStr((*C.char)(unsafe.Pointer(&result.error_code[0])), "internal_error", 64)
+			}
+			ret = -1
+		}
+	}()
+
+	if resEpoch != nil {
+		*resEpoch = 0
+	}
+
+	tenant := C.GoString(tenantID)
+	want := 0
+	if promptEst > 0 {
+		want += int(promptEst)
+	}
+	if maxTokens > 0 {
+		want += int(maxTokens)
+	}
+	if tenant == "" || want <= 0 {
+		return 0
+	}
+
+	var svc rateLimitService
+	if us := mh.UserService; us != nil {
+		svc = us
+	}
+
+	store := getGlobalRL()
+	allowed, retrySecs, epoch := tokenQuotaReserveInternal(svc, store, tenant, want)
+	if !allowed {
+		if result != nil {
+			result.decision = 3
+			result.retry_after = C.int(retrySecs)
+			cCopyStr((*C.char)(unsafe.Pointer(&result.error_code[0])), "token_quota_would_exceed", 64)
+		}
+		prom.RecordRateLimitHit(tenant, "token_quota_would_exceed")
+		prom.RecordTokenQuotaDenied(tenant)
+		tk.LogIt(tk.LogWarning, "[AIGateway] llb_ai_token_quota_reserve: tenant %s denied pre-admission (want %d, model %s)\n",
+			tenant, want, C.GoString(modelName))
+		return -1
+	}
+	if resEpoch != nil {
+		*resEpoch = C.longlong(epoch)
+	}
+	return 0
 }
 
 // llb_ai_token_quota_consume charges a completed response's token usage
@@ -402,8 +507,13 @@ func tokenQuotaConsumeInternal(svc rateLimitService, store *rl.RateLimiterStore,
 // loxilb_ai_tokens_estimated_total / loxilb_ai_tokens_missing_total split so
 // estimated accounting stays distinguishable from exact.
 //
+// reservedToks/resEpoch echo the request's admission-time reservation
+// (llb_ai_token_quota_reserve) so settlement can credit the pessimistic
+// prompt+max_tokens claim back and replace it with the real charge; pass
+// 0/0 when no reservation was made.
+//
 //export llb_ai_token_quota_consume
-func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, promptTokens C.int, completTokens C.int, estimated C.int, result *C.ai_gw_decision_t) (ret C.int) {
+func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, promptTokens C.int, completTokens C.int, estimated C.int, reservedToks C.int, resEpoch C.longlong, result *C.ai_gw_decision_t) (ret C.int) {
 	// Fail-open on panic: the response is already served, so accounting must
 	// never take down the datapath — the quota simply misses this response.
 	defer func() {
@@ -415,12 +525,17 @@ func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, promptToken
 
 	count := int(promptTokens) + int(completTokens)
 	tenant := C.GoString(tenantID)
-	if count <= 0 || tenant == "" {
+	// A zero count no longer short-circuits when a reservation rides along:
+	// the claim must be released even for an uncounted response, or the
+	// tenant's admissions stay blocked until the window rolls over.
+	if tenant == "" || (count <= 0 && reservedToks <= 0) {
 		return 0
 	}
 
-	prom.RecordTokenUsage(C.GoString(modelName), tenant, int(promptTokens),
-		int(completTokens), estimated != 0)
+	if count > 0 {
+		prom.RecordTokenUsage(C.GoString(modelName), tenant, int(promptTokens),
+			int(completTokens), estimated != 0)
+	}
 
 	var svc rateLimitService
 	if us := mh.UserService; us != nil {
@@ -428,7 +543,8 @@ func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, promptToken
 	}
 
 	store := getGlobalRL()
-	allowed, retrySecs := tokenQuotaConsumeInternal(svc, store, tenant, count)
+	allowed, retrySecs := tokenQuotaConsumeInternal(svc, store, tenant, count,
+		int(reservedToks), int64(resEpoch))
 	if !allowed {
 		if result != nil {
 			result.decision = 3

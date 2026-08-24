@@ -81,6 +81,14 @@ type RateLimiterStore struct {
 type tokenWindowEntry struct {
 	windowEpoch int64 // floor(unixSeconds / 60), updated via CAS
 	consumed    int64 // tokens consumed in current window, updated via Add
+	// reserved holds tokens promised to in-flight requests (prompt estimate +
+	// max_tokens, reserved at admission and released when the real charge
+	// settles). It is NODE-LOCAL state: never exported on the peer-sync wire
+	// (RateLimiterEntry stays untouched) — a reservation is a transient claim
+	// on THIS node's admission decision, not consumed quota. It resets to the
+	// rollover winner's own contribution on window rollover, which bounds any
+	// reservation orphaned by an aborted request to one 60-second window.
+	reserved    int64
 	limitTokens int64 // tokens-per-minute quota seen on the last charge; read by TokenQuotaSnapshot
 	exceeded    int32 // 1 = quota exceeded for this window, 0 = within quota
 }
@@ -190,6 +198,11 @@ func (s *RateLimiterStore) AllowTokens(tenantID string, count, tokensPerMin int)
 	stored := atomic.LoadInt64(&e.windowEpoch)
 	if epoch > stored && atomic.CompareAndSwapInt64(&e.windowEpoch, stored, epoch) {
 		atomic.StoreInt64(&e.consumed, int64(count))
+		// The previous window's reservations died with it: any in-flight
+		// request that reserved there settles with a stale epoch tag and
+		// skips its release, so carrying the counter over would deny the new
+		// window admissions against claims that no longer exist.
+		atomic.StoreInt64(&e.reserved, 0)
 		// Check if the very first request in the new window already exceeds quota.
 		if int64(count) > int64(tokensPerMin) {
 			atomic.StoreInt32(&e.exceeded, 1)
@@ -206,6 +219,107 @@ func (s *RateLimiterStore) AllowTokens(tenantID string, count, tokensPerMin int)
 		return false, int(epochInterval.Seconds())
 	}
 	return true, 0
+}
+
+// ReserveTokens claims want tokens of the tenant's per-minute quota for an
+// admitted request BEFORE it is dispatched to a backend, so an over-quota
+// request is denied while it is still cheap — before the GPU burns its
+// prompt. The claim is settled (released and replaced by the real charge)
+// by SettleTokens when the response completes.
+//
+// Admission denies when consumed + reserved + want would exceed the limit.
+// A denial does NOT latch the exceeded flag: it is a function of THIS
+// request's size, and a smaller request from the same tenant may still fit
+// in the window — the latch remains the post-hoc consume path's mechanism.
+//
+// Returns (allowed, retryAfterSecs, resEpoch). resEpoch tags the window the
+// reservation was made in and must be echoed to SettleTokens; 0 means no
+// reservation was recorded (no quota configured or nothing to reserve) and
+// settlement degenerates to a plain charge. Atomic-only, same hot-path
+// constraints as AllowTokens.
+func (s *RateLimiterStore) ReserveTokens(tenantID string, want, tokensPerMin int) (allowed bool, retryAfterSecs int, resEpoch int64) {
+	if tokensPerMin <= 0 || want <= 0 {
+		return true, 0, 0
+	}
+
+	v, ok := s.quotaMap.Load(tenantID)
+	if !ok {
+		v, _ = s.quotaMap.LoadOrStore(tenantID, &tokenWindowEntry{})
+	}
+	e := v.(*tokenWindowEntry)
+
+	atomic.StoreInt64(&e.limitTokens, int64(tokensPerMin))
+
+	epoch := currentQuotaEpoch.Load()
+
+	// Window rollover: mirror AllowTokens — the winner resets the window and
+	// seeds it with its own contribution (here a reservation, no consumption).
+	stored := atomic.LoadInt64(&e.windowEpoch)
+	if epoch > stored && atomic.CompareAndSwapInt64(&e.windowEpoch, stored, epoch) {
+		atomic.StoreInt64(&e.consumed, 0)
+		atomic.StoreInt32(&e.exceeded, 0)
+		if int64(want) > int64(tokensPerMin) {
+			// Larger than the whole quota: can never be admitted. Deny
+			// without recording the claim (nothing will settle it).
+			atomic.StoreInt64(&e.reserved, 0)
+			return false, int(epochInterval.Seconds()), 0
+		}
+		atomic.StoreInt64(&e.reserved, int64(want))
+		return true, 0, epoch
+	}
+
+	newReserved := atomic.AddInt64(&e.reserved, int64(want))
+	if atomic.LoadInt64(&e.consumed)+newReserved > int64(tokensPerMin) {
+		// Roll the claim back with a floor at zero: a concurrent window
+		// rollover may already have wiped it, and a plain subtract would
+		// then eat a claim the new window's requests legitimately hold.
+		reservedSubClamp(e, int64(want))
+		return false, int(epochInterval.Seconds()), 0
+	}
+	return true, 0, epoch
+}
+
+// SettleTokens replaces a request's admission-time reservation with the
+// response's real token charge: the reservation (reservedAmt, tagged with
+// the resEpoch ReserveTokens returned) is released, then actual tokens are
+// charged with full AllowTokens semantics — the exceeded latch, window
+// rollover and limit publication all behave exactly as a plain charge.
+//
+// The release is skipped when the reservation's window has already rolled
+// over (resEpoch behind the entry's current window): the rollover reset
+// wiped the claim, and releasing it here would steal a claim held by the
+// new window's in-flight requests. reservedAmt<=0 or resEpoch==0 mean no
+// reservation was recorded; the call degenerates to AllowTokens.
+func (s *RateLimiterStore) SettleTokens(tenantID string, actual, reservedAmt int, resEpoch int64, tokensPerMin int) (allowed bool, retryAfterSecs int) {
+	if reservedAmt > 0 && resEpoch > 0 {
+		if v, ok := s.quotaMap.Load(tenantID); ok {
+			e := v.(*tokenWindowEntry)
+			if atomic.LoadInt64(&e.windowEpoch) == resEpoch {
+				reservedSubClamp(e, int64(reservedAmt))
+			}
+		}
+	}
+	if actual <= 0 {
+		return true, 0
+	}
+	return s.AllowTokens(tenantID, actual, tokensPerMin)
+}
+
+// reservedSubClamp releases amt from e.reserved without letting it go
+// negative. The CAS loop matters: a window rollover can zero the counter
+// between the load and the store, and a blind AddInt64(-amt) would push it
+// below zero, granting the tenant phantom headroom on the next admission.
+func reservedSubClamp(e *tokenWindowEntry, amt int64) {
+	for {
+		cur := atomic.LoadInt64(&e.reserved)
+		next := cur - amt
+		if next < 0 {
+			next = 0
+		}
+		if atomic.CompareAndSwapInt64(&e.reserved, cur, next) {
+			return
+		}
+	}
 }
 
 // IsTokenQuotaExceeded reports whether the named tenant's token quota is

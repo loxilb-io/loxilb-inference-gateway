@@ -163,7 +163,7 @@ func TestTokenQuotaConsumeInternal(t *testing.T) {
 	}
 
 	// Charge 60 of 100: allowed, gate stays open.
-	allowed, _ := tokenQuotaConsumeInternal(svc, store, "tenant-tpm", 60)
+	allowed, _ := tokenQuotaConsumeInternal(svc, store, "tenant-tpm", 60, 0, 0)
 	if !allowed {
 		t.Fatalf("charge 60/100: expected allowed")
 	}
@@ -172,7 +172,7 @@ func TestTokenQuotaConsumeInternal(t *testing.T) {
 	}
 
 	// Charge 50 more (110 > 100): denied, exceeded flag latches.
-	allowed, retrySecs := tokenQuotaConsumeInternal(svc, store, "tenant-tpm", 50)
+	allowed, retrySecs := tokenQuotaConsumeInternal(svc, store, "tenant-tpm", 50, 0, 0)
 	if allowed {
 		t.Fatalf("charge 110/100: expected denied")
 	}
@@ -198,7 +198,7 @@ func TestTokenQuotaConsumeInternalUnlimited(t *testing.T) {
 
 	// tokens_per_min=0 → unlimited: huge charges pass.
 	svc := &mockRateLimitService{tenantTPM: 0}
-	if allowed, _ := tokenQuotaConsumeInternal(svc, store, "tenant-unlim", 1<<30); !allowed {
+	if allowed, _ := tokenQuotaConsumeInternal(svc, store, "tenant-unlim", 1<<30, 0, 0); !allowed {
 		t.Fatalf("unlimited tenant: expected allowed")
 	}
 	if store.IsTokenQuotaExceeded("tenant-unlim") {
@@ -206,16 +206,16 @@ func TestTokenQuotaConsumeInternalUnlimited(t *testing.T) {
 	}
 
 	// nil service (userservice disabled) → allowed.
-	if allowed, _ := tokenQuotaConsumeInternal(nil, store, "tenant-nosvc", 500); !allowed {
+	if allowed, _ := tokenQuotaConsumeInternal(nil, store, "tenant-nosvc", 500, 0, 0); !allowed {
 		t.Fatalf("nil service: expected allowed")
 	}
 
 	// Non-positive count / empty tenant → allowed no-ops.
 	svc2 := &mockRateLimitService{tenantTPM: 10}
-	if allowed, _ := tokenQuotaConsumeInternal(svc2, store, "tenant-x", 0); !allowed {
+	if allowed, _ := tokenQuotaConsumeInternal(svc2, store, "tenant-x", 0, 0, 0); !allowed {
 		t.Fatalf("count 0: expected allowed")
 	}
-	if allowed, _ := tokenQuotaConsumeInternal(svc2, store, "", 50); !allowed {
+	if allowed, _ := tokenQuotaConsumeInternal(svc2, store, "", 50, 0, 0); !allowed {
 		t.Fatalf("empty tenant: expected allowed")
 	}
 }
@@ -361,5 +361,98 @@ func TestValidateAPIKeyInternal(t *testing.T) {
 				t.Errorf("errorCode = %q, want %q", gotErrorCode, tt.wantErrorCode)
 			}
 		})
+	}
+}
+
+// TestTokenQuotaReserveInternal verifies the pre-admission path end to end at
+// the Go layer: an admissible reservation passes and its epoch settles
+// correctly; a reservation that cannot fit is denied WITHOUT latching the
+// exceeded flag (the gate's stage 3 must keep admitting smaller requests);
+// settlement credits the unused ceiling back.
+func TestTokenQuotaReserveInternal(t *testing.T) {
+	store := rl.New()
+	svc := &mockRateLimitService{
+		tenantRPS: 1000,
+		tenantTPM: 1000,
+		keyByID: map[string]*cmn.ApiKeySummary{
+			"key-resv": {KeyID: "key-resv", RateLimitRPS: 0, BurstSize: 0},
+		},
+	}
+
+	// Reserve 700 of 1000 (prompt est 200 + max_tokens 500): admitted.
+	allowed, _, ep := tokenQuotaReserveInternal(svc, store, "tenant-resv", 700)
+	if !allowed || ep == 0 {
+		t.Fatalf("reserve 700/1000: expected admitted with epoch, got allowed=%v ep=%d", allowed, ep)
+	}
+
+	// A second 700 cannot fit: pre-admission deny...
+	allowed, retrySecs, _ := tokenQuotaReserveInternal(svc, store, "tenant-resv", 700)
+	if allowed {
+		t.Fatalf("reserve 1400/1000: expected pre-admission deny")
+	}
+	if retrySecs <= 0 {
+		t.Errorf("pre-admission deny: expected positive retrySecs, got %d", retrySecs)
+	}
+	// ...that must NOT latch: the stage-3 gate stays open for the tenant.
+	if decision, _, _ := rateLimitCheckInternal(svc, store, "key-resv", "tenant-resv"); decision != 0 {
+		t.Fatalf("gate after reserve-deny: expected allow (no latch), got decision=%d", decision)
+	}
+	// A smaller request still fits alongside the standing reservation.
+	if allowed, _, _ := tokenQuotaReserveInternal(svc, store, "tenant-resv", 300); !allowed {
+		t.Fatalf("reserve 300 with 700 standing: expected admitted")
+	}
+
+	// Settle the first request: actual 100 of the 700 ceiling. The freed 600
+	// plus the released 300-claim window must admit a 600 reservation
+	// (consumed 100 + standing 300 + 600 = 1000).
+	if allowed, _ := tokenQuotaConsumeInternal(svc, store, "tenant-resv", 100, 700, ep); !allowed {
+		t.Fatalf("settlement 100/1000: expected allowed")
+	}
+	if allowed, _, _ := tokenQuotaReserveInternal(svc, store, "tenant-resv", 600); !allowed {
+		t.Fatalf("reserve 600 after settlement: expected admitted (100 consumed + 300 + 600 = 1000)")
+	}
+}
+
+// TestTokenQuotaReserveInternalSkips verifies the no-op contracts: unlimited
+// tenants, nil service, zero want and empty tenant all admit with epoch 0
+// (nothing to settle).
+func TestTokenQuotaReserveInternalSkips(t *testing.T) {
+	store := rl.New()
+
+	svc := &mockRateLimitService{tenantTPM: 0}
+	if allowed, _, ep := tokenQuotaReserveInternal(svc, store, "tenant-unlim", 1<<30); !allowed || ep != 0 {
+		t.Fatalf("unlimited tenant: expected admit with epoch 0")
+	}
+	if allowed, _, ep := tokenQuotaReserveInternal(nil, store, "tenant-nosvc", 500); !allowed || ep != 0 {
+		t.Fatalf("nil service: expected admit with epoch 0")
+	}
+	svc2 := &mockRateLimitService{tenantTPM: 100}
+	if allowed, _, ep := tokenQuotaReserveInternal(svc2, store, "tenant-y", 0); !allowed || ep != 0 {
+		t.Fatalf("want 0: expected admit with epoch 0")
+	}
+	if allowed, _, ep := tokenQuotaReserveInternal(svc2, store, "", 50); !allowed || ep != 0 {
+		t.Fatalf("empty tenant: expected admit with epoch 0")
+	}
+}
+
+// TestTokenQuotaConsumeReleasesOnZeroCount pins the uncounted-response rule:
+// a request that reserved at admission but produced no countable tokens
+// (aborted stream, non-JSON error response) must still release its claim at
+// settlement, or the tenant's admissions stay blocked until window rollover.
+func TestTokenQuotaConsumeReleasesOnZeroCount(t *testing.T) {
+	store := rl.New()
+	svc := &mockRateLimitService{tenantTPM: 1000}
+
+	allowed, _, ep := tokenQuotaReserveInternal(svc, store, "tenant-rel", 900)
+	if !allowed {
+		t.Fatalf("reserve 900/1000: expected admitted")
+	}
+	// Settle with count 0 — the release must still run.
+	if allowed, _ := tokenQuotaConsumeInternal(svc, store, "tenant-rel", 0, 900, ep); !allowed {
+		t.Fatalf("zero-count settlement: expected allowed")
+	}
+	// Full headroom must be back.
+	if allowed, _, _ := tokenQuotaReserveInternal(svc, store, "tenant-rel", 1000); !allowed {
+		t.Fatalf("reserve 1000 after zero-count release: expected admitted")
 	}
 }

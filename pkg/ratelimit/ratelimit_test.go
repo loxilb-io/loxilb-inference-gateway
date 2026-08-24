@@ -171,7 +171,7 @@ func TestUpdateTenant(t *testing.T) {
 }
 
 // ============================================================================
-// AllowTokens unit tests 
+// AllowTokens unit tests
 // ============================================================================
 
 // TestAllowTokensRefillRate verifies that tokens consumed in one window do not
@@ -439,5 +439,218 @@ func TestTokenQuotaSnapshot(t *testing.T) {
 	snap = s.TokenQuotaSnapshot()
 	if len(snap) != 1 || snap[0].Consumed != 0 || snap[0].Limit != 200 {
 		t.Fatalf("expected consumed=0 limit=200 after rollover, got %+v", snap)
+	}
+}
+
+// TestReserveTokensAdmission pins the pre-admission contract: a reservation
+// that fits (consumed + reserved + want <= limit) is admitted; one that does
+// not is denied BEFORE dispatch. A reservation denial must NOT latch the
+// exceeded flag — it is a function of this request's size, and a smaller
+// request from the same tenant must still be admissible in the same window.
+func TestReserveTokensAdmission(t *testing.T) {
+	s := &RateLimiterStore{entries: make(map[string]*limiterEntry)}
+
+	const tokensPerMin = 1000
+
+	allowed, _, ep := s.ReserveTokens("tenant1", 600, tokensPerMin)
+	if !allowed || ep == 0 {
+		t.Fatalf("first reservation within quota must be admitted (allowed=%v epoch=%d)", allowed, ep)
+	}
+
+	// 600 reserved + 500 wanted > 1000: deny.
+	allowed, retry, ep2 := s.ReserveTokens("tenant1", 500, tokensPerMin)
+	if allowed {
+		t.Fatal("reservation exceeding the window headroom must be denied")
+	}
+	if retry <= 0 {
+		t.Fatal("denied reservation must carry a retry-after hint")
+	}
+	if ep2 != 0 {
+		t.Fatal("denied reservation must not return a settleable epoch")
+	}
+
+	// The deny must not latch: the gate's stage-3 latch check would otherwise
+	// bounce every request until rollover.
+	if s.IsTokenQuotaExceeded("tenant1") {
+		t.Fatal("reservation denial must not latch the exceeded flag")
+	}
+
+	// A smaller request still fits (600 + 300 <= 1000) — and the denied
+	// reservation must not have leaked its claim into the counter.
+	allowed, _, _ = s.ReserveTokens("tenant1", 300, tokensPerMin)
+	if !allowed {
+		t.Fatal("smaller reservation must be admitted after a larger one was denied")
+	}
+}
+
+// TestReserveSettleReleasesAndCharges verifies the reconcile half of the
+// contract: settlement replaces the pessimistic reservation with the real
+// charge, crediting the difference back promptly so bursty tenants do not
+// starve.
+func TestReserveSettleReleasesAndCharges(t *testing.T) {
+	s := &RateLimiterStore{entries: make(map[string]*limiterEntry)}
+
+	const tokensPerMin = 1000
+
+	allowed, _, ep := s.ReserveTokens("tenant1", 500, tokensPerMin)
+	if !allowed {
+		t.Fatal("reservation should be admitted")
+	}
+
+	// Completion finished far short of max_tokens: actual charge 100.
+	if allowed, _ := s.SettleTokens("tenant1", 100, 500, ep, tokensPerMin); !allowed {
+		t.Fatal("settlement within quota should be allowed")
+	}
+
+	// The freed 400 must be reusable at once: 100 consumed + 900 wanted = 1000.
+	allowed, _, _ = s.ReserveTokens("tenant1", 900, tokensPerMin)
+	if !allowed {
+		t.Fatal("released reservation headroom must be reusable immediately")
+	}
+}
+
+// TestSettleChargeLatchesWhenOverQuota verifies settlement keeps AllowTokens'
+// latch semantics: a real charge that tips the tenant over quota latches the
+// exceeded flag for the gate's post-hoc stage-3 check.
+func TestSettleChargeLatchesWhenOverQuota(t *testing.T) {
+	s := &RateLimiterStore{entries: make(map[string]*limiterEntry)}
+
+	const tokensPerMin = 100
+
+	_, _, ep := s.ReserveTokens("tenant1", 50, tokensPerMin)
+	// The engine produced more than reserved (client under-declared max_tokens
+	// or the estimate ran hot): the real charge wins and latches.
+	allowed, retry := s.SettleTokens("tenant1", 150, 50, ep, tokensPerMin)
+	if allowed || retry <= 0 {
+		t.Fatalf("over-quota settlement must deny and latch (allowed=%v retry=%d)", allowed, retry)
+	}
+	if !s.IsTokenQuotaExceeded("tenant1") {
+		t.Fatal("over-quota settlement must latch the exceeded flag")
+	}
+}
+
+// TestSettleSkipsReleaseAfterRollover pins the epoch-tag rule: a reservation
+// made in window N must not be released from window N+1's counter — the
+// rollover already wiped it, and releasing again would steal a claim held by
+// the new window's in-flight requests.
+func TestSettleSkipsReleaseAfterRollover(t *testing.T) {
+	s := &RateLimiterStore{entries: make(map[string]*limiterEntry)}
+
+	const tokensPerMin = 1000
+
+	s.ReserveTokens("tenant1", 400, tokensPerMin)
+
+	// Roll the window over (the epoch-advance simulation used throughout this
+	// file), then let a NEW request win the reset and record its claim. The
+	// global epoch counter cannot be advanced from a test, so the first
+	// reservation's tag is made stale RELATIVE to the entry: after the forced
+	// rollover it reads as freshEp-1, one window behind the entry's current
+	// window — exactly the state a real rollover leaves behind.
+	v, _ := s.quotaMap.Load("tenant1")
+	e := v.(*tokenWindowEntry)
+	atomic.StoreInt64(&e.windowEpoch, atomic.LoadInt64(&e.windowEpoch)-1)
+	_, _, freshEp := s.ReserveTokens("tenant1", 300, tokensPerMin)
+	staleEp := freshEp - 1
+	if got := atomic.LoadInt64(&e.reserved); got != 300 {
+		t.Fatalf("rollover winner must seed reserved with its own claim only, got %d", got)
+	}
+
+	// Settling the STALE reservation must charge but not release.
+	s.SettleTokens("tenant1", 50, 400, staleEp, tokensPerMin)
+	if got := atomic.LoadInt64(&e.reserved); got != 300 {
+		t.Fatalf("stale-epoch settlement must not touch the new window's reserved, got %d", got)
+	}
+	if got := atomic.LoadInt64(&e.consumed); got != 50 {
+		t.Fatalf("stale-epoch settlement must still charge the actual tokens, got %d", got)
+	}
+}
+
+// TestReserveOversizeNeverAdmits verifies a request whose declared ceiling
+// exceeds the whole per-minute quota is denied even in a fresh window, and
+// records no phantom claim while doing so.
+func TestReserveOversizeNeverAdmits(t *testing.T) {
+	s := &RateLimiterStore{entries: make(map[string]*limiterEntry)}
+
+	const tokensPerMin = 100
+
+	allowed, _, ep := s.ReserveTokens("tenant1", 500, tokensPerMin)
+	if allowed || ep != 0 {
+		t.Fatal("reservation larger than the whole quota must be denied with no epoch")
+	}
+	// The failed admission must not consume headroom.
+	if allowed, _, _ := s.ReserveTokens("tenant1", 100, tokensPerMin); !allowed {
+		t.Fatal("full-quota reservation must be admitted after an oversize deny")
+	}
+}
+
+// TestReserveZeroConfigSkips verifies the no-quota and nothing-to-reserve
+// short-circuits: always admitted, nothing recorded, epoch 0.
+func TestReserveZeroConfigSkips(t *testing.T) {
+	s := &RateLimiterStore{entries: make(map[string]*limiterEntry)}
+
+	if allowed, _, ep := s.ReserveTokens("tenant1", 1000, 0); !allowed || ep != 0 {
+		t.Fatal("tokensPerMin=0 must skip reservation and admit")
+	}
+	if allowed, _, ep := s.ReserveTokens("tenant1", 0, 100); !allowed || ep != 0 {
+		t.Fatal("want=0 must skip reservation and admit")
+	}
+	// SettleTokens with no reservation degenerates to a plain charge.
+	if allowed, _ := s.SettleTokens("tenant1", 50, 0, 0, 100); !allowed {
+		t.Fatal("degenerate settlement within quota must be allowed")
+	}
+	v, ok := s.quotaMap.Load("tenant1")
+	if !ok {
+		t.Fatal("degenerate settlement must still create the charge entry")
+	}
+	if got := atomic.LoadInt64(&v.(*tokenWindowEntry).consumed); got != 50 {
+		t.Fatalf("degenerate settlement must charge 50, got %d", got)
+	}
+}
+
+// TestReservedClampNeverNegative pins the double-release defense: releasing
+// the same reservation twice (a C-side settle raced with a teardown path)
+// must floor the counter at zero, never grant phantom headroom.
+func TestReservedClampNeverNegative(t *testing.T) {
+	s := &RateLimiterStore{entries: make(map[string]*limiterEntry)}
+
+	const tokensPerMin = 1000
+
+	_, _, ep := s.ReserveTokens("tenant1", 200, tokensPerMin)
+	s.SettleTokens("tenant1", 10, 200, ep, tokensPerMin)
+	s.SettleTokens("tenant1", 10, 200, ep, tokensPerMin) // double settle
+
+	v, _ := s.quotaMap.Load("tenant1")
+	e := v.(*tokenWindowEntry)
+	if got := atomic.LoadInt64(&e.reserved); got != 0 {
+		t.Fatalf("reserved must clamp at 0 after double release, got %d", got)
+	}
+	// Admission math must still be sound: 20 consumed, 0 reserved → 980 fits.
+	if allowed, _, _ := s.ReserveTokens("tenant1", 980, tokensPerMin); !allowed {
+		t.Fatal("admission after double release must use clamped (not negative) reserved")
+	}
+}
+
+// TestAllowTokensRolloverZeroesReserved verifies the plain-charge rollover
+// path also wipes stale reservations — a tenant whose requests all settle
+// through AllowTokens (no reservations recorded) must not carry a dead claim
+// from a previous window into admission arithmetic.
+func TestAllowTokensRolloverZeroesReserved(t *testing.T) {
+	s := &RateLimiterStore{entries: make(map[string]*limiterEntry)}
+
+	const tokensPerMin = 1000
+
+	s.ReserveTokens("tenant1", 900, tokensPerMin)
+
+	v, _ := s.quotaMap.Load("tenant1")
+	e := v.(*tokenWindowEntry)
+	atomic.StoreInt64(&e.windowEpoch, atomic.LoadInt64(&e.windowEpoch)-1)
+
+	// A plain charge wins the rollover reset.
+	s.AllowTokens("tenant1", 100, tokensPerMin)
+	if got := atomic.LoadInt64(&e.reserved); got != 0 {
+		t.Fatalf("AllowTokens rollover must zero reserved, got %d", got)
+	}
+	if allowed, _, _ := s.ReserveTokens("tenant1", 900, tokensPerMin); !allowed {
+		t.Fatal("new window must admit against consumed only (100 + 900 <= 1000)")
 	}
 }
