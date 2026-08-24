@@ -995,6 +995,7 @@ func (e *DpEbpfH) DpPortPropMod(w *PortDpWorkQ) int {
 		setIfi.bd = C.ushort(uint16(w.SetBD))
 		setIfi.mirr = C.ushort(w.SetMirr)
 		setIfi.polid = C.ushort(w.SetPol)
+		setIfi.e_polid = C.ushort(w.SetPolEgr)
 
 		if w.Prop&cmn.PortPropUpp == cmn.PortPropUpp {
 			setIfi.pprop = C.LLB_DP_PORT_UPP
@@ -1560,6 +1561,9 @@ func DpLBRuleMod(w *LBDpWorkQ) int {
 	// reads this conn_limit and compares it against the live conc_conns count (nat_ep_map),
 	// forcing sel=-1 -> pm.nf=0 (SYN refuse, no CT) when the live count has reached the ceiling.
 	dat.conn_limit = C.uint32_t(w.ConnLimit)
+	// Tier-0 rule-attached policer id (polx_map key; 0 = none). dp_do_nat copies
+	// it into per-packet metadata on rule hit and CT-create persists it per-flow.
+	dat.polid = C.uint16_t(w.PolId)
 	if w.DsrMode {
 		dat.ca.oaux = 1
 	}

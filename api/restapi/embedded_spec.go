@@ -14405,11 +14405,12 @@ func init() {
           ],
           "properties": {
             "attachment": {
-              "description": "Target Attachment(0-RuleName, 1-PortName)",
+              "description": "Target Attachment(0-RuleName, 1-PortName, 2-PortNameEgress)",
               "type": "integer",
               "enum": [
                 0,
-                1
+                1,
+                2
               ]
             },
             "polObjName": {
@@ -31174,11 +31175,12 @@ func init() {
           ],
           "properties": {
             "attachment": {
-              "description": "Target Attachment(0-RuleName, 1-PortName)",
+              "description": "Target Attachment(0-RuleName, 1-PortName, 2-PortNameEgress)",
               "type": "integer",
               "enum": [
                 0,
-                1
+                1,
+                2
               ]
             },
             "polObjName": {
@@ -31230,11 +31232,12 @@ func init() {
       ],
       "properties": {
         "attachment": {
-          "description": "Target Attachment(0-RuleName, 1-PortName)",
+          "description": "Target Attachment(0-RuleName, 1-PortName, 2-PortNameEgress)",
           "type": "integer",
           "enum": [
             0,
-            1
+            1,
+            2
           ]
         },
         "polObjName": {

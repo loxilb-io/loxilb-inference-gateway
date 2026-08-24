@@ -129,6 +129,7 @@ type PortDpWorkQ struct {
 	Prop       cmn.PortProp
 	SetMirr    int
 	SetPol     int
+	SetPolEgr  int // egress-direction policer id (needs --egr-hooks)
 	LoadEbpf   string
 }
 
@@ -413,6 +414,7 @@ type LBDpWorkQ struct {
 	InActTo               uint64
 	PersistTo             uint64
 	ConnLimit             uint32 // Octavia per-service concurrent-connection ceiling; 0 = unlimited
+	PolId                 uint16 // Tier-0 rule-attached policer id (polx_map key); 0 = none
 	endPoints             []NatEP
 	secIP                 []net.IP
 }

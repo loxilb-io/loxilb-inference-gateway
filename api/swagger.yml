@@ -8008,8 +8008,8 @@ definitions:
         properties:
           attachment:
             type: integer
-            enum: [0,1]
-            description: Target Attachment(0-RuleName, 1-PortName)
+            enum: [0,1,2]
+            description: Target Attachment(0-RuleName, 1-PortName, 2-PortNameEgress)
           polObjName:
             type: string
             description: Target Names            

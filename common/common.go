@@ -150,6 +150,8 @@ const (
 	PortPropSpan
 	// PortPropPol - Policer is active
 	PortPropPol
+	// PortPropPolEgress - egress-direction policer is active
+	PortPropPolEgress
 )
 
 // DpStatusT - Generic status of operation
@@ -1576,6 +1578,9 @@ const (
 	PolAttachPort PolObjType = 1 << iota
 	// PolAttachLbRule - attach policer to a rule
 	PolAttachLbRule
+	// PolAttachPortEgress - attach policer to a port's egress direction
+	// (needs the eBPF egress hook, --egr-hooks)
+	PolAttachPortEgress
 )
 
 // PolObj - Information related to policer attachment point

@@ -302,7 +302,7 @@ var policyEntryTargetObjectTypeAttachmentPropEnum []interface{}
 
 func init() {
 	var res []int64
-	if err := json.Unmarshal([]byte(`[0,1]`), &res); err != nil {
+	if err := json.Unmarshal([]byte(`[0,1,2]`), &res); err != nil {
 		panic(err)
 	}
 	for _, v := range res {
