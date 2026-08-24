@@ -165,6 +165,10 @@ func (s *RateLimiterStore) ExportState() []RateLimiterEntry {
 // AND consumed atomically from the snapshot, which represents a known-
 // good source-of-truth state.
 func (s *RateLimiterStore) ImportState(entries []RateLimiterEntry) {
+	// Receiving any peer snapshot proves a live peer re-taught us: end the
+	// cold-start warmup (no-op unless the store was warming).
+	s.endQuotaWarmup(false)
+
 	// Rebuild the per-key entries map under the mutex. The fresh map is
 	// installed by reference; previous limiters become eligible for GC
 	// once any in-flight check call returns.
@@ -323,6 +327,9 @@ func (s *RateLimiterStore) ExportDelta(prevSnapshot map[string]int64) []RateLimi
 //	  epoch already).
 //	- Exceeded: monotonic-set (1 wins). Mirrors ImportState.
 func (s *RateLimiterStore) ApplyGossipDelta(entries []RateLimiterEntry) {
+	// Any received gossip batch ends the cold-start warmup (see ImportState).
+	s.endQuotaWarmup(false)
+
 	for _, e := range entries {
 		if !e.IsTenant {
 			// -B: per-key bucket gossip is not in scope; A-A

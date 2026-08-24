@@ -654,3 +654,139 @@ func TestAllowTokensRolloverZeroesReserved(t *testing.T) {
 		t.Fatal("new window must admit against consumed only (100 + 900 <= 1000)")
 	}
 }
+
+// TestCleanupEvictsIdleQuotaEntries pins the quota-map half of doCleanup: a
+// tenant whose windowEpoch is the eviction horizon (or more) behind the
+// current epoch is dropped — reclaiming both the map entry and its
+// scrape-time metric series — while a recently active tenant survives, and
+// an evicted tenant's next charge simply recreates it from zero.
+func TestCleanupEvictsIdleQuotaEntries(t *testing.T) {
+	s := newTestStore()
+
+	s.AllowTokens("fresh", 10, 100)
+	s.AllowTokens("idle", 10, 100)
+
+	// Backdate the idle tenant to exactly the eviction horizon.
+	v, ok := s.quotaMap.Load("idle")
+	if !ok {
+		t.Fatal("idle tenant missing from quotaMap after charge")
+	}
+	e := v.(*tokenWindowEntry)
+	atomic.StoreInt64(&e.windowEpoch,
+		currentQuotaEpoch.Load()-quotaEvictAfterWindows)
+
+	s.doCleanup()
+
+	if _, ok := s.quotaMap.Load("idle"); ok {
+		t.Fatal("idle tenant should have been evicted from quotaMap")
+	}
+	if _, ok := s.quotaMap.Load("fresh"); !ok {
+		t.Fatal("fresh tenant must survive quota-map eviction")
+	}
+	for _, u := range s.TokenQuotaSnapshot() {
+		if u.TenantID == "idle" {
+			t.Fatal("evicted tenant must disappear from TokenQuotaSnapshot")
+		}
+	}
+
+	// One window shy of the horizon must NOT be evicted.
+	v, _ = s.quotaMap.Load("fresh")
+	e = v.(*tokenWindowEntry)
+	atomic.StoreInt64(&e.windowEpoch,
+		currentQuotaEpoch.Load()-quotaEvictAfterWindows+1)
+	s.doCleanup()
+	if _, ok := s.quotaMap.Load("fresh"); !ok {
+		t.Fatal("tenant inside the eviction horizon must not be evicted")
+	}
+
+	// A returning tenant restarts from a zero counter.
+	if allowed, _ := s.AllowTokens("idle", 10, 100); !allowed {
+		t.Fatal("returning tenant must be re-admitted after eviction")
+	}
+	v, ok = s.quotaMap.Load("idle")
+	if !ok {
+		t.Fatal("returning tenant must be recreated in quotaMap")
+	}
+	if c := atomic.LoadInt64(&v.(*tokenWindowEntry).consumed); c != 10 {
+		t.Fatalf("recreated tenant should hold only the new charge, got %d", c)
+	}
+}
+
+// TestQuotaWarmupPeerEndsWarming pins the cold-start happy path: a store in
+// the warming state blocks nothing forever — the FIRST received peer batch
+// (snapshot or gossip delta) flips it warm and reports failOpen=false, and
+// the outcome callback fires exactly once even when the deadline timer and
+// further batches follow.
+func TestQuotaWarmupPeerEndsWarming(t *testing.T) {
+	s := newTestStore()
+	var calls int32
+	var lastFailOpen atomic.Bool
+	s.StartQuotaWarmup(50*time.Millisecond, func(failOpen bool) {
+		atomic.AddInt32(&calls, 1)
+		lastFailOpen.Store(failOpen)
+	})
+	if !s.QuotaWarming() {
+		t.Fatal("store must report warming after StartQuotaWarmup")
+	}
+
+	s.ImportState([]RateLimiterEntry{{
+		KeyID: "t:tenant1", IsTenant: true,
+		WindowEpoch: currentQuotaEpoch.Load(), Consumed: 40,
+	}})
+	if s.QuotaWarming() {
+		t.Fatal("peer snapshot must end the warmup")
+	}
+	if n := atomic.LoadInt32(&calls); n != 1 {
+		t.Fatalf("outcome callback should have fired once, got %d", n)
+	}
+	if lastFailOpen.Load() {
+		t.Fatal("peer-warmed outcome must report failOpen=false")
+	}
+
+	// Let the deadline pass and feed another batch: no second callback.
+	time.Sleep(80 * time.Millisecond)
+	s.ApplyGossipDelta([]RateLimiterEntry{{
+		KeyID: "t:tenant1", IsTenant: true,
+		WindowEpoch: currentQuotaEpoch.Load(), Consumed: 50,
+	}})
+	if n := atomic.LoadInt32(&calls); n != 1 {
+		t.Fatalf("outcome callback must be single-shot, got %d calls", n)
+	}
+}
+
+// TestQuotaWarmupTimeoutFailsOpen pins the bounded-wait contract: with no
+// peer batch inside the deadline the store flips warm on its own and the
+// outcome callback reports failOpen=true — the signal the caller must turn
+// into a metric so a cold fail-open window is never silent.
+func TestQuotaWarmupTimeoutFailsOpen(t *testing.T) {
+	s := newTestStore()
+	done := make(chan bool, 1)
+	s.StartQuotaWarmup(20*time.Millisecond, func(failOpen bool) { done <- failOpen })
+
+	select {
+	case failOpen := <-done:
+		if !failOpen {
+			t.Fatal("deadline expiry must report failOpen=true")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("warmup deadline never fired")
+	}
+	if s.QuotaWarming() {
+		t.Fatal("store must be warm after the deadline")
+	}
+}
+
+// TestQuotaWarmupDisabled pins the opt-in default: without StartQuotaWarmup
+// (or with a non-positive timeout) the store is warm from construction and
+// peer batches change nothing about that.
+func TestQuotaWarmupDisabled(t *testing.T) {
+	s := newTestStore()
+	if s.QuotaWarming() {
+		t.Fatal("a fresh store must not be warming by default")
+	}
+	s.StartQuotaWarmup(0, func(bool) { t.Fatal("disabled warmup must never fire its callback") })
+	if s.QuotaWarming() {
+		t.Fatal("timeout<=0 must leave the store warm")
+	}
+	s.ImportState(nil)
+}

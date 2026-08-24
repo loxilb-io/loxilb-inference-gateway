@@ -35,6 +35,8 @@ typedef struct {
 import "C"
 
 import (
+	"os"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -70,6 +72,8 @@ type rateLimitService interface {
 // error codes:
 //   - "rate_limit_exceeded"   – per-key token bucket denied
 //   - "tenant_quota_exceeded" – per-tenant token bucket denied
+//   - "token_quota_warming"   – quota state cold after restart; peer warm-up
+//     still inside its bounded deadline
 //   - "token_quota_exceeded"  – per-tenant token quota flag set
 func rateLimitCheckInternal(svc rateLimitService, store *rl.RateLimiterStore, keyIDStr, tenantIDStr string) (decision, retrySecs int, errorCode string) {
 	// Stage 1: per-key check with key-specific RPS and burst values.
@@ -96,8 +100,9 @@ func rateLimitCheckInternal(svc rateLimitService, store *rl.RateLimiterStore, ke
 	// Stage 2: per-tenant check with tenant-level RPS.
 	if tenantIDStr != "" {
 		tenantRPS := 0
+		tenantTPM := 0
 		if svc != nil {
-			tenantRPS, _ = svc.GetTenantRateLimit(tenantIDStr)
+			tenantRPS, tenantTPM = svc.GetTenantRateLimit(tenantIDStr)
 		}
 		allowed, retrySec := store.CheckTenant(tenantIDStr, tenantRPS)
 		if !allowed {
@@ -105,7 +110,18 @@ func rateLimitCheckInternal(svc rateLimitService, store *rl.RateLimiterStore, ke
 			return 3, retrySec, "tenant_quota_exceeded"
 		}
 
-		// Stage 3: per-tenant token quota exceeded check.
+		// Stage 3: per-tenant token quota checks — only meaningful for
+		// tenants that HAVE a token quota configured.
+		//
+		// Warming gate first: after a cold start the consumed counters are
+		// empty until a peer re-teaches them, so neither the exceeded latch
+		// nor a pre-admission reservation can be decided truthfully yet.
+		// Deny with a short retry for the bounded warmup window rather than
+		// silently admitting against a zeroed quota.
+		if tenantTPM > 0 && store.QuotaWarming() {
+			tk.LogIt(tk.LogWarning, "[AIGateway] rateLimitCheckInternal: tenant %s denied during token-quota warmup\n", tenantIDStr)
+			return 3, 1, "token_quota_warming"
+		}
 		if store.IsTokenQuotaExceeded(tenantIDStr) {
 			tk.LogIt(tk.LogWarning, "[AIGateway] rateLimitCheckInternal: tenant %s token quota exceeded\n", tenantIDStr)
 			return 3, 60, "token_quota_exceeded"
@@ -260,9 +276,47 @@ var (
 	globalRLOnce sync.Once
 )
 
+// quotaWarmupTimeout resolves the cold-start warm-from-peers deadline from
+// the LLB_AI_QUOTA_WARMUP_MS environment knob (0 disables the bounded wait).
+func quotaWarmupTimeout() time.Duration {
+	const defaultWarmupMs = 3000
+	ms := defaultWarmupMs
+	if v := os.Getenv("LLB_AI_QUOTA_WARMUP_MS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			ms = n
+		}
+	}
+	return time.Duration(ms) * time.Millisecond
+}
+
 func getGlobalRL() *rl.RateLimiterStore {
 	globalRLOnce.Do(func() {
 		globalRL = rl.New()
+		// Cold-start posture (design decision: warm from peers with a
+		// bounded timeout, then fail-open — never silently). The store
+		// starts empty on every process start; with sync peers configured
+		// we hold quota-limited admissions until the first peer batch
+		// re-teaches the counters or the deadline passes. Without peers
+		// (single-node edge) there is nothing to warm from: serve
+		// immediately, but mark the cold fail-open window with the metric.
+		// Must run BEFORE SetRateLimiterStore — a peer batch that landed
+		// between registration and a later warmup arm would have its
+		// warm signal dropped.
+		warmup := quotaWarmupTimeout()
+		if warmup > 0 && mh.dp != nil && len(mh.dp.Peers) > 0 {
+			tk.LogIt(tk.LogInfo, "[AIGateway] token-quota cold-start: warming from peers (deadline %v)\n", warmup)
+			globalRL.StartQuotaWarmup(warmup, func(failOpen bool) {
+				if failOpen {
+					prom.RecordTokenQuotaColdOpen()
+					tk.LogIt(tk.LogWarning, "[AIGateway] token-quota cold-start fail-open: no peer state within %v\n", warmup)
+					return
+				}
+				tk.LogIt(tk.LogInfo, "[AIGateway] token-quota cold-start: warmed from peer state\n")
+			})
+		} else {
+			prom.RecordTokenQuotaColdOpen()
+			tk.LogIt(tk.LogWarning, "[AIGateway] token-quota cold-start fail-open: cold quota state (no sync peers or warmup disabled)\n")
+		}
 		// -B: register the shared store with the sockproxy HA
 		// coordinator so the per-peer push goroutines can call
 		// ExportState / ExportDelta on it. NewSockproxySync is the

@@ -21,6 +21,8 @@ package ratelimit
 
 import (
 	"math"
+	"os"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -38,7 +40,22 @@ const (
 
 	// epochInterval is the duration of one token-quota accounting window.
 	epochInterval = time.Minute
+
+	// quotaEvictFloorWindows is the smallest allowed idle-eviction horizon.
+	// Anything under two windows could evict a tenant whose current window
+	// simply has not seen its first charge yet.
+	quotaEvictFloorWindows = 2
+
+	// quotaEvictDefaultWindows is the idle-eviction horizon when the
+	// LLB_AI_QUOTA_EVICT_WINDOWS environment knob is unset: a tenant whose
+	// last quota activity is this many whole windows in the past is dropped
+	// from the quota map (matches the 10-minute posture of the RPS entries).
+	quotaEvictDefaultWindows = 10
 )
+
+// quotaEvictAfterWindows is the effective idle-eviction horizon in whole
+// quota windows, resolved once at init from LLB_AI_QUOTA_EVICT_WINDOWS.
+var quotaEvictAfterWindows int64 = quotaEvictDefaultWindows
 
 // currentQuotaEpoch is an atomically updated counter incremented every
 // epochInterval by the init goroutine. AllowTokens compares the per-entry
@@ -47,6 +64,13 @@ const (
 var currentQuotaEpoch atomic.Int64
 
 func init() {
+	// Resolve the quota-map eviction horizon. Clamped to the floor so a
+	// misconfigured knob can never evict a live window.
+	if v := os.Getenv("LLB_AI_QUOTA_EVICT_WINDOWS"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			quotaEvictAfterWindows = max(n, quotaEvictFloorWindows)
+		}
+	}
 	// Initialise the epoch counter before any calls to AllowTokens.
 	currentQuotaEpoch.Store(time.Now().Unix() / int64(epochInterval.Seconds()))
 	go func() {
@@ -73,7 +97,24 @@ type RateLimiterStore struct {
 	mu       sync.Mutex
 	entries  map[string]*limiterEntry
 	quotaMap sync.Map // map[string]*tokenWindowEntry for per-tenant token quota
+
+	// warmState is the token-quota cold-start posture: quotaWarm (default —
+	// quota checks run normally) or quotaWarming (this node restarted with
+	// empty quota state and is waiting, bounded, for a peer to re-teach it).
+	// Written only by the CAS-once transition in endQuotaWarmup.
+	warmState atomic.Int32
+	// warmDone is the single-shot warmup-outcome callback registered by
+	// StartQuotaWarmup. Invoked exactly once (the endQuotaWarmup CAS
+	// guarantees it), with failOpen=true when the warmup deadline expired
+	// before any peer state arrived. Immutable after StartQuotaWarmup.
+	warmDone func(failOpen bool)
 }
+
+// Token-quota warm states (RateLimiterStore.warmState).
+const (
+	quotaWarm    int32 = 0 // normal operation (the zero value: cold-start handling is opt-in)
+	quotaWarming int32 = 1 // bounded wait for peer state after a cold start
+)
 
 // tokenWindowEntry tracks per-tenant token consumption in 60-second epochs.
 // All mutable fields use atomic operations to satisfy the data-plane hot-path
@@ -100,6 +141,50 @@ func New() *RateLimiterStore {
 	}
 	go s.Cleanup()
 	return s
+}
+
+// StartQuotaWarmup puts the store into the token-quota warming state for at
+// most timeout: a node that restarts loses its in-memory quota counters, so
+// until a peer re-teaches it (the first received sync batch — ImportState or
+// ApplyGossipDelta — ends the warmup) the admission gate treats every
+// quota-limited tenant as not-yet-decidable rather than silently fail-open.
+//
+// onDone is invoked exactly once when the warmup ends: failOpen=false when
+// peer state arrived in time, failOpen=true when the deadline expired first
+// and the node is now serving a cold window fail-open — the caller must make
+// that visible (metric + log), because a silently cold node is
+// indistinguishable from a healthy one.
+//
+// Call BEFORE the store is registered with the sync coordinator, and only
+// once, at store construction time: a peer batch that lands between
+// registration and a later StartQuotaWarmup would have its warm signal
+// dropped. A timeout <= 0 is a no-op (the store stays warm).
+func (s *RateLimiterStore) StartQuotaWarmup(timeout time.Duration, onDone func(failOpen bool)) {
+	if timeout <= 0 {
+		return
+	}
+	s.warmDone = onDone
+	s.warmState.Store(quotaWarming)
+	time.AfterFunc(timeout, func() { s.endQuotaWarmup(true) })
+}
+
+// QuotaWarming reports whether the store is still waiting for peer quota
+// state after a cold start. Atomic read — safe on the hot path.
+func (s *RateLimiterStore) QuotaWarming() bool {
+	return s.warmState.Load() == quotaWarming
+}
+
+// endQuotaWarmup performs the CAS-once warming→warm transition and fires the
+// outcome callback. Races between the deadline timer and a peer batch are
+// settled by the CAS: whichever caller wins reports its outcome, the loser
+// is a no-op.
+func (s *RateLimiterStore) endQuotaWarmup(failOpen bool) {
+	if !s.warmState.CompareAndSwap(quotaWarming, quotaWarm) {
+		return
+	}
+	if s.warmDone != nil {
+		s.warmDone(failOpen)
+	}
 }
 
 // CheckKey tests whether a request associated with keyID is within the
@@ -452,14 +537,46 @@ func (s *RateLimiterStore) update(id string, rps, burst int) {
 }
 
 // doCleanup removes all entries whose lastAccess time predates the inactivity
-// threshold. It is called by the Cleanup goroutine on each tick.
+// threshold, then evicts idle tenant quota windows. It is called by the
+// Cleanup goroutine on each tick.
 func (s *RateLimiterStore) doCleanup() {
 	cutoff := time.Now().Add(-cleanupInactiveAfter)
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	for id, e := range s.entries {
 		if e.lastAccess.Before(cutoff) {
 			delete(s.entries, id)
 		}
 	}
+	s.mu.Unlock()
+
+	// Quota-map eviction runs strictly AFTER the mutex release: the walk is
+	// lock-free (sync.Map + atomic loads, delete-during-Range is defined
+	// behaviour) and must stay that way — holding s.mu across it would
+	// reintroduce the ExportState-style stall on every concurrent check call.
+	//
+	// An entry whose windowEpoch is quotaEvictAfterWindows or more whole
+	// windows behind the current epoch has seen no charge, reservation or
+	// peer-sync update for at least that long: its consumed count reads 0
+	// on every path (rolled-over window), its exceeded latch is stale, and
+	// any reservation it carries is from an expired epoch that settlement
+	// already ignores. Dropping it also retires the tenant's scrape-time
+	// utilization/limit series (TokenQuotaSnapshot no longer sees the key) —
+	// the metric-cardinality half of the same leak.
+	//
+	// A request racing this eviction can at worst charge the orphaned entry
+	// it already holds a pointer to; the next call recreates the key with a
+	// zero counter. That under-counts one response for a tenant that was
+	// idle for the whole horizon — bounded, fail-open, and preferable to any
+	// lock on the hot path.
+	epoch := currentQuotaEpoch.Load()
+	s.quotaMap.Range(func(k, v any) bool {
+		e, ok := v.(*tokenWindowEntry)
+		if !ok {
+			return true
+		}
+		if epoch-atomic.LoadInt64(&e.windowEpoch) >= quotaEvictAfterWindows {
+			s.quotaMap.Delete(k)
+		}
+		return true
+	})
 }

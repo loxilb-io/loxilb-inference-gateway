@@ -203,6 +203,18 @@ var (
 		[]string{"tenant"},
 	)
 
+	// aiTokenQuotaColdOpenTotal marks cold fail-open windows: the node began
+	// serving quota-limited traffic with empty in-memory quota state and no
+	// peer re-taught it in time (or no peers exist). Without this series a
+	// freshly restarted node that under-enforces for up to one window is
+	// indistinguishable from a healthy one.
+	aiTokenQuotaColdOpenTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "loxilb_ai_token_quota_cold_open_total",
+			Help: "Total times this node started serving token-quota traffic fail-open with cold (empty) quota state, without peer warm-up.",
+		},
+	)
+
 	// ============================================================================
 	// P/D DISAGGREGATION METRICS 
 	// ============================================================================
@@ -323,6 +335,13 @@ func RecordTokenUsage(modelName, tenantID string, promptTokens, completionTokens
 		aiTokensEstimatedTotal.WithLabelValues(model, tenant).Add(float64(promptTokens + completionTokens))
 		aiTokensMissingTotal.WithLabelValues(model, tenant).Inc()
 	}
+}
+
+// RecordTokenQuotaColdOpen increments loxilb_ai_token_quota_cold_open_total.
+// Call once per cold fail-open transition: quota enforcement is now running
+// on empty state that no peer warmed up.
+func RecordTokenQuotaColdOpen() {
+	aiTokenQuotaColdOpenTotal.Inc()
 }
 
 // RecordTokenQuotaDenied increments the loxilb_ai_token_quota_denied_total

@@ -456,3 +456,34 @@ func TestTokenQuotaConsumeReleasesOnZeroCount(t *testing.T) {
 		t.Fatalf("reserve 1000 after zero-count release: expected admitted")
 	}
 }
+
+// TestRateLimitCheckInternalQuotaWarming pins the cold-start gate posture:
+// while the store is warming (restart, peer state not yet re-learned) a
+// tenant WITH a token quota is denied with the distinct token_quota_warming
+// code and a short retry, a tenant WITHOUT one is untouched, and the first
+// peer batch ends the hold.
+func TestRateLimitCheckInternalQuotaWarming(t *testing.T) {
+	store := rl.New()
+	store.StartQuotaWarmup(time.Hour, func(bool) {})
+
+	quotaSvc := &mockRateLimitService{tenantRPS: 0, tenantTPM: 100}
+	decision, retrySecs, errCode := rateLimitCheckInternal(quotaSvc, store, "", "tenant-warm")
+	if decision != 3 || errCode != "token_quota_warming" {
+		t.Fatalf("warming store must deny a quota tenant with token_quota_warming, got decision=%d errCode=%q", decision, errCode)
+	}
+	if retrySecs <= 0 {
+		t.Errorf("warming denial must advise a positive retry, got %d", retrySecs)
+	}
+
+	// No token quota configured: warming must not block the tenant.
+	freeSvc := &mockRateLimitService{tenantRPS: 0, tenantTPM: 0}
+	if decision, _, errCode := rateLimitCheckInternal(freeSvc, store, "", "tenant-free"); decision != 0 {
+		t.Fatalf("warming must not deny a tenant without a token quota, got decision=%d errCode=%q", decision, errCode)
+	}
+
+	// First peer batch warms the store; the quota tenant serves again.
+	store.ImportState([]rl.RateLimiterEntry{{KeyID: "t:tenant-warm", IsTenant: true}})
+	if decision, _, errCode := rateLimitCheckInternal(quotaSvc, store, "", "tenant-warm"); decision != 0 {
+		t.Fatalf("warmed store must admit the quota tenant, got decision=%d errCode=%q", decision, errCode)
+	}
+}
