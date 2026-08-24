@@ -1338,12 +1338,10 @@ func (s *SockproxySync) updatePrevSnapshot(peerKey string, entries []rl.RateLimi
 			continue
 		}
 		m[e.KeyID] = e.Consumed
-		// Strip "t:" prefix and prepend "e:" for the epoch sentinel key.
-		tenantID := e.KeyID
-		if len(tenantID) > 2 && tenantID[:2] == "t:" {
-			tenantID = tenantID[2:]
-		}
-		m["e:"+tenantID] = e.WindowEpoch
+		// Strip the quota scope prefix ("t:" or "tm:") and prepend "e:"
+		// for the epoch sentinel key, matching ExportDelta's lookup.
+		mapKey, _ := rl.QuotaMapKey(e.KeyID)
+		m["e:"+mapKey] = e.WindowEpoch
 	}
 }
 

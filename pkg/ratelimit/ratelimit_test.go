@@ -30,6 +30,34 @@ func newTestStore() *RateLimiterStore {
 	return &RateLimiterStore{entries: make(map[string]*limiterEntry)}
 }
 
+// pinQuotaClock suspends the package clock goroutine for the duration of the
+// test, so bucket refill advances only through advanceQuotaClock and the
+// arithmetic under test is deterministic. Tests that pin the clock must not
+// call t.Parallel().
+func pinQuotaClock(t *testing.T) {
+	t.Helper()
+	quotaClockFrozen.Store(true)
+	t.Cleanup(func() { quotaClockFrozen.Store(false) })
+}
+
+// advanceQuotaClock moves the pinned quota clock forward by ms, refilling
+// every bucket by the equivalent token amount.
+func advanceQuotaClock(ms int64) {
+	quotaNowMs.Add(ms)
+}
+
+// quotaDebtTokens reads the store's current spent-not-yet-refilled token
+// debt for a quota key, the bucket-era analog of the old consumed counter.
+func quotaDebtTokens(t *testing.T, s *RateLimiterStore, key string) int64 {
+	t.Helper()
+	v, ok := s.quotaMap.Load(key)
+	if !ok {
+		t.Fatalf("quota key %q missing from quotaMap", key)
+	}
+	e := v.(*tokenWindowEntry)
+	return debtTokensOf(atomic.LoadInt64(&e.tatMs), quotaNowMs.Load(), atomic.LoadInt64(&e.limitTokens))
+}
+
 // TestBurstAbsorption verifies that a limiter allows exactly burst tokens
 // before throttling subsequent requests.
 func TestBurstAbsorption(t *testing.T) {
@@ -179,18 +207,19 @@ func TestUpdateTenant(t *testing.T) {
 // each 60-second epoch). We fake the epoch by directly manipulating the entry's
 // windowEpoch field through the quotaMap after the first call.
 func TestAllowTokensRefillRate(t *testing.T) {
+	pinQuotaClock(t)
 	s := &RateLimiterStore{entries: make(map[string]*limiterEntry)}
 
 	const tokensPerMin = 100
 
-	// Consume all tokens in the "current" window.
+	// Drain the whole bucket (burst = 100% of the limit by default).
 	for i := 0; i < 10; i++ {
 		allowed, _ := s.AllowTokens("tenant1", 10, tokensPerMin)
 		if !allowed {
 			t.Fatalf("iteration %d: expected allowed within quota", i)
 		}
 	}
-	// One more request should be denied (total = 110 > 100).
+	// One more charge puts the bucket in debt (total = 110 > 100).
 	allowed, retry := s.AllowTokens("tenant1", 10, tokensPerMin)
 	if allowed {
 		t.Fatal("should be denied after consuming full quota")
@@ -199,24 +228,56 @@ func TestAllowTokensRefillRate(t *testing.T) {
 		t.Errorf("retryAfterSecs = %d, want >= 1", retry)
 	}
 
-	// Simulate window rollover by backdating the windowEpoch.
-	v, ok := s.quotaMap.Load("tenant1")
-	if !ok {
-		t.Fatal("entry not found in quotaMap")
+	// 30 seconds of refill at 100/min returns 50 tokens: from 10 tokens of
+	// debt that leaves a level of 40. A 30-token charge fits; the next
+	// 20-token charge (level now 10) does not — the budget refills
+	// CONTINUOUSLY, there is no minute boundary that resets it wholesale.
+	advanceQuotaClock(30_000)
+	if allowed, _ = s.AllowTokens("tenant1", 30, tokensPerMin); !allowed {
+		t.Fatal("30-token charge should fit the partially refilled bucket")
 	}
-	e := v.(*tokenWindowEntry)
-	atomic.StoreInt64(&e.windowEpoch, atomic.LoadInt64(&e.windowEpoch)-1) // move to previous epoch
+	if allowed, _ = s.AllowTokens("tenant1", 20, tokensPerMin); allowed {
+		t.Fatal("20-token charge should overdraw the partially refilled bucket")
+	}
+}
 
-	// After rollover, a fresh 100-token budget is available.
-	allowed, _ = s.AllowTokens("tenant1", 50, tokensPerMin)
-	if !allowed {
-		t.Fatal("should be allowed after window refill")
+// TestNoBoundaryDoubleSpend pins the hole this bucket exists to close: the
+// fixed window allowed a tenant to spend the full quota in the last second
+// of window N and again in the first second of N+1 — twice the nominal rate
+// across a two-second span. With continuous refill there is no boundary to
+// straddle: a tenant who just drained the full burst holds exactly
+// rate×Δt tokens after any Δt, minute-aligned or not.
+func TestNoBoundaryDoubleSpend(t *testing.T) {
+	pinQuotaClock(t)
+	s := &RateLimiterStore{entries: make(map[string]*limiterEntry)}
+
+	const tokensPerMin = 600
+
+	// Drain the full burst "just before the minute boundary".
+	if allowed, _ := s.AllowTokens("tenant1", 600, tokensPerMin); !allowed {
+		t.Fatal("draining the full burst from a fresh bucket must be allowed")
+	}
+
+	// Two seconds later — where the old window would have granted a fresh
+	// 600 — the refill has returned exactly 600/60 × 2 = 20 tokens. Probe
+	// admission through ReserveTokens, which unlike the post-hoc charge
+	// path does not consume anything on a deny.
+	advanceQuotaClock(2_000)
+	if allowed, _, _ := s.ReserveTokens("tenant1", 600, tokensPerMin); allowed {
+		t.Fatal("full-quota re-spend 2s after draining the bucket must be denied")
+	}
+	if allowed, _, _ := s.ReserveTokens("tenant1", 21, tokensPerMin); allowed {
+		t.Fatal("more than the 2s refill grant must be denied")
+	}
+	if allowed, _, _ := s.ReserveTokens("tenant1", 20, tokensPerMin); !allowed {
+		t.Fatal("exactly the 2s refill grant must be admitted")
 	}
 }
 
 // TestAllowTokensQuotaExceededDetection verifies that IsTokenQuotaExceeded
 // returns true once the per-minute budget is fully consumed.
 func TestAllowTokensQuotaExceededDetection(t *testing.T) {
+	pinQuotaClock(t)
 	s := &RateLimiterStore{entries: make(map[string]*limiterEntry)}
 
 	const tokensPerMin = 50
@@ -244,48 +305,46 @@ func TestAllowTokensQuotaExceededDetection(t *testing.T) {
 	}
 }
 
-// TestTokenQuotaExceededClearsOnRollover pins the read-side staleness rule:
-// once a tenant is over quota, EVERY subsequent request is denied at the gate,
-// so AllowTokens — the only writer that clears the exceeded flag — never runs
-// again. IsTokenQuotaExceeded itself must therefore report false as soon as
-// the window epoch advances, or one trip denies the tenant forever.
-func TestTokenQuotaExceededClearsOnRollover(t *testing.T) {
+// TestTokenQuotaExceededDrainsWithRefill pins the read-side self-heal rule:
+// once a tenant is over quota, EVERY subsequent request is denied at the
+// gate, so no charge ever runs to clear a stored flag. The over-quota state
+// is therefore derived from the bucket debt, and the continuous refill
+// clears it on its own — with NO further AllowTokens calls — as soon as the
+// debt has drained.
+func TestTokenQuotaExceededDrainsWithRefill(t *testing.T) {
+	pinQuotaClock(t)
 	s := &RateLimiterStore{entries: make(map[string]*limiterEntry)}
 
 	const tokensPerMin = 100
 
-	// Trip the quota.
+	// Trip the quota: 10 tokens of debt (6s of refill at 100/min).
 	s.AllowTokens("tenant1", 100, tokensPerMin)
 	if allowed, _ := s.AllowTokens("tenant1", 10, tokensPerMin); allowed {
 		t.Fatal("should be denied over quota")
 	}
 	if !s.IsTokenQuotaExceeded("tenant1") {
-		t.Fatal("exceeded flag should be latched")
+		t.Fatal("bucket in debt must read exceeded")
 	}
 
-	// Simulate the epoch advancing with NO further AllowTokens calls (the
-	// denied-tenant reality: requests bounce at the gate before any response
-	// could consume tokens).
-	v, ok := s.quotaMap.Load("tenant1")
-	if !ok {
-		t.Fatal("entry not found in quotaMap")
-	}
-	e := v.(*tokenWindowEntry)
-	atomic.StoreInt64(&e.windowEpoch, atomic.LoadInt64(&e.windowEpoch)-1)
-
+	// Refill drains the debt with no writer running (the denied-tenant
+	// reality: requests bounce at the gate before any response could
+	// consume tokens).
+	advanceQuotaClock(7_000)
 	if s.IsTokenQuotaExceeded("tenant1") {
-		t.Fatal("exceeded flag must read stale (false) after window rollover")
+		t.Fatal("exceeded must clear on its own once the refill drains the debt")
 	}
 
-	// The next consume in the new window resets cleanly and is allowed.
-	if allowed, _ := s.AllowTokens("tenant1", 50, tokensPerMin); !allowed {
-		t.Fatal("fresh window should allow within-quota consumption")
+	// The freshly refilled headroom (~1 token past even) admits a small
+	// charge cleanly.
+	if allowed, _ := s.AllowTokens("tenant1", 1, tokensPerMin); !allowed {
+		t.Fatal("drained bucket should allow a small charge")
 	}
 }
 
 // TestAllowTokensPerTenantIsolation verifies that exhausting tenant A's quota
 // does not affect tenant B's independent budget.
 func TestAllowTokensPerTenantIsolation(t *testing.T) {
+	pinQuotaClock(t)
 	s := &RateLimiterStore{entries: make(map[string]*limiterEntry)}
 
 	const tokensPerMin = 100
@@ -396,11 +455,12 @@ func TestCleanupRemovesInactive(t *testing.T) {
 }
 
 // TestTokenQuotaSnapshot verifies the scrape-time view of the quota map:
-// consumed/limit per tenant, no entry for unlimited tenants, limit refresh on
-// the next charge, and consumed reading 0 once the window has rolled over
-// with no further charges (the idle/denied-tenant case the collector exists
-// to report truthfully).
+// spent-not-yet-refilled tokens and the limit per tenant, no entry for
+// unlimited tenants, limit refresh on the next charge, and the spent value
+// decaying to 0 through refill alone with no further charges (the
+// idle/denied-tenant case the collector exists to report truthfully).
 func TestTokenQuotaSnapshot(t *testing.T) {
+	pinQuotaClock(t)
 	s := &RateLimiterStore{entries: make(map[string]*limiterEntry)}
 
 	if snap := s.TokenQuotaSnapshot(); len(snap) != 0 {
@@ -420,25 +480,22 @@ func TestTokenQuotaSnapshot(t *testing.T) {
 		t.Fatalf("unexpected snapshot entry: %+v", snap[0])
 	}
 
-	// A quota config change surfaces on the tenant's next charge.
+	// A quota config change surfaces on the tenant's next charge — and it
+	// rescales the whole outstanding debt to the new refill rate: 50 tokens
+	// of debt at 100/min is 30s of drain time, which at 200/min prices as
+	// 100 tokens; plus 10 charged at 200/min = 110.
 	s.AllowTokens("tenant1", 10, 200)
 	snap = s.TokenQuotaSnapshot()
-	if snap[0].Consumed != 60 || snap[0].Limit != 200 {
-		t.Fatalf("expected consumed=60 limit=200 after config change, got %+v", snap[0])
+	if snap[0].Consumed != 110 || snap[0].Limit != 200 {
+		t.Fatalf("expected consumed=110 limit=200 after config change, got %+v", snap[0])
 	}
 
-	// Window rollover with NO further charges: consumed must read 0 (the
-	// quota refilled) while the limit stays known.
-	v, ok := s.quotaMap.Load("tenant1")
-	if !ok {
-		t.Fatal("entry not found in quotaMap")
-	}
-	e := v.(*tokenWindowEntry)
-	atomic.StoreInt64(&e.windowEpoch, atomic.LoadInt64(&e.windowEpoch)-1)
-
+	// Refill with NO further charges: the spent value must decay to 0 (the
+	// quota refilled on its own) while the limit stays known.
+	advanceQuotaClock(60_000)
 	snap = s.TokenQuotaSnapshot()
 	if len(snap) != 1 || snap[0].Consumed != 0 || snap[0].Limit != 200 {
-		t.Fatalf("expected consumed=0 limit=200 after rollover, got %+v", snap)
+		t.Fatalf("expected consumed=0 limit=200 after refill, got %+v", snap)
 	}
 }
 
@@ -534,6 +591,7 @@ func TestSettleChargeLatchesWhenOverQuota(t *testing.T) {
 // rollover already wiped it, and releasing again would steal a claim held by
 // the new window's in-flight requests.
 func TestSettleSkipsReleaseAfterRollover(t *testing.T) {
+	pinQuotaClock(t)
 	s := &RateLimiterStore{entries: make(map[string]*limiterEntry)}
 
 	const tokensPerMin = 1000
@@ -560,7 +618,7 @@ func TestSettleSkipsReleaseAfterRollover(t *testing.T) {
 	if got := atomic.LoadInt64(&e.reserved); got != 300 {
 		t.Fatalf("stale-epoch settlement must not touch the new window's reserved, got %d", got)
 	}
-	if got := atomic.LoadInt64(&e.consumed); got != 50 {
+	if got := quotaDebtTokens(t, s, "tenant1"); got != 50 {
 		t.Fatalf("stale-epoch settlement must still charge the actual tokens, got %d", got)
 	}
 }
@@ -586,6 +644,7 @@ func TestReserveOversizeNeverAdmits(t *testing.T) {
 // TestReserveZeroConfigSkips verifies the no-quota and nothing-to-reserve
 // short-circuits: always admitted, nothing recorded, epoch 0.
 func TestReserveZeroConfigSkips(t *testing.T) {
+	pinQuotaClock(t)
 	s := &RateLimiterStore{entries: make(map[string]*limiterEntry)}
 
 	if allowed, _, ep := s.ReserveTokens("tenant1", 1000, 0); !allowed || ep != 0 {
@@ -598,11 +657,10 @@ func TestReserveZeroConfigSkips(t *testing.T) {
 	if allowed, _ := s.SettleTokens("tenant1", 50, 0, 0, 100); !allowed {
 		t.Fatal("degenerate settlement within quota must be allowed")
 	}
-	v, ok := s.quotaMap.Load("tenant1")
-	if !ok {
+	if _, ok := s.quotaMap.Load("tenant1"); !ok {
 		t.Fatal("degenerate settlement must still create the charge entry")
 	}
-	if got := atomic.LoadInt64(&v.(*tokenWindowEntry).consumed); got != 50 {
+	if got := quotaDebtTokens(t, s, "tenant1"); got != 50 {
 		t.Fatalf("degenerate settlement must charge 50, got %d", got)
 	}
 }
@@ -661,6 +719,7 @@ func TestAllowTokensRolloverZeroesReserved(t *testing.T) {
 // scrape-time metric series — while a recently active tenant survives, and
 // an evicted tenant's next charge simply recreates it from zero.
 func TestCleanupEvictsIdleQuotaEntries(t *testing.T) {
+	pinQuotaClock(t)
 	s := newTestStore()
 
 	s.AllowTokens("fresh", 10, 100)
@@ -699,15 +758,14 @@ func TestCleanupEvictsIdleQuotaEntries(t *testing.T) {
 		t.Fatal("tenant inside the eviction horizon must not be evicted")
 	}
 
-	// A returning tenant restarts from a zero counter.
+	// A returning tenant restarts from a full bucket.
 	if allowed, _ := s.AllowTokens("idle", 10, 100); !allowed {
 		t.Fatal("returning tenant must be re-admitted after eviction")
 	}
-	v, ok = s.quotaMap.Load("idle")
-	if !ok {
+	if _, ok = s.quotaMap.Load("idle"); !ok {
 		t.Fatal("returning tenant must be recreated in quotaMap")
 	}
-	if c := atomic.LoadInt64(&v.(*tokenWindowEntry).consumed); c != 10 {
+	if c := quotaDebtTokens(t, s, "idle"); c != 10 {
 		t.Fatalf("recreated tenant should hold only the new charge, got %d", c)
 	}
 }

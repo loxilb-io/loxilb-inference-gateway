@@ -38,7 +38,11 @@ const (
 	// cleanupInterval is how often the background Cleanup goroutine runs.
 	cleanupInterval = time.Minute
 
-	// epochInterval is the duration of one token-quota accounting window.
+	// epochInterval is the duration of one token-quota activity epoch. The
+	// smooth bucket refills continuously (it has no accounting window), but
+	// the minute grid remains the unit for idle-entry eviction, for expiring
+	// reservations orphaned by aborted requests, and for the retry-advice
+	// cap on denials.
 	epochInterval = time.Minute
 
 	// quotaEvictFloorWindows is the smallest allowed idle-eviction horizon.
@@ -51,17 +55,54 @@ const (
 	// last quota activity is this many whole windows in the past is dropped
 	// from the quota map (matches the 10-minute posture of the RPS entries).
 	quotaEvictDefaultWindows = 10
+
+	// quotaClockInterval is the refresh period of the coarse millisecond
+	// clock the bucket arithmetic reads instead of calling time.Now on the
+	// hot path. Staleness only delays refill by up to one period, which is
+	// the conservative direction.
+	quotaClockInterval = 100 * time.Millisecond
+
+	// quotaBurstDefaultPct is the bucket capacity as a percentage of the
+	// tokens-per-minute limit when LLB_AI_QUOTA_BURST_PCT is unset. 100
+	// means a fully idle tenant can spend one whole minute's quota at once
+	// — the same instantaneous allowance the fixed window granted — while
+	// sustained spend is still bounded by the continuous refill rate.
+	quotaBurstDefaultPct = 100
+
+	// quotaBurstMinPct / quotaBurstMaxPct clamp the burst knob. The floor
+	// keeps a request no larger than 1% of the per-minute quota admittable;
+	// the ceiling bounds the credit a long-idle tenant can accumulate.
+	quotaBurstMinPct = 1
+	quotaBurstMaxPct = 1000
+
+	// msPerMinute is the refill-arithmetic time base: a tokens-per-minute
+	// limit refills one token every 60000/limit milliseconds.
+	msPerMinute = 60_000
 )
 
 // quotaEvictAfterWindows is the effective idle-eviction horizon in whole
 // quota windows, resolved once at init from LLB_AI_QUOTA_EVICT_WINDOWS.
 var quotaEvictAfterWindows int64 = quotaEvictDefaultWindows
 
-// currentQuotaEpoch is an atomically updated counter incremented every
-// epochInterval by the init goroutine. AllowTokens compares the per-entry
-// windowEpoch against this value to detect window rollovers without calling
-// time.Now on every hot-path invocation (: no syscall per call).
+// quotaBurstPct is the bucket capacity in percent of the tokens-per-minute
+// limit, resolved once at init from LLB_AI_QUOTA_BURST_PCT.
+var quotaBurstPct int64 = quotaBurstDefaultPct
+
+// currentQuotaEpoch is the current minute of the activity-epoch grid,
+// refreshed by the clock goroutine. Entries stamp it on every charge or
+// reservation; eviction and reservation expiry compare against it without
+// calling time.Now on the hot path (no syscall per call).
 var currentQuotaEpoch atomic.Int64
+
+// quotaNowMs is the coarse monotonic-enough wall clock (Unix milliseconds)
+// the bucket refill arithmetic reads on the hot path, refreshed every
+// quotaClockInterval by the clock goroutine.
+var quotaNowMs atomic.Int64
+
+// quotaClockFrozen suspends the clock goroutine's stores so tests can pin
+// quotaNowMs / currentQuotaEpoch to deterministic values. Never set in
+// production code.
+var quotaClockFrozen atomic.Bool
 
 func init() {
 	// Resolve the quota-map eviction horizon. Clamped to the floor so a
@@ -71,15 +112,55 @@ func init() {
 			quotaEvictAfterWindows = max(n, quotaEvictFloorWindows)
 		}
 	}
-	// Initialise the epoch counter before any calls to AllowTokens.
-	currentQuotaEpoch.Store(time.Now().Unix() / int64(epochInterval.Seconds()))
+	// Resolve the burst knob, clamped so a misconfigured value can neither
+	// make every request unadmittable nor grant unbounded stored credit.
+	if v := os.Getenv("LLB_AI_QUOTA_BURST_PCT"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			quotaBurstPct = min(max(n, quotaBurstMinPct), quotaBurstMaxPct)
+		}
+	}
+	// Initialise both clocks before any calls to AllowTokens.
+	now := time.Now()
+	currentQuotaEpoch.Store(now.Unix() / int64(epochInterval.Seconds()))
+	quotaNowMs.Store(now.UnixMilli())
 	go func() {
-		ticker := time.NewTicker(epochInterval)
+		ticker := time.NewTicker(quotaClockInterval)
 		defer ticker.Stop()
 		for range ticker.C {
-			currentQuotaEpoch.Store(time.Now().Unix() / int64(epochInterval.Seconds()))
+			if quotaClockFrozen.Load() {
+				continue
+			}
+			t := time.Now()
+			quotaNowMs.Store(t.UnixMilli())
+			currentQuotaEpoch.Store(t.Unix() / int64(epochInterval.Seconds()))
 		}
 	}()
+}
+
+// burstTokensFor is the bucket capacity for a tokens-per-minute limit: the
+// most a fully idle tenant can spend instantaneously. Never below one token
+// so that a configured quota always admits some request.
+func burstTokensFor(limit int64) int64 {
+	return max(limit*quotaBurstPct/100, 1)
+}
+
+// refillCeilMs is the time, in milliseconds rounded up, that `tokens` take
+// to refill at `limit` tokens per minute. Rounding up makes the charge side
+// conservative: a charge can never be free.
+func refillCeilMs(tokens, limit int64) int64 {
+	return (tokens*msPerMinute + limit - 1) / limit
+}
+
+// debtTokensOf converts a bucket's virtual-drain-time debt back into
+// tokens: how much of the bucket's capacity is currently spent and not yet
+// refilled. Zero when the drain time has already passed (bucket full or
+// refilling toward full). Truncation rounds the debt down — the fail-open
+// direction.
+func debtTokensOf(tatMs, nowMs, limit int64) int64 {
+	if tatMs <= nowMs {
+		return 0
+	}
+	return (tatMs - nowMs) * limit / msPerMinute
 }
 
 // limiterEntry holds a token-bucket rate limiter together with its current
@@ -116,22 +197,74 @@ const (
 	quotaWarming int32 = 1 // bounded wait for peer state after a cold start
 )
 
-// tokenWindowEntry tracks per-tenant token consumption in 60-second epochs.
-// All mutable fields use atomic operations to satisfy the data-plane hot-path
+// tokenWindowEntry tracks one quota key's smooth token bucket. All mutable
+// fields use atomic operations to satisfy the data-plane hot-path
 // constraint: no mutex contention per call.
+//
+// The bucket is stored in the virtual-drain-time form: tatMs is the absolute
+// wall-clock millisecond at which the bucket would return to full. The live
+// level is burst - (tatMs-now)*limit/60000, so a tatMs at or behind now
+// means a full bucket, now+burstMs means empty, and anything later is debt —
+// the over-quota state the gate latches on. A charge advances tatMs by the
+// charged tokens' refill time; idle time drains the debt continuously, which
+// is what closes the fixed window's boundary-burst hole: spend is bounded by
+// burst + rate*Δt over EVERY interval, not per minute-aligned window.
+//
+// tatMs only ever moves forward, so peer-sync merges stay the same
+// take-the-max shape the fixed window's monotonic consumed counter had.
 type tokenWindowEntry struct {
-	windowEpoch int64 // floor(unixSeconds / 60), updated via CAS
-	consumed    int64 // tokens consumed in current window, updated via Add
+	// windowEpoch is the minute (floor(unixSeconds/60)) of the entry's most
+	// recent charge or reservation, updated via CAS. It is not part of the
+	// bucket arithmetic: it drives idle eviction, expires reservations
+	// orphaned by aborted requests (the epoch advance zeroes reserved), and
+	// rides the sync wire's WindowEpoch slot as an activity stamp.
+	windowEpoch int64
+	// tatMs is the bucket state: the absolute Unix millisecond at which the
+	// bucket's outstanding spend is fully refilled. Monotonic via CAS.
+	// Carried in the sync wire's Consumed slot; because all peers share the
+	// wall-clock time base, max-merge unions two nodes' views of the same
+	// tenant exactly as it did for the per-window counter. HA peers must
+	// therefore run the same gateway version — an old peer would read a
+	// millisecond timestamp as a token count.
+	tatMs int64
 	// reserved holds tokens promised to in-flight requests (prompt estimate +
 	// max_tokens, reserved at admission and released when the real charge
 	// settles). It is NODE-LOCAL state: never exported on the peer-sync wire
 	// (RateLimiterEntry stays untouched) — a reservation is a transient claim
-	// on THIS node's admission decision, not consumed quota. It resets to the
-	// rollover winner's own contribution on window rollover, which bounds any
-	// reservation orphaned by an aborted request to one 60-second window.
+	// on THIS node's admission decision, not consumed quota. It is zeroed
+	// when windowEpoch advances, which bounds any reservation orphaned by an
+	// aborted request to one 60-second epoch, exactly as the fixed window's
+	// rollover reset did.
 	reserved    int64
 	limitTokens int64 // tokens-per-minute quota seen on the last charge; read by TokenQuotaSnapshot
-	exceeded    int32 // 1 = quota exceeded for this window, 0 = within quota
+}
+
+// touchQuotaEpoch stamps the entry's activity epoch with the current minute.
+// The winner of the minute-advance CAS also expires the previous epoch's
+// reservations: any claim still outstanding after a whole minute belongs to
+// an aborted request that will never settle (its settlement, if it does
+// arrive, carries the stale epoch tag and skips the release).
+func touchQuotaEpoch(e *tokenWindowEntry) {
+	epoch := currentQuotaEpoch.Load()
+	stored := atomic.LoadInt64(&e.windowEpoch)
+	if epoch > stored && atomic.CompareAndSwapInt64(&e.windowEpoch, stored, epoch) {
+		atomic.StoreInt64(&e.reserved, 0)
+	}
+}
+
+// chargeTat advances the entry's virtual drain time by count tokens' refill
+// time and returns the new value. The floor clamp at now expires idle
+// credit beyond a full bucket; the CAS loop keeps the advance monotonic
+// under concurrent charges.
+func chargeTat(e *tokenWindowEntry, count, limit, nowMs int64) int64 {
+	inc := refillCeilMs(count, limit)
+	for {
+		cur := atomic.LoadInt64(&e.tatMs)
+		next := max(cur, nowMs) + inc
+		if atomic.CompareAndSwapInt64(&e.tatMs, cur, next) {
+			return next
+		}
+	}
 }
 
 // New creates a new RateLimiterStore and starts the background Cleanup goroutine.
@@ -240,19 +373,21 @@ func (s *RateLimiterStore) UpdateTenant(tenantID string, rps int) {
 	s.update("t:"+tenantID, rps, rps)
 }
 
-// AllowTokens records consumption of count tokens against the tenant's per-minute
-// quota. tokensPerMin is the configured limit; if <= 0 the check is skipped and
-// all calls are allowed.
+// AllowTokens records consumption of count tokens against the key's
+// per-minute quota. tokensPerMin is the configured limit; if <= 0 the check
+// is skipped and all calls are allowed.
 //
-// The function uses atomic operations only (no mutex) to satisfy the data-plane
-// hot-path constraint. Tokens refill effectively at tokensPerMin/60
-// tokens per second because the accounting window resets every 60 seconds.
+// The function uses atomic operations only (no mutex) to satisfy the
+// data-plane hot-path constraint. The bucket refills continuously at
+// tokensPerMin per minute up to the burst capacity; the charge always
+// lands (this is the post-hoc settlement side — the tokens are already
+// spent), and the return value reports whether the bucket is now in debt.
 //
-// Returns (true, 0) when the total tokens consumed so far in the current
-// 60-second window do not exceed tokensPerMin.
-// Returns (false, retryAfterSecs) when the total exceeds the quota; the
-// exceeded flag is set so that the NEXT request's llb_ai_ratelimit_check can
-// return decision=3 (HTTP 429) without interrupting the current response.
+// Returns (true, 0) while the bucket stays at or above empty.
+// Returns (false, retryAfterSecs) when the charge drove the bucket into
+// debt; the gate's next IsTokenQuotaExceeded read then denies the tenant
+// until the refill drains the debt — a smooth recovery at the refill rate
+// rather than the fixed window's whole-minute cliff.
 func (s *RateLimiterStore) AllowTokens(tenantID string, count, tokensPerMin int) (allowed bool, retryAfterSecs int) {
 	if tokensPerMin <= 0 || count <= 0 {
 		return true, 0
@@ -270,38 +405,21 @@ func (s *RateLimiterStore) AllowTokens(tenantID string, count, tokensPerMin int)
 	// Publish the limit for scrape-time utilization reads. Plain store: the
 	// last charge's view of the config is exactly what the collector should
 	// report, and a racing config change resolves on the next charge.
-	atomic.StoreInt64(&e.limitTokens, int64(tokensPerMin))
+	limit := int64(tokensPerMin)
+	atomic.StoreInt64(&e.limitTokens, limit)
+	touchQuotaEpoch(e)
 
-	// Read the pre-computed epoch from the atomic counter updated by the init
-	// goroutine every epochInterval. This avoids a time.Now syscall on every
-	// hot-path invocation, satisfying (no syscall per call).
-	epoch := currentQuotaEpoch.Load()
+	nowMs := quotaNowMs.Load()
+	newTat := chargeTat(e, int64(count), limit, nowMs)
 
-	// Window rollover: if the current epoch is newer than stored, try to reset.
-	// CAS ensures only one goroutine wins the reset; losers proceed with the
-	// already-reset values.
-	stored := atomic.LoadInt64(&e.windowEpoch)
-	if epoch > stored && atomic.CompareAndSwapInt64(&e.windowEpoch, stored, epoch) {
-		atomic.StoreInt64(&e.consumed, int64(count))
-		// The previous window's reservations died with it: any in-flight
-		// request that reserved there settles with a stale epoch tag and
-		// skips its release, so carrying the counter over would deny the new
-		// window admissions against claims that no longer exist.
-		atomic.StoreInt64(&e.reserved, 0)
-		// Check if the very first request in the new window already exceeds quota.
-		if int64(count) > int64(tokensPerMin) {
-			atomic.StoreInt32(&e.exceeded, 1)
-			return false, int(epochInterval.Seconds())
-		}
-		atomic.StoreInt32(&e.exceeded, 0)
-		return true, 0
-	}
-
-	// Consume tokens atomically.
-	newTotal := atomic.AddInt64(&e.consumed, int64(count))
-	if newTotal > int64(tokensPerMin) {
-		atomic.StoreInt32(&e.exceeded, 1)
-		return false, int(epochInterval.Seconds())
+	burst := burstTokensFor(limit)
+	burstMs := refillCeilMs(burst, limit)
+	if debtMs := newTat - nowMs; debtMs > burstMs {
+		// Bucket in debt. Advise retrying when the refill has drained the
+		// debt back to empty (the earliest moment a further request could
+		// possibly be admitted), capped at one epoch.
+		retry := int(min((debtMs-burstMs+999)/1000, int64(epochInterval.Seconds())))
+		return false, max(retry, 1)
 	}
 	return true, 0
 }
@@ -312,12 +430,13 @@ func (s *RateLimiterStore) AllowTokens(tenantID string, count, tokensPerMin int)
 // prompt. The claim is settled (released and replaced by the real charge)
 // by SettleTokens when the response completes.
 //
-// Admission denies when consumed + reserved + want would exceed the limit.
-// A denial does NOT latch the exceeded flag: it is a function of THIS
-// request's size, and a smaller request from the same tenant may still fit
-// in the window — the latch remains the post-hoc consume path's mechanism.
+// Admission denies when the bucket's current level cannot cover every
+// outstanding claim plus this one. A denial does NOT put the bucket in
+// debt: it is a function of THIS request's size, and a smaller request
+// from the same tenant may still fit — the debt state remains the post-hoc
+// consume path's mechanism.
 //
-// Returns (allowed, retryAfterSecs, resEpoch). resEpoch tags the window the
+// Returns (allowed, retryAfterSecs, resEpoch). resEpoch tags the minute the
 // reservation was made in and must be echoed to SettleTokens; 0 means no
 // reservation was recorded (no quota configured or nothing to reserve) and
 // settlement degenerates to a plain charge. Atomic-only, same hot-path
@@ -333,35 +452,35 @@ func (s *RateLimiterStore) ReserveTokens(tenantID string, want, tokensPerMin int
 	}
 	e := v.(*tokenWindowEntry)
 
-	atomic.StoreInt64(&e.limitTokens, int64(tokensPerMin))
+	limit := int64(tokensPerMin)
+	atomic.StoreInt64(&e.limitTokens, limit)
+	touchQuotaEpoch(e)
 
-	epoch := currentQuotaEpoch.Load()
-
-	// Window rollover: mirror AllowTokens — the winner resets the window and
-	// seeds it with its own contribution (here a reservation, no consumption).
-	stored := atomic.LoadInt64(&e.windowEpoch)
-	if epoch > stored && atomic.CompareAndSwapInt64(&e.windowEpoch, stored, epoch) {
-		atomic.StoreInt64(&e.consumed, 0)
-		atomic.StoreInt32(&e.exceeded, 0)
-		if int64(want) > int64(tokensPerMin) {
-			// Larger than the whole quota: can never be admitted. Deny
-			// without recording the claim (nothing will settle it).
-			atomic.StoreInt64(&e.reserved, 0)
-			return false, int(epochInterval.Seconds()), 0
-		}
-		atomic.StoreInt64(&e.reserved, int64(want))
-		return true, 0, epoch
-	}
-
-	newReserved := atomic.AddInt64(&e.reserved, int64(want))
-	if atomic.LoadInt64(&e.consumed)+newReserved > int64(tokensPerMin) {
-		// Roll the claim back with a floor at zero: a concurrent window
-		// rollover may already have wiped it, and a plain subtract would
-		// then eat a claim the new window's requests legitimately hold.
-		reservedSubClamp(e, int64(want))
+	burst := burstTokensFor(limit)
+	if int64(want) > burst {
+		// Larger than the whole bucket: can never be admitted. Deny
+		// without recording the claim (nothing will settle it).
 		return false, int(epochInterval.Seconds()), 0
 	}
-	return true, 0, epoch
+
+	// Admit iff the current bucket level covers every outstanding claim
+	// plus this one. The level read and the claim add are two separate
+	// atomics — a racing charge in the gap makes the admission at worst
+	// one response too generous, the same tolerance the fixed window had.
+	level := burst - debtTokensOf(atomic.LoadInt64(&e.tatMs), quotaNowMs.Load(), limit)
+	newReserved := atomic.AddInt64(&e.reserved, int64(want))
+	if newReserved > level {
+		// Roll the claim back with a floor at zero: a concurrent epoch
+		// advance may already have wiped it, and a plain subtract would
+		// then eat a claim other in-flight requests legitimately hold.
+		reservedSubClamp(e, int64(want))
+		// Advise retrying once the refill has grown the level enough to
+		// cover the shortfall, capped at one epoch.
+		deficit := newReserved - level
+		retry := int(min((deficit*60+limit-1)/limit, int64(epochInterval.Seconds())))
+		return false, max(retry, 1), 0
+	}
+	return true, 0, currentQuotaEpoch.Load()
 }
 
 // SettleTokens replaces a request's admission-time reservation with the
@@ -391,7 +510,7 @@ func (s *RateLimiterStore) SettleTokens(tenantID string, actual, reservedAmt int
 }
 
 // reservedSubClamp releases amt from e.reserved without letting it go
-// negative. The CAS loop matters: a window rollover can zero the counter
+// negative. The CAS loop matters: an epoch advance can zero the counter
 // between the load and the store, and a blind AddInt64(-amt) would push it
 // below zero, granting the tenant phantom headroom on the next admission.
 func reservedSubClamp(e *tokenWindowEntry, amt int64) {
@@ -407,40 +526,40 @@ func reservedSubClamp(e *tokenWindowEntry, amt int64) {
 	}
 }
 
-// IsTokenQuotaExceeded reports whether the named tenant's token quota is
-// currently exceeded. Called by the request-path gate (llb_ai_ratelimit_check)
-// to block the next request when the previous response consumed too many tokens.
+// IsTokenQuotaExceeded reports whether the named quota key's bucket is
+// currently in debt. Called by the request-path gate (llb_ai_ratelimit_check)
+// to block the next request when a previous response consumed too many tokens.
 //
-// The exceeded latch belongs to ONE quota window: when the epoch has advanced
-// past the window that set it, the quota has refilled and the latch is stale.
-// The staleness check must live HERE, on the read side — a tenant whose every
-// request is denied at the gate never completes a response, so AllowTokens
-// (the only writer that clears the flag) never runs again and the tenant
-// would otherwise stay denied forever after one trip.
+// The over-quota state is DERIVED, not latched: the bucket is in debt while
+// its virtual drain time sits more than one full burst beyond now, and the
+// continuous refill clears that condition on its own as time passes. That
+// keeps the fixed window's read-side lesson — a tenant whose every request
+// is denied at the gate never completes a response, so no writer would ever
+// clear a stored flag — with no stored flag to clear.
 //
-// This function uses only atomic operations (no mutex) to satisfy.
+// This function uses only atomic operations (no mutex).
 func (s *RateLimiterStore) IsTokenQuotaExceeded(tenantID string) bool {
 	if v, ok := s.quotaMap.Load(tenantID); ok {
 		e := v.(*tokenWindowEntry)
-		if atomic.LoadInt32(&e.exceeded) != 1 {
+		limit := atomic.LoadInt64(&e.limitTokens)
+		if limit <= 0 {
 			return false
 		}
-		if currentQuotaEpoch.Load() > atomic.LoadInt64(&e.windowEpoch) {
-			return false
-		}
-		return true
+		burstMs := refillCeilMs(burstTokensFor(limit), limit)
+		return atomic.LoadInt64(&e.tatMs)-quotaNowMs.Load() > burstMs
 	}
 	return false
 }
 
-// TokenQuotaUsage is a point-in-time view of one tenant's token-quota window,
+// TokenQuotaUsage is a point-in-time view of one quota key's token bucket,
 // returned by TokenQuotaSnapshot for scrape-time metric export.
 type TokenQuotaUsage struct {
 	TenantID string
-	// Consumed is the token count charged in the CURRENT accounting window.
-	// An entry whose window has rolled over since the tenant's last charge
-	// reads 0: the quota has refilled even though AllowTokens (the only
-	// writer that resets the counter) has not run again.
+	// Consumed is the spent, not-yet-refilled portion of the bucket in
+	// tokens: zero for a full bucket, the burst capacity when empty, more
+	// while in post-hoc debt. The continuous refill drains it on its own,
+	// so an idle tenant's value decays toward zero without any writer
+	// running again.
 	Consumed int64
 	// Limit is the tokens-per-minute quota observed on the tenant's most
 	// recent charge. A config change surfaces here on the next charge.
@@ -454,7 +573,7 @@ type TokenQuotaUsage struct {
 // import have no recorded limit until their first local charge and are
 // skipped: a utilization ratio cannot be computed without a denominator.
 func (s *RateLimiterStore) TokenQuotaSnapshot() []TokenQuotaUsage {
-	epoch := currentQuotaEpoch.Load()
+	nowMs := quotaNowMs.Load()
 	var out []TokenQuotaUsage
 	s.quotaMap.Range(func(k, v any) bool {
 		tenantID, ok := k.(string)
@@ -469,11 +588,8 @@ func (s *RateLimiterStore) TokenQuotaSnapshot() []TokenQuotaUsage {
 		if limit <= 0 {
 			return true
 		}
-		consumed := atomic.LoadInt64(&e.consumed)
-		if atomic.LoadInt64(&e.windowEpoch) < epoch {
-			consumed = 0
-		}
-		out = append(out, TokenQuotaUsage{TenantID: tenantID, Consumed: consumed, Limit: limit})
+		used := debtTokensOf(atomic.LoadInt64(&e.tatMs), nowMs, limit)
+		out = append(out, TokenQuotaUsage{TenantID: tenantID, Consumed: used, Limit: limit})
 		return true
 	})
 	return out

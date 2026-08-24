@@ -48,6 +48,7 @@
 package ratelimit
 
 import (
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -59,20 +60,92 @@ import (
 // shape one-to-one so the coordinator can convert in a single pass.
 //
 // KeyID prefix encodes the scope:
-//   - "k:<id>"  per-key (CheckKey) rate-limiter entry
-//   - "t:<id>"  per-tenant (AllowTokens / CheckTenant) quota entry
+//   - "k:<id>"             per-key (CheckKey) rate-limiter entry
+//   - "t:<id>"             per-tenant (AllowTokens / CheckTenant) quota entry
+//   - "tm:<id>|<model>"    per-tenant-per-model quota entry
 //
-// The same prefix convention is used internally by check/update at
-// ratelimit.go:112,128, so the IDs round-trip identically.
+// The quota scopes extend by prefix only — never by new wire fields (the
+// proto message has a reserved CurrentTokens slot documented wire-incompat).
+//
+// Since the smooth-bucket change, a quota entry's Consumed slot carries the
+// bucket's virtual drain time (tokenWindowEntry.tatMs, Unix milliseconds)
+// rather than a per-window token count, and WindowEpoch carries the entry's
+// last-activity minute. Both remain monotonic, so the max-merge receive
+// path is unchanged in shape. Mixed-version HA peering is NOT supported
+// across this change: an old peer would read the millisecond value as a
+// token count and latch every synced tenant over-quota. Upgrade all sync
+// peers together.
 type RateLimiterEntry struct {
-	KeyID        string // "k:<id>" or "t:<id>" — scope-prefixed identifier
+	KeyID        string // "k:<id>", "t:<id>" or "tm:<id>|<model>" — scope-prefixed identifier
 	RPS          int    // limiterEntry.rps (per-key only; 0 for tenant)
 	Burst        int    // limiterEntry.burst (per-key only; 0 for tenant)
-	IsTenant     bool   // true if this entry represents a tenant quota
-	WindowEpoch  int64  // tokenWindowEntry.windowEpoch (tenant only)
-	Consumed     int64  // tokenWindowEntry.consumed (tenant only)
-	Exceeded     bool   // tokenWindowEntry.exceeded != 0 (tenant only)
+	IsTenant     bool   // true if this entry represents a tenant/model quota
+	WindowEpoch  int64  // tokenWindowEntry.windowEpoch — last-activity minute (quota only)
+	Consumed     int64  // tokenWindowEntry.tatMs — bucket virtual drain time in Unix ms (quota only)
+	Exceeded     bool   // derived at export: bucket in debt (quota only; ignored on receive)
 	LastAccessNs int64  // limiterEntry.lastAccess.UnixNano (per-key only)
+}
+
+// QuotaWireKey maps a quotaMap key to its scope-prefixed sync-wire KeyID:
+// plain tenant keys get "t:", composite "tenant|model" keys get "tm:".
+func QuotaWireKey(mapKey string) string {
+	if strings.Contains(mapKey, "|") {
+		return "tm:" + mapKey
+	}
+	return "t:" + mapKey
+}
+
+// QuotaMapKey strips the scope prefix from a quota sync-wire KeyID,
+// returning the quotaMap key and whether the prefix was a known quota
+// scope.
+func QuotaMapKey(wireKeyID string) (string, bool) {
+	if rest, ok := strings.CutPrefix(wireKeyID, "tm:"); ok {
+		return rest, true
+	}
+	if rest, ok := strings.CutPrefix(wireKeyID, "t:"); ok {
+		return rest, true
+	}
+	return wireKeyID, false
+}
+
+// quotaEntryInDebt derives the wire Exceeded bit at export time: the bucket
+// is over quota while its drain time is more than one burst beyond now.
+// Entries that never saw a local charge have no limit and read false.
+func quotaEntryInDebt(we *tokenWindowEntry, nowMs int64) bool {
+	limit := atomic.LoadInt64(&we.limitTokens)
+	if limit <= 0 {
+		return false
+	}
+	return atomic.LoadInt64(&we.tatMs)-nowMs > refillCeilMs(burstTokensFor(limit), limit)
+}
+
+// mergeQuotaEntry folds one received quota entry into the local store with
+// take-the-max semantics on both monotonic fields: the activity minute and
+// the bucket drain time. Max on the drain time is the union of the two
+// nodes' admitted spend — idempotent under replay and reorder, and it can
+// only make the local node more conservative, never mint headroom. The
+// wire Exceeded bit is ignored: debt is derived from the merged drain time,
+// so importing it arrives for free and a stale flag can never wrongly deny.
+func (s *RateLimiterStore) mergeQuotaEntry(e RateLimiterEntry) {
+	mapKey, ok := QuotaMapKey(e.KeyID)
+	if !ok {
+		return
+	}
+	loaded, _ := s.quotaMap.LoadOrStore(mapKey, &tokenWindowEntry{})
+	we := loaded.(*tokenWindowEntry)
+
+	for {
+		cur := atomic.LoadInt64(&we.windowEpoch)
+		if e.WindowEpoch <= cur || atomic.CompareAndSwapInt64(&we.windowEpoch, cur, e.WindowEpoch) {
+			break
+		}
+	}
+	for {
+		cur := atomic.LoadInt64(&we.tatMs)
+		if e.Consumed <= cur || atomic.CompareAndSwapInt64(&we.tatMs, cur, e.Consumed) {
+			break
+		}
+	}
 }
 
 // ExportState returns a full snapshot of every per-key bucket AND every
@@ -120,8 +193,9 @@ func (s *RateLimiterStore) ExportState() []RateLimiterEntry {
 	// quotaMap walk happens AFTER the mutex release — atomic / sync.Map,
 	// no mutex acquisition needed. Append-only; the slice is local to
 	// this goroutine.
+	nowMs := quotaNowMs.Load()
 	s.quotaMap.Range(func(k, v any) bool {
-		tenantID, ok := k.(string)
+		mapKey, ok := k.(string)
 		if !ok {
 			return true
 		}
@@ -130,11 +204,11 @@ func (s *RateLimiterStore) ExportState() []RateLimiterEntry {
 			return true
 		}
 		out = append(out, RateLimiterEntry{
-			KeyID:       "t:" + tenantID,
+			KeyID:       QuotaWireKey(mapKey),
 			IsTenant:    true,
 			WindowEpoch: atomic.LoadInt64(&we.windowEpoch),
-			Consumed:    atomic.LoadInt64(&we.consumed),
-			Exceeded:    atomic.LoadInt32(&we.exceeded) != 0,
+			Consumed:    atomic.LoadInt64(&we.tatMs),
+			Exceeded:    quotaEntryInDebt(we, nowMs),
 		})
 		return true
 	})
@@ -192,51 +266,18 @@ func (s *RateLimiterStore) ImportState(entries []RateLimiterEntry) {
 	s.entries = fresh
 	s.mu.Unlock()
 
-	// Tenant quota merge (max semantics). LoadOrStore guarantees we never
+	// Quota merge. LoadOrStore inside mergeQuotaEntry guarantees we never
 	// overwrite a *tokenWindowEntry that another goroutine may be holding
 	// a pointer to (callers from AllowTokens cache the pointer past Load).
+	// Both monotonic fields take the max (I-3 idempotency) — with the
+	// bucket in drain-time form even an absolute snapshot merges this way,
+	// because a LOWER remote drain time only means the remote node has
+	// seen less spend, never that quota should be refunded.
 	for _, e := range entries {
 		if !e.IsTenant {
 			continue
 		}
-		// Strip the "t:" prefix to match the tenantID keying used by
-		// AllowTokens at ratelimit.go:170-172.
-		tenantID := e.KeyID
-		if len(tenantID) > 2 && tenantID[:2] == "t:" {
-			tenantID = tenantID[2:]
-		}
-		loaded, _ := s.quotaMap.LoadOrStore(tenantID, &tokenWindowEntry{})
-		we := loaded.(*tokenWindowEntry)
-
-		// Epoch: store the newer of the two unconditionally.
-		curEpoch := atomic.LoadInt64(&we.windowEpoch)
-		if e.WindowEpoch > curEpoch {
-			atomic.StoreInt64(&we.windowEpoch, e.WindowEpoch)
-			// When the epoch advances we reset consumed to the snapshot
-			// value (this snapshot is authoritative for the new epoch).
-			atomic.StoreInt64(&we.consumed, e.Consumed)
-		} else if e.WindowEpoch == curEpoch {
-			// Same epoch: take max of consumed (idempotent, never
-			// retracts the counter — / I-3).
-			for {
-				cur := atomic.LoadInt64(&we.consumed)
-				if e.Consumed <= cur {
-					break
-				}
-				if atomic.CompareAndSwapInt64(&we.consumed, cur, e.Consumed) {
-					break
-				}
-			}
-		}
-		// Else: incoming epoch is older — ignore. This handles the case
-		// where a backup that lagged behind sends us a snapshot from a
-		// past minute.
-
-		// Exceeded flag: 1 wins (set-only). A snapshot that says "quota
-		// was exceeded" must not be downgraded by reordered messages.
-		if e.Exceeded {
-			atomic.StoreInt32(&we.exceeded, 1)
-		}
+		s.mergeQuotaEntry(e)
 	}
 }
 
@@ -269,8 +310,9 @@ func (s *RateLimiterStore) ExportDelta(prevSnapshot map[string]int64) []RateLimi
 	// acquire s.mu before reading s.keyMap and release it BEFORE returning
 	// (— no send/Send call may occur while s.mu is held).
 	out := make([]RateLimiterEntry, 0)
+	nowMs := quotaNowMs.Load()
 	s.quotaMap.Range(func(k, v any) bool {
-		tenantID, ok := k.(string)
+		mapKey, ok := k.(string)
 		if !ok {
 			return true
 		}
@@ -278,27 +320,28 @@ func (s *RateLimiterStore) ExportDelta(prevSnapshot map[string]int64) []RateLimi
 		if !ok {
 			return true
 		}
-		curConsumed := atomic.LoadInt64(&we.consumed)
-		prevConsumed, hasPrev := prevSnapshot["t:"+tenantID]
-		// Include if (a) we've never seen this tenant or (b) consumed
-		// has increased. Equal-or-decreased values are skipped (the
-		// latter happens at epoch rollover; that case is covered by
-		// WindowEpoch advance below).
-		if hasPrev && curConsumed <= prevConsumed {
-			// Check epoch — if epoch advanced, send anyway so the
-			// receiver can reset its counter.
+		wireKey := QuotaWireKey(mapKey)
+		curTat := atomic.LoadInt64(&we.tatMs)
+		prevTat, hasPrev := prevSnapshot[wireKey]
+		// Include if (a) we've never pushed this key or (b) the bucket
+		// drain time advanced (i.e. the key was charged since the last
+		// push). The drain time is monotonic, so an idle key is skipped
+		// forever without any epoch special-casing — but the activity
+		// minute is still compared so a reservation-only touch (which
+		// advances the epoch, not the drain time) propagates too.
+		if hasPrev && curTat <= prevTat {
 			curEpoch := atomic.LoadInt64(&we.windowEpoch)
-			prevEpoch, _ := prevSnapshot["e:"+tenantID]
+			prevEpoch := prevSnapshot["e:"+mapKey]
 			if curEpoch <= prevEpoch {
 				return true // truly nothing to send
 			}
 		}
 		out = append(out, RateLimiterEntry{
-			KeyID:       "t:" + tenantID,
+			KeyID:       wireKey,
 			IsTenant:    true,
 			WindowEpoch: atomic.LoadInt64(&we.windowEpoch),
-			Consumed:    curConsumed,
-			Exceeded:    atomic.LoadInt32(&we.exceeded) != 0,
+			Consumed:    curTat,
+			Exceeded:    quotaEntryInDebt(we, nowMs),
 		})
 		return true
 	})
@@ -317,15 +360,10 @@ func (s *RateLimiterStore) ExportDelta(prevSnapshot map[string]int64) []RateLimi
 // lazily by the receiver via CheckKey with the same (rps, burst)
 //
 //	  config replicated through normal control-plane channels.
-//	- If WindowEpoch > local.windowEpoch: epoch rollover. Atomic-store
-//	  the new epoch and reset consumed to the remote Consumed value
-//	  (the remote is, by construction, the authoritative source for
-//	  the new epoch in A-A gossip semantics).
-//	- If WindowEpoch == local.windowEpoch: CAS loop to set local
-//	  consumed = max(local, remote). Idempotent under reorder.
-//	- If WindowEpoch < local.windowEpoch: ignore (we have a newer
-//	  epoch already).
-//	- Exceeded: monotonic-set (1 wins). Mirrors ImportState.
+//	- If IsTenant is true: mergeQuotaEntry — take-the-max on both the
+//	  activity minute and the bucket drain time (monotonic fields, I-3
+//	  idempotent under reorder/replay). The wire Exceeded bit is
+//	  ignored; debt is derived from the merged drain time.
 func (s *RateLimiterStore) ApplyGossipDelta(entries []RateLimiterEntry) {
 	// Any received gossip batch ends the cold-start warmup (see ImportState).
 	s.endQuotaWarmup(false)
@@ -339,38 +377,6 @@ func (s *RateLimiterStore) ApplyGossipDelta(entries []RateLimiterEntry) {
 			// CheckKey call.
 			continue
 		}
-		tenantID := e.KeyID
-		if len(tenantID) > 2 && tenantID[:2] == "t:" {
-			tenantID = tenantID[2:]
-		}
-		loaded, _ := s.quotaMap.LoadOrStore(tenantID, &tokenWindowEntry{})
-		we := loaded.(*tokenWindowEntry)
-
-		curEpoch := atomic.LoadInt64(&we.windowEpoch)
-		switch {
-		case e.WindowEpoch > curEpoch:
-			// Newer epoch wins: store the new epoch + reset consumed.
-			// The CAS guards against the rare case where another
-			// goroutine raced us to the same epoch.
-			if atomic.CompareAndSwapInt64(&we.windowEpoch, curEpoch, e.WindowEpoch) {
-				atomic.StoreInt64(&we.consumed, e.Consumed)
-			}
-		case e.WindowEpoch == curEpoch:
-			// Same epoch: max-merge consumed.
-			for {
-				cur := atomic.LoadInt64(&we.consumed)
-				if e.Consumed <= cur {
-					break
-				}
-				if atomic.CompareAndSwapInt64(&we.consumed, cur, e.Consumed) {
-					break
-				}
-			}
-		}
-		// e.WindowEpoch < curEpoch: ignore — we already have a newer epoch.
-
-		if e.Exceeded {
-			atomic.StoreInt32(&we.exceeded, 1)
-		}
+		s.mergeQuotaEntry(e)
 	}
 }
