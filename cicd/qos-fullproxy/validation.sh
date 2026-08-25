@@ -1,24 +1,27 @@
 #!/bin/bash
 # qos-fullproxy — Tier-1 (L7) byte-shaper validation on fullproxy LB rules.
 #
-# The shaper paces PLAINTEXT payload bytes inside the sockproxy relay
-# (client->backend direction). It is driven by the same policer-attachment
-# API as the Tier-0 rule policer; on a fullproxy rule the policer configures
-# the L7 shaper instead of the (non-existent) nat_map policer. Rates below
-# are policer-API Mbps; the shaper meters bytes (CIR Mbps / 8 = MB/s).
+# The shaper paces PLAINTEXT payload bytes inside the sockproxy relay, in
+# BOTH directions: client->backend (upload) and backend->client (download),
+# each against its own bucket at the full CIR. It is driven by the same
+# policer-attachment API as the Tier-0 rule policer; on a fullproxy rule the
+# policer configures the L7 shaper instead of the (non-existent) nat_map
+# policer. Rates below are policer-API Mbps; the shaper meters bytes
+# (CIR Mbps / 8 = MB/s).
 #
 # Legs:
-#   F1 baseline      : un-shaped upload through the fullproxy VIP is fast
+#   F1 baseline      : un-shaped upload AND download through the fullproxy
+#                      VIP are fast
 #   F2 attach+cap    : 16 Mbps policer on the rule -> upload collapses to
 #                      ~2 MB/s for the WHOLE transfer (the token check must
 #                      sit inside the relay burst loop; a check outside it
 #                      passes small probes and lets big bursts through)
 #   F3 engage-proof  : llb1 logs carry the shaper-on line for this VIP
-#   F4 download-free : response direction is NOT shaped (scope pin — flips
-#                      when the response-direction phase lands)
+#   F4 download-cap  : response direction is shaped to the same ~2 MB/s
+#                      (the odir==1 gate against the qos_down bucket)
 #   F5 isolation     : second VIP with a 64 Mbps policer caps at ~8 MB/s
 #                      while VIP1 still caps at ~2 MB/s — no cross-talk
-#   F6 detach heal   : deleting the policy restores full-rate upload
+#   F6 detach heal   : deleting the policy restores full rate BOTH ways
 #   F7 policy-first  : policer associated to a VIP whose rule does not exist
 #                      yet; rule created after -> shaping converges without
 #                      any further control-plane action
@@ -26,10 +29,12 @@
 #                      surviving -> the fresh rule re-acquires the shaper
 #                      (config is dropped with the proxy entry on delete;
 #                      the policer ticker must re-drive it)
-#   F9 park-vs-bp    : concurrent shaped upload and unshaped bulk download
-#                      on the same VIP -> both complete, neither wedges
-#                      (shaper park and cache backpressure must not clear
-#                      each other's read-pause)
+#   F9 dir-independent: full-length concurrent shaped upload + shaped
+#                      download on one VIP -> EACH holds its own ~CIR band
+#                      and the sum clears what a single shared bucket could
+#                      pass — proves per-direction buckets, and that shaper
+#                      parks and cache backpressure never clear each other's
+#                      read-pause (neither transfer wedges)
 source ../common.sh
 echo SCENARIO-qos-fullproxy
 
@@ -94,8 +99,11 @@ S(("0.0.0.0", 8080), H).serve_forever()
 PYEOF
 python3 qsink.py'
 
-# upload blob on the client
-$dexec l3h1 sh -c 'dd if=/dev/urandom of=/tmp/blob16.bin bs=1M count=16 2>/dev/null'
+# upload blobs on the client (64M for the full-length concurrent F9 leg: at
+# 8 MB/s both transfers run ~8s, so the up/down overlap spans the whole
+# measurement and the per-direction assert is meaningful)
+$dexec l3h1 sh -c 'dd if=/dev/urandom of=/tmp/blob16.bin bs=1M count=16 2>/dev/null &&
+                   dd if=/dev/urandom of=/tmp/blob64.bin bs=1M count=64 2>/dev/null'
 sleep 3
 
 # wait for the sink through the VIP
@@ -129,11 +137,15 @@ down_speed() {
 
 MB=1048576
 
-# --- F1: baseline upload must be fast (>12 MB/s) ---
+# --- F1: baseline upload AND download must be fast (>12 MB/s) ---
 s0=$(up_speed $FPVIP1)
-echo "F1 baseline upload: $s0 B/s"
+d0=$(down_speed $FPVIP1)
+echo "F1 baseline: upload=$s0 B/s download=$d0 B/s"
 if [[ -z "$s0" || "$s0" -lt $((12 * MB)) ]]; then
     echo "F1 baseline upload too slow ($s0 B/s) - topology unusable" ; code=1
+fi
+if [[ -z "$d0" || "$d0" -lt $((12 * MB)) ]]; then
+    echo "F1 baseline download too slow ($d0 B/s) - topology unusable" ; code=1
 fi
 
 # --- F2: attach 16 Mbps shaper -> upload caps at ~2 MB/s ---
@@ -156,11 +168,13 @@ if [[ "$lg" -lt 1 ]]; then
     echo "F3 no shaper-on log for $FPVIP1 (config never reached sockproxy)" ; code=1
 fi
 
-# --- F4: download direction is NOT shaped (scope pin until response phase) ---
+# --- F4: download direction is shaped to the same CIR (qos_down bucket) ---
+# 64MB at ~2 MB/s is ~32s of the 90s curl budget; the WHOLE transfer must
+# hold the band, same rationale as F2.
 s2=$(down_speed $FPVIP1)
-echo "F4 download with upload-shaper attached: $s2 B/s"
-if [[ -z "$s2" || "$s2" -lt $((12 * MB)) ]]; then
-    echo "F4 download unexpectedly slow ($s2 B/s) - response direction must be un-shaped in this phase" ; code=1
+echo "F4 shaped download: $s2 B/s (CIR 2 MB/s)"
+if [[ -z "$s2" || "$s2" -gt $((7 * MB / 2)) || "$s2" -lt $((MB / 2)) ]]; then
+    echo "F4 response direction NOT pacing (got $s2 B/s, want ~2 MB/s band [0.5,3.5])" ; code=1
 fi
 
 # --- F5: per-rule isolation - VIP2 at 64 Mbps, VIP1 still at 16 ---
@@ -179,14 +193,18 @@ if [[ -z "$s4" || "$s4" -gt $((7 * MB / 2)) ]]; then
     echo "F5 vip1 leaked past its cap under vip2 load (got $s4 B/s)" ; code=1
 fi
 
-# --- F6: detach restores full rate ---
+# --- F6: detach restores full rate in BOTH directions ---
 res=$(api_del_policy qsh1)
 echo "F6 detach: $res"
 sleep 2
 s5=$(up_speed $FPVIP1)
-echo "F6 post-detach upload: $s5 B/s"
+d5=$(down_speed $FPVIP1)
+echo "F6 post-detach: upload=$s5 B/s download=$d5 B/s"
 if [[ -z "$s5" || "$s5" -lt $((12 * MB)) ]]; then
     echo "F6 upload NOT restored after policy delete ($s5 B/s)" ; code=1
+fi
+if [[ -z "$d5" || "$d5" -lt $((12 * MB)) ]]; then
+    echo "F6 download NOT restored after policy delete ($d5 B/s)" ; code=1
 fi
 
 # --- F7: policy associated before its rule exists -> converges on rule add ---
@@ -242,23 +260,30 @@ if [[ -z "$s7" || "$s7" -gt $((7 * MB / 2)) || "$s7" -lt $((MB / 2)) ]]; then
     echo "F8 re-created rule lost its shaper (got $s7 B/s)" ; code=1
 fi
 
-# --- F9: shaped upload + bulk download concurrently on one VIP - no wedge ---
-# (vip2 still carries its 64 Mbps shaper; download must stay un-shaped and
-# both transfers must complete: a shaper park mistaken for backpressure, or
-# vice versa, wedges one of the two)
+# --- F9: full-length concurrent shaped upload + shaped download on one VIP ---
+# vip2 still carries its 64 Mbps (8 MB/s) shaper. Both 64MB transfers run
+# ~8s, overlapping for essentially the whole measurement, so:
+#   - EACH direction must hold its own ~8 MB/s band (a park/backpressure
+#     cross-clear wedges one of them),
+#   - the SUM must clear 11 MB/s — a single shared bucket would cap the
+#     combined rate near one CIR (~8 MB/s), so the sum is the discriminator
+#     that the directions meter independently.
 $dexec l3h1 sh -c "curl --max-time 90 -s -o /dev/null -w '%{speed_upload}' \
     -X POST -H 'Content-Type: application/octet-stream' \
-    --data-binary @/tmp/blob16.bin http://$FPVIP2:2020/ | cut -d. -f1 > /tmp/f9up.txt" &
+    --data-binary @/tmp/blob64.bin http://$FPVIP2:2020/ | cut -d. -f1 > /tmp/f9up.txt" &
 F9PID=$!
 s8=$(down_speed $FPVIP2)
 wait $F9PID
 s9=$($dexec l3h1 cat /tmp/f9up.txt)
-echo "F9 concurrent: download=$s8 B/s upload=$s9 B/s"
-if [[ -z "$s8" || "$s8" -lt $((12 * MB)) ]]; then
-    echo "F9 download wedged/slow during shaped upload ($s8 B/s)" ; code=1
+echo "F9 concurrent shaped: download=$s8 B/s upload=$s9 B/s (CIR 8 MB/s each)"
+if [[ -z "$s8" || "$s8" -lt $((4 * MB)) || "$s8" -gt $((12 * MB)) ]]; then
+    echo "F9 shaped download wedged or unshaped during upload ($s8 B/s)" ; code=1
 fi
 if [[ -z "$s9" || "$s9" -lt $((4 * MB)) || "$s9" -gt $((12 * MB)) ]]; then
     echo "F9 shaped upload wedged or unshaped during download ($s9 B/s)" ; code=1
+fi
+if [[ -n "$s8" && -n "$s9" && $((s8 + s9)) -lt $((11 * MB)) ]]; then
+    echo "F9 directions NOT independent (sum $((s8 + s9)) B/s ≈ one shared CIR)" ; code=1
 fi
 
 $dexec l3ep1 pkill -9 python3 2>/dev/null

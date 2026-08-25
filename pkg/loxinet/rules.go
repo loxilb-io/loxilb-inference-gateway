@@ -1719,8 +1719,9 @@ func (R *RuleH) RuleQosPolAttach(lbKey string, polid uint16, pInfo *cmn.PolInfo)
 	if r.act.actType == RtActFullProxy {
 		// A fullproxy rule has no L4 datapath entry to police; the policer
 		// instead drives the sockproxy L7 byte shaper, which paces the
-		// relay's plaintext payload at the policer's CIR. Rates are bits/sec
-		// (PolInfo native unit); polid 0 detaches.
+		// relay's plaintext payload at the policer's CIR in both directions
+		// (independent per-direction buckets). Rates are bits/sec (PolInfo
+		// native unit); polid 0 detaches.
 		if r.qosPolId == polid {
 			return 0, nil
 		}

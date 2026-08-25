@@ -2148,6 +2148,14 @@ func (e *DpEbpfH) DpLBSetCircuitBreaker(svcIP net.IP, svcPort uint16, proto uint
 	return 0
 }
 
+// Shaper direction bits (mirror QOS_DIR_* in sockproxy_qos.h): a rule-attached
+// policer shapes BOTH relay directions, each against its own bucket at the
+// full CIR — per-direction pacing, not a shared budget.
+const (
+	qosDirUpload   = 0x1 // client -> backend payload
+	qosDirDownload = 0x2 // backend -> client payload
+)
+
 // DpLBSetQosShaper - configure the L7 (Tier-1) byte shaper for a fullproxy
 // service. Rates are in bits/sec (the policer API unit); cirBps == 0 detaches.
 // The sockproxy stores the config independently of entry existence, so a
@@ -2166,7 +2174,7 @@ func (e *DpEbpfH) DpLBSetQosShaper(svcIP net.IP, svcPort uint16, proto uint8,
 	proxyKey.protocol = C.uchar(proto)
 
 	ret := C.proxy_update_qos_config(&proxyKey, C.uint64_t(cirBps), C.uint64_t(pirBps),
-		C.uint32_t(cbsBytes), 0, 0)
+		C.uint32_t(cbsBytes), C.uint8_t(qosDirUpload|qosDirDownload), 0)
 	if ret != 0 {
 		tk.LogIt(tk.LogError, "[DP] qos-shaper: config failed - VIP=%v, port=%v, ret=%d\n",
 			svcIP, svcPort, int(ret))
