@@ -851,6 +851,641 @@
           }
         }
       ]
+    },
+    {
+      "id": 21,
+      "type": "row",
+      "title": "Token quota (TPM) \u2014 needs API-key security with per-tenant token limits",
+      "description": "Empty unless the AI gateway runs with the user service and a tenant carries a tokens-per-minute limit. The series are fed by the quota consume path, and utilisation/headroom are computed at scrape time from live limiter state.",
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 31
+      },
+      "panels": [
+        {
+          "id": 22,
+          "type": "timeseries",
+          "title": "Tokens/s by kind",
+          "description": "Tokens metered against completed responses, split prompt vs completion. Charged at the quota-consume call, so a stream contributes when it completes.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 32
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "loxilb-prom"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (kind) (rate(loxilb_ai_tokens_consumed_total{model=~\"$model\",tenant=~\"$tenant\",instance=~\"$instance\"}[$__rate_interval]))",
+              "legendFormat": "{{kind}}"
+            }
+          ],
+          "options": {
+            "tooltip": {
+              "mode": "multi"
+            },
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data",
+              "custom": {
+                "axisLabel": "tokens/s"
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 23,
+          "type": "timeseries",
+          "title": "Tokens/s by model",
+          "description": "Same charges as the panel on the left, split by model. Use with the per-model quota panel below to see which model is spending a tenant's budget.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 32
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "loxilb-prom"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (model) (rate(loxilb_ai_tokens_consumed_total{model=~\"$model\",tenant=~\"$tenant\",instance=~\"$instance\"}[$__rate_interval]))",
+              "legendFormat": "{{model}}"
+            }
+          ],
+          "options": {
+            "tooltip": {
+              "mode": "multi"
+            },
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data",
+              "custom": {
+                "axisLabel": "tokens/s"
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 24,
+          "type": "timeseries",
+          "title": "Tenant quota utilisation",
+          "description": "Fraction of the per-tenant tokens-per-minute quota spent and not yet refilled, computed at scrape time. Can exceed 100%: a charge settled after admission puts the bucket in debt, which then decays as it refills.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 40
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "loxilb-prom"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "loxilb_ai_token_quota_utilization{tenant=~\"$tenant\",instance=~\"$instance\"}",
+              "legendFormat": "{{tenant}}"
+            }
+          ],
+          "options": {
+            "tooltip": {
+              "mode": "multi"
+            },
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "noValue": "No data"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 25,
+          "type": "timeseries",
+          "title": "Per-model quota utilisation",
+          "description": "Same measure keyed tenant+model. A tenant can sit well under its aggregate quota while one model is already latched \u2014 this is the panel that shows it.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 40
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "loxilb-prom"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "loxilb_ai_token_quota_model_utilization{tenant=~\"$tenant\",instance=~\"$instance\"}",
+              "legendFormat": "{{tenant}} | {{model}}"
+            }
+          ],
+          "options": {
+            "tooltip": {
+              "mode": "multi"
+            },
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "noValue": "No data"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 26,
+          "type": "timeseries",
+          "title": "Quota denials/s by tenant",
+          "description": "Requests refused at the gate because the tenant's token quota was exhausted. Denials with utilisation below 100% mean the deny came from the deep-debt path, not the reservation check.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 48
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "loxilb-prom"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (tenant) (rate(loxilb_ai_token_quota_denied_total{tenant=~\"$tenant\",instance=~\"$instance\"}[$__rate_interval]))",
+              "legendFormat": "{{tenant}}"
+            }
+          ],
+          "options": {
+            "tooltip": {
+              "mode": "multi"
+            },
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data",
+              "custom": {
+                "axisLabel": "denials/s"
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 27,
+          "type": "timeseries",
+          "title": "Estimate-net charges vs missing usage",
+          "description": "Left series counts TOKENS charged from the estimate net (no usage object in the response); right series counts RESPONSES that had no readable usage. Different units on purpose \u2014 a rising ratio between them means responses are getting more expensive to guess at.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 48
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "loxilb-prom"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (model) (rate(loxilb_ai_tokens_estimated_total{model=~\"$model\",tenant=~\"$tenant\",instance=~\"$instance\"}[$__rate_interval]))",
+              "legendFormat": "estimated tokens/s {{model}}"
+            },
+            {
+              "refId": "B",
+              "expr": "sum by (model) (rate(loxilb_ai_tokens_missing_total{model=~\"$model\",tenant=~\"$tenant\",instance=~\"$instance\"}[$__rate_interval]))",
+              "legendFormat": "responses w/o usage per s {{model}}"
+            }
+          ],
+          "options": {
+            "tooltip": {
+              "mode": "multi"
+            },
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 29,
+          "type": "timeseries",
+          "title": "Quota headroom by tenant",
+          "description": "limit x (1 - utilisation): tokens the tenant may still spend in the current window. Goes negative while the bucket is in post-hoc debt.",
+          "gridPos": {
+            "h": 8,
+            "w": 18,
+            "x": 6,
+            "y": 56
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "loxilb-prom"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "loxilb_ai_token_quota_limit_tokens{tenant=~\"$tenant\",instance=~\"$instance\"} * (1 - loxilb_ai_token_quota_utilization{tenant=~\"$tenant\",instance=~\"$instance\"})",
+              "legendFormat": "{{tenant}}"
+            }
+          ],
+          "options": {
+            "tooltip": {
+              "mode": "multi"
+            },
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data",
+              "custom": {
+                "axisLabel": "tokens"
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 28,
+          "type": "stat",
+          "title": "Cold fail-open windows",
+          "description": "Times this node began serving quota-limited traffic with empty in-memory quota state and no peer warm-up, over the dashboard range. Non-zero means a window was under-enforced after a restart.",
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 0,
+            "y": 56
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "loxilb-prom"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(increase(loxilb_ai_token_quota_cold_open_total{instance=~\"$instance\"}[$__range]))",
+              "instant": true
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "value",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data"
+            },
+            "overrides": []
+          }
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "type": "row",
+      "title": "L7 byte shaper (Tier-1 QoS) \u2014 only on fullproxy rules with a policer attached",
+      "description": "Empty until a policer is attached to a fullproxy rule. Only a direction the policy actually shapes is exported, so a missing series means that direction is not shaped rather than idle; a service that stops being shaped stops being exported entirely.",
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      },
+      "panels": [
+        {
+          "id": 31,
+          "type": "timeseries",
+          "title": "Shaped throughput by service and direction",
+          "description": "Payload bytes the Tier-1 shaper granted, per shaped service and direction, with the configured CIR as a dashed reference. These are PLAINTEXT payload bytes measured inside the relay \u2014 never comparable with the eBPF policer's L3 wire-byte counters.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 65
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "loxilb-prom"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (vip,port,direction) (rate(loxilb_proxy_qos_bytes_passed_total{instance=~\"$instance\"}[$__rate_interval]))",
+              "legendFormat": "{{vip}}:{{port}} {{direction}}"
+            },
+            {
+              "refId": "B",
+              "expr": "max by (vip,port,direction) (loxilb_proxy_qos_cir_bytes_per_second{instance=~\"$instance\"})",
+              "legendFormat": "{{vip}}:{{port}} {{direction}} CIR"
+            }
+          ],
+          "options": {
+            "tooltip": {
+              "mode": "multi"
+            },
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "noValue": "No data"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": ".*CIR$"
+                },
+                "properties": [
+                  {
+                    "id": "custom.lineStyle",
+                    "value": {
+                      "fill": "dash",
+                      "dash": [
+                        10,
+                        10
+                      ]
+                    }
+                  },
+                  {
+                    "id": "custom.fillOpacity",
+                    "value": 0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": 32,
+          "type": "timeseries",
+          "title": "Bucket saturation (delayed / passed)",
+          "description": "Share of granted bytes that had to wait through at least one park. This is a SATURATION signal, not a throttled fraction: once the bucket is empty essentially every read follows a park, so a service pinned at its CIR sits near 100%. Use parks/s and mean park below to size the delay.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 65
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "loxilb-prom"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (vip,port,direction) (rate(loxilb_proxy_qos_bytes_delayed_total{instance=~\"$instance\"}[$__rate_interval])) / clamp_min(sum by (vip,port,direction) (rate(loxilb_proxy_qos_bytes_passed_total{instance=~\"$instance\"}[$__rate_interval])), 1)",
+              "legendFormat": "{{vip}}:{{port}} {{direction}}"
+            }
+          ],
+          "options": {
+            "tooltip": {
+              "mode": "multi"
+            },
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "noValue": "No data"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 33,
+          "type": "timeseries",
+          "title": "Parks/s",
+          "description": "Rate at which the shaper parked a reader because its bucket was empty. Rises with offered load above the CIR; zero while a shaped service stays under its rate.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 73
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "loxilb-prom"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (vip,port,direction) (rate(loxilb_proxy_qos_parks_total{instance=~\"$instance\"}[$__rate_interval]))",
+              "legendFormat": "{{vip}}:{{port}} {{direction}}"
+            }
+          ],
+          "options": {
+            "tooltip": {
+              "mode": "multi"
+            },
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data",
+              "custom": {
+                "axisLabel": "parks/s"
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 34,
+          "type": "timeseries",
+          "title": "Mean park duration",
+          "description": "park_seconds / parks over the interval \u2014 how long a throttled reader waits per park. Parks that never resumed (connection torn down while throttled) are not counted, so this measures served delay.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 73
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "loxilb-prom"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (vip,port,direction) (rate(loxilb_proxy_qos_park_seconds_total{instance=~\"$instance\"}[$__rate_interval])) / clamp_min(sum by (vip,port,direction) (rate(loxilb_proxy_qos_parks_total{instance=~\"$instance\"}[$__rate_interval])), 0.001)",
+              "legendFormat": "{{vip}}:{{port}} {{direction}}"
+            }
+          ],
+          "options": {
+            "tooltip": {
+              "mode": "multi"
+            },
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "noValue": "No data"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 35,
+          "type": "timeseries",
+          "title": "Readers parked now",
+          "description": "Connections the shaper is holding at this instant (bucket park-ring depth). A ring that stays near its 256-entry cap means throttled connections are queueing faster than refills release them.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 81
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "loxilb-prom"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (vip,port,direction) (loxilb_proxy_qos_parked_connections{instance=~\"$instance\"})",
+              "legendFormat": "{{vip}}:{{port}} {{direction}}"
+            }
+          ],
+          "options": {
+            "tooltip": {
+              "mode": "multi"
+            },
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data",
+              "custom": {
+                "axisLabel": "connections"
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 36,
+          "type": "timeseries",
+          "title": "Bucket level vs burst depth",
+          "description": "Tokens available in the bucket against its burst depth. A level sitting at zero means the service is rate-bound; a level pinned at the burst depth means the shaper is configured but idle.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 81
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "loxilb-prom"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (vip,port,direction) (loxilb_proxy_qos_tokens_bytes{instance=~\"$instance\"})",
+              "legendFormat": "{{vip}}:{{port}} {{direction}} level"
+            },
+            {
+              "refId": "B",
+              "expr": "max by (vip,port,direction) (loxilb_proxy_qos_cbs_bytes{instance=~\"$instance\"})",
+              "legendFormat": "{{vip}}:{{port}} {{direction}} burst"
+            }
+          ],
+          "options": {
+            "tooltip": {
+              "mode": "multi"
+            },
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "noValue": "No data"
+            },
+            "overrides": []
+          }
+        }
+      ]
     }
   ]
 }
