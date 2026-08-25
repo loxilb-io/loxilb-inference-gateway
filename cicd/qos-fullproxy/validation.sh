@@ -45,6 +45,16 @@
 #                      (The per-rule inactive/idle reapers key on activity
 #                      anchors a parked conn also freezes; they are guarded
 #                      by the same health-pass refresh this leg pins.)
+#   F11 observability : the per-service shaper series on /metrics. Re-attach
+#                      the 2 MB/s policer, push a shaped upload, and pin the
+#                      exported numbers against the transfer that produced
+#                      them: CIR in BYTES (not the policer's bits), passed
+#                      bytes matching the body, non-zero parks AND park
+#                      seconds (the counter that did not exist before), and
+#                      delayed <= passed. Then detach: the series must
+#                      DISAPPEAR — a collector that keeps emitting an
+#                      un-shaped service is reporting a shaper that is not
+#                      running.
 source ../common.sh
 echo SCENARIO-qos-fullproxy
 
@@ -249,7 +259,14 @@ if [[ -z "$s5" || "$s5" -lt $((12 * MB)) ]]; then
     echo "F6 upload NOT restored after policy delete ($s5 B/s)" ; code=1
 fi
 if [[ -z "$d5" || "$d5" -lt $((12 * MB)) ]]; then
-    echo "F6 download NOT restored after policy delete ($d5 B/s)" ; code=1
+    # Detached means the shaper is out of the data path entirely (the burst
+    # loop resolves a NULL bucket), so a slow read here is the plain relay or
+    # the backend. Measure the endpoint directly to say which — one observed
+    # red (2026-08-26) sat exactly on the 90s curl budget while every shaped
+    # leg in the same run was exact, and was not reproducible.
+    dep5=$($dexec l3h1 curl --max-time 120 -s -o /dev/null -w '%{speed_download}' \
+        http://31.31.31.1:8080/big.bin | cut -d. -f1)
+    echo "F6 download NOT restored after policy delete ($d5 B/s; direct-to-endpoint $dep5 B/s)" ; code=1
 fi
 
 # --- F7: policy associated before its rule exists -> converges on rule add ---
@@ -377,6 +394,147 @@ fi
 capln=$(sudo docker exec llb1 sh -c 'cat /var/log/loxilbdp*.log 2>/dev/null' | grep -c "SSE_CAP")
 if [[ "$capln" -lt 1 ]]; then
     echo "F10b no SSE_CAP log line — the cut did not come from the duration cap" ; code=1
+fi
+
+# --- F11: shaper observability series on /metrics ---
+# /metrics is unauthenticated (security:[] in the swagger), so the scrape is a
+# plain GET from inside llb1. The exporter republishes the store once per 10s
+# collection cycle, hence the polls.
+qos_scrape() {
+    $dexec llb1 curl -s -m10 "$API/metrics" 2>/dev/null | grep '^loxilb_proxy_qos_'
+}
+
+# qos_val <scrape> <metric> <vip> <direction> [scale]
+# prints the series value scaled by <scale> (default 1) as an integer, or
+# MISSING when the series is absent. Values arrive in Go float form
+# (1.6777216e+07), so awk does the parsing, not bash arithmetic.
+qos_val() {
+    echo "$1" | awk -v m="$2" -v v="$3" -v d="$4" -v sc="${5:-1}" '
+        index($0, m "{") == 1 && index($0, "vip=\"" v "\"") > 0 &&
+        index($0, "direction=\"" d "\"") > 0 { val = $2; found = 1 }
+        END { if (found) printf "%.0f", val * sc; else printf "MISSING" }'
+}
+
+# qos_settled <vip> <direction>
+# Leaves a SETTLED scrape in $SC — one taken after the exporter's 10s cycle
+# has published a post-traffic snapshot. Two reads 12s apart must agree:
+# a delta computed against a mid-transfer snapshot silently under-counts
+# (the first cut of this leg lost 4MB of a 16MB body that way), and two
+# equal reads also prove the counters stop moving when the traffic does.
+SC=""
+qos_settled() {
+    local vip=$1 dir=$2 a b i
+    for i in 1 2 3; do
+        sleep 15
+        SC=$(qos_scrape)
+        a=$(qos_val "$SC" loxilb_proxy_qos_bytes_passed_total $vip $dir)
+        sleep 12
+        SC=$(qos_scrape)
+        b=$(qos_val "$SC" loxilb_proxy_qos_bytes_passed_total $vip $dir)
+        [[ "$a" != MISSING && "$a" == "$b" ]] && return 0
+    done
+    return 1
+}
+
+res=$(api_post_policy "$POL1_JSON")
+echo "F11 re-attach: $res"
+if [[ "$res" != *"Success"* ]]; then
+    echo "F11 policer re-attach on $FPVIP1 FAILED: $res" ; code=1
+fi
+
+# wait for the exporter to publish the freshly shaped service, settled
+if ! qos_settled $FPVIP1 upload; then
+    echo "F11 no settled shaper series for $FPVIP1 after attach — counters still invisible" ; code=1
+fi
+sc0=$SC
+mb0=$(qos_val "$sc0" loxilb_proxy_qos_bytes_passed_total $FPVIP1 upload)
+mp0=$(qos_val "$sc0" loxilb_proxy_qos_parks_total $FPVIP1 upload)
+mk0=$(qos_val "$sc0" loxilb_proxy_qos_park_seconds_total $FPVIP1 upload 1000)
+md0=$(qos_val "$sc0" loxilb_proxy_qos_bytes_delayed_total $FPVIP1 upload)
+mcir=$(qos_val "$sc0" loxilb_proxy_qos_cir_bytes_per_second $FPVIP1 upload)
+mcbs=$(qos_val "$sc0" loxilb_proxy_qos_cbs_bytes $FPVIP1 upload)
+echo "F11 pre-transfer: passed=$mb0 parks=$mp0 park_ms=$mk0 delayed=$md0 cir=$mcir cbs=$mcbs"
+
+# the configured rate must be exported in BYTES/s (16 Mbps policer / 8), not
+# the policer's bits — a unit slip here is invisible in a dashboard
+if [[ "$mcir" != "2000000" ]]; then
+    echo "F11 exported CIR is $mcir B/s, want 2000000 (16 Mbps policer / 8)" ; code=1
+fi
+if [[ "$mcbs" != "250000" ]]; then
+    echo "F11 exported CBS is $mcbs B, want the configured 250000" ; code=1
+fi
+
+# a 16MB shaped upload: ~8s of transfer, parked for most of it
+s11=$(up_speed $FPVIP1)
+echo "F11 shaped upload: $s11 B/s"
+if [[ -z "$s11" || "$s11" -gt $((7 * MB / 2)) || "$s11" -lt $((MB / 2)) ]]; then
+    echo "F11 upload not in the shaped band ($s11 B/s) — no parks, leg does not discriminate" ; code=1
+fi
+
+if ! qos_settled $FPVIP1 upload; then
+    echo "F11 counters never settled after the transfer — exported values keep moving" ; code=1
+fi
+sc1=$SC
+mb1=$(qos_val "$sc1" loxilb_proxy_qos_bytes_passed_total $FPVIP1 upload)
+mp1=$(qos_val "$sc1" loxilb_proxy_qos_parks_total $FPVIP1 upload)
+mk1=$(qos_val "$sc1" loxilb_proxy_qos_park_seconds_total $FPVIP1 upload 1000)
+md1=$(qos_val "$sc1" loxilb_proxy_qos_bytes_delayed_total $FPVIP1 upload)
+echo "F11 post-transfer: passed=$mb1 parks=$mp1 park_ms=$mk1 delayed=$md1"
+
+if [[ "$mb1" == MISSING || "$mb0" == MISSING ]]; then
+    echo "F11 bytes_passed series vanished across the transfer" ; code=1
+else
+    dpass=$(( mb1 - mb0 ))
+    dparks=$(( mp1 - mp0 ))
+    dpark=$(( mk1 - mk0 ))
+    ddelay=$(( md1 - md0 ))
+    echo "F11 deltas: passed=$dpass parks=$dparks park_ms=$dpark delayed=$ddelay"
+    # the 16MB body must show up in the upload direction's counter
+    if [[ "$dpass" -lt 16000000 || "$dpass" -gt 25000000 ]]; then
+        echo "F11 bytes_passed delta $dpass does not match the 16MB upload" ; code=1
+    fi
+    if [[ "$dparks" -le 0 ]]; then
+        echo "F11 parks_total did not move on a transfer the shaper demonstrably paced" ; code=1
+    fi
+    # park seconds: at 2 MB/s a 16MB body is ~8s of mostly-parked transfer.
+    # The upper bound is the unit trap — ns exported as seconds would land
+    # around 8e9 ms here.
+    if [[ "$dpark" -lt 1000 ]]; then
+        echo "F11 park_seconds_total moved $dpark ms — park duration is not being accumulated" ; code=1
+    fi
+    if [[ "$dpark" -gt 60000 ]]; then
+        echo "F11 park_seconds_total moved $dpark ms on a ~8s transfer — wrong unit or double counting" ; code=1
+    fi
+    if [[ "$ddelay" -le 0 || "$ddelay" -gt "$dpass" ]]; then
+        echo "F11 bytes_delayed delta $ddelay is not a subset of passed $dpass" ; code=1
+    fi
+fi
+
+# the download direction of the same service must carry its own series
+mdn=$(qos_val "$sc1" loxilb_proxy_qos_bytes_passed_total $FPVIP1 download)
+echo "F11 download-direction series: passed=$mdn"
+if [[ "$mdn" == MISSING ]]; then
+    echo "F11 no download-direction series — the per-direction label is not exported" ; code=1
+fi
+
+# detach: an un-shaped service must stop being exported entirely, otherwise
+# the dashboard shows a shaper that is no longer running
+res=$(api_del_policy qsh1)
+echo "F11 detach: $res"
+gone11=0
+for i in $(seq 1 8); do
+    sleep 4
+    sc2=$(qos_scrape)
+    if [[ "$(qos_val "$sc2" loxilb_proxy_qos_bytes_passed_total $FPVIP1 upload)" == MISSING ]]; then
+        gone11=1 ; break
+    fi
+done
+if [[ "$gone11" != 1 ]]; then
+    echo "F11 series for $FPVIP1 still exported after detach — store is stale" ; code=1
+fi
+# the SSE VIP was detached back at F10b and must be absent for the same reason
+if [[ "$(qos_val "$sc2" loxilb_proxy_qos_bytes_passed_total $FPVIP4 download)" != MISSING ]]; then
+    echo "F11 detached SSE VIP $FPVIP4 still exported" ; code=1
 fi
 
 $dexec l3ep1 pkill -9 python3 2>/dev/null
