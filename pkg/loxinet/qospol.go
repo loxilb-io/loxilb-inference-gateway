@@ -174,18 +174,6 @@ func (P *PolH) PolAdd(pName string, pInfo cmn.PolInfo, pObjArgs cmn.PolObj) (int
 		return PolAttachErr, errors.New("egress policer attach needs --egr-hooks")
 	}
 
-	// A fullproxy rule has no L4 datapath entry a policer could bind to. When the
-	// target rule already exists and is fullproxy, refuse the whole policer add —
-	// otherwise the API would report success for an attachment that polices
-	// nothing. (A not-yet-created rule is still accepted; the ticker attaches it
-	// when it appears, and a fullproxy rule appearing later is logged.)
-	if pObjArgs.AttachMent == cmn.PolAttachLbRule && P.Zone != nil && P.Zone.Rules != nil {
-		if r := P.Zone.Rules.getLBRuleByKey(pObjArgs.PolObjName); r != nil && r.act.actType == RtActFullProxy {
-			tk.LogIt(tk.LogError, "policer add - %s: lb-rule %s is fullproxy (unsupported)\n", pName, pObjArgs.PolObjName)
-			return PolAttachErr, errors.New("policer attach unsupported on fullproxy lb-rule")
-		}
-	}
-
 	if PolInfoXlateValidate(&pInfo) == false {
 		tk.LogIt(tk.LogError, "policer add - %s: info error\n", pName)
 		return PolInfoErr, errors.New("pol-info error")
@@ -247,17 +235,6 @@ func (P *PolH) PolAssociateLbRule(ident string, lbKey string) (int, error) {
 	if found == false {
 		tk.LogIt(tk.LogError, "policer associate - %s: no such policer (vip_qos_policy_id)\n", ident)
 		return PolNoExistErr, errors.New("no such policer error")
-	}
-
-	// A fullproxy rule has no L4 datapath entry a policer could bind to — refuse
-	// the association outright so the caller gets an error instead of a policer
-	// object that silently polices nothing. Checkable only when the rule already
-	// exists; a not-yet-created rule is handled by the ticker retry below.
-	if P.Zone != nil && P.Zone.Rules != nil {
-		if r := P.Zone.Rules.getLBRuleByKey(lbKey); r != nil && r.act.actType == RtActFullProxy {
-			tk.LogIt(tk.LogError, "policer associate - %s: lb-rule %s is fullproxy (unsupported)\n", ident, lbKey)
-			return PolAttachErr, errors.New("policer attach unsupported on fullproxy lb-rule")
-		}
 	}
 
 	// Idempotent: if this LB-rule attachment already exists on the policer,
@@ -396,11 +373,12 @@ func (P *PolH) polTickerDocaMeterStats() {
 // PolObj2DP - Sync state of policer's attachment point with data-path
 func (pObjInfo *PolObjInfo) PolObj2DP(work DpWorkT) int {
 
-	// LB rule attachment: program the policer id into the rule's datapath act
-	// (dp_proxy_tacts.polid) via a rule re-sync. The rule may legitimately not
-	// exist yet — policy objects can be created before their rule — so a missing
-	// rule flags Sync and PolTicker re-drives until it appears. A fullproxy rule
-	// is a permanent refusal (no nat_map entry to police), not a retry.
+	// LB rule attachment. An L4 rule gets the policer id programmed into its
+	// datapath act (dp_proxy_tacts.polid) via a rule re-sync; a fullproxy rule
+	// gets the L7 byte shaper configured from the policer's rates instead (no
+	// nat_map entry exists to police there). The rule may legitimately not
+	// exist yet — policy objects can be created before their rule — so a
+	// missing rule flags Sync and PolTicker re-drives until it appears.
 	if pObjInfo.Args.AttachMent == cmn.PolAttachLbRule {
 		zone := pObjInfo.Parent.Zone
 		if zone == nil || zone.Rules == nil {
@@ -411,13 +389,13 @@ func (pObjInfo *PolObjInfo) PolObj2DP(work DpWorkT) int {
 		if work == DpRemove {
 			polid = 0
 		}
-		code, err := zone.Rules.RuleQosPolAttach(pObjInfo.Args.PolObjName, polid)
+		code, err := zone.Rules.RuleQosPolAttach(pObjInfo.Args.PolObjName, polid,
+			&pObjInfo.Parent.Info)
 		if err != nil {
 			if work == DpRemove || code == RuleArgsErr {
-				// Detach with the rule already gone needs nothing; a fullproxy
-				// rule will never become attachable — either way, stop retrying.
-				// The fullproxy refusal is surfaced to the caller at associate
-				// time; here it can only be logged.
+				// Detach with the rule already gone needs nothing; a hard
+				// config error will not heal on retry — either way, stop
+				// retrying and log.
 				if code == RuleArgsErr && work != DpRemove {
 					tk.LogIt(tk.LogError, "policer %s -> lb-rule %s: %s\n",
 						pObjInfo.Parent.Key.PolName, pObjInfo.Args.PolObjName, err)

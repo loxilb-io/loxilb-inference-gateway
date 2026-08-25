@@ -10,7 +10,8 @@
 #   L3 counters      : the polx_map bucket for this policer shows pass/drop
 #                      counters CLIMBING (the historical defect was a fully
 #                      configured bucket that was never consulted — pinned at 0)
-#   L4 fullproxy-neg : attaching a policer to a fullproxy rule must FAIL loudly
+#   L4 fullproxy-pos : attaching a policer to a fullproxy rule is accepted and
+#                      drives the L7 byte shaper (deep legs: cicd/qos-fullproxy)
 #   L5 detach        : deleting the policy restores un-policed throughput
 #   L6 re-create heal: delete + re-create the LB rule with vip_qos_policy_id —
 #                      the fresh rule act must re-acquire the polid (a re-created
@@ -85,12 +86,19 @@ if [[ -z "$snap1" || "$snap1" == "$snap2" ]]; then
     echo "L3 polx bucket exists but was never consulted (map state frozen across traffic)" ; code=1
 fi
 
-# --- L4: fullproxy rule must refuse the attach ---
+# --- L4: fullproxy rule accepts the attach and engages the L7 byte shaper
+# (deep shaping-behaviour legs live in cicd/qos-fullproxy; here we pin that
+# the attach is accepted and actually reaches sockproxy, never a silent no-op)
 FP_JSON='{"policyIdent":"qpolfp","policyInfo":{"type":0,"committedInfoRate":10,"peakInfoRate":10},"targetObject":{"attachment":0,"polObjName":"20.20.20.3:2020:tcp"}}'
 res=$(api_post_policy "$FP_JSON")
 echo "L4 fullproxy attach response: $res"
-if [[ "$res" == *"Success"* ]]; then
-    echo "L4 fullproxy rule accepted a policer attach (must be refused)" ; code=1
+if [[ "$res" != *"Success"* ]]; then
+    echo "L4 fullproxy rule refused the policer attach (must drive the L7 shaper): $res" ; code=1
+else
+    lg=$(sudo docker exec llb1 sh -c 'cat /var/log/loxilbdp*.log 2>/dev/null' | grep -c "qos: shaper on 20.20.20.3")
+    if [[ "$lg" -lt 1 ]]; then
+        echo "L4 attach accepted but shaper never engaged in sockproxy (no shaper-on log)" ; code=1
+    fi
     api_del_policy qpolfp > /dev/null
 fi
 

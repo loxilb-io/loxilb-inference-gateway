@@ -1704,20 +1704,43 @@ func (R *RuleH) GetLBRuleMarkByKey(key string) int {
 	return 0
 }
 
-// RuleQosPolAttach - attach/detach a Tier-0 policer to the LB rule identified by
-// lbKey ("VIP:PORT:PROTO"). polid 0 detaches. The polid lands in the rule's
-// dataplane act (dp_proxy_tacts.polid) via a rule re-sync, from where the NAT
-// datapath copies it per-flow into CT state. Fullproxy rules are refused: they
-// never write nat_map (the rule lives in userspace sockproxy), so a rule-scoped
-// L4 policer can structurally never see their traffic — accepting the attach
-// would be a silent no-op.
-func (R *RuleH) RuleQosPolAttach(lbKey string, polid uint16) (int, error) {
+// RuleQosPolAttach - attach/detach a policer to the LB rule identified by
+// lbKey ("VIP:PORT:PROTO"). polid 0 detaches. For an L4 rule the polid lands
+// in the rule's dataplane act (dp_proxy_tacts.polid) via a rule re-sync, from
+// where the NAT datapath copies it per-flow into CT state (Tier-0 policing,
+// wire bytes). A fullproxy rule never writes nat_map, so the same policer
+// instead configures the sockproxy L7 byte shaper (Tier-1, plaintext payload
+// bytes) from its CIR/PIR/CBS — different meters, one attachment surface.
+func (R *RuleH) RuleQosPolAttach(lbKey string, polid uint16, pInfo *cmn.PolInfo) (int, error) {
 	r := R.getLBRuleByKey(lbKey)
 	if r == nil {
 		return RuleNotExistsErr, errors.New("no such lb-rule for policer attach")
 	}
 	if r.act.actType == RtActFullProxy {
-		return RuleArgsErr, errors.New("policer attach unsupported on fullproxy lb-rule (no L4 datapath entry)")
+		// A fullproxy rule has no L4 datapath entry to police; the policer
+		// instead drives the sockproxy L7 byte shaper, which paces the
+		// relay's plaintext payload at the policer's CIR. Rates are bits/sec
+		// (PolInfo native unit); polid 0 detaches.
+		if r.qosPolId == polid {
+			return 0, nil
+		}
+		var cirBps, pirBps uint64
+		var cbsBytes uint32
+		if polid != 0 {
+			if pInfo == nil {
+				return RuleArgsErr, errors.New("no policer info for fullproxy shaper attach")
+			}
+			cirBps = pInfo.CommittedInfoRate
+			pirBps = pInfo.PeakInfoRate
+			cbsBytes = uint32(pInfo.CommittedBlkSize)
+		}
+		if mh.dpEbpf == nil ||
+			mh.dpEbpf.DpLBSetQosShaper(r.tuples.l3Dst.addr.IP, r.tuples.l4Dst.valMin,
+				r.tuples.l4Prot.val, cirBps, pirBps, cbsBytes) != 0 {
+			return RuleArgsErr, errors.New("fullproxy shaper config failed")
+		}
+		r.qosPolId = polid
+		return 0, nil
 	}
 	if r.qosPolId == polid {
 		return 0, nil
@@ -1730,16 +1753,13 @@ func (R *RuleH) RuleQosPolAttach(lbKey string, polid uint16) (int, error) {
 // RuleQosPolInSync - true when the rule identified by lbKey already carries
 // polid in its datapath act. Used by the policer ticker to detect a rule that
 // was deleted and re-created (the fresh ruleEnt starts with qosPolId 0 even
-// though the association object survives). A fullproxy rule reports in-sync:
-// it is permanently unattachable — that error surfaces at associate time and
-// must not turn into an every-tick retry.
+// though the association object survives). Applies to fullproxy rules too:
+// their L7 shaper config is dropped with the proxy entry on rule delete, so
+// a re-created rule must be re-driven the same way.
 func (R *RuleH) RuleQosPolInSync(lbKey string, polid uint16) bool {
 	r := R.getLBRuleByKey(lbKey)
 	if r == nil {
 		return false
-	}
-	if r.act.actType == RtActFullProxy {
-		return true
 	}
 	return r.qosPolId == polid
 }
