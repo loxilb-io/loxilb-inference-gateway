@@ -33,9 +33,14 @@ sleep 5
 $dexec llb1 ip addr add 20.20.20.3/32 dev lo
 $dexec llb1 ip addr add 20.20.20.4/32 dev lo
 $dexec llb1 ip addr add 20.20.20.5/32 dev lo
+$dexec llb1 ip addr add 20.20.20.6/32 dev lo
 
 # Fullproxy (L7) rules under shaper test. Two VIPs so per-rule isolation is
 # provable; a third VIP (20.20.20.5) is deliberately NOT created here — the
 # policy-before-rule leg creates it mid-validation.
 create_lb_rule llb1 20.20.20.3 --tcp=2020:8080 --endpoints=31.31.31.1:1 --mode=fullproxy --host=20.20.20.3
 create_lb_rule llb1 20.20.20.4 --tcp=2020:8080 --endpoints=31.31.31.1:1 --mode=fullproxy --host=20.20.20.4
+# SSE rule with a deliberately small stream-duration cap: the idle-accounting
+# leg (F10) proves a shaped (parked) stream outlives the cap while an
+# un-shaped slow stream is still cut by it.
+create_lb_rule llb1 20.20.20.6 --tcp=2020:8080 --endpoints=31.31.31.1:1 --mode=fullproxy --host=20.20.20.6 --sse-mode --max-stream-duration=10

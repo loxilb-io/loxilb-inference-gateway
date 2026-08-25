@@ -35,12 +35,23 @@
 #                      pass — proves per-direction buckets, and that shaper
 #                      parks and cache backpressure never clear each other's
 #                      read-pause (neither transfer wedges)
+#   F10 park-safe cap : SSE rule with max-stream-duration=10s.
+#                      (a) a 40MB SSE stream shaped to 2 MB/s (~20s wall
+#                      clock, parked most of that) survives to the last
+#                      byte — shaper-paused time is excluded from the cap;
+#                      (b) with the shaper detached, a server-paced slow
+#                      SSE stream (~25s, never parked) is still cut at the
+#                      cap — the reaper stays armed for genuine slowness.
+#                      (The per-rule inactive/idle reapers key on activity
+#                      anchors a parked conn also freezes; they are guarded
+#                      by the same health-pass refresh this leg pins.)
 source ../common.sh
 echo SCENARIO-qos-fullproxy
 
 FPVIP1=20.20.20.3
 FPVIP2=20.20.20.4
 FPVIP3=20.20.20.5
+FPVIP4=20.20.20.6
 API="http://127.0.0.1:11111/netlox/v1"
 
 # 16 Mbps CIR = 2 MB/s payload; CBS 250000 B (~125ms of CIR) keeps the
@@ -50,6 +61,8 @@ POL1_JSON='{"policyIdent":"qsh1","policyInfo":{"type":0,"committedInfoRate":16,"
 POL2_JSON='{"policyIdent":"qsh2","policyInfo":{"type":0,"committedInfoRate":64,"peakInfoRate":64,"committedBlkSize":250000},"targetObject":{"attachment":0,"polObjName":"20.20.20.4:2020:tcp"}}'
 # policy-before-rule VIP
 POL3_JSON='{"policyIdent":"qsh3","policyInfo":{"type":0,"committedInfoRate":16,"peakInfoRate":16,"committedBlkSize":250000},"targetObject":{"attachment":0,"polObjName":"20.20.20.5:2020:tcp"}}'
+# SSE-cap VIP (F10): same 2 MB/s shaping profile
+POL4_JSON='{"policyIdent":"qsh4","policyInfo":{"type":0,"committedInfoRate":16,"peakInfoRate":16,"committedBlkSize":250000},"targetObject":{"attachment":0,"polObjName":"20.20.20.6:2020:tcp"}}'
 
 code=0
 
@@ -64,7 +77,12 @@ api_del_policy() {
 # HTTP backend: python3 sink accepting arbitrary-size POST bodies and serving
 # a bulk GET (the download-direction probe). Runs inside l3ep1.
 sudo docker exec -d l3ep1 sh -c 'cd /tmp && dd if=/dev/zero of=big.bin bs=1M count=64 2>/dev/null && cat > qsink.py << "PYEOF"
-import http.server, socketserver
+import http.server, socketserver, time
+
+# 40MB of 1024-byte SSE frames for the shaped stream-duration leg: at the
+# 2 MB/s shaper CIR this is ~20s of wall clock against a 10s rule cap.
+SSE_FRAME = b"data: " + b"x" * 1016 + b"\n\n"
+SSE_BLOB = SSE_FRAME * 40960
 
 class H(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
@@ -82,6 +100,33 @@ class H(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
     def do_GET(self):
+        if self.path == "/sse":
+            # source-fast SSE stream; the shaper is what paces it
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Content-Length", str(len(SSE_BLOB)))
+            self.end_headers()
+            try:
+                self.wfile.write(SSE_BLOB)
+            except OSError:
+                pass
+            return
+        if self.path == "/sse-slow":
+            # source-paced trickle: one frame per second, no shaper parks —
+            # the stream-duration cap must cut this one
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            try:
+                for _ in range(25):
+                    self.wfile.write(SSE_FRAME)
+                    self.wfile.flush()
+                    time.sleep(1)
+            except OSError:
+                pass
+            self.close_connection = True
+            return
         with open("/tmp/big.bin", "rb") as f:
             data = f.read()
         self.send_response(200)
@@ -284,6 +329,54 @@ if [[ -z "$s9" || "$s9" -lt $((4 * MB)) || "$s9" -gt $((12 * MB)) ]]; then
 fi
 if [[ -n "$s8" && -n "$s9" && $((s8 + s9)) -lt $((11 * MB)) ]]; then
     echo "F9 directions NOT independent (sum $((s8 + s9)) B/s ≈ one shared CIR)" ; code=1
+fi
+
+# --- F10: stream-duration cap must not count shaper-paused time ---
+# F10a: 2 MB/s shaper on the SSE VIP (rule cap max-stream-duration=10s).
+# The 40MB SSE stream needs ~20s of wall clock, parked for most of every
+# second of it — it must arrive COMPLETE, because the health pass excludes
+# paused time from the cap. The speed staying in the shaped band is the
+# proof the parks actually happened (i.e. the leg discriminates).
+res=$(api_post_policy "$POL4_JSON")
+echo "F10a attach: $res"
+if [[ "$res" != *"Success"* ]]; then
+    echo "F10a policer attach on SSE rule FAILED: $res" ; code=1
+fi
+sleep 2
+out10=$($dexec l3h1 curl --max-time 90 -s -o /tmp/f10a.out \
+    -w '%{size_download} %{time_total} %{speed_download}' http://$FPVIP4:2020/sse)
+sz10=$(echo $out10 | awk '{print int($1)}')
+tt10=$(echo $out10 | awk '{print int($2)}')
+sp10=$(echo $out10 | awk '{print int($3)}')
+mk10=$($dexec l3h1 sh -c 'grep -c max_stream_duration_exceeded /tmp/f10a.out 2>/dev/null; true')
+echo "F10a shaped SSE: size=$sz10 time=${tt10}s speed=$sp10 B/s marker=$mk10 (want 41943040 bytes over >=15s, no marker)"
+if [[ "$sz10" -ne 41943040 || "$mk10" != "0" ]]; then
+    echo "F10a shaped SSE stream was CUT by the duration cap while parked (size=$sz10 marker=$mk10)" ; code=1
+fi
+if [[ "$tt10" -lt 15 ]]; then
+    echo "F10a transfer too fast (${tt10}s) — cap was never at stake, leg does not discriminate" ; code=1
+fi
+if [[ -z "$sp10" || "$sp10" -gt $((7 * MB / 2)) || "$sp10" -lt $((MB / 2)) ]]; then
+    echo "F10a SSE stream not in the shaped band ($sp10 B/s) — no parks, leg does not discriminate" ; code=1
+fi
+
+# F10b: shaper detached — a server-paced slow SSE stream (~25s trickle,
+# never parked) must STILL be cut at the 10s cap: the guard only spares
+# parked conns, the reaper stays armed for genuinely slow streams.
+res=$(api_del_policy qsh4)
+echo "F10b detach: $res"
+sleep 2
+out10b=$($dexec l3h1 curl --max-time 40 -s -o /tmp/f10b.out \
+    -w '%{time_total}' http://$FPVIP4:2020/sse-slow)
+tt10b=$(echo $out10b | awk '{print int($1)}')
+mk10b=$($dexec l3h1 sh -c 'grep -c max_stream_duration_exceeded /tmp/f10b.out 2>/dev/null; true')
+echo "F10b un-shaped slow SSE: time=${tt10b}s marker=$mk10b (want cut at ~10s with the cap marker)"
+if [[ "$mk10b" == "0" || "$tt10b" -gt 18 ]]; then
+    echo "F10b duration cap went BLIND for un-shaped streams (time=${tt10b}s marker=$mk10b)" ; code=1
+fi
+capln=$(sudo docker exec llb1 sh -c 'cat /var/log/loxilbdp*.log 2>/dev/null' | grep -c "SSE_CAP")
+if [[ "$capln" -lt 1 ]]; then
+    echo "F10b no SSE_CAP log line — the cut did not come from the duration cap" ; code=1
 fi
 
 $dexec l3ep1 pkill -9 python3 2>/dev/null
