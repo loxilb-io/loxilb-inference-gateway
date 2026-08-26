@@ -87,6 +87,14 @@ typedef struct proxy_metrics_snapshot {
 
     /* TRT-LLM sequential-dialect counters (tail-append, three-way lockstep) */
     uint64_t pd_trt_ctx_early_exit;
+
+    /* Relay-cache footprint gauges. The backpressure watermark is per
+     * connection (PROXY_CACHE_HIGH_WATER), so nothing reports what the
+     * process is holding in aggregate; these do. TAIL-APPEND ONLY — same
+     * three-way lockstep contract as the blocks above. */
+    uint64_t cache_bytes_total;
+    uint64_t cache_bytes_max_conn;
+    uint64_t cache_conns_queued;
 } proxy_metrics_snapshot_t;
 
 __attribute__((weak))
