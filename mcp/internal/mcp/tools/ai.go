@@ -571,6 +571,7 @@ type ratelimitSetIn struct {
 	TenantID     string `json:"tenant_id" jsonschema:"tenant identifier"`
 	RPS          int    `json:"rps" jsonschema:"max requests per second (0 = unlimited)"`
 	TokensPerMin int    `json:"tokens_per_min" jsonschema:"max LLM tokens per minute (0 = unlimited)"`
+	BurstPct     int    `json:"burst_pct,omitempty" jsonschema:"token bucket capacity as a percent of tokens_per_min (0 = server default)"`
 }
 
 func (d *Deps) aiRatelimitSet() sdk.ToolHandlerFor[ratelimitSetIn, mutOut] {
@@ -585,10 +586,18 @@ func (d *Deps) aiRatelimitSet() sdk.ToolHandlerFor[ratelimitSetIn, mutOut] {
 		if in.RPS < 0 || in.TokensPerMin < 0 {
 			return nil, mutOut{}, fmt.Errorf("rps and tokens_per_min must be >= 0")
 		}
+		if in.BurstPct < 0 {
+			return nil, mutOut{}, fmt.Errorf("burst_pct must be >= 0 (0 = server default)")
+		}
+		// The endpoint is a full upsert of the tenant's rate-limit row, so
+		// every field is sent on every call: omitting burst_pct would not
+		// preserve a previously configured value, it would just leave the
+		// server to write the same zero this sends explicitly.
 		body := map[string]any{
 			"tenant_id":      in.TenantID,
 			"rps":            in.RPS,
 			"tokens_per_min": in.TokensPerMin,
+			"burst_pct":      in.BurstPct,
 		}
 		var res any
 		if err := c.Post(ctx, "/config/ai/tenant/ratelimit", body, &res); err != nil {

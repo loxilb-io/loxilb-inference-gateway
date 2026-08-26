@@ -19,6 +19,9 @@ import (
 // swagger:model TenantRateLimitMod
 type TenantRateLimitMod struct {
 
+	// Token bucket capacity as a percent of tokens_per_min; 0 uses the server default
+	BurstPct int64 `json:"burst_pct,omitempty"`
+
 	// Per-model token quotas for the tenant
 	ModelLimits []*TenantModelRateLimit `json:"model_limits,omitempty"`
 

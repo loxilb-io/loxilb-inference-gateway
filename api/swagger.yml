@@ -11111,6 +11111,10 @@ definitions:
         type: integer
         format: int64
         description: Maximum LLM tokens per minute for the tenant
+      burst_pct:
+        type: integer
+        format: int64
+        description: Token bucket capacity as a percent of tokens_per_min; 0 uses the server default
       model_limits:
         type: array
         description: Per-model token quotas for the tenant
@@ -11144,6 +11148,10 @@ definitions:
         type: integer
         format: int64
         description: Maximum LLM tokens per minute for the tenant
+      burst_pct:
+        type: integer
+        format: int64
+        description: Token bucket capacity as a percent of tokens_per_min; 0 uses the server default
       model_limits:
         type: array
         description: Per-model token quotas for the tenant

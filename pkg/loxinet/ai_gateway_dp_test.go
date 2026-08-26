@@ -39,12 +39,16 @@ func (m *mockAPIKeyValidator) ValidateAPIKey(_ string) (*cmn.ApiKeyEntry, error)
 type mockRateLimitService struct {
 	tenantRPS int
 	tenantTPM int
-	modelTPM  map[string]int // per-model tokens_per_min; nil = no model quotas
-	keyByID   map[string]*cmn.ApiKeySummary
+	// tenantBurst is the per-tenant bucket-capacity override in percent;
+	// 0 keeps the process-wide default, which is what every pre-existing
+	// case in this file expects.
+	tenantBurst int
+	modelTPM    map[string]int // per-model tokens_per_min; nil = no model quotas
+	keyByID     map[string]*cmn.ApiKeySummary
 }
 
-func (m *mockRateLimitService) GetTenantRateLimit(_ string) (int, int) {
-	return m.tenantRPS, m.tenantTPM
+func (m *mockRateLimitService) GetTenantRateLimit(_ string) (int, int, int) {
+	return m.tenantRPS, m.tenantTPM, m.tenantBurst
 }
 
 func (m *mockRateLimitService) GetTenantModelRateLimit(_, model string) int {
@@ -568,5 +572,38 @@ func TestTokenQuotaModelWarming(t *testing.T) {
 	}
 	if decision, _, _ := rateLimitCheckInternal(svc, store, "", "tenant-mw", "unmetered"); decision != 0 {
 		t.Fatal("warming must not hold a model without a quota")
+	}
+}
+
+// TestTokenQuotaReserveInternalPerTenantBurst covers the wiring, not the
+// bucket arithmetic: the tenant's configured capacity has to travel from the
+// rate-limit service through the bridge into ReserveTokens. If it does not,
+// both tenants below get the process-wide default and the narrow one is
+// wrongly admitted — a config that reads back correctly over the API while
+// enforcing nothing.
+func TestTokenQuotaReserveInternalPerTenantBurst(t *testing.T) {
+	// Default capacity: 900 of a 1000 TPM quota fits.
+	wide := &mockRateLimitService{tenantRPS: 1000, tenantTPM: 1000}
+	if allowed, _, _ := tokenQuotaReserveInternal(wide, rl.New(), "wide", "", 900); !allowed {
+		t.Fatal("900/1000 must be admitted at the default burst")
+	}
+
+	// Same quota, capacity narrowed to 50%: the bucket holds 500, so a
+	// 900-token claim can never be satisfied.
+	narrow := &mockRateLimitService{tenantRPS: 1000, tenantTPM: 1000, tenantBurst: 50}
+	allowed, retry, ep := tokenQuotaReserveInternal(narrow, rl.New(), "narrow", "", 900)
+	if allowed {
+		t.Fatal("900/1000 must be denied when the tenant's burst holds only 500")
+	}
+	if retry <= 0 {
+		t.Fatal("a pre-admission deny must carry a retry-after hint")
+	}
+	if ep != 0 {
+		t.Fatal("a claim larger than the bucket must not be recorded")
+	}
+
+	// The narrow tenant still works inside its own capacity.
+	if allowed, _, _ := tokenQuotaReserveInternal(narrow, rl.New(), "narrow", "", 400); !allowed {
+		t.Fatal("400 tokens must be admitted at a 50% burst of 1000 TPM")
 	}
 }

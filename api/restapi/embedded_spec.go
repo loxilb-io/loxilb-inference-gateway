@@ -15099,6 +15099,11 @@ func init() {
         "tenant_id"
       ],
       "properties": {
+        "burst_pct": {
+          "description": "Token bucket capacity as a percent of tokens_per_min; 0 uses the server default",
+          "type": "integer",
+          "format": "int64"
+        },
         "model_limits": {
           "description": "Per-model token quotas for the tenant",
           "type": "array",
@@ -15133,6 +15138,11 @@ func init() {
         "tenant_id"
       ],
       "properties": {
+        "burst_pct": {
+          "description": "Token bucket capacity as a percent of tokens_per_min; 0 uses the server default",
+          "type": "integer",
+          "format": "int64"
+        },
         "model_limits": {
           "description": "Per-model token quotas for the tenant",
           "type": "array",
@@ -32144,6 +32154,11 @@ func init() {
         "tenant_id"
       ],
       "properties": {
+        "burst_pct": {
+          "description": "Token bucket capacity as a percent of tokens_per_min; 0 uses the server default",
+          "type": "integer",
+          "format": "int64"
+        },
         "model_limits": {
           "description": "Per-model token quotas for the tenant",
           "type": "array",
@@ -32178,6 +32193,11 @@ func init() {
         "tenant_id"
       ],
       "properties": {
+        "burst_pct": {
+          "description": "Token bucket capacity as a percent of tokens_per_min; 0 uses the server default",
+          "type": "integer",
+          "format": "int64"
+        },
         "model_limits": {
           "description": "Per-model token quotas for the tenant",
           "type": "array",

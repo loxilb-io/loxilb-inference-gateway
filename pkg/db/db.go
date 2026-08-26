@@ -75,8 +75,19 @@ const (
 		`tenant_id VARCHAR(128) PRIMARY KEY,` +
 		`rps INT NOT NULL DEFAULT 0,` +
 		`tokens_per_min INT NOT NULL DEFAULT 0,` +
+		`burst_pct INT NOT NULL DEFAULT 0,` +
 		`updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)` +
 		`) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+
+	// AlterTenantRateLimitsAddBurstQuery back-fills burst_pct on a
+	// tenant_rate_limits table created before the column existed. There is no
+	// migration framework here and CREATE TABLE IF NOT EXISTS leaves an
+	// existing table alone, so without this an upgraded deployment keeps the
+	// old four-column table and every statement naming burst_pct fails —
+	// taking the whole tenant rate-limit plane down, not just the new knob.
+	// MySQL has no ADD COLUMN IF NOT EXISTS, so the duplicate-column error is
+	// the already-migrated case and is tolerated rather than avoided.
+	AlterTenantRateLimitsAddBurstQuery = `ALTER TABLE tenant_rate_limits ADD COLUMN burst_pct INT NOT NULL DEFAULT 0`
 
 	CreateTenantModelRateLimitsTableQuery = `CREATE TABLE IF NOT EXISTS tenant_model_rate_limits (` +
 		`tenant_id VARCHAR(128) NOT NULL,` +
@@ -148,11 +159,26 @@ func InitDB() (*sql.DB, error) {
 		tk.LogIt(tk.LogCritical, "Failed to create tenant_rate_limits table: %v\n", err)
 		return nil, err
 	}
+	if _, err = db.Exec(AlterTenantRateLimitsAddBurstQuery); err != nil && !IsDuplicateColumnError(err) {
+		tk.LogIt(tk.LogCritical, "Failed to add tenant_rate_limits.burst_pct: %v\n", err)
+		return nil, err
+	}
 	if _, err = db.Exec(CreateTenantModelRateLimitsTableQuery); err != nil {
 		tk.LogIt(tk.LogCritical, "Failed to create tenant_model_rate_limits table: %v\n", err)
 		return nil, err
 	}
 	return db, nil
+}
+
+// IsDuplicateColumnError reports MySQL error 1060 (duplicate column name),
+// which an idempotent ALTER TABLE ... ADD COLUMN returns when the column is
+// already present. That is the success case on an already-migrated database,
+// not a failure.
+func IsDuplicateColumnError(err error) bool {
+	if mysqlErr, ok := err.(*mysql.MySQLError); ok && mysqlErr.Number == 1060 {
+		return true
+	}
+	return false
 }
 
 func IsDuplicateEntryError(err error) bool {

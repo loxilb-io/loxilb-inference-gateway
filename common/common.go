@@ -1879,7 +1879,7 @@ type NetHookInterface interface {
 	NetAPIKeyRevoke(keyID string) error
 	NetAPIKeyDelete(keyID string) error
 	NetAPIKeyPatch(keyID string, allowedModels []string, enabled *bool) error
-	NetTenantRateLimitSet(tenantID string, rps, tokensPerMin int, modelLimits []TenantModelRateLimit) error
+	NetTenantRateLimitSet(tenantID string, rps, tokensPerMin, burstPct int, modelLimits []TenantModelRateLimit) error
 	NetTenantRateLimitGet(tenantID string) (*TenantRateLimitEntry, error)
 
 	// Bridge-VID allocator indirection.
@@ -2125,9 +2125,15 @@ type TenantModelRateLimit struct {
 
 // TenantRateLimitEntry - per-tenant rate limit configuration with metadata
 type TenantRateLimitEntry struct {
-	TenantID     string                 `json:"tenant_id"`
-	RPS          int                    `json:"rps"`
-	TokensPerMin int                    `json:"tokens_per_min"`
-	ModelLimits  []TenantModelRateLimit `json:"model_limits,omitempty"`
-	UpdatedAt    time.Time              `json:"updated_at"`
+	TenantID     string `json:"tenant_id"`
+	RPS          int    `json:"rps"`
+	TokensPerMin int    `json:"tokens_per_min"`
+	// BurstPct is the tenant's token-bucket capacity as a percentage of
+	// TokensPerMin: how much of a minute's quota a fully idle tenant may
+	// spend at once. Zero means the tenant has no override and the
+	// process-wide default (LLB_AI_QUOTA_BURST_PCT, itself defaulting to
+	// 100) applies.
+	BurstPct    int                    `json:"burst_pct"`
+	ModelLimits []TenantModelRateLimit `json:"model_limits,omitempty"`
+	UpdatedAt   time.Time              `json:"updated_at"`
 }

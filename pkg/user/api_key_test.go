@@ -58,6 +58,7 @@ func setupTestDB(t *testing.T) *sql.DB {
 		tenant_id TEXT PRIMARY KEY,
 		rps INTEGER DEFAULT 0,
 		tokens_per_min INTEGER DEFAULT 0,
+		burst_pct INTEGER DEFAULT 0,
 		updated_at DATETIME
 	)`)
 	if err != nil {
@@ -325,7 +326,7 @@ func TestDeleteAPIKeyHardRemoves(t *testing.T) {
 // TestSetTenantRateLimit verifies that the rate limit is persisted in the DB.
 func TestSetTenantRateLimit(t *testing.T) {
 	svc := newTestService(t)
-	if err := svc.SetTenantRateLimit("tenant5", 100, 2000); err != nil {
+	if err := svc.SetTenantRateLimit("tenant5", 100, 2000, 0); err != nil {
 		t.Fatalf("SetTenantRateLimit: %v", err)
 	}
 
@@ -341,10 +342,10 @@ func TestSetTenantRateLimit(t *testing.T) {
 // TestSetTenantRateLimit_Upsert verifies that a second call updates the existing row.
 func TestSetTenantRateLimit_Upsert(t *testing.T) {
 	svc := newTestService(t)
-	if err := svc.SetTenantRateLimit("tenant6", 10, 100); err != nil {
+	if err := svc.SetTenantRateLimit("tenant6", 10, 100, 0); err != nil {
 		t.Fatalf("first SetTenantRateLimit: %v", err)
 	}
-	if err := svc.SetTenantRateLimit("tenant6", 20, 200); err != nil {
+	if err := svc.SetTenantRateLimit("tenant6", 20, 200, 0); err != nil {
 		t.Fatalf("upsert SetTenantRateLimit: %v", err)
 	}
 
@@ -361,11 +362,11 @@ func TestSetTenantRateLimit_Upsert(t *testing.T) {
 // the cache so that GetTenantRateLimit returns without a DB round-trip.
 func TestGetTenantRateLimit_CacheHit(t *testing.T) {
 	svc := newTestService(t)
-	if err := svc.SetTenantRateLimit("tenant7", 50, 500); err != nil {
+	if err := svc.SetTenantRateLimit("tenant7", 50, 500, 0); err != nil {
 		t.Fatalf("SetTenantRateLimit: %v", err)
 	}
 	// Cache is populated by Set; this call must return from cache.
-	rps, tpm := svc.GetTenantRateLimit("tenant7")
+	rps, tpm, _ := svc.GetTenantRateLimit("tenant7")
 	if rps != 50 || tpm != 500 {
 		t.Fatalf("want rps=50 tpm=500, got rps=%d tpm=%d", rps, tpm)
 	}
@@ -374,13 +375,13 @@ func TestGetTenantRateLimit_CacheHit(t *testing.T) {
 // TestGetTenantRateLimit_CacheMiss_DBHit confirms a cold-cache read from the DB.
 func TestGetTenantRateLimit_CacheMiss_DBHit(t *testing.T) {
 	svc := newTestService(t)
-	if err := svc.SetTenantRateLimit("tenant8", 75, 750); err != nil {
+	if err := svc.SetTenantRateLimit("tenant8", 75, 750, 0); err != nil {
 		t.Fatalf("SetTenantRateLimit: %v", err)
 	}
 	// Flush cache to force DB read.
 	svc.Cache.Flush()
 
-	rps, tpm := svc.GetTenantRateLimit("tenant8")
+	rps, tpm, _ := svc.GetTenantRateLimit("tenant8")
 	if rps != 75 || tpm != 750 {
 		t.Fatalf("want rps=75 tpm=750, got rps=%d tpm=%d", rps, tpm)
 	}
@@ -389,7 +390,7 @@ func TestGetTenantRateLimit_CacheMiss_DBHit(t *testing.T) {
 // TestGetTenantRateLimit_NotFound confirms (0,0) is returned for unknown tenants.
 func TestGetTenantRateLimit_NotFound(t *testing.T) {
 	svc := newTestService(t)
-	rps, tpm := svc.GetTenantRateLimit("nonexistent-tenant")
+	rps, tpm, _ := svc.GetTenantRateLimit("nonexistent-tenant")
 	if rps != 0 || tpm != 0 {
 		t.Fatalf("want rps=0 tpm=0 for unknown tenant, got rps=%d tpm=%d", rps, tpm)
 	}

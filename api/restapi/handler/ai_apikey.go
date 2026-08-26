@@ -196,7 +196,7 @@ func ConfigPostAITenantRateLimit(params aiops.PostConfigAiTenantRatelimitParams,
 		})
 	}
 
-	if err := ApiHooks.NetTenantRateLimitSet(*body.TenantID, int(body.Rps), int(body.TokensPerMin), modelLimits); err != nil {
+	if err := ApiHooks.NetTenantRateLimitSet(*body.TenantID, int(body.Rps), int(body.TokensPerMin), int(body.BurstPct), modelLimits); err != nil {
 		tk.LogIt(tk.LogError, "[AITenantRateLimit] Failed to set rate limit for tenant %s: %v\n", *body.TenantID, err)
 		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
@@ -221,6 +221,7 @@ func ConfigGetAITenantRateLimit(params aiops.GetConfigAiTenantRatelimitTenantIDP
 		TenantID:     &tenantID,
 		Rps:          int64(entry.RPS),
 		TokensPerMin: int64(entry.TokensPerMin),
+		BurstPct:     int64(entry.BurstPct),
 		UpdatedAt:    strfmt.DateTime(entry.UpdatedAt),
 	}
 	for _, ml := range entry.ModelLimits {

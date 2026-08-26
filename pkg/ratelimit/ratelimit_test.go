@@ -214,13 +214,13 @@ func TestAllowTokensRefillRate(t *testing.T) {
 
 	// Drain the whole bucket (burst = 100% of the limit by default).
 	for i := 0; i < 10; i++ {
-		allowed, _ := s.AllowTokens("tenant1", 10, tokensPerMin)
+		allowed, _ := s.AllowTokens("tenant1", 10, tokensPerMin, 0)
 		if !allowed {
 			t.Fatalf("iteration %d: expected allowed within quota", i)
 		}
 	}
 	// One more charge puts the bucket in debt (total = 110 > 100).
-	allowed, retry := s.AllowTokens("tenant1", 10, tokensPerMin)
+	allowed, retry := s.AllowTokens("tenant1", 10, tokensPerMin, 0)
 	if allowed {
 		t.Fatal("should be denied after consuming full quota")
 	}
@@ -233,10 +233,10 @@ func TestAllowTokensRefillRate(t *testing.T) {
 	// 20-token charge (level now 10) does not — the budget refills
 	// CONTINUOUSLY, there is no minute boundary that resets it wholesale.
 	advanceQuotaClock(30_000)
-	if allowed, _ = s.AllowTokens("tenant1", 30, tokensPerMin); !allowed {
+	if allowed, _ = s.AllowTokens("tenant1", 30, tokensPerMin, 0); !allowed {
 		t.Fatal("30-token charge should fit the partially refilled bucket")
 	}
-	if allowed, _ = s.AllowTokens("tenant1", 20, tokensPerMin); allowed {
+	if allowed, _ = s.AllowTokens("tenant1", 20, tokensPerMin, 0); allowed {
 		t.Fatal("20-token charge should overdraw the partially refilled bucket")
 	}
 }
@@ -254,7 +254,7 @@ func TestNoBoundaryDoubleSpend(t *testing.T) {
 	const tokensPerMin = 600
 
 	// Drain the full burst "just before the minute boundary".
-	if allowed, _ := s.AllowTokens("tenant1", 600, tokensPerMin); !allowed {
+	if allowed, _ := s.AllowTokens("tenant1", 600, tokensPerMin, 0); !allowed {
 		t.Fatal("draining the full burst from a fresh bucket must be allowed")
 	}
 
@@ -263,13 +263,13 @@ func TestNoBoundaryDoubleSpend(t *testing.T) {
 	// admission through ReserveTokens, which unlike the post-hoc charge
 	// path does not consume anything on a deny.
 	advanceQuotaClock(2_000)
-	if allowed, _, _ := s.ReserveTokens("tenant1", 600, tokensPerMin); allowed {
+	if allowed, _, _ := s.ReserveTokens("tenant1", 600, tokensPerMin, 0); allowed {
 		t.Fatal("full-quota re-spend 2s after draining the bucket must be denied")
 	}
-	if allowed, _, _ := s.ReserveTokens("tenant1", 21, tokensPerMin); allowed {
+	if allowed, _, _ := s.ReserveTokens("tenant1", 21, tokensPerMin, 0); allowed {
 		t.Fatal("more than the 2s refill grant must be denied")
 	}
-	if allowed, _, _ := s.ReserveTokens("tenant1", 20, tokensPerMin); !allowed {
+	if allowed, _, _ := s.ReserveTokens("tenant1", 20, tokensPerMin, 0); !allowed {
 		t.Fatal("exactly the 2s refill grant must be admitted")
 	}
 }
@@ -287,7 +287,7 @@ func TestAllowTokensQuotaExceededDetection(t *testing.T) {
 	}
 
 	// Consume exactly the quota.
-	allowed, _ := s.AllowTokens("tenant1", 50, tokensPerMin)
+	allowed, _ := s.AllowTokens("tenant1", 50, tokensPerMin, 0)
 	if !allowed {
 		t.Fatal("should be allowed when consuming exactly the quota")
 	}
@@ -296,7 +296,7 @@ func TestAllowTokensQuotaExceededDetection(t *testing.T) {
 	}
 
 	// One more token exceeds the quota.
-	allowed, _ = s.AllowTokens("tenant1", 1, tokensPerMin)
+	allowed, _ = s.AllowTokens("tenant1", 1, tokensPerMin, 0)
 	if allowed {
 		t.Fatal("should be denied once over quota")
 	}
@@ -318,8 +318,8 @@ func TestTokenQuotaExceededDrainsWithRefill(t *testing.T) {
 	const tokensPerMin = 100
 
 	// Trip the quota: 10 tokens of debt (6s of refill at 100/min).
-	s.AllowTokens("tenant1", 100, tokensPerMin)
-	if allowed, _ := s.AllowTokens("tenant1", 10, tokensPerMin); allowed {
+	s.AllowTokens("tenant1", 100, tokensPerMin, 0)
+	if allowed, _ := s.AllowTokens("tenant1", 10, tokensPerMin, 0); allowed {
 		t.Fatal("should be denied over quota")
 	}
 	if !s.IsTokenQuotaExceeded("tenant1") {
@@ -336,7 +336,7 @@ func TestTokenQuotaExceededDrainsWithRefill(t *testing.T) {
 
 	// The freshly refilled headroom (~1 token past even) admits a small
 	// charge cleanly.
-	if allowed, _ := s.AllowTokens("tenant1", 1, tokensPerMin); !allowed {
+	if allowed, _ := s.AllowTokens("tenant1", 1, tokensPerMin, 0); !allowed {
 		t.Fatal("drained bucket should allow a small charge")
 	}
 }
@@ -350,15 +350,15 @@ func TestAllowTokensPerTenantIsolation(t *testing.T) {
 	const tokensPerMin = 100
 
 	// Exhaust tenant A.
-	s.AllowTokens("tenantA", 100, tokensPerMin)
-	s.AllowTokens("tenantA", 1, tokensPerMin) // push over quota
+	s.AllowTokens("tenantA", 100, tokensPerMin, 0)
+	s.AllowTokens("tenantA", 1, tokensPerMin, 0) // push over quota
 
 	if !s.IsTokenQuotaExceeded("tenantA") {
 		t.Fatal("tenantA should be quota-exceeded")
 	}
 
 	// Tenant B is completely independent.
-	allowed, _ := s.AllowTokens("tenantB", 50, tokensPerMin)
+	allowed, _ := s.AllowTokens("tenantB", 50, tokensPerMin, 0)
 	if !allowed {
 		t.Fatal("tenantB should not be affected by tenantA's quota exhaustion")
 	}
@@ -372,7 +372,7 @@ func TestAllowTokensZeroQuotaSkipsCheck(t *testing.T) {
 	s := &RateLimiterStore{entries: make(map[string]*limiterEntry)}
 
 	for i := 0; i < 100; i++ {
-		allowed, retry := s.AllowTokens("tenant1", 1000, 0)
+		allowed, retry := s.AllowTokens("tenant1", 1000, 0, 0)
 		if !allowed {
 			t.Fatalf("tokensPerMin=0 should always allow, denied at iteration %d", i)
 		}
@@ -404,14 +404,14 @@ func TestAllowTokensHotPath(t *testing.T) {
 	s := &RateLimiterStore{entries: make(map[string]*limiterEntry)}
 
 	// Warm up the entry so it exists in quotaMap before timing.
-	s.AllowTokens("t", 1, tokensPerMin)
+	s.AllowTokens("t", 1, tokensPerMin, 0)
 
 	batches := calls / batchSize
 	batchAvgNs := make([]int64, batches)
 	for i := range batchAvgNs {
 		start := time.Now()
 		for j := 0; j < batchSize; j++ {
-			s.AllowTokens("t", 1, tokensPerMin)
+			s.AllowTokens("t", 1, tokensPerMin, 0)
 		}
 		batchAvgNs[i] = time.Since(start).Nanoseconds() / batchSize
 	}
@@ -467,10 +467,10 @@ func TestTokenQuotaSnapshot(t *testing.T) {
 		t.Fatalf("expected empty snapshot before any charge, got %d entries", len(snap))
 	}
 
-	s.AllowTokens("tenant1", 30, 100)
-	s.AllowTokens("tenant1", 20, 100)
+	s.AllowTokens("tenant1", 30, 100, 0)
+	s.AllowTokens("tenant1", 20, 100, 0)
 	// tokensPerMin=0 skips the quota map entirely — no entry to report.
-	s.AllowTokens("tenant2", 500, 0)
+	s.AllowTokens("tenant2", 500, 0, 0)
 
 	snap := s.TokenQuotaSnapshot()
 	if len(snap) != 1 {
@@ -484,7 +484,7 @@ func TestTokenQuotaSnapshot(t *testing.T) {
 	// rescales the whole outstanding debt to the new refill rate: 50 tokens
 	// of debt at 100/min is 30s of drain time, which at 200/min prices as
 	// 100 tokens; plus 10 charged at 200/min = 110.
-	s.AllowTokens("tenant1", 10, 200)
+	s.AllowTokens("tenant1", 10, 200, 0)
 	snap = s.TokenQuotaSnapshot()
 	if snap[0].Consumed != 110 || snap[0].Limit != 200 {
 		t.Fatalf("expected consumed=110 limit=200 after config change, got %+v", snap[0])
@@ -509,13 +509,13 @@ func TestReserveTokensAdmission(t *testing.T) {
 
 	const tokensPerMin = 1000
 
-	allowed, _, ep := s.ReserveTokens("tenant1", 600, tokensPerMin)
+	allowed, _, ep := s.ReserveTokens("tenant1", 600, tokensPerMin, 0)
 	if !allowed || ep == 0 {
 		t.Fatalf("first reservation within quota must be admitted (allowed=%v epoch=%d)", allowed, ep)
 	}
 
 	// 600 reserved + 500 wanted > 1000: deny.
-	allowed, retry, ep2 := s.ReserveTokens("tenant1", 500, tokensPerMin)
+	allowed, retry, ep2 := s.ReserveTokens("tenant1", 500, tokensPerMin, 0)
 	if allowed {
 		t.Fatal("reservation exceeding the window headroom must be denied")
 	}
@@ -534,7 +534,7 @@ func TestReserveTokensAdmission(t *testing.T) {
 
 	// A smaller request still fits (600 + 300 <= 1000) — and the denied
 	// reservation must not have leaked its claim into the counter.
-	allowed, _, _ = s.ReserveTokens("tenant1", 300, tokensPerMin)
+	allowed, _, _ = s.ReserveTokens("tenant1", 300, tokensPerMin, 0)
 	if !allowed {
 		t.Fatal("smaller reservation must be admitted after a larger one was denied")
 	}
@@ -549,18 +549,18 @@ func TestReserveSettleReleasesAndCharges(t *testing.T) {
 
 	const tokensPerMin = 1000
 
-	allowed, _, ep := s.ReserveTokens("tenant1", 500, tokensPerMin)
+	allowed, _, ep := s.ReserveTokens("tenant1", 500, tokensPerMin, 0)
 	if !allowed {
 		t.Fatal("reservation should be admitted")
 	}
 
 	// Completion finished far short of max_tokens: actual charge 100.
-	if allowed, _ := s.SettleTokens("tenant1", 100, 500, ep, tokensPerMin); !allowed {
+	if allowed, _ := s.SettleTokens("tenant1", 100, 500, ep, tokensPerMin, 0); !allowed {
 		t.Fatal("settlement within quota should be allowed")
 	}
 
 	// The freed 400 must be reusable at once: 100 consumed + 900 wanted = 1000.
-	allowed, _, _ = s.ReserveTokens("tenant1", 900, tokensPerMin)
+	allowed, _, _ = s.ReserveTokens("tenant1", 900, tokensPerMin, 0)
 	if !allowed {
 		t.Fatal("released reservation headroom must be reusable immediately")
 	}
@@ -574,10 +574,10 @@ func TestSettleChargeLatchesWhenOverQuota(t *testing.T) {
 
 	const tokensPerMin = 100
 
-	_, _, ep := s.ReserveTokens("tenant1", 50, tokensPerMin)
+	_, _, ep := s.ReserveTokens("tenant1", 50, tokensPerMin, 0)
 	// The engine produced more than reserved (client under-declared max_tokens
 	// or the estimate ran hot): the real charge wins and latches.
-	allowed, retry := s.SettleTokens("tenant1", 150, 50, ep, tokensPerMin)
+	allowed, retry := s.SettleTokens("tenant1", 150, 50, ep, tokensPerMin, 0)
 	if allowed || retry <= 0 {
 		t.Fatalf("over-quota settlement must deny and latch (allowed=%v retry=%d)", allowed, retry)
 	}
@@ -596,7 +596,7 @@ func TestSettleSkipsReleaseAfterRollover(t *testing.T) {
 
 	const tokensPerMin = 1000
 
-	s.ReserveTokens("tenant1", 400, tokensPerMin)
+	s.ReserveTokens("tenant1", 400, tokensPerMin, 0)
 
 	// Roll the window over (the epoch-advance simulation used throughout this
 	// file), then let a NEW request win the reset and record its claim. The
@@ -607,14 +607,14 @@ func TestSettleSkipsReleaseAfterRollover(t *testing.T) {
 	v, _ := s.quotaMap.Load("tenant1")
 	e := v.(*tokenWindowEntry)
 	atomic.StoreInt64(&e.windowEpoch, atomic.LoadInt64(&e.windowEpoch)-1)
-	_, _, freshEp := s.ReserveTokens("tenant1", 300, tokensPerMin)
+	_, _, freshEp := s.ReserveTokens("tenant1", 300, tokensPerMin, 0)
 	staleEp := freshEp - 1
 	if got := atomic.LoadInt64(&e.reserved); got != 300 {
 		t.Fatalf("rollover winner must seed reserved with its own claim only, got %d", got)
 	}
 
 	// Settling the STALE reservation must charge but not release.
-	s.SettleTokens("tenant1", 50, 400, staleEp, tokensPerMin)
+	s.SettleTokens("tenant1", 50, 400, staleEp, tokensPerMin, 0)
 	if got := atomic.LoadInt64(&e.reserved); got != 300 {
 		t.Fatalf("stale-epoch settlement must not touch the new window's reserved, got %d", got)
 	}
@@ -631,12 +631,12 @@ func TestReserveOversizeNeverAdmits(t *testing.T) {
 
 	const tokensPerMin = 100
 
-	allowed, _, ep := s.ReserveTokens("tenant1", 500, tokensPerMin)
+	allowed, _, ep := s.ReserveTokens("tenant1", 500, tokensPerMin, 0)
 	if allowed || ep != 0 {
 		t.Fatal("reservation larger than the whole quota must be denied with no epoch")
 	}
 	// The failed admission must not consume headroom.
-	if allowed, _, _ := s.ReserveTokens("tenant1", 100, tokensPerMin); !allowed {
+	if allowed, _, _ := s.ReserveTokens("tenant1", 100, tokensPerMin, 0); !allowed {
 		t.Fatal("full-quota reservation must be admitted after an oversize deny")
 	}
 }
@@ -647,14 +647,14 @@ func TestReserveZeroConfigSkips(t *testing.T) {
 	pinQuotaClock(t)
 	s := &RateLimiterStore{entries: make(map[string]*limiterEntry)}
 
-	if allowed, _, ep := s.ReserveTokens("tenant1", 1000, 0); !allowed || ep != 0 {
+	if allowed, _, ep := s.ReserveTokens("tenant1", 1000, 0, 0); !allowed || ep != 0 {
 		t.Fatal("tokensPerMin=0 must skip reservation and admit")
 	}
-	if allowed, _, ep := s.ReserveTokens("tenant1", 0, 100); !allowed || ep != 0 {
+	if allowed, _, ep := s.ReserveTokens("tenant1", 0, 100, 0); !allowed || ep != 0 {
 		t.Fatal("want=0 must skip reservation and admit")
 	}
 	// SettleTokens with no reservation degenerates to a plain charge.
-	if allowed, _ := s.SettleTokens("tenant1", 50, 0, 0, 100); !allowed {
+	if allowed, _ := s.SettleTokens("tenant1", 50, 0, 0, 100, 0); !allowed {
 		t.Fatal("degenerate settlement within quota must be allowed")
 	}
 	if _, ok := s.quotaMap.Load("tenant1"); !ok {
@@ -673,9 +673,9 @@ func TestReservedClampNeverNegative(t *testing.T) {
 
 	const tokensPerMin = 1000
 
-	_, _, ep := s.ReserveTokens("tenant1", 200, tokensPerMin)
-	s.SettleTokens("tenant1", 10, 200, ep, tokensPerMin)
-	s.SettleTokens("tenant1", 10, 200, ep, tokensPerMin) // double settle
+	_, _, ep := s.ReserveTokens("tenant1", 200, tokensPerMin, 0)
+	s.SettleTokens("tenant1", 10, 200, ep, tokensPerMin, 0)
+	s.SettleTokens("tenant1", 10, 200, ep, tokensPerMin, 0) // double settle
 
 	v, _ := s.quotaMap.Load("tenant1")
 	e := v.(*tokenWindowEntry)
@@ -683,7 +683,7 @@ func TestReservedClampNeverNegative(t *testing.T) {
 		t.Fatalf("reserved must clamp at 0 after double release, got %d", got)
 	}
 	// Admission math must still be sound: 20 consumed, 0 reserved → 980 fits.
-	if allowed, _, _ := s.ReserveTokens("tenant1", 980, tokensPerMin); !allowed {
+	if allowed, _, _ := s.ReserveTokens("tenant1", 980, tokensPerMin, 0); !allowed {
 		t.Fatal("admission after double release must use clamped (not negative) reserved")
 	}
 }
@@ -697,18 +697,18 @@ func TestAllowTokensRolloverZeroesReserved(t *testing.T) {
 
 	const tokensPerMin = 1000
 
-	s.ReserveTokens("tenant1", 900, tokensPerMin)
+	s.ReserveTokens("tenant1", 900, tokensPerMin, 0)
 
 	v, _ := s.quotaMap.Load("tenant1")
 	e := v.(*tokenWindowEntry)
 	atomic.StoreInt64(&e.windowEpoch, atomic.LoadInt64(&e.windowEpoch)-1)
 
 	// A plain charge wins the rollover reset.
-	s.AllowTokens("tenant1", 100, tokensPerMin)
+	s.AllowTokens("tenant1", 100, tokensPerMin, 0)
 	if got := atomic.LoadInt64(&e.reserved); got != 0 {
 		t.Fatalf("AllowTokens rollover must zero reserved, got %d", got)
 	}
-	if allowed, _, _ := s.ReserveTokens("tenant1", 900, tokensPerMin); !allowed {
+	if allowed, _, _ := s.ReserveTokens("tenant1", 900, tokensPerMin, 0); !allowed {
 		t.Fatal("new window must admit against consumed only (100 + 900 <= 1000)")
 	}
 }
@@ -722,8 +722,8 @@ func TestCleanupEvictsIdleQuotaEntries(t *testing.T) {
 	pinQuotaClock(t)
 	s := newTestStore()
 
-	s.AllowTokens("fresh", 10, 100)
-	s.AllowTokens("idle", 10, 100)
+	s.AllowTokens("fresh", 10, 100, 0)
+	s.AllowTokens("idle", 10, 100, 0)
 
 	// Backdate the idle tenant to exactly the eviction horizon.
 	v, ok := s.quotaMap.Load("idle")
@@ -759,7 +759,7 @@ func TestCleanupEvictsIdleQuotaEntries(t *testing.T) {
 	}
 
 	// A returning tenant restarts from a full bucket.
-	if allowed, _ := s.AllowTokens("idle", 10, 100); !allowed {
+	if allowed, _ := s.AllowTokens("idle", 10, 100, 0); !allowed {
 		t.Fatal("returning tenant must be re-admitted after eviction")
 	}
 	if _, ok = s.quotaMap.Load("idle"); !ok {
@@ -847,4 +847,96 @@ func TestQuotaWarmupDisabled(t *testing.T) {
 		t.Fatal("timeout<=0 must leave the store warm")
 	}
 	s.ImportState(nil)
+}
+
+// TestBurstTokensForPerTenantOverride pins the resolution order of the
+// capacity knob: a tenant value wins, zero falls back to the process-wide
+// default, and an out-of-range tenant value is clamped rather than trusted —
+// a bad row in the database must be no more dangerous than a bad environment
+// variable.
+func TestBurstTokensForPerTenantOverride(t *testing.T) {
+	saved := quotaBurstPct
+	quotaBurstPct = 100
+	defer func() { quotaBurstPct = saved }()
+
+	cases := []struct {
+		name  string
+		limit int64
+		pct   int64
+		want  int64
+	}{
+		{"zero falls back to the process default", 1000, 0, 1000},
+		{"negative falls back too", 1000, -5, 1000},
+		{"tenant override halves the bucket", 1000, 50, 500},
+		{"tenant override widens the bucket", 1000, 300, 3000},
+		{"above the ceiling clamps to max", 1000, 99999, 1000 * quotaBurstMaxPct / 100},
+		{"the smallest accepted override is the floor", 1000, quotaBurstMinPct, 10},
+		{"a bucket never rounds down to zero", 10, 1, 1},
+	}
+	for _, c := range cases {
+		if got := burstTokensFor(c.limit, c.pct); got != c.want {
+			t.Errorf("%s: burstTokensFor(%d, %d) = %d, want %d", c.name, c.limit, c.pct, got, c.want)
+		}
+	}
+}
+
+// TestReserveTokensHonoursPerTenantBurst is the behavioural half: the same
+// request that a default-capacity tenant is admitted for must be refused for
+// a tenant whose configured burst cannot hold it. Without the knob reaching
+// the bucket, both calls would be admitted and the config would be decorative.
+func TestReserveTokensHonoursPerTenantBurst(t *testing.T) {
+	s := &RateLimiterStore{entries: make(map[string]*limiterEntry)}
+	const tokensPerMin = 1000
+
+	// Default capacity (100%): a 900-token claim fits inside the bucket.
+	if allowed, _, _ := s.ReserveTokens("wide", 900, tokensPerMin, 0); !allowed {
+		t.Fatal("900 of a 1000 TPM quota must be admitted at the default burst")
+	}
+
+	// Same quota, capacity narrowed to 50%: the bucket only holds 500, so the
+	// claim can never be satisfied and must be denied outright.
+	allowed, retry, ep := s.ReserveTokens("narrow", 900, tokensPerMin, 50)
+	if allowed {
+		t.Fatal("900 tokens must be denied for a tenant whose burst holds 500")
+	}
+	if retry <= 0 {
+		t.Fatal("denied reservation must carry a retry-after hint")
+	}
+	if ep != 0 {
+		t.Fatal("a claim larger than the bucket must not be recorded")
+	}
+
+	// The narrowed tenant is not broken, only narrower: a claim that fits its
+	// bucket is still admitted.
+	if allowed, _, _ := s.ReserveTokens("narrow", 400, tokensPerMin, 50); !allowed {
+		t.Fatal("400 tokens must still be admitted at a 50% burst of 1000 TPM")
+	}
+}
+
+// TestIsTokenQuotaExceededUsesStoredBurst proves the knob survives the trip
+// through the entry. IsTokenQuotaExceeded is handed a key and nothing else —
+// no service to ask for config — so if the charge did not publish the tenant's
+// capacity onto the entry, the debt threshold would silently revert to the
+// process-wide default for every read the request gate makes.
+func TestIsTokenQuotaExceededUsesStoredBurst(t *testing.T) {
+	s := &RateLimiterStore{entries: make(map[string]*limiterEntry)}
+	const tokensPerMin = 600
+
+	// 900 tokens against a 600 TPM quota. At the default 100% capacity the
+	// bucket holds 600, so the charge lands 300 beyond empty — in debt.
+	if allowed, _ := s.AllowTokens("dflt", 900, tokensPerMin, 0); allowed {
+		t.Fatal("a charge past the default burst must report debt")
+	}
+	if !s.IsTokenQuotaExceeded("dflt") {
+		t.Fatal("gate must see the debt the charge just reported")
+	}
+
+	// Same charge, same quota, capacity widened to 300%: the bucket holds
+	// 1800, so 900 sits comfortably inside it and the gate must stay open.
+	if allowed, _ := s.AllowTokens("wide", 900, tokensPerMin, 300); !allowed {
+		t.Fatal("a charge inside a widened burst must not report debt")
+	}
+	if s.IsTokenQuotaExceeded("wide") {
+		t.Fatal("gate read the default capacity instead of the tenant's stored one")
+	}
 }
