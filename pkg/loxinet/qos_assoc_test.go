@@ -54,9 +54,10 @@ func TestPolAssociateLbRuleEmptyIsNoop(t *testing.T) {
 }
 
 // TestPolAssociateLbRuleIdempotentAttach: associating an ident that is ALREADY attached to
-// the same lbKey is a no-op (the attachment is set, not appended twice) — re-running an
-// LB-create must not duplicate the policer↔rule edge. This path does not touch the
-// dataplane (the duplicate is detected before any DP call).
+// the same lbKey must not duplicate the policer↔rule edge — re-running an LB-create keeps
+// exactly one attachment. The duplicate IS re-driven through PolObj2DP (a deleted and
+// re-created rule starts with polid 0 and needs the re-push), but with no zone wired the
+// re-drive only flags Sync for the ticker.
 func TestPolAssociateLbRuleIdempotentAttach(t *testing.T) {
 	lbKey := "20.20.20.1:443:tcp"
 	p := &PolEntry{}

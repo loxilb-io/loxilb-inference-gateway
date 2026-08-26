@@ -61,7 +61,7 @@ const (
 		`key_hash VARCHAR(64) NOT NULL,` +
 		`tenant_id VARCHAR(128) NOT NULL,` +
 		`name VARCHAR(255) NOT NULL DEFAULT '',` +
-		`allowed_models TEXT NOT NULL DEFAULT '',` +
+		`allowed_models TEXT NOT NULL,` +
 		`rate_limit_rps INT DEFAULT 0,` +
 		`burst_size INT DEFAULT 0,` +
 		`tokens_per_min INT DEFAULT 0,` +
@@ -76,6 +76,14 @@ const (
 		`rps INT NOT NULL DEFAULT 0,` +
 		`tokens_per_min INT NOT NULL DEFAULT 0,` +
 		`updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)` +
+		`) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+
+	CreateTenantModelRateLimitsTableQuery = `CREATE TABLE IF NOT EXISTS tenant_model_rate_limits (` +
+		`tenant_id VARCHAR(128) NOT NULL,` +
+		`model VARCHAR(255) NOT NULL,` +
+		`tokens_per_min INT NOT NULL DEFAULT 0,` +
+		`updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),` +
+		`PRIMARY KEY (tenant_id, model)` +
 		`) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
 
 	CreateUsersTableQuery = `CREATE TABLE IF NOT EXISTS users (` +
@@ -138,6 +146,10 @@ func InitDB() (*sql.DB, error) {
 	}
 	if _, err = db.Exec(CreateTenantRateLimitsTableQuery); err != nil {
 		tk.LogIt(tk.LogCritical, "Failed to create tenant_rate_limits table: %v\n", err)
+		return nil, err
+	}
+	if _, err = db.Exec(CreateTenantModelRateLimitsTableQuery); err != nil {
+		tk.LogIt(tk.LogCritical, "Failed to create tenant_model_rate_limits table: %v\n", err)
 		return nil, err
 	}
 	return db, nil

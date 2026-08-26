@@ -636,6 +636,7 @@ type ruleEnt struct {
 	lastUpdated                 time.Time         // in-memory only, reset-to-now on restart, NEVER serialized
 	projectId                   string            // opaque tenant id, stored verbatim, filtered on GET /all (NOT authz)
 	connLimit                   uint32            // per-service concurrent-connection ceiling (0 = unlimited); plumbed to the dataplane conn_limit
+	qosPolId                    uint16            // Tier-0 rule-attached policer id (polx_map key; 0 = none); plumbed to the dataplane polid, owned by the policer attachment (RuleQosPolAttach), not by LB-create args
 	activeConns                 uint64            // live concurrent-connection count, snapshotted each RulesSync from the datapath nat_ep_map conc_conns (selector-agnostic — the SAME notion of "current" the connLimit gate enforces; NOT the LC-only active_sess[]). In-memory, reset to 0 on restart.
 	totalConns                  uint64            // cumulative connection count, snapshotted each RulesSync from the datapath nat_ep_map total_conns (++ on CT-create in the datapath so even sub-tick flows count; never decremented). In-memory, reset to 0 on restart.
 	bytesIn                     uint64            // cumulative client->VIP request bytes = datapath cum_bytes_in (closed flows) + live CT_DIR_IN bytes (in-flight). Real per-direction split; NOT a 50/50 heuristic, NOT the direction-collapsed nat_stats_map. In-memory, reset on restart.
@@ -1661,7 +1662,7 @@ func (R *RuleH) unregisterOpaqueID(r *ruleEnt) {
 // key format: "VIP:PORT:PROTO" (e.g., "20.20.20.1:5201:tcp") for exact match,
 // or just "VIP" (e.g., "20.20.20.1") for first-match by IP only (legacy compat).
 // Used QoS policer to associate DOCA meters with LB rules.
-func (R *RuleH) GetLBRuleMarkByKey(key string) int {
+func (R *RuleH) getLBRuleByKey(key string) *ruleEnt {
 	parts := strings.SplitN(key, ":", 3)
 	vipIP := parts[0]
 	var port uint16
@@ -1691,9 +1692,77 @@ func (R *RuleH) GetLBRuleMarkByKey(key string) int {
 				continue
 			}
 		}
-		return int(data.ruleNum)
+		return data
+	}
+	return nil
+}
+
+func (R *RuleH) GetLBRuleMarkByKey(key string) int {
+	if r := R.getLBRuleByKey(key); r != nil {
+		return int(r.ruleNum)
 	}
 	return 0
+}
+
+// RuleQosPolAttach - attach/detach a policer to the LB rule identified by
+// lbKey ("VIP:PORT:PROTO"). polid 0 detaches. For an L4 rule the polid lands
+// in the rule's dataplane act (dp_proxy_tacts.polid) via a rule re-sync, from
+// where the NAT datapath copies it per-flow into CT state (Tier-0 policing,
+// wire bytes). A fullproxy rule never writes nat_map, so the same policer
+// instead configures the sockproxy L7 byte shaper (Tier-1, plaintext payload
+// bytes) from its CIR/PIR/CBS — different meters, one attachment surface.
+func (R *RuleH) RuleQosPolAttach(lbKey string, polid uint16, pInfo *cmn.PolInfo) (int, error) {
+	r := R.getLBRuleByKey(lbKey)
+	if r == nil {
+		return RuleNotExistsErr, errors.New("no such lb-rule for policer attach")
+	}
+	if r.act.actType == RtActFullProxy {
+		// A fullproxy rule has no L4 datapath entry to police; the policer
+		// instead drives the sockproxy L7 byte shaper, which paces the
+		// relay's plaintext payload at the policer's CIR in both directions
+		// (independent per-direction buckets). Rates are bits/sec (PolInfo
+		// native unit); polid 0 detaches.
+		if r.qosPolId == polid {
+			return 0, nil
+		}
+		var cirBps, pirBps uint64
+		var cbsBytes uint32
+		if polid != 0 {
+			if pInfo == nil {
+				return RuleArgsErr, errors.New("no policer info for fullproxy shaper attach")
+			}
+			cirBps = pInfo.CommittedInfoRate
+			pirBps = pInfo.PeakInfoRate
+			cbsBytes = uint32(pInfo.CommittedBlkSize)
+		}
+		if mh.dpEbpf == nil ||
+			mh.dpEbpf.DpLBSetQosShaper(r.tuples.l3Dst.addr.IP, r.tuples.l4Dst.valMin,
+				r.tuples.l4Prot.val, cirBps, pirBps, cbsBytes) != 0 {
+			return RuleArgsErr, errors.New("fullproxy shaper config failed")
+		}
+		r.qosPolId = polid
+		return 0, nil
+	}
+	if r.qosPolId == polid {
+		return 0, nil
+	}
+	r.qosPolId = polid
+	r.DP(DpCreate)
+	return 0, nil
+}
+
+// RuleQosPolInSync - true when the rule identified by lbKey already carries
+// polid in its datapath act. Used by the policer ticker to detect a rule that
+// was deleted and re-created (the fresh ruleEnt starts with qosPolId 0 even
+// though the association object survives). Applies to fullproxy rules too:
+// their L7 shaper config is dropped with the proxy entry on rule delete, so
+// a re-created rule must be re-driven the same way.
+func (R *RuleH) RuleQosPolInSync(lbKey string, polid uint16) bool {
+	r := R.getLBRuleByKey(lbKey)
+	if r == nil {
+		return false
+	}
+	return r.qosPolId == polid
 }
 
 // GetLBRuleByServArgs - Get a LB rule by its service args
@@ -5333,6 +5402,7 @@ func (r *ruleEnt) LB2DP(work DpWorkT) int {
 	nWork.InActTo = uint64(r.iTO)
 	nWork.PersistTo = uint64(r.pTO)
 	nWork.ConnLimit = r.connLimit // per-service concurrent-conn ceiling (0 = unlimited)
+	nWork.PolId = r.qosPolId      // Tier-0 rule-attached policer (0 = none)
 	nWork.HostURL = r.tuples.path
 	nWork.PathPrefix = r.tuples.pathPrefix                            // P6: Pass path prefix
 	nWork.PathMatchMode = r.tuples.pathMatchMode                      // P6: Pass path match mode

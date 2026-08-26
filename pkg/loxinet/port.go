@@ -107,7 +107,9 @@ type PortSwInfo struct {
 	PortType   int
 	PortProp   cmn.PortProp
 	PortPolNum int
-	PortMirNum int
+	// PortPolNumEgr - egress-direction policer id (needs --egr-hooks)
+	PortPolNumEgr int
+	PortMirNum    int
 	PortActive bool
 	PortReal   *Port
 	PortOvl    *Port
@@ -562,12 +564,16 @@ func (P *PortsH) PortUpdateProp(name string, prop cmn.PortProp, zone string, upd
 			pe.SInfo.PortProp |= prop
 			if prop&cmn.PortPropPol == cmn.PortPropPol {
 				pe.SInfo.PortPolNum = propVal
+			} else if prop&cmn.PortPropPolEgress == cmn.PortPropPolEgress {
+				pe.SInfo.PortPolNumEgr = propVal
 			} else if prop&cmn.PortPropSpan == cmn.PortPropSpan {
 				pe.SInfo.PortMirNum = propVal
 			}
 		} else {
 			if prop&cmn.PortPropPol == cmn.PortPropPol {
 				pe.SInfo.PortPolNum = 0
+			} else if prop&cmn.PortPropPolEgress == cmn.PortPropPolEgress {
+				pe.SInfo.PortPolNumEgr = 0
 			} else if prop&cmn.PortPropSpan == cmn.PortPropSpan {
 				pe.SInfo.PortMirNum = 0
 			}
@@ -962,6 +968,7 @@ func (p *Port) DP(work DpWorkT) int {
 			pWq.SetZoneNum = zoneNum
 			pWq.Prop = p.SInfo.PortProp
 			pWq.SetPol = p.SInfo.PortPolNum
+			pWq.SetPolEgr = p.SInfo.PortPolNumEgr
 			pWq.SetMirr = p.SInfo.PortMirNum
 
 			mh.dp.ToDpCh <- pWq
@@ -997,6 +1004,7 @@ func (p *Port) DP(work DpWorkT) int {
 	_, pWq.SetZoneNum = mh.zn.Zonefind(p.Zone)
 	pWq.Prop = p.SInfo.PortProp
 	pWq.SetPol = p.SInfo.PortPolNum
+	pWq.SetPolEgr = p.SInfo.PortPolNumEgr
 	pWq.SetMirr = p.SInfo.PortMirNum
 
 	if pWq.SetZoneNum < 0 {

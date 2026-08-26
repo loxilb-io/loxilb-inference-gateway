@@ -45,6 +45,7 @@ int proxy_update_ep_health(struct proxy_ent *key, int ep_index, uint8_t inactive
 int proxy_update_ep_health_by_ip(struct proxy_ent *key, uint32_t ep_ip, uint8_t inactive);
 int proxy_set_drain_policy(struct proxy_ent *key, unsigned int policy, uint32_t timeout_sec);
 int proxy_set_circuit_breaker(struct proxy_ent *key, uint8_t enabled, uint32_t failure_threshold, uint32_t open_timeout_sec);
+int proxy_update_qos_config(struct proxy_ent *key, uint64_t cir_bps, uint64_t pir_bps, uint32_t cbs_bytes, uint8_t dir, uint8_t mode);
 int proxy_set_service_catalog(uint32_t xip, uint16_t xport, uint8_t protocol, uint16_t catalog_id);
 // Note: chwbl_prefix_hash_level is now propagated via dp_proxy_tacts.chwbl_prefix_hash_level during proxy_add_entry
 
@@ -995,6 +996,7 @@ func (e *DpEbpfH) DpPortPropMod(w *PortDpWorkQ) int {
 		setIfi.bd = C.ushort(uint16(w.SetBD))
 		setIfi.mirr = C.ushort(w.SetMirr)
 		setIfi.polid = C.ushort(w.SetPol)
+		setIfi.e_polid = C.ushort(w.SetPolEgr)
 
 		if w.Prop&cmn.PortPropUpp == cmn.PortPropUpp {
 			setIfi.pprop = C.LLB_DP_PORT_UPP
@@ -1560,6 +1562,9 @@ func DpLBRuleMod(w *LBDpWorkQ) int {
 	// reads this conn_limit and compares it against the live conc_conns count (nat_ep_map),
 	// forcing sel=-1 -> pm.nf=0 (SYN refuse, no CT) when the live count has reached the ceiling.
 	dat.conn_limit = C.uint32_t(w.ConnLimit)
+	// Tier-0 rule-attached policer id (polx_map key; 0 = none). dp_do_nat copies
+	// it into per-packet metadata on rule hit and CT-create persists it per-flow.
+	dat.polid = C.uint16_t(w.PolId)
 	if w.DsrMode {
 		dat.ca.oaux = 1
 	}
@@ -2140,6 +2145,44 @@ func (e *DpEbpfH) DpLBSetCircuitBreaker(svcIP net.IP, svcPort uint16, proto uint
 	tk.LogIt(tk.LogInfo, "[DP] P2.3: Circuit breaker configured - VIP=%v, port=%v, enabled=%v, threshold=%d, timeout=%ds\n",
 		svcIP, svcPort, enabled, failureThreshold, openTimeoutSec)
 
+	return 0
+}
+
+// Shaper direction bits (mirror QOS_DIR_* in sockproxy_qos.h): a rule-attached
+// policer shapes BOTH relay directions, each against its own bucket at the
+// full CIR — per-direction pacing, not a shared budget.
+const (
+	qosDirUpload   = 0x1 // client -> backend payload
+	qosDirDownload = 0x2 // backend -> client payload
+)
+
+// DpLBSetQosShaper - configure the L7 (Tier-1) byte shaper for a fullproxy
+// service. Rates are in bits/sec (the policer API unit); cirBps == 0 detaches.
+// The sockproxy stores the config independently of entry existence, so a
+// policer associated before its LB rule converges when the rule appears —
+// no retry loop is needed here.
+func (e *DpEbpfH) DpLBSetQosShaper(svcIP net.IP, svcPort uint16, proto uint8,
+	cirBps, pirBps uint64, cbsBytes uint32) int {
+	var proxyKey C.struct_proxy_ent
+
+	if svcIP.To4() == nil {
+		tk.LogIt(tk.LogError, "[DP] qos-shaper: IPv6 not yet supported\n")
+		return -1
+	}
+	proxyKey.xip = C.uint(tk.IPtonl(svcIP))
+	proxyKey.xport = C.ushort(tk.Htons(svcPort))
+	proxyKey.protocol = C.uchar(proto)
+
+	ret := C.proxy_update_qos_config(&proxyKey, C.uint64_t(cirBps), C.uint64_t(pirBps),
+		C.uint32_t(cbsBytes), C.uint8_t(qosDirUpload|qosDirDownload), 0)
+	if ret != 0 {
+		tk.LogIt(tk.LogError, "[DP] qos-shaper: config failed - VIP=%v, port=%v, ret=%d\n",
+			svcIP, svcPort, int(ret))
+		return -1
+	}
+
+	tk.LogIt(tk.LogInfo, "[DP] qos-shaper: VIP=%v, port=%v cir=%dbps pir=%dbps cbs=%dB\n",
+		svcIP, svcPort, cirBps, pirBps, cbsBytes)
 	return 0
 }
 

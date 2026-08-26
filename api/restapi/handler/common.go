@@ -141,7 +141,7 @@ func ResultErrorResponseErrorMessage(msg string) *models.Error {
 	// 503 Service Unavailable
 	if containsAny(m,
 		"not-ready", "timeout", "unexpected http response", "maintenance", "no-master",
-		"netrpc call timeout",
+		"netrpc call timeout", "database unavailable",
 	) {
 		return &models.Error{Code: 503, Message: "Maintenance mode", Result: msg}
 	}

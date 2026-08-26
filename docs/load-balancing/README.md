@@ -66,7 +66,7 @@ it*, *how to test it*, and *how to extend it*.
 | Per-probe CA override + verify toggle | ✅ |
 | certId certificate management (upload / rotate / delete) | ✅ |
 | Backend re-encryption by certId (CA + client cert) | ✅ |
-| `vip_qos_policy_id` QoS association | ✅ |
+| `vip_qos_policy_id` QoS association (NAT-mode rules; policer enforced in the L4 datapath — fullproxy rules are rejected) | ✅ |
 
 ### AI-Gateway L7
 
