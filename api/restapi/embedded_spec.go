@@ -5039,6 +5039,12 @@ func init() {
             "description": "block value if any",
             "name": "block",
             "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "Model name carried by the rule (the ` + "`" + `model_name` + "`" + ` given at creation). It is part of the rule key, so a rule that names a model can only be deleted by naming the same model here. Omitting it matches only a rule with no model name: with two rules on one VIP:port, one naming a model and one not, a delete without ` + "`" + `model_name` + "`" + ` removes the model-less rule and leaves the other serving.",
+            "name": "model_name",
+            "in": "query"
           }
         ],
         "responses": {
@@ -5180,6 +5186,12 @@ func init() {
             "type": "number",
             "description": "block value if any",
             "name": "block",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "Model name carried by the rule (the ` + "`" + `model_name` + "`" + ` given at creation). It is part of the rule key, so a rule that names a model can only be deleted by naming the same model here. Omitting it matches only a rule with no model name: with two rules on one VIP:port, one naming a model and one not, a delete without ` + "`" + `model_name` + "`" + ` removes the model-less rule and leaves the other serving.",
+            "name": "model_name",
             "in": "query"
           }
         ],
@@ -5416,7 +5428,7 @@ func init() {
     },
     "/config/loadbalancer/hosturl/{hosturl}/externalipaddress/{ip_address}/port/{port}/portmax/{portmax}/protocol/{proto}": {
       "delete": {
-        "description": "Delete an existing load balancer service with .",
+        "description": "Delete an existing load balancer service by its full rule key. The key is the VIP, port, protocol and host URL, plus ` + "`" + `path_prefix` + "`" + `, ` + "`" + `path_match_mode` + "`" + ` and ` + "`" + `model_name` + "`" + ` when the rule was created with them; a delete that omits a key component the rule carries does not match it and returns 404 (no-rule error).",
         "summary": "Delete an existing Load balancer service",
         "parameters": [
           {
@@ -5477,6 +5489,12 @@ func init() {
             "description": "Path matching mode (disabled, prefix, exact) for selective deletion",
             "name": "path_match_mode",
             "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "Model name carried by the rule (the ` + "`" + `model_name` + "`" + ` given at creation). It is part of the rule key, so a rule that names a model can only be deleted by naming the same model here. Omitting it matches only a rule with no model name: with two rules on one VIP:port, one naming a model and one not, a delete without ` + "`" + `model_name` + "`" + ` removes the model-less rule and leaves the other serving.",
+            "name": "model_name",
+            "in": "query"
           }
         ],
         "responses": {
@@ -5530,7 +5548,7 @@ func init() {
     },
     "/config/loadbalancer/hosturl/{hosturl}/externalipaddress/{ip_address}/port/{port}/protocol/{proto}": {
       "delete": {
-        "description": "Delete an existing load balancer service with .",
+        "description": "Delete an existing load balancer service by its full rule key. The key is the VIP, port, protocol and host URL, plus ` + "`" + `path_prefix` + "`" + `, ` + "`" + `path_match_mode` + "`" + ` and ` + "`" + `model_name` + "`" + ` when the rule was created with them; a delete that omits a key component the rule carries does not match it and returns 404 (no-rule error).",
         "summary": "Delete an existing Load balancer service",
         "parameters": [
           {
@@ -5583,6 +5601,12 @@ func init() {
             "type": "string",
             "description": "Path matching mode (disabled, prefix, exact) for selective deletion",
             "name": "path_match_mode",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "Model name carried by the rule (the ` + "`" + `model_name` + "`" + ` given at creation). It is part of the rule key, so a rule that names a model can only be deleted by naming the same model here. Omitting it matches only a rule with no model name: with two rules on one VIP:port, one naming a model and one not, a delete without ` + "`" + `model_name` + "`" + ` removes the model-less rule and leaves the other serving.",
+            "name": "model_name",
             "in": "query"
           }
         ],
@@ -20567,6 +20591,12 @@ func init() {
             "description": "block value if any",
             "name": "block",
             "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "Model name carried by the rule (the ` + "`" + `model_name` + "`" + ` given at creation). It is part of the rule key, so a rule that names a model can only be deleted by naming the same model here. Omitting it matches only a rule with no model name: with two rules on one VIP:port, one naming a model and one not, a delete without ` + "`" + `model_name` + "`" + ` removes the model-less rule and leaves the other serving.",
+            "name": "model_name",
+            "in": "query"
           }
         ],
         "responses": {
@@ -20708,6 +20738,12 @@ func init() {
             "type": "number",
             "description": "block value if any",
             "name": "block",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "Model name carried by the rule (the ` + "`" + `model_name` + "`" + ` given at creation). It is part of the rule key, so a rule that names a model can only be deleted by naming the same model here. Omitting it matches only a rule with no model name: with two rules on one VIP:port, one naming a model and one not, a delete without ` + "`" + `model_name` + "`" + ` removes the model-less rule and leaves the other serving.",
+            "name": "model_name",
             "in": "query"
           }
         ],
@@ -20944,7 +20980,7 @@ func init() {
     },
     "/config/loadbalancer/hosturl/{hosturl}/externalipaddress/{ip_address}/port/{port}/portmax/{portmax}/protocol/{proto}": {
       "delete": {
-        "description": "Delete an existing load balancer service with .",
+        "description": "Delete an existing load balancer service by its full rule key. The key is the VIP, port, protocol and host URL, plus ` + "`" + `path_prefix` + "`" + `, ` + "`" + `path_match_mode` + "`" + ` and ` + "`" + `model_name` + "`" + ` when the rule was created with them; a delete that omits a key component the rule carries does not match it and returns 404 (no-rule error).",
         "summary": "Delete an existing Load balancer service",
         "parameters": [
           {
@@ -21005,6 +21041,12 @@ func init() {
             "description": "Path matching mode (disabled, prefix, exact) for selective deletion",
             "name": "path_match_mode",
             "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "Model name carried by the rule (the ` + "`" + `model_name` + "`" + ` given at creation). It is part of the rule key, so a rule that names a model can only be deleted by naming the same model here. Omitting it matches only a rule with no model name: with two rules on one VIP:port, one naming a model and one not, a delete without ` + "`" + `model_name` + "`" + ` removes the model-less rule and leaves the other serving.",
+            "name": "model_name",
+            "in": "query"
           }
         ],
         "responses": {
@@ -21058,7 +21100,7 @@ func init() {
     },
     "/config/loadbalancer/hosturl/{hosturl}/externalipaddress/{ip_address}/port/{port}/protocol/{proto}": {
       "delete": {
-        "description": "Delete an existing load balancer service with .",
+        "description": "Delete an existing load balancer service by its full rule key. The key is the VIP, port, protocol and host URL, plus ` + "`" + `path_prefix` + "`" + `, ` + "`" + `path_match_mode` + "`" + ` and ` + "`" + `model_name` + "`" + ` when the rule was created with them; a delete that omits a key component the rule carries does not match it and returns 404 (no-rule error).",
         "summary": "Delete an existing Load balancer service",
         "parameters": [
           {
@@ -21111,6 +21153,12 @@ func init() {
             "type": "string",
             "description": "Path matching mode (disabled, prefix, exact) for selective deletion",
             "name": "path_match_mode",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "Model name carried by the rule (the ` + "`" + `model_name` + "`" + ` given at creation). It is part of the rule key, so a rule that names a model can only be deleted by naming the same model here. Omitting it matches only a rule with no model name: with two rules on one VIP:port, one naming a model and one not, a delete without ` + "`" + `model_name` + "`" + ` removes the model-less rule and leaves the other serving.",
+            "name": "model_name",
             "in": "query"
           }
         ],

@@ -24,6 +24,7 @@ type DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortPor
 
 	Bgp           *bool
 	Block         *float64
+	ModelName     *string
 	PathMatchMode *string
 	PathPrefix    *string
 
@@ -110,6 +111,14 @@ func (o *DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPor
 	}
 	if blockQ != "" {
 		qs.Set("block", blockQ)
+	}
+
+	var modelNameQ string
+	if o.ModelName != nil {
+		modelNameQ = *o.ModelName
+	}
+	if modelNameQ != "" {
+		qs.Set("model_name", modelNameQ)
 	}
 
 	var pathMatchModeQ string

@@ -187,6 +187,57 @@ echo "  T11: [SKIP] This scenario does not start loxilb with --userservice."
 echo "  T11: Combined auth+routing (key restricted to model X, request X-Model: Y → 403)"
 echo "  T11: is covered by the ai-apikey scenario where --userservice is active."
 
+# ── T12: delete by full L7 key — model_name selects the rule ─────────────────
+# The rule key includes model_name, so a delete has to name it; a delete that
+# omits it matches only the model-less rule on the same VIP:port. Both rules
+# point at server-llama so the survivor can be shown to still serve.
+echo ""
+echo "T12: L7-keyed rule delete (two rules on one VIP:port, port 2040)"
+API=http://10.10.10.254:11111/netlox/v1
+check_eq() {
+  local label="$1" want="$2" got="$3"
+  if [[ "$got" == "$want" ]]; then
+    echo "  $label [OK]"
+  else
+    echo "  $label [FAILED] — expected '$want', got '$got'"
+    code=1
+  fi
+}
+mk_l7() { # <model_name or empty> -> http code
+  $hexec l3h1 curl -s -o /dev/null -w "%{http_code}" -X POST "$API/config/loadbalancer" \
+    -H "Content-Type: application/json" -d '{
+      "serviceArguments": {
+        "externalIP": "10.10.10.254", "port": 2040, "protocol": "tcp", "sel": 0, "mode": 4,
+        "host": "10.10.10.254", "path_prefix": "/", "path_match_mode": "prefix",
+        "model_name": "'"$1"'", "inactiveTimeOut": 30
+      },
+      "endpoints": [{"endpointIP": "31.31.31.1", "targetPort": 8080, "weight": 1}]
+    }'
+}
+del_l7() { # <query string> -> http code
+  $hexec l3h1 curl -s -o /dev/null -w "%{http_code}" -X DELETE \
+    "$API/config/loadbalancer/hosturl/10.10.10.254/externalipaddress/10.10.10.254/port/2040/protocol/tcp?$1"
+}
+models_2040() { # sorted model names of the rules on port 2040; "-" = no model
+  $hexec l3h1 curl -s "$API/config/loadbalancer/all" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+print(",".join(sorted((r["serviceArguments"].get("model_name") or "-")
+      for r in d.get("lbAttr", []) if int(r["serviceArguments"].get("port", -1)) == 2040)))'
+}
+check_eq "T12a create model-keyed rule (qwen-test)" "200" "$(mk_l7 qwen-test)"
+check_eq "T12a create model-less rule on the same VIP:port" "200" "$(mk_l7 '')"
+sleep 1
+check_eq "T12a both rules present" "-,qwen-test" "$(models_2040)"
+check_eq "T12b delete without model_name" "200" "$(del_l7 'path_prefix=%2F&path_match_mode=prefix')"
+check_eq "T12b only the model-less rule was removed" "qwen-test" "$(models_2040)"
+r=$($hexec l3h1 curl -s --max-time 8 -H "X-Model: qwen-test" http://10.10.10.254:2040/)
+check "T12b surviving model-keyed rule still serves" "server-llama" "$r"
+check_eq "T12c delete naming a model no rule carries -> 404" "404" "$(del_l7 'path_prefix=%2F&path_match_mode=prefix&model_name=no-such-model')"
+check_eq "T12c rule untouched by that delete" "qwen-test" "$(models_2040)"
+check_eq "T12d delete naming the model" "200" "$(del_l7 'path_prefix=%2F&path_match_mode=prefix&model_name=qwen-test')"
+check_eq "T12d no rule left on port 2040" "" "$(models_2040)"
+
 # ── Cleanup ──────────────────────────────────────────────────────────────────
 sudo killall -9 node 2>/dev/null
 

@@ -45,6 +45,10 @@ type DeleteConfigLoadbalancerExternalipaddressIPAddressPortPortPortmaxPortmaxPro
 	  In: path
 	*/
 	IPAddress string
+	/*Model name carried by the rule (the `model_name` given at creation). It is part of the rule key, so a rule that names a model can only be deleted by naming the same model here. Omitting it matches only a rule with no model name: with two rules on one VIP:port, one naming a model and one not, a delete without `model_name` removes the model-less rule and leaves the other serving.
+	  In: query
+	*/
+	ModelName *string
 	/*Attributes for load balance service
 	  Required: true
 	  In: path
@@ -85,6 +89,11 @@ func (o *DeleteConfigLoadbalancerExternalipaddressIPAddressPortPortPortmaxPortma
 
 	rIPAddress, rhkIPAddress, _ := route.Params.GetOK("ip_address")
 	if err := o.bindIPAddress(rIPAddress, rhkIPAddress, route.Formats); err != nil {
+		res = append(res, err)
+	}
+
+	qModelName, qhkModelName, _ := qs.GetOK("model_name")
+	if err := o.bindModelName(qModelName, qhkModelName, route.Formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -164,6 +173,24 @@ func (o *DeleteConfigLoadbalancerExternalipaddressIPAddressPortPortPortmaxPortma
 	// Required: true
 	// Parameter is provided by construction from the route
 	o.IPAddress = raw
+
+	return nil
+}
+
+// bindModelName binds and validates parameter ModelName from query.
+func (o *DeleteConfigLoadbalancerExternalipaddressIPAddressPortPortPortmaxPortmaxProtocolProtoParams) bindModelName(rawData []string, hasKey bool, formats strfmt.Registry) error {
+	var raw string
+	if len(rawData) > 0 {
+		raw = rawData[len(rawData)-1]
+	}
+
+	// Required: false
+	// AllowEmptyValue: false
+
+	if raw == "" { // empty values pass all other validations
+		return nil
+	}
+	o.ModelName = &raw
 
 	return nil
 }

@@ -34,7 +34,7 @@ func NewDeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPort
 
 # Delete an existing Load balancer service
 
-Delete an existing load balancer service with .
+Delete an existing load balancer service by its full rule key. The key is the VIP, port, protocol and host URL, plus `path_prefix`, `path_match_mode` and `model_name` when the rule was created with them; a delete that omits a key component the rule carries does not match it and returns 404 (no-rule error).
 */
 type DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortProtocolProto struct {
 	Context *middleware.Context
