@@ -72,14 +72,14 @@ func TestRateLimiterRoundTrip(t *testing.T) {
 	for i := 0; i < nTenants; i++ {
 		tenantID := "rt-tenant-" + itoa(i)
 		// AllowTokens populates quotaMap and advances the bucket drain time.
-		src.AllowTokens(tenantID, 10+i, 100000) // large budget so no exceed
+		src.AllowTokens(tenantID, 10+i, 100000, 0) // large budget so no exceed
 	}
 	// Push one tenant deep into debt to verify the state round-trips: a
 	// full-burst charge plus a 10% overrun (6s of drain — comfortably
 	// larger than the test's runtime, so the debt cannot self-heal before
 	// the assertions run).
-	src.AllowTokens("rt-tenant-exceeded", 1000000, 1000000)
-	src.AllowTokens("rt-tenant-exceeded", 100000, 1000000)
+	src.AllowTokens("rt-tenant-exceeded", 1000000, 1000000, 0)
+	src.AllowTokens("rt-tenant-exceeded", 100000, 1000000, 0)
 
 	// Export.
 	snap := src.ExportState()
@@ -168,7 +168,7 @@ func TestRateLimiterRoundTrip(t *testing.T) {
 		atomic.LoadInt64(&srcExceededV.(*tokenWindowEntry).tatMs); got != want {
 		t.Errorf("expected debt drain time to round-trip, got %d want %d", got, want)
 	}
-	dst.AllowTokens("rt-tenant-exceeded", 1, 1000000) // publish the limit
+	dst.AllowTokens("rt-tenant-exceeded", 1, 1000000, 0) // publish the limit
 	if !dst.IsTokenQuotaExceeded("rt-tenant-exceeded") {
 		t.Error("imported debt must deny on the receiving node once the limit is known")
 	}
@@ -187,7 +187,7 @@ func TestRateLimiterApplyGossipDelta(t *testing.T) {
 	// Seed local state: one charge establishes the entry and a base drain
 	// time; the deltas below are expressed relative to it.
 	const tenantA = "tenant_a"
-	s.AllowTokens(tenantA, 100, 1000000)
+	s.AllowTokens(tenantA, 100, 1000000, 0)
 
 	v, _ := s.quotaMap.Load(tenantA)
 	localEpoch := atomic.LoadInt64(&v.(*tokenWindowEntry).windowEpoch)
@@ -235,7 +235,7 @@ func TestRateLimiterEpochAdvance(t *testing.T) {
 
 	s := newTestStore()
 	const tenantB = "tenant_b"
-	s.AllowTokens(tenantB, 100, 1000000)
+	s.AllowTokens(tenantB, 100, 1000000, 0)
 	v, _ := s.quotaMap.Load(tenantB)
 	we := v.(*tokenWindowEntry)
 	localEpoch := atomic.LoadInt64(&we.windowEpoch)
@@ -275,8 +275,8 @@ func TestRateLimiterModelScopeWireKeys(t *testing.T) {
 	t.Parallel()
 
 	src := newTestStore()
-	src.AllowTokens("wk-tenant", 10, 100000)
-	src.AllowTokens("wk-tenant|llama-3", 20, 100000)
+	src.AllowTokens("wk-tenant", 10, 100000, 0)
+	src.AllowTokens("wk-tenant|llama-3", 20, 100000, 0)
 
 	var sawTenant, sawModel bool
 	for _, e := range src.ExportState() {
@@ -337,7 +337,7 @@ func TestRateLimiterExportConcurrent(t *testing.T) {
 				default:
 					s.CheckKey(keyID, 1000, 1000)
 					s.CheckTenant(tenantID, 1000)
-					s.AllowTokens(tenantID, 1, 1000000)
+					s.AllowTokens(tenantID, 1, 1000000, 0)
 				}
 			}
 		}(i)
@@ -431,7 +431,7 @@ func TestRateLimiterCleanupCompat(t *testing.T) {
 	s := newTestStore()
 	for i := 0; i < 20; i++ {
 		s.CheckKey("compat-key-"+itoa(i), 100, 100)
-		s.AllowTokens("compat-tenant-"+itoa(i), 5, 1000000)
+		s.AllowTokens("compat-tenant-"+itoa(i), 5, 1000000, 0)
 	}
 
 	stop := make(chan struct{})
@@ -495,8 +495,8 @@ func TestRateLimiterExportDeltaProgress(t *testing.T) {
 	t.Parallel()
 
 	s := newTestStore()
-	s.AllowTokens("ed-t1", 50, 1000000)
-	s.AllowTokens("ed-t2", 75, 1000000)
+	s.AllowTokens("ed-t1", 50, 1000000, 0)
+	s.AllowTokens("ed-t2", 75, 1000000, 0)
 
 	// First export: prev empty → both tenants reported.
 	prev := map[string]int64{}
@@ -520,7 +520,7 @@ func TestRateLimiterExportDeltaProgress(t *testing.T) {
 	}
 
 	// Bump only ed-t1; delta should contain ed-t1 only.
-	s.AllowTokens("ed-t1", 25, 1000000)
+	s.AllowTokens("ed-t1", 25, 1000000, 0)
 	d3 := s.ExportDelta(prev)
 	if len(d3) != 1 {
 		t.Fatalf("third ExportDelta (one tenant bumped): expected 1 entry, got %d", len(d3))

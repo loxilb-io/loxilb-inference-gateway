@@ -90,6 +90,15 @@ typedef struct proxy_metrics_snapshot {
 
     // TRT-LLM sequential-dialect counters (tail-append, three-way lockstep)
     uint64_t pd_trt_ctx_early_exit;
+
+    // Relay-cache footprint gauges. The backpressure watermark is per
+    // connection (PROXY_CACHE_HIGH_WATER), so nothing reports what the
+    // process is holding in aggregate; these do. TAIL-APPEND ONLY —
+    // twin-declared in loxilb-ebpf/common/sockproxy_metrics.h and
+    // proxy_metrics_stub.c; keep ALL THREE in lockstep, same commit.
+    uint64_t cache_bytes_total;
+    uint64_t cache_bytes_max_conn;
+    uint64_t cache_conns_queued;
 } proxy_metrics_snapshot_t;
 
 // C function from sockproxy.c
@@ -152,6 +161,30 @@ var (
 		prometheus.CounterOpts{
 			Name: "loxilb_proxy_cache_high_water_events_total",
 			Help: "Total cache backpressure activations. Monotonic counter tracking adaptive backpressure triggers.",
+		},
+	)
+
+	// Relay-cache footprint. Backpressure is decided per connection against a
+	// 12MB watermark (768KB for chunked), so a body well under it never trips
+	// anything and the proxy holds it whole while a slow backend drains. What
+	// the process holds in AGGREGATE is these three; the high-water counter
+	// above only says the per-connection limit fired somewhere.
+	proxyCacheBytes = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "loxilb_proxy_cache_bytes",
+			Help: "Relay payload currently cached across all proxy connections, in bytes. Scales with concurrent in-flight body volume against slow backends; bounded per connection but not in aggregate.",
+		},
+	)
+	proxyCacheBytesMaxConn = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "loxilb_proxy_cache_bytes_max_conn",
+			Help: "Largest relay cache held by any single connection, in bytes. Approaching the 12MB watermark (768KB chunked) means backpressure is about to engage on that connection.",
+		},
+	)
+	proxyCacheConnsQueued = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "loxilb_proxy_cache_conns_queued",
+			Help: "Connections currently holding cached relay payload. Denominator for mean bytes per queued connection.",
 		},
 	)
 
@@ -818,6 +851,9 @@ func RunSockproxyMetrics(ctx context.Context) {
 		proxyActiveConnections.Set(float64(current.active_connections))
 		proxyActiveSslConnections.Set(float64(current.active_ssl_connections))
 		proxyConversationSessions.Set(float64(current.conversation_sessions))
+		proxyCacheBytes.Set(float64(current.cache_bytes_total))
+		proxyCacheBytesMaxConn.Set(float64(current.cache_bytes_max_conn))
+		proxyCacheConnsQueued.Set(float64(current.cache_conns_queued))
 
 		// 3. Update COUNTERS (delta from cumulative C atomics with overflow protection)
 		if current.conversation_hits >= prevSockproxyMetrics.conversation_hits {
@@ -1012,6 +1048,12 @@ func RunSockproxyMetrics(ctx context.Context) {
 			delta := current.pd_trt_ctx_early_exit - prevSockproxyMetrics.pd_trt_ctx_early_exit
 			pdTrtCtxEarlyExitTotal.Add(float64(delta))
 		}
+
+		// 3h. Tier-1 byte shaper: republish the per-service, per-direction
+		// store the qosShaperCollector emits from on scrape. Not a delta
+		// path - the shaper counters are exported raw (see
+		// qos_shaper_metrics.go).
+		refreshQosShaperStore()
 
 		// 4. Save state for next cycle
 		prevSockproxyMetrics = current

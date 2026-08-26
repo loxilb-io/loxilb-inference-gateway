@@ -87,6 +87,14 @@ typedef struct proxy_metrics_snapshot {
 
     /* TRT-LLM sequential-dialect counters (tail-append, three-way lockstep) */
     uint64_t pd_trt_ctx_early_exit;
+
+    /* Relay-cache footprint gauges. The backpressure watermark is per
+     * connection (PROXY_CACHE_HIGH_WATER), so nothing reports what the
+     * process is holding in aggregate; these do. TAIL-APPEND ONLY — same
+     * three-way lockstep contract as the blocks above. */
+    uint64_t cache_bytes_total;
+    uint64_t cache_bytes_max_conn;
+    uint64_t cache_conns_queued;
 } proxy_metrics_snapshot_t;
 
 __attribute__((weak))
@@ -94,4 +102,37 @@ proxy_metrics_snapshot_t proxy_get_metrics(void) {
     proxy_metrics_snapshot_t m;
     memset(&m, 0, sizeof(m));
     return m;
+}
+
+/*
+ * Weak stub for proxy_get_qos_stats (Tier-1 byte shaper per-service state).
+ *
+ * Same contract as proxy_get_metrics above: qos_shaper_metrics.go declares the
+ * extern, the strong symbol in sockproxy_http.o satisfies it in the real
+ * binary, and this zero-service stub keeps `go test ./api/prometheus/`
+ * linkable. The struct below is the third copy of the lockstep triple
+ * (sockproxy_metrics.h is canonical; qos_shaper_metrics.go carries the second)
+ * and must be updated in the same commit as the other two.
+ */
+typedef struct proxy_qos_svc_stat {
+    uint32_t xip;
+    uint16_t xport;
+    uint8_t  protocol;
+    uint8_t  dir;
+    uint64_t cir_bps;
+    uint32_t cbs_bytes;
+    uint32_t n_parked[2];
+    uint32_t pad;
+    uint64_t bytes_pass[2];
+    uint64_t bytes_delayed[2];
+    uint64_t parks[2];
+    uint64_t park_ns[2];
+    int64_t  tokens[2];
+} proxy_qos_svc_stat_t;
+
+__attribute__((weak))
+int proxy_get_qos_stats(proxy_qos_svc_stat_t *out, int max) {
+    (void)out;
+    (void)max;
+    return 0;
 }

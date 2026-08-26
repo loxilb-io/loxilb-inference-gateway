@@ -283,7 +283,7 @@ func TestRateLimiterPushCadenceAP(t *testing.T) {
 	store := rl.New()
 	// Seed at least one entry so ExportState returns non-empty (push
 	// loop short-circuits on empty entries).
-	store.AllowTokens("cadence-ap-tenant", 1, 1000000)
+	store.AllowTokens("cadence-ap-tenant", 1, 1000000, 0)
 	coord.SetRateLimiterStore(store)
 
 	peer := &DpPeer{Peer: net.ParseIP("127.0.0.3"), CapMask: 0xFFFFFFFF}
@@ -324,7 +324,7 @@ func TestRateLimiterPushCadenceAA(t *testing.T) {
 	coord := newTestCoordinator(newMockApplier(0))
 	coord.haMode.Store("AA")
 	store := rl.New()
-	store.AllowTokens("cadence-aa-tenant", 1, 1000000)
+	store.AllowTokens("cadence-aa-tenant", 1, 1000000, 0)
 	coord.SetRateLimiterStore(store)
 
 	peer := &DpPeer{Peer: net.ParseIP("127.0.0.4"), CapMask: 0xFFFFFFFF}
@@ -341,7 +341,7 @@ func TestRateLimiterPushCadenceAA(t *testing.T) {
 			case <-driverStop:
 				return
 			case <-t.C:
-				store.AllowTokens("cadence-aa-tenant", 1, 1000000)
+				store.AllowTokens("cadence-aa-tenant", 1, 1000000, 0)
 			}
 		}
 	}()
@@ -370,7 +370,7 @@ func TestRateLimiterPushAbsoluteEvery10thAA(t *testing.T) {
 	coord := newTestCoordinator(newMockApplier(0))
 	coord.haMode.Store("AA")
 	store := rl.New()
-	store.AllowTokens("absolute-tenant", 1, 1000000)
+	store.AllowTokens("absolute-tenant", 1, 1000000, 0)
 	coord.SetRateLimiterStore(store)
 
 	peer := &DpPeer{Peer: net.ParseIP("127.0.0.5"), CapMask: 0xFFFFFFFF}
@@ -387,7 +387,7 @@ func TestRateLimiterPushAbsoluteEvery10thAA(t *testing.T) {
 			case <-driverStop:
 				return
 			case <-t.C:
-				store.AllowTokens("absolute-tenant", 1, 1000000)
+				store.AllowTokens("absolute-tenant", 1, 1000000, 0)
 			}
 		}
 	}()
@@ -431,7 +431,7 @@ func TestRateLimiterPushL2Discipline(t *testing.T) {
 	store := rl.New()
 	// Seed a few entries.
 	for i := 0; i < 10; i++ {
-		store.AllowTokens("l2-tenant-"+itoaT(i), 5, 1000000)
+		store.AllowTokens("l2-tenant-"+itoaT(i), 5, 1000000, 0)
 	}
 	coord.SetRateLimiterStore(store)
 
@@ -453,7 +453,7 @@ func TestRateLimiterPushL2Discipline(t *testing.T) {
 					return
 				default:
 					store.CheckKey("l2-key-"+itoaT(id%10), 1000, 1000)
-					store.AllowTokens("l2-tenant-"+itoaT(id%10), 1, 1000000)
+					store.AllowTokens("l2-tenant-"+itoaT(id%10), 1, 1000000, 0)
 				}
 			}
 		}(i)

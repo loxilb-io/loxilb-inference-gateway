@@ -59,7 +59,7 @@ type apiKeyValidator interface {
 // rateLimitService is the subset of *user.UserService used by the rate-limit bridge.
 // It is satisfied by *user.UserService and by test mocks.
 type rateLimitService interface {
-	GetTenantRateLimit(tenantID string) (rps, tokensPerMin int)
+	GetTenantRateLimit(tenantID string) (rps, tokensPerMin, burstPct int)
 	GetTenantModelRateLimit(tenantID, model string) (tokensPerMin int)
 	GetAPIKeyByID(keyID string) (*cmn.ApiKeySummary, error)
 }
@@ -113,7 +113,7 @@ func rateLimitCheckInternal(svc rateLimitService, store *rl.RateLimiterStore, ke
 		tenantRPS := 0
 		tenantTPM := 0
 		if svc != nil {
-			tenantRPS, tenantTPM = svc.GetTenantRateLimit(tenantIDStr)
+			tenantRPS, tenantTPM, _ = svc.GetTenantRateLimit(tenantIDStr)
 		}
 		allowed, retrySec := store.CheckTenant(tenantIDStr, tenantRPS)
 		if !allowed {
@@ -465,8 +465,13 @@ func tokenQuotaReserveInternal(svc rateLimitService, store *rl.RateLimiterStore,
 	}
 	tenantTPM := 0
 	modelTPM := 0
+	// burstPct is the tenant's bucket-capacity override. The per-model bucket
+	// deliberately shares it: it is a property of how bursty the TENANT is
+	// allowed to be, and giving a model bucket its own capacity would let a
+	// tenant widen its aggregate burst by splitting spend across models.
+	burstPct := 0
 	if svc != nil {
-		_, tenantTPM = svc.GetTenantRateLimit(tenantID)
+		_, tenantTPM, burstPct = svc.GetTenantRateLimit(tenantID)
 		if modelName != "" {
 			modelTPM = svc.GetTenantModelRateLimit(tenantID, modelName)
 		}
@@ -475,17 +480,17 @@ func tokenQuotaReserveInternal(svc rateLimitService, store *rl.RateLimiterStore,
 		return true, 0, 0
 	}
 
-	allowed, retrySecs, resEpoch = store.ReserveTokens(tenantID, want, tenantTPM)
+	allowed, retrySecs, resEpoch = store.ReserveTokens(tenantID, want, tenantTPM, burstPct)
 	if !allowed {
 		return false, retrySecs, 0
 	}
 	if modelTPM > 0 {
-		mAllowed, mRetry, mEpoch := store.ReserveTokens(modelQuotaKey(tenantID, modelName), want, modelTPM)
+		mAllowed, mRetry, mEpoch := store.ReserveTokens(modelQuotaKey(tenantID, modelName), want, modelTPM, burstPct)
 		if !mAllowed {
 			// Give the aggregate claim back (epoch-tagged, clamped release;
 			// nothing charged).
 			if resEpoch != 0 {
-				store.SettleTokens(tenantID, 0, want, resEpoch, tenantTPM)
+				store.SettleTokens(tenantID, 0, want, resEpoch, tenantTPM, burstPct)
 			}
 			return false, mRetry, 0
 		}
@@ -520,8 +525,9 @@ func tokenQuotaConsumeInternal(svc rateLimitService, store *rl.RateLimiterStore,
 	}
 	tenantTPM := 0
 	modelTPM := 0
+	burstPct := 0
 	if svc != nil {
-		_, tenantTPM = svc.GetTenantRateLimit(tenantID)
+		_, tenantTPM, burstPct = svc.GetTenantRateLimit(tenantID)
 		if modelName != "" {
 			modelTPM = svc.GetTenantModelRateLimit(tenantID, modelName)
 		}
@@ -529,9 +535,9 @@ func tokenQuotaConsumeInternal(svc rateLimitService, store *rl.RateLimiterStore,
 	if reservedAmt <= 0 && (count <= 0 || (tenantTPM <= 0 && modelTPM <= 0)) {
 		return true, 0
 	}
-	allowed, retrySecs = store.SettleTokens(tenantID, count, reservedAmt, resEpoch, tenantTPM)
+	allowed, retrySecs = store.SettleTokens(tenantID, count, reservedAmt, resEpoch, tenantTPM, burstPct)
 	if modelTPM > 0 {
-		mAllowed, mRetry := store.SettleTokens(modelQuotaKey(tenantID, modelName), count, reservedAmt, resEpoch, modelTPM)
+		mAllowed, mRetry := store.SettleTokens(modelQuotaKey(tenantID, modelName), count, reservedAmt, resEpoch, modelTPM, burstPct)
 		if !mAllowed {
 			allowed = false
 			retrySecs = max(retrySecs, mRetry)

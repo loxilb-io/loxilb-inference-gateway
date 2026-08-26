@@ -67,10 +67,10 @@ const (
 	sqlDeleteAPIKeyByID = "DELETE FROM api_keys WHERE key_id = ?"
 
 	sqlReplaceIntoTenantRateLimit = "REPLACE INTO tenant_rate_limits" +
-		" (tenant_id, rps, tokens_per_min, updated_at) VALUES (?, ?, ?, ?)"
+		" (tenant_id, rps, tokens_per_min, burst_pct, updated_at) VALUES (?, ?, ?, ?, ?)"
 	sqlUpdateAPIKeyAllowedModels = "UPDATE api_keys SET allowed_models = ? WHERE key_id = ?"
-	sqlSelectTenantRateLimit     = "SELECT rps, tokens_per_min FROM tenant_rate_limits WHERE tenant_id = ?"
-	sqlSelectTenantRateLimitFull = "SELECT rps, tokens_per_min, updated_at FROM tenant_rate_limits WHERE tenant_id = ?"
+	sqlSelectTenantRateLimit     = "SELECT rps, tokens_per_min, burst_pct FROM tenant_rate_limits WHERE tenant_id = ?"
+	sqlSelectTenantRateLimitFull = "SELECT rps, tokens_per_min, burst_pct, updated_at FROM tenant_rate_limits WHERE tenant_id = ?"
 
 	sqlReplaceIntoTenantModelRateLimit = "REPLACE INTO tenant_model_rate_limits" +
 		" (tenant_id, model, tokens_per_min, updated_at) VALUES (?, ?, ?, ?)"
@@ -83,6 +83,11 @@ const (
 type rateLimitCacheEntry struct {
 	rps          int
 	tokensPerMin int
+	// burstPct is the tenant's token-bucket capacity override in percent of
+	// tokensPerMin; 0 means no override. Cached alongside the other two so a
+	// charge resolves the whole quota configuration in one lookup — the
+	// bucket needs the capacity on exactly the calls that need the rate.
+	burstPct int
 }
 
 // CreateAPIKey generates a new API key, stores only its SHA-256 hash in the database,
@@ -284,49 +289,49 @@ func (s *UserService) PatchAPIKey(keyID string, allowedModels []string, enabled 
 // SetTenantRateLimit upserts the per-tenant rate limit into the tenant_rate_limits
 // table and refreshes the in-memory cache so that subsequent GetTenantRateLimit
 // calls return the new values without a round-trip to the database.
-func (s *UserService) SetTenantRateLimit(tenantID string, rps, tokensPerMin int) error {
+func (s *UserService) SetTenantRateLimit(tenantID string, rps, tokensPerMin, burstPct int) error {
 	if err := s.dbReady(); err != nil {
 		return err
 	}
 	now := time.Now().UTC()
-	if _, err := s.DB.Exec(sqlReplaceIntoTenantRateLimit, tenantID, rps, tokensPerMin, now); err != nil {
+	if _, err := s.DB.Exec(sqlReplaceIntoTenantRateLimit, tenantID, rps, tokensPerMin, burstPct, now); err != nil {
 		tk.LogIt(tk.LogError, "[AIGateway] Failed to set rate limit for tenant %s: %v\n", tenantID, err)
 		return err
 	}
 	cacheKey := "rl:" + tenantID
-	s.Cache.Set(cacheKey, &rateLimitCacheEntry{rps: rps, tokensPerMin: tokensPerMin}, CacheExpirationTime*time.Minute)
-	tk.LogIt(tk.LogInfo, "[AIGateway] Set rate limit for tenant %s: rps=%d tokensPerMin=%d\n", tenantID, rps, tokensPerMin)
+	s.Cache.Set(cacheKey, &rateLimitCacheEntry{rps: rps, tokensPerMin: tokensPerMin, burstPct: burstPct}, CacheExpirationTime*time.Minute)
+	tk.LogIt(tk.LogInfo, "[AIGateway] Set rate limit for tenant %s: rps=%d tokensPerMin=%d burstPct=%d\n", tenantID, rps, tokensPerMin, burstPct)
 	return nil
 }
 
 // GetTenantRateLimit returns the per-tenant rate limit values.
 // The in-memory cache is checked first; on a miss the database is queried and
 // the result is cached. If the tenant has no configured limits, (0, 0) is returned.
-func (s *UserService) GetTenantRateLimit(tenantID string) (rps, tokensPerMin int) {
+func (s *UserService) GetTenantRateLimit(tenantID string) (rps, tokensPerMin, burstPct int) {
 	cacheKey := "rl:" + tenantID
 	if cached, found := s.Cache.Get(cacheKey); found {
 		if entry, ok := cached.(*rateLimitCacheEntry); ok {
-			return entry.rps, entry.tokensPerMin
+			return entry.rps, entry.tokensPerMin, entry.burstPct
 		}
 	}
 
 	// No configured-limit signal is distinguishable from DB-unavailable here;
-	// (0, 0) means "no limit", matching the no-row case. The datapath key check
+	// zeroes mean "no limit", matching the no-row case. The datapath key check
 	// has already failed closed by this point if the DB is down and uncached.
 	if s.dbReady() != nil {
-		return 0, 0
+		return 0, 0, 0
 	}
-	var r, t int
-	err := s.DB.QueryRow(sqlSelectTenantRateLimit, tenantID).Scan(&r, &t)
+	var r, t, b int
+	err := s.DB.QueryRow(sqlSelectTenantRateLimit, tenantID).Scan(&r, &t, &b)
 	if err != nil {
 		if err != sql.ErrNoRows {
 			tk.LogIt(tk.LogError, "[AIGateway] Failed to get rate limit for tenant %s: %v\n", tenantID, err)
 		}
-		return 0, 0
+		return 0, 0, 0
 	}
 
-	s.Cache.Set(cacheKey, &rateLimitCacheEntry{rps: r, tokensPerMin: t}, CacheExpirationTime*time.Minute)
-	return r, t
+	s.Cache.Set(cacheKey, &rateLimitCacheEntry{rps: r, tokensPerMin: t, burstPct: b}, CacheExpirationTime*time.Minute)
+	return r, t, b
 }
 
 // SetTenantModelRateLimit upserts one per-model token quota for a tenant
@@ -528,7 +533,7 @@ func (s *UserService) GetTenantRateLimitEntry(tenantID string) (*cmn.TenantRateL
 	entry.TenantID = tenantID
 
 	err := s.DB.QueryRow(sqlSelectTenantRateLimitFull, tenantID).Scan(
-		&entry.RPS, &entry.TokensPerMin, &entry.UpdatedAt)
+		&entry.RPS, &entry.TokensPerMin, &entry.BurstPct, &entry.UpdatedAt)
 	noTenantRow := err == sql.ErrNoRows
 	if err != nil && !noTenantRow {
 		tk.LogIt(tk.LogError, "[AIGateway] Failed to get rate limit entry for tenant %s: %v\n", tenantID, err)

@@ -1744,11 +1744,11 @@ func (na *NetAPIStruct) NetAPIKeyPatch(keyID string, allowedModels []string, ena
 
 // NetTenantRateLimitSet - Upsert per-tenant rate limit configuration,
 // including any per-model token quotas carried alongside it.
-func (na *NetAPIStruct) NetTenantRateLimitSet(tenantID string, rps, tokensPerMin int, modelLimits []cmn.TenantModelRateLimit) error {
+func (na *NetAPIStruct) NetTenantRateLimitSet(tenantID string, rps, tokensPerMin, burstPct int, modelLimits []cmn.TenantModelRateLimit) error {
 	if mh.UserService == nil {
 		return errors.New("user service not initialized")
 	}
-	if err := mh.UserService.SetTenantRateLimit(tenantID, rps, tokensPerMin); err != nil {
+	if err := mh.UserService.SetTenantRateLimit(tenantID, rps, tokensPerMin, burstPct); err != nil {
 		return err
 	}
 	for _, ml := range modelLimits {

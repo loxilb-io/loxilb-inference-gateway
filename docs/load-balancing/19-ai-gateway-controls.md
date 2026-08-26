@@ -124,6 +124,31 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 Both layers return `429` on breach; per-key limits trip first if they are tighter.
 
+### Burst
+
+`tokens_per_min` is a refill *rate*, not a hard per-minute cap. The tenant spends from a
+bucket that refills continuously at that rate, so recovery from a breach is gradual rather
+than a cliff at the top of the minute. `burst_pct` sets how large that bucket is, as a
+percentage of `tokens_per_min` — that is, how much of a minute's budget a fully idle tenant
+may spend at once:
+
+```bash
+curl -s -X POST http://127.0.0.1:11111/netlox/v1/config/ai/tenant/ratelimit \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"tenant_id": "team-a", "rps": 100, "tokens_per_min": 500000, "burst_pct": 50}'
+```
+
+Omit it (or send `0`) to use the server default of `100` — one whole minute's budget, which
+is how tenants behave with no override. Lower it to smooth a tenant that would otherwise
+drain its budget in one burst and starve itself for the rest of the minute; raise it for
+tenants with long idle gaps and large single requests. Accepted range is `1`–`1000`, and
+values outside it are clamped rather than rejected. The server-wide default can be changed
+with the `LLB_AI_QUOTA_BURST_PCT` environment variable.
+
+Note that a single request larger than the bucket can never be admitted — the pre-admission
+check refuses it outright rather than letting it queue — so `burst_pct` must leave room for
+the largest prompt-plus-`max_tokens` a tenant legitimately sends.
+
 ---
 
 ## 4. Model-name routing

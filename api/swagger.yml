@@ -8060,7 +8060,7 @@ definitions:
             description: Target Attachment(0-RuleName, 1-PortName, 2-PortNameEgress)
           polObjName:
             type: string
-            description: Target Names            
+            description: Target name. Rule attachments use VIP:PORT:PROTO for IPv4 and [VIP]:PORT:PROTO for IPv6.
 
   MirrorEntry:
     type: object
@@ -11159,6 +11159,10 @@ definitions:
         type: integer
         format: int64
         description: Maximum LLM tokens per minute for the tenant
+      burst_pct:
+        type: integer
+        format: int64
+        description: Token bucket capacity as a percent of tokens_per_min; 0 uses the server default
       model_limits:
         type: array
         description: Per-model token quotas for the tenant
@@ -11192,6 +11196,10 @@ definitions:
         type: integer
         format: int64
         description: Maximum LLM tokens per minute for the tenant
+      burst_pct:
+        type: integer
+        format: int64
+        description: Token bucket capacity as a percent of tokens_per_min; 0 uses the server default
       model_limits:
         type: array
         description: Per-model token quotas for the tenant

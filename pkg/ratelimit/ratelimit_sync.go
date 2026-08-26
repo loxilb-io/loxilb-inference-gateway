@@ -116,7 +116,8 @@ func quotaEntryInDebt(we *tokenWindowEntry, nowMs int64) bool {
 	if limit <= 0 {
 		return false
 	}
-	return atomic.LoadInt64(&we.tatMs)-nowMs > refillCeilMs(burstTokensFor(limit), limit)
+	burst := burstTokensFor(limit, atomic.LoadInt64(&we.burstPct))
+	return atomic.LoadInt64(&we.tatMs)-nowMs > refillCeilMs(burst, limit)
 }
 
 // mergeQuotaEntry folds one received quota entry into the local store with

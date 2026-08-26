@@ -18,9 +18,7 @@ package loxinet
 
 import (
 	"errors"
-	"net"
-	"strconv"
-	"strings"
+	"fmt"
 
 	tk "github.com/loxilb-io/loxilib"
 
@@ -122,13 +120,24 @@ func PolInfoXlateValidate(pInfo *cmn.PolInfo) bool {
 
 // PolObjValidate - validate object to be attached
 func PolObjValidate(pObj *cmn.PolObj) bool {
+	return validatePolObj(pObj) == nil
+}
 
+func validatePolObj(pObj *cmn.PolObj) error {
 	if pObj.AttachMent != cmn.PolAttachPort && pObj.AttachMent != cmn.PolAttachLbRule &&
 		pObj.AttachMent != cmn.PolAttachPortEgress {
-		return false
+		return errors.New("unsupported policer attachment type")
 	}
-
-	return true
+	if pObj.AttachMent == cmn.PolAttachLbRule {
+		parsed, err := parseLBRuleKey(pObj.PolObjName)
+		if err != nil {
+			return err
+		}
+		if !parsed.exact {
+			return errors.New("lb-rule policer attachment requires VIP:PORT:PROTO or [VIP]:PORT:PROTO")
+		}
+	}
+	return nil
 }
 
 // PolGetAll - Get all of the policer in loxinet
@@ -161,9 +170,9 @@ func (P *PolH) PolGetAll() ([]cmn.PolMod, error) {
 // PolAdd - Add a policer in loxinet
 func (P *PolH) PolAdd(pName string, pInfo cmn.PolInfo, pObjArgs cmn.PolObj) (int, error) {
 
-	if PolObjValidate(&pObjArgs) == false {
-		tk.LogIt(tk.LogError, "policer add - %s: bad attach point\n", pName)
-		return PolAttachErr, errors.New("pol-attachpoint error")
+	if err := validatePolObj(&pObjArgs); err != nil {
+		tk.LogIt(tk.LogError, "policer add - %s: bad attach point: %v\n", pName, err)
+		return PolAttachErr, fmt.Errorf("pol-attachpoint error: %w", err)
 	}
 
 	// The egress-direction port policer runs on the TC egress image, which is
@@ -199,8 +208,7 @@ func (P *PolH) PolAdd(pName string, pInfo cmn.PolInfo, pObjArgs cmn.PolObj) (int
 		return PolAllocErr, errors.New("pol-alloc error")
 	}
 
-	pObjInfo := PolObjInfo{Args: pObjArgs}
-	pObjInfo.Parent = p
+	pObjInfo := PolObjInfo{Args: pObjArgs, Parent: p}
 
 	// Append PObjs BEFORE DP call so DP can resolve TargetLBMark from attachments
 	p.PObjs = append(p.PObjs, pObjInfo)
@@ -208,7 +216,12 @@ func (P *PolH) PolAdd(pName string, pInfo cmn.PolInfo, pObjArgs cmn.PolObj) (int
 	P.PolMap[key] = p
 
 	p.DP(DpCreate)
-	pObjInfo.PolObj2DP(DpCreate)
+	if _, err := p.PObjs[len(p.PObjs)-1].PolObj2DP(DpCreate); err != nil {
+		p.DP(DpRemove)
+		delete(P.PolMap, key)
+		P.Mark.PutCounter(p.HwNum)
+		return PolAttachErr, fmt.Errorf("policer attachment programming failed: %w", err)
+	}
 
 	tk.LogIt(tk.LogInfo, "policer added - %s\n", pName)
 
@@ -217,7 +230,8 @@ func (P *PolH) PolAdd(pName string, pInfo cmn.PolInfo, pObjArgs cmn.PolObj) (int
 
 // PolAssociateLbRule - : associate a PRE-EXISTING policer ident to a VIP
 // LB rule, reusing policer↔LB-rule association mechanism. lbKey is the
-// "VIP:PORT:PROTO" key that GetLBRuleMarkByKey resolves to the rule mark. loxilb only
+// IPv4 "VIP:PORT:PROTO" or IPv6 "[VIP]:PORT:PROTO" key that
+// GetLBRuleMarkByKey resolves to the rule mark. loxilb only
 // associates an EXISTING ident — an unresolvable ident surfaces PolNoExistErr (no
 // silent-drop); the external Octavia driver owns creating the
 // policy via /config/policy. The association is idempotent: re-associating the same
@@ -244,14 +258,16 @@ func (P *PolH) PolAssociateLbRule(ident string, lbKey string) (int, error) {
 	for idx := range p.PObjs {
 		pObj := &p.PObjs[idx]
 		if pObj.Args.AttachMent == cmn.PolAttachLbRule && pObj.Args.PolObjName == lbKey {
-			pObj.PolObj2DP(DpCreate)
+			if _, err := pObj.PolObj2DP(DpCreate); err != nil {
+				return PolAttachErr, err
+			}
 			return 0, nil
 		}
 	}
 
 	pObjArgs := cmn.PolObj{PolObjName: lbKey, AttachMent: cmn.PolAttachLbRule}
-	if PolObjValidate(&pObjArgs) == false {
-		return PolAttachErr, errors.New("pol-attachpoint error")
+	if err := validatePolObj(&pObjArgs); err != nil {
+		return PolAttachErr, fmt.Errorf("pol-attachpoint error: %w", err)
 	}
 
 	pObjInfo := PolObjInfo{Args: pObjArgs}
@@ -260,7 +276,11 @@ func (P *PolH) PolAssociateLbRule(ident string, lbKey string) (int, error) {
 	p.PObjs = append(p.PObjs, pObjInfo)
 
 	p.DP(DpCreate)
-	pObjInfo.PolObj2DP(DpCreate)
+	if _, err := p.PObjs[len(p.PObjs)-1].PolObj2DP(DpCreate); err != nil {
+		p.PObjs = p.PObjs[:len(p.PObjs)-1]
+		p.DP(DpCreate)
+		return PolAttachErr, err
+	}
 
 	tk.LogIt(tk.LogInfo, "policer %s associated to lb-rule %s (vip_qos_policy_id)\n", ident, lbKey)
 
@@ -280,7 +300,7 @@ func (P *PolH) PolDelete(pName string) (int, error) {
 
 	for idx, pObj := range p.PObjs {
 		pP := &p.PObjs[idx]
-		pObj.PolObj2DP(DpRemove)
+		_, _ = pObj.PolObj2DP(DpRemove)
 		pP.Parent = nil
 	}
 
@@ -322,8 +342,8 @@ func (P *PolH) PolTicker() {
 	for _, p := range P.PolMap {
 		if p.Sync != 0 {
 			p.DP(DpCreate)
-			for _, pObj := range p.PObjs {
-				pObj.PolObj2DP(DpCreate)
+			for idx := range p.PObjs {
+				_, _ = p.PObjs[idx].PolObj2DP(DpCreate)
 			}
 		} else {
 			p.DP(DpStatsGet)
@@ -331,7 +351,7 @@ func (P *PolH) PolTicker() {
 				var pP *PolObjInfo
 				pP = &p.PObjs[idx]
 				if pP.Sync != 0 {
-					pP.PolObj2DP(DpCreate)
+					_, _ = pP.PolObj2DP(DpCreate)
 				} else {
 					if pObj.Args.AttachMent == cmn.PolAttachPort ||
 						pObj.Args.AttachMent == cmn.PolAttachPortEgress {
@@ -371,7 +391,7 @@ func (P *PolH) polTickerDocaMeterStats() {
 }
 
 // PolObj2DP - Sync state of policer's attachment point with data-path
-func (pObjInfo *PolObjInfo) PolObj2DP(work DpWorkT) int {
+func (pObjInfo *PolObjInfo) PolObj2DP(work DpWorkT) (int, error) {
 
 	// LB rule attachment. An L4 rule gets the policer id programmed into its
 	// datapath act (dp_proxy_tacts.polid) via a rule re-sync; a fullproxy rule
@@ -383,7 +403,7 @@ func (pObjInfo *PolObjInfo) PolObj2DP(work DpWorkT) int {
 		zone := pObjInfo.Parent.Zone
 		if zone == nil || zone.Rules == nil {
 			pObjInfo.Sync = 1
-			return -1
+			return -1, nil
 		}
 		polid := uint16(pObjInfo.Parent.HwNum)
 		if work == DpRemove {
@@ -392,27 +412,29 @@ func (pObjInfo *PolObjInfo) PolObj2DP(work DpWorkT) int {
 		code, err := zone.Rules.RuleQosPolAttach(pObjInfo.Args.PolObjName, polid,
 			&pObjInfo.Parent.Info)
 		if err != nil {
-			if work == DpRemove || code == RuleArgsErr {
-				// Detach with the rule already gone needs nothing; a hard
-				// config error will not heal on retry — either way, stop
-				// retrying and log.
-				if code == RuleArgsErr && work != DpRemove {
-					tk.LogIt(tk.LogError, "policer %s -> lb-rule %s: %s\n",
-						pObjInfo.Parent.Key.PolName, pObjInfo.Args.PolObjName, err)
-				}
+			if work == DpRemove {
+				// Detach with the rule already gone needs nothing.
 				pObjInfo.Sync = 0
-				return 0
+				return 0, nil
+			}
+			if code == RuleArgsErr {
+				// A deterministic dataplane/shaper configuration error cannot
+				// heal on retry and must reach the REST/control-plane caller.
+				tk.LogIt(tk.LogError, "policer %s -> lb-rule %s: %s\n",
+					pObjInfo.Parent.Key.PolName, pObjInfo.Args.PolObjName, err)
+				pObjInfo.Sync = 0
+				return code, err
 			}
 			pObjInfo.Sync = 1
-			return -1
+			return code, nil
 		}
 		pObjInfo.Sync = 0
-		return 0
+		return 0, nil
 	}
 
 	if pObjInfo.Args.AttachMent != cmn.PolAttachPort &&
 		pObjInfo.Args.AttachMent != cmn.PolAttachPortEgress {
-		return -1
+		return PolAttachErr, errors.New("unsupported policer attachment type")
 	}
 
 	portProp := cmn.PortPropPol
@@ -423,7 +445,7 @@ func (pObjInfo *PolObjInfo) PolObj2DP(work DpWorkT) int {
 	port := pObjInfo.Parent.Zone.Ports.PortFindByName(pObjInfo.Args.PolObjName)
 	if port == nil {
 		pObjInfo.Sync = 1
-		return -1
+		return -1, nil
 	}
 
 	if work == DpCreate {
@@ -431,7 +453,7 @@ func (pObjInfo *PolObjInfo) PolObj2DP(work DpWorkT) int {
 			pObjInfo.Parent.Zone.Name, true, int(pObjInfo.Parent.HwNum))
 		if err != nil {
 			pObjInfo.Sync = 1
-			return -1
+			return PolAttachErr, err
 		}
 	} else if work == DpRemove {
 		pObjInfo.Parent.Zone.Ports.PortUpdateProp(port.Name, portProp,
@@ -440,7 +462,7 @@ func (pObjInfo *PolObjInfo) PolObj2DP(work DpWorkT) int {
 
 	pObjInfo.Sync = 0
 
-	return 0
+	return 0, nil
 }
 
 // DP - Sync state of policer with data-path
@@ -476,26 +498,12 @@ func (p *PolEntry) DP(work DpWorkT) int {
 			if mark := p.Zone.Rules.GetLBRuleMarkByKey(pObj.Args.PolObjName); mark > 0 {
 				pwq.TargetLBMark = mark
 			}
-			// Parse "VIP:PORT:PROTO" for meter pipe match fields
-			parts := strings.SplitN(pObj.Args.PolObjName, ":", 3)
-			if len(parts) >= 1 {
-				ip := net.ParseIP(parts[0])
-				if ip != nil {
-					pwq.MeterDstIP = tk.IPtonl(ip)
-				}
-			}
-			if len(parts) >= 2 {
-				if p, err := strconv.ParseUint(parts[1], 10, 16); err == nil {
-					pwq.MeterDstPort = tk.Htons(uint16(p))
-				}
-			}
-			if len(parts) >= 3 {
-				switch parts[2] {
-				case "tcp":
-					pwq.MeterProto = 6
-				case "udp":
-					pwq.MeterProto = 17
-				}
+			// Use the same parser as rule lookup so the DOCA meter match can
+			// never interpret a different VIP/port/protocol tuple.
+			if parsed, err := parseLBRuleKey(pObj.Args.PolObjName); err == nil && parsed.exact {
+				pwq.MeterDstIP = tk.IPtonl(parsed.vip)
+				pwq.MeterDstPort = tk.Htons(parsed.port)
+				pwq.MeterProto = parsed.proto
 			}
 			break
 		}

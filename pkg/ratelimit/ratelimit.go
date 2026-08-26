@@ -140,8 +140,20 @@ func init() {
 // burstTokensFor is the bucket capacity for a tokens-per-minute limit: the
 // most a fully idle tenant can spend instantaneously. Never below one token
 // so that a configured quota always admits some request.
-func burstTokensFor(limit int64) int64 {
-	return max(limit*quotaBurstPct/100, 1)
+//
+// pct is the tenant's own capacity knob; zero (or anything non-positive)
+// means the tenant has no override and the process-wide quotaBurstPct
+// applies, which is what every tenant did before the knob became
+// per-tenant. A tenant value is clamped to the same bounds the environment
+// knob is, so a bad row in the database can no more starve a tenant or mint
+// unbounded stored credit than a bad environment variable can.
+func burstTokensFor(limit, pct int64) int64 {
+	if pct <= 0 {
+		pct = quotaBurstPct
+	} else {
+		pct = min(max(pct, quotaBurstMinPct), quotaBurstMaxPct)
+	}
+	return max(limit*pct/100, 1)
 }
 
 // refillCeilMs is the time, in milliseconds rounded up, that `tokens` take
@@ -237,6 +249,14 @@ type tokenWindowEntry struct {
 	// rollover reset did.
 	reserved    int64
 	limitTokens int64 // tokens-per-minute quota seen on the last charge; read by TokenQuotaSnapshot
+	// burstPct is the tenant's bucket-capacity knob in percent of
+	// limitTokens, published alongside limitTokens on every charge and
+	// reservation. Keeping it on the entry rather than passing it to every
+	// reader is what lets IsTokenQuotaExceeded and the peer-sync debt
+	// derivation stay config-free: both evaluate debt for a tenant they were
+	// handed by key alone, with no service to ask. Zero means the tenant has
+	// no override and the process-wide quotaBurstPct applies.
+	burstPct int64
 }
 
 // touchQuotaEpoch stamps the entry's activity epoch with the current minute.
@@ -388,7 +408,7 @@ func (s *RateLimiterStore) UpdateTenant(tenantID string, rps int) {
 // debt; the gate's next IsTokenQuotaExceeded read then denies the tenant
 // until the refill drains the debt — a smooth recovery at the refill rate
 // rather than the fixed window's whole-minute cliff.
-func (s *RateLimiterStore) AllowTokens(tenantID string, count, tokensPerMin int) (allowed bool, retryAfterSecs int) {
+func (s *RateLimiterStore) AllowTokens(tenantID string, count, tokensPerMin, burstPct int) (allowed bool, retryAfterSecs int) {
 	if tokensPerMin <= 0 || count <= 0 {
 		return true, 0
 	}
@@ -407,12 +427,13 @@ func (s *RateLimiterStore) AllowTokens(tenantID string, count, tokensPerMin int)
 	// report, and a racing config change resolves on the next charge.
 	limit := int64(tokensPerMin)
 	atomic.StoreInt64(&e.limitTokens, limit)
+	atomic.StoreInt64(&e.burstPct, int64(burstPct))
 	touchQuotaEpoch(e)
 
 	nowMs := quotaNowMs.Load()
 	newTat := chargeTat(e, int64(count), limit, nowMs)
 
-	burst := burstTokensFor(limit)
+	burst := burstTokensFor(limit, int64(burstPct))
 	burstMs := refillCeilMs(burst, limit)
 	if debtMs := newTat - nowMs; debtMs > burstMs {
 		// Bucket in debt. Advise retrying when the refill has drained the
@@ -441,7 +462,7 @@ func (s *RateLimiterStore) AllowTokens(tenantID string, count, tokensPerMin int)
 // reservation was recorded (no quota configured or nothing to reserve) and
 // settlement degenerates to a plain charge. Atomic-only, same hot-path
 // constraints as AllowTokens.
-func (s *RateLimiterStore) ReserveTokens(tenantID string, want, tokensPerMin int) (allowed bool, retryAfterSecs int, resEpoch int64) {
+func (s *RateLimiterStore) ReserveTokens(tenantID string, want, tokensPerMin, burstPct int) (allowed bool, retryAfterSecs int, resEpoch int64) {
 	if tokensPerMin <= 0 || want <= 0 {
 		return true, 0, 0
 	}
@@ -454,9 +475,10 @@ func (s *RateLimiterStore) ReserveTokens(tenantID string, want, tokensPerMin int
 
 	limit := int64(tokensPerMin)
 	atomic.StoreInt64(&e.limitTokens, limit)
+	atomic.StoreInt64(&e.burstPct, int64(burstPct))
 	touchQuotaEpoch(e)
 
-	burst := burstTokensFor(limit)
+	burst := burstTokensFor(limit, int64(burstPct))
 	if int64(want) > burst {
 		// Larger than the whole bucket: can never be admitted. Deny
 		// without recording the claim (nothing will settle it).
@@ -494,7 +516,7 @@ func (s *RateLimiterStore) ReserveTokens(tenantID string, want, tokensPerMin int
 // wiped the claim, and releasing it here would steal a claim held by the
 // new window's in-flight requests. reservedAmt<=0 or resEpoch==0 mean no
 // reservation was recorded; the call degenerates to AllowTokens.
-func (s *RateLimiterStore) SettleTokens(tenantID string, actual, reservedAmt int, resEpoch int64, tokensPerMin int) (allowed bool, retryAfterSecs int) {
+func (s *RateLimiterStore) SettleTokens(tenantID string, actual, reservedAmt int, resEpoch int64, tokensPerMin, burstPct int) (allowed bool, retryAfterSecs int) {
 	if reservedAmt > 0 && resEpoch > 0 {
 		if v, ok := s.quotaMap.Load(tenantID); ok {
 			e := v.(*tokenWindowEntry)
@@ -506,7 +528,7 @@ func (s *RateLimiterStore) SettleTokens(tenantID string, actual, reservedAmt int
 	if actual <= 0 {
 		return true, 0
 	}
-	return s.AllowTokens(tenantID, actual, tokensPerMin)
+	return s.AllowTokens(tenantID, actual, tokensPerMin, burstPct)
 }
 
 // reservedSubClamp releases amt from e.reserved without letting it go
@@ -545,7 +567,7 @@ func (s *RateLimiterStore) IsTokenQuotaExceeded(tenantID string) bool {
 		if limit <= 0 {
 			return false
 		}
-		burstMs := refillCeilMs(burstTokensFor(limit), limit)
+		burstMs := refillCeilMs(burstTokensFor(limit, atomic.LoadInt64(&e.burstPct)), limit)
 		return atomic.LoadInt64(&e.tatMs)-quotaNowMs.Load() > burstMs
 	}
 	return false

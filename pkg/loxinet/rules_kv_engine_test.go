@@ -193,6 +193,59 @@ func TestKvEngineConfigValidateRankBounds(t *testing.T) {
 	}
 }
 
+// TestKvSubscriberRankPortsBounds pins the port-range contract shared by the
+// mode-1 (P/D) and mode-3 (single-role) subscriber gates.  The range is
+// validated in widened arithmetic before any uint16 conversion, so the last
+// rank can use port 65535 but can never wrap to port 0 or another low port.
+func TestKvSubscriberRankPortsBounds(t *testing.T) {
+	tests := []struct {
+		name      string
+		mode      uint8
+		basePort  uint16
+		rankCount uint16
+		wantPorts []uint16
+		wantErr   string
+	}{
+		{"mode1 exact maximum", 1, 65528, 8, []uint16{65528, 65529, 65530, 65531, 65532, 65533, 65534, 65535}, ""},
+		{"mode3 exact maximum", KvExactModeSingleRole, 65528, 8, []uint16{65528, 65529, 65530, 65531, 65532, 65533, 65534, 65535}, ""},
+		{"mode1 overflow by one", 1, 65529, 8, nil, "kvZmqPort + kvDpRankCount - 1"},
+		{"mode3 overflow by one", KvExactModeSingleRole, 65529, 8, nil, "kvZmqPort + kvDpRankCount - 1"},
+		{"mode1 multiple ranks", 1, 60000, 3, []uint16{60000, 60001, 60002}, ""},
+		{"mode3 multiple ranks", KvExactModeSingleRole, 60000, 3, []uint16{60000, 60001, 60002}, ""},
+		{"single rank at maximum", KvExactModeSingleRole, 65535, 1, []uint16{65535}, ""},
+		{"zero values resolve to defaults", 1, 0, 0, []uint16{5557}, ""},
+		{"rank count exceeds contract", KvExactModeSingleRole, 5557, 9, nil, "1..8"},
+		{"non subscriber mode has no ports", 0, 65535, 8, nil, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := kvSubscriberRankPorts(tt.mode, tt.basePort, tt.rankCount)
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatalf("kvSubscriberRankPorts(%d, %d, %d): want rejection containing %q", tt.mode, tt.basePort, tt.rankCount, tt.wantErr)
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("rejection must contain %q, got %q", tt.wantErr, err.Error())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("kvSubscriberRankPorts(%d, %d, %d): unexpected error: %v", tt.mode, tt.basePort, tt.rankCount, err)
+			}
+			if len(got) != len(tt.wantPorts) {
+				t.Fatalf("got %d rank ports, want %d: got=%v want=%v", len(got), len(tt.wantPorts), got, tt.wantPorts)
+			}
+			for i, want := range tt.wantPorts {
+				if got[i].port != want || got[i].rank != uint16(i) {
+					t.Fatalf("rank-port[%d] = {rank:%d port:%d}, want {rank:%d port:%d}",
+						i, got[i].rank, got[i].port, i, want)
+				}
+			}
+		})
+	}
+}
+
 // TestKvEngineImmutability — behavior cases 3+4: a rule replace changing
 // kvEngineType (vllm→sglang or the inverse) is rejected with the exact
 // message (paired with RuleExistsErr at the AddLbRule call site); a replace

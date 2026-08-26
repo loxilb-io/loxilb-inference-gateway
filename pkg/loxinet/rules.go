@@ -689,6 +689,10 @@ type vipElem struct {
 	pVIP net.IP
 	inst string
 	egr  bool
+	// selfAddr is set when the rule-VIP path itself put the VIP on a kernel
+	// interface. Only such an address may be taken back down when the last
+	// rule referencing the VIP goes away.
+	selfAddr bool
 }
 
 type allowedSrcElem struct {
@@ -1659,36 +1663,21 @@ func (R *RuleH) unregisterOpaqueID(r *ruleEnt) {
 }
 
 // GetLBRuleMarkByKey - Find LB rule matching the given key and return its mark (ruleNum).
-// key format: "VIP:PORT:PROTO" (e.g., "20.20.20.1:5201:tcp") for exact match,
-// or just "VIP" (e.g., "20.20.20.1") for first-match by IP only (legacy compat).
+// key format: "VIP:PORT:PROTO" for IPv4 or "[VIP]:PORT:PROTO" for IPv6,
+// or just "VIP" for first-match by IP only (legacy compat).
 // Used QoS policer to associate DOCA meters with LB rules.
 func (R *RuleH) getLBRuleByKey(key string) *ruleEnt {
-	parts := strings.SplitN(key, ":", 3)
-	vipIP := parts[0]
-	var port uint16
-	var proto uint8
-	exactMatch := false
-	if len(parts) == 3 {
-		if p, err := strconv.ParseUint(parts[1], 10, 16); err == nil {
-			port = uint16(p)
-		}
-		switch parts[2] {
-		case "tcp":
-			proto = 6
-		case "udp":
-			proto = 17
-		case "sctp":
-			proto = 132
-		}
-		exactMatch = true
+	parsed, err := parseLBRuleKey(key)
+	if err != nil {
+		return nil
 	}
 
 	for _, data := range R.tables[RtLB].eMap {
-		if data.tuples.l3Dst.addr.IP.String() != vipIP {
+		if !data.tuples.l3Dst.addr.IP.Equal(parsed.vip) {
 			continue
 		}
-		if exactMatch {
-			if data.tuples.l4Dst.valMin != port || data.tuples.l4Prot.val != proto {
+		if parsed.exact {
+			if data.tuples.l4Dst.valMin != parsed.port || data.tuples.l4Prot.val != parsed.proto {
 				continue
 			}
 		}
@@ -2668,7 +2657,7 @@ func kvEngineEqual(a, b string) bool {
 // for the per-rule KV engine surface (ASVS V4/V5):
 //   - kvEngineType allowlist: "", "vllm", "sglang", "trtllm", "llamacpp" —
 //     unknown strings are REJECTED, never silently treated as vllm.
-//   - kvDpRankCount bounds: 0 (default 1 downstream) or 18. Values >8
+//   - kvDpRankCount bounds: 0 (default 1 downstream) or 1..8. Values >8
 //     are rejected — rank N subscribes kvZmqPort+N on every EP host, so the
 //     cap bounds the port-range walk.
 //
@@ -2685,6 +2674,52 @@ func kvEngineConfigValidate(engine string, dpRankCount uint16) error {
 		return errors.New("kv-dp-rank-count must be within 1..8 (0 = default 1)")
 	}
 	return nil
+}
+
+// kvSubscriberRankPort is a validated (rank, port) pair consumed by the two
+// ZMQ subscriber gates.  Keeping the rank beside its resolved port prevents a
+// later caller from repeating the uint16 addition that used to wrap at 65535.
+type kvSubscriberRankPort struct {
+	rank uint16
+	port uint16
+}
+
+// kvSubscriberRankPorts resolves the default base port/rank count and builds
+// the complete consecutive subscriber-port range for modes 1 and 3.  All
+// arithmetic is widened until the final port has been proven to fit in a
+// uint16; therefore no rank can wrap to port 0 (or another low port).
+//
+// Non-subscriber modes return no ports.  Valid single-rank and non-SGLang ZMQ
+// rules retain the same resolved port as before; the safety invariant applies
+// to every subscriber fan-out even though kvDpRankCount is an SGLang surface.
+func kvSubscriberRankPorts(mode uint8, zmqPort, dpRankCount uint16) ([]kvSubscriberRankPort, error) {
+	if mode != 1 && mode != KvExactModeSingleRole {
+		return nil, nil
+	}
+
+	if zmqPort == 0 {
+		zmqPort = 5557
+	}
+	if dpRankCount == 0 {
+		dpRankCount = 1
+	}
+	if dpRankCount > 8 {
+		return nil, errors.New("kv-dp-rank-count must be within 1..8 (0 = default 1)")
+	}
+
+	lastPort := uint32(zmqPort) + uint32(dpRankCount) - 1
+	if lastPort > 65535 {
+		return nil, fmt.Errorf("kvZmqPort + kvDpRankCount - 1 must be <= 65535 (base %d, ranks %d)", zmqPort, dpRankCount)
+	}
+
+	ports := make([]kvSubscriberRankPort, 0, dpRankCount)
+	for rank := uint16(0); rank < dpRankCount; rank++ {
+		// Safe after the widened last-port check above: every preceding rank is
+		// less than or equal to lastPort.
+		port := uint16(uint32(zmqPort) + uint32(rank))
+		ports = append(ports, kvSubscriberRankPort{rank: rank, port: port})
+	}
+	return ports, nil
 }
 
 // kvTrtllmFeatureGuard rejects the TRT-LLM rule shapes the engine cannot
@@ -3177,6 +3212,14 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	// engine allowlist + DP rank bounds — covers
 	// both the create and update paths (everything below flows through here).
 	if err := kvEngineConfigValidate(serv.KvEngineType, serv.KvDpRankCount); err != nil {
+		return RuleUnknownServiceErr, err
+	}
+
+	// Resolve and validate the complete ZMQ rank-port range before any rule or
+	// data-plane state is mutated.  The returned pairs are reused verbatim by
+	// both subscriber gates, so neither gate performs uint16 port arithmetic.
+	subscriberRankPorts, err := kvSubscriberRankPorts(serv.KvExactMode, serv.KvZmqPort, serv.KvDpRankCount)
+	if err != nil {
 		return RuleUnknownServiceErr, err
 	}
 
@@ -3841,33 +3884,25 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 
 	// Auto-start ZMQ subscribers for KV-cache routing (KV-12)
 	if serv.KvExactMode == 1 {
-		zmqPort := serv.KvZmqPort
-		if zmqPort == 0 {
-			zmqPort = 5557
-		}
 		serviceID := uint32(r.ruleNum)
 		// DP-rank fan-out — SGLang data-parallel
 		// engines publish per-rank on consecutive ports (kvZmqPort+rank), one
 		// subscriber goroutine per rank merging into the shared per-EP
 		// inventory. kvDpRankCount 0 ⇒ 1 (the default idiom) reproduces
 		// today's single KvSubscriberStart call byte-identically.
-		dpRanks := r.kvDpRankCount
-		if dpRanks == 0 {
-			dpRanks = 1
-		}
 		for i, ep := range lBActs.endPoints {
 			// Start subscriber for prefill EPs only (epRole == 1)
 			if ep.epRole == 1 {
-				for rank := uint16(0); rank < dpRanks; rank++ {
+				for _, rankPort := range subscriberRankPorts {
 					// TRT-LLM events ride the EP's own SERVING port (HTTP
 					// drain, no separate event port — kvZmqPort is rejected
 					// non-default at validation), so the subscriber dials
 					// xPort there. Mirrors the single-role gate below.
-					subPort := zmqPort + rank
+					subPort := rankPort.port
 					if r.kvEngineType == "trtllm" {
 						subPort = ep.xPort
 					}
-					KvSubscriberStartRank(serviceID, i, rank, ep.xIP.String(), subPort,
+					KvSubscriberStartRank(serviceID, i, rankPort.rank, ep.xIP.String(), subPort,
 						kvHashAlgoEffective(r.kvHashAlgo, r.kvEngineType), r.kvEngineType, r.kvBlockSize)
 				}
 			}
@@ -3878,20 +3913,12 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		// same zmqPort default and serviceID computation as mode 1. Teardown
 		// stays the generic KvSubscriberStopAll (already service-scoped —
 		// it cancels every (epIdx, rank) entry).
-		zmqPort := serv.KvZmqPort
-		if zmqPort == 0 {
-			zmqPort = 5557
-		}
 		serviceID := uint32(r.ruleNum)
 		// same DP-rank fan-out as the mode-1 gate —
 		// rank N subscribes at kvZmqPort+N; 0 ⇒ 1 default keeps the shipped
 		// single-rank behavior byte-identical.
-		dpRanks := r.kvDpRankCount
-		if dpRanks == 0 {
-			dpRanks = 1
-		}
 		for _, i := range kvSubscriberTargets(serv.KvExactMode, lBActs.endPoints) {
-			for rank := uint16(0); rank < dpRanks; rank++ {
+			for _, rankPort := range subscriberRankPorts {
 				// The RESOLVED contract, not the raw field: an SGLang rule takes
 				// the documented shape (kvHashAlgo omitted), which would
 				// otherwise leave svc.algo empty and make the KV-inventory
@@ -3899,11 +3926,11 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 				// TRT-LLM events ride the EP's own SERVING port (HTTP drain,
 				// no separate event port — kvZmqPort is rejected non-default
 				// at validation), so the subscriber dials xPort there.
-				subPort := zmqPort + rank
+				subPort := rankPort.port
 				if r.kvEngineType == "trtllm" {
 					subPort = lBActs.endPoints[i].xPort
 				}
-				KvSubscriberStartRank(serviceID, i, rank, lBActs.endPoints[i].xIP.String(), subPort,
+				KvSubscriberStartRank(serviceID, i, rankPort.rank, lBActs.endPoints[i].xIP.String(), subPort,
 					kvHashAlgoEffective(r.kvHashAlgo, r.kvEngineType), r.kvEngineType, r.kvBlockSize)
 			}
 		}
@@ -3963,9 +3990,9 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	// R.tables[RtLB] (DP'd above), so GetLBRuleMarkByKey resolves its mark. loxilb only
 	// associates an EXISTING ident — an unresolvable ident surfaces an error here (no
 	// silent-drop). Empty ⇒ no-op (round-trips byte-identical,
-	// The lbKey mirrors GetLBRuleMarkByKey's "VIP:PORT:PROTO" format.
+	// The lbKey mirrors GetLBRuleMarkByKey's IPv4/IPv6-safe wire format.
 	if serv.VipQosPolicyId != "" && R.zone != nil && R.zone.Pols != nil {
-		lbKey := fmt.Sprintf("%s:%d:%s", serv.ServIP, serv.ServPort, serv.Proto)
+		lbKey := formatLBRuleKey(serv.ServIP, serv.ServPort, serv.Proto)
 		if _, qerr := R.zone.Pols.PolAssociateLbRule(serv.VipQosPolicyId, lbKey); qerr != nil {
 			tk.LogIt(tk.LogError, "lb-rule %s: vip_qos_policy_id %q association failed: %v\n",
 				lbKey, serv.VipQosPolicyId, qerr)
@@ -5964,6 +5991,7 @@ func (R *RuleH) AdvRuleVIP(IP net.IP, eIP net.IP, inst string, egress bool) erro
 					tk.LogIt(tk.LogError, "lb-rule vip %s:%s add failed\n", IP.String(), ifname)
 				} else {
 					tk.LogIt(tk.LogInfo, "lb-rule vip %s:%s added\n", IP.String(), ifname)
+					R.markRuleVIPAddr(eIP, true)
 				}
 				loxinlp.DelNeighNoHook(IP.String(), "")
 			}
@@ -5997,6 +6025,7 @@ func (R *RuleH) AdvRuleVIP(IP net.IP, eIP net.IP, inst string, egress bool) erro
 			} else {
 				tk.LogIt(tk.LogInfo, "lb-rule vip %s:%s deleted\n", IP.String(), ifname)
 			}
+			R.markRuleVIPAddr(eIP, false)
 		}
 
 		if egress {
@@ -6068,6 +6097,29 @@ func (r *ruleEnt) RuleVIP2PrivIP() net.IP {
 	}
 }
 
+// markRuleVIPAddr - remember whether the rule-VIP path owns the kernel address
+// backing eIP (always the vipMap key). An address loxilb put there is taken
+// back down when the last rule referencing the VIP goes away; one that was
+// already configured on the host is left alone, since it may be serving
+// something loxilb did not create - a fullproxy VIP, for instance, has to be
+// locally bindable before the sockproxy listener can bind it, so operators
+// configure it ahead of the rule.
+// ownsHostAddr - true when the rule-VIP path may take the host address backing
+// xVIP down again: it has to have put the address there itself, and the address
+// has to still be present.
+func (v *vipElem) ownsHostAddr(xVIP net.IP) bool {
+	return v != nil && v.selfAddr && utils.IsIPHostAddr(xVIP.String())
+}
+
+func (R *RuleH) markRuleVIPAddr(eIP net.IP, self bool) {
+	if eIP == nil {
+		return
+	}
+	if vipEnt := R.vipMap[eIP.String()]; vipEnt != nil {
+		vipEnt.selfAddr = self
+	}
+}
+
 func (R *RuleH) AddRuleVIP(VIP net.IP, pVIP net.IP, inst string, egress bool) {
 	vipEnt := R.vipMap[VIP.String()]
 	if vipEnt == nil {
@@ -6102,7 +6154,7 @@ func (R *RuleH) DeleteRuleVIP(VIP net.IP) {
 		if vipEnt.pVIP != nil {
 			xVIP = vipEnt.pVIP
 		}
-		if utils.IsIPHostAddr(xVIP.String()) {
+		if vipEnt.ownsHostAddr(xVIP) {
 			ifname := "lo"
 			ev, _, iface := R.zone.L3.IfaSelectAny(xVIP, false)
 			if ev == 0 {
