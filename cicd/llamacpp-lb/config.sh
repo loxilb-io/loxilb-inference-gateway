@@ -1,30 +1,34 @@
 #!/bin/bash
-# cicd/trtllm-pd-disagg/config.sh — TensorRT-LLM P/D disaggregation CICD
-# scenario. Tests the SEQUENTIAL context-first rewriter dialect
-# (pd_dialect_trtllm) using mock_trtllm.py (no GPU required). The mock
-# enforces extra="forbid" (any unknown request field 400s) and requires the
-# generation leg to carry an encoded_opaque_state the context mock actually
-# issued — a proxy that reconstructs instead of relaying the extracted span
-# fails this scenario by construction.
+# cicd/llamacpp-lb/config.sh — llama.cpp plain-LB CICD scenario. Tests the
+# fourth typed engine's ONLY supported rule shape (plain L7 LB with
+# CHWBL/session affinity — no KV plane, no P/D) using mock_llamacpp.py
+# (no GPU required). The mock speaks the live-pinned b10524 contract:
+# silent-unknown-fields, malformed-JSON -> 500, ":" SSE ping comments,
+# cached_tokens receipts from a per-process prefix store, /props for the
+# phase-1 warn-probe.
 #
-# Topology (the sglang-pd-disagg layout):
+# Topology (the trtllm-pd-disagg layout, all four engines per EP where the
+# quad-coexistence leg needs them):
 #   l3h1  (10.10.10.1/24)  ── llb1 (loxilb, 10.10.10.254/24)
-#   l3ep1 (31.31.31.1/24)  ── llb1 (31.31.31.254/24)  [trtllm CONTEXT + vllm prefill + sglang prefill A]
-#   l3ep2 (32.32.32.1/24)  ── llb1 (32.32.32.254/24)  [trtllm CONTEXT + sglang prefill B]
-#   l3ep3 (33.33.33.1/24)  ── llb1 (33.33.33.254/24)  [trtllm GENERATION + vllm decode + sglang decode]
+#   l3ep1 (31.31.31.1/24)  ── llb1 (31.31.31.254/24)
+#   l3ep2 (32.32.32.1/24)  ── llb1 (32.32.32.254/24)
+#   l3ep3 (33.33.33.1/24)  ── llb1 (33.33.33.254/24)
 #
-# Mocks per EP (tri-engine coexistence, one process per engine flavor):
-#   :8355 mock_trtllm   (context/context/generation, admin 127.0.0.1:9600)
-#   :8100 mock_sglang_pd (prefill A/B bootstrap :9998, decode; admin :9100)
-#   :8000 mock_vllm     (prefill/prefill/decode, nixl 9001/9003/9002; admin :9000)
+# Mocks per EP:
+#   :8085 mock_llamacpp  (subject; admin 127.0.0.1:9700; l3ep3 runs a
+#         MISMATCHED --build so the typed-rule admission probe has a real
+#         build_mismatch warning to surface — leg J's fixture)
+#   :8355 mock_trtllm    (context/context/generation; quad-coexistence)
+#   :8100 mock_sglang_pd (prefill A/B bootstrap :9998, decode)
+#   :8000 mock_vllm      (prefill/prefill/decode, nixl 9001/9003/9002)
 #
 # LB rules (REST):
-#   Port 2040 — TRT-LLM P/D (subject under test): pd_disagg_mode +
-#               kvEngineType=trtllm + kvExactMode=1 + kvBlockSize=32
-#               (the polled-drain KV plane subscribes the CONTEXT EPs'
-#               serving ports — SOLE consumer of :8355 /kv_cache_events).
-#   Port 2042 — SGLang P/D coexistence rule (dual-dispatch machine).
-#   Port 2043 — vLLM P/D coexistence rule (the sibling sequential machine).
+#   Port 2044 — llamacpp typed CHWBL (subject under test): sel=8 +
+#               kvEngineType=llamacpp. Creation fires the /props warn-probe.
+#   Port 2045 — llamacpp RR + session_header_name=x-session-id (stickiness
+#               + hold-out/demotion legs run here: rotation makes EP
+#               avoidance assertable).
+#   Port 2040/2042/2043 — trtllm/sglang/vllm P/D coexistence rules.
 
 source ../common.sh
 exec < /dev/null
@@ -92,24 +96,30 @@ docker cp 10.10.10.254/key.pem  llb1:/opt/loxilb/cert/server.key
 docker cp minica.pem l3h1:/tmp/minica.pem
 
 echo "#########################################"
-echo "Starting mock TRT-LLM servers (subject under test)"
+echo "Starting mock llama.cpp servers (subject under test)"
 echo "#########################################"
 
 for ep in l3ep1 l3ep2 l3ep3; do
-  docker cp "$(dirname "$0")/mock_trtllm.py" $ep:/tmp/mock_trtllm.py
+  docker cp "$(dirname "$0")/mock_llamacpp.py" $ep:/tmp/mock_llamacpp.py
+done
+# l3ep3 runs a mismatched build on purpose: the typed-rule /props admission
+# probe must have a real fleet-skew warning to surface (leg J).
+$dexec l3ep1 bash -c "nohup python3 /tmp/mock_llamacpp.py --port 8085 --ep-idx 1 --build b10524-mock > /tmp/llamacpp-ep1.log 2>&1 &"
+$dexec l3ep2 bash -c "nohup python3 /tmp/mock_llamacpp.py --port 8085 --ep-idx 2 --build b10524-mock > /tmp/llamacpp-ep2.log 2>&1 &"
+$dexec l3ep3 bash -c "nohup python3 /tmp/mock_llamacpp.py --port 8085 --ep-idx 3 --build b10525-mock > /tmp/llamacpp-ep3.log 2>&1 &"
+
+echo "#########################################"
+echo "Starting mock TRT-LLM + SGLang + vLLM servers (quad coexistence)"
+echo "#########################################"
+
+for ep in l3ep1 l3ep2 l3ep3; do
+  docker cp "$(dirname "$0")/../trtllm-pd-disagg/mock_trtllm.py" $ep:/tmp/mock_trtllm.py
+  docker cp "$(dirname "$0")/../sglang-pd-disagg/mock_sglang_pd.py" $ep:/tmp/mock_sglang_pd.py
+  docker cp "$(dirname "$0")/../vllm-pd-disagg/mock_vllm.py" $ep:/tmp/mock_vllm.py
 done
 $dexec l3ep1 bash -c "nohup python3 /tmp/mock_trtllm.py --role context    --port 8355 --ep-idx 1 > /tmp/trtllm-ctx1.log 2>&1 &"
 $dexec l3ep2 bash -c "nohup python3 /tmp/mock_trtllm.py --role context    --port 8355 --ep-idx 2 > /tmp/trtllm-ctx2.log 2>&1 &"
 $dexec l3ep3 bash -c "nohup python3 /tmp/mock_trtllm.py --role generation --port 8355 --ep-idx 3 > /tmp/trtllm-gen3.log 2>&1 &"
-
-echo "#########################################"
-echo "Starting mock SGLang + vLLM servers (tri-engine coexistence)"
-echo "#########################################"
-
-for ep in l3ep1 l3ep2 l3ep3; do
-  docker cp "$(dirname "$0")/../sglang-pd-disagg/mock_sglang_pd.py" $ep:/tmp/mock_sglang_pd.py
-  docker cp "$(dirname "$0")/../vllm-pd-disagg/mock_vllm.py" $ep:/tmp/mock_vllm.py
-done
 $dexec l3ep1 bash -c "nohup python3 /tmp/mock_sglang_pd.py --role prefill --port 8100 --bootstrap-port 9998 --expect-host 31.31.31.1 --ep-idx 1 > /tmp/sglang-prefill1.log 2>&1 &"
 $dexec l3ep2 bash -c "nohup python3 /tmp/mock_sglang_pd.py --role prefill --port 8100 --bootstrap-port 9998 --expect-host 32.32.32.1 --ep-idx 2 > /tmp/sglang-prefill2.log 2>&1 &"
 $dexec l3ep3 bash -c "nohup python3 /tmp/mock_sglang_pd.py --role decode --port 8100 --ep-idx 3 > /tmp/sglang-decode3.log 2>&1 &"
@@ -118,7 +128,7 @@ $dexec l3ep2 bash -c "nohup python3 /tmp/mock_vllm.py --role prefill --port 8000
 $dexec l3ep3 bash -c "nohup python3 /tmp/mock_vllm.py --role decode --port 8000 --nixl-port 9002 --ep-idx 3 > /tmp/vllm-decode3.log 2>&1 &"
 
 echo "Waiting for mock servers to answer /health..."
-for spec in "l3ep1 8355" "l3ep2 8355" "l3ep3 8355" "l3ep1 8100" "l3ep2 8100" "l3ep3 8100" "l3ep1 8000" "l3ep2 8000" "l3ep3 8000"; do
+for spec in "l3ep1 8085" "l3ep2 8085" "l3ep3 8085" "l3ep1 8355" "l3ep2 8355" "l3ep3 8355" "l3ep1 8100" "l3ep2 8100" "l3ep3 8100" "l3ep1 8000" "l3ep2 8000" "l3ep3 8000"; do
   set -- $spec
   ep="$1"; port="$2"
   ok=0
@@ -132,13 +142,26 @@ for spec in "l3ep1 8355" "l3ep2 8355" "l3ep3 8355" "l3ep1 8100" "l3ep2 8100" "l3
 done
 
 echo "#########################################"
-echo "Installing LB rules on llb1 (ports 2040/2042/2043)"
+echo "Installing LB rules on llb1 (2044/2045 + coexistence 2040/2042/2043)"
 echo "#########################################"
 
-# Port 2040 — TRT-LLM P/D (subject under test). REST path: loxicmd carries
-# no kvEngineType flag yet. kvExactMode=1 subscribes the CONTEXT EPs over
-# the HTTP-polled drain (kvZmqPort deliberately absent — rejected non-
-# default for this engine).
+# Port 2044 — llamacpp typed CHWBL (subject under test). sel=8 = CHWBL
+# (content prefix-hash on the SYSTEM prompt — HAVE_LLM_SYSTEM_PROMPT_HASH
+# builds). Creation fires the /props admission warn-probe (l3ep3's
+# mismatched build must tick loxilb_ai_llamacpp_probe_warnings_total).
+$hexec llb1 curl -s -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
+  -H 'Content-Type: application/json' \
+  -d '{"serviceArguments":{"externalIP":"'"$VIP"'","port":2044,"protocol":"tcp","sel":8,"mode":4,"security":1,"kvEngineType":"llamacpp","sse_mode":true,"host":"'"$VIP"'","monitor":true,"cb_enable":true,"probetype":"http","probeport":8085,"probereq":"/health","probeTimeout":5,"probeRetries":2},"endpoints":[{"endpointIP":"31.31.31.1","targetPort":8085,"weight":1},{"endpointIP":"32.32.32.1","targetPort":8085,"weight":1},{"endpointIP":"33.33.33.1","targetPort":8085,"weight":1}]}'
+echo ""
+
+# Port 2045 — llamacpp RR + session header (stickiness leg; rotation also
+# makes the hold-out/demotion legs' EP-avoidance assertable).
+$hexec llb1 curl -s -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
+  -H 'Content-Type: application/json' \
+  -d '{"serviceArguments":{"externalIP":"'"$VIP"'","port":2045,"protocol":"tcp","sel":0,"mode":4,"security":1,"kvEngineType":"llamacpp","session_header_name":"x-session-id","sse_mode":true,"host":"'"$VIP"'","monitor":true,"cb_enable":true,"probetype":"http","probeport":8085,"probereq":"/health","probeTimeout":5,"probeRetries":2},"endpoints":[{"endpointIP":"31.31.31.1","targetPort":8085,"weight":1},{"endpointIP":"32.32.32.1","targetPort":8085,"weight":1},{"endpointIP":"33.33.33.1","targetPort":8085,"weight":1}]}'
+echo ""
+
+# Port 2040 — TRT-LLM P/D coexistence rule (sequential rewriter machine).
 $hexec llb1 curl -s -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
   -H 'Content-Type: application/json' \
   -d '{"serviceArguments":{"externalIP":"'"$VIP"'","port":2040,"protocol":"tcp","sel":0,"mode":4,"security":1,"pd_disagg_mode":true,"kvEngineType":"trtllm","kvExactMode":1,"kvBlockSize":32,"kvWarmupSec":5,"sse_mode":true,"host":"'"$VIP"'","monitor":true,"cb_enable":true,"probetype":"http","probeport":8355,"probereq":"/health","probeTimeout":5,"probeRetries":2},"endpoints":[{"endpointIP":"31.31.31.1","targetPort":8355,"weight":1,"ep_role":1},{"endpointIP":"32.32.32.1","targetPort":8355,"weight":1,"ep_role":1},{"endpointIP":"33.33.33.1","targetPort":8355,"weight":1,"ep_role":2}]}'
@@ -179,6 +202,6 @@ done
 echo "#########################################"
 echo "Configuration complete"
 echo "#########################################"
-echo "  Port 2040: TRT-LLM P/D (l3ep1+l3ep2 CONTEXT :8355, l3ep3 GENERATION :8355; kvExactMode=1)"
-echo "  Port 2042: SGLang P/D coexistence (:8100, bootstrap :9998)"
-echo "  Port 2043: vLLM P/D coexistence (:8000, nixl 9001/9003/9002)"
+echo "  Port 2044: llamacpp typed CHWBL (subject; :8085, admission probe fired)"
+echo "  Port 2045: llamacpp RR + session_header_name=x-session-id"
+echo "  Port 2040/2042/2043: trtllm/sglang/vllm P/D coexistence"

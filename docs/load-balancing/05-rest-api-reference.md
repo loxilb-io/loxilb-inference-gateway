@@ -109,7 +109,7 @@ snake_case (`pd_disagg_mode`, `sse_mode`, `model_name`, …) vs camelCase (`kvEx
 | `kvZmqPort` | int | base port of the engine's `--kv-events-config` publisher (vLLM/SGLang only; rejected for `"trtllm"`, whose events drain over HTTP on the serving port) |
 | `kvBlockSize` | int | must equal vLLM `--block-size` / SGLang `--page-size` / TensorRT-LLM `tokens_per_block` (default 32; enforced per endpoint via `/server_info` admission) |
 | `kvHashAlgo` | string | `"sha256_cbor"` for vLLM; omit for SGLang and TensorRT-LLM (engine defaults — `"blockhash_trtllm"` is implied by `kvEngineType:"trtllm"`) |
-| `kvEngineType` | string | `"sglang"` or `"trtllm"` selects that engine's contract; empty = vLLM. Immutable after create |
+| `kvEngineType` | string | `"sglang"`, `"trtllm"` or `"llamacpp"` selects that engine's contract; empty = vLLM. Immutable after create. `"llamacpp"` is **plain-LB-only**: it admits no KV/P/D field at all (the engine has no KV event plane and no P/D disaggregation — every `kvExactMode`/`pd_disagg_mode`/`kvZmqPort`/`kvDpRankCount`/`kvBlockSize`/`kvHashAlgo` combination is rejected loudly); typing the rule buys the config-time guards plus the `/props` admission warn-probe — [doc 21](21-llamacpp-load-balancing.md) |
 | `kvDpRankCount` | int | SGLang DP ranks (= `--dp-size`); rank *N* subscribes at `kvZmqPort`+*N*. Must be 1 for `"trtllm"` |
 | `kvWarmupSec` | int | grace period before KV-exact selection engages |
 

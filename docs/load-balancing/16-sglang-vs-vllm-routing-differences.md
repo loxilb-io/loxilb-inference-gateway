@@ -17,6 +17,13 @@ Related: [08 — KV-cache-aware routing (vLLM Tier-1.5 internals)](08-kv-cache-a
 [15 — SGLang KV routing architecture](15-sglang-kv-cache-aware-routing.md),
 [17 — SGLang configuration & tuning](17-sglang-config-tuning.md).
 
+The other two supported engines have their own dialect pages rather than
+rows here: [20 — TensorRT-LLM](20-tensorrt-llm-kv-cache-aware-routing.md)
+(HTTP-drain event plane, sequential context-first P/D rewriter) and
+[21 — llama.cpp](21-llamacpp-load-balancing.md) (no KV event plane and no
+P/D at all — its supported surface is plain LB with CHWBL/session
+affinity, and every `kv*`/`pd*` rule shape is rejected at config time).
+
 > ⚠ **Validation status (read this first).** Everything here is **code-verified, not
 > gate-verified**: neither the binding remote gates nor the live fleet bring-up and the
 > full 3-arm competitive A/B had run when this doc was written. The one exception is the

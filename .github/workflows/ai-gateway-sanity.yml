@@ -13,6 +13,8 @@ on:
     paths:
       - 'cicd/vllm-**'
       - 'cicd/sglang-**'
+      - 'cicd/trtllm-**'
+      - 'cicd/llamacpp-**'
       - 'cicd/ai-**'
       - 'cicd/common/reflect-echo/**'
       - 'pkg/**'
@@ -23,6 +25,8 @@ on:
     paths:
       - 'cicd/vllm-**'
       - 'cicd/sglang-**'
+      - 'cicd/trtllm-**'
+      - 'cicd/llamacpp-**'
       - 'cicd/ai-**'
       - 'cicd/common/reflect-echo/**'
       - 'pkg/**'
@@ -108,6 +112,13 @@ jobs:
       - name: TRT-LLM P/D rewriter-dialect disaggregation (mock TRT-LLM)
         run: |
           cd cicd/trtllm-pd-disagg/
+          ./config.sh
+          ./validation.sh
+          ./rmconfig.sh
+          cd -
+      - name: llama.cpp typed plain-LB affinity + guards (mock llama.cpp)
+        run: |
+          cd cicd/llamacpp-lb/
           ./config.sh
           ./validation.sh
           ./rmconfig.sh
