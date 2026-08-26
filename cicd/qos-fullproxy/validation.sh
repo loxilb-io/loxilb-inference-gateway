@@ -26,7 +26,8 @@
 #                      yet; rule created after -> shaping converges without
 #                      any further control-plane action
 #   F8 re-create heal: delete + re-create the LB rule with the association
-#                      surviving -> the fresh rule re-acquires the shaper
+#                      surviving -> the pre-configured VIP survives the
+#                      delete and the fresh rule re-acquires the shaper
 #                      (config is dropped with the proxy entry on delete;
 #                      the policer ticker must re-drive it)
 #   F9 dir-independent: full-length concurrent shaped upload + shaped
@@ -305,10 +306,18 @@ done
 if [[ "$gone" != 1 ]]; then
     echo "F8 rule delete never landed (rule still listed)" ; code=1
 fi
-# Rule delete rips the VIP off lo (DeleteRuleVIP -> DelAddrNoHook) even though
-# rule create never added it in this standalone topology — without re-adding,
-# SYNs to the VIP are dropped below TCP and the leg wedges on a dead address.
-$dexec llb1 ip addr add $FPVIP3/32 dev lo 2>/dev/null
+# The VIP must still be on lo. config.sh pre-configures it (fullproxy VIPs
+# have to be locally bindable) and rule create never added it in this
+# standalone topology, so rule delete has no business taking it down — a
+# ripped address leaves the re-created rule deaf below TCP, SYNs dropped
+# while the listener looks healthy on a vanished address.
+if ! $dexec llb1 ip addr show dev lo 2>/dev/null | grep -q "$FPVIP3/32"; then
+    echo "F8 rule delete took the pre-configured VIP $FPVIP3 off lo" ; code=1
+    # re-add so the shaper half of the leg still reports its own verdict
+    $dexec llb1 ip addr add $FPVIP3/32 dev lo 2>/dev/null
+else
+    echo "F8 pre-configured VIP $FPVIP3 survived the rule delete"
+fi
 res8=$($dexec llb1 loxicmd create lb $FPVIP3 --tcp=2020:8080 --endpoints=31.31.31.1:1 --mode=fullproxy --host=$FPVIP3)
 echo "F8 rule re-create: $res8"
 s7=""

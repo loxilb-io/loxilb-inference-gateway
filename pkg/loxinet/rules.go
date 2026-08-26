@@ -689,6 +689,10 @@ type vipElem struct {
 	pVIP net.IP
 	inst string
 	egr  bool
+	// selfAddr is set when the rule-VIP path itself put the VIP on a kernel
+	// interface. Only such an address may be taken back down when the last
+	// rule referencing the VIP goes away.
+	selfAddr bool
 }
 
 type allowedSrcElem struct {
@@ -5964,6 +5968,7 @@ func (R *RuleH) AdvRuleVIP(IP net.IP, eIP net.IP, inst string, egress bool) erro
 					tk.LogIt(tk.LogError, "lb-rule vip %s:%s add failed\n", IP.String(), ifname)
 				} else {
 					tk.LogIt(tk.LogInfo, "lb-rule vip %s:%s added\n", IP.String(), ifname)
+					R.markRuleVIPAddr(eIP, true)
 				}
 				loxinlp.DelNeighNoHook(IP.String(), "")
 			}
@@ -5997,6 +6002,7 @@ func (R *RuleH) AdvRuleVIP(IP net.IP, eIP net.IP, inst string, egress bool) erro
 			} else {
 				tk.LogIt(tk.LogInfo, "lb-rule vip %s:%s deleted\n", IP.String(), ifname)
 			}
+			R.markRuleVIPAddr(eIP, false)
 		}
 
 		if egress {
@@ -6068,6 +6074,29 @@ func (r *ruleEnt) RuleVIP2PrivIP() net.IP {
 	}
 }
 
+// markRuleVIPAddr - remember whether the rule-VIP path owns the kernel address
+// backing eIP (always the vipMap key). An address loxilb put there is taken
+// back down when the last rule referencing the VIP goes away; one that was
+// already configured on the host is left alone, since it may be serving
+// something loxilb did not create - a fullproxy VIP, for instance, has to be
+// locally bindable before the sockproxy listener can bind it, so operators
+// configure it ahead of the rule.
+// ownsHostAddr - true when the rule-VIP path may take the host address backing
+// xVIP down again: it has to have put the address there itself, and the address
+// has to still be present.
+func (v *vipElem) ownsHostAddr(xVIP net.IP) bool {
+	return v != nil && v.selfAddr && utils.IsIPHostAddr(xVIP.String())
+}
+
+func (R *RuleH) markRuleVIPAddr(eIP net.IP, self bool) {
+	if eIP == nil {
+		return
+	}
+	if vipEnt := R.vipMap[eIP.String()]; vipEnt != nil {
+		vipEnt.selfAddr = self
+	}
+}
+
 func (R *RuleH) AddRuleVIP(VIP net.IP, pVIP net.IP, inst string, egress bool) {
 	vipEnt := R.vipMap[VIP.String()]
 	if vipEnt == nil {
@@ -6102,7 +6131,7 @@ func (R *RuleH) DeleteRuleVIP(VIP net.IP) {
 		if vipEnt.pVIP != nil {
 			xVIP = vipEnt.pVIP
 		}
-		if utils.IsIPHostAddr(xVIP.String()) {
+		if vipEnt.ownsHostAddr(xVIP) {
 			ifname := "lo"
 			ev, _, iface := R.zone.L3.IfaSelectAny(xVIP, false)
 			if ev == 0 {
