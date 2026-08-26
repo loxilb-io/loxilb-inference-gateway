@@ -21,8 +21,9 @@ type DeleteConfigLoadbalancerExternalipaddressIPAddressPortPortPortmaxPortmaxPro
 	Portmax   float64
 	Proto     string
 
-	Bgp   *bool
-	Block *float64
+	Bgp       *bool
+	Block     *float64
+	ModelName *string
 
 	_basePath string
 	// avoid unkeyed usage
@@ -100,6 +101,14 @@ func (o *DeleteConfigLoadbalancerExternalipaddressIPAddressPortPortPortmaxPortma
 	}
 	if blockQ != "" {
 		qs.Set("block", blockQ)
+	}
+
+	var modelNameQ string
+	if o.ModelName != nil {
+		modelNameQ = *o.ModelName
+	}
+	if modelNameQ != "" {
+		qs.Set("model_name", modelNameQ)
 	}
 
 	_result.RawQuery = qs.Encode()
