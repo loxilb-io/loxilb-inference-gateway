@@ -8012,7 +8012,7 @@ definitions:
             description: Target Attachment(0-RuleName, 1-PortName, 2-PortNameEgress)
           polObjName:
             type: string
-            description: Target Names            
+            description: Target name. Rule attachments use VIP:PORT:PROTO for IPv4 and [VIP]:PORT:PROTO for IPv6.
 
   MirrorEntry:
     type: object

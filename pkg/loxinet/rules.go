@@ -1663,36 +1663,21 @@ func (R *RuleH) unregisterOpaqueID(r *ruleEnt) {
 }
 
 // GetLBRuleMarkByKey - Find LB rule matching the given key and return its mark (ruleNum).
-// key format: "VIP:PORT:PROTO" (e.g., "20.20.20.1:5201:tcp") for exact match,
-// or just "VIP" (e.g., "20.20.20.1") for first-match by IP only (legacy compat).
+// key format: "VIP:PORT:PROTO" for IPv4 or "[VIP]:PORT:PROTO" for IPv6,
+// or just "VIP" for first-match by IP only (legacy compat).
 // Used QoS policer to associate DOCA meters with LB rules.
 func (R *RuleH) getLBRuleByKey(key string) *ruleEnt {
-	parts := strings.SplitN(key, ":", 3)
-	vipIP := parts[0]
-	var port uint16
-	var proto uint8
-	exactMatch := false
-	if len(parts) == 3 {
-		if p, err := strconv.ParseUint(parts[1], 10, 16); err == nil {
-			port = uint16(p)
-		}
-		switch parts[2] {
-		case "tcp":
-			proto = 6
-		case "udp":
-			proto = 17
-		case "sctp":
-			proto = 132
-		}
-		exactMatch = true
+	parsed, err := parseLBRuleKey(key)
+	if err != nil {
+		return nil
 	}
 
 	for _, data := range R.tables[RtLB].eMap {
-		if data.tuples.l3Dst.addr.IP.String() != vipIP {
+		if !data.tuples.l3Dst.addr.IP.Equal(parsed.vip) {
 			continue
 		}
-		if exactMatch {
-			if data.tuples.l4Dst.valMin != port || data.tuples.l4Prot.val != proto {
+		if parsed.exact {
+			if data.tuples.l4Dst.valMin != parsed.port || data.tuples.l4Prot.val != parsed.proto {
 				continue
 			}
 		}
@@ -3967,9 +3952,9 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	// R.tables[RtLB] (DP'd above), so GetLBRuleMarkByKey resolves its mark. loxilb only
 	// associates an EXISTING ident — an unresolvable ident surfaces an error here (no
 	// silent-drop). Empty ⇒ no-op (round-trips byte-identical,
-	// The lbKey mirrors GetLBRuleMarkByKey's "VIP:PORT:PROTO" format.
+	// The lbKey mirrors GetLBRuleMarkByKey's IPv4/IPv6-safe wire format.
 	if serv.VipQosPolicyId != "" && R.zone != nil && R.zone.Pols != nil {
-		lbKey := fmt.Sprintf("%s:%d:%s", serv.ServIP, serv.ServPort, serv.Proto)
+		lbKey := formatLBRuleKey(serv.ServIP, serv.ServPort, serv.Proto)
 		if _, qerr := R.zone.Pols.PolAssociateLbRule(serv.VipQosPolicyId, lbKey); qerr != nil {
 			tk.LogIt(tk.LogError, "lb-rule %s: vip_qos_policy_id %q association failed: %v\n",
 				lbKey, serv.VipQosPolicyId, qerr)
