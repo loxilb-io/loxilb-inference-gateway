@@ -343,10 +343,10 @@ func ConfigDeleteLoadbalancer(params operations.DeleteConfigLoadbalancerHosturlH
 		// Previously only set when HostUrl != "", causing deletion failures for rules without HostUrl
 		lbServ.PathMatchMode = "disabled"
 	}
-	// Support model_name in deletion — rule key includes model_name but swagger
-	// spec does not have it as a parameter; extract from raw query string.
-	if mn := params.HTTPRequest.URL.Query().Get("model_name"); mn != "" {
-		lbServ.ModelName = mn
+	// model_name is part of the rule key: a rule created with one can only be
+	// matched by naming it, and omitting it matches only the model-less rule.
+	if params.ModelName != nil {
+		lbServ.ModelName = *params.ModelName
 	}
 
 	lbRules.Serv = lbServ
@@ -402,10 +402,10 @@ func ConfigDeleteLoadbalancerPortRange(params operations.DeleteConfigLoadbalance
 		// Previously only set when HostUrl != "", causing deletion failures for rules without HostUrl
 		lbServ.PathMatchMode = "disabled"
 	}
-	// Support model_name in deletion — rule key includes model_name but swagger
-	// spec does not have it as a parameter; extract from raw query string.
-	if mn := params.HTTPRequest.URL.Query().Get("model_name"); mn != "" {
-		lbServ.ModelName = mn
+	// model_name is part of the rule key: a rule created with one can only be
+	// matched by naming it, and omitting it matches only the model-less rule.
+	if params.ModelName != nil {
+		lbServ.ModelName = *params.ModelName
 	}
 
 	lbRules.Serv = lbServ
@@ -449,10 +449,10 @@ func ConfigDeleteLoadbalancerWithoutPath(params operations.DeleteConfigLoadbalan
 	// CRITICAL FIX: Default PathMatchMode to "disabled" for backward compatibility
 	// This ensures deletion rule keys match creation rule keys (rule key includes pathMatchMode)
 	lbServ.PathMatchMode = "disabled"
-	// Support model_name in deletion — rule key includes model_name but swagger
-	// spec does not have it as a parameter; extract from raw query string.
-	if mn := params.HTTPRequest.URL.Query().Get("model_name"); mn != "" {
-		lbServ.ModelName = mn
+	// model_name is part of the rule key: a rule created with one can only be
+	// matched by naming it, and omitting it matches only the model-less rule.
+	if params.ModelName != nil {
+		lbServ.ModelName = *params.ModelName
 	}
 
 	lbRules.Serv = lbServ
@@ -486,10 +486,10 @@ func ConfigDeleteLoadbalancerPortRangeWithoutPath(params operations.DeleteConfig
 	// CRITICAL FIX: Default PathMatchMode to "disabled" for backward compatibility
 	// This ensures deletion rule keys match creation rule keys (rule key includes pathMatchMode)
 	lbServ.PathMatchMode = "disabled"
-	// Support model_name in deletion — rule key includes model_name but swagger
-	// spec does not have it as a parameter; extract from raw query string.
-	if mn := params.HTTPRequest.URL.Query().Get("model_name"); mn != "" {
-		lbServ.ModelName = mn
+	// model_name is part of the rule key: a rule created with one can only be
+	// matched by naming it, and omitting it matches only the model-less rule.
+	if params.ModelName != nil {
+		lbServ.ModelName = *params.ModelName
 	}
 
 	lbRules.Serv = lbServ

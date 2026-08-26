@@ -88,31 +88,23 @@ else
   echo "  T-CLI-3 expected empty model_name, got '$mn' [FAIL]"; exit 1
 fi
 
-# ── T-CLI-4: teardown + delete-path probe ────────────────────────────────────
-# loxicmd delete lb addresses rules by host/port/proto only; it has no
-# --path-prefix / --path-match-mode / --model-name flags, so it cannot currently
-# remove an L7/model-keyed rule (KNOWN CLI GAP). We probe the CLI (informational),
-# then remove the rules authoritatively via REST (matching the full key) so the
-# scenario stays idempotent, and assert absence.
-rest_del() { # <port> <host> <path_prefix> <path_match_mode> <model_name>
-  $hexec llb1 curl -s -o /dev/null -X DELETE \
-    "$LOXILB_API/config/loadbalancer/hosturl/$2/externalipaddress/$VIP/port/$1/protocol/tcp?path_prefix=$3&path_match_mode=$4&model_name=$5"
-}
+# ── T-CLI-4: delete through the CLI by the full L7 key ──────────────────────
+# The rule key is host / path_prefix / path_match_mode / model_name on top of
+# VIP:port/proto, so `loxicmd delete lb` has to send all of them. A host-only
+# delete is a different key: it must fail (404) and leave the rule in place
+# rather than silently removing something else.
 echo ""
-echo "T-CLI-4: teardown (probe loxicmd delete lb, then REST-verified removal)"
-$dexec llb1 loxicmd delete lb "$VIP" --host="$VIP" --tcp 2030 >/dev/null 2>&1
+echo "T-CLI-4: loxicmd delete lb by full L7 key"
+$dexec llb1 loxicmd delete lb "$VIP" --tcp 2030 --host="$VIP" >/dev/null 2>&1
 sleep 1
-if [[ "$(rule_field 2030 model_name)" == "__ABSENT__" ]]; then
-  echo "  loxicmd delete lb removed the model-keyed rule [OK]"
-else
-  echo "  NOTE: loxicmd delete lb cannot remove L7/model-keyed rules"
-  echo "        (no --path-prefix/--path-match-mode/--model-name flags) — known CLI gap; removing via REST"
-fi
-rest_del 2030 "$VIP" "/" "prefix" "llama-70b"
-rest_del 2031 "$VIP" "/" "prefix" ""
+check_eq "T-CLI-4 host-only delete leaves the model-keyed rule" '"llama-70b"' "$(rule_field 2030 model_name)"
+$dexec llb1 loxicmd delete lb "$VIP" --tcp 2030 --host="$VIP" \
+  --path-prefix=/ --path-match-mode=prefix --model-name=llama-70b >/dev/null 2>&1
+$dexec llb1 loxicmd delete lb "$VIP" --tcp 2031 --host="$VIP" \
+  --path-prefix=/ --path-match-mode=prefix >/dev/null 2>&1
 sleep 1
-check_eq "T-CLI-4 port 2030 removed" "__ABSENT__" "$(rule_field 2030 model_name)"
-check_eq "T-CLI-4 port 2031 removed" "__ABSENT__" "$(rule_field 2031 model_name)"
+check_eq "T-CLI-4 port 2030 removed (model-keyed)" "__ABSENT__" "$(rule_field 2030 model_name)"
+check_eq "T-CLI-4 port 2031 removed (no model)" "__ABSENT__" "$(rule_field 2031 model_name)"
 
 echo ""
 echo "=== CLI Validation (Model Routing): all T-CLI tests passed ==="

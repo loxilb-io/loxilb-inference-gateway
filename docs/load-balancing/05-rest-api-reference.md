@@ -125,6 +125,17 @@ snake_case (`pd_disagg_mode`, `sse_mode`, `model_name`, …) vs camelCase (`kvEx
 | `model_name` | string | route by requested model (`X-Model` header or body `model`); `""` = catch-all; requires `path_prefix` + `path_match_mode` |
 | `path_prefix`, `path_match_mode` | string | e.g. `"/"` + `"prefix"` |
 
+**Deleting an L7-keyed rule.** `host`, `path_prefix`, `path_match_mode` and `model_name` are part of
+the rule key, so a rule created with them is only matched by a delete that repeats them — use the
+`/config/loadbalancer/hosturl/{host}/externalipaddress/{ip}/port/{port}/protocol/{proto}` route with
+`path_prefix`, `path_match_mode` and `model_name` as query parameters (or `loxicmd delete lb --host
+--path-prefix --path-match-mode --model-name`). A delete that omits a component the rule carries does
+not match it and returns 404 `no-rule error`. Omitting `model_name` matches only a model-less rule:
+with two rules on one VIP:port, one naming a model and one not, a delete without `model_name` removes
+the catch-all and leaves the model rule serving. `DELETE /config/loadbalancer/name/{lb_name}` bypasses
+the key and removes every rule with that name.
+
+
 Guides: [KV/P·D tuning](11-hierarchical-kv-routing-config-tuning.md) ·
 [SGLang](17-sglang-config-tuning.md) · [MCP](18-mcp-gateway.md) ·
 [gateway controls](19-ai-gateway-controls.md). API-key / tenant-rate-limit endpoints
