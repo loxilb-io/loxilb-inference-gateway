@@ -4,11 +4,10 @@
 #
 # Scope note (architectural): the ingress hook stamps every transit packet and
 # the egress hook passes stamped packets untouched, so TRANSIT traffic never
-# processes at an egress hook. The egress port policer therefore governs
-# HOST-ORIGINATED traffic leaving through the port (the same class --egr-hooks
-# exists for). Transit-egress policing needs a post-routing lookup keyed by the
-# resolved output port — designed but not yet built; E5 pins today's semantics
-# so any change surfaces here.
+# processes at an egress hook. That is why the egress port policer used to
+# govern only HOST-ORIGINATED traffic. Transit is now policed by a post-routing
+# lookup that resolves the egress port after the forwarding decision, so both
+# classes meet the same policer; E5 asserts that, and used to pin its absence.
 #
 # Legs:
 #   E1 baseline  : un-policed HOST-ORIGINATED upload (llb1 -> backend, direct,
@@ -18,11 +17,16 @@
 #                  ~CIR (<3.5 MB/s)
 #   E3 direction : transit download through the VIP stays fast — the egress
 #                  policer must not bleed into ingress processing (this is the
-#                  leg that caught the shared-pgm_tbl compile-time-twin defect)
+#                  leg that caught the shared-pgm_tbl compile-time-twin defect),
+#                  and must not be applied to the wrong egress port
 #   E4 detach    : deleting the policy restores host-originated upload
-#   E5 scope pin : transit upload through the VIP is NOT policed today
-#                  (documented limitation — flips when post-routing transit
-#                  egress policing lands)
+#   E5 transit   : transit upload through the VIP is policed to ~CIR. Bounded on
+#                  BOTH sides: a policer that killed the flow outright would
+#                  clear a one-sided ceiling while being a worse bug than the
+#                  one it fixed
+#   E6 heal      : transit upload recovers after the policy is deleted — a
+#                  policer id left latched on the egress path would otherwise
+#                  keep shaping traffic no policy claims
 source ../common.sh
 echo SCENARIO-qos-egrpol
 
@@ -79,11 +83,13 @@ if [[ -z "$bw2" || "$bw2" -lt 100 ]]; then
     echo "E3 egress policer bled into ingress processing (got ${bw2} Mbits/s, want >100)" ; code=1
 fi
 
-# --- E5: transit upload is NOT policed today (scope pin) ---
+# --- E5: transit upload IS policed by the egress policer ---
 bw3=$(run_bw 5)
-echo "E5 transit upload with egress policer up: ${bw3} Mbits/s"
-if [[ -z "$bw3" || "$bw3" -lt 100 ]]; then
-    echo "E5 transit-egress unexpectedly policed - scope changed, update this leg (got ${bw3} Mbits/s)" ; code=1
+echo "E5 transit upload with egress policer up: ${bw3} Mbits/s (CIR 10 Mbps)"
+if [[ -z "$bw3" || "$bw3" -gt 30 ]]; then
+    echo "E5 transit-egress NOT policed (got ${bw3} Mbits/s, want <=30 on a 10 Mbps CIR)" ; code=1
+elif [[ "$bw3" -lt 1 ]]; then
+    echo "E5 transit-egress policer killed the flow rather than shaping it (got ${bw3} Mbits/s)" ; code=1
 fi
 
 # --- E4: detach restores host-originated upload ---
@@ -94,6 +100,13 @@ hbw2=$(host_egr_bw)
 echo "E4 post-detach host-egress: ${hbw2} MB/s"
 if [[ -z "$hbw2" || "$hbw2" -lt 12 ]]; then
     echo "E4 host-egress NOT restored after policy delete (${hbw2} MB/s)" ; code=1
+fi
+
+# --- E6: transit upload recovers once the policy is gone ---
+bw4=$(run_bw 5)
+echo "E6 post-detach transit upload: ${bw4} Mbits/s"
+if [[ -z "$bw4" || "$bw4" -lt 100 ]]; then
+    echo "E6 transit-egress still policed after policy delete (${bw4} Mbits/s, want >100)" ; code=1
 fi
 
 $dexec l3ep1 pkill -9 iperf3 2>/dev/null

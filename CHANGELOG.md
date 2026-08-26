@@ -57,12 +57,16 @@ binary behaves exactly like upstream loxilb.
   smooth token bucket, so a tenant recovers continuously rather than at a
   fixed window boundary, and idle per-tenant state is evicted. Configured via
   `tokens_per_min` on the tenant rate-limit API and optional `model_limits`
-  for per-model budgets.
+  for per-model budgets. Bucket capacity — how much of a minute's budget a
+  fully idle tenant may spend at once — defaults to one whole minute and can be
+  narrowed or widened per tenant with `burst_pct` on the same API.
 - **Traffic policing and shaping**, layered:
   - **Load-balancer-rule policers** (eBPF) — a bandwidth budget attached to a
     rule rather than a port, applied to both directions of the session.
-  - **Egress-direction port policers** behind `--egr-hooks`, for
-    host-originated egress.
+  - **Egress-direction port policers** behind `--egr-hooks`, applied to
+    host-originated egress and to transit traffic leaving through the port.
+    Transit is policed after the forwarding decision, against the port the
+    packet actually leaves by, so both classes meet the same budget.
   - **An L7 byte shaper** for full-proxy AI rules, which *paces* payload bytes
     to the configured rate in either direction instead of dropping them.
     Shaper-paused time is excluded from idle and stream-duration reaping, so
@@ -87,6 +91,12 @@ binary behaves exactly like upstream loxilb.
   load balancing is unchanged and documented upstream.
 
 ### Upgrade notes
+
+- **`tenant_rate_limits` gains a `burst_pct` column.** The gateway adds it on
+  start-up if it is missing, so an existing database needs no manual step and
+  an already-migrated one is left alone. The column defaults to `0`, which
+  means "use the server default", so tenants configured before this release
+  keep exactly the capacity they had.
 
 - **Token-quota state does not interoperate across this change in an HA pair.**
   Quota is synchronized between peers over an unchanged wire format, and this
