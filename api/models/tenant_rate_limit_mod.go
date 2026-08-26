@@ -19,6 +19,9 @@ import (
 // swagger:model TenantRateLimitMod
 type TenantRateLimitMod struct {
 
+	// Per-model token quotas for the tenant
+	ModelLimits []*TenantModelRateLimit `json:"model_limits,omitempty"`
+
 	// Maximum requests per second for the tenant
 	Rps int64 `json:"rps,omitempty"`
 

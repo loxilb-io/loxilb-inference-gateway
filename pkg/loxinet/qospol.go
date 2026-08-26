@@ -123,7 +123,8 @@ func PolInfoXlateValidate(pInfo *cmn.PolInfo) bool {
 // PolObjValidate - validate object to be attached
 func PolObjValidate(pObj *cmn.PolObj) bool {
 
-	if pObj.AttachMent != cmn.PolAttachPort && pObj.AttachMent != cmn.PolAttachLbRule {
+	if pObj.AttachMent != cmn.PolAttachPort && pObj.AttachMent != cmn.PolAttachLbRule &&
+		pObj.AttachMent != cmn.PolAttachPortEgress {
 		return false
 	}
 
@@ -163,6 +164,14 @@ func (P *PolH) PolAdd(pName string, pInfo cmn.PolInfo, pObjArgs cmn.PolObj) (int
 	if PolObjValidate(&pObjArgs) == false {
 		tk.LogIt(tk.LogError, "policer add - %s: bad attach point\n", pName)
 		return PolAttachErr, errors.New("pol-attachpoint error")
+	}
+
+	// The egress-direction port policer runs on the TC egress image, which is
+	// only attached under --egr-hooks. Without the hook the bucket would exist
+	// and never be consulted — refuse loudly instead of accepting a no-op.
+	if pObjArgs.AttachMent == cmn.PolAttachPortEgress && !mh.eHooks {
+		tk.LogIt(tk.LogError, "policer add - %s: egress attach needs --egr-hooks\n", pName)
+		return PolAttachErr, errors.New("egress policer attach needs --egr-hooks")
 	}
 
 	if PolInfoXlateValidate(&pInfo) == false {
@@ -228,10 +237,14 @@ func (P *PolH) PolAssociateLbRule(ident string, lbKey string) (int, error) {
 		return PolNoExistErr, errors.New("no such policer error")
 	}
 
-	// Idempotent: if this LB-rule attachment already exists on the policer, do nothing.
+	// Idempotent: if this LB-rule attachment already exists on the policer,
+	// re-drive the DP sync instead of returning early — a rule deleted and
+	// re-created keeps the association object but the fresh rule act starts
+	// with polid 0.
 	for idx := range p.PObjs {
 		pObj := &p.PObjs[idx]
 		if pObj.Args.AttachMent == cmn.PolAttachLbRule && pObj.Args.PolObjName == lbKey {
+			pObj.PolObj2DP(DpCreate)
 			return 0, nil
 		}
 	}
@@ -287,7 +300,8 @@ func (P *PolH) PolPortDelete(name string) {
 	for _, p := range P.PolMap {
 		for idx, pObj := range p.PObjs {
 			var pP *PolObjInfo
-			if pObj.Args.AttachMent == cmn.PolAttachPort &&
+			if (pObj.Args.AttachMent == cmn.PolAttachPort ||
+				pObj.Args.AttachMent == cmn.PolAttachPortEgress) &&
 				pObj.Args.PolObjName == name {
 				pP = &p.PObjs[idx]
 				pP.Sync = 1
@@ -319,9 +333,17 @@ func (P *PolH) PolTicker() {
 				if pP.Sync != 0 {
 					pP.PolObj2DP(DpCreate)
 				} else {
-					if pObj.Args.AttachMent == cmn.PolAttachPort {
+					if pObj.Args.AttachMent == cmn.PolAttachPort ||
+						pObj.Args.AttachMent == cmn.PolAttachPortEgress {
 						port := pObj.Parent.Zone.Ports.PortFindByName(pObj.Args.PolObjName)
 						if port == nil {
+							pP.Sync = 1
+						}
+					} else if pObj.Args.AttachMent == cmn.PolAttachLbRule {
+						// Detect a rule that was deleted and re-created: the fresh
+						// rule act starts with polid 0 while this attachment
+						// believes it is applied. Re-drive on the next tick.
+						if !pObj.Parent.Zone.Rules.RuleQosPolInSync(pObj.Args.PolObjName, uint16(pObj.Parent.HwNum)) {
 							pP.Sync = 1
 						}
 					}
@@ -351,14 +373,51 @@ func (P *PolH) polTickerDocaMeterStats() {
 // PolObj2DP - Sync state of policer's attachment point with data-path
 func (pObjInfo *PolObjInfo) PolObj2DP(work DpWorkT) int {
 
-	// LB rule attachment: handled via TargetLBMark in DP → ShadowPolAdd path
+	// LB rule attachment. An L4 rule gets the policer id programmed into its
+	// datapath act (dp_proxy_tacts.polid) via a rule re-sync; a fullproxy rule
+	// gets the L7 byte shaper configured from the policer's rates instead (no
+	// nat_map entry exists to police there). The rule may legitimately not
+	// exist yet — policy objects can be created before their rule — so a
+	// missing rule flags Sync and PolTicker re-drives until it appears.
 	if pObjInfo.Args.AttachMent == cmn.PolAttachLbRule {
+		zone := pObjInfo.Parent.Zone
+		if zone == nil || zone.Rules == nil {
+			pObjInfo.Sync = 1
+			return -1
+		}
+		polid := uint16(pObjInfo.Parent.HwNum)
+		if work == DpRemove {
+			polid = 0
+		}
+		code, err := zone.Rules.RuleQosPolAttach(pObjInfo.Args.PolObjName, polid,
+			&pObjInfo.Parent.Info)
+		if err != nil {
+			if work == DpRemove || code == RuleArgsErr {
+				// Detach with the rule already gone needs nothing; a hard
+				// config error will not heal on retry — either way, stop
+				// retrying and log.
+				if code == RuleArgsErr && work != DpRemove {
+					tk.LogIt(tk.LogError, "policer %s -> lb-rule %s: %s\n",
+						pObjInfo.Parent.Key.PolName, pObjInfo.Args.PolObjName, err)
+				}
+				pObjInfo.Sync = 0
+				return 0
+			}
+			pObjInfo.Sync = 1
+			return -1
+		}
 		pObjInfo.Sync = 0
 		return 0
 	}
 
-	if pObjInfo.Args.AttachMent != cmn.PolAttachPort {
+	if pObjInfo.Args.AttachMent != cmn.PolAttachPort &&
+		pObjInfo.Args.AttachMent != cmn.PolAttachPortEgress {
 		return -1
+	}
+
+	portProp := cmn.PortPropPol
+	if pObjInfo.Args.AttachMent == cmn.PolAttachPortEgress {
+		portProp = cmn.PortPropPolEgress
 	}
 
 	port := pObjInfo.Parent.Zone.Ports.PortFindByName(pObjInfo.Args.PolObjName)
@@ -368,14 +427,14 @@ func (pObjInfo *PolObjInfo) PolObj2DP(work DpWorkT) int {
 	}
 
 	if work == DpCreate {
-		_, err := pObjInfo.Parent.Zone.Ports.PortUpdateProp(port.Name, cmn.PortPropPol,
+		_, err := pObjInfo.Parent.Zone.Ports.PortUpdateProp(port.Name, portProp,
 			pObjInfo.Parent.Zone.Name, true, int(pObjInfo.Parent.HwNum))
 		if err != nil {
 			pObjInfo.Sync = 1
 			return -1
 		}
 	} else if work == DpRemove {
-		pObjInfo.Parent.Zone.Ports.PortUpdateProp(port.Name, cmn.PortPropPol,
+		pObjInfo.Parent.Zone.Ports.PortUpdateProp(port.Name, portProp,
 			pObjInfo.Parent.Zone.Name, false, 0)
 	}
 

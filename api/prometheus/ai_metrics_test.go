@@ -280,3 +280,133 @@ func TestRecordPDRequest_ZeroLatencySkipsHistograms(t *testing.T) {
 		t.Errorf("expected no decode histogram sample when latency=0, got +%d", afterDecode-beforeDecode)
 	}
 }
+
+// TestRecordTokenUsage_KindSplit verifies the prompt/completion kind split on
+// the consumed counter and that an exact (non-estimated) charge leaves the
+// estimated/missing counters untouched.
+func TestRecordTokenUsage_KindSplit(t *testing.T) {
+	model, tenant := "tok-model-a", "tok-tenant-a"
+
+	RecordTokenUsage(model, tenant, 100, 40, false)
+
+	if v := getCounterValue(aiTokensConsumedTotal, model, tenant, "prompt"); v != 100 {
+		t.Fatalf("expected prompt consumed=100, got %f", v)
+	}
+	if v := getCounterValue(aiTokensConsumedTotal, model, tenant, "completion"); v != 40 {
+		t.Fatalf("expected completion consumed=40, got %f", v)
+	}
+	if v := getCounterValue(aiTokensEstimatedTotal, model, tenant); v != 0 {
+		t.Fatalf("exact charge must not feed estimated counter, got %f", v)
+	}
+	if v := getCounterValue(aiTokensMissingTotal, model, tenant); v != 0 {
+		t.Fatalf("exact charge must not feed missing counter, got %f", v)
+	}
+}
+
+// TestRecordTokenUsage_EstimatedFeedsSplitCounters verifies an estimate-net
+// charge lands in consumed (kind-split), estimated (token-weighted), and
+// missing (response-weighted) simultaneously.
+func TestRecordTokenUsage_EstimatedFeedsSplitCounters(t *testing.T) {
+	model, tenant := "tok-model-b", "tok-tenant-b"
+
+	RecordTokenUsage(model, tenant, 10, 5, true)
+
+	if v := getCounterValue(aiTokensConsumedTotal, model, tenant, "prompt"); v != 10 {
+		t.Fatalf("expected prompt consumed=10, got %f", v)
+	}
+	if v := getCounterValue(aiTokensConsumedTotal, model, tenant, "completion"); v != 5 {
+		t.Fatalf("expected completion consumed=5, got %f", v)
+	}
+	if v := getCounterValue(aiTokensEstimatedTotal, model, tenant); v != 15 {
+		t.Fatalf("expected estimated=15, got %f", v)
+	}
+	if v := getCounterValue(aiTokensMissingTotal, model, tenant); v != 1 {
+		t.Fatalf("expected missing=1, got %f", v)
+	}
+}
+
+// TestRecordTokenUsage_ClampsNegativeAndSkipsZero verifies negative counts
+// clamp to zero and an all-zero charge records nothing at all.
+func TestRecordTokenUsage_ClampsNegativeAndSkipsZero(t *testing.T) {
+	model, tenant := "tok-model-c", "tok-tenant-c"
+
+	RecordTokenUsage(model, tenant, -5, 0, true)
+	if v := getCounterValue(aiTokensMissingTotal, model, tenant); v != 0 {
+		t.Fatalf("all-zero charge must record nothing, missing=%f", v)
+	}
+
+	RecordTokenUsage(model, tenant, 7, -3, false)
+	if v := getCounterValue(aiTokensConsumedTotal, model, tenant, "prompt"); v != 7 {
+		t.Fatalf("expected prompt consumed=7, got %f", v)
+	}
+	if v := getCounterValue(aiTokensConsumedTotal, model, tenant, "completion"); v != 0 {
+		t.Fatalf("negative completion must clamp to 0, got %f", v)
+	}
+}
+
+// TestRecordTokenQuotaDenied verifies the dedicated gate-denial counter.
+func TestRecordTokenQuotaDenied(t *testing.T) {
+	tenant := "tok-tenant-d"
+	RecordTokenQuotaDenied(tenant)
+	RecordTokenQuotaDenied(tenant)
+	if v := getCounterValue(aiTokenQuotaDeniedTotal, tenant); v != 2 {
+		t.Fatalf("expected denied=2, got %f", v)
+	}
+}
+
+// TestTokenQuotaCollector gathers the scrape-time collector against a fake
+// snapshot source and checks utilization math (including >1.0 overshoot),
+// zero-limit skipping, and duplicate-sanitized-label suppression.
+func TestTokenQuotaCollector(t *testing.T) {
+	c := &tokenQuotaCollector{snapshot: func() []TokenQuotaState {
+		return []TokenQuotaState{
+			{Tenant: "t-one", Consumed: 50, Limit: 200},
+			{Tenant: "t-two", Consumed: 300, Limit: 200}, // overshoot: 1.5
+			{Tenant: "t-nolimit", Consumed: 5, Limit: 0}, // must be skipped
+			{Tenant: "dup a", Consumed: 1, Limit: 10},    // sanitizes to dup_a
+			{Tenant: "dup_a", Consumed: 9, Limit: 10},    // duplicate label, dropped
+		}
+	}}
+	reg := prometheus.NewPedanticRegistry()
+	reg.MustRegister(c)
+
+	mfs, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("gather failed: %v", err)
+	}
+
+	util := map[string]float64{}
+	limit := map[string]float64{}
+	for _, mf := range mfs {
+		for _, m := range mf.GetMetric() {
+			var tenant string
+			for _, lp := range m.GetLabel() {
+				if lp.GetName() == "tenant" {
+					tenant = lp.GetValue()
+				}
+			}
+			switch mf.GetName() {
+			case "loxilb_ai_token_quota_utilization":
+				util[tenant] = m.GetGauge().GetValue()
+			case "loxilb_ai_token_quota_limit_tokens":
+				limit[tenant] = m.GetGauge().GetValue()
+			}
+		}
+	}
+
+	if v := util["t-one"]; v != 0.25 {
+		t.Fatalf("expected utilization 0.25 for t-one, got %f", v)
+	}
+	if v := util["t-two"]; v != 1.5 {
+		t.Fatalf("expected overshoot utilization 1.5 for t-two, got %f", v)
+	}
+	if _, ok := util["t-nolimit"]; ok {
+		t.Fatal("zero-limit tenant must not be exported")
+	}
+	if v := util["dup_a"]; v != 0.1 {
+		t.Fatalf("expected first-wins utilization 0.1 for dup_a, got %f", v)
+	}
+	if v := limit["t-one"]; v != 200 {
+		t.Fatalf("expected limit 200 for t-one, got %f", v)
+	}
+}

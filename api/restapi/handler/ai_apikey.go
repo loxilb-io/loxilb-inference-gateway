@@ -185,7 +185,18 @@ func ConfigPostAITenantRateLimit(params aiops.PostConfigAiTenantRatelimitParams,
 		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage("tenant_id is required")}
 	}
 
-	if err := ApiHooks.NetTenantRateLimitSet(*body.TenantID, int(body.Rps), int(body.TokensPerMin)); err != nil {
+	modelLimits := make([]cmn.TenantModelRateLimit, 0, len(body.ModelLimits))
+	for _, ml := range body.ModelLimits {
+		if ml == nil || ml.Model == "" {
+			return &ErrorResponse{Payload: ResultErrorResponseErrorMessage("model_limits entries require a model name")}
+		}
+		modelLimits = append(modelLimits, cmn.TenantModelRateLimit{
+			Model:        ml.Model,
+			TokensPerMin: int(ml.TokensPerMin),
+		})
+	}
+
+	if err := ApiHooks.NetTenantRateLimitSet(*body.TenantID, int(body.Rps), int(body.TokensPerMin), modelLimits); err != nil {
 		tk.LogIt(tk.LogError, "[AITenantRateLimit] Failed to set rate limit for tenant %s: %v\n", *body.TenantID, err)
 		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
@@ -211,6 +222,12 @@ func ConfigGetAITenantRateLimit(params aiops.GetConfigAiTenantRatelimitTenantIDP
 		Rps:          int64(entry.RPS),
 		TokensPerMin: int64(entry.TokensPerMin),
 		UpdatedAt:    strfmt.DateTime(entry.UpdatedAt),
+	}
+	for _, ml := range entry.ModelLimits {
+		result.ModelLimits = append(result.ModelLimits, &models.TenantModelRateLimit{
+			Model:        ml.Model,
+			TokensPerMin: int64(ml.TokensPerMin),
+		})
 	}
 
 	return aiops.NewGetConfigAiTenantRatelimitTenantIDOK().WithPayload(result)

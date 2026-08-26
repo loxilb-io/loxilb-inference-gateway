@@ -148,8 +148,75 @@ var (
 		[]string{"model", "tenant"},
 	)
 
+	// aiTokensConsumedTotal counts tokens metered from completed AI
+	// responses, split prompt/completion via the kind label. Fed from the
+	// quota-charge path (llb_ai_token_quota_consume), so the counts are
+	// byte-identical to what the tenant quota was charged — including
+	// estimate-net charges, which the estimated/missing counters below keep
+	// distinguishable. The response-complete recorder is NOT used here: its
+	// non-streaming leg can observe zero counts when the usage object
+	// arrives in a later TCP segment than the response headers.
+	aiTokensConsumedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "loxilb_ai_tokens_consumed_total",
+			Help: "Total tokens metered against completed AI Gateway responses, by model, tenant, and kind (prompt|completion).",
+		},
+		[]string{"model", "tenant", "kind"},
+	)
+
+	// aiTokensEstimatedTotal counts quota-charged tokens whose counts came
+	// from the data plane's estimate net (request-size prompt estimate +
+	// SSE chunk count) rather than an extracted usage object. A non-zero
+	// rate means some responses complete without a readable usage chunk —
+	// the split keeps estimated accounting distinguishable from exact.
+	aiTokensEstimatedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "loxilb_ai_tokens_estimated_total",
+			Help: "Total tokens charged against tenant quotas from the estimate net (no usage object in the response), by model and tenant.",
+		},
+		[]string{"model", "tenant"},
+	)
+
+	// aiTokensMissingTotal counts completed responses that produced no
+	// readable usage object, so the estimate net had to price the charge.
+	// Counts responses (not tokens); pair with aiTokensEstimatedTotal for
+	// the token-weighted view.
+	aiTokensMissingTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "loxilb_ai_tokens_missing_total",
+			Help: "Total completed AI Gateway responses with no readable usage object (charge fell back to the estimate net), by model and tenant.",
+		},
+		[]string{"model", "tenant"},
+	)
+
+	// aiTokenQuotaDeniedTotal counts requests denied 429 at the rate-limit
+	// gate because the tenant's token-quota latch was set. Numerically a
+	// subset of loxilb_ai_rate_limit_hits_total{reason="token_quota_exceeded"},
+	// kept as its own series so quota alerting does not depend on a reason
+	// string, and as the anchor for per-model quota labels when quota keying
+	// grows a model dimension.
+	aiTokenQuotaDeniedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "loxilb_ai_token_quota_denied_total",
+			Help: "Total AI Gateway requests denied at the gate because the tenant token quota was exhausted, by tenant.",
+		},
+		[]string{"tenant"},
+	)
+
+	// aiTokenQuotaColdOpenTotal marks cold fail-open windows: the node began
+	// serving quota-limited traffic with empty in-memory quota state and no
+	// peer re-taught it in time (or no peers exist). Without this series a
+	// freshly restarted node that under-enforces for up to one window is
+	// indistinguishable from a healthy one.
+	aiTokenQuotaColdOpenTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "loxilb_ai_token_quota_cold_open_total",
+			Help: "Total times this node started serving token-quota traffic fail-open with cold (empty) quota state, without peer warm-up.",
+		},
+	)
+
 	// ============================================================================
-	// P/D DISAGGREGATION METRICS 
+	// P/D DISAGGREGATION METRICS
 	// ============================================================================
 
 	// aiPDPrefillDuration tracks prefill phase latency as a histogram.
@@ -242,6 +309,143 @@ func RecordRateLimitHit(tenantID, reason string) {
 // when decision == 2 (HTTP 403 / model not in key's allowed list).
 func RecordModelNotAllowed(tenantID, model string) {
 	aiModelNotAllowedTotal.WithLabelValues(boundModelLabel(model), sanitizeLabel(tenantID)).Inc()
+}
+
+// RecordTokenUsage feeds the token-accounting series from the quota-charge
+// path (llb_ai_token_quota_consume). promptTokens/completionTokens are the
+// counts the tenant quota was charged for one completed response. estimated
+// marks a charge priced by the data plane's estimate net — no usage object
+// materialized in the response — which additionally feeds the estimated-token
+// and missing-usage counters.
+func RecordTokenUsage(modelName, tenantID string, promptTokens, completionTokens int, estimated bool) {
+	promptTokens = max(promptTokens, 0)
+	completionTokens = max(completionTokens, 0)
+	if promptTokens+completionTokens == 0 {
+		return
+	}
+	model := boundModelLabel(modelName)
+	tenant := sanitizeLabel(tenantID)
+	if promptTokens > 0 {
+		aiTokensConsumedTotal.WithLabelValues(model, tenant, "prompt").Add(float64(promptTokens))
+	}
+	if completionTokens > 0 {
+		aiTokensConsumedTotal.WithLabelValues(model, tenant, "completion").Add(float64(completionTokens))
+	}
+	if estimated {
+		aiTokensEstimatedTotal.WithLabelValues(model, tenant).Add(float64(promptTokens + completionTokens))
+		aiTokensMissingTotal.WithLabelValues(model, tenant).Inc()
+	}
+}
+
+// RecordTokenQuotaColdOpen increments loxilb_ai_token_quota_cold_open_total.
+// Call once per cold fail-open transition: quota enforcement is now running
+// on empty state that no peer warmed up.
+func RecordTokenQuotaColdOpen() {
+	aiTokenQuotaColdOpenTotal.Inc()
+}
+
+// RecordTokenQuotaDenied increments the loxilb_ai_token_quota_denied_total
+// counter. Call this from llb_ai_ratelimit_check when the denial reason is
+// the tenant token-quota latch (error code "token_quota_exceeded").
+func RecordTokenQuotaDenied(tenantID string) {
+	aiTokenQuotaDeniedTotal.WithLabelValues(sanitizeLabel(tenantID)).Inc()
+}
+
+// TokenQuotaState is one quota bucket's live state as supplied by the
+// snapshot source registered via RegisterTokenQuotaSource (the rate-limiter
+// store, adapted in pkg/loxinet). Model is empty for the tenant aggregate
+// bucket and set for a tenant|model bucket; the collector routes the two to
+// separate series so the aggregate's labels stay unchanged.
+type TokenQuotaState struct {
+	Tenant   string
+	Model    string
+	Consumed int64
+	Limit    int64
+}
+
+var (
+	tokenQuotaUtilizationDesc = prometheus.NewDesc(
+		"loxilb_ai_token_quota_utilization",
+		"Fraction of the per-tenant tokens-per-minute quota currently spent and not yet refilled, computed at scrape time. May exceed 1.0 while the bucket is in post-hoc debt; decays continuously as the bucket refills.",
+		[]string{"tenant"}, nil,
+	)
+	tokenQuotaLimitDesc = prometheus.NewDesc(
+		"loxilb_ai_token_quota_limit_tokens",
+		"Per-tenant tokens-per-minute quota as of the tenant's most recent charge. Headroom in tokens = limit * (1 - utilization).",
+		[]string{"tenant"}, nil,
+	)
+	tokenQuotaModelUtilizationDesc = prometheus.NewDesc(
+		"loxilb_ai_token_quota_model_utilization",
+		"Fraction of a tenant's per-model tokens-per-minute quota currently spent and not yet refilled, computed at scrape time. Same semantics as loxilb_ai_token_quota_utilization, keyed tenant+model.",
+		[]string{"tenant", "model"}, nil,
+	)
+	tokenQuotaModelLimitDesc = prometheus.NewDesc(
+		"loxilb_ai_token_quota_model_limit_tokens",
+		"Per-model tokens-per-minute quota for a tenant as of the pair's most recent charge.",
+		[]string{"tenant", "model"}, nil,
+	)
+)
+
+// tokenQuotaCollector exports quota utilization at scrape time by reading the
+// live rate-limiter state. A gauge SET on the charge path would freeze at its
+// last written value: a tenant denied at the gate never completes a response,
+// so no charge runs to move the gauge back down after the window refills —
+// the tenant would read permanently over-quota while actually admitted again.
+// Scrape-time computation keeps the series truthful for throttled and idle
+// tenants alike.
+type tokenQuotaCollector struct {
+	snapshot func() []TokenQuotaState
+}
+
+func (c *tokenQuotaCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- tokenQuotaUtilizationDesc
+	ch <- tokenQuotaLimitDesc
+	ch <- tokenQuotaModelUtilizationDesc
+	ch <- tokenQuotaModelLimitDesc
+}
+
+func (c *tokenQuotaCollector) Collect(ch chan<- prometheus.Metric) {
+	// Distinct tenant/model IDs can sanitize to the same label value;
+	// emitting both would fail the scrape with a duplicate-series error, so
+	// only the first snapshot entry per sanitized label set is exported.
+	seen := make(map[string]struct{})
+	for _, st := range c.snapshot() {
+		if st.Limit <= 0 {
+			continue
+		}
+		tenant := sanitizeLabel(st.Tenant)
+		if st.Model != "" {
+			model := sanitizeLabel(st.Model)
+			if _, dup := seen[tenant+"|"+model]; dup {
+				continue
+			}
+			seen[tenant+"|"+model] = struct{}{}
+			ch <- prometheus.MustNewConstMetric(tokenQuotaModelUtilizationDesc,
+				prometheus.GaugeValue, float64(st.Consumed)/float64(st.Limit), tenant, model)
+			ch <- prometheus.MustNewConstMetric(tokenQuotaModelLimitDesc,
+				prometheus.GaugeValue, float64(st.Limit), tenant, model)
+			continue
+		}
+		if _, dup := seen[tenant]; dup {
+			continue
+		}
+		seen[tenant] = struct{}{}
+		ch <- prometheus.MustNewConstMetric(tokenQuotaUtilizationDesc,
+			prometheus.GaugeValue, float64(st.Consumed)/float64(st.Limit), tenant)
+		ch <- prometheus.MustNewConstMetric(tokenQuotaLimitDesc,
+			prometheus.GaugeValue, float64(st.Limit), tenant)
+	}
+}
+
+var tokenQuotaSourceOnce sync.Once
+
+// RegisterTokenQuotaSource registers the scrape-time token-quota collector
+// backed by fn. Call it when the rate-limiter store is initialised; only the
+// first registration takes effect.
+func RegisterTokenQuotaSource(fn func() []TokenQuotaState) {
+	tokenQuotaSourceOnce.Do(func() {
+		prometheus.MustRegister(&tokenQuotaCollector{snapshot: fn})
+	})
 }
 
 // RecordPDRequest records a P/D disaggregation lifecycle event for Prometheus metrics.

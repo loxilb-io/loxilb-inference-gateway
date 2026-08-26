@@ -14,7 +14,7 @@
  *
  *   TestRateLimiterRoundTrip            — SPEC B1: Export→Import preserves
  *                                         per-key config + per-tenant atomic
- *                                         window state byte-for-byte.
+ *                                         bucket state byte-for-byte.
  *   TestRateLimiterApplyGossipDelta     — gossip max-merge idempotent under
  *                                         reordered messages (RESEARCH §4).
  *   TestRateLimiterExportConcurrent     — SPEC B2: ExportState races
@@ -26,10 +26,13 @@
  *   TestRateLimiterCleanupCompat        — Cleanup goroutine continues to run
  *                                         untouched alongside the new sync API.
  *   TestRateLimiterExportDeltaProgress  — ExportDelta only emits entries
- *                                         whose Consumed has increased
- *                                         since the prev snapshot.
- *   TestRateLimiterEpochAdvance         — newer epoch on receive resets
- *                                         consumed; older is ignored.
+ *                                         whose bucket drain time has
+ *                                         advanced since the prev snapshot.
+ *   TestRateLimiterEpochAdvance         — activity epoch and drain time
+ *                                         max-merge independently; neither
+ *                                         ever moves backward on receive.
+ *   TestRateLimiterModelScopeWireKeys   — "tm:<tenant>|<model>" entries
+ *                                         round-trip the wire prefix.
  */
 
 package ratelimit
@@ -64,16 +67,19 @@ func TestRateLimiterRoundTrip(t *testing.T) {
 		src.CheckKey("rt-key-"+itoa(i), rps, burst)
 	}
 
-	// Populate 50 tenant quotas with varied consumed counts.
+	// Populate 50 tenant quotas with varied charge amounts.
 	const nTenants = 50
 	for i := 0; i < nTenants; i++ {
 		tenantID := "rt-tenant-" + itoa(i)
-		// AllowTokens populates quotaMap and atomically bumps consumed.
+		// AllowTokens populates quotaMap and advances the bucket drain time.
 		src.AllowTokens(tenantID, 10+i, 100000) // large budget so no exceed
 	}
-	// Mark one tenant as exceeded to verify the bool round-trips.
+	// Push one tenant deep into debt to verify the state round-trips: a
+	// full-burst charge plus a 10% overrun (6s of drain — comfortably
+	// larger than the test's runtime, so the debt cannot self-heal before
+	// the assertions run).
 	src.AllowTokens("rt-tenant-exceeded", 1000000, 1000000)
-	src.AllowTokens("rt-tenant-exceeded", 1, 1000000) // push over → exceeded=1
+	src.AllowTokens("rt-tenant-exceeded", 100000, 1000000)
 
 	// Export.
 	snap := src.ExportState()
@@ -136,11 +142,11 @@ func TestRateLimiterRoundTrip(t *testing.T) {
 		}
 		srcWE := srcV.(*tokenWindowEntry)
 		dstWE := dstV.(*tokenWindowEntry)
-		if atomic.LoadInt64(&srcWE.consumed) != atomic.LoadInt64(&dstWE.consumed) {
-			t.Errorf("tenant %q consumed mismatch: src=%d dst=%d",
+		if atomic.LoadInt64(&srcWE.tatMs) != atomic.LoadInt64(&dstWE.tatMs) {
+			t.Errorf("tenant %q drain-time mismatch: src=%d dst=%d",
 				tenantID,
-				atomic.LoadInt64(&srcWE.consumed),
-				atomic.LoadInt64(&dstWE.consumed))
+				atomic.LoadInt64(&srcWE.tatMs),
+				atomic.LoadInt64(&dstWE.tatMs))
 		}
 		if atomic.LoadInt64(&srcWE.windowEpoch) != atomic.LoadInt64(&dstWE.windowEpoch) {
 			t.Errorf("tenant %q windowEpoch mismatch: src=%d dst=%d",
@@ -150,14 +156,21 @@ func TestRateLimiterRoundTrip(t *testing.T) {
 		}
 	}
 
-	// Verify the exceeded flag round-trips.
+	// Verify the over-quota state travels with the drain time: the imported
+	// entry has no local limit yet (limits are config, not sync state), so
+	// the debt becomes visible the moment a local call publishes the limit.
 	dstExceededV, ok := dst.quotaMap.Load("rt-tenant-exceeded")
 	if !ok {
 		t.Fatalf("rt-tenant-exceeded missing from dst.quotaMap")
 	}
-	if atomic.LoadInt32(&dstExceededV.(*tokenWindowEntry).exceeded) != 1 {
-		t.Errorf("expected exceeded=1 to round-trip, got %d",
-			atomic.LoadInt32(&dstExceededV.(*tokenWindowEntry).exceeded))
+	srcExceededV, _ := src.quotaMap.Load("rt-tenant-exceeded")
+	if got, want := atomic.LoadInt64(&dstExceededV.(*tokenWindowEntry).tatMs),
+		atomic.LoadInt64(&srcExceededV.(*tokenWindowEntry).tatMs); got != want {
+		t.Errorf("expected debt drain time to round-trip, got %d want %d", got, want)
+	}
+	dst.AllowTokens("rt-tenant-exceeded", 1, 1000000) // publish the limit
+	if !dst.IsTokenQuotaExceeded("rt-tenant-exceeded") {
+		t.Error("imported debt must deny on the receiving node once the limit is known")
 	}
 }
 
@@ -171,49 +184,52 @@ func TestRateLimiterApplyGossipDelta(t *testing.T) {
 
 	s := newTestStore()
 
-	// Seed local state: tenant_a consumed = 100, epoch = E.
+	// Seed local state: one charge establishes the entry and a base drain
+	// time; the deltas below are expressed relative to it.
 	const tenantA = "tenant_a"
 	s.AllowTokens(tenantA, 100, 1000000)
 
 	v, _ := s.quotaMap.Load(tenantA)
 	localEpoch := atomic.LoadInt64(&v.(*tokenWindowEntry).windowEpoch)
+	base := atomic.LoadInt64(&v.(*tokenWindowEntry).tatMs)
 
-	// Receive higher value: should advance to 250.
+	// Receive higher drain time: should advance.
 	s.ApplyGossipDelta([]RateLimiterEntry{
-		{KeyID: "t:" + tenantA, IsTenant: true, WindowEpoch: localEpoch, Consumed: 250},
+		{KeyID: "t:" + tenantA, IsTenant: true, WindowEpoch: localEpoch, Consumed: base + 5000},
 	})
-	if got := atomic.LoadInt64(&v.(*tokenWindowEntry).consumed); got != 250 {
-		t.Errorf("after first delta: expected consumed=250, got %d", got)
+	if got := atomic.LoadInt64(&v.(*tokenWindowEntry).tatMs); got != base+5000 {
+		t.Errorf("after first delta: expected tat=base+5000, got base%+d", got-base)
 	}
 
-	// Receive reordered (older) value: max-merge keeps 250.
+	// Receive reordered (older) value: max-merge keeps base+5000.
 	s.ApplyGossipDelta([]RateLimiterEntry{
-		{KeyID: "t:" + tenantA, IsTenant: true, WindowEpoch: localEpoch, Consumed: 175},
+		{KeyID: "t:" + tenantA, IsTenant: true, WindowEpoch: localEpoch, Consumed: base + 1000},
 	})
-	if got := atomic.LoadInt64(&v.(*tokenWindowEntry).consumed); got != 250 {
-		t.Errorf("after reordered (older) delta: expected consumed STAYS at 250, got %d", got)
+	if got := atomic.LoadInt64(&v.(*tokenWindowEntry).tatMs); got != base+5000 {
+		t.Errorf("after reordered (older) delta: expected tat STAYS at base+5000, got base%+d", got-base)
 	}
 
 	// Receive identical value: no-op.
 	s.ApplyGossipDelta([]RateLimiterEntry{
-		{KeyID: "t:" + tenantA, IsTenant: true, WindowEpoch: localEpoch, Consumed: 250},
+		{KeyID: "t:" + tenantA, IsTenant: true, WindowEpoch: localEpoch, Consumed: base + 5000},
 	})
-	if got := atomic.LoadInt64(&v.(*tokenWindowEntry).consumed); got != 250 {
-		t.Errorf("after identical delta: expected consumed=250, got %d", got)
+	if got := atomic.LoadInt64(&v.(*tokenWindowEntry).tatMs); got != base+5000 {
+		t.Errorf("after identical delta: expected tat=base+5000, got base%+d", got-base)
 	}
 
-	// Receive higher value again: advances to 500.
+	// Receive higher value again: advances.
 	s.ApplyGossipDelta([]RateLimiterEntry{
-		{KeyID: "t:" + tenantA, IsTenant: true, WindowEpoch: localEpoch, Consumed: 500},
+		{KeyID: "t:" + tenantA, IsTenant: true, WindowEpoch: localEpoch, Consumed: base + 9000},
 	})
-	if got := atomic.LoadInt64(&v.(*tokenWindowEntry).consumed); got != 500 {
-		t.Errorf("after second forward delta: expected consumed=500, got %d", got)
+	if got := atomic.LoadInt64(&v.(*tokenWindowEntry).tatMs); got != base+9000 {
+		t.Errorf("after second forward delta: expected tat=base+9000, got base%+d", got-base)
 	}
 }
 
-// TestRateLimiterEpochAdvance verifies that a newer epoch in an incoming
-// gossip message resets the consumed counter, while an older epoch is
-// ignored.
+// TestRateLimiterEpochAdvance verifies the two monotonic fields merge
+// INDEPENDENTLY: a newer activity epoch never retracts the drain time (no
+// quota refund from a peer that has merely seen less spend), and an older
+// epoch does not block a further-advanced drain time from landing.
 func TestRateLimiterEpochAdvance(t *testing.T) {
 	t.Parallel()
 
@@ -221,28 +237,73 @@ func TestRateLimiterEpochAdvance(t *testing.T) {
 	const tenantB = "tenant_b"
 	s.AllowTokens(tenantB, 100, 1000000)
 	v, _ := s.quotaMap.Load(tenantB)
-	localEpoch := atomic.LoadInt64(&v.(*tokenWindowEntry).windowEpoch)
+	we := v.(*tokenWindowEntry)
+	localEpoch := atomic.LoadInt64(&we.windowEpoch)
+	base := atomic.LoadInt64(&we.tatMs)
 
-	// Newer epoch: consumed resets to incoming value.
+	// Newer epoch with a LOWER drain time: epoch advances, drain time must
+	// NOT move backward — a peer that has seen less spend is not authority
+	// to refund quota.
 	s.ApplyGossipDelta([]RateLimiterEntry{
-		{KeyID: "t:" + tenantB, IsTenant: true, WindowEpoch: localEpoch + 1, Consumed: 25},
+		{KeyID: "t:" + tenantB, IsTenant: true, WindowEpoch: localEpoch + 1, Consumed: base - 4},
 	})
-	if got := atomic.LoadInt64(&v.(*tokenWindowEntry).consumed); got != 25 {
-		t.Errorf("after newer-epoch delta: expected consumed=25 (reset), got %d", got)
+	if got := atomic.LoadInt64(&we.tatMs); got != base {
+		t.Errorf("after newer-epoch delta: drain time must not retract, got base%+d", got-base)
 	}
-	if got := atomic.LoadInt64(&v.(*tokenWindowEntry).windowEpoch); got != localEpoch+1 {
+	if got := atomic.LoadInt64(&we.windowEpoch); got != localEpoch+1 {
 		t.Errorf("after newer-epoch delta: expected epoch=%d, got %d", localEpoch+1, got)
 	}
 
-	// Older epoch: completely ignored.
+	// Older epoch with a HIGHER drain time: epoch stays, but the spend
+	// still lands (the fields are independent).
 	s.ApplyGossipDelta([]RateLimiterEntry{
-		{KeyID: "t:" + tenantB, IsTenant: true, WindowEpoch: localEpoch - 10, Consumed: 9999},
+		{KeyID: "t:" + tenantB, IsTenant: true, WindowEpoch: localEpoch - 10, Consumed: base + 9999},
 	})
-	if got := atomic.LoadInt64(&v.(*tokenWindowEntry).consumed); got != 25 {
-		t.Errorf("after older-epoch delta: expected consumed STAYS at 25, got %d", got)
+	if got := atomic.LoadInt64(&we.tatMs); got != base+9999 {
+		t.Errorf("after older-epoch delta: expected tat=base+9999, got base%+d", got-base)
 	}
-	if got := atomic.LoadInt64(&v.(*tokenWindowEntry).windowEpoch); got != localEpoch+1 {
+	if got := atomic.LoadInt64(&we.windowEpoch); got != localEpoch+1 {
 		t.Errorf("after older-epoch delta: expected epoch STAYS at %d, got %d", localEpoch+1, got)
+	}
+}
+
+// TestRateLimiterModelScopeWireKeys pins the G6 wire convention: composite
+// "tenant|model" quota keys export under the "tm:" prefix, round-trip
+// through import, and merge into the same composite map key — while plain
+// tenant keys keep their "t:" prefix untouched.
+func TestRateLimiterModelScopeWireKeys(t *testing.T) {
+	t.Parallel()
+
+	src := newTestStore()
+	src.AllowTokens("wk-tenant", 10, 100000)
+	src.AllowTokens("wk-tenant|llama-3", 20, 100000)
+
+	var sawTenant, sawModel bool
+	for _, e := range src.ExportState() {
+		switch e.KeyID {
+		case "t:wk-tenant":
+			sawTenant = true
+		case "tm:wk-tenant|llama-3":
+			sawModel = true
+		}
+	}
+	if !sawTenant || !sawModel {
+		t.Fatalf("expected both t: and tm: wire keys in export (tenant=%v model=%v)", sawTenant, sawModel)
+	}
+
+	dst := newTestStore()
+	dst.ImportState(src.ExportState())
+	if _, ok := dst.quotaMap.Load("wk-tenant"); !ok {
+		t.Fatal("plain tenant key lost in round-trip")
+	}
+	v, ok := dst.quotaMap.Load("wk-tenant|llama-3")
+	if !ok {
+		t.Fatal("composite tenant|model key lost in round-trip")
+	}
+	srcV, _ := src.quotaMap.Load("wk-tenant|llama-3")
+	if got, want := atomic.LoadInt64(&v.(*tokenWindowEntry).tatMs),
+		atomic.LoadInt64(&srcV.(*tokenWindowEntry).tatMs); got != want {
+		t.Errorf("composite key drain time mismatch: got %d want %d", got, want)
 	}
 }
 

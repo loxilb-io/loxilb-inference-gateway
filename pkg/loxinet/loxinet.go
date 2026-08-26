@@ -709,7 +709,13 @@ func loxiNetInit() {
 	// Initialize the user service subsystem
 	if opts.Opts.UserServiceEnable {
 		tk.LogIt(tk.LogInfo, "User service enabled\n")
-		mh.UserService = user.NewUserService()
+		var usErr error
+		mh.UserService, usErr = user.NewUserService()
+		if usErr != nil {
+			// Degraded start: auth/API-key requests get 503 and the datapath
+			// fails closed until the ticker reconnects the database.
+			tk.LogIt(tk.LogCritical, "User service starting degraded, database unavailable: %v\n", usErr)
+		}
 	}
 
 	// Initialize the Oauth user service subsystem
