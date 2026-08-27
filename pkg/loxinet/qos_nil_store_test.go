@@ -22,27 +22,27 @@ import (
 	rl "github.com/loxilb-io/loxilb/pkg/ratelimit"
 )
 
-// U-21 — with no key store, every QoS limit is a no-op.
+// U-21, inverted — with no key store, a keyed identity FAILS CLOSED.
 //
-// This is a characterization gate, not a repair. It pins what the code does
-// today so that the change is visible when PR 3 (step I-11) makes the store
-// required: at that point this test inverts, and inverting it is the evidence
-// that the no-op is gone.
+// This began as a characterization gate pinning the opposite: the three
+// getters were guarded by `if svc != nil`, so with a nil service every limit
+// stayed at zero, zero meant *unlimited*, and per-key RPS, per-tenant RPS,
+// tenant TPM, per-model TPM and burst were all inert at once with nothing
+// logged and no denial metric moving. The characterization named its own
+// ending: when the store became required, the test inverts, and the
+// inversion is the evidence the no-op is gone. The store-required change
+// landed; this is the inverted form.
 //
-// The behaviour it pins is not "limits are skipped". It is worse than that,
-// and the difference is why it is worth pinning: the three getters are guarded
-// by `if svc != nil`, so with a nil service the limits stay at their zero
-// values — and zero means *unlimited* in CheckKey/CheckTenant, not denied. So
-// per-key RPS, per-tenant RPS, tenant TPM, per-model TPM and burst are all
-// inert at once, the gateway logs nothing, and no denial metric moves, because
-// there is nothing to deny against. A QoS dashboard shows a quiet, healthy
-// system.
-func TestU21_QoSIsInertWithNoKeyStore(t *testing.T) {
+// What legitimately remains of the old behaviour is the empty identity:
+// traffic that no key or tenant attributes cannot have a limit looked up
+// for it, so it passes — that half is pinned below so the fail-closed guard
+// cannot quietly grow into denying non-attributing service traffic.
+func TestU21_QoSFailsClosedWithNoKeyStore(t *testing.T) {
 	store := rl.New()
 
-	// A service that would impose tight limits, so the comparison below is
-	// between "limits applied" and "limits skipped" rather than between two
-	// unlimited runs.
+	// A service that would impose tight limits: the control that the
+	// admission path can deny at all, so the assertions below compare
+	// against a working denial path rather than a broken one.
 	limited := &stubRateLimitService{
 		keyRPS:       1,
 		keyBurst:     1,
@@ -64,16 +64,24 @@ func TestU21_QoSIsInertWithNoKeyStore(t *testing.T) {
 		}
 	}
 	if !deniedWithService {
-		t.Fatal("a service imposing rps=1 never denied in 20 requests — the control is broken, so the comparison below would mean nothing")
+		t.Fatal("a service imposing rps=1 never denied in 20 requests — the control is broken, so the assertions below would mean nothing")
 	}
 
-	// With no service, nothing denies, however many requests arrive.
+	// A keyed identity with no service behind it is refused as the store's
+	// outage, from the very first request — never admitted against limits
+	// nobody can read, and never blamed on the credential.
 	storeNil := rl.New()
+	decision, _, code := rateLimitCheckInternal(nil, storeNil, key, tenant, model)
+	if decision != 4 || code != "policy_store_unavailable" {
+		t.Fatalf("keyed identity with no key store: got decision=%d code=%q, want the fail-closed store verdict — the inert no-op this test used to pin has come back", decision, code)
+	}
+
+	// The empty identity still passes: nothing attributes it, so there is
+	// no limit to fail closed on.
 	for i := 0; i < 200; i++ {
-		decision, _, code := rateLimitCheckInternal(nil, storeNil, key, tenant, model)
+		decision, _, code := rateLimitCheckInternal(nil, storeNil, "", "", "")
 		if decision != 0 {
-			t.Fatalf("request %d was denied (code=%q) with no key store — the no-op documented here has changed. "+
-				"If that is PR 3 landing, invert this test; it is the evidence that the inert path is gone.", i, code)
+			t.Fatalf("request %d: non-attributing traffic was denied (code=%q) — the fail-closed guard has grown past keyed identities", i, code)
 		}
 	}
 }

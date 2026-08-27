@@ -585,11 +585,15 @@ func serializeLBRule(lb cmn.LbRuleMod) *models.LoadbalanceEntry {
 	if lb.Serv.SSEMode {
 		tmpSvc.SseMode = lb.Serv.SSEMode
 	}
-	// Always report the policy, including the default. Unlike the fields above
-	// this is NOT omitted when it holds its zero-ish value: an operator asking
-	// what a service enforces must get an answer, and "absent" would send them
-	// back to the documentation to look up the default.
-	tmpSvc.APIKeyAuth = swag.String(cmn.ResolveApiKeyAuth(lb.Serv.ApiKeyAuth))
+	// Report the policy AS DECLARED and omit it when nothing was declared.
+	// What this API returns is what operators replay as backups, and a
+	// resolved value here is a lossy export: an undeclared service would
+	// come back as a DECLARED-disabled one, which claims the gateway's
+	// credential namespace and strips X-Api-Key from traffic that used to
+	// pass byte-identical. The default is documented; fidelity is not.
+	if lb.Serv.ApiKeyAuth != "" {
+		tmpSvc.APIKeyAuth = swag.String(lb.Serv.ApiKeyAuth)
+	}
 	if lb.Serv.MaxStreamDurationSec != 0 {
 		tmpSvc.MaxStreamDurationSec = int32(lb.Serv.MaxStreamDurationSec)
 	}

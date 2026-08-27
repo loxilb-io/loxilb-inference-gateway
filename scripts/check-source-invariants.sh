@@ -141,6 +141,31 @@ else
   fi
 fi
 
+
+# ---------------------------------------------------------------------------
+# 4. The API-key policy is stored and reported AS DECLARED, never resolved.
+#
+# The wire encodes three states — unset, required, declared-disabled — and
+# keys two different behaviours on the difference between unset and
+# declared-disabled: a declared service has claimed the gateway credential
+# namespace and gets X-Api-Key stripped upstream, an undeclared one must
+# keep byte-identical proxying for non-AI backends that consume their own.
+# Resolving the default at the storage or display site erases that
+# difference before the encoder can see it: every undeclared service became
+# declared-disabled, and the strip armed fleet-wide. The default belongs at
+# the point of DECISION (the encoder, the mode predicate), nowhere earlier.
+# ---------------------------------------------------------------------------
+store_line="$(grep -n 'r\.apiKeyAuth[[:space:]]*=' pkg/loxinet/rules.go | grep -v '==' || true)"
+store_resolved="$(printf '%s' "$store_line" | grep -c 'ResolveApiKeyAuth' || true)"
+store_count="$(printf '%s' "$store_line" | grep -c . || true)"
+display_resolved="$(grep -n 'APIKeyAuth[[:space:]]*=' api/restapi/handler/loadbalancer.go | grep -c 'ResolveApiKeyAuth' || true)"
+if [ "$store_count" -ge 1 ] && [ "$store_resolved" -eq 0 ] && [ "$display_resolved" -eq 0 ]; then
+  pass "api-key policy stored and displayed as declared (resolution only at decision sites)"
+else
+  fail "api-key policy resolved before the wire (store hits=$store_count resolved-store=$store_resolved resolved-display=$display_resolved)"
+  printf '%s\n' "$store_line"
+fi
+
 echo "==========================="
 if [ "$FAILED" = "0" ]; then echo "ALL INVARIANTS HOLD"; else echo "INVARIANTS VIOLATED"; fi
 exit "$FAILED"

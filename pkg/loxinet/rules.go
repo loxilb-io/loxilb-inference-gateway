@@ -593,7 +593,7 @@ type ruleEnt struct {
 	backendProtocol             string                  // Backend protocol capability: "http1", "http2", or "both"
 	sessionHeaderName           string                  // Custom session header for persist mode (e.g., "mcp-session-id")
 	sseMode                     bool                    // SSE mode: suppress idle-timeout during streaming
-	apiKeyAuth                  string                  // data-plane X-Api-Key policy: "disabled" (default) or "required"
+	apiKeyAuth                  string                  // data-plane X-Api-Key policy AS DECLARED: "", "disabled" or "required"
 	maxStreamDurationSec        uint32                  // Absolute wall-clock cap for SSE streams in seconds
 	backendKeepaliveIntervalSec uint32                  // Backend SO_KEEPALIVE+TCP_KEEPIDLE interval in seconds
 	timeoutMemberConnectMs      uint32                  // backend connect-poll deadline in ms (0=500ms default)
@@ -3768,11 +3768,16 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 
 	// Store SSE streaming configuration
 	r.sseMode = serv.SSEMode
-	// Resolve the data-plane API-key policy once, here, and store the
-	// resolved value — every later reader (the read path, the change
-	// detector, the rule installer) then sees the same answer without
-	// re-deriving the default.
-	r.apiKeyAuth = cmn.ResolveApiKeyAuth(serv.ApiKeyAuth)
+	// Store the policy AS DECLARED, never resolved: the wire encoder keys
+	// two different behaviours on the difference this would erase. A service
+	// that declared "disabled" has claimed the gateway's credential
+	// namespace and gets X-Api-Key stripped upstream; a service that
+	// declared nothing must keep byte-identical proxying, because non-AI
+	// backends legitimately consume an X-Api-Key of their own. Resolving
+	// here turned every undeclared service into a declared-disabled one and
+	// armed the strip fleet-wide. Readers that need the default apply
+	// cmn.ResolveApiKeyAuth at the point of decision.
+	r.apiKeyAuth = serv.ApiKeyAuth
 	r.maxStreamDurationSec = serv.MaxStreamDurationSec
 	r.backendKeepaliveIntervalSec = serv.BackendKeepaliveIntervalSec
 
@@ -5511,7 +5516,7 @@ func (r *ruleEnt) LB2DP(work DpWorkT) int {
 	nWork.BackendProtocol = r.backendProtocol                         // Backend protocol capability
 	nWork.SessionHeaderName = r.sessionHeaderName                     // Custom session header name for persist mode
 	nWork.SSEMode = r.sseMode                                         // SSE streaming mode
-	nWork.ApiKeyAuth = r.apiKeyAuth                                   // data-plane X-Api-Key policy (already resolved)
+	nWork.ApiKeyAuth = r.apiKeyAuth                                   // data-plane X-Api-Key policy, as declared (encoder resolves)
 	nWork.MaxStreamDurationSec = r.maxStreamDurationSec               // SSE max stream duration cap
 	nWork.BackendKeepaliveIntervalSec = r.backendKeepaliveIntervalSec // SSE backend keepalive
 	nWork.TimeoutMemberConnect = r.timeoutMemberConnectMs             // connect ms
