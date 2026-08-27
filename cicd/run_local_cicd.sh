@@ -276,6 +276,46 @@ cd ai-sse-quota/
 ./rmconfig.sh
 cd -
 
+# ai-authsep: the authentication-plane regression, container-only (no GPU) —
+# the same four suites the auth-plane-sanity workflow runs. validation.sh is
+# the four-cell {userservice x key store} matrix with role isolation, verified
+# TLS and enforcement mechanics; tiers.sh sweeps management-auth mode x store
+# state x key policy x streaming shape; backcompat.sh pins the upgrade
+# contract for pre-policy rule bodies and exported backups. Needs minica on
+# PATH (the TLS legs mint their own CA) and python3 (the counting backend);
+# config.sh pulls postgres:18.6 for the two credential stores. See the
+# suite's README for the reference green counts.
+cd ai-authsep/
+./config.sh
+./validation.sh
+./tiers.sh
+./backcompat.sh
+./rmconfig.sh
+cd -
+
+# AI QoS on the mock topology (no GPU): rule-attached ingress policing,
+# full-proxy payload shaping, and egress-direction policing. The per-engine
+# QoS acceptance (token quotas end-to-end against real inference engines)
+# needs GPUs and runs on the testbed out of band; these three gate the
+# datapath mechanics that do not.
+cd qos-rulepol/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
+cd qos-fullproxy/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
+cd qos-egrpol/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
 cd vllm-pd-disagg/
 ./config.sh
 ./validation.sh
