@@ -149,9 +149,9 @@ echo
 # ------------------------------------------------------------------ MGMT-6 ----
 if want 6; then
 echo "---- MGMT-6: unknown Bearer token -> 401 in < 1 s ----"
-# The point of this leg is the latency, not the code: F-AUTH-8 retried a
-# deterministic failure three times with a trailing sleep, so an unknown token
-# cost ~10 s and an unauthenticated caller could occupy a serving goroutine.
+# The point of this leg is the latency, not the code: the login path used to
+# retry a deterministic failure three times with a trailing sleep, so an unknown
+# token cost ~10 s and an unauthenticated caller could occupy a serving goroutine.
 UNK=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
 mgmt 20 -H "Authorization: Bearer $UNK" "$API/auth/users"
 echo "  status=$MSTATUS elapsed=${MTIME}s"
@@ -190,8 +190,9 @@ fi
 # ----------------------------------------------------------------- MGMT-15 ----
 if want 15; then
 echo "---- MGMT-15: unknown roles refused at write time ----"
-# The authorizer half (a hand-inserted bad role is denied) gated I-2. This is
-# the write-time half, which the plan assigns to Phase 5c.7 and therefore here.
+# The authorizer half — a hand-inserted bad role is denied — was covered by an
+# earlier step. This is the write-time half, which belongs with the management
+# store port and therefore lands here.
 #
 # The assertion is the PROPERTY, not one status code. The closed set is enforced
 # at two layers and they answer differently: the schema enum rejects a non-empty
@@ -433,9 +434,10 @@ else
   else
     verdict MGMT-14 fail "deleted user's token still answers $MSTATUS"
   fi
-  # F-AUTH-42 was exactly this: the store looked right because CASCADE had
-  # already erased the rows, while the peers were never told. Assert the
-  # publish, not just the row count.
+  # This is the failure that made the store look correct while the peers were
+  # wrong: the cascade had already erased the token rows, so the read that drives
+  # the broadcast found nothing and no peer was ever told. Assert the publish,
+  # not just the row count.
   LOGF=$(docker exec llb1 sh -c 'ls -t /var/log/loxilb*.log 2>/dev/null | head -1')
   if [ -n "$LOGF" ]; then
     PUB=$(docker exec llb1 sh -c "grep -icE 'revoke|invalidate' $LOGF" 2>/dev/null)
@@ -443,7 +445,7 @@ else
     if [ "${PUB:-0}" -gt 0 ] 2>/dev/null; then
       verdict MGMT-14b pass "the revocation path ran and logged ($PUB lines)"
     else
-      verdict MGMT-14b fail "no revocation was logged — the peers would not have been told (F-AUTH-42 shape)"
+      verdict MGMT-14b fail "no revocation was logged — the peers would not have been told"
     fi
   else
     verdict MGMT-14b undecided "no gateway log to inspect for the publish"
@@ -534,7 +536,7 @@ for i in 1 2 3 4 5; do
   echo "  flap $i: fds=$(fdcount)"
 done
 # The reconnect ticker is 10 s, so a 60 s hold is six attempts with nothing to
-# connect to — the exact loop that produced the F-AUTH-13 leak.
+# connect to — the exact loop that used to leak a connection pool per attempt.
 docker stop "$PG_CT" >/dev/null 2>&1
 sleep 60
 FD_DOWN=$(fdcount)
