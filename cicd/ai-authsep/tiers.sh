@@ -543,7 +543,9 @@ echo "===== TIER E: transitions (the defects that live in the change) ====="
 # copy must not outlive the rule change.
 mk_rule 2029 false false disabled
 sleep 3
-docker exec -i l3h1 sh -c 'cat > /tmp/ka_probe.py' <<'PYEOF'
+# Probe runs as HOST python3 inside l3h1's netns (the nettest image ships no
+# python3), so the script and its output both live on the host.
+cat > /tmp/ka_probe.py <<'PYEOF'
 import http.client, json, sys, time
 conn = http.client.HTTPConnection("10.10.10.254", 2029, timeout=30)
 body = json.dumps({"model":"test-model","messages":[{"role":"user","content":"hi"}]})
@@ -555,7 +557,7 @@ conn.request("POST", "/v1/chat/completions", body, {"Content-Type": "application
 r2 = conn.getresponse()
 print("second", r2.status, r2.read().decode()[:80], flush=True)
 PYEOF
-docker exec l3h1 python3 /tmp/ka_probe.py > /tmp/e1.out 2>&1 &
+sudo ip netns exec l3h1 python3 /tmp/ka_probe.py > /tmp/e1.out 2>&1 &
 E1PID=$!
 sleep 4
 mk_rule 2029 false false required    # same VIP re-POST = update in place
@@ -635,7 +637,7 @@ chk "E7 the recreated rule carries no ghost of the deleted policy" "200" "$(prob
 # E8: the E1 property in the other direction — required → disabled on a live
 # keep-alive connection admits the NEXT request keyless.
 rm_rule 2029; mk_rule 2029 false false required; sleep 3
-docker exec -i l3h1 sh -c 'cat > /tmp/ka2_probe.py' <<'PYEOF'
+cat > /tmp/ka2_probe.py <<'PYEOF'
 import http.client, json, time
 conn = http.client.HTTPConnection("10.10.10.254", 2029, timeout=30)
 body = json.dumps({"model":"test-model","messages":[{"role":"user","content":"hi"}]})
@@ -647,7 +649,7 @@ conn.request("POST", "/v1/chat/completions", body, {"Content-Type": "application
 r2 = conn.getresponse()
 print("second", r2.status, flush=True)
 PYEOF
-docker exec l3h1 python3 /tmp/ka2_probe.py > /tmp/e8.out 2>&1 &
+sudo ip netns exec l3h1 python3 /tmp/ka2_probe.py > /tmp/e8.out 2>&1 &
 E8PID=$!
 sleep 4
 mk_rule 2029 false false disabled

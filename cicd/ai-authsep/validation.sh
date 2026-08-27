@@ -410,16 +410,15 @@ fi
 # Measured as a delta around the denied requests rather than as a total, so a
 # backend that legitimately served the admitted traffic earlier in the run does
 # not make this look like a leak.
-# The path is an ARGUMENT, never `wc -l < path`: the redirection would be
-# performed by the host shell against the host's filesystem, the file would be
-# missing, and every delta would read zero — which is indistinguishable from a
-# perfect result. The control below exists because that failure is silent.
-BEFORE_DENY=$(docker exec l3ep1 wc -l /tmp/backend_reqs.log 2>/dev/null | awk '{print $1}')
+# count_server runs as a host process in l3ep1's netns, so its log is a HOST
+# file. The positive control below still exists because a moved or dead log
+# reads zero — which is indistinguishable from a perfect result.
+BEFORE_DENY=$(wc -l /tmp/backend_reqs.log 2>/dev/null | awk '{print $1}')
 body='{"model":"test-model","messages":[{"role":"user","content":"hi"}]}'
 DENY_CODE=$(vip_code -X POST http://$VIP:2020/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -H 'X-Api-Key: lxb_00000000000000000000000000000000' -d "$body")
-AFTER_DENY=$(docker exec l3ep1 wc -l /tmp/backend_reqs.log 2>/dev/null | awk '{print $1}')
+AFTER_DENY=$(wc -l /tmp/backend_reqs.log 2>/dev/null | awk '{print $1}')
 DELTA=$(( ${AFTER_DENY:-0} - ${BEFORE_DENY:-0} ))
 # Positive control first. A zero delta proves nothing unless an ADMITTED
 # request moves this counter — a backend that had stopped logging, or a log
@@ -427,7 +426,7 @@ DELTA=$(( ${AFTER_DENY:-0} - ${BEFORE_DENY:-0} ))
 BEFORE_OK=$AFTER_DENY
 OK_CODE=$(vip_code -X POST http://$VIP:2021/v1/chat/completions \
   -H 'Content-Type: application/json' -d "$body")
-AFTER_OK=$(docker exec l3ep1 wc -l /tmp/backend_reqs.log 2>/dev/null | awk '{print $1}')
+AFTER_OK=$(wc -l /tmp/backend_reqs.log 2>/dev/null | awk '{print $1}')
 OK_DELTA=$(( ${AFTER_OK:-0} - ${BEFORE_OK:-0} ))
 echo "  denied request -> $DENY_CODE, backend delta $DELTA; admitted -> $OK_CODE, backend delta $OK_DELTA"
 if [ "$OK_DELTA" -lt 1 ]; then
@@ -721,7 +720,7 @@ echo "--- DP-27: the key stays on the client side of the gateway ---"
 # x-api-key material appeared in what actually arrived. Instrument control
 # first — a canary that is NOT the credential must register, or an absent
 # key proves only that the detector is blind.
-docker exec l3ep1 sh -c ': > /tmp/backend_reqs.log'
+sudo sh -c ': > /tmp/backend_reqs.log'
 vip_code -X POST "http://$VIP:2020/v1/chat/completions?probe=dp27-canary" \
   -H 'Content-Type: application/json' -H 'X-Canary: x-api-key-canary' -H "X-Api-Key: $K_EXP" -d "$BODY5" >/dev/null
 vip_code -X POST "http://$VIP:2020/v1/chat/completions?probe=dp27-required" \
@@ -729,9 +728,9 @@ vip_code -X POST "http://$VIP:2020/v1/chat/completions?probe=dp27-required" \
 vip_code -X POST "http://$VIP:2021/v1/chat/completions?probe=dp27-disabled" \
   -H 'Content-Type: application/json' -H "X-Api-Key: $K_EXP" -d "$BODY5" >/dev/null
 sleep 1
-L_CANARY=$(docker exec l3ep1 grep "probe=dp27-canary" /tmp/backend_reqs.log 2>/dev/null | head -1)
-L_REQ=$(docker exec l3ep1 grep "probe=dp27-required" /tmp/backend_reqs.log 2>/dev/null | head -1)
-L_DIS=$(docker exec l3ep1 grep "probe=dp27-disabled" /tmp/backend_reqs.log 2>/dev/null | head -1)
+L_CANARY=$(grep "probe=dp27-canary" /tmp/backend_reqs.log 2>/dev/null | head -1)
+L_REQ=$(grep "probe=dp27-required" /tmp/backend_reqs.log 2>/dev/null | head -1)
+L_DIS=$(grep "probe=dp27-disabled" /tmp/backend_reqs.log 2>/dev/null | head -1)
 chk_has "DP-27 control: the detector sees x-api-key-shaped bytes when they DO arrive" "x_api_key=True" "$L_CANARY"
 chk_has "DP-27 the credential is absent upstream on the enforcing service" "x_api_key=False" "$L_REQ"
 chk_has "DP-27 and absent upstream on the disabled service too" "x_api_key=False" "$L_DIS"

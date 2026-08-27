@@ -138,7 +138,8 @@ warn_count() {
   docker exec llb1 grep -c "quota configured but NO service has api_key_auth=required" /tmp/loxilb.out 2>/dev/null | tr -d '[:space:]'
 }
 backend_line() { # backend_line <marker>
-  docker exec l3ep1 grep "$1" /tmp/backend_reqs.log 2>/dev/null | head -1
+  # count_server runs as a host process in l3ep1's netns; its log is a host file
+  grep "$1" /tmp/backend_reqs.log 2>/dev/null | head -1
 }
 
 BODY='{"model":"test-model","messages":[{"role":"user","content":"hi"}]}'
@@ -182,7 +183,7 @@ chk "A3 the old sse-riding shape serves keyless (the documented delta)" "200" \
 lcurl -o /dev/null -X POST $API/config/loadbalancer \
   -H 'Content-Type: application/json' -d "$(PLAIN_RULE_BODY 2032)"
 sleep 3
-docker exec l3ep1 sh -c ': > /tmp/backend_reqs.log'
+sudo sh -c ': > /tmp/backend_reqs.log'
 vip_code -X POST "http://$VIP:2030/v1/chat/completions?probe=bc-a4-sse" \
   -H 'Content-Type: application/json' -H 'X-Api-Key: not-ours-passthrough' -d "$BODY" >/dev/null
 vip_code -X POST "http://$VIP:2032/v1/chat/completions?probe=bc-a4-plain" \
@@ -229,7 +230,7 @@ chk "B2 keyless is now denied" "401" \
 chk_has "B2 and the denial names the credential, not the store" "invalid_api_key" \
   "$(vip_body -X POST http://$VIP:2030/v1/chat/completions -H 'Content-Type: application/json' -d "$BODY")"
 
-docker exec l3ep1 sh -c ': > /tmp/backend_reqs.log'
+sudo sh -c ': > /tmp/backend_reqs.log'
 chk "B3 the pre-upgrade key authenticates on the upgraded service" "200" \
   "$(vip_code -X POST "http://$VIP:2030/v1/chat/completions?probe=bc-b3" -H 'Content-Type: application/json' -H "X-Api-Key: $K_OLD" -d "$BODY")"
 sleep 1
@@ -324,7 +325,7 @@ chk "C4 the undeclared shape survived it too" "" "$(resolved_policy 2031)"
 # Fidelity where it bites: after the round-trip, the never-declared service
 # must still forward the client's key. A lossy export would have come back
 # declared-disabled and started stripping traffic it used to pass.
-docker exec l3ep1 sh -c ': > /tmp/backend_reqs.log'
+sudo sh -c ': > /tmp/backend_reqs.log'
 vip_code -X POST "http://$VIP:2032/v1/chat/completions?probe=bc-c5" \
   -H 'Content-Type: application/json' -H 'X-Api-Key: not-ours-passthrough' -d "$BODY" >/dev/null
 sleep 1

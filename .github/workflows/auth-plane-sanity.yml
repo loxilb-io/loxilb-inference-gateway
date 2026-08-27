@@ -79,7 +79,9 @@ jobs:
       - name: Install libtokenizers (cgo link dependency of the router)
         run: arch=$(dpkg --print-architecture) && wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz -O /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
       # The datapath packages link the eBPF userland, so the tree must build
-      # before its tests can compile.
+      # before its tests can compile — and the kernel objects' install step
+      # needs /opt/loxilb and the bpffs mount this helper creates.
+      - run: loxilb-ebpf/utils/mkllb_bpffs.sh
       - run: sudo -E env "PATH=$PATH" make
 
       - name: Source invariants
