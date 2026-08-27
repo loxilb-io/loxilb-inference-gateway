@@ -160,8 +160,18 @@ func NewUserService() *UserService {
 	svc := &UserService{
 		Cache: cache.New(time.Duration(CacheExpirationTime)*time.Minute, time.Duration(CacheCleanupInterval)*time.Minute),
 	}
+	// Resolved here, synchronously, so the background dial never reads the
+	// option globals from its own goroutine — and so an unresolvable
+	// configuration (an unreadable password file) is reported at boot, not
+	// from a goroutine seconds later.
+	params, err := resolveMgmtDialParams()
+	if err != nil {
+		tk.LogIt(tk.LogCritical, "%s Store configuration unresolvable, user service degraded: %v\n",
+			store.LogTag, err)
+		return svc
+	}
 	go func() {
-		userDB, err := dialWithRetry()
+		userDB, err := dialWithRetry(params)
 		if err != nil || userDB == nil {
 			tk.LogIt(tk.LogCritical, "%s Store unavailable after %d attempts, user service degraded: %v\n",
 				store.LogTag, DbMaxRetries, err)
@@ -551,7 +561,12 @@ func (s *UserService) UserServiceTicker() {
 // at boot, tables never created) becomes fully functional on heal — the
 // CREATE TABLE IF NOT EXISTS statements are no-ops on an intact schema.
 func (s *UserService) reconnectDB() error {
-	tempDB, err := connectStore()
+	params, err := resolveMgmtDialParams()
+	if err != nil {
+		tk.LogIt(tk.LogCritical, "Failed to reconnect to the database: %v\n", err)
+		return err
+	}
+	tempDB, err := connectStore(params)
 	if err != nil || tempDB == nil {
 		tk.LogIt(tk.LogCritical, "Failed to reconnect to the database: %v\n", err)
 		if err == nil {

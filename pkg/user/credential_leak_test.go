@@ -23,29 +23,22 @@ import (
 	"testing"
 	"time"
 
-	tk "github.com/loxilb-io/loxilib"
 	"github.com/patrickmn/go-cache"
 )
 
-// setupLogCapture redirects all tk.LogIt output to a temporary file
-// and returns the path and a cleanup function.
-// NOTE: Do NOT call t.Parallel in tests using this — LogItInit
-// writes package-level state (DefaultLogger).
+// setupLogCapture hands back the package-wide capture file TestMain pointed
+// the logger at. It deliberately does NOT re-initialize the logger: the
+// logger is package-global, other tests' background work (the constructor's
+// store dial) may still be logging, and a re-init here races those writes.
+// Scanning the shared file makes the leak gate STRONGER, not weaker — a
+// credential logged by any test in this package now fails it, not only one
+// logged between this test's own init and read.
 func setupLogCapture(t *testing.T) (logPath string, cleanup func()) {
 	t.Helper()
-	f, err := os.CreateTemp("", "loxilb-cred-test-*.log")
-	if err != nil {
-		t.Fatalf("create temp log file: %v", err)
+	if packageLogPath == "" {
+		t.Fatal("packageLogPath unset — TestMain did not run")
 	}
-	logPath = f.Name()
-	f.Close()
-
-	tk.LogItInit(logPath, tk.LogDebug, false)
-
-	cleanup = func() {
-		os.Remove(logPath)
-	}
-	return logPath, cleanup
+	return packageLogPath, func() {}
 }
 
 // assertNoCredentialPatterns reads the captured log output and fails the

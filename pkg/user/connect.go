@@ -58,6 +58,36 @@ func mgmtDSN() (string, error) {
 	), nil
 }
 
+// mgmtDialParams is everything the dial derives from the process options,
+// resolved once on the caller's goroutine. The background dial retries for
+// seconds and must not re-read mutable package globals from its own
+// goroutine: nothing rewrites the options mid-run in the product, but the
+// dial outlives its caller by design, and a reader that re-derives its
+// configuration per attempt is one config-reload feature away from a real
+// race. Snapshotting also pins the dial to the configuration it was started
+// under, which is the only configuration its caller ever asked it to try.
+type mgmtDialParams struct {
+	dsn        string
+	useTLS     bool
+	caCert     string
+	clientCert string
+	clientKey  string
+}
+
+func resolveMgmtDialParams() (mgmtDialParams, error) {
+	dsn, err := mgmtDSN()
+	if err != nil {
+		return mgmtDialParams{}, err
+	}
+	return mgmtDialParams{
+		dsn:        dsn,
+		useTLS:     options.Opts.MgmtSSLOption,
+		caCert:     options.Opts.MgmtSSLCACert,
+		clientCert: options.Opts.MgmtSSLClientCert,
+		clientKey:  options.Opts.MgmtSSLClientKey,
+	}, nil
+}
+
 // connectStore dials the management store, verifies it is provisioned, and
 // creates this plane's tables.
 //
@@ -65,19 +95,16 @@ func mgmtDSN() (string, error) {
 // the pool is closed on every failure path rather than leaked, the TLS posture
 // has no plaintext fallback, and a provisioning mistake is reported by name in
 // preflight instead of arriving later as an opaque error on a login.
-func connectStore() (*sql.DB, error) {
-	dsn, err := mgmtDSN()
-	if err != nil {
-		return nil, err
-	}
-	tk.LogIt(tk.LogInfo, "%s Connecting to the management store at %s\n", store.LogTag, pgstore.RedactDSN(dsn))
+func connectStore(p mgmtDialParams) (*sql.DB, error) {
+	tk.LogIt(tk.LogInfo, "%s Connecting to the management store at %s\n", store.LogTag, pgstore.RedactDSN(p.dsn))
 
 	var db *sql.DB
-	if options.Opts.MgmtSSLOption {
-		db, err = store.ConnectWithSecureTLS(dsn, pgstore.DefaultMaxRetries, pgstore.DefaultBackoff,
-			options.Opts.MgmtSSLCACert, options.Opts.MgmtSSLClientCert, options.Opts.MgmtSSLClientKey)
+	var err error
+	if p.useTLS {
+		db, err = store.ConnectWithSecureTLS(p.dsn, pgstore.DefaultMaxRetries, pgstore.DefaultBackoff,
+			p.caCert, p.clientCert, p.clientKey)
 	} else {
-		db, err = store.ConnectWithRetry(dsn, pgstore.DefaultMaxRetries, pgstore.DefaultBackoff)
+		db, err = store.ConnectWithRetry(p.dsn, pgstore.DefaultMaxRetries, pgstore.DefaultBackoff)
 	}
 	if err != nil {
 		return nil, err
@@ -102,13 +129,13 @@ var connectBackoff = DbRetryDelay
 // dialWithRetry rides out a database that is still starting: a cold server
 // accepts authenticated TCP connections only several seconds after it first
 // answers pings.
-func dialWithRetry() (*sql.DB, error) {
+func dialWithRetry(p mgmtDialParams) (*sql.DB, error) {
 	var lastErr error
 	for i := 0; i < DbMaxRetries; i++ {
 		if i > 0 {
 			time.Sleep(connectBackoff)
 		}
-		db, err := connectStore()
+		db, err := connectStore(p)
 		if err == nil {
 			return db, nil
 		}

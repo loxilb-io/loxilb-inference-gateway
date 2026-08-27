@@ -384,7 +384,13 @@ func cacheKeyForTenant(t string) string     { return cachePfxTenant + t }
 func cacheKeyForModel(t, m string) string   { return cachePfxModel + t + "|" + m }
 
 // hashKey returns the stored form of a raw key. Only this ever reaches the
-// database.
+// database. A plain SHA-256 is the right construction here, not a slow
+// password hash: raw keys are machine-generated 256-bit random values (and
+// supplied keys are length-gated), so there is no low-entropy secret for a
+// computationally expensive hash to protect, and this runs on the
+// per-request validation path where a deliberate slowdown would price every
+// request. Human-chosen management-plane passwords are bcrypt-hashed in
+// pkg/user, where that cost belongs.
 func hashKey(rawKey string) string {
 	h := sha256.Sum256([]byte(rawKey))
 	return hex.EncodeToString(h[:])
