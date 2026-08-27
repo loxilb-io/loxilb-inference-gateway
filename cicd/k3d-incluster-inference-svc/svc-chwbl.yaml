@@ -1,0 +1,25 @@
+# The subject under test: an ordinary LoadBalancer Service whose annotations ask
+# for the inference-gateway feature set (INFERENCE_GATEWAY.md, Service path).
+# model-name matches the mock server's advertised model.
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-qwen3-svc
+  namespace: llm
+  annotations:
+    loxilb.io/lbmode: "fullproxy"
+    loxilb.io/usepodnetwork: "yes"
+    loxilb.io/epselect: "chwbl"
+    loxilb.io/chwbl-prefix-hash-level: "2"
+    loxilb.io/sse-mode: "true"
+    loxilb.io/model-name: "Qwen/Qwen3-0.6B"
+    loxilb.io/liveness: "yes"
+spec:
+  loadBalancerClass: loxilb.io/loxilb
+  selector:
+    app: vllm-qwen3
+  ports:
+    - port: 8000
+      targetPort: 8000
+      protocol: TCP
+  type: LoadBalancer

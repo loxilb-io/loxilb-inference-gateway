@@ -39,6 +39,10 @@ _fail_next = False      # One-shot: next inference request answers HTTP 500
                         # Armed via POST /admin/fail-next, cleared on consume
                         # or /admin/reset; mirrors the mock_sglang_pd.py knob.
 _args = None            # Set by main(); allows handlers to access parsed args
+# Identity of this server instance, echoed as the X-Served-By response header so
+# a test can attribute a proxied response to the endpoint that produced it. In
+# Kubernetes POD_NAME (downward API) names the pod; hostname covers docker/netns.
+SERVED_BY = os.environ.get("POD_NAME") or socket.gethostname()
 
 
 class MockVLLMHandler(BaseHTTPRequestHandler):
@@ -67,6 +71,7 @@ class MockVLLMHandler(BaseHTTPRequestHandler):
             self.send_header("X-Prefill-Ep", str(EP_IDX))
         elif SERVER_ROLE == "decode":
             self.send_header("X-Decode-Ep", str(EP_IDX))
+        self.send_header("X-Served-By", SERVED_BY)
         self.close_connection = True
         self.end_headers()
         self.wfile.write(data)
@@ -86,6 +91,7 @@ class MockVLLMHandler(BaseHTTPRequestHandler):
             self.send_header("X-Prefill-Ep", str(EP_IDX))
         elif SERVER_ROLE == "decode":
             self.send_header("X-Decode-Ep", str(EP_IDX))
+        self.send_header("X-Served-By", SERVED_BY)
         self.close_connection = True
         self.end_headers()
 
