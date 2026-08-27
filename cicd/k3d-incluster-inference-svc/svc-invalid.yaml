@@ -1,0 +1,20 @@
+# Negative control: chwbl exists only under fullproxy, so kube-loxilb must
+# refuse this with an InvalidInferenceConfig event instead of programming a
+# rule that black-holes traffic.
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-qwen3-invalid
+  namespace: llm
+  annotations:
+    loxilb.io/lbmode: "onearm"
+    loxilb.io/epselect: "chwbl"
+spec:
+  loadBalancerClass: loxilb.io/loxilb
+  selector:
+    app: vllm-qwen3
+  ports:
+    - port: 8001
+      targetPort: 8000
+      protocol: TCP
+  type: LoadBalancer

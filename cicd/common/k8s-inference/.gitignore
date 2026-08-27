@@ -1,0 +1,3 @@
+# runtime artifacts of k3d_common.sh
+.bin/
+.work/

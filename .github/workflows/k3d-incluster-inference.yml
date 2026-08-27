@@ -1,0 +1,68 @@
+name: K3d-InCluster-Inference-Sanity-CI
+
+# Runs the two k3d in-cluster inference-gateway scenarios: loxilb and
+# kube-loxilb (integration/inference-gateway, built from source) as Pods in a
+# single-node k3d cluster, exercised through Service annotations (svc) and
+# through Gateway API InferencePool (gwapi). Hosted runners suffice: the k3d
+# node is a privileged container, so nothing touches the runner's own network.
+
+on:
+  schedule:
+    - cron: '0 16 * * *'
+  workflow_dispatch:
+    inputs:
+      klbRef:
+        description: 'kube-loxilb git ref to build'
+        required: false
+        default: 'integration/inference-gateway'
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'cicd/common/k8s-inference/**'
+      - 'cicd/k3d-incluster-inference-svc/**'
+      - 'cicd/k3d-incluster-inference-gwapi/**'
+      - '.github/workflows/k3d-incluster-inference.yml'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'cicd/common/k8s-inference/**'
+      - 'cicd/k3d-incluster-inference-svc/**'
+      - 'cicd/k3d-incluster-inference-gwapi/**'
+      - '.github/workflows/k3d-incluster-inference.yml'
+
+jobs:
+  k3d-incluster-inference:
+    name: ${{ matrix.scenario }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [k3d-incluster-inference-svc, k3d-incluster-inference-gwapi]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PyYAML (manifest renderer)
+        run: python3 -m pip install --quiet pyyaml
+      # Authenticate to avoid anonymous ghcr pull limits (the image is public).
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN || github.token }}
+      - name: Run the scenario
+        env:
+          KLB_REF: ${{ github.event.inputs.klbRef || 'integration/inference-gateway' }}
+        run: |
+          cd cicd/${{ matrix.scenario }}
+          rc=0
+          ./config.sh && ./validation.sh || rc=$?
+          ./rmconfig.sh || true
+          exit $rc
+      - name: Debug on failure
+        if: failure()
+        run: |
+          docker ps -a || true
+          KCFG=$(ls ~/.config/k3d/kubeconfig-*.yaml 2>/dev/null | head -1)
+          [ -n "$KCFG" ] && KUBECONFIG=$KCFG kubectl get pods -A || true
+          [ -n "$KCFG" ] && KUBECONFIG=$KCFG kubectl -n kube-system logs deploy/kube-loxilb --tail=80 || true
