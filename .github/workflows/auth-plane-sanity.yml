@@ -1,0 +1,185 @@
+name: Auth-Plane-Sanity-CI
+
+# The authentication-plane regression, self-contained on a hosted runner: no
+# GPU, no cloud service, no external backend. Four gates, in cost order:
+#
+#   unit-gates    invariants + the auth/key/quota unit suites against a real
+#                 PostgreSQL (store legs FAIL rather than skip when the
+#                 server is missing, so a green run cannot be a skipped one)
+#   validation    the four-cell matrix (userservice x store), store role
+#                 isolation, password hygiene, verified TLS, enforcement
+#                 mechanics — cicd/ai-authsep/validation.sh
+#   tiers         the combination sweep: management-auth mode x store state
+#                 x key policy x streaming shape — cicd/ai-authsep/tiers.sh
+#   backcompat    the upgrade contract: pre-upgrade artifacts replayed,
+#                 the one-line upgrade armed and rolled back, export
+#                 re-imported — cicd/ai-authsep/backcompat.sh
+#
+# The engine matrix (llama.cpp / vLLM / SGLang / TRT-LLM, converged and
+# disaggregated) needs GPUs and runs on the testbed out of band; this
+# workflow is everything that does not.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'pkg/aikey/**'
+      - 'pkg/user/**'
+      - 'pkg/authz/**'
+      - 'pkg/pgstore/**'
+      - 'pkg/loxinet/**'
+      - 'api/**'
+      - 'common/**'
+      - 'options/**'
+      - 'cicd/ai-authsep/**'
+      - 'scripts/check-source-invariants.sh'
+      - 'scripts/aigw-db-bootstrap.sql'
+      - 'loxilb-ebpf'
+      - '.github/workflows/auth-plane-sanity.yml'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'pkg/aikey/**'
+      - 'pkg/user/**'
+      - 'pkg/authz/**'
+      - 'pkg/pgstore/**'
+      - 'pkg/loxinet/**'
+      - 'api/**'
+      - 'common/**'
+      - 'options/**'
+      - 'cicd/ai-authsep/**'
+      - 'scripts/check-source-invariants.sh'
+      - 'scripts/aigw-db-bootstrap.sql'
+      - 'loxilb-ebpf'
+      - '.github/workflows/auth-plane-sanity.yml'
+  schedule:
+    # Nightly, so a regression arriving through an untouched path (a
+    # dependency bump, a submodule pin, runner image drift) still surfaces
+    # within a day rather than on the next auth-plane PR.
+    - cron: '30 17 * * *'
+  workflow_dispatch:
+
+jobs:
+  unit-gates:
+    name: unit-gates
+    runs-on: ubuntu-24.04
+    # Dependabot PRs have no submodule token; the private eBPF checkout fails.
+    if: github.actor != 'dependabot[bot]'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: sudo apt-get update
+      - run: sudo apt-get -y install clang llvm libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves libbsd-dev build-essential bison flex libjson-c-dev libnghttp2-dev
+      - name: Install libtokenizers (cgo link dependency of the router)
+        run: arch=$(dpkg --print-architecture) && wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz -O /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
+      # The datapath packages link the eBPF userland, so the tree must build
+      # before its tests can compile.
+      - run: sudo -E env "PATH=$PATH" make
+
+      - name: Source invariants
+        run: bash scripts/check-source-invariants.sh
+
+      - name: Disposable PostgreSQL for the store-backed suites
+        # The store legs run with *_TEST_PG=required below: with the server
+        # missing they fail loudly instead of skipping, which is the whole
+        # point of provisioning one here.
+        run: |
+          docker run -d --name authsep-unit-pg \
+            -e POSTGRES_PASSWORD=ci-superuser-pw -e POSTGRES_DB=loxilb \
+            -p 127.0.0.1:5432:5432 postgres:18.6
+          for i in $(seq 1 30); do
+            docker exec authsep-unit-pg pg_isready -U postgres >/dev/null 2>&1 && break
+            sleep 2
+          done
+          docker exec -i authsep-unit-pg psql -U postgres -d loxilb \
+            -v aigw_password=ci-aigw-pw -v aigw_mgmt_password=ci-mgmt-pw \
+            -f /dev/stdin < scripts/aigw-db-bootstrap.sql
+
+      - name: Auth and key-store unit suites (store legs mandatory)
+        env:
+          AIKEY_TEST_PG: required
+          AIKEY_TEST_DSN: postgres://aigwuser:ci-aigw-pw@127.0.0.1:5432/loxilb
+          MGMT_TEST_PG: required
+          MGMT_TEST_DSN: postgres://aigw_mgmt_user:ci-mgmt-pw@127.0.0.1:5432/loxilb
+        run: |
+          sudo -E env "PATH=$PATH" go vet ./pkg/aikey ./pkg/user ./pkg/authz ./pkg/pgstore
+          sudo -E env "PATH=$PATH" go test -count=1 ./pkg/authz ./pkg/pgstore
+          sudo -E env "PATH=$PATH" go test -count=1 -race ./pkg/aikey ./pkg/user
+
+      - name: Datapath policy gates
+        # Two exclusions, both pre-existing and unrelated to this plane: the
+        # in-process bring-up needs a privileged eBPF environment the runner
+        # does not have, and the singleflight-collapse leg asserts a
+        # scheduling coincidence.
+        env:
+          AIKEY_TEST_PG: required
+          AIKEY_TEST_DSN: postgres://aigwuser:ci-aigw-pw@127.0.0.1:5432/loxilb
+        run: |
+          sudo -E env "PATH=$PATH" go test -count=1 \
+            -skip 'TestMain|TestResolveFlowMACs_SingleflightCollapse' \
+            ./pkg/loxinet
+
+  authsep-scenarios:
+    name: authsep-scenarios
+    runs-on: ubuntu-24.04
+    if: github.actor != 'dependabot[bot]'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
+      - uses: actions/setup-python@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: sudo apt-get update
+      - run: sudo apt-get -y install clang llvm libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip build-essential bison flex iperf iproute2 nodejs socat ethtool libjson-c-dev libnghttp2-dev
+      - name: Install libtokenizers (cgo link dependency of the router)
+        run: arch=$(dpkg --print-architecture) && wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz -O /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
+      - run: loxilb-ebpf/utils/mkllb_bpffs.sh
+      - run: sudo -E env "PATH=$PATH" make
+      # minica is fetched by the TLS legs' certificate provisioning
+      - run: sudo -E env "PATH=$PATH" GOBIN=/usr/local/bin go install github.com/jsha/minica@latest
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN || github.token }}
+      # Same image recipe as the AI-gateway sanity workflow: pull the
+      # published image (or build it), overlay the freshly built binary,
+      # and commit — the scenarios then test THIS tree, not the registry.
+      - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
+      - run: docker run -u root --cap-add SYS_ADMIN --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: sudo -E env "PATH=$PATH" make docker-cp
+      - run: docker exec -dit loxilb mkllb_bpffs
+      - run: id=`docker ps -f name=loxilb | cut -d " " -f 1 | grep -iv "CONTAINER"` && docker commit $id ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: docker stop loxilb && docker rm loxilb
+
+      - name: Validation (four-cell matrix, role isolation, TLS, enforcement)
+        run: |
+          cd cicd/ai-authsep/
+          ./config.sh
+          ./validation.sh
+      - name: Combination tiers (management auth x store x policy x streaming)
+        # Runs on the topology validation left standing, exactly as the
+        # recorded full runs do; tiers.sh restarts the gateway itself.
+        run: |
+          cd cicd/ai-authsep/
+          ./tiers.sh
+      - name: Backward compatibility (the upgrade contract)
+        run: |
+          cd cicd/ai-authsep/
+          ./backcompat.sh
+      - name: Teardown
+        if: always()
+        run: |
+          cd cicd/ai-authsep/
+          ./rmconfig.sh || true
+      - run: echo "Auth-plane sanity complete"

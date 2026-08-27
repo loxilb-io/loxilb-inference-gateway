@@ -32,11 +32,21 @@ only run with `--userservice on`.
 
 ## Running
 
+The full regression, in the order the recorded runs use:
+
 ```bash
 ./config.sh        # topology + both stores + certificates
-./validation.sh    # all legs
+./validation.sh    # the four-cell matrix, role isolation, TLS, enforcement
+./tiers.sh         # the combination sweep (management auth x store x policy x streaming)
+./backcompat.sh    # the upgrade contract (see below)
 ./rmconfig.sh      # teardown, including the client key and the store password
 ```
+
+Each script prints a `SUMMARY: pass=N fail=M` line and exits non-zero on any
+failure, so the block above can run unattended and the exit code is the
+verdict. Reference green counts: `validation.sh` 96, `tiers.sh` 170 (with
+Tier F and the oauth2 column reported as loud skips — a skip that stops
+being printed is itself a regression), `backcompat.sh` 25.
 
 `config.sh` accepts `USERSERVICE=on|off` and `AIKEYSTORE=configured|unconfigured`
 for its initial posture. They exist so a cell can be pinned by hand;
@@ -44,6 +54,88 @@ for its initial posture. They exist so a cell can be pinned by hand;
 the point.
 
 Pin a specific gateway build with `LOXILB_DOCKER_IMAGE=<tag>`.
+
+### Script inventory
+
+| Script | What it proves | Runtime |
+|---|---|---|
+| `config.sh` | brings up the topology: gateway, both PostgreSQL stores (plaintext + TLS-required), two counting mock backends | ~2 min |
+| `validation.sh` | the four-cell `{userservice} x {store}` matrix with byte-identical verdict vectors along the userservice axis; store role isolation at the database; the store password absent from argv and logs; verified TLS with no downgrade; enforcement mechanics (expiry, rate limits, stripping, denied requests never reaching the backend, store-outage semantics) | ~8 min |
+| `tiers.sh` | every management-auth mode against every store state against every key policy against every streaming shape, with literal expected verdicts per cell; adversarial credential classes; QoS-follows-policy; transition semantics across restarts | ~13 min |
+| `backcompat.sh` | the upgrade contract — see the next section | ~4 min |
+| `rmconfig.sh` | teardown; also what to run when a failed run leaves containers behind | ~1 min |
+| `count_server.py` | the mock backend; logs one line per arriving request, including whether any `x-api-key` material reached it — several legs read that log as their judge | — |
+
+### The upgrade contract (`backcompat.sh`)
+
+The policy change altered what a service's configuration means: key
+enforcement used to be a side effect of the streaming flag and is now an
+explicit per-service declaration. `backcompat.sh` pins what an operator
+upgrading across that change is promised, using only artifacts a
+pre-upgrade deployment could have produced:
+
+* **Phase A** — a rule body captured before the field existed still
+  installs, resolves to `disabled`, and keeps byte-identical proxying: the
+  client's `X-Api-Key` reaches the backend untouched, because an
+  undeclared service may front a non-AI backend with its own credential
+  namespace. The one verdict that deliberately moves — the old
+  sse-riding shape no longer enforces — is asserted as such, together
+  with its designed mitigation: a quota configured while no service
+  enforces draws a loud gateway warning instead of pretending to protect.
+* **Phase B** — adding `"api_key_auth": "required"` to the same rule arms
+  the whole chain (keyless denied, pre-upgrade keys accepted, credential
+  stripped upstream, rate limits live), and replaying the original body
+  rolls it back.
+* **Phase C** — what `GET /config/loadbalancer/all` exports re-imports
+  across a gateway restart with an identical verdict vector, declared and
+  undeclared shapes both intact. This is the backup/restore path an
+  operator will actually use.
+
+When a leg here goes red after a product change, the change broke a
+compatibility promise; the fix belongs in the product or in a deliberate,
+documented revision of the promise — never in the assert.
+
+### Unit gates (no topology needed)
+
+The store-backed unit suites run against a disposable PostgreSQL — never
+against a store a scenario run is using, because the fixtures truncate the
+tables they test:
+
+```bash
+docker run -d --name authsep-unit-pg -e POSTGRES_PASSWORD=pw -e POSTGRES_DB=loxilb \
+  -p 127.0.0.1:5432:5432 postgres:18.6
+docker exec -i authsep-unit-pg psql -U postgres -d loxilb \
+  -v aigw_password=aigw-pw -v aigw_mgmt_password=mgmt-pw \
+  -f /dev/stdin < scripts/aigw-db-bootstrap.sql
+
+bash scripts/check-source-invariants.sh
+AIKEY_TEST_PG=required AIKEY_TEST_DSN=postgres://aigwuser:aigw-pw@127.0.0.1:5432/loxilb \
+MGMT_TEST_PG=required  MGMT_TEST_DSN=postgres://aigw_mgmt_user:mgmt-pw@127.0.0.1:5432/loxilb \
+  go test -count=1 -race ./pkg/aikey ./pkg/user
+go test -count=1 ./pkg/authz ./pkg/pgstore
+AIKEY_TEST_PG=required AIKEY_TEST_DSN=postgres://aigwuser:aigw-pw@127.0.0.1:5432/loxilb \
+  go test -count=1 -skip 'TestMain|TestResolveFlowMACs_SingleflightCollapse' ./pkg/loxinet
+```
+
+`*_TEST_PG=required` makes the store legs fail rather than skip when the
+server is absent — a green run cannot be a silently skipped one. The two
+`pkg/loxinet` exclusions are pre-existing and unrelated to this plane: the
+in-process bring-up needs a privileged eBPF environment, and the
+singleflight leg asserts a scheduling coincidence.
+
+### Continuous runs
+
+`.github/workflows/auth-plane-sanity.yml` runs all of the above on every
+pull request touching the auth plane, nightly, and on demand
+(`workflow_dispatch`): a `unit-gates` job (invariants + the unit suites
+against a provisioned PostgreSQL) and an `authsep-scenarios` job
+(`config.sh` → `validation.sh` → `tiers.sh` → `backcompat.sh` →
+`rmconfig.sh`). No GPU is involved anywhere in it. The engine matrix
+(llama.cpp / vLLM / SGLang / TRT-LLM, converged and disaggregated) is the
+one auth-plane gate that cannot run there; it runs on the GPU testbed out
+of band, and its harness arms `api_key_auth=required` on its own service
+before the quota legs — a quota without an enforcing service measures
+nothing, which is also what the gateway's own warning says.
 
 ## What the legs prove
 
