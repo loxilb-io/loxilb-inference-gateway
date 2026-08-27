@@ -212,7 +212,7 @@ func init() {
       },
       "post": {
         "security": [],
-        "description": "Creates a new user in the system.\n\nRequires an authenticated administrator, with one exception: while no user exists at all, a request from a loopback peer may create the first one, so that the management API can be brought up before any credential exists. That bootstrap closes as soon as the first account is created.\n\nThe authentication is performed by the handler rather than by the generated security chain, because the chain cannot express a condition that depends on the state of the user table. The empty security block does not mean the operation is open.",
+        "description": "Creates a new user in the system.\n\nRequires an authenticated administrator, with one exception: while no\nuser exists at all, a request from a loopback peer may create the first\none, so that the management API can be brought up before any credential\nexists. That bootstrap closes as soon as the first account is created.\n\nThe authentication is performed by the handler rather than by the\ngenerated security chain, because the chain cannot express a condition\nthat depends on the state of the user table. The security block below is\nempty for that reason and does not mean the operation is open.",
         "consumes": [
           "application/json"
         ],
@@ -9759,7 +9759,7 @@ func init() {
           }
         },
         "api_key": {
-          "description": "Optional caller-supplied key material to register instead of generating one. Write-only: it is never returned by GET or by the list, and the create response omits raw_key when it is set, because the caller already holds the value.",
+          "description": "Optional caller-supplied key material to register instead of generating one, for importing keys minted elsewhere. Write-only: it is never returned by GET or by the list, and the create response omits raw_key when it is set, because the caller already holds the value.",
           "type": "string"
         },
         "burst_size": {
@@ -13035,6 +13035,15 @@ func init() {
                 "type": "string"
               }
             },
+            "api_key_auth": {
+              "description": "Data-plane X-Api-Key enforcement policy for this service. \"required\" makes the data plane validate the X-Api-Key header against the API-key store before the request reaches a backend; \"disabled\" (the default, and what an unset value resolves to) admits requests without a key. Independent of sse_mode and pd_disagg_mode, and independent of the management-plane authentication mode. Reading a service back always reports the resolved value, never an empty string.",
+              "type": "string",
+              "default": "disabled",
+              "enum": [
+                "disabled",
+                "required"
+              ]
+            },
             "backend_ca_cert_id": {
               "description": "(16) certId of the backend re-encryption CA bundle (resolved by the certId registry to the managed-dir ca.crt at backend SSL_CTX build). Optional/additive — empty = system default.",
               "type": "string"
@@ -14454,7 +14463,7 @@ func init() {
               ]
             },
             "polObjName": {
-              "description": "Target Names",
+              "description": "Target name. Rule attachments use VIP:PORT:PROTO for IPv4 and [VIP]:PORT:PROTO for IPv6.",
               "type": "string"
             }
           }
@@ -15799,7 +15808,7 @@ func init() {
       },
       "post": {
         "security": [],
-        "description": "Creates a new user in the system.\n\nRequires an authenticated administrator, with one exception: while no user exists at all, a request from a loopback peer may create the first one, so that the management API can be brought up before any credential exists. That bootstrap closes as soon as the first account is created.\n\nThe authentication is performed by the handler rather than by the generated security chain, because the chain cannot express a condition that depends on the state of the user table. The empty security block does not mean the operation is open.",
+        "description": "Creates a new user in the system.\n\nRequires an authenticated administrator, with one exception: while no\nuser exists at all, a request from a loopback peer may create the first\none, so that the management API can be brought up before any credential\nexists. That bootstrap closes as soon as the first account is created.\n\nThe authentication is performed by the handler rather than by the\ngenerated security chain, because the chain cannot express a condition\nthat depends on the state of the user table. The security block below is\nempty for that reason and does not mean the operation is open.",
         "consumes": [
           "application/json"
         ],
@@ -25334,7 +25343,7 @@ func init() {
           }
         },
         "api_key": {
-          "description": "Optional caller-supplied key material to register instead of generating one. Write-only: it is never returned by GET or by the list, and the create response omits raw_key when it is set, because the caller already holds the value.",
+          "description": "Optional caller-supplied key material to register instead of generating one, for importing keys minted elsewhere. Write-only: it is never returned by GET or by the list, and the create response omits raw_key when it is set, because the caller already holds the value.",
           "type": "string"
         },
         "burst_size": {
@@ -29080,6 +29089,15 @@ func init() {
                 "type": "string"
               }
             },
+            "api_key_auth": {
+              "description": "Data-plane X-Api-Key enforcement policy for this service. \"required\" makes the data plane validate the X-Api-Key header against the API-key store before the request reaches a backend; \"disabled\" (the default, and what an unset value resolves to) admits requests without a key. Independent of sse_mode and pd_disagg_mode, and independent of the management-plane authentication mode. Reading a service back always reports the resolved value, never an empty string.",
+              "type": "string",
+              "default": "disabled",
+              "enum": [
+                "disabled",
+                "required"
+              ]
+            },
             "backend_ca_cert_id": {
               "description": "(16) certId of the backend re-encryption CA bundle (resolved by the certId registry to the managed-dir ca.crt at backend SSL_CTX build). Optional/additive — empty = system default.",
               "type": "string"
@@ -29714,6 +29732,15 @@ func init() {
           "additionalProperties": {
             "type": "string"
           }
+        },
+        "api_key_auth": {
+          "description": "Data-plane X-Api-Key enforcement policy for this service. \"required\" makes the data plane validate the X-Api-Key header against the API-key store before the request reaches a backend; \"disabled\" (the default, and what an unset value resolves to) admits requests without a key. Independent of sse_mode and pd_disagg_mode, and independent of the management-plane authentication mode. Reading a service back always reports the resolved value, never an empty string.",
+          "type": "string",
+          "default": "disabled",
+          "enum": [
+            "disabled",
+            "required"
+          ]
         },
         "backend_ca_cert_id": {
           "description": "(16) certId of the backend re-encryption CA bundle (resolved by the certId registry to the managed-dir ca.crt at backend SSL_CTX build). Optional/additive — empty = system default.",
@@ -31323,7 +31350,7 @@ func init() {
               ]
             },
             "polObjName": {
-              "description": "Target Names",
+              "description": "Target name. Rule attachments use VIP:PORT:PROTO for IPv4 and [VIP]:PORT:PROTO for IPv6.",
               "type": "string"
             }
           }
@@ -31380,7 +31407,7 @@ func init() {
           ]
         },
         "polObjName": {
-          "description": "Target Names",
+          "description": "Target name. Rule attachments use VIP:PORT:PROTO for IPv4 and [VIP]:PORT:PROTO for IPv6.",
           "type": "string"
         }
       }

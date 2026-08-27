@@ -22,7 +22,7 @@ package loxinet
 #include <string.h>
 
 // AI Gateway decision structure (must match sockproxy_ai_gw.h)
-// decision values: 0=allow, 1=deny_401, 2=deny_403, 3=deny_429
+// decision values: 0=allow, 1=deny_401, 2=deny_403, 3=deny_429, 4=deny_503
 typedef struct {
     int  decision;
     int  retry_after;
@@ -162,7 +162,7 @@ func rateLimitCheckInternal(svc rateLimitService, store *rl.RateLimiterStore, ke
 //
 // Return values:
 //
-//	decision   – 0=allow, 1=deny_401, 2=deny_403
+//	decision   – 0=allow, 1=deny_401, 2=deny_403, 3=deny_429, 4=deny_503
 //	tenantID   – populated on allow and deny_403 (for metric recording)
 //	keyID      – populated on allow
 //	modelOut   – model name echoed back on allow
@@ -240,6 +240,9 @@ func cCopyStr(dst *C.char, src string, maxLen int) {
 //	0 – allow
 //	1 – deny with 401 (missing/disabled/expired key)
 //	2 – deny with 403 (model not allowed)
+//	3 – deny with 429 (rate limit or token quota; retry_after set)
+//	4 – deny with 503 (policy store unavailable — the policy requires a key
+//	    and the store cannot answer; distinct from 401 on purpose)
 //
 //export llb_ai_validate_key
 func llb_ai_validate_key(rawKey *C.char, modelName *C.char, result *C.ai_gw_decision_t) (ret C.int) {
@@ -265,26 +268,29 @@ func llb_ai_validate_key(rawKey *C.char, modelName *C.char, result *C.ai_gw_deci
 	// Guard: the key store must exist before data-plane calls arrive.
 	us := mh.AIKeyService
 	if us == nil {
-		// Say so once. A gateway reaching this point has a rule that wants a
-		// key checked and no store to check it against, and the branch below
-		// admits the request — a state an operator has to be able to see in
-		// the log rather than infer from traffic that is never rejected.
+		// Reaching here now MEANS something specific. The data-plane gate only
+		// calls this function when the service's api_key_auth policy is
+		// "required", so a nil store is not "nobody asked for auth" — it is
+		// "the operator asked for auth and the store cannot answer".
+		//
+		// That is a policy-store outage, and it fails CLOSED. Admitting the
+		// request would serve unauthenticated traffic on a service explicitly
+		// configured to require a credential, which is the one outcome the
+		// policy exists to prevent.
+		//
+		// It is deliberately NOT a 401. A client must be able to tell "your
+		// key is wrong" from "the gateway cannot tell right now": the first is
+		// the client's problem and permanent, the second is the operator's and
+		// transient, and a client that retries is right in the second case and
+		// wrong in the first.
 		noKeyStoreOnce.Do(func() {
 			tk.LogIt(tk.LogCritical,
-				"[AIGateway] No API-key store configured (--aikey-db-host unset): requests are admitted without a key\n")
+				"[AIGateway] No API-key store configured (--aikey-db-host unset): services with api_key_auth=required are refusing requests with 503\n")
 		})
-		// No key store is configured, so there is nothing to validate against
-		// and the request is admitted.
-		//
-		// This branch is retained deliberately while the C gate is still
-		// driven by ai_gw_mode rather than by per-service policy: failing
-		// closed here today would flip every keyless SSE and P/D request on a
-		// storeless gateway from allowed to denied, before any operator has a
-		// field with which to say otherwise. It is deleted in the same change
-		// that makes the gate read api_key_auth — see the authentication plane
-		// separation work, with the fail-closed change.
-		result.decision = 0
-		return 0
+		prom.RecordPolicyStoreUnavailable()
+		result.decision = 4
+		cCopyStr((*C.char)(unsafe.Pointer(&result.error_code[0])), "policy_store_unavailable", 64)
+		return -1
 	}
 
 	rawKeyStr := C.GoString(rawKey)
@@ -893,4 +899,20 @@ func llb_ai_normal_session_hit(modelName *C.char) {
 	defer cgoRecover("llb_ai_normal_session_hit")
 	modelNameStr := C.GoString(modelName)
 	prom.RecordNormalSessionHit(modelNameStr)
+}
+
+// llb_ai_record_unmetered records an AI request that was admitted without any
+// X-Api-Key validation, because the service's api_key_auth policy resolved to
+// "disabled".
+//
+// C sockproxy calls this from the gate on connections with ai_gw_mode=1 and
+// apikey_auth=0 — AI traffic that is accounted for streaming purposes but is
+// neither authenticated nor attributable to a tenant. Keyed by VIP because
+// that is the identity the operator configured the policy on; there is no
+// tenant to key it by, which is precisely the condition being reported.
+//
+//export llb_ai_record_unmetered
+func llb_ai_record_unmetered(vip *C.char) {
+	defer cgoRecover("llb_ai_record_unmetered")
+	prom.RecordUnmeteredRequest(C.GoString(vip))
 }

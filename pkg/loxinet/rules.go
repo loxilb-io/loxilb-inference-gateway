@@ -593,6 +593,7 @@ type ruleEnt struct {
 	backendProtocol             string                  // Backend protocol capability: "http1", "http2", or "both"
 	sessionHeaderName           string                  // Custom session header for persist mode (e.g., "mcp-session-id")
 	sseMode                     bool                    // SSE mode: suppress idle-timeout during streaming
+	apiKeyAuth                  string                  // data-plane X-Api-Key policy: "disabled" (default) or "required"
 	maxStreamDurationSec        uint32                  // Absolute wall-clock cap for SSE streams in seconds
 	backendKeepaliveIntervalSec uint32                  // Backend SO_KEEPALIVE+TCP_KEEPIDLE interval in seconds
 	timeoutMemberConnectMs      uint32                  // backend connect-poll deadline in ms (0=500ms default)
@@ -1178,6 +1179,10 @@ func (R *RuleH) GetLBRule() ([]cmn.LbRuleMod, error) {
 		ret.Serv.BackendProtocol = data.backendProtocol     // Backend protocol capability
 		ret.Serv.SessionHeaderName = data.sessionHeaderName // Custom session header for persist mode
 		ret.Serv.SSEMode = data.sseMode                     // SSE streaming mode
+		// Surface the RESOLVED policy, never the raw configured string: an
+		// operator reading this back has to see what the data plane will
+		// actually enforce, and "" would leave them to re-derive the default.
+		ret.Serv.ApiKeyAuth = data.apiKeyAuth
 		ret.Serv.MaxStreamDurationSec = data.maxStreamDurationSec
 		ret.Serv.BackendKeepaliveIntervalSec = data.backendKeepaliveIntervalSec
 		ret.Serv.TimeoutMemberConnect = data.timeoutMemberConnectMs // Octavia
@@ -2931,6 +2936,28 @@ func kvEngineMixDetect(newEngine string, otherEngines []string) (string, bool) {
 // AddLbRule - Add a service LB rule. The service details are passed in serv argument,
 // and end-point information is passed in the slice servEndPoints. On success,
 // it will return 0 and nil error, else appropriate return code and error string will be set
+// aiGwModeFor is the ONE definition of "this service does AI-gateway
+// accounting". It takes the three inputs rather than a rule because the eBPF
+// installer sees only a work item and the DOCA backend sees only a rule, and
+// both must get the same answer.
+//
+// The derivation used to be spelled out independently in the eBPF installer
+// and twice in the DOCA backend. The copies drift the moment the derivation
+// changes — as it does here, gaining api_key_auth: a service with
+// api_key_auth=required and neither streaming mode would get AI accounting in
+// sockproxy but the short TCP aging in DOCA, silently reaping long-lived
+// inference connections, on DPU deployments only and therefore invisible on
+// the standard testbed.
+func aiGwModeFor(sseMode, pdDisagg bool, apiKeyAuth string) bool {
+	return sseMode || pdDisagg ||
+		cmn.ResolveApiKeyAuth(apiKeyAuth) == cmn.ApiKeyAuthRequired
+}
+
+// aiGwMode reports whether this rule's connections do AI-gateway accounting.
+func (r *ruleEnt) aiGwMode() bool {
+	return aiGwModeFor(r.sseMode, r.pdDisaggMode, r.apiKeyAuth)
+}
+
 func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, servSecVIPs []cmn.LbSecVIPArg, allowedSources []cmn.LbAllowedSrcIPArg, servEndPoints []cmn.LbEndPointArg) (int, error) {
 	var lBActs ruleLBActs
 	var nSecIP []ruleLBSIP
@@ -2962,6 +2989,14 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		if privIP == nil {
 			return RuleUnknownServiceErr, errors.New("malformed-service privateIP error")
 		}
+	}
+
+	// Validate the data-plane API-key enforcement policy. The set is closed,
+	// so an unrecognised value is refused here rather than installed: the
+	// datapath would otherwise have to choose between admitting everything
+	// and rejecting everything on behalf of an operator who has said neither.
+	if !cmn.IsValidApiKeyAuth(serv.ApiKeyAuth) {
+		return RuleArgsErr, cmn.ErrInvalidApiKeyAuth
 	}
 
 	// Validate inactivity timeout
@@ -3318,6 +3353,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 			eRule.backendProtocol != serv.BackendProtocol ||
 			eRule.sessionHeaderName != serv.SessionHeaderName ||
 			eRule.sseMode != serv.SSEMode ||
+			(serv.ApiKeyAuth != "" && eRule.apiKeyAuth != serv.ApiKeyAuth) ||
 			eRule.maxStreamDurationSec != serv.MaxStreamDurationSec ||
 			eRule.backendKeepaliveIntervalSec != serv.BackendKeepaliveIntervalSec ||
 			eRule.timeoutMemberConnectMs != serv.TimeoutMemberConnect ||
@@ -3461,6 +3497,22 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		}
 		eRule.sessionHeaderName = serv.SessionHeaderName
 		eRule.sseMode = serv.SSEMode
+		// PRESERVE on omit, unlike the fields around it.
+		//
+		// An unset api_key_auth resolves to "disabled" when a rule is
+		// CREATED, but on an update it means "the caller did not mention
+		// this", not "turn it off". POST against an existing rule is a full
+		// replace, so any client that cannot express the field -- loxicmd
+		// carries 18 of this struct's fields -- would otherwise switch
+		// authentication off on a service the operator believed protected,
+		// with no error and no warning. Clearing the policy is still
+		// possible: send "disabled" explicitly.
+		//
+		// backend_protocol immediately above is guarded the same way and for
+		// the same reason.
+		if serv.ApiKeyAuth != "" {
+			eRule.apiKeyAuth = serv.ApiKeyAuth
+		}
 		eRule.maxStreamDurationSec = serv.MaxStreamDurationSec
 		eRule.backendKeepaliveIntervalSec = serv.BackendKeepaliveIntervalSec
 		// update per-listener member timeouts (ms). Assigned
@@ -3699,6 +3751,11 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 
 	// Store SSE streaming configuration
 	r.sseMode = serv.SSEMode
+	// Resolve the data-plane API-key policy once, here, and store the
+	// resolved value — every later reader (the read path, the change
+	// detector, the rule installer) then sees the same answer without
+	// re-deriving the default.
+	r.apiKeyAuth = cmn.ResolveApiKeyAuth(serv.ApiKeyAuth)
 	r.maxStreamDurationSec = serv.MaxStreamDurationSec
 	r.backendKeepaliveIntervalSec = serv.BackendKeepaliveIntervalSec
 
@@ -5437,6 +5494,7 @@ func (r *ruleEnt) LB2DP(work DpWorkT) int {
 	nWork.BackendProtocol = r.backendProtocol                         // Backend protocol capability
 	nWork.SessionHeaderName = r.sessionHeaderName                     // Custom session header name for persist mode
 	nWork.SSEMode = r.sseMode                                         // SSE streaming mode
+	nWork.ApiKeyAuth = r.apiKeyAuth                                   // data-plane X-Api-Key policy (already resolved)
 	nWork.MaxStreamDurationSec = r.maxStreamDurationSec               // SSE max stream duration cap
 	nWork.BackendKeepaliveIntervalSec = r.backendKeepaliveIntervalSec // SSE backend keepalive
 	nWork.TimeoutMemberConnect = r.timeoutMemberConnectMs             // connect ms

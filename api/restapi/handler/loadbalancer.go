@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-openapi/runtime/middleware"
 	"github.com/go-openapi/strfmt"
+	"github.com/go-openapi/swag"
 	"github.com/loxilb-io/loxilb/api/models"
 	"github.com/loxilb-io/loxilb/api/restapi/operations"
 	cmn "github.com/loxilb-io/loxilb/common"
@@ -113,6 +114,13 @@ func ConfigPostLoadbalancer(params operations.PostConfigLoadbalancerParams, prin
 
 	// SSE (Server-Sent Events) streaming configuration 
 	lbRules.Serv.SSEMode = params.Attr.ServiceArguments.SseMode
+	// Data-plane X-Api-Key policy. The generated field is a pointer because the
+	// schema carries an enum; nil means the caller omitted it, which resolves
+	// to "disabled" in the rule layer rather than here, so the default lives in
+	// exactly one place.
+	if params.Attr.ServiceArguments.APIKeyAuth != nil {
+		lbRules.Serv.ApiKeyAuth = *params.Attr.ServiceArguments.APIKeyAuth
+	}
 	lbRules.Serv.MaxStreamDurationSec = uint32(params.Attr.ServiceArguments.MaxStreamDurationSec)
 	lbRules.Serv.BackendKeepaliveIntervalSec = uint32(params.Attr.ServiceArguments.BackendKeepaliveIntervalSec)
 
@@ -577,6 +585,11 @@ func serializeLBRule(lb cmn.LbRuleMod) *models.LoadbalanceEntry {
 	if lb.Serv.SSEMode {
 		tmpSvc.SseMode = lb.Serv.SSEMode
 	}
+	// Always report the policy, including the default. Unlike the fields above
+	// this is NOT omitted when it holds its zero-ish value: an operator asking
+	// what a service enforces must get an answer, and "absent" would send them
+	// back to the documentation to look up the default.
+	tmpSvc.APIKeyAuth = swag.String(cmn.ResolveApiKeyAuth(lb.Serv.ApiKeyAuth))
 	if lb.Serv.MaxStreamDurationSec != 0 {
 		tmpSvc.MaxStreamDurationSec = int32(lb.Serv.MaxStreamDurationSec)
 	}

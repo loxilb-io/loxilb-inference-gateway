@@ -372,6 +372,7 @@ type LBDpWorkQ struct {
 	ModelName                   string                  // AI model name for pool selection (e.g. "llama-70b"); empty = wildcard
 	CatalogID                   uint16                  // Tracing catalog ID for deep inspection (0 = no tracing)
 	SSEMode                     bool                    // SSE (Server-Sent Events) mode: suppress idle-timeout during streaming
+	ApiKeyAuth                  string                  // data-plane X-Api-Key policy: "disabled" (default) or "required"
 	MaxStreamDurationSec        uint32                  // Absolute wall-clock cap for streaming connections in seconds (0=system hard cap)
 	BackendKeepaliveIntervalSec uint32                  // Sets SO_KEEPALIVE+TCP_KEEPIDLE on backend socket in seconds (0=disabled)
 	TimeoutMemberConnect        uint32                  // backend connect-poll deadline in ms (0=500ms default)

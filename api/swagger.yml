@@ -7312,6 +7312,19 @@ definitions:
             x-nullable: false
             default: false
             description: Enable SSE (Server-Sent Events) streaming mode. When true, idle-timeout is suppressed while a streaming LLM response is active (Content-Type text/event-stream detected). Required for OpenAI-compatible streaming endpoints.
+          api_key_auth:
+            type: string
+            enum: [disabled, required]
+            default: disabled
+            description: >-
+              Data-plane X-Api-Key enforcement policy for this service.
+              "required" makes the data plane validate the X-Api-Key header
+              against the API-key store before the request reaches a backend;
+              "disabled" (the default, and what an unset value resolves to)
+              admits requests without a key. Independent of sse_mode and
+              pd_disagg_mode, and independent of the management-plane
+              authentication mode. Reading a service back always reports the
+              resolved value, never an empty string.
           max_stream_duration_sec:
             type: integer
             format: int32
