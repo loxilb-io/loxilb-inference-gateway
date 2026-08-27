@@ -116,9 +116,23 @@ func AuthPostLogin(params auth.PostAuthLoginParams) middleware.Responder {
 	if err != nil {
 		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
-	if valid {
-		response.Token = token
+	if !valid {
+		// A failed login is a failure on the wire, not a success carrying an
+		// empty body. This previously fell through to 200 with {}, so the only
+		// thing separating a rejected credential from an accepted one was the
+		// presence of the token field: a caller that checked the status — the
+		// ordinary thing to do — read a refusal as a success, and nothing
+		// counting 401s (rate limiting, alerting, access-log review) could see
+		// failed attempts at all.
+		//
+		// The wording and status are the ones authFailure() serves, and both
+		// the unknown-user and wrong-password cases reach this single branch,
+		// so the two remain indistinguishable to the caller. The work done
+		// before this point is unchanged, so they remain indistinguishable by
+		// timing as well.
+		return errorResponseWithCode(http.StatusUnauthorized, "Missing or invalid credentials")
 	}
+	response.Token = token
 	return auth.NewPostAuthLoginOK().WithPayload(&response)
 }
 

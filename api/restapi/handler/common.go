@@ -95,6 +95,22 @@ func ResultErrorResponseErrorMessage(msg string) *models.Error {
 		return &models.Error{Code: 404, Message: "Resource not found", Result: msg}
 	}
 
+	// 503 Service Unavailable — the store was never reached
+	//
+	// Placed ahead of the classes below because it is about whether the
+	// request was answered at all, not about what the answer was. Without it
+	// "user database unavailable" matched no class and fell through to 500, so
+	// an outage of the management store was reported to the caller as a fault
+	// in the gateway, and a retry-after-a-moment condition was rendered as one
+	// that will not improve.
+	if containsAny(m, "database unavailable", "store unavailable", "key_store_unconfigured") {
+		return &models.Error{
+			Code:    503,
+			Message: "Credential store unavailable",
+			Result:  "Credential store unavailable",
+		}
+	}
+
 	// 401 Auth or Token
 	if containsAny(m,
 		"invalid token", "token is expired", "token not fou",

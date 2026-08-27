@@ -178,7 +178,15 @@ func (s *UserService) AddUser(user cmn.User) (int, error) {
 	}
 	var userID int
 	err = RetryOperation(func() error {
-		if err := s.validatePassword(user.Username, user.Password); err != nil {
+		// Policy only. The previous-password rule compares against a stored
+		// row, and the only row it could find here belongs to a username that
+		// already exists — which is a conflict the insert below reports
+		// properly, as 409 "username already exists". Running the comparison
+		// first answered 400 "password must not be the same as the previous
+		// password" instead, which told the caller the wrong thing and turned
+		// this endpoint into a confirmation oracle for other accounts'
+		// passwords.
+		if err := s.validatePasswordPolicy(user.Username, user.Password); err != nil {
 			tk.LogIt(tk.LogError, "Password validation failed: %v\n", err.Error())
 			return err
 		}
@@ -252,7 +260,10 @@ func (s *UserService) BootstrapUser(user cmn.User) (int, error) {
 		return 0, cmn.ErrInvalidRole
 	}
 
-	if err := s.validatePassword(user.Username, user.Password); err != nil {
+	// Policy only: this path runs only with the table empty, so there is no
+	// previous password to compare against and the query would be a wasted
+	// round trip against a table the check above has already counted.
+	if err := s.validatePasswordPolicy(user.Username, user.Password); err != nil {
 		tk.LogIt(tk.LogError, "Password validation failed: %v\n", err.Error())
 		return 0, err
 	}

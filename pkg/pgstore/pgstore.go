@@ -30,14 +30,18 @@
 package pgstore
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -49,6 +53,9 @@ import (
 	// registers the "pgx" driver with database/sql
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
+
+// ConnectTimeoutSeconds bounds a single dial attempt to the store.
+const ConnectTimeoutSeconds = 2
 
 // SSL modes used when building a PostgreSQL DSN.
 const (
@@ -93,6 +100,14 @@ func PostgresDSN(user, password, host, port, dbname, sslMode string) string {
 	}
 	q := url.Values{}
 	q.Set("sslmode", sslMode)
+	// Bound the dial. Without it a stopped server is not reported until the
+	// kernel gives up on the SYN — about 15 s — and the request profile
+	// spends that three times over, so an unreachable store cost ~45 s per
+	// request while the retry sleeps it was budgeted against total 900 ms.
+	// The failure this bounds is "nothing is listening", which one attempt
+	// establishes; the retries are there for a server that is up and
+	// briefly busy, and those answer well inside this.
+	q.Set("connect_timeout", strconv.Itoa(ConnectTimeoutSeconds))
 	u.RawQuery = q.Encode()
 	return u.String()
 }
@@ -292,4 +307,53 @@ func (s Store) openWithRetry(dsn string, maxRetries int, backoff time.Duration) 
 func IsUniqueViolation(err error) bool {
 	var pgErr *pgxconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
+
+// IsUnavailable reports whether err means the store could not be reached or
+// the connection to it broke, as distinct from the store reaching a verdict
+// the caller will not like.
+//
+// The distinction decides a status code. A credential the store examined and
+// rejected is a 401; a credential the store never saw because there was
+// nothing to ask is a 503, and answering 401 there tells a caller their token
+// is wrong when nothing checked it. The retry classifier cannot make this
+// call: it treats every error that is not on a short terminal list as worth
+// retrying, which includes application outcomes like a duplicate username, so
+// using it here would report a rejected create as a database outage.
+//
+// A server that answered with an SQLSTATE examined the request, so a pgconn
+// PgError is deliberately NOT unavailable — including class 08, which arrives
+// only once a connection existed.
+func IsUnavailable(err error) bool {
+	if err == nil {
+		return false
+	}
+	// The pool gave up, or handed back a connection that had already died.
+	if errors.Is(err, driver.ErrBadConn) || errors.Is(err, sql.ErrConnDone) ||
+		errors.Is(err, sql.ErrTxDone) {
+		return true
+	}
+	// The server replied. Whatever it said, it was reachable.
+	var pgErr *pgxconn.PgError
+	if errors.As(err, &pgErr) {
+		return false
+	}
+	// pgx could not establish a session at all: refused, timed out, TLS
+	// refused, no route.
+	var connErr *pgxconn.ConnectError
+	if errors.As(err, &connErr) {
+		return true
+	}
+	// Anything at the socket layer, including a deadline exceeded while
+	// dialling.
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return true
+	}
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		return true
+	}
+	return errors.Is(err, context.DeadlineExceeded) || errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrUnexpectedEOF)
 }

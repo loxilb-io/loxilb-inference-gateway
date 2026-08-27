@@ -26,6 +26,7 @@ import (
 	"unicode"
 
 	cmn "github.com/loxilb-io/loxilb/common"
+	"github.com/loxilb-io/loxilb/pkg/pgstore"
 	tk "github.com/loxilb-io/loxilib"
 
 	"golang.org/x/crypto/bcrypt"
@@ -142,6 +143,19 @@ func RetryOperation(operation func() error, maxRetries int, retryDelay time.Dura
 		time.Sleep(delay)
 		delay *= AuthRetryBackoff
 	}
+	// The budget is spent. If what defeated it was the store being
+	// unreachable, say so in the taxonomy the callers branch on, so that a
+	// request whose credential was never examined is answered 503 rather than
+	// 401 and a store read that never happened is not rendered as 500.
+	//
+	// The test is pgstore.IsUnavailable, not `retryable`: `retryable` returns
+	// true for anything that is not on a short terminal list, so it also
+	// covers application outcomes such as a duplicate username, and reporting
+	// one of those as a database outage would be worse than the bug this
+	// fixes. The cause is wrapped rather than replaced so the log keeps it.
+	if pgstore.IsUnavailable(err) {
+		return fmt.Errorf("%w: %v", cmn.ErrDBUnavailable, err)
+	}
 	return err
 }
 
@@ -228,7 +242,18 @@ func (s *UserService) ValidateUser(username, password string) (string, bool, err
 // fixing a mismatch, and it would silently reject credentials that are valid
 // today. If the product wants a sequence rule it needs a specified one, and
 // then this function and this list change together.
-func (s *UserService) validatePassword(username, password string) error {
+// validatePasswordPolicy applies the format rules above — everything that can
+// be decided from the candidate password and the username alone, with no
+// reference to what is stored.
+//
+// It is split out because the previous-password rule is not a property of the
+// password: it is a comparison against an existing row, and on a create there
+// is no such row to compare against. Running it there made POST /auth/users
+// answer "password must not be the same as the previous password" for a
+// username that already existed, which both told the caller the wrong thing
+// and confirmed, to anyone allowed to create users, that their guess at
+// another account's current password was correct.
+func (s *UserService) validatePasswordPolicy(username, password string) error {
 	if len(password) < MinPasswordLength {
 		err := errors.New("password must be at least 9 characters long")
 		tk.LogIt(tk.LogError, "%v\n", err.Error())
@@ -291,6 +316,20 @@ func (s *UserService) validatePassword(username, password string) error {
 	if !hasSpecial {
 		err := errors.New("password must contain at least one special character")
 		tk.LogIt(tk.LogError, "%v\n", err.Error())
+		return err
+	}
+
+	tk.LogIt(tk.LogInfo, "Password policy validated successfully")
+
+	return nil
+}
+
+// validatePassword is the policy plus the previous-password rule, and is the
+// check for a password CHANGE. Creates use validatePasswordPolicy: see the
+// note there for why the comparison cannot run on a path where the row it
+// compares against is the conflict the caller should have been told about.
+func (s *UserService) validatePassword(username, password string) error {
+	if err := s.validatePasswordPolicy(username, password); err != nil {
 		return err
 	}
 
