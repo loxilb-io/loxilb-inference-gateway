@@ -147,7 +147,7 @@ lift), `gpu_mode_set`, `gpu_conversations_cleanup`, `llamafw_enable_set`,
 
 > **Prerequisite:** the API-key and tenant-rate-limit REST endpoints are only
 > wired when the target loxilb runs with `--userservice` (plus a reachable
-> `--databasehost`). On a non-userservice target these tools return the
+> `--mgmt-db-host`). On a non-userservice target these tools return the
 > target's HTTP 501 verbatim. Note also: with `--userservice` enabled,
 > `/netlox/v1/metrics` requires a JWT, so a Prometheus instance scraping that
 > target needs a bearer-token scrape config.
