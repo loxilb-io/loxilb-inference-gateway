@@ -1,15 +1,28 @@
 #!/bin/bash
 # Bring-up for the step I-6 baseline re-run (PR 2b, before any management fix).
 #
-# I-6 asks one question: are the I-0b management-plane reds still present now
-# that PR 1 and PR 2 sit on top? So the topology has to be the I-0 one — the
-# management store is MariaDB and does not move to PostgreSQL until I-8 — with
-# exactly one difference, forced by the I-4 repoint: data-plane keys now live in
-# `pkg/aikey`, so the gateway needs --aikey-db-* or POST /config/ai/apikey
-# answers 503 ai_key_store_unconfigured and the B-5 leg has no key to present.
+# I-6 asked one question: are the I-0b management-plane reds still present now
+# that PR 1 and PR 2 sit on top? At I-6 the topology was the I-0 one, with the
+# management store on MariaDB, and one deliberate difference forced by the I-4
+# repoint: data-plane keys live in `pkg/aikey`, so the gateway needs
+# --aikey-db-* or POST /config/ai/apikey answers 503 ai_key_store_unconfigured
+# and the B-5 leg has no key to present.
 #
-# That difference is deliberate and is the honest way to hold B-5 comparable.
-# Everything B-2/B-3/B-4 touch is still MariaDB, exactly as at I-0.
+# THIS FILE NO LONGER REPRODUCES THAT TOPOLOGY, and cannot: I-8 moved the
+# management store to PostgreSQL and deleted the MySQL driver, so the MariaDB
+# arrangement is not a configuration of the current product. Both planes now
+# reach the same PostgreSQL server through different roles and schemas.
+#
+# What carries across I-6 and I-9 is therefore the instrument and the named
+# expectation, not the store beneath it. When reading the two runs side by side,
+# the I-6 reds were recorded against MariaDB and the I-9 greens against
+# PostgreSQL — that substitution IS the fix under test, not a variable that was
+# left uncontrolled. The B-2/B-3/B-4 causes were dialect-independent (a
+# two-column query scanned into one destination, and a MySQL-shaped timestamp
+# layout), which is what makes the comparison legitimate.
+#
+# The default image below is deliberately NOT bumped to an I-9 build: it is what
+# reproduces the I-6 run. Pass AUTHSEP_IMAGE explicitly for a green run.
 #
 # Asserts nothing. probe_i6.sh decides the verdicts.
 #
@@ -25,10 +38,6 @@ echo "### PostgreSQL key store (data plane)"
 ./pg-up.sh >/dev/null || { echo "pg-up.sh failed"; exit 1; }
 PG_IP=$(docker inspect -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" aikey-pg)
 echo "key store IP: $PG_IP"
-
-# The management plane moved to PostgreSQL at step I-8, so both planes now
-# reach the same server through different roles and different schemas. MariaDB
-# is gone from the topology because it is gone from the product.
 
 source ../common.sh
 

@@ -12,6 +12,12 @@
 #   AUTHSEP_EXPECT=red    (default) I-6: B-2/B-3/B-4 expected to reproduce
 #   AUTHSEP_EXPECT=green            I-9: the same legs expected to be repaired
 #
+# Ground truth is read from the management store, which is PostgreSQL from I-8
+# onward (schema aigw_mgmt in database loxilb). The I-6 evidence was recorded
+# against MariaDB; this probe was ported rather than frozen because its whole
+# purpose is to be re-run under the opposite expectation. up.sh and probe_i4.sh
+# stay frozen at the old flags for the reason given in their own headers.
+#
 # The same instrument serves both steps, so the I-9 gate cannot be produced by
 # softening this one — the expectation is named, not edited.
 #
@@ -28,7 +34,41 @@ API=http://localhost:11111/netlox/v1
 TREE=${AUTHSEP_TREE:-/root/loxilb-igw-authsep}
 EXPECT=${AUTHSEP_EXPECT:-red}
 
-mysqlq() { docker exec mysql-ai mysql -uroot -ploxilb123 loxilb_db -N -e "$1" 2>/dev/null; }
+# Ground truth comes from the management store. At I-8 that store is PostgreSQL
+# — schema aigw_mgmt inside database loxilb — and the MariaDB container this
+# probe first read is gone with the driver.
+#
+# Read as the bootstrap superuser and fully qualify the schema, deliberately:
+# aigw_mgmt_user carries search_path as a role attribute and holds grants that
+# are themselves under test, so a ground-truth read that could fail for a
+# permission reason would be indistinguishable from the product defect this
+# probe is measuring.
+#
+# Errors are NOT swallowed. The MariaDB helper sent stderr to /dev/null, so a
+# store that had gone away returned the empty string and every leg reading it
+# silently decided against a value that was never fetched — a dead fixture
+# rendering as a product defect. A failed query now returns a sentinel and the
+# caller turns it into exit 2, "the run decided nothing".
+PG_CT=${AUTHSEP_PG_CT:-aikey-pg}
+PG_ROLE=${AUTHSEP_PG_ROLE:-oamuser}
+PG_DB=${AUTHSEP_PG_DB:-loxilb}
+
+pgq() {
+  local out
+  if ! out=$(docker exec "$PG_CT" psql -U "$PG_ROLE" -d "$PG_DB" \
+               -At -q -v ON_ERROR_STOP=1 -c "$1" 2>&1); then
+    printf 'PGQ_ERROR: %s' "$(printf '%s' "$out" | tr '\n' ' ')"
+    return 1
+  fi
+  printf '%s' "$out"
+}
+
+# pgq_ok <value> <what> — stop the run when a ground-truth read failed.
+pgq_ok() {
+  case "$1" in
+    PGQ_ERROR:*) echo "  management store read failed ($2): ${1#PGQ_ERROR: }"; exit 2 ;;
+  esac
+}
 
 # mgmt <timeout> <curl args...> — sets MSTATUS and MBODY.
 #
@@ -76,7 +116,15 @@ echo
 echo "---- preconditions ----"
 mgmt 10 "$API/version"; VER=$MSTATUS
 [ "$VER" = "200" ] || { echo "  management API not serving (status $VER)"; exit 2; }
-NUSERS=$(mysqlq 'SELECT COUNT(*) FROM users;')
+# Prove the fixture before reading it. A store that answers but carries no
+# aigw_mgmt.users is not a baseline with zero users — it is no baseline at all,
+# and the difference decides whether the legs below mean anything.
+STORE_OK=$(pgq "SELECT to_regclass('aigw_mgmt.users') IS NOT NULL")
+pgq_ok "$STORE_OK" "aigw_mgmt.users presence"
+[ "$STORE_OK" = "t" ] || { echo "  aigw_mgmt.users does not exist in $PG_CT/$PG_DB"; exit 2; }
+echo "  management store reachable, aigw_mgmt.users present"
+NUSERS=$(pgq 'SELECT COUNT(*) FROM aigw_mgmt.users;')
+pgq_ok "$NUSERS" "user count"
 echo "  users table rows: $NUSERS"
 [ "$NUSERS" = "1" ] || { echo "  expected exactly the bootstrapped admin; got $NUSERS"; exit 2; }
 [ -n "$TOKEN" ]   || { echo "  no admin token in /root/authsep-baseline.env"; exit 2; }
@@ -99,7 +147,13 @@ echo
 
 ########################## B-4-r ##########################
 echo "---- B-4-r: password material in the list body ----"
-HASH_PREFIX=$(mysqlq 'SELECT LEFT(password,20) FROM users WHERE username="admin";')
+# Single quotes, not double: MySQL read "admin" as a string literal, PostgreSQL
+# reads it as an identifier and errors. Left unported this returns nothing, the
+# grep below matches the empty string, and the leg reports the stored hash
+# present in every body it is shown.
+HASH_PREFIX=$(pgq "SELECT LEFT(password,20) FROM aigw_mgmt.users WHERE username='admin';")
+pgq_ok "$HASH_PREFIX" "stored hash prefix"
+[ -n "$HASH_PREFIX" ] || { echo "  no admin row in aigw_mgmt.users"; exit 2; }
 echo "  stored hash prefix: $HASH_PREFIX"
 if [ "$O3" = "fixed" ] && echo "$B3" | grep -qF "$HASH_PREFIX"; then
   O4=repro; NOTE4="hash material observed in the live body"
@@ -159,8 +213,13 @@ echo
 ########################## B-2-r ##########################
 # Last, because it is the only leg that tries to mutate the admin credential.
 echo "---- B-2-r: PUT /auth/users/{id} password change ----"
-ADMIN_ID=$(mysqlq 'SELECT id FROM users WHERE username="admin";')
-HB=$(mysqlq 'SELECT LEFT(password,20) FROM users WHERE username="admin";')
+ADMIN_ID=$(pgq "SELECT id FROM aigw_mgmt.users WHERE username='admin';")
+pgq_ok "$ADMIN_ID" "admin id"
+HB=$(pgq "SELECT LEFT(password,20) FROM aigw_mgmt.users WHERE username='admin';")
+pgq_ok "$HB" "hash before"
+# Without an id the PUT below addresses /auth/users/ and the leg measures
+# routing, not the password change it is named for.
+[ -n "$ADMIN_ID" ] && [ -n "$HB" ] || { echo "  admin row unreadable before the attempt"; exit 2; }
 echo "  admin id=$ADMIN_ID  hash before: $HB"
 T0=$(date +%s)
 mgmt 30 -X PUT "$API/auth/users/$ADMIN_ID" \
@@ -168,7 +227,11 @@ mgmt 30 -X PUT "$API/auth/users/$ADMIN_ID" \
   -d '{"username":"admin","password":"NewPass456!"}'
 T1=$(date +%s)
 S2=$MSTATUS; B2=$MBODY
-HA=$(mysqlq 'SELECT LEFT(password,20) FROM users WHERE username="admin";')
+HA=$(pgq "SELECT LEFT(password,20) FROM aigw_mgmt.users WHERE username='admin';")
+pgq_ok "$HA" "hash after"
+# HA empty would compare unequal to HB and read as "hash rotated" — the fixed
+# verdict, produced by a failed read. Refuse to decide instead.
+[ -n "$HA" ] || { echo "  admin row unreadable after the attempt"; exit 2; }
 echo "  status=$S2  elapsed=$((T1 - T0))s"
 echo "  body=$B2"
 echo "  hash after:  $HA"
