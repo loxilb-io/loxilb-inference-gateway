@@ -189,16 +189,37 @@ fi
 
 # ----------------------------------------------------------------- MGMT-15 ----
 if want 15; then
-echo "---- MGMT-15: unknown roles refused at write time -> 400 ----"
+echo "---- MGMT-15: unknown roles refused at write time ----"
 # The authorizer half (a hand-inserted bad role is denied) gated I-2. This is
 # the write-time half, which the plan assigns to Phase 5c.7 and therefore here.
+#
+# The assertion is the PROPERTY, not one status code. The closed set is enforced
+# at two layers and they answer differently: the schema enum rejects a non-empty
+# unknown role at the API boundary with 422, while an empty role reaches the
+# store layer and is rejected there with 400 by authz.IsValidRole. Both are
+# refusals at write time, which is what this baseline is about; asserting a
+# literal 400 would have failed a correct product, and asserting "not 2xx" would
+# have passed a 500. So: the status must be a client refusal from the closed set
+# {400, 422}, AND no row may exist afterwards — the second is the half that
+# cannot be satisfied by a status code alone.
 M15=pass; M15N=""
 for R in operator Viewer2 ""; do
-  S=$(mkuser "i9role-$(printf '%s' "$R" | tr -c 'a-zA-Z0-9' '_')" 'Rolecheck1!' "$R")
-  echo "  role='$R' -> POST status=$S"
-  [ "$S" = "400" ] || { M15=fail; M15N="$M15N role='$R' gave $S;"; }
+  U="i9role_$(printf '%s' "$R" | tr -c 'a-zA-Z0-9' '_')"
+  pgq "DELETE FROM aigw_mgmt.users WHERE username='$U';" >/dev/null
+  S=$(mkuser "$U" 'Rolecheck1!' "$R")
+  ROWS=$(pgq "SELECT count(*) FROM aigw_mgmt.users WHERE username='$U';")
+  echo "  role='$R' -> POST status=$S  rows afterwards=$ROWS"
+  case "$S" in
+    400|422) ;;
+    *) M15=fail; M15N="$M15N role='$R' gave $S (not a client refusal);" ;;
+  esac
+  if pgq_bad "$ROWS"; then
+    M15=undecided; M15N="$M15N role='$R' row count unreadable;"
+  elif [ "$ROWS" != "0" ]; then
+    M15=fail; M15N="$M15N role='$R' was REFUSED BUT STORED ($ROWS rows);"
+  fi
 done
-# and the same on update, which is a different code path from create
+# The update path is separate code from the create path.
 UPD_ID=$(uid_of admin)
 if pgq_bad "$UPD_ID" || [ -z "$UPD_ID" ]; then
   M15=undecided; M15N="$M15N could not read admin id for the update half;"
@@ -206,10 +227,19 @@ else
   mgmt 15 -X PUT "$API/auth/users/$UPD_ID" -H "Content-Type: application/json" \
     -H "Authorization: Bearer $TOKEN" \
     -d '{"username":"admin","role":"operator"}'
-  echo "  update admin role='operator' -> status=$MSTATUS"
-  [ "$MSTATUS" = "400" ] || { M15=fail; M15N="$M15N update gave $MSTATUS;"; }
+  AROLE=$(pgq "SELECT role FROM aigw_mgmt.users WHERE username='admin';")
+  echo "  update admin role='operator' -> status=$MSTATUS  stored role now='$AROLE'"
+  case "$MSTATUS" in
+    400|422) ;;
+    *) M15=fail; M15N="$M15N update gave $MSTATUS (not a client refusal);" ;;
+  esac
+  if pgq_bad "$AROLE"; then
+    M15=undecided; M15N="$M15N admin role unreadable after the update;"
+  elif [ "$AROLE" != "admin" ]; then
+    M15=fail; M15N="$M15N admin role was CHANGED to '$AROLE';"
+  fi
 fi
-verdict MGMT-15 "$M15" "${M15N:-400 at write for operator, Viewer2 and the empty role, on create and update}"
+verdict MGMT-15 "$M15" "${M15N:-refused at write time on create and update (422 schema enum / 400 store layer), nothing stored, admin role unchanged}"
 echo
 fi
 
