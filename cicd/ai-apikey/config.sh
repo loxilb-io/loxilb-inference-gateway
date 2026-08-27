@@ -1,36 +1,59 @@
 #!/bin/bash
 # CICD scenario: ai-apikey
 # Tests the AI Gateway control-plane API (create/list/get/delete API keys,
-# set/get tenant rate limits). Starts loxilb with --userservice and a MariaDB
-# backend so that the REST API at localhost:11111 is fully functional.
+# set/get tenant rate limits). Starts loxilb with --userservice and a
+# PostgreSQL backend so that the REST API at localhost:11111 is fully
+# functional.
+#
+# Both planes reach the same server through different roles and different
+# schemas: aigw/aigwuser for the data-plane keys, aigw_mgmt/aigw_mgmt_user for
+# users and session tokens. Provisioned by the script the product ships, so
+# the fixture and the deployment path are the same thing.
 #
 # Topology:
 #   l3h1 (10.10.10.1) ---- llb1 (VIP 10.10.10.254) ---- l3ep1 (31.31.31.1)
-#   mysql-ai (docker bridge, reachable from llb1)
+#   pg-ai (docker bridge, reachable from llb1)
 
 source ../common.sh
 
+PG_NAME=pg-ai
+PG_OWNER=oamuser
+PG_OWNER_PW=oampass
+PG_DB=loxilb
+DP_PW=dp-secret-1
+MGMT_PW=mgmt-secret-1
+
 echo "#########################################"
-echo "Spawning MariaDB for API key storage"
+echo "Spawning PostgreSQL for the two stores"
 echo "#########################################"
 
-# Start MariaDB on the Docker default bridge (accessible from all containers)
-docker run --rm -d --name mysql-ai \
-  -e MYSQL_ROOT_PASSWORD=loxilb123 \
-  -e MYSQL_DATABASE=loxilb_db \
-  mariadb:10.11
+docker rm -f "$PG_NAME" >/dev/null 2>&1
+docker run --rm -d --name "$PG_NAME" \
+  -e POSTGRES_USER="$PG_OWNER" \
+  -e POSTGRES_PASSWORD="$PG_OWNER_PW" \
+  -e POSTGRES_DB="$PG_DB" \
+  postgres:18.6 >/dev/null
 
-echo "Waiting for MariaDB to be ready..."
-for i in $(seq 1 30); do
-  if docker exec mysql-ai mysqladmin ping -h127.0.0.1 -uroot -ploxilb123 --silent 2>/dev/null; then
-    echo "MariaDB ready (${i}s)"
+echo "Waiting for PostgreSQL to be ready..."
+for i in $(seq 1 60); do
+  # Over TCP, not the unix socket: pg_isready answers on the socket before the
+  # server is listening on a port the gateway can reach.
+  if docker exec "$PG_NAME" pg_isready -h 127.0.0.1 -U "$PG_OWNER" -d "$PG_DB" >/dev/null 2>&1; then
+    echo "PostgreSQL ready (${i}s)"
     break
   fi
-  sleep 2
+  sleep 1
 done
+docker exec "$PG_NAME" pg_isready -h 127.0.0.1 -U "$PG_OWNER" -d "$PG_DB" >/dev/null || {
+  echo "PostgreSQL did not come up"; exit 1; }
 
-MYSQL_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' mysql-ai)
-echo "MariaDB IP: $MYSQL_IP"
+docker cp ../../scripts/aigw-db-bootstrap.sql "$PG_NAME:/tmp/aigw-db-bootstrap.sql"
+docker exec -e AIGW_DB_PASSWORD="$DP_PW" -e AIGW_MGMT_DB_PASSWORD="$MGMT_PW" \
+  "$PG_NAME" psql -h 127.0.0.1 -U "$PG_OWNER" -d "$PG_DB" -q -f /tmp/aigw-db-bootstrap.sql || {
+  echo "bootstrap script failed"; exit 1; }
+
+PG_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$PG_NAME")
+echo "PostgreSQL IP: $PG_IP"
 
 echo "#########################################"
 echo "Preparing loxilb config directory"
@@ -39,14 +62,21 @@ echo "#########################################"
 # pick_config=yes mounts $(pwd)/llb1_config as /etc/loxilb/ inside the container
 pick_config=yes
 mkdir -p llb1_config
-echo "loxilb123" > llb1_config/mysql_password
+# Both secrets arrive as mounted files, which is the deployment shape; neither
+# ever becomes a command-line argument.
+echo "$MGMT_PW" > llb1_config/mgmt_db_password
+echo "$DP_PW"   > llb1_config/aikey_password
 
 echo "#########################################"
 echo "Spawning all hosts"
 echo "#########################################"
 
 spawn_docker_host --dock-type loxilb --dock-name llb1 \
-  --extra-args "--userservice --databasehost $MYSQL_IP"
+  --extra-args "--userservice \
+    --mgmt-db-host $PG_IP --mgmt-db-port 5432 --mgmt-db-user aigw_mgmt_user \
+    --mgmt-db-name $PG_DB --mgmt-db-password-file /etc/loxilb/mgmt_db_password \
+    --aikey-db-host $PG_IP --aikey-db-port 5432 --aikey-db-user aigwuser \
+    --aikey-db-name $PG_DB --aikey-db-password-file /etc/loxilb/aikey_password"
 spawn_docker_host --dock-type host --dock-name l3h1
 spawn_docker_host --dock-type host --dock-name l3ep1
 

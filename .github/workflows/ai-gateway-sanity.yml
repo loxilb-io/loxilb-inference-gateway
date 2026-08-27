@@ -151,6 +151,13 @@ jobs:
           ./validation.sh
           ./rmconfig.sh
           cd -
+      - name: Authentication plane separation (PostgreSQL key store, plaintext + TLS)
+        run: |
+          cd cicd/ai-authsep/
+          ./config.sh
+          ./validation.sh
+          ./rmconfig.sh
+          cd -
       - run: echo "AI-gateway sanity complete"
 
 # Related feature workflows: mcp-sanity.yml (MCP proxying),

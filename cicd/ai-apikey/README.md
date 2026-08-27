@@ -16,11 +16,11 @@ Tests the AI Gateway API key management via the control-plane REST API.
 ```
 l3h1 (10.10.10.1) ──── llb1 (VIP 10.10.10.254) ──── l3ep1 (31.31.31.1:8080)
                          │
-                    mysql-ai (MariaDB 10.11)
+                    pg-ai (PostgreSQL 18.6)
                     (started on Docker bridge network)
 ```
 
-- **llb1**: LoxiLB Enterprise with `--userservice --databasehost <mysql_ip>`
+- **llb1**: LoxiLB Enterprise with `--userservice` plus the `--mgmt-db-*` and `--aikey-db-*` stores
 - **l3h1**: Test client
 - **l3ep1**: Minimal HTTP backend (`tcp_server.js server1`)
 - **LB rule**: VIP `10.10.10.254:2020` → `31.31.31.1:8080` (fullproxy, TCP)

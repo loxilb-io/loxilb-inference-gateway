@@ -36,4 +36,12 @@ paths = [
   # The script carries no key material. (PR #32 fixed the script's own
   # self-check but not this scan of the script.)
   '''^scripts/release-hygiene\.sh$''',
+  # API-key store unit fixtures. Both declare the same synthetic key,
+  # "lxb_" followed by "0123456789abcdef" repeated four times — sequential hex,
+  # never issued, and used only to show that a cached entry is unreachable
+  # under a bare hash and that the two planes hold separate caches. Scoped to
+  # these two files rather than to the lxb_ prefix, so a real key pasted into
+  # any other file is still caught.
+  '''^pkg/aikey/cache_isolation_test\.go$''',
+  '''^pkg/aikey/plane_isolation_test\.go$''',
 ]
