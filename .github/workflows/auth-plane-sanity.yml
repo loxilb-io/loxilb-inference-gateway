@@ -63,7 +63,7 @@ on:
 jobs:
   unit-gates:
     name: unit-gates
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     # Dependabot PRs have no submodule token; the private eBPF checkout fails.
     if: github.actor != 'dependabot[bot]'
     steps:
@@ -127,7 +127,7 @@ jobs:
 
   authsep-scenarios:
     name: authsep-scenarios
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     if: github.actor != 'dependabot[bot]'
     steps:
       - uses: actions/checkout@v4
