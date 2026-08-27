@@ -14,7 +14,6 @@ delete_docker_host l3h1
 delete_docker_host llb1
 
 ./pg.sh down || true
-docker rm -f mysql-ai >/dev/null 2>&1 || true
 
 # The client key and the store password live here; leaving them behind on a
 # runner is the kind of thing this scenario exists to object to.

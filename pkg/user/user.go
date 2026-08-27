@@ -139,27 +139,37 @@ func (s *UserService) dbReady() error {
 	return err
 }
 
-// NewUserService creates a new UserService instance. The dial is retried to
-// ride out a database that is still starting: a cold server accepts
-// authenticated TCP connections only several seconds after it first answers
-// pings. On persistent failure the service is returned in a degraded state
-// together with the error — the handle stays nil, store-backed methods return
-// ErrDBUnavailable (HTTP 503), and UserServiceTicker keeps reconnecting.
-func NewUserService() (*UserService, error) {
+// NewUserService creates a new UserService instance and completes its first
+// store dial in the background. The dial is retried to ride out a database
+// that is still starting — a cold server accepts authenticated TCP
+// connections only several seconds after it first answers pings — and against
+// a store that is DOWN those retries block for over a minute. Returning only
+// after they finish held the caller's whole init sequence hostage to the
+// management store's availability: everything ordered after this call (other
+// subsystems, and the boot snapshot restore waiting on them) inherited the
+// outage, and the data plane's persisted config could be rolled back and
+// quarantined because an unrelated store was unreachable.
+//
+// The caller therefore gets the service immediately, degraded: the handle is
+// nil until the background dial lands, store-backed methods return
+// ErrDBUnavailable (HTTP 503) in the meantime, and on persistent dial failure
+// UserServiceTicker keeps reconnecting — the same recovery path an outage
+// after a healthy start already uses. Attach publishes the handle under the
+// service's lock, so the background hand-off is safe against readers.
+func NewUserService() *UserService {
 	svc := &UserService{
 		Cache: cache.New(time.Duration(CacheExpirationTime)*time.Minute, time.Duration(CacheCleanupInterval)*time.Minute),
 	}
-	userDB, err := dialWithRetry()
-	if err != nil || userDB == nil {
-		tk.LogIt(tk.LogCritical, "%s Store unavailable after %d attempts, user service degraded: %v\n",
-			store.LogTag, DbMaxRetries, err)
-		if err == nil {
-			err = ErrDBUnavailable
+	go func() {
+		userDB, err := dialWithRetry()
+		if err != nil || userDB == nil {
+			tk.LogIt(tk.LogCritical, "%s Store unavailable after %d attempts, user service degraded: %v\n",
+				store.LogTag, DbMaxRetries, err)
+			return
 		}
-		return svc, err
-	}
-	svc.Attach(userDB)
-	return svc, nil
+		svc.Attach(userDB)
+	}()
+	return svc
 }
 
 // ValidateUser validates the user credentials.

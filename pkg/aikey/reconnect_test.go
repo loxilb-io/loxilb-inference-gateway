@@ -104,14 +104,17 @@ func TestDegradedServiceRefusesEveryStoreCall(t *testing.T) {
 	if _, err := svc.ListAPIKeys(""); !errors.Is(err, ErrDBUnavailable) {
 		t.Errorf("ListAPIKeys on a degraded service = %v, want ErrDBUnavailable", err)
 	}
-	// The quota reads have no error channel: they report "no limit", which is
-	// what an unconfigured tenant reports too. That is deliberate — the key
-	// check has already failed closed by the time these run.
-	if rps, tpm, burst := svc.GetTenantRateLimit("t"); rps != 0 || tpm != 0 || burst != 0 {
-		t.Errorf("GetTenantRateLimit on a degraded service = (%d,%d,%d), want zeroes", rps, tpm, burst)
+	// The quota reads used to report bare "no limit" here, indistinguishable
+	// from an unconfigured tenant — which meant a store outage switched
+	// quotas off for any tenant whose limits were never cached. The decision
+	// taken for that window: a tenant the store has NEVER answered for is an
+	// error the caller fails closed on, never a zero read as "unlimited".
+	if rps, tpm, burst, rlErr := svc.GetTenantRateLimit("t"); !errors.Is(rlErr, ErrDBUnavailable) {
+		t.Errorf("GetTenantRateLimit on a degraded service with nothing cached = (%d,%d,%d,%v), want ErrDBUnavailable",
+			rps, tpm, burst, rlErr)
 	}
-	if tpm := svc.GetTenantModelRateLimit("t", "m"); tpm != 0 {
-		t.Errorf("GetTenantModelRateLimit on a degraded service = %d, want 0", tpm)
+	if tpm, mErr := svc.GetTenantModelRateLimit("t", "m"); !errors.Is(mErr, ErrDBUnavailable) {
+		t.Errorf("GetTenantModelRateLimit on a degraded service with nothing cached = (%d,%v), want ErrDBUnavailable", tpm, mErr)
 	}
 }
 

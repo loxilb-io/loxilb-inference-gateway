@@ -96,6 +96,51 @@ else
   fi
 fi
 
+# ---------------------------------------------------------------------------
+# 3. The wire field apikey_auth is derived from the service's own policy only.
+#
+# Authentication used to ride on whether a service streamed: an operator could
+# not enable SSE without enabling auth, nor authenticate a service that did not
+# stream. Splitting the two axes is only real while they stay independent, and
+# that independence is invisible to the compiler -- nothing fails to build when
+# the guard quietly gains a streaming term, and the resulting service admits
+# unauthenticated traffic without logging anything.
+#
+# The unit gate in pkg/loxinet/apikey_policy_test.go pins the VALUE the
+# predicate computes. This pins the TEXT of the assignment, which is the half a
+# value test cannot see: that the installer asks the predicate at all.
+# ---------------------------------------------------------------------------
+INSTALLER=pkg/loxinet/dpebpf_linux.go
+if [ ! -f "$INSTALLER" ]; then
+  fail "$INSTALLER is missing - has the eBPF rule installer moved?"
+else
+  # The guard spans from just above the FIRST assignment to the LAST one:
+  # the derivation is now a chain (required / declared-disabled / unset), and
+  # a window that stopped at the first branch would let a streaming term
+  # smuggle into a later else-if unseen.
+  ln="$(grep -n 'dat\.apikey_auth[[:space:]]*=' "$INSTALLER" | head -1 | cut -d: -f1)"
+  lnend="$(grep -n 'dat\.apikey_auth[[:space:]]*=' "$INSTALLER" | tail -1 | cut -d: -f1)"
+  if [ -z "$ln" ]; then
+    fail "no assignment to dat.apikey_auth in $INSTALLER - the wire field is no longer set"
+  else
+    # Strip // comments before matching. The block above this assignment
+    # explains in prose that the field is NOT set from the streaming modes, and
+    # a check that read its own documentation as a violation would be unfixable
+    # without deleting the explanation.
+    guard="$(sed -n "$((ln > 5 ? ln - 5 : 1)),${lnend}p" "$INSTALLER" | sed 's|//.*||')"
+    bad=""
+    printf '%s' "$guard" | grep -qE 'SSEMode|sseMode' && bad="$bad sse"
+    printf '%s' "$guard" | grep -qE 'PDDisagg|pdDisagg' && bad="$bad pd"
+    printf '%s' "$guard" | grep -q 'ResolveApiKeyAuth' || bad="$bad no-ResolveApiKeyAuth"
+    if [ -n "$bad" ]; then
+      fail "dat.apikey_auth guard reads more than the service policy ($bad):"
+      printf '%s\n' "$guard" | sed 's/^/          /'
+    else
+      pass "wire apikey_auth is derived from the service policy alone"
+    fi
+  fi
+fi
+
 echo "==========================="
 if [ "$FAILED" = "0" ]; then echo "ALL INVARIANTS HOLD"; else echo "INVARIANTS VIOLATED"; fi
 exit "$FAILED"

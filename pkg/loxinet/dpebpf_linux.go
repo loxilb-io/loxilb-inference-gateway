@@ -1810,8 +1810,19 @@ func DpLBRuleMod(w *LBDpWorkQ) int {
 	// independence is the point of the field: authentication was previously a
 	// rider on whether the service streamed, so an operator could not enable
 	// SSE without enabling auth, nor authenticate a non-streaming service.
+	//
+	// Three wire values, not two, because "disabled" arrives in two shapes
+	// that must not be conflated. An EXPLICIT "disabled" declares the service
+	// AI-facing: no key is checked, but the X-Api-Key header is still the
+	// gateway's credential namespace and is stripped before dispatch — a
+	// tenant's key forwarded through a non-enforcing service is replayable
+	// against every enforcing one. An UNSET policy declares nothing, and a
+	// service that never said it was AI-facing keeps byte-identical proxying:
+	// plenty of non-AI backends consume an X-Api-Key of their own.
 	if cmn.ResolveApiKeyAuth(w.ApiKeyAuth) == cmn.ApiKeyAuthRequired {
 		dat.apikey_auth = 1
+	} else if w.ApiKeyAuth != "" {
+		dat.apikey_auth = 2
 	} else {
 		dat.apikey_auth = 0
 	}

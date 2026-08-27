@@ -2958,6 +2958,23 @@ func (r *ruleEnt) aiGwMode() bool {
 	return aiGwModeFor(r.sseMode, r.pdDisaggMode, r.apiKeyAuth)
 }
 
+// HasApiKeyEnforcingRule reports whether any installed LB rule carries
+// api_key_auth=required. Tenant quotas are attributed through a validated
+// key, so with no enforcing rule a configured quota is enforced against
+// nothing at all — the caller uses this to say so out loud instead of
+// letting the configuration sit there looking like protection.
+//
+// Caller must hold the RuleH-wide lock (mh.mtx) that guards
+// R.tables[RtLB].eMap, same as every other walk over it.
+func (R *RuleH) HasApiKeyEnforcingRule() bool {
+	for _, r := range R.tables[RtLB].eMap {
+		if cmn.ResolveApiKeyAuth(r.apiKeyAuth) == cmn.ApiKeyAuthRequired {
+			return true
+		}
+	}
+	return false
+}
+
 func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, servSecVIPs []cmn.LbSecVIPArg, allowedSources []cmn.LbAllowedSrcIPArg, servEndPoints []cmn.LbEndPointArg) (int, error) {
 	var lBActs ruleLBActs
 	var nSecIP []ruleLBSIP

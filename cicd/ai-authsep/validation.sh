@@ -97,10 +97,26 @@ pg_since() { docker logs "$1" 2>&1 | tail -n +"$(( $2 + 1 ))"; }
 # are cleared for the same reason.
 restart_gw() { # restart_gw <flags...>
   docker exec llb1 pkill -f '/root/loxilb-io/loxilb/loxilb' >/dev/null 2>&1
-  for _ in $(seq 1 30); do
+  for _ in $(seq 1 15); do
     docker exec llb1 pgrep -f '/root/loxilb-io/loxilb/loxilb' >/dev/null 2>&1 || break
     sleep 1
   done
+  # A survivor here means the new gateway will lose the port bind and die,
+  # while the OLD process keeps answering — every leg that follows then runs
+  # against the previous flag set and reads as phantom product failures.
+  # Escalate, and refuse to continue if even SIGKILL does not clear it.
+  if docker exec llb1 pgrep -f '/root/loxilb-io/loxilb/loxilb' >/dev/null 2>&1; then
+    echo "  (old gateway survived SIGTERM for 15s; escalating to SIGKILL)"
+    docker exec llb1 pkill -9 -f '/root/loxilb-io/loxilb/loxilb' >/dev/null 2>&1
+    for _ in $(seq 1 10); do
+      docker exec llb1 pgrep -f '/root/loxilb-io/loxilb/loxilb' >/dev/null 2>&1 || break
+      sleep 1
+    done
+  fi
+  if docker exec llb1 pgrep -f '/root/loxilb-io/loxilb/loxilb' >/dev/null 2>&1; then
+    echo "  FATAL: the old gateway process would not die; refusing to run legs against it"
+    return 1
+  fi
   docker exec llb1 ip link del llb0 >/dev/null 2>&1
   for ifc in $(docker exec llb1 ip -o link show | awk -F': ' '{print $2}' | cut -d'@' -f1); do
     [ "$ifc" = "lo" ] && continue
@@ -134,15 +150,26 @@ restart_gw() { # restart_gw <flags...>
 }
 
 # Rules do not survive a restart, so both services are recreated each time.
-#   :2020  sse_mode=true   — the AI service, where keys are checked today
-#   :2021  sse_mode=false  — a plain full-proxy AI service. PR 2 state: keys
-#          are NOT checked here at all. The per-service policy field gives it
-#          expectation below changes with it.
+#
+#   :2020  sse_mode=true   api_key_auth=required  — the enforcing service
+#   :2021  sse_mode=false  api_key_auth=disabled  — the non-enforcing service
+#
+# Both policies are now stated rather than inferred, and that is the change.
+# Enforcement used to be a rider on sse_mode: :2020 checked keys because it
+# streamed, and :2021 escaped the check because it did not. Neither service
+# said anything about authentication, so neither leg tested a policy — they
+# tested a side effect of a streaming flag, and the pair would have kept
+# passing if the policy field did nothing at all.
+#
+# The two axes are deliberately crossed rather than aligned: :2020 streams AND
+# enforces, :2021 does neither, so a datapath that had quietly gone back to
+# deriving one from the other would still pass here. The cross that would
+# catch that (a non-streaming service that enforces) is what DP-22 is for.
 mk_rules() {
-  for spec in "2020 true" "2021 false"; do
+  for spec in "2020 true required" "2021 false disabled"; do
     set -- $spec
     lcurl -X POST $API/config/loadbalancer -H 'Content-Type: application/json' \
-      -d "{\"serviceArguments\":{\"externalIP\":\"$VIP\",\"port\":$1,\"protocol\":\"tcp\",\"mode\":4,\"sse_mode\":$2,\"inactiveTimeOut\":60,\"host\":\"$VIP\"},\"endpoints\":[{\"endpointIP\":\"31.31.31.1\",\"targetPort\":8080,\"weight\":1}]}" >/dev/null
+      -d "{\"serviceArguments\":{\"externalIP\":\"$VIP\",\"port\":$1,\"protocol\":\"tcp\",\"mode\":4,\"sse_mode\":$2,\"api_key_auth\":\"$3\",\"inactiveTimeOut\":60,\"host\":\"$VIP\"},\"endpoints\":[{\"endpointIP\":\"31.31.31.1\",\"targetPort\":8080,\"weight\":1}]}" >/dev/null
   done
   sleep 3
 }
@@ -264,11 +291,11 @@ chk "A valid key :2020 admitted"      "valid:2020=200"    "$(echo "$VEC_A"  | gr
 chk "A unknown key :2020 denied"      "unknown:2020=401"  "$(echo "$VEC_A"  | grep '^unknown:2020=')"
 chk "A revoked key :2020 denied"      "disabled:2020=401" "$(echo "$VEC_A"  | grep '^disabled:2020=')"
 chk "A model outside allow-list 403"  "badmodel:2020=403" "$(echo "$VEC_A"  | grep '^badmodel:2020=')"
-# PR 2 state: a plain full-proxy AI service never reaches the key check
-# at all. The per-service policy field gives :2021 api_key_auth=disabled
-# explicitly and this stays
-# 200 for a different and defensible reason.
-chk "A keyless :2021 admitted"        "keyless:2021=200"  "$(echo "$VEC_A"  | grep '^keyless:2021=')"
+# Still 200, and now for a reason the service states: api_key_auth=disabled.
+# Before the policy field this was 200 because a non-streaming service never
+# reached the key check at all — the right answer arrived by accident, and the
+# leg could not tell the difference between a working policy and a missing one.
+chk "A keyless :2021 admitted (api_key_auth=disabled says so)" "keyless:2021=200"  "$(echo "$VEC_A"  | grep '^keyless:2021=')"
 
 KEYROWS_A=$(psql_as aisep-pg oamuser oampass 'SELECT count(*) FROM aigw.api_keys;' | tr -d '[:space:]')
 
@@ -284,16 +311,27 @@ run_seven unauth401
 VEC_B=$(vector_configured)
 echo "$VEC_B" | sed 's/^/    B /'
 
-echo "  the management database holds no data-plane table"
-# The DDL for api_keys, tenant_rate_limits and tenant_model_rate_limits left
-# pkg/db with the repoint. If InitDB still created them, a later change could
-# quietly start writing there again and nothing on the wire would say so.
-DPT=$(docker exec mysql-ai mysql -uroot -ploxilb123 loxilb_db -N -e \
-  "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='loxilb_db' AND table_name IN ('api_keys','tenant_rate_limits','tenant_model_rate_limits');" 2>/dev/null | tr -d '[:space:]')
-chk "no data-plane tables in the management database" "0" "$DPT"
-MGT=$(docker exec mysql-ai mysql -uroot -ploxilb123 loxilb_db -N -e \
-  "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='loxilb_db' AND table_name IN ('users','token');" 2>/dev/null | tr -d '[:space:]')
+echo "  the management schema holds no data-plane table"
+# The management plane lives in aigw_mgmt under its own role, on the same
+# server as the data plane's aigw. Asking the wrong database is how this leg
+# stops meaning anything: it used to query the MariaDB that --userservice once
+# needed, and once the management plane moved to PostgreSQL that query returned
+# zero tables for the trivial reason that the gateway had stopped writing there
+# at all. A zero that means "nothing looked" reads exactly like a zero that
+# means "correctly separated", which is why the non-vacuity row below is not
+# optional.
+DPT=$(psql_as aisep-pg oamuser oampass \
+  "SELECT count(*) FROM pg_tables WHERE schemaname='aigw_mgmt' AND tablename IN ('api_keys','tenant_rate_limits','tenant_model_rate_limits');" | tr -d '[:space:]')
+chk "no data-plane tables in the management schema" "0" "$DPT"
+MGT=$(psql_as aisep-pg oamuser oampass \
+  "SELECT count(*) FROM pg_tables WHERE schemaname='aigw_mgmt' AND tablename IN ('users','token');" | tr -d '[:space:]')
 chk "the management tables are still created (the leg above is not vacuous)" "2" "$MGT"
+# And the converse: the data plane's tables are where they belong. Together
+# these three say the planes are separated, rather than that one of them is
+# simply absent.
+DPOWN=$(psql_as aisep-pg oamuser oampass \
+  "SELECT count(*) FROM pg_tables WHERE schemaname='aigw' AND tablename IN ('api_keys','tenant_rate_limits','tenant_model_rate_limits');" | tr -d '[:space:]')
+chk "the data-plane tables live in aigw" "3" "$DPOWN"
 
 KEYROWS_B=$(psql_as aisep-pg oamuser oampass 'SELECT count(*) FROM aigw.api_keys;' | tr -d '[:space:]')
 chk "POL-6 the key rows are unchanged across the --userservice toggle" "$KEYROWS_A" "$KEYROWS_B"
@@ -324,14 +362,23 @@ run_seven unconfigured503
 
 VEC_C=$(vector_unconfigured)
 echo "$VEC_C" | sed 's/^/    C /'
-# PR 2 state: the retained `nil -> allow`. PR 3 deletes this branch and these
-# two become 503 policy_store_unavailable (DP-13).
-chk "C keyless :2020 admitted (retained nil->allow; PR 3 removes it)" "keyless:2020=200" "$(echo "$VEC_C" | grep '^keyless:2020=')"
-chk "C unknown key :2020 admitted (same branch)"                     "unknown:2020=200" "$(echo "$VEC_C" | grep '^unknown:2020=')"
-chk "C keyless :2021 admitted"                                       "keyless:2021=200" "$(echo "$VEC_C" | grep '^keyless:2021=')"
+# DP-13. The retained `nil -> allow` is gone: a service whose policy says
+# required, on a gateway with no key store, refuses rather than admits.
+#
+# 503 and not 401 is the load-bearing part. The client has done nothing wrong
+# and its key may be perfectly good — the gateway cannot tell. A 401 would say
+# "your credential is bad", which is both false and permanent, and a client
+# that stopped retrying because of it would stay broken after the operator
+# fixed the store.
+chk "C keyless :2020 refused, store unavailable"     "keyless:2020=503" "$(echo "$VEC_C" | grep '^keyless:2020=')"
+chk "C unknown key :2020 refused, store unavailable" "unknown:2020=503" "$(echo "$VEC_C" | grep '^unknown:2020=')"
+# The non-enforcing service is unaffected, which is what makes the two 503s
+# above a policy decision rather than a gateway that has simply stopped
+# serving. Without this row a build that 503'"'"'d everything would pass.
+chk "C keyless :2021 still admitted (policy is disabled, store is irrelevant)" "keyless:2021=200" "$(echo "$VEC_C" | grep '^keyless:2021=')"
 
 LOGC=$(docker exec llb1 cat /tmp/loxilb.err /tmp/loxilb.out 2>/dev/null)
-chk_has "the storeless admit is stated in the log, once, at critical severity" "No API-key store configured" "$LOGC"
+chk_has "the storeless refusal is stated in the log, once, at critical severity" "No API-key store configured" "$LOGC"
 
 # ── Cell D: --userservice ON, no store ─────────────────────────────────────
 echo ""
@@ -351,13 +398,45 @@ else
   FAIL=$((FAIL + 1))
 fi
 
-# Still open: a denied request can still be dispatched
-# upstream, because the C gate returns without an explicit value. The backend
-# log is reported here rather than asserted — DP-28 gates PR 3, and the leak
-# ratio is nondeterministic, so an assertion either way would be a fiction.
-LEAK=$(docker exec l3ep1 wc -l /tmp/backend_reqs.log 2>/dev/null | awk '{print $1}')
-echo "  [INFO] backend saw ${LEAK:-?} request(s) across this run; denied requests can still reach it"
-echo "         until PR 3; DP-28 asserts the counter, and it gates I-12, not this step."
+# DP-28: a denied request must not reach the backend.
+#
+# This is the leg the whole scenario was built for — the gateway's own counters
+# cannot answer it, because from their point of view a denied request was
+# denied either way. Only the backend knows whether it was handed the request
+# anyway. The defect it gates was real: three deny paths returned from the C
+# gate with a bare `return;`, leaving an indeterminate parser status that the
+# caller read as "carry on", and the request went upstream after being refused.
+#
+# Measured as a delta around the denied requests rather than as a total, so a
+# backend that legitimately served the admitted traffic earlier in the run does
+# not make this look like a leak.
+# The path is an ARGUMENT, never `wc -l < path`: the redirection would be
+# performed by the host shell against the host's filesystem, the file would be
+# missing, and every delta would read zero — which is indistinguishable from a
+# perfect result. The control below exists because that failure is silent.
+BEFORE_DENY=$(docker exec l3ep1 wc -l /tmp/backend_reqs.log 2>/dev/null | awk '{print $1}')
+body='{"model":"test-model","messages":[{"role":"user","content":"hi"}]}'
+DENY_CODE=$(vip_code -X POST http://$VIP:2020/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -H 'X-Api-Key: lxb_00000000000000000000000000000000' -d "$body")
+AFTER_DENY=$(docker exec l3ep1 wc -l /tmp/backend_reqs.log 2>/dev/null | awk '{print $1}')
+DELTA=$(( ${AFTER_DENY:-0} - ${BEFORE_DENY:-0} ))
+# Positive control first. A zero delta proves nothing unless an ADMITTED
+# request moves this counter — a backend that had stopped logging, or a log
+# path that had moved, would otherwise report a perfect result.
+BEFORE_OK=$AFTER_DENY
+OK_CODE=$(vip_code -X POST http://$VIP:2021/v1/chat/completions \
+  -H 'Content-Type: application/json' -d "$body")
+AFTER_OK=$(docker exec l3ep1 wc -l /tmp/backend_reqs.log 2>/dev/null | awk '{print $1}')
+OK_DELTA=$(( ${AFTER_OK:-0} - ${BEFORE_OK:-0} ))
+echo "  denied request -> $DENY_CODE, backend delta $DELTA; admitted -> $OK_CODE, backend delta $OK_DELTA"
+if [ "$OK_DELTA" -lt 1 ]; then
+  echo "  [FAIL] DP-28 control: an ADMITTED request did not move the backend counter"
+  echo "         — the instrument is not reading, so the denied-request result below means nothing"
+  FAIL=$((FAIL + 1))
+else
+  chk "DP-28 a denied request does not reach the backend" "0" "$DELTA"
+fi
 
 ################################################################################
 echo ""
@@ -526,6 +605,164 @@ chk_hasnt "DP-17b no session was authorized on the store"   "user=aigwuser" "$NE
 
 # Leave the topology in the posture config.sh advertised.
 point_store_dns "$PG_TLS_IP"
+
+################################################################################
+echo ""
+echo "===== SECTION 5: enforcement mechanics (DP-4, DP-6, DP-10, DP-11, DP-22, DP-23, DP-27) ====="
+################################################################################
+
+# ── DP-23: a quota configured against nothing says so ──────────────────────
+# The "no enforcing service" posture is produced by DELETING the rules, never
+# by restarting: loxilb replays its rules from snapshot.json on start, so a
+# freshly restarted gateway still carries every service the previous one had
+# — the first version of this leg leaned on exactly that assumption and went
+# red against a product that was behaving correctly. The warning must appear
+# for the ruleless write and must NOT appear again once an enforcing rule
+# exists — both halves, or the leg would pass against a gateway that always
+# warns.
+echo ""
+echo "--- DP-23: tenant quota with no enforcing service ---"
+restart_gw $AIKEY_ARGS || exit 1
+for p23 in 2020 2021 2022; do
+  lcurl -o /dev/null -X DELETE "$API/config/loadbalancer/hosturl/$VIP/externalipaddress/$VIP/port/$p23/protocol/tcp"
+  lcurl -o /dev/null -X DELETE "$API/config/loadbalancer/externalipaddress/$VIP/port/$p23/protocol/tcp"
+done
+NRULES=$(lcurl "$API/config/loadbalancer/all" | python3 -c 'import sys,json;print(len(json.load(sys.stdin).get("lbAttr",[])))' 2>/dev/null)
+chk "DP-23 precondition: the rule table is actually empty" "0" "$NRULES"
+lcurl -o /dev/null -X POST $API/config/ai/tenant/ratelimit -H 'Content-Type: application/json' \
+  -d '{"tenant_id":"dp23-tenant","rps":100,"tokens_per_min":50000}'
+sleep 1
+W1=$(docker exec llb1 grep -c "quota configured but NO service has api_key_auth=required" /tmp/loxilb.out /tmp/loxilb.err 2>/dev/null | awk -F: '{n+=$2} END{print n+0}')
+chk "DP-23 the write is warned about, out loud" "1" "$W1"
+mk_rules
+lcurl -o /dev/null -X POST $API/config/ai/tenant/ratelimit -H 'Content-Type: application/json' \
+  -d '{"tenant_id":"dp23-tenant","rps":100,"tokens_per_min":50000}'
+sleep 1
+W2=$(docker exec llb1 grep -c "quota configured but NO service has api_key_auth=required" /tmp/loxilb.out /tmp/loxilb.err 2>/dev/null | awk -F: '{n+=$2} END{print n+0}')
+chk "DP-23 with an enforcing rule present the same write is NOT warned about" "$W1" "$W2"
+
+# Fresh keys for the rest of the section (the restart above emptied the cache).
+R_E=$(mkkey dp4-expired '[]')
+K_EXP=$(echo "$R_E" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("raw_key",""))' 2>/dev/null)
+# Expired at create time on purpose: expiry is checked at validation, and a
+# key that was born expired is the cheapest honest way to exercise it.
+R_E2=$(lcurl -X POST $API/config/ai/apikey -H 'Content-Type: application/json' \
+  -d '{"tenant_id":"dp4-tenant","name":"born-expired","allowed_models":[],"rate_limit_rps":200,"tokens_per_min":0,"enabled":true,"expires_at":"2020-01-01T00:00:00.000Z"}')
+K_DEAD=$(echo "$R_E2" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("raw_key",""))' 2>/dev/null)
+R_S=$(lcurl -X POST $API/config/ai/apikey -H 'Content-Type: application/json' \
+  -d '{"tenant_id":"dp6-tenant","name":"slow","allowed_models":[],"rate_limit_rps":1,"burst_size":1,"tokens_per_min":0,"enabled":true}')
+K_SLOW=$(echo "$R_S" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("raw_key",""))' 2>/dev/null)
+BODY5='{"model":"test-model","messages":[{"role":"user","content":"hi"}]}'
+
+echo ""
+echo "--- DP-4: an expired key is a 401, not a served request ---"
+# The live half of the expiry check: the store row is present and enabled, so
+# only the expires_at comparison can produce the denial.
+chk "DP-4 a valid key from the same section serves (control)" "200" \
+  "$(vip_code -X POST http://$VIP:2020/v1/chat/completions -H 'Content-Type: application/json' -H "X-Api-Key: $K_EXP" -d "$BODY5")"
+chk "DP-4 the born-expired key is refused" "401" \
+  "$(vip_code -X POST http://$VIP:2020/v1/chat/completions -H 'Content-Type: application/json' -H "X-Api-Key: $K_DEAD" -d "$BODY5")"
+
+echo ""
+echo "--- DP-6: per-key RPS exhaustion is a 429 that says when to come back ---"
+# rps=1 burst=1: the first request drains the bucket, an immediate burst of
+# five must include at least one 429, and that 429 must carry Retry-After —
+# a client that is told to slow down without being told for how long will
+# guess, and guess wrong in both directions.
+CODES6=""
+HDR6=""
+for i in 1 2 3 4 5 6; do
+  OUT6=$(docker exec l3h1 curl -s -D - -o /dev/null -m 20 -X POST "http://$VIP:2020/v1/chat/completions" \
+    -H 'Content-Type: application/json' -H "X-Api-Key: $K_SLOW" -d "$BODY5")
+  C6=$(echo "$OUT6" | head -1 | awk '{print $2}')
+  CODES6="$CODES6 $C6"
+  if [ "$C6" = "429" ] && [ -z "$HDR6" ]; then
+    HDR6=$(echo "$OUT6" | grep -i '^Retry-After:' | tr -d '\r' | awk '{print $2}')
+  fi
+done
+echo "    codes:$CODES6"
+case "$CODES6" in
+  *429*) echo "  [PASS] DP-6 the burst was rate-limited"; PASS=$((PASS + 1));;
+  *) echo "  [FAIL] DP-6 six burst requests on rps=1 never saw a 429 (codes:$CODES6)"; FAIL=$((FAIL + 1));;
+esac
+if [ -n "$HDR6" ] && [ "$HDR6" -ge 1 ] 2>/dev/null; then
+  echo "  [PASS] DP-6 the 429 carries Retry-After ($HDR6 s)"; PASS=$((PASS + 1))
+else
+  echo "  [FAIL] DP-6 the 429 carries no usable Retry-After ('$HDR6')"; FAIL=$((FAIL + 1))
+fi
+
+echo ""
+echo "--- DP-22: enforcement on a service that does not stream ---"
+# The crossed cell mk_rules cannot provide: sse_mode=false AND
+# api_key_auth=required. Enforcement used to be a rider on the streaming
+# flag, so this service — auth without SSE — could not exist at all; a
+# datapath that quietly re-derived one from the other would serve :2022
+# keyless and never rate-limit it.
+lcurl -o /dev/null -X POST $API/config/loadbalancer -H 'Content-Type: application/json' \
+  -d "{\"serviceArguments\":{\"externalIP\":\"$VIP\",\"port\":2022,\"protocol\":\"tcp\",\"mode\":4,\"sse_mode\":false,\"api_key_auth\":\"required\",\"inactiveTimeOut\":60,\"host\":\"$VIP\"},\"endpoints\":[{\"endpointIP\":\"31.31.31.1\",\"targetPort\":8080,\"weight\":1}]}"
+sleep 3
+chk "DP-22 keyless on the non-streaming enforcing service is denied" "401" \
+  "$(vip_code -X POST http://$VIP:2022/v1/chat/completions -H 'Content-Type: application/json' -d "$BODY5")"
+chk "DP-22 a valid key serves it (control)" "200" \
+  "$(vip_code -X POST http://$VIP:2022/v1/chat/completions -H 'Content-Type: application/json' -H "X-Api-Key: $K_EXP" -d "$BODY5")"
+CODES22=""
+for i in 1 2 3 4 5 6; do
+  CODES22="$CODES22 $(vip_code -X POST http://$VIP:2022/v1/chat/completions -H 'Content-Type: application/json' -H "X-Api-Key: $K_SLOW" -d "$BODY5")"
+done
+echo "    codes:$CODES22"
+case "$CODES22" in
+  *429*) echo "  [PASS] DP-22 RPS enforced on the non-SSE service"; PASS=$((PASS + 1));;
+  *) echo "  [FAIL] DP-22 rps=1 key was never rate-limited on the non-SSE service (codes:$CODES22)"; FAIL=$((FAIL + 1));;
+esac
+
+echo ""
+echo "--- DP-27: the key stays on the client side of the gateway ---"
+# The backend's own log decides this: count_server records whether any
+# x-api-key material appeared in what actually arrived. Instrument control
+# first — a canary that is NOT the credential must register, or an absent
+# key proves only that the detector is blind.
+docker exec l3ep1 sh -c ': > /tmp/backend_reqs.log'
+vip_code -X POST "http://$VIP:2020/v1/chat/completions?probe=dp27-canary" \
+  -H 'Content-Type: application/json' -H 'X-Canary: x-api-key-canary' -H "X-Api-Key: $K_EXP" -d "$BODY5" >/dev/null
+vip_code -X POST "http://$VIP:2020/v1/chat/completions?probe=dp27-required" \
+  -H 'Content-Type: application/json' -H "X-Api-Key: $K_EXP" -d "$BODY5" >/dev/null
+vip_code -X POST "http://$VIP:2021/v1/chat/completions?probe=dp27-disabled" \
+  -H 'Content-Type: application/json' -H "X-Api-Key: $K_EXP" -d "$BODY5" >/dev/null
+sleep 1
+L_CANARY=$(docker exec l3ep1 grep "probe=dp27-canary" /tmp/backend_reqs.log 2>/dev/null | head -1)
+L_REQ=$(docker exec l3ep1 grep "probe=dp27-required" /tmp/backend_reqs.log 2>/dev/null | head -1)
+L_DIS=$(docker exec l3ep1 grep "probe=dp27-disabled" /tmp/backend_reqs.log 2>/dev/null | head -1)
+chk_has "DP-27 control: the detector sees x-api-key-shaped bytes when they DO arrive" "x_api_key=True" "$L_CANARY"
+chk_has "DP-27 the credential is absent upstream on the enforcing service" "x_api_key=False" "$L_REQ"
+chk_has "DP-27 and absent upstream on the disabled service too" "x_api_key=False" "$L_DIS"
+
+echo ""
+echo "--- DP-10 / DP-11: the store goes away mid-flight ---"
+# K_EXP has validated at the VIP above, so it is cached. K_COLD is minted and
+# never presented, so its first appearance requires the store. Stop the store
+# and the two keys must part ways: the cached one serves (the documented
+# window), the cold one is told the truth — 503, the gateway cannot tell, and
+# never 401, which would send the keyholder to rotate a credential that is
+# fine.
+R_C=$(mkkey dp10-cold '[]')
+K_COLD=$(echo "$R_C" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("raw_key",""))' 2>/dev/null)
+docker stop aisep-pg >/dev/null 2>&1
+sleep 2
+CODE10=$(vip_code -X POST http://$VIP:2020/v1/chat/completions -H 'Content-Type: application/json' -H "X-Api-Key: $K_COLD" -d "$BODY5")
+chk "DP-10 an uncached key during the outage is a 503, not a verdict on the key" "503" "$CODE10"
+BODY10=$(docker exec l3h1 curl -s -m 20 -X POST http://$VIP:2020/v1/chat/completions -H 'Content-Type: application/json' -H "X-Api-Key: $K_COLD" -d "$BODY5")
+chk_has "DP-10 and it names the store, not the credential" "policy_store_unavailable" "$BODY10"
+chk "DP-11 the cached key keeps serving through the outage (documented window)" "200" \
+  "$(vip_code -X POST http://$VIP:2020/v1/chat/completions -H 'Content-Type: application/json' -H "X-Api-Key: $K_EXP" -d "$BODY5")"
+docker start aisep-pg >/dev/null 2>&1
+for i in $(seq 1 30); do
+  docker exec -e PGPASSWORD=oampass aisep-pg psql -h 127.0.0.1 -U oamuser -d loxilb -tAc 'SELECT 1' >/dev/null 2>&1 && break
+  sleep 1
+done
+chk "DP-10 aftermath: the cold key serves once the store is back" "200" \
+  "$(vip_code -X POST http://$VIP:2020/v1/chat/completions -H 'Content-Type: application/json' -H "X-Api-Key: $K_COLD" -d "$BODY5")"
+
+# Leave the topology in the posture config.sh advertised.
 restart_gw $AIKEY_ARGS >/dev/null 2>&1
 mk_rules
 

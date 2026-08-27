@@ -13,8 +13,9 @@ the property; the two columns agreeing is.
 l3h1 (10.10.10.1) ── llb1 (VIPs 10.10.10.254:2020 / :2021, mgmt :11111) ── l3ep1 (31.31.31.1:8080)
                        │
                        ├── aisep-pg      PostgreSQL 18.6, plaintext
-                       ├── aisep-pg-tls  PostgreSQL 18.6, TLS required
-                       └── mysql-ai      MariaDB — management plane only
+                       │                 aigw = data plane (aigwuser)
+                       │                 aigw_mgmt = management plane (aigw_mgmt_user)
+                       └── aisep-pg-tls  PostgreSQL 18.6, TLS required
 ```
 
 ## How it differs from `cicd/ai-apikey`
@@ -22,7 +23,7 @@ l3h1 (10.10.10.1) ── llb1 (VIPs 10.10.10.254:2020 / :2021, mgmt :11111) ─�
 | | `ai-apikey` | `ai-authsep` |
 |---|---|---|
 | key store | MariaDB, via `--userservice` | PostgreSQL `aigw` schema, via `--aikey-db-*` |
-| management plane | required | a **parameter** |
+| management plane | required, on MariaDB | a **parameter**, on the PostgreSQL `aigw_mgmt` schema |
 | backend | none — the suite never starts one | `count_server.py`, which records what actually arrived |
 | TLS to the store | not covered | covered, both postures |
 
@@ -103,19 +104,25 @@ IP SAN, and `llb1`'s `/etc/hosts` entry for that name is what each leg moves:
 Both DP-17 legs assert that nothing was authorized on the server, which is the
 "no plaintext retry" clause stated where it can actually be observed.
 
-## Verdicts that PR 3 changes
+## Verdicts that PR 3 changed
 
-Three expectations in `validation.sh` encode the *current* behaviour of a
-deliberately behaviour-preserving change, and PR 3 must edit them:
+Three expectations in `validation.sh` encoded the *current* behaviour of a
+deliberately behaviour-preserving change. PR 3 has now flipped all three:
 
-| leg | today | after PR 3 |
+| leg | before | now |
 |---|---|---|
 | keyless on `:2021` (`sse_mode=false`) | `200` — a plain full-proxy AI service never reaches the key check | `200`, because `api_key_auth=disabled` says so |
 | keyless / unknown key with no store configured | `200` — the retained `nil → allow` | `503 policy_store_unavailable` (DP-13) |
-| backend request counter on a denied request | reported, not asserted — denied requests can still reach the backend and the ratio is nondeterministic | asserted unchanged |
+| backend request counter on a denied request | reported, not asserted — denied requests could still reach the backend and the ratio was nondeterministic | asserted zero, with an admitted request as the positive control (DP-28) |
 
-They are written down rather than left implicit so that flipping them is a
+They were written down rather than left implicit so that flipping them was a
 deliberate act with a diff, not a silent drift.
+
+Both services now state their policy instead of inheriting one. `:2020` is
+`sse_mode=true api_key_auth=required` and `:2021` is `sse_mode=false
+api_key_auth=disabled` — deliberately crossed, so a datapath that had gone back
+to deriving enforcement from the streaming flag would still pass these two legs
+and has to be caught by a non-streaming enforcing service instead.
 
 ## Notes
 

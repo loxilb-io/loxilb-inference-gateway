@@ -1787,6 +1787,21 @@ func (na *NetAPIStruct) NetTenantRateLimitSet(tenantID string, rps, tokensPerMin
 			return err
 		}
 	}
+	// A quota is attributed through a validated key, and keys are only checked
+	// on services whose api_key_auth is "required". With no such service this
+	// configuration enforces nothing, and silently accepting it leaves the
+	// operator believing a limit exists that no request will ever meet. The
+	// write is still accepted — configuring the quota before flipping a
+	// service's policy is a legitimate order of operations — but it must not
+	// look like protection while it is not one.
+	mh.mtx.RLock()
+	enforcing := mh.zr.Rules.HasApiKeyEnforcingRule()
+	mh.mtx.RUnlock()
+	if !enforcing {
+		tk.LogIt(tk.LogWarning,
+			"[AIGateway] tenant %s quota configured but NO service has api_key_auth=required: nothing will enforce it until one does\n",
+			tenantID)
+	}
 	return nil
 }
 

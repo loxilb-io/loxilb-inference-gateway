@@ -18,10 +18,12 @@ package loxinet
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
 	cmn "github.com/loxilb-io/loxilb/common"
+	"github.com/loxilb-io/loxilb/pkg/aikey"
 	rl "github.com/loxilb-io/loxilb/pkg/ratelimit"
 )
 
@@ -45,14 +47,15 @@ type mockRateLimitService struct {
 	tenantBurst int
 	modelTPM    map[string]int // per-model tokens_per_min; nil = no model quotas
 	keyByID     map[string]*cmn.ApiKeySummary
+	limitsErr   error
 }
 
-func (m *mockRateLimitService) GetTenantRateLimit(_ string) (int, int, int) {
-	return m.tenantRPS, m.tenantTPM, m.tenantBurst
+func (m *mockRateLimitService) GetTenantRateLimit(_ string) (int, int, int, error) {
+	return m.tenantRPS, m.tenantTPM, m.tenantBurst, m.limitsErr
 }
 
-func (m *mockRateLimitService) GetTenantModelRateLimit(_, model string) int {
-	return m.modelTPM[model]
+func (m *mockRateLimitService) GetTenantModelRateLimit(_, model string) (int, error) {
+	return m.modelTPM[model], m.limitsErr
 }
 
 func (m *mockRateLimitService) GetAPIKeyByID(keyID string) (*cmn.ApiKeySummary, error) {
@@ -258,12 +261,38 @@ func TestValidateAPIKeyInternal(t *testing.T) {
 			wantErrorCode: "invalid_api_key",
 		},
 		{
-			name:          "invalid key (service returns error) returns deny_401",
-			svc:           &mockAPIKeyValidator{err: errors.New("invalid or disabled API key")},
+			// The sentinel, not a lookalike string: only ErrInvalidKey is a
+			// verdict on the credential. This case used to wrap a same-text
+			// errors.New, which is exactly how the taxonomy stayed
+			// untested — any error at all produced the 401.
+			name:          "invalid key (ErrInvalidKey) returns deny_401",
+			svc:           &mockAPIKeyValidator{err: aikey.ErrInvalidKey},
 			rawKey:        "lxb_bad_key",
 			modelName:     "gpt-4",
 			wantDecision:  1,
 			wantErrorCode: "invalid_api_key",
+		},
+		{
+			// A store that cannot answer is not a verdict on the
+			// credential. 401 here tells a client with a good key to stop
+			// retrying; 503 tells it the truth.
+			name:          "store outage (ErrDBUnavailable) returns deny_503",
+			svc:           &mockAPIKeyValidator{err: fmt.Errorf("aikey: key store unavailable: %w", aikey.ErrDBUnavailable)},
+			rawKey:        "lxb_good_key_unreachable_store",
+			modelName:     "gpt-4",
+			wantDecision:  4,
+			wantErrorCode: "policy_store_unavailable",
+		},
+		{
+			// A raw driver error — the server died mid-query, so nothing
+			// wrapped it — is still "the store could not answer", never
+			// "your key is bad".
+			name:          "unclassified store error returns deny_503",
+			svc:           &mockAPIKeyValidator{err: errors.New("driver: bad connection")},
+			rawKey:        "lxb_key_during_outage",
+			modelName:     "gpt-4",
+			wantDecision:  4,
+			wantErrorCode: "policy_store_unavailable",
 		},
 		{
 			name: "expired key returns deny_401",

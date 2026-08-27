@@ -719,13 +719,13 @@ func loxiNetInit() {
 	// Initialize the user service subsystem
 	if opts.Opts.UserServiceEnable {
 		tk.LogIt(tk.LogInfo, "User service enabled\n")
-		var usErr error
-		mh.UserService, usErr = user.NewUserService()
-		if usErr != nil {
-			// Degraded start: auth/API-key requests get 503 and the datapath
-			// fails closed until the ticker reconnects the database.
-			tk.LogIt(tk.LogCritical, "User service starting degraded, database unavailable: %v\n", usErr)
-		}
+		// The first dial completes in the background: against a store that is
+		// down it blocks for over a minute, and everything ordered below —
+		// including the boot snapshot restore waiting on those subsystems —
+		// must not inherit the management store's outage. Until the dial
+		// lands, auth requests get 503 and the datapath fails closed; the
+		// ticker keeps reconnecting on persistent failure.
+		mh.UserService = user.NewUserService()
 		// A session revoked here — by deleting the user, or by changing their
 		// password or role — must stop authenticating on the peers before
 		// their cached copy expires. Without this the revocation stops at this
@@ -753,13 +753,21 @@ func loxiNetInit() {
 		// configured nothing while it is busy dialling what they configured.
 		svc := aikey.New()
 		mh.AIKeyService = svc
-		if akErr := svc.Connect(); akErr != nil {
-			// Degraded start. The service stays usable: its store-backed calls
-			// report unavailable, so the key lifecycle API answers 503 and the
-			// reconnect tick keeps trying. The DSN is logged redacted — it
-			// carries the store password.
-			tk.LogIt(tk.LogCritical, "AI key store starting degraded: %v\n", akErr)
-		}
+		// The dial runs in the background for the same reason the service is
+		// published before it: Connect retries with a doubling backoff and
+		// takes tens of seconds against a store that is down, and blocking
+		// init here handed that outage to every subsystem ordered below —
+		// observed as the boot snapshot restore giving up (quarantining the
+		// data plane's persisted config) while init was still dialling.
+		go func() {
+			if akErr := svc.Connect(); akErr != nil {
+				// Degraded start. The service stays usable: its store-backed
+				// calls report unavailable, so the key lifecycle API answers
+				// 503 and the reconnect tick keeps trying. The DSN is logged
+				// redacted — it carries the store password.
+				tk.LogIt(tk.LogCritical, "AI key store starting degraded: %v\n", akErr)
+			}
+		}()
 		// A key revoked here must stop authenticating on the peers before
 		// their cached copy expires. Without this the store evicts locally and
 		// the revocation stops at this gateway's edge.

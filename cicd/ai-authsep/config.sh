@@ -17,8 +17,8 @@
 #   l3h1 (10.10.10.1) ── llb1 (VIPs 10.10.10.254:2020/:2021, mgmt :11111) ── l3ep1 (31.31.31.1:8080)
 #                          │
 #                          ├── aisep-pg     PostgreSQL 18.6, plaintext
-#                          ├── aisep-pg-tls PostgreSQL 18.6, TLS required
-#                          └── mysql-ai     MariaDB, management plane only
+#                          │                (aigw = data plane, aigw_mgmt = management)
+#                          └── aisep-pg-tls PostgreSQL 18.6, TLS required
 #
 # Parameters (initial posture only — validation.sh drives every combination
 # itself, because comparing cells is what the matrix is for):
@@ -58,22 +58,13 @@ fi
 echo "  plaintext store: $PG_IP"
 echo "  TLS store:       $PG_TLS_IP"
 
-echo "#########################################"
-echo "MariaDB (management plane only)"
-echo "#########################################"
-# The management store is MariaDB until PR 2b moves it to the aigw_mgmt schema.
-# It is here only so --userservice can be switched on; no data-plane table
-# lives in it any more, and one of the legs below asserts exactly that.
-docker rm -f mysql-ai >/dev/null 2>&1 || true
-docker run -d --name mysql-ai \
-  -e MYSQL_ROOT_PASSWORD=loxilb123 -e MYSQL_DATABASE=loxilb_db mariadb:10.11 >/dev/null
-for i in $(seq 1 30); do
-  if docker exec mysql-ai mysqladmin ping -h127.0.0.1 -uroot -ploxilb123 --silent 2>/dev/null; then
-    echo "  MariaDB ready (${i})"; break
-  fi
-  sleep 2
-done
-MYSQL_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' mysql-ai)
+# MariaDB is gone from this scenario. It was here only so --userservice could
+# be switched on, and once the management plane moved to the aigw_mgmt schema
+# nothing connected to it — while validation.sh went on querying it for the
+# "no data-plane tables in the management store" leg, which then reported a
+# clean separation for the trivial reason that the gateway had stopped writing
+# to that database entirely. A fixture nothing uses does not sit inert; it
+# answers questions with a stale yes.
 
 echo "#########################################"
 echo "loxilb config directory"
@@ -132,6 +123,10 @@ echo "Counting backend on l3ep1:8080"
 echo "#########################################"
 docker cp count_server.py l3ep1:/count_server.py
 docker exec -d l3ep1 python3 /count_server.py server1
+# Second instance on :8081 — the decode role of P/D rules needs a real,
+# listening endpoint (an endpoint that exists only to satisfy create-time
+# validation would be a fixture lying about the topology).
+docker exec -d l3ep1 python3 /count_server.py server2 8081
 sleep 2
 
 echo "#########################################"
@@ -149,7 +144,6 @@ done
 cat > .state <<STATE
 PG_IP="$PG_IP"
 PG_TLS_IP="$PG_TLS_IP"
-MYSQL_IP="$MYSQL_IP"
 AIKEY_ARGS="$AIKEY_ARGS"
 MGMT_ARGS="$MGMT_ARGS"
 STATE

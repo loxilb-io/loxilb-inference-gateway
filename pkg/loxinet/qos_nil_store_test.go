@@ -84,14 +84,15 @@ type stubRateLimitService struct {
 	keyRPS, keyBurst       int
 	tenantRPS, tenantTPM   int
 	modelTPM, burstPercent int
+	limitsErr              error
 }
 
-func (s *stubRateLimitService) GetTenantRateLimit(tenantID string) (rps, tokensPerMin, burstPct int) {
-	return s.tenantRPS, s.tenantTPM, s.burstPercent
+func (s *stubRateLimitService) GetTenantRateLimit(tenantID string) (rps, tokensPerMin, burstPct int, err error) {
+	return s.tenantRPS, s.tenantTPM, s.burstPercent, s.limitsErr
 }
 
-func (s *stubRateLimitService) GetTenantModelRateLimit(tenantID, model string) (tokensPerMin int) {
-	return s.modelTPM
+func (s *stubRateLimitService) GetTenantModelRateLimit(tenantID, model string) (tokensPerMin int, err error) {
+	return s.modelTPM, s.limitsErr
 }
 
 func (s *stubRateLimitService) GetAPIKeyByID(keyID string) (*cmn.ApiKeySummary, error) {

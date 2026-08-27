@@ -487,11 +487,14 @@ func TestRateLimitRoundTrip(t *testing.T) {
 	// Read through a peer so the values come from the store, not this
 	// service's own cache.
 	peer := peerOf(t, svc)
-	rps, tpm, burst := peer.GetTenantRateLimit(tenant)
+	rps, tpm, burst, rlErr := peer.GetTenantRateLimit(tenant)
+	if rlErr != nil {
+		t.Fatalf("GetTenantRateLimit: %v", rlErr)
+	}
 	if rps != 25 || tpm != 120000 || burst != 40 {
 		t.Errorf("rate limit = %d/%d/%d, want 25/120000/40", rps, tpm, burst)
 	}
-	if got := peer.GetTenantModelRateLimit(tenant, "llama-3-70b"); got != 9000 {
+	if got, mErr := peer.GetTenantModelRateLimit(tenant, "llama-3-70b"); mErr != nil || got != 9000 {
 		t.Errorf("model quota = %d, want 9000", got)
 	}
 
@@ -514,7 +517,7 @@ func TestRateLimitRoundTrip(t *testing.T) {
 	if err := svc.SetTenantModelRateLimit(tenant, "llama-3-70b", 0); err != nil {
 		t.Fatalf("clear model quota: %v", err)
 	}
-	if got := peerOf(t, svc).GetTenantModelRateLimit(tenant, "llama-3-70b"); got != 0 {
+	if got, mErr := peerOf(t, svc).GetTenantModelRateLimit(tenant, "llama-3-70b"); mErr != nil || got != 0 {
 		t.Errorf("cleared model quota reads %d, want 0", got)
 	}
 }

@@ -11,9 +11,12 @@ import sys
 import time
 import threading
 
-LOG = "/tmp/backend_reqs.log"
 name = sys.argv[1] if len(sys.argv) > 1 else "server1"
-port = 8080
+port = int(sys.argv[2]) if len(sys.argv) > 2 else 8080
+# Each instance owns its log: a second server sharing (and truncating) the
+# first one's file would silently blind the upstream-leak assertions that
+# read it.
+LOG = "/tmp/backend_reqs.log" if port == 8080 else "/tmp/backend_reqs_%d.log" % port
 
 open(LOG, "w").close()  # truncate at start
 
@@ -42,11 +45,25 @@ def handle(conn, addr):
         with open(LOG, "a") as f:
             f.write("%s peer=%s reqline=%r x_api_key=%s authz=%s bytes=%d\n"
                     % (ts, addr[0], line0, has_key, authz, len(data)))
-        body = name.encode()
-        resp = (b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n"
-                b"Content-Length: %d\r\nConnection: close\r\n\r\n%s"
-                % (len(body), body))
-        conn.sendall(resp)
+        if "sse=1" in line0:
+            # SSE mode, selected by the probe's own query string: a short
+            # server-sent stream, slow enough that a mid-stream store outage
+            # or key revocation lands INSIDE it. The transition legs need a
+            # stream that is provably in flight when the world changes; an
+            # instant 200 cannot be interrupted by anything.
+            conn.sendall(b"HTTP/1.1 200 OK\r\n"
+                         b"Content-Type: text/event-stream\r\n"
+                         b"Connection: close\r\n\r\n")
+            for i in range(5):
+                conn.sendall(b"data: {\"chunk\": %d}\n\n" % i)
+                time.sleep(1.2)
+            conn.sendall(b"data: [DONE]\n\n")
+        else:
+            body = name.encode()
+            resp = (b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n"
+                    b"Content-Length: %d\r\nConnection: close\r\n\r\n%s"
+                    % (len(body), body))
+            conn.sendall(resp)
     except Exception:
         pass
     finally:

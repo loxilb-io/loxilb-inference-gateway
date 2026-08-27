@@ -35,6 +35,7 @@ typedef struct {
 import "C"
 
 import (
+	"errors"
 	"os"
 	"strconv"
 	"strings"
@@ -47,6 +48,7 @@ import (
 
 	prom "github.com/loxilb-io/loxilb/api/prometheus"
 	cmn "github.com/loxilb-io/loxilb/common"
+	"github.com/loxilb-io/loxilb/pkg/aikey"
 	rl "github.com/loxilb-io/loxilb/pkg/ratelimit"
 )
 
@@ -59,8 +61,12 @@ type apiKeyValidator interface {
 // rateLimitService is the subset of the data-plane key store used by the
 // rate-limit bridge. It is satisfied by *aikey.Service and by test mocks.
 type rateLimitService interface {
-	GetTenantRateLimit(tenantID string) (rps, tokensPerMin, burstPct int)
-	GetTenantModelRateLimit(tenantID, model string) (tokensPerMin int)
+	// Both quota reads answer from cache, then the store, then the last
+	// store-confirmed value during an outage. A non-nil error means none of
+	// those exist — the zeroes are not "unlimited" and the admission path
+	// must fail closed on them.
+	GetTenantRateLimit(tenantID string) (rps, tokensPerMin, burstPct int, err error)
+	GetTenantModelRateLimit(tenantID, model string) (tokensPerMin int, err error)
 	GetAPIKeyByID(keyID string) (*cmn.ApiKeySummary, error)
 }
 
@@ -92,6 +98,25 @@ func modelQuotaKey(tenantID, model string) string {
 //   - "token_quota_exceeded"  – tenant aggregate or tenant|model token bucket
 //     in debt
 func rateLimitCheckInternal(svc rateLimitService, store *rl.RateLimiterStore, keyIDStr, tenantIDStr, modelName string) (decision, retrySecs int, errorCode string) {
+	// A keyed identity with no service behind it is an invariant violation,
+	// not a configuration: the gate only calls this stage with a key_id or
+	// tenant_id it got from a SUCCESSFUL validation, and validation cannot
+	// succeed without a service. If the identity is real and the service is
+	// gone anyway, every limit below would read as zero — "no limit
+	// configured" — and the whole QoS plane would silently switch off for
+	// exactly the traffic it was configured to bound. Fail closed
+	// with the store's own error code; the C arm maps decision 4 to a 503.
+	//
+	// An EMPTY identity with a nil service is different and stays allowed:
+	// that is ordinary traffic on a service whose policy does not attribute
+	// tenants, and there is nothing to enforce against.
+	if svc == nil && (keyIDStr != "" || tenantIDStr != "") {
+		tk.LogIt(tk.LogCritical,
+			"[AIGateway] rateLimitCheckInternal: keyed identity (key=%s tenant=%s) with NO key service — failing closed\n",
+			keyIDStr, tenantIDStr)
+		return 4, 5, "policy_store_unavailable"
+	}
+
 	// Stage 1: per-key check with key-specific RPS and burst values.
 	if keyIDStr != "" {
 		keyRPS := 0
@@ -118,7 +143,18 @@ func rateLimitCheckInternal(svc rateLimitService, store *rl.RateLimiterStore, ke
 		tenantRPS := 0
 		tenantTPM := 0
 		if svc != nil {
-			tenantRPS, tenantTPM, _ = svc.GetTenantRateLimit(tenantIDStr)
+			var rlErr error
+			tenantRPS, tenantTPM, _, rlErr = svc.GetTenantRateLimit(tenantIDStr)
+			if rlErr != nil {
+				// The store is unreachable and has never answered for this
+				// tenant: admitting on the zeroes would run the request with
+				// every quota off. Same decision as the nil-service guard —
+				// the outage's own code, not a "slow down".
+				tk.LogIt(tk.LogWarning,
+					"[AIGateway] rateLimitCheckInternal: tenant %s limits unknowable (store outage, nothing cached) — failing closed\n",
+					tenantIDStr)
+				return 4, 5, "policy_store_unavailable"
+			}
 		}
 		allowed, retrySec := store.CheckTenant(tenantIDStr, tenantRPS)
 		if !allowed {
@@ -131,7 +167,14 @@ func rateLimitCheckInternal(svc rateLimitService, store *rl.RateLimiterStore, ke
 		// request's model.
 		modelTPM := 0
 		if svc != nil && modelName != "" {
-			modelTPM = svc.GetTenantModelRateLimit(tenantIDStr, modelName)
+			var mErr error
+			modelTPM, mErr = svc.GetTenantModelRateLimit(tenantIDStr, modelName)
+			if mErr != nil {
+				tk.LogIt(tk.LogWarning,
+					"[AIGateway] rateLimitCheckInternal: tenant %s model %s limits unknowable (store outage, nothing cached) — failing closed\n",
+					tenantIDStr, modelName)
+				return 4, 5, "policy_store_unavailable"
+			}
 		}
 
 		// Warming gate first: after a cold start the consumed counters are
@@ -175,8 +218,22 @@ func validateAPIKeyInternal(svc apiKeyValidator, rawKey, modelName string) (deci
 
 	entry, err := svc.ValidateAPIKey(rawKey)
 	if err != nil {
-		tk.LogIt(tk.LogWarning, "[AIGateway] llb_ai_validate_key: key validation failed: %v\n", err)
-		return 1, "", "", "", "invalid_api_key"
+		// Two different failures arrive on this one error path, and they must
+		// not share a verdict. ErrInvalidKey is a verdict on the credential:
+		// the store answered and the key is unknown, disabled or malformed —
+		// the client's problem, permanent, 401. Every other error means the
+		// store could NOT answer — a degraded pool, a dial that failed, a
+		// query cut off mid-outage — and answering 401 there tells a client
+		// with a perfectly good key that its credential is bad, which is both
+		// false and permanent-sounding. The management plane had this same
+		// defect and had it fixed; this is its data-plane twin.
+		if errors.Is(err, aikey.ErrInvalidKey) {
+			tk.LogIt(tk.LogWarning, "[AIGateway] llb_ai_validate_key: key validation failed: %v\n", err)
+			return 1, "", "", "", "invalid_api_key"
+		}
+		tk.LogIt(tk.LogError, "[AIGateway] llb_ai_validate_key: key store could not answer: %v\n", err)
+		prom.RecordPolicyStoreUnavailable()
+		return 4, "", "", "", "policy_store_unavailable"
 	}
 
 	// Check expiry (ValidateAPIKey only filters on enabled=1, not expires_at).
@@ -265,31 +322,18 @@ func llb_ai_validate_key(rawKey *C.char, modelName *C.char, result *C.ai_gw_deci
 	// Zero out the result struct before writing.
 	*result = C.ai_gw_decision_t{}
 
-	// Guard: the key store must exist before data-plane calls arrive.
+	// Guard: the key store must exist before data-plane calls arrive. The
+	// verdict itself is decided in keyStoreVerdict, which is plain Go and
+	// therefore unit-testable; only the reporting stays here.
 	us := mh.AIKeyService
-	if us == nil {
-		// Reaching here now MEANS something specific. The data-plane gate only
-		// calls this function when the service's api_key_auth policy is
-		// "required", so a nil store is not "nobody asked for auth" — it is
-		// "the operator asked for auth and the store cannot answer".
-		//
-		// That is a policy-store outage, and it fails CLOSED. Admitting the
-		// request would serve unauthenticated traffic on a service explicitly
-		// configured to require a credential, which is the one outcome the
-		// policy exists to prevent.
-		//
-		// It is deliberately NOT a 401. A client must be able to tell "your
-		// key is wrong" from "the gateway cannot tell right now": the first is
-		// the client's problem and permanent, the second is the operator's and
-		// transient, and a client that retries is right in the second case and
-		// wrong in the first.
+	if decision, errorCode, haveStore := keyStoreVerdict(us); !haveStore {
 		noKeyStoreOnce.Do(func() {
 			tk.LogIt(tk.LogCritical,
 				"[AIGateway] No API-key store configured (--aikey-db-host unset): services with api_key_auth=required are refusing requests with 503\n")
 		})
 		prom.RecordPolicyStoreUnavailable()
-		result.decision = 4
-		cCopyStr((*C.char)(unsafe.Pointer(&result.error_code[0])), "policy_store_unavailable", 64)
+		result.decision = C.int(decision)
+		cCopyStr((*C.char)(unsafe.Pointer(&result.error_code[0])), errorCode, 64)
 		return -1
 	}
 
@@ -497,9 +541,15 @@ func tokenQuotaReserveInternal(svc rateLimitService, store *rl.RateLimiterStore,
 	// tenant widen its aggregate burst by splitting spend across models.
 	burstPct := 0
 	if svc != nil {
-		_, tenantTPM, burstPct = svc.GetTenantRateLimit(tenantID)
+		// An unknowable-limits error is tolerated here, not failed closed:
+		// admission (rateLimitCheckInternal) has already refused fresh
+		// requests for such a tenant, so a read that still errors here is
+		// the outage beginning mid-request — the reservation proceeds on
+		// zeroes exactly as an unlimited tenant's would, and the admission
+		// gate owns the deny from the next request on.
+		_, tenantTPM, burstPct, _ = svc.GetTenantRateLimit(tenantID)
 		if modelName != "" {
-			modelTPM = svc.GetTenantModelRateLimit(tenantID, modelName)
+			modelTPM, _ = svc.GetTenantModelRateLimit(tenantID, modelName)
 		}
 	}
 	if tenantTPM <= 0 && modelTPM <= 0 {
@@ -553,9 +603,13 @@ func tokenQuotaConsumeInternal(svc rateLimitService, store *rl.RateLimiterStore,
 	modelTPM := 0
 	burstPct := 0
 	if svc != nil {
-		_, tenantTPM, burstPct = svc.GetTenantRateLimit(tenantID)
+		// Same tolerance as reservation: settlement must run even when the
+		// limits are unknowable — an unreleased claim would deny the tenant's
+		// admissions until the epoch expires it, turning the outage into a
+		// second, self-inflicted quota failure.
+		_, tenantTPM, burstPct, _ = svc.GetTenantRateLimit(tenantID)
 		if modelName != "" {
-			modelTPM = svc.GetTenantModelRateLimit(tenantID, modelName)
+			modelTPM, _ = svc.GetTenantModelRateLimit(tenantID, modelName)
 		}
 	}
 	if reservedAmt <= 0 && (count <= 0 || (tenantTPM <= 0 && modelTPM <= 0)) {

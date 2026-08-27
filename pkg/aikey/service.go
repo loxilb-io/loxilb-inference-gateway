@@ -192,6 +192,36 @@ type Service struct {
 	invalidate func(KeyInvalidation)
 
 	Cache *cache.Cache
+
+	// rlLastKnown holds, per rate-limit cache key, the last value the store
+	// actually answered with (a configured limit or an explicit "no row"),
+	// and never expires. It exists for the store-outage window: the TTL cache
+	// above forgets, and a forgotten limit read as (0,0,0) is "unlimited" —
+	// which turned a store outage into every quota silently off for any
+	// tenant whose limits were not in the TTL cache. During an outage the
+	// last-known value is enforced instead; only a tenant the store has NEVER
+	// answered for is refused. Bounded by the number of distinct tenants and
+	// tenant|model pairs this process has served.
+	rlLastKnown sync.Map
+}
+
+// rememberRateLimit records a store-confirmed rate-limit value in both the
+// TTL cache (freshness) and the last-known map (outage fallback). Every
+// write MUST go through here: a value that reaches only the TTL cache
+// silently ages out of outage coverage.
+func (s *Service) rememberRateLimit(cacheKey string, e *rateLimitCacheEntry) {
+	s.Cache.Set(cacheKey, e, CacheExpirationTime*time.Minute)
+	s.rlLastKnown.Store(cacheKey, e)
+}
+
+// lastKnownRateLimit retrieves the outage-fallback value for a cache key.
+func (s *Service) lastKnownRateLimit(cacheKey string) (*rateLimitCacheEntry, bool) {
+	if v, ok := s.rlLastKnown.Load(cacheKey); ok {
+		if e, ok2 := v.(*rateLimitCacheEntry); ok2 {
+			return e, true
+		}
+	}
+	return nil, false
 }
 
 // New returns a service with no store attached. Every store-backed method on
@@ -603,43 +633,60 @@ func (s *Service) SetTenantRateLimit(tenantID string, rps, tokensPerMin, burstPc
 		tk.LogIt(tk.LogError, "[AIKey] Failed to set rate limit for tenant %s: %v\n", tenantID, err)
 		return err
 	}
-	s.Cache.Set(cacheKeyForTenant(tenantID),
-		&rateLimitCacheEntry{rps: rps, tokensPerMin: tokensPerMin, burstPct: burstPct},
-		CacheExpirationTime*time.Minute)
+	s.rememberRateLimit(cacheKeyForTenant(tenantID),
+		&rateLimitCacheEntry{rps: rps, tokensPerMin: tokensPerMin, burstPct: burstPct})
 	tk.LogIt(tk.LogInfo, "[AIKey] Set rate limit for tenant %s: rps=%d tokensPerMin=%d burstPct=%d\n",
 		tenantID, rps, tokensPerMin, burstPct)
 	return nil
 }
 
 // GetTenantRateLimit returns the per-tenant rate limit values, cache first.
-// If the tenant has no configured limits, zeroes are returned.
-func (s *Service) GetTenantRateLimit(tenantID string) (rps, tokensPerMin, burstPct int) {
-	if cached, found := s.Cache.Get(cacheKeyForTenant(tenantID)); found {
+// If the tenant has no configured limits, zeroes are returned with a nil
+// error. A non-nil error means the store is unreachable AND it has never
+// answered for this tenant, so no truthful value exists — the caller must
+// fail closed rather than read the zeroes as "unlimited".
+func (s *Service) GetTenantRateLimit(tenantID string) (rps, tokensPerMin, burstPct int, err error) {
+	cacheKey := cacheKeyForTenant(tenantID)
+	if cached, found := s.Cache.Get(cacheKey); found {
 		if entry, ok := cached.(*rateLimitCacheEntry); ok {
-			return entry.rps, entry.tokensPerMin, entry.burstPct
+			return entry.rps, entry.tokensPerMin, entry.burstPct, nil
 		}
 	}
 
-	// No configured-limit signal is distinguishable from store-unavailable
-	// here; zeroes mean "no limit", matching the no-row case. The datapath key
-	// check has already failed closed by this point if the store is down and
-	// the key uncached.
+	// With the store unreachable, "no limit configured" and "could not ask"
+	// used to collapse into the same zeroes — so an outage switched quotas
+	// off for exactly the traffic they were configured to bound, for any
+	// tenant whose limits had aged out of the TTL cache while its key had
+	// not. The decision taken for that window: enforce the LAST value the
+	// store confirmed (a real limit or an explicit no-row), and refuse only
+	// a tenant the store has never answered for — the same shape the key
+	// cache itself gives a cached key during an outage.
 	db, dbErr := s.store()
 	if dbErr != nil {
-		return 0, 0, 0
+		if e, ok := s.lastKnownRateLimit(cacheKey); ok {
+			return e.rps, e.tokensPerMin, e.burstPct, nil
+		}
+		return 0, 0, 0, errStoreUnavailable
 	}
 	var r, t, b int
-	err := db.QueryRow(sqlSelectTenantRateLimit, tenantID).Scan(&r, &t, &b)
+	err = db.QueryRow(sqlSelectTenantRateLimit, tenantID).Scan(&r, &t, &b)
 	if err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
-			tk.LogIt(tk.LogError, "[AIKey] Failed to get rate limit for tenant %s: %v\n", tenantID, err)
+		if errors.Is(err, sql.ErrNoRows) {
+			// An explicit "no limits configured" is an answer worth keeping:
+			// it is what makes an unlimited tenant distinguishable from an
+			// unanswered one when the store goes away.
+			s.rememberRateLimit(cacheKey, &rateLimitCacheEntry{})
+			return 0, 0, 0, nil
 		}
-		return 0, 0, 0
+		tk.LogIt(tk.LogError, "[AIKey] Failed to get rate limit for tenant %s: %v\n", tenantID, err)
+		if e, ok := s.lastKnownRateLimit(cacheKey); ok {
+			return e.rps, e.tokensPerMin, e.burstPct, nil
+		}
+		return 0, 0, 0, errStoreUnavailable
 	}
 
-	s.Cache.Set(cacheKeyForTenant(tenantID),
-		&rateLimitCacheEntry{rps: r, tokensPerMin: t, burstPct: b}, CacheExpirationTime*time.Minute)
-	return r, t, b
+	s.rememberRateLimit(cacheKey, &rateLimitCacheEntry{rps: r, tokensPerMin: t, burstPct: b})
+	return r, t, b, nil
 }
 
 // SetTenantModelRateLimit upserts one per-model token quota for a tenant.
@@ -661,6 +708,11 @@ func (s *Service) SetTenantModelRateLimit(tenantID, model string, tokensPerMin i
 			tk.LogIt(tk.LogError, "[AIKey] Failed to clear model rate limit for %s/%s: %v\n", tenantID, model, err)
 			return err
 		}
+		// The clear is itself a store-confirmed answer ("no limit"), so it is
+		// remembered rather than merely dropped from the TTL cache — a bare
+		// delete would leave the last-known map still enforcing the removed
+		// limit through the next outage.
+		s.rememberRateLimit(cacheKey, &rateLimitCacheEntry{})
 		s.Cache.Delete(cacheKey)
 		tk.LogIt(tk.LogInfo, "[AIKey] Cleared model rate limit for tenant %s model %s\n", tenantID, model)
 		return nil
@@ -670,7 +722,7 @@ func (s *Service) SetTenantModelRateLimit(tenantID, model string, tokensPerMin i
 		tk.LogIt(tk.LogError, "[AIKey] Failed to set model rate limit for %s/%s: %v\n", tenantID, model, err)
 		return err
 	}
-	s.Cache.Set(cacheKey, &rateLimitCacheEntry{tokensPerMin: tokensPerMin}, CacheExpirationTime*time.Minute)
+	s.rememberRateLimit(cacheKey, &rateLimitCacheEntry{tokensPerMin: tokensPerMin})
 	tk.LogIt(tk.LogInfo, "[AIKey] Set model rate limit for tenant %s model %s: tokensPerMin=%d\n",
 		tenantID, model, tokensPerMin)
 	return nil
@@ -678,34 +730,43 @@ func (s *Service) SetTenantModelRateLimit(tenantID, model string, tokensPerMin i
 
 // GetTenantModelRateLimit returns the per-model token quota for a tenant, or
 // 0 when the pair has no model-specific limit configured (the tenant
-// aggregate quota, if any, still applies).
-func (s *Service) GetTenantModelRateLimit(tenantID, model string) (tokensPerMin int) {
+// aggregate quota, if any, still applies). A non-nil error carries the same
+// meaning as GetTenantRateLimit's: the store is unreachable and has never
+// answered for this pair, so the zero must not be read as "unlimited".
+func (s *Service) GetTenantModelRateLimit(tenantID, model string) (tokensPerMin int, err error) {
 	if model == "" {
-		return 0
+		return 0, nil
 	}
 	cacheKey := cacheKeyForModel(tenantID, model)
 	if cached, found := s.Cache.Get(cacheKey); found {
 		if entry, ok := cached.(*rateLimitCacheEntry); ok {
-			return entry.tokensPerMin
+			return entry.tokensPerMin, nil
 		}
 	}
 	db, dbErr := s.store()
 	if dbErr != nil {
-		return 0
+		if e, ok := s.lastKnownRateLimit(cacheKey); ok {
+			return e.tokensPerMin, nil
+		}
+		return 0, errStoreUnavailable
 	}
 	var t int
-	err := db.QueryRow(sqlSelectTenantModelRateLimit, tenantID, model).Scan(&t)
+	err = db.QueryRow(sqlSelectTenantModelRateLimit, tenantID, model).Scan(&t)
 	if err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			tk.LogIt(tk.LogError, "[AIKey] Failed to get model rate limit for %s/%s: %v\n", tenantID, model, err)
-			return 0
+			if e, ok := s.lastKnownRateLimit(cacheKey); ok {
+				return e.tokensPerMin, nil
+			}
+			return 0, errStoreUnavailable
 		}
 		// Cache the miss too: an unlimited model on a busy tenant would
-		// otherwise pay one round-trip per request.
+		// otherwise pay one round-trip per request — and the remembered miss
+		// is what keeps that model servable through a later outage.
 		t = 0
 	}
-	s.Cache.Set(cacheKey, &rateLimitCacheEntry{tokensPerMin: t}, CacheExpirationTime*time.Minute)
-	return t
+	s.rememberRateLimit(cacheKey, &rateLimitCacheEntry{tokensPerMin: t})
+	return t, nil
 }
 
 // GetTenantModelRateLimits returns every configured per-model quota for a
