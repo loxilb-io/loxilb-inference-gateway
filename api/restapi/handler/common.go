@@ -158,6 +158,15 @@ func ResultErrorResponseErrorMessage(msg string) *models.Error {
 		"Failed to add Cors", "Failed to delete Cors", "filename is required", "file is empty",
 		"no configuration file provided", "invalid json format",
 		"is required",
+		// Create-time rule-validation rejections. These are addressed to the
+		// operator who wrote the rule — the reason ("pd-bootstrap-port
+		// requires pd_disagg_mode=true and kv-engine-type sglang") IS the
+		// API's answer, so it must ride in the body. Before the fall-through
+		// below stopped disclosing internal text, these reached callers only
+		// by falling through it; without their own class here, closing that
+		// disclosure silently rewrote every validator's answer into a 500
+		// with a correlation ref.
+		" requires ", " must be ", "unsupported for", "supports kvexactmode",
 	) {
 		return &models.Error{Code: 400, Message: "Malformed arguments for API call", Result: msg}
 	}
