@@ -19,6 +19,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -32,6 +33,38 @@ import (
 	cmn "github.com/loxilb-io/loxilb/common"
 )
 
+// keyStoreFailure gives a key-store condition the status and the wording it
+// must be answered with, or nil when err is about something else.
+//
+// The two conditions are told apart on the wire because they ask the operator
+// for different things. "Unconfigured" means no store was ever named, and the
+// fix is a --aikey-db-host; "unavailable" means one was named and cannot be
+// reached, and the fix is at the store. Both are 503: the routes are
+// registered either way, so neither is a 501, and neither is a fault in the
+// gateway, so neither is a 500.
+func keyStoreFailure(err error) *ErrorResponse {
+	switch {
+	case errors.Is(err, cmn.ErrKeyStoreUnconfigured):
+		return errorResponseWithCode(http.StatusServiceUnavailable, "ai_key_store_unconfigured")
+	case errors.Is(err, cmn.ErrDBUnavailable):
+		return errorResponseWithCode(http.StatusServiceUnavailable, "ai_key_store_unavailable")
+	}
+	return nil
+}
+
+// writeKeyStoreFailure is keyStoreFailure for the raw-handler arm, which does
+// not go through the generated responder chain.
+func writeKeyStoreFailure(w http.ResponseWriter, err error) bool {
+	resp := keyStoreFailure(err)
+	if resp == nil {
+		return false
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(int(resp.Payload.Code))
+	json.NewEncoder(w).Encode(map[string]string{"error": resp.Payload.Message}) //nolint:errcheck
+	return true
+}
+
 // ConfigPostAIApikey - POST /config/ai/apikey
 // Creates a new API key for a tenant. Returns the raw key exactly once.
 func ConfigPostAIApikey(params aiops.PostConfigAiApikeyParams, principal interface{}) middleware.Responder {
@@ -44,8 +77,12 @@ func ConfigPostAIApikey(params aiops.PostConfigAiApikeyParams, principal interfa
 	}
 
 	entry := cmn.ApiKeyEntry{
-		TenantID:      *req.TenantID,
-		Name:          req.Name,
+		TenantID: *req.TenantID,
+		Name:     req.Name,
+		// Caller-supplied key material, when present. The store validates its
+		// length and charset and keeps only the hash; this handler must not log
+		// it, and the response below does not echo it.
+		ApiKey:        req.APIKey,
 		AllowedModels: req.AllowedModels,
 		RateLimitRPS:  int(req.RateLimitRps),
 		BurstSize:     int(req.BurstSize),
@@ -67,10 +104,15 @@ func ConfigPostAIApikey(params aiops.PostConfigAiApikeyParams, principal interfa
 	rawKey, keyID, err := ApiHooks.NetAPIKeyCreate(entry)
 	if err != nil {
 		tk.LogIt(tk.LogError, "[AIApikey] Failed to create API key for tenant %s: %v\n", *req.TenantID, err)
+		if resp := keyStoreFailure(err); resp != nil {
+			return resp
+		}
 		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
 
-	// raw key must never be logged
+	// raw key must never be logged. It is also empty when the caller supplied
+	// the key material: echoing a value the caller already holds would put it
+	// into response logs and API traces for no benefit.
 	return aiops.NewPostConfigAiApikeyCreated().WithPayload(&models.APIKeyCreateResponse{
 		RawKey: &rawKey,
 		KeyID:  keyID,
@@ -91,6 +133,9 @@ func ConfigGetAIApikeys(params aiops.GetConfigAiApikeyParams, principal interfac
 	keys, err := ApiHooks.NetAPIKeyList(tenantID)
 	if err != nil {
 		tk.LogIt(tk.LogError, "[AIApikey] Failed to list API keys (tenant=%q): %v\n", tenantID, err)
+		if resp := keyStoreFailure(err); resp != nil {
+			return resp
+		}
 		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
 
@@ -112,6 +157,9 @@ func ConfigGetAIApikeyByID(params aiops.GetConfigAiApikeyKeyIDParams, principal 
 	key, err := ApiHooks.NetAPIKeyGet(params.KeyID)
 	if err != nil {
 		tk.LogIt(tk.LogError, "[AIApikey] Failed to get API key %s: %v\n", params.KeyID, err)
+		if resp := keyStoreFailure(err); resp != nil {
+			return resp
+		}
 		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
 
@@ -128,6 +176,9 @@ func ConfigDeleteAIApikey(params aiops.DeleteConfigAiApikeyKeyIDParams, principa
 
 	if err := ApiHooks.NetAPIKeyDelete(params.KeyID); err != nil {
 		tk.LogIt(tk.LogError, "[AIApikey] Failed to delete API key %s: %v\n", params.KeyID, err)
+		if resp := keyStoreFailure(err); resp != nil {
+			return resp
+		}
 		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
 
@@ -161,6 +212,9 @@ func ConfigPatchAIApikey(w http.ResponseWriter, r *http.Request, keyID string) {
 
 	if err := ApiHooks.NetAPIKeyPatch(keyID, body.AllowedModels, body.Enabled); err != nil {
 		tk.LogIt(tk.LogError, "[AIApikey] Failed to patch API key %s: %v\n", keyID, err)
+		if writeKeyStoreFailure(w, err) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		status := http.StatusInternalServerError
 		if strings.Contains(err.Error(), "not found") {
@@ -198,6 +252,9 @@ func ConfigPostAITenantRateLimit(params aiops.PostConfigAiTenantRatelimitParams,
 
 	if err := ApiHooks.NetTenantRateLimitSet(*body.TenantID, int(body.Rps), int(body.TokensPerMin), int(body.BurstPct), modelLimits); err != nil {
 		tk.LogIt(tk.LogError, "[AITenantRateLimit] Failed to set rate limit for tenant %s: %v\n", *body.TenantID, err)
+		if resp := keyStoreFailure(err); resp != nil {
+			return resp
+		}
 		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
 
@@ -213,6 +270,9 @@ func ConfigGetAITenantRateLimit(params aiops.GetConfigAiTenantRatelimitTenantIDP
 	entry, err := ApiHooks.NetTenantRateLimitGet(params.TenantID)
 	if err != nil {
 		tk.LogIt(tk.LogError, "[AITenantRateLimit] Failed to get rate limit for tenant %s: %v\n", params.TenantID, err)
+		if resp := keyStoreFailure(err); resp != nil {
+			return resp
+		}
 		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
 

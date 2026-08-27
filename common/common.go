@@ -17,6 +17,7 @@
 package common
 
 import (
+	"errors"
 	"net"
 	"time"
 )
@@ -1712,6 +1713,40 @@ type NetTraceParserMeta struct {
 	SupportedPaths []string
 }
 
+// ErrDBUnavailable is returned when the credential store is not initialised or
+// its connection has been lost. It is a server-side condition, not a verdict on
+// the credential, and maps to HTTP 503.
+var ErrDBUnavailable = errors.New("user database unavailable")
+
+// ErrKeyStoreUnconfigured is returned by the data-plane API-key hooks when no
+// key store has been configured at all. It is distinct from ErrDBUnavailable:
+// that one means a store exists and cannot be reached, this one means the
+// operator never named one.
+//
+// Both map to HTTP 503. The key lifecycle routes are registered whether or not
+// a store exists, so the honest answer to a call against a gateway without one
+// is "this is not configured here" — not 501, which would claim the feature
+// does not exist, and not 500, which would claim a fault.
+var ErrKeyStoreUnconfigured = errors.New("ai_key_store_unconfigured")
+
+// ErrTokenNotFound is returned when a token is well-formed but unknown to the
+// store. It is a verdict on the credential and maps to HTTP 401. It exists as a
+// sentinel because the authentication chain has to tell it apart from a store
+// failure, and comparing error strings to make that distinction is how the two
+// came to be reported with the same status.
+var ErrTokenNotFound = errors.New("Token not found")
+
+// ErrInvalidRole is returned when a create or update names a role outside the
+// closed set the authorizer implements. It is a distinct sentinel so the REST
+// layer can answer 400 — the request is malformed, not unauthorized — rather
+// than storing a role that would silently carry no authority.
+var ErrInvalidRole = errors.New("invalid role: must be one of admin, viewer")
+
+// ErrBootstrapClosed is returned by NetUserBootstrap when a user already
+// exists. Unauthenticated creation is a one-time bootstrap, so this is a
+// credential failure rather than a server fault and maps to HTTP 401.
+var ErrBootstrapClosed = errors.New("user bootstrap is closed")
+
 // NetHookInterface - Go interface which needs to be implemented to talk to loxinet module
 type NetHookInterface interface {
 	NetMirrorGet() ([]MirrGetMod, error)
@@ -1799,6 +1834,7 @@ type NetHookInterface interface {
 	NetBFDDel(bm *BFDMod) (int, error)
 
 	NetUserAdd(um *User) (int, error)
+	NetUserBootstrap(um *User) (int, error)
 	NetUserGet() ([]User, error)
 	NetUserDel(ID int) error
 	NetUserUpdate(um *User) error
@@ -2089,8 +2125,16 @@ type IPsecCACertificate struct {
 
 // ApiKeyEntry - API key entry with all fields including the secret hash
 type ApiKeyEntry struct {
-	KeyID         string     `json:"key_id"`
-	KeyHash       string     `json:"-"`
+	KeyID   string `json:"key_id"`
+	KeyHash string `json:"-"`
+	// ApiKey carries caller-supplied key material on create, for importing a
+	// tenant whose key was minted elsewhere. Empty on the primary path, where
+	// the gateway mints the key itself.
+	//
+	// Write-only, and `json:"-"` rather than a write-only convention: the REST
+	// layer copies it in from the request body explicitly, so no marshalling
+	// path can return it in a response, a listing or a log line by accident.
+	ApiKey        string     `json:"-"`
 	TenantID      string     `json:"tenant_id"`
 	Name          string     `json:"name"`
 	AllowedModels []string   `json:"allowed_models"`

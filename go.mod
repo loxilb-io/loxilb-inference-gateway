@@ -15,14 +15,12 @@ require (
 	github.com/go-openapi/strfmt v0.21.3
 	github.com/go-openapi/swag v0.22.3
 	github.com/go-openapi/validate v0.22.0
-	github.com/go-sql-driver/mysql v1.8.1
 	github.com/go-zeromq/zmq4 v0.17.0
-	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/uuid v1.6.0
+	github.com/jackc/pgx/v5 v5.10.0
 	github.com/jessevdk/go-flags v1.5.0
 	github.com/loxilb-io/ipvs v0.1.0
 	github.com/loxilb-io/loxilib v0.8.9-0.20241218081253-760c19357603
-	github.com/mattn/go-sqlite3 v1.14.29
 	github.com/osrg/gobgp/v3 v3.35.0
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/prometheus-community/pro-bing v0.1.0
@@ -53,7 +51,6 @@ require (
 
 require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
-	filippo.io/edwards25519 v1.1.1 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.11 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.5 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.6.5 // indirect
@@ -78,6 +75,9 @@ require (
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
 	github.com/imdario/mergo v0.3.6 // indirect
+	github.com/jackc/pgpassfile v1.0.0 // indirect
+	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
+	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/loxilb-io/sctp v0.0.0-20241217032220-301b591b9ced // indirect

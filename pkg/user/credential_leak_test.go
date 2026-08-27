@@ -19,11 +19,11 @@ import (
 	"database/sql"
 	"os"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
 	tk "github.com/loxilb-io/loxilib"
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/patrickmn/go-cache"
 )
 
@@ -72,28 +72,13 @@ func assertNoCredentialPatterns(t *testing.T, logPath string) {
 	}
 }
 
-// setupCredLeakTestDB creates an in-memory SQLite database with the token
-// table required by Logout and ValidateToken code paths.
+// setupCredLeakTestDB opens the management store the rest of this package's
+// store legs use. It was an in-memory SQLite; the statements it exercises are
+// now schema-qualified PostgreSQL with numbered placeholders, so a SQLite
+// stand-in would only prove that a different dialect does not leak.
 func setupCredLeakTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite3: %v", err)
-	}
-
-	// Create the token table matching the schema used by DeleteTokenQuery
-	// and ValidateTokenQuery. SQLite does not have NOW, but the queries
-	// that only delete by token_value work fine.
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS token (
-		token_value TEXT PRIMARY KEY,
-		username TEXT,
-		expires_at DATETIME,
-		role TEXT
-	)`)
-	if err != nil {
-		t.Fatalf("create token table: %v", err)
-	}
-	return db
+	return openMgmtStore(t)
 }
 
 // TestNoCredentialLeakInLogs exercises the Logout and ValidateToken code
@@ -108,38 +93,59 @@ func TestNoCredentialLeakInLogs(t *testing.T) {
 	defer cleanup()
 
 	db := setupCredLeakTestDB(t)
-	defer db.Close()
 
 	svc := &UserService{
-		DB:    db,
 		Cache: cache.New(5*time.Minute, 10*time.Minute),
 	}
+	svc.Attach(db)
 
-	// Use a realistic JWT-like token that would match the eyJ pattern
+	// A token of the shape the old JWT scheme produced, so the eyJ pattern in
+	// assertNoCredentialPatterns still has something to match on, plus one of
+	// the opaque hex tokens the scheme now issues.
 	fakeJWT := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjoiZmFrZSJ9.fakesig"
-
-	// --- Exercise Logout path ---
-	// Populate cache so Logout can recover the username
-	svc.Cache.Set(fakeJWT, "testuser|admin", 5*time.Minute)
-
-	// Insert a token row so DeleteTokenQuery succeeds (exercises the log line)
-	_, err := db.Exec("INSERT INTO token (token_value, username, expires_at, role) VALUES (?, ?, ?, ?)",
-		fakeJWT, "testuser", time.Now().Add(1*time.Hour).Format("2006-01-02 15:04:05"), "admin")
+	realToken, err := generateToken()
 	if err != nil {
-		t.Fatalf("insert token: %v", err)
+		t.Fatalf("generate token: %v", err)
 	}
 
-	err = svc.Logout(fakeJWT)
-	if err != nil {
-		t.Logf("Logout returned error (may be expected): %v", err)
-	}
+	// The token table references users, so the owner has to exist.
+	insertUserRow(t, svc, "testuser", mustHash(t, "Admin123!"), "admin")
 
-	// --- Exercise ValidateToken path (token not in cache or DB) ---
-	_, err = svc.ValidateToken(fakeJWT)
-	if err != nil {
-		t.Logf("ValidateToken returned error (expected — token deleted): %v", err)
+	for _, tok := range []string{fakeJWT, realToken} {
+		// --- Exercise Logout path ---
+		// Populate cache so Logout can recover the username. Keyed by hash,
+		// which is what the code does.
+		svc.Cache.Set(hashToken(tok), "testuser|admin", 5*time.Minute)
+
+		// Insert a token row so DeleteTokenQuery succeeds (exercises the log line)
+		if _, err := db.Exec(InsertTokenQuery,
+			hashToken(tok), "testuser", time.Now().Add(1*time.Hour), "admin"); err != nil {
+			t.Fatalf("insert token: %v", err)
+		}
+
+		if err := svc.Logout(tok); err != nil {
+			t.Logf("Logout returned error (may be expected): %v", err)
+		}
+
+		// --- Exercise ValidateToken path (token not in cache or DB) ---
+		if _, err := svc.ValidateToken(tok); err != nil {
+			t.Logf("ValidateToken returned error (expected — token deleted): %v", err)
+		}
 	}
 
 	// --- Assert no credential patterns in log output ---
 	assertNoCredentialPatterns(t, logPath)
+
+	// The opaque token is 64 hex characters and matches no pattern above, so
+	// assert it directly: a scheme change must not quietly retire the check.
+	content, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read log file: %v", err)
+	}
+	if strings.Contains(string(content), realToken) {
+		t.Error("an opaque session token appeared verbatim in the log output")
+	}
+	if !strings.Contains(string(content), "testuser") {
+		t.Error("the log lines under test never ran — nothing named the user they log")
+	}
 }

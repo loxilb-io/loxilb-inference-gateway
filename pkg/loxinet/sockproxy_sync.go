@@ -93,6 +93,11 @@ const (
 	capSockproxySnapshot uint32 = 1 << 3
 )
 
+// keyInvalidateTimeout bounds one peer's ApiKeyInvalidate call. It is short
+// because an administrative revocation waits on it, and a peer that cannot
+// answer in this long will converge on cache expiry anyway.
+const keyInvalidateTimeout = 2 * time.Second
+
 // proxySyncEvent is the Go-local POD copy of proxy_sync_event_t from C.
 // Copied byte-by-byte in llb_sockproxy_emit_sync_event and queued onto
 // the singleton event ring. C-side buffer is invalid after the //export
@@ -1358,4 +1363,115 @@ func hashStringForJitter(s string) uint32 {
 		h *= prime32
 	}
 	return h
+}
+
+// BroadcastKeyInvalidation tells every peer that a data-plane API key has
+// stopped being valid here.
+//
+// It is the wire half of the key-store's fan-out: the store has already
+// evicted its own copy by the time this runs, so what is left is closing the
+// window in which a key revoked on this gateway keeps authenticating on the
+// others until their cached copy expires.
+//
+// Best-effort by design. A peer that cannot be reached converges when its
+// entry times out, so a failure is logged and does not fail the revocation
+// that triggered it — refusing to revoke locally because a peer is down would
+// leave the key valid in more places, not fewer.
+//
+// The peers are contacted concurrently and each call is bounded, so the
+// administrative request that triggered this waits on the slowest single peer
+// rather than on their sum.
+func (s *SockproxySync) BroadcastKeyInvalidation(keyHash, keyID string) {
+	s.broadcastInvalidation(&ApiKeyInvalidation{
+		KeyHash: keyHash,
+		KeyId:   keyID,
+		Plane:   CredentialPlane_CREDENTIAL_PLANE_AIKEY,
+	})
+}
+
+// BroadcastTokenInvalidation tells every peer that a management session token
+// has stopped being valid here.
+//
+// The same channel as the key fan-out and the same best-effort contract, with
+// one difference that matters: the message names the management plane, so a
+// receiver evicts from the management cache and never from the key cache. The
+// two planes share a wire, not a cache — conflating them at the eviction
+// layer would re-introduce, one level down, exactly the coupling that let a
+// data-plane key hash be presented as a management token.
+//
+// Only the hash travels. It is sha256(token), which is what the store holds;
+// the token itself is never written down after it is issued.
+func (s *SockproxySync) BroadcastTokenInvalidation(tokenHashes []string) {
+	for _, h := range tokenHashes {
+		s.broadcastInvalidation(&ApiKeyInvalidation{
+			KeyHash: h,
+			Plane:   CredentialPlane_CREDENTIAL_PLANE_MGMT_TOKEN,
+		})
+	}
+}
+
+// broadcastInvalidation fans one invalidation out to every peer concurrently,
+// so the administrative request that triggered it waits on the slowest single
+// peer rather than on their sum.
+func (s *SockproxySync) broadcastInvalidation(msg *ApiKeyInvalidation) {
+	if s == nil || s.peersFn == nil {
+		return
+	}
+	peers := s.peersFn()
+	if len(peers) == 0 {
+		return
+	}
+
+	var wg sync.WaitGroup
+	for i := range peers {
+		peerKey := peers[i].Peer.String()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s.sendKeyInvalidation(peerKey, msg)
+		}()
+	}
+	wg.Wait()
+}
+
+// sendKeyInvalidation issues one invalidation to one peer, dialling it first
+// if no client is cached yet.
+func (s *SockproxySync) sendKeyInvalidation(peerKey string, msg *ApiKeyInvalidation) {
+	client := s.grpcClientFor(peerKey)
+	if client == nil && s.connectFn != nil {
+		s.connectFn(peerKey)
+		client = s.grpcClientFor(peerKey)
+	}
+	if client == nil {
+		tk.LogIt(tk.LogWarning, "[XSYNC] peer=%s no gRPC client; key %s not invalidated there\n",
+			peerKey, msg.KeyId)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), keyInvalidateTimeout)
+	defer cancel()
+	if _, err := client.ApiKeyInvalidate(ctx, msg); err != nil {
+		if status.Code(err) == codes.Unimplemented {
+			// A peer from before this RPC existed. It has no separate key
+			// cache to evict, so nothing is lost beyond the notice itself;
+			// say so once and stop reporting it every revocation.
+			s.warnOncePeerRPC(peerKey, "ApiKeyInvalidate",
+				"peer does not implement key invalidation; it will converge on cache expiry")
+			return
+		}
+		tk.LogIt(tk.LogError, "[XSYNC] peer=%s ApiKeyInvalidate failed for key %s: %v\n",
+			peerKey, msg.KeyId, err)
+		return
+	}
+	tk.LogIt(tk.LogDebug, "[XSYNC] peer=%s invalidated key %s\n", peerKey, msg.KeyId)
+}
+
+// grpcClientFor returns the cached sockproxy gRPC client for a peer, or nil.
+func (s *SockproxySync) grpcClientFor(peerKey string) XSyncClient {
+	if c, ok := s.spClients.Load(peerKey); ok && c != nil {
+		if client, ok := c.(XSyncClient); ok {
+			return client
+		}
+	}
+	return nil
 }

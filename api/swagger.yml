@@ -278,7 +278,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/User'
+              $ref: '#/definitions/UserSummary'
             type: array
         "500":
           description: Internal Server Error
@@ -290,7 +290,18 @@ paths:
     post:
       consumes:
       - application/json
-      description: Creates a new user in the system
+      description: |-
+        Creates a new user in the system.
+
+        Requires an authenticated administrator, with one exception: while no
+        user exists at all, a request from a loopback peer may create the first
+        one, so that the management API can be brought up before any credential
+        exists. That bootstrap closes as soon as the first account is created.
+
+        The authentication is performed by the handler rather than by the
+        generated security chain, because the chain cannot express a condition
+        that depends on the state of the user table. The security block below is
+        empty for that reason and does not mean the operation is open.
       parameters:
       - description: User data
         in: body
@@ -300,7 +311,7 @@ paths:
           $ref: '#/definitions/User'
       produces:
       - application/json
-      security: [] # Overrides global security, no authorization required
+      security: [] # Authentication is enforced in the handler; see description
       responses:
         "201":
           description: Created
@@ -308,6 +319,16 @@ paths:
             $ref: '#/definitions/User'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/Error'
+        "401":
+          description: Unauthorized - not an administrator, and the bootstrap
+            conditions (loopback peer, no user yet) are not met
+          schema:
+            $ref: '#/definitions/Error'
+        "403":
+          description: Forbidden - authenticated, but the role carries no
+            authority to create users
           schema:
             $ref: '#/definitions/Error'
         "500":
@@ -9778,6 +9799,22 @@ definitions:
       - username
       - password
 
+  # A user as the API reports one. Deliberately has no password property: the
+  # request model above needs one, a response never does, and a response model
+  # that cannot express a password cannot leak a stored hash.
+  UserSummary:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: integer
+      username:
+        type: string
+      role:
+        type: string
+        enum: ["admin", "viewer"]
+    type: object
+
   FlowCountMetrics:
     type: object
     properties:
@@ -11058,6 +11095,13 @@ definitions:
       name:
         type: string
         description: Human-readable label for the API key
+      api_key:
+        type: string
+        description: >-
+          Optional caller-supplied key material to register instead of
+          generating one, for importing keys minted elsewhere. Write-only: it is
+          never returned by GET or by the list, and the create response omits
+          raw_key when it is set, because the caller already holds the value.
       allowed_models:
         type: array
         items:

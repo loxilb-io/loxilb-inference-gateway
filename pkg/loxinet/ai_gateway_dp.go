@@ -50,19 +50,24 @@ import (
 	rl "github.com/loxilb-io/loxilb/pkg/ratelimit"
 )
 
-// apiKeyValidator is the subset of *user.UserService used by the AI Gateway bridge.
-// It is satisfied by *user.UserService and by test mocks.
+// apiKeyValidator is the subset of the data-plane key store used by the AI
+// Gateway bridge. It is satisfied by *aikey.Service and by test mocks.
 type apiKeyValidator interface {
 	ValidateAPIKey(rawKey string) (*cmn.ApiKeyEntry, error)
 }
 
-// rateLimitService is the subset of *user.UserService used by the rate-limit bridge.
-// It is satisfied by *user.UserService and by test mocks.
+// rateLimitService is the subset of the data-plane key store used by the
+// rate-limit bridge. It is satisfied by *aikey.Service and by test mocks.
 type rateLimitService interface {
 	GetTenantRateLimit(tenantID string) (rps, tokensPerMin, burstPct int)
 	GetTenantModelRateLimit(tenantID, model string) (tokensPerMin int)
 	GetAPIKeyByID(keyID string) (*cmn.ApiKeySummary, error)
 }
+
+// noKeyStoreOnce keeps the "no key store configured" notice to one line per
+// process. The condition is per-gateway configuration, not per-request, so
+// repeating it once per admitted request would bury the log it belongs in.
+var noKeyStoreOnce sync.Once
 
 // modelQuotaKey is the composite quota-map key for a tenant's per-model
 // token bucket. The "|" delimiter matches the sync layer's "tm:" wire-scope
@@ -257,12 +262,27 @@ func llb_ai_validate_key(rawKey *C.char, modelName *C.char, result *C.ai_gw_deci
 	// Zero out the result struct before writing.
 	*result = C.ai_gw_decision_t{}
 
-	// Guard: user service must be initialised before data-plane calls arrive.
-	us := mh.UserService
+	// Guard: the key store must exist before data-plane calls arrive.
+	us := mh.AIKeyService
 	if us == nil {
-		// User service not initialised (userservice not enabled).
-		// API key enforcement requires a running user service; without it there
-		// are no keys to validate against, so all requests are allowed.
+		// Say so once. A gateway reaching this point has a rule that wants a
+		// key checked and no store to check it against, and the branch below
+		// admits the request — a state an operator has to be able to see in
+		// the log rather than infer from traffic that is never rejected.
+		noKeyStoreOnce.Do(func() {
+			tk.LogIt(tk.LogCritical,
+				"[AIGateway] No API-key store configured (--aikey-db-host unset): requests are admitted without a key\n")
+		})
+		// No key store is configured, so there is nothing to validate against
+		// and the request is admitted.
+		//
+		// This branch is retained deliberately while the C gate is still
+		// driven by ai_gw_mode rather than by per-service policy: failing
+		// closed here today would flip every keyless SSE and P/D request on a
+		// storeless gateway from allowed to denied, before any operator has a
+		// field with which to say otherwise. It is deleted in the same change
+		// that makes the gate read api_key_auth — see the authentication plane
+		// separation work, with the fail-closed change.
 		result.decision = 0
 		return 0
 	}
@@ -382,7 +402,7 @@ func getGlobalRL() *rl.RateLimiterStore {
 //  2. Per-tenant: uses the tenant's shared token bucket (burst = rps).
 //
 // The RPS limit is fetched from the control-plane rate-limit config via the
-// UserService. If no limit is configured (rps=0) the request is allowed.
+// key store. If no limit is configured (rps=0) the request is allowed.
 //
 // Parameters:
 //
@@ -420,7 +440,7 @@ func llb_ai_ratelimit_check(keyID *C.char, tenantID *C.char, model *C.char, resu
 	modelStr := C.GoString(model)
 
 	var svc rateLimitService
-	if us := mh.UserService; us != nil {
+	if us := mh.AIKeyService; us != nil {
 		svc = us
 	}
 
@@ -598,7 +618,7 @@ func llb_ai_token_quota_reserve(tenantID *C.char, modelName *C.char, promptEst C
 	}
 
 	var svc rateLimitService
-	if us := mh.UserService; us != nil {
+	if us := mh.AIKeyService; us != nil {
 		svc = us
 	}
 
@@ -674,7 +694,7 @@ func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, promptToken
 	}
 
 	var svc rateLimitService
-	if us := mh.UserService; us != nil {
+	if us := mh.AIKeyService; us != nil {
 		svc = us
 	}
 

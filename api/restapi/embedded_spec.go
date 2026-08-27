@@ -198,7 +198,7 @@ func init() {
             "schema": {
               "type": "array",
               "items": {
-                "$ref": "#/definitions/User"
+                "$ref": "#/definitions/UserSummary"
               }
             }
           },
@@ -212,7 +212,7 @@ func init() {
       },
       "post": {
         "security": [],
-        "description": "Creates a new user in the system",
+        "description": "Creates a new user in the system.\n\nRequires an authenticated administrator, with one exception: while no user exists at all, a request from a loopback peer may create the first one, so that the management API can be brought up before any credential exists. That bootstrap closes as soon as the first account is created.\n\nThe authentication is performed by the handler rather than by the generated security chain, because the chain cannot express a condition that depends on the state of the user table. The empty security block does not mean the operation is open.",
         "consumes": [
           "application/json"
         ],
@@ -243,6 +243,18 @@ func init() {
           },
           "400": {
             "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Unauthorized - not an administrator, and the bootstrap conditions (loopback peer, no user yet) are not met",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Forbidden - authenticated, but the role carries no authority to create users",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -9746,6 +9758,10 @@ func init() {
             "type": "string"
           }
         },
+        "api_key": {
+          "description": "Optional caller-supplied key material to register instead of generating one. Write-only: it is never returned by GET or by the list, and the create response omits raw_key when it is set, because the caller already holds the value.",
+          "type": "string"
+        },
         "burst_size": {
           "description": "Burst capacity above the steady-state RPS limit",
           "type": "integer",
@@ -15350,6 +15366,27 @@ func init() {
         }
       }
     },
+    "UserSummary": {
+      "type": "object",
+      "properties": {
+        "created_at": {
+          "type": "string"
+        },
+        "id": {
+          "type": "integer"
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "admin",
+            "viewer"
+          ]
+        },
+        "username": {
+          "type": "string"
+        }
+      }
+    },
     "VersionGetEntry": {
       "type": "object",
       "properties": {
@@ -15748,7 +15785,7 @@ func init() {
             "schema": {
               "type": "array",
               "items": {
-                "$ref": "#/definitions/User"
+                "$ref": "#/definitions/UserSummary"
               }
             }
           },
@@ -15762,7 +15799,7 @@ func init() {
       },
       "post": {
         "security": [],
-        "description": "Creates a new user in the system",
+        "description": "Creates a new user in the system.\n\nRequires an authenticated administrator, with one exception: while no user exists at all, a request from a loopback peer may create the first one, so that the management API can be brought up before any credential exists. That bootstrap closes as soon as the first account is created.\n\nThe authentication is performed by the handler rather than by the generated security chain, because the chain cannot express a condition that depends on the state of the user table. The empty security block does not mean the operation is open.",
         "consumes": [
           "application/json"
         ],
@@ -15793,6 +15830,18 @@ func init() {
           },
           "400": {
             "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Unauthorized - not an administrator, and the bootstrap conditions (loopback peer, no user yet) are not met",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Forbidden - authenticated, but the role carries no authority to create users",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -25284,6 +25333,10 @@ func init() {
             "type": "string"
           }
         },
+        "api_key": {
+          "description": "Optional caller-supplied key material to register instead of generating one. Write-only: it is never returned by GET or by the list, and the create response omits raw_key when it is set, because the caller already holds the value.",
+          "type": "string"
+        },
         "burst_size": {
           "description": "Burst capacity above the steady-state RPS limit",
           "type": "integer",
@@ -32418,6 +32471,27 @@ func init() {
         },
         "password": {
           "type": "string"
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "admin",
+            "viewer"
+          ]
+        },
+        "username": {
+          "type": "string"
+        }
+      }
+    },
+    "UserSummary": {
+      "type": "object",
+      "properties": {
+        "created_at": {
+          "type": "string"
+        },
+        "id": {
+          "type": "integer"
         },
         "role": {
           "type": "string",

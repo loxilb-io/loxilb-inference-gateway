@@ -47,6 +47,7 @@ import (
 	"github.com/loxilb-io/loxilb/api/restapi/handler"
 	cmn "github.com/loxilb-io/loxilb/common"
 	opts "github.com/loxilb-io/loxilb/options"
+	"github.com/loxilb-io/loxilb/pkg/aikey"
 	"github.com/loxilb-io/loxilb/pkg/llamafirewall"
 	"github.com/loxilb-io/loxilb/pkg/logrotate"
 	"github.com/loxilb-io/loxilb/pkg/loxilog"
@@ -106,6 +107,11 @@ type loxiNetH struct {
 	UserService        *user.UserService
 	OauthUserService   *user.OauthUserService
 	securityRateConfig cmn.SecurityRateConfig // Unified security rate limiting configuration (P0-5 + P0-6)
+
+	// AIKeyService is the data-plane API-key store. It is a separate object
+	// from UserService on purpose: the two planes share no store, no cache and
+	// no enable switch. Nil means no key store is configured.
+	AIKeyService *aikey.Service
 
 	// HTTP/HTTPS Protocol Analyzer (Distributed Tracing)
 	tracingEnabled bool           // Whether tracing is enabled
@@ -321,6 +327,10 @@ func loxiNetTicker(bgpPeerMode bool) {
 				if opts.Opts.UserServiceEnable {
 					mh.UserService.UserServiceTicker()
 				}
+				// Independent of the management plane: the key store has its
+				// own connection, and a service that started degraded heals
+				// here whatever --userservice is set to.
+				mh.AIKeyService.Ticker()
 			}
 		}
 	}
@@ -715,6 +725,48 @@ func loxiNetInit() {
 			// Degraded start: auth/API-key requests get 503 and the datapath
 			// fails closed until the ticker reconnects the database.
 			tk.LogIt(tk.LogCritical, "User service starting degraded, database unavailable: %v\n", usErr)
+		}
+		// A session revoked here — by deleting the user, or by changing their
+		// password or role — must stop authenticating on the peers before
+		// their cached copy expires. Without this the revocation stops at this
+		// gateway's edge and a deleted administrator keeps administering
+		// elsewhere. The message names the management plane, so a receiver
+		// touches only the management cache.
+		if coord := mh.sockproxySync; coord != nil {
+			mh.UserService.SetTokenSink(func(hashes []string) {
+				coord.BroadcastTokenInvalidation(hashes)
+			})
+		}
+	}
+
+	// Initialize the data-plane API-key store. Deliberately parallel to the
+	// user service rather than nested inside it: availability of the key store
+	// follows from its own connection options, and enforcement follows from
+	// per-service policy. Neither is a function of --userservice.
+	if opts.Opts.AIKeyDBHost != "" {
+		// Publish the service before dialling, not after. Connect retries with
+		// a doubling backoff and takes tens of seconds against a store that is
+		// down; assigning the pointer only afterwards leaves every reader
+		// seeing nil for the whole of that window, and nil means "no store was
+		// configured" — the opposite of what is true here. The visible cost of
+		// getting this backwards is a key API that tells an operator they
+		// configured nothing while it is busy dialling what they configured.
+		svc := aikey.New()
+		mh.AIKeyService = svc
+		if akErr := svc.Connect(); akErr != nil {
+			// Degraded start. The service stays usable: its store-backed calls
+			// report unavailable, so the key lifecycle API answers 503 and the
+			// reconnect tick keeps trying. The DSN is logged redacted — it
+			// carries the store password.
+			tk.LogIt(tk.LogCritical, "AI key store starting degraded: %v\n", akErr)
+		}
+		// A key revoked here must stop authenticating on the peers before
+		// their cached copy expires. Without this the store evicts locally and
+		// the revocation stops at this gateway's edge.
+		if coord := mh.sockproxySync; coord != nil {
+			mh.AIKeyService.SetInvalidationSink(func(inv aikey.KeyInvalidation) {
+				coord.BroadcastKeyInvalidation(inv.KeyHash, inv.KeyID)
+			})
 		}
 	}
 
