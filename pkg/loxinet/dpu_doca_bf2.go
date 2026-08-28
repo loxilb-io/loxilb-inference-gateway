@@ -1175,7 +1175,7 @@ func (d *DpDocaBf2) LBFlowOffload(ct *DpCtInfo, lbMark int) error {
 		r := mh.zr.Rules.GetLBRuleByID(ct.RuleID)
 		mh.mtx.Unlock()
 		if r != nil {
-			aiGwMode = r.sseMode || r.pdDisaggMode
+			aiGwMode = r.aiGwMode()
 		}
 	}
 
@@ -1338,7 +1338,7 @@ func (d *DpDocaBf2) pairedLBFlowOffload(fwd, rev *DpCtInfo, lbMark int) error {
 		r := mh.zr.Rules.GetLBRuleByID(fwd.RuleID)
 		mh.mtx.Unlock()
 		if r != nil {
-			aiGwMode = r.sseMode || r.pdDisaggMode
+			aiGwMode = r.aiGwMode()
 		}
 	}
 	agingSec := d.resolveAgingSec(fwdP.protoNum, aiGwMode)

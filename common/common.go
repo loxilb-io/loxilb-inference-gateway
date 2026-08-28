@@ -17,6 +17,7 @@
 package common
 
 import (
+	"errors"
 	"net"
 	"time"
 )
@@ -959,6 +960,12 @@ type LbServiceArg struct {
 	// SSEMode - Enable SSE (Server-Sent Events) streaming mode for this rule.
 	// When enabled, idle-timeout is suppressed while a streaming LLM response is active.
 	SSEMode bool `json:"sse_mode,omitempty"`
+	// ApiKeyAuth - data-plane X-Api-Key enforcement policy for this service.
+	// "disabled" (default) admits without a key; "required" enforces.
+	// Independent of the management-plane authentication mode, and independent
+	// of sse_mode and pd_disagg_mode: an unset value resolves to "disabled" on
+	// every rule, with no reference to how the service streams.
+	ApiKeyAuth string `json:"api_key_auth,omitempty"`
 	// MaxStreamDurationSec - Absolute wall-clock cap for SSE streams in seconds.
 	// 0 = use system hard cap (PROXY_SSE_HARD_CAP_SEC = 86400s / 24h).
 	MaxStreamDurationSec uint32 `json:"max_stream_duration_sec,omitempty"`
@@ -1712,6 +1719,86 @@ type NetTraceParserMeta struct {
 	SupportedPaths []string
 }
 
+// Data-plane X-Api-Key enforcement policies for LbServiceArg.ApiKeyAuth.
+//
+// The set is closed and the default is refusal to enforce, not refusal to
+// serve: an operator who has never heard of this field gets the behaviour
+// they have today. Enforcement is opt-in per service and says nothing about
+// how that service streams — that is the whole point of the field existing
+// separately from sse_mode and pd_disagg_mode.
+const (
+	// ApiKeyAuthDisabled admits requests without an X-Api-Key header. It is
+	// what an unset field resolves to.
+	ApiKeyAuthDisabled = "disabled"
+	// ApiKeyAuthRequired enforces X-Api-Key validation in the data plane.
+	ApiKeyAuthRequired = "required"
+)
+
+// ResolveApiKeyAuth maps a service's configured policy onto the closed set,
+// resolving the unset value to ApiKeyAuthDisabled.
+//
+// It exists so that the default lives in exactly one place. The datapath, the
+// REST read path and the rule installer each need the resolved value, and a
+// default spelled out at three call sites is a default that will eventually
+// disagree with itself.
+func ResolveApiKeyAuth(policy string) string {
+	if policy == "" {
+		return ApiKeyAuthDisabled
+	}
+	return policy
+}
+
+// IsValidApiKeyAuth reports whether a configured policy is one this build
+// implements. The empty string is valid and means "unset".
+func IsValidApiKeyAuth(policy string) bool {
+	switch policy {
+	case "", ApiKeyAuthDisabled, ApiKeyAuthRequired:
+		return true
+	}
+	return false
+}
+
+// ErrInvalidApiKeyAuth is returned when a service names an api_key_auth value
+// outside the closed set. It is a distinct sentinel so the REST layer can
+// answer 400 rather than installing a rule whose enforcement policy the data
+// plane would have to guess at — and guessing here means guessing between
+// "admit everything" and "reject everything".
+var ErrInvalidApiKeyAuth = errors.New("invalid api_key_auth: must be one of disabled, required")
+
+// ErrDBUnavailable is returned when the credential store is not initialised or
+// its connection has been lost. It is a server-side condition, not a verdict on
+// the credential, and maps to HTTP 503.
+var ErrDBUnavailable = errors.New("user database unavailable")
+
+// ErrKeyStoreUnconfigured is returned by the data-plane API-key hooks when no
+// key store has been configured at all. It is distinct from ErrDBUnavailable:
+// that one means a store exists and cannot be reached, this one means the
+// operator never named one.
+//
+// Both map to HTTP 503. The key lifecycle routes are registered whether or not
+// a store exists, so the honest answer to a call against a gateway without one
+// is "this is not configured here" — not 501, which would claim the feature
+// does not exist, and not 500, which would claim a fault.
+var ErrKeyStoreUnconfigured = errors.New("ai_key_store_unconfigured")
+
+// ErrTokenNotFound is returned when a token is well-formed but unknown to the
+// store. It is a verdict on the credential and maps to HTTP 401. It exists as a
+// sentinel because the authentication chain has to tell it apart from a store
+// failure, and comparing error strings to make that distinction is how the two
+// came to be reported with the same status.
+var ErrTokenNotFound = errors.New("Token not found")
+
+// ErrInvalidRole is returned when a create or update names a role outside the
+// closed set the authorizer implements. It is a distinct sentinel so the REST
+// layer can answer 400 — the request is malformed, not unauthorized — rather
+// than storing a role that would silently carry no authority.
+var ErrInvalidRole = errors.New("invalid role: must be one of admin, viewer")
+
+// ErrBootstrapClosed is returned by NetUserBootstrap when a user already
+// exists. Unauthenticated creation is a one-time bootstrap, so this is a
+// credential failure rather than a server fault and maps to HTTP 401.
+var ErrBootstrapClosed = errors.New("user bootstrap is closed")
+
 // NetHookInterface - Go interface which needs to be implemented to talk to loxinet module
 type NetHookInterface interface {
 	NetMirrorGet() ([]MirrGetMod, error)
@@ -1799,6 +1886,7 @@ type NetHookInterface interface {
 	NetBFDDel(bm *BFDMod) (int, error)
 
 	NetUserAdd(um *User) (int, error)
+	NetUserBootstrap(um *User) (int, error)
 	NetUserGet() ([]User, error)
 	NetUserDel(ID int) error
 	NetUserUpdate(um *User) error
@@ -2089,8 +2177,16 @@ type IPsecCACertificate struct {
 
 // ApiKeyEntry - API key entry with all fields including the secret hash
 type ApiKeyEntry struct {
-	KeyID         string     `json:"key_id"`
-	KeyHash       string     `json:"-"`
+	KeyID   string `json:"key_id"`
+	KeyHash string `json:"-"`
+	// ApiKey carries caller-supplied key material on create, for importing a
+	// tenant whose key was minted elsewhere. Empty on the primary path, where
+	// the gateway mints the key itself.
+	//
+	// Write-only, and `json:"-"` rather than a write-only convention: the REST
+	// layer copies it in from the request body explicitly, so no marshalling
+	// path can return it in a response, a listing or a log line by accident.
+	ApiKey        string     `json:"-"`
 	TenantID      string     `json:"tenant_id"`
 	Name          string     `json:"name"`
 	AllowedModels []string   `json:"allowed_models"`

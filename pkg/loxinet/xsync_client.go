@@ -297,6 +297,12 @@ func callGRPC(client XSyncClient, rpcCallStr string, args interface{}, reply *in
 		} else {
 			err = errors.New("not-implemented-yet")
 		}
+	} else if rpcCallStr == "XSync.ApiKeyInvalidate" {
+		if msg, ok := args.(*ApiKeyInvalidation); ok {
+			xreply, err = client.ApiKeyInvalidate(ctx, msg)
+		} else {
+			err = errors.New("not-implemented-yet")
+		}
 	} else if rpcCallStr == "XSync.GetSockproxySnapshot" {
 		if msg, ok := args.(*SockproxyBulkReq); ok {
 			_, err = client.GetSockproxySnapshot(ctx, msg)

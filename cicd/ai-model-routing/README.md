@@ -21,7 +21,7 @@ l3h1 (10.10.10.1)
                  └── port 2022 model_name=""  (wildcard)   ──── l3ep3 (33.33.33.1:8080)
 ```
 
-- **llb1**: LoxiLB Enterprise with `--userservice --databasehost <mysql_ip>`
+- **llb1**: LoxiLB Enterprise with `--userservice` and the `--mgmt-db-*` store
 - **l3h1**: Test client
 - **l3ep{1,2,3}**: Minimal HTTP backends returning `server-{llama,mistral,wild}`
 

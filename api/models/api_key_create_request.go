@@ -22,6 +22,9 @@ type APIKeyCreateRequest struct {
 	// List of model identifiers this key may access
 	AllowedModels []string `json:"allowed_models"`
 
+	// Optional caller-supplied key material to register instead of generating one, for importing keys minted elsewhere. Write-only: it is never returned by GET or by the list, and the create response omits raw_key when it is set, because the caller already holds the value.
+	APIKey string `json:"api_key,omitempty"`
+
 	// Burst capacity above the steady-state RPS limit
 	BurstSize int64 `json:"burst_size,omitempty"`
 

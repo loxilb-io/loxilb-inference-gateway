@@ -144,9 +144,16 @@ jobs:
           ./validation.sh
           ./rmconfig.sh
           cd -
-      - name: API keys + tenant rate limits (MariaDB-backed)
+      - name: API keys + tenant rate limits (PostgreSQL-backed)
         run: |
           cd cicd/ai-apikey/
+          ./config.sh
+          ./validation.sh
+          ./rmconfig.sh
+          cd -
+      - name: Authentication plane separation (PostgreSQL key store, plaintext + TLS)
+        run: |
+          cd cicd/ai-authsep/
           ./config.sh
           ./validation.sh
           ./rmconfig.sh

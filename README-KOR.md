@@ -315,7 +315,7 @@ curl -s -X POST http://127.0.0.1:11111/netlox/v1/config/loadbalancer \
 게이트웨이에서 적용합니다:
 
 ```bash
-# issue a key (loxilb started with --userservice --databasehost <mysql-ip>)
+# issue a key (loxilb started with --userservice and the --mgmt-db-*/--aikey-db-* stores)
 curl -s -X POST http://127.0.0.1:11111/netlox/v1/config/ai/apikey \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{
   "tenant_id": "team-a", "name": "prod-key", "allowed_models": ["llama-70b"],

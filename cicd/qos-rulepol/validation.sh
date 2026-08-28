@@ -72,6 +72,8 @@ bw1=$(run_bw 8)
 echo "L2 policed bw: ${bw1} Mbits/s (CIR 10)"
 if [[ -z "$bw1" || "$bw1" -gt 25 ]]; then
     echo "L2 rule policer NOT enforcing (got ${bw1} Mbits/s, want <=25)" ; code=1
+elif [[ "$bw1" -lt 1 ]]; then
+    echo "L2 rule policer killed the flow rather than shaping it (got ${bw1} Mbits/s)" ; code=1
 fi
 
 # --- L3: the polx bucket must actually be consulted. Only do_dp_policer ever
@@ -127,6 +129,8 @@ bw3=$(run_bw 8)
 echo "L6 re-created-rule policed bw: ${bw3} Mbits/s (CIR 10)"
 if [[ -z "$bw3" || "$bw3" -gt 25 ]]; then
     echo "L6 re-created rule lost its policer (got ${bw3} Mbits/s, want <=25)" ; code=1
+elif [[ "$bw3" -lt 1 ]]; then
+    echo "L6 re-created rule's policer killed the flow rather than shaping it (got ${bw3} Mbits/s)" ; code=1
 fi
 
 # --- L7: reverse direction (download) is capped by the same rule policer ---
@@ -134,6 +138,8 @@ bw4=$(run_bw 8 -R)
 echo "L7 reverse-direction policed bw: ${bw4} Mbits/s (CIR 10)"
 if [[ -z "$bw4" || "$bw4" -gt 25 ]]; then
     echo "L7 reverse direction NOT policed (got ${bw4} Mbits/s, want <=25)" ; code=1
+elif [[ "$bw4" -lt 1 ]]; then
+    echo "L7 reverse-direction policer killed the flow rather than shaping it (got ${bw4} Mbits/s)" ; code=1
 fi
 
 # --- L8: egress attach without --egr-hooks must be refused ---

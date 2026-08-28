@@ -23,6 +23,7 @@ import (
 	"time"
 
 	cmn "github.com/loxilb-io/loxilb/common"
+	opts "github.com/loxilb-io/loxilb/options"
 	tk "github.com/loxilb-io/loxilib"
 )
 
@@ -1221,6 +1222,11 @@ func (na *NetAPIStruct) NetUserAdd(param *cmn.User) (int, error) {
 	return mh.UserService.AddUser(*param)
 }
 
+// NetUserBootstrap - Create the first user in loxilb, only while none exists
+func (na *NetAPIStruct) NetUserBootstrap(param *cmn.User) (int, error) {
+	return mh.UserService.BootstrapUser(*param)
+}
+
 // NetUserGet - Get a user in loxilb
 func (na *NetAPIStruct) NetUserGet() ([]cmn.User, error) {
 	return mh.UserService.GetUsers()
@@ -1694,77 +1700,117 @@ func (na *NetAPIStruct) NetIPsecCACertificateExportAll() ([]cmn.IPsecCACertifica
 // AI Gateway - API key lifecycle management
 // ============================================================================
 
+// These hooks reach the data-plane key store (pkg/aikey), never the
+// management-plane user service. Who may call them is still governed by
+// management authentication on the listener; what they operate on is not.
+// A nil store is reported as its own condition so the API can answer 503 rather
+// than 500 — but which condition it is depends on the configuration, not on the
+// pointer. See keyStoreAbsentErr.
+
+// keyStoreAbsentErr says why there is no key store to reach, for the window in
+// which the pointer is nil.
+//
+// "No store is configured" and "the store is configured and not reachable yet"
+// are different answers, and an operator acts on them differently — one is a
+// missing flag, the other is a database to go and look at. The pointer cannot
+// tell them apart: loxiNetInit builds the store partway through a much longer
+// initialisation and the REST API is already serving before it gets there, so
+// early in every boot the pointer is nil on a gateway that is configured
+// perfectly well. The option is what the operator actually set, so that is what
+// decides.
+func keyStoreAbsentErr() error {
+	if opts.Opts.AIKeyDBHost != "" {
+		return cmn.ErrDBUnavailable
+	}
+	return cmn.ErrKeyStoreUnconfigured
+}
+
 // NetAPIKeyCreate - Create a new API key for a tenant.
 func (na *NetAPIStruct) NetAPIKeyCreate(entry cmn.ApiKeyEntry) (string, string, error) {
-	if mh.UserService == nil {
-		return "", "", errors.New("user service not initialized")
+	if mh.AIKeyService == nil {
+		return "", "", keyStoreAbsentErr()
 	}
-	return mh.UserService.CreateAPIKey(entry)
+	return mh.AIKeyService.CreateAPIKey(entry)
 }
 
 // NetAPIKeyList - List API keys. If tenantID is empty, returns all keys.
 func (na *NetAPIStruct) NetAPIKeyList(tenantID string) ([]cmn.ApiKeySummary, error) {
-	if mh.UserService == nil {
-		return nil, errors.New("user service not initialized")
+	if mh.AIKeyService == nil {
+		return nil, keyStoreAbsentErr()
 	}
-	return mh.UserService.ListAPIKeys(tenantID)
+	return mh.AIKeyService.ListAPIKeys(tenantID)
 }
 
 // NetAPIKeyGet - Retrieve a single API key by its key_id.
 func (na *NetAPIStruct) NetAPIKeyGet(keyID string) (*cmn.ApiKeySummary, error) {
-	if mh.UserService == nil {
-		return nil, errors.New("user service not initialized")
+	if mh.AIKeyService == nil {
+		return nil, keyStoreAbsentErr()
 	}
-	return mh.UserService.GetAPIKeyByID(keyID)
+	return mh.AIKeyService.GetAPIKeyByID(keyID)
 }
 
 // NetAPIKeyRevoke - Disable an API key and evict it from cache.
 func (na *NetAPIStruct) NetAPIKeyRevoke(keyID string) error {
-	if mh.UserService == nil {
-		return errors.New("user service not initialized")
+	if mh.AIKeyService == nil {
+		return keyStoreAbsentErr()
 	}
-	return mh.UserService.RevokeAPIKey(keyID)
+	return mh.AIKeyService.RevokeAPIKey(keyID)
 }
 
 // NetAPIKeyDelete - Permanently delete an API key and evict it from cache.
 func (na *NetAPIStruct) NetAPIKeyDelete(keyID string) error {
-	if mh.UserService == nil {
-		return errors.New("user service not initialized")
+	if mh.AIKeyService == nil {
+		return keyStoreAbsentErr()
 	}
-	return mh.UserService.DeleteAPIKey(keyID)
+	return mh.AIKeyService.DeleteAPIKey(keyID)
 }
 
 // NetAPIKeyPatch - Update allowed_models and/or enabled for an API key.
 func (na *NetAPIStruct) NetAPIKeyPatch(keyID string, allowedModels []string, enabled *bool) error {
-	if mh.UserService == nil {
-		return errors.New("user service not initialized")
+	if mh.AIKeyService == nil {
+		return keyStoreAbsentErr()
 	}
-	return mh.UserService.PatchAPIKey(keyID, allowedModels, enabled)
+	return mh.AIKeyService.PatchAPIKey(keyID, allowedModels, enabled)
 }
 
 // NetTenantRateLimitSet - Upsert per-tenant rate limit configuration,
 // including any per-model token quotas carried alongside it.
 func (na *NetAPIStruct) NetTenantRateLimitSet(tenantID string, rps, tokensPerMin, burstPct int, modelLimits []cmn.TenantModelRateLimit) error {
-	if mh.UserService == nil {
-		return errors.New("user service not initialized")
+	if mh.AIKeyService == nil {
+		return keyStoreAbsentErr()
 	}
-	if err := mh.UserService.SetTenantRateLimit(tenantID, rps, tokensPerMin, burstPct); err != nil {
+	if err := mh.AIKeyService.SetTenantRateLimit(tenantID, rps, tokensPerMin, burstPct); err != nil {
 		return err
 	}
 	for _, ml := range modelLimits {
-		if err := mh.UserService.SetTenantModelRateLimit(tenantID, ml.Model, ml.TokensPerMin); err != nil {
+		if err := mh.AIKeyService.SetTenantModelRateLimit(tenantID, ml.Model, ml.TokensPerMin); err != nil {
 			return err
 		}
+	}
+	// A quota is attributed through a validated key, and keys are only checked
+	// on services whose api_key_auth is "required". With no such service this
+	// configuration enforces nothing, and silently accepting it leaves the
+	// operator believing a limit exists that no request will ever meet. The
+	// write is still accepted — configuring the quota before flipping a
+	// service's policy is a legitimate order of operations — but it must not
+	// look like protection while it is not one.
+	mh.mtx.RLock()
+	enforcing := mh.zr.Rules.HasApiKeyEnforcingRule()
+	mh.mtx.RUnlock()
+	if !enforcing {
+		tk.LogIt(tk.LogWarning,
+			"[AIGateway] tenant %s quota configured but NO service has api_key_auth=required: nothing will enforce it until one does\n",
+			tenantID)
 	}
 	return nil
 }
 
 // NetTenantRateLimitGet - Retrieve the full rate limit entry for a tenant.
 func (na *NetAPIStruct) NetTenantRateLimitGet(tenantID string) (*cmn.TenantRateLimitEntry, error) {
-	if mh.UserService == nil {
-		return nil, errors.New("user service not initialized")
+	if mh.AIKeyService == nil {
+		return nil, keyStoreAbsentErr()
 	}
-	return mh.UserService.GetTenantRateLimitEntry(tenantID)
+	return mh.AIKeyService.GetTenantRateLimitEntry(tenantID)
 }
 
 // NetGetOrAllocBridgeVid - : thin wrapper over the

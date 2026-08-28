@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-openapi/runtime/middleware"
 	"github.com/go-openapi/strfmt"
+	"github.com/go-openapi/swag"
 	"github.com/loxilb-io/loxilb/api/models"
 	"github.com/loxilb-io/loxilb/api/restapi/operations"
 	cmn "github.com/loxilb-io/loxilb/common"
@@ -113,6 +114,13 @@ func ConfigPostLoadbalancer(params operations.PostConfigLoadbalancerParams, prin
 
 	// SSE (Server-Sent Events) streaming configuration 
 	lbRules.Serv.SSEMode = params.Attr.ServiceArguments.SseMode
+	// Data-plane X-Api-Key policy. The generated field is a pointer because the
+	// schema carries an enum; nil means the caller omitted it, which resolves
+	// to "disabled" in the rule layer rather than here, so the default lives in
+	// exactly one place.
+	if params.Attr.ServiceArguments.APIKeyAuth != nil {
+		lbRules.Serv.ApiKeyAuth = *params.Attr.ServiceArguments.APIKeyAuth
+	}
 	lbRules.Serv.MaxStreamDurationSec = uint32(params.Attr.ServiceArguments.MaxStreamDurationSec)
 	lbRules.Serv.BackendKeepaliveIntervalSec = uint32(params.Attr.ServiceArguments.BackendKeepaliveIntervalSec)
 
@@ -576,6 +584,15 @@ func serializeLBRule(lb cmn.LbRuleMod) *models.LoadbalanceEntry {
 	// SSE streaming configuration 
 	if lb.Serv.SSEMode {
 		tmpSvc.SseMode = lb.Serv.SSEMode
+	}
+	// Report the policy AS DECLARED and omit it when nothing was declared.
+	// What this API returns is what operators replay as backups, and a
+	// resolved value here is a lossy export: an undeclared service would
+	// come back as a DECLARED-disabled one, which claims the gateway's
+	// credential namespace and strips X-Api-Key from traffic that used to
+	// pass byte-identical. The default is documented; fidelity is not.
+	if lb.Serv.ApiKeyAuth != "" {
+		tmpSvc.APIKeyAuth = swag.String(lb.Serv.ApiKeyAuth)
 	}
 	if lb.Serv.MaxStreamDurationSec != 0 {
 		tmpSvc.MaxStreamDurationSec = int32(lb.Serv.MaxStreamDurationSec)

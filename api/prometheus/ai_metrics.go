@@ -283,6 +283,39 @@ var (
 		},
 		[]string{"model"},
 	)
+
+	// aiUnmeteredRequestsTotal counts AI requests served without a credential,
+	// because the service's api_key_auth policy resolved to "disabled".
+	//
+	// It exists because the default is "disabled": an operator who never sets
+	// the field gets AI traffic that nobody is billed for and no key is
+	// checked on, and that is a choice they should be able to SEE rather than
+	// discover from a bill. It reports the consequence of the configuration,
+	// not a fault — a steady non-zero rate here is normal on a deliberately
+	// open gateway and alarming on one believed to be enforcing.
+	aiUnmeteredRequestsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "loxilb_ai_unmetered_requests_total",
+			Help: "Total AI gateway requests admitted without X-Api-Key validation because the service's api_key_auth policy is disabled. Not an error: it quantifies AI traffic that is neither authenticated nor metered.",
+		},
+		[]string{"vip"},
+	)
+
+	// aiPolicyStoreUnavailableTotal counts requests refused with 503 because a
+	// service required an API key and the key store could not answer.
+	//
+	// It exists so the fail-closed condition is ALERTABLE rather than inferred.
+	// Without it the only symptom is a change in denial volume, and denials are
+	// indistinguishable at the counter level from ordinary bad keys — an
+	// operator watching 401s cannot tell "someone is probing us" from "our
+	// store is down and we are refusing legitimate traffic". Those need
+	// opposite responses, so they get separate counters.
+	aiPolicyStoreUnavailableTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "loxilb_ai_policy_store_unavailable_total",
+			Help: "Total AI gateway requests refused with 503 because the service's api_key_auth policy requires a key and the API-key store is unconfigured or unreachable. Non-zero means the gateway is failing closed and legitimate traffic is being refused.",
+		},
+	)
 )
 
 // AdjustActiveStreams adjusts the loxilb_ai_active_streams gauge by delta for
@@ -507,6 +540,25 @@ func RecordPDSessionHit(modelName string) {
 // conv_map lookup) succeeds in PROXY_SEL_STICKY mode (non-P/D AI GW normal mode).
 func RecordNormalSessionHit(modelName string) {
 	aiNormalSessionHitsTotal.WithLabelValues(boundModelLabel(modelName)).Inc()
+}
+
+// RecordUnmeteredRequest increments loxilb_ai_unmetered_requests_total for the
+// service VIP that admitted an AI request without checking a key. Called by
+// llb_ai_record_unmetered from the data-plane gate when a connection has
+// ai_gw_mode=1 and apikey_auth=0.
+func RecordUnmeteredRequest(vip string) {
+	aiUnmeteredRequestsTotal.WithLabelValues(vip).Inc()
+}
+
+// RecordPolicyStoreUnavailable increments
+// loxilb_ai_policy_store_unavailable_total. Called from the data-plane key
+// validation path when the policy requires a key and no store can answer.
+//
+// Deliberately unlabelled: the condition is a property of the gateway, not of
+// any one tenant or VIP, and there is no authenticated tenant to attribute it
+// to — that is precisely the condition being reported.
+func RecordPolicyStoreUnavailable() {
+	aiPolicyStoreUnavailableTotal.Inc()
 }
 
 // RecordAIRequest is the Go entry point called by the CGO export llb_ai_record_request.

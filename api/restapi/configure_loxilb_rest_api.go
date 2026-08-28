@@ -216,7 +216,6 @@ func configureAPI(api *operations.LoxilbRestAPIAPI) http.Handler {
 	// OPA L4 Policy Watcher — wired via setupGlobalMiddleware path routing
 	// (not swagger-generated; see HandleOPAWatcher in handler/opa_watcher.go)
 	opaWatcherHandler = handler.HandleOPAWatcher
-	apiKeyPatchHandler = handler.ConfigPatchAIApikey
 
 	// DPU Debug — wired via setupGlobalMiddleware path routing
 	// (not swagger-generated; see HandleDpuDebug in handler/dpu_debug.go)
@@ -380,15 +379,28 @@ func configureAPI(api *operations.LoxilbRestAPIAPI) http.Handler {
 		api.UsersPostAuthUsersHandler = users.PostAuthUsersHandlerFunc(handler.UsersPostUsers)
 		api.UsersDeleteAuthUsersIDHandler = users.DeleteAuthUsersIDHandlerFunc(handler.UsersDeleteUsers)
 		api.UsersPutAuthUsersIDHandler = users.PutAuthUsersIDHandlerFunc(handler.UsersPutUsers)
-
-		// AI Gateway - API key lifecycle management
-		api.AiPostConfigAiApikeyHandler = ai.PostConfigAiApikeyHandlerFunc(handler.ConfigPostAIApikey)
-		api.AiGetConfigAiApikeyHandler = ai.GetConfigAiApikeyHandlerFunc(handler.ConfigGetAIApikeys)
-		api.AiGetConfigAiApikeyKeyIDHandler = ai.GetConfigAiApikeyKeyIDHandlerFunc(handler.ConfigGetAIApikeyByID)
-		api.AiDeleteConfigAiApikeyKeyIDHandler = ai.DeleteConfigAiApikeyKeyIDHandlerFunc(handler.ConfigDeleteAIApikey)
-		api.AiPostConfigAiTenantRatelimitHandler = ai.PostConfigAiTenantRatelimitHandlerFunc(handler.ConfigPostAITenantRateLimit)
-		api.AiGetConfigAiTenantRatelimitTenantIDHandler = ai.GetConfigAiTenantRatelimitTenantIDHandlerFunc(handler.ConfigGetAITenantRateLimit)
 	}
+
+	// AI Gateway - API key lifecycle management.
+	//
+	// Registered unconditionally. These are administrative calls on the
+	// management listener, so who may make them is governed by the global
+	// BearerAuth requirement like every other route here — but whether the
+	// routes exist at all is a property of the data-plane key store, which has
+	// its own connection options and no relationship to --userservice. Leaving
+	// them inside the block above made an operator who had a key store but no
+	// user service unable to reach their own keys, and answered 501 as though
+	// the feature were unimplemented.
+	//
+	// The PATCH arm is not swagger-generated; it is dispatched by path in
+	// setupGlobalMiddleware. It belongs with its four siblings all the same.
+	api.AiPostConfigAiApikeyHandler = ai.PostConfigAiApikeyHandlerFunc(handler.ConfigPostAIApikey)
+	api.AiGetConfigAiApikeyHandler = ai.GetConfigAiApikeyHandlerFunc(handler.ConfigGetAIApikeys)
+	api.AiGetConfigAiApikeyKeyIDHandler = ai.GetConfigAiApikeyKeyIDHandlerFunc(handler.ConfigGetAIApikeyByID)
+	api.AiDeleteConfigAiApikeyKeyIDHandler = ai.DeleteConfigAiApikeyKeyIDHandlerFunc(handler.ConfigDeleteAIApikey)
+	apiKeyPatchHandler = handler.ConfigPatchAIApikey
+	api.AiPostConfigAiTenantRatelimitHandler = ai.PostConfigAiTenantRatelimitHandlerFunc(handler.ConfigPostAITenantRateLimit)
+	api.AiGetConfigAiTenantRatelimitTenantIDHandler = ai.GetConfigAiTenantRatelimitTenantIDHandlerFunc(handler.ConfigGetAITenantRateLimit)
 
 	if opts.Opts.Oauth2Enable {
 		// OAuth2 API
@@ -521,7 +533,7 @@ var snapshotFreeze = handler.SnapshotFreezeMiddleware
 // shadowing reason.
 var autoPersistKick = handler.AutoPersistMiddleware
 
-func setupGlobalMiddleware(handler http.Handler) http.Handler {
+func setupGlobalMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		allowedOrigins := cors.GetCORSManager().GetOrigin()
 		// Set CORS headers
@@ -578,38 +590,57 @@ func setupGlobalMiddleware(handler http.Handler) http.Handler {
 			}
 		}
 
+		// The handlers below are dispatched here rather than through the
+		// generated chain, so they must run the same authentication and
+		// authorization the chain would have applied. Without it they were
+		// reachable with no credentials in every authentication mode.
 		// OPA L4 Policy Watcher endpoint (not swagger-generated)
 		if r.URL.Path == "/netlox/v1/config/opa/watcher" && opaWatcherHandler != nil {
+			if !handler.RequireManagementAuth(w, r) {
+				return
+			}
 			opaWatcherHandler(w, r)
 			return
 		}
 
 		// DPU HW Counters endpoint (not swagger-generated)
 		if r.URL.Path == "/netlox/v1/config/dpu/hwcounters" && dpuHwCountersHandler != nil {
+			if !handler.RequireManagementAuth(w, r) {
+				return
+			}
 			dpuHwCountersHandler(w, r)
 			return
 		}
 
 		// DPU Debug endpoint (not swagger-generated)
 		if r.URL.Path == "/netlox/v1/config/dpu/debug" && dpuDebugHandler != nil {
+			if !handler.RequireManagementAuth(w, r) {
+				return
+			}
 			dpuDebugHandler(w, r)
 			return
 		}
 
 		// AI KV Inventory endpoint (not swagger-generated)
 		if r.URL.Path == "/netlox/v1/config/ai/kv/inventory" && kvInventoryHandler != nil {
+			if !handler.RequireManagementAuth(w, r) {
+				return
+			}
 			kvInventoryHandler(w, r)
 			return
 		}
 
 		// PATCH /config/ai/apikey/{key_id} — not swagger-generated (PB-2 fix)
 		if strings.HasPrefix(r.URL.Path, "/netlox/v1/config/ai/apikey/") && r.Method == http.MethodPatch {
+			if !handler.RequireManagementAuth(w, r) {
+				return
+			}
 			keyID := strings.TrimPrefix(r.URL.Path, "/netlox/v1/config/ai/apikey/")
 			apiKeyPatchHandler(w, r, keyID)
 			return
 		}
 
 		// Delegate to the main handler for all other requests
-		handler.ServeHTTP(w, r)
+		next.ServeHTTP(w, r)
 	})
 }

@@ -16,11 +16,13 @@
 package handler
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
 	"strings"
 
+	openapierrors "github.com/go-openapi/errors"
 	"github.com/go-openapi/runtime"
 	"github.com/go-openapi/runtime/middleware"
 
@@ -28,6 +30,7 @@ import (
 	"github.com/loxilb-io/loxilb/api/restapi/operations/auth"
 	cmn "github.com/loxilb-io/loxilb/common"
 	opts "github.com/loxilb-io/loxilb/options"
+	"github.com/loxilb-io/loxilb/pkg/authz"
 	tk "github.com/loxilb-io/loxilib"
 )
 
@@ -45,18 +48,57 @@ func BearerAuthAuth(tokenString string) (interface{}, error) {
 	// go-swagger APIKeyAuthenticator passes the full header value including
 	// the "Bearer " prefix. Strip it before validation.
 	tokenString = strings.TrimPrefix(tokenString, "Bearer ")
-	if opts.Opts.UserServiceEnable {
-		// User DB based valaidation
-		return ApiHooks.NetUserValidate(tokenString)
-	} else if opts.Opts.Oauth2Enable {
-		// OAuth2 based validation
-		return ApiHooks.NetOauthUserValidate(tokenString)
-	} else if opts.Opts.ManualTokenEnable {
-		// Manual token based validation
-		return ManualTokenValidate(tokenString)
-	} else {
+	var (
+		principal interface{}
+		err       error
+	)
+	switch {
+	case opts.Opts.UserServiceEnable:
+		principal, err = ApiHooks.NetUserValidate(tokenString)
+	case opts.Opts.Oauth2Enable:
+		principal, err = ApiHooks.NetOauthUserValidate(tokenString)
+	case opts.Opts.ManualTokenEnable:
+		principal, err = ManualTokenValidate(tokenString)
+	default:
 		return true, nil
 	}
+	if err != nil {
+		return nil, authFailure(err)
+	}
+	return principal, nil
+}
+
+// authFailure gives a failed authentication the status it must be served with.
+//
+// go-openapi renders an error carrying no code as 500, so an unknown token was
+// reported on generated routes as a server fault — and with the store's own
+// wording — while the same token got a 401 from a route dispatched outside the
+// chain. A store that cannot be reached is a different condition from a
+// credential that is wrong, and keeps its own status: answering 401 there would
+// tell a caller their credential was rejected when it was never examined.
+func authFailure(err error) error {
+	// A store that cannot be reached has not examined the credential, so it
+	// keeps its own status rather than reporting the caller's token as wrong.
+	if errors.Is(err, cmn.ErrDBUnavailable) {
+		return openapierrors.New(http.StatusServiceUnavailable, "Credential store unavailable")
+	}
+	// Everything else is the authenticator declining the credential. Rejecting
+	// is the fail-closed answer, and it is the one an unauthenticated caller
+	// may learn: the wording is the same for an unknown token, an expired one
+	// and a wrong manual token, so none of them can be told apart.
+	//
+	// A raw driver error that survives the store's retries also lands here and
+	// is reported as a rejection. Classifying those as their own condition
+	// needs the retry rework that is scheduled separately; until then the
+	// answer is at least fail-closed.
+	return openapierrors.New(http.StatusUnauthorized, "Missing or invalid credentials")
+}
+
+// managementAuthConfigured reports whether any authentication mode is active.
+// With none configured, BearerAuthAuth authorizes every caller and there is no
+// credential for one to present.
+func managementAuthConfigured() bool {
+	return opts.Opts.UserServiceEnable || opts.Opts.Oauth2Enable || opts.Opts.ManualTokenEnable
 }
 
 // AuthPostLogin function
@@ -74,9 +116,23 @@ func AuthPostLogin(params auth.PostAuthLoginParams) middleware.Responder {
 	if err != nil {
 		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
-	if valid {
-		response.Token = token
+	if !valid {
+		// A failed login is a failure on the wire, not a success carrying an
+		// empty body. This previously fell through to 200 with {}, so the only
+		// thing separating a rejected credential from an accepted one was the
+		// presence of the token field: a caller that checked the status — the
+		// ordinary thing to do — read a refusal as a success, and nothing
+		// counting 401s (rate limiting, alerting, access-log review) could see
+		// failed attempts at all.
+		//
+		// The wording and status are the ones authFailure() serves, and both
+		// the unknown-user and wrong-password cases reach this single branch,
+		// so the two remain indistinguishable to the caller. The work done
+		// before this point is unchanged, so they remain indistinguishable by
+		// timing as well.
+		return errorResponseWithCode(http.StatusUnauthorized, "Missing or invalid credentials")
 	}
+	response.Token = token
 	return auth.NewPostAuthLoginOK().WithPayload(&response)
 }
 
@@ -91,35 +147,103 @@ func AuthPostLogout(params auth.PostAuthLogoutParams, principal interface{}) mid
 	return auth.NewPostAuthLogoutOK()
 }
 
-// Authorized function to handle authorization logic
-// requests are authorized based on the role of the user
+// The role model, the principal decoding and the loopback test live in
+// pkg/authz: this package links the datapath library, and a test binary for it
+// cannot be linked, so decision logic kept here could not be unit tested.
+
+// Authorized returns the authorizer for the generated handler chain. The role
+// logic applies in every authentication mode: previously it was installed only
+// under UserServiceEnable, so an OAuth2 or manual-token deployment authorized
+// every authenticated caller for every operation regardless of role.
 func Authorized() runtime.Authorizer {
-	// TODO: Add more roles and permissions logic for oauth users
-	if opts.Opts.UserServiceEnable {
-		return runtime.AuthorizerFunc(func(param *http.Request, principal interface{}) error {
-			permitInfo := principal.(string)
-			// Viewer user can only GET requests
-			UserNameAndRole := strings.Split(permitInfo, "|")
-			if len(UserNameAndRole) != 2 {
-				return errors.New("Invalid user info. Please contact the administrator")
-			}
-			UserRole := UserNameAndRole[1]
-			// Viewer user can only GET requests except for logout
-			if strings.Contains(UserRole, "viewer") && param.Method == "POST" && param.URL.Path == "/netlox/v1/auth/logout" {
-				return nil
-			} else if strings.Contains(UserRole, "viewer") && param.Method != "GET" {
-				return errors.New("Permission denied")
-			}
-			return nil
-		})
-	} else {
-		return runtime.AuthorizerFunc(func(_ *http.Request, _ interface{}) error {
+	return runtime.AuthorizerFunc(authorizePrincipal)
+}
 
-			return nil
-		})
-
+// authorizePrincipal runs the shared decision and gives the generated chain a
+// status to serve. go-openapi renders a plain error as 403; a credential that
+// is not a management identity must read as 401 instead, indistinguishable from
+// an unknown token.
+func authorizePrincipal(r *http.Request, principal interface{}) error {
+	err := authz.Authorize(r.Method, r.URL.Path, principal)
+	if errors.Is(err, authz.ErrNotManagementPrincipal) {
+		return openapierrors.New(http.StatusUnauthorized, "Missing or invalid credentials")
 	}
+	return err
+}
 
+// authStatus maps an authorization error to the status it must be served with.
+func authStatus(err error) int {
+	if errors.Is(err, authz.ErrNotManagementPrincipal) {
+		return http.StatusUnauthorized
+	}
+	return http.StatusForbidden
+}
+
+// RequireManagementAuth authenticates and authorizes a request that is
+// dispatched outside the generated handler chain. It reports whether the
+// request may proceed; when it may not, the response has already been written.
+//
+// Handlers routed ahead of the generated chain returned before any
+// authentication ran, leaving them reachable without credentials in every
+// authentication mode. Running them through the same BearerAuthAuth and
+// authorization pair the generated chain uses is what keeps the two behaviours
+// identical.
+func RequireManagementAuth(w http.ResponseWriter, r *http.Request) bool {
+	authHeader := r.Header.Get("Authorization")
+	// An absent credential is a decided answer, so refuse it without a store
+	// lookup. Validating the empty string instead would spend the token
+	// lookup's full retry budget before reaching the same conclusion, which
+	// turns an unauthenticated request into a way to occupy a serving
+	// goroutine for seconds at a time.
+	if managementAuthConfigured() && authHeader == "" {
+		writeAuthError(w, http.StatusUnauthorized, "Missing or invalid credentials")
+		return false
+	}
+	principal, err := BearerAuthAuth(authHeader)
+	if err != nil || principal == nil {
+		// Serve exactly what the generated chain would, including a store
+		// outage's 503: the two paths must be indistinguishable.
+		code, msg := http.StatusUnauthorized, "Missing or invalid credentials"
+		var coded openapierrors.Error
+		if errors.As(err, &coded) {
+			code, msg = int(coded.Code()), coded.Error()
+		}
+		writeAuthError(w, code, msg)
+		return false
+	}
+	if err := authz.Authorize(r.Method, r.URL.Path, principal); err != nil {
+		code := authStatus(err)
+		msg := err.Error()
+		if code == http.StatusUnauthorized {
+			msg = "Missing or invalid credentials"
+		}
+		writeAuthError(w, code, msg)
+		return false
+	}
+	return true
+}
+
+// writeAuthError emits the same error envelope the generated chain produces, so
+// a client cannot tell the two dispatch paths apart from the response alone.
+func writeAuthError(w http.ResponseWriter, code int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	body, err := json.Marshal(&models.Error{
+		Code:    int32(code),
+		Message: msg,
+		Result:  msg,
+		Fields:  []string{},
+	})
+	if err != nil {
+		return
+	}
+	w.Write(body)
+}
+
+// isLoopbackRequest reports whether the request arrived from a loopback peer,
+// reading the address from the transport and never from a header.
+func isLoopbackRequest(r *http.Request) bool {
+	return authz.IsLoopbackAddr(r.RemoteAddr)
 }
 
 // ManualTokenValidate function

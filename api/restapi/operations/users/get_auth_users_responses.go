@@ -26,7 +26,7 @@ type GetAuthUsersOK struct {
 	/*
 	  In: Body
 	*/
-	Payload []*models.User `json:"body,omitempty"`
+	Payload []*models.UserSummary `json:"body,omitempty"`
 }
 
 // NewGetAuthUsersOK creates GetAuthUsersOK with default headers values
@@ -36,13 +36,13 @@ func NewGetAuthUsersOK() *GetAuthUsersOK {
 }
 
 // WithPayload adds the payload to the get auth users o k response
-func (o *GetAuthUsersOK) WithPayload(payload []*models.User) *GetAuthUsersOK {
+func (o *GetAuthUsersOK) WithPayload(payload []*models.UserSummary) *GetAuthUsersOK {
 	o.Payload = payload
 	return o
 }
 
 // SetPayload sets the payload to the get auth users o k response
-func (o *GetAuthUsersOK) SetPayload(payload []*models.User) {
+func (o *GetAuthUsersOK) SetPayload(payload []*models.UserSummary) {
 	o.Payload = payload
 }
 
@@ -53,7 +53,7 @@ func (o *GetAuthUsersOK) WriteResponse(rw http.ResponseWriter, producer runtime.
 	payload := o.Payload
 	if payload == nil {
 		// return empty array
-		payload = make([]*models.User, 0, 50)
+		payload = make([]*models.UserSummary, 0, 50)
 	}
 
 	if err := producer.Produce(rw, payload); err != nil {

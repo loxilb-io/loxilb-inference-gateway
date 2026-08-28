@@ -1,0 +1,228 @@
+# `cicd/ai-authsep` — authentication plane separation
+
+The data plane's key decision must not depend on the management plane. That is
+the whole claim of the authentication-plane-separation work, and this scenario
+is where it is asserted on live traffic.
+
+Exercises the data plane across all four `{--userservice} × {key store}`
+cells, in both TLS postures, and compares the two verdict vectors along the
+`--userservice` axis for equality — a cell meeting its own expectations is not
+the property; the two columns agreeing is.
+
+```
+l3h1 (10.10.10.1) ── llb1 (VIPs 10.10.10.254:2020 / :2021, mgmt :11111) ── l3ep1 (31.31.31.1:8080)
+                       │
+                       ├── aisep-pg      PostgreSQL 18.6, plaintext
+                       │                 aigw = data plane (aigwuser)
+                       │                 aigw_mgmt = management plane (aigw_mgmt_user)
+                       └── aisep-pg-tls  PostgreSQL 18.6, TLS required
+```
+
+## How it differs from `cicd/ai-apikey`
+
+| | `ai-apikey` | `ai-authsep` |
+|---|---|---|
+| key store | MariaDB, via `--userservice` | PostgreSQL `aigw` schema, via `--aikey-db-*` |
+| management plane | required, on MariaDB | a **parameter**, on the PostgreSQL `aigw_mgmt` schema |
+| backend | none — the suite never starts one | `count_server.py`, which records what actually arrived |
+| TLS to the store | not covered | covered, both postures |
+
+`ai-apikey` cannot ask the question this scenario exists for, because it can
+only run with `--userservice on`.
+
+## Running
+
+The full regression, in the order the recorded runs use:
+
+```bash
+./config.sh        # topology + both stores + certificates
+./validation.sh    # the four-cell matrix, role isolation, TLS, enforcement
+./tiers.sh         # the combination sweep (management auth x store x policy x streaming)
+./backcompat.sh    # the upgrade contract (see below)
+./rmconfig.sh      # teardown, including the client key and the store password
+```
+
+Each script prints a `SUMMARY: pass=N fail=M` line and exits non-zero on any
+failure, so the block above can run unattended and the exit code is the
+verdict. Reference green counts: `validation.sh` 96, `tiers.sh` 170 (with
+Tier F and the oauth2 column reported as loud skips — a skip that stops
+being printed is itself a regression), `backcompat.sh` 25.
+
+`config.sh` accepts `USERSERVICE=on|off` and `AIKEYSTORE=configured|unconfigured`
+for its initial posture. They exist so a cell can be pinned by hand;
+`validation.sh` drives every combination itself, because comparing the cells is
+the point.
+
+Pin a specific gateway build with `LOXILB_DOCKER_IMAGE=<tag>`.
+
+### Script inventory
+
+| Script | What it proves | Runtime |
+|---|---|---|
+| `config.sh` | brings up the topology: gateway, both PostgreSQL stores (plaintext + TLS-required), two counting mock backends | ~2 min |
+| `validation.sh` | the four-cell `{userservice} x {store}` matrix with byte-identical verdict vectors along the userservice axis; store role isolation at the database; the store password absent from argv and logs; verified TLS with no downgrade; enforcement mechanics (expiry, rate limits, stripping, denied requests never reaching the backend, store-outage semantics) | ~8 min |
+| `tiers.sh` | every management-auth mode against every store state against every key policy against every streaming shape, with literal expected verdicts per cell; adversarial credential classes; QoS-follows-policy; transition semantics across restarts | ~13 min |
+| `backcompat.sh` | the upgrade contract — see the next section | ~4 min |
+| `rmconfig.sh` | teardown; also what to run when a failed run leaves containers behind | ~1 min |
+| `count_server.py` | the mock backend; logs one line per arriving request, including whether any `x-api-key` material reached it — several legs read that log as their judge | — |
+
+### The upgrade contract (`backcompat.sh`)
+
+The policy change altered what a service's configuration means: key
+enforcement used to be a side effect of the streaming flag and is now an
+explicit per-service declaration. `backcompat.sh` pins what an operator
+upgrading across that change is promised, using only artifacts a
+pre-upgrade deployment could have produced:
+
+* **Phase A** — a rule body captured before the field existed still
+  installs, resolves to `disabled`, and keeps byte-identical proxying: the
+  client's `X-Api-Key` reaches the backend untouched, because an
+  undeclared service may front a non-AI backend with its own credential
+  namespace. The one verdict that deliberately moves — the old
+  sse-riding shape no longer enforces — is asserted as such, together
+  with its designed mitigation: a quota configured while no service
+  enforces draws a loud gateway warning instead of pretending to protect.
+* **Phase B** — adding `"api_key_auth": "required"` to the same rule arms
+  the whole chain (keyless denied, pre-upgrade keys accepted, credential
+  stripped upstream, rate limits live), and replaying the original body
+  rolls it back.
+* **Phase C** — what `GET /config/loadbalancer/all` exports re-imports
+  across a gateway restart with an identical verdict vector, declared and
+  undeclared shapes both intact. This is the backup/restore path an
+  operator will actually use.
+
+When a leg here goes red after a product change, the change broke a
+compatibility promise; the fix belongs in the product or in a deliberate,
+documented revision of the promise — never in the assert.
+
+### Unit gates (no topology needed)
+
+The store-backed unit suites run against a disposable PostgreSQL — never
+against a store a scenario run is using, because the fixtures truncate the
+tables they test:
+
+```bash
+docker run -d --name authsep-unit-pg -e POSTGRES_PASSWORD=pw -e POSTGRES_DB=loxilb \
+  -p 127.0.0.1:5432:5432 postgres:18.6
+docker exec -i authsep-unit-pg psql -U postgres -d loxilb \
+  -v aigw_password=aigw-pw -v aigw_mgmt_password=mgmt-pw \
+  -f /dev/stdin < scripts/aigw-db-bootstrap.sql
+
+bash scripts/check-source-invariants.sh
+AIKEY_TEST_PG=required AIKEY_TEST_DSN=postgres://aigwuser:aigw-pw@127.0.0.1:5432/loxilb \
+MGMT_TEST_PG=required  MGMT_TEST_DSN=postgres://aigw_mgmt_user:mgmt-pw@127.0.0.1:5432/loxilb \
+  go test -count=1 -race ./pkg/aikey ./pkg/user
+go test -count=1 ./pkg/authz ./pkg/pgstore
+AIKEY_TEST_PG=required AIKEY_TEST_DSN=postgres://aigwuser:aigw-pw@127.0.0.1:5432/loxilb \
+  go test -count=1 -skip 'TestMain|TestResolveFlowMACs_SingleflightCollapse' ./pkg/loxinet
+```
+
+`*_TEST_PG=required` makes the store legs fail rather than skip when the
+server is absent — a green run cannot be a silently skipped one. The two
+`pkg/loxinet` exclusions are pre-existing and unrelated to this plane: the
+in-process bring-up needs a privileged eBPF environment, and the
+singleflight leg asserts a scheduling coincidence.
+
+### Continuous runs
+
+`.github/workflows/auth-plane-sanity.yml` runs all of the above on every
+pull request touching the auth plane, nightly, and on demand
+(`workflow_dispatch`): a `unit-gates` job (invariants + the unit suites
+against a provisioned PostgreSQL) and an `authsep-scenarios` job
+(`config.sh` → `validation.sh` → `tiers.sh` → `backcompat.sh` →
+`rmconfig.sh`). No GPU is involved anywhere in it. The engine matrix
+(llama.cpp / vLLM / SGLang / TRT-LLM, converged and disaggregated) is the
+one auth-plane gate that cannot run there; it runs on the GPU testbed out
+of band, and its harness arms `api_key_auth=required` on its own service
+before the quota legs — a quota without an enforcing service measures
+nothing, which is also what the gateway's own warning says.
+
+## What the legs prove
+
+**Section 1 — the four-cell matrix.** Every data-plane leg runs in all four
+`{--userservice on|off} × {store configured|not}` cells. Each cell is checked
+against its own expected verdicts, and then the two vectors along the
+`--userservice` axis are compared for *equality*. A cell passing its own
+expectations is not the property under test; the two columns agreeing is.
+Also POL-1 (the key lifecycle stands with no management plane), POL-1b (no
+store configured is reported as `503 ai_key_store_unconfigured`, not `501` and
+not `500`), POL-1c (management auth governs the caller), and POL-6 (the key
+rows do not move when `--userservice` is toggled).
+
+**Timing, not just verdicts.** Three legs sample the key API at moments the rest
+of the suite deliberately waits past: the very first answer it gives after the
+REST listener comes up, and again while the store dial is still in flight (that
+precondition is itself asserted, so the leg cannot decay into one that waits
+until the answer is easy). A configured store must never be described as
+*unconfigured* at either moment — "you set no flag" and "your database is down"
+are different situations and an operator acts on them differently. The storeless
+cell is the control: there, the first answer must say `unconfigured`. These are
+the regression legs for the configured-but-unreachable store reporting itself
+as unconfigured, which the first version of this suite found.
+
+**Section 2 — DP-18, DP-19.** Store role isolation, asserted at the database
+rather than in the gateway. `public.users` and `public.api_tokens` are created
+by the owner first, so `aigwuser`'s denial is about privilege and not about the
+table being absent — otherwise the leg would pass for the wrong reason and stop
+meaning anything the day those tables actually arrive. DP-19 asserts the
+*known* state: `oamuser` is the initdb superuser and still reads
+`aigw.api_keys`. It is written down so that it turns red if OAM ever moves to a
+non-superuser role and nobody revisits the plan.
+
+**Section 3 — DP-20.** The store password is in neither the gateway's `argv`
+nor its log, checked against a run that actually had a store — a cell with no
+store never builds a DSN, so grepping its log would pass for free.
+
+**Section 4 — DP-16, DP-17.** Verified TLS to the store, and the absence of a
+downgrade. The store certificate carries `DNS:aikey-store` and deliberately no
+IP SAN, and `llb1`'s `/etc/hosts` entry for that name is what each leg moves:
+
+* **DP-16a** — TLS-required server, correct CA and client keypair. The store
+  connects; the *server* reports the session as TLS with `client_dn=CN=aigwuser`,
+  which is the half a client-side assertion cannot give you; and a key written
+  into that database with `psql` — never through the gateway — authenticates at
+  the VIP, so the data plane demonstrably read that store over that connection.
+* **DP-16b** — the same name, the same CA, the same keypair, pointed at a
+  server that cannot speak TLS. That isolates the downgrade question from every
+  other way a TLS connection can fail. The gateway must report
+  `503 ai_key_store_unavailable`, and the plaintext server must log no
+  authorized `aigwuser` session. A control leg immediately afterwards shows the
+  same server *does* authorize one when TLS is not asked for, so the absence
+  above is evidence rather than an empty log.
+* **DP-17a** — the store certificate signed by a CA the gateway was not given.
+* **DP-17b** — the store addressed by an identity its certificate does not
+  carry.
+
+Both DP-17 legs assert that nothing was authorized on the server, which is the
+"no plaintext retry" clause stated where it can actually be observed.
+
+## Verdicts that PR 3 changed
+
+Three expectations in `validation.sh` encoded the *current* behaviour of a
+deliberately behaviour-preserving change. PR 3 has now flipped all three:
+
+| leg | before | now |
+|---|---|---|
+| keyless on `:2021` (`sse_mode=false`) | `200` — a plain full-proxy AI service never reaches the key check | `200`, because `api_key_auth=disabled` says so |
+| keyless / unknown key with no store configured | `200` — the retained `nil → allow` | `503 policy_store_unavailable` (DP-13) |
+| backend request counter on a denied request | reported, not asserted — denied requests could still reach the backend and the ratio was nondeterministic | asserted zero, with an admitted request as the positive control (DP-28) |
+
+They were written down rather than left implicit so that flipping them was a
+deliberate act with a diff, not a silent drift.
+
+Both services now state their policy instead of inheriting one. `:2020` is
+`sse_mode=true api_key_auth=required` and `:2021` is `sse_mode=false
+api_key_auth=disabled` — deliberately crossed, so a datapath that had gone back
+to deriving enforcement from the streaming flag would still pass these two legs
+and has to be caught by a non-streaming enforcing service instead.
+
+## Notes
+
+* The gateway is restarted between cells because the flag set *is* the thing
+  under test. A bare kill-and-start fails on `llb_xh_init: Assertion 0 failed`;
+  `restart_gw` clears the four pieces of datapath state that outlive the
+  process (the `llb0` TAP, the XDP programs, the clsact qdiscs, the bpffs pins).
+* `validation.sh` refuses to start against a store that already holds keys.
+  `key_hash` is `UNIQUE`, so a re-run would fail on the create and read as a
+  code defect. `config.sh` recreates both stores.
+* A red leg is a code defect until proven otherwise. Do not soften an assert.

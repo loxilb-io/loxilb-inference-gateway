@@ -198,7 +198,7 @@ func init() {
             "schema": {
               "type": "array",
               "items": {
-                "$ref": "#/definitions/User"
+                "$ref": "#/definitions/UserSummary"
               }
             }
           },
@@ -212,7 +212,7 @@ func init() {
       },
       "post": {
         "security": [],
-        "description": "Creates a new user in the system",
+        "description": "Creates a new user in the system.\n\nRequires an authenticated administrator, with one exception: while no\nuser exists at all, a request from a loopback peer may create the first\none, so that the management API can be brought up before any credential\nexists. That bootstrap closes as soon as the first account is created.\n\nThe authentication is performed by the handler rather than by the\ngenerated security chain, because the chain cannot express a condition\nthat depends on the state of the user table. The security block below is\nempty for that reason and does not mean the operation is open.",
         "consumes": [
           "application/json"
         ],
@@ -243,6 +243,18 @@ func init() {
           },
           "400": {
             "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Unauthorized - not an administrator, and the bootstrap conditions (loopback peer, no user yet) are not met",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Forbidden - authenticated, but the role carries no authority to create users",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -9746,6 +9758,10 @@ func init() {
             "type": "string"
           }
         },
+        "api_key": {
+          "description": "Optional caller-supplied key material to register instead of generating one, for importing keys minted elsewhere. Write-only: it is never returned by GET or by the list, and the create response omits raw_key when it is set, because the caller already holds the value.",
+          "type": "string"
+        },
         "burst_size": {
           "description": "Burst capacity above the steady-state RPS limit",
           "type": "integer",
@@ -13019,6 +13035,15 @@ func init() {
                 "type": "string"
               }
             },
+            "api_key_auth": {
+              "description": "Data-plane X-Api-Key enforcement policy for this service. \"required\" makes the data plane validate the X-Api-Key header against the API-key store before the request reaches a backend; \"disabled\" (the default, and what an unset value resolves to) admits requests without a key. Independent of sse_mode and pd_disagg_mode, and independent of the management-plane authentication mode. Reading a service back always reports the resolved value, never an empty string.",
+              "type": "string",
+              "default": "disabled",
+              "enum": [
+                "disabled",
+                "required"
+              ]
+            },
             "backend_ca_cert_id": {
               "description": "(16) certId of the backend re-encryption CA bundle (resolved by the certId registry to the managed-dir ca.crt at backend SSL_CTX build). Optional/additive — empty = system default.",
               "type": "string"
@@ -14438,7 +14463,7 @@ func init() {
               ]
             },
             "polObjName": {
-              "description": "Target Names",
+              "description": "Target name. Rule attachments use VIP:PORT:PROTO for IPv4 and [VIP]:PORT:PROTO for IPv6.",
               "type": "string"
             }
           }
@@ -15350,6 +15375,27 @@ func init() {
         }
       }
     },
+    "UserSummary": {
+      "type": "object",
+      "properties": {
+        "created_at": {
+          "type": "string"
+        },
+        "id": {
+          "type": "integer"
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "admin",
+            "viewer"
+          ]
+        },
+        "username": {
+          "type": "string"
+        }
+      }
+    },
     "VersionGetEntry": {
       "type": "object",
       "properties": {
@@ -15748,7 +15794,7 @@ func init() {
             "schema": {
               "type": "array",
               "items": {
-                "$ref": "#/definitions/User"
+                "$ref": "#/definitions/UserSummary"
               }
             }
           },
@@ -15762,7 +15808,7 @@ func init() {
       },
       "post": {
         "security": [],
-        "description": "Creates a new user in the system",
+        "description": "Creates a new user in the system.\n\nRequires an authenticated administrator, with one exception: while no\nuser exists at all, a request from a loopback peer may create the first\none, so that the management API can be brought up before any credential\nexists. That bootstrap closes as soon as the first account is created.\n\nThe authentication is performed by the handler rather than by the\ngenerated security chain, because the chain cannot express a condition\nthat depends on the state of the user table. The security block below is\nempty for that reason and does not mean the operation is open.",
         "consumes": [
           "application/json"
         ],
@@ -15793,6 +15839,18 @@ func init() {
           },
           "400": {
             "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Unauthorized - not an administrator, and the bootstrap conditions (loopback peer, no user yet) are not met",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Forbidden - authenticated, but the role carries no authority to create users",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -25284,6 +25342,10 @@ func init() {
             "type": "string"
           }
         },
+        "api_key": {
+          "description": "Optional caller-supplied key material to register instead of generating one, for importing keys minted elsewhere. Write-only: it is never returned by GET or by the list, and the create response omits raw_key when it is set, because the caller already holds the value.",
+          "type": "string"
+        },
         "burst_size": {
           "description": "Burst capacity above the steady-state RPS limit",
           "type": "integer",
@@ -29027,6 +29089,15 @@ func init() {
                 "type": "string"
               }
             },
+            "api_key_auth": {
+              "description": "Data-plane X-Api-Key enforcement policy for this service. \"required\" makes the data plane validate the X-Api-Key header against the API-key store before the request reaches a backend; \"disabled\" (the default, and what an unset value resolves to) admits requests without a key. Independent of sse_mode and pd_disagg_mode, and independent of the management-plane authentication mode. Reading a service back always reports the resolved value, never an empty string.",
+              "type": "string",
+              "default": "disabled",
+              "enum": [
+                "disabled",
+                "required"
+              ]
+            },
             "backend_ca_cert_id": {
               "description": "(16) certId of the backend re-encryption CA bundle (resolved by the certId registry to the managed-dir ca.crt at backend SSL_CTX build). Optional/additive — empty = system default.",
               "type": "string"
@@ -29661,6 +29732,15 @@ func init() {
           "additionalProperties": {
             "type": "string"
           }
+        },
+        "api_key_auth": {
+          "description": "Data-plane X-Api-Key enforcement policy for this service. \"required\" makes the data plane validate the X-Api-Key header against the API-key store before the request reaches a backend; \"disabled\" (the default, and what an unset value resolves to) admits requests without a key. Independent of sse_mode and pd_disagg_mode, and independent of the management-plane authentication mode. Reading a service back always reports the resolved value, never an empty string.",
+          "type": "string",
+          "default": "disabled",
+          "enum": [
+            "disabled",
+            "required"
+          ]
         },
         "backend_ca_cert_id": {
           "description": "(16) certId of the backend re-encryption CA bundle (resolved by the certId registry to the managed-dir ca.crt at backend SSL_CTX build). Optional/additive — empty = system default.",
@@ -31270,7 +31350,7 @@ func init() {
               ]
             },
             "polObjName": {
-              "description": "Target Names",
+              "description": "Target name. Rule attachments use VIP:PORT:PROTO for IPv4 and [VIP]:PORT:PROTO for IPv6.",
               "type": "string"
             }
           }
@@ -31327,7 +31407,7 @@ func init() {
           ]
         },
         "polObjName": {
-          "description": "Target Names",
+          "description": "Target name. Rule attachments use VIP:PORT:PROTO for IPv4 and [VIP]:PORT:PROTO for IPv6.",
           "type": "string"
         }
       }
@@ -32418,6 +32498,27 @@ func init() {
         },
         "password": {
           "type": "string"
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "admin",
+            "viewer"
+          ]
+        },
+        "username": {
+          "type": "string"
+        }
+      }
+    },
+    "UserSummary": {
+      "type": "object",
+      "properties": {
+        "created_at": {
+          "type": "string"
+        },
+        "id": {
+          "type": "integer"
         },
         "role": {
           "type": "string",

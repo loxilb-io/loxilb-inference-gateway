@@ -52,6 +52,7 @@ import (
 	"unsafe"
 
 	opts "github.com/loxilb-io/loxilb/options"
+	"github.com/loxilb-io/loxilb/pkg/aikey"
 	tk "github.com/loxilb-io/loxilib"
 	"google.golang.org/grpc"
 )
@@ -341,6 +342,43 @@ func (xs *XSync) RateLimiterSync(ctx context.Context, m *RateLimiterBatch) (*XSy
 	coord := NewSockproxySync()
 	if err := coord.ApplyRateLimiterBatch(m); err != nil {
 		return &XSyncReply{Response: -1}, err
+	}
+	return &XSyncReply{Response: 0}, nil
+}
+
+// ApiKeyInvalidate receives notice that a data-plane API key has stopped being
+// valid on a peer.
+//
+// The receiving side evicts and does not fan out again: peers form a mesh, not
+// a tree, so re-broadcasting what a peer just told us would circulate for as
+// long as the entries live.
+//
+// A gateway with no key store configured has nothing to evict and reports
+// success — the sender's key really is not honoured here, which is the
+// property the message exists to establish.
+func (xs *XSync) ApiKeyInvalidate(ctx context.Context, m *ApiKeyInvalidation) (*XSyncReply, error) {
+	if !mh.ready {
+		return &XSyncReply{Response: -1}, errors.New("Not-Ready")
+	}
+	if m == nil {
+		return &XSyncReply{Response: -1}, errors.New("empty invalidation")
+	}
+	// Route on the plane the sender named. A message must only ever reach the
+	// cache belonging to its own plane: evicting from both "to be safe" would
+	// let either plane invalidate the other's credentials, which is a coupling
+	// this campaign exists to remove.
+	//
+	// UNSPECIFIED means a peer from before the discriminator existed, and
+	// those only ever sent data-plane invalidations.
+	switch m.Plane {
+	case CredentialPlane_CREDENTIAL_PLANE_MGMT_TOKEN:
+		tk.LogIt(tk.LogDebug, "RPC - ApiKeyInvalidate plane=mgmt-token\n")
+		if mh.UserService != nil {
+			mh.UserService.ApplyTokenInvalidation(m.KeyHash)
+		}
+	default:
+		tk.LogIt(tk.LogDebug, "RPC - ApiKeyInvalidate plane=aikey key=%s\n", m.KeyId)
+		mh.AIKeyService.ApplyInvalidation(aikey.KeyInvalidation{KeyHash: m.KeyHash, KeyID: m.KeyId})
 	}
 	return &XSyncReply{Response: 0}, nil
 }

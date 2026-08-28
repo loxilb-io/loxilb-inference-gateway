@@ -33,10 +33,15 @@ user-service database (§2.1).
 API keys are persisted in the gateway's user-service database. Start loxilb with:
 
 ```bash
-loxilb --userservice --databasehost <mysql-ip>
+loxilb --userservice \
+  --mgmt-db-host <postgres-ip> --mgmt-db-user aigw_mgmt_user --mgmt-db-name loxilb \
+  --mgmt-db-password-file /etc/loxilb/mgmt_db_password \
+  --aikey-db-host <postgres-ip> --aikey-db-user aigwuser --aikey-db-name loxilb \
+  --aikey-db-password-file /etc/loxilb/aikey_password
 ```
 
-backed by a MySQL/MariaDB instance. Administrative calls use the JWT auth flow:
+backed by a PostgreSQL instance. Administrative calls authenticate with an
+opaque session token, which the store holds only as a SHA-256 hash:
 
 ```bash
 # one-time: create an admin user, then log in for a Bearer token
@@ -219,7 +224,7 @@ cd cicd/ai-model-routing   # no DB needed — model routing only
 cd ../ai-sse-quota         # SSE quota behaviors incl. the 10s runaway-cap probe
 ./config.sh && ./validation.sh && ./rmconfig.sh
 
-cd ../ai-apikey            # full key lifecycle + 401/403/429 enforcement (brings up MariaDB)
+cd ../ai-apikey            # full key lifecycle + 401/403/429 enforcement (brings up PostgreSQL)
 ./config.sh && ./validation.sh && ./rmconfig.sh
 ```
 
@@ -229,7 +234,8 @@ cd ../ai-apikey            # full key lifecycle + 401/403/429 enforcement (bring
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `POST /config/ai/apikey` fails | loxilb started without `--userservice --databasehost` | Restart with both flags + reachable MySQL/MariaDB |
+| `POST /config/ai/apikey` fails with `503 ai_key_store_unconfigured` | loxilb started without `--aikey-db-host` | Restart with the `--aikey-db-*` family and a reachable PostgreSQL provisioned by `scripts/aigw-db-bootstrap.sql` |
+| `POST /config/ai/apikey` fails with `401` | loxilb started with `--userservice` and no credential was presented | Authenticate first; see the bootstrap note above |
 | Mutating calls return `503` + `Retry-After: 5` right after a gateway restart | Boot-config gate: writes are held until the boot snapshot replay settles | Expected — retry after the `Retry-After` interval; not an outage |
 | Keys accepted but not enforced at the VIP | Rule lacks `sse_mode: true` / not `mode: 4` | Enforcement runs in the fullproxy AI path only |
 | Requests hit the wrong model pool | Field casing | `model_name`, `path_prefix`, `path_match_mode` are snake_case — a mis-cased field is silently dropped |

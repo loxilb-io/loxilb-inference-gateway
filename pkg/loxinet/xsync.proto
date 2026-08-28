@@ -113,6 +113,44 @@ message VllmWorkerMetrics {
     int64  scrape_ts = 5;
 }
 
+// CredentialPlane names which plane a revoked credential belongs to.
+//
+// The two planes share this channel and nothing else. A receiver must never
+// evict from the other plane's cache on the strength of one of these
+// messages: that is how a data-plane key hash came to be honoured as a
+// management token in the first place, and a shared eviction path would
+// re-create the coupling at the level of cache keys. The discriminator makes
+// the routing explicit rather than inferred from which field is populated.
+enum CredentialPlane {
+    CREDENTIAL_PLANE_UNSPECIFIED = 0;
+    // Data-plane API key (pkg/aikey).
+    CREDENTIAL_PLANE_AIKEY = 1;
+    // Management session token (pkg/user).
+    CREDENTIAL_PLANE_MGMT_TOKEN = 2;
+}
+
+// ApiKeyInvalidation — one credential that has stopped being valid.
+//
+// For a data-plane key both identifiers travel, because the receiver's caches
+// are keyed differently: the authentication path by hash, the management read
+// path by key id. Evicting one and not the other leaves a revoked key readable
+// as enabled until its entry expires.
+//
+// For a management token only key_hash is meaningful, and it carries
+// sha256(token) — the same value the store holds.
+//
+// No credential travels on this channel. Both fields are hashes or opaque
+// identifiers, and a peer able to receive this message can already read the
+// store.
+message ApiKeyInvalidation {
+    string key_hash = 1;
+    string key_id = 2;
+    // Absent on messages from a pre-discriminator peer, which only ever sent
+    // data-plane invalidations; the receiver treats UNSPECIFIED as AIKEY so a
+    // mixed-version pair keeps working.
+    CredentialPlane plane = 3;
+}
+
 // SockproxySnapshotReply — combined snapshot for GetSockproxySnapshot.
 // Chunked via next_cursor; sessions covers Phases A+B+C; rl_state populated
 // from Phase B; metrics populated from Phase C (empty in Phase A).
@@ -135,4 +173,9 @@ service XSync {
     rpc SockproxySessionBulkGet (SockproxyBulkReq)    returns (SockproxySessionBulkReply) {}
     rpc RateLimiterSync         (RateLimiterBatch)    returns (XSyncReply) {}
     rpc GetSockproxySnapshot    (SockproxyBulkReq)    returns (SockproxySnapshotReply) {}
+
+    // Data-plane API-key invalidation. A key revoked, disabled or deleted on
+    // one gateway must stop authenticating on its peers before their cached
+    // copy expires.
+    rpc ApiKeyInvalidate        (ApiKeyInvalidation)  returns (XSyncReply) {}
   }

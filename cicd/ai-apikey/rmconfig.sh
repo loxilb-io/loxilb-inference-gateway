@@ -16,9 +16,9 @@ delete_docker_host l3ep1
 delete_docker_host l3h1
 delete_docker_host llb1
 
-## Remove mysql container
-docker stop mysql-ai 2>/dev/null || true
-docker rm   mysql-ai 2>/dev/null || true
+## Remove the PostgreSQL container
+docker stop pg-ai 2>/dev/null || true
+docker rm   pg-ai 2>/dev/null || true
 
 ## Remove config mount dir
 rm -rf llb1_config

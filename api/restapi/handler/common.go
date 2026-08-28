@@ -16,6 +16,8 @@
 package handler
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"net/http"
 	"strings"
 
@@ -23,6 +25,7 @@ import (
 	cmn "github.com/loxilb-io/loxilb/common"
 
 	"github.com/go-openapi/runtime"
+	tk "github.com/loxilb-io/loxilib"
 )
 
 var ApiHooks cmn.NetHookInterface
@@ -49,6 +52,18 @@ func (c CustomResponder) WriteResponse(w http.ResponseWriter, p runtime.Producer
 func (e *ErrorResponse) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 	rw.WriteHeader(int(e.Payload.Code))
 	producer.Produce(rw, e.Payload)
+}
+
+// errorResponseWithCode returns a responder carrying an explicit HTTP status,
+// for the cases where the status is a decision rather than something inferred
+// from an error message.
+func errorResponseWithCode(code int, msg string) *ErrorResponse {
+	return &ErrorResponse{Payload: &models.Error{
+		Code:    int32(code),
+		Message: msg,
+		Result:  msg,
+		Fields:  []string{},
+	}}
 }
 
 func containsAny(haystack string, needles ...string) bool {
@@ -80,6 +95,22 @@ func ResultErrorResponseErrorMessage(msg string) *models.Error {
 		return &models.Error{Code: 404, Message: "Resource not found", Result: msg}
 	}
 
+	// 503 Service Unavailable — the store was never reached
+	//
+	// Placed ahead of the classes below because it is about whether the
+	// request was answered at all, not about what the answer was. Without it
+	// "user database unavailable" matched no class and fell through to 500, so
+	// an outage of the management store was reported to the caller as a fault
+	// in the gateway, and a retry-after-a-moment condition was rendered as one
+	// that will not improve.
+	if containsAny(m, "database unavailable", "store unavailable", "key_store_unconfigured") {
+		return &models.Error{
+			Code:    503,
+			Message: "Credential store unavailable",
+			Result:  "Credential store unavailable",
+		}
+	}
+
 	// 401 Auth or Token
 	if containsAny(m,
 		"invalid token", "token is expired", "token not fou",
@@ -108,6 +139,7 @@ func ResultErrorResponseErrorMessage(msg string) *models.Error {
 
 	// 400 Bad Request
 	if containsAny(m,
+		"invalid role",
 		"malformed", "parse error", "invalid parameters", "invalid ",
 		"mask format is wrong", "not ipv4 address", "proto error", "malformed-proto",
 		"malformed service proto", "unknown work type", "unknown log level", "unknown ep-host-state",
@@ -126,6 +158,15 @@ func ResultErrorResponseErrorMessage(msg string) *models.Error {
 		"Failed to add Cors", "Failed to delete Cors", "filename is required", "file is empty",
 		"no configuration file provided", "invalid json format",
 		"is required",
+		// Create-time rule-validation rejections. These are addressed to the
+		// operator who wrote the rule — the reason ("pd-bootstrap-port
+		// requires pd_disagg_mode=true and kv-engine-type sglang") IS the
+		// API's answer, so it must ride in the body. Before the fall-through
+		// below stopped disclosing internal text, these reached callers only
+		// by falling through it; without their own class here, closing that
+		// disclosure silently rewrote every validator's answer into a 500
+		// with a correlation ref.
+		" requires ", " must be ", "unsupported for", "supports kvexactmode",
 	) {
 		return &models.Error{Code: 400, Message: "Malformed arguments for API call", Result: msg}
 	}
@@ -146,6 +187,37 @@ func ResultErrorResponseErrorMessage(msg string) *models.Error {
 		return &models.Error{Code: 503, Message: "Maintenance mode", Result: msg}
 	}
 
-	// 500 Internal Server Error (default)
-	return &models.Error{Code: 500, Message: msg, Result: msg}
+	// 500 Internal Server Error (default).
+	//
+	// The branches above name a condition the API models — "no such route",
+	// "resource already exists" — and their Result carries loxilb's own
+	// vocabulary for it, which is API detail a caller is meant to see. This
+	// branch is the opposite: it is reached by errors nothing classified, so
+	// the text is whatever some internal layer happened to say. It handed out
+	// the database driver's wording for a failing query's scan arity, the
+	// stored timestamp format together with the Go layout the code expected,
+	// and it did so on /auth/login, which is unauthenticated.
+	//
+	// Both Message and Result are serialised into the response body, so
+	// substituting only one of them would move the disclosure rather than
+	// remove it. The detail goes to the log, and the caller gets a reference
+	// that lets an operator find that log line — which is the part of
+	// debuggability worth keeping.
+	ref := errorRef()
+	tk.LogIt(tk.LogError, "api: internal error ref=%s: %s\n", ref, msg)
+	return &models.Error{
+		Code:    500,
+		Message: "Internal service error",
+		Result:  "Internal service error (ref " + ref + ")",
+	}
+}
+
+// errorRef returns a short correlation token tying a 500 response to the log
+// line that holds what actually went wrong.
+func errorRef() string {
+	var b [4]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "unavailable"
+	}
+	return hex.EncodeToString(b[:])
 }

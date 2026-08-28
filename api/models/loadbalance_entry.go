@@ -603,6 +603,10 @@ type LoadbalanceEntryServiceArguments struct {
 	// Opaque key/value map round-tripping octaviaProtocol and any future Octavia field verbatim. Store-as-given, return-as-stored; never interpreted.
 	Annotations map[string]string `json:"annotations,omitempty"`
 
+	// Data-plane X-Api-Key enforcement policy for this service. "required" makes the data plane validate the X-Api-Key header against the API-key store before the request reaches a backend; "disabled" (the default, and what an unset value resolves to) admits requests without a key. Independent of sse_mode and pd_disagg_mode, and independent of the management-plane authentication mode. Reading a service back always reports the resolved value, never an empty string.
+	// Enum: [disabled required]
+	APIKeyAuth *string `json:"api_key_auth,omitempty"`
+
 	// (16) certId of the backend re-encryption CA bundle (resolved by the certId registry to the managed-dir ca.crt at backend SSL_CTX build). Optional/additive — empty = system default.
 	BackendCaCertID string `json:"backend_ca_cert_id,omitempty"`
 
@@ -872,6 +876,10 @@ type LoadbalanceEntryServiceArguments struct {
 func (m *LoadbalanceEntryServiceArguments) Validate(formats strfmt.Registry) error {
 	var res []error
 
+	if err := m.validateAPIKeyAuth(formats); err != nil {
+		res = append(res, err)
+	}
+
 	if err := m.validateBackendKeepaliveIntervalSec(formats); err != nil {
 		res = append(res, err)
 	}
@@ -983,6 +991,48 @@ func (m *LoadbalanceEntryServiceArguments) Validate(formats strfmt.Registry) err
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
+	return nil
+}
+
+var loadbalanceEntryServiceArgumentsTypeAPIKeyAuthPropEnum []interface{}
+
+func init() {
+	var res []string
+	if err := json.Unmarshal([]byte(`["disabled","required"]`), &res); err != nil {
+		panic(err)
+	}
+	for _, v := range res {
+		loadbalanceEntryServiceArgumentsTypeAPIKeyAuthPropEnum = append(loadbalanceEntryServiceArgumentsTypeAPIKeyAuthPropEnum, v)
+	}
+}
+
+const (
+
+	// LoadbalanceEntryServiceArgumentsAPIKeyAuthDisabled captures enum value "disabled"
+	LoadbalanceEntryServiceArgumentsAPIKeyAuthDisabled string = "disabled"
+
+	// LoadbalanceEntryServiceArgumentsAPIKeyAuthRequired captures enum value "required"
+	LoadbalanceEntryServiceArgumentsAPIKeyAuthRequired string = "required"
+)
+
+// prop value enum
+func (m *LoadbalanceEntryServiceArguments) validateAPIKeyAuthEnum(path, location string, value string) error {
+	if err := validate.EnumCase(path, location, value, loadbalanceEntryServiceArgumentsTypeAPIKeyAuthPropEnum, true); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (m *LoadbalanceEntryServiceArguments) validateAPIKeyAuth(formats strfmt.Registry) error {
+	if swag.IsZero(m.APIKeyAuth) { // not required
+		return nil
+	}
+
+	// value enum
+	if err := m.validateAPIKeyAuthEnum("serviceArguments"+"."+"api_key_auth", "body", *m.APIKeyAuth); err != nil {
+		return err
+	}
+
 	return nil
 }
 
