@@ -508,9 +508,11 @@ when the selected backend fails during the request:
 | `LOXILB_KV_UNIFIED_MODE` | **Legacy fallback toggle**, consulted only when `LOXILB_KV_LB_MODE` is unset. The unified prefix-CHWBL **capacity-weighted bounded-load blend** is **ON by default (the shipped default)** — Tier-1.5 keeps the cache-affinity (overlap) winner while it is under its capacity-weighted cap and *spills* CHWBL-style when it is over, so a hot prefix can no longer herd every request onto one prefill EP. Set `LOXILB_KV_UNIFIED_MODE=0` (or `false`/`off`/`no`) to **explicitly disable** it and restore the legacy pure overlap-argmax selector (byte-identical to the pre-blend baseline). Why it is the default: replicated A/B testing showed the blend is the only mode where KV-exact beats round-robin at the loose SLO — it cuts the prefill hot-spot's TTFT p90 from ~15.9 s to ~10.0 s. |
 | `LOXILB_KV_MEAN_LOAD_FACTOR` | The blend's bounded-load slack `c = (1+ε)·100`; valid `[100, 1000]` (ε ∈ [0, 9]); default `175` (ε = 0.75). Higher ⇒ more affinity-preserving (looser cap); lower ⇒ more aggressive spilling. Out-of-range/garbage ⇒ default. |
 | `LOXILB_KV_LOAD_PENALTY` | Static λ for the `soft` blend mode (default 32) |
-| `LOXILB_KV_SPILL_RELIEF` | Opt-in: redirect hot-prefix spills to the least-loaded under-cap EP instead of the next-best-overlap EP (default off) |
+| `LOXILB_KV_SPILL_RELIEF` | Full-fleet hot-prefix relief. Unset/auto ⇒ ON for single-role `kvExactMode=3`, OFF for P/D mode 1; explicit `1/true/on/yes` or `0/false/off/no` overrides process-wide |
 | `LOXILB_KV_CAP_SUM_MILLI` | Deployment Σcapacity (milli-units) for the capacity-normalized adaptive law (unset ⇒ normalization off) |
 | `LOXILB_KV_TLOAD_LOG` | Promote per-selection `[KV_INV] totalLoad=` diagnostics to Info level |
+| `LOXILB_KV_COLDSTART_SEED_N` | Every Nth Tier-1.5 hit seeds a cold EP while one exists; default 16, `0` disables |
+| `LOXILB_KV_COLDSTART_MIN_BLOCKS` | Inventory below this floor is considered cold for seeding; default 16, `0` means strictly empty only |
 | `LOXILB_KV_MAX_BLOCKS` | Per-EP inventory cap: default 1,000,000, range 1000–100,000,000; FIFO eviction counted in `loxilb_kv_inv_cap_evictions_total{service,ep}` |
 | `LOXILB_KV_ZERO_HIT_N` | Consecutive-zero-hit watchdog threshold (default 50; positive integers only — cannot be disabled) |
 | `LLB_KV_LOADGUARD` | Hard load-imbalance pre-guard applied before Tier 1.5 runs (default off) |

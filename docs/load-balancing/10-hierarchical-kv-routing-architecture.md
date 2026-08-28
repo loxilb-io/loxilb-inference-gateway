@@ -287,9 +287,11 @@ Intuition: an EP may hold its cache-affinity traffic while it carries at most `(
 capacity-fair share of the current total load; beyond that, the excess spills to siblings. Higher
 ε ⇒ more affinity-preserving; lower ε ⇒ more aggressive spilling.
 
-An optional refinement, `LOXILB_KV_SPILL_RELIEF` (default OFF), redirects hot-prefix spills to
-the *least-loaded under-cap* EP rather than the next-best-overlap EP, for faster pressure relief
-(`kvSpillReliefSetting`, `ai_kv_unified.go`).
+An optional refinement, `LOXILB_KV_SPILL_RELIEF`, redirects hot-prefix spills to the
+*least-loaded under-cap* EP across the full healthy fleet rather than remaining inside the
+positive-overlap candidate set. The current unset/auto behavior is ON for single-role
+`kvExactMode=3` and OFF for P/D `kvExactMode=1`; an explicit on/off value overrides this
+process-wide (`kvSpillReliefSetting`, `ai_kv_unified.go`).
 
 ### 4.3 `soft` mode — continuous cost blend
 
@@ -525,4 +527,3 @@ that lets all of this run in the serving path of production traffic.
 | Metrics export | `api/prometheus/sockproxy_metrics.go`, `ai_metrics.go`, `aictrl_metrics.go` |
 
 Configuration reference and tuning playbook: [doc 11](11-hierarchical-kv-routing-config-tuning.md).
-
