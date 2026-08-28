@@ -138,10 +138,14 @@ echo "Creating LB rule (AI Gateway, VIP 10.10.10.254:2020)"
 echo "#########################################"
 
 # AI Gateway rule:
-#   mode=4  (LBModeFullProxy) — activates sockproxy HTTP userspace processing
-#   sse_mode=true             — sets ai_gw_mode=1 inside sockproxy so that
-#                               llb_ai_validate_key / llb_ai_ratelimit_check
-#                               are invoked for every inbound request
+#   mode=4  (LBModeFullProxy)  — activates sockproxy HTTP userspace processing
+#   sse_mode=true              — streaming shape (AI accounting)
+#   api_key_auth="required"    — key enforcement is a per-service policy now,
+#                                not a rider on the streaming flag; a rule that
+#                                declares nothing deliberately does not enforce
+#                                (and the gateway warns on every quota write).
+#                                This suite exists to test enforcement, so it
+#                                declares it.
 $hexec llb1 curl -s -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
@@ -152,6 +156,7 @@ $hexec llb1 curl -s -X POST http://localhost:11111/netlox/v1/config/loadbalancer
       "protocol":        "tcp",
       "mode":            4,
       "sse_mode":        true,
+      "api_key_auth":    "required",
       "inactiveTimeOut": 60,
       "host":            "10.10.10.254"
     },
@@ -166,4 +171,4 @@ echo "ai-apikey testbed ready"
 echo "#########################################"
 echo "  VIP:               http://10.10.10.254:2020"
 echo "  Control plane API: http://llb1:11111/netlox/v1/config/ai/..."
-echo "  MySQL:             $MYSQL_IP:3306"
+echo "  PostgreSQL:        $PG_IP:5432"

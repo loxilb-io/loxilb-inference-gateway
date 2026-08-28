@@ -144,7 +144,7 @@ jobs:
           ./validation.sh
           ./rmconfig.sh
           cd -
-      - name: API keys + tenant rate limits (MariaDB-backed)
+      - name: API keys + tenant rate limits (PostgreSQL-backed)
         run: |
           cd cicd/ai-apikey/
           ./config.sh
