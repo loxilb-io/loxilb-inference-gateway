@@ -163,8 +163,10 @@ need tuning:
 - `chwbl_replication` (virtual nodes per endpoint, default 100) smooths ring
   placement; raising it has only a marginal, non-monotonic effect on real
   fleets, so the default is a fine starting point.
-- `chwbl_mean_load_factor` (default 125) bounds per-endpoint load and
-  spills to the next endpoint above the bound — but this rescue only engages
+- `chwbl_mean_load_factor` bounds per-endpoint load and spills to the next
+  endpoint above the bound. Swagger annotates 125, but the current omitted-field
+  path has an effective value of 175; set it explicitly for reproducible
+  behavior. This rescue only engages
   under genuine **concurrency**; a sequential, one-request-at-a-time workload
   never trips it, so placement there is pure ring hashing. If you see skew
   under real concurrent load, lowering the factor spreads more aggressively

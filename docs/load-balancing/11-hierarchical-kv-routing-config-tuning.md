@@ -112,9 +112,11 @@ Set with `docker run -e …`; all read once at startup.
 | `LOXILB_KV_UNIFIED_MODE` | ON | disable: `0/false/off/no` | Legacy toggle, consulted only when `LOXILB_KV_LB_MODE` is unset; disable ⇒ `off` (pure overlap-argmax) |
 | `LOXILB_KV_MEAN_LOAD_FACTOR` | 175 (ε=0.75) | int 100–1000 | Static ε for `hard` mode, as (1+ε)·100 |
 | `LOXILB_KV_LOAD_PENALTY` | 32 | int 1–100000 | Static λ for `soft` mode |
-| `LOXILB_KV_SPILL_RELIEF` | OFF | `1/true/on/yes` | Hot-prefix spill goes to least-loaded under-cap EP (opt-in) |
+| `LOXILB_KV_SPILL_RELIEF` | auto: mode 3 ON, P/D mode 1 OFF | on: `1/true/on/yes`; off: `0/false/off/no`; unset: auto | Hot single-cached prefix may spill to the least-loaded under-cap EP across the full healthy fleet. Explicit value is process-global |
 | `LOXILB_KV_CAP_SUM_MILLI` | 0 (off) | positive int | Deployment Σcapacity (milli-units) for capacity-normalized adaptive law; factor sanity-clamped [1/8, 8] |
 | `LOXILB_KV_TLOAD_LOG` | off | `1` | Promote per-selection `[KV_INV] totalLoad=` diagnostics to Info |
+| `LOXILB_KV_COLDSTART_SEED_N` | 16 | int ≥0; 0=off | While a cold EP exists, divert every Nth Tier-1.5 hit to rehydrate it; self-limiting once the EP reaches the cold floor |
+| `LOXILB_KV_COLDSTART_MIN_BLOCKS` | 16 | int ≥0; 0=strict empty-only | Inventory below this floor is cold/unselectable for seed purposes |
 | `LOXILB_KV_MAX_BLOCKS` | 1,000,000 | int 1000–100,000,000 | Per-EP inventory cap (FIFO eviction; watch `loxilb_kv_inv_cap_evictions_total`) |
 | `LOXILB_KV_ZERO_HIT_N` | 50 | positive int only | Consecutive-zero-hit watchdog threshold (`loxilb_pd_kv_zero_hit_watchdog_total`); cannot be disabled — invalid values fall back to 50 |
 | `LOXILB_AI_CTRL_ADDR` | unset (no controller) | `host:port` | Master gate for the controller applier; e.g. `10.0.0.13:18856` |

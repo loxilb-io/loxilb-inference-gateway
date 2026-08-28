@@ -70,9 +70,18 @@ GEMINI.md
 claudedocs/
 claude-agents/
 
-# Internal-only docs (design trackers, execution/audit logs, maintainer runbooks) —
-# never published to the public OSS repo; relocate to a private repo/wiki as needed.
+# PRIVATE BOUNDARY: company-only plans, analytics systems, campaign data,
+# execution/audit logs, and maintainer runbooks must never be published to the
+# public OSS repository. Keep them here only as a local quarantine and relocate
+# durable work to a separately access-controlled private repository or wiki.
 docs/internal/
+
+# Defense-in-depth for private marketing systems accidentally created outside
+# docs/internal/. These paths must remain absent from the public Git index.
+/private/
+/.private/
+/deploy/marketing-analytics/
+/.github/workflows/marketing-analytics-*.yml
 
 # Private testbed CI/CD (references private fleet topology; never published)
 cicd/private-*/
@@ -106,3 +115,7 @@ deploy/monitoring/.env
 packaging/.staging
 dist/
 __pycache__/
+# Added by code-review-graph
+.code-review-graph/
+CODEBUDDY.md
+QODER.md

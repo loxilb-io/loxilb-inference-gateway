@@ -20,7 +20,7 @@ it*, *how to test it*, and *how to extend it*.
 
 | You are a… | Start here |
 |---|---|
-| **User / operator** configuring the gateway | [REST reference](05-rest-api-reference.md) → [L7 TLS](03-l7-tls.md); classic L4/L7 fundamentals: [upstream loxilb docs](https://loxilb-io.github.io/loxilbdocs/) |
+| **User / operator** configuring an LLM engine fleet | [Multi-LLM platform operations guide](22-multi-llm-platform-operations-guide.ko.md) → [REST reference](05-rest-api-reference.md) → [L7 TLS](03-l7-tls.md); classic L4/L7 fundamentals: [upstream loxilb docs](https://loxilb-io.github.io/loxilbdocs/) |
 | **AI / vLLM platform engineer** | [Hierarchical routing architecture](10-hierarchical-kv-routing-architecture.md) → [Configuration & tuning](11-hierarchical-kv-routing-config-tuning.md) → internals: [KV-exact deep dive](08-kv-cache-aware-routing.md), [AWS P/D deploy & debug](09-kv-cache-aware-routing-aws-pd-deep-dive.md), [AI-Gateway L7 proxy & HA](04-ai-gateway-l7.md); SGLang: [architecture](15-sglang-kv-cache-aware-routing.md) → [vs vLLM](16-sglang-vs-vllm-routing-differences.md) → [config & tuning](17-sglang-config-tuning.md) |
 | **API platform operator** exposing OpenAI-compatible or MCP endpoints | [AI gateway controls](19-ai-gateway-controls.md) (API keys, rate limits, model routing, SSE quotas) → [MCP gateway](18-mcp-gateway.md) |
 | **QA engineer** validating a feature | Each feature doc has a **CICD validation** section; consolidated runbook in [Troubleshooting](06-troubleshooting.md) and [Developer guide §CICD](07-developer-guide.md) |
@@ -49,6 +49,8 @@ it*, *how to test it*, and *how to extend it*.
 | [`18-mcp-gateway.md`](18-mcp-gateway.md) | **MCP gateway user guide**: load-balancing Model Context Protocol servers — session stickiness (`session_header_name: mcp-session-id`), the three deployment shapes (HTTP / TLS-terminating / end-to-end HTTPS), MCP trace tagging, troubleshooting |
 | [`19-ai-gateway-controls.md`](19-ai-gateway-controls.md) | **AI gateway controls user guide**: API-key lifecycle & `X-Api-Key` enforcement (401/403/429), per-tenant rate limits, model-name routing (`model_name`/`path_prefix`), SSE stream quotas (`sse_mode`, `max_stream_duration_sec`) |
 | [`20-tensorrt-llm-kv-cache-aware-routing.md`](20-tensorrt-llm-kv-cache-aware-routing.md) | **TensorRT-LLM integration**: HTTP-drain KV event plane (sole-consumer rule), token re-hash strategy, `/server_info` admission guard (`tokens_per_block` enforcement), sequential `context_only`/`generation_only` P/D dialect with context early-exit, converged `kvExactMode=3`, validation status |
+| [`21-llamacpp-load-balancing.md`](21-llamacpp-load-balancing.md) | **llama.cpp integration**: converged-only typed plain-LB, CHWBL prefix affinity, `/props` advisory probe, engine-side slot/host-cache tuning, and explicit rejection of KV-exact/P/D fields |
+| [`22-multi-llm-platform-operations-guide.ko.md`](22-multi-llm-platform-operations-guide.ko.md) | **Beginner AI Infra operator manual (Korean)**: Mermaid mode diagrams, vLLM/SGLang/TensorRT-LLM/llama.cpp concepts, converged vs P/D comparison, engine-specific deployment recipes, REST rule examples, verification, and troubleshooting |
 
 ---
 
@@ -82,6 +84,9 @@ it*, *how to test it*, and *how to extend it*.
 | Failover warmup (KV inventory + vLLM metrics snapshot) | ⏸ Deferred |
 | Engine-exact KV routing from ZMQ KV-cache events (vLLM, P/D) | ✅ Live-validated on a real GPU fleet (NIXL P/D); see [doc 09](09-kv-cache-aware-routing-aws-pd-deep-dive.md) |
 | Engine-exact KV routing, single pool (SGLang, `kvExactMode=3`) | ✅ See [doc 15](15-sglang-kv-cache-aware-routing.md) |
+| SGLang P/D dual-dispatch (`kvEngineType=sglang`, `pdBootstrapPort`) | ✅ Live GPU and mock-CICD validated; see [multi-engine operator guide](22-multi-llm-platform-operations-guide.ko.md) |
+| TensorRT-LLM converged + P/D (`kvExactMode=3/1`) | ✅ Live GPU and mock-CICD validated; see [doc 20](20-tensorrt-llm-kv-cache-aware-routing.md) |
+| llama.cpp converged CHWBL (`kvEngineType=llamacpp`, `sel=8`) | ✅ Live GPU and mock-CICD validated; KV-exact/P/D intentionally unsupported; see [doc 21](21-llamacpp-load-balancing.md) |
 | MCP proxying with session stickiness | ✅ See [doc 18](18-mcp-gateway.md) |
 | API keys / tenant rate limits / model routing / SSE quotas | ✅ See [doc 19](19-ai-gateway-controls.md) |
 
