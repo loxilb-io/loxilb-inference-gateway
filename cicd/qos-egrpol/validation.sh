@@ -37,12 +37,31 @@ EGR_JSON='{"policyIdent":"qegr1","policyInfo":{"type":0,"committedInfoRate":10,"
 code=0
 
 sudo docker exec -d l3ep1 iperf3 -s -p 8080
-sleep 2
 
-# Transit Mbits/s through the VIP (iperf3 receiver side)
+# docker exec -d returns before iperf3 binds; poll the listener on the
+# backend itself instead of sleeping blind, so an empty run_bw reading later
+# can only mean the VIP path, never server startup (this raced in qos-rulepol,
+# where the first client run follows the server start immediately).
+iperf_up=0
+for _ in $(seq 1 15); do
+    if $dexec l3ep1 sh -c "ss -lntH 2>/dev/null | grep -q ':8080 ' || netstat -tln 2>/dev/null | grep -q ':8080 ' || cat /proc/net/tcp /proc/net/tcp6 2>/dev/null | grep -q ':1F90 '"; then
+        iperf_up=1; break
+    fi
+    sleep 1
+done
+if [[ "$iperf_up" != 1 ]]; then
+    echo "iperf3 server never began listening on l3ep1:8080" ; code=1
+fi
+
+# Transit Mbits/s through the VIP (iperf3 receiver side). A run with no
+# receiver summary yields "" and surfaces iperf3's own error on the console.
 run_bw() {
-    local secs=$1; shift
-    $dexec l3h1 iperf3 -c $VIP -p 2020 -t $secs "$@" 2>&1 | \
+    local secs=$1 raw; shift
+    raw=$($dexec l3h1 iperf3 -c $VIP -p 2020 -t $secs "$@" 2>&1)
+    if ! echo "$raw" | grep -q receiver; then
+        echo "iperf3 run produced no receiver summary: $(echo "$raw" | grep -v '^$' | tail -1)" >&2
+    fi
+    echo "$raw" | \
         awk '/receiver/ {v=$7; u=$8; if (u=="Kbits/sec") v=v/1000; if (u=="Gbits/sec") v=v*1000; printf "%d", v}'
 }
 
