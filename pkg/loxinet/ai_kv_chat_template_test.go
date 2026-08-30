@@ -146,3 +146,24 @@ func TestChatTemplate_UnknownModelNoTemplate(t *testing.T) {
 		t.Fatal("expected ok=false for unregistered non-Qwen model, got ok=true")
 	}
 }
+
+// TestChatTemplate_UnregisteredQwenModelsNotTemplated asserts that Qwen-vendor
+// models WITHOUT an exact registry entry return ok=false. A vendor-prefix
+// fallback here is a correctness defect, not a convenience: Qwen3 uses a
+// different template dialect (no default system prompt), and even a same-dialect
+// sibling size is an unvalidated identity — rendering it with the registered
+// 7B template silently mis-hashes every block. Any registry lookup broader than
+// exact-slug match must turn this test red.
+func TestChatTemplate_UnregisteredQwenModelsNotTemplated(t *testing.T) {
+	msgs := []kvChatMessage{{Role: "user", Content: "hi"}}
+	for _, model := range []string{
+		"Qwen/Qwen3-0.6B",            // different template dialect than Qwen2.5
+		"Qwen/Qwen2.5-14B-Instruct",  // same dialect, but not a validated registry entry
+		"Qwen/Qwen2.5-7B",            // base variant of the registered instruct model
+		"Qwen__Qwen2.5-7B-Instructx", // adversarial near-miss of the registered slug
+	} {
+		if rendered, ok := kvRenderChatTemplate(model, msgs); ok {
+			t.Errorf("model %q has no registered template but rendered %q — unregistered models must fall back, never inherit a vendor sibling's template", model, rendered)
+		}
+	}
+}

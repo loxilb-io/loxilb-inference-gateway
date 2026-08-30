@@ -81,8 +81,12 @@ func TestKvBridgeTokenizeUsesSpecials(t *testing.T) {
 // template render, which already carries its special tokens; vLLM encodes it
 // with add_special_tokens=False, so a second BOS must not be prepended.
 func TestKvBridgeTokenizeChatUsesNoSpecials(t *testing.T) {
-	// A Qwen__-prefixed slug resolves the built-in ChatML renderer, so the
-	// bridge reaches the tokenize step without registry setup.
+	// Register a renderer for the test model explicitly: template lookup is
+	// exact-slug only, and this test is about the encode mode downstream of
+	// the render, not about how the renderer was resolved.
+	slug := kvModelSlug("Qwen/encode-mode-test")
+	kvChatTemplateRegistry[slug] = renderChatMLQwen
+	defer delete(kvChatTemplateRegistry, slug)
 	rec := kvEncodeModeInstallTokenizer(t, "Qwen/encode-mode-test")
 
 	body := `{"messages":[{"role":"user","content":"hi"}]}`
