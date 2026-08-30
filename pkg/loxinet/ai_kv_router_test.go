@@ -964,10 +964,19 @@ func TestKvLoadTokenizerMissing(t *testing.T) {
 		t.Error("expected nil for missing model")
 	}
 
-	// Second call — should still return nil (cached failure, no retry)
+	// Repair the staged tokenizer. The data-plane path stays negative-cached
+	// for the TTL, but a failed attempt must not poison the model until process
+	// restart: the admission-path retry (rule POST) probes fresh and succeeds.
+	backend.tokenizers["/etc/loxilb/tokenizers/missing-model/tokenizer.json"] = &mockTokenizer{
+		ids: []uint32{1, 2, 3},
+	}
 	tok = kvLoadTokenizer("missing-model")
 	if tok != nil {
-		t.Error("expected nil on second call for missing model")
+		t.Error("expected nil from the data-plane path inside the negative-cache TTL")
+	}
+	tok = kvLoadTokenizerFresh("missing-model")
+	if tok == nil {
+		t.Error("expected repaired tokenizer to load on admission retry")
 	}
 }
 

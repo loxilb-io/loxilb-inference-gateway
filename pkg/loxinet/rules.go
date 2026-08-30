@@ -2802,6 +2802,42 @@ func kvLlamacppFeatureGuard(engine string, kvExactMode uint8, pdDisagg bool, zmq
 	return nil
 }
 
+// kvVllmExactRuntimeValidate turns the two cross-process vLLM parity inputs
+// into an admission-time contract. Without this guard, a rule can be created,
+// read back as healthy, keep returning HTTP 200 through Tier-2 fallback, and
+// nevertheless miss every Tier-1.5 lookup because either:
+//
+//   - vLLM and the Gateway computed different first-block parent hashes; or
+//   - the request model name did not identify a loadable Gateway tokenizer.
+//
+// model_name is deliberately required for an exact rule. It is already part
+// of the rule key and data-plane model selection, so binding it here makes the
+// served-model identity explicit instead of permitting an unvalidated wildcard
+// pool. A multi-model deployment uses one exact rule per served model.
+//
+// getenv and tokenizerReady are injected to keep the decision deterministic in
+// unit tests. Production passes os.LookupEnv and a real HF tokenizer load.
+func kvVllmExactRuntimeValidate(engine string, kvExactMode uint8, modelName string,
+	getenv func(string) (string, bool), tokenizerReady func(string) bool) error {
+	if kvExactMode == 0 || kvEngineEffective(engine) != "vllm" {
+		return nil
+	}
+	if modelName == "" {
+		return errors.New("model_name is required for vllm kvExactMode (must equal the served model and staged tokenizer identity)")
+	}
+	seed, present := getenv("LLB_KV_NONE_HASH_SEED")
+	if !present || seed == "" {
+		return errors.New("vllm kvExactMode requires non-empty Gateway LLB_KV_NONE_HASH_SEED matching engine PYTHONHASHSEED")
+	}
+	if len(seed) > 23 {
+		return errors.New("LLB_KV_NONE_HASH_SEED must be at most 23 bytes for vllm kvExactMode")
+	}
+	if tokenizerReady == nil || !tokenizerReady(modelName) {
+		return errors.New("vllm kvExactMode tokenizer is required and must be loadable for model_name (stage /etc/loxilb/tokenizers/<model-slug>/tokenizer.json before retry)")
+	}
+	return nil
+}
+
 // kvHashAlgoEffective resolves the block-hash contract a rule actually runs.
 // It mirrors dpebpf_linux.go's resolution order EXACTLY (the single source of
 // truth for what the C data plane hashes with): an explicit kvHashAlgo always
@@ -3280,6 +3316,15 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	// pair can never reach the data plane. An absent kvHashAlgo (the recommended
 	// shape) always passes.
 	if err := kvHashAlgoValidate(serv.KvHashAlgo, serv.KvEngineType); err != nil {
+		return RuleUnknownServiceErr, err
+	}
+
+	// vLLM exact-routing parity is a runtime prerequisite, not an operator
+	// convention. Validate it before any rule, subscriber, or data-plane state
+	// is mutated so a management-API success can never conceal permanent
+	// Tier-1.5 fallback.
+	if err := kvVllmExactRuntimeValidate(serv.KvEngineType, serv.KvExactMode, serv.ModelName,
+		os.LookupEnv, func(modelName string) bool { return kvLoadTokenizerFresh(modelName) != nil }); err != nil {
 		return RuleUnknownServiceErr, err
 	}
 

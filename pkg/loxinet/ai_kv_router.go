@@ -37,6 +37,8 @@ import "C"
 import (
 	"crypto/sha256"
 	"sync"
+	"sync/atomic"
+	"time"
 	"unsafe"
 
 	log "github.com/sirupsen/logrus"
@@ -79,11 +81,48 @@ func KvRegisterTokenizerBackend(backend KvTokenizerBackend) {
 
 // kvTokenizerPool manages loaded tokenizers keyed by model slug.
 var (
-	kvTokenizerPool    = make(map[string]KvTokenizer) // model-slug -> tokenizer (nil = failed)
+	kvTokenizerPool    = make(map[string]KvTokenizer) // model-slug -> successfully loaded tokenizer
 	kvTokenizerMu      sync.RWMutex
 	kvTokenizerWarnMap sync.Map // model-slug -> warned (bool)
-	kvTokenizerLoaded  sync.Map // model-slug -> attempted (bool) — prevents retry
+
+	// kvTokenizerEpoch is the pool generation. Pool reset/close advances it under
+	// the pool write lock; a load that started under an older generation discards
+	// its result at commit time instead of populating state belonging to a
+	// previous pool lifetime.
+	kvTokenizerEpoch atomic.Uint64
+
+	// kvTokenizerNeg holds per-slug retry-not-before deadlines for failed loads,
+	// under its own lock so a broken-model request storm never touches the pool
+	// locks or the filesystem more than once per kvTokenizerNegTTL.
+	kvTokenizerNegMu sync.Mutex
+	kvTokenizerNeg   = make(map[string]time.Time)
+
+	// kvTokenizerFlight collapses concurrent loads of one (slug, generation)
+	// into a single LoadModel call performed with NO pool lock held, so a slow
+	// or failing load never stalls lookups of already-loaded tokenizers.
+	kvTokenizerFlightMu sync.Mutex
+	kvTokenizerFlight   = make(map[kvTokenizerFlightKey]*kvTokenizerLoad)
 )
+
+// kvTokenizerNegTTL bounds how often a missing/broken tokenizer is re-probed on
+// the data-plane path. Rule admission bypasses it via kvLoadTokenizerFresh so an
+// operator's stage-and-retry needs no wait. Variable so tests can compress it.
+var kvTokenizerNegTTL = 5 * time.Second
+
+// kvTokenizerWaitTimeout bounds how long a caller waits on another goroutine's
+// in-flight load before abandoning it; the shared load itself keeps running and
+// commits (or negative-caches) on its own lifecycle.
+var kvTokenizerWaitTimeout = 2 * time.Second
+
+type kvTokenizerFlightKey struct {
+	slug  string
+	epoch uint64
+}
+
+type kvTokenizerLoad struct {
+	done chan struct{} // closed when the load committed or was discarded
+	tok  KvTokenizer   // valid only after done; nil on failure or stale discard
+}
 
 // kvTokenCache implements a per-prefix LRU token ID cache to avoid
 // re-tokenizing identical system prompts across multi-turn conversations.
@@ -132,52 +171,131 @@ func kvModelSlug(modelName string) string {
 // kvTokenizerDir is the base directory for tokenizer files.
 const kvTokenizerDir = "/etc/loxilb/tokenizers"
 
-// kvLoadTokenizer loads a tokenizer for the given model.
-// Returns nil if no backend, file missing, or parse error.
-// Uses warn-once logging and caches failures to avoid retries.
+// kvLoadTokenizer loads a tokenizer for the given model (data-plane path).
+// Returns nil if no backend, file missing, parse error, or a failed load is
+// still inside its negative-cache TTL. Failed loads remain retryable so an
+// operator can stage a tokenizer without restarting the Gateway.
 func kvLoadTokenizer(modelName string) KvTokenizer {
-	if kvRegisteredBackend == nil {
+	return kvLoadTokenizerEx(modelName, false)
+}
+
+// kvLoadTokenizerFresh is the admission-path variant: it drops any negative-
+// cache entry before probing, so an operator who has just staged or repaired a
+// tokenizer gets an immediate authoritative answer on the rule POST retry.
+// Rule admission is operator-triggered and low-rate; only the data-plane path
+// needs the TTL bound.
+func kvLoadTokenizerFresh(modelName string) KvTokenizer {
+	return kvLoadTokenizerEx(modelName, true)
+}
+
+func kvLoadTokenizerEx(modelName string, freshProbe bool) KvTokenizer {
+	backend := kvRegisteredBackend
+	if backend == nil {
 		return nil
 	}
-
 	slug := kvModelSlug(modelName)
 
-	// Fast path: check under read lock
-	kvTokenizerMu.RLock()
-	if t, ok := kvTokenizerPool[slug]; ok {
+	// Two attempts: a load whose result was discarded because the pool
+	// generation changed mid-flight re-dispatches once under the new
+	// generation instead of reporting a false miss.
+	for attempt := 0; attempt < 2; attempt++ {
+		kvTokenizerMu.RLock()
+		t, ok := kvTokenizerPool[slug]
 		kvTokenizerMu.RUnlock()
-		return t // may be nil (cached failure)
+		if ok {
+			return t
+		}
+
+		if freshProbe {
+			kvTokenizerNegMu.Lock()
+			delete(kvTokenizerNeg, slug)
+			kvTokenizerNegMu.Unlock()
+		} else {
+			kvTokenizerNegMu.Lock()
+			deadline, failed := kvTokenizerNeg[slug]
+			kvTokenizerNegMu.Unlock()
+			if failed && time.Now().Before(deadline) {
+				return nil
+			}
+		}
+
+		key := kvTokenizerFlightKey{slug: slug, epoch: kvTokenizerEpoch.Load()}
+		kvTokenizerFlightMu.Lock()
+		call, joined := kvTokenizerFlight[key]
+		if !joined {
+			call = &kvTokenizerLoad{done: make(chan struct{})}
+			kvTokenizerFlight[key] = call
+		}
+		kvTokenizerFlightMu.Unlock()
+
+		if !joined {
+			tok, stale := kvTokenizerLoadAndCommit(backend, modelName, slug, key.epoch)
+			if !stale {
+				call.tok = tok
+			}
+			close(call.done)
+			kvTokenizerFlightMu.Lock()
+			delete(kvTokenizerFlight, key)
+			kvTokenizerFlightMu.Unlock()
+			if stale {
+				continue
+			}
+			return tok
+		}
+
+		select {
+		case <-call.done:
+		case <-time.After(kvTokenizerWaitTimeout):
+			return nil // abandon; the shared load finishes on its own lifecycle
+		}
+		if call.tok != nil {
+			return call.tok
+		}
+		// nil is either a genuine failure (now negative-cached; the next
+		// iteration returns fast) or a stale-generation discard (the next
+		// iteration re-dispatches under the new generation).
 	}
-	kvTokenizerMu.RUnlock()
+	return nil
+}
 
-	// Check if already attempted (avoids write lock contention)
-	if _, attempted := kvTokenizerLoaded.Load(slug); attempted {
-		return nil
-	}
-
-	// Slow path: acquire write lock, double-check, then load
-	kvTokenizerMu.Lock()
-	defer kvTokenizerMu.Unlock()
-
-	if t, ok := kvTokenizerPool[slug]; ok {
-		return t
-	}
-
-	kvTokenizerLoaded.Store(slug, true)
-
+// kvTokenizerLoadAndCommit performs the filesystem load with NO pool lock held,
+// then commits the outcome under the pool write lock only if the pool is still
+// the generation the load started under. stale=true means a concurrent pool
+// reset invalidated the result and nothing was populated — neither the pool nor
+// the negative cache may carry state across generations.
+func kvTokenizerLoadAndCommit(backend KvTokenizerBackend, modelName, slug string, epoch uint64) (KvTokenizer, bool) {
 	tokenizerPath := kvTokenizerDir + "/" + slug + "/tokenizer.json"
-	tokenizer := kvRegisteredBackend.LoadModel(tokenizerPath)
+	tokenizer := backend.LoadModel(tokenizerPath)
+
+	kvTokenizerMu.Lock()
+	if kvTokenizerEpoch.Load() != epoch {
+		kvTokenizerMu.Unlock()
+		if tokenizer != nil {
+			tokenizer.Close()
+		}
+		return nil, true
+	}
+	if tokenizer != nil {
+		kvTokenizerPool[slug] = tokenizer
+	}
+	kvTokenizerMu.Unlock()
+
 	if tokenizer == nil {
-		kvTokenizerPool[slug] = nil // cache failure
+		// Failure stays retryable (operators stage tokenizers without a
+		// restart) but TTL-bounded, so a broken-model request storm cannot
+		// become a filesystem probe storm. The warn remains once-per-model so
+		// repeated data-plane fallback cannot flood logs.
+		kvTokenizerNegMu.Lock()
+		kvTokenizerNeg[slug] = time.Now().Add(kvTokenizerNegTTL)
+		kvTokenizerNegMu.Unlock()
 		if _, warned := kvTokenizerWarnMap.LoadOrStore(slug, true); !warned {
 			log.Warnf("kv-router: tokenizer not available for model %q at %s", modelName, tokenizerPath)
 		}
-		return nil
+		return nil, false
 	}
 
-	kvTokenizerPool[slug] = tokenizer
 	log.Infof("kv-router: loaded tokenizer for model %q from %s", modelName, tokenizerPath)
-	return tokenizer
+	return tokenizer, false
 }
 
 // kvTokenizeWithCache tokenizes text using the model's tokenizer, with LRU caching.
@@ -236,9 +354,12 @@ func kvTokenizeWithCache(text, modelName string, maxTokens int) []uint32 {
 }
 
 // KvTokenizerClose cleans up all loaded tokenizers for graceful shutdown.
+// The generation bump makes any still-in-flight load discard its result
+// instead of resurrecting an entry in the closed pool.
 func KvTokenizerClose() {
 	kvTokenizerMu.Lock()
 	defer kvTokenizerMu.Unlock()
+	kvTokenizerEpoch.Add(1)
 	for slug, t := range kvTokenizerPool {
 		if t != nil {
 			t.Close()
@@ -255,13 +376,19 @@ func KvTokenCacheReset() {
 	kvLRUOrder = nil
 }
 
-// KvTokenizerPoolReset clears the tokenizer pool (for testing).
+// KvTokenizerPoolReset clears the tokenizer pool, negative cache, and warn
+// state, advancing the pool generation so in-flight loads from the previous
+// lifetime discard their results (for testing and registry reload).
 func KvTokenizerPoolReset() {
 	kvTokenizerMu.Lock()
-	defer kvTokenizerMu.Unlock()
+	kvTokenizerEpoch.Add(1)
 	kvTokenizerPool = make(map[string]KvTokenizer)
-	kvTokenizerLoaded = sync.Map{}
 	kvTokenizerWarnMap = sync.Map{}
+	kvTokenizerMu.Unlock()
+
+	kvTokenizerNegMu.Lock()
+	kvTokenizerNeg = make(map[string]time.Time)
+	kvTokenizerNegMu.Unlock()
 }
 
 //export llb_ai_kv_tokenize
