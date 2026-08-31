@@ -1,0 +1,184 @@
+# engine-contracts/contracts.yaml — code-owned engine contract profiles.
+#
+# Source of truth for the compile-time engine registry. Every profile
+# composes independent axes (transport, wire schema, hash binding, P/D
+# dialect, capabilities, probe); the framework NAME never implies a wire
+# contract by itself. Regenerate compiled artifacts with:
+#
+#   go run ./cmd/ecgen
+#
+# which emits pkg/enginecontract/zz_generated_registry.go and the C header
+# loxilb-ebpf/common/sockproxy_pd_ids.h. CI re-runs the generator and fails
+# on any diff, so this file and the generated artifacts can never drift.
+#
+# Ownership (DEC-001): this file is code-owned. Human-approved support
+# status lives in support-catalog.yaml; watcher observations live in
+# observed-releases.json. Neither of those may alter what this file
+# declares.
+#
+# The version selectors below are implementation selectors (which decoder
+# family a version speaks), NOT validated-support claims — support claims
+# live exclusively in support-catalog.yaml (DEC-001, promotion workflow).
+
+schemaVersion: engine-contracts.loxilb.io/v1alpha1
+
+# Monotonic manifest generation: bump by exactly 1 on any change to this
+# file. Contract references carry (profileId, generation); a stale
+# generation never resolves (fail closed).
+generation: 1
+
+# Engine wire IDs: the numeric kv_engine_type encoding shared by the Go
+# control plane and the eBPF/C data plane. Values are ABI-frozen (DEC-008):
+# they cross the Go→C boundary as numbers and must never be renumbered.
+# llama.cpp has no P/D or KV-event plane and deliberately has no wire ID.
+engineIds:
+  vllm: 0
+  sglang: 1
+  trtllm: 2
+
+# Closed binding vocabularies. A profile may only reference IDs declared
+# here (or the reserved ID "none" for a capability the engine lacks).
+bindings:
+  transports:
+    - zmq-multipart-v1
+    - http-drain-v1
+  wireSchemas:
+    - vllm-kv-tagged-array-v1
+    - vllm-kv-tagged-map-v2
+    - sglang-kv-tagged-array-rank-v1
+    - trtllm-kv-json-v1
+  hashBindings:
+    - vllm-block-hash-v1
+    - sglang-raw-parent-le32-v1
+    - trtllm-token-rehash-v1
+  pdDialects:
+    - vllm-nixl-v1
+    - sglang-bootstrap-v1
+    - trtllm-ctx-first-v1
+  probes:
+    - vllm-runtime-info-v1
+    - sglang-server-info-v1
+    - trtllm-server-info-v1
+    - llamacpp-props-v1
+
+profiles:
+  # vLLM tagged-ARRAY family: each KV event object is a msgpack tagged
+  # array. The outer batch is an array in BOTH vLLM families — only the
+  # per-event representation changed upstream at v0.24.0.
+  - id: vllm-kv-array-v1
+    engine: vllm
+    versions:
+      scheme: semver
+      minInclusive: v0.17.0
+      maxInclusive: v0.23.0
+    transport: zmq-multipart-v1
+    wireSchema: vllm-kv-tagged-array-v1
+    hashBinding: vllm-block-hash-v1
+    pdDialect: vllm-nixl-v1
+    probe: vllm-runtime-info-v1
+    capabilities:
+      kvEvents: implemented
+      prefixRouting: implemented
+      pdRouting: implemented
+      runtimeProbe: implemented
+
+  # vLLM tagged-MAP family: per-event msgpack tagged map from v0.24.0.
+  # familyDefault: a contract reference resolved by engine family alone
+  # (no exact identity) binds to this profile.
+  - id: vllm-kv-map-v2
+    engine: vllm
+    familyDefault: true
+    versions:
+      scheme: semver
+      minInclusive: v0.24.0
+      maxInclusive: v0.28.0
+    transport: zmq-multipart-v1
+    wireSchema: vllm-kv-tagged-map-v2
+    hashBinding: vllm-block-hash-v1
+    pdDialect: vllm-nixl-v1
+    probe: vllm-runtime-info-v1
+    capabilities:
+      kvEvents: implemented
+      prefixRouting: implemented
+      pdRouting: implemented
+      runtimeProbe: implemented
+
+  # SGLang: tagged-array wire with a meaningful batch dp_rank; rank
+  # identity from the socket (base port + N) and from the payload must
+  # agree. Raw parent bytes + little-endian u32 token hash binding.
+  - id: sglang-kv-rank-v1
+    engine: sglang
+    familyDefault: true
+    versions:
+      scheme: exact
+      exact: v0.5.18
+    transport: zmq-multipart-v1
+    wireSchema: sglang-kv-tagged-array-rank-v1
+    hashBinding: sglang-raw-parent-le32-v1
+    pdDialect: sglang-bootstrap-v1
+    probe: sglang-server-info-v1
+    capabilities:
+      kvEvents: implemented
+      prefixRouting: implemented
+      pdRouting: implemented
+      runtimeProbe: implemented
+
+  # TensorRT-LLM stable: HTTP drain transport (a consuming read — sole
+  # consumer + gateway-managed cursor/epoch, DEC-007) with a native JSON
+  # envelope decoder. kvEvents is "adapter" until the synthetic-frame
+  # bridge is retired by the migration epic.
+  - id: trtllm-kv-http-v1
+    engine: trtllm
+    familyDefault: true
+    versions:
+      scheme: exact
+      exact: v1.2.1
+    transport: http-drain-v1
+    wireSchema: trtllm-kv-json-v1
+    hashBinding: trtllm-token-rehash-v1
+    pdDialect: trtllm-ctx-first-v1
+    probe: trtllm-server-info-v1
+    capabilities:
+      kvEvents: adapter
+      prefixRouting: implemented
+      pdRouting: implemented
+      runtimeProbe: implemented
+
+  # TensorRT-LLM preview: the wire fixtures in this repository were
+  # captured from the 1.3.0rc24 preview. Preview and stable are separate
+  # identity tuples — evidence for one never counts for the other.
+  - id: trtllm-kv-http-preview-v1
+    engine: trtllm
+    versions:
+      scheme: exact
+      exact: 1.3.0rc24
+    transport: http-drain-v1
+    wireSchema: trtllm-kv-json-v1
+    hashBinding: trtllm-token-rehash-v1
+    pdDialect: trtllm-ctx-first-v1
+    probe: trtllm-server-info-v1
+    capabilities:
+      kvEvents: adapter
+      prefixRouting: implemented
+      pdRouting: implemented
+      runtimeProbe: implemented
+
+  # llama.cpp: no KV-event plane and no P/D disaggregation upstream. The
+  # profile exists so the absence is a declared, typed contract answer
+  # (capability_unavailable) instead of an engine-specific guard string.
+  # /props is an advisory probe only — never identity proof by itself.
+  - id: llamacpp-nokv-v1
+    engine: llamacpp
+    versions:
+      scheme: exact
+      exact: v0.3.0
+    transport: none
+    wireSchema: none
+    hashBinding: none
+    pdDialect: none
+    probe: llamacpp-props-v1
+    capabilities:
+      kvEvents: none
+      prefixRouting: none
+      pdRouting: none
+      runtimeProbe: implemented
