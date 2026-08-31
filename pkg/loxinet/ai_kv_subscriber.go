@@ -1119,7 +1119,7 @@ func replayKvEvents(inv *kvInventory, replay kvZmqReplayRequester, startSeq int6
 // existing caller and test keeps its shipped single-rank behavior
 // byte-identically (: default rank count 1 ≡ today's single-port path).
 func KvSubscriberStart(serviceID uint32, epIdx int, epIP string, zmqPort uint16, algo string) {
-	KvSubscriberStartRank(serviceID, epIdx, 0, epIP, zmqPort, algo, "", 0)
+	KvSubscriberStartRank(serviceID, epIdx, 0, epIP, zmqPort, algo, "", 0, "")
 }
 
 // KvSubscriberStartRank starts a ZMQ subscriber goroutine for one (EP, DP
@@ -1136,7 +1136,7 @@ func KvSubscriberStart(serviceID uint32, epIdx int, epIP string, zmqPort uint16,
 // (events ride it — there is no separate event port) and blockSize carries
 // the rule's kvBlockSize for the poller's full-block decoder.
 func KvSubscriberStartRank(serviceID uint32, epIdx int, rank uint16, epIP string, port uint16, algo string,
-	engine string, blockSize uint32) {
+	engine string, blockSize uint32, contractID string) {
 	kvServicesMu.Lock()
 	defer kvServicesMu.Unlock()
 
@@ -1253,7 +1253,7 @@ func KvSubscriberStartRank(serviceID uint32, epIdx int, rank uint16, epIP string
 		// engine-contract registry (legacy policy table preserves shipped
 		// behavior per engine; see kvLegacyWireProfile). Fail closed: no
 		// binding, no subscriber.
-		wireSchema, wErr := kvResolveWireSchema(engine)
+		wireSchema, wErr := kvResolveWireSchema(engine, contractID)
 		if wErr != nil {
 			log.Warnf("kv-subscriber: ep %d rank %d: %v — subscriber not started", epIdx, rank, wErr)
 			return

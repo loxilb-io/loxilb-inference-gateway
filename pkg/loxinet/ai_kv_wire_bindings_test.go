@@ -303,7 +303,7 @@ func TestKvWireLegacyProfilePins(t *testing.T) {
 		"trtllm": KvWireTrtllmJSONV1,
 	}
 	for engine, want := range wantSchema {
-		got, err := kvResolveWireSchema(engine)
+		got, err := kvResolveWireSchema(engine, "")
 		if err != nil {
 			t.Errorf("engine %q: %v", engine, err)
 			continue
@@ -324,9 +324,23 @@ func TestKvWireLegacyProfilePins(t *testing.T) {
 	}
 	// Engines without an event plane, or unknown engines, must fail closed.
 	for _, engine := range []string{"llamacpp", "bogus-engine"} {
-		if _, err := kvResolveWireSchema(engine); err == nil {
+		if _, err := kvResolveWireSchema(engine, ""); err == nil {
 			t.Errorf("engine %q must not resolve a wire schema", engine)
 		}
+	}
+
+	// A rule whose binding carries a contract reference binds THROUGH it:
+	// a strict vllm rule on the native map profile gets the map decoder —
+	// the legacy table (vllm -> tagged-ARRAY) must not shadow the bound
+	// contract, or every native event rejects as schema_mismatch and the
+	// rule can never attest.
+	got, err := kvResolveWireSchema("vllm", "vllm-kv-map-v2")
+	if err != nil || got != KvWireVllmMapV2 {
+		t.Errorf("contract-bound resolution = %q, %v (want %q)", got, err, KvWireVllmMapV2)
+	}
+	// Unknown contract references fail closed, never fall back to legacy.
+	if _, err := kvResolveWireSchema("vllm", "no-such-contract"); err == nil {
+		t.Error("unknown contract reference must fail closed")
 	}
 }
 

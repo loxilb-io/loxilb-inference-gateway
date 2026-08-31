@@ -20,6 +20,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	cmn "github.com/loxilb-io/loxilb/common"
 )
 
 // admissionDeps builds a deps set with sane defaults; individual tests
@@ -42,10 +44,10 @@ func admissionDeps(over func(*kvExactAdmissionDeps)) kvExactAdmissionDeps {
 
 func testProfile(supported []string, aliasPolicy string, aliases []string) *ModelPromptProfile {
 	return &ModelPromptProfile{
-		ProfileID:     "prof-a",
-		BaseModel:     "Qwen/Qwen3-32B",
-		SupportedApis: supported,
-		AliasPolicy:   aliasPolicy,
+		ProfileID:      "prof-a",
+		BaseModel:      "Qwen/Qwen3-32B",
+		SupportedApis:  supported,
+		AliasPolicy:    aliasPolicy,
 		AllowedAliases: aliases,
 	}
 }
@@ -296,6 +298,15 @@ func TestKvExactBindingImmutabilityCheck(t *testing.T) {
 	if err := kvExactBindingImmutabilityCheck("p", "p", "chat", "both"); err == nil {
 		t.Fatal("api-mode change admitted on a live rule")
 	}
+	// Migration attach is the ONE sanctioned transition: profile-less ->
+	// strict admits (legacy and restored rules earn their way in); the
+	// reverse (dropping the profile) stays a live-rebind refusal.
+	if err := kvExactBindingImmutabilityCheck("", "p", "chat", "chat"); err != nil {
+		t.Fatalf("migration attach (\"\" -> profile) refused: %v", err)
+	}
+	if err := kvExactBindingImmutabilityCheck("p", "", "chat", "chat"); err == nil {
+		t.Fatal("profile drop admitted on a live rule")
+	}
 }
 
 // TestKvChatTemplateSupported: the admission renderer probe answers exactly
@@ -329,5 +340,39 @@ func TestKvProfileServesModel(t *testing.T) {
 	base := testProfile([]string{"completions"}, KvAliasPolicyBaseModelOnly, []string{"served-alias"})
 	if kvProfileServesModel(base, "served-alias") {
 		t.Fatal("alias served under base_model_only")
+	}
+}
+
+// AddLbRule wraps every create-time KV validation refusal in the typed
+// cmn.KvAdmissionError the API layer classifies as HTTP 400 — without the
+// wrap, refusal wordings the message classifier does not know surface as
+// internal 500s (observed live on an unknown kvModelProfile).
+func TestKvAdmissionRefuseWrapsTyped(t *testing.T) {
+	plain := errors.New(`kvModelProfile "ghost" is not a published model-prompt profile`)
+	wrapped := kvAdmissionRefuse(plain)
+	var adm *cmn.KvAdmissionError
+	if !errors.As(wrapped, &adm) {
+		t.Fatal("plain refusal did not wrap into cmn.KvAdmissionError")
+	}
+	if adm.Reason != "" {
+		t.Fatalf("plain refusal must carry no reason code, got %q", adm.Reason)
+	}
+	if wrapped.Error() != plain.Error() {
+		t.Fatalf("operator-facing wording changed: %q", wrapped.Error())
+	}
+
+	// A typed engine-contract refusal contributes its stable reason code.
+	contract := kvContractRefusal("kvZmqPort is meaningless for kv-engine-type llamacpp (no KV event transport)")
+	wrapped = kvAdmissionRefuse(contract)
+	if !errors.As(wrapped, &adm) {
+		t.Fatal("contract refusal did not wrap into cmn.KvAdmissionError")
+	}
+	if adm.Reason != KvReasonCapabilityUnavailable {
+		t.Fatalf("contract reason code lost: got %q want %q", adm.Reason, KvReasonCapabilityUnavailable)
+	}
+	// The typed contract error stays reachable through the wrap.
+	var ce *KvContractError
+	if !errors.As(wrapped, &ce) {
+		t.Fatal("KvContractError no longer reachable through the admission wrap")
 	}
 }

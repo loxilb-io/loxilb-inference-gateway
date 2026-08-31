@@ -98,6 +98,9 @@ const (
 	KvAttestReasonPeerMismatch       = "peer_capability_mismatch"
 	KvAttestReasonEnforcementFault   = "enforcement_fault"
 	KvAttestReasonRuntimeFault       = "runtime_fault"
+	// A profile-less KV-exact rule that arrived via restore: exact routing
+	// is fenced (strict bypass) until a profile is attached by rule replace.
+	KvAttestReasonRequiresMigration = "restored_profile_less_requires_migration"
 )
 
 // KvAttestManifest is the §6.4 deployment-manifest trust root: operator- or

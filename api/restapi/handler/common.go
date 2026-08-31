@@ -18,6 +18,7 @@ package handler
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -76,6 +77,19 @@ func containsAny(haystack string, needles ...string) bool {
 		}
 	}
 	return false
+}
+
+// ResultErrorResponseError classifies an error value, preferring structure
+// over message text: a typed KV admission refusal is the operator's answer
+// and is always a 400, regardless of whether its wording matches any phrase
+// in the message classifier below. Everything else falls back to the
+// message-based classification.
+func ResultErrorResponseError(err error) *models.Error {
+	var adm *cmn.KvAdmissionError
+	if errors.As(err, &adm) {
+		return &models.Error{Code: 400, Message: "Malformed arguments for API call", Result: err.Error()}
+	}
+	return ResultErrorResponseErrorMessage(err.Error())
 }
 
 func ResultErrorResponseErrorMessage(msg string) *models.Error {

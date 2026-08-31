@@ -133,13 +133,23 @@ var kvLegacyWireProfile = map[string]string{
 }
 
 // kvResolveWireSchema resolves the wire schema for a subscriber stream
-// through the compiled engine-contract registry: the legacy policy table
-// picks the profile, the profile declares the schema. Unknown engines fail
-// closed (admission already rejects them; this is the last line).
-func kvResolveWireSchema(engine string) (string, error) {
-	profID, ok := kvLegacyWireProfile[engine]
-	if !ok {
-		return "", fmt.Errorf("kv-wire: no contract profile for engine %q", engine)
+// through the compiled engine-contract registry. A rule whose composed
+// binding carries a contract reference binds its wire schema THROUGH that
+// reference — a strict vllm rule bound to the native map profile must get
+// the map decoder, or every native event is rejected as schema_mismatch
+// and the rule can never attest (observed live against the v0.28.0 wire).
+// Only profile-less rules take the legacy policy table, which preserves
+// shipped behavior per engine (vllm stays tagged-ARRAY until the migration
+// epic). Unknown engines/contracts fail closed (admission already rejects
+// them; this is the last line).
+func kvResolveWireSchema(engine, contractID string) (string, error) {
+	profID := contractID
+	if profID == "" {
+		legacyID, ok := kvLegacyWireProfile[engine]
+		if !ok {
+			return "", fmt.Errorf("kv-wire: no contract profile for engine %q", engine)
+		}
+		profID = legacyID
 	}
 	prof, ok := enginecontract.ProfileByID(profID)
 	if !ok {

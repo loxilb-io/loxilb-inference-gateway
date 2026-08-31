@@ -26,8 +26,8 @@ type KvExactEnforcement struct {
 	// Last enforcement fault reason (absent when none).
 	Fault string `json:"fault,omitempty"`
 
-	// Whether the authoritative tokenize-bridge deny-set fence currently denies the rule (fail-closed backstop - denied rules produce no tokens, so no hashes, regardless of C-side state).
-	GoFenced bool `json:"goFenced,omitempty"`
+	// Whether the authoritative tokenize-bridge deny-set fence currently denies the rule (fail-closed backstop - denied rules produce no tokens, so no hashes, regardless of C-side state). Always serialized - a lifted fence (false) must stay distinguishable from an unreported one.
+	GoFenced bool `json:"goFenced"`
 
 	// RFC3339 time of the last full contract-word ACK (readback and binding-digest halves both verified). Absent before the first ACK after registration or restart.
 	LastAckAt string `json:"lastAckAt,omitempty"`

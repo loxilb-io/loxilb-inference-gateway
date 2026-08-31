@@ -89,11 +89,36 @@ func TestKvBindingRuleIsolation(t *testing.T) {
 	}
 }
 
+// TestKvBindingDigestConvergesAcrossRules: two rules with EQUAL components
+// — the two-node HA shape, where each node mints its own rule UUID for the
+// same operator config — must allocate the SAME binding digest, or the
+// §17.7 capability exchange can never converge and strict cluster
+// activation is structurally impossible (found live as
+// binding_not_converged_on_peer on both nodes forever). Anti-replay is the
+// separate (ruleIdentity, bindingGen) pair, not the digest.
+func TestKvBindingDigestConvergesAcrossRules(t *testing.T) {
+	kvBindingTestSetup(t)
+	ba, err := KvBindingAllocate("rule-node-a", kvTestComponents(1))
+	if err != nil {
+		t.Fatalf("allocate a: %v", err)
+	}
+	bb, err := KvBindingAllocate("rule-node-b", kvTestComponents(1))
+	if err != nil {
+		t.Fatalf("allocate b: %v", err)
+	}
+	if ba.Digest != bb.Digest {
+		t.Fatalf("equal components diverged across rule identities: %s vs %s", ba.Digest, bb.Digest)
+	}
+	if ba.RuleIdent == bb.RuleIdent {
+		t.Fatal("test premise broken: rule identities must differ")
+	}
+}
+
 // TestKvBindingDigestCoversEveryComponent: changing any single component
 // changes the digest — the digest, not the generation handle, is identity.
 func TestKvBindingDigestCoversEveryComponent(t *testing.T) {
 	base := kvTestComponents(1)
-	baseDigest := kvBindingDigest("rule-x", &base)
+	baseDigest := kvBindingDigest(&base)
 	mutations := map[string]KvExactBindingComponents{}
 
 	m := base
@@ -119,12 +144,17 @@ func TestKvBindingDigestCoversEveryComponent(t *testing.T) {
 	mutations["consensus policy"] = m
 
 	for name, comps := range mutations {
-		if kvBindingDigest("rule-x", &comps) == baseDigest {
+		if kvBindingDigest(&comps) == baseDigest {
 			t.Errorf("mutating %s did not change the binding digest", name)
 		}
 	}
-	if kvBindingDigest("rule-y", &base) == baseDigest {
-		t.Error("rule identity does not participate in the digest")
+	// The digest names the composed CONTENT — the rule identity must NOT
+	// participate. Equivalently-configured rules on two cluster nodes carry
+	// different node-minted UUIDs, and the HA capability exchange requires
+	// their binding digests to CONVERGE for strict activation; anti-replay
+	// rides the separate (ruleIdentity, bindingGen) pair.
+	if kvBindingDigest(&base) != baseDigest {
+		t.Error("equal components must produce equal digests regardless of rule identity")
 	}
 }
 
@@ -222,7 +252,7 @@ func kvExportOne(t *testing.T, ruleIdent string, gen uint32) cmn.KvExactBindingM
 		RequiredEvidenceLevel: comps.RequiredEvidenceLevel,
 		ConsensusPolicy:       comps.ConsensusPolicy,
 		BindingGen:            gen,
-		BindingDigest:         kvBindingDigest(ruleIdent, &comps),
+		BindingDigest:         kvBindingDigest(&comps),
 		MaxAllocatedGen:       gen,
 	}
 }
