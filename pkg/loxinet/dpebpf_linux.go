@@ -43,6 +43,7 @@ struct proxy_ent {
 };
 int proxy_update_ep_health(struct proxy_ent *key, int ep_index, uint8_t inactive);
 int proxy_update_ep_health_by_ip(struct proxy_ent *key, uint32_t ep_ip, uint8_t inactive);
+int proxy_update_kv_exact_contract(struct proxy_ent *key, uint32_t binding_gen, uint8_t api_mode, uint8_t eligible, uint64_t *applied);
 int proxy_set_drain_policy(struct proxy_ent *key, unsigned int policy, uint32_t timeout_sec);
 int proxy_set_circuit_breaker(struct proxy_ent *key, uint8_t enabled, uint32_t failure_threshold, uint32_t open_timeout_sec);
 int proxy_update_qos_config(struct proxy_ent *key, uint64_t cir_bps, uint64_t pir_bps, uint32_t cbs_bytes, uint8_t dir, uint8_t mode);
@@ -769,6 +770,17 @@ func DpEbpfInit(clusterEn, rssEn, egrHooks, localSockPolicy, sockMapEn, ktlsEn b
 	for i := 0; i < mapNotifierWorkers; i++ {
 		go dpMapNotifierWorker(ne.ToFinCh[i], ne.ToMapCh)
 	}
+
+	// KV binding-dataplane contract: hand the control plane its setter
+	// seam. Until this registration every strict KV-exact rule stays on the
+	// Go deny set (fail-closed); the install transactions in
+	// ai_kv_dataplane.go can only clear a fence through this ACK path.
+	KvRegisterContractSetter(func(vip net.IP, port uint16, proto uint8,
+		bindingGen uint32, apiMode, eligible uint8) (uint64, bool) {
+		applied, ret := ne.DpKvExactContractUpdate(vip, port, proto,
+			bindingGen, apiMode, eligible)
+		return applied, ret == 0
+	})
 
 	return ne
 }
@@ -2013,6 +2025,39 @@ func (e *DpEbpfH) DpLBEndpointHealthUpdate(svcIP net.IP, svcPort uint16, proto u
 		svcIP, svcPort, epIndex, inactive)
 
 	return 0
+}
+
+// DpKvExactContractUpdate - KV binding-dataplane contract: install/refresh
+// the packed [binding_gen|flags|api_mode|eligible] word on the service's
+// sockproxy entry (synchronous CGO; pattern: DpLBEndpointHealthUpdate). The
+// returned applied word is the C-side readback — the caller's ACK is
+// (ret == 0 && applied == the word it requested) plus the control-plane
+// binding-digest check (kvDataplaneContractInstall).
+func (e *DpEbpfH) DpKvExactContractUpdate(svcIP net.IP, svcPort uint16, proto uint8,
+	bindingGen uint32, apiMode, eligible uint8) (uint64, int) {
+	var proxyKey C.struct_proxy_ent
+
+	if svcIP.To4() == nil {
+		tk.LogIt(tk.LogError, "[DP] IPv6 not yet supported for kv contract updates\n")
+		return 0, -1
+	}
+	proxyKey.xip = C.uint(tk.IPtonl(svcIP))
+	proxyKey.xport = C.ushort(tk.Htons(svcPort))
+	proxyKey.protocol = C.uchar(proto)
+
+	var applied C.uint64_t
+	ret := C.proxy_update_kv_exact_contract(&proxyKey, C.uint32_t(bindingGen),
+		C.uint8_t(apiMode), C.uint8_t(eligible), &applied)
+	if ret != 0 {
+		tk.LogIt(tk.LogError, "[DP] kv contract update failed - VIP=%v, port=%v, gen=%d, ret=%d\n",
+			svcIP, svcPort, bindingGen, int(ret))
+		return uint64(applied), -1
+	}
+
+	tk.LogIt(tk.LogDebug, "[DP] kv contract updated - VIP=%v, port=%v, gen=%d, api_mode=%d, eligible=%d\n",
+		svcIP, svcPort, bindingGen, apiMode, eligible)
+
+	return uint64(applied), 0
 }
 
 // DpLBEndpointHostStateUpdate - P2 GPU-Aware: Update endpoint state based on GPU hostState

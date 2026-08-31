@@ -2884,6 +2884,11 @@ type kvExactAdmissionDeps struct {
 type kvExactAdmissionResult struct {
 	Strict bool
 	Comps  KvExactBindingComponents
+	// Effective API surfaces after profile inheritance ("" apiMode on a
+	// strict rule inherits the profile's supportedApis, never wider). The
+	// contract install packs these into the data-plane contract word's api_mode byte.
+	APIChat        bool
+	APICompletions bool
 }
 
 // kvExactRuntimeValidate turns the cross-process KV-exact parity inputs into
@@ -2980,6 +2985,8 @@ func kvExactRuntimeValidate(engine string, kvExactMode uint8, modelName, apiMode
 			return res, fmt.Errorf("strict KV-exact rule requires a resolvable engine contract for %q: %w", eng, err)
 		}
 		res.Strict = true
+		res.APIChat = wantChat
+		res.APICompletions = wantCompletions
 		res.Comps = KvExactBindingComponents{
 			Profile:               KvModelProfileRef{ID: p.ProfileID, Gen: gen},
 			Contract:              ref,
@@ -4315,6 +4322,17 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	// kvexactbinding domain applies right after the loadbalancer domain and
 	// carries the authoritative binding (with the high-water mark that keeps
 	// a restarted allocator from reissuing an in-flight generation).
+	if kvAdmission.Strict {
+		// Fence-first: register the rule's data-plane contract identity
+		// DENIED before the DP entry can exist — the tokenize-bridge deny
+		// set fences every exact scoring path until the contract-word
+		// install transaction fully ACKs. Registered for restore replays
+		// too: the kvexactbinding snapshot domain re-kicks the install once
+		// it lands the authoritative binding.
+		KvSvcContractRegister(uint32(r.ruleNum), r.id,
+			r.tuples.l3Dst.addr.IP, r.tuples.l4Dst.valMin, r.tuples.l4Prot.val,
+			kvContractAPIModeByte(kvAdmission.APIChat, kvAdmission.APICompletions))
+	}
 	if kvAdmission.Strict && !serv.RestoreReplay {
 		if b, bErr := KvBindingAllocate(r.id, kvAdmission.Comps); bErr != nil {
 			tk.LogIt(tk.LogError, "kv-binding: rule %s allocation failed: %v\n", r.id, bErr)
@@ -4329,6 +4347,14 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	r.DP(DpCreate)
 	DpBrokerSyncBarrier(mh.dp)
 	R.flushLBCtEntries(r, CtFlushRidZeroOnly)
+
+	// Install the contract word now that the DP worker is creating the
+	// proxy entry (async — the transaction retries until the entry exists;
+	// pattern: the circuit-breaker goroutine below). A replayed strict rule
+	// has no binding yet here; its install is kicked by KvBindingRestore.
+	if kvAdmission.Strict && !serv.RestoreReplay {
+		kvDataplaneContractInstallAsync(uint32(r.ruleNum))
+	}
 
 	// Enable circuit breaker for P/D disaggregation services (fix)
 	// proxy_set_circuit_breaker requires the proxy entry to exist first (created async by DP worker),
@@ -4598,6 +4624,9 @@ func (R *RuleH) DeleteLbRule(serv cmn.LbServiceArg) (int, error) {
 	// (a fresh client-supplied id colliding with stale binding state would
 	// otherwise inherit a foreign identity).
 	KvBindingDelete(rule.id)
+	// The contract word dies with the proxy entry; drop the deny-set /
+	// contract registration with it (a recreate re-registers fence-first).
+	KvSvcContractDeregister(uint32(rule.ruleNum))
 
 	// COMP-01 : Stop vLLM metrics scraper
 	if rule.vllmScraper != nil {

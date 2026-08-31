@@ -61,6 +61,10 @@ typedef struct proxy_metrics_snapshot {
     uint64_t pd_kv_t15_miss_no_worker;
     uint64_t pd_kv_t15_miss_excluded;
     uint64_t pd_kv_t15_miss_shallow;
+    uint64_t pd_kv_t15_miss_not_ready;
+    uint64_t pd_kv_t15_miss_api_mode;
+    uint64_t pd_kv_t15_miss_unsupported;
+    uint64_t pd_kv_t15_miss_runtime_fault;
     uint64_t pd_kv_t15_fallthrough_total;
 
     // CB proactive heal + per-EP admission layer
@@ -670,6 +674,14 @@ var pdKvT15MissReasonLabels = []string{
 	"no_worker",
 	"excluded",
 	"shallow",
+	// Binding-dataplane contract classes: the pre-tokenize contract gate
+	// (not_ready / api_mode) and the typed-bridge strict-path classes
+	// (unsupported_feature / runtime_fault). The legacy collapsed -1 stays
+	// on the historical "tokenize" reason.
+	"not_ready",
+	"api_mode",
+	"unsupported_feature",
+	"runtime_fault",
 }
 
 // init pre-creates every reason child so the CounterVec appears in
@@ -955,7 +967,7 @@ func RunSockproxyMetrics(ctx context.Context) {
 
 		// 3e. : KV Tier 1.5 routing diagnostics (per-guard miss + fallthrough)
 		// Delta pattern matches existing counters; fields populate in plan 42-02.
-		t15MissCurrent := [9]C.uint64_t{
+		t15MissCurrent := [13]C.uint64_t{
 			current.pd_kv_t15_miss_mode_off,
 			current.pd_kv_t15_miss_warmup,
 			current.pd_kv_t15_miss_text_empty,
@@ -965,8 +977,12 @@ func RunSockproxyMetrics(ctx context.Context) {
 			current.pd_kv_t15_miss_no_worker,
 			current.pd_kv_t15_miss_excluded,
 			current.pd_kv_t15_miss_shallow,
+			current.pd_kv_t15_miss_not_ready,
+			current.pd_kv_t15_miss_api_mode,
+			current.pd_kv_t15_miss_unsupported,
+			current.pd_kv_t15_miss_runtime_fault,
 		}
-		t15MissPrev := [9]C.uint64_t{
+		t15MissPrev := [13]C.uint64_t{
 			prevSockproxyMetrics.pd_kv_t15_miss_mode_off,
 			prevSockproxyMetrics.pd_kv_t15_miss_warmup,
 			prevSockproxyMetrics.pd_kv_t15_miss_text_empty,
@@ -976,6 +992,10 @@ func RunSockproxyMetrics(ctx context.Context) {
 			prevSockproxyMetrics.pd_kv_t15_miss_no_worker,
 			prevSockproxyMetrics.pd_kv_t15_miss_excluded,
 			prevSockproxyMetrics.pd_kv_t15_miss_shallow,
+			prevSockproxyMetrics.pd_kv_t15_miss_not_ready,
+			prevSockproxyMetrics.pd_kv_t15_miss_api_mode,
+			prevSockproxyMetrics.pd_kv_t15_miss_unsupported,
+			prevSockproxyMetrics.pd_kv_t15_miss_runtime_fault,
 		}
 		for i, reason := range pdKvT15MissReasonLabels {
 			if t15MissCurrent[i] >= t15MissPrev[i] {

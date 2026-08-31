@@ -383,10 +383,34 @@ func TestKvTier15MissCountersRegistered(t *testing.T) {
 	}
 
 	seen := map[string]bool{}
+	reasonSeen := map[string]bool{}
 	for _, mf := range mfs {
 		name := mf.GetName()
 		if name == missMetricName || name == fallthroughMetricName {
 			seen[name] = true
+		}
+		if name == missMetricName {
+			for _, m := range mf.GetMetric() {
+				for _, lp := range m.GetLabel() {
+					if lp.GetName() == "reason" {
+						reasonSeen[lp.GetValue()] = true
+					}
+				}
+			}
+		}
+	}
+
+	// Every canonical reason child must exist immediately after package init
+	// (pre-created so dashboards see the full series set before any
+	// increment). The last four are the contract-gate / typed-bridge
+	// classes — lockstep with pd_kv_t15_miss_* in sockproxy.h.
+	for _, reason := range []string{
+		"mode_off", "warmup", "text_empty", "model_empty", "tokenize",
+		"hashes", "no_worker", "excluded", "shallow",
+		"not_ready", "api_mode", "unsupported_feature", "runtime_fault",
+	} {
+		if !reasonSeen[reason] {
+			t.Errorf("miss-reason child %q not pre-created", reason)
 		}
 	}
 

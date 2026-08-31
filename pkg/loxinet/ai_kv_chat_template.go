@@ -172,6 +172,55 @@ func kvExtractMessageContent(raw json.RawMessage) string {
 	return ""
 }
 
+// kvChatExcludedFeature inspects a raw chat request body for the plan-§4
+// excluded-feature vocabulary and returns the first feature found ("" =
+// none). Consulted on STRICT bridge paths only (kvBridgeTokenizeChat):
+// requests carrying these features hash differently engine-side than the
+// gateway's plain-text render, so a strict rule refuses to score them
+// (request-class UNSUPPORTED — never readiness-affecting, I-12) instead of
+// routing a mis-hashed prefix. Legacy rules keep today's behavior untouched.
+func kvChatExcludedFeature(body string) string {
+	var req struct {
+		Tools              json.RawMessage `json:"tools"`
+		ToolChoice         json.RawMessage `json:"tool_choice"`
+		CacheSalt          json.RawMessage `json:"cache_salt"`
+		PromptEmbeds       json.RawMessage `json:"prompt_embeds"`
+		ChatTemplateKwargs json.RawMessage `json:"chat_template_kwargs"`
+		Messages           []struct {
+			Content json.RawMessage `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal([]byte(body), &req); err != nil {
+		return ""
+	}
+	present := func(raw json.RawMessage) bool {
+		return len(raw) > 0 && string(raw) != "null"
+	}
+	switch {
+	case present(req.Tools) || present(req.ToolChoice):
+		return "tools"
+	case present(req.CacheSalt):
+		return "cache_salt"
+	case present(req.PromptEmbeds):
+		return "prompt_embeds"
+	case present(req.ChatTemplateKwargs):
+		return "template_kwargs"
+	}
+	for _, m := range req.Messages {
+		var parts []struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(m.Content, &parts); err == nil {
+			for _, p := range parts {
+				if p.Type != "" && p.Type != "text" {
+					return "multimodal"
+				}
+			}
+		}
+	}
+	return ""
+}
+
 // kvTokenizeChatBody renders modelName's chat template over the messages in the
 // raw chat request body, then tokenizes the rendered prompt through the shared
 // Encode path (WithEncodeSpecialTokens) so the token_ids are byte-identical to
