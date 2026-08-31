@@ -130,18 +130,29 @@ func TestCHeaderParity(t *testing.T) {
 	}
 	defer f.Close()
 	got := map[string]uint8{}
+	invalid := uint64(0)
+	haveInvalid := false
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
 		fields := strings.Fields(sc.Text())
-		if len(fields) == 3 && fields[0] == "#define" && strings.HasPrefix(fields[1], "PD_ENGINE_") &&
-			fields[1] != "PD_ENGINE_ID_MAX" {
-			n, err := strconv.ParseUint(fields[2], 10, 8)
+		if len(fields) != 3 || fields[0] != "#define" || !strings.HasPrefix(fields[1], "PD_ENGINE_") ||
+			fields[1] == "PD_ENGINE_ID_MAX" {
+			continue
+		}
+		if fields[1] == "PD_ENGINE_INVALID" {
+			n, err := strconv.ParseUint(fields[2], 0, 8)
 			if err != nil {
 				t.Fatalf("header line %q: %v", sc.Text(), err)
 			}
-			engine := strings.ToLower(strings.TrimPrefix(fields[1], "PD_ENGINE_"))
-			got[engine] = uint8(n)
+			invalid, haveInvalid = n, true
+			continue
 		}
+		n, err := strconv.ParseUint(fields[2], 10, 8)
+		if err != nil {
+			t.Fatalf("header line %q: %v", sc.Text(), err)
+		}
+		engine := strings.ToLower(strings.TrimPrefix(fields[1], "PD_ENGINE_"))
+		got[engine] = uint8(n)
 	}
 	if len(got) != len(EngineWireIDs) {
 		t.Fatalf("header declares %d engines, registry %d", len(got), len(EngineWireIDs))
@@ -149,6 +160,19 @@ func TestCHeaderParity(t *testing.T) {
 	for eng, id := range EngineWireIDs {
 		if got[eng] != id {
 			t.Fatalf("engine %q: header ID %d != registry ID %d", eng, got[eng], id)
+		}
+	}
+	// The unknown-wire sentinel must exist, stay at 0xFF, and never collide
+	// with a real engine ID (strict pd_dialect_resolve maps it to NULL).
+	if !haveInvalid {
+		t.Fatal("header is missing PD_ENGINE_INVALID — rerun ecgen")
+	}
+	if invalid != 0xFF {
+		t.Fatalf("PD_ENGINE_INVALID = %#x, ABI-frozen at 0xFF", invalid)
+	}
+	for eng, id := range got {
+		if uint64(id) == invalid {
+			t.Fatalf("engine %q assigned the invalid sentinel value %#x", eng, invalid)
 		}
 	}
 	// ABI freeze: the historic hand-maintained values must never move.

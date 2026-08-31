@@ -8,10 +8,10 @@ import "github.com/loxilb-io/loxilb/pkg/enginecontract/schema"
 // cover the exact artifact bytes this build compiled in; peers compare
 // them during the HA capability exchange.
 const (
-	SchemaVersion        = "engine-contracts.loxilb.io/v1alpha1"
-	Generation    uint64 = 1
-	ManifestDigest       = "sha256:e7a5237e9b951b680485b867fd78453de6042dd49a45391d0bd70473865d2895"
-	SupportCatalogDigest = "sha256:2be29e85ee2dc946b76ab7b975851e2d67a094364f0b7766c2f4376c3c24a9dc"
+	SchemaVersion               = "engine-contracts.loxilb.io/v1alpha1"
+	Generation           uint64 = 1
+	ManifestDigest              = "sha256:e7a5237e9b951b680485b867fd78453de6042dd49a45391d0bd70473865d2895"
+	SupportCatalogDigest        = "sha256:5d8a312a05666f7515469b589e77568667bd2347885f2f7b4497e53267063ce3"
 )
 
 // EngineWireIDs is the ABI-frozen numeric kv_engine_type encoding shared
@@ -20,88 +20,88 @@ const (
 var EngineWireIDs = map[string]uint8{
 	"sglang": 1,
 	"trtllm": 2,
-	"vllm": 0,
+	"vllm":   0,
 }
 
 // ProfileDigests maps profile ID to its canonical content digest.
 var ProfileDigests = map[string]string{
-	"llamacpp-nokv-v1": "sha256:b0dd83fa98ee86a8da308722b4a1551a233a75180b8fb7af0115a67648a46c10",
-	"sglang-kv-rank-v1": "sha256:976415b29287fccbe50beaa89dcdc643adac54b87ffb3023b5125396030d29ca",
+	"llamacpp-nokv-v1":          "sha256:b0dd83fa98ee86a8da308722b4a1551a233a75180b8fb7af0115a67648a46c10",
+	"sglang-kv-rank-v1":         "sha256:976415b29287fccbe50beaa89dcdc643adac54b87ffb3023b5125396030d29ca",
 	"trtllm-kv-http-preview-v1": "sha256:33c13e08a52a75c5984d0801793b896de913d0adc6acf6fbcafbbe609b3a2c43",
-	"trtllm-kv-http-v1": "sha256:937998108b4fe07a58ea14d854dfde901aa13941322e72f47763b6289de5cfb1",
-	"vllm-kv-array-v1": "sha256:5116e348538f8a3346a0e210932ce893c6fb3f711f587a833f479f3a15109a31",
-	"vllm-kv-map-v2": "sha256:9d5405b744989ffdf538420467f9dc6cd3205316fe204e7d3ec537c87a979164",
+	"trtllm-kv-http-v1":         "sha256:937998108b4fe07a58ea14d854dfde901aa13941322e72f47763b6289de5cfb1",
+	"vllm-kv-array-v1":          "sha256:5116e348538f8a3346a0e210932ce893c6fb3f711f587a833f479f3a15109a31",
+	"vllm-kv-map-v2":            "sha256:9d5405b744989ffdf538420467f9dc6cd3205316fe204e7d3ec537c87a979164",
 }
 
 // Profiles is the compiled profile table, sorted by ID.
 var Profiles = []schema.Profile{
 	{
-		ID: "llamacpp-nokv-v1",
-		Engine: "llamacpp",
-		Versions: schema.VersionSelector{Scheme: "exact", Exact: "v0.3.0"},
-		Transport: "none",
-		WireSchema: "none",
-		HashBinding: "none",
-		PDDialect: "none",
-		Probe: "llamacpp-props-v1",
+		ID:           "llamacpp-nokv-v1",
+		Engine:       "llamacpp",
+		Versions:     schema.VersionSelector{Scheme: "exact", Exact: "v0.3.0"},
+		Transport:    "none",
+		WireSchema:   "none",
+		HashBinding:  "none",
+		PDDialect:    "none",
+		Probe:        "llamacpp-props-v1",
 		Capabilities: map[string]string{"kvEvents": "none", "pdRouting": "none", "prefixRouting": "none", "runtimeProbe": "implemented"},
 	},
 	{
-		ID: "sglang-kv-rank-v1",
-		Engine: "sglang",
+		ID:            "sglang-kv-rank-v1",
+		Engine:        "sglang",
 		FamilyDefault: true,
-		Versions: schema.VersionSelector{Scheme: "exact", Exact: "v0.5.18"},
-		Transport: "zmq-multipart-v1",
-		WireSchema: "sglang-kv-tagged-array-rank-v1",
-		HashBinding: "sglang-raw-parent-le32-v1",
-		PDDialect: "sglang-bootstrap-v1",
-		Probe: "sglang-server-info-v1",
-		Capabilities: map[string]string{"kvEvents": "implemented", "pdRouting": "implemented", "prefixRouting": "implemented", "runtimeProbe": "implemented"},
+		Versions:      schema.VersionSelector{Scheme: "exact", Exact: "v0.5.18"},
+		Transport:     "zmq-multipart-v1",
+		WireSchema:    "sglang-kv-tagged-array-rank-v1",
+		HashBinding:   "sglang-raw-parent-le32-v1",
+		PDDialect:     "sglang-bootstrap-v1",
+		Probe:         "sglang-server-info-v1",
+		Capabilities:  map[string]string{"kvEvents": "implemented", "pdRouting": "implemented", "prefixRouting": "implemented", "runtimeProbe": "implemented"},
 	},
 	{
-		ID: "trtllm-kv-http-preview-v1",
-		Engine: "trtllm",
-		Versions: schema.VersionSelector{Scheme: "exact", Exact: "1.3.0rc24"},
-		Transport: "http-drain-v1",
-		WireSchema: "trtllm-kv-json-v1",
-		HashBinding: "trtllm-token-rehash-v1",
-		PDDialect: "trtllm-ctx-first-v1",
-		Probe: "trtllm-server-info-v1",
+		ID:           "trtllm-kv-http-preview-v1",
+		Engine:       "trtllm",
+		Versions:     schema.VersionSelector{Scheme: "exact", Exact: "1.3.0rc24"},
+		Transport:    "http-drain-v1",
+		WireSchema:   "trtllm-kv-json-v1",
+		HashBinding:  "trtllm-token-rehash-v1",
+		PDDialect:    "trtllm-ctx-first-v1",
+		Probe:        "trtllm-server-info-v1",
 		Capabilities: map[string]string{"kvEvents": "adapter", "pdRouting": "implemented", "prefixRouting": "implemented", "runtimeProbe": "implemented"},
 	},
 	{
-		ID: "trtllm-kv-http-v1",
-		Engine: "trtllm",
+		ID:            "trtllm-kv-http-v1",
+		Engine:        "trtllm",
 		FamilyDefault: true,
-		Versions: schema.VersionSelector{Scheme: "exact", Exact: "v1.2.1"},
-		Transport: "http-drain-v1",
-		WireSchema: "trtllm-kv-json-v1",
-		HashBinding: "trtllm-token-rehash-v1",
-		PDDialect: "trtllm-ctx-first-v1",
-		Probe: "trtllm-server-info-v1",
-		Capabilities: map[string]string{"kvEvents": "adapter", "pdRouting": "implemented", "prefixRouting": "implemented", "runtimeProbe": "implemented"},
+		Versions:      schema.VersionSelector{Scheme: "exact", Exact: "v1.2.1"},
+		Transport:     "http-drain-v1",
+		WireSchema:    "trtllm-kv-json-v1",
+		HashBinding:   "trtllm-token-rehash-v1",
+		PDDialect:     "trtllm-ctx-first-v1",
+		Probe:         "trtllm-server-info-v1",
+		Capabilities:  map[string]string{"kvEvents": "adapter", "pdRouting": "implemented", "prefixRouting": "implemented", "runtimeProbe": "implemented"},
 	},
 	{
-		ID: "vllm-kv-array-v1",
-		Engine: "vllm",
-		Versions: schema.VersionSelector{Scheme: "semver", MinInclusive: "v0.17.0", MaxInclusive: "v0.23.0"},
-		Transport: "zmq-multipart-v1",
-		WireSchema: "vllm-kv-tagged-array-v1",
-		HashBinding: "vllm-block-hash-v1",
-		PDDialect: "vllm-nixl-v1",
-		Probe: "vllm-runtime-info-v1",
+		ID:           "vllm-kv-array-v1",
+		Engine:       "vllm",
+		Versions:     schema.VersionSelector{Scheme: "semver", MinInclusive: "v0.17.0", MaxInclusive: "v0.23.0"},
+		Transport:    "zmq-multipart-v1",
+		WireSchema:   "vllm-kv-tagged-array-v1",
+		HashBinding:  "vllm-block-hash-v1",
+		PDDialect:    "vllm-nixl-v1",
+		Probe:        "vllm-runtime-info-v1",
 		Capabilities: map[string]string{"kvEvents": "implemented", "pdRouting": "implemented", "prefixRouting": "implemented", "runtimeProbe": "implemented"},
 	},
 	{
-		ID: "vllm-kv-map-v2",
-		Engine: "vllm",
+		ID:            "vllm-kv-map-v2",
+		Engine:        "vllm",
 		FamilyDefault: true,
-		Versions: schema.VersionSelector{Scheme: "semver", MinInclusive: "v0.24.0", MaxInclusive: "v0.28.0"},
-		Transport: "zmq-multipart-v1",
-		WireSchema: "vllm-kv-tagged-map-v2",
-		HashBinding: "vllm-block-hash-v1",
-		PDDialect: "vllm-nixl-v1",
-		Probe: "vllm-runtime-info-v1",
-		Capabilities: map[string]string{"kvEvents": "implemented", "pdRouting": "implemented", "prefixRouting": "implemented", "runtimeProbe": "implemented"},
+		Versions:      schema.VersionSelector{Scheme: "semver", MinInclusive: "v0.24.0", MaxInclusive: "v0.28.0"},
+		Transport:     "zmq-multipart-v1",
+		WireSchema:    "vllm-kv-tagged-map-v2",
+		HashBinding:   "vllm-block-hash-v1",
+		PDDialect:     "vllm-nixl-v1",
+		Probe:         "vllm-runtime-info-v1",
+		Capabilities:  map[string]string{"kvEvents": "implemented", "pdRouting": "implemented", "prefixRouting": "implemented", "runtimeProbe": "implemented"},
 	},
 }

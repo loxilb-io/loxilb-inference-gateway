@@ -37,6 +37,7 @@ import (
 	"time"
 
 	cmn "github.com/loxilb-io/loxilb/common"
+	"github.com/loxilb-io/loxilb/pkg/enginecontract"
 	"github.com/loxilb-io/loxilb/pkg/snapshot"
 	tk "github.com/loxilb-io/loxilib"
 )
@@ -85,10 +86,15 @@ func kvLocalCapability() KvCapabilityInfo {
 		AttestationPolicy: kvCapabilityPolicyVersion,
 		BuildIdentity:     cmn.Version + "+" + cmn.BuildInfo,
 		EvidencePolicy:    kvEvidencePolicyVersion,
-		// Engine-contract registry / support-catalog / contract-schema
-		// digests stay empty until the contract registry serves them; equality is
-		// still enforced (empty must meet empty — a peer that HAS a registry
-		// cannot co-activate with one that does not).
+		// Engine-contract identity comes from the compiled registry: the
+		// digests cover the exact contracts.yaml / support-catalog.yaml
+		// bytes this build embeds. Equality is required for strict
+		// activation — a peer compiled from a different manifest (or one
+		// with no registry at all, whose fields are empty) cannot
+		// co-activate.
+		ContractRegistryDigest: enginecontract.ManifestDigest,
+		SupportCatalogDigest:   enginecontract.SupportCatalogDigest,
+		ContractSchemaVer:      enginecontract.SchemaVersion,
 	}
 }
 

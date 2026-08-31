@@ -170,7 +170,10 @@ func TestResolveVersionDeterministic(t *testing.T) {
 }
 
 func TestSemverOrdering(t *testing.T) {
-	for _, tc := range []struct{ a, b string; want int }{
+	for _, tc := range []struct {
+		a, b string
+		want int
+	}{
 		{"v0.23.0", "v0.24.0", -1},
 		{"1.2.3", "v1.2.3", 0},
 		{"1.3.0-rc24", "1.3.0", -1},

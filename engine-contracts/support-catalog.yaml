@@ -66,9 +66,9 @@ entries:
       kvEvents:
         implementation: native
         evidence:
-          source: not_run    # native tagged-map decoder gates flip with its fixtures
-          fixture: not_run
-          synthetic: not_run
+          source: pass       # native tagged-map decoder in-tree (batch-atomic, cross-family detection)
+          fixture: pass      # unit fixtures in-tree: map decode, atomicity, both mismatch directions
+          synthetic: not_run # no contract-faithful map-v2 mock publisher E2E yet
           realEngine: not_run
       prefixRouting:
         implementation: native

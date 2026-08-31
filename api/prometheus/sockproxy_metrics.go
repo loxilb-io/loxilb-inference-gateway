@@ -473,6 +473,22 @@ var (
 		[]string{"service", "ep"},
 	)
 
+	// Wire-rejection counter — increments when a subscriber's resolved wire
+	// binding rejects a payload: a tagged-map batch on the tagged-array
+	// binding (engine wire family newer than the bound contract), a strict
+	// map-binding batch failure, or an SGLang batch whose declared dp_rank
+	// disagrees with the stream's socket-derived rank. The bounded reason
+	// set is defined in pkg/loxinet/ai_kv_wire_bindings.go. Nonzero here is
+	// the loud form of what used to be a silent debug-level skip that left
+	// a healthy-looking but permanently stale inventory.
+	kvSubscriberWireRejectTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "loxilb_kv_subscriber_wire_reject_total",
+			Help: "Total KV event payloads rejected by the stream's wire binding (schema_mismatch | decode_error | rank_mismatch).",
+		},
+		[]string{"service", "ep", "reason"},
+	)
+
 	// Cap-hit eviction counter — increments by the number of blocks
 	// evicted whenever an EP's kvInventory exceeds the per-EP kvMaxBlocks cap.
 	// Authoritative "publisher misbehaving" signal: nonzero ⇒ a publisher is
@@ -1161,6 +1177,9 @@ func ClearKvEpSeries(service, epIdx string) {
 	kvSubscriberConnected.DeleteLabelValues(service, epIdx)
 	kvSubscriberReconnectTotal.DeleteLabelValues(service, epIdx)
 	kvSubscriberRecvErrorTotal.DeleteLabelValues(service, epIdx)
+	// The wire-reject counter carries a third (bounded) reason label, so
+	// the per-EP scope clears via partial match.
+	kvSubscriberWireRejectTotal.DeletePartialMatch(prometheus.Labels{"service": service, "ep": epIdx})
 	kvInvCapEvictionsTotal.DeleteLabelValues(service, epIdx)
 	ClearKvEpInfo(service, epIdx)
 }
@@ -1279,6 +1298,13 @@ func IncKvSubscriberReconnect(service, ep string) {
 // Called on every RecvMultipart error.
 func IncKvSubscriberRecvError(service, ep string) {
 	kvSubscriberRecvErrorTotal.WithLabelValues(service, ep).Inc()
+}
+
+// IncKvSubscriberWireReject increments the wire-binding rejection counter
+// for (service, ep, reason). Called from the subscriber loop when the
+// resolved wire binding rejects a payload or a rank identity disagrees.
+func IncKvSubscriberWireReject(service, ep, reason string) {
+	kvSubscriberWireRejectTotal.WithLabelValues(service, ep, reason).Inc()
 }
 
 // IncKvInventoryCapHit increments the cap-eviction counter for

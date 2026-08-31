@@ -27,7 +27,7 @@ import (
 type fakeReplayRequester struct {
 	startSeq  int64
 	sendErr   error
-	recvErr   error   // returned after the queued replies are exhausted
+	recvErr   error    // returned after the queued replies are exhausted
 	replies   [][]byte // payloads served in order, seq = index
 	nextReply int
 	closed    bool
@@ -88,7 +88,7 @@ func TestKvReplayBackfillsInventory(t *testing.T) {
 		kvBlockRemovedBatch(t, []uint64{22}),
 	}}
 
-	replayKvEvents(inv, f, 0)
+	replayKvEvents(inv, f, 0, kvWireDecoderFunc(kvWireDecodeArrayV1))
 
 	if f.startSeq != 0 {
 		t.Fatalf("requested start seq = %d, want 0", f.startSeq)
@@ -109,7 +109,7 @@ func TestKvReplayBackfillsInventory(t *testing.T) {
 // error keeps what was already applied without panicking.
 func TestKvReplayFailOpen(t *testing.T) {
 	inv := newKvInventory()
-	replayKvEvents(inv, &fakeReplayRequester{sendErr: errors.New("no listener")}, 0)
+	replayKvEvents(inv, &fakeReplayRequester{sendErr: errors.New("no listener")}, 0, kvWireDecoderFunc(kvWireDecodeArrayV1))
 	if got := inv.Size(); got != 0 {
 		t.Fatalf("failed request must apply nothing, inventory size = %d", got)
 	}
@@ -119,7 +119,7 @@ func TestKvReplayFailOpen(t *testing.T) {
 		replies: [][]byte{kvBlockStoredBatch(t, []uint64{7})},
 		recvErr: errors.New("socket died mid-replay"),
 	}
-	replayKvEvents(inv2, f, 0)
+	replayKvEvents(inv2, f, 0, kvWireDecoderFunc(kvWireDecodeArrayV1))
 	if got := inv2.Size(); got != 1 {
 		t.Fatalf("partial replay must keep applied events, inventory size = %d", got)
 	}

@@ -37,6 +37,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"go/format"
 	"os"
 	"path/filepath"
 	"sort"
@@ -161,7 +162,17 @@ func generateCHeader(m *schema.ContractsManifest) []byte {
 			maxID = e.id
 		}
 	}
-	fmt.Fprintf(&b, "\n/* Highest generated engine ID; anything above is unknown. */\n#define PD_ENGINE_ID_MAX %d\n\n#endif /* __SOCKPROXY_PD_IDS_H__ */\n", maxID)
+	fmt.Fprintf(&b, `
+/* Highest generated engine ID; anything above is unknown. */
+#define PD_ENGINE_ID_MAX %d
+
+/* Sentinel for an unknown wire value: pd_engine_from_kv_engine_type()
+ * returns it instead of defaulting to a real engine, and
+ * pd_dialect_resolve() maps it (and anything else unknown) to NULL. */
+#define PD_ENGINE_INVALID 0xFF
+
+#endif /* __SOCKPROXY_PD_IDS_H__ */
+`, maxID)
 	return b.Bytes()
 }
 
@@ -218,6 +229,10 @@ func run() error {
 	}
 
 	goOut := generateGo(m, sha256Hex(cb), sha256Hex(sb))
+	goOut, err = format.Source(goOut)
+	if err != nil {
+		return fmt.Errorf("generated Go does not format: %w", err)
+	}
 	if err := writeOrCheck(filepath.Join(*root, "pkg", "enginecontract", "zz_generated_registry.go"), goOut, *check); err != nil {
 		return err
 	}
