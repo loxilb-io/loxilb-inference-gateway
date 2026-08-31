@@ -30,7 +30,8 @@ type APIKeySummary struct {
 	CreatedAt strfmt.DateTime `json:"created_at,omitempty"`
 
 	// Whether this key is currently active
-	Enabled bool `json:"enabled"`
+	// Required: true
+	Enabled *bool `json:"enabled"`
 
 	// Optional expiry timestamp (RFC3339)
 	// Format: date-time
@@ -60,6 +61,10 @@ func (m *APIKeySummary) Validate(formats strfmt.Registry) error {
 		res = append(res, err)
 	}
 
+	if err := m.validateEnabled(formats); err != nil {
+		res = append(res, err)
+	}
+
 	if err := m.validateExpiresAt(formats); err != nil {
 		res = append(res, err)
 	}
@@ -76,6 +81,15 @@ func (m *APIKeySummary) validateCreatedAt(formats strfmt.Registry) error {
 	}
 
 	if err := validate.FormatOf("created_at", "body", "date-time", m.CreatedAt.String(), formats); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *APIKeySummary) validateEnabled(formats strfmt.Registry) error {
+
+	if err := validate.Required("enabled", "body", m.Enabled); err != nil {
 		return err
 	}
 

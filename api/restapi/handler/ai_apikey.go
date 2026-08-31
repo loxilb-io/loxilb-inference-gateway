@@ -305,7 +305,9 @@ func apiKeySummaryToModel(k cmn.ApiKeySummary) *models.APIKeySummary {
 		BurstSize:     int64(k.BurstSize),
 		TokensPerMin:  int64(k.TokensPerMin),
 		CreatedAt:     strfmt.DateTime(k.CreatedAt),
-		Enabled:       k.Enabled,
+		// the schema marks enabled required, so the generated field is a
+		// pointer; k is a by-value copy, so its address is stable here
+		Enabled: &k.Enabled,
 	}
 	if k.ExpiresAt != nil {
 		summary.ExpiresAt = strfmt.DateTime(*k.ExpiresAt)

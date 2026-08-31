@@ -103,6 +103,96 @@ func (o *PostAuthUsersBadRequest) WriteResponse(rw http.ResponseWriter, producer
 	}
 }
 
+// PostAuthUsersUnauthorizedCode is the HTTP code returned for type PostAuthUsersUnauthorized
+const PostAuthUsersUnauthorizedCode int = 401
+
+/*
+PostAuthUsersUnauthorized Unauthorized - not an administrator, and the bootstrap conditions (loopback peer, no user yet) are not met
+
+swagger:response postAuthUsersUnauthorized
+*/
+type PostAuthUsersUnauthorized struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostAuthUsersUnauthorized creates PostAuthUsersUnauthorized with default headers values
+func NewPostAuthUsersUnauthorized() *PostAuthUsersUnauthorized {
+
+	return &PostAuthUsersUnauthorized{}
+}
+
+// WithPayload adds the payload to the post auth users unauthorized response
+func (o *PostAuthUsersUnauthorized) WithPayload(payload *models.Error) *PostAuthUsersUnauthorized {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post auth users unauthorized response
+func (o *PostAuthUsersUnauthorized) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostAuthUsersUnauthorized) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(401)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// PostAuthUsersForbiddenCode is the HTTP code returned for type PostAuthUsersForbidden
+const PostAuthUsersForbiddenCode int = 403
+
+/*
+PostAuthUsersForbidden Forbidden - authenticated, but the role carries no authority to create users
+
+swagger:response postAuthUsersForbidden
+*/
+type PostAuthUsersForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostAuthUsersForbidden creates PostAuthUsersForbidden with default headers values
+func NewPostAuthUsersForbidden() *PostAuthUsersForbidden {
+
+	return &PostAuthUsersForbidden{}
+}
+
+// WithPayload adds the payload to the post auth users forbidden response
+func (o *PostAuthUsersForbidden) WithPayload(payload *models.Error) *PostAuthUsersForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post auth users forbidden response
+func (o *PostAuthUsersForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostAuthUsersForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // PostAuthUsersInternalServerErrorCode is the HTTP code returned for type PostAuthUsersInternalServerError
 const PostAuthUsersInternalServerErrorCode int = 500
 

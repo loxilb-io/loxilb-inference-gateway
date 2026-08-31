@@ -270,12 +270,12 @@ func (m *PolicyEntryPolicyInfo) UnmarshalBinary(b []byte) error {
 // swagger:model PolicyEntryTargetObject
 type PolicyEntryTargetObject struct {
 
-	// Target Attachment(0-RuleName, 1-PortName)
+	// Target Attachment(0-RuleName, 1-PortName, 2-PortNameEgress)
 	// Required: true
-	// Enum: [0 1]
+	// Enum: [0 1 2]
 	Attachment *int64 `json:"attachment"`
 
-	// Target Names
+	// Target name. Rule attachments use VIP:PORT:PROTO for IPv4 and [VIP]:PORT:PROTO for IPv6.
 	// Required: true
 	PolObjName *string `json:"polObjName"`
 }

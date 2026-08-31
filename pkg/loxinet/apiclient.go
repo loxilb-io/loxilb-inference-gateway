@@ -430,6 +430,18 @@ func (na *NetAPIStruct) NetKvExactBindingAdd(b *cmn.KvExactBindingMod) (int, err
 	return 0, nil
 }
 
+// NetKvExactStatusGet - resolved KV-exact composition status of every
+// KV-exact rule on vip:port:proto (modelName "" = all models). A dedicated
+// read model — never the GET/POST-shared rule entry.
+func (na *NetAPIStruct) NetKvExactStatusGet(vip string, port uint16, proto string, modelName string) ([]cmn.KvExactStatusMod, error) {
+	if na.BgpPeerMode {
+		return nil, errors.New("running in bgp only mode")
+	}
+	mh.mtx.Lock()
+	defer mh.mtx.Unlock()
+	return mh.zr.Rules.GetKvExactStatus(vip, port, proto, modelName)
+}
+
 // NetKvExactBindingDel - remove one rule's KV-exact binding state.
 func (na *NetAPIStruct) NetKvExactBindingDel(b *cmn.KvExactBindingMod) (int, error) {
 	if na.BgpPeerMode {

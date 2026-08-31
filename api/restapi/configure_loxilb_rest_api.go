@@ -102,6 +102,9 @@ func configureAPI(api *operations.LoxilbRestAPIAPI) http.Handler {
 	api.GetConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoHandler = operations.GetConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoHandlerFunc(handler.ConfigGetLoadbalancerByKey)
 	api.GetConfigLoadbalancerIDHandler = operations.GetConfigLoadbalancerIDHandlerFunc(handler.ConfigGetLoadbalancerByID)
 	api.GetConfigLoadbalancerStatusHandler = operations.GetConfigLoadbalancerStatusHandlerFunc(handler.ConfigGetLoadbalancerStatus)
+	// resolved KV-exact composition status by composite key — a dedicated
+	// read model, never the GET/POST-shared LoadbalanceEntry
+	api.GetConfigLoadbalancerKvExactStatusHandler = operations.GetConfigLoadbalancerKvExactStatusHandlerFunc(handler.ConfigGetLoadbalancerKvExactStatus)
 	// per-service statistics quad {activeConnections, bytesIn, bytesOut, totalConnections} by composite key
 	api.GetConfigLoadbalancerStatsHandler = operations.GetConfigLoadbalancerStatsHandlerFunc(handler.ConfigGetLoadbalancerStats)
 	// PATCH (RFC 7386 JSON merge-patch) by composite key
