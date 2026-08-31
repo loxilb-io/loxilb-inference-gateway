@@ -261,3 +261,50 @@ groups:
           summary: "Conntrack table above 95% of capacity — new flows will be dropped soon"
           dashboard: "LoxiLB / L4 Load Balancer"
           panel: "Conntrack entries"
+
+  - name: loxilb-kv-attestation
+    rules:
+      # §7.4 escalation terminal: the data-plane contract word could not be
+      # ACKed and the Go deny set is the standing fence. Exact routing is
+      # safe (fenced) but the rule cannot serve Tier-1.5 until an operator
+      # or a recovering setter clears the fault.
+      - alert: KvExactEnforcementFault
+        expr: loxilb_ai_kv_enforcement_fault > 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "KV-exact rule {{ $labels.rule }} in ENFORCEMENT_FAULT — contract word unACKable, Go deny set fencing"
+          description: "The dataplane contract-word transaction failed its retries. Exact scoring is fenced by the tokenize-bridge deny set (fail-closed). Investigate the eBPF datapath / proxy entry for this rule."
+          dashboard: "LoxiLB / AI Gateway"
+          panel: "KV attestation"
+
+      # A strict rule stuck below READY keeps serving Tier-2 only. Fires
+      # after 15m of non-READY (the ladder retries on the probe cadence).
+      - alert: KvExactRuleNotReady
+        expr: loxilb_ai_kv_attest_state{state!~"READY|READY_FUNCTIONAL_ONLY|LEGACY_ACTIVE_UNATTESTED"} == 1
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "KV-exact rule {{ $labels.rule }} held at {{ $labels.state }} for 15m — exact routing disabled"
+          description: "The attestation ladder has not reached READY (see the rule's /kvexactstatus reasonCodes: probe failure, echo-challenge failure, manifest_missing, or peer capability mismatch)."
+          dashboard: "LoxiLB / AI Gateway"
+          panel: "KV attestation"
+
+      - alert: KvExactAttestationProbeFailures
+        expr: rate(loxilb_ai_kv_attest_probe_fail_total[10m]) > 0
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "KV-exact attestation probes failing ({{ $labels.reason }})"
+          description: "Sustained identity/token-parity probe failures. token_mismatch means the deployed engine renders/tokenizes differently than the profile — the exact defect this system fences."
+          dashboard: "LoxiLB / AI Gateway"
+          panel: "KV attestation"
+
+      - alert: KvExactEchoChallengeFailures
+        expr: increase(loxilb_ai_kv_attest_echo_total{result="fail"}[30m]) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: "KV-exact echo challenge failing"
+          description: "The block-hash echo challenge (nonce-unique, per endpoint) failed — hash algorithm, block size, seed, or event-plane schema disagreement between gateway and engine."
+          dashboard: "LoxiLB / AI Gateway"
+          panel: "KV attestation"

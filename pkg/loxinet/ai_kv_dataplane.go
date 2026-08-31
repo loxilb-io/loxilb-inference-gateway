@@ -31,6 +31,7 @@ import (
 	"sync"
 	"time"
 
+	cmn "github.com/loxilb-io/loxilb/common"
 	tk "github.com/loxilb-io/loxilib"
 )
 
@@ -91,6 +92,68 @@ type kvSvcContract struct {
 	apiMode   uint8
 	denied    bool
 	fault     string // last enforcement fault reason ("" = none)
+	// lastAckAt/lastApplied record the most recent full setter ACK (§7.1
+	// enforced-state evidence for the status sub-resource); zero until the
+	// first ACK after registration or restart.
+	lastAckAt   time.Time
+	lastApplied uint64
+}
+
+// KvSvcEnforcement is the status read model of a rule's enforcement position
+// (plan §7.4 GET shape): the Go-fence flag, the last recorded fault, and the
+// last full data-plane ACK (word + timestamp).
+type KvSvcEnforcement struct {
+	GoFenced    bool
+	Fault       string
+	LastAckAt   time.Time
+	LastApplied uint64
+}
+
+// KvSvcContractEnforcement reports the enforcement position for a svc_id
+// (false = the rule has no registered contract, i.e. legacy).
+func KvSvcContractEnforcement(svcID uint32) (KvSvcEnforcement, bool) {
+	kvSvcMu.RLock()
+	defer kvSvcMu.RUnlock()
+	c := kvSvcContracts[svcID]
+	if c == nil {
+		return KvSvcEnforcement{}, false
+	}
+	return KvSvcEnforcement{
+		GoFenced:    c.denied,
+		Fault:       c.fault,
+		LastAckAt:   c.lastAckAt,
+		LastApplied: c.lastApplied,
+	}, true
+}
+
+// kvExactEnforcementInfo builds the status sub-resource's enforcement block
+// for a strict rule (nil when the rule has no registered contract).
+func kvExactEnforcementInfo(svcID uint32, desired, enforced string) *cmn.KvExactEnforcement {
+	e, ok := KvSvcContractEnforcement(svcID)
+	if !ok {
+		return nil
+	}
+	out := &cmn.KvExactEnforcement{
+		Desired:  desired,
+		Enforced: enforced,
+		Fault:    e.Fault,
+		GoFenced: e.GoFenced,
+	}
+	if !e.LastAckAt.IsZero() {
+		out.LastAckAt = e.LastAckAt.UTC().Format(time.RFC3339)
+	}
+	return out
+}
+
+// kvSvcContractAckStamp records a full setter ACK (word readback + digest
+// half both verified by the caller).
+func kvSvcContractAckStamp(svcID uint32, applied uint64) {
+	kvSvcMu.Lock()
+	if c := kvSvcContracts[svcID]; c != nil {
+		c.lastAckAt = time.Now()
+		c.lastApplied = applied
+	}
+	kvSvcMu.Unlock()
 }
 
 var (
@@ -222,21 +285,24 @@ func kvSvcContractOutcome(svcID uint32, denied bool, fault string) {
 	kvSvcMu.Unlock()
 }
 
-// kvDataplaneContractInstall runs one §7.4 install transaction against the
-// injected setter: compute the expected word from the rule's CURRENT binding,
-// call the synchronous setter, and accept only the full ACK — C readback ==
-// the requested word AND the binding still being current (digest-verified)
-// after the readback. Only a full ACK clears the deny entry; every other
-// outcome keeps the rule fenced and records the fault. Retries re-read the
-// current binding each attempt, so a concurrent re-allocation converges on
-// the NEWEST generation instead of ACKing a stale one (§17.3's "two distinct
-// component pairs must be unacceptable under one data-plane generation").
+// kvDataplaneContractApply runs one §7.2/§7.4 contract transaction against
+// the injected setter at an explicit eligibility: compute the expected word
+// from the rule's CURRENT binding, call the synchronous setter, and accept
+// only the full ACK — C readback == the requested word AND the binding still
+// being current (digest-verified) after the readback. Only a full ACK clears
+// the deny entry; every other outcome keeps the rule fenced and records the
+// fault — which IS the §7.4 escalation's deny-set write (a same-process
+// memory operation that cannot fail), so a rule whose C word cannot be
+// trusted is always Go-fenced regardless of C-side state. Retries re-read
+// the current binding each attempt, so a concurrent re-allocation converges
+// on the NEWEST generation instead of ACKing a stale one (§17.3's "two
+// distinct component pairs must be unacceptable under one data-plane
+// generation").
 //
-// At the contract-install plateau eligible is always 0: the word carries identity and
-// surface policy, and the rule stays fenced pending attestation — the
-// readiness ladder is the only writer that will ever flip eligible to 1.
-func kvDataplaneContractInstall(svcID uint32, setter kvContractSetter,
-	attempts int, backoff time.Duration) error {
+// eligible=1 is written ONLY by the attestation controller's READY
+// transition (ai_kv_attest.go); every other caller installs at eligible=0.
+func kvDataplaneContractApply(svcID uint32, setter kvContractSetter,
+	attempts int, backoff time.Duration, eligible uint8) error {
 	if setter == nil {
 		kvSvcContractOutcome(svcID, true, "no_dataplane_setter")
 		return fmt.Errorf("kv-contract: svc %d: no data-plane setter registered", svcID)
@@ -261,9 +327,9 @@ func kvDataplaneContractInstall(svcID uint32, setter kvContractSetter,
 			kvSvcContractOutcome(svcID, true, "binding_state_missing")
 			continue
 		}
-		want := KvContractPack(b.BindingGen, 0, snap.apiMode, 0)
+		want := KvContractPack(b.BindingGen, 0, snap.apiMode, eligible)
 		applied, ok := setter(snap.vip, snap.port, snap.proto,
-			b.BindingGen, snap.apiMode, 0)
+			b.BindingGen, snap.apiMode, eligible)
 		if !ok {
 			lastErr = fmt.Errorf("kv-contract: svc %d rule %s: setter failed", svcID, snap.ruleIdent)
 			kvSvcContractOutcome(svcID, true, "dataplane_setter_failed")
@@ -288,22 +354,36 @@ func kvDataplaneContractInstall(svcID uint32, setter kvContractSetter,
 			continue
 		}
 		kvSvcContractOutcome(svcID, false, "")
-		tk.LogIt(tk.LogInfo, "kv-contract: svc %d rule %s gen %d api_mode %d installed (fenced pending attestation)\n",
-			svcID, snap.ruleIdent, b.BindingGen, snap.apiMode)
+		kvSvcContractAckStamp(svcID, want)
+		tk.LogIt(tk.LogInfo, "kv-contract: svc %d rule %s gen %d api_mode %d eligible %d applied\n",
+			svcID, snap.ruleIdent, b.BindingGen, snap.apiMode, eligible)
 		return nil
 	}
-	tk.LogIt(tk.LogError, "kv-contract: svc %d install failed after %d attempts: %v — rule stays Go-fenced (ENFORCEMENT_FAULT path)\n",
-		svcID, attempts, lastErr)
+	tk.LogIt(tk.LogError, "kv-contract: svc %d apply(eligible=%d) failed after %d attempts: %v — rule stays Go-fenced (ENFORCEMENT_FAULT path)\n",
+		svcID, eligible, attempts, lastErr)
 	return lastErr
+}
+
+// kvDataplaneContractInstall is the install-shaped transaction (eligible=0):
+// the word carries identity and surface policy and the rule stays fenced
+// pending attestation — the attestation readiness ladder is the only writer that
+// flips eligible to 1.
+func kvDataplaneContractInstall(svcID uint32, setter kvContractSetter,
+	attempts int, backoff time.Duration) error {
+	return kvDataplaneContractApply(svcID, setter, attempts, backoff, 0)
 }
 
 // kvDataplaneContractInstallAsync launches the production install goroutine
 // (pattern: the circuit-breaker enable retry — the proxy entry is created
-// asynchronously by the DP worker, so the first attempts may miss it).
+// asynchronously by the DP worker, so the first attempts may miss it). A
+// full install ACK hands the rule to the attestation controller, the
+// only path to eligible=1.
 func kvDataplaneContractInstallAsync(svcID uint32) {
 	go func() {
-		_ = kvDataplaneContractInstall(svcID, kvContractSetter_get(),
-			20, 200*time.Millisecond)
+		if kvDataplaneContractInstall(svcID, kvContractSetter_get(),
+			20, 200*time.Millisecond) == nil {
+			kvAttestActivate(svcID)
+		}
 	}()
 }
 
@@ -355,11 +435,21 @@ func kvBridgeTokenize(svcID, bindingGen uint32, text, model string, max int) ([]
 		if bindingGen != 0 {
 			// Admission proved this tokenizer loadable; its absence now is
 			// a runtime fault, not a request problem.
-			return nil, KvTokErrTokenizer
+			return nil, kvBridgeRuntimeFault(svcID, KvTokErrTokenizer)
 		}
 		return nil, KvTokErrRequest
 	}
 	return tokens, 0
+}
+
+// kvBridgeRuntimeFault forwards a strict path's runtime-fault code and kicks
+// the rule's attestation controller (§6.3: the ladder re-runs on any
+// runtime-fault signal). Request-class codes NEVER pass through here —
+// readiness reacting to attacker-controllable request problems would let
+// traffic degrade rules (I-12).
+func kvBridgeRuntimeFault(svcID uint32, code int) int {
+	KvAttestKick(svcID, KvAttestReasonRuntimeFault)
+	return code
 }
 
 // kvBridgeTokenizeChat is the typed core of llb_ai_kv_tokenize_chat. Same
@@ -390,14 +480,14 @@ func kvBridgeTokenizeChat(svcID, bindingGen uint32, body, model string, max int)
 			// Admission refuses a declared chat surface without a validated
 			// renderer, so a strict rule reaching this branch means the
 			// renderer itself failed.
-			return nil, KvTokErrRenderer
+			return nil, kvBridgeRuntimeFault(svcID, KvTokErrRenderer)
 		}
 		return nil, KvTokErrRequest
 	}
 	tokens := kvTokenizeWithCache(rendered, model, max)
 	if len(tokens) == 0 {
 		if strict {
-			return nil, KvTokErrTokenizer
+			return nil, kvBridgeRuntimeFault(svcID, KvTokErrTokenizer)
 		}
 		return nil, KvTokErrRequest
 	}

@@ -8,6 +8,7 @@ package models
 import (
 	"context"
 
+	"github.com/go-openapi/errors"
 	"github.com/go-openapi/strfmt"
 	"github.com/go-openapi/swag"
 )
@@ -31,6 +32,9 @@ type KvExactStatusEntry struct {
 
 	// State the data plane actually enforces. Honest about pending machinery - a strict rule reports PENDING_DATAPLANE_CONTRACT until the data-plane contract word and attestation controller enforce its binding; a strict rule with missing binding state reports ENFORCEMENT_FAULT, never a silent legacy downgrade.
 	EnforcedState string `json:"enforcedState,omitempty"`
+
+	// enforcement
+	Enforcement *KvExactEnforcement `json:"enforcement,omitempty"`
 
 	// Contract generation the binding was composed at.
 	EngineContractGen uint64 `json:"engineContractGen,omitempty"`
@@ -71,11 +75,64 @@ type KvExactStatusEntry struct {
 
 // Validate validates this kv exact status entry
 func (m *KvExactStatusEntry) Validate(formats strfmt.Registry) error {
+	var res []error
+
+	if err := m.validateEnforcement(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if len(res) > 0 {
+		return errors.CompositeValidationError(res...)
+	}
 	return nil
 }
 
-// ContextValidate validates this kv exact status entry based on context it is used
+func (m *KvExactStatusEntry) validateEnforcement(formats strfmt.Registry) error {
+	if swag.IsZero(m.Enforcement) { // not required
+		return nil
+	}
+
+	if m.Enforcement != nil {
+		if err := m.Enforcement.Validate(formats); err != nil {
+			if ve, ok := err.(*errors.Validation); ok {
+				return ve.ValidateName("enforcement")
+			} else if ce, ok := err.(*errors.CompositeError); ok {
+				return ce.ValidateName("enforcement")
+			}
+			return err
+		}
+	}
+
+	return nil
+}
+
+// ContextValidate validate this kv exact status entry based on the context it is used
 func (m *KvExactStatusEntry) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
+	var res []error
+
+	if err := m.contextValidateEnforcement(ctx, formats); err != nil {
+		res = append(res, err)
+	}
+
+	if len(res) > 0 {
+		return errors.CompositeValidationError(res...)
+	}
+	return nil
+}
+
+func (m *KvExactStatusEntry) contextValidateEnforcement(ctx context.Context, formats strfmt.Registry) error {
+
+	if m.Enforcement != nil {
+		if err := m.Enforcement.ContextValidate(ctx, formats); err != nil {
+			if ve, ok := err.(*errors.Validation); ok {
+				return ve.ValidateName("enforcement")
+			} else if ce, ok := err.(*errors.CompositeError); ok {
+				return ce.ValidateName("enforcement")
+			}
+			return err
+		}
+	}
+
 	return nil
 }
 

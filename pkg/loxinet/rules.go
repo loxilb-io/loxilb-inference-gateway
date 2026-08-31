@@ -1210,7 +1210,7 @@ func (R *RuleH) GetLBRule() ([]cmn.LbRuleMod, error) {
 		ret.Serv.KvHashAlgo = data.kvHashAlgo
 		ret.Serv.KvZmqPort = data.kvZmqPort
 		ret.Serv.KvWarmupSec = data.kvWarmupSec
-		ret.Serv.KvEngineType = data.kvEngineType // zero value ⇒ omitempty ⇒ absent on legacy rules
+		ret.Serv.KvEngineType = data.kvEngineType     // zero value ⇒ omitempty ⇒ absent on legacy rules
 		ret.Serv.KvExactApiMode = data.kvExactApiMode // zero value ⇒ omitempty ⇒ absent on legacy rules
 		ret.Serv.KvModelProfile = data.kvModelProfile // zero value ⇒ omitempty ⇒ absent on legacy rules
 		ret.Serv.KvDpRankCount = data.kvDpRankCount
@@ -3020,10 +3020,10 @@ func kvExactRuntimeValidate(engine string, kvExactMode uint8, modelName, apiMode
 // whose binding state is missing is an enforcement fault, never silently
 // legacy.
 const (
-	KvExactStateLegacyActive      = "LEGACY_ACTIVE_UNATTESTED"
-	KvExactStateProfileValidated  = "PROFILE_VALIDATED"
-	KvExactStatePendingDataplane  = "PENDING_DATAPLANE_CONTRACT"
-	KvExactStateEnforcementFault  = "ENFORCEMENT_FAULT"
+	KvExactStateLegacyActive     = "LEGACY_ACTIVE_UNATTESTED"
+	KvExactStateProfileValidated = "PROFILE_VALIDATED"
+	KvExactStatePendingDataplane = "PENDING_DATAPLANE_CONTRACT"
+	KvExactStateEnforcementFault = "ENFORCEMENT_FAULT"
 )
 
 // GetKvExactStatus returns the resolved KV-exact composition status of every
@@ -3091,6 +3091,7 @@ func (R *RuleH) GetKvExactStatus(vip string, port uint16, proto string, modelNam
 			m.DesiredState = KvExactStateProfileValidated
 			m.EnforcedState = KvExactStateEnforcementFault
 			m.ReasonCodes = []string{"binding_state_missing"}
+			m.Enforcement = kvExactEnforcementInfo(uint32(data.ruleNum), m.DesiredState, m.EnforcedState)
 			res = append(res, m)
 			continue
 		}
@@ -3124,9 +3125,19 @@ func (R *RuleH) GetKvExactStatus(vip string, port uint16, proto string, modelNam
 				}
 			}
 		}
-		m.DesiredState = KvExactStateProfileValidated
-		m.EnforcedState = KvExactStatePendingDataplane
-		m.ReasonCodes = []string{"binding_dataplane_pending", "attestation_pending"}
+		// The attestation controller owns the ladder position once the
+		// contract-word install has handed the rule to it; before that the
+		// honest answer is still PENDING_DATAPLANE_CONTRACT.
+		if desired, enforced, reasons, aok := KvAttestStatus(uint32(data.ruleNum)); aok {
+			m.DesiredState = desired
+			m.EnforcedState = enforced
+			m.ReasonCodes = reasons
+		} else {
+			m.DesiredState = KvExactStateProfileValidated
+			m.EnforcedState = KvExactStatePendingDataplane
+			m.ReasonCodes = []string{"binding_dataplane_pending", "attestation_pending"}
+		}
+		m.Enforcement = kvExactEnforcementInfo(uint32(data.ruleNum), m.DesiredState, m.EnforcedState)
 		res = append(res, m)
 	}
 	return res, nil
@@ -4332,6 +4343,30 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		KvSvcContractRegister(uint32(r.ruleNum), r.id,
 			r.tuples.l3Dst.addr.IP, r.tuples.l4Dst.valMin, r.tuples.l4Prot.val,
 			kvContractAPIModeByte(kvAdmission.APIChat, kvAdmission.APICompletions))
+		// Attestation identity: registered alongside the contract so a
+		// full install ACK can hand the rule to the readiness ladder. The
+		// attestable endpoint set mirrors the subscriber target set — event
+		// bridges exist only on subscribed endpoints, so echo consensus is
+		// scoped to them.
+		attEps := make([]KvAttestEndpoint, 0, len(lBActs.endPoints))
+		for _, i := range kvSubscriberTargets(serv.KvExactMode, lBActs.endPoints) {
+			attEps = append(attEps, KvAttestEndpoint{
+				EpIdx: i,
+				IP:    lBActs.endPoints[i].xIP.String(),
+				Port:  lBActs.endPoints[i].xPort,
+			})
+		}
+		kvAttestRegisterRule(kvAttestRuleInfo{
+			svcID:     uint32(r.ruleNum),
+			ruleIdent: r.id,
+			modelName: r.tuples.modelName,
+			engine:    kvEngineEffective(r.kvEngineType),
+			hashAlgo:  kvHashAlgoEffective(r.kvHashAlgo, r.kvEngineType),
+			blockSize: r.kvBlockSize,
+			profileID: r.kvModelProfile,
+			apiChat:   kvAdmission.APIChat,
+			apiCompl:  kvAdmission.APICompletions,
+		}, attEps)
 	}
 	if kvAdmission.Strict && !serv.RestoreReplay {
 		if b, bErr := KvBindingAllocate(r.id, kvAdmission.Comps); bErr != nil {
@@ -4626,6 +4661,7 @@ func (R *RuleH) DeleteLbRule(serv cmn.LbServiceArg) (int, error) {
 	KvBindingDelete(rule.id)
 	// The contract word dies with the proxy entry; drop the deny-set /
 	// contract registration with it (a recreate re-registers fence-first).
+	kvAttestDeregisterRule(uint32(rule.ruleNum))
 	KvSvcContractDeregister(uint32(rule.ruleNum))
 
 	// COMP-01 : Stop vLLM metrics scraper
