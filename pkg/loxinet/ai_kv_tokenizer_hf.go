@@ -80,6 +80,19 @@ func (b *HFTokenizerBackend) LoadModel(tokenizerPath string) KvTokenizer {
 	return &hfTokenizerInstance{t: t}
 }
 
+// LoadModelBytes parses a tokenizer from in-memory tokenizer.json contents
+// (the digest-verified buffer of a published model profile). Same default
+// construction as LoadModel: encode_special_tokens=false, so embedded
+// special-token strings are recognized as their single special IDs.
+func (b *HFTokenizerBackend) LoadModelBytes(data []byte) KvTokenizer {
+	t, err := daul.FromBytes(data)
+	if err != nil {
+		tk.LogIt(tk.LogDebug, "[KV] tokenizer load from verified bytes failed: %v\n", err)
+		return nil
+	}
+	return &hfTokenizerInstance{t: t}
+}
+
 // hfTokenizerInstance wraps a daulet/tokenizers.Tokenizer to implement KvTokenizer.
 type hfTokenizerInstance struct {
 	t *daul.Tokenizer

@@ -42,6 +42,7 @@ type mockHooks struct {
 
 	endpoints []cmn.EndPointMod
 	lbRules   []cmn.LbRuleMod
+	kvBinds   []cmn.KvExactBindingMod
 	fwRules   []cmn.FwRuleMod
 	policies  []cmn.PolMod
 	mirrors   []cmn.MirrGetMod
@@ -242,6 +243,35 @@ func (m *mockHooks) NetLbRuleDel(l *cmn.LbRuleMod) (int, error) {
 		}
 	}
 	m.lbRules = out
+	return 0, nil
+}
+
+// --- kvexactbinding ---
+
+func (m *mockHooks) NetKvExactBindingGet() ([]cmn.KvExactBindingMod, error) {
+	m.log("NetKvExactBindingGet")
+	return resizeOverride(m, "NetKvExactBindingGet", append([]cmn.KvExactBindingMod(nil), m.kvBinds...)), nil
+}
+func (m *mockHooks) NetKvExactBindingAdd(b *cmn.KvExactBindingMod) (int, error) {
+	m.log("NetKvExactBindingAdd:%s", b.RuleIdent)
+	if err := m.failIfConfigured("NetKvExactBindingAdd"); err != nil {
+		return -1, err
+	}
+	m.kvBinds = append(m.kvBinds, *b)
+	return 0, nil
+}
+func (m *mockHooks) NetKvExactBindingDel(b *cmn.KvExactBindingMod) (int, error) {
+	m.log("NetKvExactBindingDel:%s", b.RuleIdent)
+	if err := m.failIfConfigured("NetKvExactBindingDel"); err != nil {
+		return -1, err
+	}
+	out := m.kvBinds[:0]
+	for _, r := range m.kvBinds {
+		if r.RuleIdent != b.RuleIdent {
+			out = append(out, r)
+		}
+	}
+	m.kvBinds = out
 	return 0, nil
 }
 

@@ -56,6 +56,17 @@ type KvTokenizerBackend interface {
 	Name() string
 }
 
+// KvTokenizerBytesBackend is the in-memory loading capability of a tokenizer
+// backend. Models covered by a published ModelPromptProfile load from the
+// registry's digest-verified buffer — the digested bytes are the bytes the
+// tokenizer uses, with no second path-based open in between — so a backend
+// must implement this to serve profiled models.
+type KvTokenizerBytesBackend interface {
+	// LoadModelBytes parses a tokenizer from tokenizer.json contents.
+	// Returns nil on parse error.
+	LoadModelBytes(data []byte) KvTokenizer
+}
+
 // KvTokenizer is a loaded tokenizer instance for a specific model.
 type KvTokenizer interface {
 	// Encode tokenizes text and returns token IDs.
@@ -114,9 +125,26 @@ var kvTokenizerNegTTL = 5 * time.Second
 // commits (or negative-caches) on its own lifecycle.
 var kvTokenizerWaitTimeout = 2 * time.Second
 
+// kvTokenizerFlightKey identifies one collapsible load: what is being loaded
+// (the artifact identity) under which pool generation. For models covered by
+// a published profile the identity is the profile-pinned tokenizer digest, so
+// a profile update (new digest ⇒ new key) can never join a load of the old
+// artifact; legacy profile-less models key by slug.
 type kvTokenizerFlightKey struct {
-	slug  string
-	epoch uint64
+	identity string
+	epoch    uint64
+}
+
+// kvTokenizerLoadIdentity resolves the flight identity for a slug, returning
+// the profile entry when one covers the model so the subsequent load uses
+// that same generation's verified bytes.
+func kvTokenizerLoadIdentity(slug string) (string, *kvProfileEntry) {
+	if g := kvProfileReg.Load(); g != nil {
+		if e, ok := g.ByModel[slug]; ok {
+			return "sha256:" + e.Profile.TokenizerSha256, e
+		}
+	}
+	return "slug:" + slug, nil
 }
 
 type kvTokenizerLoad struct {
@@ -219,7 +247,8 @@ func kvLoadTokenizerEx(modelName string, freshProbe bool) KvTokenizer {
 			}
 		}
 
-		key := kvTokenizerFlightKey{slug: slug, epoch: kvTokenizerEpoch.Load()}
+		identity, profEntry := kvTokenizerLoadIdentity(slug)
+		key := kvTokenizerFlightKey{identity: identity, epoch: kvTokenizerEpoch.Load()}
 		kvTokenizerFlightMu.Lock()
 		call, joined := kvTokenizerFlight[key]
 		if !joined {
@@ -229,7 +258,7 @@ func kvLoadTokenizerEx(modelName string, freshProbe bool) KvTokenizer {
 		kvTokenizerFlightMu.Unlock()
 
 		if !joined {
-			tok, stale := kvTokenizerLoadAndCommit(backend, modelName, slug, key.epoch)
+			tok, stale := kvTokenizerLoadAndCommit(backend, modelName, slug, profEntry, key.epoch)
 			if !stale {
 				call.tok = tok
 			}
@@ -258,14 +287,29 @@ func kvLoadTokenizerEx(modelName string, freshProbe bool) KvTokenizer {
 	return nil
 }
 
-// kvTokenizerLoadAndCommit performs the filesystem load with NO pool lock held,
-// then commits the outcome under the pool write lock only if the pool is still
+// kvTokenizerLoadAndCommit performs the load with NO pool lock held, then
+// commits the outcome under the pool write lock only if the pool is still
 // the generation the load started under. stale=true means a concurrent pool
 // reset invalidated the result and nothing was populated — neither the pool nor
 // the negative cache may carry state across generations.
-func kvTokenizerLoadAndCommit(backend KvTokenizerBackend, modelName, slug string, epoch uint64) (KvTokenizer, bool) {
-	tokenizerPath := kvTokenizerDir + "/" + slug + "/tokenizer.json"
-	tokenizer := backend.LoadModel(tokenizerPath)
+//
+// A model covered by a published profile (profEntry != nil) loads from the
+// registry's digest-verified in-memory buffer; opening the legacy filesystem
+// path instead would tokenize bytes nobody verified, so a backend without
+// in-memory loading fails the load rather than falling back.
+func kvTokenizerLoadAndCommit(backend KvTokenizerBackend, modelName, slug string, profEntry *kvProfileEntry, epoch uint64) (KvTokenizer, bool) {
+	var tokenizer KvTokenizer
+	source := kvTokenizerDir + "/" + slug + "/tokenizer.json"
+	if profEntry != nil {
+		source = "profile " + profEntry.Profile.ProfileID + " (sha256:" + profEntry.Profile.TokenizerSha256[:12] + "…)"
+		if bb, ok := backend.(KvTokenizerBytesBackend); ok {
+			tokenizer = bb.LoadModelBytes(profEntry.TokenizerBytes)
+		} else {
+			log.Warnf("kv-router: backend %s cannot load verified profile bytes for model %q", backend.Name(), modelName)
+		}
+	} else {
+		tokenizer = backend.LoadModel(source)
+	}
 
 	kvTokenizerMu.Lock()
 	if kvTokenizerEpoch.Load() != epoch {
@@ -289,12 +333,12 @@ func kvTokenizerLoadAndCommit(backend KvTokenizerBackend, modelName, slug string
 		kvTokenizerNeg[slug] = time.Now().Add(kvTokenizerNegTTL)
 		kvTokenizerNegMu.Unlock()
 		if _, warned := kvTokenizerWarnMap.LoadOrStore(slug, true); !warned {
-			log.Warnf("kv-router: tokenizer not available for model %q at %s", modelName, tokenizerPath)
+			log.Warnf("kv-router: tokenizer not available for model %q from %s", modelName, source)
 		}
 		return nil, false
 	}
 
-	log.Infof("kv-router: loaded tokenizer for model %q from %s", modelName, tokenizerPath)
+	log.Infof("kv-router: loaded tokenizer for model %q from %s", modelName, source)
 	return tokenizer, false
 }
 

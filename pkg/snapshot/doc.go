@@ -32,7 +32,13 @@ import (
 
 // SchemaVersion is the current document format version emitted by Encode.
 // Bumped per §4.2: major on breaking changes, minor on additive changes.
-const SchemaVersion = "1.0"
+//
+// 1.1: added the kvexactbinding domain (KV-exact model-profile/engine-
+// contract bindings). Profile-aware documents must not restore onto builds
+// that do not understand binding state, so this is a minor bump (the
+// version gate in CheckSchemaVersion refuses newer-minor documents) rather
+// than a silently-added field.
+const SchemaVersion = "1.1"
 
 // DocKind identifies the document type, matching §4's "kind" field.
 const DocKind = "loxilb-snapshot"
@@ -55,18 +61,19 @@ const (
 // also the valid values for the REST `components` query parameter (task
 // G-3) and for Select (registry.go).
 const (
-	DomainEndpoint     = "endpoint"
-	DomainLoadBalancer = "loadbalancer"
-	DomainFirewall     = "firewall"
-	DomainPolicy       = "policy"
-	DomainMirror       = "mirror"
-	DomainSession      = "session"
-	DomainSessionUlCl  = "sessionulcl"
-	DomainIPFilter     = "ipfilter"
-	DomainSecurityRate = "securityrate"
-	DomainBFD          = "bfd"
-	DomainBGP          = "bgp"
-	DomainIPsec        = "ipsec"
+	DomainEndpoint       = "endpoint"
+	DomainLoadBalancer   = "loadbalancer"
+	DomainKvExactBinding = "kvexactbinding"
+	DomainFirewall       = "firewall"
+	DomainPolicy         = "policy"
+	DomainMirror         = "mirror"
+	DomainSession        = "session"
+	DomainSessionUlCl    = "sessionulcl"
+	DomainIPFilter       = "ipfilter"
+	DomainSecurityRate   = "securityrate"
+	DomainBFD            = "bfd"
+	DomainBGP            = "bgp"
+	DomainIPsec          = "ipsec"
 )
 
 // DefaultExcludedDomains lists the domains deliberately never captured by a
@@ -114,14 +121,19 @@ type IPsecDomain struct {
 // exactly the §4.1 table order (apply order; DeleteOrder in registry.go is
 // the reverse).
 type Domains struct {
-	Endpoint     []cmn.EndPointMod    `json:"endpoint"`
-	LoadBalancer []cmn.LbRuleMod      `json:"loadbalancer"`
-	Firewall     []cmn.FwRuleMod      `json:"firewall"`
-	Policy       []cmn.PolMod         `json:"policy"`
-	Mirror       []cmn.MirrGetMod     `json:"mirror"`
-	Session      []cmn.SessionMod     `json:"session"`
-	SessionUlCl  []cmn.SessionUlClMod `json:"sessionulcl"`
-	IPFilter     []cmn.IPFilterEntry  `json:"ipfilter"`
+	Endpoint     []cmn.EndPointMod `json:"endpoint"`
+	LoadBalancer []cmn.LbRuleMod   `json:"loadbalancer"`
+	// KvExactBinding carries each rule's KV-exact composed-binding identity
+	// (model-profile ref, engine-contract ref, binding generation + digest,
+	// allocation high-water mark). Applied after loadbalancer (bindings
+	// belong to rules). Added in schema 1.1; absent in 1.0 documents.
+	KvExactBinding []cmn.KvExactBindingMod `json:"kvexactbinding,omitempty"`
+	Firewall       []cmn.FwRuleMod         `json:"firewall"`
+	Policy         []cmn.PolMod            `json:"policy"`
+	Mirror         []cmn.MirrGetMod        `json:"mirror"`
+	Session        []cmn.SessionMod        `json:"session"`
+	SessionUlCl    []cmn.SessionUlClMod    `json:"sessionulcl"`
+	IPFilter       []cmn.IPFilterEntry     `json:"ipfilter"`
 	// SecurityRate is a singleton (Set semantics on apply); nil means "not
 	// captured" (e.g. excluded via `components`).
 	SecurityRate *cmn.SecurityRateState `json:"securityrate,omitempty"`

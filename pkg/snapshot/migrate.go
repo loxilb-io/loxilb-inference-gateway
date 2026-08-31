@@ -16,7 +16,11 @@
 
 package snapshot
 
-import "fmt"
+import (
+	"fmt"
+
+	cmn "github.com/loxilb-io/loxilb/common"
+)
 
 // Migration transforms a Document from one minor schema_version to the
 // next-higher minor version within the same major (§4.2: "A migrations
@@ -36,10 +40,23 @@ type Migration struct {
 }
 
 // Migrations is the ordered table of registered schema migrations, applied
-// in slice order. It is intentionally empty for schema_version "1.0" -- there
-// is nothing to migrate from yet. Future 1.x -> 1.y transforms register
-// themselves here.
-var Migrations []Migration
+// in slice order.
+var Migrations = []Migration{
+	// 1.0 -> 1.1: the kvexactbinding domain was added. Purely additive -- a
+	// 1.0 document simply has no bindings -- so the transform only
+	// normalizes the absent field to its empty value and re-stamps the
+	// version, giving restore engines a uniform 1.1 shape to work on.
+	{
+		FromVersion: "1.0",
+		ToVersion:   "1.1",
+		Apply: func(doc *Document) error {
+			if doc.Domains.KvExactBinding == nil {
+				doc.Domains.KvExactBinding = []cmn.KvExactBindingMod{}
+			}
+			return nil
+		},
+	},
+}
 
 // ApplyMigrations runs every registered Migration whose FromVersion matches
 // doc.SchemaVersion (chaining through ToVersion) until either no further

@@ -1826,6 +1826,9 @@ type NetHookInterface interface {
 	NetLbRuleAdd(*LbRuleMod) (int, error)
 	NetLbRuleDel(*LbRuleMod) (int, error)
 	NetLbRuleGet() ([]LbRuleMod, error)
+	NetKvExactBindingGet() ([]KvExactBindingMod, error)
+	NetKvExactBindingAdd(*KvExactBindingMod) (int, error)
+	NetKvExactBindingDel(*KvExactBindingMod) (int, error)
 	// NetL7PolicyApply attaches an ordered L7 content-routing route array to the
 	// running sockproxy rule fronting the given VIP:port:proto.
 	// Driven from the dedicated /config/l7policy REST resource: the route IR
@@ -2232,4 +2235,39 @@ type TenantRateLimitEntry struct {
 	BurstPct    int                    `json:"burst_pct"`
 	ModelLimits []TenantModelRateLimit `json:"model_limits,omitempty"`
 	UpdatedAt   time.Time              `json:"updated_at"`
+}
+
+// KvExactBindingMod - persisted form of one rule's KV-exact binding: the
+// composed model-profile + engine-contract identity, its rule-scoped
+// binding generation, the full binding digest, and the highest generation
+// ever allocated for the rule (so a restarted allocator never reuses a
+// generation that may still be in flight).
+type KvExactBindingMod struct {
+	// RuleIdent identifies the bound load-balancer rule (its stable id).
+	RuleIdent string `json:"ruleIdent"`
+	// ModelProfileID/ModelProfileGen reference exactly one ModelPromptProfile
+	// at exactly one registry generation (scalars by schema).
+	ModelProfileID  string `json:"modelProfileId"`
+	ModelProfileGen uint64 `json:"modelProfileGen"`
+	// EngineContractID/EngineContractGen reference exactly one engine
+	// contract at exactly one generation (scalars by schema).
+	EngineContractID  string `json:"engineContractId"`
+	EngineContractGen uint64 `json:"engineContractGen"`
+	// AttestationPolicyGen versions the attestation policy the binding was
+	// admitted under.
+	AttestationPolicyGen uint32 `json:"attestationPolicyGen"`
+	// RequiredEvidenceLevel is the support-catalog evidence level this
+	// binding requires of its engine tuple.
+	RequiredEvidenceLevel string `json:"requiredEvidenceLevel"`
+	// ConsensusPolicy names the endpoint-consensus policy.
+	ConsensusPolicy string `json:"consensusPolicy"`
+	// BindingGen is the rule-scoped monotonic data-plane generation (0 is
+	// reserved and never a valid generation).
+	BindingGen uint32 `json:"bindingGen"`
+	// BindingDigest is the full digest over the composed binding identity.
+	// It, not BindingGen, is the identity proof.
+	BindingDigest string `json:"bindingDigest"`
+	// MaxAllocatedGen is the highest BindingGen the rule's allocator has
+	// handed out; restore resumes allocation above it.
+	MaxAllocatedGen uint32 `json:"maxAllocatedGen"`
 }

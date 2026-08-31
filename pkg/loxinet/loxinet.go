@@ -417,6 +417,15 @@ func loxiNetInit() {
 	// Without this, llb_ai_kv_tokenize always returns -1 and Tier-1.5 is permanently disabled.
 	KvRegisterTokenizerBackend(NewHFTokenizerBackend())
 
+	// Publish the model-profile registry if one is staged. A broken registry
+	// keeps the gateway up on legacy profile-less behavior (rules that
+	// REQUIRE a profile fail closed at admission instead), but the failure
+	// must be loud: silent profile loss would silently change how requests
+	// tokenize.
+	if err := KvProfileRegistryLoad(); err != nil {
+		tk.LogIt(tk.LogError, "[KV] model-profile registry load failed (profiles unavailable): %v\n", err)
+	}
+
 	kaArgs := KAString2Mode(opts.Opts.Ka, opts.Opts.ClusterInterface)
 	clusterMode := false
 	if opts.Opts.ClusterNodes != "none" {
