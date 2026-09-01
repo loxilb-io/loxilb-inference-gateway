@@ -60,6 +60,15 @@ Expected: `validation.sh` prints `[OK]` per assert and exits 0 with
 
 ## Traps (do not regress)
 
+- the rules are vhost-keyed (host=VIP) with model_name in the key: delete
+  MUST use the `/hosturl/<vip>/...` variant with `?model_name=<urlencoded>`
+  — the host-less path 404s while the rule survives, and every later
+  "create" becomes a silent in-place update (the first run's 409
+  cascade + phantom engine_geometry_mismatch on dp=2 cases came from this);
+  case_teardown asserts the delete code for that reason;
+- `docker logs` lags writes by 10s+ on the CI hosts — log anchors go
+  through `wait_log_delta` (bounded delta-poll), never a single sample;
+
 - external `kill`/`pkill` binaries are DISABLED stubs on the CI host —
   `lib.sh` signals simulator pids with the shell BUILTIN kill only;
 - the challenge prompt tokenizes through `/etc/loxilb/tokenizers/<slug>/`

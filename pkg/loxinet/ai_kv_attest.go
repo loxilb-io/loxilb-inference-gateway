@@ -287,14 +287,27 @@ func kvAttestEnv() (time.Duration, time.Duration, bool, bool) {
 // svc_id: a second start for a live controller only kicks it.
 func KvAttestStart(info kvAttestRuleInfo, deps kvAttestDeps) *kvAttestController {
 	kvAttestMu.Lock()
-	if c := kvAttestControllers[info.svcID]; c != nil {
+	old := kvAttestControllers[info.svcID]
+	if old != nil && old.info == info {
 		kvAttestMu.Unlock()
-		c.Kick("re-activation")
-		return c
+		old.Kick("re-activation")
+		return old
+	}
+	// A live controller with a DIFFERENT identity means the rule was updated
+	// in place (dpRanks/zmqPort/profile/... changed without delete+recreate).
+	// Kicking it would re-earn the ladder against the stale declaration —
+	// e.g. a dpRanks bump would fail every climb as engine_geometry_mismatch
+	// while the rule itself reads back the new value. Replace it instead;
+	// the replacement re-earns from the bottom under the updated identity.
+	if old != nil {
+		delete(kvAttestControllers, info.svcID)
 	}
 	c := newKvAttestController(info, deps)
 	kvAttestControllers[info.svcID] = c
 	kvAttestMu.Unlock()
+	if old != nil {
+		close(old.stop)
+	}
 
 	c.wg.Add(1)
 	go c.loop()
@@ -467,6 +480,13 @@ func (c *kvAttestController) addReceipt(r KvAttestReceipt) {
 		c.receipts = c.receipts[len(c.receipts)-kvAttestReceiptCap:]
 	}
 	c.mu.Unlock()
+	// Failed probes must be debuggable from the operator log alone: the
+	// receipt detail names the exact disagreement (which geometry axis,
+	// which rank set), while the status API carries only the reason code.
+	if !r.OK {
+		log.Warnf("kv-attest: rule %s %s probe ep %s failed: %s (%s)",
+			c.info.ruleIdent, r.Kind, r.EndpointID, r.Reason, r.Detail)
+	}
 }
 
 // fenceAndReattest is the §7.2 fence-first transaction: fence the data plane

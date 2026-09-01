@@ -580,3 +580,43 @@ func TestKvAttestApplyEligibleStampsAck(t *testing.T) {
 		t.Fatalf("enforcement read-model after ACK: %+v (found=%v)", enf, found)
 	}
 }
+
+// TestKvAttestStartReplacesOnInfoChange: a rule UPDATE re-registers changed
+// attestation identity (e.g. kvDpRankCount) and re-activates through
+// KvAttestStart. The running controller must be replaced — kicking it would
+// re-earn every ladder against the stale declaration (live signature: dp=2
+// sims + dp=2 rule read-back, yet every climb fails engine_geometry_mismatch
+// because the controller still holds dpRanks=1).
+func TestKvAttestStartReplacesOnInfoChange(t *testing.T) {
+	h := newAttestHarness(t)
+	c1 := KvAttestStart(h.info, h.deps)
+	t.Cleanup(func() {
+		KvAttestReset()
+		c1.wg.Wait()
+	})
+
+	// Same identity re-activation keeps the controller (kick path).
+	if c := KvAttestStart(h.info, h.deps); c != c1 {
+		t.Fatalf("same-info re-activation must return the running controller")
+	}
+
+	// Updated identity (dpRanks 0->2) must REPLACE it.
+	updated := h.info
+	updated.dpRanks = 2
+	c2 := KvAttestStart(updated, h.deps)
+	t.Cleanup(func() {
+		KvAttestReset()
+		c2.wg.Wait()
+	})
+	if c2 == c1 {
+		t.Fatalf("info change must start a fresh controller, got the stale one kicked")
+	}
+	if c2.info != updated {
+		t.Fatalf("replacement controller info = %+v, want %+v", c2.info, updated)
+	}
+	select {
+	case <-c1.stop:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("stale controller was not stopped on replacement")
+	}
+}

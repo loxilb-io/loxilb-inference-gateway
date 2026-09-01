@@ -53,9 +53,14 @@ JSON
     echo "${http}|$(tr -d '\n' < /tmp/kvsgl-resp.json 2>/dev/null)"
 }
 
-del_rule() {
-    $hexec llb1 curl -s -m 10 -o /dev/null -X DELETE \
-        "http://localhost:11111/${LB}/externalipaddress/${VIP}/port/${PORT}/protocol/tcp"
+del_rule() { # -> HTTP code. The rules are vhost-keyed (host=VIP) and carry a
+    # model_name key part — the host-less delete path resolves a DIFFERENT
+    # (model-less, host-less) key and 404s while the rule survives, turning
+    # every later create into a silent in-place update.
+    local enc
+    enc=$(python3 -c "import urllib.parse;print(urllib.parse.quote('${MODEL}',safe=''))")
+    $hexec llb1 curl -s -m 10 -o /dev/null -w "%{http_code}" -X DELETE \
+        "http://localhost:11111/${LB}/hosturl/${VIP}/externalipaddress/${VIP}/port/${PORT}/protocol/tcp?model_name=${enc}"
 }
 
 kvstatus() {
@@ -107,9 +112,22 @@ case_setup() {
 }
 
 case_teardown() {
-    del_rule
+    # A failed delete is a case failure in its own right: the surviving rule
+    # would corrupt every later case (the first run's 409 cascade).
+    chk "rule delete HTTP 2xx" '^2..$' "$(del_rule)"
     sims_stop
     sleep 2
+}
+
+wait_log_delta() { # <marker-regex> <base> <timeout-s> -> 1 once count > base, else 0
+    # docker logs on the CI hosts lag writes by 10s+ — poll a bounded window
+    # instead of sampling once; the assert stays a hard before/after delta.
+    local deadline=$((SECONDS + $3))
+    while (( SECONDS < deadline )); do
+        if (( $(log_count "$1") > $2 )); then echo 1; return; fi
+        sleep 2
+    done
+    echo 0
 }
 
 echo "#########################################"
@@ -120,7 +138,7 @@ case_setup "" 1
 got=$(wait_enforced '^READY$' 90)
 chk "T1 enforcedState READY" '^READY$' "$got"
 chk "T1 rank-attribution logged" '^1$' \
-    "$(( $(log_count 'sglang echo ep .*1 rank\(s\) echoed') > T1_BASE ))"
+    "$(wait_log_delta 'sglang echo ep .*1 rank\(s\) echoed' "$T1_BASE" 30)"
 st=$(kvstatus)
 chk "T1 goFenced false" '^false$' "$(jfield "$st" '.kvExactStatusAttr[0].enforcement.goFenced')"
 case_teardown
@@ -133,7 +151,7 @@ case_setup "" 2
 got=$(wait_enforced '^READY$' 120)
 chk "T2 enforcedState READY" '^READY$' "$got"
 chk "T2 2-rank attribution logged" '^1$' \
-    "$(( $(log_count 'sglang echo ep .*2 rank\(s\) echoed.*ranks \[0 1\]') > T2_BASE ))"
+    "$(wait_log_delta 'sglang echo ep .*2 rank\(s\) echoed.*ranks \[0 1\]' "$T2_BASE" 30)"
 case_teardown
 
 echo "#########################################"
@@ -171,7 +189,7 @@ case_setup "rank-lie" 2
 got=$(wait_reason 'challenge_timeout' 180)
 chk "T6 reason challenge_timeout" 'challenge_timeout' "$got"
 chk "T6 rank-identity rejection logged" '^1$' \
-    "$(( $(log_count 'rank identity mismatch') > T6_BASE ))"
+    "$(wait_log_delta 'rank identity mismatch' "$T6_BASE" 30)"
 case_teardown
 
 echo "#########################################"
@@ -182,7 +200,7 @@ case_setup "rank-split" 2
 got=$(wait_reason 'challenge_failed' 120)
 chk "T7 reason challenge_failed" 'challenge_failed' "$got"
 chk "T7 split-echo refusal logged" '^1$' \
-    "$(( $(log_count 'echoed from 2 rank streams') > T7_BASE ))"
+    "$(wait_log_delta 'echoed from 2 rank streams' "$T7_BASE" 30)"
 case_teardown
 
 echo "#########################################"
