@@ -358,7 +358,9 @@ func TestKvAttestEligibleFlipFailureIsEnforcementFault(t *testing.T) {
 }
 
 // TestKvAttestNoEndpointsHoldsFenced / adapter-less engines stay fenced at
-// PROFILE_VALIDATED (SGLang/TRT until their adapters land).
+// PROFILE_VALIDATED (TRT-LLM until its adapter lands; SGLang gained
+// its adapter — the production mapping is pinned by
+// TestKvSglangAdapterSelected, this harness fake only knows vllm).
 func TestKvAttestNoEndpointsAndNoAdapterHoldFenced(t *testing.T) {
 	h := newAttestHarness(t)
 	h.deps.endpoints = func(svcID uint32) []KvAttestEndpoint { return nil }
@@ -369,7 +371,7 @@ func TestKvAttestNoEndpointsAndNoAdapterHoldFenced(t *testing.T) {
 	}
 
 	h2 := newAttestHarness(t)
-	h2.info.engine = "sglang"
+	h2.info.engine = "trtllm"
 	c2 := h2.controller()
 	c2.fenceAndReattest("activation")
 	if c2.enforced != KvExactStateProfileValidated || c2.reasons[0] != KvAttestReasonAdapterUnavailable {

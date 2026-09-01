@@ -59,6 +59,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 )
 
 // KvAttestReasonGeometryMismatch types a challenge-preflight failure where
@@ -317,6 +319,11 @@ func (a *kvSglangAttest) HashChallenge(ep KvAttestEndpoint, info kvAttestRuleInf
 			Detail: fmt.Sprintf("rank coverage %d/%d after %d challenges (missing ranks %v)",
 				len(echoed), ranks, attempts, kvSglangMissingRanks(echoed, ranks))}
 	}
+	// Rank attribution belongs in the operator log too: receipts hold it,
+	// but a live DP fleet being debugged needs the coverage visible without
+	// correlating receipt digests (one line per successful challenge round).
+	log.Infof("kv-attest: sglang echo ep %s: %d rank(s) echoed over %d challenge(s) (ranks %v)",
+		ep.ID(), ranks, attempts, kvSglangSortedRanks(echoed))
 	return KvAttestFinding{OK: true,
 		Detail: fmt.Sprintf("%d rank(s) echoed over %d challenge(s) (ranks %v)",
 			ranks, attempts, kvSglangSortedRanks(echoed))}
