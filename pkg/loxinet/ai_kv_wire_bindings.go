@@ -312,7 +312,7 @@ func kvWireDecodeMapEvent(raw interface{}) (kvEvent, error) {
 		if v, present := m["lora_id"]; present && !kvFieldEmpty(v) {
 			ev.Lora = true
 		}
-		if v, present := m["extra_keys"]; present && !kvFieldEmpty(v) {
+		if v, present := m["extra_keys"]; present && !kvPerBlockFieldEmpty(v) {
 			ev.ExtraKeys = true
 		}
 		return ev, nil

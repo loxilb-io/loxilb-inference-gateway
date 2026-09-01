@@ -380,5 +380,12 @@ func KvBindingRestore(mod *cmn.KvExactBindingMod) error {
 	// binding exists, run the contract-word install transaction — the only
 	// path that can clear the fence.
 	KvSvcContractKickInstall(mod.RuleIdent)
+	// The replayed rule's subscribers started before this binding existed and
+	// resolved the legacy wire schema; converge them on the restored contract
+	// or every native event rejects as schema_mismatch and the rule can never
+	// re-attest past token parity.
+	if svcID, ok := kvSvcByRuleIdent(mod.RuleIdent); ok {
+		KvSubscriberRebindWire(svcID, mod.EngineContractID)
+	}
 	return nil
 }

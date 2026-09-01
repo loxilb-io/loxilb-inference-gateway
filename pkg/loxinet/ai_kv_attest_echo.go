@@ -43,6 +43,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	tk "github.com/loxilb-io/loxilib"
 )
 
 // ---- challenge hasher seam ----
@@ -214,6 +216,11 @@ func (w *kvHashWatch) observe(ev kvEvent) {
 }
 
 func (w *kvHashWatch) fail(reason, detail string) {
+	// Surface the wire-check verdict at the moment it happens: the receipt
+	// carries it too, but a live operator debugging a held ladder needs the
+	// detail without correlating receipt digests (bounded to one line per
+	// challenge round by the pending/failReason guard in observe).
+	tk.LogIt(tk.LogInfo, "kv-attest: echo challenge wire-check failed: %s (%s)\n", detail, reason)
 	w.failReason = reason
 	w.failDetail = detail
 	close(w.done)

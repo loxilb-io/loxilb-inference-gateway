@@ -226,6 +226,28 @@ func (a *kvVllmAttest) TokenParityProbe(ep KvAttestEndpoint, info kvAttestRuleIn
 	if err != nil {
 		return KvAttestFinding{Reason: KvAttestReasonFixturesMissing, Detail: err.Error()}
 	}
+	// Every API surface the rule serves must be covered by at least one
+	// fixture, or parity attests a surface subset while the uncovered
+	// surface routes unverified: a chat-declaring rule whose fixture set
+	// holds only completions probes would reach READY with its chat
+	// render+encode never checked against the deployed engine.
+	haveChat, haveCompl := false, false
+	for _, fx := range fixtures {
+		switch fx.API {
+		case "chat":
+			haveChat = true
+		case "completions":
+			haveCompl = true
+		}
+	}
+	if info.apiChat && !haveChat {
+		return KvAttestFinding{Reason: KvAttestReasonFixturesMissing,
+			Detail: "declared chat surface has no chat-shape probe fixtures"}
+	}
+	if info.apiCompl && !haveCompl {
+		return KvAttestFinding{Reason: KvAttestReasonFixturesMissing,
+			Detail: "declared completions surface has no completions-shape probe fixtures"}
+	}
 	for _, fx := range fixtures {
 		if f := a.tokenizeProbeOne(ep, fx); !f.OK {
 			return f

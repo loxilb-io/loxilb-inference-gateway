@@ -112,6 +112,47 @@ func TestKvProfileRegistryPublishAndLookup(t *testing.T) {
 // TestKvProfileRegistryFailureKeepsPreviousGeneration is the
 // replace-during-reload guarantee: a failing reload must leave the previous
 // generation fully serving, including its verified artifact bytes.
+// TestKvProfileVerifyDiskDetectsDrift: the freshness re-read must accept an
+// untouched registry, reject a flipped artifact byte with the pinned-vs-disk
+// digests named, and accept the registry again once the bytes are restored.
+func TestKvProfileVerifyDiskDetectsDrift(t *testing.T) {
+	root := kvRegistryTestSetup(t)
+	tok := []byte("tok-drift-corpus")
+	kvWriteProfileFixture(t, root, "p-drift", "acme/drift-m1", tok)
+	if err := KvProfileRegistryLoadFrom(root); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	if err := KvProfileVerifyDisk("p-drift"); err != nil {
+		t.Fatalf("verify on untouched registry: %v", err)
+	}
+	if err := KvProfileVerifyDisk("p-none"); err == nil {
+		t.Fatal("unknown profile must not verify")
+	}
+
+	art := filepath.Join(root, kvProfileArtifactSubdir, kvModelSlug("acme/drift-m1"), "tokenizer.json")
+	drifted := append([]byte(nil), tok...)
+	drifted[0] ^= 0xff
+	if err := os.WriteFile(art, drifted, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := KvProfileVerifyDisk("p-drift")
+	if err == nil {
+		t.Fatal("byte-flipped artifact must fail verification")
+	}
+	// The loaded generation keeps serving the attested bytes meanwhile.
+	if e, ok := kvProfileByID("p-drift"); !ok || string(e.TokenizerBytes) != string(tok) {
+		t.Fatalf("in-memory generation changed under drift: %v", ok)
+	}
+
+	if err := os.WriteFile(art, tok, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := KvProfileVerifyDisk("p-drift"); err != nil {
+		t.Fatalf("verify after restore: %v", err)
+	}
+}
+
 func TestKvProfileRegistryFailureKeepsPreviousGeneration(t *testing.T) {
 	root := kvRegistryTestSetup(t)
 	kvWriteProfileFixture(t, root, "p-keep", "acme/reg-keep", []byte("good-bytes"))

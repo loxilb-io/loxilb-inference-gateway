@@ -111,6 +111,32 @@ func TestChatTemplate_ParseMessagesFromBody(t *testing.T) {
 	}
 }
 
+// TestChatTemplate_ContentPartsJoinWithNewline pins the engine's
+// string-content-format part handling: multiple text parts in one message are
+// joined with "\n" before rendering. A bare concatenation renders different
+// bytes than the engine caches — live vLLM v0.28.0 answered one extra token
+// (the joining "\n") on every endpoint for a two-part message, so any other
+// separator silently mis-hashes strict chat traffic.
+func TestChatTemplate_ContentPartsJoinWithNewline(t *testing.T) {
+	body := `{"model":"m","messages":[{"role":"user","content":[` +
+		`{"type":"text","text":"Content-part probe: "},` +
+		`{"type":"text","text":"two text segments, one prompt."}]}]}`
+	msgs, ok := kvParseChatMessages(body)
+	if !ok || len(msgs) != 1 {
+		t.Fatalf("parse failed: ok=%v msgs=%d", ok, len(msgs))
+	}
+	want := "Content-part probe: \ntwo text segments, one prompt."
+	if msgs[0].Content != want {
+		t.Fatalf("content-part join mismatch:\n got:  %q\n want: %q", msgs[0].Content, want)
+	}
+	// Single-part content must stay byte-identical (no separator introduced).
+	one := `{"model":"m","messages":[{"role":"user","content":[{"type":"text","text":"solo"}]}]}`
+	msgs, ok = kvParseChatMessages(one)
+	if !ok || msgs[0].Content != "solo" {
+		t.Fatalf("single-part content changed: %q", msgs[0].Content)
+	}
+}
+
 // TestChatTemplate_UnknownModelNoTemplate asserts a non-Qwen model with no
 // registered template returns ok=false (so the caller falls back instead of
 // mis-hashing with a guessed template).

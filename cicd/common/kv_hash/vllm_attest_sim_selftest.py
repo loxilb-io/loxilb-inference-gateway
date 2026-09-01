@@ -193,13 +193,17 @@ def run_positive():
             chk("seq frame is u64 big-endian 0 (first publish)",
                 frames[1] == (0).to_bytes(8, "big"), frames[1].hex())
             batch = msgpack.unpackb(frames[2], raw=False)
-            chk("payload is msgpack [ts, [event], None]",
+            chk("payload is msgpack [ts, [event], dp_rank=0] (live v0.28.0 shape)",
                 isinstance(batch, list) and len(batch) == 3
-                and isinstance(batch[0], float) and batch[2] is None,
+                and isinstance(batch[0], float) and batch[2] == 0,
                 str(type(batch)))
             events = batch[1]
             chk("batch carries exactly one event", len(events) == 1)
             ev = events[0]
+            chk("extra_keys is per-block nulls (live wire shape)",
+                ev.get("extra_keys") == [None] * len(ev["block_hashes"]),
+                str(ev.get("extra_keys")))
+            chk("lora_id is null on plain events", ev.get("lora_id") is None)
             chk("event type is BlockStored", ev.get("type") == "BlockStored")
             chk("block_hashes match the independent reference chain",
                 ev.get("block_hashes") == ref_hashes,

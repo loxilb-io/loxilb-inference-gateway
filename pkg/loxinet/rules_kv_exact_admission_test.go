@@ -127,7 +127,10 @@ func TestKvExactAdmissionOffMode(t *testing.T) {
 	if _, err := kvExactRuntimeValidate("vllm", 0, "m", "", "prof-a", deps); err == nil {
 		t.Fatal("kvModelProfile without kvExactMode must be rejected as dead config")
 	}
-	if err := kvExactApiModeValidate(KvExactApiChat, 0); err == nil {
+	// Through the FULL admission path, not the pure function: the pure-fn
+	// call alone left the mode-0 early return untested, and the live L-2
+	// leg proved that path admitted the dead declaration (HTTP 200).
+	if _, err := kvExactRuntimeValidate("vllm", 0, "m", KvExactApiChat, "", deps); err == nil {
 		t.Fatal("kvExactApiMode without kvExactMode must be rejected as dead config")
 	}
 }

@@ -2953,6 +2953,12 @@ func kvExactRuntimeValidate(engine string, kvExactMode uint8, modelName, apiMode
 		if profileID != "" {
 			return res, errors.New("kvModelProfile is meaningless without kvExactMode (no KV-exact tier; omit it)")
 		}
+		// The api-mode declaration is equally dead config without the
+		// KV-exact tier — refuse it here too, or the validator's non-exact
+		// branch is unreachable and the declaration silently no-ops.
+		if err := kvExactApiModeValidate(apiMode, kvExactMode); err != nil {
+			return res, err
+		}
 		return res, nil
 	}
 	if err := kvExactApiModeValidate(apiMode, kvExactMode); err != nil {

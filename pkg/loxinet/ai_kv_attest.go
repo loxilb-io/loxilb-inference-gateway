@@ -95,6 +95,7 @@ const (
 	KvAttestReasonChallengeTimeout   = "challenge_timeout"
 	KvAttestReasonManifestMissing    = "manifest_missing"
 	KvAttestReasonStale              = "attestation_stale"
+	KvAttestReasonProfileResolution  = "profile_resolution_fault"
 	KvAttestReasonPeerMismatch       = "peer_capability_mismatch"
 	KvAttestReasonEnforcementFault   = "enforcement_fault"
 	KvAttestReasonRuntimeFault       = "runtime_fault"
@@ -191,6 +192,7 @@ type kvAttestDeps struct {
 	endpoints        func(svcID uint32) []KvAttestEndpoint
 	apply            func(svcID uint32, eligible uint8) error
 	manifest         func(profileID string) (*KvAttestManifest, bool)
+	profileFreshness func(profileID string) error
 	peerGate         func(info kvAttestRuleInfo) (bool, string)
 	now              func() time.Time
 	requireManifest  bool
@@ -512,6 +514,16 @@ func (c *kvAttestController) runLadder() {
 		c.publish(KvExactStateProfileValidated, KvAttestReasonAdapterUnavailable)
 		return
 	}
+	// The ladder is only earnable while the on-disk registry still matches
+	// the loaded generation; a drifted artifact holds the rule fenced until
+	// the operator restores the bytes or republishes the registry.
+	if c.deps.profileFreshness != nil && info.profileID != "" {
+		if err := c.deps.profileFreshness(info.profileID); err != nil {
+			log.Errorf("kv-attest: rule %s profile artifacts unresolvable on disk (%v) — holding fenced", info.ruleIdent, err)
+			c.publish(KvExactStateProfileValidated, KvAttestReasonProfileResolution)
+			return
+		}
+	}
 
 	manifest, haveManifest := c.deps.manifest(info.profileID)
 	manifestDigest := ""
@@ -643,6 +655,17 @@ func (c *kvAttestController) probeSweep() bool {
 	if ad == nil {
 		c.fenceAndReattest(KvAttestReasonAdapterUnavailable)
 		return false
+	}
+	// §6.3 freshness covers the trust inputs on disk, not just the probes:
+	// a READY rule whose registry artifacts no longer match the loaded
+	// generation is serving from bytes an auditor can no longer trace.
+	if c.deps.profileFreshness != nil && info.profileID != "" {
+		if err := c.deps.profileFreshness(info.profileID); err != nil {
+			log.Errorf("kv-attest: rule %s profile artifacts drifted on disk (%v) — fencing", info.ruleIdent, err)
+			kvAttestProbeFailFn(KvAttestReasonProfileResolution)
+			c.fenceAndReattest(KvAttestReasonProfileResolution)
+			return false
+		}
 	}
 	manifest, haveManifest := c.deps.manifest(info.profileID)
 	c.mu.Lock()
@@ -820,6 +843,7 @@ func kvAttestProductionDeps() kvAttestDeps {
 				3, 200*time.Millisecond, eligible)
 		},
 		manifest:         kvAttestManifestLoad,
+		profileFreshness: KvProfileVerifyDisk,
 		peerGate:         kvClusterCapabilityGate,
 		now:              time.Now,
 		requireManifest:  reqManifest,

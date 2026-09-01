@@ -189,6 +189,39 @@ func kvProfileByID(id string) (*kvProfileEntry, bool) {
 	return e, ok
 }
 
+// KvProfileVerifyDisk re-reads a published profile's artifacts beneath the
+// generation's source root and compares them to the receipts pinned at load
+// time. The registry serves from memory, so a READY rule stays functional
+// through on-disk drift — but its attestation receipts then no longer trace
+// to auditable bytes, and a restart would load different content. Any
+// mismatch (or a file that no longer passes the trusted-open checks) is an
+// error the attestation cadence turns into a fence.
+func KvProfileVerifyDisk(profileID string) error {
+	g := kvProfileReg.Load()
+	if g == nil {
+		return fmt.Errorf("kv-profile: no registry generation published")
+	}
+	e, ok := g.Profiles[profileID]
+	if !ok {
+		return fmt.Errorf("kv-profile: profile %q not in generation %d", profileID, g.Gen)
+	}
+	rootFd, err := unix.Open(g.SourceRoot, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return fmt.Errorf("kv-profile: open root %s: %w", g.SourceRoot, err)
+	}
+	defer unix.Close(rootFd)
+	for _, r := range e.Receipts {
+		data, _, err := kvReadTrustedFile(rootFd, r.Path, kvProfileArtifactMaxBytes)
+		if err != nil {
+			return fmt.Errorf("kv-profile: reverify %s: %w", r.Path, err)
+		}
+		if got := kvSha256Hex(data); got != r.Sha256 {
+			return fmt.Errorf("kv-profile: %s: on-disk bytes hash to %s, loaded generation pinned %s", r.Path, got, r.Sha256)
+		}
+	}
+	return nil
+}
+
 // kvProfileLoadGeneration performs the full trusted load. It returns a
 // complete, verified generation or an error — never a partial state.
 func kvProfileLoadGeneration(root string) (*kvProfileGeneration, error) {

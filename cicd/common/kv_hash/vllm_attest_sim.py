@@ -95,12 +95,28 @@ class Publisher:
         time.sleep(0.3)  # PUB/SUB slow-joiner guard
 
     def emit_block_stored(self, hashes, token_ids):
+        # Full live-wire shape (captured from vLLM v0.28.0 on the GPU
+        # testbed): extra_keys is one entry PER STORED BLOCK, null when that
+        # block carries none — [null, null] on every plain event. A sim that
+        # omits the field hides decoder bugs in exactly the fields the echo
+        # challenge wire-checks (the live validation legs caught one), so the sim
+        # must emit what the engine emits.
         event = {
             "type": "BlockStored",
             "block_hashes": [int(h) for h in hashes],
+            "parent_block_hash": None,
             "token_ids": [int(t) for t in token_ids],
+            "block_size": 16,
+            "lora_id": None,
+            "medium": "GPU",
+            "lora_name": None,
+            "extra_keys": [None] * len(hashes),
+            "group_idx": 0,
+            "kv_cache_spec_kind": "full_attention",
         }
-        batch = [time.time(), [event], None]
+        if hashes and len(token_ids) % len(hashes) == 0:
+            event["block_size"] = len(token_ids) // len(hashes)
+        batch = [time.time(), [event], 0]
         with self.lock:
             frames = [
                 self.topic,
