@@ -2649,6 +2649,22 @@ func kvSubscriberTargets(mode uint8, endPoints []ruleLBEp) []int {
 	return targets
 }
 
+// kvAttestDecodeEPs returns the decode-role endpoints a P/D rule's SGLang
+// pair challenge needs as counterparts (see kvAttestRuleInfo.decodeEPs).
+// Non-P/D rules carry none.
+func kvAttestDecodeEPs(pdMode bool, endPoints []ruleLBEp) []KvAttestEndpoint {
+	if !pdMode {
+		return nil
+	}
+	var out []KvAttestEndpoint
+	for i, ep := range endPoints {
+		if ep.epRole == 2 {
+			out = append(out, KvAttestEndpoint{EpIdx: i, IP: ep.xIP.String(), Port: ep.xPort})
+		}
+	}
+	return out
+}
+
 // kvEngineEffective resolves default: an absent kvEngineType means
 // vllm (the established default-OFF pattern — absent field ⇒ today's behavior).
 func kvEngineEffective(engine string) string {
@@ -4170,17 +4186,20 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 				})
 			}
 			kvAttestRegisterRule(kvAttestRuleInfo{
-				svcID:     uint32(eRule.ruleNum),
-				ruleIdent: eRule.id,
-				modelName: eRule.tuples.modelName,
-				engine:    kvEngineEffective(eRule.kvEngineType),
-				hashAlgo:  kvHashAlgoEffective(eRule.kvHashAlgo, eRule.kvEngineType),
-				blockSize: eRule.kvBlockSize,
-				profileID: eRule.kvModelProfile,
-				apiChat:   kvAdmission.APIChat,
-				apiCompl:  kvAdmission.APICompletions,
-				dpRanks:   eRule.kvDpRankCount,
-				zmqPort:   eRule.kvZmqPort,
+				svcID:           uint32(eRule.ruleNum),
+				ruleIdent:       eRule.id,
+				modelName:       eRule.tuples.modelName,
+				engine:          kvEngineEffective(eRule.kvEngineType),
+				hashAlgo:        kvHashAlgoEffective(eRule.kvHashAlgo, eRule.kvEngineType),
+				blockSize:       eRule.kvBlockSize,
+				profileID:       eRule.kvModelProfile,
+				apiChat:         kvAdmission.APIChat,
+				apiCompl:        kvAdmission.APICompletions,
+				dpRanks:         eRule.kvDpRankCount,
+				zmqPort:         eRule.kvZmqPort,
+				pdMode:          eRule.pdDisaggMode,
+				pdBootstrapPort: eRule.pdBootstrapPort,
+				decodeEPs:       kvAttestDecodeEPs(eRule.pdDisaggMode, lBActs.endPoints),
 			}, attEps)
 			// A restore replay allocates NOTHING (same split as the create
 			// path): the kvexactbinding snapshot domain applies right after
@@ -4475,17 +4494,20 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 			})
 		}
 		kvAttestRegisterRule(kvAttestRuleInfo{
-			svcID:     uint32(r.ruleNum),
-			ruleIdent: r.id,
-			modelName: r.tuples.modelName,
-			engine:    kvEngineEffective(r.kvEngineType),
-			hashAlgo:  kvHashAlgoEffective(r.kvHashAlgo, r.kvEngineType),
-			blockSize: r.kvBlockSize,
-			profileID: r.kvModelProfile,
-			apiChat:   kvAdmission.APIChat,
-			apiCompl:  kvAdmission.APICompletions,
-			dpRanks:   r.kvDpRankCount,
-			zmqPort:   r.kvZmqPort,
+			svcID:           uint32(r.ruleNum),
+			ruleIdent:       r.id,
+			modelName:       r.tuples.modelName,
+			engine:          kvEngineEffective(r.kvEngineType),
+			hashAlgo:        kvHashAlgoEffective(r.kvHashAlgo, r.kvEngineType),
+			blockSize:       r.kvBlockSize,
+			profileID:       r.kvModelProfile,
+			apiChat:         kvAdmission.APIChat,
+			apiCompl:        kvAdmission.APICompletions,
+			dpRanks:         r.kvDpRankCount,
+			zmqPort:         r.kvZmqPort,
+			pdMode:          r.pdDisaggMode,
+			pdBootstrapPort: r.pdBootstrapPort,
+			decodeEPs:       kvAttestDecodeEPs(r.pdDisaggMode, lBActs.endPoints),
 		}, attEps)
 	}
 	if r.kvRestoredLegacy {

@@ -32,9 +32,11 @@ package loxinet
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -56,6 +58,13 @@ type kvSglTestConf struct {
 	tokenize []int64
 	// completionsStatus for /v1/completions (0 => 200).
 	completionsStatus int
+	// pdRequireBootstrap mimics a --disaggregation-mode prefill server:
+	// /v1/completions without a bootstrap triple is refused 400 before any
+	// KV work happens, exactly like the live engine.
+	pdRequireBootstrap bool
+	// lastCompletionsBody, when non-nil, captures the most recent
+	// /v1/completions request body.
+	lastCompletionsBody *string
 }
 
 // kvSglTestServer serves the pinned SGLang API surface the adapter consumes.
@@ -100,6 +109,15 @@ func kvSglTestServer(t *testing.T, conf kvSglTestConf) (*httptest.Server, KvAtte
 			raw, _ := json.Marshal(conf.tokenize)
 			fmt.Fprintf(w, `{"tokens":%s,"count":%d,"max_model_len":131072}`, raw, len(conf.tokenize))
 		case "/v1/completions":
+			body, _ := io.ReadAll(r.Body)
+			if conf.lastCompletionsBody != nil {
+				*conf.lastCompletionsBody = string(body)
+			}
+			if conf.pdRequireBootstrap && !strings.Contains(string(body), `"bootstrap_room"`) {
+				w.WriteHeader(400)
+				fmt.Fprint(w, `{"object":"error","message":"Disaggregated request received without bootstrap room id"}`)
+				return
+			}
 			st := conf.completionsStatus
 			if st == 0 {
 				st = 200
@@ -514,4 +532,133 @@ func TestKvSglangHashChallengeGeometryRefusals(t *testing.T) {
 			t.Fatalf("want engine_geometry_mismatch on dp_size, got OK=%v %s", f.OK, f.Reason)
 		}
 	})
+}
+
+// ---- P/D pair challenge (disagg prefill refuses bootstrap-less inference) ----
+
+// kvSglPdInfo is kvSglInfo in P/D shape with one decode counterpart.
+func kvSglPdInfo(dep KvAttestEndpoint) kvAttestRuleInfo {
+	info := kvSglInfo()
+	info.pdMode = true
+	info.pdBootstrapPort = 9998
+	info.decodeEPs = []KvAttestEndpoint{dep}
+	return info
+}
+
+// kvSglDecodeMock is a decode-EP stand-in recording every completions body.
+func kvSglDecodeMock(t *testing.T, status int) (KvAttestEndpoint, func() []string) {
+	t.Helper()
+	var mu sync.Mutex
+	var bodies []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/completions" {
+			w.WriteHeader(404)
+			return
+		}
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		bodies = append(bodies, string(b))
+		mu.Unlock()
+		if status != 200 {
+			w.WriteHeader(status)
+			return
+		}
+		fmt.Fprint(w, `{}`)
+	}))
+	t.Cleanup(ts.Close)
+	return kvTestEndpoint(t, ts), func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string(nil), bodies...)
+	}
+}
+
+// The challenge against a P/D rule must dispatch as a (prefill, decode)
+// pair carrying the bootstrap triple: the prefill mock here refuses
+// bootstrap-less bodies with the live engine's 400, so losing the pair
+// dispatch turns this red on its own.
+func TestKvSglangHashChallengePdPairDispatch(t *testing.T) {
+	kvSglTestSetup(t)
+	conf := kvSglGoodConf()
+	conf.pdRequireBootstrap = true
+	prefillBody := ""
+	conf.lastCompletionsBody = &prefillBody
+	_, ep, _ := kvSglTestServer(t, conf)
+	dep, decodeBodies := kvSglDecodeMock(t, 200)
+
+	info := kvSglPdInfo(dep)
+	kvSglFeedRanks(t, info.svcID, ep.EpIdx, []int{0}, 1)
+	f := newKvSglangAttest().HashChallenge(ep, info)
+	if !f.OK {
+		t.Fatalf("pd pair challenge refused: %s (%s)", f.Reason, f.Detail)
+	}
+	for _, want := range []string{`"bootstrap_host":`, `"bootstrap_port":9998`, `"bootstrap_room":`} {
+		if !strings.Contains(prefillBody, want) {
+			t.Fatalf("prefill challenge body lacks %s: %s", want, prefillBody)
+		}
+	}
+	got := decodeBodies()
+	if len(got) != 1 {
+		t.Fatalf("decode counterpart saw %d requests, want exactly 1", len(got))
+	}
+	if got[0] != prefillBody {
+		t.Fatalf("decode counterpart body diverges from prefill leg:\n  prefill: %s\n  decode:  %s",
+			prefillBody, got[0])
+	}
+}
+
+// A P/D rule with no decode-role endpoint cannot pair the challenge —
+// typed refusal, not a timeout to debug.
+func TestKvSglangHashChallengePdNoDecodeEndpoint(t *testing.T) {
+	kvSglTestSetup(t)
+	conf := kvSglGoodConf()
+	conf.pdRequireBootstrap = true
+	_, ep, _ := kvSglTestServer(t, conf)
+
+	info := kvSglInfo()
+	info.pdMode = true
+	f := newKvSglangAttest().HashChallenge(ep, info)
+	if f.OK || f.Reason != KvAttestReasonChallengeFailed || !strings.Contains(f.Detail, "decode") {
+		t.Fatalf("want typed challenge_failed naming the missing decode counterpart, got OK=%v %s (%s)",
+			f.OK, f.Reason, f.Detail)
+	}
+}
+
+// A decode counterpart that errors fails the challenge typed with the
+// counterpart's identity in the detail.
+func TestKvSglangHashChallengePdDecodeCounterpartError(t *testing.T) {
+	kvSglTestSetup(t)
+	conf := kvSglGoodConf()
+	conf.pdRequireBootstrap = true
+	_, ep, _ := kvSglTestServer(t, conf)
+	dep, _ := kvSglDecodeMock(t, 500)
+
+	info := kvSglPdInfo(dep)
+	f := newKvSglangAttest().HashChallenge(ep, info)
+	if f.OK || f.Reason != KvAttestReasonChallengeFailed || !strings.Contains(f.Detail, "decode counterpart") {
+		t.Fatalf("want typed challenge_failed naming the decode counterpart, got OK=%v %s (%s)",
+			f.OK, f.Reason, f.Detail)
+	}
+	if !strings.Contains(f.Detail, "HTTP 500") {
+		t.Fatalf("detail must carry the counterpart status: %s", f.Detail)
+	}
+}
+
+// The converged challenge body must stay bootstrap-free — the pair
+// machinery may not leak into single-role rules.
+func TestKvSglangHashChallengeConvergedBodyHasNoBootstrap(t *testing.T) {
+	kvSglTestSetup(t)
+	conf := kvSglGoodConf()
+	body := ""
+	conf.lastCompletionsBody = &body
+	_, ep, _ := kvSglTestServer(t, conf)
+
+	info := kvSglInfo()
+	kvSglFeedRanks(t, info.svcID, ep.EpIdx, []int{0}, 1)
+	if f := newKvSglangAttest().HashChallenge(ep, info); !f.OK {
+		t.Fatalf("converged challenge refused: %s (%s)", f.Reason, f.Detail)
+	}
+	if strings.Contains(body, "bootstrap_") {
+		t.Fatalf("converged challenge body leaks bootstrap fields: %s", body)
+	}
 }

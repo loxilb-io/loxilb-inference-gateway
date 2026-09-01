@@ -51,6 +51,7 @@ package loxinet
 
 import (
 	"crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -69,10 +70,21 @@ import (
 const KvAttestReasonGeometryMismatch = "engine_geometry_mismatch"
 
 const (
-	kvSglangZmqPortDefault  = 5557
-	kvSglangFixtureSub      = "sglang"
-	kvSglangRankAttemptsPer = 4 // challenge attempts budgeted per advertised rank
+	kvSglangZmqPortDefault       = 5557
+	kvSglangFixtureSub           = "sglang"
+	kvSglangRankAttemptsPer      = 4 // challenge attempts budgeted per advertised rank
+	kvSglangBootstrapPortDefault = 8998
 )
+
+// kvSglangChallengeRoom draws a bootstrap room id in the engine's accepted
+// range [0, 2^63-1] (see sockproxy_pd_sglang.c: the datapath's rooms share it).
+func kvSglangChallengeRoom() (int64, error) {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return 0, err
+	}
+	return int64(binary.BigEndian.Uint64(b[:]) &^ (1 << 63)), nil
+}
 
 // kvSglangAttest implements kvAttestAdapter for the SGLang engine family.
 type kvSglangAttest struct {
@@ -357,6 +369,48 @@ func (a *kvSglangAttest) challengeOnce(ep KvAttestEndpoint, info kvAttestRuleInf
 	url := fmt.Sprintf("http://%s:%d/v1/completions", ep.IP, ep.Port)
 	reqBody := fmt.Sprintf(`{"model":%q,"prompt":%q,"max_tokens":1,"temperature":0}`,
 		info.modelName, prompt)
+	var decodeDone chan KvAttestFinding
+	if info.pdMode {
+		// A disaggregation-mode prefill refuses bootstrap-less inference
+		// outright, so the challenge dispatches as a (prefill, decode) pair
+		// carrying the same bootstrap triple the datapath injects
+		// (sockproxy_pd_sglang.c). The verdict still comes from the prefill's
+		// event plane; the decode leg exists so the prefill's transfer
+		// rendezvous completes instead of holding the room open to timeout.
+		if len(info.decodeEPs) == 0 {
+			return nil, KvAttestFinding{Reason: KvAttestReasonChallengeFailed,
+				Detail: "P/D rule has no decode endpoint to pair the challenge with"}
+		}
+		room, rErr := kvSglangChallengeRoom()
+		if rErr != nil {
+			return nil, KvAttestFinding{Reason: KvAttestReasonChallengeFailed,
+				Detail: "bootstrap room: " + rErr.Error()}
+		}
+		bootPort := info.pdBootstrapPort
+		if bootPort == 0 {
+			bootPort = kvSglangBootstrapPortDefault
+		}
+		reqBody = fmt.Sprintf(`{"model":%q,"prompt":%q,"max_tokens":1,"temperature":0,"bootstrap_host":%q,"bootstrap_port":%d,"bootstrap_room":%d}`,
+			info.modelName, prompt, ep.IP, bootPort, room)
+		dep := info.decodeEPs[0]
+		durl := fmt.Sprintf("http://%s:%d/v1/completions", dep.IP, dep.Port)
+		decodeDone = make(chan KvAttestFinding, 1)
+		go func(body, id string) {
+			dResp, dErr := a.client.Post(durl, "application/json", strings.NewReader(body))
+			if dErr != nil {
+				decodeDone <- KvAttestFinding{Reason: KvAttestReasonChallengeFailed,
+					Detail: fmt.Sprintf("decode counterpart %s: %v", id, dErr)}
+				return
+			}
+			dResp.Body.Close()
+			if dResp.StatusCode != http.StatusOK {
+				decodeDone <- KvAttestFinding{Reason: KvAttestReasonChallengeFailed,
+					Detail: fmt.Sprintf("decode counterpart %s HTTP %d", id, dResp.StatusCode)}
+				return
+			}
+			decodeDone <- KvAttestFinding{OK: true}
+		}(reqBody, dep.ID())
+	}
 	resp, err := a.client.Post(url, "application/json", strings.NewReader(reqBody))
 	if err != nil {
 		return nil, KvAttestFinding{Reason: KvAttestReasonEndpointUnreach,
@@ -366,6 +420,11 @@ func (a *kvSglangAttest) challengeOnce(ep KvAttestEndpoint, info kvAttestRuleInf
 	if resp.StatusCode != http.StatusOK {
 		return nil, KvAttestFinding{Reason: KvAttestReasonChallengeFailed,
 			Detail: fmt.Sprintf("challenge inference HTTP %d", resp.StatusCode)}
+	}
+	if decodeDone != nil {
+		if df := <-decodeDone; !df.OK {
+			return nil, df
+		}
 	}
 
 	select {

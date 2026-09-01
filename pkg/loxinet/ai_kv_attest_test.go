@@ -611,7 +611,7 @@ func TestKvAttestStartReplacesOnInfoChange(t *testing.T) {
 	if c2 == c1 {
 		t.Fatalf("info change must start a fresh controller, got the stale one kicked")
 	}
-	if c2.info != updated {
+	if !c2.info.equal(updated) {
 		t.Fatalf("replacement controller info = %+v, want %+v", c2.info, updated)
 	}
 	select {

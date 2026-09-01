@@ -50,6 +50,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"strconv"
 	"sync"
 	"time"
@@ -172,6 +173,19 @@ type kvAttestRuleInfo struct {
 	// challenge coverage); zero values take the engine defaults downstream.
 	dpRanks uint16 // kvDpRankCount (0 => 1)
 	zmqPort uint16 // kvZmqPort (0 => 5557)
+	// SGLang P/D pair-challenge context (mode-1 rules): a disaggregation-mode
+	// prefill engine refuses bootstrap-less inference, so the echo challenge
+	// dispatches as a (prefill, decode) pair carrying the bootstrap triple.
+	pdMode          bool
+	pdBootstrapPort uint16             // 0 => engine default downstream
+	decodeEPs       []KvAttestEndpoint // ep_role 2 counterparts for the pair
+}
+
+// equal is the controller-identity comparison (== is unavailable once the
+// info carries the decode endpoint slice; a changed counterpart set must
+// replace the controller like any other identity change).
+func (a kvAttestRuleInfo) equal(b kvAttestRuleInfo) bool {
+	return reflect.DeepEqual(a, b)
 }
 
 // kvAttestAdapter is the per-engine attestation surface (§16.5). The vLLM
@@ -288,7 +302,7 @@ func kvAttestEnv() (time.Duration, time.Duration, bool, bool) {
 func KvAttestStart(info kvAttestRuleInfo, deps kvAttestDeps) *kvAttestController {
 	kvAttestMu.Lock()
 	old := kvAttestControllers[info.svcID]
-	if old != nil && old.info == info {
+	if old != nil && old.info.equal(info) {
 		kvAttestMu.Unlock()
 		old.Kick("re-activation")
 		return old
