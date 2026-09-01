@@ -88,6 +88,10 @@ type kvHashWatch struct {
 	mu        sync.Mutex
 	hashIndex map[uint64]int // expected hash -> block index in wantTokens
 	pending   int
+	// ranks records the DP rank of every stream that delivered an expected
+	// hash (rank attribution, §16.5 SGLang). Streams without rank identity
+	// (vLLM) report rank 0.
+	ranks map[int]bool
 	// wantTokens is the gateway's own tokenization of the challenge prompt
 	// (full blocks only), for the §6.2 token_id cross-check.
 	wantTokens []uint32
@@ -116,6 +120,7 @@ func kvHashWatchRegister(svcID uint32, epIdx int, expected []uint64,
 		hashIndex:  make(map[uint64]int, len(expected)),
 		pending:    len(expected),
 		wantTokens: wantTokens,
+		ranks:      make(map[int]bool, 1),
 		done:       make(chan struct{}),
 	}
 	for i, h := range expected {
@@ -149,9 +154,10 @@ func kvHashWatchUnregister(w *kvHashWatch) {
 }
 
 // kvHashWatchObserve is the subscriber-loop hook: called with every decoded
-// BlockStored event AFTER it lands in the inventory. Cheap when no watch is
-// armed (one RLock + map miss).
-func kvHashWatchObserve(svcID uint32, epIdx int, ev kvEvent) {
+// BlockStored event AFTER it lands in the inventory, carrying the delivering
+// stream's DP rank for attribution. Cheap when no watch is armed (one RLock
+// + map miss).
+func kvHashWatchObserve(svcID uint32, epIdx int, rank int, ev kvEvent) {
 	kvHashWatchMu.RLock()
 	ws := kvHashWatches[kvHashWatchKey(svcID, epIdx)]
 	if len(ws) == 0 {
@@ -163,11 +169,11 @@ func kvHashWatchObserve(svcID uint32, epIdx int, ev kvEvent) {
 	kvHashWatchMu.RUnlock()
 
 	for _, w := range watches {
-		w.observe(ev)
+		w.observe(rank, ev)
 	}
 }
 
-func (w *kvHashWatch) observe(ev kvEvent) {
+func (w *kvHashWatch) observe(rank int, ev kvEvent) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.pending == 0 || w.failReason != "" {
@@ -209,6 +215,7 @@ func (w *kvHashWatch) observe(ev kvEvent) {
 		}
 		delete(w.hashIndex, h)
 		w.pending--
+		w.ranks[rank] = true
 	}
 	if w.pending == 0 {
 		close(w.done)
@@ -230,6 +237,18 @@ func (w *kvHashWatch) result() (string, string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.failReason, w.failDetail
+}
+
+// ranksEchoed returns the DP ranks whose streams delivered expected hashes
+// (unsorted; callers order as needed).
+func (w *kvHashWatch) ranksEchoed() []int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	out := make([]int, 0, len(w.ranks))
+	for r := range w.ranks {
+		out = append(out, r)
+	}
+	return out
 }
 
 // ---- challenge construction ----

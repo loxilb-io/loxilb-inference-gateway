@@ -168,6 +168,10 @@ type kvAttestRuleInfo struct {
 	profileID string
 	apiChat   bool
 	apiCompl  bool
+	// SGLang event-plane declaration (geometry preflight + DP-rank
+	// challenge coverage); zero values take the engine defaults downstream.
+	dpRanks uint16 // kvDpRankCount (0 => 1)
+	zmqPort uint16 // kvZmqPort (0 => 5557)
 }
 
 // kvAttestAdapter is the per-engine attestation surface (§16.5). The vLLM
@@ -854,13 +858,15 @@ func kvAttestProductionDeps() kvAttestDeps {
 }
 
 // kvAttestAdapterFor maps an effective engine family to its attestation
-// adapter. Only the vLLM adapter exists today; SGLang and TRT-LLM return nil
+// adapter. vLLM and SGLang exist; TRT-LLM returns nil until its adapter lands
 // (rules hold fenced at PROFILE_VALIDATED — fail-closed, never inferred
 // from another engine's evidence).
 func kvAttestAdapterFor(engine string) kvAttestAdapter {
 	switch engine {
 	case "", "vllm":
 		return kvVllmAdapter()
+	case "sglang":
+		return kvSglangAdapter()
 	default:
 		return nil
 	}

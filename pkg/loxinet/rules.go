@@ -4179,6 +4179,8 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 				profileID: eRule.kvModelProfile,
 				apiChat:   kvAdmission.APIChat,
 				apiCompl:  kvAdmission.APICompletions,
+				dpRanks:   eRule.kvDpRankCount,
+				zmqPort:   eRule.kvZmqPort,
 			}, attEps)
 			// A restore replay allocates NOTHING (same split as the create
 			// path): the kvexactbinding snapshot domain applies right after
@@ -4482,6 +4484,8 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 			profileID: r.kvModelProfile,
 			apiChat:   kvAdmission.APIChat,
 			apiCompl:  kvAdmission.APICompletions,
+			dpRanks:   r.kvDpRankCount,
+			zmqPort:   r.kvZmqPort,
 		}, attEps)
 	}
 	if r.kvRestoredLegacy {

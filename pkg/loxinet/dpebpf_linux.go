@@ -2083,6 +2083,8 @@ func DpKvComputeChallengeHashes(hashAlgo string, blockSize uint32, tokens []uint
 		algo, stride = 0, 32 // KV_HASH_SHA256_CBOR
 	case "xxhash_cbor":
 		algo, stride = 1, 16 // KV_HASH_XXHASH_CBOR
+	case "sha256_sglang":
+		algo, stride = 2, 32 // KV_HASH_SHA256_SGLANG (raw parent||LE32, FIRST-8)
 	default:
 		return nil, false
 	}
