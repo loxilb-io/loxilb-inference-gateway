@@ -226,8 +226,8 @@ func kvChatExcludedFeature(body string) string {
 
 // kvTokenizeChatBody renders modelName's chat template over the messages in the
 // raw chat request body, then tokenizes the rendered prompt through the shared
-// Encode path (WithEncodeSpecialTokens) so the token_ids are byte-identical to
-// vLLM's cached chat prompt. Returns nil if the body has no messages, no chat
+// Encode path with addSpecialTokens=false (the render carries its own special
+// tokens) so the token_ids are byte-identical to vLLM's cached chat prompt. Returns nil if the body has no messages, no chat
 // template is known, or tokenization fails.
 func kvTokenizeChatBody(body, modelName string, maxTokens int) []uint32 {
 	msgs, ok := kvParseChatMessages(body)
@@ -238,5 +238,5 @@ func kvTokenizeChatBody(body, modelName string, maxTokens int) []uint32 {
 	if !ok || rendered == "" {
 		return nil
 	}
-	return kvTokenizeWithCache(rendered, modelName, maxTokens)
+	return kvTokenizeWithCache(rendered, modelName, maxTokens, false)
 }

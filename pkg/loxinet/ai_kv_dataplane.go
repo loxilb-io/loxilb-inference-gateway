@@ -430,7 +430,10 @@ func kvBridgeTokenize(svcID, bindingGen uint32, text, model string, max int) ([]
 	if text == "" || model == "" || max <= 0 {
 		return nil, KvTokErrRequest
 	}
-	tokens := kvTokenizeWithCache(text, model, max)
+	// Raw completions prompt: encode with specials so the id stream matches
+	// vLLM's add_special_tokens=True completions tokenization (BOS included
+	// on tokenizers that declare one).
+	tokens := kvTokenizeWithCache(text, model, max, true)
 	if len(tokens) == 0 {
 		if bindingGen != 0 {
 			// Admission proved this tokenizer loadable; its absence now is
@@ -484,7 +487,9 @@ func kvBridgeTokenizeChat(svcID, bindingGen uint32, body, model string, max int)
 		}
 		return nil, KvTokErrRequest
 	}
-	tokens := kvTokenizeWithCache(rendered, model, max)
+	// Chat-rendered text: the template already carries its special tokens and
+	// vLLM encodes the render with add_special_tokens=False.
+	tokens := kvTokenizeWithCache(rendered, model, max, false)
 	if len(tokens) == 0 {
 		if strict {
 			return nil, kvBridgeRuntimeFault(svcID, KvTokErrTokenizer)

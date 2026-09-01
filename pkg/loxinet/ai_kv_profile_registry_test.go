@@ -318,7 +318,7 @@ func TestKvProfileRegistryPublishResetsTokenizerPool(t *testing.T) {
 // kvProfTestTok is a trivial KvTokenizer for backend fakes.
 type kvProfTestTok struct{}
 
-func (kvProfTestTok) Encode(string) []uint32 { return []uint32{1} }
+func (kvProfTestTok) Encode(string, bool) []uint32 { return []uint32{1} }
 func (kvProfTestTok) Close()                 {}
 
 // kvBytesRecBackend records which load path served each request.

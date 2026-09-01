@@ -792,7 +792,7 @@ type mockTokenizer struct {
 	ids []uint32
 }
 
-func (m *mockTokenizer) Encode(text string) []uint32 {
+func (m *mockTokenizer) Encode(text string, addSpecialTokens bool) []uint32 {
 	return m.ids
 }
 
@@ -857,7 +857,7 @@ func TestKvTokenCacheLRU(t *testing.T) {
 	// Fill cache to capacity
 	for i := 0; i < 3; i++ {
 		text := string(rune('A' + i))
-		result := kvTokenizeWithCache(text, "test-model", 100)
+		result := kvTokenizeWithCache(text, "test-model", 100, true)
 		if result == nil {
 			t.Fatalf("kvTokenizeWithCache returned nil for text %q", text)
 		}
@@ -871,7 +871,7 @@ func TestKvTokenCacheLRU(t *testing.T) {
 	kvTokenCacheMu.RUnlock()
 
 	// Add one more — should evict the oldest (text "A")
-	result := kvTokenizeWithCache("D", "test-model", 100)
+	result := kvTokenizeWithCache("D", "test-model", 100, true)
 	if result == nil {
 		t.Fatal("kvTokenizeWithCache returned nil for text D")
 	}
@@ -882,7 +882,7 @@ func TestKvTokenCacheLRU(t *testing.T) {
 	}
 	// Check that "A" was evicted (full-text-identity key — see tokenCacheKey)
 	slug := kvModelSlug("test-model")
-	keyA := kvTokenCacheKeyFor(slug, "A")
+	keyA := kvTokenCacheKeyFor(slug, "A", true)
 	if _, ok := kvTokenCache[keyA]; ok {
 		t.Error("expected key A to be evicted from cache")
 	}
@@ -917,7 +917,7 @@ func TestKvTokenCacheHit(t *testing.T) {
 	kvTokenizerMu.Unlock()
 
 	// First call — should call Encode
-	result := kvTokenizeWithCache("hello world", "test-model", 100)
+	result := kvTokenizeWithCache("hello world", "test-model", 100, true)
 	if result == nil || len(result) != 3 {
 		t.Fatalf("first call: got %v, want [10,20,30]", result)
 	}
@@ -926,7 +926,7 @@ func TestKvTokenCacheHit(t *testing.T) {
 	}
 
 	// Second call with same text — should hit cache, NOT call Encode
-	result = kvTokenizeWithCache("hello world", "test-model", 100)
+	result = kvTokenizeWithCache("hello world", "test-model", 100, true)
 	if result == nil || len(result) != 3 {
 		t.Fatalf("second call: got %v, want [10,20,30]", result)
 	}
@@ -941,9 +941,9 @@ type countingTokenizer struct {
 	callCount *int
 }
 
-func (c *countingTokenizer) Encode(text string) []uint32 {
+func (c *countingTokenizer) Encode(text string, addSpecialTokens bool) []uint32 {
 	*c.callCount++
-	return c.inner.Encode(text)
+	return c.inner.Encode(text, addSpecialTokens)
 }
 
 func (c *countingTokenizer) Close() { c.inner.Close() }
@@ -1011,7 +1011,7 @@ func TestKvTokenizeNoBackend(t *testing.T) {
 	// No backend registered
 	KvRegisterTokenizerBackend(nil)
 
-	result := kvTokenizeWithCache("hello", "test-model", 100)
+	result := kvTokenizeWithCache("hello", "test-model", 100, true)
 	if result != nil {
 		t.Errorf("expected nil when no backend registered, got %v", result)
 	}
@@ -1046,7 +1046,7 @@ func TestKvTokenCacheConcurrent(t *testing.T) {
 		go func(idx int) {
 			defer wg.Done()
 			text := string(rune('A' + (idx % 26)))
-			result := kvTokenizeWithCache(text, "concurrent-model", 100)
+			result := kvTokenizeWithCache(text, "concurrent-model", 100, true)
 			if result == nil {
 				t.Errorf("concurrent call %d returned nil", idx)
 			}
@@ -1766,8 +1766,15 @@ func TestKvAdaptiveCapNormClampGuard(t *testing.T) {
 // ids, which would mask a cache-identity collision).
 type contentTokenizer struct{}
 
-func (c *contentTokenizer) Encode(text string) []uint32 {
-	sum := sha256.Sum256([]byte(text))
+func (c *contentTokenizer) Encode(text string, addSpecialTokens bool) []uint32 {
+	// Fold the encode mode into the digest the way a BOS-carrying tokenizer
+	// folds add_special_tokens into its output, so a cache entry shared
+	// across modes surfaces as an id mismatch.
+	mode := byte(0)
+	if addSpecialTokens {
+		mode = 1
+	}
+	sum := sha256.Sum256(append([]byte(text), mode))
 	ids := make([]uint32, 8)
 	for i := range ids {
 		ids[i] = binary.BigEndian.Uint32(sum[i*4 : i*4+4])
@@ -1800,8 +1807,8 @@ func TestKvTokenCacheLongPromptNoCollision(t *testing.T) {
 	textA := string(head) + "\nfunc tailA() { return 1 }\n"
 	textB := string(head) + "\nfunc tailB() { completely different suffix }\n"
 
-	idsA := kvTokenizeWithCache(textA, "test-model", 100)
-	idsB := kvTokenizeWithCache(textB, "test-model", 100)
+	idsA := kvTokenizeWithCache(textA, "test-model", 100, true)
+	idsB := kvTokenizeWithCache(textB, "test-model", 100, true)
 	if idsA == nil || idsB == nil {
 		t.Fatal("tokenize returned nil")
 	}
@@ -1828,7 +1835,7 @@ func TestKvTokenCacheLongPromptNoCollision(t *testing.T) {
 	}
 
 	// And a genuine repeat must still HIT (identical ids for identical text).
-	idsA2 := kvTokenizeWithCache(textA, "test-model", 100)
+	idsA2 := kvTokenizeWithCache(textA, "test-model", 100, true)
 	if len(idsA2) != len(idsA) {
 		t.Fatalf("repeat lookup length mismatch: %d vs %d", len(idsA2), len(idsA))
 	}

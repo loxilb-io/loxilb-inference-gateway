@@ -261,7 +261,10 @@ func kvChallengeTimeout() time.Duration {
 // (default: the data-plane cache path — attesting parity with what scoring
 // uses). Tests override.
 var kvChallengeTokenizeFn = func(text, model string, max int) []uint32 {
-	return kvTokenizeWithCache(text, model, max)
+	// The challenge inference posts to /v1/completions without an
+	// add_special_tokens override, so the engine tokenizes it with the vLLM
+	// default (true); the expected hash chain must be built the same way.
+	return kvTokenizeWithCache(text, model, max, true)
 }
 
 // kvChallengeBuildPrompt builds the nonce-unique challenge prompt: the nonce
