@@ -620,3 +620,43 @@ func TestKvAttestStartReplacesOnInfoChange(t *testing.T) {
 		t.Fatalf("stale controller was not stopped on replacement")
 	}
 }
+
+// TestKvAttestTypedReasonSurvivesReclimb: a rule held below READY re-runs
+// the ladder every probe tick. The transitional hash_attestation_pending
+// must be published only on ARRIVAL at TOKEN_PARITY_VERIFIED — a re-climb
+// that republished it would erase the typed rung-2 verdict for all but a
+// sliver of each cycle (live signature: T4/T5/T6 pollers reading
+// hash_attestation_pending for 120s+ while every challenge timed out).
+func TestKvAttestTypedReasonSurvivesReclimb(t *testing.T) {
+	h := newAttestHarness(t)
+	h.adapter.challenge = KvAttestFinding{Reason: KvAttestReasonChallengeTimeout,
+		Detail: "expected hashes not observed within 15s"}
+	c := h.controller()
+
+	countTP := func() int {
+		n := 0
+		for _, e := range h.rec.list() {
+			if e == "state:"+KvExactStateTokenParity {
+				n++
+			}
+		}
+		return n
+	}
+
+	c.runLadder() // arrival: pending publish + typed verdict publish
+	if got := countTP(); got != 2 {
+		t.Fatalf("first climb: %d TOKEN_PARITY publishes, want 2 (pending + verdict)", got)
+	}
+	if c.enforced != KvExactStateTokenParity || len(c.reasons) != 1 ||
+		c.reasons[0] != KvAttestReasonChallengeTimeout {
+		t.Fatalf("first climb verdict: state=%s reasons=%v", c.enforced, c.reasons)
+	}
+
+	c.runLadder() // re-climb: verdict publish ONLY — no transient in between
+	if got := countTP(); got != 3 {
+		t.Fatalf("re-climb: %d TOKEN_PARITY publishes total, want 3 (re-climb must not republish pending)", got)
+	}
+	if len(c.reasons) != 1 || c.reasons[0] != KvAttestReasonChallengeTimeout {
+		t.Fatalf("re-climb erased the typed verdict: reasons=%v", c.reasons)
+	}
+}

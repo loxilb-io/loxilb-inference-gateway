@@ -28,6 +28,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -56,6 +57,7 @@ import (
 	"github.com/loxilb-io/loxilb/pkg/user"
 	utils "github.com/loxilb-io/loxilb/pkg/utils"
 	tk "github.com/loxilb-io/loxilib"
+	logrus "github.com/sirupsen/logrus"
 )
 
 // string constant representing root security zone
@@ -384,6 +386,13 @@ func loxiNetInit() {
 		} {
 			lg.SetOutput(rw)
 		}
+		// The AI subsystems (KV attest/subscriber, adapters) log through
+		// sirupsen/logrus, which writes to stderr only. Under any launcher
+		// that discards the process's stderr (docker exec -dt, detached
+		// supervisors) those lines vanish entirely. Tee them into the same
+		// rotated file the level writers use so /var/log/loxilb<host>.log
+		// carries the whole story regardless of how stderr is wired.
+		logrus.SetOutput(io.MultiWriter(os.Stderr, rw))
 	} else {
 		tk.LogIt(tk.LogWarning, "log rotation disabled for %s: %v\n", logfile, err)
 	}

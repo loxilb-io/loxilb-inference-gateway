@@ -583,8 +583,17 @@ func (c *kvAttestController) runLadder() {
 	}
 	c.mu.Lock()
 	c.lastProbeOK = now()
+	alreadyTokenParity := c.enforced == KvExactStateTokenParity
 	c.mu.Unlock()
-	c.publish(KvExactStateTokenParity, "hash_attestation_pending")
+	// First arrival at rung 1 publishes the transitional reason; re-climbs
+	// of a rule already holding here must NOT — the retry ladder runs every
+	// probe tick, and republishing the transient would erase the typed
+	// rung-2 verdict (challenge_timeout, engine_geometry_mismatch, ...) for
+	// all but a sliver of each cycle, leaving status readers with a
+	// permanent "pending" and no cause.
+	if !alreadyTokenParity {
+		c.publish(KvExactStateTokenParity, "hash_attestation_pending")
+	}
 
 	// Rung 2 — ENGINE_HASH_ATTESTED: the §6.2 echo challenge, every endpoint.
 	for _, ep := range eps {
