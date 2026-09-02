@@ -176,9 +176,10 @@ func decodeTrtllmEnvs(t *testing.T, raw string) []trtllmEventEnvelope {
 	return envs
 }
 
-// decodeTrtllmFrames unpacks one synthesized 3-frame message via the shared
-// msgpack decoder the subscriber loop uses, returning (seq, events).
-func decodeTrtllmFrames(t *testing.T, frames [][]byte) (uint64, []kvEvent) {
+// decodeTrtllmFrames unpacks one raw-envelope 3-frame message, decoding
+// the payload through the caller's native trtllm wire decoder exactly as
+// the subscriber loop does, returning (seq, events).
+func decodeTrtllmFrames(t *testing.T, frames [][]byte, d *trtllmWireDecoder) (uint64, []kvEvent) {
 	t.Helper()
 	if len(frames) != 3 {
 		t.Fatalf("got %d frames, want 3", len(frames))
@@ -187,15 +188,34 @@ func decodeTrtllmFrames(t *testing.T, frames [][]byte) (uint64, []kvEvent) {
 		t.Fatalf("topic frame %q, want \"trtllm\"", frames[0])
 	}
 	seq := binary.BigEndian.Uint64(frames[1])
-	events, err := decodeKVEventBatch(frames[2])
+	batch, err := d.Decode(frames[2])
 	if err != nil {
 		t.Fatalf("payload decode: %v", err)
 	}
-	return seq, events
+	return seq, batch.Events
 }
 
-func newTestTrtllmPoller(blockSize int) *trtllmEventPoller {
-	return newTrtllmEventPoller(context.Background(), "127.0.0.1:0", blockSize)
+// trtDecode runs one raw envelope through the native wire decoder. An
+// envelope that translates to nothing yields an EMPTY event list (the
+// transport frame already advanced the seq).
+func trtDecode(t *testing.T, d *trtllmWireDecoder, raw string) []kvEvent {
+	t.Helper()
+	batch, err := d.Decode([]byte(raw))
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	return batch.Events
+}
+
+// trtEnvJSON re-marshals a (mutated) fixture envelope back to raw bytes for
+// the decoder.
+func trtEnvJSON(t *testing.T, env *trtllmEventEnvelope) string {
+	t.Helper()
+	b, err := json.Marshal(env)
+	if err != nil {
+		t.Fatalf("envelope marshal: %v", err)
+	}
+	return string(b)
 }
 
 // TestTrtllmTranslateStoredFixture drives the live-captured stored pair:
@@ -203,13 +223,9 @@ func newTestTrtllmPoller(blockSize int) *trtllmEventPoller {
 // (with a translation entry under the ENGINE hash), and the 4-token partial
 // tail must translate to a seq-advancing no-op, not a phantom key.
 func TestTrtllmTranslateStoredFixture(t *testing.T) {
-	p := newTestTrtllmPoller(32)
+	d := newTrtllmWireDecoder(32)
 
-	full := decodeTrtllmEnvs(t, "["+trtllmFixtureStoredFull+"]")[0]
-	seq, events := decodeTrtllmFrames(t, p.translate(&full))
-	if seq != 5 {
-		t.Errorf("seq %d, want 5 (the engine event_id)", seq)
-	}
+	events := trtDecode(t, d, trtllmFixtureStoredFull)
 	if len(events) != 1 || events[0].Type != kvEventBlockStored {
 		t.Fatalf("want one BlockStored, got %+v", events)
 	}
@@ -220,24 +236,17 @@ func TestTrtllmTranslateStoredFixture(t *testing.T) {
 	if wantKey == trtllmFixtureEngineHashFull {
 		t.Error("self-owned key equals the engine hash — the re-hash is not running")
 	}
-	entry, ok := p.chain[trtllmFixtureEngineHashFull]
+	entry, ok := d.chain[trtllmFixtureEngineHashFull]
 	if !ok || entry.key != wantKey {
 		t.Fatalf("translation entry missing/wrong: %+v ok=%v", entry, ok)
 	}
 
 	// The chained partial: parent lookup succeeds (engine hash above), but
-	// the 4-token block is not reproducible request-side — no-op.
-	partial := decodeTrtllmEnvs(t, "["+trtllmFixtureStoredPartialChained+"]")[0]
-	seq, events = decodeTrtllmFrames(t, p.translate(&partial))
-	if seq != 6 {
-		t.Errorf("seq %d, want 6", seq)
+	// the 4-token block is not reproducible request-side — empty batch.
+	if events := trtDecode(t, d, trtllmFixtureStoredPartialChained); len(events) != 0 {
+		t.Errorf("partial tail must translate to nothing, got %+v", events)
 	}
-	for _, ev := range events {
-		if ev.Type != kvEventUnknown {
-			t.Errorf("partial tail must be a no-op, got %+v", ev)
-		}
-	}
-	if got := p.stats.blocksSkipped.Load(); got != 1 {
+	if got := d.stats.blocksSkipped.Load(); got != 1 {
 		t.Errorf("blocksSkipped %d, want 1", got)
 	}
 }
@@ -248,26 +257,21 @@ func TestTrtllmTranslateStoredFixture(t *testing.T) {
 // and drops every translation entry — a fresh engine cache shares no blocks
 // with the old one.
 func TestTrtllmTranslateCreatedResetsState(t *testing.T) {
-	p := newTestTrtllmPoller(32)
+	d := newTrtllmWireDecoder(32)
 
-	full := decodeTrtllmEnvs(t, "["+trtllmFixtureStoredFull+"]")[0]
-	p.translate(&full)
-	if len(p.chain) != 1 {
-		t.Fatalf("chain size %d, want 1", len(p.chain))
+	trtDecode(t, d, trtllmFixtureStoredFull)
+	if len(d.chain) != 1 {
+		t.Fatalf("chain size %d, want 1", len(d.chain))
 	}
 
-	created := decodeTrtllmEnvs(t, "["+trtllmFixtureCreated+"]")[0]
-	seq, events := decodeTrtllmFrames(t, p.translate(&created))
-	if seq != 0 {
-		t.Errorf("seq %d, want 0 (the engine's restart reset)", seq)
-	}
+	events := trtDecode(t, d, trtllmFixtureCreated)
 	if len(events) != 1 || events[0].Type != kvEventAllBlocksCleared {
 		t.Fatalf("want AllBlocksCleared, got %+v", events)
 	}
-	if len(p.chain) != 0 {
-		t.Errorf("chain must be empty after created, size %d", len(p.chain))
+	if len(d.chain) != 0 {
+		t.Errorf("chain must be empty after created, size %d", len(d.chain))
 	}
-	if got := p.stats.created.Load(); got != 1 {
+	if got := d.stats.created.Load(); got != 1 {
 		t.Errorf("created counter %d, want 1", got)
 	}
 }
@@ -276,27 +280,22 @@ func TestTrtllmTranslateCreatedResetsState(t *testing.T) {
 // engine hashes map to the self-owned keys (and give up their entries);
 // unknown ones are counted, never guessed.
 func TestTrtllmTranslateRemoved(t *testing.T) {
-	p := newTestTrtllmPoller(32)
-	full := decodeTrtllmEnvs(t, "["+trtllmFixtureStoredFull+"]")[0]
-	p.translate(&full)
+	d := newTrtllmWireDecoder(32)
+	trtDecode(t, d, trtllmFixtureStoredFull)
 	_, wantKey := kvSglangRehashBlock(nil, trtllmFixtureFullTokens)
 
-	removed := decodeTrtllmEnvs(t,
-		`[{"event_id": 7, "window_size": 32768, "data": {"type": "removed", "block_hashes": [1001022829664365637, 18446744073709551615]}}]`)[0]
-	seq, events := decodeTrtllmFrames(t, p.translate(&removed))
-	if seq != 7 {
-		t.Errorf("seq %d, want 7", seq)
-	}
+	events := trtDecode(t, d,
+		`{"event_id": 7, "window_size": 32768, "data": {"type": "removed", "block_hashes": [1001022829664365637, 18446744073709551615]}}`)
 	if len(events) != 1 || events[0].Type != kvEventBlockRemoved {
 		t.Fatalf("want BlockRemoved, got %+v", events)
 	}
 	if len(events[0].Hashes) != 1 || events[0].Hashes[0] != wantKey {
 		t.Fatalf("removed keys %v, want [0x%016x]", events[0].Hashes, wantKey)
 	}
-	if len(p.chain) != 0 {
+	if len(d.chain) != 0 {
 		t.Errorf("translation entry must be dropped on removal")
 	}
-	if got := p.stats.removedUnknown.Load(); got != 1 {
+	if got := d.stats.removedUnknown.Load(); got != 1 {
 		t.Errorf("removedUnknown %d, want 1", got)
 	}
 }
@@ -305,15 +304,11 @@ func TestTrtllmTranslateRemoved(t *testing.T) {
 // is unknown (stored before this subscriber connected — there is no replay
 // channel) must be dropped whole, counted, and advance the seq.
 func TestTrtllmTranslateUnchainedDrop(t *testing.T) {
-	p := newTestTrtllmPoller(32)
-	orphan := decodeTrtllmEnvs(t, "["+trtllmFixtureStoredPartialChained+"]")[0]
-	_, events := decodeTrtllmFrames(t, p.translate(&orphan))
-	for _, ev := range events {
-		if ev.Type != kvEventUnknown {
-			t.Errorf("orphan chain must be a no-op, got %+v", ev)
-		}
+	d := newTrtllmWireDecoder(32)
+	if events := trtDecode(t, d, trtllmFixtureStoredPartialChained); len(events) != 0 {
+		t.Errorf("orphan chain must translate to nothing, got %+v", events)
 	}
-	if got := p.stats.unchained.Load(); got != 1 {
+	if got := d.stats.unchained.Load(); got != 1 {
 		t.Errorf("unchained %d, want 1", got)
 	}
 }
@@ -323,31 +318,24 @@ func TestTrtllmTranslateUnchainedDrop(t *testing.T) {
 // collide, so one inventory keyspace cannot hold both), and a created event
 // re-pins the window for the fresh cache.
 func TestTrtllmTranslateWindowPin(t *testing.T) {
-	p := newTestTrtllmPoller(32)
-	full := decodeTrtllmEnvs(t, "["+trtllmFixtureStoredFull+"]")[0]
-	p.translate(&full)
+	d := newTrtllmWireDecoder(32)
+	trtDecode(t, d, trtllmFixtureStoredFull)
 
 	other := decodeTrtllmEnvs(t, "["+trtllmFixtureStoredFull+"]")[0]
 	other.WindowSize = 4096
 	other.EventID = 9
-	seq, events := decodeTrtllmFrames(t, p.translate(&other))
-	if seq != 9 {
-		t.Errorf("seq %d, want 9", seq)
+	if events := trtDecode(t, d, trtEnvJSON(t, &other)); len(events) != 0 {
+		t.Errorf("cross-window event must translate to nothing, got %+v", events)
 	}
-	for _, ev := range events {
-		if ev.Type != kvEventUnknown {
-			t.Errorf("cross-window event must be a no-op, got %+v", ev)
-		}
-	}
-	if got := p.stats.windowSkipped.Load(); got != 1 {
+	if got := d.stats.windowSkipped.Load(); got != 1 {
 		t.Errorf("windowSkipped %d, want 1", got)
 	}
 
 	created := decodeTrtllmEnvs(t, "["+trtllmFixtureCreated+"]")[0]
 	created.WindowSize = 4096
-	p.translate(&created)
-	if p.window != 4096 {
-		t.Errorf("window pin %d after created, want 4096", p.window)
+	trtDecode(t, d, trtEnvJSON(t, &created))
+	if d.window != 4096 {
+		t.Errorf("window pin %d after created, want 4096", d.window)
 	}
 }
 
@@ -356,15 +344,11 @@ func TestTrtllmTranslateWindowPin(t *testing.T) {
 // skip counter) — hashing mis-paged blocks would fill the inventory with
 // keys the request-side pager never computes.
 func TestTrtllmTranslateBlockSizeMismatch(t *testing.T) {
-	p := newTestTrtllmPoller(16) // engine fixture stores 32-token blocks
-	full := decodeTrtllmEnvs(t, "["+trtllmFixtureStoredFull+"]")[0]
-	_, events := decodeTrtllmFrames(t, p.translate(&full))
-	for _, ev := range events {
-		if ev.Type != kvEventUnknown {
-			t.Errorf("mis-paged block must be a no-op, got %+v", ev)
-		}
+	d := newTrtllmWireDecoder(16) // engine fixture stores 32-token blocks
+	if events := trtDecode(t, d, trtllmFixtureStoredFull); len(events) != 0 {
+		t.Errorf("mis-paged block must translate to nothing, got %+v", events)
 	}
-	if got := p.stats.blocksSkipped.Load(); got != 1 {
+	if got := d.stats.blocksSkipped.Load(); got != 1 {
 		t.Errorf("blocksSkipped %d, want 1", got)
 	}
 }
@@ -575,11 +559,15 @@ func TestTrtllmPollerHTTP(t *testing.T) {
 		t.Fatalf("connect: %v", err)
 	}
 
+	// One decoder per stream, as the subscriber loop holds it: created
+	// resets state, then the stored root indexes.
+	d := newTrtllmWireDecoder(32)
+
 	frames, err := p.RecvMultipart()
 	if err != nil {
 		t.Fatalf("recv 1: %v", err)
 	}
-	seq, events := decodeTrtllmFrames(t, frames)
+	seq, events := decodeTrtllmFrames(t, frames, d)
 	if seq != 0 || len(events) != 1 || events[0].Type != kvEventAllBlocksCleared {
 		t.Fatalf("msg 1: seq=%d events=%+v, want created→AllBlocksCleared@0", seq, events)
 	}
@@ -588,7 +576,7 @@ func TestTrtllmPollerHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("recv 2: %v", err)
 	}
-	seq, events = decodeTrtllmFrames(t, frames)
+	seq, events = decodeTrtllmFrames(t, frames, d)
 	if seq != 5 || len(events) != 1 || events[0].Type != kvEventBlockStored {
 		t.Fatalf("msg 2: seq=%d events=%+v, want BlockStored@5", seq, events)
 	}

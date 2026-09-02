@@ -2348,4 +2348,23 @@ type KvExactStatusMod struct {
 	EnforcedState string `json:"enforcedState"`
 	// ReasonCodes are bounded typed reasons explaining EnforcedState.
 	ReasonCodes []string `json:"reasonCodes,omitempty"`
+	// Enforcement is the data-plane enforcement position of a strict rule
+	// (absent on legacy rules): the Go deny-set fence, the last recorded
+	// enforcement fault, and the last full contract-word ACK.
+	Enforcement *KvExactEnforcement `json:"enforcement,omitempty"`
+}
+
+// KvExactEnforcement - the enforcement half of a strict rule's status: what
+// the control plane wants vs what the data plane provably enforces.
+type KvExactEnforcement struct {
+	Desired  string `json:"desired"`
+	Enforced string `json:"enforced"`
+	// LastAckAt is the RFC3339 time of the last full contract-word ACK
+	// (readback + binding-digest halves both verified); empty before the
+	// first ACK after registration or restart.
+	LastAckAt string `json:"lastAckAt,omitempty"`
+	// Fault is the last enforcement fault reason ("" = none).
+	Fault string `json:"fault,omitempty"`
+	// GoFenced reports the authoritative tokenize-bridge deny-set fence.
+	GoFenced bool `json:"goFenced"`
 }

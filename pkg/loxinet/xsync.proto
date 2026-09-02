@@ -162,6 +162,30 @@ message SockproxySnapshotReply {
     int32  total_chunks = 5;
 }
 
+// KvCapability is the §17.7 HA capability-exchange message (v2 wire shape):
+// every digest that must agree cluster-wide before a strict KV-exact rule may
+// activate. An old peer answers gRPC Unimplemented (or net/rpc "method not
+// found") — that response IS the fail-closed signal: profile-aware exact
+// activation is prohibited while any eligible peer is incapable. The new
+// node detects the old node; the old node needs no new behavior (xsync is
+// protobuf — old peers ignore unknown fields, so a marker design cannot
+// work and was withdrawn).
+message KvCapability {
+    uint32 schema_minor              = 1;  // profile-aware rule schema understood
+    string hash_contract_ver         = 2;  // supported hashContract fingerprint family
+    string profile_set_digest        = 3;  // profile registry generation digest incl. artifacts
+    uint32 attestation_policy        = 4;  // attestation generation/freshness policy version
+    // v2 additions (§17.7):
+    string build_identity            = 5;  // gateway build identity
+    string contract_registry_digest  = 6;  // engine-contract registry digest
+    string support_catalog_digest    = 7;  // support-catalog digest
+    string contract_schema_ver       = 8;  // engine-contract schema version/digest
+    uint32 evidence_policy           = 9;  // evidence-policy version
+    // Per-Rule activation exchange: the activating rule's composed binding.
+    string binding_digest            = 10;
+    uint32 binding_gen               = 11;
+}
+
 // The xsync service definition.
 service XSync {
     rpc DpWorkOnCtGetGRPC (ConnGet) returns (XSyncReply) {}
@@ -178,4 +202,8 @@ service XSync {
     // one gateway must stop authenticating on its peers before their cached
     // copy expires.
     rpc ApiKeyInvalidate        (ApiKeyInvalidation)  returns (XSyncReply) {}
+
+    // §17.7 KV capability exchange: peers swap capability/digest sets at
+    // connect, on registry/policy change, and per strict-rule activation.
+    rpc KvCapabilityExchange    (KvCapability)        returns (KvCapability) {}
   }

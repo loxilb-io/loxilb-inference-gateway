@@ -70,7 +70,14 @@ type KvTokenizerBytesBackend interface {
 // KvTokenizer is a loaded tokenizer instance for a specific model.
 type KvTokenizer interface {
 	// Encode tokenizes text and returns token IDs.
-	Encode(text string) []uint32
+	// addSpecialTokens must mirror how the engine tokenized the text being
+	// matched: true for raw completions prompts (vLLM tokenizes them with
+	// add_special_tokens=True, prepending BOS on models like Llama-3 whose
+	// post-processor declares one), false for chat-template-rendered prompts
+	// (the template supplies the specials; vLLM encodes those with
+	// add_special_tokens=False). BOS-less tokenizers (Qwen, EXAONE) produce
+	// identical output either way.
+	Encode(text string, addSpecialTokens bool) []uint32
 
 	// Close releases resources.
 	Close()
@@ -172,14 +179,15 @@ var (
 // fixed-size (long prompts must not become map keys) while making a collision
 // require a sha256 collision at equal length.
 type tokenCacheKey struct {
-	modelSlug string
-	textLen   int
-	textSum   [sha256.Size]byte
+	modelSlug  string
+	textLen    int
+	textSum    [sha256.Size]byte
+	addSpecial bool
 }
 
 // kvTokenCacheKeyFor builds the full-text-identity cache key for (text, slug).
-func kvTokenCacheKeyFor(slug, text string) tokenCacheKey {
-	return tokenCacheKey{modelSlug: slug, textLen: len(text), textSum: sha256.Sum256([]byte(text))}
+func kvTokenCacheKeyFor(slug, text string, addSpecial bool) tokenCacheKey {
+	return tokenCacheKey{modelSlug: slug, textLen: len(text), textSum: sha256.Sum256([]byte(text)), addSpecial: addSpecial}
 }
 
 // kvModelSlug normalizes a model name for filesystem lookup.
@@ -342,12 +350,16 @@ func kvTokenizerLoadAndCommit(backend KvTokenizerBackend, modelName, slug string
 	return tokenizer, false
 }
 
-// kvTokenizeWithCache tokenizes text using the model's tokenizer, with LRU caching.
-func kvTokenizeWithCache(text, modelName string, maxTokens int) []uint32 {
+// kvTokenizeWithCache tokenizes text using the model's tokenizer, with LRU
+// caching. addSpecialTokens follows the KvTokenizer.Encode contract (true for
+// raw completions prompts, false for chat-rendered text) and is part of the
+// cache identity: the two modes produce different id streams on BOS-carrying
+// tokenizers, so a shared entry would leak one mode's tokens into the other.
+func kvTokenizeWithCache(text, modelName string, maxTokens int, addSpecialTokens bool) []uint32 {
 	slug := kvModelSlug(modelName)
 
-	// Cache key = full-text identity (slug + len + sha256) — see tokenCacheKey.
-	key := kvTokenCacheKeyFor(slug, text)
+	// Cache key = full-text identity (slug + len + sha256 + encode mode).
+	key := kvTokenCacheKeyFor(slug, text, addSpecialTokens)
 
 	// Check cache under read lock
 	kvTokenCacheMu.RLock()
@@ -367,7 +379,7 @@ func kvTokenizeWithCache(text, modelName string, maxTokens int) []uint32 {
 	}
 
 	// Tokenize
-	ids := tokenizer.Encode(text)
+	ids := tokenizer.Encode(text, addSpecialTokens)
 	if len(ids) == 0 {
 		return nil
 	}
@@ -435,17 +447,20 @@ func KvTokenizerPoolReset() {
 	kvTokenizerNegMu.Unlock()
 }
 
+// Both tokenize exports now carry (svc_id, binding_gen) — the C caller
+// threads the rule identity and the contract generation it loaded from the
+// kv_exact_contract word, and receives typed LLB_KV_TOK_ERR_* codes instead
+// of the old collapsed -1 (twin-lockstep with sockproxy_ai_gw.h /
+// sockproxy_kv_exact.h and the call sites in sockproxy_kv_exact.c). The
+// typed cores live in ai_kv_dataplane.go; these wrappers only marshal.
+//
 //export llb_ai_kv_tokenize
-func llb_ai_kv_tokenize(text, modelName *C.char, outIDs *C.uint32_t, maxIDs C.int) C.int {
-	goText := C.GoString(text)
-	goModel := C.GoString(modelName)
-	if goText == "" || goModel == "" || maxIDs <= 0 {
-		return -1
-	}
-
-	tokens := kvTokenizeWithCache(goText, goModel, int(maxIDs))
-	if tokens == nil || len(tokens) == 0 {
-		return -1
+func llb_ai_kv_tokenize(text, modelName *C.char, outIDs *C.uint32_t, maxIDs C.int,
+	svcID, bindingGen C.uint32_t) C.int {
+	tokens, code := kvBridgeTokenize(uint32(svcID), uint32(bindingGen),
+		C.GoString(text), C.GoString(modelName), int(maxIDs))
+	if code != 0 {
+		return C.int(code)
 	}
 
 	n := len(tokens)
@@ -468,16 +483,12 @@ func llb_ai_kv_tokenize(text, modelName *C.char, outIDs *C.uint32_t, maxIDs C.in
 // should then fall back rather than route a mis-hashed request through KV-exact.
 //
 //export llb_ai_kv_tokenize_chat
-func llb_ai_kv_tokenize_chat(body, modelName *C.char, outIDs *C.uint32_t, maxIDs C.int) C.int {
-	goBody := C.GoString(body)
-	goModel := C.GoString(modelName)
-	if goBody == "" || goModel == "" || maxIDs <= 0 {
-		return -1
-	}
-
-	tokens := kvTokenizeChatBody(goBody, goModel, int(maxIDs))
-	if len(tokens) == 0 {
-		return -1
+func llb_ai_kv_tokenize_chat(body, modelName *C.char, outIDs *C.uint32_t, maxIDs C.int,
+	svcID, bindingGen C.uint32_t) C.int {
+	tokens, code := kvBridgeTokenizeChat(uint32(svcID), uint32(bindingGen),
+		C.GoString(body), C.GoString(modelName), int(maxIDs))
+	if code != 0 {
+		return C.int(code)
 	}
 
 	n := len(tokens)

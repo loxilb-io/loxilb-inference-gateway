@@ -62,6 +62,10 @@ typedef struct proxy_metrics_snapshot {
     uint64_t pd_kv_t15_miss_no_worker;
     uint64_t pd_kv_t15_miss_excluded;
     uint64_t pd_kv_t15_miss_shallow;
+    uint64_t pd_kv_t15_miss_not_ready;
+    uint64_t pd_kv_t15_miss_api_mode;
+    uint64_t pd_kv_t15_miss_unsupported;
+    uint64_t pd_kv_t15_miss_runtime_fault;
     uint64_t pd_kv_t15_fallthrough_total;
 
     /* Keep in lockstep with loxilb-ebpf/common/sockproxy_metrics.h and the
@@ -95,6 +99,12 @@ typedef struct proxy_metrics_snapshot {
     uint64_t cache_bytes_total;
     uint64_t cache_bytes_max_conn;
     uint64_t cache_conns_queued;
+
+    /* Same-EP reconnect counters. TAIL-APPEND ONLY — twin-declared in
+     * loxilb-ebpf/common/sockproxy_metrics.h and the cgo preamble of
+     * sockproxy_metrics.go; keep ALL THREE in lockstep, same commit. */
+    uint64_t pd_connect_retry_same_ep;
+    uint64_t pd_connect_retry_same_ep_ok;
 } proxy_metrics_snapshot_t;
 
 __attribute__((weak))

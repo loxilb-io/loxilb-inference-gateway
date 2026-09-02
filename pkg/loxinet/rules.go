@@ -37,6 +37,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/loxilb-io/loxilb/api/loxinlp"
 	cmn "github.com/loxilb-io/loxilb/common"
+	"github.com/loxilb-io/loxilb/pkg/enginecontract"
+	ecschema "github.com/loxilb-io/loxilb/pkg/enginecontract/schema"
 	utils "github.com/loxilb-io/loxilb/pkg/utils"
 	tk "github.com/loxilb-io/loxilib"
 	probing "github.com/prometheus-community/pro-bing"
@@ -621,6 +623,7 @@ type ruleEnt struct {
 	kvEngineType                string                  // KV-event engine: ""/"vllm" (default) or "sglang" — immutable after create
 	kvExactApiMode              string                  // KV-exact API surfaces: ""/"completions"/"chat"/"both" — immutable after create
 	kvModelProfile              string                  // bound ModelPromptProfile ID ("" = legacy profile-less) — immutable after create
+	kvRestoredLegacy            bool                    // profile-less KV-exact rule arrived via restore: REQUIRES_MIGRATION, exact path fenced until a profile is attached
 	kvDpRankCount               uint16                  // SGLang DP rank count (1..8, 0 ⇒ 1; rank N publishes at kvZmqPort+N)
 	pdBootstrapPort             uint16                  // SGLang P/D bootstrap port on prefill EPs (0 ⇒ 8998 downstream)
 	chwblPrefixHashLevel        int                     // CHWBL prefix hash level: 1, 2, or 3
@@ -1210,7 +1213,7 @@ func (R *RuleH) GetLBRule() ([]cmn.LbRuleMod, error) {
 		ret.Serv.KvHashAlgo = data.kvHashAlgo
 		ret.Serv.KvZmqPort = data.kvZmqPort
 		ret.Serv.KvWarmupSec = data.kvWarmupSec
-		ret.Serv.KvEngineType = data.kvEngineType // zero value ⇒ omitempty ⇒ absent on legacy rules
+		ret.Serv.KvEngineType = data.kvEngineType     // zero value ⇒ omitempty ⇒ absent on legacy rules
 		ret.Serv.KvExactApiMode = data.kvExactApiMode // zero value ⇒ omitempty ⇒ absent on legacy rules
 		ret.Serv.KvModelProfile = data.kvModelProfile // zero value ⇒ omitempty ⇒ absent on legacy rules
 		ret.Serv.KvDpRankCount = data.kvDpRankCount
@@ -2646,6 +2649,22 @@ func kvSubscriberTargets(mode uint8, endPoints []ruleLBEp) []int {
 	return targets
 }
 
+// kvAttestDecodeEPs returns the decode-role endpoints a P/D rule's SGLang
+// pair challenge needs as counterparts (see kvAttestRuleInfo.decodeEPs).
+// Non-P/D rules carry none.
+func kvAttestDecodeEPs(pdMode bool, endPoints []ruleLBEp) []KvAttestEndpoint {
+	if !pdMode {
+		return nil
+	}
+	var out []KvAttestEndpoint
+	for i, ep := range endPoints {
+		if ep.epRole == 2 {
+			out = append(out, KvAttestEndpoint{EpIdx: i, IP: ep.xIP.String(), Port: ep.xPort})
+		}
+	}
+	return out
+}
+
 // kvEngineEffective resolves default: an absent kvEngineType means
 // vllm (the established default-OFF pattern — absent field ⇒ today's behavior).
 func kvEngineEffective(engine string) string {
@@ -2788,20 +2807,30 @@ func kvLlamacppFeatureGuard(engine string, kvExactMode uint8, pdDisagg bool, zmq
 	if kvEngineEffective(engine) != "llamacpp" {
 		return nil
 	}
-	if kvExactMode != 0 {
-		return errors.New("kvExactMode is unsupported for kv-engine-type llamacpp (no KV event plane; use select=chwbl for prefix affinity)")
+	// The refusals below are the compiled llamacpp contract profile's
+	// capability answers (kvEvents=none, pdRouting=none) delivered as
+	// typed reason codes. The profile is consulted so a future capability
+	// change is a manifest change, not a hand edit here; a registry that
+	// unexpectedly lacks the profile keeps every refusal (fail closed).
+	kvEventsNone, pdRoutingNone := true, true
+	if p, ok := enginecontract.ProfileByID(kvLlamacppProfileID); ok {
+		kvEventsNone = p.Capabilities[ecschema.CapKvEvents] == ecschema.CapNone
+		pdRoutingNone = p.Capabilities[ecschema.CapPdRouting] == ecschema.CapNone
 	}
-	if pdDisagg {
-		return errors.New("pd_disagg_mode is unsupported for kv-engine-type llamacpp (engine has no P/D disaggregation)")
+	if kvExactMode != 0 && kvEventsNone {
+		return kvContractRefusal("kvExactMode is unsupported for kv-engine-type llamacpp (no KV event plane; use select=chwbl for prefix affinity)")
 	}
-	if zmqPort != 0 && zmqPort != 5557 {
-		return errors.New("kvZmqPort is meaningless for kv-engine-type llamacpp (no KV event transport)")
+	if pdDisagg && pdRoutingNone {
+		return kvContractRefusal("pd_disagg_mode is unsupported for kv-engine-type llamacpp (engine has no P/D disaggregation)")
 	}
-	if dpRankCount > 1 {
-		return errors.New("kvDpRankCount is meaningless for kv-engine-type llamacpp (no client-visible DP ranks)")
+	if zmqPort != 0 && zmqPort != 5557 && kvEventsNone {
+		return kvContractRefusal("kvZmqPort is meaningless for kv-engine-type llamacpp (no KV event transport)")
 	}
-	if blockSize != 0 && blockSize != 16 {
-		return errors.New("kvBlockSize is meaningless for kv-engine-type llamacpp (no block table, no gateway-side hashing)")
+	if dpRankCount > 1 && kvEventsNone {
+		return kvContractRefusal("kvDpRankCount is meaningless for kv-engine-type llamacpp (no client-visible DP ranks)")
+	}
+	if blockSize != 0 && blockSize != 16 && kvEventsNone {
+		return kvContractRefusal("kvBlockSize is meaningless for kv-engine-type llamacpp (no block table, no gateway-side hashing)")
 	}
 	return nil
 }
@@ -2866,6 +2895,19 @@ func kvProfileServesModel(p *ModelPromptProfile, modelName string) bool {
 	return false
 }
 
+// kvAdmissionRefuse wraps a KV create/replace validation refusal in the
+// typed cmn.KvAdmissionError the API layer classifies structurally as HTTP
+// 400 — an admission refusal whose wording matches no classifier phrase must
+// never surface as an internal 500 hiding the reason behind a correlation
+// ref. A typed engine-contract refusal contributes its stable reason code.
+func kvAdmissionRefuse(err error) error {
+	var ce *KvContractError
+	if errors.As(err, &ce) {
+		return &cmn.KvAdmissionError{Reason: ce.Code, Err: err}
+	}
+	return &cmn.KvAdmissionError{Err: err}
+}
+
 // kvExactAdmissionDeps injects the environment a KV-exact admission decision
 // reads, keeping kvExactRuntimeValidate deterministic in unit tests.
 // Production wires os.LookupEnv, a fresh tokenizer load, the profile
@@ -2884,6 +2926,11 @@ type kvExactAdmissionDeps struct {
 type kvExactAdmissionResult struct {
 	Strict bool
 	Comps  KvExactBindingComponents
+	// Effective API surfaces after profile inheritance ("" apiMode on a
+	// strict rule inherits the profile's supportedApis, never wider). The
+	// contract install packs these into the data-plane contract word's api_mode byte.
+	APIChat        bool
+	APICompletions bool
 }
 
 // kvExactRuntimeValidate turns the cross-process KV-exact parity inputs into
@@ -2921,6 +2968,12 @@ func kvExactRuntimeValidate(engine string, kvExactMode uint8, modelName, apiMode
 	if kvExactMode == 0 {
 		if profileID != "" {
 			return res, errors.New("kvModelProfile is meaningless without kvExactMode (no KV-exact tier; omit it)")
+		}
+		// The api-mode declaration is equally dead config without the
+		// KV-exact tier — refuse it here too, or the validator's non-exact
+		// branch is unreachable and the declaration silently no-ops.
+		if err := kvExactApiModeValidate(apiMode, kvExactMode); err != nil {
+			return res, err
 		}
 		return res, nil
 	}
@@ -2980,6 +3033,8 @@ func kvExactRuntimeValidate(engine string, kvExactMode uint8, modelName, apiMode
 			return res, fmt.Errorf("strict KV-exact rule requires a resolvable engine contract for %q: %w", eng, err)
 		}
 		res.Strict = true
+		res.APIChat = wantChat
+		res.APICompletions = wantCompletions
 		res.Comps = KvExactBindingComponents{
 			Profile:               KvModelProfileRef{ID: p.ProfileID, Gen: gen},
 			Contract:              ref,
@@ -3013,10 +3068,10 @@ func kvExactRuntimeValidate(engine string, kvExactMode uint8, modelName, apiMode
 // whose binding state is missing is an enforcement fault, never silently
 // legacy.
 const (
-	KvExactStateLegacyActive      = "LEGACY_ACTIVE_UNATTESTED"
-	KvExactStateProfileValidated  = "PROFILE_VALIDATED"
-	KvExactStatePendingDataplane  = "PENDING_DATAPLANE_CONTRACT"
-	KvExactStateEnforcementFault  = "ENFORCEMENT_FAULT"
+	KvExactStateLegacyActive     = "LEGACY_ACTIVE_UNATTESTED"
+	KvExactStateProfileValidated = "PROFILE_VALIDATED"
+	KvExactStatePendingDataplane = "PENDING_DATAPLANE_CONTRACT"
+	KvExactStateEnforcementFault = "ENFORCEMENT_FAULT"
 )
 
 // GetKvExactStatus returns the resolved KV-exact composition status of every
@@ -3064,10 +3119,22 @@ func (R *RuleH) GetKvExactStatus(vip string, port uint16, proto string, modelNam
 		}
 
 		if data.kvModelProfile == "" {
-			// Legacy profile-less rule: active, unattested, and says so.
 			if m.ApiMode == "" {
 				m.ApiMode = KvExactApiBoth
 			}
+			if data.kvRestoredLegacy {
+				// Restored profile-less rule: REQUIRES_MIGRATION with the
+				// exact path fenced (D-7b strict bypass) — never reported as
+				// the live legacy behavior it no longer has. Migration =
+				// rule replace attaching a profile.
+				m.DesiredState = KvExactStateRequiresMigration
+				m.EnforcedState = KvExactStateRequiresMigration
+				m.ReasonCodes = []string{KvAttestReasonRequiresMigration}
+				m.Enforcement = kvExactEnforcementInfo(uint32(data.ruleNum), m.DesiredState, m.EnforcedState)
+				res = append(res, m)
+				continue
+			}
+			// Legacy profile-less rule: active, unattested, and says so.
 			m.DesiredState = KvExactStateLegacyActive
 			m.EnforcedState = KvExactStateLegacyActive
 			m.ReasonCodes = []string{"no_model_profile_bound"}
@@ -3084,6 +3151,7 @@ func (R *RuleH) GetKvExactStatus(vip string, port uint16, proto string, modelNam
 			m.DesiredState = KvExactStateProfileValidated
 			m.EnforcedState = KvExactStateEnforcementFault
 			m.ReasonCodes = []string{"binding_state_missing"}
+			m.Enforcement = kvExactEnforcementInfo(uint32(data.ruleNum), m.DesiredState, m.EnforcedState)
 			res = append(res, m)
 			continue
 		}
@@ -3117,9 +3185,19 @@ func (R *RuleH) GetKvExactStatus(vip string, port uint16, proto string, modelNam
 				}
 			}
 		}
-		m.DesiredState = KvExactStateProfileValidated
-		m.EnforcedState = KvExactStatePendingDataplane
-		m.ReasonCodes = []string{"binding_dataplane_pending", "attestation_pending"}
+		// The attestation controller owns the ladder position once the
+		// contract-word install has handed the rule to it; before that the
+		// honest answer is still PENDING_DATAPLANE_CONTRACT.
+		if desired, enforced, reasons, aok := KvAttestStatus(uint32(data.ruleNum)); aok {
+			m.DesiredState = desired
+			m.EnforcedState = enforced
+			m.ReasonCodes = reasons
+		} else {
+			m.DesiredState = KvExactStateProfileValidated
+			m.EnforcedState = KvExactStatePendingDataplane
+			m.ReasonCodes = []string{"binding_dataplane_pending", "attestation_pending"}
+		}
+		m.Enforcement = kvExactEnforcementInfo(uint32(data.ruleNum), m.DesiredState, m.EnforcedState)
 		res = append(res, m)
 	}
 	return res, nil
@@ -3131,7 +3209,14 @@ func (R *RuleH) GetKvExactStatus(vip string, port uint16, proto string, modelNam
 // in-flight requests with no data-plane fence to order the switch.
 func kvExactBindingImmutabilityCheck(existingProfile, incomingProfile, existingApiMode, incomingApiMode string) error {
 	if existingProfile != incomingProfile {
-		return errors.New("lbrule-exist error: cant modify rule kv model profile (delete and recreate)")
+		// Migration attach is the ONE sanctioned transition: a profile-less
+		// rule (legacy or restored REQUIRES_MIGRATION) may gain a profile on
+		// replace — that upgrade re-runs the full strict bring-up. Every
+		// other rebind would re-key a live binding identity under in-flight
+		// requests and stays refused.
+		if existingProfile != "" || incomingProfile == "" {
+			return errors.New("lbrule-exist error: cant modify rule kv model profile (delete and recreate)")
+		}
 	}
 	if existingApiMode != incomingApiMode {
 		return errors.New("lbrule-exist error: cant modify rule kv exact api mode (delete and recreate)")
@@ -3601,7 +3686,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	// engine allowlist + DP rank bounds — covers
 	// both the create and update paths (everything below flows through here).
 	if err := kvEngineConfigValidate(serv.KvEngineType, serv.KvDpRankCount); err != nil {
-		return RuleUnknownServiceErr, err
+		return RuleUnknownServiceErr, kvAdmissionRefuse(err)
 	}
 
 	// Resolve and validate the complete ZMQ rank-port range before any rule or
@@ -3609,7 +3694,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	// both subscriber gates, so neither gate performs uint16 port arithmetic.
 	subscriberRankPorts, err := kvSubscriberRankPorts(serv.KvExactMode, serv.KvZmqPort, serv.KvDpRankCount)
 	if err != nil {
-		return RuleUnknownServiceErr, err
+		return RuleUnknownServiceErr, kvAdmissionRefuse(err)
 	}
 
 	// engine ⇔ hash-algo coherence. Placed beside the engine allowlist so create
@@ -3617,7 +3702,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	// pair can never reach the data plane. An absent kvHashAlgo (the recommended
 	// shape) always passes.
 	if err := kvHashAlgoValidate(serv.KvHashAlgo, serv.KvEngineType); err != nil {
-		return RuleUnknownServiceErr, err
+		return RuleUnknownServiceErr, kvAdmissionRefuse(err)
 	}
 
 	// KV-exact routing parity is a runtime prerequisite, not an operator
@@ -3643,27 +3728,29 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 			contractRef:  kvCurrentContractRef,
 		})
 	if err != nil {
-		return RuleUnknownServiceErr, err
+		return RuleUnknownServiceErr, kvAdmissionRefuse(err)
 	}
 
 	// pdBootstrapPort is meaningful only on an sglang P/D rule — anywhere else
 	// it would be silently dead config.
 	if err := pdBootstrapPortValidate(serv.PDBootstrapPort, serv.PDDisaggMode, serv.KvEngineType); err != nil {
-		return RuleUnknownServiceErr, err
+		return RuleUnknownServiceErr, kvAdmissionRefuse(err)
 	}
 
-	// TRT-LLM per-feature guards: plain LB is accepted today; KV-exact and P/D
-	// stay rejected until their phases land, and the engine's meaningless knobs
-	// (kvZmqPort, kvDpRankCount) fail loudly instead of riding as dead config.
+	// TRT-LLM per-feature guards: plain LB and the HTTP-polled KV-exact
+	// shapes (modes 1/3) are accepted — production readiness is fenced
+	// separately by the attestation ladder until the ownership mechanism
+	// lands. The engine's meaningless knobs (a real kvZmqPort, DP ranks)
+	// fail loudly instead of riding as dead config.
 	if err := kvTrtllmFeatureGuard(serv.KvEngineType, serv.KvExactMode, serv.PDDisaggMode, serv.KvZmqPort, serv.KvDpRankCount); err != nil {
-		return RuleUnknownServiceErr, err
+		return RuleUnknownServiceErr, kvAdmissionRefuse(err)
 	}
 
 	// llama.cpp per-feature guards: plain LB (+ CHWBL/session affinity) is the
 	// whole supported surface — the engine has no KV event plane and no P/D,
 	// so every kv*/pd* shape fails loudly instead of riding as dead config.
 	if err := kvLlamacppFeatureGuard(serv.KvEngineType, serv.KvExactMode, serv.PDDisaggMode, serv.KvZmqPort, serv.KvDpRankCount, serv.KvBlockSize); err != nil {
-		return RuleUnknownServiceErr, err
+		return RuleUnknownServiceErr, kvAdmissionRefuse(err)
 	}
 
 	sort.SliceStable(lBActs.endPoints, func(i, j int) bool {
@@ -3796,6 +3883,15 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		// current) leaves ruleChg false, short-circuits at the RuleExistsErr return
 		// below, and never reaches the admin_state apply / LB2DP drain.
 		if serv.AdminStateUp != nil && resolveAdminStateUp(serv.AdminStateUp) != eRule.adminStateUp {
+			ruleChg = true
+		}
+
+		// Migration attach (profile-less -> strict) is a real change even
+		// when every other field is identical — without this it would
+		// short-circuit at the RuleExistsErr return below and the sanctioned
+		// migration replace could never commit.
+		kvMigrating := serv.KvExactMode != 0 && eRule.kvModelProfile == "" && serv.KvModelProfile != ""
+		if kvMigrating {
 			ruleChg = true
 		}
 
@@ -4068,6 +4164,59 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		DpBrokerSyncBarrier(mh.dp)
 		R.flushLBCtEntries(eRule, CtFlushRidZeroOnly)
 
+		// Migration commit: attach the admission-validated profile identity
+		// and run the same fence-first strict bring-up a fresh strict rule
+		// gets — register DENIED, hand to attestation, allocate the binding,
+		// kick the contract-word install. This replaces the restored-legacy
+		// deny entry (same svc key), so the fence lifts only through a full
+		// install ACK followed by the readiness ladder.
+		if kvMigrating && kvAdmission.Strict {
+			eRule.kvModelProfile = serv.KvModelProfile
+			eRule.kvExactApiMode = serv.KvExactApiMode
+			eRule.kvRestoredLegacy = false
+			KvSvcContractRegister(uint32(eRule.ruleNum), eRule.id,
+				eRule.tuples.l3Dst.addr.IP, eRule.tuples.l4Dst.valMin, eRule.tuples.l4Prot.val,
+				kvContractAPIModeByte(kvAdmission.APIChat, kvAdmission.APICompletions))
+			attEps := make([]KvAttestEndpoint, 0, len(lBActs.endPoints))
+			for _, i := range kvSubscriberTargets(serv.KvExactMode, lBActs.endPoints) {
+				attEps = append(attEps, KvAttestEndpoint{
+					EpIdx: i,
+					IP:    lBActs.endPoints[i].xIP.String(),
+					Port:  lBActs.endPoints[i].xPort,
+				})
+			}
+			kvAttestRegisterRule(kvAttestRuleInfo{
+				svcID:           uint32(eRule.ruleNum),
+				ruleIdent:       eRule.id,
+				modelName:       eRule.tuples.modelName,
+				engine:          kvEngineEffective(eRule.kvEngineType),
+				hashAlgo:        kvHashAlgoEffective(eRule.kvHashAlgo, eRule.kvEngineType),
+				blockSize:       eRule.kvBlockSize,
+				profileID:       eRule.kvModelProfile,
+				apiChat:         kvAdmission.APIChat,
+				apiCompl:        kvAdmission.APICompletions,
+				dpRanks:         eRule.kvDpRankCount,
+				zmqPort:         eRule.kvZmqPort,
+				pdMode:          eRule.pdDisaggMode,
+				pdBootstrapPort: eRule.pdBootstrapPort,
+				decodeEPs:       kvAttestDecodeEPs(eRule.pdDisaggMode, lBActs.endPoints),
+			}, attEps)
+			// A restore replay allocates NOTHING (same split as the create
+			// path): the kvexactbinding snapshot domain applies right after
+			// and carries the authoritative binding + allocator high-water
+			// mark, then re-kicks the install itself.
+			if !serv.RestoreReplay {
+				if b, bErr := KvBindingAllocate(eRule.id, kvAdmission.Comps); bErr != nil {
+					tk.LogIt(tk.LogError, "kv-binding: rule %s migration allocation failed: %v\n", eRule.id, bErr)
+				} else {
+					tk.LogIt(tk.LogInfo, "kv-binding: rule %s migrated to profile %s@%d contract %s@%d gen %d digest %.12s\n",
+						eRule.id, b.Components.Profile.ID, b.Components.Profile.Gen,
+						b.Components.Contract.ID, b.Components.Contract.Gen, b.BindingGen, b.Digest)
+				}
+				kvDataplaneContractInstallAsync(uint32(eRule.ruleNum))
+			}
+		}
+
 		return 0, nil
 	} else if serv.Oper == cmn.LBOPDetach {
 		tk.LogIt(tk.LogInfo, "lb-rule %s-%v-%s does not exist\n", serv.ServIP, serv.ServPort, serv.Proto)
@@ -4189,6 +4338,12 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	r.kvEngineType = serv.KvEngineType // engine + DP rank count
 	r.kvExactApiMode = serv.KvExactApiMode
 	r.kvModelProfile = serv.KvModelProfile
+	// A profile-less KV-exact rule arriving on the restore path is
+	// REQUIRES_MIGRATION, never silently legacy-active: the pre-upgrade
+	// unattested behavior must not survive a restore by default (strict
+	// bypass). The marker drives the status verdict and the exact-path
+	// fence below; attaching a profile on replace clears it.
+	r.kvRestoredLegacy = serv.RestoreReplay && serv.KvExactMode != 0 && serv.KvModelProfile == ""
 	r.kvDpRankCount = serv.KvDpRankCount
 	r.pdBootstrapPort = serv.PDBootstrapPort
 
@@ -4315,6 +4470,57 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	// kvexactbinding domain applies right after the loadbalancer domain and
 	// carries the authoritative binding (with the high-water mark that keeps
 	// a restarted allocator from reissuing an in-flight generation).
+	if kvAdmission.Strict {
+		// Fence-first: register the rule's data-plane contract identity
+		// DENIED before the DP entry can exist — the tokenize-bridge deny
+		// set fences every exact scoring path until the contract-word
+		// install transaction fully ACKs. Registered for restore replays
+		// too: the kvexactbinding snapshot domain re-kicks the install once
+		// it lands the authoritative binding.
+		KvSvcContractRegister(uint32(r.ruleNum), r.id,
+			r.tuples.l3Dst.addr.IP, r.tuples.l4Dst.valMin, r.tuples.l4Prot.val,
+			kvContractAPIModeByte(kvAdmission.APIChat, kvAdmission.APICompletions))
+		// Attestation identity: registered alongside the contract so a
+		// full install ACK can hand the rule to the readiness ladder. The
+		// attestable endpoint set mirrors the subscriber target set — event
+		// bridges exist only on subscribed endpoints, so echo consensus is
+		// scoped to them.
+		attEps := make([]KvAttestEndpoint, 0, len(lBActs.endPoints))
+		for _, i := range kvSubscriberTargets(serv.KvExactMode, lBActs.endPoints) {
+			attEps = append(attEps, KvAttestEndpoint{
+				EpIdx: i,
+				IP:    lBActs.endPoints[i].xIP.String(),
+				Port:  lBActs.endPoints[i].xPort,
+			})
+		}
+		kvAttestRegisterRule(kvAttestRuleInfo{
+			svcID:           uint32(r.ruleNum),
+			ruleIdent:       r.id,
+			modelName:       r.tuples.modelName,
+			engine:          kvEngineEffective(r.kvEngineType),
+			hashAlgo:        kvHashAlgoEffective(r.kvHashAlgo, r.kvEngineType),
+			blockSize:       r.kvBlockSize,
+			profileID:       r.kvModelProfile,
+			apiChat:         kvAdmission.APIChat,
+			apiCompl:        kvAdmission.APICompletions,
+			dpRanks:         r.kvDpRankCount,
+			zmqPort:         r.kvZmqPort,
+			pdMode:          r.pdDisaggMode,
+			pdBootstrapPort: r.pdBootstrapPort,
+			decodeEPs:       kvAttestDecodeEPs(r.pdDisaggMode, lBActs.endPoints),
+		}, attEps)
+	}
+	if r.kvRestoredLegacy {
+		// D-7b strict bypass: register the restored-legacy rule's identity
+		// DENIED with no install path — the tokenize-bridge fence keeps the
+		// exact tier from ever scoring (requests still route through the
+		// normal LB tiers), and only migration (replace attaching a profile)
+		// re-registers it on the strict install path that can lift the deny.
+		chat, completions := kvExactApiSurfaces(r.kvExactApiMode)
+		KvSvcContractRegister(uint32(r.ruleNum), r.id,
+			r.tuples.l3Dst.addr.IP, r.tuples.l4Dst.valMin, r.tuples.l4Prot.val,
+			kvContractAPIModeByte(chat, completions))
+	}
 	if kvAdmission.Strict && !serv.RestoreReplay {
 		if b, bErr := KvBindingAllocate(r.id, kvAdmission.Comps); bErr != nil {
 			tk.LogIt(tk.LogError, "kv-binding: rule %s allocation failed: %v\n", r.id, bErr)
@@ -4329,6 +4535,14 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	r.DP(DpCreate)
 	DpBrokerSyncBarrier(mh.dp)
 	R.flushLBCtEntries(r, CtFlushRidZeroOnly)
+
+	// Install the contract word now that the DP worker is creating the
+	// proxy entry (async — the transaction retries until the entry exists;
+	// pattern: the circuit-breaker goroutine below). A replayed strict rule
+	// has no binding yet here; its install is kicked by KvBindingRestore.
+	if kvAdmission.Strict && !serv.RestoreReplay {
+		kvDataplaneContractInstallAsync(uint32(r.ruleNum))
+	}
 
 	// Enable circuit breaker for P/D disaggregation services (fix)
 	// proxy_set_circuit_breaker requires the proxy entry to exist first (created async by DP worker),
@@ -4352,7 +4566,14 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		}()
 	}
 
-	// Auto-start ZMQ subscribers for KV-cache routing (KV-12)
+	// Auto-start ZMQ subscribers for KV-cache routing (KV-12).
+	// A strict rule's composed binding pins the engine contract; the
+	// subscriber must bind its wire decoder through that SAME reference
+	// (profile-less rules pass "" and take the legacy per-engine policy).
+	kvWireContractID := ""
+	if b, ok := KvBindingCurrent(r.id); ok {
+		kvWireContractID = b.Components.Contract.ID
+	}
 	if serv.KvExactMode == 1 {
 		serviceID := uint32(r.ruleNum)
 		// DP-rank fan-out — SGLang data-parallel
@@ -4373,7 +4594,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 						subPort = ep.xPort
 					}
 					KvSubscriberStartRank(serviceID, i, rankPort.rank, ep.xIP.String(), subPort,
-						kvHashAlgoEffective(r.kvHashAlgo, r.kvEngineType), r.kvEngineType, r.kvBlockSize)
+						kvHashAlgoEffective(r.kvHashAlgo, r.kvEngineType), r.kvEngineType, r.kvBlockSize, kvWireContractID)
 				}
 			}
 		}
@@ -4401,7 +4622,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 					subPort = lBActs.endPoints[i].xPort
 				}
 				KvSubscriberStartRank(serviceID, i, rankPort.rank, lBActs.endPoints[i].xIP.String(), subPort,
-					kvHashAlgoEffective(r.kvHashAlgo, r.kvEngineType), r.kvEngineType, r.kvBlockSize)
+					kvHashAlgoEffective(r.kvHashAlgo, r.kvEngineType), r.kvEngineType, r.kvBlockSize, kvWireContractID)
 			}
 		}
 	}
@@ -4598,6 +4819,10 @@ func (R *RuleH) DeleteLbRule(serv cmn.LbServiceArg) (int, error) {
 	// (a fresh client-supplied id colliding with stale binding state would
 	// otherwise inherit a foreign identity).
 	KvBindingDelete(rule.id)
+	// The contract word dies with the proxy entry; drop the deny-set /
+	// contract registration with it (a recreate re-registers fence-first).
+	kvAttestDeregisterRule(uint32(rule.ruleNum))
+	KvSvcContractDeregister(uint32(rule.ruleNum))
 
 	// COMP-01 : Stop vLLM metrics scraper
 	if rule.vllmScraper != nil {

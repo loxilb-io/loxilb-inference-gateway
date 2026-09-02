@@ -56,7 +56,6 @@ import (
 	prom "github.com/loxilb-io/loxilb/api/prometheus"
 	"github.com/loxilb-io/loxilb/api/restapi/handler"
 	log "github.com/sirupsen/logrus"
-	"github.com/vmihailenco/msgpack/v5"
 )
 
 // ---------- KV Block Inventory ----------
@@ -305,10 +304,26 @@ type kvEpRankKey struct {
 }
 
 // kvServiceState manages all KV inventories and subscriber goroutines for one LB service.
+// kvSubStartArgs records one (EP, rank) subscriber's start parameters so the
+// stream can be restarted under a different wire binding after the fact: a
+// snapshot restore replays the rule before the persisted binding document
+// lands, and the streams must converge on the restored contract.
+type kvSubStartArgs struct {
+	epIdx      int
+	rank       uint16
+	epIP       string
+	port       uint16
+	algo       string
+	engine     string
+	blockSize  uint32
+	contractID string
+}
+
 type kvServiceState struct {
 	mu          sync.RWMutex
 	inventories map[int]*kvInventory // ep_index -> inventory (shared across ranks)
 	cancelFns   map[kvEpRankKey]context.CancelFunc
+	startArgs   map[kvEpRankKey]kvSubStartArgs
 	serviceID   uint32
 	algo        string // "sha256_cbor" | "xxhash_cbor" | "" (unknown);
 
@@ -332,6 +347,7 @@ func newKvServiceState(serviceID uint32) *kvServiceState {
 	return &kvServiceState{
 		inventories: make(map[int]*kvInventory),
 		cancelFns:   make(map[kvEpRankKey]context.CancelFunc),
+		startArgs:   make(map[kvEpRankKey]kvSubStartArgs),
 		serviceID:   serviceID,
 		algo:        "",
 	}
@@ -390,35 +406,29 @@ const (
 type kvEvent struct {
 	Type   kvEventType
 	Hashes []uint64 // block hashes (for BlockStored and BlockRemoved)
+	// The remaining fields are decoded from BlockStored only when present,
+	// for the §6.2 echo-challenge wire checks (ai_kv_attest_echo.go): the
+	// flat token_id list covering the event's blocks in order, and whether
+	// the event carries a lora_id / non-empty extra_keys (either fails a
+	// challenge block — extraKeyPolicy none_p0 verified on the wire).
+	Tokens    []uint32
+	Lora      bool
+	ExtraKeys bool
 }
 
 // decodeKVEventBatch decodes a msgpack-encoded KVEventBatch.
 // Format: [ts: float, events: [[tag, ...], ...], dp_rank: int|nil]
+//
+// Compatibility wrapper over the tagged-array wire binding
+// (ai_kv_wire_bindings.go) — the shipped skip semantics for malformed
+// events are preserved there, with tagged-map events now surfacing as a
+// typed schema-mismatch error instead of a silent debug-level skip.
 func decodeKVEventBatch(payload []byte) ([]kvEvent, error) {
-	var raw []interface{}
-	if err := msgpack.Unmarshal(payload, &raw); err != nil {
-		return nil, fmt.Errorf("msgpack unmarshal: %w", err)
+	batch, err := kvWireDecodeArrayV1(payload)
+	if err != nil {
+		return nil, err
 	}
-
-	if len(raw) < 2 {
-		return nil, fmt.Errorf("batch too short: %d elements", len(raw))
-	}
-
-	eventsRaw, ok := raw[1].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("events field not array")
-	}
-
-	var events []kvEvent
-	for _, evRaw := range eventsRaw {
-		ev, err := decodeKVEvent(evRaw)
-		if err != nil {
-			log.Debugf("kv-subscriber: skip event: %v", err)
-			continue
-		}
-		events = append(events, ev)
-	}
-	return events, nil
+	return batch.Events, nil
 }
 
 // decodeKVEvent decodes a single tagged event array.
@@ -442,7 +452,21 @@ func decodeKVEvent(raw interface{}) (kvEvent, error) {
 		if err != nil {
 			return kvEvent{}, fmt.Errorf("BlockStored: %w", err)
 		}
-		return kvEvent{Type: kvEventBlockStored, Hashes: hashes}, nil
+		ev := kvEvent{Type: kvEventBlockStored, Hashes: hashes}
+		// Optional challenge-check fields (schema at the top of this file:
+		// [tag, [hash...], parent, [token_id...], block_size, lora_id,
+		// medium, lora_name, extra_keys]). Absence is tolerated — inventory
+		// ingest never depends on them; only an armed challenge watch does.
+		if len(arr) > 3 {
+			ev.Tokens = extractTokenIDs(arr[3])
+		}
+		if len(arr) > 5 && !kvFieldEmpty(arr[5]) {
+			ev.Lora = true
+		}
+		if len(arr) > 8 && !kvPerBlockFieldEmpty(arr[8]) {
+			ev.ExtraKeys = true
+		}
+		return ev, nil
 
 	case "BlockRemoved":
 		if len(arr) < 2 {
@@ -460,6 +484,95 @@ func decodeKVEvent(raw interface{}) (kvEvent, error) {
 	default:
 		return kvEvent{Type: kvEventUnknown}, nil
 	}
+}
+
+// extractTokenIDs decodes a flat msgpack token_id array (best-effort: a
+// malformed/absent list yields nil, which an armed challenge watch treats as
+// a wire-check failure while inventory ingest ignores it).
+func extractTokenIDs(raw interface{}) []uint32 {
+	arr, ok := raw.([]interface{})
+	if !ok {
+		return nil
+	}
+	out := make([]uint32, 0, len(arr))
+	for _, v := range arr {
+		switch t := v.(type) {
+		case int8:
+			out = append(out, uint32(t))
+		case int16:
+			out = append(out, uint32(t))
+		case int32:
+			out = append(out, uint32(t))
+		case int64:
+			out = append(out, uint32(t))
+		case uint8:
+			out = append(out, uint32(t))
+		case uint16:
+			out = append(out, uint32(t))
+		case uint32:
+			out = append(out, t)
+		case uint64:
+			out = append(out, uint32(t))
+		default:
+			return nil
+		}
+	}
+	return out
+}
+
+// kvFieldEmpty reports whether an optional msgpack field is absent-like
+// (nil, empty map, empty array, zero int) — the §6.2 checks require
+// lora_id/extra_keys to be EMPTY on challenge blocks.
+func kvFieldEmpty(raw interface{}) bool {
+	switch t := raw.(type) {
+	case nil:
+		return true
+	case map[string]interface{}:
+		return len(t) == 0
+	case map[interface{}]interface{}:
+		return len(t) == 0
+	case []interface{}:
+		return len(t) == 0
+	case int8:
+		return t == 0
+	case int16:
+		return t == 0
+	case int32:
+		return t == 0
+	case int64:
+		return t == 0
+	case uint8:
+		return t == 0
+	case uint16:
+		return t == 0
+	case uint32:
+		return t == 0
+	case uint64:
+		return t == 0
+	case string:
+		return t == ""
+	default:
+		return false
+	}
+}
+
+// kvPerBlockFieldEmpty reports whether a per-block wire field carries no
+// content. vLLM serializes BlockStored extra_keys as ONE entry PER STORED
+// BLOCK, null (or an empty tuple) at a block's index when that block has no
+// extra keys — so [null, null] means "no block carries extra keys" and must
+// not read as present (live v0.28.0 emits exactly that shape on every
+// event; treating it as present false-fails every echo challenge). A
+// non-array value falls back to the scalar emptiness rule.
+func kvPerBlockFieldEmpty(raw interface{}) bool {
+	if arr, ok := raw.([]interface{}); ok {
+		for _, e := range arr {
+			if !kvFieldEmpty(e) {
+				return false
+			}
+		}
+		return true
+	}
+	return kvFieldEmpty(raw)
 }
 
 // extractBlockHashes extracts uint64 block hashes from a msgpack array.
@@ -610,7 +723,30 @@ func runKvSubscriberLoop(ctx context.Context, epIdx int, serviceID uint32, inv *
 // structurally impossible rather than merely avoided.
 func runKvSubscriberLoopRank(ctx context.Context, epIdx int, rank uint16, serviceID uint32,
 	inv *kvInventory, sub KvEventSource, replay kvZmqReplayRequester, endpoint string) {
+	// Compatibility wrapper: every pre-binding caller (and the existing
+	// test corpus) drives the legacy tagged-array binding byte-identically.
+	runKvSubscriberLoopBinding(ctx, epIdx, rank, serviceID, inv, sub, replay, endpoint,
+		KvWireVllmArrayV1, 0)
+}
+
+// runKvSubscriberLoopBinding is the binding-aware loop body: identical to
+// the shipped loop except that payload decoding goes through the resolved
+// wire binding (ai_kv_wire_bindings.go) and — on the rank-aware SGLang
+// binding — a batch whose declared data_parallel_rank disagrees with this
+// stream's socket-derived rank is a typed rejection, never applied.
+func runKvSubscriberLoopBinding(ctx context.Context, epIdx int, rank uint16, serviceID uint32,
+	inv *kvInventory, sub KvEventSource, replay kvZmqReplayRequester, endpoint string,
+	wireSchema string, blockSize int) {
 	if inv == nil {
+		return
+	}
+
+	dec, decErr := kvWireDecoderFor(wireSchema, blockSize)
+	if decErr != nil {
+		// Fail closed: a stream we cannot decode for must not run at all —
+		// a subscriber that connects but silently drops every payload is
+		// indistinguishable from a healthy idle publisher.
+		log.Warnf("kv-subscriber: ep %d rank %d: %v — subscriber not started", epIdx, rank, decErr)
 		return
 	}
 
@@ -734,7 +870,7 @@ func runKvSubscriberLoopRank(ctx context.Context, epIdx int, rank uint16, servic
 				// pre- path; production passes replay=nil).
 				log.Infof("kv-subscriber: ep %d seq gap detected: %d -> %d (missing %d)",
 					epIdx, rankLastSeq, seq, gap)
-				replayKvEvents(inv, replay, rankLastSeq+1)
+				replayKvEvents(inv, replay, rankLastSeq+1, dec)
 			} else if !justResynced {
 				// gap with NO replay client is no longer
 				// silently ignored — the missed events may include BlockRemoved/
@@ -775,17 +911,39 @@ func runKvSubscriberLoopRank(ctx context.Context, epIdx int, rank uint16, servic
 			inv.ClearAll()
 		}
 
-		// Decode and apply events from payload (frame 2)
-		events, err := decodeKVEventBatch(frames[2])
+		// Decode and apply events from payload (frame 2) via the resolved
+		// wire binding. A typed wire rejection (schema mismatch, strict
+		// map-batch failure) is counted — the silent-staleness class this
+		// binding layer exists to close — and the batch applies nothing.
+		batch, err := dec.Decode(frames[2])
 		if err != nil {
+			if reason := kvWireReasonOf(err); reason != "" {
+				incKvWireRejectIfLive(ctx, svcLabel, epLabel, reason)
+			}
 			log.Debugf("kv-subscriber: ep %d decode error: %v", epIdx, err)
 			continue
 		}
+
+		// SGLang rank-aware binding: the payload's declared rank must agree
+		// with this stream's socket-derived rank (base port + rank). A
+		// disagreement means the endpoint's rank topology is not what the
+		// rule declared — applying the batch would corrupt the union
+		// inventory with another rank's stream.
+		if wireSchema == KvWireSglangRankV1 && batch.DPRank != nil && *batch.DPRank != int64(rank) {
+			incKvWireRejectIfLive(ctx, svcLabel, epLabel, KvWireReasonRankMismatch)
+			log.Warnf("kv-subscriber: ep %d rank %d: batch declares dp_rank %d — rejected (rank identity mismatch)",
+				epIdx, rank, *batch.DPRank)
+			continue
+		}
+		events := batch.Events
 
 		for _, ev := range events {
 			switch ev.Type {
 			case kvEventBlockStored:
 				inv.AddBlocks(ev.Hashes)
+				// Echo-challenge watch (ai_kv_attest_echo.go): resolves an
+				// armed challenge's expected hashes; no-op otherwise.
+				kvHashWatchObserve(serviceID, epIdx, int(rank), ev)
 				log.Infof("kv-subscriber: BlockStored %d block(s) for ep %d (total=%d)", len(ev.Hashes), epIdx, inv.Size())
 			case kvEventBlockRemoved:
 				inv.RemoveBlocks(ev.Hashes)
@@ -876,6 +1034,18 @@ func incKvRecvErrorIfLive(ctx context.Context, svcLabel, epLabel string) {
 	prom.IncKvSubscriberRecvError(svcLabel, epLabel)
 }
 
+// incKvWireRejectIfLive increments the wire-binding rejection counter under
+// the same teardown discipline as the other per-EP KV series (an unguarded
+// Inc landing after ClearKvEpSeries would resurrect a deleted child).
+func incKvWireRejectIfLive(ctx context.Context, svcLabel, epLabel, reason string) {
+	kvSeriesMu.Lock()
+	defer kvSeriesMu.Unlock()
+	if ctx.Err() != nil {
+		return
+	}
+	prom.IncKvSubscriberWireReject(svcLabel, epLabel, reason)
+}
+
 // rebuildKvSubscriber closes the current SUB socket and redials the same
 // endpoint. On success it clears the inventory (the remote publisher's block
 // IDs are fresh after restart — old hashes would mis-route Tier 1.5) and
@@ -936,8 +1106,11 @@ func rebuildKvSubscriber(ctx context.Context, sub kvZmqSubscriber, inv *kvInvent
 	return true
 }
 
-// replayKvEvents requests missed events from the replay socket.
-func replayKvEvents(inv *kvInventory, replay kvZmqReplayRequester, startSeq int64) {
+// replayKvEvents requests missed events from the replay socket. Replayed
+// payloads decode through the SAME wire binding as the live stream — a
+// replay buffer in a different wire family than the bound contract must
+// fail the same way live traffic would.
+func replayKvEvents(inv *kvInventory, replay kvZmqReplayRequester, startSeq int64, dec kvWireDecoder) {
 	if err := replay.SendStartSeq(startSeq); err != nil {
 		log.Warnf("kv-subscriber: replay request failed: %v", err)
 		return
@@ -952,10 +1125,11 @@ func replayKvEvents(inv *kvInventory, replay kvZmqReplayRequester, startSeq int6
 			break
 		}
 
-		events, err := decodeKVEventBatch(payload)
+		batch, err := dec.Decode(payload)
 		if err != nil {
 			continue
 		}
+		events := batch.Events
 		for _, ev := range events {
 			switch ev.Type {
 			case kvEventBlockStored:
@@ -981,7 +1155,7 @@ func replayKvEvents(inv *kvInventory, replay kvZmqReplayRequester, startSeq int6
 // existing caller and test keeps its shipped single-rank behavior
 // byte-identically (: default rank count 1 ≡ today's single-port path).
 func KvSubscriberStart(serviceID uint32, epIdx int, epIP string, zmqPort uint16, algo string) {
-	KvSubscriberStartRank(serviceID, epIdx, 0, epIP, zmqPort, algo, "", 0)
+	KvSubscriberStartRank(serviceID, epIdx, 0, epIP, zmqPort, algo, "", 0, "")
 }
 
 // KvSubscriberStartRank starts a ZMQ subscriber goroutine for one (EP, DP
@@ -998,7 +1172,7 @@ func KvSubscriberStart(serviceID uint32, epIdx int, epIP string, zmqPort uint16,
 // (events ride it — there is no separate event port) and blockSize carries
 // the rule's kvBlockSize for the poller's full-block decoder.
 func KvSubscriberStartRank(serviceID uint32, epIdx int, rank uint16, epIP string, port uint16, algo string,
-	engine string, blockSize uint32) {
+	engine string, blockSize uint32, contractID string) {
 	kvServicesMu.Lock()
 	defer kvServicesMu.Unlock()
 
@@ -1044,6 +1218,10 @@ func KvSubscriberStartRank(serviceID uint32, epIdx int, rank uint16, epIP string
 
 	ctx, cancel := context.WithCancel(context.Background())
 	svc.cancelFns[key] = cancel
+	svc.startArgs[key] = kvSubStartArgs{
+		epIdx: epIdx, rank: rank, epIP: epIP, port: port,
+		algo: algo, engine: engine, blockSize: blockSize, contractID: contractID,
+	}
 
 	addr := fmt.Sprintf("tcp://%s:%d", epIP, port)
 	log.Infof("kv-subscriber: starting EP %d rank %d for service %d at %s", epIdx, rank, serviceID, addr)
@@ -1111,14 +1289,24 @@ func KvSubscriberStartRank(serviceID uint32, epIdx int, rank uint16, epIP string
 		// The ZMQ replay port-offset probe only makes sense for ZMQ engines;
 		// the trtllm drain has no replay channel at all, so its cold-start
 		// posture is always organic warmup.
+		// Resolve the stream's wire binding through the compiled
+		// engine-contract registry (legacy policy table preserves shipped
+		// behavior per engine; see kvLegacyWireProfile). Fail closed: no
+		// binding, no subscriber.
+		wireSchema, wErr := kvResolveWireSchema(engine, contractID)
+		if wErr != nil {
+			log.Warnf("kv-subscriber: ep %d rank %d: %v — subscriber not started", epIdx, rank, wErr)
+			return
+		}
+
 		if raddr := kvReplayEndpoint(addr); raddr != "" && engine != "trtllm" {
 			rctx, rcancel := context.WithTimeout(ctx, 15*time.Second)
 			rc := newPureGoZmqReplayClient(rctx)
 			if err := rc.Connect(raddr); err != nil {
 				log.Infof("kv-subscriber: ep %d rank %d no replay listener at %s (%v) — inventory warms organically",
 					epIdx, rank, raddr, err)
-			} else {
-				replayKvEvents(inv, rc, 0)
+			} else if rdec, derr := kvWireDecoderFor(wireSchema, int(blockSize)); derr == nil {
+				replayKvEvents(inv, rc, 0, rdec)
 				log.Infof("kv-subscriber: ep %d rank %d replayed buffered KV events from %s (inventory size=%d)",
 					epIdx, rank, raddr, inv.Size())
 			}
@@ -1132,7 +1320,8 @@ func KvSubscriberStartRank(serviceID uint32, epIdx int, rank uint16, epIP string
 		// the endpoint to redial when it detects a dead socket.
 		// inv was resolved above under svc.mu, before this goroutine was
 		// spawned — passing it in keeps the teardown-racy map read out of here.
-		runKvSubscriberLoopRank(ctx, epIdx, rank, serviceID, inv, sub, nil, addr)
+		runKvSubscriberLoopBinding(ctx, epIdx, rank, serviceID, inv, sub, nil, addr,
+			wireSchema, int(blockSize))
 	}()
 }
 
@@ -1159,6 +1348,7 @@ func KvSubscriberStop(serviceID uint32, epIdx int) {
 		if key.epIdx == epIdx {
 			cancel()
 			delete(svc.cancelFns, key)
+			delete(svc.startArgs, key)
 		}
 	}
 	delete(svc.inventories, epIdx)
@@ -1172,6 +1362,42 @@ func KvSubscriberStop(serviceID uint32, epIdx int) {
 	// Drop the EP's trtllm admission verdict (no-op for ZMQ engines) so the
 	// audit API never shows a stale verdict for a decommissioned EP.
 	kvTrtllmAdmissionForget(serviceID, epIdx)
+}
+
+// KvSubscriberRebindWire restarts every subscriber stream of a service under
+// the given engine-contract reference. A restore replay starts a strict
+// rule's subscribers before the persisted binding document lands, so they
+// resolve the LEGACY wire schema and reject every native event as
+// schema_mismatch — the rule could then never re-attest past token parity
+// after a gateway restart. The binding restore calls this to converge the
+// streams on the restored contract. Restart, not in-place mutation: each
+// goroutine resolves its wire schema exactly once at start.
+func KvSubscriberRebindWire(serviceID uint32, contractID string) {
+	kvServicesMu.RLock()
+	svc, ok := kvServices[serviceID]
+	kvServicesMu.RUnlock()
+	if !ok {
+		return
+	}
+	svc.mu.RLock()
+	args := make([]kvSubStartArgs, 0, len(svc.startArgs))
+	rebind := false
+	for _, a := range svc.startArgs {
+		if a.contractID != contractID {
+			rebind = true
+		}
+		args = append(args, a)
+	}
+	svc.mu.RUnlock()
+	if !rebind || len(args) == 0 {
+		return
+	}
+	log.Infof("kv-subscriber: service %d rebinding %d stream(s) to contract %q", serviceID, len(args), contractID)
+	KvSubscriberStopAll(serviceID)
+	for _, a := range args {
+		KvSubscriberStartRank(serviceID, a.epIdx, a.rank, a.epIP, a.port, a.algo,
+			a.engine, a.blockSize, contractID)
+	}
 }
 
 // KvSubscriberStopAll stops all ZMQ subscribers for the given service.

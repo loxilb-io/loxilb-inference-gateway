@@ -112,7 +112,7 @@ func ConfigPostLoadbalancer(params operations.PostConfigLoadbalancerParams, prin
 	// AI model name for pool selection (empty = wildcard, backward compatible)
 	lbRules.Serv.ModelName = params.Attr.ServiceArguments.ModelName
 
-	// SSE (Server-Sent Events) streaming configuration 
+	// SSE (Server-Sent Events) streaming configuration
 	lbRules.Serv.SSEMode = params.Attr.ServiceArguments.SseMode
 	// Data-plane X-Api-Key policy. The generated field is a pointer because the
 	// schema carries an enum; nil means the caller omitted it, which resolves
@@ -124,7 +124,7 @@ func ConfigPostLoadbalancer(params operations.PostConfigLoadbalancerParams, prin
 	lbRules.Serv.MaxStreamDurationSec = uint32(params.Attr.ServiceArguments.MaxStreamDurationSec)
 	lbRules.Serv.BackendKeepaliveIntervalSec = uint32(params.Attr.ServiceArguments.BackendKeepaliveIntervalSec)
 
-	// P/D disaggregation mode 
+	// P/D disaggregation mode
 	lbRules.Serv.PDDisaggMode = params.Attr.ServiceArguments.PdDisaggMode
 
 	// P/D cache-aware routing (US-PD801)
@@ -318,7 +318,7 @@ func ConfigPostLoadbalancer(params operations.PostConfigLoadbalancerParams, prin
 	_, err := ApiHooks.NetLbRuleAdd(&lbRules)
 	if err != nil {
 		tk.LogIt(tk.LogDebug, "api: Error occur : %v\n", err)
-		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
+		return &ErrorResponse{Payload: ResultErrorResponseError(err)}
 	}
 	return &ResultResponse{Result: "Success"}
 }
@@ -585,7 +585,7 @@ func serializeLBRule(lb cmn.LbRuleMod) *models.LoadbalanceEntry {
 		tmpSvc.SessionHeaderName = lb.Serv.SessionHeaderName
 	}
 
-	// SSE streaming configuration 
+	// SSE streaming configuration
 	if lb.Serv.SSEMode {
 		tmpSvc.SseMode = lb.Serv.SSEMode
 	}
@@ -605,7 +605,7 @@ func serializeLBRule(lb cmn.LbRuleMod) *models.LoadbalanceEntry {
 		tmpSvc.BackendKeepaliveIntervalSec = int32(lb.Serv.BackendKeepaliveIntervalSec)
 	}
 
-	// P/D disaggregation mode 
+	// P/D disaggregation mode
 	if lb.Serv.PDDisaggMode {
 		tmpSvc.PdDisaggMode = lb.Serv.PDDisaggMode
 	}
@@ -945,7 +945,7 @@ func ConfigGetLoadbalancerKvExactStatus(params operations.GetConfigLoadbalancerK
 	entries := make([]*models.KvExactStatusEntry, 0, len(mods))
 	for i := range mods {
 		m := &mods[i]
-		entries = append(entries, &models.KvExactStatusEntry{
+		e := &models.KvExactStatusEntry{
 			RuleIdentity:          m.RuleIdentity,
 			ModelName:             m.ModelName,
 			EngineFamily:          m.EngineFamily,
@@ -963,7 +963,17 @@ func ConfigGetLoadbalancerKvExactStatus(params operations.GetConfigLoadbalancerK
 			DesiredState:          m.DesiredState,
 			EnforcedState:         m.EnforcedState,
 			ReasonCodes:           m.ReasonCodes,
-		})
+		}
+		if m.Enforcement != nil {
+			e.Enforcement = &models.KvExactEnforcement{
+				Desired:   m.Enforcement.Desired,
+				Enforced:  m.Enforcement.Enforced,
+				LastAckAt: m.Enforcement.LastAckAt,
+				Fault:     m.Enforcement.Fault,
+				GoFenced:  m.Enforcement.GoFenced,
+			}
+		}
+		entries = append(entries, e)
 	}
 	return operations.NewGetConfigLoadbalancerKvExactStatusOK().WithPayload(
 		&operations.GetConfigLoadbalancerKvExactStatusOKBody{KvExactStatusAttr: entries})
