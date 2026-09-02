@@ -35,12 +35,34 @@ code=0
 # iperf3 lives in the nettest image, not on the CI host — run it via docker
 # exec (same netns as the container's connected veths), detached for the server
 sudo docker exec -d l3ep1 iperf3 -s -p 8080
-sleep 2
 
-# Measured Mbits/s of an iperf3 run through the VIP (receiver side)
+# docker exec -d returns before iperf3 binds, and a fixed sleep raced it on
+# loaded CI hosts: the L1 client ran against nothing and the baseline read as
+# an empty string. Poll the listener on the backend itself (not through the
+# VIP) so a later empty measurement can only mean the VIP path, never server
+# startup.
+iperf_up=0
+for _ in $(seq 1 15); do
+    if $dexec l3ep1 sh -c "ss -lntH 2>/dev/null | grep -q ':8080 ' || netstat -tln 2>/dev/null | grep -q ':8080 ' || cat /proc/net/tcp /proc/net/tcp6 2>/dev/null | grep -q ':1F90 '"; then
+        iperf_up=1; break
+    fi
+    sleep 1
+done
+if [[ "$iperf_up" != 1 ]]; then
+    echo "iperf3 server never began listening on l3ep1:8080" ; code=1
+fi
+
+# Measured Mbits/s of an iperf3 run through the VIP (receiver side). A run
+# with no receiver summary yields "" and surfaces iperf3's own error on the
+# console — "connection refused" vs "timeout" is the evidence that separates
+# a dead server from a blackholed first connection through the rule.
 run_bw() {
-    local secs=$1; shift
-    $dexec l3h1 iperf3 -c $VIP -p 2020 -t $secs "$@" 2>&1 | \
+    local secs=$1 raw; shift
+    raw=$($dexec l3h1 iperf3 -c $VIP -p 2020 -t $secs "$@" 2>&1)
+    if ! echo "$raw" | grep -q receiver; then
+        echo "iperf3 run produced no receiver summary: $(echo "$raw" | grep -v '^$' | tail -1)" >&2
+    fi
+    echo "$raw" | \
         awk '/receiver/ {v=$7; u=$8; if (u=="Kbits/sec") v=v/1000; if (u=="Gbits/sec") v=v*1000; printf "%d", v}'
 }
 
@@ -119,7 +141,7 @@ res=$(api_post_policy "$POLID_JSON")
 if [[ "$res" != *"Success"* ]]; then
     echo "L6 policy re-add failed: $res" ; code=1
 fi
-$dexec llb1 curl -s -X DELETE "$API/config/loadbalancer/externalipaddress/$VIP/port/2020/protocol/tcp"
+$dexec llb1 curl -s -X DELETE "$API/config/loadbalancer/externalipaddress/$VIP/port/2020/protocol/tcp" > /dev/null
 sleep 1
 LB_JSON='{"serviceArguments":{"externalIP":"20.20.20.1","port":2020,"protocol":"tcp","vip_qos_policy_id":"qpol1"},"endpoints":[{"endpointIP":"31.31.31.1","targetPort":8080,"weight":1}]}'
 res=$($dexec llb1 curl -s -X POST -H 'Content-Type: application/json' -d "$LB_JSON" $API/config/loadbalancer)
@@ -149,6 +171,12 @@ echo "L8 egress-attach-without-hooks response: $res"
 if [[ "$res" == *"Success"* ]]; then
     echo "L8 egress attach accepted without --egr-hooks (must be refused)" ; code=1
     api_del_policy qnoegr > /dev/null
+elif [[ "$res" != *"egr-hooks"* ]]; then
+    # The refusal is addressed to the operator who wrote the policy, so the
+    # reason must ride in the response body. A refusal that only carries a
+    # correlation ref means the validator's answer was swallowed by the API's
+    # internal-error fall-through — refused for the wrong reason is still red.
+    echo "L8 refusal does not state the reason (want egr-hooks in body): $res" ; code=1
 fi
 
 $dexec l3ep1 pkill -9 iperf3 2>/dev/null
