@@ -358,7 +358,9 @@ func TestKvAttestEligibleFlipFailureIsEnforcementFault(t *testing.T) {
 }
 
 // TestKvAttestNoEndpointsHoldsFenced / adapter-less engines stay fenced at
-// PROFILE_VALIDATED (SGLang/TRT until their adapters land).
+// PROFILE_VALIDATED (TRT-LLM until its adapter lands; SGLang gained
+// its adapter — the production mapping is pinned by
+// TestKvSglangAdapterSelected, this harness fake only knows vllm).
 func TestKvAttestNoEndpointsAndNoAdapterHoldFenced(t *testing.T) {
 	h := newAttestHarness(t)
 	h.deps.endpoints = func(svcID uint32) []KvAttestEndpoint { return nil }
@@ -369,7 +371,7 @@ func TestKvAttestNoEndpointsAndNoAdapterHoldFenced(t *testing.T) {
 	}
 
 	h2 := newAttestHarness(t)
-	h2.info.engine = "sglang"
+	h2.info.engine = "trtllm"
 	c2 := h2.controller()
 	c2.fenceAndReattest("activation")
 	if c2.enforced != KvExactStateProfileValidated || c2.reasons[0] != KvAttestReasonAdapterUnavailable {
@@ -576,5 +578,85 @@ func TestKvAttestApplyEligibleStampsAck(t *testing.T) {
 	enf, found := KvSvcContractEnforcement(9)
 	if !found || enf.GoFenced || enf.LastAckAt.IsZero() || enf.LastApplied != want {
 		t.Fatalf("enforcement read-model after ACK: %+v (found=%v)", enf, found)
+	}
+}
+
+// TestKvAttestStartReplacesOnInfoChange: a rule UPDATE re-registers changed
+// attestation identity (e.g. kvDpRankCount) and re-activates through
+// KvAttestStart. The running controller must be replaced — kicking it would
+// re-earn every ladder against the stale declaration (live signature: dp=2
+// sims + dp=2 rule read-back, yet every climb fails engine_geometry_mismatch
+// because the controller still holds dpRanks=1).
+func TestKvAttestStartReplacesOnInfoChange(t *testing.T) {
+	h := newAttestHarness(t)
+	c1 := KvAttestStart(h.info, h.deps)
+	t.Cleanup(func() {
+		KvAttestReset()
+		c1.wg.Wait()
+	})
+
+	// Same identity re-activation keeps the controller (kick path).
+	if c := KvAttestStart(h.info, h.deps); c != c1 {
+		t.Fatalf("same-info re-activation must return the running controller")
+	}
+
+	// Updated identity (dpRanks 0->2) must REPLACE it.
+	updated := h.info
+	updated.dpRanks = 2
+	c2 := KvAttestStart(updated, h.deps)
+	t.Cleanup(func() {
+		KvAttestReset()
+		c2.wg.Wait()
+	})
+	if c2 == c1 {
+		t.Fatalf("info change must start a fresh controller, got the stale one kicked")
+	}
+	if !c2.info.equal(updated) {
+		t.Fatalf("replacement controller info = %+v, want %+v", c2.info, updated)
+	}
+	select {
+	case <-c1.stop:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("stale controller was not stopped on replacement")
+	}
+}
+
+// TestKvAttestTypedReasonSurvivesReclimb: a rule held below READY re-runs
+// the ladder every probe tick. The transitional hash_attestation_pending
+// must be published only on ARRIVAL at TOKEN_PARITY_VERIFIED — a re-climb
+// that republished it would erase the typed rung-2 verdict for all but a
+// sliver of each cycle (live signature: T4/T5/T6 pollers reading
+// hash_attestation_pending for 120s+ while every challenge timed out).
+func TestKvAttestTypedReasonSurvivesReclimb(t *testing.T) {
+	h := newAttestHarness(t)
+	h.adapter.challenge = KvAttestFinding{Reason: KvAttestReasonChallengeTimeout,
+		Detail: "expected hashes not observed within 15s"}
+	c := h.controller()
+
+	countTP := func() int {
+		n := 0
+		for _, e := range h.rec.list() {
+			if e == "state:"+KvExactStateTokenParity {
+				n++
+			}
+		}
+		return n
+	}
+
+	c.runLadder() // arrival: pending publish + typed verdict publish
+	if got := countTP(); got != 2 {
+		t.Fatalf("first climb: %d TOKEN_PARITY publishes, want 2 (pending + verdict)", got)
+	}
+	if c.enforced != KvExactStateTokenParity || len(c.reasons) != 1 ||
+		c.reasons[0] != KvAttestReasonChallengeTimeout {
+		t.Fatalf("first climb verdict: state=%s reasons=%v", c.enforced, c.reasons)
+	}
+
+	c.runLadder() // re-climb: verdict publish ONLY — no transient in between
+	if got := countTP(); got != 3 {
+		t.Fatalf("re-climb: %d TOKEN_PARITY publishes total, want 3 (re-climb must not republish pending)", got)
+	}
+	if len(c.reasons) != 1 || c.reasons[0] != KvAttestReasonChallengeTimeout {
+		t.Fatalf("re-climb erased the typed verdict: reasons=%v", c.reasons)
 	}
 }

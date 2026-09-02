@@ -943,7 +943,7 @@ func runKvSubscriberLoopBinding(ctx context.Context, epIdx int, rank uint16, ser
 				inv.AddBlocks(ev.Hashes)
 				// Echo-challenge watch (ai_kv_attest_echo.go): resolves an
 				// armed challenge's expected hashes; no-op otherwise.
-				kvHashWatchObserve(serviceID, epIdx, ev)
+				kvHashWatchObserve(serviceID, epIdx, int(rank), ev)
 				log.Infof("kv-subscriber: BlockStored %d block(s) for ep %d (total=%d)", len(ev.Hashes), epIdx, inv.Size())
 			case kvEventBlockRemoved:
 				inv.RemoveBlocks(ev.Hashes)

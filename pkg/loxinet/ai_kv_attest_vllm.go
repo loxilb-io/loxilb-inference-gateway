@@ -142,6 +142,14 @@ type kvProbeExpect struct {
 // the registry trust root. Empty set or any verification failure returns an
 // error — a strict rule cannot attest without its reviewed fixtures.
 func kvProbeFixturesLoad(profileID string) ([]kvProbeFixture, error) {
+	return kvProbeFixturesLoadDir("probefixtures/" + profileID)
+}
+
+// kvProbeFixturesLoadDir loads a fixture set from an explicit path beneath
+// the registry trust root. Engine-scoped fixture sets (the SGLang adapter
+// loads probefixtures/<profileId>/sglang) reuse the identical trusted-file
+// discipline; the vLLM set stays at the profile root unchanged.
+func kvProbeFixturesLoadDir(dirRel string) ([]kvProbeFixture, error) {
 	root := kvAttestManifestRoot()
 	rootFd, err := unix.Open(root, unix.O_DIRECTORY|unix.O_RDONLY|unix.O_CLOEXEC, 0)
 	if err != nil {
@@ -149,7 +157,6 @@ func kvProbeFixturesLoad(profileID string) ([]kvProbeFixture, error) {
 	}
 	defer unix.Close(rootFd)
 
-	dirRel := "probefixtures/" + profileID
 	dirFd, err := kvOpenBeneath(rootFd, dirRel)
 	if err != nil {
 		return nil, fmt.Errorf("fixture dir %s: %w", dirRel, err)
@@ -226,11 +233,23 @@ func (a *kvVllmAttest) TokenParityProbe(ep KvAttestEndpoint, info kvAttestRuleIn
 	if err != nil {
 		return KvAttestFinding{Reason: KvAttestReasonFixturesMissing, Detail: err.Error()}
 	}
-	// Every API surface the rule serves must be covered by at least one
-	// fixture, or parity attests a surface subset while the uncovered
-	// surface routes unverified: a chat-declaring rule whose fixture set
-	// holds only completions probes would reach READY with its chat
-	// render+encode never checked against the deployed engine.
+	if f := kvFixtureSurfaceCheck(fixtures, info); !f.OK {
+		return f
+	}
+	for _, fx := range fixtures {
+		if f := a.tokenizeProbeOne(ep, fx); !f.OK {
+			return f
+		}
+	}
+	return KvAttestFinding{OK: true, Detail: fmt.Sprintf("%d fixtures byte-exact", len(fixtures))}
+}
+
+// kvFixtureSurfaceCheck enforces that every API surface the rule serves is
+// covered by at least one fixture, or parity would attest a surface subset
+// while the uncovered surface routes unverified: a chat-declaring rule whose
+// fixture set holds only completions probes would reach READY with its chat
+// render+encode never checked against the deployed engine.
+func kvFixtureSurfaceCheck(fixtures []kvProbeFixture, info kvAttestRuleInfo) KvAttestFinding {
 	haveChat, haveCompl := false, false
 	for _, fx := range fixtures {
 		switch fx.API {
@@ -248,17 +267,20 @@ func (a *kvVllmAttest) TokenParityProbe(ep KvAttestEndpoint, info kvAttestRuleIn
 		return KvAttestFinding{Reason: KvAttestReasonFixturesMissing,
 			Detail: "declared completions surface has no completions-shape probe fixtures"}
 	}
-	for _, fx := range fixtures {
-		if f := a.tokenizeProbeOne(ep, fx); !f.OK {
-			return f
-		}
-	}
-	return KvAttestFinding{OK: true, Detail: fmt.Sprintf("%d fixtures byte-exact", len(fixtures))}
+	return KvAttestFinding{OK: true}
 }
 
 func (a *kvVllmAttest) tokenizeProbeOne(ep KvAttestEndpoint, fx kvProbeFixture) KvAttestFinding {
 	url := fmt.Sprintf("http://%s:%d/tokenize", ep.IP, ep.Port)
-	resp, err := a.client.Post(url, "application/json", strings.NewReader(string(fx.RequestBytes)))
+	return kvTokenizeFixtureProbe(a.client, url, fx)
+}
+
+// kvTokenizeFixtureProbe posts one committed fixture's request bytes
+// verbatim and applies the pinned {count, tokens, max_model_len} response
+// schema plus the FULL token-array comparison (§5). Engine adapters differ
+// only in the tokenize URL they construct.
+func kvTokenizeFixtureProbe(client *http.Client, url string, fx kvProbeFixture) KvAttestFinding {
+	resp, err := client.Post(url, "application/json", strings.NewReader(string(fx.RequestBytes)))
 	if err != nil {
 		return KvAttestFinding{Reason: KvAttestReasonEndpointUnreach,
 			Detail: fmt.Sprintf("fixture %s: %v", fx.Name, err)}
@@ -359,7 +381,12 @@ func (a *kvVllmAttest) kvVllmModelServed(ep KvAttestEndpoint, model string) KvAt
 }
 
 func (a *kvVllmAttest) getCapped(url string) ([]byte, KvAttestFinding) {
-	resp, err := a.client.Get(url)
+	return kvAttestGetCapped(a.client, url)
+}
+
+// kvAttestGetCapped is the shared size-capped identity GET (both adapters).
+func kvAttestGetCapped(client *http.Client, url string) ([]byte, KvAttestFinding) {
+	resp, err := client.Get(url)
 	if err != nil {
 		return nil, KvAttestFinding{Reason: KvAttestReasonEndpointUnreach, Detail: err.Error()}
 	}

@@ -50,6 +50,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"strconv"
 	"sync"
 	"time"
@@ -168,6 +169,23 @@ type kvAttestRuleInfo struct {
 	profileID string
 	apiChat   bool
 	apiCompl  bool
+	// SGLang event-plane declaration (geometry preflight + DP-rank
+	// challenge coverage); zero values take the engine defaults downstream.
+	dpRanks uint16 // kvDpRankCount (0 => 1)
+	zmqPort uint16 // kvZmqPort (0 => 5557)
+	// SGLang P/D pair-challenge context (mode-1 rules): a disaggregation-mode
+	// prefill engine refuses bootstrap-less inference, so the echo challenge
+	// dispatches as a (prefill, decode) pair carrying the bootstrap triple.
+	pdMode          bool
+	pdBootstrapPort uint16             // 0 => engine default downstream
+	decodeEPs       []KvAttestEndpoint // ep_role 2 counterparts for the pair
+}
+
+// equal is the controller-identity comparison (== is unavailable once the
+// info carries the decode endpoint slice; a changed counterpart set must
+// replace the controller like any other identity change).
+func (a kvAttestRuleInfo) equal(b kvAttestRuleInfo) bool {
+	return reflect.DeepEqual(a, b)
 }
 
 // kvAttestAdapter is the per-engine attestation surface (§16.5). The vLLM
@@ -283,14 +301,27 @@ func kvAttestEnv() (time.Duration, time.Duration, bool, bool) {
 // svc_id: a second start for a live controller only kicks it.
 func KvAttestStart(info kvAttestRuleInfo, deps kvAttestDeps) *kvAttestController {
 	kvAttestMu.Lock()
-	if c := kvAttestControllers[info.svcID]; c != nil {
+	old := kvAttestControllers[info.svcID]
+	if old != nil && old.info.equal(info) {
 		kvAttestMu.Unlock()
-		c.Kick("re-activation")
-		return c
+		old.Kick("re-activation")
+		return old
+	}
+	// A live controller with a DIFFERENT identity means the rule was updated
+	// in place (dpRanks/zmqPort/profile/... changed without delete+recreate).
+	// Kicking it would re-earn the ladder against the stale declaration —
+	// e.g. a dpRanks bump would fail every climb as engine_geometry_mismatch
+	// while the rule itself reads back the new value. Replace it instead;
+	// the replacement re-earns from the bottom under the updated identity.
+	if old != nil {
+		delete(kvAttestControllers, info.svcID)
 	}
 	c := newKvAttestController(info, deps)
 	kvAttestControllers[info.svcID] = c
 	kvAttestMu.Unlock()
+	if old != nil {
+		close(old.stop)
+	}
 
 	c.wg.Add(1)
 	go c.loop()
@@ -463,6 +494,13 @@ func (c *kvAttestController) addReceipt(r KvAttestReceipt) {
 		c.receipts = c.receipts[len(c.receipts)-kvAttestReceiptCap:]
 	}
 	c.mu.Unlock()
+	// Failed probes must be debuggable from the operator log alone: the
+	// receipt detail names the exact disagreement (which geometry axis,
+	// which rank set), while the status API carries only the reason code.
+	if !r.OK {
+		log.Warnf("kv-attest: rule %s %s probe ep %s failed: %s (%s)",
+			c.info.ruleIdent, r.Kind, r.EndpointID, r.Reason, r.Detail)
+	}
 }
 
 // fenceAndReattest is the §7.2 fence-first transaction: fence the data plane
@@ -559,8 +597,17 @@ func (c *kvAttestController) runLadder() {
 	}
 	c.mu.Lock()
 	c.lastProbeOK = now()
+	alreadyTokenParity := c.enforced == KvExactStateTokenParity
 	c.mu.Unlock()
-	c.publish(KvExactStateTokenParity, "hash_attestation_pending")
+	// First arrival at rung 1 publishes the transitional reason; re-climbs
+	// of a rule already holding here must NOT — the retry ladder runs every
+	// probe tick, and republishing the transient would erase the typed
+	// rung-2 verdict (challenge_timeout, engine_geometry_mismatch, ...) for
+	// all but a sliver of each cycle, leaving status readers with a
+	// permanent "pending" and no cause.
+	if !alreadyTokenParity {
+		c.publish(KvExactStateTokenParity, "hash_attestation_pending")
+	}
 
 	// Rung 2 — ENGINE_HASH_ATTESTED: the §6.2 echo challenge, every endpoint.
 	for _, ep := range eps {
@@ -854,13 +901,15 @@ func kvAttestProductionDeps() kvAttestDeps {
 }
 
 // kvAttestAdapterFor maps an effective engine family to its attestation
-// adapter. Only the vLLM adapter exists today; SGLang and TRT-LLM return nil
+// adapter. vLLM and SGLang exist; TRT-LLM returns nil until its adapter lands
 // (rules hold fenced at PROFILE_VALIDATED — fail-closed, never inferred
 // from another engine's evidence).
 func kvAttestAdapterFor(engine string) kvAttestAdapter {
 	switch engine {
 	case "", "vllm":
 		return kvVllmAdapter()
+	case "sglang":
+		return kvSglangAdapter()
 	default:
 		return nil
 	}

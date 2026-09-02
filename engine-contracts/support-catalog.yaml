@@ -94,39 +94,45 @@ entries:
 
   - engine: sglang
     version: v0.5.18
-    revision: ""
+    revision: "71de97b264b04dcd514cf904003028aefe9775c8"
+    image:
+      platformDigest: sha256:9e148f5ac788e856a06166bd6347a831831eb9fcfab4d1770874823a7c29a1a1
     gatewayRelease: v0.9.8.9-rc.1
     profile: sglang-kv-rank-v1
     promotion: candidate
+    # Evidence recorded for a future promotion via the evidence pipeline
+    # (DEC-009/DEC-012); the promotion word itself stays candidate until
+    # that pipeline exists.
+    evidenceBundle: "2026-09-02 live converged + disaggregated validation (Qwen/Qwen3-0.6B, dp=1/dp=2); bundle checksums sha256:25f446d8036373b6d2ed112cdab93354e240ec91fd6fbb8083e53f636caf752b sha256:2e333c372336c378b6aedebf5cdcfe6591156e25babe4538bf0eaa47bd1d1bed"
     capabilities:
       kvEvents:
         implementation: native
         evidence:
           source: pass       # rank fan-out / multirank unit fixtures in-tree
           fixture: pass
-          synthetic: not_run
-          realEngine: not_run
+          synthetic: pass    # kv-sglang-attest simulator suite (in-tree)
+          realEngine: pass   # live subscriber + banked wire capture, converged and dp=2
       prefixRouting:
         implementation: native
         evidence:
           source: pass
           fixture: pass
-          synthetic: not_run
-          realEngine: not_run
+          synthetic: pass
+          realEngine: pass   # live exact-hit routing, converged and disaggregated
       pdRouting:
         implementation: native
         evidence:
           source: pass
           fixture: pass
-          synthetic: not_run
-          realEngine: not_run
+          synthetic: pass
+          realEngine: pass   # live prefill/decode pair with paired echo challenge
       runtimeProbe:
         implementation: native
         evidence:
-          source: not_run
-          fixture: not_run
-          synthetic: not_run
-          realEngine: not_run
+          source: pass       # adapter identity/geometry probes + unit tests
+          fixture: pass      # committed tokenize-parity probe fixtures
+          synthetic: pass    # simulator identity/geometry cases
+          realEngine: pass   # live readiness climbs to READY on both topologies
 
   - engine: trtllm
     version: v1.2.1

@@ -151,7 +151,7 @@ func kvEchoFeed(t *testing.T, svcID uint32, epIdx int, mutate func(ev *kvEvent))
 		if mutate != nil {
 			mutate(&ev)
 		}
-		kvHashWatchObserve(svcID, epIdx, ev)
+		kvHashWatchObserve(svcID, epIdx, 0, ev)
 	}()
 }
 
@@ -192,7 +192,7 @@ func TestKvEchoChallengeSplitEvents(t *testing.T) {
 			ev := kvEvent{Type: kvEventBlockStored,
 				Hashes: []uint64{h},
 				Tokens: tokens[i*kvEchoTestBS : (i+1)*kvEchoTestBS]}
-			kvHashWatchObserve(info.svcID, ep.EpIdx, ev)
+			kvHashWatchObserve(info.svcID, ep.EpIdx, 0, ev)
 		}
 	}()
 
@@ -341,7 +341,7 @@ func TestKvHashWatchConcurrentObservers(t *testing.T) {
 			}
 			w := kvHashWatchRegister(9, 0, expected, tokens, kvEchoTestBS)
 			defer kvHashWatchUnregister(w)
-			kvHashWatchObserve(9, 0, kvEvent{Type: kvEventBlockStored, Hashes: expected, Tokens: tokens})
+			kvHashWatchObserve(9, 0, 0, kvEvent{Type: kvEventBlockStored, Hashes: expected, Tokens: tokens})
 			select {
 			case <-w.done:
 				if r, _ := w.result(); r != "" {
