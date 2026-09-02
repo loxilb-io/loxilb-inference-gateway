@@ -194,6 +194,7 @@ type trtllmCounters struct {
 	unchained      atomic.Uint64 // stored events dropped on an unknown parent
 	blocksSkipped  atomic.Uint64 // blocks not indexed (partial/salt/extra-id/mm)
 	removedUnknown atomic.Uint64 // removed hashes with no translation entry
+	ownerFaults    atomic.Uint64 // drain-ownership continuity violations (invalidations emitted)
 }
 
 // trtllmEventPoller adapts the TensorRT-LLM HTTP event drain to the
@@ -259,7 +260,24 @@ type trtllmWireDecoder struct {
 	// chain is the engine-hash translation map (see trtllmChainEntry).
 	chain map[uint64]trtllmChainEntry
 
+	// Drain-ownership identity (DEC-007, ai_kv_trtllm_ownership.go). When
+	// bound, every decoded envelope's event_id feeds the continuity check;
+	// a violation invalidates this stream's inventory in-band.
+	ownerBound bool
+	ownerSvc   uint32
+	ownerEp    int
+
 	stats trtllmCounters
+}
+
+// bindOwner attaches the decoder to its (service, EP) drain-ownership
+// record and opens a fresh epoch. Called once at subscriber-stream start —
+// the decoder instance (and so the epoch) survives transport rebuilds,
+// matching the chain map's lifetime: a network blip is not an ownership
+// change, and the event_id continuity check still validates across it.
+func (d *trtllmWireDecoder) bindOwner(serviceID uint32, epIdx int) {
+	d.ownerBound, d.ownerSvc, d.ownerEp = true, serviceID, epIdx
+	kvTrtllmOwnershipAcquire(serviceID, epIdx)
 }
 
 func newTrtllmWireDecoder(blockSize int) *trtllmWireDecoder {
@@ -284,6 +302,26 @@ func (d *trtllmWireDecoder) Decode(payload []byte) (kvWireBatch, error) {
 	if err := dec.Decode(&env); err != nil {
 		return kvWireBatch{}, kvWireErrf(KvWireReasonDecodeError, "trtllm envelope: %v", err)
 	}
+	// Drain-ownership continuity (DEC-007): a hole or regression in the
+	// event_id sequence means this consumer's view of the destructive drain
+	// is incomplete — the inventory built from it may hold phantom blocks.
+	// Invalidate in-band (AllBlocksCleared through the normal event path),
+	// drop this envelope (its parent refs are unchained anyway), and reset
+	// the translation state so post-fault blocks re-anchor from scratch.
+	// The fault is recorded in the ownership registry for the attestation
+	// plane to fence on; it stays until the engine announces a fresh cache.
+	if d.ownerBound {
+		reason, ok := kvTrtllmOwnershipObserve(d.ownerSvc, d.ownerEp, env.EventID, env.Data.Type == "created")
+		if !ok {
+			d.stats.ownerFaults.Add(1)
+			d.chain = make(map[uint64]trtllmChainEntry)
+			d.window = -1
+			log.Warnf("[KV_TRT] svc %d ep %d drain ownership fault %s at event_id=%d — invalidating inventory",
+				d.ownerSvc, d.ownerEp, reason, env.EventID)
+			return kvWireBatch{Events: []kvEvent{{Type: kvEventAllBlocksCleared}}}, nil
+		}
+	}
+
 	ev, ok := d.translate(&env)
 	if !ok {
 		return kvWireBatch{}, nil
