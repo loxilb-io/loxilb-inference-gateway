@@ -435,17 +435,20 @@ func KvTokenizerPoolReset() {
 	kvTokenizerNegMu.Unlock()
 }
 
+// Both tokenize exports now carry (svc_id, binding_gen) — the C caller
+// threads the rule identity and the contract generation it loaded from the
+// kv_exact_contract word, and receives typed LLB_KV_TOK_ERR_* codes instead
+// of the old collapsed -1 (twin-lockstep with sockproxy_ai_gw.h /
+// sockproxy_kv_exact.h and the call sites in sockproxy_kv_exact.c). The
+// typed cores live in ai_kv_dataplane.go; these wrappers only marshal.
+//
 //export llb_ai_kv_tokenize
-func llb_ai_kv_tokenize(text, modelName *C.char, outIDs *C.uint32_t, maxIDs C.int) C.int {
-	goText := C.GoString(text)
-	goModel := C.GoString(modelName)
-	if goText == "" || goModel == "" || maxIDs <= 0 {
-		return -1
-	}
-
-	tokens := kvTokenizeWithCache(goText, goModel, int(maxIDs))
-	if tokens == nil || len(tokens) == 0 {
-		return -1
+func llb_ai_kv_tokenize(text, modelName *C.char, outIDs *C.uint32_t, maxIDs C.int,
+	svcID, bindingGen C.uint32_t) C.int {
+	tokens, code := kvBridgeTokenize(uint32(svcID), uint32(bindingGen),
+		C.GoString(text), C.GoString(modelName), int(maxIDs))
+	if code != 0 {
+		return C.int(code)
 	}
 
 	n := len(tokens)
@@ -468,16 +471,12 @@ func llb_ai_kv_tokenize(text, modelName *C.char, outIDs *C.uint32_t, maxIDs C.in
 // should then fall back rather than route a mis-hashed request through KV-exact.
 //
 //export llb_ai_kv_tokenize_chat
-func llb_ai_kv_tokenize_chat(body, modelName *C.char, outIDs *C.uint32_t, maxIDs C.int) C.int {
-	goBody := C.GoString(body)
-	goModel := C.GoString(modelName)
-	if goBody == "" || goModel == "" || maxIDs <= 0 {
-		return -1
-	}
-
-	tokens := kvTokenizeChatBody(goBody, goModel, int(maxIDs))
-	if len(tokens) == 0 {
-		return -1
+func llb_ai_kv_tokenize_chat(body, modelName *C.char, outIDs *C.uint32_t, maxIDs C.int,
+	svcID, bindingGen C.uint32_t) C.int {
+	tokens, code := kvBridgeTokenizeChat(uint32(svcID), uint32(bindingGen),
+		C.GoString(body), C.GoString(modelName), int(maxIDs))
+	if code != 0 {
+		return C.int(code)
 	}
 
 	n := len(tokens)

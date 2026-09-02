@@ -369,5 +369,11 @@ func KvBindingRestore(mod *cmn.KvExactBindingMod) error {
 		current:      b,
 		live:         map[uint32]*KvExactBinding{b.BindingGen: b},
 	}
+
+	// The loadbalancer snapshot domain registered this strict rule
+	// fenced (deny set) without a binding; now that the authoritative
+	// binding exists, run the contract-word install transaction — the only
+	// path that can clear the fence.
+	KvSvcContractKickInstall(mod.RuleIdent)
 	return nil
 }
