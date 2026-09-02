@@ -504,10 +504,20 @@ func TestKvAttestLadderOracleParityState(t *testing.T) {
 // encode_rendered_matches_templated), so a render or fixture drift fails the
 // check instead of being absorbed by a permissive stub.
 func TestKvTrtllmCommittedChatFixturesParity(t *testing.T) {
-	const slug = "Qwen__Qwen3-0.6B"
-	const profileDir = "qwen3-06b-completions-v1"
-	const servedModel = "Qwen/Qwen3-0.6B"
+	for _, tc := range []struct {
+		slug, profileDir, servedModel string
+	}{
+		{"Qwen__Qwen3-0.6B", "qwen3-06b-completions-v1", "Qwen/Qwen3-0.6B"},
+		{"NousResearch__Meta-Llama-3.1-8B-Instruct", "llama31-8b-completions-v1",
+			"NousResearch/Meta-Llama-3.1-8B-Instruct"},
+	} {
+		t.Run(tc.slug, func(t *testing.T) {
+			kvTrtllmCommittedChatFixturesParity(t, tc.slug, tc.profileDir, tc.servedModel)
+		})
+	}
+}
 
+func kvTrtllmCommittedChatFixturesParity(t *testing.T, slug, profileDir, servedModel string) {
 	goldens := loadRenderParityFixture(t)
 	model, ok := goldens.Models[slug]
 	if !ok {
