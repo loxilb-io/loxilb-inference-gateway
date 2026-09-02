@@ -426,6 +426,15 @@ func loxiNetInit() {
 		tk.LogIt(tk.LogError, "[KV] model-profile registry load failed (profiles unavailable): %v\n", err)
 	}
 
+	// Register the compiled engine-contract registry as the process's
+	// contract source: strict KV-exact rules resolve their engine-contract
+	// reference against it (before this, every strict admission failed
+	// closed on the nil source). A broken registration keeps that
+	// fail-closed posture — loudly.
+	if err := KvContractSourceInit(); err != nil {
+		tk.LogIt(tk.LogError, "[KV] engine-contract source init failed (strict rules stay closed): %v\n", err)
+	}
+
 	kaArgs := KAString2Mode(opts.Opts.Ka, opts.Opts.ClusterInterface)
 	clusterMode := false
 	if opts.Opts.ClusterNodes != "none" {

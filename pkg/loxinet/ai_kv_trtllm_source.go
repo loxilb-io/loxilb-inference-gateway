@@ -68,15 +68,18 @@
  * cost per prefix and self-heals as blocks are re-stored.
  *
  * Transport adaptation: the subscriber loop (runKvSubscriberLoop) consumes
- * ZMQ-style 3-frame messages, and its seq-gap / seq-regression / KEEP-CLEAR
- * machinery is exactly the resync policy this transport needs. So the poller
- * synthesizes one message per engine event: frame 0 = topic "trtllm",
- * frame 1 = event_id as 8-byte big-endian (the seq), frame 2 = a msgpack
- * KVEventBatch carrying the single translated event. An engine restart then
- * resolves without any new loop code: event_id regression => CLEAR, and the
- * created event maps to AllBlocksCleared. Events that translate to nothing
- * (skipped window, dropped blocks, "updated") still emit a no-op message so
- * the seq advances without a phantom gap.
+ * 3-frame envelope messages, and its seq-gap / seq-regression / KEEP-CLEAR
+ * machinery is exactly the resync policy this transport needs. The poller
+ * frames one message per engine event: frame 0 = topic "trtllm", frame 1 =
+ * event_id as 8-byte big-endian (the seq), frame 2 = the UNTOUCHED raw
+ * JSON envelope from the drain. All interpretation — window pin, hash
+ * translation, created/stored/removed mapping — lives in the trtllm wire
+ * decoder (trtllmWireDecoder, binding trtllm-kv-json-v1); the transport
+ * synthesizes no wire format. An engine restart still resolves without any
+ * new loop code: event_id regression => CLEAR, and the created event
+ * decodes to AllBlocksCleared. Events that translate to nothing (skipped
+ * window, dropped blocks, "updated") decode to an EMPTY batch — the seq
+ * advanced with the frame, so no phantom gap appears.
  *
  * Poll discipline: adaptive backoff — reset to the min interval after a
  * non-empty drain, multiply by 1.5 toward the max on empty ones (defaults
@@ -107,7 +110,6 @@ import (
 	"time"
 
 	log "github.com/sirupsen/logrus"
-	"github.com/vmihailenco/msgpack/v5"
 )
 
 const (
@@ -208,23 +210,15 @@ type trtllmEventPoller struct {
 	mu     sync.Mutex
 	url    string     // drain URL, set by Connect
 	closed bool       // Close() called; Connect() re-arms
-	queue  [][][]byte // decoded-but-undelivered synthesized messages
+	queue  [][][]byte // undelivered raw-envelope messages
 
 	// backoff is the current idle-poll sleep (adaptive between pollMin and
 	// pollMax). Only touched from RecvMultipart (single consumer).
 	backoff time.Duration
 
-	// window is the first-seen window_size; events from other windows are
-	// counted and skipped so a variable-window model cannot cross-pollute
-	// one inventory keyspace. -1 until the first event.
-	window int64
-
-	// chain is the engine-hash translation map (see trtllmChainEntry). It
-	// survives Close/Connect rebuilds on purpose: a transient network blip
-	// does not invalidate resident engine blocks, and a real engine restart
-	// announces itself with a created event, which resets the map.
-	chain map[uint64]trtllmChainEntry
-
+	// stats here covers TRANSPORT-level counters only (pollErrors); the
+	// translation counters live on trtllmWireDecoder, where the
+	// translation itself moved.
 	stats trtllmCounters
 }
 
@@ -243,10 +237,58 @@ func newTrtllmEventPoller(ctx context.Context, addr string, blockSize int) *trtl
 		pollMin:   minP,
 		pollMax:   maxP,
 		backoff:   minP,
-		window:    -1,
-		chain:     make(map[uint64]trtllmChainEntry),
 		client:    &http.Client{Timeout: kvTrtllmHTTPTimeout},
 	}
+}
+
+// trtllmWireDecoder is the native JSON wire binding (trtllm-kv-json-v1):
+// it decodes one raw drain envelope into canonical kvEvents, owning the
+// engine-hash translation chain that used to live on the poller. Stateful
+// per stream — the subscriber loop holds exactly one instance, so the
+// chain survives transport rebuilds (a network blip does not invalidate
+// resident engine blocks) and a real engine restart announces itself with
+// a created event, which resets it.
+type trtllmWireDecoder struct {
+	blockSize int
+
+	// window is the first-seen window_size; events from other windows are
+	// counted and skipped so a variable-window model cannot cross-pollute
+	// one inventory keyspace. -1 until the first event.
+	window int64
+
+	// chain is the engine-hash translation map (see trtllmChainEntry).
+	chain map[uint64]trtllmChainEntry
+
+	stats trtllmCounters
+}
+
+func newTrtllmWireDecoder(blockSize int) *trtllmWireDecoder {
+	if blockSize <= 0 {
+		blockSize = 16
+	}
+	return &trtllmWireDecoder{
+		blockSize: blockSize,
+		window:    -1,
+		chain:     make(map[uint64]trtllmChainEntry),
+	}
+}
+
+// Decode parses one raw drain envelope (transport frame 2) and translates
+// it into canonical events. An envelope with nothing to publish returns an
+// empty batch — the loop's seq tracker already advanced via the transport
+// frame, so gaps stay visible without synthetic no-op payloads.
+func (d *trtllmWireDecoder) Decode(payload []byte) (kvWireBatch, error) {
+	var env trtllmEventEnvelope
+	dec := json.NewDecoder(bytes.NewReader(payload))
+	dec.UseNumber()
+	if err := dec.Decode(&env); err != nil {
+		return kvWireBatch{}, kvWireErrf(KvWireReasonDecodeError, "trtllm envelope: %v", err)
+	}
+	ev, ok := d.translate(&env)
+	if !ok {
+		return kvWireBatch{}, nil
+	}
+	return kvWireBatch{Events: []kvEvent{ev}}, nil
 }
 
 // kvTrtllmDrainURL normalizes a subscriber address to the drain URL. The
@@ -316,6 +358,7 @@ func (p *trtllmEventPoller) RecvMultipart() ([][]byte, error) {
 		}
 
 		if len(envs) == 0 {
+			// (empty drain — fall through to the idle backoff below)
 			// Idle: sleep the current backoff, then widen it toward pollMax.
 			select {
 			case <-p.ctx.Done():
@@ -330,10 +373,27 @@ func (p *trtllmEventPoller) RecvMultipart() ([][]byte, error) {
 		}
 
 		p.backoff = p.pollMin
-		p.mu.Lock()
+		// Frame each raw envelope for the loop: frame 0 = topic, frame 1 =
+		// event_id as 8-byte big-endian (the seq the loop already tracks),
+		// frame 2 = the UNTOUCHED envelope JSON. Translation happens in the
+		// trtllm wire decoder — the transport no longer synthesizes any
+		// wire format. Sniff every event_id BEFORE queueing so a malformed
+		// envelope fails the whole poll (no partial delivery).
+		msgs := make([][][]byte, 0, len(envs))
 		for i := range envs {
-			p.queue = append(p.queue, p.translate(&envs[i]))
+			var hdr struct {
+				EventID uint64 `json:"event_id"`
+			}
+			if err := json.Unmarshal(envs[i], &hdr); err != nil {
+				p.stats.pollErrors.Add(1)
+				return nil, fmt.Errorf("trtllm poll: envelope %d: %w", i, err)
+			}
+			seq := make([]byte, 8)
+			binary.BigEndian.PutUint64(seq, hdr.EventID)
+			msgs = append(msgs, [][]byte{kvTrtllmTopic, seq, []byte(envs[i])})
 		}
+		p.mu.Lock()
+		p.queue = append(p.queue, msgs...)
 		p.mu.Unlock()
 	}
 }
@@ -387,8 +447,11 @@ func kvTrtllmParseU64(n json.Number) (uint64, bool) {
 	return 0, false
 }
 
-// pollOnce drains the endpoint once and decodes the returned envelope array.
-func (p *trtllmEventPoller) pollOnce(url string) ([]trtllmEventEnvelope, error) {
+// pollOnce drains the endpoint once and returns the RAW event envelopes —
+// one json.RawMessage per engine event, untouched. The wire decoder owns
+// all interpretation; the transport only validates that the response is a
+// JSON array.
+func (p *trtllmEventPoller) pollOnce(url string) ([]json.RawMessage, error) {
 	req, err := http.NewRequestWithContext(p.ctx, http.MethodPost, url, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("trtllm poll: build request: %w", err)
@@ -406,10 +469,8 @@ func (p *trtllmEventPoller) pollOnce(url string) ([]trtllmEventEnvelope, error) 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("trtllm poll: status %d", resp.StatusCode)
 	}
-	var envs []trtllmEventEnvelope
-	dec := json.NewDecoder(bytes.NewReader(body))
-	dec.UseNumber()
-	if err := dec.Decode(&envs); err != nil {
+	var envs []json.RawMessage
+	if err := json.Unmarshal(body, &envs); err != nil {
 		return nil, fmt.Errorf("trtllm poll: decode: %w", err)
 	}
 	return envs, nil
@@ -417,23 +478,23 @@ func (p *trtllmEventPoller) pollOnce(url string) ([]trtllmEventEnvelope, error) 
 
 // ---------- event translation ----------
 
-// kvTrtllmTopic is frame 0 of every synthesized message.
+// kvTrtllmTopic is frame 0 of every raw-envelope message.
 var kvTrtllmTopic = []byte("trtllm")
 
-// translate turns one engine event into one synthesized 3-frame message.
-// Every event produces exactly one message — events with nothing to publish
-// emit a no-op payload — so the loop's seq tracker sees the engine's
-// event_id sequence verbatim, gaps included.
-func (p *trtllmEventPoller) translate(env *trtllmEventEnvelope) [][]byte {
+// translate turns one engine event into at most one canonical event.
+// Events with nothing to publish return ok=false (the transport frame
+// already advanced the loop's seq tracker, so the engine's event_id
+// sequence stays visible verbatim, gaps included).
+func (d *trtllmWireDecoder) translate(env *trtllmEventEnvelope) (kvEvent, bool) {
 	// Window pin: index only the first-seen attention window. A model with
 	// variable sliding windows stores per-window block sets whose token
 	// prefixes collide across windows; keying them into one inventory would
 	// manufacture false hits.
-	if p.window < 0 {
-		p.window = env.WindowSize
-	} else if env.WindowSize != p.window && env.Data.Type != "created" {
-		p.stats.windowSkipped.Add(1)
-		return p.noopMessage(env.EventID)
+	if d.window < 0 {
+		d.window = env.WindowSize
+	} else if env.WindowSize != d.window && env.Data.Type != "created" {
+		d.stats.windowSkipped.Add(1)
+		return kvEvent{}, false
 	}
 
 	// A non-v1 hash_algo tag means the endpoint's configured event hashing
@@ -441,7 +502,7 @@ func (p *trtllmEventPoller) translate(env *trtllmEventEnvelope) [][]byte {
 	// self-consistent (engine hashes are only local translation handles),
 	// so this is counted as an anomaly, not dropped.
 	if env.HashAlgo != "" && env.HashAlgo != kvTrtllmHashAlgoV1 {
-		if p.stats.algoAnomaly.Add(1) == 1 {
+		if d.stats.algoAnomaly.Add(1) == 1 {
 			log.Warnf("[KV_TRT] event hash_algo=%q (expected %q) — endpoint config changed under the rule", env.HashAlgo, kvTrtllmHashAlgoV1)
 		}
 	}
@@ -451,37 +512,37 @@ func (p *trtllmEventPoller) translate(env *trtllmEventEnvelope) [][]byte {
 		// Fresh engine cache: every resident block and every translation
 		// entry is gone. The window pin resets too — a restart may carry a
 		// new engine config.
-		p.stats.created.Add(1)
-		p.chain = make(map[uint64]trtllmChainEntry)
-		p.window = env.WindowSize
+		d.stats.created.Add(1)
+		d.chain = make(map[uint64]trtllmChainEntry)
+		d.window = env.WindowSize
 		log.Infof("[KV_TRT] created event (event_id=%d) — engine cache is fresh, clearing inventory", env.EventID)
-		return p.eventMessage(env.EventID, "AllBlocksCleared", nil)
+		return kvEvent{Type: kvEventAllBlocksCleared}, true
 
 	case "stored":
-		keys := p.translateStored(&env.Data)
+		keys := d.translateStored(&env.Data)
 		if len(keys) == 0 {
-			return p.noopMessage(env.EventID)
+			return kvEvent{}, false
 		}
-		return p.eventMessage(env.EventID, "BlockStored", keys)
+		return kvEvent{Type: kvEventBlockStored, Hashes: keys}, true
 
 	case "removed":
-		keys := p.translateRemoved(&env.Data)
+		keys := d.translateRemoved(&env.Data)
 		if len(keys) == 0 {
-			return p.noopMessage(env.EventID)
+			return kvEvent{}, false
 		}
-		return p.eventMessage(env.EventID, "BlockRemoved", keys)
+		return kvEvent{Type: kvEventBlockRemoved, Hashes: keys}, true
 
 	default:
 		// "updated" (cache-level/priority moves — the block stays reusable)
 		// and anything future ride through as seq-advancing no-ops.
-		return p.noopMessage(env.EventID)
+		return kvEvent{}, false
 	}
 }
 
 // translateStored re-hashes a stored chain into inventory keys and records
 // the engine-hash translation entries. Returns the keys to index (full,
 // clean blocks only).
-func (p *trtllmEventPoller) translateStored(d *trtllmEventData) []uint64 {
+func (d *trtllmWireDecoder) translateStored(data *trtllmEventData) []uint64 {
 	// Resolve the chain anchor: parent_hash is the ENGINE hash of the block
 	// this chain extends (null at a tree root). An unknown parent means the
 	// parent was stored before this subscriber connected (no replay
@@ -490,18 +551,18 @@ func (p *trtllmEventPoller) translateStored(d *trtllmEventData) []uint64 {
 	// so the whole event is dropped and the inventory self-heals when the
 	// blocks are eventually re-stored from an indexable anchor.
 	var parentDigest *[32]byte
-	if ph, ok := kvTrtllmParseU64(d.ParentHash); ok {
-		entry, found := p.chain[ph]
+	if ph, ok := kvTrtllmParseU64(data.ParentHash); ok {
+		entry, found := d.chain[ph]
 		if !found {
-			p.stats.unchained.Add(1)
+			d.stats.unchained.Add(1)
 			return nil
 		}
 		parentDigest = &entry.digest
 	}
 
-	keys := make([]uint64, 0, len(d.Blocks))
-	for i := range d.Blocks {
-		blk := &d.Blocks[i]
+	keys := make([]uint64, 0, len(data.Blocks))
+	for i := range data.Blocks {
+		blk := &data.Blocks[i]
 		// Blocks the C request-side hash can never reproduce end the walk:
 		// partial tail (short token list), extra-id tokens, salted or
 		// multimodal blocks. Blocks after them would chain through them.
@@ -511,8 +572,8 @@ func (p *trtllmEventPoller) translateStored(d *trtllmEventData) []uint64 {
 		// produce keys the request-side pager never computes — skipping
 		// keeps the mismatch loudly visible in the skip counter instead
 		// of silently indexing unmatchable keys.
-		if len(blk.Tokens) != p.blockSize || !kvTrtllmBlockClean(blk) {
-			p.stats.blocksSkipped.Add(uint64(len(d.Blocks) - i))
+		if len(blk.Tokens) != d.blockSize || !kvTrtllmBlockClean(blk) {
+			d.stats.blocksSkipped.Add(uint64(len(data.Blocks) - i))
 			break
 		}
 		toks := make([]uint32, len(blk.Tokens))
@@ -522,12 +583,12 @@ func (p *trtllmEventPoller) translateStored(d *trtllmEventData) []uint64 {
 		digest, key := kvSglangRehashBlock(parentDigest, toks)
 
 		if eh, ok := kvTrtllmParseU64(blk.BlockHash); ok {
-			if len(p.chain) >= kvTrtllmChainMapCap {
+			if len(d.chain) >= kvTrtllmChainMapCap {
 				// Defensive backstop only — see kvTrtllmChainMapCap.
 				log.Warnf("[KV_TRT] chain map cap %d hit — resetting translation state", kvTrtllmChainMapCap)
-				p.chain = make(map[uint64]trtllmChainEntry)
+				d.chain = make(map[uint64]trtllmChainEntry)
 			}
-			p.chain[eh] = trtllmChainEntry{key: key, digest: digest}
+			d.chain[eh] = trtllmChainEntry{key: key, digest: digest}
 		}
 		keys = append(keys, key)
 		pd := digest
@@ -540,18 +601,18 @@ func (p *trtllmEventPoller) translateStored(d *trtllmEventData) []uint64 {
 // translation map and drops the used entries (the engine evicts leaves
 // before parents, so a dropped entry can no longer be referenced as a
 // parent). Hashes with no entry were never indexed — counted, skipped.
-func (p *trtllmEventPoller) translateRemoved(d *trtllmEventData) []uint64 {
-	keys := make([]uint64, 0, len(d.BlockHashes))
-	for _, n := range d.BlockHashes {
+func (d *trtllmWireDecoder) translateRemoved(data *trtllmEventData) []uint64 {
+	keys := make([]uint64, 0, len(data.BlockHashes))
+	for _, n := range data.BlockHashes {
 		eh, ok := kvTrtllmParseU64(n)
 		if !ok {
 			continue
 		}
-		if entry, found := p.chain[eh]; found {
+		if entry, found := d.chain[eh]; found {
 			keys = append(keys, entry.key)
-			delete(p.chain, eh)
+			delete(d.chain, eh)
 		} else {
-			p.stats.removedUnknown.Add(1)
+			d.stats.removedUnknown.Add(1)
 		}
 	}
 	return keys
@@ -570,44 +631,6 @@ func kvTrtllmBlockClean(blk *trtllmStoredBlock) bool {
 	}
 	salt := string(bytes.TrimSpace(blk.CacheSalt))
 	return salt == "" || salt == "null"
-}
-
-// ---------- frame synthesis ----------
-
-// eventMessage builds one ZMQ-shaped 3-frame message carrying a single
-// translated event in the msgpack KVEventBatch layout the shared decoder
-// already speaks: [ts, [[tag, [hash...]]], dp_rank].
-func (p *trtllmEventPoller) eventMessage(eventID uint64, tag string, keys []uint64) [][]byte {
-	var ev []interface{}
-	if tag == "AllBlocksCleared" {
-		ev = []interface{}{tag}
-	} else {
-		hs := make([]interface{}, len(keys))
-		for i, k := range keys {
-			hs[i] = k
-		}
-		ev = []interface{}{tag, hs}
-	}
-	payload, err := msgpack.Marshal([]interface{}{float64(0), []interface{}{ev}, nil})
-	if err != nil {
-		// Marshal of plain slices cannot realistically fail; degrade to a
-		// no-op message so the seq still advances.
-		log.Warnf("[KV_TRT] msgpack marshal failed: %v", err)
-		return p.noopMessage(eventID)
-	}
-	seq := make([]byte, 8)
-	binary.BigEndian.PutUint64(seq, eventID)
-	return [][]byte{kvTrtllmTopic, seq, payload}
-}
-
-// noopMessage advances the loop's seq tracker without publishing anything:
-// the payload's single event decodes to kvEventUnknown, which the loop
-// ignores. Skipping the message instead would read as a seq gap.
-func (p *trtllmEventPoller) noopMessage(eventID uint64) [][]byte {
-	payload, _ := msgpack.Marshal([]interface{}{float64(0), []interface{}{[]interface{}{"KvNoop"}}, nil})
-	seq := make([]byte, 8)
-	binary.BigEndian.PutUint64(seq, eventID)
-	return [][]byte{kvTrtllmTopic, seq, payload}
 }
 
 // ---------- /server_info admission guard ----------

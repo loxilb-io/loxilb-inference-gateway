@@ -1,0 +1,237 @@
+# engine-contracts/support-catalog.yaml — approval-owned support status.
+#
+# Human-approved support state for EXACT identity tuples. This file is the
+# ONLY place a support claim may live; contracts.yaml declares what is
+# implementable, observed-releases.json records what the watcher saw, and
+# neither implies support (DEC-001).
+#
+# Promotion states: observed | candidate | validated | blocked | deprecated.
+# Evidence gates per capability: pass | fail | not_run | n_a. A gate that
+# was not run is NOT a pass; promotion to "validated" requires an exact
+# identity tuple (revision + image digests), an immutable evidence bundle,
+# real-engine evidence, and two-stage human approval (DEC-009, DEC-012).
+#
+# Every entry below is seeded at "candidate" with conservative gates: a
+# gate is "pass" only where reproducible evidence exists in this
+# repository today. Prior live campaigns predate the evidence-bundle
+# format and are deliberately NOT counted (they re-run under the
+# promotion pipeline).
+
+schemaVersion: engine-support.loxilb.io/v1alpha1
+
+entries:
+  - engine: vllm
+    version: v0.23.0
+    revision: ""
+    gatewayRelease: v0.9.8.9-rc.1
+    profile: vllm-kv-array-v1
+    promotion: candidate
+    capabilities:
+      kvEvents:
+        implementation: native
+        evidence:
+          source: pass       # tagged-array decoder + unit fixtures in-tree
+          fixture: pass
+          synthetic: pass    # contract-faithful mock publisher E2E suite in-tree
+          realEngine: not_run
+      prefixRouting:
+        implementation: native
+        evidence:
+          source: pass
+          fixture: pass
+          synthetic: pass
+          realEngine: not_run
+      pdRouting:
+        implementation: native
+        evidence:
+          source: pass
+          fixture: pass
+          synthetic: pass
+          realEngine: not_run
+      runtimeProbe:
+        implementation: native
+        evidence:
+          source: pass
+          fixture: pass
+          synthetic: not_run
+          realEngine: not_run
+
+  - engine: vllm
+    version: v0.28.0
+    revision: ""
+    gatewayRelease: v0.9.8.9-rc.1
+    profile: vllm-kv-map-v2
+    promotion: candidate
+    capabilities:
+      kvEvents:
+        implementation: native
+        evidence:
+          source: pass       # native tagged-map decoder in-tree (batch-atomic, cross-family detection)
+          fixture: pass      # unit fixtures in-tree: map decode, atomicity, both mismatch directions
+          synthetic: not_run # no contract-faithful map-v2 mock publisher E2E yet
+          realEngine: not_run
+      prefixRouting:
+        implementation: native
+        evidence:
+          source: not_run
+          fixture: not_run
+          synthetic: not_run
+          realEngine: not_run
+      pdRouting:
+        implementation: native
+        evidence:
+          source: not_run
+          fixture: not_run
+          synthetic: not_run
+          realEngine: not_run
+      runtimeProbe:
+        implementation: native
+        evidence:
+          source: not_run
+          fixture: not_run
+          synthetic: not_run
+          realEngine: not_run
+
+  - engine: sglang
+    version: v0.5.18
+    revision: ""
+    gatewayRelease: v0.9.8.9-rc.1
+    profile: sglang-kv-rank-v1
+    promotion: candidate
+    capabilities:
+      kvEvents:
+        implementation: native
+        evidence:
+          source: pass       # rank fan-out / multirank unit fixtures in-tree
+          fixture: pass
+          synthetic: not_run
+          realEngine: not_run
+      prefixRouting:
+        implementation: native
+        evidence:
+          source: pass
+          fixture: pass
+          synthetic: not_run
+          realEngine: not_run
+      pdRouting:
+        implementation: native
+        evidence:
+          source: pass
+          fixture: pass
+          synthetic: not_run
+          realEngine: not_run
+      runtimeProbe:
+        implementation: native
+        evidence:
+          source: not_run
+          fixture: not_run
+          synthetic: not_run
+          realEngine: not_run
+
+  - engine: trtllm
+    version: v1.2.1
+    revision: ""
+    gatewayRelease: v0.9.8.9-rc.1
+    profile: trtllm-kv-http-v1
+    promotion: candidate
+    capabilities:
+      kvEvents:
+        implementation: adapter
+        evidence:
+          source: not_run    # in-tree fixtures are preview 1.3.0rc24, not v1.2.1
+          fixture: not_run
+          synthetic: not_run
+          realEngine: not_run
+      prefixRouting:
+        implementation: native
+        evidence:
+          source: not_run
+          fixture: not_run
+          synthetic: not_run
+          realEngine: not_run
+      pdRouting:
+        implementation: native
+        evidence:
+          source: not_run
+          fixture: not_run
+          synthetic: not_run
+          realEngine: not_run
+      runtimeProbe:
+        implementation: native
+        evidence:
+          source: not_run
+          fixture: not_run
+          synthetic: not_run
+          realEngine: not_run
+
+  - engine: trtllm
+    version: 1.3.0rc24
+    revision: ""
+    gatewayRelease: v0.9.8.9-rc.1
+    profile: trtllm-kv-http-preview-v1
+    promotion: candidate
+    capabilities:
+      kvEvents:
+        implementation: adapter
+        evidence:
+          source: pass       # drain poller + wire fixtures captured from this preview
+          fixture: pass
+          synthetic: not_run
+          realEngine: not_run
+      prefixRouting:
+        implementation: native
+        evidence:
+          source: pass
+          fixture: pass
+          synthetic: not_run
+          realEngine: not_run
+      pdRouting:
+        implementation: native
+        evidence:
+          source: pass
+          fixture: pass
+          synthetic: not_run
+          realEngine: not_run
+      runtimeProbe:
+        implementation: native
+        evidence:
+          source: pass
+          fixture: pass
+          synthetic: not_run
+          realEngine: not_run
+
+  - engine: llamacpp
+    version: v0.3.0
+    revision: ""
+    gatewayRelease: v0.9.8.9-rc.1
+    profile: llamacpp-nokv-v1
+    promotion: candidate
+    capabilities:
+      kvEvents:
+        implementation: none
+        evidence:
+          source: n_a
+          fixture: n_a
+          synthetic: n_a
+          realEngine: n_a
+      prefixRouting:
+        implementation: none
+        evidence:
+          source: n_a
+          fixture: n_a
+          synthetic: n_a
+          realEngine: n_a
+      pdRouting:
+        implementation: none
+        evidence:
+          source: n_a
+          fixture: n_a
+          synthetic: n_a
+          realEngine: n_a
+      runtimeProbe:
+        implementation: native
+        evidence:
+          source: pass       # advisory /props probe + warning-taxonomy tests in-tree
+          fixture: pass
+          synthetic: not_run
+          realEngine: not_run

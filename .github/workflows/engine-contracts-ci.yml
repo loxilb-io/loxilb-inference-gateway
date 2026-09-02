@@ -1,0 +1,51 @@
+name: Engine-Contracts-CI
+
+# Guards the engine-contract trust artifacts and their compiled registries:
+#  - schema + semantic validation of contracts.yaml / support-catalog.yaml /
+#    observed-releases.json (valid and invalid fixtures);
+#  - generated-artifact parity: `ecgen -check` fails when
+#    pkg/enginecontract/zz_generated_registry.go or
+#    loxilb-ebpf/common/sockproxy_pd_ids.h is stale;
+#  - generation determinism: running the generator twice from a clean
+#    checkout produces byte-identical output and no git diff.
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "engine-contracts/**"
+      - "pkg/enginecontract/**"
+      - "cmd/ecgen/**"
+      - ".github/workflows/engine-contracts-ci.yml"
+  workflow_dispatch: {}
+
+jobs:
+  contracts:
+    name: engine-contracts-ci
+    # Dependabot PRs don't receive repo secrets, so CI_SUBMODULE_TOKEN is
+    # empty and the private loxilb-ebpf submodule can't be cloned. Skip
+    # rather than fail red (build-check.yml precedent).
+    if: ${{ github.actor != 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Schema and registry unit tests
+        run: go test ./pkg/enginecontract/...
+
+      - name: Committed artifacts match the manifest
+        run: go run ./cmd/ecgen -check
+
+      - name: Regeneration is deterministic (two runs, zero diff)
+        run: |
+          go run ./cmd/ecgen
+          go run ./cmd/ecgen
+          git diff --exit-code -- pkg/enginecontract loxilb-ebpf/common/sockproxy_pd_ids.h

@@ -37,6 +37,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/loxilb-io/loxilb/api/loxinlp"
 	cmn "github.com/loxilb-io/loxilb/common"
+	"github.com/loxilb-io/loxilb/pkg/enginecontract"
+	ecschema "github.com/loxilb-io/loxilb/pkg/enginecontract/schema"
 	utils "github.com/loxilb-io/loxilb/pkg/utils"
 	tk "github.com/loxilb-io/loxilib"
 	probing "github.com/prometheus-community/pro-bing"
@@ -2788,20 +2790,30 @@ func kvLlamacppFeatureGuard(engine string, kvExactMode uint8, pdDisagg bool, zmq
 	if kvEngineEffective(engine) != "llamacpp" {
 		return nil
 	}
-	if kvExactMode != 0 {
-		return errors.New("kvExactMode is unsupported for kv-engine-type llamacpp (no KV event plane; use select=chwbl for prefix affinity)")
+	// The refusals below are the compiled llamacpp contract profile's
+	// capability answers (kvEvents=none, pdRouting=none) delivered as
+	// typed reason codes. The profile is consulted so a future capability
+	// change is a manifest change, not a hand edit here; a registry that
+	// unexpectedly lacks the profile keeps every refusal (fail closed).
+	kvEventsNone, pdRoutingNone := true, true
+	if p, ok := enginecontract.ProfileByID(kvLlamacppProfileID); ok {
+		kvEventsNone = p.Capabilities[ecschema.CapKvEvents] == ecschema.CapNone
+		pdRoutingNone = p.Capabilities[ecschema.CapPdRouting] == ecschema.CapNone
 	}
-	if pdDisagg {
-		return errors.New("pd_disagg_mode is unsupported for kv-engine-type llamacpp (engine has no P/D disaggregation)")
+	if kvExactMode != 0 && kvEventsNone {
+		return kvContractRefusal("kvExactMode is unsupported for kv-engine-type llamacpp (no KV event plane; use select=chwbl for prefix affinity)")
 	}
-	if zmqPort != 0 && zmqPort != 5557 {
-		return errors.New("kvZmqPort is meaningless for kv-engine-type llamacpp (no KV event transport)")
+	if pdDisagg && pdRoutingNone {
+		return kvContractRefusal("pd_disagg_mode is unsupported for kv-engine-type llamacpp (engine has no P/D disaggregation)")
 	}
-	if dpRankCount > 1 {
-		return errors.New("kvDpRankCount is meaningless for kv-engine-type llamacpp (no client-visible DP ranks)")
+	if zmqPort != 0 && zmqPort != 5557 && kvEventsNone {
+		return kvContractRefusal("kvZmqPort is meaningless for kv-engine-type llamacpp (no KV event transport)")
 	}
-	if blockSize != 0 && blockSize != 16 {
-		return errors.New("kvBlockSize is meaningless for kv-engine-type llamacpp (no block table, no gateway-side hashing)")
+	if dpRankCount > 1 && kvEventsNone {
+		return kvContractRefusal("kvDpRankCount is meaningless for kv-engine-type llamacpp (no client-visible DP ranks)")
+	}
+	if blockSize != 0 && blockSize != 16 && kvEventsNone {
+		return kvContractRefusal("kvBlockSize is meaningless for kv-engine-type llamacpp (no block table, no gateway-side hashing)")
 	}
 	return nil
 }
