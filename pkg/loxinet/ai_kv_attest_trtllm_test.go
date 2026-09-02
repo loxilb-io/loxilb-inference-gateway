@@ -512,12 +512,23 @@ func TestKvTrtllmCommittedChatFixturesParity(t *testing.T) {
 			"NousResearch/Meta-Llama-3.1-8B-Instruct"},
 	} {
 		t.Run(tc.slug, func(t *testing.T) {
-			kvTrtllmCommittedChatFixturesParity(t, tc.slug, tc.profileDir, tc.servedModel)
+			kvCommittedChatFixturesParity(t, tc.slug, tc.profileDir, kvTrtllmFixtureSub, tc.servedModel)
 		})
 	}
 }
 
-func kvTrtllmCommittedChatFixturesParity(t *testing.T, slug, profileDir, servedModel string) {
+// TestKvSharedRootCommittedChatFixturesParity replays the committed chat
+// fixtures at the profile ROOT — the fixture home the vLLM adapter loads
+// directly and the sglang cicd suite stages into the sglang subdirectory —
+// through the same production oracle chain. Unlike the trtllm set, these
+// request bytes are ALSO posted verbatim to a live engine tokenize route by
+// TokenParityProbe, so the banked ids were live-verified against the
+// engine's messages-form defaults before banking (P9d six-leg record).
+func TestKvSharedRootCommittedChatFixturesParity(t *testing.T) {
+	kvCommittedChatFixturesParity(t, "Qwen__Qwen3-0.6B", "qwen3-06b-completions-v1", "", "Qwen/Qwen3-0.6B")
+}
+
+func kvCommittedChatFixturesParity(t *testing.T, slug, profileDir, fixtureSub, servedModel string) {
 	goldens := loadRenderParityFixture(t)
 	model, ok := goldens.Models[slug]
 	if !ok {
@@ -551,7 +562,7 @@ func kvTrtllmCommittedChatFixturesParity(t *testing.T, slug, profileDir, servedM
 	}
 	t.Cleanup(func() { kvTrtllmOracleEncodeFn = prevEnc })
 
-	dir := kvHashFixturePath(t, "probefixtures", profileDir, kvTrtllmFixtureSub)
+	dir := kvHashFixturePath(t, "probefixtures", profileDir, fixtureSub)
 	loadPair := func(t *testing.T, base string) kvProbeFixture {
 		t.Helper()
 		expRaw, err := os.ReadFile(filepath.Join(dir, base+".expect.json"))
@@ -578,7 +589,7 @@ func kvTrtllmCommittedChatFixturesParity(t *testing.T, slug, profileDir, servedM
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		t.Fatalf("committed trtllm fixture dir missing: %v", err)
+		t.Fatalf("committed fixture dir missing: %v", err)
 	}
 	checked := 0
 	for _, e := range entries {
