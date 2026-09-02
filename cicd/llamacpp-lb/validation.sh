@@ -387,7 +387,7 @@ check "I1: llamacpp typed rule :2044 serving" $?
 
 I_TRT=$($dexec l3h1 curl -sk --cacert "$CACERT" -m 30 \
   "https://$VIP:2040/v1/completions" -H "Content-Type: application/json" \
-  -d '{"model":"m","prompt":"quad-engine check '"$RUN"' 111 222 333 444","max_tokens":8,"stream":false}' \
+  -d '{"model":"Qwen/Qwen2.5-7B-Instruct","prompt":"quad-engine check '"$RUN"' 111 222 333 444","max_tokens":8,"stream":false}' \
   -w "\nHTTPSTATUS:%{http_code}" 2>&1)
 [ "$(status_of "$I_TRT")" = "200" ]
 check "I2: trtllm P/D rule :2040 serving (sequential rewriter untouched)" $?

@@ -243,6 +243,7 @@ read -r -d '' SEED_RULE_A <<JSON
     "host": "${VIP}",
     "pd_disagg_mode": true,
     "probeRetries": 1,
+    "model_name": "Qwen/Qwen3-0.6B",
     "kvExactMode": 1,
     "kvZmqPort": ${KV_ZMQ_PORT_A},
     "kvHashAlgo": "${KV_HASH_ALGO_A}",
@@ -260,7 +261,7 @@ JSON
 
 echo "Seeding VIP-A (vLLM P/D mock) ${VIP}:${VPORT_A} (kvExactMode=1, 2 prefill + 2 decode)..."
 if [[ "$USE_CLI" == "1" ]]; then
-  create_lb_rule llb1 "${VIP}" --tcp=${VPORT_A}:80 --mode=fullproxy --host="${VIP}" --pd-disagg --proberetries=1 --kv-exact-mode=1 --kv-zmq-port=${KV_ZMQ_PORT_A} --kv-hash-algo=${KV_HASH_ALGO_A} --kv-warmup=${KV_WARMUP_SEC} --kv-block-size=${KV_BLOCK_SIZE} --endpoints=31.31.31.1:1,32.32.32.1:1,33.33.33.1:1,34.34.34.1:1 --ep-role=prefill,decode,prefill,decode
+  create_lb_rule llb1 "${VIP}" --tcp=${VPORT_A}:80 --mode=fullproxy --host="${VIP}" --pd-disagg --proberetries=1 --model-name="Qwen/Qwen3-0.6B" --kv-exact-mode=1 --kv-zmq-port=${KV_ZMQ_PORT_A} --kv-hash-algo=${KV_HASH_ALGO_A} --kv-warmup=${KV_WARMUP_SEC} --kv-block-size=${KV_BLOCK_SIZE} --endpoints=31.31.31.1:1,32.32.32.1:1,33.33.33.1:1,34.34.34.1:1 --ep-role=prefill,decode,prefill,decode
 else
 $hexec llb1 curl -s -o /dev/null -w "  POST /config/loadbalancer (VIP-A vLLM rule) -> HTTP %{http_code}\n" \
     -X POST "${LBBASE}" -H 'Content-Type: application/json' -d "${SEED_RULE_A}"
@@ -283,6 +284,7 @@ read -r -d '' SEED_RULE_B <<JSON
     "mode": 4,
     "host": "${VIP}",
     "probeRetries": 1,
+    "model_name": "Qwen/Qwen3-0.6B",
     "kvExactMode": 3,
     "kvEngineType": "sglang",
     "kvDpRankCount": ${KV_DP_RANKS},
@@ -300,7 +302,7 @@ JSON
 
 echo "Seeding VIP-B (SGLang single-role) ${VIP}:${VPORT_B} (kvExactMode=3, engine=sglang, dpRanks=${KV_DP_RANKS})..."
 if [[ "$USE_CLI" == "1" ]]; then
-  create_lb_rule llb1 "${VIP}" --tcp=${VPORT_B}:80 --mode=fullproxy --host="${VIP}" --proberetries=1 --kv-exact-mode=3 --kv-engine-type=sglang --kv-dp-ranks=${KV_DP_RANKS} --kv-zmq-port=${KV_ZMQ_PORT_B} --kv-warmup=${KV_WARMUP_SEC} --kv-block-size=${KV_BLOCK_SIZE} --endpoints=35.35.35.1:1,36.36.36.1:1,37.37.37.1:1
+  create_lb_rule llb1 "${VIP}" --tcp=${VPORT_B}:80 --mode=fullproxy --host="${VIP}" --proberetries=1 --model-name="Qwen/Qwen3-0.6B" --kv-exact-mode=3 --kv-engine-type=sglang --kv-dp-ranks=${KV_DP_RANKS} --kv-zmq-port=${KV_ZMQ_PORT_B} --kv-warmup=${KV_WARMUP_SEC} --kv-block-size=${KV_BLOCK_SIZE} --endpoints=35.35.35.1:1,36.36.36.1:1,37.37.37.1:1
 else
 $hexec llb1 curl -s -o /dev/null -w "  POST /config/loadbalancer (VIP-B SGLang rule) -> HTTP %{http_code}\n" \
     -X POST "${LBBASE}" -H 'Content-Type: application/json' -d "${SEED_RULE_B}"
