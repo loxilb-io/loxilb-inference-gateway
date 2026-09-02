@@ -316,16 +316,11 @@ func TestKvTrtllmTokenParityOracle(t *testing.T) {
 		chatReq := []byte(`{"model":"m-trt","messages":[{"role":"user","content":"hi"}]}`)
 		kvWriteTrtllmProbeFixture(t, root, info.profileID, "chat", "chat", chatReq, want)
 		lastSpecials := kvTrtOracleSeam(t, oracleOut)
-		slug := kvModelSlug(info.modelName)
-		prevFn, had := kvChatTemplateRegistry[slug]
-		kvChatTemplateRegistry[slug] = func(messages []kvChatMessage) string { return "rendered" }
-		t.Cleanup(func() {
-			if had {
-				kvChatTemplateRegistry[slug] = prevFn
-			} else {
-				delete(kvChatTemplateRegistry, slug)
-			}
-		})
+		// A static template renders "rendered" for any message list — the
+		// same stub the registry seam used to provide, now through the
+		// profile-driven render path.
+		kvTestPublishChatProfile(t, info.modelName, "rendered",
+			KvRenderPolicy{AddGenerationPrompt: true})
 		chatInfo := info
 		chatInfo.apiChat, chatInfo.apiCompl = true, false
 		f := newKvTrtllmAttest().TokenParityProbe(ep, chatInfo)

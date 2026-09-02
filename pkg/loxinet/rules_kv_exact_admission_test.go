@@ -313,14 +313,15 @@ func TestKvExactBindingImmutabilityCheck(t *testing.T) {
 }
 
 // TestKvChatTemplateSupported: the admission renderer probe answers exactly
-// what the serving path would do — registry-backed models render, unknown
-// models refuse.
+// what the serving path would do — models served by a published chat profile
+// render, models without one refuse.
 func TestKvChatTemplateSupported(t *testing.T) {
+	kvTestPublishQwen25Profile(t, "Qwen/Qwen2.5-7B-Instruct")
 	if !kvChatTemplateSupported("Qwen/Qwen2.5-7B-Instruct") {
-		t.Fatal("registry model must report a renderer")
+		t.Fatal("profiled model must report a renderer")
 	}
 	if kvChatTemplateSupported("meta-llama/Llama-3.1-8B-Instruct") {
-		t.Fatal("model without a registered template must refuse")
+		t.Fatal("model without a published chat profile must refuse")
 	}
 }
 
