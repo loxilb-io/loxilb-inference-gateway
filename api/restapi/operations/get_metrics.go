@@ -12,16 +12,16 @@ import (
 )
 
 // GetMetricsHandlerFunc turns a function with the right signature into a get metrics handler
-type GetMetricsHandlerFunc func(GetMetricsParams, interface{}) middleware.Responder
+type GetMetricsHandlerFunc func(GetMetricsParams) middleware.Responder
 
 // Handle executing the request and returning a response
-func (fn GetMetricsHandlerFunc) Handle(params GetMetricsParams, principal interface{}) middleware.Responder {
-	return fn(params, principal)
+func (fn GetMetricsHandlerFunc) Handle(params GetMetricsParams) middleware.Responder {
+	return fn(params)
 }
 
 // GetMetricsHandler interface for that can handle valid get metrics params
 type GetMetricsHandler interface {
-	Handle(GetMetricsParams, interface{}) middleware.Responder
+	Handle(GetMetricsParams) middleware.Responder
 }
 
 // NewGetMetrics creates a new http.Handler for the get metrics operation
@@ -45,25 +45,12 @@ func (o *GetMetrics) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		*r = *rCtx
 	}
 	var Params = NewGetMetricsParams()
-	uprinc, aCtx, err := o.Context.Authorize(r, route)
-	if err != nil {
-		o.Context.Respond(rw, r, route.Produces, route, err)
-		return
-	}
-	if aCtx != nil {
-		*r = *aCtx
-	}
-	var principal interface{}
-	if uprinc != nil {
-		principal = uprinc.(interface{}) // this is really a interface{}, I promise
-	}
-
 	if err := o.Context.BindValidRequest(r, route, &Params); err != nil { // bind params
 		o.Context.Respond(rw, r, route.Produces, route, err)
 		return
 	}
 
-	res := o.Handler.Handle(Params, principal) // actually handle the request
+	res := o.Handler.Handle(Params) // actually handle the request
 	o.Context.Respond(rw, r, route.Produces, route, res)
 
 }

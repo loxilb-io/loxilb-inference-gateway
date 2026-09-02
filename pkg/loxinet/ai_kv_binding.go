@@ -68,6 +68,11 @@ type KvEngineContractSource interface {
 	// ResolveDigest returns the content digest of the referenced contract,
 	// or an error when the contract is unknown at that generation.
 	ResolveDigest(ref KvEngineContractRef) (string, error)
+	// CurrentRef returns the current contract reference for an engine
+	// family ("vllm", "sglang", "trtllm"), or an error when the registry
+	// serves no contract for it. Identity resolution only — contract
+	// content never crosses this seam.
+	CurrentRef(engineFamily string) (KvEngineContractRef, error)
 }
 
 var (
@@ -94,6 +99,19 @@ func kvResolveEngineContract(ref KvEngineContractRef) (string, error) {
 		return "", ErrKvNoContractSource
 	}
 	return s.ResolveDigest(ref)
+}
+
+// kvCurrentContractRef resolves the current engine-contract reference for an
+// engine family through the registered source. Fail-closed: with no source
+// registered, strict (profile-bound) admission cannot compose a binding.
+func kvCurrentContractRef(engineFamily string) (KvEngineContractRef, error) {
+	kvEngineContractSrcMu.RLock()
+	s := kvEngineContractSrc
+	kvEngineContractSrcMu.RUnlock()
+	if s == nil {
+		return KvEngineContractRef{}, ErrKvNoContractSource
+	}
+	return s.CurrentRef(engineFamily)
 }
 
 // KvExactBindingComponents are the contract-sensitive inputs a binding

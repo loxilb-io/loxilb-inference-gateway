@@ -379,6 +379,12 @@ func applyLoadBalancer(hooks Hooks, doc *Document, tolerateExists bool) (int, in
 	n, skipped := 0, 0
 	for i := range doc.Domains.LoadBalancer {
 		lb := &doc.Domains.LoadBalancer[i]
+		// Restore replay, not a fresh POST: a strict KV-exact rule must not
+		// allocate a new binding generation here — the kvexactbinding domain
+		// applies right after this one and carries the authoritative binding,
+		// including the allocation high-water mark that prevents a restarted
+		// allocator from reissuing a generation that may still be in flight.
+		lb.Serv.RestoreReplay = true
 		if _, err := hooks.NetLbRuleAdd(lb); err != nil {
 			if tolerateExists && isIdempotentExists(err) {
 				skipped++

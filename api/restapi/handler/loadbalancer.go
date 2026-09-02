@@ -146,6 +146,10 @@ func ConfigPostLoadbalancer(params operations.PostConfigLoadbalancerParams, prin
 	// values ⇒ byte-identical vLLM behavior (default-OFF additive chain).
 	lbRules.Serv.KvEngineType = params.Attr.ServiceArguments.KvEngineType
 	lbRules.Serv.KvDpRankCount = uint16(params.Attr.ServiceArguments.KvDpRankCount)
+	// KV-exact API-surface declaration + model-profile binding. Absent ⇒ zero
+	// values ⇒ legacy profile-less behavior (default-OFF additive chain).
+	lbRules.Serv.KvExactApiMode = params.Attr.ServiceArguments.KvExactAPIMode
+	lbRules.Serv.KvModelProfile = params.Attr.ServiceArguments.KvModelProfile
 	lbRules.Serv.PDBootstrapPort = uint16(params.Attr.ServiceArguments.PdBootstrapPort)
 
 	// Custom session header configuration - supports both RR and Persist modes
@@ -649,6 +653,12 @@ func serializeLBRule(lb cmn.LbRuleMod) *models.LoadbalanceEntry {
 	if lb.Serv.KvDpRankCount != 0 {
 		tmpSvc.KvDpRankCount = int32(lb.Serv.KvDpRankCount)
 	}
+	if lb.Serv.KvExactApiMode != "" {
+		tmpSvc.KvExactAPIMode = lb.Serv.KvExactApiMode
+	}
+	if lb.Serv.KvModelProfile != "" {
+		tmpSvc.KvModelProfile = lb.Serv.KvModelProfile
+	}
 	if lb.Serv.PDBootstrapPort != 0 {
 		tmpSvc.PdBootstrapPort = int32(lb.Serv.PDBootstrapPort)
 	}
@@ -909,6 +919,54 @@ func ConfigGetLoadbalancerStatus(params operations.GetConfigLoadbalancerStatusPa
 		LastUpdated:     strfmt.DateTime(lastUpdated.UTC()),
 	}
 	return operations.NewGetConfigLoadbalancerStatusOK().WithPayload(status)
+}
+
+// ConfigGetLoadbalancerKvExactStatus - GET the resolved KV-exact composition
+// status of every KV-exact rule on a composite key (optionally narrowed to one
+// model). Served from a DEDICATED read model (cmn.KvExactStatusMod), never the
+// GET/POST-shared LoadbalanceEntry: a client echoing a GET body back into a
+// POST must never be able to replay resolved status as configuration.
+func ConfigGetLoadbalancerKvExactStatus(params operations.GetConfigLoadbalancerKvExactStatusParams, principal interface{}) middleware.Responder {
+	tk.LogIt(tk.LogTrace, "api: Load balancer %s API called. url : %s\n", params.HTTPRequest.Method, params.HTTPRequest.URL)
+
+	modelName := ""
+	if params.ModelName != nil {
+		modelName = *params.ModelName
+	}
+	mods, err := ApiHooks.NetKvExactStatusGet(stripV6Brackets(params.IPAddress), uint16(params.Port), params.Proto, modelName)
+	if err != nil {
+		tk.LogIt(tk.LogDebug, "api: Error occur : %v\n", err)
+		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
+	}
+	if len(mods) == 0 {
+		return operations.NewGetConfigLoadbalancerKvExactStatusNotFound()
+	}
+
+	entries := make([]*models.KvExactStatusEntry, 0, len(mods))
+	for i := range mods {
+		m := &mods[i]
+		entries = append(entries, &models.KvExactStatusEntry{
+			RuleIdentity:          m.RuleIdentity,
+			ModelName:             m.ModelName,
+			EngineFamily:          m.EngineFamily,
+			APIMode:               m.ApiMode,
+			ModelProfileID:        m.ModelProfileID,
+			ModelProfileGen:       m.ModelProfileGen,
+			EngineContractID:      m.EngineContractID,
+			EngineContractGen:     m.EngineContractGen,
+			BindingGen:            m.BindingGen,
+			BindingDigest:         m.BindingDigest,
+			HashContractID:        m.HashContractID,
+			WireSchemaID:          m.WireSchemaID,
+			PdDialectID:           m.PdDialectID,
+			RequiredEvidenceLevel: m.RequiredEvidenceLevel,
+			DesiredState:          m.DesiredState,
+			EnforcedState:         m.EnforcedState,
+			ReasonCodes:           m.ReasonCodes,
+		})
+	}
+	return operations.NewGetConfigLoadbalancerKvExactStatusOK().WithPayload(
+		&operations.GetConfigLoadbalancerKvExactStatusOKBody{KvExactStatusAttr: entries})
 }
 
 // ConfigGetLoadbalancerStats - GET the per-service statistics quad

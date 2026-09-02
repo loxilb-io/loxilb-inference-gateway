@@ -7,6 +7,7 @@ package models
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/go-openapi/errors"
 	"github.com/go-openapi/strfmt"
@@ -23,7 +24,7 @@ type TenantRateLimitEntry struct {
 	BurstPct int64 `json:"burst_pct,omitempty"`
 
 	// Per-model token quotas for the tenant
-	ModelLimits []*TenantModelRateLimit `json:"model_limits,omitempty"`
+	ModelLimits []*TenantModelRateLimit `json:"model_limits"`
 
 	// Maximum requests per second for the tenant
 	Rps int64 `json:"rps,omitempty"`
@@ -44,6 +45,10 @@ type TenantRateLimitEntry struct {
 func (m *TenantRateLimitEntry) Validate(formats strfmt.Registry) error {
 	var res []error
 
+	if err := m.validateModelLimits(formats); err != nil {
+		res = append(res, err)
+	}
+
 	if err := m.validateTenantID(formats); err != nil {
 		res = append(res, err)
 	}
@@ -55,6 +60,32 @@ func (m *TenantRateLimitEntry) Validate(formats strfmt.Registry) error {
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
+	return nil
+}
+
+func (m *TenantRateLimitEntry) validateModelLimits(formats strfmt.Registry) error {
+	if swag.IsZero(m.ModelLimits) { // not required
+		return nil
+	}
+
+	for i := 0; i < len(m.ModelLimits); i++ {
+		if swag.IsZero(m.ModelLimits[i]) { // not required
+			continue
+		}
+
+		if m.ModelLimits[i] != nil {
+			if err := m.ModelLimits[i].Validate(formats); err != nil {
+				if ve, ok := err.(*errors.Validation); ok {
+					return ve.ValidateName("model_limits" + "." + strconv.Itoa(i))
+				} else if ce, ok := err.(*errors.CompositeError); ok {
+					return ce.ValidateName("model_limits" + "." + strconv.Itoa(i))
+				}
+				return err
+			}
+		}
+
+	}
+
 	return nil
 }
 
@@ -79,8 +110,37 @@ func (m *TenantRateLimitEntry) validateUpdatedAt(formats strfmt.Registry) error 
 	return nil
 }
 
-// ContextValidate validates this tenant rate limit entry based on context it is used
+// ContextValidate validate this tenant rate limit entry based on the context it is used
 func (m *TenantRateLimitEntry) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
+	var res []error
+
+	if err := m.contextValidateModelLimits(ctx, formats); err != nil {
+		res = append(res, err)
+	}
+
+	if len(res) > 0 {
+		return errors.CompositeValidationError(res...)
+	}
+	return nil
+}
+
+func (m *TenantRateLimitEntry) contextValidateModelLimits(ctx context.Context, formats strfmt.Registry) error {
+
+	for i := 0; i < len(m.ModelLimits); i++ {
+
+		if m.ModelLimits[i] != nil {
+			if err := m.ModelLimits[i].ContextValidate(ctx, formats); err != nil {
+				if ve, ok := err.(*errors.Validation); ok {
+					return ve.ValidateName("model_limits" + "." + strconv.Itoa(i))
+				} else if ce, ok := err.(*errors.CompositeError); ok {
+					return ce.ValidateName("model_limits" + "." + strconv.Itoa(i))
+				}
+				return err
+			}
+		}
+
+	}
+
 	return nil
 }
 

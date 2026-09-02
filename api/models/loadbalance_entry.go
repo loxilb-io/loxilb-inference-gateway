@@ -688,11 +688,15 @@ type LoadbalanceEntryServiceArguments struct {
 	// Minimum: 1
 	KvDpRankCount int32 `json:"kvDpRankCount,omitempty"`
 
-	// KV-event engine behind this rule. One framework per VIP; immutable after create (delete+recreate to change). Drives hash-algo default: sglang => sha256_sglang, trtllm => blockhash_trtllm. trtllm supports plain LB, kvExactMode=3 (single-role Tier 1.5 over HTTP-polled KV events on each endpoint's own serving port — the gateway must be the SOLE consumer of /kv_cache_events per endpoint) and pd_disagg_mode with kvExactMode=1 (sequential P/D dialect); kvZmqPort/kvDpRankCount are meaningless for it (rejected when set — no ZMQ, no client-visible DP ranks). llamacpp supports plain LB with CHWBL/session affinity ONLY — the engine has no KV event plane and no P/D disaggregation, so kvExactMode, pd_disagg_mode, kvHashAlgo and non-default kvZmqPort/kvDpRankCount/kvBlockSize are all rejected. NOTE: LOXILB_KV_* env knobs (unified mode, eps/lambda, cap-sum, max-blocks) are process-global and shared across all KV VIPs (accepted limitation).
+	// KV-event engine behind this rule. One framework per load-balancer Rule — different rules (ports) on one VIP IP MAY run different engines (accepted multi-framework coexistence, warned at create); immutable after create (delete+recreate to change). Drives hash-algo default: sglang => sha256_sglang, trtllm => blockhash_trtllm. trtllm supports plain LB, kvExactMode=3 (single-role Tier 1.5 over HTTP-polled KV events on each endpoint's own serving port — the gateway must be the SOLE consumer of /kv_cache_events per endpoint) and pd_disagg_mode with kvExactMode=1 (sequential P/D dialect); kvZmqPort/kvDpRankCount are meaningless for it (rejected when set — no ZMQ, no client-visible DP ranks). llamacpp supports plain LB with CHWBL/session affinity ONLY — the engine has no KV event plane and no P/D disaggregation, so kvExactMode, pd_disagg_mode, kvHashAlgo and non-default kvZmqPort/kvDpRankCount/kvBlockSize are all rejected. NOTE: LOXILB_KV_* env knobs (unified mode, eps/lambda, cap-sum, max-blocks) are process-global and shared across all KV VIPs (accepted limitation).
 	// Enum: [vllm sglang trtllm llamacpp]
 	KvEngineType string `json:"kvEngineType,omitempty"`
 
-	// KV-cache exact (Tier 1.5) routing mode. Selects the ENDPOINT TOPOLOGY only — the serving framework is chosen independently by kvEngineType, and every mode below works with either engine. 0 = off. 1 = zmq over a P/D role-partitioned pool: requires pd_disagg_mode=true (rejected otherwise) and endpoints tagged ep_role 1/2; only ep_role=1 (prefill) endpoints are subscribed and scored, and Tier 1.5 sits between Tier 1 (trie) and Tier 2 (min-load) in the P/D ladder. 2 = nats (reserved, not implemented). 3 = zmq single-role over a role-less pool: requires mode=4 (fullproxy) and pd_disagg_mode=false (both rejected otherwise); ALL endpoints are subscribed and scored. Mode 3 does NOT reproduce the P/D ladder — there is no Tier-0 session stickiness, no Tier-1 trie and no admission gate on this path; a Tier-1.5 miss falls back to the rule's own sel selector (CHWBL/RR/persist).
+	// Request API surfaces this KV-exact rule serves. Absent on a profile-less rule keeps the legacy behavior (both surfaces, unattested); with kvModelProfile bound, the effective surfaces default to the profile's declared supportedApis and an explicit value must be a subset of them. Declaring a chat surface requires a validated chat renderer for the rule's model_name — an unsupported chat declaration is refused at create time, never degraded into a silent runtime fallback. Meaningless without kvExactMode (rejected). Immutable after create (delete+recreate to change). Scalar by schema — arrays are rejected representations.
+	// Enum: [completions chat both]
+	KvExactAPIMode string `json:"kvExactApiMode,omitempty"`
+
+	// KV-cache exact (Tier 1.5) routing mode. Selects the ENDPOINT TOPOLOGY only — the serving framework is chosen independently by kvEngineType, and engine support for each mode is bounded by the per-engine capability matrix in the kvEngineType description (NOT every mode works with every engine). 0 = off. 1 = zmq over a P/D role-partitioned pool: requires pd_disagg_mode=true (rejected otherwise) and endpoints tagged ep_role 1/2; only ep_role=1 (prefill) endpoints are subscribed and scored, and Tier 1.5 sits between Tier 1 (trie) and Tier 2 (min-load) in the P/D ladder. 2 = nats (reserved, not implemented). 3 = zmq single-role over a role-less pool: requires mode=4 (fullproxy) and pd_disagg_mode=false (both rejected otherwise); ALL endpoints are subscribed and scored. Mode 3 does NOT reproduce the P/D ladder — there is no Tier-0 session stickiness, no Tier-1 trie and no admission gate on this path; a Tier-1.5 miss falls back to the rule's own sel selector (CHWBL/RR/persist).
 	// Maximum: 3
 	// Minimum: 0
 	KvExactMode int64 `json:"kvExactMode,omitempty"`
@@ -700,6 +704,9 @@ type LoadbalanceEntryServiceArguments struct {
 	// Block-hash contract used to match the prompt against the engine-published KV inventory. PREFER OMITTING THIS FIELD — when absent, the contract is derived from kvEngineType (vllm => sha256_cbor, sglang => sha256_sglang, trtllm => blockhash_trtllm), which is always the coherent choice. An explicit value overrides that default and MUST match the engine, or every computed hash misses and Tier 1.5 is silently dead; incoherent pairs are therefore rejected at config time. vLLM engines: "sha256_cbor" (must equal --prefix-caching-hash-algo) or "xxhash_cbor". SGLang engines: "sha256_sglang" only — SGLang hashes parent||tokens raw (no CBOR, no NONE seed) and truncates to the FIRST 8 digest bytes, where vLLM CBOR-encodes and truncates to the LAST 8. TRT-LLM engines: "blockhash_trtllm" only — the same raw chained-SHA256 contract applied on both sides by the gateway itself (requests and the token lists carried in stored KV events); the engine's own unversioned uint64 mixing hash is never used as a routing key.
 	// Enum: [sha256_cbor xxhash_cbor sha256_sglang blockhash_trtllm]
 	KvHashAlgo string `json:"kvHashAlgo,omitempty"`
+
+	// ID of the ModelPromptProfile this rule binds to. Naming a profile makes the rule STRICT: the profile must be published in the gateway's profile registry, its alias policy must admit the rule's model_name, its pinned tokenizer artifacts must load and digest-match, and a composed KV-exact binding (model-profile@generation + engine-contract@generation) is allocated at create time — admission fails closed while no engine-contract registry is available. Absent = legacy profile-less rule (no binding; documented migration behavior). Immutable after create (delete+recreate to change). Scalar by schema — exactly one profile per rule; arrays are rejected representations.
+	KvModelProfile string `json:"kvModelProfile,omitempty"`
 
 	// Seconds to wait after ZMQ subscriber connects before activating Tier 1.5 routing. Allows inventory to populate.
 	// Minimum: 0
@@ -913,6 +920,10 @@ func (m *LoadbalanceEntryServiceArguments) Validate(formats strfmt.Registry) err
 	}
 
 	if err := m.validateKvEngineType(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateKvExactAPIMode(formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -1244,6 +1255,51 @@ func (m *LoadbalanceEntryServiceArguments) validateKvEngineType(formats strfmt.R
 
 	// value enum
 	if err := m.validateKvEngineTypeEnum("serviceArguments"+"."+"kvEngineType", "body", m.KvEngineType); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+var loadbalanceEntryServiceArgumentsTypeKvExactAPIModePropEnum []interface{}
+
+func init() {
+	var res []string
+	if err := json.Unmarshal([]byte(`["completions","chat","both"]`), &res); err != nil {
+		panic(err)
+	}
+	for _, v := range res {
+		loadbalanceEntryServiceArgumentsTypeKvExactAPIModePropEnum = append(loadbalanceEntryServiceArgumentsTypeKvExactAPIModePropEnum, v)
+	}
+}
+
+const (
+
+	// LoadbalanceEntryServiceArgumentsKvExactAPIModeCompletions captures enum value "completions"
+	LoadbalanceEntryServiceArgumentsKvExactAPIModeCompletions string = "completions"
+
+	// LoadbalanceEntryServiceArgumentsKvExactAPIModeChat captures enum value "chat"
+	LoadbalanceEntryServiceArgumentsKvExactAPIModeChat string = "chat"
+
+	// LoadbalanceEntryServiceArgumentsKvExactAPIModeBoth captures enum value "both"
+	LoadbalanceEntryServiceArgumentsKvExactAPIModeBoth string = "both"
+)
+
+// prop value enum
+func (m *LoadbalanceEntryServiceArguments) validateKvExactAPIModeEnum(path, location string, value string) error {
+	if err := validate.EnumCase(path, location, value, loadbalanceEntryServiceArgumentsTypeKvExactAPIModePropEnum, true); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (m *LoadbalanceEntryServiceArguments) validateKvExactAPIMode(formats strfmt.Registry) error {
+	if swag.IsZero(m.KvExactAPIMode) { // not required
+		return nil
+	}
+
+	// value enum
+	if err := m.validateKvExactAPIModeEnum("serviceArguments"+"."+"kvExactApiMode", "body", m.KvExactAPIMode); err != nil {
 		return err
 	}
 

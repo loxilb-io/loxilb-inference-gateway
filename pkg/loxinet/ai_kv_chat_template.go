@@ -111,6 +111,16 @@ func kvRenderChatTemplate(modelName string, messages []kvChatMessage) (string, b
 	return "", false
 }
 
+// kvChatTemplateSupported reports whether a validated chat renderer exists
+// for modelName. Deliberately a wrapper over kvRenderChatTemplate so this
+// answer can never drift from the decision the serving path actually makes —
+// admission refuses a declared chat surface exactly when the serving path
+// would have to fall back untemplated.
+func kvChatTemplateSupported(modelName string) bool {
+	_, ok := kvRenderChatTemplate(modelName, nil)
+	return ok
+}
+
 // kvParseChatMessages extracts the ordered role/content turns from a raw chat
 // request body (the JSON loxilb's C side has in its receive buffer). Content may
 // be a plain string or the OpenAI array form ([{type:"text",text:"..."}]); the

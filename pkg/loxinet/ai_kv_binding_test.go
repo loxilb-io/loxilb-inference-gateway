@@ -20,6 +20,7 @@ import (
 	"errors"
 	"math"
 	"reflect"
+	"strings"
 	"testing"
 
 	cmn "github.com/loxilb-io/loxilb/common"
@@ -324,6 +325,15 @@ func (s *kvStubContractSource) ResolveDigest(ref KvEngineContractRef) (string, e
 		return d, nil
 	}
 	return "", errors.New("unknown contract")
+}
+
+func (s *kvStubContractSource) CurrentRef(engineFamily string) (KvEngineContractRef, error) {
+	for ref := range s.digests {
+		if strings.HasPrefix(ref.ID, engineFamily) {
+			return ref, nil
+		}
+	}
+	return KvEngineContractRef{}, errors.New("no contract for engine family")
 }
 
 // TestKvEngineContractSourceSeam: without a registered source every resolve
