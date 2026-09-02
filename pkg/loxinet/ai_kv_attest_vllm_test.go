@@ -90,6 +90,40 @@ func kvProbeInfo(profileID string) kvAttestRuleInfo {
 	}
 }
 
+// TestKvVllmSurfaceUncoveredRefused pins the fixture-set surface-coverage
+// rule: a rule serving a declared API surface with no fixture of that shape
+// must NOT token-parity-attest — the live validation legs showed a chat-declaring
+// profile whose chat fixtures could not be banked (render divergence) would
+// otherwise reach READY on completions evidence alone, its chat surface
+// never verified against the deployed engine.
+func TestKvVllmSurfaceUncoveredRefused(t *testing.T) {
+	root := kvAttestFixtureRoot(t, "prof-surface", "m-probe")
+	reqBody := []byte(`{"model":"m-probe","prompt":"p","add_special_tokens":false}`)
+	kvWriteProbeFixture(t, root, "prof-surface", "plain", reqBody, []int64{1, 2, 3})
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"count":3,"tokens":[1,2,3],"max_model_len":4096}`)
+	}))
+	defer ts.Close()
+
+	a := newKvVllmAttest()
+	info := kvProbeInfo("prof-surface")
+	info.apiChat, info.apiCompl = true, true
+	f := a.TokenParityProbe(kvTestEndpoint(t, ts), info)
+	if f.OK || f.Reason != KvAttestReasonFixturesMissing {
+		t.Fatalf("chat surface with completions-only fixtures must refuse, got %+v", f)
+	}
+	if !strings.Contains(f.Detail, "chat") {
+		t.Fatalf("refusal detail must name the uncovered surface, got %q", f.Detail)
+	}
+
+	// Completions-only rule over the same set stays attestable.
+	info.apiChat = false
+	if f := a.TokenParityProbe(kvTestEndpoint(t, ts), info); !f.OK {
+		t.Fatalf("completions-only surface must pass: %s %s", f.Reason, f.Detail)
+	}
+}
+
 func TestKvVllmTokenParityProbeByteExact(t *testing.T) {
 	root := kvAttestFixtureRoot(t, "prof-probe", "m-probe")
 	reqBody := []byte(`{"model":"m-probe","prompt":"canonical probe","add_special_tokens":false,"return_token_strs":false}`)

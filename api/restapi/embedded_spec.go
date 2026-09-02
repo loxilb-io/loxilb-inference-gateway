@@ -12183,8 +12183,9 @@ func init() {
           "type": "string"
         },
         "goFenced": {
-          "description": "Whether the authoritative tokenize-bridge deny-set fence currently denies the rule (fail-closed backstop - denied rules produce no tokens, so no hashes, regardless of C-side state).",
-          "type": "boolean"
+          "description": "Whether the authoritative tokenize-bridge deny-set fence currently denies the rule (fail-closed backstop - denied rules produce no tokens, so no hashes, regardless of C-side state). Always serialized - a lifted fence (false) must stay distinguishable from an unreported one.",
+          "type": "boolean",
+          "x-omitempty": false
         },
         "lastAckAt": {
           "description": "RFC3339 time of the last full contract-word ACK (readback and binding-digest halves both verified). Absent before the first ACK after registration or restart.",
@@ -28456,8 +28457,9 @@ func init() {
           "type": "string"
         },
         "goFenced": {
-          "description": "Whether the authoritative tokenize-bridge deny-set fence currently denies the rule (fail-closed backstop - denied rules produce no tokens, so no hashes, regardless of C-side state).",
-          "type": "boolean"
+          "description": "Whether the authoritative tokenize-bridge deny-set fence currently denies the rule (fail-closed backstop - denied rules produce no tokens, so no hashes, regardless of C-side state). Always serialized - a lifted fence (false) must stay distinguishable from an unreported one.",
+          "type": "boolean",
+          "x-omitempty": false
         },
         "lastAckAt": {
           "description": "RFC3339 time of the last full contract-word ACK (readback and binding-digest halves both verified). Absent before the first ACK after registration or restart.",

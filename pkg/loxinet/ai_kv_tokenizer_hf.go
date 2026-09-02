@@ -98,13 +98,18 @@ type hfTokenizerInstance struct {
 	t *daul.Tokenizer
 }
 
-// Encode tokenizes text without special tokens and returns the token ID slice.
-// addSpecialTokens=false matches vLLM's block hash tokenization mode.
-func (h *hfTokenizerInstance) Encode(text string) []uint32 {
+// Encode tokenizes text and returns the token ID slice. addSpecialTokens maps
+// to HF add_special_tokens: it must be true for raw completions prompts (vLLM
+// tokenizes those with add_special_tokens=True, so BOS-declaring tokenizers
+// like Llama-3 prepend <|begin_of_text|> to the cached block stream) and false
+// for chat-template-rendered text (the template supplies the specials and vLLM
+// encodes the render with add_special_tokens=False). Passing the wrong mode on
+// a BOS model shifts every block boundary and yields zero inventory matches.
+func (h *hfTokenizerInstance) Encode(text string, addSpecialTokens bool) []uint32 {
 	if h.t == nil {
 		return nil
 	}
-	ids, _ := h.t.Encode(text, false)
+	ids, _ := h.t.Encode(text, addSpecialTokens)
 	return ids
 }
 

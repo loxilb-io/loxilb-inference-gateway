@@ -124,8 +124,8 @@ func kvChatTemplateSupported(modelName string) bool {
 // kvParseChatMessages extracts the ordered role/content turns from a raw chat
 // request body (the JSON loxilb's C side has in its receive buffer). Content may
 // be a plain string or the OpenAI array form ([{type:"text",text:"..."}]); the
-// text segments are concatenated. Returns ok=false on parse failure or no
-// messages.
+// text segments are joined with "\n" to match the engine's string-content-format
+// part handling. Returns ok=false on parse failure or no messages.
 func kvParseChatMessages(body string) ([]kvChatMessage, bool) {
 	var req struct {
 		Messages []struct {
@@ -147,7 +147,10 @@ func kvParseChatMessages(body string) ([]kvChatMessage, bool) {
 }
 
 // kvExtractMessageContent normalizes a chat message "content" field (string or
-// OpenAI content-part array) into plain text.
+// OpenAI content-part array) into plain text. Multiple text parts are joined
+// with "\n": string-content-format chat templates receive parts joined that
+// way by the engine's request parser, so any other separator renders (and
+// therefore tokenizes and hashes) different bytes than the engine caches.
 func kvExtractMessageContent(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return ""
@@ -161,13 +164,13 @@ func kvExtractMessageContent(raw json.RawMessage) string {
 		Text string `json:"text"`
 	}
 	if err := json.Unmarshal(raw, &parts); err == nil {
-		var b strings.Builder
+		texts := make([]string, 0, len(parts))
 		for _, p := range parts {
 			if p.Type == "text" {
-				b.WriteString(p.Text)
+				texts = append(texts, p.Text)
 			}
 		}
-		return b.String()
+		return strings.Join(texts, "\n")
 	}
 	return ""
 }
@@ -223,8 +226,8 @@ func kvChatExcludedFeature(body string) string {
 
 // kvTokenizeChatBody renders modelName's chat template over the messages in the
 // raw chat request body, then tokenizes the rendered prompt through the shared
-// Encode path (WithEncodeSpecialTokens) so the token_ids are byte-identical to
-// vLLM's cached chat prompt. Returns nil if the body has no messages, no chat
+// Encode path with addSpecialTokens=false (the render carries its own special
+// tokens) so the token_ids are byte-identical to vLLM's cached chat prompt. Returns nil if the body has no messages, no chat
 // template is known, or tokenization fails.
 func kvTokenizeChatBody(body, modelName string, maxTokens int) []uint32 {
 	msgs, ok := kvParseChatMessages(body)
@@ -235,5 +238,5 @@ func kvTokenizeChatBody(body, modelName string, maxTokens int) []uint32 {
 	if !ok || rendered == "" {
 		return nil
 	}
-	return kvTokenizeWithCache(rendered, modelName, maxTokens)
+	return kvTokenizeWithCache(rendered, modelName, maxTokens, false)
 }

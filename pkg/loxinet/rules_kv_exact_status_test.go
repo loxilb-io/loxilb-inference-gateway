@@ -149,3 +149,56 @@ func TestKvExactStatusReadModel(t *testing.T) {
 		}
 	})
 }
+
+// TestKvExactStatusRestoredLegacy: a profile-less KV-exact rule that arrived
+// via the restore path reports REQUIRES_MIGRATION with the exact path fenced
+// (strict bypass) — never the live legacy behavior it no longer has, and
+// never a silent READY.
+func TestKvExactStatusRestoredLegacy(t *testing.T) {
+	KvBindingReset()
+	t.Cleanup(KvBindingReset)
+	t.Cleanup(KvSvcContractReset)
+
+	R := &RuleH{}
+	R.tables[RtLB].eMap = map[string]*ruleEnt{}
+
+	restored := kvStatusTestRule("rule-restored", "model-r", "vllm", "", "completions", "10.0.0.1", 9100, 6, 1)
+	restored.kvRestoredLegacy = true
+	restored.ruleNum = 42
+	R.tables[RtLB].eMap["r"] = restored
+
+	// The create path registers the restored-legacy rule DENIED with no
+	// install path — mirror that registration here.
+	KvSvcContractRegister(42, "rule-restored", net.ParseIP("10.0.0.1"), 9100, 6, 0)
+
+	res, err := R.GetKvExactStatus("10.0.0.1", 9100, "tcp", "")
+	if err != nil || len(res) != 1 {
+		t.Fatalf("status = %v, %v", res, err)
+	}
+	m := res[0]
+	if m.DesiredState != KvExactStateRequiresMigration || m.EnforcedState != KvExactStateRequiresMigration {
+		t.Fatalf("restored states = %s/%s (want REQUIRES_MIGRATION/REQUIRES_MIGRATION)", m.DesiredState, m.EnforcedState)
+	}
+	if len(m.ReasonCodes) != 1 || m.ReasonCodes[0] != KvAttestReasonRequiresMigration {
+		t.Fatalf("reasons = %v", m.ReasonCodes)
+	}
+	if m.Enforcement == nil || !m.Enforcement.GoFenced {
+		t.Fatalf("restored rule must report the engaged fence, got %+v", m.Enforcement)
+	}
+	// The fence is live, not just reported: the tokenize bridge refuses.
+	if !kvSvcDenied(42) {
+		t.Fatal("restored rule's svc must be in the deny set")
+	}
+
+	// A FRESH profile-less rule (same shape, no restore marker) still
+	// reports legacy-active — the restored verdict must not leak onto it.
+	fresh := kvStatusTestRule("rule-fresh", "model-r", "vllm", "", "completions", "10.0.0.1", 9101, 6, 1)
+	R.tables[RtLB].eMap["f"] = fresh
+	res, err = R.GetKvExactStatus("10.0.0.1", 9101, "tcp", "")
+	if err != nil || len(res) != 1 {
+		t.Fatalf("fresh status = %v, %v", res, err)
+	}
+	if res[0].DesiredState != KvExactStateLegacyActive {
+		t.Fatalf("fresh legacy state = %s", res[0].DesiredState)
+	}
+}

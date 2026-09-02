@@ -422,6 +422,75 @@ func TestKvAttestCadenceProbeFailureFences(t *testing.T) {
 	}
 }
 
+// TestKvAttestArtifactDriftFencesAndRecovers: a READY rule whose registry
+// artifacts drift on disk is fenced within one cadence with the typed
+// profile-resolution reason, the ladder holds fenced while the drift
+// persists, and restoring the bytes re-earns READY without operator kicks.
+func TestKvAttestArtifactDriftFencesAndRecovers(t *testing.T) {
+	h := newAttestHarness(t)
+	var freshErr error
+	var freshMu sync.Mutex
+	h.deps.profileFreshness = func(profileID string) error {
+		if profileID != "prof-1" {
+			t.Errorf("freshness probed wrong profile %q", profileID)
+		}
+		freshMu.Lock()
+		defer freshMu.Unlock()
+		return freshErr
+	}
+	c := h.controller()
+	c.fenceAndReattest("activation")
+	if c.enforced != KvExactStateReady {
+		t.Fatalf("precondition: READY, got %s", c.enforced)
+	}
+	baseFences := h.rec.count("apply:0")
+
+	freshMu.Lock()
+	freshErr = fmt.Errorf("tokenizer bytes drifted")
+	freshMu.Unlock()
+	h.advance(h.deps.probeCadence)
+	c.cadenceCheck()
+
+	if c.enforced != KvExactStateProfileValidated {
+		t.Fatalf("enforced = %s, want PROFILE_VALIDATED under drift", c.enforced)
+	}
+	if len(c.reasons) == 0 || c.reasons[0] != KvAttestReasonProfileResolution {
+		t.Fatalf("reasons = %v, want [%s ...]", c.reasons, KvAttestReasonProfileResolution)
+	}
+	if got := h.rec.count("apply:0"); got <= baseFences {
+		t.Fatalf("drift did not fence (apply:0 count %d -> %d)", baseFences, got)
+	}
+	if h.rec.count("probefail:"+KvAttestReasonProfileResolution) == 0 {
+		t.Fatalf("probe-fail metric missing: %v", h.rec.list())
+	}
+	if h.rec.count("apply:1") != 1 {
+		t.Fatalf("drifted rule must not re-flip eligible: %v", h.rec.list())
+	}
+
+	// Still drifted on the next cadence: the retry holds fenced.
+	h.advance(h.deps.probeCadence)
+	c.cadenceCheck()
+	if c.enforced != KvExactStateProfileValidated {
+		t.Fatalf("enforced = %s, want PROFILE_VALIDATED while drift persists", c.enforced)
+	}
+	if h.rec.count("apply:1") != 1 {
+		t.Fatalf("eligible re-flipped while drifted: %v", h.rec.list())
+	}
+
+	// Bytes restored: the cadence retry re-earns the full ladder.
+	freshMu.Lock()
+	freshErr = nil
+	freshMu.Unlock()
+	h.advance(h.deps.probeCadence)
+	c.cadenceCheck()
+	if c.enforced != KvExactStateReady {
+		t.Fatalf("enforced = %s, want READY after restore", c.enforced)
+	}
+	if h.rec.count("apply:1") != 2 {
+		t.Fatalf("restore must re-flip eligible exactly once more: %v", h.rec.list())
+	}
+}
+
 // TestKvAttestControllerLifecycle: Start/Kick/Stop through the registry with
 // the production goroutine — the ladder re-runs on a kick, and Stop tears
 // down the state gauge and the controller entry.

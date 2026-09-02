@@ -7096,7 +7096,8 @@ definitions:
         description: Last enforcement fault reason (absent when none).
       goFenced:
         type: boolean
-        description: Whether the authoritative tokenize-bridge deny-set fence currently denies the rule (fail-closed backstop - denied rules produce no tokens, so no hashes, regardless of C-side state).
+        x-omitempty: false
+        description: Whether the authoritative tokenize-bridge deny-set fence currently denies the rule (fail-closed backstop - denied rules produce no tokens, so no hashes, regardless of C-side state). Always serialized - a lifted fence (false) must stay distinguishable from an unreported one.
   LoadbalanceStats:
     type: object
     description: Per-LB statistics quad (Octavia).

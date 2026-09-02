@@ -43,6 +43,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	tk "github.com/loxilb-io/loxilib"
 )
 
 // ---- challenge hasher seam ----
@@ -214,6 +216,11 @@ func (w *kvHashWatch) observe(ev kvEvent) {
 }
 
 func (w *kvHashWatch) fail(reason, detail string) {
+	// Surface the wire-check verdict at the moment it happens: the receipt
+	// carries it too, but a live operator debugging a held ladder needs the
+	// detail without correlating receipt digests (bounded to one line per
+	// challenge round by the pending/failReason guard in observe).
+	tk.LogIt(tk.LogInfo, "kv-attest: echo challenge wire-check failed: %s (%s)\n", detail, reason)
 	w.failReason = reason
 	w.failDetail = detail
 	close(w.done)
@@ -254,7 +261,10 @@ func kvChallengeTimeout() time.Duration {
 // (default: the data-plane cache path — attesting parity with what scoring
 // uses). Tests override.
 var kvChallengeTokenizeFn = func(text, model string, max int) []uint32 {
-	return kvTokenizeWithCache(text, model, max)
+	// The challenge inference posts to /v1/completions without an
+	// add_special_tokens override, so the engine tokenizes it with the vLLM
+	// default (true); the expected hash chain must be built the same way.
+	return kvTokenizeWithCache(text, model, max, true)
 }
 
 // kvChallengeBuildPrompt builds the nonce-unique challenge prompt: the nonce

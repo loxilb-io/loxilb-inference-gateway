@@ -127,6 +127,42 @@ func TestKvWireMapV2LoraAndExtraKeys(t *testing.T) {
 	}
 }
 
+// TestKvWireMapV2ExtraKeysPerBlockNulls pins the real v0.28.0 wire shape:
+// extra_keys is one entry PER STORED BLOCK, null at a block's index when
+// that block carries no extra keys. [null, null] therefore means "no extra
+// keys anywhere" and must decode as ExtraKeys=false — live engines emit
+// exactly that on every BlockStored, and reading it as present false-fails
+// every echo challenge (the simulator omitted the field, hiding this).
+func TestKvWireMapV2ExtraKeysPerBlockNulls(t *testing.T) {
+	stored := kvWireMapStored([]interface{}{int64(1), int64(2)}, nil)
+	stored["extra_keys"] = []interface{}{nil, nil}
+	stored["lora_id"] = nil
+	payload := kvWireMustMarshal(t, kvWireBatchFixture(nil, stored))
+
+	batch, err := kvWireDecodeMapV2(payload)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if batch.Events[0].ExtraKeys {
+		t.Error("[null,null] extra_keys must decode as ExtraKeys=false")
+	}
+	if batch.Events[0].Lora {
+		t.Error("null lora_id must decode as Lora=false")
+	}
+
+	// One non-null per-block entry flips it back to present.
+	stored2 := kvWireMapStored([]interface{}{int64(1), int64(2)}, nil)
+	stored2["extra_keys"] = []interface{}{nil, []interface{}{"mm_hash"}}
+	payload2 := kvWireMustMarshal(t, kvWireBatchFixture(nil, stored2))
+	batch2, err := kvWireDecodeMapV2(payload2)
+	if err != nil {
+		t.Fatalf("decode2: %v", err)
+	}
+	if !batch2.Events[0].ExtraKeys {
+		t.Error("a non-null per-block entry must set ExtraKeys")
+	}
+}
+
 func TestKvWireMapV2DecodeRemovedAndCleared(t *testing.T) {
 	payload := kvWireMustMarshal(t, kvWireBatchFixture(nil,
 		map[string]interface{}{"type": "BlockRemoved", "block_hashes": []interface{}{int64(42)}, "medium": nil},
@@ -303,7 +339,7 @@ func TestKvWireLegacyProfilePins(t *testing.T) {
 		"trtllm": KvWireTrtllmJSONV1,
 	}
 	for engine, want := range wantSchema {
-		got, err := kvResolveWireSchema(engine)
+		got, err := kvResolveWireSchema(engine, "")
 		if err != nil {
 			t.Errorf("engine %q: %v", engine, err)
 			continue
@@ -324,9 +360,23 @@ func TestKvWireLegacyProfilePins(t *testing.T) {
 	}
 	// Engines without an event plane, or unknown engines, must fail closed.
 	for _, engine := range []string{"llamacpp", "bogus-engine"} {
-		if _, err := kvResolveWireSchema(engine); err == nil {
+		if _, err := kvResolveWireSchema(engine, ""); err == nil {
 			t.Errorf("engine %q must not resolve a wire schema", engine)
 		}
+	}
+
+	// A rule whose binding carries a contract reference binds THROUGH it:
+	// a strict vllm rule on the native map profile gets the map decoder —
+	// the legacy table (vllm -> tagged-ARRAY) must not shadow the bound
+	// contract, or every native event rejects as schema_mismatch and the
+	// rule can never attest.
+	got, err := kvResolveWireSchema("vllm", "vllm-kv-map-v2")
+	if err != nil || got != KvWireVllmMapV2 {
+		t.Errorf("contract-bound resolution = %q, %v (want %q)", got, err, KvWireVllmMapV2)
+	}
+	// Unknown contract references fail closed, never fall back to legacy.
+	if _, err := kvResolveWireSchema("vllm", "no-such-contract"); err == nil {
+		t.Error("unknown contract reference must fail closed")
 	}
 }
 

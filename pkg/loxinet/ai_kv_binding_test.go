@@ -17,8 +17,10 @@
 package loxinet
 
 import (
+	"context"
 	"errors"
 	"math"
+	"net"
 	"reflect"
 	"strings"
 	"testing"
@@ -89,11 +91,36 @@ func TestKvBindingRuleIsolation(t *testing.T) {
 	}
 }
 
+// TestKvBindingDigestConvergesAcrossRules: two rules with EQUAL components
+// — the two-node HA shape, where each node mints its own rule UUID for the
+// same operator config — must allocate the SAME binding digest, or the
+// §17.7 capability exchange can never converge and strict cluster
+// activation is structurally impossible (found live as
+// binding_not_converged_on_peer on both nodes forever). Anti-replay is the
+// separate (ruleIdentity, bindingGen) pair, not the digest.
+func TestKvBindingDigestConvergesAcrossRules(t *testing.T) {
+	kvBindingTestSetup(t)
+	ba, err := KvBindingAllocate("rule-node-a", kvTestComponents(1))
+	if err != nil {
+		t.Fatalf("allocate a: %v", err)
+	}
+	bb, err := KvBindingAllocate("rule-node-b", kvTestComponents(1))
+	if err != nil {
+		t.Fatalf("allocate b: %v", err)
+	}
+	if ba.Digest != bb.Digest {
+		t.Fatalf("equal components diverged across rule identities: %s vs %s", ba.Digest, bb.Digest)
+	}
+	if ba.RuleIdent == bb.RuleIdent {
+		t.Fatal("test premise broken: rule identities must differ")
+	}
+}
+
 // TestKvBindingDigestCoversEveryComponent: changing any single component
 // changes the digest — the digest, not the generation handle, is identity.
 func TestKvBindingDigestCoversEveryComponent(t *testing.T) {
 	base := kvTestComponents(1)
-	baseDigest := kvBindingDigest("rule-x", &base)
+	baseDigest := kvBindingDigest(&base)
 	mutations := map[string]KvExactBindingComponents{}
 
 	m := base
@@ -119,12 +146,17 @@ func TestKvBindingDigestCoversEveryComponent(t *testing.T) {
 	mutations["consensus policy"] = m
 
 	for name, comps := range mutations {
-		if kvBindingDigest("rule-x", &comps) == baseDigest {
+		if kvBindingDigest(&comps) == baseDigest {
 			t.Errorf("mutating %s did not change the binding digest", name)
 		}
 	}
-	if kvBindingDigest("rule-y", &base) == baseDigest {
-		t.Error("rule identity does not participate in the digest")
+	// The digest names the composed CONTENT — the rule identity must NOT
+	// participate. Equivalently-configured rules on two cluster nodes carry
+	// different node-minted UUIDs, and the HA capability exchange requires
+	// their binding digests to CONVERGE for strict activation; anti-replay
+	// rides the separate (ruleIdentity, bindingGen) pair.
+	if kvBindingDigest(&base) != baseDigest {
+		t.Error("equal components must produce equal digests regardless of rule identity")
 	}
 }
 
@@ -222,7 +254,7 @@ func kvExportOne(t *testing.T, ruleIdent string, gen uint32) cmn.KvExactBindingM
 		RequiredEvidenceLevel: comps.RequiredEvidenceLevel,
 		ConsensusPolicy:       comps.ConsensusPolicy,
 		BindingGen:            gen,
-		BindingDigest:         kvBindingDigest(ruleIdent, &comps),
+		BindingDigest:         kvBindingDigest(&comps),
 		MaxAllocatedGen:       gen,
 	}
 }
@@ -293,6 +325,80 @@ func TestKvBindingExportRestoreRoundTrip(t *testing.T) {
 	// Duplicate restore of the same rule is refused.
 	if err := KvBindingRestore(&exported[0]); err == nil {
 		t.Fatal("second restore over live binding state accepted")
+	}
+}
+
+// TestKvBindingRestoreRebindsSubscriberWire: a restore replay starts a
+// strict rule's subscribers before the persisted binding document lands, so
+// they resolve the LEGACY wire schema; installing the restored binding must
+// restart those streams under the restored engine contract — otherwise every
+// native event rejects as schema_mismatch and the rule can never re-attest
+// past token parity after a gateway restart.
+func TestKvBindingRestoreRebindsSubscriberWire(t *testing.T) {
+	kvBindingTestSetup(t)
+	const svcID = uint32(9107)
+	const ruleIdent = "rule-restore-rebind"
+
+	// The metrics bridge is a once-armed global; arm it with a live context
+	// so the subscriber start below never captures a nil shutdown context.
+	StartKvMetricsBridge(context.Background())
+
+	KvSvcContractRegister(svcID, ruleIdent, net.ParseIP("127.0.0.1"), 9107, 6, 0)
+	t.Cleanup(func() { KvSvcContractDeregister(svcID) })
+
+	// Replay order: the LB rule replays first and starts its subscriber with
+	// no binding installed yet — contractID "" (the legacy per-engine wire).
+	KvSubscriberStartRank(svcID, 0, 0, "127.0.0.1", 45907, "sha256_cbor", "vllm", 16, "")
+	t.Cleanup(func() { KvSubscriberStopAll(svcID) })
+
+	argsContract := func() string {
+		t.Helper()
+		kvServicesMu.RLock()
+		svc := kvServices[svcID]
+		kvServicesMu.RUnlock()
+		if svc == nil {
+			t.Fatal("subscriber service state missing")
+		}
+		svc.mu.RLock()
+		defer svc.mu.RUnlock()
+		a, ok := svc.startArgs[kvEpRankKey{epIdx: 0, rank: 0}]
+		if !ok {
+			t.Fatal("subscriber start args missing")
+		}
+		return a.contractID
+	}
+	if got := argsContract(); got != "" {
+		t.Fatalf("pre-restore subscriber contract = %q, want legacy \"\"", got)
+	}
+
+	comps := kvTestComponents(1)
+	digest := kvBindingDigest(&comps)
+	err := KvBindingRestore(&cmn.KvExactBindingMod{
+		RuleIdent:             ruleIdent,
+		ModelProfileID:        comps.Profile.ID,
+		ModelProfileGen:       comps.Profile.Gen,
+		EngineContractID:      comps.Contract.ID,
+		EngineContractGen:     comps.Contract.Gen,
+		AttestationPolicyGen:  comps.AttestationPolicyGen,
+		RequiredEvidenceLevel: comps.RequiredEvidenceLevel,
+		ConsensusPolicy:       comps.ConsensusPolicy,
+		BindingGen:            4,
+		BindingDigest:         digest,
+		MaxAllocatedGen:       4,
+	})
+	if err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+
+	if got := argsContract(); got != comps.Contract.ID {
+		t.Fatalf("post-restore subscriber contract = %q, want %q (stream not rebound)", got, comps.Contract.ID)
+	}
+
+	// Converged streams are left alone: a rebind to the already-bound
+	// contract must not churn the goroutines (no stop/start cycle).
+	KvSubscriberRebindWire(svcID, comps.Contract.ID)
+	if got := argsContract(); got != comps.Contract.ID {
+		t.Fatalf("idempotent rebind changed contract to %q", got)
 	}
 }
 

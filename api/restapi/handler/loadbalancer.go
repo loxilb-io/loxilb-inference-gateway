@@ -318,7 +318,7 @@ func ConfigPostLoadbalancer(params operations.PostConfigLoadbalancerParams, prin
 	_, err := ApiHooks.NetLbRuleAdd(&lbRules)
 	if err != nil {
 		tk.LogIt(tk.LogDebug, "api: Error occur : %v\n", err)
-		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
+		return &ErrorResponse{Payload: ResultErrorResponseError(err)}
 	}
 	return &ResultResponse{Result: "Success"}
 }

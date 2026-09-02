@@ -147,13 +147,18 @@ var (
 	kvBindingRules = make(map[string]*kvBindingRuleState)
 )
 
-// kvBindingDigest computes the full binding digest over a canonical
-// serialization of the components. Every field participates: two component
-// sets differing in ANY field produce different digests.
-func kvBindingDigest(ruleIdent string, c *KvExactBindingComponents) string {
+// kvBindingDigest computes the binding digest over a canonical
+// serialization of the components. Every component field participates: two
+// sets differing in ANY field produce different digests. The rule identity
+// deliberately does NOT participate: the digest names the composed CONTENT,
+// and the HA capability exchange requires equivalently-configured rules on
+// two nodes to CONVERGE on it (a node-local UUID in the digest makes strict
+// cluster activation structurally impossible). Local anti-replay protection
+// is the separate (ruleIdentity, bindingGen) pair.
+func kvBindingDigest(c *KvExactBindingComponents) string {
 	h := sha256.New()
-	fmt.Fprintf(h, "rule\x00%s\x00profile\x00%s\x00%d\x00contract\x00%s\x00%d\x00policy\x00%d\x00evidence\x00%s\x00consensus\x00%s\x00",
-		ruleIdent, c.Profile.ID, c.Profile.Gen, c.Contract.ID, c.Contract.Gen,
+	fmt.Fprintf(h, "profile\x00%s\x00%d\x00contract\x00%s\x00%d\x00policy\x00%d\x00evidence\x00%s\x00consensus\x00%s\x00",
+		c.Profile.ID, c.Profile.Gen, c.Contract.ID, c.Contract.Gen,
 		c.AttestationPolicyGen, c.RequiredEvidenceLevel, c.ConsensusPolicy)
 	return hex.EncodeToString(h.Sum(nil))
 }
@@ -217,7 +222,7 @@ func KvBindingAllocate(ruleIdent string, comps KvExactBindingComponents) (*KvExa
 		RuleIdent:  ruleIdent,
 		Components: comps,
 		BindingGen: next,
-		Digest:     kvBindingDigest(ruleIdent, &comps),
+		Digest:     kvBindingDigest(&comps),
 	}
 	rs.maxAllocated = next
 	rs.current = b
@@ -343,7 +348,7 @@ func KvBindingRestore(mod *cmn.KvExactBindingMod) error {
 	if err := kvValidateBindingComponents(&comps); err != nil {
 		return fmt.Errorf("rule %s: %w", mod.RuleIdent, err)
 	}
-	digest := kvBindingDigest(mod.RuleIdent, &comps)
+	digest := kvBindingDigest(&comps)
 	if digest != mod.BindingDigest {
 		return fmt.Errorf("kv-binding: rule %s: persisted digest %.12s… does not match recomputed %.12s… — refusing to restore an unproven identity",
 			mod.RuleIdent, mod.BindingDigest, digest)
@@ -375,5 +380,12 @@ func KvBindingRestore(mod *cmn.KvExactBindingMod) error {
 	// binding exists, run the contract-word install transaction — the only
 	// path that can clear the fence.
 	KvSvcContractKickInstall(mod.RuleIdent)
+	// The replayed rule's subscribers started before this binding existed and
+	// resolved the legacy wire schema; converge them on the restored contract
+	// or every native event rejects as schema_mismatch and the rule can never
+	// re-attest past token parity.
+	if svcID, ok := kvSvcByRuleIdent(mod.RuleIdent); ok {
+		KvSubscriberRebindWire(svcID, mod.EngineContractID)
+	}
 	return nil
 }

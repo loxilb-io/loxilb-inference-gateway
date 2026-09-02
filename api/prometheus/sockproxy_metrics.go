@@ -103,6 +103,13 @@ typedef struct proxy_metrics_snapshot {
     uint64_t cache_bytes_total;
     uint64_t cache_bytes_max_conn;
     uint64_t cache_conns_queued;
+
+    // Same-EP reconnect counters (transient backend connect failure on an
+    // affinity-bearing service). TAIL-APPEND ONLY — twin-declared in
+    // loxilb-ebpf/common/sockproxy_metrics.h and proxy_metrics_stub.c;
+    // keep ALL THREE in lockstep, same commit.
+    uint64_t pd_connect_retry_same_ep;
+    uint64_t pd_connect_retry_same_ep_ok;
 } proxy_metrics_snapshot_t;
 
 // C function from sockproxy.c
@@ -618,6 +625,22 @@ var (
 		},
 	)
 
+	// Same-EP reconnects on transient backend connect failure (affinity-bearing
+	// services: P/D disagg or KV-exact). Attempts vs successes; a success means
+	// the cache-owner endpoint was preserved instead of falling to Tier-2.
+	pdConnectRetrySameEpTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "loxilb_pd_connect_retry_same_ep_total",
+			Help: "Same-endpoint reconnect attempts after a transient backend connect failure on an affinity-bearing service (P/D disaggregation or KV-exact). Bounded by LLB_PD_CONNECT_RETRY_SAME_EP (default 1).",
+		},
+	)
+	pdConnectRetrySameEpOkTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "loxilb_pd_connect_retry_same_ep_ok_total",
+			Help: "Same-endpoint reconnect attempts that succeeded: the originally selected (cache-owner) endpoint accepted on retry, preserving KV affinity instead of falling through to Tier-2 selection.",
+		},
+	)
+
 	// Metric #33: raw shutdowns on selection failure (Counter)
 	lbSelectFailureShutdownTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
@@ -1055,6 +1078,14 @@ func RunSockproxyMetrics(ctx context.Context) {
 		if current.pd_connect_failover >= prevSockproxyMetrics.pd_connect_failover {
 			delta := current.pd_connect_failover - prevSockproxyMetrics.pd_connect_failover
 			pdConnectFailoverTotal.Add(float64(delta))
+		}
+		if current.pd_connect_retry_same_ep >= prevSockproxyMetrics.pd_connect_retry_same_ep {
+			delta := current.pd_connect_retry_same_ep - prevSockproxyMetrics.pd_connect_retry_same_ep
+			pdConnectRetrySameEpTotal.Add(float64(delta))
+		}
+		if current.pd_connect_retry_same_ep_ok >= prevSockproxyMetrics.pd_connect_retry_same_ep_ok {
+			delta := current.pd_connect_retry_same_ep_ok - prevSockproxyMetrics.pd_connect_retry_same_ep_ok
+			pdConnectRetrySameEpOkTotal.Add(float64(delta))
 		}
 		if current.lb_select_failure_shutdown >= prevSockproxyMetrics.lb_select_failure_shutdown {
 			delta := current.lb_select_failure_shutdown - prevSockproxyMetrics.lb_select_failure_shutdown
