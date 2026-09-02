@@ -7076,6 +7076,27 @@ definitions:
         items:
           type: string
         description: Bounded typed reasons explaining enforcedState.
+      enforcement:
+        $ref: '#/definitions/KvExactEnforcement'
+  KvExactEnforcement:
+    type: object
+    description: Data-plane enforcement position of a strict KV-exact rule (absent on legacy rules) - what the control plane wants vs what the data plane provably enforces, per the fence-first contract-word transaction.
+    properties:
+      desired:
+        type: string
+        description: Desired attestation-ladder state.
+      enforced:
+        type: string
+        description: State the data plane actually enforces.
+      lastAckAt:
+        type: string
+        description: RFC3339 time of the last full contract-word ACK (readback and binding-digest halves both verified). Absent before the first ACK after registration or restart.
+      fault:
+        type: string
+        description: Last enforcement fault reason (absent when none).
+      goFenced:
+        type: boolean
+        description: Whether the authoritative tokenize-bridge deny-set fence currently denies the rule (fail-closed backstop - denied rules produce no tokens, so no hashes, regardless of C-side state).
   LoadbalanceStats:
     type: object
     description: Per-LB statistics quad (Octavia).

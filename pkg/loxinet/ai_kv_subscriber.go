@@ -390,6 +390,14 @@ const (
 type kvEvent struct {
 	Type   kvEventType
 	Hashes []uint64 // block hashes (for BlockStored and BlockRemoved)
+	// The remaining fields are decoded from BlockStored only when present,
+	// for the §6.2 echo-challenge wire checks (ai_kv_attest_echo.go): the
+	// flat token_id list covering the event's blocks in order, and whether
+	// the event carries a lora_id / non-empty extra_keys (either fails a
+	// challenge block — extraKeyPolicy none_p0 verified on the wire).
+	Tokens    []uint32
+	Lora      bool
+	ExtraKeys bool
 }
 
 // decodeKVEventBatch decodes a msgpack-encoded KVEventBatch.
@@ -442,7 +450,21 @@ func decodeKVEvent(raw interface{}) (kvEvent, error) {
 		if err != nil {
 			return kvEvent{}, fmt.Errorf("BlockStored: %w", err)
 		}
-		return kvEvent{Type: kvEventBlockStored, Hashes: hashes}, nil
+		ev := kvEvent{Type: kvEventBlockStored, Hashes: hashes}
+		// Optional challenge-check fields (schema at the top of this file:
+		// [tag, [hash...], parent, [token_id...], block_size, lora_id,
+		// medium, lora_name, extra_keys]). Absence is tolerated — inventory
+		// ingest never depends on them; only an armed challenge watch does.
+		if len(arr) > 3 {
+			ev.Tokens = extractTokenIDs(arr[3])
+		}
+		if len(arr) > 5 && !kvFieldEmpty(arr[5]) {
+			ev.Lora = true
+		}
+		if len(arr) > 8 && !kvFieldEmpty(arr[8]) {
+			ev.ExtraKeys = true
+		}
+		return ev, nil
 
 	case "BlockRemoved":
 		if len(arr) < 2 {
@@ -459,6 +481,76 @@ func decodeKVEvent(raw interface{}) (kvEvent, error) {
 
 	default:
 		return kvEvent{Type: kvEventUnknown}, nil
+	}
+}
+
+// extractTokenIDs decodes a flat msgpack token_id array (best-effort: a
+// malformed/absent list yields nil, which an armed challenge watch treats as
+// a wire-check failure while inventory ingest ignores it).
+func extractTokenIDs(raw interface{}) []uint32 {
+	arr, ok := raw.([]interface{})
+	if !ok {
+		return nil
+	}
+	out := make([]uint32, 0, len(arr))
+	for _, v := range arr {
+		switch t := v.(type) {
+		case int8:
+			out = append(out, uint32(t))
+		case int16:
+			out = append(out, uint32(t))
+		case int32:
+			out = append(out, uint32(t))
+		case int64:
+			out = append(out, uint32(t))
+		case uint8:
+			out = append(out, uint32(t))
+		case uint16:
+			out = append(out, uint32(t))
+		case uint32:
+			out = append(out, t)
+		case uint64:
+			out = append(out, uint32(t))
+		default:
+			return nil
+		}
+	}
+	return out
+}
+
+// kvFieldEmpty reports whether an optional msgpack field is absent-like
+// (nil, empty map, empty array, zero int) — the §6.2 checks require
+// lora_id/extra_keys to be EMPTY on challenge blocks.
+func kvFieldEmpty(raw interface{}) bool {
+	switch t := raw.(type) {
+	case nil:
+		return true
+	case map[string]interface{}:
+		return len(t) == 0
+	case map[interface{}]interface{}:
+		return len(t) == 0
+	case []interface{}:
+		return len(t) == 0
+	case int8:
+		return t == 0
+	case int16:
+		return t == 0
+	case int32:
+		return t == 0
+	case int64:
+		return t == 0
+	case uint8:
+		return t == 0
+	case uint16:
+		return t == 0
+	case uint32:
+		return t == 0
+	case uint64:
+		return t == 0
+	case string:
+		return t == ""
+	default:
+		return false
 	}
 }
 
@@ -786,6 +878,9 @@ func runKvSubscriberLoopRank(ctx context.Context, epIdx int, rank uint16, servic
 			switch ev.Type {
 			case kvEventBlockStored:
 				inv.AddBlocks(ev.Hashes)
+				// Echo-challenge watch (ai_kv_attest_echo.go): resolves an
+				// armed challenge's expected hashes; no-op otherwise.
+				kvHashWatchObserve(serviceID, epIdx, ev)
 				log.Infof("kv-subscriber: BlockStored %d block(s) for ep %d (total=%d)", len(ev.Hashes), epIdx, inv.Size())
 			case kvEventBlockRemoved:
 				inv.RemoveBlocks(ev.Hashes)

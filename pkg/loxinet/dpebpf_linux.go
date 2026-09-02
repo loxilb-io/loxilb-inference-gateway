@@ -44,6 +44,7 @@ struct proxy_ent {
 int proxy_update_ep_health(struct proxy_ent *key, int ep_index, uint8_t inactive);
 int proxy_update_ep_health_by_ip(struct proxy_ent *key, uint32_t ep_ip, uint8_t inactive);
 int proxy_update_kv_exact_contract(struct proxy_ent *key, uint32_t binding_gen, uint8_t api_mode, uint8_t eligible, uint64_t *applied);
+int kv_compute_block_hashes(uint8_t hash_algo, const uint32_t *tokens, int n_tokens, uint32_t block_size, uint8_t *out_hashes, int hash_stride, int max_blocks);
 int proxy_set_drain_policy(struct proxy_ent *key, unsigned int policy, uint32_t timeout_sec);
 int proxy_set_circuit_breaker(struct proxy_ent *key, uint8_t enabled, uint32_t failure_threshold, uint32_t open_timeout_sec);
 int proxy_update_qos_config(struct proxy_ent *key, uint64_t cir_bps, uint64_t pir_bps, uint32_t cbs_bytes, uint8_t dir, uint8_t mode);
@@ -267,6 +268,7 @@ struct service_scoring_config {
 */
 import "C"
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"net"
@@ -781,6 +783,11 @@ func DpEbpfInit(clusterEn, rssEn, egrHooks, localSockPolicy, sockMapEn, ktlsEn b
 			bindingGen, apiMode, eligible)
 		return applied, ret == 0
 	})
+
+	// Attestation: the §6.2 echo challenge computes its expected chain
+	// with the SAME C implementation the data plane scores with — never a
+	// Go reimplementation that could agree with itself but not with tier15.
+	KvRegisterChallengeHasher(DpKvComputeChallengeHashes)
 
 	return ne
 }
@@ -2058,6 +2065,44 @@ func (e *DpEbpfH) DpKvExactContractUpdate(svcIP net.IP, svcPort uint16, proto ui
 		svcIP, svcPort, bindingGen, apiMode, eligible)
 
 	return uint64(applied), 0
+}
+
+// DpKvComputeChallengeHashes - attestation: compute the expected chained
+// block hashes for an echo challenge via the C kv_compute_block_hashes —
+// the same implementation the data-plane tier15 path scores with. Returns
+// the uint64 inventory forms (big-endian first 8 digest bytes, matching
+// cBlockHashesToUint64) of every FULL block's hash.
+func DpKvComputeChallengeHashes(hashAlgo string, blockSize uint32, tokens []uint32) ([]uint64, bool) {
+	if len(tokens) == 0 || blockSize == 0 {
+		return nil, false
+	}
+	var algo C.uint8_t
+	var stride int
+	switch hashAlgo {
+	case "", "sha256_cbor":
+		algo, stride = 0, 32 // KV_HASH_SHA256_CBOR
+	case "xxhash_cbor":
+		algo, stride = 1, 16 // KV_HASH_XXHASH_CBOR
+	default:
+		return nil, false
+	}
+	maxBlocks := len(tokens) / int(blockSize)
+	if maxBlocks == 0 {
+		return nil, false
+	}
+	out := make([]byte, stride*maxBlocks)
+	n := C.kv_compute_block_hashes(algo,
+		(*C.uint32_t)(unsafe.Pointer(&tokens[0])), C.int(len(tokens)),
+		C.uint32_t(blockSize),
+		(*C.uint8_t)(unsafe.Pointer(&out[0])), C.int(stride), C.int(maxBlocks))
+	if n <= 0 {
+		return nil, false
+	}
+	hashes := make([]uint64, int(n))
+	for i := 0; i < int(n); i++ {
+		hashes[i] = binary.BigEndian.Uint64(out[i*stride : i*stride+8])
+	}
+	return hashes, true
 }
 
 // DpLBEndpointHostStateUpdate - P2 GPU-Aware: Update endpoint state based on GPU hostState

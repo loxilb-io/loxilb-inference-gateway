@@ -12166,6 +12166,32 @@ func init() {
         }
       }
     },
+    "KvExactEnforcement": {
+      "description": "Data-plane enforcement position of a strict KV-exact rule (absent on legacy rules) - what the control plane wants vs what the data plane provably enforces, per the fence-first contract-word transaction.",
+      "type": "object",
+      "properties": {
+        "desired": {
+          "description": "Desired attestation-ladder state.",
+          "type": "string"
+        },
+        "enforced": {
+          "description": "State the data plane actually enforces.",
+          "type": "string"
+        },
+        "fault": {
+          "description": "Last enforcement fault reason (absent when none).",
+          "type": "string"
+        },
+        "goFenced": {
+          "description": "Whether the authoritative tokenize-bridge deny-set fence currently denies the rule (fail-closed backstop - denied rules produce no tokens, so no hashes, regardless of C-side state).",
+          "type": "boolean"
+        },
+        "lastAckAt": {
+          "description": "RFC3339 time of the last full contract-word ACK (readback and binding-digest halves both verified). Absent before the first ACK after registration or restart.",
+          "type": "string"
+        }
+      }
+    },
     "KvExactStatusEntry": {
       "description": "Resolved KV-exact composition status of one rule. Every identity field is a scalar by schema - one rule composes exactly one model profile with exactly one engine contract at exactly one generation each; arrays and repeated identity fields are rejected representations.",
       "type": "object",
@@ -12190,6 +12216,9 @@ func init() {
         "enforcedState": {
           "description": "State the data plane actually enforces. Honest about pending machinery - a strict rule reports PENDING_DATAPLANE_CONTRACT until the data-plane contract word and attestation controller enforce its binding; a strict rule with missing binding state reports ENFORCEMENT_FAULT, never a silent legacy downgrade.",
           "type": "string"
+        },
+        "enforcement": {
+          "$ref": "#/definitions/KvExactEnforcement"
         },
         "engineContractGen": {
           "description": "Contract generation the binding was composed at.",
@@ -28410,6 +28439,32 @@ func init() {
         }
       }
     },
+    "KvExactEnforcement": {
+      "description": "Data-plane enforcement position of a strict KV-exact rule (absent on legacy rules) - what the control plane wants vs what the data plane provably enforces, per the fence-first contract-word transaction.",
+      "type": "object",
+      "properties": {
+        "desired": {
+          "description": "Desired attestation-ladder state.",
+          "type": "string"
+        },
+        "enforced": {
+          "description": "State the data plane actually enforces.",
+          "type": "string"
+        },
+        "fault": {
+          "description": "Last enforcement fault reason (absent when none).",
+          "type": "string"
+        },
+        "goFenced": {
+          "description": "Whether the authoritative tokenize-bridge deny-set fence currently denies the rule (fail-closed backstop - denied rules produce no tokens, so no hashes, regardless of C-side state).",
+          "type": "boolean"
+        },
+        "lastAckAt": {
+          "description": "RFC3339 time of the last full contract-word ACK (readback and binding-digest halves both verified). Absent before the first ACK after registration or restart.",
+          "type": "string"
+        }
+      }
+    },
     "KvExactStatusEntry": {
       "description": "Resolved KV-exact composition status of one rule. Every identity field is a scalar by schema - one rule composes exactly one model profile with exactly one engine contract at exactly one generation each; arrays and repeated identity fields are rejected representations.",
       "type": "object",
@@ -28434,6 +28489,9 @@ func init() {
         "enforcedState": {
           "description": "State the data plane actually enforces. Honest about pending machinery - a strict rule reports PENDING_DATAPLANE_CONTRACT until the data-plane contract word and attestation controller enforce its binding; a strict rule with missing binding state reports ENFORCEMENT_FAULT, never a silent legacy downgrade.",
           "type": "string"
+        },
+        "enforcement": {
+          "$ref": "#/definitions/KvExactEnforcement"
         },
         "engineContractGen": {
           "description": "Contract generation the binding was composed at.",

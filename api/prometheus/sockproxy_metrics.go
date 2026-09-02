@@ -1333,3 +1333,88 @@ func KvZeroHitWatchdogValue(svcID uint32) float64 {
 	}
 	return *m.Counter.Value
 }
+
+// ---- KV-exact attestation metrics (ai_kv_attest.go) ----
+
+var (
+	// Attestation ladder position per strict rule: exactly one state label
+	// carries 1 per rule (the setter clears the previous state's series).
+	// States: PROFILE_VALIDATED, TOKEN_PARITY_VERIFIED, ENGINE_HASH_ATTESTED,
+	// READY, READY_FUNCTIONAL_ONLY, DEGRADED, ENFORCEMENT_FAULT, ...
+	kvAttestState = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "loxilb_ai_kv_attest_state",
+			Help: "KV-exact attestation ladder position per strict rule (1 on the current state's series).",
+		},
+		[]string{"rule", "state"},
+	)
+
+	// The KvExactEnforcementFault alert source (plan §7.4): 1 while a rule's
+	// data-plane contract word could not be ACKed and the Go deny set is the
+	// standing fence.
+	kvAttestEnforcementFault = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "loxilb_ai_kv_enforcement_fault",
+			Help: "1 while a strict KV-exact rule is in ENFORCEMENT_FAULT (contract word unACKable; Go deny set fencing).",
+		},
+		[]string{"rule"},
+	)
+
+	kvAttestProbeFailTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "loxilb_ai_kv_attest_probe_fail_total",
+			Help: "Attestation probe failures by typed reason (identity/token-parity probes, plan section 5).",
+		},
+		[]string{"reason"},
+	)
+
+	kvAttestEchoTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "loxilb_ai_kv_attest_echo_total",
+			Help: "Echo-challenge outcomes (plan section 6.2) by result (ok|fail).",
+		},
+		[]string{"result"},
+	)
+
+	// kvAttestStatePrev tracks each rule's current state series so a
+	// transition can clear the previous one (bounded label vocabulary,
+	// exactly-one-hot per rule).
+	kvAttestStateMu   sync.Mutex
+	kvAttestStatePrev = make(map[string]string)
+)
+
+// SetKvAttestState publishes a rule's attestation ladder position (state ""
+// removes the rule's series entirely — rule teardown).
+func SetKvAttestState(rule, state string) {
+	kvAttestStateMu.Lock()
+	defer kvAttestStateMu.Unlock()
+	if prev, ok := kvAttestStatePrev[rule]; ok && prev != state {
+		kvAttestState.DeleteLabelValues(rule, prev)
+	}
+	if state == "" {
+		delete(kvAttestStatePrev, rule)
+		kvAttestEnforcementFault.DeleteLabelValues(rule)
+		return
+	}
+	kvAttestStatePrev[rule] = state
+	kvAttestState.WithLabelValues(rule, state).Set(1)
+}
+
+// SetKvAttestEnforcementFault raises/clears the enforcement-fault gauge.
+func SetKvAttestEnforcementFault(rule string, fault bool) {
+	v := 0.0
+	if fault {
+		v = 1.0
+	}
+	kvAttestEnforcementFault.WithLabelValues(rule).Set(v)
+}
+
+// IncKvAttestProbeFail counts one typed probe failure.
+func IncKvAttestProbeFail(reason string) {
+	kvAttestProbeFailTotal.WithLabelValues(reason).Inc()
+}
+
+// IncKvAttestEcho counts one echo-challenge outcome ("ok" | "fail").
+func IncKvAttestEcho(result string) {
+	kvAttestEchoTotal.WithLabelValues(result).Inc()
+}
