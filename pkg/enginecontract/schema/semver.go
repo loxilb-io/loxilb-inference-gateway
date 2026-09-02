@@ -64,15 +64,15 @@ func parseSemver(s string) (semver, error) {
 // sorts before its release (1.2.3-rc1 < 1.2.3); two pre-releases order
 // lexically, which is sufficient for the rcN identities the selectors use.
 func compareSemver(a, b semver) int {
-	for _, d := range [3]int64{
-		int64(a.major) - int64(b.major),
-		int64(a.minor) - int64(b.minor),
-		int64(a.patch) - int64(b.patch),
+	for _, pair := range [3][2]uint64{
+		{a.major, b.major},
+		{a.minor, b.minor},
+		{a.patch, b.patch},
 	} {
-		if d < 0 {
+		if pair[0] < pair[1] {
 			return -1
 		}
-		if d > 0 {
+		if pair[0] > pair[1] {
 			return 1
 		}
 	}

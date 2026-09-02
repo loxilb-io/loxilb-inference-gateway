@@ -71,7 +71,7 @@ const (
 func kvLocalCapability() KvCapabilityInfo {
 	minor := uint32(0)
 	if parts := strings.SplitN(snapshot.SchemaVersion, ".", 2); len(parts) == 2 {
-		if n, err := strconv.Atoi(parts[1]); err == nil && n >= 0 {
+		if n, err := strconv.ParseUint(parts[1], 10, 32); err == nil {
 			minor = uint32(n)
 		}
 	}
