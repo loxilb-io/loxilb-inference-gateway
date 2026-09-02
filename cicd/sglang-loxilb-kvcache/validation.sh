@@ -443,13 +443,14 @@ for _ in 1 2 3; do
 done
 # ...then delete + re-add the VIP-B rule on the SAME gateway.
 del_b_rc=$(llb_curl -o /dev/null -w "%{http_code}" -X DELETE \
-    "${LBBASE}/hosturl/${VIP}/externalipaddress/${VIP}/port/${VPORT_B}/protocol/tcp" 2>/dev/null)
+    "${LBBASE}/hosturl/${VIP}/externalipaddress/${VIP}/port/${VPORT_B}/protocol/tcp?model_name=Qwen%2FQwen3-0.6B" 2>/dev/null)
 sleep 3
 read -r -d '' RULE_B_JSON <<JSON
 {
   "serviceArguments": {
     "externalIP": "${VIP}", "port": ${VPORT_B}, "protocol": "tcp", "sel": 0, "mode": 4,
     "host": "${VIP}", "probeRetries": 1,
+    "model_name": "Qwen/Qwen3-0.6B",
     "kvExactMode": 3, "kvEngineType": "sglang", "kvDpRankCount": ${KV_DP_RANKS},
     "kvZmqPort": ${KV_ZMQ_PORT_B}, "kvWarmupSec": ${KV_WARMUP_SEC}, "kvBlockSize": ${KV_BLOCK_SIZE}
   },
@@ -490,13 +491,14 @@ for _ in 1 2; do
     [[ -n "${an}" ]] && a_served=$((a_served + 1))
 done
 del_a_rc=$(llb_curl -o /dev/null -w "%{http_code}" -X DELETE \
-    "${LBBASE}/hosturl/${VIP}/externalipaddress/${VIP}/port/${VPORT_A}/protocol/tcp" 2>/dev/null)
+    "${LBBASE}/hosturl/${VIP}/externalipaddress/${VIP}/port/${VPORT_A}/protocol/tcp?model_name=Qwen%2FQwen3-0.6B" 2>/dev/null)
 sleep 3
 read -r -d '' RULE_A_JSON <<JSON
 {
   "serviceArguments": {
     "externalIP": "${VIP}", "port": ${VPORT_A}, "protocol": "tcp", "sel": 0, "mode": 4,
     "host": "${VIP}", "pd_disagg_mode": true, "probeRetries": 1,
+    "model_name": "Qwen/Qwen3-0.6B",
     "kvExactMode": 1, "kvZmqPort": ${KV_ZMQ_PORT_A}, "kvHashAlgo": "${KV_HASH_ALGO_A}",
     "kvWarmupSec": ${KV_WARMUP_SEC}, "kvBlockSize": ${KV_BLOCK_SIZE}
   },
@@ -586,6 +588,7 @@ read -r -d '' RULE_B_ENGINE_FLIP <<JSON
   "serviceArguments": {
     "externalIP": "${VIP}", "port": ${VPORT_B}, "protocol": "tcp", "sel": 0, "mode": 4,
     "host": "${VIP}", "probeRetries": 1,
+    "model_name": "Qwen/Qwen3-0.6B",
     "kvExactMode": 3, "kvEngineType": "vllm", "kvDpRankCount": ${KV_DP_RANKS},
     "kvZmqPort": ${KV_ZMQ_PORT_B}, "kvWarmupSec": ${KV_WARMUP_SEC}, "kvBlockSize": ${KV_BLOCK_SIZE}
   },
@@ -737,6 +740,7 @@ read -r -d '' RULE_C_JSON <<JSON
   "serviceArguments": {
     "externalIP": "${VIP}", "port": ${VPORT_C}, "protocol": "tcp", "sel": 0, "mode": 4,
     "host": "${VIP}", "probeRetries": 1,
+    "model_name": "Qwen/Qwen3-0.6B",
     "kvExactMode": 3, "kvEngineType": "sglang", "kvDpRankCount": 1,
     "kvZmqPort": ${KV_ZMQ_PORT_C}, "kvWarmupSec": ${KV_WARMUP_SEC}, "kvBlockSize": ${KV_BLOCK_SIZE_WRONG}
   },
@@ -792,7 +796,7 @@ assert "(L7) loxilb_pd_kv_zero_hit_watchdog_total{service_id=${SID_C:-?}} delta 
     "$([[ "${l7_cnt_after}" -gt "${l7_cnt_before}" ]] && echo 1 || echo 0)"
 # Teardown the throwaway rule + its feeder (paired-resource discipline).
 del_c_rc=$(llb_curl -o /dev/null -w "%{http_code}" -X DELETE \
-    "${LBBASE}/hosturl/${VIP}/externalipaddress/${VIP}/port/${VPORT_C}/protocol/tcp" 2>/dev/null)
+    "${LBBASE}/hosturl/${VIP}/externalipaddress/${VIP}/port/${VPORT_C}/protocol/tcp?model_name=Qwen%2FQwen3-0.6B" 2>/dev/null)
 kill_publisher_port "${KV_ZMQ_PORT_C}"
 assert "(L7) throwaway rule deleted (2xx)" "$([[ "${del_c_rc}" == 2* ]] && echo 1 || echo 0)"
 
@@ -815,6 +819,7 @@ read -r -d '' RULE_D_JSON <<JSON
   "serviceArguments": {
     "externalIP": "${VIP}", "port": ${VPORT_D}, "protocol": "tcp", "sel": 0, "mode": 4,
     "host": "${VIP}", "probeRetries": 1,
+    "model_name": "Qwen/Qwen3-0.6B",
     "kvExactMode": 3, "kvEngineType": "sglang", "kvDpRankCount": 1,
     "kvZmqPort": ${KV_ZMQ_PORT_D}, "kvWarmupSec": ${KV_WARMUP_SEC}, "kvBlockSize": ${KV_BLOCK_SIZE}
   },
@@ -887,7 +892,7 @@ assert "(L8) warm affinity undisturbed: tier15_hits{1} delta >= 15 of 20 (only t
     "$([[ $((l8_hits1_after - l8_hits1_before)) -ge 15 ]] && echo 1 || echo 0)"
 # Teardown the throwaway rule + its feeder (paired-resource discipline).
 del_d_rc=$(llb_curl -o /dev/null -w "%{http_code}" -X DELETE \
-    "${LBBASE}/hosturl/${VIP}/externalipaddress/${VIP}/port/${VPORT_D}/protocol/tcp" 2>/dev/null)
+    "${LBBASE}/hosturl/${VIP}/externalipaddress/${VIP}/port/${VPORT_D}/protocol/tcp?model_name=Qwen%2FQwen3-0.6B" 2>/dev/null)
 kill_publisher_port "${KV_ZMQ_PORT_D}"
 assert "(L8) throwaway rule deleted (2xx)" "$([[ "${del_d_rc}" == 2* ]] && echo 1 || echo 0)"
 
