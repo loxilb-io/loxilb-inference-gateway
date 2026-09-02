@@ -25,3 +25,5 @@ delete_docker_host l3ep3
 delete_docker_host llb1
 
 rm -rf 10.10.10.254/ minica.pem minica-key.pem 2>/dev/null
+
+rm -rf "$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )/.tokenizers-stage"

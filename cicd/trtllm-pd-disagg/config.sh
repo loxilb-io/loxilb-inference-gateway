@@ -35,7 +35,17 @@ echo "#########################################"
 echo "Spawning Docker hosts"
 echo "#########################################"
 
-spawn_docker_host --dock-type loxilb --dock-name llb1
+# KV-exact admission requires the rule's model_name to have a loadable
+# staged tokenizer; stage the committed fixture tokenizer for the model
+# the mock engines serve.
+CFGDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+TOKSTAGE="${CFGDIR}/.tokenizers-stage"
+rm -rf "${TOKSTAGE}"
+mkdir -p "${TOKSTAGE}/Qwen__Qwen2.5-7B-Instruct"
+cp "${CFGDIR}/../common/kv_hash/fixtures/tokenizers/Qwen__Qwen2.5-7B-Instruct/tokenizer.json" \
+   "${TOKSTAGE}/Qwen__Qwen2.5-7B-Instruct/tokenizer.json"
+
+spawn_docker_host --dock-type loxilb --dock-name llb1 --docker-args "-v ${TOKSTAGE}:/etc/loxilb/tokenizers:ro"
 spawn_docker_host --dock-type host   --dock-name l3ep1
 spawn_docker_host --dock-type host   --dock-name l3ep2
 spawn_docker_host --dock-type host   --dock-name l3ep3
@@ -141,7 +151,7 @@ echo "#########################################"
 # default for this engine).
 $hexec llb1 curl -s -X POST http://localhost:11111/netlox/v1/config/loadbalancer \
   -H 'Content-Type: application/json' \
-  -d '{"serviceArguments":{"externalIP":"'"$VIP"'","port":2040,"protocol":"tcp","sel":0,"mode":4,"security":1,"pd_disagg_mode":true,"kvEngineType":"trtllm","kvExactMode":1,"kvBlockSize":32,"kvWarmupSec":5,"sse_mode":true,"host":"'"$VIP"'","monitor":true,"cb_enable":true,"probetype":"http","probeport":8355,"probereq":"/health","probeTimeout":5,"probeRetries":2},"endpoints":[{"endpointIP":"31.31.31.1","targetPort":8355,"weight":1,"ep_role":1},{"endpointIP":"32.32.32.1","targetPort":8355,"weight":1,"ep_role":1},{"endpointIP":"33.33.33.1","targetPort":8355,"weight":1,"ep_role":2}]}'
+  -d '{"serviceArguments":{"externalIP":"'"$VIP"'","port":2040,"protocol":"tcp","sel":0,"mode":4,"security":1,"pd_disagg_mode":true,"kvEngineType":"trtllm","kvExactMode":1,"model_name":"Qwen/Qwen2.5-7B-Instruct","kvBlockSize":32,"kvWarmupSec":5,"sse_mode":true,"host":"'"$VIP"'","monitor":true,"cb_enable":true,"probetype":"http","probeport":8355,"probereq":"/health","probeTimeout":5,"probeRetries":2},"endpoints":[{"endpointIP":"31.31.31.1","targetPort":8355,"weight":1,"ep_role":1},{"endpointIP":"32.32.32.1","targetPort":8355,"weight":1,"ep_role":1},{"endpointIP":"33.33.33.1","targetPort":8355,"weight":1,"ep_role":2}]}'
 echo ""
 
 # Port 2042 — SGLang P/D coexistence rule (dual-dispatch machine).
