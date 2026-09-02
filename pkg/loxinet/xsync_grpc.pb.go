@@ -34,6 +34,9 @@ type XSyncClient interface {
 	// one gateway must stop authenticating on its peers before their cached
 	// copy expires.
 	ApiKeyInvalidate(ctx context.Context, in *ApiKeyInvalidation, opts ...grpc.CallOption) (*XSyncReply, error)
+	// §17.7 KV capability exchange: peers swap capability/digest sets at
+	// connect, on registry/policy change, and per strict-rule activation.
+	KvCapabilityExchange(ctx context.Context, in *KvCapability, opts ...grpc.CallOption) (*KvCapability, error)
 }
 
 type xSyncClient struct {
@@ -116,6 +119,15 @@ func (c *xSyncClient) ApiKeyInvalidate(ctx context.Context, in *ApiKeyInvalidati
 	return out, nil
 }
 
+func (c *xSyncClient) KvCapabilityExchange(ctx context.Context, in *KvCapability, opts ...grpc.CallOption) (*KvCapability, error) {
+	out := new(KvCapability)
+	err := c.cc.Invoke(ctx, "/XSync/KvCapabilityExchange", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // XSyncServer is the server API for XSync service.
 // All implementations must embed UnimplementedXSyncServer
 // for forward compatibility
@@ -132,6 +144,9 @@ type XSyncServer interface {
 	// one gateway must stop authenticating on its peers before their cached
 	// copy expires.
 	ApiKeyInvalidate(context.Context, *ApiKeyInvalidation) (*XSyncReply, error)
+	// §17.7 KV capability exchange: peers swap capability/digest sets at
+	// connect, on registry/policy change, and per strict-rule activation.
+	KvCapabilityExchange(context.Context, *KvCapability) (*KvCapability, error)
 	mustEmbedUnimplementedXSyncServer()
 }
 
@@ -162,6 +177,9 @@ func (UnimplementedXSyncServer) GetSockproxySnapshot(context.Context, *Sockproxy
 }
 func (UnimplementedXSyncServer) ApiKeyInvalidate(context.Context, *ApiKeyInvalidation) (*XSyncReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ApiKeyInvalidate not implemented")
+}
+func (UnimplementedXSyncServer) KvCapabilityExchange(context.Context, *KvCapability) (*KvCapability, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method KvCapabilityExchange not implemented")
 }
 func (UnimplementedXSyncServer) mustEmbedUnimplementedXSyncServer() {}
 
@@ -320,6 +338,24 @@ func _XSync_ApiKeyInvalidate_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _XSync_KvCapabilityExchange_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(KvCapability)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(XSyncServer).KvCapabilityExchange(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/XSync/KvCapabilityExchange",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(XSyncServer).KvCapabilityExchange(ctx, req.(*KvCapability))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // XSync_ServiceDesc is the grpc.ServiceDesc for XSync service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -358,6 +394,10 @@ var XSync_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ApiKeyInvalidate",
 			Handler:    _XSync_ApiKeyInvalidate_Handler,
+		},
+		{
+			MethodName: "KvCapabilityExchange",
+			Handler:    _XSync_KvCapabilityExchange_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

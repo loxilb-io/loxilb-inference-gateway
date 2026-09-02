@@ -61,6 +61,10 @@ typedef struct proxy_metrics_snapshot {
     uint64_t pd_kv_t15_miss_no_worker;
     uint64_t pd_kv_t15_miss_excluded;
     uint64_t pd_kv_t15_miss_shallow;
+    uint64_t pd_kv_t15_miss_not_ready;
+    uint64_t pd_kv_t15_miss_api_mode;
+    uint64_t pd_kv_t15_miss_unsupported;
+    uint64_t pd_kv_t15_miss_runtime_fault;
     uint64_t pd_kv_t15_fallthrough_total;
 
     // CB proactive heal + per-EP admission layer
@@ -99,6 +103,13 @@ typedef struct proxy_metrics_snapshot {
     uint64_t cache_bytes_total;
     uint64_t cache_bytes_max_conn;
     uint64_t cache_conns_queued;
+
+    // Same-EP reconnect counters (transient backend connect failure on an
+    // affinity-bearing service). TAIL-APPEND ONLY — twin-declared in
+    // loxilb-ebpf/common/sockproxy_metrics.h and proxy_metrics_stub.c;
+    // keep ALL THREE in lockstep, same commit.
+    uint64_t pd_connect_retry_same_ep;
+    uint64_t pd_connect_retry_same_ep_ok;
 } proxy_metrics_snapshot_t;
 
 // C function from sockproxy.c
@@ -469,6 +480,22 @@ var (
 		[]string{"service", "ep"},
 	)
 
+	// Wire-rejection counter — increments when a subscriber's resolved wire
+	// binding rejects a payload: a tagged-map batch on the tagged-array
+	// binding (engine wire family newer than the bound contract), a strict
+	// map-binding batch failure, or an SGLang batch whose declared dp_rank
+	// disagrees with the stream's socket-derived rank. The bounded reason
+	// set is defined in pkg/loxinet/ai_kv_wire_bindings.go. Nonzero here is
+	// the loud form of what used to be a silent debug-level skip that left
+	// a healthy-looking but permanently stale inventory.
+	kvSubscriberWireRejectTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "loxilb_kv_subscriber_wire_reject_total",
+			Help: "Total KV event payloads rejected by the stream's wire binding (schema_mismatch | decode_error | rank_mismatch).",
+		},
+		[]string{"service", "ep", "reason"},
+	)
+
 	// Cap-hit eviction counter — increments by the number of blocks
 	// evicted whenever an EP's kvInventory exceeds the per-EP kvMaxBlocks cap.
 	// Authoritative "publisher misbehaving" signal: nonzero ⇒ a publisher is
@@ -598,6 +625,22 @@ var (
 		},
 	)
 
+	// Same-EP reconnects on transient backend connect failure (affinity-bearing
+	// services: P/D disagg or KV-exact). Attempts vs successes; a success means
+	// the cache-owner endpoint was preserved instead of falling to Tier-2.
+	pdConnectRetrySameEpTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "loxilb_pd_connect_retry_same_ep_total",
+			Help: "Same-endpoint reconnect attempts after a transient backend connect failure on an affinity-bearing service (P/D disaggregation or KV-exact). Bounded by LLB_PD_CONNECT_RETRY_SAME_EP (default 1).",
+		},
+	)
+	pdConnectRetrySameEpOkTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "loxilb_pd_connect_retry_same_ep_ok_total",
+			Help: "Same-endpoint reconnect attempts that succeeded: the originally selected (cache-owner) endpoint accepted on retry, preserving KV affinity instead of falling through to Tier-2 selection.",
+		},
+	)
+
 	// Metric #33: raw shutdowns on selection failure (Counter)
 	lbSelectFailureShutdownTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
@@ -670,6 +713,14 @@ var pdKvT15MissReasonLabels = []string{
 	"no_worker",
 	"excluded",
 	"shallow",
+	// Binding-dataplane contract classes: the pre-tokenize contract gate
+	// (not_ready / api_mode) and the typed-bridge strict-path classes
+	// (unsupported_feature / runtime_fault). The legacy collapsed -1 stays
+	// on the historical "tokenize" reason.
+	"not_ready",
+	"api_mode",
+	"unsupported_feature",
+	"runtime_fault",
 }
 
 // init pre-creates every reason child so the CounterVec appears in
@@ -955,7 +1006,7 @@ func RunSockproxyMetrics(ctx context.Context) {
 
 		// 3e. : KV Tier 1.5 routing diagnostics (per-guard miss + fallthrough)
 		// Delta pattern matches existing counters; fields populate in plan 42-02.
-		t15MissCurrent := [9]C.uint64_t{
+		t15MissCurrent := [13]C.uint64_t{
 			current.pd_kv_t15_miss_mode_off,
 			current.pd_kv_t15_miss_warmup,
 			current.pd_kv_t15_miss_text_empty,
@@ -965,8 +1016,12 @@ func RunSockproxyMetrics(ctx context.Context) {
 			current.pd_kv_t15_miss_no_worker,
 			current.pd_kv_t15_miss_excluded,
 			current.pd_kv_t15_miss_shallow,
+			current.pd_kv_t15_miss_not_ready,
+			current.pd_kv_t15_miss_api_mode,
+			current.pd_kv_t15_miss_unsupported,
+			current.pd_kv_t15_miss_runtime_fault,
 		}
-		t15MissPrev := [9]C.uint64_t{
+		t15MissPrev := [13]C.uint64_t{
 			prevSockproxyMetrics.pd_kv_t15_miss_mode_off,
 			prevSockproxyMetrics.pd_kv_t15_miss_warmup,
 			prevSockproxyMetrics.pd_kv_t15_miss_text_empty,
@@ -976,6 +1031,10 @@ func RunSockproxyMetrics(ctx context.Context) {
 			prevSockproxyMetrics.pd_kv_t15_miss_no_worker,
 			prevSockproxyMetrics.pd_kv_t15_miss_excluded,
 			prevSockproxyMetrics.pd_kv_t15_miss_shallow,
+			prevSockproxyMetrics.pd_kv_t15_miss_not_ready,
+			prevSockproxyMetrics.pd_kv_t15_miss_api_mode,
+			prevSockproxyMetrics.pd_kv_t15_miss_unsupported,
+			prevSockproxyMetrics.pd_kv_t15_miss_runtime_fault,
 		}
 		for i, reason := range pdKvT15MissReasonLabels {
 			if t15MissCurrent[i] >= t15MissPrev[i] {
@@ -1019,6 +1078,14 @@ func RunSockproxyMetrics(ctx context.Context) {
 		if current.pd_connect_failover >= prevSockproxyMetrics.pd_connect_failover {
 			delta := current.pd_connect_failover - prevSockproxyMetrics.pd_connect_failover
 			pdConnectFailoverTotal.Add(float64(delta))
+		}
+		if current.pd_connect_retry_same_ep >= prevSockproxyMetrics.pd_connect_retry_same_ep {
+			delta := current.pd_connect_retry_same_ep - prevSockproxyMetrics.pd_connect_retry_same_ep
+			pdConnectRetrySameEpTotal.Add(float64(delta))
+		}
+		if current.pd_connect_retry_same_ep_ok >= prevSockproxyMetrics.pd_connect_retry_same_ep_ok {
+			delta := current.pd_connect_retry_same_ep_ok - prevSockproxyMetrics.pd_connect_retry_same_ep_ok
+			pdConnectRetrySameEpOkTotal.Add(float64(delta))
 		}
 		if current.lb_select_failure_shutdown >= prevSockproxyMetrics.lb_select_failure_shutdown {
 			delta := current.lb_select_failure_shutdown - prevSockproxyMetrics.lb_select_failure_shutdown
@@ -1141,6 +1208,9 @@ func ClearKvEpSeries(service, epIdx string) {
 	kvSubscriberConnected.DeleteLabelValues(service, epIdx)
 	kvSubscriberReconnectTotal.DeleteLabelValues(service, epIdx)
 	kvSubscriberRecvErrorTotal.DeleteLabelValues(service, epIdx)
+	// The wire-reject counter carries a third (bounded) reason label, so
+	// the per-EP scope clears via partial match.
+	kvSubscriberWireRejectTotal.DeletePartialMatch(prometheus.Labels{"service": service, "ep": epIdx})
 	kvInvCapEvictionsTotal.DeleteLabelValues(service, epIdx)
 	ClearKvEpInfo(service, epIdx)
 }
@@ -1261,6 +1331,13 @@ func IncKvSubscriberRecvError(service, ep string) {
 	kvSubscriberRecvErrorTotal.WithLabelValues(service, ep).Inc()
 }
 
+// IncKvSubscriberWireReject increments the wire-binding rejection counter
+// for (service, ep, reason). Called from the subscriber loop when the
+// resolved wire binding rejects a payload or a rank identity disagrees.
+func IncKvSubscriberWireReject(service, ep, reason string) {
+	kvSubscriberWireRejectTotal.WithLabelValues(service, ep, reason).Inc()
+}
+
 // IncKvInventoryCapHit increments the cap-eviction counter for
 // (service, ep) by n. Called from ai_kv_subscriber.go AddBlocks when the per-EP
 // kvMaxBlocks cap forces eviction. Uses .Add(n) (one call per eviction batch)
@@ -1312,4 +1389,89 @@ func KvZeroHitWatchdogValue(svcID uint32) float64 {
 		return 0
 	}
 	return *m.Counter.Value
+}
+
+// ---- KV-exact attestation metrics (ai_kv_attest.go) ----
+
+var (
+	// Attestation ladder position per strict rule: exactly one state label
+	// carries 1 per rule (the setter clears the previous state's series).
+	// States: PROFILE_VALIDATED, TOKEN_PARITY_VERIFIED, ENGINE_HASH_ATTESTED,
+	// READY, READY_FUNCTIONAL_ONLY, DEGRADED, ENFORCEMENT_FAULT, ...
+	kvAttestState = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "loxilb_ai_kv_attest_state",
+			Help: "KV-exact attestation ladder position per strict rule (1 on the current state's series).",
+		},
+		[]string{"rule", "state"},
+	)
+
+	// The KvExactEnforcementFault alert source (plan §7.4): 1 while a rule's
+	// data-plane contract word could not be ACKed and the Go deny set is the
+	// standing fence.
+	kvAttestEnforcementFault = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "loxilb_ai_kv_enforcement_fault",
+			Help: "1 while a strict KV-exact rule is in ENFORCEMENT_FAULT (contract word unACKable; Go deny set fencing).",
+		},
+		[]string{"rule"},
+	)
+
+	kvAttestProbeFailTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "loxilb_ai_kv_attest_probe_fail_total",
+			Help: "Attestation probe failures by typed reason (identity/token-parity probes, plan section 5).",
+		},
+		[]string{"reason"},
+	)
+
+	kvAttestEchoTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "loxilb_ai_kv_attest_echo_total",
+			Help: "Echo-challenge outcomes (plan section 6.2) by result (ok|fail).",
+		},
+		[]string{"result"},
+	)
+
+	// kvAttestStatePrev tracks each rule's current state series so a
+	// transition can clear the previous one (bounded label vocabulary,
+	// exactly-one-hot per rule).
+	kvAttestStateMu   sync.Mutex
+	kvAttestStatePrev = make(map[string]string)
+)
+
+// SetKvAttestState publishes a rule's attestation ladder position (state ""
+// removes the rule's series entirely — rule teardown).
+func SetKvAttestState(rule, state string) {
+	kvAttestStateMu.Lock()
+	defer kvAttestStateMu.Unlock()
+	if prev, ok := kvAttestStatePrev[rule]; ok && prev != state {
+		kvAttestState.DeleteLabelValues(rule, prev)
+	}
+	if state == "" {
+		delete(kvAttestStatePrev, rule)
+		kvAttestEnforcementFault.DeleteLabelValues(rule)
+		return
+	}
+	kvAttestStatePrev[rule] = state
+	kvAttestState.WithLabelValues(rule, state).Set(1)
+}
+
+// SetKvAttestEnforcementFault raises/clears the enforcement-fault gauge.
+func SetKvAttestEnforcementFault(rule string, fault bool) {
+	v := 0.0
+	if fault {
+		v = 1.0
+	}
+	kvAttestEnforcementFault.WithLabelValues(rule).Set(v)
+}
+
+// IncKvAttestProbeFail counts one typed probe failure.
+func IncKvAttestProbeFail(reason string) {
+	kvAttestProbeFailTotal.WithLabelValues(reason).Inc()
+}
+
+// IncKvAttestEcho counts one echo-challenge outcome ("ok" | "fail").
+func IncKvAttestEcho(result string) {
+	kvAttestEchoTotal.WithLabelValues(result).Inc()
 }

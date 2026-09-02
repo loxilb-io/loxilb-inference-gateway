@@ -94,7 +94,8 @@ func domainNames(entries []DomainEntry) []string {
 // DeleteOrder is the exact reverse.
 func TestRegistryOrder(t *testing.T) {
 	want := []string{
-		DomainEndpoint, DomainLoadBalancer, DomainFirewall, DomainPolicy,
+		DomainEndpoint, DomainLoadBalancer, DomainKvExactBinding,
+		DomainFirewall, DomainPolicy,
 		DomainMirror, DomainSession, DomainSessionUlCl, DomainIPFilter,
 		DomainSecurityRate, DomainBFD, DomainBGP, DomainIPsec,
 	}

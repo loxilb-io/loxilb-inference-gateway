@@ -1013,6 +1013,31 @@ type LbServiceArg struct {
 	// KvDpRankCount - SGLang data-parallel rank count (18, 0 ⇒ default 1).
 	// Rank N publishes KV events at KvZmqPort+N; all ranks union into one per-EP inventory.
 	KvDpRankCount uint16 `json:"kvDpRankCount,omitempty"`
+	// KvExactApiMode - request API surfaces this KV-exact rule serves:
+	// "completions", "chat" or "both". Absent ("") on a profile-less rule
+	// keeps the legacy behavior (both surfaces, unattested); with a bound
+	// model profile the effective surface set defaults to the profile's
+	// declared supportedApis and an explicit value must be a subset of them.
+	// Declaring a chat surface requires a validated chat renderer for the
+	// rule's model — an unsupported chat declaration is refused at create
+	// time, never degraded into a silent runtime fallback.
+	// Immutable on a live rule (delete+recreate to change).
+	KvExactApiMode string `json:"kvExactApiMode,omitempty"`
+	// KvModelProfile - ID of the ModelPromptProfile this rule binds to.
+	// Naming a profile makes the rule STRICT: the profile must be published,
+	// its alias policy must admit the rule's model_name, its tokenizer
+	// artifacts must load and digest-match, and a composed KV-exact binding
+	// (profile@generation + engine-contract@generation) is allocated at
+	// create time. Empty = legacy profile-less rule (no binding, documented
+	// migration behavior). Immutable on a live rule (delete+recreate).
+	KvModelProfile string `json:"kvModelProfile,omitempty"`
+	// RestoreReplay - set by the snapshot engine when this rule add is a
+	// restore replay rather than a fresh POST. A replayed strict rule must
+	// NOT allocate a new KV-exact binding generation: the snapshot's
+	// kvexactbinding domain applies right after the loadbalancer domain and
+	// carries the authoritative binding (including the allocation high-water
+	// mark that prevents generation reuse). In-memory only (json:"-").
+	RestoreReplay bool `json:"-"`
 
 	// CHWBL-specific configuration (only used when Sel=LbSelCHWBL)
 	// CHWBLPrefixHashLevel - Prefix hash level for CHWBL: 1=Level1, 2=Level1+2, 3=Level1+2+3
@@ -1826,6 +1851,15 @@ type NetHookInterface interface {
 	NetLbRuleAdd(*LbRuleMod) (int, error)
 	NetLbRuleDel(*LbRuleMod) (int, error)
 	NetLbRuleGet() ([]LbRuleMod, error)
+	NetKvExactBindingGet() ([]KvExactBindingMod, error)
+	NetKvExactBindingAdd(*KvExactBindingMod) (int, error)
+	NetKvExactBindingDel(*KvExactBindingMod) (int, error)
+	// NetKvExactStatusGet returns the resolved KV-exact composition status of
+	// every KV-exact rule on vip:port:proto (modelName "" = all models).
+	// Served from a DEDICATED read model: resolved status must never ride the
+	// GET/POST-shared LoadbalanceEntry, where a client echoing a GET body back
+	// into a POST would replay resolved state as configuration.
+	NetKvExactStatusGet(vip string, port uint16, proto string, modelName string) ([]KvExactStatusMod, error)
 	// NetL7PolicyApply attaches an ordered L7 content-routing route array to the
 	// running sockproxy rule fronting the given VIP:port:proto.
 	// Driven from the dedicated /config/l7policy REST resource: the route IR
@@ -2232,4 +2266,105 @@ type TenantRateLimitEntry struct {
 	BurstPct    int                    `json:"burst_pct"`
 	ModelLimits []TenantModelRateLimit `json:"model_limits,omitempty"`
 	UpdatedAt   time.Time              `json:"updated_at"`
+}
+
+// KvExactBindingMod - persisted form of one rule's KV-exact binding: the
+// composed model-profile + engine-contract identity, its rule-scoped
+// binding generation, the full binding digest, and the highest generation
+// ever allocated for the rule (so a restarted allocator never reuses a
+// generation that may still be in flight).
+type KvExactBindingMod struct {
+	// RuleIdent identifies the bound load-balancer rule (its stable id).
+	RuleIdent string `json:"ruleIdent"`
+	// ModelProfileID/ModelProfileGen reference exactly one ModelPromptProfile
+	// at exactly one registry generation (scalars by schema).
+	ModelProfileID  string `json:"modelProfileId"`
+	ModelProfileGen uint64 `json:"modelProfileGen"`
+	// EngineContractID/EngineContractGen reference exactly one engine
+	// contract at exactly one generation (scalars by schema).
+	EngineContractID  string `json:"engineContractId"`
+	EngineContractGen uint64 `json:"engineContractGen"`
+	// AttestationPolicyGen versions the attestation policy the binding was
+	// admitted under.
+	AttestationPolicyGen uint32 `json:"attestationPolicyGen"`
+	// RequiredEvidenceLevel is the support-catalog evidence level this
+	// binding requires of its engine tuple.
+	RequiredEvidenceLevel string `json:"requiredEvidenceLevel"`
+	// ConsensusPolicy names the endpoint-consensus policy.
+	ConsensusPolicy string `json:"consensusPolicy"`
+	// BindingGen is the rule-scoped monotonic data-plane generation (0 is
+	// reserved and never a valid generation).
+	BindingGen uint32 `json:"bindingGen"`
+	// BindingDigest is the full digest over the composed binding identity.
+	// It, not BindingGen, is the identity proof.
+	BindingDigest string `json:"bindingDigest"`
+	// MaxAllocatedGen is the highest BindingGen the rule's allocator has
+	// handed out; restore resumes allocation above it.
+	MaxAllocatedGen uint32 `json:"maxAllocatedGen"`
+}
+
+// KvExactStatusMod - resolved KV-exact composition status of one rule. A
+// DEDICATED read model, deliberately not the LoadbalanceEntry: status echoed
+// from a GET must never be replayable into a POST as configuration. Every
+// identity field is a scalar — one rule composes exactly one model profile
+// with exactly one engine contract at exactly one generation each.
+type KvExactStatusMod struct {
+	// RuleIdentity is the rule's stable opaque id.
+	RuleIdentity string `json:"ruleIdentity"`
+	// ModelName/EngineFamily identify what the rule serves and through which
+	// KV-event engine family (effective value; "" resolves to vllm).
+	ModelName    string `json:"modelName"`
+	EngineFamily string `json:"engineFamily"`
+	// ApiMode is the rule's effective KV-exact API surface declaration.
+	ApiMode string `json:"apiMode"`
+	// ModelProfileID/ModelProfileGen reference the bound ModelPromptProfile
+	// (empty/0 on a legacy profile-less rule).
+	ModelProfileID  string `json:"modelProfileId,omitempty"`
+	ModelProfileGen uint64 `json:"modelProfileGen,omitempty"`
+	// EngineContractID/EngineContractGen reference the bound engine contract
+	// (empty/0 on a legacy profile-less rule).
+	EngineContractID  string `json:"engineContractId,omitempty"`
+	EngineContractGen uint64 `json:"engineContractGen,omitempty"`
+	// BindingGen/BindingDigest are the rule's current composed-binding
+	// data-plane generation and its identity-proving digest (0/"" legacy).
+	BindingGen    uint32 `json:"bindingGen,omitempty"`
+	BindingDigest string `json:"bindingDigest,omitempty"`
+	// HashContractID names the block-hash contract the rule's data plane
+	// computes with (the effective kvHashAlgo).
+	HashContractID string `json:"hashContractId"`
+	// WireSchemaID/PdDialectID are engine-contract identities; empty until an
+	// engine-contract registry serves them.
+	WireSchemaID string `json:"wireSchemaId,omitempty"`
+	PdDialectID  string `json:"pdDialectId,omitempty"`
+	// RequiredEvidenceLevel is the support-catalog evidence level the
+	// binding requires of its engine tuple ("" on legacy rules).
+	RequiredEvidenceLevel string `json:"requiredEvidenceLevel,omitempty"`
+	// DesiredState/EnforcedState report the rule's position on the
+	// attestation ladder. A legacy profile-less rule reports
+	// LEGACY_ACTIVE_UNATTESTED on both; a strict rule reports its validated
+	// desired state and the honestly-pending enforced state until the
+	// data-plane contract word and the attestation controller enforce it.
+	DesiredState  string `json:"desiredState"`
+	EnforcedState string `json:"enforcedState"`
+	// ReasonCodes are bounded typed reasons explaining EnforcedState.
+	ReasonCodes []string `json:"reasonCodes,omitempty"`
+	// Enforcement is the data-plane enforcement position of a strict rule
+	// (absent on legacy rules): the Go deny-set fence, the last recorded
+	// enforcement fault, and the last full contract-word ACK.
+	Enforcement *KvExactEnforcement `json:"enforcement,omitempty"`
+}
+
+// KvExactEnforcement - the enforcement half of a strict rule's status: what
+// the control plane wants vs what the data plane provably enforces.
+type KvExactEnforcement struct {
+	Desired  string `json:"desired"`
+	Enforced string `json:"enforced"`
+	// LastAckAt is the RFC3339 time of the last full contract-word ACK
+	// (readback + binding-digest halves both verified); empty before the
+	// first ACK after registration or restart.
+	LastAckAt string `json:"lastAckAt,omitempty"`
+	// Fault is the last enforcement fault reason ("" = none).
+	Fault string `json:"fault,omitempty"`
+	// GoFenced reports the authoritative tokenize-bridge deny-set fence.
+	GoFenced bool `json:"goFenced"`
 }

@@ -1055,6 +1055,54 @@ paths:
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+  '/config/loadbalancer/externalipaddress/{ip_address}/port/{port}/protocol/{proto}/kvexactstatus':
+    get:
+      summary: Get the resolved KV-exact composition status of Load balancer rules
+      description: Returns the resolved KV-exact status (model-profile/engine-contract binding identity, binding generation and digest, hash contract, attestation-ladder desired/enforced states with reason codes) for every KV-exact rule on the composite key. A DEDICATED read model - resolved status never rides the GET/POST-shared LoadbalanceEntry, so an echoed GET body can never replay resolved state back as configuration. Every identity field is a scalar by schema.
+      operationId: getConfigLoadbalancerKvExactStatus
+      parameters:
+        - name: ip_address
+          in: path
+          type: string
+          required: true
+          description: External (VIP) IP address of the load balancer service
+        - name: port
+          in: path
+          type: number
+          required: true
+          description: Service port of the load balancer service
+        - name: proto
+          in: path
+          type: string
+          required: true
+          description: Protocol of the load balancer service (tcp/udp/sctp)
+        - name: model_name
+          in: query
+          type: string
+          required: false
+          description: Restrict to the rule serving this model name (absent = every KV-exact rule on the key)
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: object
+            properties:
+              kvExactStatusAttr:
+                type: array
+                items:
+                  $ref: '#/definitions/KvExactStatusEntry'
+        '401':
+          description: Invalid authentication credentials
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: Resource not found
+          schema:
+            $ref: '#/definitions/Error'
+        '500':
+          description: Internal service error
+          schema:
+            $ref: '#/definitions/Error'
   '/config/loadbalancer/externalipaddress/{ip_address}/port/{port}/protocol/{proto}/stats':
     get:
       summary: Get per-service statistics of a Load balancer service
@@ -6968,6 +7016,88 @@ definitions:
         type: string
         format: date-time
         description: In-memory last-mutation timestamp (RFC3339). Reset-to-now on restart, never persisted.
+  KvExactStatusEntry:
+    type: object
+    description: Resolved KV-exact composition status of one rule. Every identity field is a scalar by schema - one rule composes exactly one model profile with exactly one engine contract at exactly one generation each; arrays and repeated identity fields are rejected representations.
+    properties:
+      ruleIdentity:
+        type: string
+        description: Stable opaque id of the load-balancer rule.
+      modelName:
+        type: string
+        description: Served model name the rule keys its endpoint pool on.
+      engineFamily:
+        type: string
+        description: Effective KV-event engine family (absent kvEngineType resolves to vllm).
+      apiMode:
+        type: string
+        description: Effective KV-exact API surface declaration (completions/chat/both; an absent kvExactApiMode resolves to the bound profile's declared surfaces, or "both" on a legacy rule).
+      modelProfileId:
+        type: string
+        description: Bound ModelPromptProfile ID (absent on a legacy profile-less rule).
+      modelProfileGen:
+        type: integer
+        format: uint64
+        description: Registry generation the profile was bound at.
+      engineContractId:
+        type: string
+        description: Bound engine-contract ID (absent on a legacy profile-less rule).
+      engineContractGen:
+        type: integer
+        format: uint64
+        description: Contract generation the binding was composed at.
+      bindingGen:
+        type: integer
+        format: uint32
+        description: Rule-scoped monotonic binding generation (data-plane handle; 0 is reserved and never a valid generation).
+      bindingDigest:
+        type: string
+        description: Full digest over the composed binding identity. The digest, never the generation handle, is the identity proof.
+      hashContractId:
+        type: string
+        description: Block-hash contract the rule's data plane computes with (the effective kvHashAlgo).
+      wireSchemaId:
+        type: string
+        description: Engine-contract wire-schema identity (absent until an engine-contract registry serves it).
+      pdDialectId:
+        type: string
+        description: Engine-contract P/D dialect identity (absent until an engine-contract registry serves it).
+      requiredEvidenceLevel:
+        type: string
+        description: Support-catalog evidence level the binding requires of its engine tuple (absent on legacy rules).
+      desiredState:
+        type: string
+        description: Desired attestation-ladder state (LEGACY_ACTIVE_UNATTESTED on profile-less rules, PROFILE_VALIDATED and upward on strict rules).
+      enforcedState:
+        type: string
+        description: State the data plane actually enforces. Honest about pending machinery - a strict rule reports PENDING_DATAPLANE_CONTRACT until the data-plane contract word and attestation controller enforce its binding; a strict rule with missing binding state reports ENFORCEMENT_FAULT, never a silent legacy downgrade.
+      reasonCodes:
+        type: array
+        items:
+          type: string
+        description: Bounded typed reasons explaining enforcedState.
+      enforcement:
+        $ref: '#/definitions/KvExactEnforcement'
+  KvExactEnforcement:
+    type: object
+    description: Data-plane enforcement position of a strict KV-exact rule (absent on legacy rules) - what the control plane wants vs what the data plane provably enforces, per the fence-first contract-word transaction.
+    properties:
+      desired:
+        type: string
+        description: Desired attestation-ladder state.
+      enforced:
+        type: string
+        description: State the data plane actually enforces.
+      lastAckAt:
+        type: string
+        description: RFC3339 time of the last full contract-word ACK (readback and binding-digest halves both verified). Absent before the first ACK after registration or restart.
+      fault:
+        type: string
+        description: Last enforcement fault reason (absent when none).
+      goFenced:
+        type: boolean
+        x-omitempty: false
+        description: Whether the authoritative tokenize-bridge deny-set fence currently denies the rule (fail-closed backstop - denied rules produce no tokens, so no hashes, regardless of C-side state). Always serialized - a lifted fence (false) must stay distinguishable from an unreported one.
   LoadbalanceStats:
     type: object
     description: Per-LB statistics quad (Octavia).
@@ -7385,8 +7515,9 @@ definitions:
             default: 0
             description: >-
               KV-cache exact (Tier 1.5) routing mode. Selects the ENDPOINT TOPOLOGY only —
-              the serving framework is chosen independently by kvEngineType, and every mode
-              below works with either engine.
+              the serving framework is chosen independently by kvEngineType, and engine
+              support for each mode is bounded by the per-engine capability matrix in the
+              kvEngineType description (NOT every mode works with every engine).
               0 = off.
               1 = zmq over a P/D role-partitioned pool: requires pd_disagg_mode=true (rejected
               otherwise) and endpoints tagged ep_role 1/2; only ep_role=1 (prefill) endpoints
@@ -7445,7 +7576,7 @@ definitions:
             x-nullable: false
             enum: ["vllm", "sglang", "trtllm", "llamacpp"]
             default: "vllm"
-            description: "KV-event engine behind this rule. One framework per VIP; immutable after create (delete+recreate to change). Drives hash-algo default: sglang => sha256_sglang, trtllm => blockhash_trtllm. trtllm supports plain LB, kvExactMode=3 (single-role Tier 1.5 over HTTP-polled KV events on each endpoint's own serving port — the gateway must be the SOLE consumer of /kv_cache_events per endpoint) and pd_disagg_mode with kvExactMode=1 (sequential P/D dialect); kvZmqPort/kvDpRankCount are meaningless for it (rejected when set — no ZMQ, no client-visible DP ranks). llamacpp supports plain LB with CHWBL/session affinity ONLY — the engine has no KV event plane and no P/D disaggregation, so kvExactMode, pd_disagg_mode, kvHashAlgo and non-default kvZmqPort/kvDpRankCount/kvBlockSize are all rejected. NOTE: LOXILB_KV_* env knobs (unified mode, eps/lambda, cap-sum, max-blocks) are process-global and shared across all KV VIPs (accepted limitation)."
+            description: "KV-event engine behind this rule. One framework per load-balancer Rule — different rules (ports) on one VIP IP MAY run different engines (accepted multi-framework coexistence, warned at create); immutable after create (delete+recreate to change). Drives hash-algo default: sglang => sha256_sglang, trtllm => blockhash_trtllm. trtllm supports plain LB, kvExactMode=3 (single-role Tier 1.5 over HTTP-polled KV events on each endpoint's own serving port — the gateway must be the SOLE consumer of /kv_cache_events per endpoint) and pd_disagg_mode with kvExactMode=1 (sequential P/D dialect); kvZmqPort/kvDpRankCount are meaningless for it (rejected when set — no ZMQ, no client-visible DP ranks). llamacpp supports plain LB with CHWBL/session affinity ONLY — the engine has no KV event plane and no P/D disaggregation, so kvExactMode, pd_disagg_mode, kvHashAlgo and non-default kvZmqPort/kvDpRankCount/kvBlockSize are all rejected. NOTE: LOXILB_KV_* env knobs (unified mode, eps/lambda, cap-sum, max-blocks) are process-global and shared across all KV VIPs (accepted limitation)."
           kvDpRankCount:
             type: integer
             format: int32
@@ -7454,6 +7585,15 @@ definitions:
             maximum: 8
             default: 1
             description: "SGLang data-parallel rank count. Rank N publishes KV events at kvZmqPort+N; all ranks union into one per-EP inventory."
+          kvExactApiMode:
+            type: string
+            x-nullable: false
+            enum: ["completions", "chat", "both"]
+            description: "Request API surfaces this KV-exact rule serves. Absent on a profile-less rule keeps the legacy behavior (both surfaces, unattested); with kvModelProfile bound, the effective surfaces default to the profile's declared supportedApis and an explicit value must be a subset of them. Declaring a chat surface requires a validated chat renderer for the rule's model_name — an unsupported chat declaration is refused at create time, never degraded into a silent runtime fallback. Meaningless without kvExactMode (rejected). Immutable after create (delete+recreate to change). Scalar by schema — arrays are rejected representations."
+          kvModelProfile:
+            type: string
+            x-nullable: false
+            description: "ID of the ModelPromptProfile this rule binds to. Naming a profile makes the rule STRICT: the profile must be published in the gateway's profile registry, its alias policy must admit the rule's model_name, its pinned tokenizer artifacts must load and digest-match, and a composed KV-exact binding (model-profile@generation + engine-contract@generation) is allocated at create time — admission fails closed while no engine-contract registry is available. Absent = legacy profile-less rule (no binding; documented migration behavior). Immutable after create (delete+recreate to change). Scalar by schema — exactly one profile per rule; arrays are rejected representations."
           pdBootstrapPort:
             type: integer
             format: int32

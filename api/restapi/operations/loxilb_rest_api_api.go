@@ -313,7 +313,7 @@ func NewLoxilbRestAPIAPI(spec *loads.Document) *LoxilbRestAPIAPI {
 		GetLogsHandler: GetLogsHandlerFunc(func(params GetLogsParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation GetLogs has not yet been implemented")
 		}),
-		GetMetricsHandler: GetMetricsHandlerFunc(func(params GetMetricsParams, principal interface{}) middleware.Responder {
+		GetMetricsHandler: GetMetricsHandlerFunc(func(params GetMetricsParams) middleware.Responder {
 			return middleware.NotImplemented("operation GetMetrics has not yet been implemented")
 		}),
 		GetMetricsEpdisttrafficHandler: GetMetricsEpdisttrafficHandlerFunc(func(params GetMetricsEpdisttrafficParams, principal interface{}) middleware.Responder {
@@ -615,6 +615,9 @@ func NewLoxilbRestAPIAPI(spec *loads.Document) *LoxilbRestAPIAPI {
 		}),
 		GetConfigLoadbalancerIDHandler: GetConfigLoadbalancerIDHandlerFunc(func(params GetConfigLoadbalancerIDParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation GetConfigLoadbalancerID has not yet been implemented")
+		}),
+		GetConfigLoadbalancerKvExactStatusHandler: GetConfigLoadbalancerKvExactStatusHandlerFunc(func(params GetConfigLoadbalancerKvExactStatusParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetConfigLoadbalancerKvExactStatus has not yet been implemented")
 		}),
 		GetConfigLoadbalancerStatsHandler: GetConfigLoadbalancerStatsHandlerFunc(func(params GetConfigLoadbalancerStatsParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation GetConfigLoadbalancerStats has not yet been implemented")
@@ -1091,6 +1094,8 @@ type LoxilbRestAPIAPI struct {
 	GetConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoHandler GetConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoHandler
 	// GetConfigLoadbalancerIDHandler sets the operation handler for the get config loadbalancer ID operation
 	GetConfigLoadbalancerIDHandler GetConfigLoadbalancerIDHandler
+	// GetConfigLoadbalancerKvExactStatusHandler sets the operation handler for the get config loadbalancer kv exact status operation
+	GetConfigLoadbalancerKvExactStatusHandler GetConfigLoadbalancerKvExactStatusHandler
 	// GetConfigLoadbalancerStatsHandler sets the operation handler for the get config loadbalancer stats operation
 	GetConfigLoadbalancerStatsHandler GetConfigLoadbalancerStatsHandler
 	// GetConfigLoadbalancerStatusHandler sets the operation handler for the get config loadbalancer status operation
@@ -1769,6 +1774,9 @@ func (o *LoxilbRestAPIAPI) Validate() error {
 	}
 	if o.GetConfigLoadbalancerIDHandler == nil {
 		unregistered = append(unregistered, "GetConfigLoadbalancerIDHandler")
+	}
+	if o.GetConfigLoadbalancerKvExactStatusHandler == nil {
+		unregistered = append(unregistered, "GetConfigLoadbalancerKvExactStatusHandler")
 	}
 	if o.GetConfigLoadbalancerStatsHandler == nil {
 		unregistered = append(unregistered, "GetConfigLoadbalancerStatsHandler")
@@ -2667,6 +2675,10 @@ func (o *LoxilbRestAPIAPI) initHandlerCache() {
 		o.handlers["GET"] = make(map[string]http.Handler)
 	}
 	o.handlers["GET"]["/config/loadbalancer/id/{id}"] = NewGetConfigLoadbalancerID(o.context, o.GetConfigLoadbalancerIDHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/loadbalancer/externalipaddress/{ip_address}/port/{port}/protocol/{proto}/kvexactstatus"] = NewGetConfigLoadbalancerKvExactStatus(o.context, o.GetConfigLoadbalancerKvExactStatusHandler)
 	if o.handlers["GET"] == nil {
 		o.handlers["GET"] = make(map[string]http.Handler)
 	}

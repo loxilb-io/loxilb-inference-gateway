@@ -43,6 +43,12 @@ type Hooks interface {
 	NetLbRuleAdd(*cmn.LbRuleMod) (int, error)
 	NetLbRuleDel(*cmn.LbRuleMod) (int, error)
 
+	// kvexactbinding (schema 1.1): per-rule KV-exact composed-binding
+	// identity. Applied after loadbalancer (bindings belong to rules).
+	NetKvExactBindingGet() ([]cmn.KvExactBindingMod, error)
+	NetKvExactBindingAdd(*cmn.KvExactBindingMod) (int, error)
+	NetKvExactBindingDel(*cmn.KvExactBindingMod) (int, error)
+
 	// firewall (§4.1 #3)
 	NetFwRuleGet() ([]cmn.FwRuleMod, error)
 	NetFwRuleAdd(*cmn.FwRuleMod) (int, error)
@@ -159,6 +165,7 @@ type DomainEntry struct {
 var Registry = []DomainEntry{
 	{Name: DomainEndpoint, Get: getEndpoint, Apply: applyEndpoint, Delete: deleteEndpoint},
 	{Name: DomainLoadBalancer, Get: getLoadBalancer, Apply: applyLoadBalancer, Delete: deleteLoadBalancer},
+	{Name: DomainKvExactBinding, Get: getKvExactBinding, Apply: applyKvExactBinding, Delete: deleteKvExactBinding},
 	{Name: DomainFirewall, Get: getFirewall, Apply: applyFirewall, Delete: deleteFirewall},
 	{Name: DomainPolicy, Get: getPolicy, Apply: applyPolicy, Delete: deletePolicy},
 	{Name: DomainMirror, Get: getMirror, Apply: applyMirror, Delete: deleteMirror},
@@ -372,6 +379,12 @@ func applyLoadBalancer(hooks Hooks, doc *Document, tolerateExists bool) (int, in
 	n, skipped := 0, 0
 	for i := range doc.Domains.LoadBalancer {
 		lb := &doc.Domains.LoadBalancer[i]
+		// Restore replay, not a fresh POST: a strict KV-exact rule must not
+		// allocate a new binding generation here — the kvexactbinding domain
+		// applies right after this one and carries the authoritative binding,
+		// including the allocation high-water mark that prevents a restarted
+		// allocator from reissuing a generation that may still be in flight.
+		lb.Serv.RestoreReplay = true
 		if _, err := hooks.NetLbRuleAdd(lb); err != nil {
 			if tolerateExists && isIdempotentExists(err) {
 				skipped++
@@ -395,6 +408,57 @@ func deleteLoadBalancer(hooks Hooks) (int, error) {
 		lb := &rules[i]
 		if _, err := hooks.NetLbRuleDel(lb); err != nil {
 			errs = append(errs, fmt.Errorf("delete loadbalancer %q: %w", lb.Serv.ServIP, err))
+			continue
+		}
+		n++
+	}
+	return n, errors.Join(errs...)
+}
+
+// ---------------------------------------------------------------------
+// 2b. kvexactbinding (schema 1.1)
+//
+// Bindings apply after loadbalancer (they reference rules by identity) and
+// delete before it in DeleteOrder's reversal (binding state goes away
+// before the rule it describes).
+// ---------------------------------------------------------------------
+
+func getKvExactBinding(hooks Hooks, doc *Document) error {
+	binds, err := hooks.NetKvExactBindingGet()
+	if err != nil {
+		return fmt.Errorf("get kvexactbinding: %w", err)
+	}
+	doc.Domains.KvExactBinding = binds
+	return nil
+}
+
+func applyKvExactBinding(hooks Hooks, doc *Document, tolerateExists bool) (int, int, error) {
+	n, skipped := 0, 0
+	for i := range doc.Domains.KvExactBinding {
+		b := &doc.Domains.KvExactBinding[i]
+		if _, err := hooks.NetKvExactBindingAdd(b); err != nil {
+			if tolerateExists && isIdempotentExists(err) {
+				skipped++
+				continue
+			}
+			return n, skipped, fmt.Errorf("apply kvexactbinding %q: %w", b.RuleIdent, err)
+		}
+		n++
+	}
+	return n, skipped, nil
+}
+
+func deleteKvExactBinding(hooks Hooks) (int, error) {
+	binds, err := hooks.NetKvExactBindingGet()
+	if err != nil {
+		return 0, fmt.Errorf("delete kvexactbinding: get: %w", err)
+	}
+	n := 0
+	var errs []error
+	for i := range binds {
+		b := &binds[i]
+		if _, err := hooks.NetKvExactBindingDel(b); err != nil {
+			errs = append(errs, fmt.Errorf("delete kvexactbinding %q: %w", b.RuleIdent, err))
 			continue
 		}
 		n++

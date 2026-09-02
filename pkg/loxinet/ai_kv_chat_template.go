@@ -111,11 +111,21 @@ func kvRenderChatTemplate(modelName string, messages []kvChatMessage) (string, b
 	return "", false
 }
 
+// kvChatTemplateSupported reports whether a validated chat renderer exists
+// for modelName. Deliberately a wrapper over kvRenderChatTemplate so this
+// answer can never drift from the decision the serving path actually makes —
+// admission refuses a declared chat surface exactly when the serving path
+// would have to fall back untemplated.
+func kvChatTemplateSupported(modelName string) bool {
+	_, ok := kvRenderChatTemplate(modelName, nil)
+	return ok
+}
+
 // kvParseChatMessages extracts the ordered role/content turns from a raw chat
 // request body (the JSON loxilb's C side has in its receive buffer). Content may
 // be a plain string or the OpenAI array form ([{type:"text",text:"..."}]); the
-// text segments are concatenated. Returns ok=false on parse failure or no
-// messages.
+// text segments are joined with "\n" to match the engine's string-content-format
+// part handling. Returns ok=false on parse failure or no messages.
 func kvParseChatMessages(body string) ([]kvChatMessage, bool) {
 	var req struct {
 		Messages []struct {
@@ -137,7 +147,10 @@ func kvParseChatMessages(body string) ([]kvChatMessage, bool) {
 }
 
 // kvExtractMessageContent normalizes a chat message "content" field (string or
-// OpenAI content-part array) into plain text.
+// OpenAI content-part array) into plain text. Multiple text parts are joined
+// with "\n": string-content-format chat templates receive parts joined that
+// way by the engine's request parser, so any other separator renders (and
+// therefore tokenizes and hashes) different bytes than the engine caches.
 func kvExtractMessageContent(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return ""
@@ -151,21 +164,70 @@ func kvExtractMessageContent(raw json.RawMessage) string {
 		Text string `json:"text"`
 	}
 	if err := json.Unmarshal(raw, &parts); err == nil {
-		var b strings.Builder
+		texts := make([]string, 0, len(parts))
 		for _, p := range parts {
 			if p.Type == "text" {
-				b.WriteString(p.Text)
+				texts = append(texts, p.Text)
 			}
 		}
-		return b.String()
+		return strings.Join(texts, "\n")
+	}
+	return ""
+}
+
+// kvChatExcludedFeature inspects a raw chat request body for the plan-§4
+// excluded-feature vocabulary and returns the first feature found ("" =
+// none). Consulted on STRICT bridge paths only (kvBridgeTokenizeChat):
+// requests carrying these features hash differently engine-side than the
+// gateway's plain-text render, so a strict rule refuses to score them
+// (request-class UNSUPPORTED — never readiness-affecting, I-12) instead of
+// routing a mis-hashed prefix. Legacy rules keep today's behavior untouched.
+func kvChatExcludedFeature(body string) string {
+	var req struct {
+		Tools              json.RawMessage `json:"tools"`
+		ToolChoice         json.RawMessage `json:"tool_choice"`
+		CacheSalt          json.RawMessage `json:"cache_salt"`
+		PromptEmbeds       json.RawMessage `json:"prompt_embeds"`
+		ChatTemplateKwargs json.RawMessage `json:"chat_template_kwargs"`
+		Messages           []struct {
+			Content json.RawMessage `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal([]byte(body), &req); err != nil {
+		return ""
+	}
+	present := func(raw json.RawMessage) bool {
+		return len(raw) > 0 && string(raw) != "null"
+	}
+	switch {
+	case present(req.Tools) || present(req.ToolChoice):
+		return "tools"
+	case present(req.CacheSalt):
+		return "cache_salt"
+	case present(req.PromptEmbeds):
+		return "prompt_embeds"
+	case present(req.ChatTemplateKwargs):
+		return "template_kwargs"
+	}
+	for _, m := range req.Messages {
+		var parts []struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(m.Content, &parts); err == nil {
+			for _, p := range parts {
+				if p.Type != "" && p.Type != "text" {
+					return "multimodal"
+				}
+			}
+		}
 	}
 	return ""
 }
 
 // kvTokenizeChatBody renders modelName's chat template over the messages in the
 // raw chat request body, then tokenizes the rendered prompt through the shared
-// Encode path (WithEncodeSpecialTokens) so the token_ids are byte-identical to
-// vLLM's cached chat prompt. Returns nil if the body has no messages, no chat
+// Encode path with addSpecialTokens=false (the render carries its own special
+// tokens) so the token_ids are byte-identical to vLLM's cached chat prompt. Returns nil if the body has no messages, no chat
 // template is known, or tokenization fails.
 func kvTokenizeChatBody(body, modelName string, maxTokens int) []uint32 {
 	msgs, ok := kvParseChatMessages(body)
@@ -176,5 +238,5 @@ func kvTokenizeChatBody(body, modelName string, maxTokens int) []uint32 {
 	if !ok || rendered == "" {
 		return nil
 	}
-	return kvTokenizeWithCache(rendered, modelName, maxTokens)
+	return kvTokenizeWithCache(rendered, modelName, maxTokens, false)
 }

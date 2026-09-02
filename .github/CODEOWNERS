@@ -28,6 +28,16 @@
 /cicd/mcp-**                        @NLX-SeokHwanKong
 /cicd/monitoring/                   @NLX-SeokHwanKong
 
+# Engine-contract trust artifacts. contracts.yaml and the ADR series are
+# code-owned; support-catalog.yaml is APPROVAL-owned — promotion to
+# "validated" requires two-stage human review (framework owner + gateway
+# maintainer), so the catalog lists the maintainer council and the LAST
+# matching pattern here wins over the code-owned default above it.
+/engine-contracts/                  @NLX-SeokHwanKong @UltraInstinct14
+/pkg/enginecontract/                @NLX-SeokHwanKong @UltraInstinct14
+/cmd/ecgen/                         @NLX-SeokHwanKong @UltraInstinct14
+/engine-contracts/support-catalog.yaml @TrekkieCoder @UltraInstinct14 @backguynn @inhogog2 @NLX-SeokHwanKong
+
 # AI-gateway documentation
 /docs/                              @NLX-SeokHwanKong @UltraInstinct14
 

@@ -33,7 +33,10 @@ import (
 // every call, so building it per scrape would leak allocations
 var promHandler = promhttp.Handler()
 
-func ConfigGetPrometheusCounter(params operations.GetMetricsParams, principal interface{}) middleware.Responder {
+// No principal parameter: /metrics carries security:[] in the API spec
+// (Prometheus scrapers don't send a bearer), so the generated operation is
+// unauthenticated by design.
+func ConfigGetPrometheusCounter(params operations.GetMetricsParams) middleware.Responder {
 	tk.LogIt(tk.LogTrace, "api: Prometheus %s API called. url : %s\n", params.HTTPRequest.Method, params.HTTPRequest.URL)
 	if !options.Opts.Prometheus {
 		// 503 keeps scrapers reporting a clean "down" state instead of a

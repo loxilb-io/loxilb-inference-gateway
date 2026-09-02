@@ -1486,6 +1486,60 @@
           }
         }
       ]
+    },
+    {
+      "id": 37,
+      "type": "timeseries",
+      "title": "KV attestation",
+      "description": "Attestation ladder state per strict rule, enforcement faults, probe and echo-challenge failures. Series appear only while strict KV-exact rules exist.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 33
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No strict KV-exact rules attested"
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "loxilb_ai_kv_attest_state{instance=~\"$instance\"} == 1",
+          "legendFormat": "{{rule}} {{state}}"
+        },
+        {
+          "refId": "B",
+          "expr": "loxilb_ai_kv_enforcement_fault{instance=~\"$instance\"}",
+          "legendFormat": "{{rule}} enforcement_fault"
+        },
+        {
+          "refId": "C",
+          "expr": "rate(loxilb_ai_kv_attest_probe_fail_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "probe_fail {{reason}}"
+        },
+        {
+          "refId": "D",
+          "expr": "increase(loxilb_ai_kv_attest_echo_total{result=\"fail\",instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "echo_fail {{rule}}"
+        }
+      ]
     }
   ]
 }

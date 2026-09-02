@@ -92,7 +92,10 @@ func TestSpecialTokenParity_LoadModel_EncodesImEndAsSpecial(t *testing.T) {
 	}
 	defer tok.Close()
 
-	got := tok.Encode(f.Prompt)
+	// addSpecialTokens=false: these fixtures are chat-shaped prompts whose
+	// special tokens are embedded in the text; the invariant under test is
+	// their recognition, which is independent of BOS prepending.
+	got := tok.Encode(f.Prompt, false)
 
 	// Core invariant: the leading special token is recognized as ONE special id,
 	// not split into the 6 normal tokens of the (wrong) default mode.

@@ -408,6 +408,52 @@ func (na *NetAPIStruct) NetLbRuleGet() ([]cmn.LbRuleMod, error) {
 	return ret, err
 }
 
+// NetKvExactBindingGet - export every rule's KV-exact composed binding
+// (model-profile + engine-contract identity, binding generation, digest).
+func (na *NetAPIStruct) NetKvExactBindingGet() ([]cmn.KvExactBindingMod, error) {
+	if na.BgpPeerMode {
+		return nil, errors.New("running in bgp only mode")
+	}
+	return KvBindingExport(), nil
+}
+
+// NetKvExactBindingAdd - restore one rule's KV-exact composed binding. The
+// binding digest is recomputed and verified against the persisted value; a
+// document whose components do not prove its digest is refused.
+func (na *NetAPIStruct) NetKvExactBindingAdd(b *cmn.KvExactBindingMod) (int, error) {
+	if na.BgpPeerMode {
+		return RuleErrBase, errors.New("running in bgp only mode")
+	}
+	if err := KvBindingRestore(b); err != nil {
+		return RuleErrBase, err
+	}
+	return 0, nil
+}
+
+// NetKvExactStatusGet - resolved KV-exact composition status of every
+// KV-exact rule on vip:port:proto (modelName "" = all models). A dedicated
+// read model — never the GET/POST-shared rule entry.
+func (na *NetAPIStruct) NetKvExactStatusGet(vip string, port uint16, proto string, modelName string) ([]cmn.KvExactStatusMod, error) {
+	if na.BgpPeerMode {
+		return nil, errors.New("running in bgp only mode")
+	}
+	mh.mtx.Lock()
+	defer mh.mtx.Unlock()
+	return mh.zr.Rules.GetKvExactStatus(vip, port, proto, modelName)
+}
+
+// NetKvExactBindingDel - remove one rule's KV-exact binding state.
+func (na *NetAPIStruct) NetKvExactBindingDel(b *cmn.KvExactBindingMod) (int, error) {
+	if na.BgpPeerMode {
+		return RuleErrBase, errors.New("running in bgp only mode")
+	}
+	if b == nil || b.RuleIdent == "" {
+		return RuleErrBase, errors.New("kv-binding: rule identity is required")
+	}
+	KvBindingDelete(b.RuleIdent)
+	return 0, nil
+}
+
 // l7ProtoToNum maps a service protocol string to its IP protocol number
 // (matching the rest of the rules layer: tcp=6, udp=17, sctp=132). L7 content
 // routing is meaningful only over the stream protocols; unknown values default to

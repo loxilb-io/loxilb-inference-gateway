@@ -34,7 +34,17 @@ func NewPostAuthUsers(ctx *middleware.Context, handler PostAuthUsersHandler) *Po
 
 # Create a new user
 
-Creates a new user in the system
+Creates a new user in the system.
+
+Requires an authenticated administrator, with one exception: while no
+user exists at all, a request from a loopback peer may create the first
+one, so that the management API can be brought up before any credential
+exists. That bootstrap closes as soon as the first account is created.
+
+The authentication is performed by the handler rather than by the
+generated security chain, because the chain cannot express a condition
+that depends on the state of the user table. The security block below is
+empty for that reason and does not mean the operation is open.
 */
 type PostAuthUsers struct {
 	Context *middleware.Context
