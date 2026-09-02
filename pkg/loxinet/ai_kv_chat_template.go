@@ -94,19 +94,18 @@ func renderChatMLQwen(messages []kvChatMessage) string {
 }
 
 // kvRenderChatTemplate renders the chat-template-applied prompt for modelName.
-// Returns ok=false when no template is known for the model — the caller must NOT
-// route such a request through KV-exact chat tokenization (it would silently
-// mis-hash); it should fall back rather than guess a template.
+// Returns ok=false when no template is registered for the exact model — the
+// caller must NOT route such a request through KV-exact chat tokenization (it
+// would silently mis-hash); it should fall back rather than guess a template.
 //
-// As a seam, any unrecognized "Qwen__*" slug falls back to the ChatML/Qwen
-// renderer (the whole Qwen2.5 family shares this template).
+// Registry lookup is exact-slug only. There is deliberately NO vendor-prefix
+// fallback: template dialects vary within a vendor line (Qwen3 renders without
+// Qwen2.5's default system prompt, for example), so an unregistered sibling
+// model must fall back, never inherit a relative's template.
 func kvRenderChatTemplate(modelName string, messages []kvChatMessage) (string, bool) {
 	slug := kvModelSlug(modelName)
 	if fn, ok := kvChatTemplateRegistry[slug]; ok {
 		return fn(messages), true
-	}
-	if strings.HasPrefix(slug, "Qwen__") {
-		return renderChatMLQwen(messages), true
 	}
 	return "", false
 }
