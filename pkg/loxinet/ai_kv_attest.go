@@ -211,6 +211,7 @@ type kvAttestDeps struct {
 	apply            func(svcID uint32, eligible uint8) error
 	manifest         func(profileID string) (*KvAttestManifest, bool)
 	profileFreshness func(profileID string) error
+	drainOwnership   func(svcID uint32, epIdx int) (KvTrtllmOwnershipReceipt, bool)
 	peerGate         func(info kvAttestRuleInfo) (bool, string)
 	now              func() time.Time
 	requireManifest  bool
@@ -563,6 +564,15 @@ func (c *kvAttestController) runLadder() {
 		}
 	}
 
+	// Drain ownership gates the ladder for destructive-read engines: an
+	// unproven or violated consumer role means the inventory evidence the
+	// later rungs would attest is not trustworthy to begin with.
+	if reason := c.drainOwnershipFault(eps); reason != "" {
+		log.Errorf("kv-attest: rule %s drain ownership %s — holding fenced", info.ruleIdent, reason)
+		c.publish(KvExactStateProfileValidated, reason)
+		return
+	}
+
 	manifest, haveManifest := c.deps.manifest(info.profileID)
 	manifestDigest := ""
 	if haveManifest {
@@ -688,6 +698,34 @@ func (c *kvAttestController) cadenceCheck() {
 	}
 }
 
+// drainOwnershipFault returns the typed fault reason when the rule's engine
+// drain ownership is unprovable or violated, "" otherwise. For the trtllm
+// engine every attested endpoint must hold a clean ownership receipt
+// (§17.4 / engine-contracts/adr/DEC-007): the drain is a destructive read,
+// so a green challenge without proven sole consumption proves only that the
+// challenge's own events were observed. A missing receipt (subscriber not
+// yet started, or torn down) is unprovable ownership — fail closed; the
+// ladder re-runs and heals once the stream binds. Faulted receipts carry
+// their own bounded reason (drain_sequence_gap / drain_ownership_lost).
+func (c *kvAttestController) drainOwnershipFault(eps []KvAttestEndpoint) string {
+	if c.info.engine != "trtllm" || c.deps.drainOwnership == nil {
+		return ""
+	}
+	for _, ep := range eps {
+		r, ok := c.deps.drainOwnership(c.info.svcID, ep.EpIdx)
+		if !ok {
+			return KvTrtllmFaultOwnershipLost
+		}
+		if r.Faulted {
+			if r.FaultReason != "" {
+				return r.FaultReason
+			}
+			return KvTrtllmFaultOwnershipLost
+		}
+	}
+	return ""
+}
+
 // probeSweep re-runs the identity + token-parity probes against every
 // endpoint of a READY rule. A failure fences (fence-first) and returns
 // false.
@@ -713,6 +751,16 @@ func (c *kvAttestController) probeSweep() bool {
 			c.fenceAndReattest(KvAttestReasonProfileResolution)
 			return false
 		}
+	}
+	// A drain-ownership fault detected since the last sweep knocks READY
+	// off within one cadence: the subscriber already invalidated the
+	// inventory in-band; this fences serving until the stream is provably
+	// complete again (fresh engine cache or re-acquire).
+	if reason := c.drainOwnershipFault(eps); reason != "" {
+		log.Errorf("kv-attest: rule %s drain ownership %s — fencing", info.ruleIdent, reason)
+		kvAttestProbeFailFn(reason)
+		c.fenceAndReattest(reason)
+		return false
 	}
 	manifest, haveManifest := c.deps.manifest(info.profileID)
 	c.mu.Lock()
@@ -891,6 +939,7 @@ func kvAttestProductionDeps() kvAttestDeps {
 		},
 		manifest:         kvAttestManifestLoad,
 		profileFreshness: KvProfileVerifyDisk,
+		drainOwnership:   KvTrtllmOwnership,
 		peerGate:         kvClusterCapabilityGate,
 		now:              time.Now,
 		requireManifest:  reqManifest,

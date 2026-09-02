@@ -174,3 +174,113 @@ func TestTrtllmDecoderUnboundKeepsLegacyBehavior(t *testing.T) {
 		t.Fatal("unbound decoder recorded an ownership fault")
 	}
 }
+
+// ---- attestation-plane fence on the ownership receipt (§17.4) ----
+
+// trtllmAttestHarness reshapes the shared attest harness for a trtllm rule
+// with an injectable ownership answer.
+func trtllmAttestHarness(t *testing.T, receipt KvTrtllmOwnershipReceipt, have bool) (*attestHarness, *kvAttestController) {
+	t.Helper()
+	h := newAttestHarness(t)
+	h.info.engine = "trtllm"
+	adapter := h.adapter
+	h.deps.adapterFor = func(engine string) kvAttestAdapter {
+		if engine == "trtllm" {
+			return adapter
+		}
+		return nil
+	}
+	h.deps.drainOwnership = func(svcID uint32, epIdx int) (KvTrtllmOwnershipReceipt, bool) {
+		return receipt, have
+	}
+	return h, newKvAttestController(h.info, h.deps)
+}
+
+// TestKvAttestTrtllmOwnershipFaultHoldsFenced: a faulted drain receipt holds
+// the ladder at PROFILE_VALIDATED under the receipt's own typed reason —
+// eligible=1 is never written.
+func TestKvAttestTrtllmOwnershipFaultHoldsFenced(t *testing.T) {
+	h, c := trtllmAttestHarness(t,
+		KvTrtllmOwnershipReceipt{Faulted: true, FaultReason: KvTrtllmFaultSequenceGap}, true)
+	c.fenceAndReattest("activation")
+	if c.enforced != KvExactStateProfileValidated {
+		t.Fatalf("enforced = %s, want PROFILE_VALIDATED (events %v)", c.enforced, h.rec.list())
+	}
+	if len(c.reasons) == 0 || c.reasons[0] != KvTrtllmFaultSequenceGap {
+		t.Fatalf("reasons = %v", c.reasons)
+	}
+	if h.rec.count("apply:1") != 0 {
+		t.Fatalf("eligible=1 written under an ownership fault: %v", h.rec.list())
+	}
+}
+
+// TestKvAttestTrtllmOwnershipUnprovenFailsClosed: no receipt at all (stream
+// not bound yet, or torn down) is unprovable ownership — same fence.
+func TestKvAttestTrtllmOwnershipUnprovenFailsClosed(t *testing.T) {
+	_, c := trtllmAttestHarness(t, KvTrtllmOwnershipReceipt{}, false)
+	c.fenceAndReattest("activation")
+	if c.enforced != KvExactStateProfileValidated {
+		t.Fatalf("enforced = %s, want PROFILE_VALIDATED", c.enforced)
+	}
+	if len(c.reasons) == 0 || c.reasons[0] != KvTrtllmFaultOwnershipLost {
+		t.Fatalf("reasons = %v", c.reasons)
+	}
+}
+
+// TestKvAttestTrtllmOwnershipCleanReachesReady: the gate must not be
+// vacuously closed — a clean receipt lets the full ladder earn READY.
+func TestKvAttestTrtllmOwnershipCleanReachesReady(t *testing.T) {
+	h, c := trtllmAttestHarness(t,
+		KvTrtllmOwnershipReceipt{Epoch: 3, CursorSet: true, Cursor: 42}, true)
+	c.fenceAndReattest("activation")
+	if c.enforced != KvExactStateReady {
+		t.Fatalf("enforced = %s, want READY (events %v)", c.enforced, h.rec.list())
+	}
+}
+
+// TestKvAttestTrtllmOwnershipSweepFences: a fault surfacing AFTER READY is
+// caught by the probe sweep within one cadence and fences.
+func TestKvAttestTrtllmOwnershipSweepFences(t *testing.T) {
+	h := newAttestHarness(t)
+	h.info.engine = "trtllm"
+	adapter := h.adapter
+	h.deps.adapterFor = func(engine string) kvAttestAdapter {
+		if engine == "trtllm" {
+			return adapter
+		}
+		return nil
+	}
+	faulted := false
+	h.deps.drainOwnership = func(svcID uint32, epIdx int) (KvTrtllmOwnershipReceipt, bool) {
+		if faulted {
+			return KvTrtllmOwnershipReceipt{Faulted: true, FaultReason: KvTrtllmFaultOwnershipLost}, true
+		}
+		return KvTrtllmOwnershipReceipt{CursorSet: true}, true
+	}
+	c := newKvAttestController(h.info, h.deps)
+	c.fenceAndReattest("activation")
+	if c.enforced != KvExactStateReady {
+		t.Fatalf("precondition: enforced = %s, want READY", c.enforced)
+	}
+	faulted = true
+	if c.probeSweep() {
+		t.Fatal("probeSweep must fail on an ownership fault")
+	}
+	if h.rec.count("probefail:"+KvTrtllmFaultOwnershipLost) == 0 {
+		t.Fatalf("probe-fail metric missing: %v", h.rec.list())
+	}
+}
+
+// TestKvAttestNonTrtllmIgnoresOwnership: the gate is engine-scoped — a vllm
+// rule with a (nonsensical) faulted ownership answer still earns READY.
+func TestKvAttestNonTrtllmIgnoresOwnership(t *testing.T) {
+	h := newAttestHarness(t)
+	h.deps.drainOwnership = func(svcID uint32, epIdx int) (KvTrtllmOwnershipReceipt, bool) {
+		return KvTrtllmOwnershipReceipt{Faulted: true, FaultReason: KvTrtllmFaultSequenceGap}, true
+	}
+	c := newKvAttestController(h.info, h.deps)
+	c.fenceAndReattest("activation")
+	if c.enforced != KvExactStateReady {
+		t.Fatalf("enforced = %s, want READY (events %v)", c.enforced, h.rec.list())
+	}
+}
