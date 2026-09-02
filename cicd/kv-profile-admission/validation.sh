@@ -377,7 +377,7 @@ chk "D restored legacy enforcedState REQUIRES_MIGRATION" '^REQUIRES_MIGRATION$' 
 chk "D restored legacy reason" 'restored_profile_less_requires_migration' "$(jfield "$st" '.kvExactStatusAttr[0].reasonCodes[0]')"
 chk "D restored legacy fence engaged (goFenced=true)" '^true$' "$(jfield "$st" '.kvExactStatusAttr[0].enforcement.goFenced')"
 
-# D-7b service continuity: the fenced rule still serves through the normal
+# service continuity: the fenced rule still serves through the normal
 # LB tiers (the bypass is of the EXACT tier, not of the service).
 banner=$($hexec l3h1 curl -s -m 5 -X POST "http://${VIP}:8090/v1/completions" \
     -H "Host: ${VIP}" -H 'Content-Type: application/json' \

@@ -3124,7 +3124,7 @@ func (R *RuleH) GetKvExactStatus(vip string, port uint16, proto string, modelNam
 			}
 			if data.kvRestoredLegacy {
 				// Restored profile-less rule: REQUIRES_MIGRATION with the
-				// exact path fenced (D-7b strict bypass) — never reported as
+				// exact path fenced (strict bypass) — never reported as
 				// the live legacy behavior it no longer has. Migration =
 				// rule replace attaching a profile.
 				m.DesiredState = KvExactStateRequiresMigration
@@ -4511,7 +4511,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		}, attEps)
 	}
 	if r.kvRestoredLegacy {
-		// D-7b strict bypass: register the restored-legacy rule's identity
+		// strict bypass: register the restored-legacy rule's identity
 		// DENIED with no install path — the tokenize-bridge fence keeps the
 		// exact tier from ever scoring (requests still route through the
 		// normal LB tiers), and only migration (replace attaching a profile)
