@@ -557,11 +557,16 @@ func (d *trtllmWireDecoder) translate(env *trtllmEventEnvelope) (kvEvent, bool) 
 		return kvEvent{Type: kvEventAllBlocksCleared}, true
 
 	case "stored":
-		keys := d.translateStored(&env.Data)
+		keys, toks := d.translateStored(&env.Data)
 		if len(keys) == 0 {
 			return kvEvent{}, false
 		}
-		return kvEvent{Type: kvEventBlockStored, Hashes: keys}, true
+		// The flat token list (block j's tokens at j*blockSize) feeds the
+		// §6.2 echo wire-check (kvHashWatchObserve): TRT stored events
+		// always carry full token lists, so the challenge's token
+		// comparison — the live half of the oracle parity evidence — is
+		// available on every indexed block.
+		return kvEvent{Type: kvEventBlockStored, Hashes: keys, Tokens: toks}, true
 
 	case "removed":
 		keys := d.translateRemoved(&env.Data)
@@ -579,8 +584,9 @@ func (d *trtllmWireDecoder) translate(env *trtllmEventEnvelope) (kvEvent, bool) 
 
 // translateStored re-hashes a stored chain into inventory keys and records
 // the engine-hash translation entries. Returns the keys to index (full,
-// clean blocks only).
-func (d *trtllmWireDecoder) translateStored(data *trtllmEventData) []uint64 {
+// clean blocks only) and their flat token list in key order (blockSize
+// tokens per key — the canonical-event layout the echo wire-check expects).
+func (d *trtllmWireDecoder) translateStored(data *trtllmEventData) ([]uint64, []uint32) {
 	// Resolve the chain anchor: parent_hash is the ENGINE hash of the block
 	// this chain extends (null at a tree root). An unknown parent means the
 	// parent was stored before this subscriber connected (no replay
@@ -593,12 +599,13 @@ func (d *trtllmWireDecoder) translateStored(data *trtllmEventData) []uint64 {
 		entry, found := d.chain[ph]
 		if !found {
 			d.stats.unchained.Add(1)
-			return nil
+			return nil, nil
 		}
 		parentDigest = &entry.digest
 	}
 
 	keys := make([]uint64, 0, len(data.Blocks))
+	toks := make([]uint32, 0, len(data.Blocks)*d.blockSize)
 	for i := range data.Blocks {
 		blk := &data.Blocks[i]
 		// Blocks the C request-side hash can never reproduce end the walk:
@@ -614,11 +621,11 @@ func (d *trtllmWireDecoder) translateStored(data *trtllmEventData) []uint64 {
 			d.stats.blocksSkipped.Add(uint64(len(data.Blocks) - i))
 			break
 		}
-		toks := make([]uint32, len(blk.Tokens))
+		blkToks := make([]uint32, len(blk.Tokens))
 		for j, t := range blk.Tokens {
-			toks[j] = uint32(t.TokenID)
+			blkToks[j] = uint32(t.TokenID)
 		}
-		digest, key := kvSglangRehashBlock(parentDigest, toks)
+		digest, key := kvSglangRehashBlock(parentDigest, blkToks)
 
 		if eh, ok := kvTrtllmParseU64(blk.BlockHash); ok {
 			if len(d.chain) >= kvTrtllmChainMapCap {
@@ -629,10 +636,11 @@ func (d *trtllmWireDecoder) translateStored(data *trtllmEventData) []uint64 {
 			d.chain[eh] = trtllmChainEntry{key: key, digest: digest}
 		}
 		keys = append(keys, key)
+		toks = append(toks, blkToks...)
 		pd := digest
 		parentDigest = &pd
 	}
-	return keys
+	return keys, toks
 }
 
 // translateRemoved maps removed engine hashes to inventory keys via the

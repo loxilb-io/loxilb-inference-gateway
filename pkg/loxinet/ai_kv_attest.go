@@ -156,6 +156,11 @@ type KvAttestFinding struct {
 	OK     bool
 	Reason string // typed reason code on failure
 	Detail string
+	// Oracle marks a green token-parity finding earned through the
+	// approved-oracle path (§16.5 — engines with no tokenize surface): the
+	// ladder then holds TOKEN_PARITY_NOT_AVAILABLE_WITH_APPROVED_ORACLE
+	// instead of TOKEN_PARITY_VERIFIED so the evidence class stays visible.
+	Oracle bool
 }
 
 // kvAttestRuleInfo is the immutable identity the controller attests against.
@@ -584,7 +589,10 @@ func (c *kvAttestController) runLadder() {
 
 	// Rung 1 — TOKEN_PARITY_VERIFIED: identity consistency (when a manifest
 	// names the expected identity) plus §5 byte-exact fixture probes, every
-	// endpoint.
+	// endpoint. An adapter with no engine tokenize surface earns the rung
+	// through the approved-oracle path instead (Oracle finding), and the
+	// rung's published state says so (§16.5).
+	parityState := KvExactStateTokenParity
 	for _, ep := range eps {
 		if haveManifest {
 			f := ad.IdentityProbe(ep, manifest)
@@ -604,10 +612,13 @@ func (c *kvAttestController) runLadder() {
 			c.publish(KvExactStateProfileValidated, f.Reason)
 			return
 		}
+		if f.Oracle {
+			parityState = KvExactStateTokenParityNoOracle
+		}
 	}
 	c.mu.Lock()
 	c.lastProbeOK = now()
-	alreadyTokenParity := c.enforced == KvExactStateTokenParity
+	alreadyTokenParity := c.enforced == parityState
 	c.mu.Unlock()
 	// First arrival at rung 1 publishes the transitional reason; re-climbs
 	// of a rule already holding here must NOT — the retry ladder runs every
@@ -616,7 +627,7 @@ func (c *kvAttestController) runLadder() {
 	// all but a sliver of each cycle, leaving status readers with a
 	// permanent "pending" and no cause.
 	if !alreadyTokenParity {
-		c.publish(KvExactStateTokenParity, "hash_attestation_pending")
+		c.publish(parityState, "hash_attestation_pending")
 	}
 
 	// Rung 2 — ENGINE_HASH_ATTESTED: the §6.2 echo challenge, every endpoint.
@@ -626,7 +637,7 @@ func (c *kvAttestController) runLadder() {
 			Reason: f.Reason, Detail: f.Detail, At: now(), ManifestDigest: manifestDigest})
 		if !f.OK {
 			kvAttestEchoFn("fail")
-			c.publish(KvExactStateTokenParity, f.Reason)
+			c.publish(parityState, f.Reason)
 			return
 		}
 		kvAttestEchoFn("ok")
@@ -959,6 +970,8 @@ func kvAttestAdapterFor(engine string) kvAttestAdapter {
 		return kvVllmAdapter()
 	case "sglang":
 		return kvSglangAdapter()
+	case "trtllm":
+		return kvTrtllmAdapter()
 	default:
 		return nil
 	}

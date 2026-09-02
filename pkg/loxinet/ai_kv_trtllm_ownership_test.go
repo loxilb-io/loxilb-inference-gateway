@@ -284,3 +284,49 @@ func TestKvAttestNonTrtllmIgnoresOwnership(t *testing.T) {
 		t.Fatalf("enforced = %s, want READY (events %v)", c.enforced, h.rec.list())
 	}
 }
+
+// TestTrtllmOwnershipMetricSeams pins the §17.4 observability consequence:
+// every continuity fault increments the typed fault counter, and every
+// standing-fault clear (created announcement or re-acquire) increments the
+// heal counter — external tooling draining a gateway-managed stream must be
+// visible on the metric surface, not only in receipts.
+func TestTrtllmOwnershipMetricSeams(t *testing.T) {
+	faults := map[string]int{}
+	heals := 0
+	prevFault, prevHeal := kvTrtllmOwnFaultMetricFn, kvTrtllmOwnHealMetricFn
+	kvTrtllmOwnFaultMetricFn = func(reason string) { faults[reason]++ }
+	kvTrtllmOwnHealMetricFn = func() { heals++ }
+	t.Cleanup(func() {
+		kvTrtllmOwnFaultMetricFn, kvTrtllmOwnHealMetricFn = prevFault, prevHeal
+		kvTrtllmOwnershipForget(96001, 0)
+	})
+
+	kvTrtllmOwnershipAcquire(96001, 0)
+	kvTrtllmOwnershipObserve(96001, 0, 0, true) // created anchor
+	kvTrtllmOwnershipObserve(96001, 0, 1, false)
+	if len(faults) != 0 || heals != 0 {
+		t.Fatalf("contiguous stream must not touch the seams: faults=%v heals=%d", faults, heals)
+	}
+
+	kvTrtllmOwnershipObserve(96001, 0, 5, false) // hole
+	if faults[KvTrtllmFaultSequenceGap] != 1 {
+		t.Fatalf("gap fault not counted: %v", faults)
+	}
+	kvTrtllmOwnershipObserve(96001, 0, 9, true) // created clears the fault
+	if heals != 1 {
+		t.Fatalf("created clear not counted as heal: %d", heals)
+	}
+	kvTrtllmOwnershipObserve(96001, 0, 9, false) // regression, no announcement
+	if faults[KvTrtllmFaultOwnershipLost] != 1 {
+		t.Fatalf("ownership-lost fault not counted: %v", faults)
+	}
+	kvTrtllmOwnershipAcquire(96001, 0) // re-acquire over a faulted record
+	if heals != 2 {
+		t.Fatalf("re-acquire over a fault not counted as heal: %d", heals)
+	}
+	// A re-acquire over a CLEAN record is not a heal.
+	kvTrtllmOwnershipAcquire(96001, 0)
+	if heals != 2 {
+		t.Fatalf("clean re-acquire must not count as heal: %d", heals)
+	}
+}

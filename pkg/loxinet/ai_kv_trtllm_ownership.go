@@ -20,6 +20,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	prom "github.com/loxilb-io/loxilb/api/prometheus"
 )
 
 // TensorRT-LLM drain ownership (engine-contracts/adr/DEC-007-trt-drain-ownership.md).
@@ -94,6 +96,15 @@ const (
 	KvTrtllmFaultOwnershipLost = "drain_ownership_lost"
 )
 
+// Metric seams (kvAttestProbeFailFn precedent): defaults are the real
+// Prometheus surface; unit tests override. The fault counter is the ADR's
+// required ownership/gap observability — external tooling draining a
+// gateway-managed stream shows up here before anyone reads a status page.
+var (
+	kvTrtllmOwnFaultMetricFn = prom.IncKvTrtllmDrainOwnershipFault
+	kvTrtllmOwnHealMetricFn  = prom.IncKvTrtllmDrainOwnershipHeal
+)
+
 // kvTrtllmOwnerEpoch is the process-global monotonic epoch allocator.
 var kvTrtllmOwnerEpoch atomic.Uint64
 
@@ -109,8 +120,12 @@ func kvTrtllmOwnershipAcquire(serviceID uint32, epIdx int) uint64 {
 	epoch := kvTrtllmOwnerEpoch.Add(1)
 	st := &kvTrtllmOwnerState{epoch: epoch, acquiredAt: time.Now()}
 	kvTrtllmOwnerReg.Lock()
+	prev := kvTrtllmOwnerReg.m[kvTrtllmSvcEp{serviceID, epIdx}]
 	kvTrtllmOwnerReg.m[kvTrtllmSvcEp{serviceID, epIdx}] = st
 	kvTrtllmOwnerReg.Unlock()
+	if prev != nil && prev.faulted {
+		kvTrtllmOwnHealMetricFn()
+	}
 	return epoch
 }
 
@@ -155,6 +170,9 @@ func kvTrtllmOwnershipObserve(serviceID uint32, epIdx int, eventID uint64, creat
 
 	if created {
 		st.cursor, st.cursorSet = eventID, true
+		if st.faulted {
+			kvTrtllmOwnHealMetricFn()
+		}
 		st.faulted, st.faultReason = false, ""
 		return "", true
 	}
@@ -170,11 +188,13 @@ func kvTrtllmOwnershipObserve(serviceID uint32, epIdx int, eventID uint64, creat
 		st.gaps++
 		st.cursor = eventID
 		st.faulted, st.faultReason, st.faultAt = true, KvTrtllmFaultSequenceGap, time.Now()
+		kvTrtllmOwnFaultMetricFn(KvTrtllmFaultSequenceGap)
 		return KvTrtllmFaultSequenceGap, false
 	default: // eventID <= st.cursor
 		st.dups++
 		st.cursor = eventID
 		st.faulted, st.faultReason, st.faultAt = true, KvTrtllmFaultOwnershipLost, time.Now()
+		kvTrtllmOwnFaultMetricFn(KvTrtllmFaultOwnershipLost)
 		return KvTrtllmFaultOwnershipLost, false
 	}
 }
