@@ -178,9 +178,12 @@ func (P *PolH) PolAdd(pName string, pInfo cmn.PolInfo, pObjArgs cmn.PolObj) (int
 	// The egress-direction port policer runs on the TC egress image, which is
 	// only attached under --egr-hooks. Without the hook the bucket would exist
 	// and never be consulted — refuse loudly instead of accepting a no-op.
+	// Worded with " requires " so the API layer classifies this as an
+	// operator-addressed validation rejection (400 with the reason in the
+	// body) instead of the internal-error fall-through's correlation ref.
 	if pObjArgs.AttachMent == cmn.PolAttachPortEgress && !mh.eHooks {
-		tk.LogIt(tk.LogError, "policer add - %s: egress attach needs --egr-hooks\n", pName)
-		return PolAttachErr, errors.New("egress policer attach needs --egr-hooks")
+		tk.LogIt(tk.LogError, "policer add - %s: egress attach requires --egr-hooks\n", pName)
+		return PolAttachErr, errors.New("egress policer attach requires --egr-hooks")
 	}
 
 	if PolInfoXlateValidate(&pInfo) == false {
