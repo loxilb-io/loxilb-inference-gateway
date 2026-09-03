@@ -1433,6 +1433,25 @@ var (
 		[]string{"result"},
 	)
 
+	// TRT-LLM drain ownership (plan section 17.4): the destructive-read
+	// stream's continuity violations, by typed reason
+	// (drain_sequence_gap | drain_ownership_lost), and the heals that
+	// lift them (a created announcement or a stream re-acquire).
+	kvTrtllmDrainOwnFaultTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "loxilb_ai_kv_trtllm_drain_ownership_fault_total",
+			Help: "TRT-LLM drain ownership continuity faults by typed reason (plan section 17.4).",
+		},
+		[]string{"reason"},
+	)
+
+	kvTrtllmDrainOwnHealTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "loxilb_ai_kv_trtllm_drain_ownership_heal_total",
+			Help: "TRT-LLM drain ownership fault clears (fresh engine cache announcement or stream re-acquire).",
+		},
+	)
+
 	// kvAttestStatePrev tracks each rule's current state series so a
 	// transition can clear the previous one (bounded label vocabulary,
 	// exactly-one-hot per rule).
@@ -1474,4 +1493,15 @@ func IncKvAttestProbeFail(reason string) {
 // IncKvAttestEcho counts one echo-challenge outcome ("ok" | "fail").
 func IncKvAttestEcho(result string) {
 	kvAttestEchoTotal.WithLabelValues(result).Inc()
+}
+
+// IncKvTrtllmDrainOwnershipFault counts one drain-ownership continuity
+// fault by typed reason (bounded vocabulary — the KvTrtllmFault* constants).
+func IncKvTrtllmDrainOwnershipFault(reason string) {
+	kvTrtllmDrainOwnFaultTotal.WithLabelValues(reason).Inc()
+}
+
+// IncKvTrtllmDrainOwnershipHeal counts one standing-fault clear.
+func IncKvTrtllmDrainOwnershipHeal() {
+	kvTrtllmDrainOwnHealTotal.Inc()
 }

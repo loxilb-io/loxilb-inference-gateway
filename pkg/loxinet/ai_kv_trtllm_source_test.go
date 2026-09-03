@@ -609,3 +609,29 @@ func TestTrtllmPollerHTTP(t *testing.T) {
 		t.Fatal("re-armed poller wedged")
 	}
 }
+
+// TestTrtllmTranslateStoredEmitsTokens pins the canonical-event token
+// layout the §6.2 echo wire-check consumes (kvHashWatchObserve): a stored
+// event's flat token list covers its indexed blocks in key order, blockSize
+// tokens per key — without it every drain re-hash challenge would fail the
+// "BlockStored carries no token_ids" wire check by construction.
+func TestTrtllmTranslateStoredEmitsTokens(t *testing.T) {
+	d := newTrtllmWireDecoder(32)
+
+	events := trtDecode(t, d, trtllmFixtureStoredFull)
+	if len(events) != 1 || events[0].Type != kvEventBlockStored {
+		t.Fatalf("want one BlockStored, got %+v", events)
+	}
+	ev := events[0]
+	if len(ev.Tokens) != len(ev.Hashes)*32 {
+		t.Fatalf("token list %d tokens for %d keys, want blockSize alignment", len(ev.Tokens), len(ev.Hashes))
+	}
+	for i, tok := range trtllmFixtureFullTokens {
+		if ev.Tokens[i] != tok {
+			t.Fatalf("token[%d] = %d, want %d", i, ev.Tokens[i], tok)
+		}
+	}
+	if ev.Lora || ev.ExtraKeys {
+		t.Fatal("clean stored block must not flag lora/extra_keys (unindexable blocks never reach the event)")
+	}
+}

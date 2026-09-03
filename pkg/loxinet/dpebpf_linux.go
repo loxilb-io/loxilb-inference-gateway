@@ -2085,6 +2085,12 @@ func DpKvComputeChallengeHashes(hashAlgo string, blockSize uint32, tokens []uint
 		algo, stride = 1, 16 // KV_HASH_XXHASH_CBOR
 	case "sha256_sglang":
 		algo, stride = 2, 32 // KV_HASH_SHA256_SGLANG (raw parent||LE32, FIRST-8)
+	case "blockhash_trtllm":
+		// The TRT-LLM binding of the same raw chained-SHA256 arm — both
+		// sides ours (see the writer mapping in DpLBRuleMod): the
+		// challenge's expected chain must match what the event decoder
+		// re-hashes stored token lists with.
+		algo, stride = 2, 32
 	default:
 		return nil, false
 	}
