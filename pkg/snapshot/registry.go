@@ -128,6 +128,13 @@ type Hooks interface {
 	// snapshots round-trip. SENSITIVE (§8).
 	NetIPsecCertificateExportAll() ([]cmn.IPsecCertificateMod, error)
 	NetIPsecCACertificateExportAll() ([]cmn.IPsecCACertificateMod, error)
+
+	// cors (schema 1.3) -- singleton, Set semantics; nil = unconfigured
+	// factory default (not configuration, not captured). Reset (the wipe
+	// path) returns to that default rather than a synthetic deny-all.
+	NetCORSGet() (*cmn.CORSConfig, error)
+	NetCORSSet(*cmn.CORSConfig) (int, error)
+	NetCORSReset() (int, error)
 }
 
 // DomainEntry describes one v1 snapshot domain: how to fetch its live
@@ -185,6 +192,7 @@ var Registry = []DomainEntry{
 	{Name: DomainBFD, Get: getBFD, Apply: applyBFD, Delete: deleteBFD},
 	{Name: DomainBGP, Get: getBGP, Apply: applyBGP, Delete: deleteBGP},
 	{Name: DomainIPsec, Get: getIPsec, Apply: applyIPsec, Delete: deleteIPsec},
+	{Name: DomainCORS, Get: getCORS, Apply: applyCORS, Delete: deleteCORS},
 }
 
 // ApplyOrder returns the registry in apply order (table order, dependencies
@@ -1365,4 +1373,42 @@ func deleteIPsec(hooks Hooks) (int, error) {
 	// zero-value Set to fall back on (IPsecConfigMod's pointer fields would
 	// need real default values, not just zero values, to be safe).
 	return n, errors.Join(errs...)
+}
+
+// ---------------------------------------------------------------------
+// 13. cors -- singleton, Set semantics (schema 1.3)
+//
+// The explicit origin allowlist + wildcard opt-in. The unconfigured
+// factory default (open) is NOT configuration: capture exports nil for
+// it, and the wipe resets back to it -- never to a synthetic deny-all
+// that a failed restore would then leave behind. An explicitly-empty
+// allowlist ({origins: [], wildcard: false} = deny-all) IS configuration
+// and round-trips as such.
+// ---------------------------------------------------------------------
+
+func getCORS(hooks Hooks, doc *Document) error {
+	cfg, err := hooks.NetCORSGet()
+	if err != nil {
+		return fmt.Errorf("get cors: %w", err)
+	}
+	doc.Domains.CORS = cfg
+	return nil
+}
+
+func applyCORS(hooks Hooks, doc *Document, _ bool) (int, int, error) {
+	// Singleton with Set (overwrite) semantics: no "exists" to tolerate.
+	if doc.Domains.CORS == nil {
+		return 0, 0, nil
+	}
+	if _, err := hooks.NetCORSSet(doc.Domains.CORS); err != nil {
+		return 0, 0, fmt.Errorf("apply cors: %w", err)
+	}
+	return 1, 0, nil
+}
+
+func deleteCORS(hooks Hooks) (int, error) {
+	if _, err := hooks.NetCORSReset(); err != nil {
+		return 0, fmt.Errorf("delete cors: %w", err)
+	}
+	return 1, nil
 }

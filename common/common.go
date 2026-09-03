@@ -1890,6 +1890,16 @@ type NetHookInterface interface {
 	// no-op when the referenced load-balancer is already gone) and removes
 	// the stored resource.
 	NetL7PolicyDel(id string) (int, error)
+	// NetCORSGet returns the explicit CORS desired configuration (origin
+	// allowlist + wildcard opt-in), or nil while the gateway is
+	// unconfigured (factory default, not persisted).
+	NetCORSGet() (*CORSConfig, error)
+	// NetCORSSet replaces the whole CORS configuration (overwrite/Set
+	// semantics -- the snapshot restore path).
+	NetCORSSet(*CORSConfig) (int, error)
+	// NetCORSReset discards any explicit CORS configuration, returning to
+	// the unconfigured factory default (the snapshot wipe path).
+	NetCORSReset() (int, error)
 	NetCtInfoGet() ([]CtInfo, error)
 	NetSessionGet() ([]SessionMod, error)
 	NetSessionUlClGet() ([]SessionUlClMod, error)

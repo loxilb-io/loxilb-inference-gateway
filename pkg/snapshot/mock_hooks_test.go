@@ -59,6 +59,8 @@ type mockHooks struct {
 	bgpPolicyDefs []cmn.GoBGPPolicyDefinitionsMod
 	bgpGC         *cmn.GoBGPGlobalConfig
 
+	corsCfg *cmn.CORSConfig
+
 	ipsecConfig  *cmn.IPsecConfig
 	ipsecTunnels []*cmn.IPsecTunnel
 	ipsecCerts   []*cmn.IPsecCertificate
@@ -346,6 +348,46 @@ func (m *mockHooks) NetL7PolicyDel(id string) (int, error) {
 		return -1, errors.New("l7policy not-exists error")
 	}
 	m.l7Pols = out
+	return 0, nil
+}
+
+// --- cors ---
+//
+// Singleton mirroring the real manager's export/set/reset semantics: nil
+// = unconfigured factory default; Set overwrites and makes it explicit;
+// Reset returns to nil.
+
+func (m *mockHooks) NetCORSGet() (*cmn.CORSConfig, error) {
+	m.log("NetCORSGet")
+	if err := m.failIfConfigured("NetCORSGet"); err != nil {
+		return nil, err
+	}
+	if m.corsCfg == nil {
+		return nil, nil
+	}
+	cp := *m.corsCfg
+	cp.Origins = append([]string(nil), m.corsCfg.Origins...)
+	return &cp, nil
+}
+func (m *mockHooks) NetCORSSet(cfg *cmn.CORSConfig) (int, error) {
+	m.log("NetCORSSet")
+	if err := m.failIfConfigured("NetCORSSet"); err != nil {
+		return -1, err
+	}
+	if cfg == nil {
+		return -1, errors.New("cors: nil config (use reset for the factory default)")
+	}
+	cp := *cfg
+	cp.Origins = append([]string(nil), cfg.Origins...)
+	m.corsCfg = &cp
+	return 0, nil
+}
+func (m *mockHooks) NetCORSReset() (int, error) {
+	m.log("NetCORSReset")
+	if err := m.failIfConfigured("NetCORSReset"); err != nil {
+		return -1, err
+	}
+	m.corsCfg = nil
 	return 0, nil
 }
 

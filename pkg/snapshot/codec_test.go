@@ -88,6 +88,7 @@ func sampleDocument() *Document {
 				IPsecTunnelMod: cmn.IPsecTunnelMod{Name: "tun1", LocalIP: "1.1.1.1", RemoteIP: "2.2.2.2"},
 			}},
 		},
+		CORS: &cmn.CORSConfig{Origins: []string{"https://ops.example.com", "https://ui.example.com"}},
 	}
 	return doc
 }

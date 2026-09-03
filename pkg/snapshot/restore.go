@@ -507,6 +507,11 @@ func countDomain(name string, d *Domains) int {
 			n++
 		}
 		return n
+	case DomainCORS:
+		if d.CORS != nil {
+			return 1
+		}
+		return 0
 	case DomainIPsec:
 		// The Config singleton is deliberately NOT counted: it cannot be
 		// wiped (deleteIPsec's documented no-op) and it materializes on its

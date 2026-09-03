@@ -49,12 +49,14 @@ import (
 // always had).
 //
 // 1.3: added the l7policy domain (dedicated L7_POLICY resources: content
-// routes attached to an LB by stable id). Additive like 1.1's
-// kvexactbinding: older documents simply carry no policies, and their
-// included_domains never lists l7policy, so restoring them leaves live L7
-// policies untouched (the 1.2->1.3 migration deliberately does NOT widen
-// coverage). Builds that predate the domain refuse 1.3 documents via the
-// minor-version gate rather than silently dropping the field.
+// routes attached to an LB by stable id) and the cors domain (explicit
+// origin allowlist + wildcard opt-in; the unconfigured factory default is
+// not configuration and is captured as absent). Additive like 1.1's
+// kvexactbinding: older documents simply carry neither, and their
+// included_domains never lists these domains, so restoring them leaves
+// the live state untouched (the 1.2->1.3 migration deliberately does NOT
+// widen coverage). Builds that predate the domains refuse 1.3 documents
+// via the minor-version gate rather than silently dropping fields.
 const SchemaVersion = "1.3"
 
 // DocKind identifies the document type, matching §4's "kind" field.
@@ -92,6 +94,7 @@ const (
 	DomainBFD            = "bfd"
 	DomainBGP            = "bgp"
 	DomainIPsec          = "ipsec"
+	DomainCORS           = "cors"
 )
 
 // DefaultExcludedDomains lists the configuration areas deliberately never
@@ -171,6 +174,12 @@ type Domains struct {
 	BFD          []cmn.BFDMod           `json:"bfd"`
 	BGP          BGPDomain              `json:"bgp"`
 	IPsec        IPsecDomain            `json:"ipsec"`
+	// CORS is the explicit origin allowlist + wildcard opt-in (singleton,
+	// Set semantics on apply). nil means "unconfigured" -- the factory
+	// default (open) is not configuration and is deliberately not
+	// captured, so restoring an unconfigured capture leaves the target at
+	// its own factory default. Added in schema 1.3.
+	CORS *cmn.CORSConfig `json:"cors,omitempty"`
 }
 
 // Document is the canonical, versioned snapshot document (§4). It is the

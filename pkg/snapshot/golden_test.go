@@ -58,6 +58,7 @@ func legacyGoldenDocument(schemaVersion string) *Document {
 	doc := goldenDocument()
 	doc.SchemaVersion = schemaVersion
 	doc.Domains.L7Policy = nil // predates 1.3
+	doc.Domains.CORS = nil     // predates 1.3
 	if schemaVersion == "1.2" {
 		// 1.2 declared coverage explicitly (the 13 pre-1.3 domains) and
 		// derived its exclusion list at a time l7policy was unpersisted.
@@ -153,11 +154,12 @@ func TestGoldenLegacySchemas(t *testing.T) {
 				t.Fatalf("migration left l7policy nil (want normalized empty)")
 			}
 			if version == "1.2" {
-				// 1.2 declared its coverage; migration must keep l7policy
-				// OUT of it (an old document must not wipe live policies).
+				// 1.2 declared its coverage; migration must keep the 1.3
+				// domains OUT of it (an old document must not wipe live
+				// L7 policies or CORS config).
 				for _, name := range doc.IncludedDomains {
-					if name == DomainL7Policy {
-						t.Fatalf("1.2 golden gained l7policy coverage through migration: %v", doc.IncludedDomains)
+					if name == DomainL7Policy || name == DomainCORS {
+						t.Fatalf("1.2 golden gained %q coverage through migration: %v", name, doc.IncludedDomains)
 					}
 				}
 			} else if len(doc.IncludedDomains) != len(Registry) {

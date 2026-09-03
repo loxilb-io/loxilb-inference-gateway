@@ -95,7 +95,6 @@ const (
 	AreaAIRateLimit  = "ai_ratelimit"
 	AreaCert         = "cert"
 	AreaCluster      = "cluster"
-	AreaCORS         = "cors"
 	AreaGPU          = "gpu"
 	AreaGPUMode      = "gpu_mode"
 	AreaInterface    = "interface"
@@ -198,12 +197,11 @@ var RouteLifecycles = []RouteLifecycle{
 	{Method: "post", Path: "/config/l7policy", Class: ClassSnapshot, Area: DomainL7Policy, DesiredState: true},
 	{Method: "delete", Path: "/config/l7policy/id/{id}", Class: ClassSnapshot, Area: DomainL7Policy, DesiredState: true},
 
-	// --- L7 desired state with no persistence yet: runtime-only today.
-	// Listing these areas in excluded_domains (via the derivation below)
-	// is exactly the honesty the marker exists for; reclassify to
-	// ClassSnapshot (or ClassExternalStore) when persistence lands.
-	{Method: "post", Path: "/config/cors", Class: ClassRuntimeRebuilt, Area: AreaCORS, DesiredState: true},
-	{Method: "delete", Path: "/config/cors/{cors_url}", Class: ClassRuntimeRebuilt, Area: AreaCORS, DesiredState: true},
+	// --- CORS: snapshot domain since schema 1.3 (explicit allowlist +
+	// wildcard opt-in round-trip; the unconfigured factory default is not
+	// captured).
+	{Method: "post", Path: "/config/cors", Class: ClassSnapshot, Area: DomainCORS, DesiredState: true},
+	{Method: "delete", Path: "/config/cors/{cors_url}", Class: ClassSnapshot, Area: DomainCORS, DesiredState: true},
 
 	// --- TLS certificate store: PEM material lives on disk under the
 	// certificate directory (external store), not in the snapshot.
@@ -316,6 +314,7 @@ var snapshotDomainSet = map[string]bool{
 	DomainBFD:            true,
 	DomainBGP:            true,
 	DomainIPsec:          true,
+	DomainCORS:           true,
 }
 
 // ExcludedDomainsFromLifecycle derives the excluded_domains honesty list

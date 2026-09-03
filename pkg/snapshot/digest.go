@@ -264,6 +264,14 @@ func domainItemJSONs(name string, d *Domains) ([]string, error) {
 			cfg = d.SecurityRate.Config
 		}
 		return itemJSONs([]cmn.SecurityRateConfig{cfg})
+	case DomainCORS:
+		// Singleton: nil (unconfigured factory default) digests as no
+		// items -- absent-vs-configured is exactly the difference VERIFY
+		// must see, unlike securityrate where nil and zeroed coincide.
+		if d.CORS == nil {
+			return nil, nil
+		}
+		return itemJSONs([]cmn.CORSConfig{*d.CORS})
 	case DomainBFD:
 		return itemJSONs(d.BFD)
 	case DomainBGP:
