@@ -40,6 +40,10 @@ type PostConfigRestoreParams struct {
 	// HTTP Request Object
 	HTTPRequest *http.Request `json:"-"`
 
+	/*Comma-separated snapshot domains to restore. Defaults to every domain the document covers (its included_domains). Requesting a domain the document does not cover is refused.
+	  In: query
+	*/
+	Components *string
 	/*dry-run (default) validates and returns the plan without mutating anything; commit applies the snapshot with automatic rollback on failure.
 	  In: query
 	  Default: "dry-run"
@@ -62,6 +66,11 @@ func (o *PostConfigRestoreParams) BindRequest(r *http.Request, route *middleware
 	o.HTTPRequest = r
 
 	qs := runtime.Values(r.URL.Query())
+
+	qComponents, qhkComponents, _ := qs.GetOK("components")
+	if err := o.bindComponents(qComponents, qhkComponents, route.Formats); err != nil {
+		res = append(res, err)
+	}
 
 	qMode, qhkMode, _ := qs.GetOK("mode")
 	if err := o.bindMode(qMode, qhkMode, route.Formats); err != nil {
@@ -87,6 +96,24 @@ func (o *PostConfigRestoreParams) BindRequest(r *http.Request, route *middleware
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
+	return nil
+}
+
+// bindComponents binds and validates parameter Components from query.
+func (o *PostConfigRestoreParams) bindComponents(rawData []string, hasKey bool, formats strfmt.Registry) error {
+	var raw string
+	if len(rawData) > 0 {
+		raw = rawData[len(rawData)-1]
+	}
+
+	// Required: false
+	// AllowEmptyValue: false
+
+	if raw == "" { // empty values pass all other validations
+		return nil
+	}
+	o.Components = &raw
+
 	return nil
 }
 

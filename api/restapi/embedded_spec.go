@@ -6980,6 +6980,12 @@ func init() {
             "in": "query"
           },
           {
+            "type": "string",
+            "description": "Comma-separated snapshot domains to restore. Defaults to every domain the document covers (its included_domains). Requesting a domain the document does not cover is refused.",
+            "name": "components",
+            "in": "query"
+          },
+          {
             "description": "The snapshot document, as produced by GET /config/snapshot.",
             "name": "snapshot",
             "in": "body",
@@ -22778,6 +22784,12 @@ func init() {
             "default": "dry-run",
             "description": "dry-run (default) validates and returns the plan without mutating anything; commit applies the snapshot with automatic rollback on failure.",
             "name": "mode",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "Comma-separated snapshot domains to restore. Defaults to every domain the document covers (its included_domains). Requesting a domain the document does not cover is refused.",
+            "name": "components",
             "in": "query"
           },
           {

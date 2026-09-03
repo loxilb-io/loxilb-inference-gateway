@@ -219,7 +219,13 @@ func ConfigPostRestore(params operations.PostConfigRestoreParams, principal any)
 	defer snapshotGate.Store(false)
 
 	engine := snapshot.NewEngine(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath)
-	result, err := engine.Restore(raw, snapshot.RestoreOptions{Mode: mode})
+	result, err := engine.Restore(raw, snapshot.RestoreOptions{
+		Mode: mode,
+		// Selection semantics live in the engine: components intersects
+		// the document's included_domains, an uncovered component is
+		// refused, and empty means "everything the document covers".
+		Components: parseComponents(params.Components),
+	})
 	if err != nil {
 		// Engine-level precondition failure (not a document/apply problem).
 		return &ErrorResponse{Payload: &models.Error{

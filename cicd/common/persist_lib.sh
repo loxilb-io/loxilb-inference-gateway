@@ -228,9 +228,19 @@ restart_inplace_cold() { # restart_inplace_cold <llb> <flags...> — snapshot re
     plib_start_gw "$llb" "$@"
 }
 
-# plib_collect_logs <llb> — always-callable evidence collection.
+# plib_collect_logs <llb> — always-callable evidence collection. Captured
+# snapshot documents in the artifacts are SCRUBBED of the ipsec domain
+# before they can leave the runner: snapshots embed tunnel PSKs and
+# private-key PEM, and evidence uploads must never carry live secrets.
 plib_collect_logs() {
-    local llb=$1
+    local llb=$1 f
     docker exec "$llb" tail -200 /tmp/loxilb.out > "$PLIB_ARTIFACTS/loxilb.out.tail" 2>/dev/null
     docker exec "$llb" tail -100 /tmp/loxilb.err > "$PLIB_ARTIFACTS/loxilb.err.tail" 2>/dev/null
+    for f in "$PLIB_ARTIFACTS"/*.json; do
+        [ -f "$f" ] || continue
+        if sudo jq -e '.domains.ipsec?' "$f" >/dev/null 2>&1; then
+            sudo jq '.domains.ipsec = {"scrubbed": true} | .checksum = "scrubbed"' "$f" > "$f.scrub" \
+                && sudo mv "$f.scrub" "$f"
+        fi
+    done
 }

@@ -19,6 +19,8 @@ CFGDIR="$(cd "$(dirname "$0")" && pwd)"
 
 # Idempotency: always self-clean a prior aborted run first.
 "${CFGDIR}/rmconfig.sh" >/dev/null 2>&1 || true
+# Stale evidence from a prior run must not masquerade as this run's.
+sudo rm -rf "${CFGDIR}/artifacts" >/dev/null 2>&1 || true
 
 TOK_SLUG="Qwen__Qwen3-0.6B"
 TOK_SRC="${CFGDIR}/../common/kv_hash/fixtures/tokenizers/${TOK_SLUG}/tokenizer.json"
