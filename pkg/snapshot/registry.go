@@ -152,6 +152,11 @@ type Hooks interface {
 	NetCertGet() ([]cmn.CertMeta, error)
 	NetCertAdd(*cmn.CertMeta) (int, error)
 	NetCertDel(id string) (int, error)
+
+	// recovery_dependencies (schema 1.4) -- document-level manifest, not a
+	// domain: no wipe/apply, capture-only (see buildRecoveryManifest,
+	// capture.go).
+	NetRecoveryDepsGet() ([]cmn.RecoveryDependency, error)
 }
 
 // DomainEntry describes one v1 snapshot domain: how to fetch its live

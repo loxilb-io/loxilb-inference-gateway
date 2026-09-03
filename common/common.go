@@ -1930,6 +1930,14 @@ type NetHookInterface interface {
 	// on-disk material is deliberately KEPT -- it is node secret material,
 	// and the apply that follows a wipe must be able to re-register it.
 	NetCertDel(id string) (int, error)
+	// NetRecoveryDepsGet returns the identity of every external store the
+	// running gateway is wired to (recoverydep.go vocabulary): compiled
+	// engine-contract registry constants, the published kv-model-profile
+	// generation, and the configured management/data-plane databases.
+	// Identity only -- generations and digests, never store content. The
+	// snapshot capture path turns these into the document's
+	// recovery_dependencies manifest (schema 1.4).
+	NetRecoveryDepsGet() ([]RecoveryDependency, error)
 	NetCtInfoGet() ([]CtInfo, error)
 	NetSessionGet() ([]SessionMod, error)
 	NetSessionUlClGet() ([]SessionUlClMod, error)

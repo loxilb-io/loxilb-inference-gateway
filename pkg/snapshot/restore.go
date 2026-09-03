@@ -24,6 +24,8 @@ import (
 	"bytes"
 	"fmt"
 	"time"
+
+	cmn "github.com/loxilb-io/loxilb/common"
 )
 
 // ---------------------------------------------------------------------
@@ -395,6 +397,32 @@ func stageValidate(doc *Document) (compatible bool, errs []string) {
 	for _, name := range DomainNames() {
 		if !included[name] && countDomain(name, &doc.Domains) > 0 {
 			errs = append(errs, fmt.Sprintf("snapshot: domain %q carries content but is not listed in included_domains", name))
+		}
+	}
+	if len(errs) > 0 {
+		return true, errs
+	}
+
+	// recovery_dependencies manifest checks (schema 1.4+; nil = none
+	// declared, valid). A REQUIRED entry of a type this build does not
+	// know cannot be verified -- proceeding would be guessing about a
+	// dependency the capturing gateway declared load-bearing, so it fails
+	// closed here, before anything is planned or wiped. Unknown OPTIONAL
+	// types pass (forward compatibility: informational entries from a
+	// newer producer must not brick an otherwise-compatible restore).
+	seenDep := make(map[string]bool, len(doc.RecoveryDependencies))
+	for _, d := range doc.RecoveryDependencies {
+		if d.Type == "" {
+			errs = append(errs, "snapshot: recovery_dependencies entry with empty type")
+			continue
+		}
+		key := d.Type + "\x00" + d.ID
+		if seenDep[key] {
+			errs = append(errs, fmt.Sprintf("snapshot: recovery_dependencies lists %s %q more than once", d.Type, d.ID))
+		}
+		seenDep[key] = true
+		if d.Required && !cmn.KnownRecoveryDepTypes[d.Type] {
+			errs = append(errs, fmt.Sprintf("snapshot: required recovery dependency of unknown type %q cannot be verified by this build; refusing to restore", d.Type))
 		}
 	}
 	if len(errs) > 0 {

@@ -63,6 +63,15 @@ type mockHooks struct {
 	tracingCfg *cmn.TracingConfig
 	certMetas  []cmn.CertMeta
 
+	// recoveryDeps is what NetRecoveryDepsGet returns: the store
+	// identities the "gateway" is wired to (required flags on the
+	// database entries included, mirroring the real producer's
+	// ownership); Capture derives the manifest from these plus the
+	// document. Empty by default -- an unwired gateway has only its
+	// compiled-in stores, and tests that assert manifest content set
+	// this explicitly.
+	recoveryDeps []cmn.RecoveryDependency
+
 	ipsecConfig  *cmn.IPsecConfig
 	ipsecTunnels []*cmn.IPsecTunnel
 	ipsecCerts   []*cmn.IPsecCertificate
@@ -961,6 +970,14 @@ func (m *mockHooks) NetIPsecCACertificateDel(name string) (int, error) {
 func (m *mockHooks) NetIPsecCACertificateExportAll() ([]cmn.IPsecCACertificateMod, error) {
 	m.log("NetIPsecCACertificateExportAll")
 	return resizeOverride(m, "NetIPsecCACertificateExportAll", func() []cmn.IPsecCACertificateMod { return append([]cmn.IPsecCACertificateMod(nil), m.ipsecCAMods...) }), nil
+}
+
+func (m *mockHooks) NetRecoveryDepsGet() ([]cmn.RecoveryDependency, error) {
+	m.log("NetRecoveryDepsGet")
+	if err := m.failIfConfigured("NetRecoveryDepsGet"); err != nil {
+		return nil, err
+	}
+	return append([]cmn.RecoveryDependency(nil), m.recoveryDeps...), nil
 }
 
 // compile-time assertion that mockHooks satisfies Hooks.
