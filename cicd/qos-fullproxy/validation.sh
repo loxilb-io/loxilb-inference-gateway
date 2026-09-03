@@ -85,75 +85,92 @@ api_del_policy() {
     $dexec llb1 curl -s -X DELETE $API/config/policy/ident/$1
 }
 
-# HTTP backend: python3 sink accepting arbitrary-size POST bodies and serving
-# a bulk GET (the download-direction probe). Runs inside l3ep1.
-sudo docker exec -d l3ep1 sh -c 'cd /tmp && dd if=/dev/zero of=big.bin bs=1M count=64 2>/dev/null && cat > qsink.py << "PYEOF"
-import http.server, socketserver, time
+# HTTP backend: perl sink accepting arbitrary-size POST bodies and serving
+# a bulk GET (the download-direction probe). Runs inside l3ep1. Perl, not
+# python: the canonical nettest host image ships perl but NO python, and the
+# hosts have no internet once config.sh points their default route at llb1 —
+# a runtime install is impossible, so the sink must run on what the image
+# carries (first hit on a freshly spawned testbed; earlier green runs leaned
+# on a long-lived l3ep1 container that had python provisioned by hand).
+if ! $dexec l3ep1 sh -c 'command -v perl' > /dev/null 2>&1; then
+    echo "l3ep1 host image lacks perl - qsink cannot run"
+    echo SCENARIO-qos-fullproxy [FAILED]
+    exit 1
+fi
+sudo docker exec -d l3ep1 sh -c 'cd /tmp && dd if=/dev/zero of=big.bin bs=1M count=64 2>/dev/null && cat > qsink.pl << "PLEOF"
+use strict; use warnings;
+use IO::Socket::INET;
+$SIG{CHLD} = "IGNORE";
+$SIG{PIPE} = "IGNORE";
 
 # 40MB of 1024-byte SSE frames for the shaped stream-duration leg: at the
 # 2 MB/s shaper CIR this is ~20s of wall clock against a 10s rule cap.
-SSE_FRAME = b"data: " + b"x" * 1016 + b"\n\n"
-SSE_BLOB = SSE_FRAME * 40960
+my $frame = "data: " . ("x" x 1016) . "\n\n";
+my $sse   = $frame x 40960;
 
-class H(http.server.BaseHTTPRequestHandler):
-    protocol_version = "HTTP/1.1"
-    def do_POST(self):
-        n = int(self.headers.get("Content-Length", 0))
-        left = n
-        while left > 0:
-            chunk = self.rfile.read(min(left, 1 << 20))
-            if not chunk:
-                break
-            left -= len(chunk)
-        body = b"sunk %d\n" % (n - left)
-        self.send_response(200)
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-    def do_GET(self):
-        if self.path == "/sse":
+my $srv = IO::Socket::INET->new(LocalHost => "0.0.0.0", LocalPort => 8080,
+                                Listen => 64, ReuseAddr => 1) or die $!;
+while (my $c = $srv->accept) {
+    if (fork) { close $c; next; }   # parent keeps accepting
+    close $srv;
+    $c->autoflush(1);
+    # HTTP/1.1 keep-alive per request, like the python handler this replaces:
+    # the connection stays open after a Content-Length response until the
+    # CLIENT closes. Closing server-side right after the /sse write would put
+    # a backend FIN behind ~a shaper-CIR-second of parked bytes and change
+    # what F10a measures (observed: the tail went missing, no cap marker).
+    while (1) {
+        my $head = "";
+        while ($head !~ /\r?\n\r?\n/) {
+            my $n = sysread($c, my $buf, 65536);
+            last unless $n;
+            $head .= $buf;
+        }
+        last unless $head =~ /^(\S+)\s+(\S+)/;
+        my ($meth, $path) = ($1, $2);
+        # curl sends Expect: 100-continue on big POST bodies and stalls ~1s
+        # without the interim response - that stall would poison speed_upload
+        print $c "HTTP/1.1 100 Continue\r\n\r\n" if $head =~ /Expect:\s*100-continue/i;
+        if ($meth eq "POST") {
+            my ($cl) = $head =~ /Content-Length:\s*(\d+)/i; $cl ||= 0;
+            my $got = 0;
+            $got = length($1) if $head =~ /\r?\n\r?\n(.*)$/s;
+            while ($got < $cl) {
+                my $n = sysread($c, my $buf, 1 << 20);
+                last unless $n;
+                $got += $n;
+            }
+            my $body = "sunk $got\n";
+            last unless print $c "HTTP/1.1 200 OK\r\nContent-Length: " .
+                length($body) . "\r\n\r\n" . $body;
+        } elsif ($path eq "/sse") {
             # source-fast SSE stream; the shaper is what paces it
-            self.send_response(200)
-            self.send_header("Content-Type", "text/event-stream")
-            self.send_header("Content-Length", str(len(SSE_BLOB)))
-            self.end_headers()
-            try:
-                self.wfile.write(SSE_BLOB)
-            except OSError:
-                pass
-            return
-        if self.path == "/sse-slow":
-            # source-paced trickle: one frame per second, no shaper parks —
+            last unless print $c "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n" .
+                "Content-Length: " . length($sse) . "\r\n\r\n";
+            last unless print $c $sse;
+        } elsif ($path eq "/sse-slow") {
+            # source-paced trickle: one frame per second, no shaper parks -
             # the stream-duration cap must cut this one
-            self.send_response(200)
-            self.send_header("Content-Type", "text/event-stream")
-            self.send_header("Connection", "close")
-            self.end_headers()
-            try:
-                for _ in range(25):
-                    self.wfile.write(SSE_FRAME)
-                    self.wfile.flush()
-                    time.sleep(1)
-            except OSError:
-                pass
-            self.close_connection = True
-            return
-        with open("/tmp/big.bin", "rb") as f:
-            data = f.read()
-        self.send_response(200)
-        self.send_header("Content-Type", "application/octet-stream")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
-    def log_message(self, *a):
-        pass
-
-class S(socketserver.ThreadingTCPServer):
-    allow_reuse_address = True
-
-S(("0.0.0.0", 8080), H).serve_forever()
-PYEOF
-python3 qsink.py'
+            print $c "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n" .
+                     "Connection: close\r\n\r\n";
+            for (1 .. 25) {
+                last unless print $c $frame;
+                sleep 1;
+            }
+            last;
+        } else {
+            my $data = "";
+            if (open my $f, "<", "/tmp/big.bin") { local $/; $data = <$f>; close $f; }
+            last unless print $c "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n" .
+                "Content-Length: " . length($data) . "\r\n\r\n";
+            last unless print $c $data;
+        }
+    }
+    close $c;
+    exit 0;
+}
+PLEOF
+perl qsink.pl'
 
 # upload blobs on the client (64M for the full-length concurrent F9 leg: at
 # 8 MB/s both transfers run ~8s, so the up/down overlap spans the whole
@@ -546,7 +563,7 @@ if [[ "$(qos_val "$sc2" loxilb_proxy_qos_bytes_passed_total $FPVIP4 download)" !
     echo "F11 detached SSE VIP $FPVIP4 still exported" ; code=1
 fi
 
-$dexec l3ep1 pkill -9 python3 2>/dev/null
+$dexec l3ep1 pkill -9 perl 2>/dev/null
 if [[ $code == 0 ]]; then
     echo SCENARIO-qos-fullproxy [OK]
 else
