@@ -172,7 +172,6 @@ func TestExcludedDomainsDerivation(t *testing.T) {
 		AreaCORS,
 		AreaGPUMode,
 		AreaInterface,
-		AreaL7Policy,
 		AreaLlamaFW,
 		AreaMetrics,
 		AreaOPA,

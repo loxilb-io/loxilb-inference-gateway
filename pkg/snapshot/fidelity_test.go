@@ -214,11 +214,43 @@ func TestMigrationStampsFullCoverageOn11Docs(t *testing.T) {
 	if err := ApplyMigrations(doc); err != nil {
 		t.Fatalf("ApplyMigrations: %v", err)
 	}
-	if doc.SchemaVersion != "1.2" {
-		t.Fatalf("expected migration to 1.2, got %q", doc.SchemaVersion)
+	if doc.SchemaVersion != SchemaVersion {
+		t.Fatalf("expected migration chain to reach %q, got %q", SchemaVersion, doc.SchemaVersion)
 	}
 	if len(doc.IncludedDomains) != len(Registry) {
 		t.Fatalf("expected full coverage stamped, got %v", doc.IncludedDomains)
+	}
+}
+
+// TestMigrationKeepsL7PolicyOutOf12Coverage: a 1.2 document declared its
+// coverage explicitly and never captured L7 policies, so migrating it to
+// 1.3 must NOT widen included_domains -- restoring an old document must
+// leave live L7 policies untouched. The absent domain payload is
+// normalized to its empty value.
+func TestMigrationKeepsL7PolicyOutOf12Coverage(t *testing.T) {
+	doc := NewDocument("0.9.8.6-beta", "test-host", TriggerManual)
+	doc.SchemaVersion = "1.2"
+	pre := make([]string, 0, len(Registry)-1)
+	for _, name := range DomainNames() {
+		if name != DomainL7Policy {
+			pre = append(pre, name)
+		}
+	}
+	doc.IncludedDomains = pre
+	doc.Domains.L7Policy = nil
+	if err := ApplyMigrations(doc); err != nil {
+		t.Fatalf("ApplyMigrations: %v", err)
+	}
+	if doc.SchemaVersion != SchemaVersion {
+		t.Fatalf("expected migration to %q, got %q", SchemaVersion, doc.SchemaVersion)
+	}
+	for _, name := range doc.IncludedDomains {
+		if name == DomainL7Policy {
+			t.Fatalf("1.2->1.3 migration widened coverage to l7policy: %v", doc.IncludedDomains)
+		}
+	}
+	if doc.Domains.L7Policy == nil {
+		t.Fatalf("migration left l7policy payload nil (want normalized empty)")
 	}
 }
 

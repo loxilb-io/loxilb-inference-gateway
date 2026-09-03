@@ -47,7 +47,15 @@ import (
 // in 1.2+ documents (the 1.1->1.2 migration stamps full coverage onto
 // older documents, which is exactly the wipe-everything behavior they
 // always had).
-const SchemaVersion = "1.2"
+//
+// 1.3: added the l7policy domain (dedicated L7_POLICY resources: content
+// routes attached to an LB by stable id). Additive like 1.1's
+// kvexactbinding: older documents simply carry no policies, and their
+// included_domains never lists l7policy, so restoring them leaves live L7
+// policies untouched (the 1.2->1.3 migration deliberately does NOT widen
+// coverage). Builds that predate the domain refuse 1.3 documents via the
+// minor-version gate rather than silently dropping the field.
+const SchemaVersion = "1.3"
 
 // DocKind identifies the document type, matching §4's "kind" field.
 const DocKind = "loxilb-snapshot"
@@ -73,6 +81,7 @@ const (
 	DomainEndpoint       = "endpoint"
 	DomainLoadBalancer   = "loadbalancer"
 	DomainKvExactBinding = "kvexactbinding"
+	DomainL7Policy       = "l7policy"
 	DomainFirewall       = "firewall"
 	DomainPolicy         = "policy"
 	DomainMirror         = "mirror"
@@ -144,12 +153,18 @@ type Domains struct {
 	// allocation high-water mark). Applied after loadbalancer (bindings
 	// belong to rules). Added in schema 1.1; absent in 1.0 documents.
 	KvExactBinding []cmn.KvExactBindingMod `json:"kvexactbinding,omitempty"`
-	Firewall       []cmn.FwRuleMod         `json:"firewall"`
-	Policy         []cmn.PolMod            `json:"policy"`
-	Mirror         []cmn.MirrGetMod        `json:"mirror"`
-	Session        []cmn.SessionMod        `json:"session"`
-	SessionUlCl    []cmn.SessionUlClMod    `json:"sessionulcl"`
-	IPFilter       []cmn.IPFilterEntry     `json:"ipfilter"`
+	// L7Policy carries the dedicated L7_POLICY resources (ordered content
+	// routes attached to an LB by its stable opaque id). Applied after
+	// loadbalancer/kvexactbinding (a policy references its rule by
+	// LB opaque id, which must be live to attach). Added in schema 1.3;
+	// absent in older documents.
+	L7Policy    []cmn.L7PolicyArg    `json:"l7policy,omitempty"`
+	Firewall    []cmn.FwRuleMod      `json:"firewall"`
+	Policy      []cmn.PolMod         `json:"policy"`
+	Mirror      []cmn.MirrGetMod     `json:"mirror"`
+	Session     []cmn.SessionMod     `json:"session"`
+	SessionUlCl []cmn.SessionUlClMod `json:"sessionulcl"`
+	IPFilter    []cmn.IPFilterEntry  `json:"ipfilter"`
 	// SecurityRate is a singleton (Set semantics on apply); nil means "not
 	// captured" (e.g. excluded via `components`).
 	SecurityRate *cmn.SecurityRateState `json:"securityrate,omitempty"`

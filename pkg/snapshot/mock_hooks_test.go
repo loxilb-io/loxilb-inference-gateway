@@ -17,6 +17,7 @@
 package snapshot
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 
@@ -43,6 +44,7 @@ type mockHooks struct {
 	endpoints []cmn.EndPointMod
 	lbRules   []cmn.LbRuleMod
 	kvBinds   []cmn.KvExactBindingMod
+	l7Pols    []cmn.L7PolicyArg
 	fwRules   []cmn.FwRuleMod
 	policies  []cmn.PolMod
 	mirrors   []cmn.MirrGetMod
@@ -294,6 +296,56 @@ func (m *mockHooks) NetKvExactBindingDel(b *cmn.KvExactBindingMod) (int, error) 
 		}
 	}
 	m.kvBinds = out
+	return 0, nil
+}
+
+// --- l7policy ---
+//
+// The mock mirrors the real registry's identity semantics (pkg/loxinet):
+// re-adding a byte-identical policy is the idempotent "l7policy-exists
+// error" no-op, a same-id-different-content add is the non-idempotent
+// "cant modify" conflict, and deleting an unknown id is "not-exists" --
+// the restore engine's boot-retry tolerance branches on exactly these
+// error shapes.
+
+func (m *mockHooks) NetL7PolicyGet() ([]cmn.L7PolicyArg, error) {
+	m.log("NetL7PolicyGet")
+	return resizeOverride(m, "NetL7PolicyGet", func() []cmn.L7PolicyArg { return append([]cmn.L7PolicyArg(nil), m.l7Pols...) }), nil
+}
+func (m *mockHooks) NetL7PolicyAdd(p *cmn.L7PolicyArg) (int, error) {
+	m.log("NetL7PolicyAdd:%s", p.Id)
+	if err := m.failIfConfigured("NetL7PolicyAdd"); err != nil {
+		return -1, err
+	}
+	for i := range m.l7Pols {
+		if m.l7Pols[i].Id == p.Id {
+			if reflect.DeepEqual(m.l7Pols[i], *p) {
+				return -1, errors.New("l7policy-exists error")
+			}
+			return -1, fmt.Errorf("l7policy-exist error: cant modify existing policy %s (delete and re-create)", p.Id)
+		}
+	}
+	m.l7Pols = append(m.l7Pols, *p)
+	return 0, nil
+}
+func (m *mockHooks) NetL7PolicyDel(id string) (int, error) {
+	m.log("NetL7PolicyDel:%s", id)
+	if err := m.failIfConfigured("NetL7PolicyDel"); err != nil {
+		return -1, err
+	}
+	out := m.l7Pols[:0]
+	found := false
+	for _, p := range m.l7Pols {
+		if p.Id == id {
+			found = true
+			continue
+		}
+		out = append(out, p)
+	}
+	if !found {
+		return -1, errors.New("l7policy not-exists error")
+	}
+	m.l7Pols = out
 	return 0, nil
 }
 

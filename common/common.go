@@ -1875,6 +1875,21 @@ type NetHookInterface interface {
 	// NetL7PolicyRemove detaches any L7 policy from the VIP:port:proto rule
 	// (regfrees every compiled REGEX program on the C side).
 	NetL7PolicyRemove(vip string, port uint16, proto string) (int, error)
+	// NetL7PolicyGet returns every stored L7_POLICY resource (deep copies,
+	// sorted by id). The desired-state policy registry lives control-plane
+	// side (pkg/loxinet), so REST CRUD and config snapshot/restore share
+	// one store.
+	NetL7PolicyGet() ([]L7PolicyArg, error)
+	// NetL7PolicyAdd validates the policy, resolves its load-balancer by
+	// stable opaque id, attaches the route IR to the running sockproxy
+	// rule and stores the policy. An empty Id is minted server-side
+	// (UUID) and written back to the argument; a caller-supplied Id is
+	// honored when unique.
+	NetL7PolicyAdd(*L7PolicyArg) (int, error)
+	// NetL7PolicyDel detaches the policy's routes from the dataplane (a
+	// no-op when the referenced load-balancer is already gone) and removes
+	// the stored resource.
+	NetL7PolicyDel(id string) (int, error)
 	NetCtInfoGet() ([]CtInfo, error)
 	NetSessionGet() ([]SessionMod, error)
 	NetSessionUlClGet() ([]SessionUlClMod, error)

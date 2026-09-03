@@ -100,7 +100,6 @@ const (
 	AreaGPUMode      = "gpu_mode"
 	AreaInterface    = "interface"
 	AreaL4Trace      = "l4trace"
-	AreaL7Policy     = "l7policy"
 	AreaLifecycle    = "config_lifecycle"
 	AreaLlamaFW      = "llamafirewall"
 	AreaMetrics      = "metrics"
@@ -193,12 +192,16 @@ var RouteLifecycles = []RouteLifecycle{
 	{Method: "post", Path: "/config/ipsec/tunnels/{name}/action", Class: ClassRuntimeRebuilt, Area: DomainIPsec},
 	{Method: "delete", Path: "/config/ipsec/stats", Class: ClassRuntimeRebuilt, Area: DomainIPsec},
 
+	// --- L7 policies: snapshot domain since schema 1.3 (the desired-state
+	// registry lives control-plane side and round-trips through capture/
+	// restore).
+	{Method: "post", Path: "/config/l7policy", Class: ClassSnapshot, Area: DomainL7Policy, DesiredState: true},
+	{Method: "delete", Path: "/config/l7policy/id/{id}", Class: ClassSnapshot, Area: DomainL7Policy, DesiredState: true},
+
 	// --- L7 desired state with no persistence yet: runtime-only today.
 	// Listing these areas in excluded_domains (via the derivation below)
 	// is exactly the honesty the marker exists for; reclassify to
 	// ClassSnapshot (or ClassExternalStore) when persistence lands.
-	{Method: "post", Path: "/config/l7policy", Class: ClassRuntimeRebuilt, Area: AreaL7Policy, DesiredState: true},
-	{Method: "delete", Path: "/config/l7policy/id/{id}", Class: ClassRuntimeRebuilt, Area: AreaL7Policy, DesiredState: true},
 	{Method: "post", Path: "/config/cors", Class: ClassRuntimeRebuilt, Area: AreaCORS, DesiredState: true},
 	{Method: "delete", Path: "/config/cors/{cors_url}", Class: ClassRuntimeRebuilt, Area: AreaCORS, DesiredState: true},
 
@@ -302,6 +305,7 @@ var snapshotDomainSet = map[string]bool{
 	DomainEndpoint:       true,
 	DomainLoadBalancer:   true,
 	DomainKvExactBinding: true,
+	DomainL7Policy:       true,
 	DomainFirewall:       true,
 	DomainPolicy:         true,
 	DomainMirror:         true,

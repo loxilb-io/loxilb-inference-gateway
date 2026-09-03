@@ -72,6 +72,26 @@ var Migrations = []Migration{
 			return nil
 		},
 	},
+	// 1.2 -> 1.3: the l7policy domain was added. Purely additive like
+	// 1.0->1.1 -- normalize the absent field to its empty value and
+	// re-stamp the version. Deliberately NOT stamped into
+	// included_domains: a pre-1.3 document never captured L7 policies, so
+	// restoring it must leave live policies untouched (included_domains
+	// is what scopes the wipe). Note the 1.1->1.2 migration above runs
+	// FIRST for pre-1.2 documents, and DomainNames() there now includes
+	// l7policy -- so legacy full-coverage documents DO wipe the domain,
+	// which preserves their historical "restore replaces everything"
+	// semantics exactly.
+	{
+		FromVersion: "1.2",
+		ToVersion:   "1.3",
+		Apply: func(doc *Document) error {
+			if doc.Domains.L7Policy == nil {
+				doc.Domains.L7Policy = []cmn.L7PolicyArg{}
+			}
+			return nil
+		},
+	},
 }
 
 // ApplyMigrations runs every registered Migration whose FromVersion matches

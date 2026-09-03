@@ -95,7 +95,7 @@ func domainNames(entries []DomainEntry) []string {
 func TestRegistryOrder(t *testing.T) {
 	want := []string{
 		DomainEndpoint, DomainLoadBalancer, DomainKvExactBinding,
-		DomainFirewall, DomainPolicy,
+		DomainL7Policy, DomainFirewall, DomainPolicy,
 		DomainMirror, DomainSession, DomainSessionUlCl, DomainIPFilter,
 		DomainSecurityRate, DomainBFD, DomainBGP, DomainIPsec,
 	}

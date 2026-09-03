@@ -18,8 +18,13 @@
 // L7_POLICY resource (policy + ordered child rules).
 //
 // A policy references an existing L4 load-balancer by its STABLE opaque id
-// — resolved here via findLBRuleByOpaqueID (404 if absent). The policy body is validated
-// SERVER-SIDE with Octavia per-type rules (ASVS V5 —):
+// (404 if absent). The desired-state registry itself lives control-plane
+// side (pkg/loxinet, reached via the NetL7PolicyGet/Add/Del hooks) so the
+// config snapshot/restore engine shares one store with this handler; here
+// remains only the REST semantics: model conversion, early validation for
+// clean 400s, and error→status mapping. The policy body is validated
+// SERVER-SIDE with Octavia per-type rules (ASVS V5, cmn.ValidateL7Policy —
+// shared with the restore apply path):
 //
 //   - FILE_TYPE accepts ONLY EQUAL_TO or REGEX (Octavia constraint).
 //   - key is REQUIRED for HEADER / COOKIE / QUERY.
@@ -45,7 +50,6 @@ package handler
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/go-openapi/runtime/middleware"
@@ -55,241 +59,15 @@ import (
 	tk "github.com/loxilb-io/loxilib"
 )
 
-// --- canonical L7 enum values (mirror the swagger enums + the C IR) -----------
+// The Octavia server-side validation (and the canonical enum/bound
+// constants) moved to cmn.ValidateL7Policy (common/l7policy.go): the
+// config-restore apply path (pkg/loxinet NetL7PolicyAdd) must enforce the
+// exact same rules on documents that never pass through this handler.
+// These aliases keep this package's call sites (and its validation unit
+// tests, which drive the shared implementation) unchanged.
+var validateL7Policy = cmn.ValidateL7Policy
 
-const (
-	l7FieldHost     = "HOST"
-	l7FieldPath     = "PATH"
-	l7FieldHeader   = "HEADER"
-	l7FieldCookie   = "COOKIE"
-	l7FieldFileType = "FILE_TYPE"
-	l7FieldMethod   = "METHOD"
-	l7FieldQuery    = "QUERY"
-
-	l7OpEqual         = "EQUAL_TO"
-	l7OpStartsWith    = "STARTS_WITH"
-	l7OpSegmentPrefix = "SEGMENT_PREFIX"
-	l7OpEndsWith      = "ENDS_WITH"
-	l7OpContains      = "CONTAINS"
-	l7OpRegex         = "REGEX"
-
-	l7ActForward  = "FORWARD"
-	l7ActRedirect = "REDIRECT"
-	l7ActReject   = "REJECT"
-
-	// insertHeaders ops + bounds. l7HdrMaxFilters MUST match the C
-	// L7_MAX_HDR_FILTERS (sockproxy_l7policy.h) — the data-plane copy truncates above it, so
-	// the handler rejects over-count with a 400 rather than silently dropping ops.
-	l7HdrOpSet      = "SET"
-	l7HdrOpAdd      = "ADD"
-	l7HdrOpRemove   = "REMOVE"
-	l7HdrMaxFilters = 8
-	l7HdrNameMax    = 63  // L7_HDR_NAME_MAX-1 (NUL)
-	l7HdrValueMax   = 255 // L7_HDR_VALUE_MAX-1 (NUL)
-)
-
-// l7ValidHdrOps gates the insertHeaders op enum (anything else => 400, never a silent SET).
-var l7ValidHdrOps = map[string]bool{l7HdrOpSet: true, l7HdrOpAdd: true, l7HdrOpRemove: true}
-
-// l7ValidFields / l7ValidOps gate unknown enum values (a future SSL_* field is rejected here —
-// it must not silently fall through as an unmatched no-op).
-var l7ValidFields = map[string]bool{
-	l7FieldHost: true, l7FieldPath: true, l7FieldHeader: true, l7FieldCookie: true,
-	l7FieldFileType: true, l7FieldMethod: true, l7FieldQuery: true,
-}
-
-var l7ValidOps = map[string]bool{
-	l7OpEqual: true, l7OpStartsWith: true, l7OpSegmentPrefix: true,
-	l7OpEndsWith: true, l7OpContains: true, l7OpRegex: true,
-}
-
-// l7ValidRedirectStatus is the redirect status-code allow-list (Octavia/Gateway constraint).
-var l7ValidRedirectStatus = map[int]bool{301: true, 302: true, 303: true, 307: true, 308: true}
-
-// validateL7Policy enforces the Octavia per-type rules SERVER-SIDE. It returns a
-// non-nil error describing the FIRST violation (the handler maps that to a 400). It is a pure
-// function so the unit tests can drive every per-type rule without the generated swagger types.
-func validateL7Policy(p *cmn.L7PolicyArg) error {
-	if p == nil {
-		return fmt.Errorf("l7policy: nil body")
-	}
-	if strings.TrimSpace(p.LbId) == "" {
-		return fmt.Errorf("l7policy: lbId is required (the stable id of the L4 load-balancer to attach to)")
-	}
-	if len(p.Rules) == 0 {
-		return fmt.Errorf("l7policy: at least one rule is required")
-	}
-	for ri := range p.Rules {
-		rule := &p.Rules[ri]
-		for si := range rule.MatchSets {
-			set := &rule.MatchSets[si]
-			for ci := range set.Conditions {
-				if err := validateL7Condition(&set.Conditions[ci]); err != nil {
-					return fmt.Errorf("l7policy: rule[%d] set[%d] cond[%d]: %w", ri, si, ci, err)
-				}
-			}
-		}
-		if err := validateL7Action(&rule.Action); err != nil {
-			return fmt.Errorf("l7policy: rule[%d] action: %w", ri, err)
-		}
-		if err := validateInsertHeaders(rule.InsertHeaders); err != nil {
-			return fmt.Errorf("l7policy: rule[%d] insertHeaders: %w", ri, err)
-		}
-	}
-	if err := validateSessionPersistence(p); err != nil {
-		return err
-	}
-	return nil
-}
-
-// validateSessionPersistence enforces HTTP_COOKIE session-persistence rules
-// SERVER-SIDE: each rule's SessionPersistence must be one of the known modes, and HTTP_COOKIE
-// (LB-generated stateless cookie) is MUTUALLY EXCLUSIVE per pool with APP_COOKIE / SOURCE_IP —
-// mixing them within one policy is ambiguous (the data plane can apply only one affinity mode),
-// so it is rejected with a 400 (the handler maps a non-nil error to 400). Empty ("") = off.
-func validateSessionPersistence(p *cmn.L7PolicyArg) error {
-	sawHTTPCookie := false
-	sawOtherAffinity := false
-	for ri := range p.Rules {
-		mode := strings.ToUpper(strings.TrimSpace(p.Rules[ri].SessionPersistence))
-		switch mode {
-		case "": // off — no persistence on this rule
-		case "HTTP_COOKIE":
-			sawHTTPCookie = true
-		case "APP_COOKIE", "SOURCE_IP":
-			sawOtherAffinity = true
-		default:
-			return fmt.Errorf("l7policy: rule[%d] sessionPersistence: unsupported mode %q "+
-				"(want one of HTTP_COOKIE, APP_COOKIE, SOURCE_IP, or empty)", ri, p.Rules[ri].SessionPersistence)
-		}
-	}
-	if sawHTTPCookie && sawOtherAffinity {
-		return fmt.Errorf("l7policy: sessionPersistence HTTP_COOKIE is mutually exclusive with " +
-			"APP_COOKIE/SOURCE_IP per pool — do not mix them within one policy")
-	}
-	return nil
-}
-
-// hasCtrlChars reports whether s contains a CR, LF, NUL, or any other ASCII control char
-// (or DEL). Such bytes in an insertHeaders name/value enable CRLF/header injection at the
-// data plane, so they are rejected with a 400 at config time — the first line
-// of defence ahead of the data-plane l7_hdr_name_valid/l7_hdr_value_valid guards.
-func hasCtrlChars(s string) bool {
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c == '\t' { // HT is permitted inside a header value
-			continue
-		}
-		if c < 0x20 || c == 0x7f {
-			return true
-		}
-	}
-	return false
-}
-
-// validateInsertHeaders enforces request-header insertion rules SERVER-SIDE:
-//   - op ∈ {SET, ADD, REMOVE} (case-insensitive); anything else => 400.
-//
-// - bounded count ≤ l7HdrMaxFilters (C L7_MAX_HDR_FILTERS) so the data-plane copy never
-// silently truncates (DoS bound).
-//   - non-empty name with no control chars / ':' (CRLF injection guard); name
-//     length ≤ l7HdrNameMax; value length ≤ l7HdrValueMax and no control chars (value is
-//     ignored for REMOVE but still length/CRLF-checked when present).
-func validateInsertHeaders(hdrs []cmn.L7HeaderFilterArg) error {
-	if len(hdrs) > l7HdrMaxFilters {
-		return fmt.Errorf("too many insertHeaders entries (%d > max %d)", len(hdrs), l7HdrMaxFilters)
-	}
-	for i := range hdrs {
-		h := &hdrs[i]
-		op := strings.ToUpper(strings.TrimSpace(h.Op))
-		if !l7ValidHdrOps[op] {
-			return fmt.Errorf("entry[%d]: unknown op %q (want SET/ADD/REMOVE)", i, h.Op)
-		}
-		name := strings.TrimSpace(h.Name)
-		if name == "" {
-			return fmt.Errorf("entry[%d]: header name is required", i)
-		}
-		if len(name) > l7HdrNameMax {
-			return fmt.Errorf("entry[%d]: header name too long (%d > %d)", i, len(name), l7HdrNameMax)
-		}
-		if hasCtrlChars(name) || strings.ContainsRune(name, ':') {
-			return fmt.Errorf("entry[%d]: header name %q contains illegal characters (CRLF/control/':')", i, h.Name)
-		}
-		if len(h.Value) > l7HdrValueMax {
-			return fmt.Errorf("entry[%d]: header value too long (%d > %d)", i, len(h.Value), l7HdrValueMax)
-		}
-		if hasCtrlChars(h.Value) {
-			return fmt.Errorf("entry[%d]: header value contains illegal control characters (CRLF injection)", i)
-		}
-	}
-	return nil
-}
-
-func validateL7Condition(c *cmn.L7ConditionArg) error {
-	field := strings.ToUpper(strings.TrimSpace(c.Field))
-	op := strings.ToUpper(strings.TrimSpace(c.Op))
-
-	if !l7ValidFields[field] {
-		// An unknown/unsupported field (e.g. a SSL_* type) is rejected, never
-		// silently accepted as a no-op condition.
-		return fmt.Errorf("unknown or unsupported field %q", c.Field)
-	}
-	if !l7ValidOps[op] {
-		return fmt.Errorf("unknown or unsupported op %q", c.Op)
-	}
-
-	// Octavia FILE_TYPE constraint: ONLY EQUAL_TO or REGEX are valid ops for FILE_TYPE.
-	if field == l7FieldFileType && op != l7OpEqual && op != l7OpRegex {
-		return fmt.Errorf("FILE_TYPE accepts only EQUAL_TO or REGEX (got %q)", c.Op)
-	}
-
-	// key is REQUIRED for HEADER / COOKIE / QUERY (the field that needs a name).
-	if (field == l7FieldHeader || field == l7FieldCookie || field == l7FieldQuery) &&
-		strings.TrimSpace(c.Key) == "" {
-		return fmt.Errorf("key is required for %s", field)
-	}
-
-	// A REGEX value is try-compiled at config time so a malformed pattern is a 400 here
-	// rather than a regcomp failure surfaced later (the authoritative compile is the single
-	// attach-time regcomp on the C side).
-	if op == l7OpRegex {
-		if strings.TrimSpace(c.Value) == "" {
-			return fmt.Errorf("REGEX op requires a non-empty value")
-		}
-		if _, err := regexp.Compile(c.Value); err != nil {
-			return fmt.Errorf("malformed REGEX pattern %q: %v", c.Value, err)
-		}
-	}
-	return nil
-}
-
-func validateL7Action(a *cmn.L7ActionArg) error {
-	kind := strings.ToUpper(strings.TrimSpace(a.Kind))
-	switch kind {
-	case l7ActForward:
-		if a.Forward == nil {
-			return fmt.Errorf("FORWARD action requires a forward target")
-		}
-	case l7ActRedirect:
-		if a.Redirect == nil {
-			return fmt.Errorf("REDIRECT action requires a redirect target")
-		}
-		code := a.Redirect.StatusCode
-		// 0/absent defaults to 302; any explicit value must be in the allow-list.
-		if code != 0 && !l7ValidRedirectStatus[code] {
-			return fmt.Errorf("REDIRECT statusCode %d not in {301,302,303,307,308}", code)
-		}
-	case l7ActReject:
-		// REJECT statusCode defaults to 403; an explicit value must be a 4xx.
-		if a.Reject != nil && a.Reject.StatusCode != 0 &&
-			(a.Reject.StatusCode < 400 || a.Reject.StatusCode > 499) {
-			return fmt.Errorf("REJECT statusCode %d must be a 4xx", a.Reject.StatusCode)
-		}
-	default:
-		return fmt.Errorf("unknown action kind %q (want FORWARD/REDIRECT/REJECT)", a.Kind)
-	}
-	return nil
-}
+const l7HdrMaxFilters = cmn.L7HdrMaxFilters
 
 // exportToGateway is HARD-ERROR superset-divergence guard (the Cilium
 // GHSA-qcm3-7879-xcww silent-drop bug class). When a policy is exported to a Kubernetes
@@ -312,7 +90,7 @@ func exportToGateway(p *cmn.L7PolicyArg) error {
 	for ri := range p.Rules {
 		rule := &p.Rules[ri]
 		// REJECT is not representable on Gateway API — hard error, never a silent drop.
-		if strings.EqualFold(strings.TrimSpace(rule.Action.Kind), l7ActReject) {
+		if strings.EqualFold(strings.TrimSpace(rule.Action.Kind), cmn.L7ActReject) {
 			return fmt.Errorf("l7policy: rule[%d] uses REJECT, which is unrepresentable on Gateway API — refusing to silently drop", ri)
 		}
 		for si := range rule.MatchSets {
@@ -323,10 +101,10 @@ func exportToGateway(p *cmn.L7PolicyArg) error {
 				if c.Invert {
 					return fmt.Errorf("l7policy: rule[%d] set[%d] cond[%d] uses invert, which is unrepresentable on Gateway API — refusing to silently drop", ri, si, ci)
 				}
-				if field == l7FieldCookie {
+				if field == cmn.L7FieldCookie {
 					return fmt.Errorf("l7policy: rule[%d] set[%d] cond[%d] matches COOKIE, which is unrepresentable on Gateway API — refusing to silently drop", ri, si, ci)
 				}
-				if field == l7FieldFileType {
+				if field == cmn.L7FieldFileType {
 					return fmt.Errorf("l7policy: rule[%d] set[%d] cond[%d] matches FILE_TYPE, which is unrepresentable on Gateway API — refusing to silently drop", ri, si, ci)
 				}
 			}
@@ -335,16 +113,23 @@ func exportToGateway(p *cmn.L7PolicyArg) error {
 	return nil
 }
 
-// l7PolicyStore is the in-memory L7_POLICY registry, keyed by policy id. The L7 API is
-// unreleased so this clean-state store carries no back-compat debt. The control-plane
-// attach (DpProxyAttachL7Policy) is driven from here; this resource is CRUD'd independently of
-// the L4 LB it references.
-var l7PolicyStore = map[string]*cmn.L7PolicyArg{}
-
 // --- CRUD handlers (deferred-regen: generated op types come from `make build`) -----------
+//
+// The desired-state registry (and with it the attach to the sockproxy
+// dataplane, ID minting per the stable-ID scheme, and the one-policy-per-LB
+// invariant) lives behind ApiHooks.NetL7PolicyGet/Add/Del (pkg/loxinet) so
+// snapshot capture/restore shares it. The handlers translate models and map
+// registry errors onto REST statuses:
+//
+//	validation failure            => 400
+//	referenced LB not found       => 404
+//	duplicate id / LB has policy  => 409
+//	anything else (attach, ...)   => 400 with the error payload
 
-// ConfigPostL7Policy creates an L7_POLICY: resolves the referenced LB by its stable
-// id (404 if absent), validates server-side (Octavia per-type rules => 400), and stores it.
+// ConfigPostL7Policy creates an L7_POLICY: validates server-side (Octavia
+// per-type rules => 400) and hands it to the control-plane registry, which
+// resolves the referenced LB by its stable id (404 if absent), mints the
+// policy id when absent, attaches and stores.
 func ConfigPostL7Policy(params operations.PostConfigL7PolicyParams, principal interface{}) middleware.Responder {
 	tk.LogIt(tk.LogTrace, "api: L7Policy %s API called. url : %s\n", params.HTTPRequest.Method, params.HTTPRequest.URL)
 
@@ -353,80 +138,70 @@ func ConfigPostL7Policy(params operations.PostConfigL7PolicyParams, principal in
 	}
 	policy := l7PolicyFromModel(params.Attr)
 
-	// the policy references the L4 LB by its STABLE opaque id — resolve it (404 if absent).
-	lb, err := findLBRuleByOpaqueID(policy.LbId)
-	if err != nil {
-		tk.LogIt(tk.LogDebug, "api: Error occur : %v\n", err)
-		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
-	}
-	if lb == nil {
-		return operations.NewPostConfigL7PolicyNotFound()
-	}
-
-	// Octavia server-side validation — any violation is a 400.
+	// Octavia server-side validation — any violation is a 400. The registry
+	// re-validates (its restore intake needs to), but validating here keeps
+	// the 400 mapping crisp and the error text free of registry context.
 	if err := validateL7Policy(policy); err != nil {
 		tk.LogIt(tk.LogDebug, "api: l7policy validation failed: %v\n", err)
 		return operations.NewPostConfigL7PolicyBadRequest().WithPayload(ResultErrorResponseErrorMessage(err.Error()))
 	}
 
-	if policy.Id == "" {
-		policy.Id = fmt.Sprintf("l7policy-%s-%d", policy.LbId, len(l7PolicyStore)+1)
+	if _, err := ApiHooks.NetL7PolicyAdd(policy); err != nil {
+		tk.LogIt(tk.LogDebug, "api: l7policy add failed: %v\n", err)
+		msg := err.Error()
+		switch {
+		case strings.Contains(msg, "not found"):
+			return operations.NewPostConfigL7PolicyNotFound()
+		case strings.Contains(msg, "l7policy-exists error") || strings.Contains(msg, "l7policy-exist error"):
+			// Duplicate id (identical or conflicting) or an LB that already
+			// carries a policy: resource conflict.
+			return operations.NewPostConfigL7PolicyConflict().WithPayload(ResultErrorResponseErrorMessage(msg))
+		default:
+			return operations.NewPostConfigL7PolicyBadRequest().WithPayload(ResultErrorResponseErrorMessage(msg))
+		}
 	}
 
-	// Attach the validated route IR to the running sockproxy rule fronting the
-	// resolved LB's VIP:port:proto. This is the control-plane attach: the
-	// route array reaches the eBPF userspace proxy via a SEPARATE CGO call
-	// (DpProxyAttachL7Policy), never inline on the 4096-byte proxy_arg. Without
-	// this the policy would be stored but never enforced (has_l7_policy stays 0).
-	if _, err := ApiHooks.NetL7PolicyApply(lb.Serv.ServIP, lb.Serv.ServPort, lb.Serv.Proto, policy.Rules); err != nil {
-		tk.LogIt(tk.LogError, "api: l7policy attach to dataplane failed: %v\n", err)
-		return operations.NewPostConfigL7PolicyBadRequest().WithPayload(ResultErrorResponseErrorMessage(err.Error()))
-	}
-
-	l7PolicyStore[policy.Id] = policy
-
-	tk.LogIt(tk.LogInfo, "api: L7Policy %s attached to LB id=%s VIP=%s:%d/%s (%d rules)\n",
-		policy.Id, policy.LbId, lb.Serv.ServIP, lb.Serv.ServPort, lb.Serv.Proto, len(policy.Rules))
 	return operations.NewPostConfigL7PolicyNoContent()
 }
 
 // ConfigGetL7PolicyAll returns all configured L7 policies.
 func ConfigGetL7PolicyAll(params operations.GetConfigL7PolicyAllParams, principal interface{}) middleware.Responder {
 	tk.LogIt(tk.LogTrace, "api: L7Policy %s API called. url : %s\n", params.HTTPRequest.Method, params.HTTPRequest.URL)
-	return operations.NewGetConfigL7PolicyAllOK().WithPayload(serializeL7PolicyCollection())
+	policies, err := ApiHooks.NetL7PolicyGet()
+	if err != nil {
+		tk.LogIt(tk.LogDebug, "api: Error occur : %v\n", err)
+		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
+	}
+	return operations.NewGetConfigL7PolicyAllOK().WithPayload(serializeL7PolicyCollection(policies))
 }
 
 // ConfigGetL7PolicyByID returns a single L7 policy by its opaque id (404 on miss).
 func ConfigGetL7PolicyByID(params operations.GetConfigL7PolicyIDParams, principal interface{}) middleware.Responder {
 	tk.LogIt(tk.LogTrace, "api: L7Policy %s API called. url : %s\n", params.HTTPRequest.Method, params.HTTPRequest.URL)
-	policy, ok := l7PolicyStore[params.ID]
-	if !ok || policy == nil {
-		return operations.NewGetConfigL7PolicyIDNotFound()
+	policies, err := ApiHooks.NetL7PolicyGet()
+	if err != nil {
+		tk.LogIt(tk.LogDebug, "api: Error occur : %v\n", err)
+		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
-	return operations.NewGetConfigL7PolicyIDOK().WithPayload(serializeL7Policy(policy))
+	for i := range policies {
+		if policies[i].Id == params.ID {
+			return operations.NewGetConfigL7PolicyIDOK().WithPayload(serializeL7Policy(&policies[i]))
+		}
+	}
+	return operations.NewGetConfigL7PolicyIDNotFound()
 }
 
 // ConfigDeleteL7Policy detaches and removes an L7 policy by id (404 on miss). The detach path
 // (proxy_detach_l7_policy) regfrees every compiled REGEX program on the C side.
 func ConfigDeleteL7Policy(params operations.DeleteConfigL7PolicyIDParams, principal interface{}) middleware.Responder {
 	tk.LogIt(tk.LogTrace, "api: L7Policy %s API called. url : %s\n", params.HTTPRequest.Method, params.HTTPRequest.URL)
-	policy, ok := l7PolicyStore[params.ID]
-	if !ok || policy == nil {
-		return operations.NewDeleteConfigL7PolicyIDNotFound()
-	}
-
-	// Detach from the dataplane (regfrees every compiled REGEX program on the C
-	// side). Resolve the referenced LB to recover its VIP:port:proto; if the LB is
-	// already gone the sockproxy rule (and its attached policy) was torn down with
-	// it, so a missing LB is not a delete error — we still drop the store entry.
-	if lb, err := findLBRuleByOpaqueID(policy.LbId); err == nil && lb != nil {
-		if _, derr := ApiHooks.NetL7PolicyRemove(lb.Serv.ServIP, lb.Serv.ServPort, lb.Serv.Proto); derr != nil {
-			tk.LogIt(tk.LogError, "api: l7policy detach from dataplane failed: %v\n", derr)
+	if _, err := ApiHooks.NetL7PolicyDel(params.ID); err != nil {
+		if strings.Contains(err.Error(), "not-exists") {
+			return operations.NewDeleteConfigL7PolicyIDNotFound()
 		}
+		tk.LogIt(tk.LogError, "api: l7policy delete failed: %v\n", err)
+		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
-
-	delete(l7PolicyStore, params.ID)
-	tk.LogIt(tk.LogInfo, "api: L7Policy %s detached from LB id=%s\n", policy.Id, policy.LbId)
 	return operations.NewDeleteConfigL7PolicyIDNoContent()
 }
 
@@ -599,11 +374,12 @@ func serializeL7Policy(p *cmn.L7PolicyArg) *models.L7Policy {
 	return m
 }
 
-// serializeL7PolicyCollection wraps every stored policy for the GET-all response.
-func serializeL7PolicyCollection() *models.L7PolicyGetEntry {
+// serializeL7PolicyCollection wraps every stored policy for the GET-all
+// response (the registry hands them back already sorted by id).
+func serializeL7PolicyCollection(policies []cmn.L7PolicyArg) *models.L7PolicyGetEntry {
 	out := &models.L7PolicyGetEntry{}
-	for _, p := range l7PolicyStore {
-		out.L7policyAttr = append(out.L7policyAttr, serializeL7Policy(p))
+	for i := range policies {
+		out.L7policyAttr = append(out.L7policyAttr, serializeL7Policy(&policies[i]))
 	}
 	return out
 }

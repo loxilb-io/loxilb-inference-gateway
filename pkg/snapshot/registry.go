@@ -49,6 +49,14 @@ type Hooks interface {
 	NetKvExactBindingAdd(*cmn.KvExactBindingMod) (int, error)
 	NetKvExactBindingDel(*cmn.KvExactBindingMod) (int, error)
 
+	// l7policy (schema 1.3): dedicated L7_POLICY resources. Applied after
+	// loadbalancer (a policy attaches to a rule resolved by its stable
+	// opaque id). Add validates, resolves the LB and attaches to the
+	// dataplane; Del detaches and removes.
+	NetL7PolicyGet() ([]cmn.L7PolicyArg, error)
+	NetL7PolicyAdd(*cmn.L7PolicyArg) (int, error)
+	NetL7PolicyDel(id string) (int, error)
+
 	// firewall (§4.1 #3)
 	NetFwRuleGet() ([]cmn.FwRuleMod, error)
 	NetFwRuleAdd(*cmn.FwRuleMod) (int, error)
@@ -166,6 +174,7 @@ var Registry = []DomainEntry{
 	{Name: DomainEndpoint, Get: getEndpoint, Apply: applyEndpoint, Delete: deleteEndpoint},
 	{Name: DomainLoadBalancer, Get: getLoadBalancer, Apply: applyLoadBalancer, Delete: deleteLoadBalancer},
 	{Name: DomainKvExactBinding, Get: getKvExactBinding, Apply: applyKvExactBinding, Delete: deleteKvExactBinding},
+	{Name: DomainL7Policy, Get: getL7Policy, Apply: applyL7Policy, Delete: deleteL7Policy},
 	{Name: DomainFirewall, Get: getFirewall, Apply: applyFirewall, Delete: deleteFirewall},
 	{Name: DomainPolicy, Get: getPolicy, Apply: applyPolicy, Delete: deletePolicy},
 	{Name: DomainMirror, Get: getMirror, Apply: applyMirror, Delete: deleteMirror},
@@ -278,6 +287,7 @@ func isIdempotentExists(err error) bool {
 		"sess-exists error",
 		"ulcl-exists error",
 		"prop-exists error",
+		"l7policy-exists error",
 	} {
 		if strings.Contains(m, sentinel) {
 			return true
@@ -485,6 +495,67 @@ func deleteKvExactBinding(hooks Hooks) (int, error) {
 		b := &binds[i]
 		if _, err := hooks.NetKvExactBindingDel(b); err != nil {
 			errs = append(errs, fmt.Errorf("delete kvexactbinding %q: %w", b.RuleIdent, err))
+			continue
+		}
+		n++
+	}
+	return n, errors.Join(errs...)
+}
+
+// ---------------------------------------------------------------------
+// 2c. l7policy (schema 1.3)
+//
+// Dedicated L7_POLICY resources: ordered content routes attached to an L4
+// LB by its stable opaque id. Applied after loadbalancer (the referenced
+// rule must be live for the attach to succeed) and deleted before it in
+// DeleteOrder's reversal. Add validates server-side and fails loudly on a
+// missing LB or a failed dataplane attach -- a policy that cannot be
+// enforced must fail the domain (and with it a boot generation), never
+// silently restore as allow-all.
+// ---------------------------------------------------------------------
+
+func getL7Policy(hooks Hooks, doc *Document) error {
+	pols, err := hooks.NetL7PolicyGet()
+	if isSubsystemUnavailable(err) {
+		doc.Domains.L7Policy = nil
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("get l7policy: %w", err)
+	}
+	doc.Domains.L7Policy = pols
+	return nil
+}
+
+func applyL7Policy(hooks Hooks, doc *Document, tolerateExists bool) (int, int, error) {
+	n, skipped := 0, 0
+	for i := range doc.Domains.L7Policy {
+		p := &doc.Domains.L7Policy[i]
+		if _, err := hooks.NetL7PolicyAdd(p); err != nil {
+			if tolerateExists && isIdempotentExists(err) {
+				skipped++
+				continue
+			}
+			return n, skipped, fmt.Errorf("apply l7policy %q: %w", p.Id, err)
+		}
+		n++
+	}
+	return n, skipped, nil
+}
+
+func deleteL7Policy(hooks Hooks) (int, error) {
+	pols, err := hooks.NetL7PolicyGet()
+	if isSubsystemUnavailable(err) {
+		return 0, nil // subsystem not running: nothing to delete
+	}
+	if err != nil {
+		return 0, fmt.Errorf("delete l7policy: get: %w", err)
+	}
+	n := 0
+	var errs []error
+	for i := range pols {
+		if _, err := hooks.NetL7PolicyDel(pols[i].Id); err != nil {
+			errs = append(errs, fmt.Errorf("delete l7policy %q: %w", pols[i].Id, err))
 			continue
 		}
 		n++

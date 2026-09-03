@@ -173,6 +173,51 @@ func (o *PostConfigL7PolicyNotFound) WriteResponse(rw http.ResponseWriter, produ
 	}
 }
 
+// PostConfigL7PolicyConflictCode is the HTTP code returned for type PostConfigL7PolicyConflict
+const PostConfigL7PolicyConflictCode int = 409
+
+/*
+PostConfigL7PolicyConflict Resource conflict (duplicate policy id, or the load-balancer already carries a policy)
+
+swagger:response postConfigL7PolicyConflict
+*/
+type PostConfigL7PolicyConflict struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigL7PolicyConflict creates PostConfigL7PolicyConflict with default headers values
+func NewPostConfigL7PolicyConflict() *PostConfigL7PolicyConflict {
+
+	return &PostConfigL7PolicyConflict{}
+}
+
+// WithPayload adds the payload to the post config l7 policy conflict response
+func (o *PostConfigL7PolicyConflict) WithPayload(payload *models.Error) *PostConfigL7PolicyConflict {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config l7 policy conflict response
+func (o *PostConfigL7PolicyConflict) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigL7PolicyConflict) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(409)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // PostConfigL7PolicyInternalServerErrorCode is the HTTP code returned for type PostConfigL7PolicyInternalServerError
 const PostConfigL7PolicyInternalServerErrorCode int = 500
 

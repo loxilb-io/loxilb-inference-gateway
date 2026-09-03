@@ -88,6 +88,12 @@ func NormalizeDomains(d *Domains) error {
 		return err
 	}
 
+	// L7 policies carry no runtime measurement fields; sorting by canonical
+	// JSON (id leads the encoding) keeps captures byte-stable.
+	if err := sortByJSON(d.L7Policy); err != nil {
+		return err
+	}
+
 	for i := range d.Firewall {
 		d.Firewall[i].Opts.Counter = "" // traffic counter
 	}
@@ -235,6 +241,8 @@ func domainItemJSONs(name string, d *Domains) ([]string, error) {
 		return itemJSONs(d.LoadBalancer)
 	case DomainKvExactBinding:
 		return itemJSONs(d.KvExactBinding)
+	case DomainL7Policy:
+		return itemJSONs(d.L7Policy)
 	case DomainFirewall:
 		return itemJSONs(d.Firewall)
 	case DomainPolicy:

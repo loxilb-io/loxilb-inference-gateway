@@ -490,6 +490,8 @@ func countDomain(name string, d *Domains) int {
 		return len(d.SessionUlCl)
 	case DomainKvExactBinding:
 		return len(d.KvExactBinding)
+	case DomainL7Policy:
+		return len(d.L7Policy)
 	case DomainIPFilter:
 		return len(d.IPFilter)
 	case DomainSecurityRate:
