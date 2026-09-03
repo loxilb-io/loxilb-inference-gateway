@@ -1916,6 +1916,20 @@ type NetHookInterface interface {
 	// certificate keys on disk, and the apply that follows a wipe must
 	// still be able to re-join them.
 	NetTracingReset() (int, error)
+	// NetCertGet returns the registered TLS certificates as desired-state
+	// metadata (stable id + content digest of the node-local managed
+	// material; PEM and keys never cross this surface).
+	NetCertGet() ([]CertMeta, error)
+	// NetCertAdd re-registers one certificate from the node-local managed
+	// directory after verifying its material matches the given digest --
+	// missing or divergent material is a loud error, never a silent
+	// different-cert handshake.
+	NetCertAdd(*CertMeta) (int, error)
+	// NetCertDel unregisters one certificate's hostnames from the SNI
+	// store and drops its metadata (the snapshot wipe path). The managed
+	// on-disk material is deliberately KEPT -- it is node secret material,
+	// and the apply that follows a wipe must be able to re-register it.
+	NetCertDel(id string) (int, error)
 	NetCtInfoGet() ([]CtInfo, error)
 	NetSessionGet() ([]SessionMod, error)
 	NetSessionUlClGet() ([]SessionUlClMod, error)

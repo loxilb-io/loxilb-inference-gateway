@@ -95,6 +95,10 @@ func sampleDocument() *Document {
 			UseTLS:      true,
 			HeaderNames: []string{"x-otlp-api-key"},
 		},
+		Cert: []cmn.CertMeta{{
+			CertId: "edge-tls-1",
+			Digest: "sha256:5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03",
+		}},
 	}
 	return doc
 }

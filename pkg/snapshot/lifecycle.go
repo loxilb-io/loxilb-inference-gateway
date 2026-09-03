@@ -93,7 +93,7 @@ const (
 	AreaAuthUsers    = "auth_users"
 	AreaAIKeys       = "ai_keys"
 	AreaAIRateLimit  = "ai_ratelimit"
-	AreaCert         = "cert"
+	AreaSNI          = "sni"
 	AreaCluster      = "cluster"
 	AreaGPU          = "gpu"
 	AreaGPUMode      = "gpu_mode"
@@ -203,13 +203,17 @@ var RouteLifecycles = []RouteLifecycle{
 	{Method: "post", Path: "/config/cors", Class: ClassSnapshot, Area: DomainCORS, DesiredState: true},
 	{Method: "delete", Path: "/config/cors/{cors_url}", Class: ClassSnapshot, Area: DomainCORS, DesiredState: true},
 
-	// --- TLS certificate store: PEM material lives on disk under the
-	// certificate directory (external store), not in the snapshot.
-	{Method: "post", Path: "/config/cert", Class: ClassExternalStore, Area: AreaCert, DesiredState: true},
-	{Method: "put", Path: "/config/cert/{certId}", Class: ClassExternalStore, Area: AreaCert, DesiredState: true},
-	{Method: "delete", Path: "/config/cert/{certId}", Class: ClassExternalStore, Area: AreaCert, DesiredState: true},
-	{Method: "post", Path: "/sni/certificates", Class: ClassExternalStore, Area: AreaCert, DesiredState: true},
-	{Method: "delete", Path: "/sni/certificates", Class: ClassExternalStore, Area: AreaCert, DesiredState: true},
+	// --- certId TLS material: snapshot domain since schema 1.3 as
+	// {id, digest} metadata (PEM/keys stay in the node-local managed
+	// directory; restore verifies the digest before re-registering).
+	{Method: "post", Path: "/config/cert", Class: ClassSnapshot, Area: DomainCert, DesiredState: true},
+	{Method: "put", Path: "/config/cert/{certId}", Class: ClassSnapshot, Area: DomainCert, DesiredState: true},
+	{Method: "delete", Path: "/config/cert/{certId}", Class: ClassSnapshot, Area: DomainCert, DesiredState: true},
+	// The legacy path-based SNI registration API carries no certId, so
+	// its registrations are NOT captured by the cert domain -- its own
+	// area keeps that honest in excluded_domains.
+	{Method: "post", Path: "/sni/certificates", Class: ClassExternalStore, Area: AreaSNI, DesiredState: true},
+	{Method: "delete", Path: "/sni/certificates", Class: ClassExternalStore, Area: AreaSNI, DesiredState: true},
 
 	// --- Tracing/observability. The OTLP collector endpoint is product
 	// configuration (desired state, runtime-only today); trace toggles,
@@ -319,6 +323,7 @@ var snapshotDomainSet = map[string]bool{
 	DomainIPsec:          true,
 	DomainCORS:           true,
 	DomainTracing:        true,
+	DomainCert:           true,
 }
 
 // ExcludedDomainsFromLifecycle derives the excluded_domains honesty list

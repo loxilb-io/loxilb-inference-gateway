@@ -48,16 +48,20 @@ package handler
 */
 import "C"
 import (
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/pem"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"unsafe"
 
 	"github.com/go-openapi/runtime/middleware"
+	"github.com/google/uuid"
 	"github.com/loxilb-io/loxilb/api/models"
 	"github.com/loxilb-io/loxilb/api/restapi/operations"
 	cmn "github.com/loxilb-io/loxilb/common"
@@ -98,17 +102,8 @@ func validateCert(c *cmn.CertArg) error {
 	if c == nil {
 		return fmt.Errorf("cert: nil body")
 	}
-	if strings.TrimSpace(c.CertId) == "" {
-		return fmt.Errorf("cert: certId is required")
-	}
-	if len(c.CertId) >= certIDMax {
-		return fmt.Errorf("cert: certId too long (%d >= %d)", len(c.CertId), certIDMax)
-	}
-	// A certId becomes a directory name under the managed dir — reject path-traversal /
-	// separator bytes so a crafted id cannot escape PROXY_SSL_CERTID_DIR.
-	if strings.ContainsAny(c.CertId, "/\\") || c.CertId == "." || c.CertId == ".." ||
-		strings.Contains(c.CertId, "..") {
-		return fmt.Errorf("cert: certId %q contains illegal path characters", c.CertId)
+	if err := validateCertID(c.CertId); err != nil {
+		return err
 	}
 	if strings.TrimSpace(c.CertPEM) == "" {
 		return fmt.Errorf("cert: certPem is required")
@@ -130,6 +125,25 @@ func validateCert(c *cmn.CertArg) error {
 	if !pemHasArmor(c.KeyPEM, "PRIVATE KEY") && !pemHasArmor(c.KeyPEM, "RSA PRIVATE KEY") &&
 		!pemHasArmor(c.KeyPEM, "EC PRIVATE KEY") {
 		return fmt.Errorf("cert: keyPem is not a PEM private key (missing BEGIN/END *PRIVATE KEY armor)")
+	}
+	return nil
+}
+
+// validateCertID enforces the certId contract everywhere an id reaches a
+// filesystem path (upload, delete-reconcile, restore apply): required,
+// bounded (< certIDMax, the C registry handle bound), and free of
+// path-traversal / separator bytes so a crafted id cannot escape
+// PROXY_SSL_CERTID_DIR.
+func validateCertID(id string) error {
+	if strings.TrimSpace(id) == "" {
+		return fmt.Errorf("cert: certId is required")
+	}
+	if len(id) >= certIDMax {
+		return fmt.Errorf("cert: certId too long (%d >= %d)", len(id), certIDMax)
+	}
+	if strings.ContainsAny(id, "/\\") || id == "." || id == ".." ||
+		strings.Contains(id, "..") {
+		return fmt.Errorf("cert: certId %q contains illegal path characters", id)
 	}
 	return nil
 }
@@ -255,10 +269,10 @@ func ConfigPostCert(params operations.PostConfigCertParams, principal interface{
 	}
 	cert := certFromModel(params.Attr)
 	if cert.CertId == "" {
-		certStoreMu.RLock()
-		n := len(certStore)
-		certStoreMu.RUnlock()
-		cert.CertId = fmt.Sprintf("cert-%d", n+1)
+		// Server-minted stable id: a UUID, never a store-length counter
+		// (len+1 collides with a surviving id after any deletion, and the
+		// id doubles as the managed directory name).
+		cert.CertId = uuid.NewString()
 	}
 
 	if err := validateCert(cert); err != nil {
@@ -326,18 +340,37 @@ func ConfigPutCert(params operations.PutConfigCertCertIDParams, principal interf
 	return operations.NewPutConfigCertCertIDOK()
 }
 
-// ConfigDeleteCert removes the managed material + SNI registration. Unknown certId ⇒ 404.
+// ConfigDeleteCert removes the managed material + SNI registration. The
+// delete reconciles ALL three places a certId can live -- the in-memory
+// store, the C SNI registry, and the managed on-disk directory -- so
+// material orphaned by a crash or an un-reconciled boot is still
+// deletable via the API instead of requiring shell access to the node
+// (an on-disk private key the API can neither serve nor remove is the
+// worst of both worlds). 404 only when NO trace of the id exists.
 func ConfigDeleteCert(params operations.DeleteConfigCertCertIDParams, principal interface{}) middleware.Responder {
 	tk.LogIt(tk.LogTrace, "api: Cert %s API called. url : %s\n", params.HTTPRequest.Method, params.HTTPRequest.URL)
+
+	// The certId reaches filesystem paths below -- hold it to the same
+	// traversal rules as upload before touching anything.
+	if err := validateCertID(params.CertID); err != nil {
+		return operations.NewDeleteConfigCertCertIDBadRequest().WithPayload(ResultErrorResponseErrorMessage(err.Error()))
+	}
 
 	certStoreMu.RLock()
 	_, known := certStore[params.CertID]
 	certStoreMu.RUnlock()
-	if !known {
+	dirExists := false
+	if fi, err := os.Stat(filepath.Join(certManagedDir, params.CertID)); err == nil && fi.IsDir() {
+		dirExists = true
+	}
+	if !known && !dirExists {
 		return operations.NewDeleteConfigCertCertIDNotFound()
 	}
 
-	if err := certDelete(params.CertID); err != nil {
+	// Unregister from the SNI store; a registry that never heard of the
+	// id (orphaned disk material after an unclean boot) is exactly the
+	// state this delete reconciles, not an error.
+	if err := certDelete(params.CertID); err != nil && !certErrIsNotFound(err) {
 		tk.LogIt(tk.LogError, "api: cert delete failed: %v\n", err)
 		return operations.NewDeleteConfigCertCertIDBadRequest().WithPayload(ResultErrorResponseErrorMessage(err.Error()))
 	}
@@ -396,4 +429,189 @@ func certListHostnames(certId string) []string {
 		return []string{cn}
 	}
 	return nil
+}
+
+// ---------------------------------------------------------------------
+// Config-persistence surface (the snapshot "cert" domain, reached via the
+// NetCertGet/Add/Del hooks in pkg/loxinet) + the boot reconcile.
+//
+// Secret split: PEM material (above all the private key) never enters the
+// snapshot document. The document carries {certId, digest} per
+// certificate; the material itself lives ONLY in the managed directory
+// (PROXY_SSL_CERTID_DIR/<certId>/). Restore verifies the on-disk material
+// against the captured digest before re-registering -- a gateway must
+// never come up silently serving DIFFERENT TLS material than its desired
+// state declares, and a node missing the material fails the domain loudly
+// (keys are re-provisioned, never invented).
+// ---------------------------------------------------------------------
+
+// certErrIsNotFound reports whether a C-registry error is the "certId not
+// registered" errno (-ENOENT = -2) -- the state the delete/wipe reconcile
+// paths tolerate.
+func certErrIsNotFound(err error) bool {
+	return err != nil && strings.HasSuffix(err.Error(), ": -2")
+}
+
+// certErrIsExists reports whether a C-registry error is the "already
+// registered" errno (-EEXIST = -17) -- the state the re-register paths
+// tolerate.
+func certErrIsExists(err error) bool {
+	return err != nil && strings.HasSuffix(err.Error(), ": -17")
+}
+
+// certDiskDigest hashes the managed material exactly as persisted:
+// sha256 over server.crt bytes followed by server.key bytes.
+func certDiskDigest(certId string) (string, error) {
+	dir := filepath.Join(certManagedDir, certId)
+	crt, err := os.ReadFile(filepath.Join(dir, "server.crt"))
+	if err != nil {
+		return "", fmt.Errorf("cert %s: read server.crt: %w", certId, err)
+	}
+	key, err := os.ReadFile(filepath.Join(dir, "server.key"))
+	if err != nil {
+		return "", fmt.Errorf("cert %s: read server.key: %w", certId, err)
+	}
+	h := sha256.New()
+	h.Write(crt)
+	h.Write(key)
+	return "sha256:" + hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// CertExportMetas returns every registered certificate as desired-state
+// metadata (sorted by id), digesting the managed material from disk. A
+// store entry whose material cannot be read is a loud capture error --
+// it means the registry and the disk have diverged, which a snapshot
+// must surface, not paper over.
+func CertExportMetas() ([]cmn.CertMeta, error) {
+	certStoreMu.RLock()
+	ids := make([]string, 0, len(certStore))
+	for id := range certStore {
+		ids = append(ids, id)
+	}
+	certStoreMu.RUnlock()
+	sort.Strings(ids)
+	out := make([]cmn.CertMeta, 0, len(ids))
+	for _, id := range ids {
+		digest, err := certDiskDigest(id)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, cmn.CertMeta{CertId: id, Digest: digest})
+	}
+	return out, nil
+}
+
+// CertApplyMeta re-registers one certificate from the managed directory
+// after verifying the on-disk material matches the captured digest.
+// Identity semantics match the other restore intakes: a byte-identical
+// re-apply is the idempotent "cert-exists error" no-op; the same id with
+// divergent material is a fatal conflict.
+func CertApplyMeta(meta *cmn.CertMeta) error {
+	if meta == nil {
+		return fmt.Errorf("cert: nil meta")
+	}
+	if err := validateCertID(meta.CertId); err != nil {
+		return err
+	}
+
+	digest, err := certDiskDigest(meta.CertId)
+	if err != nil {
+		return fmt.Errorf("cert %s: managed material missing on this node (re-provision it, key material never rides the snapshot): %w", meta.CertId, err)
+	}
+	if digest != meta.Digest {
+		return fmt.Errorf("cert-exist error: cant apply %s -- managed material on disk diverges from the captured digest", meta.CertId)
+	}
+
+	certStoreMu.RLock()
+	_, known := certStore[meta.CertId]
+	certStoreMu.RUnlock()
+	if known {
+		// Digest already proven equal: identical re-apply (boot retry).
+		return fmt.Errorf("cert-exists error")
+	}
+
+	if _, err := certRegister(meta.CertId); err != nil && !certErrIsExists(err) {
+		return fmt.Errorf("cert %s: register: %w", meta.CertId, err)
+	}
+	certAdoptFromDisk(meta.CertId)
+	tk.LogIt(tk.LogInfo, "api: Cert %s re-registered from managed material (restore)\n", meta.CertId)
+	return nil
+}
+
+// CertWipeRegistration unregisters one certificate (SNI store + metadata)
+// while KEEPING the managed on-disk material: a wipe removes desired
+// state, not node secret material, and the apply that follows a wipe must
+// still be able to re-register the material by digest. The API DELETE is
+// the operation that removes material.
+func CertWipeRegistration(id string) error {
+	if err := validateCertID(id); err != nil {
+		return err
+	}
+	if err := certDelete(id); err != nil && !certErrIsNotFound(err) {
+		return err
+	}
+	certStoreMu.Lock()
+	delete(certStore, id)
+	certStoreMu.Unlock()
+	return nil
+}
+
+// certAdoptFromDisk rebuilds the in-memory metadata entry for a certId
+// from the managed directory (server.crt; the key is never held in
+// memory on this path -- it is write-only secret material).
+func certAdoptFromDisk(certId string) {
+	crt, err := os.ReadFile(filepath.Join(certManagedDir, certId, "server.crt"))
+	if err != nil {
+		return
+	}
+	entry := &cmn.CertArg{CertId: certId, CertPEM: string(crt)}
+	certStoreMu.Lock()
+	certStore[certId] = entry
+	certStoreMu.Unlock()
+	entry.Hostnames = certListHostnames(certId)
+}
+
+// CertBootReconcile re-registers every certificate found in the managed
+// directory at boot. Before this existed, a reboot orphaned all managed
+// material: the SNI store came up empty (every TLS handshake dead until
+// each cert was re-POSTed) while the material sat on disk invisible to
+// the API. Runs before the boot snapshot replay, so a replay that
+// declares certs finds them already registered and skips them as
+// idempotent. Per-entry failures are logged and skipped -- one corrupt
+// directory must not keep every other certificate down.
+func CertBootReconcile() int {
+	entries, err := os.ReadDir(certManagedDir)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			tk.LogIt(tk.LogWarning, "api: cert boot reconcile: read %s: %v\n", certManagedDir, err)
+		}
+		return 0
+	}
+	n := 0
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		id := e.Name()
+		if err := validateCertID(id); err != nil {
+			tk.LogIt(tk.LogWarning, "api: cert boot reconcile: skip %q: %v\n", id, err)
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(certManagedDir, id, "server.crt")); err != nil {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(certManagedDir, id, "server.key")); err != nil {
+			continue
+		}
+		if _, err := certRegister(id); err != nil && !certErrIsExists(err) {
+			tk.LogIt(tk.LogError, "api: cert boot reconcile: register %s failed: %v\n", id, err)
+			continue
+		}
+		certAdoptFromDisk(id)
+		n++
+	}
+	if n > 0 {
+		tk.LogIt(tk.LogInfo, "api: cert boot reconcile: %d certificate(s) re-registered from %s\n", n, certManagedDir)
+	}
+	return n
 }

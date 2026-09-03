@@ -61,6 +61,7 @@ type mockHooks struct {
 
 	corsCfg    *cmn.CORSConfig
 	tracingCfg *cmn.TracingConfig
+	certMetas  []cmn.CertMeta
 
 	ipsecConfig  *cmn.IPsecConfig
 	ipsecTunnels []*cmn.IPsecTunnel
@@ -431,6 +432,55 @@ func (m *mockHooks) NetTracingReset() (int, error) {
 		return -1, err
 	}
 	m.tracingCfg = nil
+	return 0, nil
+}
+
+// --- cert ---
+//
+// The mock mirrors the real registry's identity semantics: identical
+// re-add (same id, same digest) is the idempotent "cert-exists error"
+// no-op; the same id with a different digest is the non-idempotent
+// divergent-material conflict; deleting keeps nothing to model (the
+// managed-directory material never crosses the Hooks surface).
+
+func (m *mockHooks) NetCertGet() ([]cmn.CertMeta, error) {
+	m.log("NetCertGet")
+	return resizeOverride(m, "NetCertGet", func() []cmn.CertMeta { return append([]cmn.CertMeta(nil), m.certMetas...) }), nil
+}
+func (m *mockHooks) NetCertAdd(c *cmn.CertMeta) (int, error) {
+	m.log("NetCertAdd:%s", c.CertId)
+	if err := m.failIfConfigured("NetCertAdd"); err != nil {
+		return -1, err
+	}
+	for i := range m.certMetas {
+		if m.certMetas[i].CertId == c.CertId {
+			if m.certMetas[i].Digest == c.Digest {
+				return -1, errors.New("cert-exists error")
+			}
+			return -1, fmt.Errorf("cert-exist error: cant apply %s -- managed material on disk diverges from the captured digest", c.CertId)
+		}
+	}
+	m.certMetas = append(m.certMetas, *c)
+	return 0, nil
+}
+func (m *mockHooks) NetCertDel(id string) (int, error) {
+	m.log("NetCertDel:%s", id)
+	if err := m.failIfConfigured("NetCertDel"); err != nil {
+		return -1, err
+	}
+	out := m.certMetas[:0]
+	found := false
+	for _, c := range m.certMetas {
+		if c.CertId == id {
+			found = true
+			continue
+		}
+		out = append(out, c)
+	}
+	if !found {
+		return -1, errors.New("cert not-exists error")
+	}
+	m.certMetas = out
 	return 0, nil
 }
 

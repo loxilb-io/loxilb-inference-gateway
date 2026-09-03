@@ -50,10 +50,12 @@ import (
 //
 // 1.3: added the l7policy domain (dedicated L7_POLICY resources: content
 // routes attached to an LB by stable id), the cors domain (explicit
-// origin allowlist + wildcard opt-in) and the tracing domain (OTLP
-// export product config; auth header NAMES only -- values stay in a
-// node-local secret store). For the singletons, the unconfigured
-// boot/factory default is not configuration and is captured as absent.
+// origin allowlist + wildcard opt-in), the tracing domain (OTLP export
+// product config; auth header NAMES only -- values stay in a node-local
+// secret store) and the cert domain (TLS certificates as {id, digest}
+// metadata -- PEM/keys stay in the node-local managed directory). For
+// the singletons, the unconfigured boot/factory default is not
+// configuration and is captured as absent.
 // Additive like 1.1's kvexactbinding: older documents simply carry none
 // of these, and their included_domains never lists them, so restoring
 // them leaves the live state untouched (the 1.2->1.3 migration
@@ -99,6 +101,7 @@ const (
 	DomainIPsec          = "ipsec"
 	DomainCORS           = "cors"
 	DomainTracing        = "tracing"
+	DomainCert           = "cert"
 )
 
 // DefaultExcludedDomains lists the configuration areas deliberately never
@@ -191,6 +194,13 @@ type Domains struct {
 	// means "boot default only" (not configuration, not captured). Added
 	// in schema 1.3.
 	Tracing *cmn.TracingConfig `json:"tracing,omitempty"`
+	// Cert carries TLS certificate desired state as {id, digest}
+	// metadata. The PEM material (above all the private keys) lives ONLY
+	// in the node-local managed certificate directory: restore verifies
+	// the on-disk material against the captured digest before
+	// re-registering it, and fails loudly when it is missing or
+	// divergent. Added in schema 1.3.
+	Cert []cmn.CertMeta `json:"cert,omitempty"`
 }
 
 // Document is the canonical, versioned snapshot document (§4). It is the

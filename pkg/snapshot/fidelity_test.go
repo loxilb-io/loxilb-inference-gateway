@@ -234,7 +234,8 @@ func TestMigrationKeepsNewDomainsOutOf12Coverage(t *testing.T) {
 	doc.SchemaVersion = "1.2"
 	pre := make([]string, 0, len(Registry))
 	for _, name := range DomainNames() {
-		if name != DomainL7Policy && name != DomainCORS && name != DomainTracing {
+		if name != DomainL7Policy && name != DomainCORS &&
+			name != DomainTracing && name != DomainCert {
 			pre = append(pre, name)
 		}
 	}
@@ -242,6 +243,7 @@ func TestMigrationKeepsNewDomainsOutOf12Coverage(t *testing.T) {
 	doc.Domains.L7Policy = nil
 	doc.Domains.CORS = nil
 	doc.Domains.Tracing = nil
+	doc.Domains.Cert = nil
 	if err := ApplyMigrations(doc); err != nil {
 		t.Fatalf("ApplyMigrations: %v", err)
 	}
@@ -249,7 +251,8 @@ func TestMigrationKeepsNewDomainsOutOf12Coverage(t *testing.T) {
 		t.Fatalf("expected migration to %q, got %q", SchemaVersion, doc.SchemaVersion)
 	}
 	for _, name := range doc.IncludedDomains {
-		if name == DomainL7Policy || name == DomainCORS || name == DomainTracing {
+		if name == DomainL7Policy || name == DomainCORS ||
+			name == DomainTracing || name == DomainCert {
 			t.Fatalf("1.2->1.3 migration widened coverage to %q: %v", name, doc.IncludedDomains)
 		}
 	}

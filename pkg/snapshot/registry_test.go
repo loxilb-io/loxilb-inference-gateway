@@ -98,7 +98,7 @@ func TestRegistryOrder(t *testing.T) {
 		DomainL7Policy, DomainFirewall, DomainPolicy,
 		DomainMirror, DomainSession, DomainSessionUlCl, DomainIPFilter,
 		DomainSecurityRate, DomainBFD, DomainBGP, DomainIPsec, DomainCORS,
-		DomainTracing,
+		DomainTracing, DomainCert,
 	}
 	got := domainNames(ApplyOrder())
 	if len(got) != len(want) {

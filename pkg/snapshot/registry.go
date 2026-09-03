@@ -143,6 +143,15 @@ type Hooks interface {
 	NetTracingGet() (*cmn.TracingConfig, error)
 	NetTracingSet(*cmn.TracingConfig) (int, error)
 	NetTracingReset() (int, error)
+
+	// cert (schema 1.3) -- TLS certificates as {id, digest} metadata.
+	// Add re-registers from the node-local managed material after digest
+	// verification (missing/divergent material fails loudly); Del
+	// unregisters while KEEPING the on-disk material (node secret, wipe
+	// must not shred what the following apply re-registers).
+	NetCertGet() ([]cmn.CertMeta, error)
+	NetCertAdd(*cmn.CertMeta) (int, error)
+	NetCertDel(id string) (int, error)
 }
 
 // DomainEntry describes one v1 snapshot domain: how to fetch its live
@@ -202,6 +211,7 @@ var Registry = []DomainEntry{
 	{Name: DomainIPsec, Get: getIPsec, Apply: applyIPsec, Delete: deleteIPsec},
 	{Name: DomainCORS, Get: getCORS, Apply: applyCORS, Delete: deleteCORS},
 	{Name: DomainTracing, Get: getTracing, Apply: applyTracing, Delete: deleteTracing},
+	{Name: DomainCert, Get: getCert, Apply: applyCert, Delete: deleteCert},
 }
 
 // ApplyOrder returns the registry in apply order (table order, dependencies
@@ -305,6 +315,7 @@ func isIdempotentExists(err error) bool {
 		"ulcl-exists error",
 		"prop-exists error",
 		"l7policy-exists error",
+		"cert-exists error",
 	} {
 		if strings.Contains(m, sentinel) {
 			return true
@@ -1458,4 +1469,65 @@ func deleteTracing(hooks Hooks) (int, error) {
 		return 0, fmt.Errorf("delete tracing: %w", err)
 	}
 	return 1, nil
+}
+
+// ---------------------------------------------------------------------
+// 15. cert (schema 1.3)
+//
+// TLS certificates as {id, digest} desired-state metadata. The PEM
+// material lives only in the node-local managed directory: Apply
+// re-registers after digest verification and fails loudly on missing or
+// divergent material (a gateway must never come up silently serving
+// different TLS material than declared); Delete unregisters but KEEPS
+// the on-disk material -- a wipe removes desired state, not node secret
+// material, and the apply that follows must be able to re-register it.
+// ---------------------------------------------------------------------
+
+func getCert(hooks Hooks, doc *Document) error {
+	metas, err := hooks.NetCertGet()
+	if isSubsystemUnavailable(err) {
+		doc.Domains.Cert = nil
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("get cert: %w", err)
+	}
+	doc.Domains.Cert = metas
+	return nil
+}
+
+func applyCert(hooks Hooks, doc *Document, tolerateExists bool) (int, int, error) {
+	n, skipped := 0, 0
+	for i := range doc.Domains.Cert {
+		c := &doc.Domains.Cert[i]
+		if _, err := hooks.NetCertAdd(c); err != nil {
+			if tolerateExists && isIdempotentExists(err) {
+				skipped++
+				continue
+			}
+			return n, skipped, fmt.Errorf("apply cert %q: %w", c.CertId, err)
+		}
+		n++
+	}
+	return n, skipped, nil
+}
+
+func deleteCert(hooks Hooks) (int, error) {
+	metas, err := hooks.NetCertGet()
+	if isSubsystemUnavailable(err) {
+		return 0, nil // subsystem not running: nothing to delete
+	}
+	if err != nil {
+		return 0, fmt.Errorf("delete cert: get: %w", err)
+	}
+	n := 0
+	var errs []error
+	for i := range metas {
+		if _, err := hooks.NetCertDel(metas[i].CertId); err != nil {
+			errs = append(errs, fmt.Errorf("delete cert %q: %w", metas[i].CertId, err))
+			continue
+		}
+		n++
+	}
+	return n, errors.Join(errs...)
 }
