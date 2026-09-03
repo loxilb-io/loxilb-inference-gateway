@@ -160,7 +160,7 @@ sudo sh -c "printf '# drift\n' >> $CFG/certs/ng-cert1/server.crt"
 rc=$(restore_commit llb1 "$PLIB_ARTIFACTS/cert-only.json")
 res=$(jq -r '.result' < "$PLIB_ARTIFACTS/restore-response.json")
 errs=$(jq -r '(.errors // []) | join(" ")' < "$PLIB_ARTIFACTS/restore-response.json")
-if [[ "$rc" == "500" && "$res" == "rolled_back" && "$errs" == *"diverges from the captured digest"* ]]; then
+if [[ "$rc" == "500" && "$res" == "rolled-back" && "$errs" == *"diverges from the captured digest"* ]]; then
     pass "divergent material refused at apply (500, rolled back, loud digest error)"
 else
     fail "divergent-material restore: HTTP $rc result=$res errors=$errs"
