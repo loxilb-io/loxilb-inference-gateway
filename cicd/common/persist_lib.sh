@@ -90,6 +90,22 @@ plib_dump_domain() { # plib_dump_domain <llb> <domain> <outdir>
     bgpneigh)
         url="$PLIB_API/config/bgp/neigh/all"
         filter='[.bgpNeiAttr[]? | del(.state,.uptime)] | sort' ;;
+    l7policy)
+        url="$PLIB_API/config/l7policy"
+        filter='[.l7policyAttr[]?] | sort' ;;
+    cors)
+        url="$PLIB_API/config/cors/all"
+        filter='{cors: ((.corsAttr // []) | sort)}' ;;
+    tracing)
+        # connected is live exporter state, not desired config; header
+        # values come back redacted (stable), names participate.
+        url="$PLIB_API/config/trace/otlp"
+        filter='del(.connected)' ;;
+    cert)
+        # The SNI store view: hostname + managed path are desired state;
+        # refCount tracks live proxy attachment and churns with restarts.
+        url="$PLIB_API/sni/certificates"
+        filter='[.certificates[]? | del(.refCount)] | sort' ;;
     snapshotdoc)
         # The snapshot document itself: metadata that legitimately changes
         # per capture is stripped; the domains payload is the subject.
@@ -107,7 +123,7 @@ plib_dump_domain() { # plib_dump_domain <llb> <domain> <outdir>
     rm -f "$outdir/.jqerr-$domain"
 }
 
-PLIB_DOMAINS="endpoint loadbalancer firewall policy mirror session sessionulcl ipfilter securityrate bfd bgpneigh snapshotdoc"
+PLIB_DOMAINS="endpoint loadbalancer firewall policy mirror session sessionulcl ipfilter securityrate bfd bgpneigh l7policy cors tracing cert snapshotdoc"
 
 canonical_get_all() { # canonical_get_all <llb> <outdir>
     local llb=$1 outdir=$2 d

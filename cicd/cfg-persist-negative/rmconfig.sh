@@ -14,6 +14,6 @@ delete_docker_host llb1
 delete_docker_host l3h1
 delete_docker_host l3ep1
 
-sudo rm -rf "${CFGDIR}/llb1_config" >/dev/null 2>&1 || true
+sudo rm -rf "${CFGDIR}/llb1_config" "${CFGDIR}/.certs-stage" >/dev/null 2>&1 || true
 
 echo "cfg-persist-negative topology deleted"

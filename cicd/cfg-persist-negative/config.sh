@@ -92,4 +92,26 @@ $dexec llb1 loxicmd create session ng-user1 88.88.88.88 \
     echo "FATAL: fixture session refused"; exit 1; }
 echo "  fixture: session [OK]"
 
+# Managed certificate for the digest-verification legs: the PEM pair is
+# kept in the run stage so the cross-node leg can RE-PROVISION the exact
+# same material after the API delete (same bytes => same digest as the
+# captured document).
+CERTSTAGE="${CFGDIR}/.certs-stage"
+rm -rf "${CERTSTAGE}"; mkdir -p "${CERTSTAGE}"
+openssl req -x509 -newkey rsa:2048 -nodes -days 2 \
+    -keyout "${CERTSTAGE}/ng.key" -out "${CERTSTAGE}/ng.crt" \
+    -subj "/CN=ng-sni.test" -addext "subjectAltName=DNS:ng-sni.test" 2>/dev/null
+[[ -s "${CERTSTAGE}/ng.crt" ]] || { echo "FATAL: openssl cert generation failed"; exit 1; }
+CERT_BODY=$(jq -n --arg id "ng-cert1" \
+    --rawfile crt "${CERTSTAGE}/ng.crt" --rawfile key "${CERTSTAGE}/ng.key" \
+    '{certId: $id, certPem: $crt, keyPem: $key}')
+rc=$($hexec llb1 curl -s -m 10 -o /tmp/cfgn-post.json -w "%{http_code}" \
+    -X POST "${API}/config/cert" -H 'Content-Type: application/json' -d "$CERT_BODY")
+if [[ "$rc" != "201" ]]; then
+    echo "FATAL: fixture cert upload refused (HTTP $rc):"
+    cat /tmp/cfgn-post.json 2>/dev/null; echo
+    exit 1
+fi
+echo "  fixture: managed cert ng-cert1 [OK]"
+
 echo "cfg-persist-negative config done"

@@ -16,7 +16,12 @@ Fixture classes: plain L4 LB (hash select, health-monitored, source
 allowlist), API-key-gated L7 fullproxy rule, strict KV-exact P/D rule
 (creates a binding), standalone endpoint, firewall, QoS policy, SPAN
 mirror, session + ULCL, ipfilter, securityrate, BGP global config and a
-neighbor with **non-default transport** (port 1790 + multihop).
+neighbor with **non-default transport** (port 1790 + multihop), plus the
+four snapshot-1.3 domains: an **L7 REJECT policy** (non-default 451) on a
+plain fullproxy, a **CORS allowlist** (one origin), an **OTLP export
+config** with an auth header (the secret-split subject), and a **managed
+TLS certificate** (`/config/cert`) whose SAN hostname lands in the SNI
+store; an HTTPS-terminating proxy serves it at handshake.
 
 ## Oracles (see `../common/persist_lib.sh`)
 
@@ -36,13 +41,33 @@ neighbor with **non-default transport** (port 1790 + multihop).
    without one — the refusal class must be identical before/after).
 6. **Speaker-level BGP oracle**: `gobgp -p 50052 -j neighbor` must show
    the restored transport config on the wire side, not just the REST echo.
+7. **Secret split**: the captured document must carry the OTLP header
+   NAME and the cert `{cert_id, digest}` metadata but never the header
+   value or any PEM; the value must sit in the node-local
+   `otlp-headers.json` (0600) and survive the restart.
+8. **Enforcement probes for the 1.3 domains**: `/blocked` answers the
+   policy's own 451 and a non-matching path the Gateway-API no-match
+   default 404 before AND after restart (a detached policy flips both to
+   plain forwarding); an allowlisted Origin gets
+   its grant (with credentials) while an unlisted one gets NO grant
+   either side of the restart; `openssl s_client -servername` receives
+   the managed cert at handshake before AND after reboot.
+9. **Configured-empty CORS**: removing the last origin is DENY-ALL, is
+   captured as `{"origins":[]}` (distinct from unconfigured/absent), and
+   a second restart must not re-seed the factory-open default.
 
 ## Red twin
 
-`PLIB_RED_MUTATE=1 ./validation.sh` deletes the firewall rule and
-re-persists AFTER the canonical baseline capture, so the restart comes
-back different from the baseline — the deep-diff oracle must fail (exit
-1). Run it whenever the harness changes; a suite whose asserts cannot go
+`PLIB_RED_MUTATE=1 ./validation.sh` mutates AFTER the canonical baseline
+capture and re-persists, so the restart comes back different from the
+baseline: the firewall delete trips the deep-diff oracle, the l7policy
+delete trips the RT-07 enforcement leg, the cors-origin delete trips the
+grant leg, and removing `otlp-headers.json` trips the node-local secret
+leg (persist rewrites only `snapshot.json`, so the file stays gone).
+Exit must be 1. The cert legs get their red from the negative suite's
+digest-divergence/missing-material legs (mutating the managed dir here
+would wedge the boot-replay receipt on purpose-built retries). Run the
+red twin whenever the harness changes; a suite whose asserts cannot go
 red proves nothing.
 
 ## Traps (do not regress)
