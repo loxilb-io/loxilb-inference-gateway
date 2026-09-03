@@ -217,8 +217,8 @@ func TestKvSglangAdapterSelected(t *testing.T) {
 	if kvAttestAdapterFor("sglang") == nil {
 		t.Fatal("sglang adapter not selected — rules would hold fenced at adapter_unavailable")
 	}
-	if kvAttestAdapterFor("trtllm") != nil {
-		t.Fatal("trtllm adapter must stay nil until implemented")
+	if kvAttestAdapterFor("trtllm") == nil {
+		t.Fatal("trtllm adapter not selected — rules would hold fenced at adapter_unavailable")
 	}
 }
 

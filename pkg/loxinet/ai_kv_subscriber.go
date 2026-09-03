@@ -749,6 +749,11 @@ func runKvSubscriberLoopBinding(ctx context.Context, epIdx int, rank uint16, ser
 		log.Warnf("kv-subscriber: ep %d rank %d: %v — subscriber not started", epIdx, rank, decErr)
 		return
 	}
+	// The TRT drain is a destructive read: bind this stream to its
+	// drain-ownership record so event_id continuity is enforced (DEC-007).
+	if td, ok := dec.(*trtllmWireDecoder); ok {
+		td.bindOwner(serviceID, epIdx)
+	}
 
 	svcLabel := fmt.Sprintf("%d", serviceID)
 	epLabel := fmt.Sprintf("%d", epIdx)
@@ -1360,8 +1365,11 @@ func KvSubscriberStop(serviceID uint32, epIdx int) {
 	kvSeriesMu.Unlock()
 
 	// Drop the EP's trtllm admission verdict (no-op for ZMQ engines) so the
-	// audit API never shows a stale verdict for a decommissioned EP.
+	// audit API never shows a stale verdict for a decommissioned EP. The
+	// drain-ownership record goes with it — a decommissioned EP holds no
+	// consumer role.
 	kvTrtllmAdmissionForget(serviceID, epIdx)
+	kvTrtllmOwnershipForget(serviceID, epIdx)
 }
 
 // KvSubscriberRebindWire restarts every subscriber stream of a service under
@@ -1441,6 +1449,7 @@ func KvSubscriberStopAll(serviceID uint32) {
 
 	// Drop the service's trtllm admission verdicts (no-op for ZMQ engines).
 	kvTrtllmAdmissionForgetAll(serviceID)
+	kvTrtllmOwnershipForgetAll(serviceID)
 }
 
 // ---------- : Tier-1.5 zero-hit watchdog ----------
