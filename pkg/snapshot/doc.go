@@ -76,11 +76,18 @@ const (
 	DomainIPsec          = "ipsec"
 )
 
-// DefaultExcludedDomains lists the domains deliberately never captured by a
-// v1 snapshot (§4.1 "Deliberately excluded" table). Recorded verbatim into
-// Document.ExcludedDomains as an honesty marker -- it is not a filter over
-// the Domains struct (which simply never has fields for these).
-var DefaultExcludedDomains = []string{"cluster", "conntrack", "ai_keys", "interface"}
+// DefaultExcludedDomains lists the configuration areas deliberately never
+// captured by a snapshot. Recorded verbatim into Document.ExcludedDomains
+// as an honesty marker -- it is not a filter over the Domains struct
+// (which simply never has fields for these).
+//
+// The list is derived from the route-lifecycle registry (lifecycle.go):
+// every configuration area with a desired-state mutating API whose state
+// is NOT captured by the snapshot document, whether it lives in an
+// external store, is runtime-only today, or is excluded by product
+// decision. A hand-maintained list here rotted (it silently under-reported
+// what a snapshot does not cover); the derivation cannot.
+var DefaultExcludedDomains = ExcludedDomainsFromLifecycle()
 
 // BGPDomain is the composite "bgp" domain document (§4, row 11 of §4.1).
 //
