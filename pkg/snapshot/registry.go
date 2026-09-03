@@ -304,7 +304,21 @@ func isSubsystemUnavailable(err error) bool {
 	return strings.Contains(m, "not running") ||
 		strings.Contains(m, "mode is disabled") ||
 		strings.Contains(m, "not initialized") ||
-		strings.Contains(m, "bgp only mode")
+		strings.Contains(m, "bgp only mode") ||
+		// gRPC-backed subsystems (gobgpd) surface "not up yet" as a
+		// transport error, not a domain message -- during startup the
+		// daemon's socket simply is not listening. Discovered live: boot
+		// capture/verify hit "rpc error: code = Unavailable ...
+		// connection refused" while gobgpd was still starting.
+		strings.Contains(m, "code = unavailable") ||
+		strings.Contains(m, "connection refused") ||
+		// gobgpd answers this until loxilb's global-config push runs
+		// StartBgp -- same startup window, different message.
+		strings.Contains(m, "hasn't started") ||
+		// gobgpd's ListDefinedSet rejects even the valid PREFIX type with
+		// this message until the speaker's policy table initializes --
+		// one more shape of the same startup window (only gobgp emits it).
+		strings.Contains(m, "invalid defined-set type")
 }
 
 // ---------------------------------------------------------------------
@@ -914,6 +928,13 @@ func deleteBFD(hooks Hooks) (int, error) {
 
 var bgpDefinedSetTypes = []string{"prefix", "neigh", "community", "extCommunity", "largeCommunity", "asPath"}
 
+// bgpManagedPolicySuffix marks policy definitions the gateway creates and
+// owns itself (pkg/loxinet/gobgpclient.go: set-next-hop-self-gpolicy,
+// set-llb-export-gpolicy). They are excluded from capture and wipe: the
+// speaker machinery recreates them, so they are not operator desired
+// state, and deleting them would break the LB export/HA path.
+const bgpManagedPolicySuffix = "-gpolicy"
+
 // bgpNeighGetModToMod converts the Get-shaped cmn.GoBGPNeighGetMod back into
 // the Add/Del-shaped cmn.GoBGPNeighMod. RemotePort and MultiHop round-trip
 // through the Get shape (additive fields; a zero RemotePort means "default"
@@ -951,11 +972,23 @@ func getBGP(hooks Hooks, doc *Document) error {
 	if err != nil {
 		return fmt.Errorf("get bgp policy_definitions: %w", err)
 	}
+	// Gateway-managed policies (the "-gpolicy" convention: next-hop-self,
+	// LB export MED/local-pref) are (re)created by the speaker machinery
+	// itself -- capturing them double-applies on restore ("statement
+	// already defined") exactly like rule-managed endpoints would. Same
+	// filter discipline: operator config only.
+	kept := make([]cmn.GoBGPPolicyDefinitionsMod, 0, len(policyDefs))
+	for _, pd := range policyDefs {
+		if strings.HasSuffix(pd.Name, bgpManagedPolicySuffix) {
+			continue
+		}
+		kept = append(kept, pd)
+	}
 
 	doc.Domains.BGP = BGPDomain{
 		Neighbors:         neighbors,
 		DefinedSets:       definedSets,
-		PolicyDefinitions: policyDefs,
+		PolicyDefinitions: kept,
 	}
 
 	// G-7: capture global config; zero LocalAs means "not configured" and
@@ -975,6 +1008,19 @@ func getBGP(hooks Hooks, doc *Document) error {
 
 func applyBGP(hooks Hooks, doc *Document, tolerateExists bool) (int, int, error) {
 	n, skipped := 0, 0
+	// Global config FIRST: pushing it is what STARTS the BGP speaker, and
+	// every other item (AddPeer above all) is refused with "bgp server
+	// hasn't started yet" until then. With global config applied last, a
+	// boot replay of a neighbor-bearing snapshot deadlocked forever:
+	// every retry failed on the first neighbor before ever reaching the
+	// one item that would have started the speaker (observed live).
+	if doc.Domains.BGP.GlobalConfig != nil {
+		// Set-semantics singleton (overwrite): no "exists" to tolerate.
+		if _, err := hooks.NetGoBGPGCAdd(doc.Domains.BGP.GlobalConfig); err != nil {
+			return n, skipped, fmt.Errorf("apply bgp global_config: %w", err)
+		}
+		n++
+	}
 	for _, nb := range doc.Domains.BGP.Neighbors {
 		if _, err := hooks.NetGoBGPNeighAdd(bgpNeighGetModToMod(nb)); err != nil {
 			if tolerateExists && isIdempotentExists(err) {
@@ -1007,13 +1053,6 @@ func applyBGP(hooks Hooks, doc *Document, tolerateExists bool) (int, int, error)
 		}
 		n++
 	}
-	if doc.Domains.BGP.GlobalConfig != nil {
-		// Set-semantics singleton (overwrite): no "exists" to tolerate.
-		if _, err := hooks.NetGoBGPGCAdd(doc.Domains.BGP.GlobalConfig); err != nil {
-			return n, skipped, fmt.Errorf("apply bgp global_config: %w", err)
-		}
-		n++
-	}
 	return n, skipped, nil
 }
 
@@ -1038,6 +1077,9 @@ func deleteBGP(hooks Hooks) (int, error) {
 
 	for _, ts := range bgpDefinedSetTypes {
 		sets, err := hooks.NetGoBGPPolicyDefinedSetGet("all", ts)
+		if isSubsystemUnavailable(err) {
+			continue // speaker (still) not up for this call: nothing to delete
+		}
 		if err != nil {
 			errs = append(errs, fmt.Errorf("delete bgp: get defined_sets (%s): %w", ts, err))
 			continue
@@ -1053,12 +1095,20 @@ func deleteBGP(hooks Hooks) (int, error) {
 	}
 
 	policyDefs, err := hooks.NetGoBGPPolicyDefinitionsGet()
+	if isSubsystemUnavailable(err) {
+		return n, errors.Join(errs...)
+	}
 	if err != nil {
 		errs = append(errs, fmt.Errorf("delete bgp: get policy_definitions: %w", err))
 		return n, errors.Join(errs...)
 	}
 	for i := range policyDefs {
 		pd := &policyDefs[i]
+		// Gateway-managed policies stay: the speaker machinery owns them
+		// (see bgpManagedPolicySuffix) and the LB export path needs them.
+		if strings.HasSuffix(pd.Name, bgpManagedPolicySuffix) {
+			continue
+		}
 		if _, err := hooks.NetGoBGPPolicyDefinitionDel(pd); err != nil {
 			errs = append(errs, fmt.Errorf("delete bgp policy_definition %q: %w", pd.Name, err))
 			continue

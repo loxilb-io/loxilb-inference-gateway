@@ -23,6 +23,8 @@
 package snapshot
 
 import (
+	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -405,6 +407,164 @@ func TestApplyOrderReturnsCopy(t *testing.T) {
 	got[0], got[1] = got[1], got[0]
 	if Registry[0].Name != DomainEndpoint {
 		t.Fatalf("ApplyOrder leaked the registry backing array; Registry[0] is now %q", Registry[0].Name)
+	}
+}
+
+// --- boot restore vs subsystem startup ordering ---
+
+// TestBootPlanNeverReadsLiveState: the Boot variant's PLAN stage must not
+// call any Get hook -- the datapath is empty at boot by the same premise
+// that skips PRESERVE and the wipe, and a boot-time Get can race an
+// optional subsystem (gobgpd) that is not listening yet. Discovered live:
+// a BGP-enabled gateway quarantined its snapshot on EVERY boot because
+// PLAN's bgp Get hit the still-starting gobgpd.
+func TestBootPlanNeverReadsLiveState(t *testing.T) {
+	hooks := newMockHooks()
+	doc := NewDocument("0.9.8.6-beta", "test-host", TriggerManual)
+	doc.IncludedDomains = []string{DomainLoadBalancer}
+	doc.Domains.LoadBalancer = []cmn.LbRuleMod{{
+		Serv: cmn.LbServiceArg{ServIP: "1.1.1.1", ServPort: 80, Proto: "tcp"},
+		Eps:  []cmn.LbEndPointArg{{EpIP: "10.0.0.1", EpPort: 8080}},
+	}}
+	raw := encodeDoc(t, doc)
+
+	e := newTestEngine(hooks, t.TempDir())
+	res, err := e.Restore(raw, RestoreOptions{Boot: true})
+	if err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+	if res.Result != ResultOK {
+		t.Fatalf("boot restore failed: %+v", res)
+	}
+	for _, call := range hooks.Calls {
+		if call == "NetLbRuleGet" {
+			t.Fatalf("boot PLAN read live state before apply; calls: %v", hooks.Calls)
+		}
+		if strings.HasPrefix(call, "NetLbRuleAdd") {
+			break // apply started -- later Gets (VERIFY) are expected
+		}
+	}
+	if len(res.Plan) != 1 || res.Plan[0].ToApply != 1 || res.Plan[0].ToDelete != 0 {
+		t.Fatalf("boot plan should report to_apply from the doc and to_delete=0, got %+v", res.Plan)
+	}
+}
+
+// TestSubsystemUnavailableCoversGrpcTransport: gRPC-backed subsystems
+// (gobgpd) surface "not up yet" as a transport error; the tolerance
+// classifier must treat it as unavailable, not as a hard failure.
+func TestSubsystemUnavailableCoversGrpcTransport(t *testing.T) {
+	err := fmt.Errorf(`rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: dial tcp 127.0.0.1:50052: connect: connection refused"`)
+	if !isSubsystemUnavailable(err) {
+		t.Fatalf("gRPC Unavailable transport error not classified as subsystem-unavailable")
+	}
+	if isSubsystemUnavailable(fmt.Errorf("some real apply failure")) {
+		t.Fatalf("classifier over-matches")
+	}
+}
+
+// --- capture canonicalization: desired state only, deterministic bytes ---
+
+// TestCaptureStripsRuntimeMeasurements: probe delay measurements and
+// current health are runtime data -- persisting them churned the document
+// checksum on every idle capture (observed live).
+func TestCaptureStripsRuntimeMeasurements(t *testing.T) {
+	hooks := newMockHooks()
+	hooks.endpoints = []cmn.EndPointMod{{
+		HostName: "10.0.0.1", Name: "ep1", ProbeType: "ping",
+		MinDelay: "1ms", AvgDelay: "2ms", MaxDelay: "3ms", CurrState: "up",
+	}}
+	doc, err := Capture(hooks, "v-test", "host-test", TriggerManual, nil)
+	if err != nil {
+		t.Fatalf("Capture: %v", err)
+	}
+	ep := doc.Domains.Endpoint[0]
+	if ep.MinDelay != "" || ep.AvgDelay != "" || ep.MaxDelay != "" || ep.CurrState != "" {
+		t.Fatalf("runtime probe measurements persisted into the document: %+v", ep)
+	}
+	if ep.HostName != "10.0.0.1" || ep.ProbeType != "ping" {
+		t.Fatalf("desired state lost in normalization: %+v", ep)
+	}
+}
+
+// TestCaptureIsEnumerationOrderStable: two captures of an unchanged
+// gateway must produce the identical domains payload even when the
+// backend enumerates rules in a different order (map iteration) --
+// observed live as byte-churning snapshots on an idle gateway.
+func TestCaptureIsEnumerationOrderStable(t *testing.T) {
+	ruleA := cmn.LbRuleMod{Serv: cmn.LbServiceArg{ServIP: "1.1.1.1", ServPort: 80, Proto: "tcp"},
+		Eps: []cmn.LbEndPointArg{{EpIP: "10.0.0.1", EpPort: 8080}}}
+	ruleB := cmn.LbRuleMod{Serv: cmn.LbServiceArg{ServIP: "2.2.2.2", ServPort: 81, Proto: "tcp"},
+		Eps: []cmn.LbEndPointArg{{EpIP: "10.0.0.2", EpPort: 8081}}}
+
+	hooks := newMockHooks()
+	hooks.lbRules = []cmn.LbRuleMod{ruleA, ruleB}
+	doc1, err := Capture(hooks, "v-test", "host-test", TriggerManual, nil)
+	if err != nil {
+		t.Fatalf("Capture: %v", err)
+	}
+	hooks.lbRules = []cmn.LbRuleMod{ruleB, ruleA} // backend re-ordered
+	doc2, err := Capture(hooks, "v-test", "host-test", TriggerManual, nil)
+	if err != nil {
+		t.Fatalf("Capture: %v", err)
+	}
+	j1, _ := json.Marshal(doc1.Domains)
+	j2, _ := json.Marshal(doc2.Domains)
+	if string(j1) != string(j2) {
+		t.Fatalf("captured payload depends on backend enumeration order:\n%s\nvs\n%s", j1, j2)
+	}
+}
+
+// TestBootApplyFailureDoesNotRollBack: a failed boot apply leaves the
+// partially applied state for the next retry to converge over -- rolling
+// back between attempts made replayed config flap in and out for the
+// whole retry window and let the rollback's own wipe fail against a
+// still-starting subsystem, escalating a startup race to ROLLBACK-FAILED
+// plus a quarantined snapshot (observed live on a BGP-enabled gateway).
+func TestBootApplyFailureDoesNotRollBack(t *testing.T) {
+	hooks := newMockHooks()
+	doc := NewDocument("0.9.8.6-beta", "test-host", TriggerManual)
+	doc.IncludedDomains = []string{DomainEndpoint, DomainLoadBalancer}
+	doc.Domains.Endpoint = []cmn.EndPointMod{{HostName: "10.0.0.1", Name: "ep1"}}
+	doc.Domains.LoadBalancer = []cmn.LbRuleMod{{
+		Serv: cmn.LbServiceArg{ServIP: "1.1.1.1", ServPort: 80, Proto: "tcp"},
+		Eps:  []cmn.LbEndPointArg{{EpIP: "10.0.0.1", EpPort: 8080}},
+	}}
+	raw := encodeDoc(t, doc)
+
+	hooks.failNext("NetLbRuleAdd", fmt.Errorf("rpc error: code = Unknown desc = bgp server hasn't started yet"))
+
+	e := newTestEngine(hooks, t.TempDir())
+	res, err := e.Restore(raw, RestoreOptions{Boot: true})
+	if err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+	if res.Result == ResultRolledBack || res.Result == ResultRollbackFailed {
+		t.Fatalf("boot apply failure must not roll back, got %q", res.Result)
+	}
+	if len(res.Errors) == 0 {
+		t.Fatalf("apply failure must be reported")
+	}
+	if call := containsCallSubstring(hooks.Calls, "Del"); call != "" {
+		t.Fatalf("boot failure path must not wipe partial state, saw %q", call)
+	}
+	if len(hooks.endpoints) != 1 {
+		t.Fatalf("partially applied state must survive for the retry, endpoints=%+v", hooks.endpoints)
+	}
+
+	// The retry converges: the real backend answers the endpoint
+	// re-apply with its idempotent "already exists" convention (the mock
+	// must be told to), the boot apply tolerates it, and the previously
+	// failed rule applies cleanly now.
+	hooks.failNext("NetEpHostAdd", fmt.Errorf("already exists"))
+	res2, err := e.Restore(raw, RestoreOptions{Boot: true})
+	if err != nil {
+		t.Fatalf("retry Restore: %v", err)
+	}
+	if res2.Result != ResultOK {
+		t.Fatalf("boot retry over partial state failed: %+v", res2)
+	}
+	if len(hooks.lbRules) != 1 || len(hooks.endpoints) != 1 {
+		t.Fatalf("retry did not converge: rules=%d endpoints=%d", len(hooks.lbRules), len(hooks.endpoints))
 	}
 }
 

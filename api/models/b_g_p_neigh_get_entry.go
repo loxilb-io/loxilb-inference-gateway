@@ -20,8 +20,14 @@ type BGPNeighGetEntry struct {
 	// BGP Neighbor IP address
 	IPAddress string `json:"ipAddress,omitempty"`
 
+	// Whether eBGP multihop is enabled for this neighbor
+	MultiHop bool `json:"multiHop,omitempty"`
+
 	// Remote AS number
 	RemoteAs int64 `json:"remoteAs,omitempty"`
+
+	// Configured non-default BGP peering port (0 means the default, 179)
+	RemotePort int64 `json:"remotePort,omitempty"`
 
 	// Current state
 	State string `json:"state,omitempty"`

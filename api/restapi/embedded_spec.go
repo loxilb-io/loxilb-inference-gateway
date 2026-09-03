@@ -10030,8 +10030,16 @@ func init() {
           "description": "BGP Neighbor IP address",
           "type": "string"
         },
+        "multiHop": {
+          "description": "Whether eBGP multihop is enabled for this neighbor",
+          "type": "boolean"
+        },
         "remoteAs": {
           "description": "Remote AS number",
+          "type": "integer"
+        },
+        "remotePort": {
+          "description": "Configured non-default BGP peering port (0 means the default, 179)",
           "type": "integer"
         },
         "state": {
@@ -25809,8 +25817,16 @@ func init() {
           "description": "BGP Neighbor IP address",
           "type": "string"
         },
+        "multiHop": {
+          "description": "Whether eBGP multihop is enabled for this neighbor",
+          "type": "boolean"
+        },
         "remoteAs": {
           "description": "Remote AS number",
+          "type": "integer"
+        },
+        "remotePort": {
+          "description": "Configured non-default BGP peering port (0 means the default, 179)",
           "type": "integer"
         },
         "state": {

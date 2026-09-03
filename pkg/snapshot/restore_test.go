@@ -568,13 +568,15 @@ func TestRestoreBootSkipsPreserveAndWipe(t *testing.T) {
 	if call := containsCallSubstring(hooks.Calls, "Del"); call != "" {
 		t.Fatalf("boot must skip the pre-apply wipe entirely (no Del calls), got: %s", call)
 	}
-	// PLAN + VERIFY each Get once; PRESERVE and the (skipped) wipe's
-	// enumeration must not add two more -- exactly 2 calls, not 4.
-	if got := hooks.callCounts["NetEpHostGet"]; got != 2 {
-		t.Fatalf("expected exactly 2 NetEpHostGet calls (PLAN, VERIFY) for boot, got %d", got)
+	// Only VERIFY Gets at boot: PLAN never reads live state (empty by the
+	// boot premise, and a boot-time Get can race a still-starting optional
+	// subsystem), and PRESERVE plus the wipe's enumeration are skipped --
+	// exactly 1 call, not 2 or 4.
+	if got := hooks.callCounts["NetEpHostGet"]; got != 1 {
+		t.Fatalf("expected exactly 1 NetEpHostGet call (VERIFY only) for boot, got %d", got)
 	}
-	if got := hooks.callCounts["NetLbRuleGet"]; got != 2 {
-		t.Fatalf("expected exactly 2 NetLbRuleGet calls (PLAN, VERIFY) for boot, got %d", got)
+	if got := hooks.callCounts["NetLbRuleGet"]; got != 1 {
+		t.Fatalf("expected exactly 1 NetLbRuleGet call (VERIFY only) for boot, got %d", got)
 	}
 
 	if len(hooks.endpoints) != 1 || hooks.endpoints[0].Name != "ep1" {

@@ -40,6 +40,13 @@ func Capture(hooks Hooks, gatewayVersion, hostname string, trigger Trigger, comp
 			return nil, fmt.Errorf("capture %s: %w", entry.Name, err)
 		}
 	}
+	// Canonicalize (digest.go): strip runtime measurement fields and sort
+	// every list, so a captured document carries desired state only and
+	// an unchanged gateway always captures the identical payload --
+	// map-ordered backend enumeration must not churn persisted checksums.
+	if err := NormalizeDomains(&doc.Domains); err != nil {
+		return nil, fmt.Errorf("capture: normalize: %w", err)
+	}
 	snapshotTotal.WithLabelValues(string(trigger)).Inc()
 	return doc, nil
 }

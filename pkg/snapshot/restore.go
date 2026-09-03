@@ -242,7 +242,7 @@ func (e *Engine) restore(raw []byte, opts RestoreOptions) (*Result, error) {
 
 	// 3. PLAN -- ordered per-domain {to_delete (live), to_apply (doc)}.
 	// Read-only (Get calls only); dry-run stops here.
-	plan, err := e.stagePlan(doc, selected)
+	plan, err := e.stagePlan(doc, selected, opts.Boot)
 	if err != nil {
 		result.Errors = []string{err.Error()}
 		return result, nil
@@ -288,11 +288,12 @@ func (e *Engine) restore(raw []byte, opts RestoreOptions) (*Result, error) {
 			"apply %s: skipped %d already-existing identical item(s) (duplicate document entries)", domain, count))
 	}
 
-	// 6. VERIFY -- only meaningful if APPLY fully succeeded. Skipped
-	// duplicates lower the expected live count: the item exists exactly
-	// once no matter how many document entries named it.
+	// 6. VERIFY -- only meaningful if APPLY fully succeeded. Counts and
+	// digests compare DISTINCT normalized items on both sides, so
+	// tolerated idempotent duplicates (in-document or pre-existing from a
+	// boot retry) need no special arithmetic.
 	if len(applyErrs) == 0 {
-		applyErrs = append(applyErrs, e.stageVerify(doc, plan, selected, skipped)...)
+		applyErrs = append(applyErrs, e.stageVerify(doc, selected)...)
 	}
 
 	if len(applyErrs) == 0 {
@@ -305,9 +306,24 @@ func (e *Engine) restore(raw []byte, opts RestoreOptions) (*Result, error) {
 		result.Errors = append(result.Errors, ae.Error())
 	}
 
-	// ROLLBACK: wipe again + re-apply the step-4 (or implicit-empty, for
-	// Boot) pre-restore document. "already exists" apply errors are
-	// tolerated (item-level idempotency, §5.3) -- see rollback().
+	// A BOOT apply that failed only on still-starting subsystems does not
+	// roll back: the boot loader retries, boot applies tolerate
+	// idempotent duplicates, and the next attempt converges over the
+	// partial state. Rolling back between attempts made the replayed
+	// config flap in and out for the whole retry window, and let the
+	// rollback's own wipe fail against the same still-starting subsystem,
+	// escalating a transient startup race into ROLLBACK-FAILED plus a
+	// quarantined snapshot (observed live on a BGP-enabled gateway).
+	// Any OTHER boot failure (a real conflict, a bad document) still
+	// rolls back -- a permanent failure must not leave partial state for
+	// the legacy fallback to collide with.
+	if opts.Boot && allSubsystemStartup(applyErrs) {
+		return result, nil
+	}
+
+	// ROLLBACK: wipe again + re-apply the step-4 pre-restore document.
+	// "already exists" apply errors are tolerated (item-level
+	// idempotency, §5.3) -- see rollback().
 	rollbackErrs := e.rollback(preDoc, selected)
 	if len(rollbackErrs) == 0 {
 		result.Result = ResultRolledBack
@@ -425,16 +441,28 @@ func selectForRestore(doc *Document, components []string) ([]DomainEntry, error)
 // Stage 3: PLAN
 // ---------------------------------------------------------------------
 
-func (e *Engine) stagePlan(doc *Document, selected []DomainEntry) ([]PlanItem, error) {
+// stagePlan builds the ordered per-domain plan. The Boot variant never
+// calls Get: the datapath is empty at boot BY THE SAME PREMISE that lets
+// Boot skip PRESERVE and the pre-apply wipe, so to_delete is 0 by
+// definition -- and, critically, a boot-time Get can race an optional
+// subsystem (gobgpd, ipsec) that has not finished starting, turning a
+// startup-ordering hiccup into a failed (and quarantined) boot restore.
+// Discovered live: a BGP-enabled gateway quarantined its snapshot on
+// EVERY boot because PLAN's bgp Get hit the not-yet-listening gobgpd.
+func (e *Engine) stagePlan(doc *Document, selected []DomainEntry, boot bool) ([]PlanItem, error) {
 	plan := make([]PlanItem, 0, len(selected))
 	for _, entry := range selected {
-		scratch := &Document{}
-		if err := entry.Get(e.Hooks, scratch); err != nil {
-			return nil, fmt.Errorf("plan: get %s: %w", entry.Name, err)
+		toDelete := 0
+		if !boot {
+			scratch := &Document{}
+			if err := entry.Get(e.Hooks, scratch); err != nil {
+				return nil, fmt.Errorf("plan: get %s: %w", entry.Name, err)
+			}
+			toDelete = countDomain(entry.Name, &scratch.Domains)
 		}
 		plan = append(plan, PlanItem{
 			Domain:   entry.Name,
-			ToDelete: countDomain(entry.Name, &scratch.Domains),
+			ToDelete: toDelete,
 			ToApply:  countDomain(entry.Name, &doc.Domains),
 		})
 	}
@@ -506,6 +534,11 @@ func (e *Engine) stagePreserve(selected []DomainEntry) (*Document, error) {
 		if err := entry.Get(e.Hooks, preDoc); err != nil {
 			return nil, fmt.Errorf("get %s: %w", entry.Name, err)
 		}
+	}
+	// Same canonicalization as Capture: the pre-restore document is a
+	// persisted artifact too.
+	if err := NormalizeDomains(&preDoc.Domains); err != nil {
+		return nil, fmt.Errorf("normalize: %w", err)
 	}
 	snapshotTotal.WithLabelValues(string(TriggerPreRestore)).Inc()
 	return preDoc, nil
@@ -596,28 +629,26 @@ func (e *Engine) stageApply(doc *Document, selected []DomainEntry, boot bool) ([
 // the digest does not. stageVerify is only reached when stageApply
 // reported zero errors, so any mismatch here means the backend didn't
 // persist what it acknowledged.
-func (e *Engine) stageVerify(doc *Document, plan []PlanItem, selected []DomainEntry, skipped map[string]int) []error {
+func (e *Engine) stageVerify(doc *Document, selected []DomainEntry) []error {
 	var errs []error
-	for i, entry := range selected {
+	for _, entry := range selected {
 		scratch := &Document{}
 		if err := entry.Get(e.Hooks, scratch); err != nil {
 			errs = append(errs, fmt.Errorf("verify: get %s: %w", entry.Name, err))
 			continue
 		}
-		got := countDomain(entry.Name, &scratch.Domains)
-		want := plan[i].ToApply - skipped[entry.Name]
-		if got != want {
-			errs = append(errs, fmt.Errorf("verify: %s: expected %d item(s) after apply, found %d", entry.Name, want, got))
-			continue
-		}
-		wantDigest, err := DomainDigest(entry.Name, &doc.Domains)
+		wantCount, wantDigest, err := DomainContent(entry.Name, &doc.Domains)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("verify: %s: %w", entry.Name, err))
 			continue
 		}
-		gotDigest, err := DomainDigest(entry.Name, &scratch.Domains)
+		gotCount, gotDigest, err := DomainContent(entry.Name, &scratch.Domains)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("verify: %s: %w", entry.Name, err))
+			continue
+		}
+		if gotCount != wantCount {
+			errs = append(errs, fmt.Errorf("verify: %s: expected %d item(s) after apply, found %d", entry.Name, wantCount, gotCount))
 			continue
 		}
 		if wantDigest != gotDigest {
@@ -659,6 +690,21 @@ func (e *Engine) rollback(preDoc *Document, selected []DomainEntry) []error {
 		}
 	}
 	return errs
+}
+
+// allSubsystemStartup reports whether every error is a still-starting
+// subsystem condition (isSubsystemUnavailable, registry.go) -- the
+// boot-retryable class.
+func allSubsystemStartup(errs []error) bool {
+	if len(errs) == 0 {
+		return false
+	}
+	for _, err := range errs {
+		if !isSubsystemUnavailable(err) {
+			return false
+		}
+	}
+	return true
 }
 
 // entryNames extracts DomainEntry.Name in order, for passing a selected

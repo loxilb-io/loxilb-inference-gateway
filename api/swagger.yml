@@ -9806,6 +9806,12 @@ definitions:
       updowntime:
         type: string
         description: Current uptime
+      remotePort:
+        type: integer
+        description: Configured non-default BGP peering port (0 means the default, 179)
+      multiHop:
+        type: boolean
+        description: Whether eBGP multihop is enabled for this neighbor
 
 
   BGPGlobalConfig:
