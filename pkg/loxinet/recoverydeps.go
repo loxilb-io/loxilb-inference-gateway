@@ -27,6 +27,8 @@
 package loxinet
 
 import (
+	"fmt"
+	"sort"
 	"strconv"
 
 	cmn "github.com/loxilb-io/loxilb/common"
@@ -73,4 +75,100 @@ func (na *NetAPIStruct) NetRecoveryDepsGet() ([]cmn.RecoveryDependency, error) {
 		})
 	}
 	return deps, nil
+}
+
+// NetRecoveryDepVerify - check one REQUIRED recovery dependency against
+// this node's actual stores, before the restore engine plans or wipes
+// anything. Error = the declared-load-bearing store is genuinely absent or
+// incompatible: fail the restore closed. Warning = wired but currently
+// degraded, or a difference the per-item apply re-verifies anyway: surface
+// it, do not block.
+//
+// The database checks are deliberately configuration-only. Both stores
+// dial in the background ON PURPOSE (loxinet.go: a store that is down
+// blocks for over a minute, and the boot snapshot restore must not
+// inherit the management store's outage -- auth answers 503 and the
+// reconnect tick heals it). Gating restore on live reachability would
+// re-create exactly that hostage-taking; what restore needs to know is
+// whether the store exists at all on this node. Reachability/readiness
+// get their own surface with the boot status API.
+func (na *NetAPIStruct) NetRecoveryDepVerify(dep cmn.RecoveryDependency) (string, error) {
+	switch dep.Type {
+	case cmn.RecoveryDepEngineContracts:
+		docGen, err := strconv.ParseUint(dep.Generation, 10, 64)
+		if err != nil {
+			return "", fmt.Errorf("malformed generation %q: %v", dep.Generation, err)
+		}
+		if docGen > enginecontract.Generation {
+			return "", fmt.Errorf("document requires engine-contract generation %d; this build compiles generation %d -- upgrade the gateway or re-capture",
+				docGen, enginecontract.Generation)
+		}
+		if docGen == enginecontract.Generation && dep.Digest != "" && dep.Digest != enginecontract.ManifestDigest {
+			return "", fmt.Errorf("engine-contract generation %d digest %s does not match this build's %s -- the registry was rebuilt without a generation bump",
+				docGen, dep.Digest, enginecontract.ManifestDigest)
+		}
+		if docGen < enginecontract.Generation {
+			return fmt.Sprintf("captured under engine-contract generation %d, this build compiles %d; restored bindings re-earn attestation against the current registry",
+				docGen, enginecontract.Generation), nil
+		}
+		return "", nil
+
+	case cmn.RecoveryDepKvModelProfiles:
+		g := kvProfileCurrent()
+		if g == nil {
+			return "", fmt.Errorf("no model-profile registry generation is published on this node; provision the profile directory before restoring KV-bound configuration")
+		}
+		// Re-verify the published generation's artifacts against disk:
+		// the registry serves from memory, so this is the moment silent
+		// on-disk drift would otherwise ride into a restored config.
+		for _, id := range kvProfileSortedIDs(g) {
+			if err := KvProfileVerifyDisk(id); err != nil {
+				return "", fmt.Errorf("published profile %q no longer matches its on-disk artifacts: %v", id, err)
+			}
+		}
+		// A different set digest is NOT a failure: a legitimate restore
+		// target may carry more (or newer) profiles than the capture
+		// node. Per-binding references verify individually at apply.
+		if dep.Digest != "" && dep.Digest != "sha256:"+g.SetDigest {
+			return fmt.Sprintf("profile set digest differs from capture (%s vs sha256:%s); per-binding verification decides compatibility",
+				dep.Digest, g.SetDigest), nil
+		}
+		return "", nil
+
+	case cmn.RecoveryDepAPIKeyDB:
+		if opts.Opts.AIKeyDBHost == "" {
+			return "", fmt.Errorf("document requires the data-plane API-key store but none is configured on this node")
+		}
+		return "", nil
+
+	case cmn.RecoveryDepAuthDB:
+		if !opts.Opts.UserServiceEnable {
+			return "", fmt.Errorf("document requires the management user/auth store but the user service is not enabled on this node")
+		}
+		return "", nil
+
+	case cmn.RecoveryDepCertStore:
+		// Verified where the authority is: the cert domain apply
+		// re-registers each certificate only after checking the managed
+		// on-disk material against the captured per-cert digest, failing
+		// loudly on missing or divergent material. The manifest's set
+		// digest adds nothing that check does not already prove.
+		return "", nil
+
+	default:
+		// VALIDATE already refused unknown REQUIRED types; reaching here
+		// means the engine and the vocabulary disagree -- fail closed.
+		return "", fmt.Errorf("no verifier for dependency type %q", dep.Type)
+	}
+}
+
+// kvProfileSortedIDs returns the generation's profile IDs sorted, so
+// verification failures report deterministically.
+func kvProfileSortedIDs(g *kvProfileGeneration) []string {
+	ids := make([]string, 0, len(g.Profiles))
+	for id := range g.Profiles {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
 }

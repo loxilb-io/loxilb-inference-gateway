@@ -116,3 +116,137 @@ func TestNetRecoveryDepsWiredStores(t *testing.T) {
 		}
 	}
 }
+
+func TestNetRecoveryDepVerifyEngineContracts(t *testing.T) {
+	na := &NetAPIStruct{}
+	gen := strconv.FormatUint(enginecontract.Generation, 10)
+	newer := strconv.FormatUint(enginecontract.Generation+1, 10)
+
+	cases := []struct {
+		name     string
+		dep      cmn.RecoveryDependency
+		wantErr  bool
+		wantWarn bool
+	}{
+		{"same generation matching digest", cmn.RecoveryDependency{
+			Type: cmn.RecoveryDepEngineContracts, Generation: gen,
+			Digest: enginecontract.ManifestDigest, Required: true}, false, false},
+		{"newer generation than binary", cmn.RecoveryDependency{
+			Type: cmn.RecoveryDepEngineContracts, Generation: newer,
+			Digest: enginecontract.ManifestDigest, Required: true}, true, false},
+		{"same generation divergent digest", cmn.RecoveryDependency{
+			Type: cmn.RecoveryDepEngineContracts, Generation: gen,
+			Digest: "sha256:deadbeef", Required: true}, true, false},
+		{"malformed generation", cmn.RecoveryDependency{
+			Type: cmn.RecoveryDepEngineContracts, Generation: "not-a-number", Required: true}, true, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			warn, err := na.NetRecoveryDepVerify(tc.dep)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("err=%v wantErr=%v", err, tc.wantErr)
+			}
+			if (warn != "") != tc.wantWarn {
+				t.Fatalf("warn=%q wantWarn=%v", warn, tc.wantWarn)
+			}
+		})
+	}
+}
+
+// An older-generation document warns rather than fails: bindings re-earn
+// attestation against the current registry. Compiled Generation is 1
+// today, so the "older" case only becomes constructible when the real
+// registry moves past it; this guard keeps the semantic pinned from that
+// moment on without fabricating registry state now.
+func TestNetRecoveryDepVerifyOlderContractGeneration(t *testing.T) {
+	if enginecontract.Generation < 2 {
+		t.Skip("compiled registry still at generation 1; no older generation exists to verify")
+	}
+	na := &NetAPIStruct{}
+	warn, err := na.NetRecoveryDepVerify(cmn.RecoveryDependency{
+		Type: cmn.RecoveryDepEngineContracts, Generation: "1", Required: true})
+	if err != nil || warn == "" {
+		t.Fatalf("older generation must warn-and-pass: warn=%q err=%v", warn, err)
+	}
+}
+
+func TestNetRecoveryDepVerifyKvProfiles(t *testing.T) {
+	na := &NetAPIStruct{}
+	KvProfileRegistryReset()
+	t.Cleanup(KvProfileRegistryReset)
+
+	t.Run("unpublished registry fails closed", func(t *testing.T) {
+		_, err := na.NetRecoveryDepVerify(cmn.RecoveryDependency{
+			Type: cmn.RecoveryDepKvModelProfiles, Generation: "7", Digest: "sha256:bbbb", Required: true})
+		if err == nil {
+			t.Fatalf("no published generation but verification passed")
+		}
+	})
+
+	t.Run("different set digest warns not fails", func(t *testing.T) {
+		kvProfileReg.Store(&kvProfileGeneration{
+			Gen: 9, Profiles: map[string]*kvProfileEntry{}, SetDigest: "cccc",
+			SourceRoot: "/nonexistent-root",
+		})
+		t.Cleanup(KvProfileRegistryReset)
+		warn, err := na.NetRecoveryDepVerify(cmn.RecoveryDependency{
+			Type: cmn.RecoveryDepKvModelProfiles, Generation: "7", Digest: "sha256:bbbb", Required: true})
+		if err != nil {
+			t.Fatalf("cross-node digest difference failed instead of warning: %v", err)
+		}
+		if warn == "" {
+			t.Fatalf("cross-node digest difference passed silently")
+		}
+	})
+
+	t.Run("on-disk drift fails closed", func(t *testing.T) {
+		// A published profile whose source root is gone is the extreme
+		// form of drift: the receipts no longer trace to any bytes.
+		kvProfileReg.Store(&kvProfileGeneration{
+			Gen: 9, SetDigest: "cccc", SourceRoot: "/nonexistent-root",
+			Profiles: map[string]*kvProfileEntry{"p1": {}},
+		})
+		t.Cleanup(KvProfileRegistryReset)
+		_, err := na.NetRecoveryDepVerify(cmn.RecoveryDependency{
+			Type: cmn.RecoveryDepKvModelProfiles, Generation: "9", Required: true})
+		if err == nil {
+			t.Fatalf("published profile with unverifiable artifacts passed")
+		}
+	})
+}
+
+func TestNetRecoveryDepVerifyDatabases(t *testing.T) {
+	na := &NetAPIStruct{}
+	saved := opts.Opts
+	t.Cleanup(func() { opts.Opts = saved })
+
+	opts.Opts.AIKeyDBHost, opts.Opts.UserServiceEnable = "", false
+	if _, err := na.NetRecoveryDepVerify(cmn.RecoveryDependency{
+		Type: cmn.RecoveryDepAPIKeyDB, Required: true}); err == nil {
+		t.Fatalf("required api-key store passed on a node with none configured")
+	}
+	if _, err := na.NetRecoveryDepVerify(cmn.RecoveryDependency{
+		Type: cmn.RecoveryDepAuthDB, Required: true}); err == nil {
+		t.Fatalf("required auth store passed on a node with the user service disabled")
+	}
+
+	opts.Opts.AIKeyDBHost, opts.Opts.UserServiceEnable = "127.0.0.1", true
+	for _, typ := range []string{cmn.RecoveryDepAPIKeyDB, cmn.RecoveryDepAuthDB} {
+		warn, err := na.NetRecoveryDepVerify(cmn.RecoveryDependency{Type: typ, Required: true})
+		if err != nil || warn != "" {
+			t.Fatalf("configured store %s did not verify clean: warn=%q err=%v", typ, warn, err)
+		}
+	}
+}
+
+func TestNetRecoveryDepVerifyUnknownAndCertStore(t *testing.T) {
+	na := &NetAPIStruct{}
+	if _, err := na.NetRecoveryDepVerify(cmn.RecoveryDependency{Type: "quantum-ledger", Required: true}); err == nil {
+		t.Fatalf("verifier accepted a type it has no check for")
+	}
+	// cert-store: the cert domain apply owns per-cert digest verification.
+	if warn, err := na.NetRecoveryDepVerify(cmn.RecoveryDependency{
+		Type: cmn.RecoveryDepCertStore, Digest: "sha256:1111", Required: true}); err != nil || warn != "" {
+		t.Fatalf("cert-store manifest entry must defer to the domain apply: warn=%q err=%v", warn, err)
+	}
+}

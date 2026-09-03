@@ -154,9 +154,12 @@ type Hooks interface {
 	NetCertDel(id string) (int, error)
 
 	// recovery_dependencies (schema 1.4) -- document-level manifest, not a
-	// domain: no wipe/apply, capture-only (see buildRecoveryManifest,
-	// capture.go).
+	// domain: no wipe/apply. Get feeds capture (see buildRecoveryManifest,
+	// capture.go); Verify gates restore (stageVerifyDeps, restore.go):
+	// error = fail closed before anything is planned or wiped, non-empty
+	// warning = surfaced but tolerated.
 	NetRecoveryDepsGet() ([]cmn.RecoveryDependency, error)
+	NetRecoveryDepVerify(dep cmn.RecoveryDependency) (string, error)
 }
 
 // DomainEntry describes one v1 snapshot domain: how to fetch its live

@@ -232,6 +232,20 @@ func (e *Engine) restore(raw []byte, opts RestoreOptions) (*Result, error) {
 		return result, nil
 	}
 
+	// 2b. VERIFY DEPENDENCIES -- every REQUIRED recovery_dependencies
+	// entry is checked against this node's actual stores (hooks) while
+	// nothing has been planned, wiped, or applied: a restore whose
+	// declared-load-bearing external store is missing must stop HERE, not
+	// mid-apply after the wipe. Optional entries are informational and
+	// never verified. Runs in dry-run too -- preflighting exactly this is
+	// what dry-run is for.
+	depWarns, depErrs := e.stageVerifyDeps(doc)
+	result.Warnings = append(result.Warnings, depWarns...)
+	if len(depErrs) > 0 {
+		result.Errors = depErrs
+		return result, nil
+	}
+
 	// Selection runs AFTER validate so migrations have stamped
 	// included_domains onto pre-1.2 documents: what a restore may wipe and
 	// apply is included_domains ∩ the caller's components -- a partial
@@ -351,6 +365,35 @@ func stageParse(raw []byte) (*Document, error) {
 		return nil, err
 	}
 	return doc, nil
+}
+
+// ---------------------------------------------------------------------
+// Stage 2b: VERIFY DEPENDENCIES
+// ---------------------------------------------------------------------
+
+// stageVerifyDeps checks each REQUIRED recovery_dependencies entry against
+// this node's actual external stores, via the hooks. It runs after
+// VALIDATE (the manifest's shape and type vocabulary are already good) and
+// before PLAN, so a missing load-bearing store fails the restore closed
+// with zero mutations -- the wipe-then-fail-mid-apply alternative costs a
+// rollback and, at boot, the whole replay. Warnings (a store that is
+// wired but degraded, an older-generation registry the per-item apply
+// will re-verify) surface in the result without blocking.
+func (e *Engine) stageVerifyDeps(doc *Document) (warns, errs []string) {
+	for _, dep := range doc.RecoveryDependencies {
+		if !dep.Required {
+			continue
+		}
+		warn, err := e.Hooks.NetRecoveryDepVerify(dep)
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("dependency %s: %v", dep.Type, err))
+			continue
+		}
+		if warn != "" {
+			warns = append(warns, fmt.Sprintf("dependency %s: %s", dep.Type, warn))
+		}
+	}
+	return warns, errs
 }
 
 // ---------------------------------------------------------------------

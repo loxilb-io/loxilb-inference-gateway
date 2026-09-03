@@ -63,6 +63,13 @@ type mockHooks struct {
 	tracingCfg *cmn.TracingConfig
 	certMetas  []cmn.CertMeta
 
+	// depVerifyFail/depVerifyWarn drive NetRecoveryDepVerify by dependency
+	// type: an entry in depVerifyFail fails that type's verification (the
+	// node "lacks" the store); depVerifyWarn returns a degraded-store
+	// warning. Unlisted types verify clean.
+	depVerifyFail map[string]error
+	depVerifyWarn map[string]string
+
 	// recoveryDeps is what NetRecoveryDepsGet returns: the store
 	// identities the "gateway" is wired to (required flags on the
 	// database entries included, mirroring the real producer's
@@ -978,6 +985,14 @@ func (m *mockHooks) NetRecoveryDepsGet() ([]cmn.RecoveryDependency, error) {
 		return nil, err
 	}
 	return append([]cmn.RecoveryDependency(nil), m.recoveryDeps...), nil
+}
+
+func (m *mockHooks) NetRecoveryDepVerify(dep cmn.RecoveryDependency) (string, error) {
+	m.log("NetRecoveryDepVerify:%s", dep.Type)
+	if err, ok := m.depVerifyFail[dep.Type]; ok {
+		return "", err
+	}
+	return m.depVerifyWarn[dep.Type], nil
 }
 
 // compile-time assertion that mockHooks satisfies Hooks.

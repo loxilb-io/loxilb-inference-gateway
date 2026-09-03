@@ -1938,6 +1938,12 @@ type NetHookInterface interface {
 	// snapshot capture path turns these into the document's
 	// recovery_dependencies manifest (schema 1.4).
 	NetRecoveryDepsGet() ([]RecoveryDependency, error)
+	// NetRecoveryDepVerify checks one REQUIRED manifest entry against this
+	// node's actual stores before a restore mutates anything. A returned
+	// error fails the restore closed (nothing planned or wiped); a
+	// non-empty warning is surfaced but does not block -- the degraded
+	// path is deliberate for stores that heal asynchronously.
+	NetRecoveryDepVerify(dep RecoveryDependency) (string, error)
 	NetCtInfoGet() ([]CtInfo, error)
 	NetSessionGet() ([]SessionMod, error)
 	NetSessionUlClGet() ([]SessionUlClMod, error)

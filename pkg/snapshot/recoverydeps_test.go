@@ -266,3 +266,142 @@ func TestManifestIsChecksumCovered(t *testing.T) {
 		t.Fatalf("tampered recovery_dependencies passed checksum verification")
 	}
 }
+
+// ---------------------------------------------------------------------
+// Restore-side: stageVerifyDeps (dependency verification before PLAN)
+// ---------------------------------------------------------------------
+
+// capturedRaw builds an encoded document from a fully wired source
+// gateway: required db entries, required registries (bindings present)
+// and a cert-store entry.
+func capturedRaw(t *testing.T) []byte {
+	t.Helper()
+	src := depHooks()
+	src.kvBinds = []cmn.KvExactBindingMod{{RuleIdent: "r1", ModelProfileID: "p1"}}
+	src.certMetas = []cmn.CertMeta{{CertId: "edge", Digest: "sha256:1111"}}
+	doc, err := Capture(src, "v-test", "src-host", TriggerManual, nil)
+	if err != nil {
+		t.Fatalf("Capture: %v", err)
+	}
+	raw, err := Encode(doc)
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	return raw
+}
+
+func TestRestoreFailsClosedOnMissingRequiredDep(t *testing.T) {
+	raw := capturedRaw(t)
+	hooks := newMockHooks()
+	hooks.depVerifyFail = map[string]error{
+		cmn.RecoveryDepAuthDB: errors.New("user service is not enabled on this node"),
+	}
+	e := newTestEngine(hooks, t.TempDir())
+
+	res, err := e.Restore(raw, RestoreOptions{Mode: ModeCommit})
+	if err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+	if res.Result == ResultOK {
+		t.Fatalf("restore succeeded with a missing required dependency")
+	}
+	found := false
+	for _, msg := range res.Errors {
+		if strings.Contains(msg, "dependency auth-db") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("errors do not name the failing dependency: %v", res.Errors)
+	}
+	// Fail closed means fail BEFORE anything is planned, wiped or
+	// applied: the only hook traffic allowed is the verification itself.
+	for _, call := range hooks.Calls {
+		if !strings.HasPrefix(call, "NetRecoveryDepVerify:") {
+			t.Fatalf("hook %q ran after a dependency verification failure (must stop before PLAN): all=%v", call, hooks.Calls)
+		}
+	}
+}
+
+func TestRestoreDepWarningDoesNotBlock(t *testing.T) {
+	raw := capturedRaw(t)
+	hooks := newMockHooks()
+	hooks.depVerifyWarn = map[string]string{
+		cmn.RecoveryDepEngineContracts: "captured under an older generation",
+	}
+	e := newTestEngine(hooks, t.TempDir())
+
+	res, err := e.Restore(raw, RestoreOptions{Mode: ModeCommit})
+	if err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+	if res.Result != ResultOK {
+		t.Fatalf("degraded-store warning blocked the restore: %+v", res)
+	}
+	found := false
+	for _, w := range res.Warnings {
+		if strings.Contains(w, "dependency engine-contracts") && strings.Contains(w, "older generation") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("dependency warning not surfaced: %v", res.Warnings)
+	}
+}
+
+func TestRestoreVerifiesOnlyRequiredDeps(t *testing.T) {
+	src := depHooks()
+	doc, err := Capture(src, "v-test", "src-host", TriggerManual, nil)
+	if err != nil {
+		t.Fatalf("Capture: %v", err)
+	}
+	// No bindings captured -> registries are optional entries; add an
+	// unknown OPTIONAL type on top (VALIDATE tolerates it, and verify
+	// must never be asked about it).
+	doc.RecoveryDependencies = append(doc.RecoveryDependencies,
+		cmn.RecoveryDependency{Type: "quantum-ledger", Required: false})
+	raw, err := Encode(doc)
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+
+	hooks := newMockHooks()
+	e := newTestEngine(hooks, t.TempDir())
+	res, rerr := e.Restore(raw, RestoreOptions{Mode: ModeCommit})
+	if rerr != nil || res.Result != ResultOK {
+		t.Fatalf("restore failed: err=%v res=%+v", rerr, res)
+	}
+	verified := map[string]bool{}
+	for _, call := range hooks.Calls {
+		if strings.HasPrefix(call, "NetRecoveryDepVerify:") {
+			verified[strings.TrimPrefix(call, "NetRecoveryDepVerify:")] = true
+		}
+	}
+	for _, typ := range []string{cmn.RecoveryDepAPIKeyDB, cmn.RecoveryDepAuthDB} {
+		if !verified[typ] {
+			t.Errorf("required dependency %s was never verified", typ)
+		}
+	}
+	for _, typ := range []string{cmn.RecoveryDepEngineContracts, cmn.RecoveryDepKvModelProfiles, "quantum-ledger"} {
+		if verified[typ] {
+			t.Errorf("optional dependency %s was verified (informational entries must not gate)", typ)
+		}
+	}
+}
+
+func TestDryRunVerifiesDeps(t *testing.T) {
+	raw := capturedRaw(t)
+	hooks := newMockHooks()
+	hooks.depVerifyFail = map[string]error{
+		cmn.RecoveryDepAPIKeyDB: errors.New("no api-key store configured"),
+	}
+	e := newTestEngine(hooks, t.TempDir())
+
+	res, err := e.Restore(raw, RestoreOptions{Mode: ModeDryRun})
+	if err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+	if res.Result == ResultOK || len(res.Errors) == 0 {
+		t.Fatalf("dry-run did not preflight dependency verification: %+v", res)
+	}
+}
