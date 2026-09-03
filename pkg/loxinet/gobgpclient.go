@@ -949,6 +949,17 @@ func (gbh *GoBgpH) BGPNeighGet(address string, enableAdv bool) ([]cmn.GoBGPNeigh
 		tmpPeer.Addr = r.Peer.State.NeighborAddress
 		tmpPeer.RemoteAS = r.Peer.State.PeerAsn
 		tmpPeer.State = r.Peer.State.SessionState.String()
+		// Transport/multihop config, so get/re-add round-trips (snapshot
+		// restore) preserve them. BGPNeighMod always sets RemotePort (179
+		// when the caller passed 0), so report the default as 0/absent to
+		// keep "default" and "explicit 179" from drifting apart in
+		// re-encoded payloads.
+		if r.Peer.Transport != nil && r.Peer.Transport.RemotePort != 179 {
+			tmpPeer.RemotePort = uint16(r.Peer.Transport.RemotePort)
+		}
+		if r.Peer.EbgpMultihop != nil && r.Peer.EbgpMultihop.Enabled {
+			tmpPeer.MultiHop = true
+		}
 		timeStr := "never"
 		maxtimelen := len("Up/Down")
 		if r.Peer.Timers.State.Uptime != nil {

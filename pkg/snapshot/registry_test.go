@@ -360,19 +360,21 @@ func TestBGPGlobalConfigGapLeftNil(t *testing.T) {
 	}
 }
 
-// TestBGPNeighborConversionLossOfFidelity documents the discovered gap:
-// GoBGPNeighGetMod cannot carry RemotePort/MultiHop, so bgpNeighGetModToMod
-// necessarily zeroes them.
-func TestBGPNeighborConversionLossOfFidelity(t *testing.T) {
-	got := bgpNeighGetModToMod(cmn.GoBGPNeighGetMod{Addr: "10.0.0.5", RemoteAS: 65010})
+// TestBGPNeighborConversionFidelity: RemotePort and MultiHop round-trip
+// through the Get shape into the Add shape -- restored neighbors keep
+// their transport configuration. (This test previously PINNED the opposite:
+// the Get shape could not carry these fields and the conversion zeroed
+// them, silently reverting restored neighbors to defaults.)
+func TestBGPNeighborConversionFidelity(t *testing.T) {
+	got := bgpNeighGetModToMod(cmn.GoBGPNeighGetMod{Addr: "10.0.0.5", RemoteAS: 65010, RemotePort: 1790, MultiHop: true})
 	if got.Addr == nil || got.Addr.String() != "10.0.0.5" {
 		t.Fatalf("expected Addr to parse to 10.0.0.5, got %v", got.Addr)
 	}
 	if got.RemoteAS != 65010 {
 		t.Fatalf("expected RemoteAS 65010, got %d", got.RemoteAS)
 	}
-	if got.RemotePort != 0 || got.MultiHop != false {
-		t.Fatalf("expected RemotePort/MultiHop to be zero-valued (data not available from Get), got %+v", got)
+	if got.RemotePort != 1790 || !got.MultiHop {
+		t.Fatalf("expected RemotePort/MultiHop to round-trip (1790/true), got %+v", got)
 	}
 }
 

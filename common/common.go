@@ -1378,6 +1378,12 @@ type GoBGPNeighGetMod struct {
 	RemoteAS uint32 `json:"remoteAS"`
 	State    string `json:"state"`
 	Uptime   string `json:"uptime"`
+	// RemotePort/MultiHop mirror the Add-side GoBGPNeighMod fields so a
+	// neighbor's transport config survives a get/re-add round trip
+	// (snapshot restore). Additive + omitempty: absent in older payloads,
+	// zero values mean "defaults" (port 179, no multihop).
+	RemotePort uint16 `json:"remotePort,omitempty"`
+	MultiHop   bool   `json:"multiHop,omitempty"`
 }
 
 type GoBGPPolicyDefinedSetMod struct {

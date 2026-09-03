@@ -135,6 +135,17 @@ func legacyDumpToSnapshot(legacy *DumpFile) ([]byte, error) {
 		tk.LogIt(tk.LogWarning, "config/import: ignoring %d legacy cluster entrie(s): cluster state is not restorable via snapshots\n", len(legacy.Cluster))
 	}
 	doc := snapshot.NewDocument(cmn.Version, snapshotHostname(), snapshot.TriggerManual)
+	// The legacy dump format can only express these five domains, so the
+	// converted document declares exactly that coverage: importing it must
+	// not wipe domains (sessions, bgp, ipsec, ...) the legacy file could
+	// never have carried.
+	doc.IncludedDomains = []string{
+		snapshot.DomainEndpoint,
+		snapshot.DomainLoadBalancer,
+		snapshot.DomainFirewall,
+		snapshot.DomainPolicy,
+		snapshot.DomainMirror,
+	}
 	doc.Domains.Endpoint = legacy.Endpoint
 	doc.Domains.LoadBalancer = legacy.Lbrule
 	doc.Domains.Firewall = legacy.Firewall

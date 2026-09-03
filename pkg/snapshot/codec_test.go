@@ -37,6 +37,13 @@ func sampleDocument() *Document {
 			Serv: cmn.LbServiceArg{ServIP: "1.1.1.1", ServPort: 80, Proto: "tcp"},
 			Eps:  []cmn.LbEndPointArg{{EpIP: "10.0.0.1", EpPort: 8080}},
 		}},
+		KvExactBinding: []cmn.KvExactBindingMod{{
+			RuleIdent:         "rule-kv-1",
+			ModelProfileID:    "prof-qwen",
+			ModelProfileGen:   3,
+			EngineContractID:  "ec-vllm",
+			EngineContractGen: 2,
+		}},
 		Firewall:    []cmn.FwRuleMod{{Rule: cmn.FwRuleArg{SrcIP: "1.2.3.4/32", DstIP: "5.6.7.8/32"}}},
 		Policy:      []cmn.PolMod{{Ident: "pol1"}},
 		Mirror:      []cmn.MirrGetMod{{Ident: "mirr1"}},

@@ -179,10 +179,22 @@ var Registry = []DomainEntry{
 }
 
 // ApplyOrder returns the registry in apply order (table order, dependencies
-// first). It returns Registry itself (not a copy) -- callers must not
-// mutate the result.
+// first), as a fresh copy: a caller sorting/truncating/reordering the
+// returned slice cannot corrupt the package-global apply-order contract
+// every other caller depends on.
 func ApplyOrder() []DomainEntry {
-	return Registry
+	out := make([]DomainEntry, len(Registry))
+	copy(out, Registry)
+	return out
+}
+
+// DomainNames returns every registry domain name in apply order.
+func DomainNames() []string {
+	out := make([]string, len(Registry))
+	for i, e := range Registry {
+		out[i] = e.Name
+	}
+	return out
 }
 
 // DeleteOrder returns the registry in delete order: the exact reverse of
@@ -792,10 +804,23 @@ func deleteIPFilter(hooks Hooks) (int, error) {
 
 func getSecurityRate(hooks Hooks, doc *Document) error {
 	state, err := hooks.NetSecurityRateGet()
+	if isSubsystemUnavailable(err) {
+		doc.Domains.SecurityRate = nil
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("get securityrate: %w", err)
 	}
-	doc.Domains.SecurityRate = state
+	if state == nil {
+		doc.Domains.SecurityRate = nil
+		return nil
+	}
+	// Deep-copy and keep Config only: the hook may return a pointer into
+	// live state (a later live update must not silently rewrite an
+	// already-captured document), and Stats is runtime counters, not
+	// desired configuration -- persisting it made every idle persist churn
+	// the document checksum and leaked meaningless numbers into restores.
+	doc.Domains.SecurityRate = &cmn.SecurityRateState{Config: state.Config}
 	return nil
 }
 
@@ -890,20 +915,16 @@ func deleteBFD(hooks Hooks) (int, error) {
 var bgpDefinedSetTypes = []string{"prefix", "neigh", "community", "extCommunity", "largeCommunity", "asPath"}
 
 // bgpNeighGetModToMod converts the Get-shaped cmn.GoBGPNeighGetMod back into
-// the Add/Del-shaped cmn.GoBGPNeighMod.
-//
-// KNOWN GAP: GoBGPNeighGetMod (Addr string, RemoteAS, State, Uptime) does not
-// carry RemotePort or MultiHop, both of which GoBGPNeighMod needs for
-// Add/Del. Those two fields are therefore NOT round-trippable through the
-// existing Get hook -- this conversion fills them with their zero values
-// (RemotePort 0, MultiHop false), which may not match the original neighbor
-// config. This is a real, distinct restore-fidelity gap on top of the
-// documented TODO(G-7) BGP-global-config gap; flagged here for the G-2
-// restore-engine author and for testbed scenario 1 (populate/restore/diff).
+// the Add/Del-shaped cmn.GoBGPNeighMod. RemotePort and MultiHop round-trip
+// through the Get shape (additive fields; a zero RemotePort means "default"
+// and the Add path normalizes it to 179), so restored neighbors keep their
+// transport configuration instead of silently reverting to defaults.
 func bgpNeighGetModToMod(n cmn.GoBGPNeighGetMod) *cmn.GoBGPNeighMod {
 	return &cmn.GoBGPNeighMod{
-		Addr:     net.ParseIP(n.Addr),
-		RemoteAS: n.RemoteAS,
+		Addr:       net.ParseIP(n.Addr),
+		RemoteAS:   n.RemoteAS,
+		RemotePort: n.RemotePort,
+		MultiHop:   n.MultiHop,
 	}
 }
 

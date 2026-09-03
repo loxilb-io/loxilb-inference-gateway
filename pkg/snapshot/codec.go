@@ -33,10 +33,15 @@ const checksumPrefix = "sha256:"
 
 // canonicalize returns the canonical JSON encoding of doc used both for
 // checksumming and for the on-wire/on-disk representation. "Canonical" here
-// means deterministic: Document and everything it embeds is built from
-// structs and slices (no maps), so encoding/json already serializes fields
-// in a fixed, struct-declaration order -- this function exists as a single
-// choke point so that never changes by accident.
+// means deterministic: encoding/json serializes struct fields in
+// declaration order and sorts map keys, so a Document encodes byte-stably
+// regardless of what the embedded common types are built from. What
+// canonicalization can NOT do is decide which fields are desired state --
+// captured documents may carry runtime-valued fields inside the common
+// structs, which is why VERIFY-stage comparison goes through the
+// normalizing DomainDigest (digest.go) rather than raw document bytes.
+// This function exists as a single choke point so the encoding never
+// changes by accident.
 func canonicalize(doc *Document) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
