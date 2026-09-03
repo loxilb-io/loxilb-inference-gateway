@@ -214,7 +214,10 @@ var RouteLifecycles = []RouteLifecycle{
 	// --- Tracing/observability. The OTLP collector endpoint is product
 	// configuration (desired state, runtime-only today); trace toggles,
 	// catalog parsers and L4 trace sampling are diagnostics.
-	{Method: "post", Path: "/config/trace/otlp", Class: ClassRuntimeRebuilt, Area: AreaTracing, DesiredState: true},
+	// OTLP export product config: snapshot domain since schema 1.3
+	// (header values stay node-local; only names ride the document). The
+	// remaining trace routes are runtime toggles/diagnostics.
+	{Method: "post", Path: "/config/trace/otlp", Class: ClassSnapshot, Area: DomainTracing, DesiredState: true},
 	{Method: "post", Path: "/config/trace/enable", Class: ClassRuntimeRebuilt, Area: AreaTracing},
 	{Method: "post", Path: "/config/trace/disable", Class: ClassRuntimeRebuilt, Area: AreaTracing},
 	{Method: "put", Path: "/config/trace/catalog/{catalog_id}/parser", Class: ClassRuntimeRebuilt, Area: AreaTracing},
@@ -315,6 +318,7 @@ var snapshotDomainSet = map[string]bool{
 	DomainBGP:            true,
 	DomainIPsec:          true,
 	DomainCORS:           true,
+	DomainTracing:        true,
 }
 
 // ExcludedDomainsFromLifecycle derives the excluded_domains honesty list

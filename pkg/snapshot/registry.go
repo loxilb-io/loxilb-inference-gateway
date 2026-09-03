@@ -135,6 +135,14 @@ type Hooks interface {
 	NetCORSGet() (*cmn.CORSConfig, error)
 	NetCORSSet(*cmn.CORSConfig) (int, error)
 	NetCORSReset() (int, error)
+
+	// tracing (schema 1.3) -- singleton, Set semantics; nil = boot
+	// default only. Set re-joins auth header values from the node-local
+	// secret store (names ride the document, values never do); Reset
+	// returns to the boot default without shredding node-local secrets.
+	NetTracingGet() (*cmn.TracingConfig, error)
+	NetTracingSet(*cmn.TracingConfig) (int, error)
+	NetTracingReset() (int, error)
 }
 
 // DomainEntry describes one v1 snapshot domain: how to fetch its live
@@ -193,6 +201,7 @@ var Registry = []DomainEntry{
 	{Name: DomainBGP, Get: getBGP, Apply: applyBGP, Delete: deleteBGP},
 	{Name: DomainIPsec, Get: getIPsec, Apply: applyIPsec, Delete: deleteIPsec},
 	{Name: DomainCORS, Get: getCORS, Apply: applyCORS, Delete: deleteCORS},
+	{Name: DomainTracing, Get: getTracing, Apply: applyTracing, Delete: deleteTracing},
 }
 
 // ApplyOrder returns the registry in apply order (table order, dependencies
@@ -1409,6 +1418,44 @@ func applyCORS(hooks Hooks, doc *Document, _ bool) (int, int, error) {
 func deleteCORS(hooks Hooks) (int, error) {
 	if _, err := hooks.NetCORSReset(); err != nil {
 		return 0, fmt.Errorf("delete cors: %w", err)
+	}
+	return 1, nil
+}
+
+// ---------------------------------------------------------------------
+// 14. tracing -- singleton, Set semantics (schema 1.3)
+//
+// OTLP trace-export product configuration. Secret split: the document
+// carries endpoint/protocol/TLS + auth header NAMES; header VALUES live
+// in a node-local secret store the Set hook re-joins from (warning loudly
+// about names it cannot resolve). The boot default (compiled + env) is
+// node-local config, not desired state: capture exports nil for it, and
+// the wipe resets back to it without touching node-local secrets.
+// ---------------------------------------------------------------------
+
+func getTracing(hooks Hooks, doc *Document) error {
+	cfg, err := hooks.NetTracingGet()
+	if err != nil {
+		return fmt.Errorf("get tracing: %w", err)
+	}
+	doc.Domains.Tracing = cfg
+	return nil
+}
+
+func applyTracing(hooks Hooks, doc *Document, _ bool) (int, int, error) {
+	// Singleton with Set (overwrite) semantics: no "exists" to tolerate.
+	if doc.Domains.Tracing == nil {
+		return 0, 0, nil
+	}
+	if _, err := hooks.NetTracingSet(doc.Domains.Tracing); err != nil {
+		return 0, 0, fmt.Errorf("apply tracing: %w", err)
+	}
+	return 1, 0, nil
+}
+
+func deleteTracing(hooks Hooks) (int, error) {
+	if _, err := hooks.NetTracingReset(); err != nil {
+		return 0, fmt.Errorf("delete tracing: %w", err)
 	}
 	return 1, nil
 }

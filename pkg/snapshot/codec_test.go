@@ -89,6 +89,12 @@ func sampleDocument() *Document {
 			}},
 		},
 		CORS: &cmn.CORSConfig{Origins: []string{"https://ops.example.com", "https://ui.example.com"}},
+		Tracing: &cmn.TracingConfig{
+			Endpoint:    "collector.example.com:4317",
+			Protocol:    "grpc",
+			UseTLS:      true,
+			HeaderNames: []string{"x-otlp-api-key"},
+		},
 	}
 	return doc
 }

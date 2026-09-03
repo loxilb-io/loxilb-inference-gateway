@@ -59,7 +59,8 @@ type mockHooks struct {
 	bgpPolicyDefs []cmn.GoBGPPolicyDefinitionsMod
 	bgpGC         *cmn.GoBGPGlobalConfig
 
-	corsCfg *cmn.CORSConfig
+	corsCfg    *cmn.CORSConfig
+	tracingCfg *cmn.TracingConfig
 
 	ipsecConfig  *cmn.IPsecConfig
 	ipsecTunnels []*cmn.IPsecTunnel
@@ -388,6 +389,48 @@ func (m *mockHooks) NetCORSReset() (int, error) {
 		return -1, err
 	}
 	m.corsCfg = nil
+	return 0, nil
+}
+
+// --- tracing ---
+//
+// Singleton mirroring the real store's export/set/reset semantics: nil =
+// boot default only; Set overwrites and makes it explicit; Reset returns
+// to nil. (The real Set also re-joins header values from the node-local
+// secret store -- value handling never crosses the Hooks surface, so the
+// mock has nothing to model there.)
+
+func (m *mockHooks) NetTracingGet() (*cmn.TracingConfig, error) {
+	m.log("NetTracingGet")
+	if err := m.failIfConfigured("NetTracingGet"); err != nil {
+		return nil, err
+	}
+	if m.tracingCfg == nil {
+		return nil, nil
+	}
+	cp := *m.tracingCfg
+	cp.HeaderNames = append([]string(nil), m.tracingCfg.HeaderNames...)
+	return &cp, nil
+}
+func (m *mockHooks) NetTracingSet(cfg *cmn.TracingConfig) (int, error) {
+	m.log("NetTracingSet")
+	if err := m.failIfConfigured("NetTracingSet"); err != nil {
+		return -1, err
+	}
+	if cfg == nil {
+		return -1, errors.New("tracing: nil config (use reset for the boot default)")
+	}
+	cp := *cfg
+	cp.HeaderNames = append([]string(nil), cfg.HeaderNames...)
+	m.tracingCfg = &cp
+	return 0, nil
+}
+func (m *mockHooks) NetTracingReset() (int, error) {
+	m.log("NetTracingReset")
+	if err := m.failIfConfigured("NetTracingReset"); err != nil {
+		return -1, err
+	}
+	m.tracingCfg = nil
 	return 0, nil
 }
 

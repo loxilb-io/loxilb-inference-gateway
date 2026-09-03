@@ -272,6 +272,12 @@ func domainItemJSONs(name string, d *Domains) ([]string, error) {
 			return nil, nil
 		}
 		return itemJSONs([]cmn.CORSConfig{*d.CORS})
+	case DomainTracing:
+		// Same nil-vs-configured distinction as cors.
+		if d.Tracing == nil {
+			return nil, nil
+		}
+		return itemJSONs([]cmn.TracingConfig{*d.Tracing})
 	case DomainBFD:
 		return itemJSONs(d.BFD)
 	case DomainBGP:

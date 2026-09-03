@@ -49,14 +49,17 @@ import (
 // always had).
 //
 // 1.3: added the l7policy domain (dedicated L7_POLICY resources: content
-// routes attached to an LB by stable id) and the cors domain (explicit
-// origin allowlist + wildcard opt-in; the unconfigured factory default is
-// not configuration and is captured as absent). Additive like 1.1's
-// kvexactbinding: older documents simply carry neither, and their
-// included_domains never lists these domains, so restoring them leaves
-// the live state untouched (the 1.2->1.3 migration deliberately does NOT
-// widen coverage). Builds that predate the domains refuse 1.3 documents
-// via the minor-version gate rather than silently dropping fields.
+// routes attached to an LB by stable id), the cors domain (explicit
+// origin allowlist + wildcard opt-in) and the tracing domain (OTLP
+// export product config; auth header NAMES only -- values stay in a
+// node-local secret store). For the singletons, the unconfigured
+// boot/factory default is not configuration and is captured as absent.
+// Additive like 1.1's kvexactbinding: older documents simply carry none
+// of these, and their included_domains never lists them, so restoring
+// them leaves the live state untouched (the 1.2->1.3 migration
+// deliberately does NOT widen coverage). Builds that predate the domains
+// refuse 1.3 documents via the minor-version gate rather than silently
+// dropping fields.
 const SchemaVersion = "1.3"
 
 // DocKind identifies the document type, matching §4's "kind" field.
@@ -95,6 +98,7 @@ const (
 	DomainBGP            = "bgp"
 	DomainIPsec          = "ipsec"
 	DomainCORS           = "cors"
+	DomainTracing        = "tracing"
 )
 
 // DefaultExcludedDomains lists the configuration areas deliberately never
@@ -180,6 +184,13 @@ type Domains struct {
 	// captured, so restoring an unconfigured capture leaves the target at
 	// its own factory default. Added in schema 1.3.
 	CORS *cmn.CORSConfig `json:"cors,omitempty"`
+	// Tracing is the explicit OTLP trace-export product configuration
+	// (singleton, Set semantics on apply): endpoint, protocol, TLS
+	// posture and auth header NAMES -- header values are secret material
+	// and live only in a node-local store, never in this document. nil
+	// means "boot default only" (not configuration, not captured). Added
+	// in schema 1.3.
+	Tracing *cmn.TracingConfig `json:"tracing,omitempty"`
 }
 
 // Document is the canonical, versioned snapshot document (§4). It is the

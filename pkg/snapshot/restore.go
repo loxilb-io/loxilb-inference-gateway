@@ -512,6 +512,11 @@ func countDomain(name string, d *Domains) int {
 			return 1
 		}
 		return 0
+	case DomainTracing:
+		if d.Tracing != nil {
+			return 1
+		}
+		return 0
 	case DomainIPsec:
 		// The Config singleton is deliberately NOT counted: it cannot be
 		// wiped (deleteIPsec's documented no-op) and it materializes on its

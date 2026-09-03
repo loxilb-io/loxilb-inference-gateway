@@ -1900,6 +1900,22 @@ type NetHookInterface interface {
 	// NetCORSReset discards any explicit CORS configuration, returning to
 	// the unconfigured factory default (the snapshot wipe path).
 	NetCORSReset() (int, error)
+	// NetTracingGet returns the explicit OTLP trace-export configuration
+	// (header names only, never values), or nil while only the
+	// compiled/environment default is in effect.
+	NetTracingGet() (*TracingConfig, error)
+	// NetTracingSet replaces the OTLP trace-export configuration
+	// (overwrite/Set semantics -- the snapshot restore path). Header
+	// values are re-joined from the node-local secret store; unresolvable
+	// names are warned about loudly, never silently dropped from the
+	// desired state.
+	NetTracingSet(*TracingConfig) (int, error)
+	// NetTracingReset returns the OTLP configuration to the node's boot
+	// default (the snapshot wipe path). Node-local header secrets are
+	// deliberately NOT shredded -- they are node material, like
+	// certificate keys on disk, and the apply that follows a wipe must
+	// still be able to re-join them.
+	NetTracingReset() (int, error)
 	NetCtInfoGet() ([]CtInfo, error)
 	NetSessionGet() ([]SessionMod, error)
 	NetSessionUlClGet() ([]SessionUlClMod, error)
