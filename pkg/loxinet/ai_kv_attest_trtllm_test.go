@@ -525,7 +525,19 @@ func TestKvTrtllmCommittedChatFixturesParity(t *testing.T) {
 // TokenParityProbe, so the banked ids were live-verified against the
 // engine's messages-form defaults before banking (P9d six-leg record).
 func TestKvSharedRootCommittedChatFixturesParity(t *testing.T) {
-	kvCommittedChatFixturesParity(t, "Qwen__Qwen3-0.6B", "qwen3-06b-completions-v1", "", "Qwen/Qwen3-0.6B")
+	for _, tc := range []struct {
+		slug, profileDir, servedModel string
+	}{
+		{"Qwen__Qwen3-0.6B", "qwen3-06b-completions-v1", "Qwen/Qwen3-0.6B"},
+		{"NousResearch__Meta-Llama-3.1-8B-Instruct", "llama31-8b-completions-v1",
+			"NousResearch/Meta-Llama-3.1-8B-Instruct"},
+		{"LGAI-EXAONE__EXAONE-3.5-7.8B-Instruct", "exaone35-78b-completions-v1",
+			"LGAI-EXAONE/EXAONE-3.5-7.8B-Instruct"},
+	} {
+		t.Run(tc.slug, func(t *testing.T) {
+			kvCommittedChatFixturesParity(t, tc.slug, tc.profileDir, "", tc.servedModel)
+		})
+	}
 }
 
 func kvCommittedChatFixturesParity(t *testing.T, slug, profileDir, fixtureSub, servedModel string) {
