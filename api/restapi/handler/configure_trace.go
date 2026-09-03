@@ -484,12 +484,19 @@ func ConfigGetOtlpEndpoint(params tracing.GetConfigTraceOtlpParams, principal in
 	config := otlpConfig
 	otlpMutex.RUnlock()
 
-	// Security: Redact sensitive header values before returning
+	// Security: Redact sensitive header values before returning. A name
+	// with an EMPTY stored value means the document declared it but this
+	// node holds no secret for it (cross-node restore) -- surface that
+	// distinctly so the operator knows to re-provision.
 	redactedConfig := config
 	if len(config.Headers) > 0 {
 		redactedConfig.Headers = make(map[string]string)
-		for name := range config.Headers {
-			redactedConfig.Headers[name] = "***REDACTED***"
+		for name, v := range config.Headers {
+			if v == "" {
+				redactedConfig.Headers[name] = "***MISSING-REPROVISION***"
+			} else {
+				redactedConfig.Headers[name] = "***REDACTED***"
+			}
 		}
 	}
 
@@ -617,6 +624,13 @@ func OtlpApplyConfig(cfg *cmn.TracingConfig) error {
 		if v, ok := stored[name]; ok {
 			headers[name] = v
 		} else {
+			// The NAME is desired state and must stay visible (capture,
+			// VERIFY, GET) even when this node holds no value for it --
+			// dropping it would make the post-apply state diverge from the
+			// document and roll back the whole boot replay. The empty value
+			// marks "re-provision here": the exporter skips it, GET reports
+			// it as missing.
+			headers[name] = ""
 			missing = append(missing, name)
 		}
 	}

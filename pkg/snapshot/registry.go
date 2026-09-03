@@ -1509,6 +1509,34 @@ func applyCert(hooks Hooks, doc *Document, tolerateExists bool) (int, int, error
 		}
 		n++
 	}
+	// Boot replay (tolerateExists) runs WITHOUT the pre-apply wipe, against
+	// a store the boot cert reconcile has already re-populated from
+	// node-local managed material. Desired state wins: any registration the
+	// document does not declare is pruned (registration only -- the managed
+	// material stays on disk, exactly like a wipe). Without this, a node
+	// holding material for a cert the document dropped fails VERIFY and the
+	// WHOLE boot replay rolls back to empty.
+	if tolerateExists {
+		declared := make(map[string]bool, len(doc.Domains.Cert))
+		for i := range doc.Domains.Cert {
+			declared[doc.Domains.Cert[i].CertId] = true
+		}
+		live, err := hooks.NetCertGet()
+		if isSubsystemUnavailable(err) {
+			return n, skipped, nil
+		}
+		if err != nil {
+			return n, skipped, fmt.Errorf("apply cert: reconcile get: %w", err)
+		}
+		for i := range live {
+			if declared[live[i].CertId] {
+				continue
+			}
+			if _, err := hooks.NetCertDel(live[i].CertId); err != nil {
+				return n, skipped, fmt.Errorf("apply cert: prune undeclared %q: %w", live[i].CertId, err)
+			}
+		}
+	}
 	return n, skipped, nil
 }
 

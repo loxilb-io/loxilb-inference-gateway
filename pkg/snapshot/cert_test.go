@@ -92,6 +92,56 @@ func TestCertApplyIdempotencyAndDivergence(t *testing.T) {
 	}
 }
 
+// TestCertBootApplyPrunesUndeclared: the boot cert reconcile re-registers
+// every managed on-disk certificate BEFORE the boot replay, and the boot
+// replay skips the pre-apply wipe. A certificate the document does not
+// declare must therefore be pruned during the boot apply -- otherwise
+// VERIFY counts the reconciled extra, fails, and the WHOLE boot replay is
+// rolled back to empty (found live by the cfg-persist-roundtrip red twin:
+// a document whose cert domain was empty poisoned every other domain).
+func TestCertBootApplyPrunesUndeclared(t *testing.T) {
+	// Reconciled-but-undeclared cert + empty document (boot): prune to 0.
+	hooks := newMockHooks()
+	hooks.certMetas = []cmn.CertMeta{certTestMeta("reconciled", "aa")}
+	doc := NewDocument("v0.9.9", "gw-test", TriggerManual)
+	if _, _, err := applyCert(hooks, doc, true); err != nil {
+		t.Fatalf("boot apply with empty cert domain: %v", err)
+	}
+	if got, _ := hooks.NetCertGet(); len(got) != 0 {
+		t.Fatalf("undeclared cert survived the boot apply: %+v (VERIFY would fail and roll back the whole boot)", got)
+	}
+
+	// Declared cert stays (idempotent skip), undeclared sibling is pruned.
+	hooks = newMockHooks()
+	hooks.certMetas = []cmn.CertMeta{
+		certTestMeta("edge-a", "aa"), certTestMeta("stale-b", "bb"),
+	}
+	doc = NewDocument("v0.9.9", "gw-test", TriggerManual)
+	doc.Domains.Cert = []cmn.CertMeta{certTestMeta("edge-a", "aa")}
+	applied, skipped, err := applyCert(hooks, doc, true)
+	if err != nil || applied != 0 || skipped != 1 {
+		t.Fatalf("boot apply = (%d,%d,%v), want (0,1,nil)", applied, skipped, err)
+	}
+	got, _ := hooks.NetCertGet()
+	if len(got) != 1 || got[0].CertId != "edge-a" {
+		t.Fatalf("boot apply left %+v, want only the declared edge-a", got)
+	}
+
+	// NON-boot apply must NOT prune: the engine's pre-apply wipe owns
+	// reconciliation there, and pruning here would double up.
+	hooks = newMockHooks()
+	hooks.certMetas = []cmn.CertMeta{certTestMeta("stale-b", "bb")}
+	doc = NewDocument("v0.9.9", "gw-test", TriggerManual)
+	doc.Domains.Cert = []cmn.CertMeta{certTestMeta("edge-a", "aa")}
+	if _, _, err := applyCert(hooks, doc, false); err != nil {
+		t.Fatalf("non-boot apply: %v", err)
+	}
+	got, _ = hooks.NetCertGet()
+	if len(got) != 2 {
+		t.Fatalf("non-boot apply pruned (%+v) -- reconciliation there belongs to the wipe", got)
+	}
+}
+
 // TestCertCaptureSubsystemUnavailable: BGP-only nodes run no sockproxy;
 // capture treats the domain as empty instead of failing the snapshot.
 func TestCertCaptureSubsystemUnavailable(t *testing.T) {
