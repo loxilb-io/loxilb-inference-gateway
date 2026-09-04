@@ -49,6 +49,7 @@ import (
 	"io"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -130,8 +131,6 @@ type kvProfileGeneration struct {
 var (
 	// kvProfileReg is the currently published generation (nil = empty).
 	kvProfileReg atomic.Pointer[kvProfileGeneration]
-	// kvProfileRegGen allocates generation numbers (monotonic per process).
-	kvProfileRegGen atomic.Uint64
 	// kvProfileLoadMu serializes publish/retire; lookups are lock-free.
 	kvProfileLoadMu sync.Mutex
 )
@@ -158,7 +157,7 @@ func KvProfileRegistryLoadFrom(root string) error {
 	if err != nil {
 		return err
 	}
-	gen.Gen = kvProfileRegGen.Add(1)
+	gen.Gen = kvProfileGenFromDigest(gen.SetDigest)
 	for _, e := range gen.Profiles {
 		e.Gen = gen.Gen
 	}
@@ -514,6 +513,27 @@ func kvCheckTrustedOwner(uid uint32, path string) error {
 		return fmt.Errorf("kv-profile: %s owned by uid %d (want root or the gateway uid)", path, uid)
 	}
 	return nil
+}
+
+// kvProfileGenFromDigest derives the published generation number from the
+// set digest: stable across process restarts and different exactly when the
+// published content differs. The registry loads only at boot (there is no
+// runtime reload path), so a per-process counter could never advance within
+// one gateway lifetime and would reset to 1 across restarts — a value
+// shaped like a cache key that never invalidates. The first 13 hex digits
+// (52 bits) keep the value lossless for IEEE-754 consumers; 0 is reserved
+// for "no registry published", so a zero derivation maps to 1.
+func kvProfileGenFromDigest(digest string) uint64 {
+	var v uint64
+	if len(digest) >= 13 {
+		if p, err := strconv.ParseUint(digest[:13], 16, 64); err == nil {
+			v = p
+		}
+	}
+	if v == 0 {
+		v = 1
+	}
+	return v
 }
 
 // kvProfileSetDigest computes the generation's set digest: profile IDs in

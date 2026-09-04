@@ -276,6 +276,19 @@ func kvSvcContractSnapshot(svcID uint32) (kvSvcContract, bool) {
 	return *c, true
 }
 
+// Fault codes carried by the enforcement.fault status field. Published as
+// the x-kv-status-fault-codes vocabulary in api/swagger.yml; the vocabulary
+// sync test transcribes these constants, so every fault written through
+// kvSvcContractOutcome must be one of them — an inline literal is invisible
+// to the sync gate.
+const (
+	KvContractFaultNoSetter            = "no_dataplane_setter"
+	KvContractFaultBindingStateMissing = "binding_state_missing"
+	KvContractFaultSetterFailed        = "dataplane_setter_failed"
+	KvContractFaultAckMismatch         = "dataplane_ack_mismatch"
+	KvContractFaultBindingChanged      = "binding_changed_during_install"
+)
+
 func kvSvcContractOutcome(svcID uint32, denied bool, fault string) {
 	kvSvcMu.Lock()
 	if c := kvSvcContracts[svcID]; c != nil {
@@ -304,7 +317,7 @@ func kvSvcContractOutcome(svcID uint32, denied bool, fault string) {
 func kvDataplaneContractApply(svcID uint32, setter kvContractSetter,
 	attempts int, backoff time.Duration, eligible uint8) error {
 	if setter == nil {
-		kvSvcContractOutcome(svcID, true, "no_dataplane_setter")
+		kvSvcContractOutcome(svcID, true, KvContractFaultNoSetter)
 		return fmt.Errorf("kv-contract: svc %d: no data-plane setter registered", svcID)
 	}
 	if attempts < 1 {
@@ -324,7 +337,7 @@ func kvDataplaneContractApply(svcID uint32, setter kvContractSetter,
 		b, ok := KvBindingCurrent(snap.ruleIdent)
 		if !ok {
 			lastErr = fmt.Errorf("kv-contract: svc %d rule %s: binding state missing", svcID, snap.ruleIdent)
-			kvSvcContractOutcome(svcID, true, "binding_state_missing")
+			kvSvcContractOutcome(svcID, true, KvContractFaultBindingStateMissing)
 			continue
 		}
 		want := KvContractPack(b.BindingGen, 0, snap.apiMode, eligible)
@@ -332,13 +345,13 @@ func kvDataplaneContractApply(svcID uint32, setter kvContractSetter,
 			b.BindingGen, snap.apiMode, eligible)
 		if !ok {
 			lastErr = fmt.Errorf("kv-contract: svc %d rule %s: setter failed", svcID, snap.ruleIdent)
-			kvSvcContractOutcome(svcID, true, "dataplane_setter_failed")
+			kvSvcContractOutcome(svcID, true, KvContractFaultSetterFailed)
 			continue
 		}
 		if applied != want {
 			lastErr = fmt.Errorf("kv-contract: svc %d rule %s: readback 0x%x != requested 0x%x",
 				svcID, snap.ruleIdent, applied, want)
-			kvSvcContractOutcome(svcID, true, "dataplane_ack_mismatch")
+			kvSvcContractOutcome(svcID, true, KvContractFaultAckMismatch)
 			continue
 		}
 		// Digest half of the ACK: the generation we just installed must
@@ -350,7 +363,7 @@ func kvDataplaneContractApply(svcID uint32, setter kvContractSetter,
 			!KvBindingVerify(snap.ruleIdent, b.BindingGen, b.Digest) {
 			lastErr = fmt.Errorf("kv-contract: svc %d rule %s: binding changed during install (gen %d)",
 				svcID, snap.ruleIdent, b.BindingGen)
-			kvSvcContractOutcome(svcID, true, "binding_changed_during_install")
+			kvSvcContractOutcome(svcID, true, KvContractFaultBindingChanged)
 			continue
 		}
 		kvSvcContractOutcome(svcID, false, "")

@@ -27,7 +27,7 @@ type KvExactEnforcement struct {
 	// Required: true
 	Enforced *string `json:"enforced"`
 
-	// Last enforcement fault reason (absent when none).
+	// Last enforcement fault code (x-kv-status-fault-codes vocabulary; absent when none). Same forward-compatibility rule as reasonCodes - an unrecognized value MUST be rendered raw and MUST NOT be treated as fatal.
 	Fault string `json:"fault,omitempty"`
 
 	// Whether the authoritative tokenize-bridge deny-set fence currently denies the rule (fail-closed backstop - denied rules produce no tokens, so no hashes, regardless of C-side state). Always serialized - a lifted fence (false) must stay distinguishable from an unreported one.

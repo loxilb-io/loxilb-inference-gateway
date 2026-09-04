@@ -41,6 +41,7 @@ import (
 // constant-name prefixes that carry vocabulary values.
 var kvStatusStatePrefixes = []string{"KvExactState"}
 var kvStatusReasonPrefixes = []string{"KvAttestReason", "KvTrtllmFault"}
+var kvStatusFaultPrefixes = []string{"KvContractFault"}
 
 // collectVocabularyConstants AST-scans every non-test Go file of this package
 // and returns the string values of constants whose names carry one of the
@@ -101,7 +102,7 @@ func collectVocabularyConstants(t *testing.T, prefixes []string) map[string]stri
 
 // publishedVocabulary reads the x-kv-status-* extension blocks off the
 // KvExactStatusEntry definition in api/swagger.yml.
-func publishedVocabulary(t *testing.T) (version int, states, reasons map[string]bool) {
+func publishedVocabulary(t *testing.T) (version int, states, reasons, faults map[string]bool) {
 	t.Helper()
 	raw, err := os.ReadFile("../../api/swagger.yml")
 	if err != nil {
@@ -112,6 +113,7 @@ func publishedVocabulary(t *testing.T) (version int, states, reasons map[string]
 			VocabularyVersion int                    `yaml:"x-kv-status-vocabulary-version"`
 			States            map[string]interface{} `yaml:"x-kv-status-states"`
 			Reasons           map[string]interface{} `yaml:"x-kv-status-reason-codes"`
+			Faults            map[string]interface{} `yaml:"x-kv-status-fault-codes"`
 		} `yaml:"definitions"`
 	}
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
@@ -121,14 +123,17 @@ func publishedVocabulary(t *testing.T) (version int, states, reasons map[string]
 	if !ok {
 		t.Fatal("KvExactStatusEntry definition missing from swagger")
 	}
-	states, reasons = map[string]bool{}, map[string]bool{}
+	states, reasons, faults = map[string]bool{}, map[string]bool{}, map[string]bool{}
 	for k := range entry.States {
 		states[k] = true
 	}
 	for k := range entry.Reasons {
 		reasons[k] = true
 	}
-	return entry.VocabularyVersion, states, reasons
+	for k := range entry.Faults {
+		faults[k] = true
+	}
+	return entry.VocabularyVersion, states, reasons, faults
 }
 
 func diffVocabulary(t *testing.T, kind string, code map[string]string, published map[string]bool) {
@@ -148,13 +153,14 @@ func diffVocabulary(t *testing.T, kind string, code map[string]string, published
 // TestKvStatusVocabularySync: bidirectional code-constants ↔ published
 // vocabulary equality for both states and reasons, plus a sane version.
 func TestKvStatusVocabularySync(t *testing.T) {
-	version, states, reasons := publishedVocabulary(t)
-	if version < 1 {
-		t.Fatalf("x-kv-status-vocabulary-version = %d, want >= 1", version)
+	version, states, reasons, faults := publishedVocabulary(t)
+	if version < 2 {
+		t.Fatalf("x-kv-status-vocabulary-version = %d, want >= 2 (fault codes published at 2)", version)
 	}
-	if len(states) == 0 || len(reasons) == 0 {
-		t.Fatalf("published vocabulary empty (states=%d reasons=%d) — extension blocks missing", len(states), len(reasons))
+	if len(states) == 0 || len(reasons) == 0 || len(faults) == 0 {
+		t.Fatalf("published vocabulary empty (states=%d reasons=%d faults=%d) — extension blocks missing", len(states), len(reasons), len(faults))
 	}
 	diffVocabulary(t, "state", collectVocabularyConstants(t, kvStatusStatePrefixes), states)
 	diffVocabulary(t, "reason code", collectVocabularyConstants(t, kvStatusReasonPrefixes), reasons)
+	diffVocabulary(t, "fault code", collectVocabularyConstants(t, kvStatusFaultPrefixes), faults)
 }
