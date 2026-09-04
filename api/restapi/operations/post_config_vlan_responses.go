@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// PostConfigVlanNoContentCode is the HTTP code returned for type PostConfigVlanNoContent
-const PostConfigVlanNoContentCode int = 204
+// PostConfigVlanOKCode is the HTTP code returned for type PostConfigVlanOK
+const PostConfigVlanOKCode int = 200
 
 /*
-PostConfigVlanNoContent OK
+PostConfigVlanOK OK
 
-swagger:response postConfigVlanNoContent
+swagger:response postConfigVlanOK
 */
-type PostConfigVlanNoContent struct {
+type PostConfigVlanOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewPostConfigVlanNoContent creates PostConfigVlanNoContent with default headers values
-func NewPostConfigVlanNoContent() *PostConfigVlanNoContent {
+// NewPostConfigVlanOK creates PostConfigVlanOK with default headers values
+func NewPostConfigVlanOK() *PostConfigVlanOK {
 
-	return &PostConfigVlanNoContent{}
+	return &PostConfigVlanOK{}
+}
+
+// WithPayload adds the payload to the post config vlan o k response
+func (o *PostConfigVlanOK) WithPayload(payload *models.OperationResult) *PostConfigVlanOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config vlan o k response
+func (o *PostConfigVlanOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *PostConfigVlanNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *PostConfigVlanOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // PostConfigVlanBadRequestCode is the HTTP code returned for type PostConfigVlanBadRequest

@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// DeleteConfigBgpPolicyDefinedsetsDefinesetTypeTypeNameNoContentCode is the HTTP code returned for type DeleteConfigBgpPolicyDefinedsetsDefinesetTypeTypeNameNoContent
-const DeleteConfigBgpPolicyDefinedsetsDefinesetTypeTypeNameNoContentCode int = 204
+// DeleteConfigBgpPolicyDefinedsetsDefinesetTypeTypeNameOKCode is the HTTP code returned for type DeleteConfigBgpPolicyDefinedsetsDefinesetTypeTypeNameOK
+const DeleteConfigBgpPolicyDefinedsetsDefinesetTypeTypeNameOKCode int = 200
 
 /*
-DeleteConfigBgpPolicyDefinedsetsDefinesetTypeTypeNameNoContent OK
+DeleteConfigBgpPolicyDefinedsetsDefinesetTypeTypeNameOK OK
 
-swagger:response deleteConfigBgpPolicyDefinedsetsDefinesetTypeTypeNameNoContent
+swagger:response deleteConfigBgpPolicyDefinedsetsDefinesetTypeTypeNameOK
 */
-type DeleteConfigBgpPolicyDefinedsetsDefinesetTypeTypeNameNoContent struct {
+type DeleteConfigBgpPolicyDefinedsetsDefinesetTypeTypeNameOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewDeleteConfigBgpPolicyDefinedsetsDefinesetTypeTypeNameNoContent creates DeleteConfigBgpPolicyDefinedsetsDefinesetTypeTypeNameNoContent with default headers values
-func NewDeleteConfigBgpPolicyDefinedsetsDefinesetTypeTypeNameNoContent() *DeleteConfigBgpPolicyDefinedsetsDefinesetTypeTypeNameNoContent {
+// NewDeleteConfigBgpPolicyDefinedsetsDefinesetTypeTypeNameOK creates DeleteConfigBgpPolicyDefinedsetsDefinesetTypeTypeNameOK with default headers values
+func NewDeleteConfigBgpPolicyDefinedsetsDefinesetTypeTypeNameOK() *DeleteConfigBgpPolicyDefinedsetsDefinesetTypeTypeNameOK {
 
-	return &DeleteConfigBgpPolicyDefinedsetsDefinesetTypeTypeNameNoContent{}
+	return &DeleteConfigBgpPolicyDefinedsetsDefinesetTypeTypeNameOK{}
+}
+
+// WithPayload adds the payload to the delete config bgp policy definedsets defineset type type name o k response
+func (o *DeleteConfigBgpPolicyDefinedsetsDefinesetTypeTypeNameOK) WithPayload(payload *models.OperationResult) *DeleteConfigBgpPolicyDefinedsetsDefinesetTypeTypeNameOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config bgp policy definedsets defineset type type name o k response
+func (o *DeleteConfigBgpPolicyDefinedsetsDefinesetTypeTypeNameOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *DeleteConfigBgpPolicyDefinedsetsDefinesetTypeTypeNameNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *DeleteConfigBgpPolicyDefinedsetsDefinesetTypeTypeNameOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // DeleteConfigBgpPolicyDefinedsetsDefinesetTypeTypeNameBadRequestCode is the HTTP code returned for type DeleteConfigBgpPolicyDefinedsetsDefinesetTypeTypeNameBadRequest

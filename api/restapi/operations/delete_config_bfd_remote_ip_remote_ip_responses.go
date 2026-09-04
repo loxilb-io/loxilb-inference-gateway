@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// DeleteConfigBfdRemoteIPRemoteIPNoContentCode is the HTTP code returned for type DeleteConfigBfdRemoteIPRemoteIPNoContent
-const DeleteConfigBfdRemoteIPRemoteIPNoContentCode int = 204
+// DeleteConfigBfdRemoteIPRemoteIPOKCode is the HTTP code returned for type DeleteConfigBfdRemoteIPRemoteIPOK
+const DeleteConfigBfdRemoteIPRemoteIPOKCode int = 200
 
 /*
-DeleteConfigBfdRemoteIPRemoteIPNoContent OK
+DeleteConfigBfdRemoteIPRemoteIPOK OK
 
-swagger:response deleteConfigBfdRemoteIpRemoteIpNoContent
+swagger:response deleteConfigBfdRemoteIpRemoteIpOK
 */
-type DeleteConfigBfdRemoteIPRemoteIPNoContent struct {
+type DeleteConfigBfdRemoteIPRemoteIPOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewDeleteConfigBfdRemoteIPRemoteIPNoContent creates DeleteConfigBfdRemoteIPRemoteIPNoContent with default headers values
-func NewDeleteConfigBfdRemoteIPRemoteIPNoContent() *DeleteConfigBfdRemoteIPRemoteIPNoContent {
+// NewDeleteConfigBfdRemoteIPRemoteIPOK creates DeleteConfigBfdRemoteIPRemoteIPOK with default headers values
+func NewDeleteConfigBfdRemoteIPRemoteIPOK() *DeleteConfigBfdRemoteIPRemoteIPOK {
 
-	return &DeleteConfigBfdRemoteIPRemoteIPNoContent{}
+	return &DeleteConfigBfdRemoteIPRemoteIPOK{}
+}
+
+// WithPayload adds the payload to the delete config bfd remote Ip remote Ip o k response
+func (o *DeleteConfigBfdRemoteIPRemoteIPOK) WithPayload(payload *models.OperationResult) *DeleteConfigBfdRemoteIPRemoteIPOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config bfd remote Ip remote Ip o k response
+func (o *DeleteConfigBfdRemoteIPRemoteIPOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *DeleteConfigBfdRemoteIPRemoteIPNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *DeleteConfigBfdRemoteIPRemoteIPOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // DeleteConfigBfdRemoteIPRemoteIPBadRequestCode is the HTTP code returned for type DeleteConfigBfdRemoteIPRemoteIPBadRequest

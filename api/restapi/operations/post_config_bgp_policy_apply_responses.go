@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// PostConfigBgpPolicyApplyNoContentCode is the HTTP code returned for type PostConfigBgpPolicyApplyNoContent
-const PostConfigBgpPolicyApplyNoContentCode int = 204
+// PostConfigBgpPolicyApplyOKCode is the HTTP code returned for type PostConfigBgpPolicyApplyOK
+const PostConfigBgpPolicyApplyOKCode int = 200
 
 /*
-PostConfigBgpPolicyApplyNoContent OK
+PostConfigBgpPolicyApplyOK OK
 
-swagger:response postConfigBgpPolicyApplyNoContent
+swagger:response postConfigBgpPolicyApplyOK
 */
-type PostConfigBgpPolicyApplyNoContent struct {
+type PostConfigBgpPolicyApplyOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewPostConfigBgpPolicyApplyNoContent creates PostConfigBgpPolicyApplyNoContent with default headers values
-func NewPostConfigBgpPolicyApplyNoContent() *PostConfigBgpPolicyApplyNoContent {
+// NewPostConfigBgpPolicyApplyOK creates PostConfigBgpPolicyApplyOK with default headers values
+func NewPostConfigBgpPolicyApplyOK() *PostConfigBgpPolicyApplyOK {
 
-	return &PostConfigBgpPolicyApplyNoContent{}
+	return &PostConfigBgpPolicyApplyOK{}
+}
+
+// WithPayload adds the payload to the post config bgp policy apply o k response
+func (o *PostConfigBgpPolicyApplyOK) WithPayload(payload *models.OperationResult) *PostConfigBgpPolicyApplyOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config bgp policy apply o k response
+func (o *PostConfigBgpPolicyApplyOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *PostConfigBgpPolicyApplyNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *PostConfigBgpPolicyApplyOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // PostConfigBgpPolicyApplyBadRequestCode is the HTTP code returned for type PostConfigBgpPolicyApplyBadRequest

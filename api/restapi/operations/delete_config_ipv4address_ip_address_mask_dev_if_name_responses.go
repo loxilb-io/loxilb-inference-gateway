@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// DeleteConfigIpv4addressIPAddressMaskDevIfNameNoContentCode is the HTTP code returned for type DeleteConfigIpv4addressIPAddressMaskDevIfNameNoContent
-const DeleteConfigIpv4addressIPAddressMaskDevIfNameNoContentCode int = 204
+// DeleteConfigIpv4addressIPAddressMaskDevIfNameOKCode is the HTTP code returned for type DeleteConfigIpv4addressIPAddressMaskDevIfNameOK
+const DeleteConfigIpv4addressIPAddressMaskDevIfNameOKCode int = 200
 
 /*
-DeleteConfigIpv4addressIPAddressMaskDevIfNameNoContent OK
+DeleteConfigIpv4addressIPAddressMaskDevIfNameOK OK
 
-swagger:response deleteConfigIpv4addressIpAddressMaskDevIfNameNoContent
+swagger:response deleteConfigIpv4addressIpAddressMaskDevIfNameOK
 */
-type DeleteConfigIpv4addressIPAddressMaskDevIfNameNoContent struct {
+type DeleteConfigIpv4addressIPAddressMaskDevIfNameOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewDeleteConfigIpv4addressIPAddressMaskDevIfNameNoContent creates DeleteConfigIpv4addressIPAddressMaskDevIfNameNoContent with default headers values
-func NewDeleteConfigIpv4addressIPAddressMaskDevIfNameNoContent() *DeleteConfigIpv4addressIPAddressMaskDevIfNameNoContent {
+// NewDeleteConfigIpv4addressIPAddressMaskDevIfNameOK creates DeleteConfigIpv4addressIPAddressMaskDevIfNameOK with default headers values
+func NewDeleteConfigIpv4addressIPAddressMaskDevIfNameOK() *DeleteConfigIpv4addressIPAddressMaskDevIfNameOK {
 
-	return &DeleteConfigIpv4addressIPAddressMaskDevIfNameNoContent{}
+	return &DeleteConfigIpv4addressIPAddressMaskDevIfNameOK{}
+}
+
+// WithPayload adds the payload to the delete config ipv4address Ip address mask dev if name o k response
+func (o *DeleteConfigIpv4addressIPAddressMaskDevIfNameOK) WithPayload(payload *models.OperationResult) *DeleteConfigIpv4addressIPAddressMaskDevIfNameOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config ipv4address Ip address mask dev if name o k response
+func (o *DeleteConfigIpv4addressIPAddressMaskDevIfNameOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *DeleteConfigIpv4addressIPAddressMaskDevIfNameNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *DeleteConfigIpv4addressIPAddressMaskDevIfNameOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // DeleteConfigIpv4addressIPAddressMaskDevIfNameBadRequestCode is the HTTP code returned for type DeleteConfigIpv4addressIPAddressMaskDevIfNameBadRequest

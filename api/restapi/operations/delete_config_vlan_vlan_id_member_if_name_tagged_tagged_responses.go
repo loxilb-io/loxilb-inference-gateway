@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedNoContentCode is the HTTP code returned for type DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedNoContent
-const DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedNoContentCode int = 204
+// DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedOKCode is the HTTP code returned for type DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedOK
+const DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedOKCode int = 200
 
 /*
-DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedNoContent OK
+DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedOK OK
 
-swagger:response deleteConfigVlanVlanIdMemberIfNameTaggedTaggedNoContent
+swagger:response deleteConfigVlanVlanIdMemberIfNameTaggedTaggedOK
 */
-type DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedNoContent struct {
+type DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewDeleteConfigVlanVlanIDMemberIfNameTaggedTaggedNoContent creates DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedNoContent with default headers values
-func NewDeleteConfigVlanVlanIDMemberIfNameTaggedTaggedNoContent() *DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedNoContent {
+// NewDeleteConfigVlanVlanIDMemberIfNameTaggedTaggedOK creates DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedOK with default headers values
+func NewDeleteConfigVlanVlanIDMemberIfNameTaggedTaggedOK() *DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedOK {
 
-	return &DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedNoContent{}
+	return &DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedOK{}
+}
+
+// WithPayload adds the payload to the delete config vlan vlan Id member if name tagged tagged o k response
+func (o *DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedOK) WithPayload(payload *models.OperationResult) *DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config vlan vlan Id member if name tagged tagged o k response
+func (o *DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedBadRequestCode is the HTTP code returned for type DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedBadRequest

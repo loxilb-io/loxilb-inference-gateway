@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// PostConfigBgpGlobalNoContentCode is the HTTP code returned for type PostConfigBgpGlobalNoContent
-const PostConfigBgpGlobalNoContentCode int = 204
+// PostConfigBgpGlobalOKCode is the HTTP code returned for type PostConfigBgpGlobalOK
+const PostConfigBgpGlobalOKCode int = 200
 
 /*
-PostConfigBgpGlobalNoContent OK
+PostConfigBgpGlobalOK OK
 
-swagger:response postConfigBgpGlobalNoContent
+swagger:response postConfigBgpGlobalOK
 */
-type PostConfigBgpGlobalNoContent struct {
+type PostConfigBgpGlobalOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewPostConfigBgpGlobalNoContent creates PostConfigBgpGlobalNoContent with default headers values
-func NewPostConfigBgpGlobalNoContent() *PostConfigBgpGlobalNoContent {
+// NewPostConfigBgpGlobalOK creates PostConfigBgpGlobalOK with default headers values
+func NewPostConfigBgpGlobalOK() *PostConfigBgpGlobalOK {
 
-	return &PostConfigBgpGlobalNoContent{}
+	return &PostConfigBgpGlobalOK{}
+}
+
+// WithPayload adds the payload to the post config bgp global o k response
+func (o *PostConfigBgpGlobalOK) WithPayload(payload *models.OperationResult) *PostConfigBgpGlobalOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config bgp global o k response
+func (o *PostConfigBgpGlobalOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *PostConfigBgpGlobalNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *PostConfigBgpGlobalOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // PostConfigBgpGlobalBadRequestCode is the HTTP code returned for type PostConfigBgpGlobalBadRequest

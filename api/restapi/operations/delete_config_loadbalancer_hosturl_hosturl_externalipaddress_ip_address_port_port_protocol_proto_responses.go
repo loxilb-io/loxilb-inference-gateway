@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortProtocolProtoNoContentCode is the HTTP code returned for type DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortProtocolProtoNoContent
-const DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortProtocolProtoNoContentCode int = 204
+// DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortProtocolProtoOKCode is the HTTP code returned for type DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortProtocolProtoOK
+const DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortProtocolProtoOKCode int = 200
 
 /*
-DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortProtocolProtoNoContent OK
+DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortProtocolProtoOK OK
 
-swagger:response deleteConfigLoadbalancerHosturlHosturlExternalipaddressIpAddressPortPortProtocolProtoNoContent
+swagger:response deleteConfigLoadbalancerHosturlHosturlExternalipaddressIpAddressPortPortProtocolProtoOK
 */
-type DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortProtocolProtoNoContent struct {
+type DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortProtocolProtoOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewDeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortProtocolProtoNoContent creates DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortProtocolProtoNoContent with default headers values
-func NewDeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortProtocolProtoNoContent() *DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortProtocolProtoNoContent {
+// NewDeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortProtocolProtoOK creates DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortProtocolProtoOK with default headers values
+func NewDeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortProtocolProtoOK() *DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortProtocolProtoOK {
 
-	return &DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortProtocolProtoNoContent{}
+	return &DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortProtocolProtoOK{}
+}
+
+// WithPayload adds the payload to the delete config loadbalancer hosturl hosturl externalipaddress Ip address port port protocol proto o k response
+func (o *DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortProtocolProtoOK) WithPayload(payload *models.OperationResult) *DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortProtocolProtoOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config loadbalancer hosturl hosturl externalipaddress Ip address port port protocol proto o k response
+func (o *DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortProtocolProtoOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortProtocolProtoNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortProtocolProtoOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortProtocolProtoBadRequestCode is the HTTP code returned for type DeleteConfigLoadbalancerHosturlHosturlExternalipaddressIPAddressPortPortProtocolProtoBadRequest
