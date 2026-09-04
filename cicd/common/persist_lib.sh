@@ -181,6 +181,17 @@ restore_commit() { # restore_commit <llb> <docfile> [extra-query] — echoes htt
         -H 'Content-Type: application/json' --data-binary @"$doc"
 }
 
+restore_dryrun() { # restore_dryrun <llb> <docfile> — echoes http code, body in artifacts
+    # The dry-run pipeline runs PARSE (strict decode + checksum verify),
+    # VALIDATE and PLAN without mutating anything, so it doubles as the
+    # integrity oracle for a document read straight off disk: a torn or
+    # half-written snapshot.json cannot answer 200/ok here.
+    local llb=$1 doc=$2
+    plib_curl "$llb" -o "$PLIB_ARTIFACTS/restore-response.json" -w "%{http_code}" \
+        -X POST "$PLIB_API/config/restore?mode=dry-run" \
+        -H 'Content-Type: application/json' --data-binary @"$doc"
+}
+
 # --- restarts --------------------------------------------------------------
 
 wait_replay_receipt() { # wait_replay_receipt <llb>

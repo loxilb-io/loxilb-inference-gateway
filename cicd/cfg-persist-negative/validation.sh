@@ -776,5 +776,157 @@ echo "$resp" | grep -q 'X-Echo-Backend' \
     && pass "VIP routes traffic after the fault-injection legs" \
     || fail "post-fault VIP probe: $resp"
 
+#################################################################################
+echo "=== concurrency storm: the gate serializes, nothing tears ==="
+#################################################################################
+# Persists, captures, a commit restore and config mutations all fired at
+# once, three rounds. The contract: the snapshot endpoints serialize on
+# the gate and answer 409 when it is held, every OTHER mutating call is
+# frozen with 503 while a restore holds it, and nothing anywhere answers
+# 5xx. A round that produced no rejection at all never contended the gate
+# -- three such rounds fail the leg rather than pass it vacuously.
+STORM="$PLIB_ARTIFACTS/ng08"
+mkdir -p "$STORM"
+storm_round() { # storm_round <round> — fire the whole storm, wait for all of it
+    local r=$1 i
+    rm -f "$STORM/r$r-"*.code
+    for i in 1 2 3; do
+        ( plib_curl llb1 -o "$STORM/r$r-persist-$i.body" -w "%{http_code}" \
+            -X POST "$PLIB_API/config/persist" > "$STORM/r$r-persist-$i.code" ) &
+    done
+    for i in 1 2; do
+        ( plib_curl llb1 -o "$STORM/r$r-capture-$i.body" -w "%{http_code}" \
+            "$PLIB_API/config/snapshot" > "$STORM/r$r-capture-$i.code" ) &
+    done
+    ( plib_curl llb1 -o "$STORM/r$r-restore.body" -w "%{http_code}" \
+        -X POST "$PLIB_API/config/restore?mode=commit" \
+        -H 'Content-Type: application/json' --data-binary @"$PLIB_ARTIFACTS/good.json" \
+        > "$STORM/r$r-restore.code" ) &
+    for i in $(seq 1 6); do
+        ( plib_curl llb1 -o /dev/null -w "%{http_code}" \
+            -X POST "$PLIB_API/config/firewall" -H 'Content-Type: application/json' \
+            -d "{\"ruleArguments\":{\"sourceIP\":\"9.$r.0.$i/32\",\"destinationIP\":\"6.6.6.6/32\"},\"opts\":{\"drop\":true}}" \
+            > "$STORM/r$r-mutate-$i.code" ) &
+    done
+    wait
+}
+q_storm=$(quarantine_count)
+storm_contract_ok=1
+storm_rejections=0
+for r in 1 2 3; do
+    storm_round "$r"
+    for f in "$STORM/r$r-persist-"*.code "$STORM/r$r-capture-"*.code "$STORM/r$r-restore.code"; do
+        c=$(cat "$f" 2>/dev/null)
+        case "$c" in
+        200) ;;
+        409) storm_rejections=$((storm_rejections + 1)) ;;
+        *)  fail "storm round $r: $(basename "$f" .code) answered HTTP $c (contract: 200 or 409)"
+            storm_contract_ok=0 ;;
+        esac
+    done
+    for f in "$STORM/r$r-mutate-"*.code; do
+        c=$(cat "$f" 2>/dev/null)
+        case "$c" in
+        200|204) ;;
+        503) storm_rejections=$((storm_rejections + 1)) ;;
+        *)  fail "storm round $r: mutation $(basename "$f" .code) answered HTTP $c (contract: 200/204 or 503)"
+            storm_contract_ok=0 ;;
+        esac
+    done
+done
+[[ "$storm_contract_ok" == 1 ]] \
+    && pass "3 storm rounds: every response inside the gate contract (no 5xx, no torn semantics)" \
+    || fail "storm rounds broke the response-code contract"
+[[ "$storm_rejections" -ge 1 ]] \
+    && pass "the gate actually rejected concurrent callers ($storm_rejections rejections across 3 rounds)" \
+    || fail "no 409/503 in 3 storm rounds: the gate was never contended, so the leg proved nothing"
+# The gate must not leak: a plain persist after the storm has to succeed.
+sleep 6   # let the storm's auto-persist debounce drain first
+if persist_and_verify llb1; then
+    pass "gate released after the storm: a fresh persist succeeds"
+else
+    fail "persist after the storm failed (gate leak or unpersistable state)"
+fi
+rc=$(restore_dryrun llb1 "$CFG/snapshot.json")
+rres=$(jq -r '.result' < "$PLIB_ARTIFACTS/restore-response.json")
+[[ "$rc" == "200" && "$rres" == "ok" ]] \
+    && pass "post-storm snapshot.json parses, checksum-verifies and plans cleanly" \
+    || fail "post-storm document integrity: HTTP $rc result=$rres"
+[[ "$(quarantine_count)" == "$q_storm" ]] \
+    && pass "the storm produced no quarantine artifacts" \
+    || fail "storm quarantined a snapshot: $(quarantine_count) artifacts, was $q_storm"
+# Whatever the storm left must survive a restart deep-equal: a capture torn
+# by a concurrent mutation would surface here as a post-reboot diff.
+canonical_get_all llb1 "$PLIB_ARTIFACTS/ng08-before" || fail "post-storm canonical dump"
+restart_inplace_keep llb1 || fail "restart after the storm"
+canonical_get_all llb1 "$PLIB_ARTIFACTS/ng08-after" || fail "post-restart canonical dump"
+deep_diff "$PLIB_ARTIFACTS/ng08-before" "$PLIB_ARTIFACTS/ng08-after" ng08 \
+    && pass "post-storm state round-trips a restart deep-equal (nothing tore)" \
+    || fail "post-storm state changed across the restart (torn capture)"
+
+#################################################################################
+echo "=== SIGKILL inside the auto-persist debounce: integrity always, loss documented ==="
+#################################################################################
+# Ten rounds, each killing the gateway at a different offset inside the 3s
+# auto-persist quiet window. The contract here is INTEGRITY, not no-loss:
+# a mutation that never made it out of the debounce is DOCUMENTED loss, so
+# the asserts are that snapshot.json is always a parseable, checksum-valid
+# document, that the boot never quarantines it, and that the pre-existing
+# state always comes back. A round is allowed to keep or lose its own
+# mutation -- never anything else.
+ng11_ok=1
+ng11_kept=0
+for i in $(seq 1 10); do
+    delay=$(awk -v n="$i" 'BEGIN{printf "%.1f", 0.2 + (n-1)*0.3}')   # 0.2s .. 2.9s
+    fw_before=$(fw_count)
+    rc=$(plib_curl llb1 -o /dev/null -w "%{http_code}" -X POST "$PLIB_API/config/firewall" \
+        -H 'Content-Type: application/json' \
+        -d "{\"ruleArguments\":{\"sourceIP\":\"8.8.$i.1/32\",\"destinationIP\":\"6.6.6.6/32\"},\"opts\":{\"drop\":true}}")
+    if [[ "$rc" != "200" && "$rc" != "204" ]]; then
+        fail "SIGKILL round $i: mutation refused (HTTP $rc)"; ng11_ok=0; break
+    fi
+    q_round=$(quarantine_count)
+    sleep "$delay"
+    docker exec llb1 pkill -9 -f '/root/loxilb-io/loxilb/loxilb' >/dev/null 2>&1
+    for _ in $(seq 1 10); do
+        docker exec llb1 pgrep -f '/root/loxilb-io/loxilb/loxilb' >/dev/null 2>&1 || break
+        sleep 1
+    done
+    if ! sudo test -s "$CFG/snapshot.json"; then
+        fail "SIGKILL round $i (kill at ${delay}s): snapshot.json missing or empty on disk"
+        ng11_ok=0; break
+    fi
+    plib_start_gw llb1 || { fail "SIGKILL round $i: gateway did not come back"; ng11_ok=0; break; }
+    plib_wait_api llb1 || { fail "SIGKILL round $i: API never returned"; ng11_ok=0; break; }
+    if ! wait_replay_receipt llb1; then
+        fail "SIGKILL round $i (kill at ${delay}s): boot never replayed the snapshot"; ng11_ok=0; break
+    fi
+    if [[ "$(quarantine_count)" != "$q_round" ]]; then
+        fail "SIGKILL round $i (kill at ${delay}s): boot quarantined the snapshot (corruption)"; ng11_ok=0; break
+    fi
+    rc=$(restore_dryrun llb1 "$CFG/snapshot.json")
+    rres=$(jq -r '.result' < "$PLIB_ARTIFACTS/restore-response.json")
+    if [[ "$rc" != "200" || "$rres" != "ok" ]]; then
+        fail "SIGKILL round $i (kill at ${delay}s): snapshot.json not a valid document (HTTP $rc result=$rres)"
+        ng11_ok=0; break
+    fi
+    if [[ "$(lb_count)" != "1" ]]; then
+        fail "SIGKILL round $i (kill at ${delay}s): pre-existing LB state lost (lb=$(lb_count), want 1)"
+        ng11_ok=0; break
+    fi
+    fw_after=$(fw_count)
+    if [[ "$fw_after" == "$((fw_before + 1))" ]]; then
+        ng11_kept=$((ng11_kept + 1))
+    elif [[ "$fw_after" != "$fw_before" ]]; then
+        fail "SIGKILL round $i (kill at ${delay}s): firewall count $fw_after, want $fw_before or $((fw_before + 1)) (torn state)"
+        ng11_ok=0; break
+    fi
+done
+if [[ "$ng11_ok" == 1 ]]; then
+    pass "10 SIGKILL rounds across the debounce window: snapshot.json always a valid document"
+    pass "10 SIGKILL rounds: no quarantine, boot replay settled, pre-existing state intact every time"
+    echo "  (mutations that survived their kill: $ng11_kept/10 -- loss inside the debounce is documented behavior, not a defect)"
+fi
+
 plib_collect_logs llb1
 exit $code
