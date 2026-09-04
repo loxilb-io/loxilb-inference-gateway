@@ -566,5 +566,95 @@ lb2021=$(plib_curl llb1 "$PLIB_API/config/loadbalancer/all" | jq '[.lbAttr[]? | 
     || fail "arbitration state: port-2020=$lb2020 port-2021=$lb2021"
 sudo rm -f "$CFG/lbconfig.txt"
 
+#################################################################################
+echo "=== node-secret loss: encrypted document refused pre-wipe, quarantined at boot ==="
+#################################################################################
+# Snapshot secret values (the IPsec PSK below) are encrypted under
+# CFG/snapshot-node.secret. Replacing/losing that secret must be LOUD in
+# both directions: the boot replay quarantines the now-undecryptable
+# snapshot instead of half-applying, and a REST restore of the foreign
+# document is refused BEFORE anything is wiped -- live config survives.
+NGPSK="ng-psk-negative-fixture"
+rc=$(plib_curl llb1 -o /dev/null -w "%{http_code}" -X POST "$PLIB_API/config/ipsec/tunnels" \
+    -H 'Content-Type: application/json' \
+    -d "{\"name\":\"ng-tun1\",\"localIp\":\"31.31.31.250\",\"remoteIp\":\"31.31.31.249\",\"authMode\":\"psk\",\"psk\":\"$NGPSK\",\"localId\":\"ng-a\",\"remoteId\":\"ng-b\",\"ikeVersion\":\"ikev2\",\"tunnelMode\":\"tunnel\",\"auto\":\"add\"}")
+[[ "$rc" == "204" || "$rc" == "200" ]] \
+    && pass "ipsec PSK tunnel staged (encrypted-value subject)" \
+    || fail "ipsec tunnel POST: HTTP $rc"
+persist_and_verify llb1 \
+    && pass "persist carries the tunnel" || fail "persist with ipsec tunnel"
+if sudo grep -q 'enc:v1:' "$CFG/snapshot.json" && ! sudo grep -q "$NGPSK" "$CFG/snapshot.json"; then
+    pass "persisted document carries the PSK encrypted, never plaintext"
+else
+    fail "snapshot.json plaintext/ciphertext posture wrong"
+fi
+sudo cat "$CFG/snapshot.json" > "$PLIB_ARTIFACTS/enc-under-old-secret.json"
+# The secret backup deliberately stays OUT of PLIB_ARTIFACTS: uploading
+# the secret next to the ciphertext document would hand evidence readers
+# the decryption key.
+NGSECBAK=$(mktemp /tmp/ng-node-secret.XXXXXX)
+sudo cat "$CFG/snapshot-node.secret" > "$NGSECBAK"
+
+# Replace the node secret with a fresh, VALID-format one (the corrupt-file
+# case is a unit-level refusal; this is the ops-relevant "wrong node" /
+# re-provisioned case) and reboot onto the now-undecryptable snapshot.
+q0=$(quarantine_count)
+python3 -c "print('ab'*32)" | sudo tee "$CFG/snapshot-node.secret" >/dev/null
+sudo chmod 600 "$CFG/snapshot-node.secret"
+plib_start_gw llb1 || fail "gateway did not come back after the wrong-secret boot"
+plib_wait_api llb1 || fail "API after wrong-secret boot"
+[[ "$(quarantine_count)" == "$((q0+1))" ]] \
+    && pass "undecryptable snapshot quarantined at boot (fail closed)" \
+    || fail "no quarantine artifact for the wrong-secret boot"
+docker exec llb1 grep -aq "snapshot-node.secret" /tmp/loxilb.out \
+    && pass "boot log names the node secret file (operator-actionable)" \
+    || fail "node secret not named in the boot log"
+[[ "$(lb_count)" == "0" ]] \
+    && pass "clean empty boot after the wrong-secret quarantine" \
+    || fail "unexpected config after wrong-secret boot"
+
+# Pre-wipe refusal on the RUNNING node: seed live state, then push the
+# old-secret document -- it must be refused with the live state untouched
+# (a mid-apply failure would have wiped and rolled back instead).
+rc=$(restore_commit llb1 "$PLIB_ARTIFACTS/good.json")
+[[ "$rc" == "200" && "$(lb_count)" == "1" ]] \
+    && pass "canary state restored under the new secret" \
+    || fail "canary restore: HTTP $rc lb=$(lb_count)"
+q1=$(quarantine_count)
+rc=$(restore_commit llb1 "$PLIB_ARTIFACTS/enc-under-old-secret.json")
+body=$(cat "$PLIB_ARTIFACTS/restore-response.json")
+if [[ "$rc" == "400" ]] && echo "$body" | grep -q "snapshot-node.secret"; then
+    pass "old-secret document refused pre-wipe (HTTP 400, names the secret file)"
+else
+    fail "old-secret restore: HTTP $rc body=$(echo "$body" | head -c 200)"
+fi
+[[ "$(lb_count)" == "1" && "$(quarantine_count)" == "$q1" ]] \
+    && pass "live state survived the refusal untouched (nothing wiped)" \
+    || fail "refusal side effects: lb=$(lb_count) quarantines moved"
+
+# Recovery through the real operator path: put the original secret back,
+# reboot, and REST-restore the old-secret document -- everything decrypts
+# again, down to strongSwan holding the plaintext PSK.
+sudo cp "$NGSECBAK" "$CFG/snapshot-node.secret"
+sudo chmod 600 "$CFG/snapshot-node.secret"
+plib_start_gw llb1 || fail "gateway did not come back after secret recovery"
+plib_wait_api llb1 || fail "API after secret recovery"
+# This boot has a VALID snapshot.json (the canary write-through, no
+# secret values) to replay -- the write gate holds mutating calls (503)
+# until it settles, so wait for the receipt before restoring.
+wait_replay_receipt llb1 || fail "canary snapshot never settled on the recovery boot"
+rc=$(restore_commit llb1 "$PLIB_ARTIFACTS/enc-under-old-secret.json")
+[[ "$rc" == "200" ]] \
+    && pass "old-secret document restores once its secret is back" \
+    || fail "recovery restore: HTTP $rc"
+docker exec llb1 grep -aq "$NGPSK" /etc/ipsec.secrets \
+    && pass "recovered tunnel handed strongSwan the plaintext PSK" \
+    || fail "strongSwan secrets missing the PSK after recovery"
+rm -f "$NGSECBAK"
+resp=$($hexec l3h1 curl -s -m 5 "http://${VIP}:2020/" 2>/dev/null | head -3)
+echo "$resp" | grep -q 'X-Echo-Backend' \
+    && pass "recovered VIP routes traffic after the secret-recovery boot" \
+    || fail "recovered VIP probe: $resp"
+
 plib_collect_logs llb1
 exit $code

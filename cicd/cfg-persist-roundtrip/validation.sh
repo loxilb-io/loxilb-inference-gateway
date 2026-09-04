@@ -110,6 +110,26 @@ else
     pass "no PEM material in the document (cert secret split)"
 fi
 
+ipsec_n=$(jq -r '.domains.ipsec.tunnels | length' < "$PLIB_ARTIFACTS/snap-idle-1.json")
+ipsec_psk=$(jq -r '.domains.ipsec.tunnels[0].psk' < "$PLIB_ARTIFACTS/snap-idle-1.json")
+[[ "$ipsec_n" == "1" && "$ipsec_psk" == enc:v1:* ]] \
+    && pass "ipsec tunnel captured with the PSK encrypted (enc:v1)" \
+    || fail "ipsec tunnels=$ipsec_n psk=${ipsec_psk:0:16}..."
+if grep -q 'rt-psk-roundtrip-fixture' "$PLIB_ARTIFACTS/snap-idle-1.json"; then
+    fail "IPsec PSK leaked into the snapshot document in plaintext"
+else
+    pass "no plaintext PSK in the document (encrypted value split)"
+fi
+if sudo test -f llb1_config/snapshot-node.secret \
+   && [[ "$(sudo stat -c %a llb1_config/snapshot-node.secret)" == "600" ]]; then
+    pass "node secret auto-provisioned next to snapshot.json (0600)"
+else
+    fail "llb1_config/snapshot-node.secret missing or wrong mode"
+fi
+docker exec llb1 grep -aq 'rt-psk-roundtrip-fixture' /etc/ipsec.secrets \
+    && pass "plaintext PSK reached only the node-local strongSwan secrets" \
+    || fail "strongSwan secrets file missing the applied PSK"
+
 corig=$(jq -c '.domains.cors.origins' < "$PLIB_ARTIFACTS/snap-idle-1.json")
 [[ "$corig" == '["http://rt-allowed.example"]' ]] \
     && pass "cors domain captured (explicit allowlist)" \
@@ -410,6 +430,21 @@ if sudo test -f llb1_config/otlp-headers.json \
 else
     fail "otlp-headers.json missing/empty after restart"
 fi
+
+#################################################################################
+echo "=== IPsec PSK survived the restart (boot replay decrypted it) ==="
+#################################################################################
+# The document carries only ciphertext, so the tunnel coming back with
+# strongSwan holding the PLAINTEXT PSK proves the boot replay decrypted
+# under the surviving node secret. The document side (still enc:v1, still
+# byte-stable) is covered by the snapshotdoc deep-diff above.
+tun_n=$(plib_curl llb1 "$PLIB_API/config/ipsec/tunnels/all" | jq '[.ipsecTunnelAttr[]?] | length')
+[[ "$tun_n" == "1" ]] \
+    && pass "ipsec tunnel re-applied by the boot replay" \
+    || fail "ipsec tunnels after restart: $tun_n, want 1"
+docker exec llb1 grep -aq 'rt-psk-roundtrip-fixture' /etc/ipsec.secrets \
+    && pass "boot replay decrypted the PSK for the backend" \
+    || fail "strongSwan secrets missing the PSK after restart"
 
 #################################################################################
 echo "=== managed cert re-registered at boot: SNI handshake (the reboot probe) ==="
