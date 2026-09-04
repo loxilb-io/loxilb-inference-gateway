@@ -230,6 +230,24 @@ func KvBindingAllocate(ruleIdent string, comps KvExactBindingComponents) (*KvExa
 	return b, nil
 }
 
+// KvBindingMigrationAttach is the live migration-attach half of the wire
+// convergence: allocate the attach binding, then restart the rule's running
+// subscriber streams under the composed engine contract. The rule was
+// created profile-less, so its subscribers resolved the legacy wire schema
+// at start and reject every native event as schema_mismatch — the attest
+// ladder then stalls at the echo challenge (challenge_timeout) until a
+// gateway restart, and the exact tier scores against an inventory that
+// never fills. The restore replay converges the same way in
+// KvBindingRestore; this is its attach-side twin.
+func KvBindingMigrationAttach(ruleIdent string, svcID uint32, comps KvExactBindingComponents) (*KvExactBinding, error) {
+	b, err := KvBindingAllocate(ruleIdent, comps)
+	if err != nil {
+		return nil, err
+	}
+	KvSubscriberRebindWire(svcID, b.Components.Contract.ID)
+	return b, nil
+}
+
 // KvBindingCurrent returns the rule's current (desired) binding.
 func KvBindingCurrent(ruleIdent string) (*KvExactBinding, bool) {
 	kvBindingMu.RLock()

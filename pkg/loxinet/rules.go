@@ -4233,7 +4233,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 			// and carries the authoritative binding + allocator high-water
 			// mark, then re-kicks the install itself.
 			if !serv.RestoreReplay {
-				if b, bErr := KvBindingAllocate(eRule.id, kvAdmission.Comps); bErr != nil {
+				if b, bErr := KvBindingMigrationAttach(eRule.id, uint32(eRule.ruleNum), kvAdmission.Comps); bErr != nil {
 					tk.LogIt(tk.LogError, "kv-binding: rule %s migration allocation failed: %v\n", eRule.id, bErr)
 				} else {
 					tk.LogIt(tk.LogInfo, "kv-binding: rule %s migrated to profile %s@%d contract %s@%d gen %d digest %.12s\n",
