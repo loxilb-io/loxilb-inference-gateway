@@ -464,3 +464,64 @@ func TestKvEngineContractSourceSeam(t *testing.T) {
 		t.Fatal("wrong generation resolved")
 	}
 }
+
+func TestKvBindingMigrationAttachRebindsSubscriberWire(t *testing.T) {
+	kvBindingTestSetup(t)
+	const svcID = uint32(9108)
+	const ruleIdent = "rule-attach-rebind"
+
+	// The metrics bridge is a once-armed global; arm it with a live context
+	// so the subscriber start below never captures a nil shutdown context.
+	StartKvMetricsBridge(context.Background())
+
+	KvSvcContractRegister(svcID, ruleIdent, net.ParseIP("127.0.0.1"), 9108, 6, 0)
+	t.Cleanup(func() { KvSvcContractDeregister(svcID) })
+
+	// Live order: the rule is created profile-less and starts its subscriber
+	// before any binding exists — contractID "" (the legacy per-engine wire).
+	KvSubscriberStartRank(svcID, 0, 0, "127.0.0.1", 45908, "sha256_cbor", "vllm", 16, "")
+	t.Cleanup(func() { KvSubscriberStopAll(svcID) })
+
+	argsContract := func() string {
+		t.Helper()
+		kvServicesMu.RLock()
+		svc := kvServices[svcID]
+		kvServicesMu.RUnlock()
+		if svc == nil {
+			t.Fatal("subscriber service state missing")
+		}
+		svc.mu.RLock()
+		defer svc.mu.RUnlock()
+		a, ok := svc.startArgs[kvEpRankKey{epIdx: 0, rank: 0}]
+		if !ok {
+			t.Fatal("subscriber start args missing")
+		}
+		return a.contractID
+	}
+	if got := argsContract(); got != "" {
+		t.Fatalf("pre-attach subscriber contract = %q, want legacy \"\"", got)
+	}
+
+	comps := kvTestComponents(1)
+
+	// A refused allocation must leave the streams untouched: no binding was
+	// installed, so converging the wire would bind it to a contract the rule
+	// does not hold.
+	if _, err := KvBindingMigrationAttach("", svcID, comps); err == nil {
+		t.Fatal("attach with empty rule identity must fail")
+	}
+	if got := argsContract(); got != "" {
+		t.Fatalf("failed attach rebound subscriber to %q, want legacy \"\"", got)
+	}
+
+	b, err := KvBindingMigrationAttach(ruleIdent, svcID, comps)
+	if err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	if b.Components.Contract.ID != comps.Contract.ID {
+		t.Fatalf("attach binding contract = %q, want %q", b.Components.Contract.ID, comps.Contract.ID)
+	}
+	if got := argsContract(); got != comps.Contract.ID {
+		t.Fatalf("post-attach subscriber contract = %q, want %q (stream not rebound)", got, comps.Contract.ID)
+	}
+}
