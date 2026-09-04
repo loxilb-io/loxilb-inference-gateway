@@ -1,0 +1,33 @@
+{
+ "_note": "Provenance of the banked chat-template artifacts. Each chat_template.jinja is the verbatim chat_template string from the PINNED upstream tokenizer_config.json revision (the same revision the engines serve and the profiles' tokenizer artifacts were taken from). The sha256 here is what a profile's templateSha256 must pin; the render-parity goldens (kv_chat_render_parity.json) were generated from these exact bytes and re-verify the digest at generation time. bos/eos are the special-token strings a profile's renderPolicy must declare when its template references them.",
+ "templates": {
+  "LGAI-EXAONE__EXAONE-3.5-7.8B-Instruct": {
+   "model": "LGAI-EXAONE/EXAONE-3.5-7.8B-Instruct",
+   "revision": "553ea250b9a5317231459279d5847d6cf955b9aa",
+   "sha256": "627e212836e41c6231988b4ae595a16ddfd7814d2c39fd7bf3105651f8bbeebd",
+   "bos_token": "[BOS]",
+   "eos_token": "[|endofturn|]"
+  },
+  "NousResearch__Meta-Llama-3.1-8B-Instruct": {
+   "model": "NousResearch/Meta-Llama-3.1-8B-Instruct",
+   "revision": "d10aef7999a2b5ba950ab3974312feeedbfe0b77",
+   "sha256": "b48c47f6443892716176eb200bf4ef108f64e06ca26ed0fa8ebc0a4b3992fcb2",
+   "bos_token": "<|begin_of_text|>",
+   "eos_token": "<|eot_id|>"
+  },
+  "Qwen__Qwen2.5-7B-Instruct": {
+   "model": "Qwen/Qwen2.5-7B-Instruct",
+   "revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+   "sha256": "cd8e9439f0570856fd70470bf8889ebd8b5d1107207f67a5efb46e342330527f",
+   "bos_token": null,
+   "eos_token": "<|im_end|>"
+  },
+  "Qwen__Qwen3-0.6B": {
+   "model": "Qwen/Qwen3-0.6B",
+   "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+   "sha256": "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8",
+   "bos_token": null,
+   "eos_token": "<|im_end|>"
+  }
+ }
+}

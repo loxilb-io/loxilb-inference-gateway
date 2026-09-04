@@ -66,6 +66,73 @@ func kvRegistryTestSetup(t *testing.T) string {
 	return t.TempDir()
 }
 
+// kvWriteChatProfileFixture writes one chat-declaring profile document plus
+// its tokenizer and template artifacts under root, digests computed from the
+// real bytes.
+func kvWriteChatProfileFixture(t *testing.T, root, id, model string, tok, tpl []byte) {
+	t.Helper()
+	slug := kvModelSlug(model)
+	artDir := filepath.Join(root, kvProfileArtifactSubdir, slug)
+	if err := os.MkdirAll(artDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(artDir, "tokenizer.json"), tok, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(artDir, "template.jinja"), tpl, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tokSum := sha256.Sum256(tok)
+	tplSum := sha256.Sum256(tpl)
+	doc := fmt.Sprintf("profileId: %s\nbaseModel: %s\n"+
+		"tokenizerArtifact: %s/tokenizer.json\ntokenizerSha256: %s\n"+
+		"templateArtifact: %s/template.jinja\ntemplateSha256: %s\n"+
+		"templateContentFormat: string\nrenderPolicy:\n  addGenerationPrompt: true\n"+
+		"supportedApis: [chat, completions]\naliasPolicy: base_model_only\n",
+		id, model, slug, hex.EncodeToString(tokSum[:]), slug, hex.EncodeToString(tplSum[:]))
+	if err := os.WriteFile(filepath.Join(root, id+".yaml"), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestKvProfileRegistryTemplateCompileGate: a digest-valid template artifact
+// the executor cannot compile refuses the WHOLE generation at publish time
+// (all-or-nothing), leaving the previous generation serving; the same
+// profile with a compilable template publishes and reports chat support
+// through the real on-disk trust path.
+func TestKvProfileRegistryTemplateCompileGate(t *testing.T) {
+	root := kvRegistryTestSetup(t)
+	kvWriteProfileFixture(t, root, "p-base", "acme/reg-base", []byte("tok-base"))
+	if err := KvProfileRegistryLoadFrom(root); err != nil {
+		t.Fatalf("baseline publish: %v", err)
+	}
+	prevGen := kvProfileCurrent().Gen
+
+	badRoot := t.TempDir()
+	kvWriteChatProfileFixture(t, badRoot, "p-chat", "acme/reg-chat",
+		[]byte("tok-chat"), []byte("{% bogus %}"))
+	if err := KvProfileRegistryLoadFrom(badRoot); err == nil {
+		t.Fatal("uncompilable template artifact published")
+	}
+	if g := kvProfileCurrent(); g == nil || g.Gen != prevGen {
+		t.Fatal("failed publish must leave the previous generation serving")
+	}
+
+	goodRoot := t.TempDir()
+	kvWriteChatProfileFixture(t, goodRoot, "p-chat", "acme/reg-chat",
+		[]byte("tok-chat"), []byte("{{ messages[0].content }}"))
+	if err := KvProfileRegistryLoadFrom(goodRoot); err != nil {
+		t.Fatalf("compilable chat profile refused: %v", err)
+	}
+	if !kvChatTemplateSupported("acme/reg-chat") {
+		t.Fatal("published chat profile must report a renderer")
+	}
+	if out, ok := kvRenderChatTemplate("acme/reg-chat",
+		[]kvChatMessage{{Role: "user", Content: "hello-trust-path"}}); !ok || out != "hello-trust-path" {
+		t.Fatalf("on-disk trust-path render wrong: ok=%v out=%q", ok, out)
+	}
+}
+
 func TestKvProfileRegistryPublishAndLookup(t *testing.T) {
 	root := kvRegistryTestSetup(t)
 	kvWriteProfileFixture(t, root, "p-one", "acme/reg-m1", []byte("tok-one"))
@@ -319,7 +386,7 @@ func TestKvProfileRegistryPublishResetsTokenizerPool(t *testing.T) {
 type kvProfTestTok struct{}
 
 func (kvProfTestTok) Encode(string, bool) []uint32 { return []uint32{1} }
-func (kvProfTestTok) Close()                 {}
+func (kvProfTestTok) Close()                       {}
 
 // kvBytesRecBackend records which load path served each request.
 type kvBytesRecBackend struct {

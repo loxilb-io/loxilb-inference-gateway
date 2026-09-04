@@ -1,0 +1,1 @@
+{"model": "NousResearch/Meta-Llama-3.1-8B-Instruct", "messages": [{"role": "system", "content": "You are a terse assistant. Answer in one word."}, {"role": "user", "content": "What is the capital of France?"}]}

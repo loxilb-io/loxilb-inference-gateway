@@ -174,7 +174,7 @@ var (
 // preamble (same system prompt + repo header, divergent tail — the defining
 // shared-prefix shape) returned EACH OTHER's token ids, so the block-hash chain
 // hashed the wrong request and Tier-1.5 mis-routed. The chat path feeds the full
-// rendered template through this cache (kvTokenizeChatBody), so texts far beyond
+// rendered template through this cache (kvBridgeTokenizeChat), so texts far beyond
 // 512 bytes are the NORM there, not the exception. len+sha256 keeps the key
 // fixed-size (long prompts must not become map keys) while making a collision
 // require a sha256 collision at equal length.

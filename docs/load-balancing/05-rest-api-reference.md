@@ -95,6 +95,19 @@ snake_case (`pd_disagg_mode`, `sse_mode`, `model_name`, …) vs camelCase (`kvEx
 | `pd_cache_threshold` | int | cache-match threshold `0`–`100`; lower = more aggressive cache routing (default `20`) |
 | `pd_balance_abs_threshold` | int | if max−min active connections exceeds this, bypass cache affinity (default `3`) |
 
+> **Always set `monitor: true` on a P/D rule.** Endpoint health is what
+> demotes a dead role member out of P/D selection: without monitoring (and
+> without a circuit-breaker policy) a prefill endpoint that dies keeps being
+> selected, and every request answers `503 pd_pool_unavailable` indefinitely
+> while the healthy decode endpoint sits idle. With monitoring on (TCP rules
+> default to a TCP-connect probe on each endpoint's target port), the dead
+> member is demoted within the probe cycle. Note the demotion outcome is
+> deliberate fail-closed for a P/D-only pool: a pool with no healthy prefill
+> (or no healthy decode) answers a typed `503 pd_pool_unavailable` rather
+> than silently serving converged traffic on the surviving role — only
+> pools that also carry `ep_role: 0` members fall back to normal-mode
+> serving on those members.
+
 **Resilience**
 
 | Field | Type | Notes |
