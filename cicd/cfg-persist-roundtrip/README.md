@@ -55,6 +55,15 @@ store; an HTTPS-terminating proxy serves it at handshake.
 9. **Configured-empty CORS**: removing the last origin is DENY-ALL, is
    captured as `{"origins":[]}` (distinct from unconfigured/absent), and
    a second restart must not re-seed the factory-open default.
+10. **Recovery-dependencies manifest (schema 1.4)**: the document
+    declares exactly the wired external stores, (type,id)-sorted — the
+    captured KV binding makes `engine-contracts` + `kv-model-profiles`
+    REQUIRED, the captured cert makes `cert-store` REQUIRED, and no DB
+    entry appears (none is wired here). Entries carry identity fields
+    only (type/id/generation/digest/required — never store content),
+    and the manifest is byte-identical across idle captures AND across
+    the restart. The fail-closed side of the contract lives in the
+    negative suite.
 
 ## Red twin
 

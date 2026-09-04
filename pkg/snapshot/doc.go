@@ -62,7 +62,19 @@ import (
 // deliberately does NOT widen coverage). Builds that predate the domains
 // refuse 1.3 documents via the minor-version gate rather than silently
 // dropping fields.
-const SchemaVersion = "1.3"
+//
+// 1.4: added the recovery_dependencies manifest (document-level, not a
+// domain): the identity -- type, stable id, generation, digest, required
+// flag -- of every external store the captured configuration depends on
+// for full recovery (engine-contract registry, kv-model-profile
+// generation, management/data-plane databases, managed cert directory).
+// Identity only; the stores' content stays external per §6. Additive:
+// older documents carry no manifest, which restore treats as "no
+// dependencies declared" -- the pre-1.4 semantics exactly. Builds that
+// predate the manifest refuse 1.4 documents via the minor-version gate,
+// so a declared REQUIRED dependency can never be silently dropped by an
+// older build.
+const SchemaVersion = "1.4"
 
 // DocKind identifies the document type, matching §4's "kind" field.
 const DocKind = "loxilb-snapshot"
@@ -227,6 +239,17 @@ type Document struct {
 	// never captures, regardless of `components` filtering. See
 	// DefaultExcludedDomains.
 	ExcludedDomains []string `json:"excluded_domains"`
+	// RecoveryDependencies is the §6 manifest (schema 1.4+): the external
+	// stores the captured configuration depends on, by identity
+	// (generation/digest), never by content. Built by Capture from the
+	// hooks' store identities plus the document's own contents (see
+	// buildRecoveryManifest, capture.go); nil in older documents and in
+	// internally-built documents (the restore engine's PRESERVE stage),
+	// meaning "no dependencies declared". Restore refuses a REQUIRED
+	// entry whose type this build does not know (fail closed,
+	// stageValidate) -- an unverifiable requirement must stop the
+	// pipeline, not be skipped.
+	RecoveryDependencies []cmn.RecoveryDependency `json:"recovery_dependencies,omitempty"`
 	// Checksum is "sha256:<hex>" over the canonical JSON of this document
 	// with this field set to "" (see codec.go ComputeChecksum). Populated by
 	// Encode; validated by VerifyChecksum.

@@ -94,6 +94,17 @@ var Migrations = []Migration{
 			return nil
 		},
 	},
+	// 1.3 -> 1.4: the recovery_dependencies manifest was added. Purely
+	// additive at the document level (no new domains): a 1.3 document
+	// simply declares no dependencies, and nil IS that meaningful value
+	// -- the migration must NOT invent a manifest for a document captured
+	// by a build that never recorded one (the entries carry generations
+	// and digests only a live capture can know). Restamp only.
+	{
+		FromVersion: "1.3",
+		ToVersion:   "1.4",
+		Apply:       func(doc *Document) error { return nil },
+	},
 }
 
 // ApplyMigrations runs every registered Migration whose FromVersion matches

@@ -120,6 +120,63 @@ npol=$(jq -r '.domains.l7policy | length' < "$PLIB_ARTIFACTS/snap-idle-1.json")
     || fail "l7policy domain count=$npol, want 1"
 
 #################################################################################
+echo "=== recovery_dependencies manifest: declared, honest, deterministic ==="
+#################################################################################
+# Schema 1.4: the document names every external store a recovery of it
+# depends on -- identity only (type/id/generation/digest), never store
+# content. This topology pins all three content-scoped entries: the KV
+# binding makes the contract + profile registries REQUIRED, the managed
+# cert makes the cert store REQUIRED; no database is wired, so no DB entry
+# may appear. (The negative suite proves the REQUIRED flags bite.)
+sv=$(jq -r '.schema_version' < "$PLIB_ARTIFACTS/snap-idle-1.json")
+[[ "$sv" == "1.4" ]] \
+    && pass "document rides schema 1.4" \
+    || fail "schema_version=$sv, want 1.4"
+dep_types=$(jq -c '[.recovery_dependencies[].type]' < "$PLIB_ARTIFACTS/snap-idle-1.json")
+[[ "$dep_types" == '["cert-store","engine-contracts","kv-model-profiles"]' ]] \
+    && pass "manifest declares exactly the wired stores, (type,id)-sorted" \
+    || fail "manifest types=$dep_types, want cert-store/engine-contracts/kv-model-profiles"
+dep_req=$(jq -c '[.recovery_dependencies[].required]' < "$PLIB_ARTIFACTS/snap-idle-1.json")
+[[ "$dep_req" == '[true,true,true]' ]] \
+    && pass "captured binding + cert make every entry REQUIRED" \
+    || fail "manifest required flags=$dep_req, want all true"
+ec_gen=$(jq -r '.recovery_dependencies[] | select(.type=="engine-contracts") | .generation' \
+    < "$PLIB_ARTIFACTS/snap-idle-1.json")
+ec_dig=$(jq -r '.recovery_dependencies[] | select(.type=="engine-contracts") | .digest' \
+    < "$PLIB_ARTIFACTS/snap-idle-1.json")
+[[ "$ec_gen" =~ ^[0-9]+$ && "$ec_dig" == sha256:* ]] \
+    && pass "engine-contracts entry carries the compiled generation + digest" \
+    || fail "engine-contracts entry gen=$ec_gen digest=$ec_dig"
+kv_id=$(jq -r '.recovery_dependencies[] | select(.type=="kv-model-profiles") | .id' \
+    < "$PLIB_ARTIFACTS/snap-idle-1.json")
+kv_gen=$(jq -r '.recovery_dependencies[] | select(.type=="kv-model-profiles") | .generation' \
+    < "$PLIB_ARTIFACTS/snap-idle-1.json")
+kv_dig=$(jq -r '.recovery_dependencies[] | select(.type=="kv-model-profiles") | .digest' \
+    < "$PLIB_ARTIFACTS/snap-idle-1.json")
+[[ "$kv_id" == "/etc/loxilb/kvprofiles" && "$kv_gen" =~ ^[0-9]+$ && "$kv_dig" == sha256:* ]] \
+    && pass "kv-model-profiles entry carries source root + published generation + set digest" \
+    || fail "kv-model-profiles entry id=$kv_id gen=$kv_gen digest=$kv_dig"
+cs_dig=$(jq -r '.recovery_dependencies[] | select(.type=="cert-store") | .digest' \
+    < "$PLIB_ARTIFACTS/snap-idle-1.json")
+[[ "$cs_dig" == sha256:* ]] \
+    && pass "cert-store entry summarizes the captured cert set (digest)" \
+    || fail "cert-store entry digest=$cs_dig"
+# Identity must never carry store content or credentials: every manifest
+# field is type/id/generation/digest/required -- nothing else.
+dep_extra=$(jq -r '[.recovery_dependencies[] | keys[]] | unique - ["type","id","generation","digest","required"] | length' \
+    < "$PLIB_ARTIFACTS/snap-idle-1.json")
+[[ "$dep_extra" == "0" ]] \
+    && pass "manifest entries carry identity fields only" \
+    || fail "manifest entries carry $dep_extra unexpected field(s)"
+# Determinism rides the same idle-capture pair as the domains leg: an
+# unchanged gateway must declare the identical manifest.
+dep_m1=$(jq -S '.recovery_dependencies' < "$PLIB_ARTIFACTS/snap-idle-1.json")
+dep_m2=$(jq -S '.recovery_dependencies' < "$PLIB_ARTIFACTS/snap-idle-2.json")
+[[ -n "$dep_m1" && "$dep_m1" == "$dep_m2" ]] \
+    && pass "manifest identical across idle captures (deterministic)" \
+    || fail "manifest churned between idle captures"
+
+#################################################################################
 echo "=== L7 policy / CORS / TLS-SNI datapath baselines (before) ==="
 #################################################################################
 # With a policy ATTACHED, the routing table is authoritative: the matched
@@ -318,6 +375,13 @@ gen_a=$(jq -S '.domains.kvexactbinding[0]' < "$PLIB_ARTIFACTS/snap-after.json")
 [[ -n "$gen_b" && "$gen_b" == "$gen_a" ]] \
     && pass "binding identity + generations field-identical across restart" \
     || fail "binding drifted across restart"
+# The manifest is built from process-stable identities (compiled contract
+# constants, the reloaded profile generation, the cert set), so an
+# unchanged gateway must re-declare the identical manifest after a restart.
+dep_ma=$(jq -S '.recovery_dependencies' < "$PLIB_ARTIFACTS/snap-after.json")
+[[ -n "$dep_ma" && "$dep_ma" == "$dep_m1" ]] \
+    && pass "recovery_dependencies manifest identical across restart" \
+    || fail "recovery_dependencies manifest drifted across restart"
 
 #################################################################################
 echo "=== configured-EMPTY cors: deny-all survives a restart (no re-seed) ==="
