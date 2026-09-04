@@ -1797,10 +1797,17 @@ var nNl *NlH
 func applySnapshotBoot() bool {
 	raw, err := snapshot.LoadPersisted(opt.Opts.ConfigPath)
 	if err != nil {
+		// A snapshot.json exists (arbitration chose it) but cannot be
+		// read. Quarantine like every other boot failure: leaving the
+		// unreadable file in place would boot empty AND let the next
+		// persist overwrite the only forensic copy.
 		tk.LogIt(tk.LogError, "nlp: boot snapshot: read %s/%s: %v\n", opt.Opts.ConfigPath, snapshot.PersistFileName, err)
+		recordBootFailure(quarantineBootSnapshot(), "read persisted snapshot: "+err.Error())
 		return false
 	}
 	if raw == nil {
+		// Vanished between the arbitration stat and the read; nothing to
+		// quarantine, the legacy replay proceeds as if it never existed.
 		return false
 	}
 	hostname, herr := os.Hostname()
@@ -1813,18 +1820,27 @@ func applySnapshotBoot() bool {
 	for attempt := 1; ; attempt++ {
 		result, err := engine.Restore(raw, snapshot.RestoreOptions{Boot: true})
 		if err != nil {
+			// Engine-level precondition failure: same durable-wipe risk
+			// as a pipeline failure, so quarantine here too.
 			tk.LogIt(tk.LogError, "nlp: boot snapshot: engine: %v\n", err)
+			recordBootFailure(quarantineBootSnapshot(), "restore engine: "+err.Error())
 			return false
 		}
 		if result.Result == snapshot.ResultOK {
-			tk.LogIt(tk.LogInfo, "nlp: boot snapshot: %s applied (%d domains planned, attempt %d)\n",
-				snapshot.PersistFileName, len(result.Plan), attempt)
+			tk.LogIt(tk.LogInfo, "nlp: boot snapshot: %s applied (%d domains planned, attempt %d, generation %d)\n",
+				snapshot.PersistFileName, len(result.Plan), attempt, result.SnapshotGeneration)
 			// Tolerated anomalies (e.g. duplicate document entries skipped
 			// as already-existing) still deserve a loud trace: the snapshot
 			// should not normally contain duplicates.
 			for _, w := range result.Warnings {
 				tk.LogIt(tk.LogWarning, "nlp: boot snapshot: %s\n", w)
 			}
+			snapshot.RecordBootRestoreState(snapshot.BootRestoreState{
+				Profile:       opt.Opts.ConfigBootProfile,
+				SnapshotFound: true,
+				Succeeded:     true,
+				Generation:    result.SnapshotGeneration,
+			})
 			return true
 		}
 		if attempt < bootRetries && subsystemStartupErrors(result.Errors) {
@@ -1833,11 +1849,24 @@ func applySnapshotBoot() bool {
 			time.Sleep(2 * time.Second)
 			continue
 		}
-		tk.LogIt(tk.LogError, "nlp: boot snapshot: restore failed (result=%q errors=%v); falling back to legacy config replay\n",
+		tk.LogIt(tk.LogError, "nlp: boot snapshot: restore failed (result=%q errors=%v)\n",
 			result.Result, result.Errors)
-		quarantineBootSnapshot()
+		recordBootFailure(quarantineBootSnapshot(), result.Errors...)
 		return false
 	}
+}
+
+// recordBootFailure records a degraded boot restore outcome for the
+// status/readiness surface: whatever profile the boot runs under, a failed
+// boot snapshot restore must never look READY silently.
+func recordBootFailure(quarantinePath string, reasons ...string) {
+	snapshot.RecordBootRestoreState(snapshot.BootRestoreState{
+		Profile:        opt.Opts.ConfigBootProfile,
+		SnapshotFound:  true,
+		Degraded:       true,
+		QuarantinePath: quarantinePath,
+		Reasons:        reasons,
+	})
 }
 
 // quarantineBootSnapshot renames a snapshot.json whose boot restore failed
@@ -1850,13 +1879,14 @@ func applySnapshotBoot() bool {
 // straight to the legacy replay instead of re-failing on a document
 // already known not to apply. The operator can inspect the quarantined
 // file and re-apply it via POST /config/restore once the cause is fixed.
-func quarantineBootSnapshot() {
+func quarantineBootSnapshot() string {
 	path, err := snapshot.QuarantinePersisted(opt.Opts.ConfigPath, time.Now())
 	if err != nil {
 		tk.LogIt(tk.LogError, "nlp: boot snapshot: quarantine failed: %v (a later persist may overwrite the failing snapshot)\n", err)
-		return
+		return ""
 	}
 	tk.LogIt(tk.LogCritical, "nlp: boot snapshot: restore failed; snapshot preserved at %s (will not be retried or overwritten)\n", path)
+	return path
 }
 
 // legacyConfigFiles are the boot-replay *.txt artifacts that §6.2 newest-wins
@@ -1979,9 +2009,37 @@ func LbSessionGet(done bool) int {
 			useSnapshot = true
 		}
 
-		if useSnapshot && applySnapshotBoot() {
-			tk.LogIt(tk.LogInfo, "nlp: boot config restored from snapshot.json; legacy *.txt replay skipped\n")
-			return 0
+		// Baseline boot record (profile + what arbitration chose); a
+		// snapshot restore outcome below overwrites it with the result.
+		snapshot.RecordBootRestoreState(snapshot.BootRestoreState{
+			Profile:       opt.Opts.ConfigBootProfile,
+			SnapshotFound: useSnapshot,
+		})
+
+		if useSnapshot {
+			if applySnapshotBoot() {
+				tk.LogIt(tk.LogInfo, "nlp: boot config restored from snapshot.json; legacy *.txt replay skipped\n")
+				return 0
+			}
+			// The snapshot boot failed (quarantined + recorded loudly
+			// above). Under the strict profile there is NO legacy
+			// fallback: replaying stale *.txt artifacts would run the
+			// gateway on older configuration while looking alive, so
+			// strict boots EMPTY and waits for operator recovery (the
+			// write gate still opens -- POST /config/restore of the
+			// quarantined document is the recovery path; readiness stays
+			// degraded via the recorded boot state).
+			if strings.EqualFold(opt.Opts.ConfigBootProfile, "strict") {
+				tk.LogIt(tk.LogCritical, "nlp: boot: strict profile: snapshot restore failed; legacy fallback disabled -- gateway boots EMPTY pending operator recovery (restore the quarantined snapshot via POST /config/restore)\n")
+				return 0
+			}
+			// Compat: fall through to the legacy replay, recorded as a
+			// degraded fallback so the status surface can expose that the
+			// gateway may be running older (*.txt-era) configuration.
+			if _, txtAny := newestLegacyConfigMtime(); txtAny {
+				snapshot.RecordBootLegacyFallback()
+				tk.LogIt(tk.LogWarning, "nlp: boot: compat profile: falling back to the legacy *.txt replay after the failed snapshot restore (degraded: replayed config may be older than the quarantined snapshot)\n")
+			}
 		}
 
 		// Legacy *.txt replay: either no snapshot.json, arbitration chose

@@ -183,6 +183,20 @@ echo "=== persist response contract: identity, coverage, dependency status ==="
 # (schema/generation/checksum), its coverage, and the dependency manifest
 # with capture-time statuses, so automation can verify what was saved
 # without re-reading the file.
+#
+# Drain first: a still-pending auto-persist debounce (re-kicked every time
+# an earlier capture held the snapshot gate) is a legitimate concurrent
+# writer of snapshot.json and would interleave between the paired persists
+# below, shifting their generations. Wait until the on-disk generation
+# holds still for longer than the 3s debounce quiet period.
+drain_ok=""
+for _ in $(seq 1 8); do
+    g_a=$(sudo cat llb1_config/snapshot.json | jq -r '.generation')
+    sleep 4
+    g_b=$(sudo cat llb1_config/snapshot.json | jq -r '.generation')
+    if [[ "$g_a" == "$g_b" ]]; then drain_ok=1; break; fi
+done
+[[ -n "$drain_ok" ]] || fail "auto-persist debounce never drained (generation kept moving)"
 persist_and_verify llb1 || fail "persist for the response-contract legs failed"
 presp="$PLIB_ARTIFACTS/persist-response.json"
 psv=$(jq -r '.schema_version' < "$presp")

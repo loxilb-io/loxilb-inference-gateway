@@ -58,6 +58,9 @@ type RestoreResult struct {
 	// snapshot gateway version
 	SnapshotGatewayVersion string `json:"snapshot_gateway_version,omitempty"`
 
+	// The restored document's lineage generation (absent for documents that predate generations and for bare captures).
+	SnapshotGeneration uint64 `json:"snapshot_generation,omitempty"`
+
 	// Non-fatal anomalies the pipeline tolerated (degraded external stores, duplicate document items skipped at boot). Warnings never change the result field or trigger rollback.
 	Warnings []string `json:"warnings"`
 }

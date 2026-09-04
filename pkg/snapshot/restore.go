@@ -111,6 +111,10 @@ type Result struct {
 	// left inconsistent; a dry-run that fails VALIDATE reports "" with
 	// Errors populated).
 	Result string `json:"result,omitempty"`
+	// SnapshotGeneration is the restored document's lineage generation
+	// (schema 1.5+; zero/absent for older documents and bare captures).
+	// The boot loader records it as the applied boot generation.
+	SnapshotGeneration uint64 `json:"snapshot_generation,omitempty"`
 	// Warnings reports non-fatal anomalies the pipeline tolerated -- today,
 	// document items skipped during a boot apply because a byte-identical
 	// item already existed (a duplicate entry inside the document). Kept
@@ -238,6 +242,7 @@ func (e *Engine) restore(raw []byte, opts RestoreOptions) (*Result, error) {
 	}
 	result.SchemaVersion = doc.SchemaVersion
 	result.SnapshotGatewayVersion = doc.GatewayVersion
+	result.SnapshotGeneration = doc.Generation
 
 	// 2. VALIDATE -- schema-version gate + migrations + coverage checks.
 	// Stage gating: a VALIDATE failure returns here and never reaches

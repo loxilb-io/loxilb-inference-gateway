@@ -15098,6 +15098,11 @@ func init() {
         "snapshot_gateway_version": {
           "type": "string"
         },
+        "snapshot_generation": {
+          "description": "The restored document's lineage generation (absent for documents that predate generations and for bare captures).",
+          "type": "integer",
+          "format": "uint64"
+        },
         "warnings": {
           "description": "Non-fatal anomalies the pipeline tolerated (degraded external stores, duplicate document items skipped at boot). Warnings never change the result field or trigger rollback.",
           "type": "array",
@@ -32500,6 +32505,11 @@ func init() {
         },
         "snapshot_gateway_version": {
           "type": "string"
+        },
+        "snapshot_generation": {
+          "description": "The restored document's lineage generation (absent for documents that predate generations and for bare captures).",
+          "type": "integer",
+          "format": "uint64"
         },
         "warnings": {
           "description": "Non-fatal anomalies the pipeline tolerated (degraded external stores, duplicate document items skipped at boot). Warnings never change the result field or trigger rollback.",

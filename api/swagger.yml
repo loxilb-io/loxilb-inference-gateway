@@ -6965,6 +6965,10 @@ definitions:
       result:
         type: string
         description: ok, rolled-back, or ROLLBACK-FAILED; empty when the pipeline stopped before APPLY.
+      snapshot_generation:
+        type: integer
+        format: uint64
+        description: The restored document's lineage generation (absent for documents that predate generations and for bare captures).
       warnings:
         type: array
         description: Non-fatal anomalies the pipeline tolerated (degraded external stores, duplicate document items skipped at boot). Warnings never change the result field or trigger rollback.
