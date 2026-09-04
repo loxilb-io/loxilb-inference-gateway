@@ -55,7 +55,7 @@ func ConfigGetIPsec(params operations.GetConfigIpsecParams, principal interface{
 	config, err := ApiHooks.NetIPsecGetConfig()
 	if err != nil {
 		tk.LogIt(tk.LogError, "[IPsec] Get config[NOK]: %v\n", err)
-		return &ResultResponse{Result: err.Error()}
+		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
 
 	tk.LogIt(tk.LogDebug, "[IPsec] Get config[OK]: FastPath=%v, HwOffload=%v\n", config.FastPathEnabled, config.HwOffloadEnabled)
@@ -95,7 +95,7 @@ func ConfigPostIPsec(params operations.PostConfigIpsecParams, principal interfac
 	_, err := ApiHooks.NetIPsecConfigSet(&cfgMod)
 	if err != nil {
 		tk.LogIt(tk.LogError, "[IPsec] Config update[NOK]: %v\n", err)
-		return &ResultResponse{Result: err.Error()}
+		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
 
 	return &ResultResponse{Result: "Success"}
@@ -108,7 +108,7 @@ func ConfigGetIPsecTunnelsAll(params operations.GetConfigIpsecTunnelsAllParams, 
 	tunnels, err := ApiHooks.NetIPsecTunnelGetAll()
 	if err != nil {
 		tk.LogIt(tk.LogError, "[IPsec] Get tunnels[NOK]: %v\n", err)
-		return &ResultResponse{Result: err.Error()}
+		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
 
 	tk.LogIt(tk.LogDebug, "[IPsec] Get tunnels[OK]: count=%d\n", len(tunnels))
@@ -237,7 +237,7 @@ func ConfigPostIPsecTunnels(params operations.PostConfigIpsecTunnelsParams, prin
 	_, err := ApiHooks.NetIPsecTunnelAdd(&tunnelMod)
 	if err != nil {
 		tk.LogIt(tk.LogError, "[IPsec] Tunnel add[NOK]: %v\n", err)
-		return &ResultResponse{Result: err.Error()}
+		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
 
 	tk.LogIt(tk.LogInfo, "[IPsec] Tunnel add[OK]: %s\n", tunnelMod.Name)
@@ -304,7 +304,7 @@ func ConfigPutIPsecTunnelsName(params operations.PutConfigIpsecTunnelsNameParams
 	_, err := ApiHooks.NetIPsecTunnelUpdate(&tunnelMod)
 	if err != nil {
 		tk.LogIt(tk.LogError, "[IPsec] Tunnel update[NOK]: %v\n", err)
-		return &ResultResponse{Result: err.Error()}
+		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
 
 	tk.LogIt(tk.LogInfo, "[IPsec] Tunnel update[OK]: %s\n", tunnelMod.Name)
@@ -321,7 +321,7 @@ func ConfigPostIPsecTunnelsNameAction(params operations.PostConfigIpsecTunnelsNa
 	_, err := ApiHooks.NetIPsecTunnelAction(params.Name, action)
 	if err != nil {
 		tk.LogIt(tk.LogError, "[IPsec] Tunnel action[NOK]: %v\n", err)
-		return &ResultResponse{Result: err.Error()}
+		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
 
 	tk.LogIt(tk.LogInfo, "[IPsec] Tunnel action[OK]: %s %s\n", params.Name, action)
@@ -335,7 +335,7 @@ func ConfigGetIPsecTunnelsName(params operations.GetConfigIpsecTunnelsNameParams
 	tunnel, err := ApiHooks.NetIPsecTunnelGet(params.Name)
 	if err != nil {
 		tk.LogIt(tk.LogError, "[IPsec] Get tunnel %s[NOK]: %v\n", params.Name, err)
-		return &ResultResponse{Result: err.Error()}
+		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
 
 	tk.LogIt(tk.LogDebug, "[IPsec] Get tunnel %s[OK]: state=%s\n", params.Name, tunnel.State)
@@ -404,7 +404,7 @@ func ConfigGetIPsecTunnelsNamePeerconfig(params operations.GetConfigIpsecTunnels
 	peerCfg, err := ApiHooks.NetIPsecTunnelPeerConfig(params.Name)
 	if err != nil {
 		tk.LogIt(tk.LogError, "[IPsec] Peer config %s[NOK]: %v\n", params.Name, err)
-		return &ResultResponse{Result: err.Error()}
+		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
 
 	tk.LogIt(tk.LogInfo, "[IPsec] Peer config generated for tunnel %s\n", params.Name)
@@ -428,7 +428,7 @@ func ConfigDeleteIPsecTunnelsName(params operations.DeleteConfigIpsecTunnelsName
 	_, err := ApiHooks.NetIPsecTunnelDel(params.Name)
 	if err != nil {
 		tk.LogIt(tk.LogError, "[IPsec] Tunnel delete[NOK]: %v\n", err)
-		return &ResultResponse{Result: err.Error()}
+		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
 
 	return &ResultResponse{Result: "Success"}
@@ -441,7 +441,7 @@ func ConfigGetIPsecSasAll(params operations.GetConfigIpsecSasAllParams, principa
 	sas, err := ApiHooks.NetIPsecSAGetAll()
 	if err != nil {
 		tk.LogIt(tk.LogError, "[IPsec] Get SAs[NOK]: %v\n", err)
-		return &ResultResponse{Result: err.Error()}
+		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
 
 	tk.LogIt(tk.LogDebug, "[IPsec] Get SAs[OK]: count=%d\n", len(sas))
@@ -478,7 +478,7 @@ func ConfigGetIPsecStats(params operations.GetConfigIpsecStatsParams, principal 
 	stats, err := ApiHooks.NetIPsecStatsGet()
 	if err != nil {
 		tk.LogIt(tk.LogError, "[IPsec] Get stats[NOK]: %v\n", err)
-		return &ResultResponse{Result: err.Error()}
+		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
 
 	tk.LogIt(tk.LogDebug, "[IPsec] Get stats[OK]: tunnels=%d, SAs=%d\n", stats.TotalTunnels, stats.TotalSAs)
@@ -511,7 +511,7 @@ func ConfigDeleteIPsecStats(params operations.DeleteConfigIpsecStatsParams, prin
 	_, err := ApiHooks.NetIPsecStatsReset()
 	if err != nil {
 		tk.LogIt(tk.LogError, "[IPsec] Reset stats[NOK]: %v\n", err)
-		return &ResultResponse{Result: err.Error()}
+		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
 
 	return &ResultResponse{Result: "Success"}
@@ -524,7 +524,7 @@ func ConfigGetIPsecCertificatesAll(params operations.GetConfigIpsecCertificatesA
 	certs, err := ApiHooks.NetIPsecCertificateGetAll()
 	if err != nil {
 		tk.LogIt(tk.LogError, "[IPsec] Get certificates[NOK]: %v\n", err)
-		return &ResultResponse{Result: err.Error()}
+		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
 
 	tk.LogIt(tk.LogDebug, "[IPsec] Get certificates[OK]: count=%d\n", len(certs))
@@ -564,7 +564,7 @@ func ConfigPostIPsecCertificates(params operations.PostConfigIpsecCertificatesPa
 	_, err := ApiHooks.NetIPsecCertificateAdd(&certMod)
 	if err != nil {
 		tk.LogIt(tk.LogError, "[IPsec] Certificate add[NOK]: %v\n", err)
-		return &ResultResponse{Result: err.Error()}
+		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
 
 	// Get the installed certificate to return details
@@ -592,7 +592,7 @@ func ConfigGetIPsecCertificatesName(params operations.GetConfigIpsecCertificates
 	cert, err := ApiHooks.NetIPsecCertificateGet(params.Name)
 	if err != nil {
 		tk.LogIt(tk.LogError, "[IPsec] Get certificate %s[NOK]: %v\n", params.Name, err)
-		return &ResultResponse{Result: err.Error()}
+		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
 
 	tk.LogIt(tk.LogDebug, "[IPsec] Get certificate %s[OK]: subject=%s\n", params.Name, cert.Subject)
@@ -619,7 +619,7 @@ func ConfigDeleteIPsecCertificatesName(params operations.DeleteConfigIpsecCertif
 	_, err := ApiHooks.NetIPsecCertificateDel(params.Name)
 	if err != nil {
 		tk.LogIt(tk.LogError, "[IPsec] Certificate delete[NOK]: %v\n", err)
-		return &ResultResponse{Result: err.Error()}
+		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
 
 	return &ResultResponse{Result: "Success"}
@@ -638,7 +638,7 @@ func ConfigPostIPsecCertificatesValidate(params operations.PostConfigIpsecCertif
 	)
 	if err != nil {
 		tk.LogIt(tk.LogError, "[IPsec] Certificate validation[NOK]: %v\n", err)
-		return &ResultResponse{Result: err.Error()}
+		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
 
 	result := &models.IPsecCertValidation{
@@ -661,7 +661,7 @@ func ConfigGetIPsecCaCertificatesAll(params operations.GetConfigIpsecCaCertifica
 	caCerts, err := ApiHooks.NetIPsecCACertificateGetAll()
 	if err != nil {
 		tk.LogIt(tk.LogError, "[IPsec] Get CA certificates[NOK]: %v\n", err)
-		return &ResultResponse{Result: err.Error()}
+		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
 
 	tk.LogIt(tk.LogDebug, "[IPsec] Get CA certificates[OK]: count=%d\n", len(caCerts))
@@ -697,7 +697,7 @@ func ConfigPostIPsecCaCertificates(params operations.PostConfigIpsecCaCertificat
 	_, err := ApiHooks.NetIPsecCACertificateAdd(&caCertMod)
 	if err != nil {
 		tk.LogIt(tk.LogError, "[IPsec] CA certificate add[NOK]: %v\n", err)
-		return &ResultResponse{Result: err.Error()}
+		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
 
 	// Get the installed CA certificate to return details
@@ -723,7 +723,7 @@ func ConfigGetIPsecCaCertificatesName(params operations.GetConfigIpsecCaCertific
 	caCert, err := ApiHooks.NetIPsecCACertificateGet(params.Name)
 	if err != nil {
 		tk.LogIt(tk.LogError, "[IPsec] Get CA certificate %s[NOK]: %v\n", params.Name, err)
-		return &ResultResponse{Result: err.Error()}
+		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
 
 	tk.LogIt(tk.LogDebug, "[IPsec] Get CA certificate %s[OK]: subject=%s\n", params.Name, caCert.Subject)
@@ -748,7 +748,7 @@ func ConfigDeleteIPsecCaCertificatesName(params operations.DeleteConfigIpsecCaCe
 	_, err := ApiHooks.NetIPsecCACertificateDel(params.Name)
 	if err != nil {
 		tk.LogIt(tk.LogError, "[IPsec] CA certificate delete[NOK]: %v\n", err)
-		return &ResultResponse{Result: err.Error()}
+		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
 
 	return &ResultResponse{Result: "Success"}
