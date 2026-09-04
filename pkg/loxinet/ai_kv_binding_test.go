@@ -34,6 +34,28 @@ func kvBindingTestSetup(t *testing.T) {
 	t.Cleanup(KvBindingReset)
 }
 
+// kvBindingTestPublishProfile publishes a minimal generation containing one
+// profile id, so a restored binding referencing it is resolvable against the
+// live registry (the precondition for clearing the restore fence). Restores the prior
+// generation on cleanup.
+func kvBindingTestPublishProfile(t *testing.T, profileID, baseModel string) {
+	t.Helper()
+	prev := kvProfileReg.Load()
+	t.Cleanup(func() { kvProfileReg.Store(prev) })
+	e := &kvProfileEntry{Profile: ModelPromptProfile{
+		ProfileID: profileID, BaseModel: baseModel,
+		SupportedApis: []string{KvProfileAPICompletions},
+		AliasPolicy:   KvAliasPolicyBaseModelOnly,
+	}}
+	gen := &kvProfileGeneration{
+		Gen:      kvProfileRegGen.Add(1),
+		Profiles: map[string]*kvProfileEntry{profileID: e},
+		ByModel:  map[string]*kvProfileEntry{kvModelSlug(baseModel): e},
+	}
+	e.Gen = gen.Gen
+	kvProfileReg.Store(gen)
+}
+
 func kvTestComponents(policyGen uint32) KvExactBindingComponents {
 	return KvExactBindingComponents{
 		Profile:               KvModelProfileRef{ID: "acme-m1-v1", Gen: 3},
@@ -336,6 +358,12 @@ func TestKvBindingExportRestoreRoundTrip(t *testing.T) {
 // past token parity after a gateway restart.
 func TestKvBindingRestoreRebindsSubscriberWire(t *testing.T) {
 	kvBindingTestSetup(t)
+	// A healthy restart loads the profile registry BEFORE it replays the
+	// snapshot (loxinet boot order), so the restored binding's profile is
+	// resolvable when KvBindingRestore runs and the contract-word install +
+	// wire rebind proceed. Model that ordering; otherwise the restore
+	// withholds the install to keep the fence.
+	kvBindingTestPublishProfile(t, kvTestComponents(1).Profile.ID, "acme-m1")
 	const svcID = uint32(9107)
 	const ruleIdent = "rule-restore-rebind"
 

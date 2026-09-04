@@ -50,6 +50,7 @@ import (
 	"sync"
 
 	cmn "github.com/loxilb-io/loxilb/common"
+	tk "github.com/loxilb-io/loxilib"
 )
 
 // KvEngineContractRef references an engine contract by identity and
@@ -331,6 +332,18 @@ func KvBindingExport() []cmn.KvExactBindingMod {
 // tampered or corrupted document fails here instead of installing an
 // identity the components do not prove. The allocator resumes above the
 // persisted high-water mark so restored generations are never reissued.
+// kvBindingProfileResolvable reports whether a persisted binding's
+// model-prompt profile exists in the currently published registry
+// generation. The binding's own digest guards only its internal
+// consistency; this is the separate check against the LIVE registry that
+// decides whether a restore may clear the strict-bypass fence. Extracted as
+// a predicate so the decision is unit-testable without driving the async
+// install transaction.
+func kvBindingProfileResolvable(profileID string) bool {
+	_, ok := kvProfileByID(profileID)
+	return ok
+}
+
 func KvBindingRestore(mod *cmn.KvExactBindingMod) error {
 	if mod == nil || mod.RuleIdent == "" {
 		return errors.New("kv-binding: restore requires a rule identity")
@@ -379,6 +392,23 @@ func KvBindingRestore(mod *cmn.KvExactBindingMod) error {
 	// fenced (deny set) without a binding; now that the authoritative
 	// binding exists, run the contract-word install transaction — the only
 	// path that can clear the fence.
+	//
+	// EXCEPT when the binding's model-prompt profile cannot be resolved in
+	// the currently published registry generation (an all-or-nothing publish
+	// failed, so nothing is serving). The persisted binding is
+	// self-consistent — its digest recomputes — but it is unproven against
+	// the live registry, so kicking the install here would clear the fence
+	// on a rule that can no longer be attested. The loadbalancer domain has
+	// already fenced this rule (kvRestoredProfileUnresolved); keep the binding
+	// STATE so nothing is lost, but leave the fence engaged until the registry
+	// is repaired. Without this a single malformed profile document silently
+	// un-fences every strict rule on the next restart.
+	if !kvBindingProfileResolvable(mod.ModelProfileID) {
+		tk.LogIt(tk.LogError,
+			"kv-binding: rule %s restored with UNRESOLVED profile %q — binding state kept, contract-word install withheld, fence retained until the registry is repaired\n",
+			mod.RuleIdent, mod.ModelProfileID)
+		return nil
+	}
 	KvSvcContractKickInstall(mod.RuleIdent)
 	// The replayed rule's subscribers started before this binding existed and
 	// resolved the legacy wire schema; converge them on the restored contract

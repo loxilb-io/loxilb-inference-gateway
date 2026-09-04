@@ -7173,6 +7173,7 @@ definitions:
       enforcement_fault: Data-plane fence/contract transaction could not be acknowledged.
       runtime_fault: Engine runtime fault reported through the inventory stream.
       restored_profile_less_requires_migration: Profile-less rule arrived via restore; fenced until a profile is attached by replace.
+      profile_registry_unavailable: Restored rule's declared profile could not be resolved because no registry generation is published; the declaration is preserved and the exact path stays fenced until the registry is repaired.
       drain_sequence_gap: Destructive-read drain stream shows a sequence gap - inventory evidence untrustworthy.
       drain_ownership_lost: Drain ownership lost to another consumer - inventory evidence untrustworthy.
       attestation_pending: Attestation controller registered but has not published a verdict yet.

@@ -624,6 +624,7 @@ type ruleEnt struct {
 	kvExactApiMode              string                  // KV-exact API surfaces: ""/"completions"/"chat"/"both" — immutable after create
 	kvModelProfile              string                  // bound ModelPromptProfile ID ("" = legacy profile-less) — immutable after create
 	kvRestoredLegacy            bool                    // profile-less KV-exact rule arrived via restore: REQUIRES_MIGRATION, exact path fenced until a profile is attached
+	kvRestoredProfileUnresolved bool                    // restored KV-exact rule whose declared profile could not be resolved (registry unavailable): declaration preserved, exact path fenced
 	kvDpRankCount               uint16                  // SGLang DP rank count (1..8, 0 ⇒ 1; rank N publishes at kvZmqPort+N)
 	pdBootstrapPort             uint16                  // SGLang P/D bootstrap port on prefill EPs (0 ⇒ 8998 downstream)
 	chwblPrefixHashLevel        int                     // CHWBL prefix hash level: 1, 2, or 3
@@ -2962,6 +2963,32 @@ type kvExactAdmissionResult struct {
 // profile — requires an available chat renderer for the model: unsupported
 // chat is refused at create time, never degraded into a silent runtime
 // fallback that would mis-template and mis-hash every chat request.
+// kvExactNeedsRestoreFence reports whether a rule arriving on the restore
+// path must be registered DENIED on the strict-bypass path — i.e. whether the
+// exact tier must be fenced off until an operator action makes it attestable
+// again. Two causes qualify, and BOTH must fence: a profile-less rule (the
+// pre-upgrade unattested behavior must not survive a restore) and a rule
+// whose declared profile the registry could not resolve (the declaration is
+// intact, but nothing can be attested while no generation is published).
+//
+// Extracted as a predicate so the fence decision is unit-testable on its own:
+// asserting the deny-set from a status test proves nothing, because the test
+// has to register the contract itself to build the fixture.
+func kvExactNeedsRestoreFence(r *ruleEnt) bool {
+	return r.kvRestoredLegacy || r.kvRestoredProfileUnresolved
+}
+
+// errKvProfileUnresolved marks an admission refusal whose ONLY cause is that
+// the declared model-prompt profile is not resolvable in the currently
+// published registry generation. It is the one refusal a snapshot restore
+// must not treat as a bad rule: the registry publish is all-or-nothing, so a
+// single malformed profile document anywhere makes every declaration in the
+// snapshot unresolvable at once. Restoring those rules as profile-less legacy
+// would silently drop both the operator's declaration and the exact-path
+// fence, so the restore path preserves the declaration and fences instead
+// (see RulesLbRuleAdd's restore branch and GetKvExactStatus).
+var errKvProfileUnresolved = errors.New("kv-exact: model-prompt profile unresolved")
+
 func kvExactRuntimeValidate(engine string, kvExactMode uint8, modelName, apiMode, profileID string,
 	deps kvExactAdmissionDeps) (kvExactAdmissionResult, error) {
 	var res kvExactAdmissionResult
@@ -2998,7 +3025,12 @@ func kvExactRuntimeValidate(engine string, kvExactMode uint8, modelName, apiMode
 	if profileID != "" {
 		p, gen, ok := deps.profileByID(profileID)
 		if !ok {
-			return res, fmt.Errorf("kvModelProfile %q is not a published model-prompt profile", profileID)
+			// Wrapped so the restore path can tell "this declaration cannot
+			// be resolved right now" apart from every other admission
+			// refusal. On a fresh POST the wrapper changes nothing: the
+			// caller still refuses with the same message.
+			return res, fmt.Errorf("%w: kvModelProfile %q is not a published model-prompt profile",
+				errKvProfileUnresolved, profileID)
 		}
 		if !kvProfileServesModel(p, modelName) {
 			return res, fmt.Errorf("model_name %q is not served by profile %q (alias policy %s admits base model %q%s)",
@@ -3141,6 +3173,21 @@ func (R *RuleH) GetKvExactStatus(vip string, port uint16, proto string, modelNam
 			m.DesiredState = KvExactStateLegacyActive
 			m.EnforcedState = KvExactStateLegacyActive
 			m.ReasonCodes = []string{KvAttestReasonNoProfileBound}
+			res = append(res, m)
+			continue
+		}
+
+		if data.kvRestoredProfileUnresolved {
+			// Restored strict rule whose declared profile the registry could
+			// not resolve. The declaration is intact and the exact path is
+			// fenced; the remedy is repairing the registry, so say THAT
+			// rather than the generic missing-binding fault (and never the
+			// profile-less legacy verdict, which would read as benign).
+			m.ModelProfileID = data.kvModelProfile
+			m.DesiredState = KvExactStateProfileValidated
+			m.EnforcedState = KvExactStateEnforcementFault
+			m.ReasonCodes = []string{KvAttestReasonProfileRegistryUnavailable}
+			m.Enforcement = kvExactEnforcementInfo(uint32(data.ruleNum), m.DesiredState, m.EnforcedState)
 			res = append(res, m)
 			continue
 		}
@@ -3766,8 +3813,25 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 			chatRenderer: kvChatTemplateSupported,
 			contractRef:  kvCurrentContractRef,
 		})
+	kvRestoreProfileUnresolved := false
 	if err != nil {
-		return RuleUnknownServiceErr, kvAdmissionRefuse(err)
+		// A snapshot restore must never be turned into a silent strictness
+		// downgrade. The profile registry publishes all-or-nothing, so one
+		// malformed document makes EVERY declaration in the snapshot
+		// unresolvable; refusing here would fail the whole loadbalancer
+		// domain, roll the restore back, and let the legacy config replay
+		// recreate these rules with no profile and no fence — unattested
+		// KV-exact rules serving traffic. Keep the declaration, admit the
+		// rule non-strict, and fence the exact path below instead.
+		if serv.RestoreReplay && errors.Is(err, errKvProfileUnresolved) {
+			kvRestoreProfileUnresolved = true
+			kvAdmission = kvExactAdmissionResult{}
+			tk.LogIt(tk.LogError,
+				"kv-exact: rule %s:%d restored with UNRESOLVED profile %q (%v) — declaration preserved, exact path fenced\n",
+				serv.ServIP, serv.ServPort, serv.KvModelProfile, err)
+		} else {
+			return RuleUnknownServiceErr, kvAdmissionRefuse(err)
+		}
 	}
 
 	// pdBootstrapPort is meaningful only on an sglang P/D rule — anywhere else
@@ -4371,6 +4435,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	// bypass). The marker drives the status verdict and the exact-path
 	// fence below; attaching a profile on replace clears it.
 	r.kvRestoredLegacy = serv.RestoreReplay && serv.KvExactMode != 0 && serv.KvModelProfile == ""
+	r.kvRestoredProfileUnresolved = kvRestoreProfileUnresolved
 	r.kvDpRankCount = serv.KvDpRankCount
 	r.pdBootstrapPort = serv.PDBootstrapPort
 
@@ -4537,7 +4602,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 			decodeEPs:       kvAttestDecodeEPs(r.pdDisaggMode, lBActs.endPoints),
 		}, attEps)
 	}
-	if r.kvRestoredLegacy {
+	if kvExactNeedsRestoreFence(r) {
 		// strict bypass: register the restored-legacy rule's identity
 		// DENIED with no install path — the tokenize-bridge fence keeps the
 		// exact tier from ever scoring (requests still route through the
