@@ -45,3 +45,13 @@ paths = [
   '''^pkg/aikey/cache_isolation_test\.go$''',
   '''^pkg/aikey/plane_isolation_test\.go$''',
 ]
+# cfg-persist-roundtrip's OTLP secret-split fixture. The suite POSTs a dummy
+# OTLP auth header ("rt-otlp-secret-…") precisely so validation.sh can prove
+# the value is split into the node-local otlp-headers.json and never reaches
+# the snapshot document. It is a grep subject, not a credential. Scoped to
+# the literal fixture value (not the file) so a real key committed anywhere
+# in that suite is still caught, and so history rewrites cannot resurrect
+# the finding.
+regexes = [
+  '''rt-otlp-secret-[0-9a-z]+''',
+]
