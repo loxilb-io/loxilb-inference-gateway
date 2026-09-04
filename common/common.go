@@ -1796,6 +1796,12 @@ var ErrInvalidApiKeyAuth = errors.New("invalid api_key_auth: must be one of disa
 // nothing on it.
 var ErrKvExactKeyUnservable = errors.New("kv-exact status: unservable key")
 
+// ErrAiModelProfileNotFound marks a model-profile discovery read for a
+// profile id absent from the currently published registry generation (or when
+// no generation is published at all). It is a read answer, not a fault: the
+// REST layer serves it as the detail operation's 404.
+var ErrAiModelProfileNotFound = errors.New("model-profile: not found in published registry generation")
+
 // ErrDBUnavailable is returned when the credential store is not initialised or
 // its connection has been lost. It is a server-side condition, not a verdict on
 // the credential, and maps to HTTP 503.
@@ -1866,6 +1872,17 @@ type NetHookInterface interface {
 	// GET/POST-shared LoadbalanceEntry, where a client echoing a GET body back
 	// into a POST would replay resolved state as configuration.
 	NetKvExactStatusGet(vip string, port uint16, proto string, modelName string) ([]KvExactStatusMod, error)
+	// NetAiModelProfileList returns the currently published model-profile
+	// registry generation as the read-only discovery envelope (profiles
+	// ordered by ProfileID ascending; generation 0 + empty set when no
+	// registry is published). Discovery is a cache, never an admission
+	// authority: rule admission re-validates against the generation current
+	// at POST time.
+	NetAiModelProfileList() (AiModelProfileRegistryMod, error)
+	// NetAiModelProfileGet returns one published profile by id;
+	// ErrAiModelProfileNotFound when the id is absent from the published
+	// generation (or none is published).
+	NetAiModelProfileGet(profileID string) (AiModelProfileMod, error)
 	// NetL7PolicyApply attaches an ordered L7 content-routing route array to the
 	// running sockproxy rule fronting the given VIP:port:proto.
 	// Driven from the dedicated /config/l7policy REST resource: the route IR
@@ -2373,4 +2390,57 @@ type KvExactEnforcement struct {
 	Fault string `json:"fault,omitempty"`
 	// GoFenced reports the authoritative tokenize-bridge deny-set fence.
 	GoFenced bool `json:"goFenced"`
+}
+
+// AiModelProfileMod - one published model-prompt profile as the discovery
+// read model. A DEDICATED read-only projection of the registry entry:
+// artifact locator paths, the registry root, and every other host-filesystem
+// detail are deliberately absent — the sha256 digests are the only artifact
+// identities a client gets. Presence conveys validity by construction
+// (publication is all-or-nothing), so the model carries no availability
+// state.
+type AiModelProfileMod struct {
+	// ProfileID is the registry key (a single path-safe segment).
+	ProfileID string `json:"profileId"`
+	// Gen is the registry generation this entry was published at.
+	Gen uint64 `json:"gen"`
+	// BaseModel is the served base-model identity.
+	BaseModel string `json:"baseModel"`
+	// AliasPolicy is base_model_only or list; AllowedAliases lists the
+	// additionally served model names (only with AliasPolicy list).
+	AliasPolicy    string   `json:"aliasPolicy"`
+	AllowedAliases []string `json:"allowedAliases,omitempty"`
+	// SupportedApis declares the request surfaces (completions/chat).
+	SupportedApis []string `json:"supportedApis"`
+	// SupportedFeatures/ExcludedFeatures form the request-feature matrix.
+	SupportedFeatures []string `json:"supportedFeatures,omitempty"`
+	ExcludedFeatures  []string `json:"excludedFeatures,omitempty"`
+	// TokenizerRevision is informational provenance ("" = not recorded).
+	TokenizerRevision string `json:"tokenizerRevision,omitempty"`
+	// TokenizerSha256 pins the tokenizer artifact bytes (always present —
+	// the registry refuses to publish without a verified tokenizer).
+	TokenizerSha256 string `json:"tokenizerSha256"`
+	// TemplateSha256/TemplateContentFormat describe the bound chat template
+	// (empty when none is bound).
+	TemplateSha256        string `json:"templateSha256,omitempty"`
+	TemplateContentFormat string `json:"templateContentFormat,omitempty"`
+	// Renderer/Oracle identify the serving-path renderer and the parity
+	// oracle the rendered bytes are attested against (empty = undeclared).
+	RendererEngine  string `json:"rendererEngine,omitempty"`
+	RendererVersion string `json:"rendererVersion,omitempty"`
+	OracleEngine    string `json:"oracleEngine,omitempty"`
+	OracleVersion   string `json:"oracleVersion,omitempty"`
+}
+
+// AiModelProfileRegistryMod - the published registry generation as the
+// discovery envelope. Generation 0 with an empty Profiles slice is the
+// documented no-registry-published (legacy-mode) answer, not an error.
+type AiModelProfileRegistryMod struct {
+	// RegistryGeneration is the monotonic generation number (0 = none).
+	RegistryGeneration uint64 `json:"registryGeneration"`
+	// SetDigest is the digest over the generation's profile documents and
+	// verified artifact bytes ("" at generation 0).
+	SetDigest string `json:"setDigest,omitempty"`
+	// Profiles is every published profile ordered by ProfileID ascending.
+	Profiles []AiModelProfileMod `json:"profiles"`
 }
