@@ -47,6 +47,14 @@ persist_and_verify llb1 || fail "baseline persist"
 plib_curl llb1 "$PLIB_API/config/snapshot" -o "$PLIB_ARTIFACTS/good.json"
 [[ $(sudo jq -r '.kind' "$PLIB_ARTIFACTS/good.json" 2>/dev/null) == "loxilb-snapshot" ]] \
     && pass "known-good document captured" || fail "good capture"
+# Readiness baseline: a healthy gateway answers 200 ready=true and the
+# status surface reports the persist we just made (generation+checksum).
+rrc=$(plib_curl llb1 -o "$PLIB_ARTIFACTS/ready-baseline.json" -w "%{http_code}" "$PLIB_API/status/ready")
+rready=$(jq -r '.ready' < "$PLIB_ARTIFACTS/ready-baseline.json")
+rpgen=$(jq -r '.last_persist.generation // 0' < "$PLIB_ARTIFACTS/ready-baseline.json")
+[[ "$rrc" == "200" && "$rready" == "true" && "$rpgen" -ge 1 ]] \
+    && pass "healthy gateway is READY and reports its last persist (gen $rpgen)" \
+    || fail "baseline readiness: HTTP $rrc ready=$rready last_persist.gen=$rpgen"
 
 #################################################################################
 echo "=== partial document must not wipe omitted domains ==="
@@ -507,10 +515,26 @@ docker exec llb1 grep -aq "strict profile: snapshot restore failed; legacy fallb
 [[ "$(lb_count)" == "0" ]] \
     && pass "strict boot is EMPTY: the legacy lbconfig.txt was NOT replayed" \
     || fail "strict boot applied config anyway (lb=$(lb_count))"
+# No silent READY: the degraded strict boot must answer 503 ready=false
+# with the boot record naming the degradation.
+rrc=$(plib_curl llb1 -o "$PLIB_ARTIFACTS/ready-degraded.json" -w "%{http_code}" "$PLIB_API/status/ready")
+rready=$(jq -r '.ready' < "$PLIB_ARTIFACTS/ready-degraded.json")
+rdeg=$(jq -r '.boot.degraded' < "$PLIB_ARTIFACTS/ready-degraded.json")
+rwhy=$(jq -r '(.reasons // []) | join(" ")' < "$PLIB_ARTIFACTS/ready-degraded.json")
+[[ "$rrc" == "503" && "$rready" == "false" && "$rdeg" == "true" && "$rwhy" == *"restore failed"* ]] \
+    && pass "degraded strict boot is NOT ready (503, reason names the failed restore)" \
+    || fail "degraded readiness: HTTP $rrc ready=$rready degraded=$rdeg reasons=$rwhy"
 rc=$(restore_commit llb1 "$PLIB_ARTIFACTS/good.json")
 [[ "$rc" == "200" && "$(lb_count)" == "1" ]] \
     && pass "operator recovery via REST restore works under strict" \
     || fail "strict recovery restore failed (HTTP $rc lb=$(lb_count))"
+# The commit restore is the designed exit from degraded: READY flips back.
+rrc=$(plib_curl llb1 -o "$PLIB_ARTIFACTS/ready-recovered.json" -w "%{http_code}" "$PLIB_API/status/ready")
+rready=$(jq -r '.ready' < "$PLIB_ARTIFACTS/ready-recovered.json")
+rmode=$(jq -r '.last_restore.mode // ""' < "$PLIB_ARTIFACTS/ready-recovered.json")
+[[ "$rrc" == "200" && "$rready" == "true" && "$rmode" == "commit" ]] \
+    && pass "commit-restore recovery flips READY back on (last_restore mode commit)" \
+    || fail "post-recovery readiness: HTTP $rrc ready=$rready last_restore.mode=$rmode"
 resp=$($hexec l3h1 curl -s -m 5 "http://${VIP}:2020/" 2>/dev/null | head -3)
 echo "$resp" | grep -q 'X-Echo-Backend' \
     && pass "recovered VIP routes traffic after the strict-boot recovery" \
