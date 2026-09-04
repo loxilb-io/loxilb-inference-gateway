@@ -416,5 +416,105 @@ resp=$($hexec l3h1 curl -s -m 5 "http://${VIP}:2020/" 2>/dev/null | head -3)
 echo "$resp" | grep -q 'X-Echo-Backend' \
     && pass "recovered L4 VIP routes traffic" || fail "recovered VIP probe: $resp"
 
+#################################################################################
+echo "=== boot quarantines an UNREADABLE snapshot.json (read-failure branch) ==="
+#################################################################################
+# A directory planted where the snapshot file belongs makes os.ReadFile
+# fail with a real I/O error (EISDIR) -- the read-failure branch, distinct
+# from the parse/pipeline failures above. It must quarantine like every
+# other boot failure: left in place, the next persist would overwrite the
+# only forensic copy of whatever is wrong on disk.
+q0=$(quarantine_count)
+sudo rm -rf "$CFG/snapshot.json"
+sudo mkdir "$CFG/snapshot.json"
+plib_start_gw llb1 || fail "gateway did not come back after unreadable-snapshot boot"
+plib_wait_api llb1 || fail "API after unreadable-snapshot boot"
+[[ "$(quarantine_count)" == "$((q0+1))" ]] \
+    && pass "unreadable snapshot quarantined at boot (read-failure branch)" \
+    || fail "no quarantine artifact for the unreadable snapshot"
+docker exec llb1 grep -aq "boot snapshot: read" /tmp/loxilb.out \
+    && pass "read failure logged loudly" || fail "no read-failure log line"
+[[ "$(lb_count)" == "0" ]] \
+    && pass "clean empty boot after the read-failure quarantine" \
+    || fail "unexpected config after read-failure boot"
+rc=$(restore_commit llb1 "$PLIB_ARTIFACTS/good.json")
+[[ "$rc" == "200" && "$(lb_count)" == "1" ]] \
+    && pass "recovery via REST restore after the read-failure quarantine" \
+    || fail "recovery restore failed (HTTP $rc lb=$(lb_count))"
+
+#################################################################################
+echo "=== compat boot profile: legacy fallback runs and is loudly degraded ==="
+#################################################################################
+# A failing snapshot AND a legacy lbconfig.txt both present, snapshot
+# newer (arbitration picks it). The default compat profile must
+# quarantine the snapshot, then fall back to the *.txt replay -- and say
+# so loudly, because the replayed config may be older than what the
+# quarantined snapshot carried.
+cat > "$PLIB_ARTIFACTS/legacy-lb.txt" <<'EOF'
+{
+  "lbAttr": [
+    {
+      "serviceArguments": {
+        "externalIP": "20.20.20.1", "port": 2021, "protocol": "tcp",
+        "sel": 0, "mode": 0, "BGP": false, "Monitor": false,
+        "inactiveTimeOut": 240, "block": 0
+      },
+      "secondaryIPs": null,
+      "endpoints": [
+        { "endpointIP": "31.31.31.1", "targetPort": 80, "weight": 1, "state": "active", "counter": "" }
+      ]
+    }
+  ]
+}
+EOF
+q0=$(quarantine_count)
+sudo cp "$PLIB_ARTIFACTS/legacy-lb.txt" "$CFG/lbconfig.txt"
+sudo touch -t 202601010000 "$CFG/lbconfig.txt"
+sudo cp "$PLIB_ARTIFACTS/dep-kv.json" "$CFG/snapshot.json"
+plib_start_gw llb1 || fail "gateway did not come back on the compat-fallback boot"
+plib_wait_api llb1 || fail "API after compat-fallback boot"
+[[ "$(quarantine_count)" == "$((q0+1))" ]] \
+    && pass "failing snapshot quarantined before the compat fallback" \
+    || fail "no quarantine artifact on the compat-fallback boot"
+docker exec llb1 grep -aq "compat profile: falling back" /tmp/loxilb.out \
+    && pass "compat fallback logged as degraded" || fail "no compat-fallback log line"
+lb_legacy=$(plib_curl llb1 "$PLIB_API/config/loadbalancer/all" | jq '[.lbAttr[]? | select(.serviceArguments.port==2021)] | length')
+[[ "$lb_legacy" == "1" && "$(lb_count)" == "1" ]] \
+    && pass "legacy *.txt replay ran under compat (the port-2021 rule is live)" \
+    || fail "compat fallback state: lb=$(lb_count) legacy-rule=$lb_legacy"
+
+#################################################################################
+echo "=== strict boot profile: NO legacy fallback after a failed restore ==="
+#################################################################################
+# Same double-artifact setup, booted with --config-boot-profile strict:
+# replaying stale *.txt artifacts over a failed restore would run the
+# gateway on older configuration while looking alive, so strict must boot
+# EMPTY (quarantine + loud log), leaving recovery to the operator.
+q0=$(quarantine_count)
+sudo cp "$PLIB_ARTIFACTS/legacy-lb.txt" "$CFG/lbconfig.txt"
+sudo touch -t 202601010000 "$CFG/lbconfig.txt"
+sudo cp "$PLIB_ARTIFACTS/dep-kv.json" "$CFG/snapshot.json"
+plib_start_gw llb1 --config-boot-profile strict || fail "gateway did not come back on the strict boot"
+plib_wait_api llb1 || fail "API after strict boot"
+[[ "$(quarantine_count)" == "$((q0+1))" ]] \
+    && pass "failing snapshot quarantined under strict" \
+    || fail "no quarantine artifact on the strict boot"
+docker exec llb1 grep -aq "strict profile: snapshot restore failed; legacy fallback disabled" /tmp/loxilb.out \
+    && pass "strict profile logged the disabled fallback" || fail "no strict-profile log line"
+[[ "$(lb_count)" == "0" ]] \
+    && pass "strict boot is EMPTY: the legacy lbconfig.txt was NOT replayed" \
+    || fail "strict boot applied config anyway (lb=$(lb_count))"
+rc=$(restore_commit llb1 "$PLIB_ARTIFACTS/good.json")
+[[ "$rc" == "200" && "$(lb_count)" == "1" ]] \
+    && pass "operator recovery via REST restore works under strict" \
+    || fail "strict recovery restore failed (HTTP $rc lb=$(lb_count))"
+resp=$($hexec l3h1 curl -s -m 5 "http://${VIP}:2020/" 2>/dev/null | head -3)
+echo "$resp" | grep -q 'X-Echo-Backend' \
+    && pass "recovered VIP routes traffic after the strict-boot recovery" \
+    || fail "post-strict recovery VIP probe: $resp"
+# Drop the planted legacy artifact so later boots arbitrate on the
+# snapshot alone (the write-through above re-persisted the good state).
+sudo rm -f "$CFG/lbconfig.txt"
+
 plib_collect_logs llb1
 exit $code
