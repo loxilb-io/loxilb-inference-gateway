@@ -214,11 +214,56 @@ func TestMigrationStampsFullCoverageOn11Docs(t *testing.T) {
 	if err := ApplyMigrations(doc); err != nil {
 		t.Fatalf("ApplyMigrations: %v", err)
 	}
-	if doc.SchemaVersion != "1.2" {
-		t.Fatalf("expected migration to 1.2, got %q", doc.SchemaVersion)
+	if doc.SchemaVersion != SchemaVersion {
+		t.Fatalf("expected migration chain to reach %q, got %q", SchemaVersion, doc.SchemaVersion)
 	}
 	if len(doc.IncludedDomains) != len(Registry) {
 		t.Fatalf("expected full coverage stamped, got %v", doc.IncludedDomains)
+	}
+}
+
+// TestMigrationKeepsNewDomainsOutOf12Coverage: a 1.2 document declared
+// its coverage explicitly and never captured L7 policies or CORS config,
+// so migrating it to 1.3 must NOT widen included_domains -- restoring an
+// old document must leave the live state of the new domains untouched.
+// The absent l7policy payload is normalized to its empty value; the
+// absent cors payload stays nil (nil is the meaningful "unconfigured"
+// value for that singleton).
+func TestMigrationKeepsNewDomainsOutOf12Coverage(t *testing.T) {
+	doc := NewDocument("0.9.8.6-beta", "test-host", TriggerManual)
+	doc.SchemaVersion = "1.2"
+	pre := make([]string, 0, len(Registry))
+	for _, name := range DomainNames() {
+		if name != DomainL7Policy && name != DomainCORS &&
+			name != DomainTracing && name != DomainCert {
+			pre = append(pre, name)
+		}
+	}
+	doc.IncludedDomains = pre
+	doc.Domains.L7Policy = nil
+	doc.Domains.CORS = nil
+	doc.Domains.Tracing = nil
+	doc.Domains.Cert = nil
+	if err := ApplyMigrations(doc); err != nil {
+		t.Fatalf("ApplyMigrations: %v", err)
+	}
+	if doc.SchemaVersion != SchemaVersion {
+		t.Fatalf("expected migration to %q, got %q", SchemaVersion, doc.SchemaVersion)
+	}
+	for _, name := range doc.IncludedDomains {
+		if name == DomainL7Policy || name == DomainCORS ||
+			name == DomainTracing || name == DomainCert {
+			t.Fatalf("1.2->1.3 migration widened coverage to %q: %v", name, doc.IncludedDomains)
+		}
+	}
+	if doc.Domains.L7Policy == nil {
+		t.Fatalf("migration left l7policy payload nil (want normalized empty)")
+	}
+	if doc.Domains.CORS != nil {
+		t.Fatalf("migration invented cors config: %+v", doc.Domains.CORS)
+	}
+	if doc.Domains.Tracing != nil {
+		t.Fatalf("migration invented tracing config: %+v", doc.Domains.Tracing)
 	}
 }
 

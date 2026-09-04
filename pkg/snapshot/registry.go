@@ -49,6 +49,14 @@ type Hooks interface {
 	NetKvExactBindingAdd(*cmn.KvExactBindingMod) (int, error)
 	NetKvExactBindingDel(*cmn.KvExactBindingMod) (int, error)
 
+	// l7policy (schema 1.3): dedicated L7_POLICY resources. Applied after
+	// loadbalancer (a policy attaches to a rule resolved by its stable
+	// opaque id). Add validates, resolves the LB and attaches to the
+	// dataplane; Del detaches and removes.
+	NetL7PolicyGet() ([]cmn.L7PolicyArg, error)
+	NetL7PolicyAdd(*cmn.L7PolicyArg) (int, error)
+	NetL7PolicyDel(id string) (int, error)
+
 	// firewall (§4.1 #3)
 	NetFwRuleGet() ([]cmn.FwRuleMod, error)
 	NetFwRuleAdd(*cmn.FwRuleMod) (int, error)
@@ -120,6 +128,30 @@ type Hooks interface {
 	// snapshots round-trip. SENSITIVE (§8).
 	NetIPsecCertificateExportAll() ([]cmn.IPsecCertificateMod, error)
 	NetIPsecCACertificateExportAll() ([]cmn.IPsecCACertificateMod, error)
+
+	// cors (schema 1.3) -- singleton, Set semantics; nil = unconfigured
+	// factory default (not configuration, not captured). Reset (the wipe
+	// path) returns to that default rather than a synthetic deny-all.
+	NetCORSGet() (*cmn.CORSConfig, error)
+	NetCORSSet(*cmn.CORSConfig) (int, error)
+	NetCORSReset() (int, error)
+
+	// tracing (schema 1.3) -- singleton, Set semantics; nil = boot
+	// default only. Set re-joins auth header values from the node-local
+	// secret store (names ride the document, values never do); Reset
+	// returns to the boot default without shredding node-local secrets.
+	NetTracingGet() (*cmn.TracingConfig, error)
+	NetTracingSet(*cmn.TracingConfig) (int, error)
+	NetTracingReset() (int, error)
+
+	// cert (schema 1.3) -- TLS certificates as {id, digest} metadata.
+	// Add re-registers from the node-local managed material after digest
+	// verification (missing/divergent material fails loudly); Del
+	// unregisters while KEEPING the on-disk material (node secret, wipe
+	// must not shred what the following apply re-registers).
+	NetCertGet() ([]cmn.CertMeta, error)
+	NetCertAdd(*cmn.CertMeta) (int, error)
+	NetCertDel(id string) (int, error)
 }
 
 // DomainEntry describes one v1 snapshot domain: how to fetch its live
@@ -166,6 +198,7 @@ var Registry = []DomainEntry{
 	{Name: DomainEndpoint, Get: getEndpoint, Apply: applyEndpoint, Delete: deleteEndpoint},
 	{Name: DomainLoadBalancer, Get: getLoadBalancer, Apply: applyLoadBalancer, Delete: deleteLoadBalancer},
 	{Name: DomainKvExactBinding, Get: getKvExactBinding, Apply: applyKvExactBinding, Delete: deleteKvExactBinding},
+	{Name: DomainL7Policy, Get: getL7Policy, Apply: applyL7Policy, Delete: deleteL7Policy},
 	{Name: DomainFirewall, Get: getFirewall, Apply: applyFirewall, Delete: deleteFirewall},
 	{Name: DomainPolicy, Get: getPolicy, Apply: applyPolicy, Delete: deletePolicy},
 	{Name: DomainMirror, Get: getMirror, Apply: applyMirror, Delete: deleteMirror},
@@ -176,6 +209,9 @@ var Registry = []DomainEntry{
 	{Name: DomainBFD, Get: getBFD, Apply: applyBFD, Delete: deleteBFD},
 	{Name: DomainBGP, Get: getBGP, Apply: applyBGP, Delete: deleteBGP},
 	{Name: DomainIPsec, Get: getIPsec, Apply: applyIPsec, Delete: deleteIPsec},
+	{Name: DomainCORS, Get: getCORS, Apply: applyCORS, Delete: deleteCORS},
+	{Name: DomainTracing, Get: getTracing, Apply: applyTracing, Delete: deleteTracing},
+	{Name: DomainCert, Get: getCert, Apply: applyCert, Delete: deleteCert},
 }
 
 // ApplyOrder returns the registry in apply order (table order, dependencies
@@ -278,6 +314,8 @@ func isIdempotentExists(err error) bool {
 		"sess-exists error",
 		"ulcl-exists error",
 		"prop-exists error",
+		"l7policy-exists error",
+		"cert-exists error",
 	} {
 		if strings.Contains(m, sentinel) {
 			return true
@@ -485,6 +523,67 @@ func deleteKvExactBinding(hooks Hooks) (int, error) {
 		b := &binds[i]
 		if _, err := hooks.NetKvExactBindingDel(b); err != nil {
 			errs = append(errs, fmt.Errorf("delete kvexactbinding %q: %w", b.RuleIdent, err))
+			continue
+		}
+		n++
+	}
+	return n, errors.Join(errs...)
+}
+
+// ---------------------------------------------------------------------
+// 2c. l7policy (schema 1.3)
+//
+// Dedicated L7_POLICY resources: ordered content routes attached to an L4
+// LB by its stable opaque id. Applied after loadbalancer (the referenced
+// rule must be live for the attach to succeed) and deleted before it in
+// DeleteOrder's reversal. Add validates server-side and fails loudly on a
+// missing LB or a failed dataplane attach -- a policy that cannot be
+// enforced must fail the domain (and with it a boot generation), never
+// silently restore as allow-all.
+// ---------------------------------------------------------------------
+
+func getL7Policy(hooks Hooks, doc *Document) error {
+	pols, err := hooks.NetL7PolicyGet()
+	if isSubsystemUnavailable(err) {
+		doc.Domains.L7Policy = nil
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("get l7policy: %w", err)
+	}
+	doc.Domains.L7Policy = pols
+	return nil
+}
+
+func applyL7Policy(hooks Hooks, doc *Document, tolerateExists bool) (int, int, error) {
+	n, skipped := 0, 0
+	for i := range doc.Domains.L7Policy {
+		p := &doc.Domains.L7Policy[i]
+		if _, err := hooks.NetL7PolicyAdd(p); err != nil {
+			if tolerateExists && isIdempotentExists(err) {
+				skipped++
+				continue
+			}
+			return n, skipped, fmt.Errorf("apply l7policy %q: %w", p.Id, err)
+		}
+		n++
+	}
+	return n, skipped, nil
+}
+
+func deleteL7Policy(hooks Hooks) (int, error) {
+	pols, err := hooks.NetL7PolicyGet()
+	if isSubsystemUnavailable(err) {
+		return 0, nil // subsystem not running: nothing to delete
+	}
+	if err != nil {
+		return 0, fmt.Errorf("delete l7policy: get: %w", err)
+	}
+	n := 0
+	var errs []error
+	for i := range pols {
+		if _, err := hooks.NetL7PolicyDel(pols[i].Id); err != nil {
+			errs = append(errs, fmt.Errorf("delete l7policy %q: %w", pols[i].Id, err))
 			continue
 		}
 		n++
@@ -1293,5 +1392,170 @@ func deleteIPsec(hooks Hooks) (int, error) {
 	// mirroring securityrate's own singleton caveat but without even a
 	// zero-value Set to fall back on (IPsecConfigMod's pointer fields would
 	// need real default values, not just zero values, to be safe).
+	return n, errors.Join(errs...)
+}
+
+// ---------------------------------------------------------------------
+// 13. cors -- singleton, Set semantics (schema 1.3)
+//
+// The explicit origin allowlist + wildcard opt-in. The unconfigured
+// factory default (open) is NOT configuration: capture exports nil for
+// it, and the wipe resets back to it -- never to a synthetic deny-all
+// that a failed restore would then leave behind. An explicitly-empty
+// allowlist ({origins: [], wildcard: false} = deny-all) IS configuration
+// and round-trips as such.
+// ---------------------------------------------------------------------
+
+func getCORS(hooks Hooks, doc *Document) error {
+	cfg, err := hooks.NetCORSGet()
+	if err != nil {
+		return fmt.Errorf("get cors: %w", err)
+	}
+	doc.Domains.CORS = cfg
+	return nil
+}
+
+func applyCORS(hooks Hooks, doc *Document, _ bool) (int, int, error) {
+	// Singleton with Set (overwrite) semantics: no "exists" to tolerate.
+	if doc.Domains.CORS == nil {
+		return 0, 0, nil
+	}
+	if _, err := hooks.NetCORSSet(doc.Domains.CORS); err != nil {
+		return 0, 0, fmt.Errorf("apply cors: %w", err)
+	}
+	return 1, 0, nil
+}
+
+func deleteCORS(hooks Hooks) (int, error) {
+	if _, err := hooks.NetCORSReset(); err != nil {
+		return 0, fmt.Errorf("delete cors: %w", err)
+	}
+	return 1, nil
+}
+
+// ---------------------------------------------------------------------
+// 14. tracing -- singleton, Set semantics (schema 1.3)
+//
+// OTLP trace-export product configuration. Secret split: the document
+// carries endpoint/protocol/TLS + auth header NAMES; header VALUES live
+// in a node-local secret store the Set hook re-joins from (warning loudly
+// about names it cannot resolve). The boot default (compiled + env) is
+// node-local config, not desired state: capture exports nil for it, and
+// the wipe resets back to it without touching node-local secrets.
+// ---------------------------------------------------------------------
+
+func getTracing(hooks Hooks, doc *Document) error {
+	cfg, err := hooks.NetTracingGet()
+	if err != nil {
+		return fmt.Errorf("get tracing: %w", err)
+	}
+	doc.Domains.Tracing = cfg
+	return nil
+}
+
+func applyTracing(hooks Hooks, doc *Document, _ bool) (int, int, error) {
+	// Singleton with Set (overwrite) semantics: no "exists" to tolerate.
+	if doc.Domains.Tracing == nil {
+		return 0, 0, nil
+	}
+	if _, err := hooks.NetTracingSet(doc.Domains.Tracing); err != nil {
+		return 0, 0, fmt.Errorf("apply tracing: %w", err)
+	}
+	return 1, 0, nil
+}
+
+func deleteTracing(hooks Hooks) (int, error) {
+	if _, err := hooks.NetTracingReset(); err != nil {
+		return 0, fmt.Errorf("delete tracing: %w", err)
+	}
+	return 1, nil
+}
+
+// ---------------------------------------------------------------------
+// 15. cert (schema 1.3)
+//
+// TLS certificates as {id, digest} desired-state metadata. The PEM
+// material lives only in the node-local managed directory: Apply
+// re-registers after digest verification and fails loudly on missing or
+// divergent material (a gateway must never come up silently serving
+// different TLS material than declared); Delete unregisters but KEEPS
+// the on-disk material -- a wipe removes desired state, not node secret
+// material, and the apply that follows must be able to re-register it.
+// ---------------------------------------------------------------------
+
+func getCert(hooks Hooks, doc *Document) error {
+	metas, err := hooks.NetCertGet()
+	if isSubsystemUnavailable(err) {
+		doc.Domains.Cert = nil
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("get cert: %w", err)
+	}
+	doc.Domains.Cert = metas
+	return nil
+}
+
+func applyCert(hooks Hooks, doc *Document, tolerateExists bool) (int, int, error) {
+	n, skipped := 0, 0
+	for i := range doc.Domains.Cert {
+		c := &doc.Domains.Cert[i]
+		if _, err := hooks.NetCertAdd(c); err != nil {
+			if tolerateExists && isIdempotentExists(err) {
+				skipped++
+				continue
+			}
+			return n, skipped, fmt.Errorf("apply cert %q: %w", c.CertId, err)
+		}
+		n++
+	}
+	// Boot replay (tolerateExists) runs WITHOUT the pre-apply wipe, against
+	// a store the boot cert reconcile has already re-populated from
+	// node-local managed material. Desired state wins: any registration the
+	// document does not declare is pruned (registration only -- the managed
+	// material stays on disk, exactly like a wipe). Without this, a node
+	// holding material for a cert the document dropped fails VERIFY and the
+	// WHOLE boot replay rolls back to empty.
+	if tolerateExists {
+		declared := make(map[string]bool, len(doc.Domains.Cert))
+		for i := range doc.Domains.Cert {
+			declared[doc.Domains.Cert[i].CertId] = true
+		}
+		live, err := hooks.NetCertGet()
+		if isSubsystemUnavailable(err) {
+			return n, skipped, nil
+		}
+		if err != nil {
+			return n, skipped, fmt.Errorf("apply cert: reconcile get: %w", err)
+		}
+		for i := range live {
+			if declared[live[i].CertId] {
+				continue
+			}
+			if _, err := hooks.NetCertDel(live[i].CertId); err != nil {
+				return n, skipped, fmt.Errorf("apply cert: prune undeclared %q: %w", live[i].CertId, err)
+			}
+		}
+	}
+	return n, skipped, nil
+}
+
+func deleteCert(hooks Hooks) (int, error) {
+	metas, err := hooks.NetCertGet()
+	if isSubsystemUnavailable(err) {
+		return 0, nil // subsystem not running: nothing to delete
+	}
+	if err != nil {
+		return 0, fmt.Errorf("delete cert: get: %w", err)
+	}
+	n := 0
+	var errs []error
+	for i := range metas {
+		if _, err := hooks.NetCertDel(metas[i].CertId); err != nil {
+			errs = append(errs, fmt.Errorf("delete cert %q: %w", metas[i].CertId, err))
+			continue
+		}
+		n++
+	}
 	return n, errors.Join(errs...)
 }

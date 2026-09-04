@@ -95,9 +95,10 @@ func domainNames(entries []DomainEntry) []string {
 func TestRegistryOrder(t *testing.T) {
 	want := []string{
 		DomainEndpoint, DomainLoadBalancer, DomainKvExactBinding,
-		DomainFirewall, DomainPolicy,
+		DomainL7Policy, DomainFirewall, DomainPolicy,
 		DomainMirror, DomainSession, DomainSessionUlCl, DomainIPFilter,
-		DomainSecurityRate, DomainBFD, DomainBGP, DomainIPsec,
+		DomainSecurityRate, DomainBFD, DomainBGP, DomainIPsec, DomainCORS,
+		DomainTracing, DomainCert,
 	}
 	got := domainNames(ApplyOrder())
 	if len(got) != len(want) {

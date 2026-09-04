@@ -19,8 +19,8 @@ import (
 	"strings"
 
 	"github.com/go-openapi/runtime/middleware"
-	"github.com/loxilb-io/loxilb/api/apiutils/cors"
 	"github.com/loxilb-io/loxilb/api/restapi/operations"
+	cmn "github.com/loxilb-io/loxilb/common"
 	tk "github.com/loxilb-io/loxilib"
 )
 
@@ -28,7 +28,7 @@ import (
 func ConfigGetCors(params operations.GetConfigCorsAllParams, principal interface{}) middleware.Responder {
 	// Get Cors rules
 	tk.LogIt(tk.LogTrace, "api: Cors %s API called. url : %s\n", params.HTTPRequest.Method, params.HTTPRequest.URL)
-	res := cors.GetCORSManager().GetOrigin()
+	res := cmn.GetCORSManager().GetOrigin()
 	corsList := make([]string, 0, len(res))
 	for cors := range res {
 		if strings.TrimSpace(cors) == "" {
@@ -59,7 +59,7 @@ func ConfigPostCors(params operations.PostConfigCorsParams, principal interface{
 			return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(msg)}
 		}
 		// Add or update the Cors URL
-		corsManager := cors.GetCORSManager()
+		corsManager := cmn.GetCORSManager()
 		err := corsManager.AddOrigin(corsurl)
 		if err != nil {
 			tk.LogIt(tk.LogError, "Failed to add Cors URL: %s\n", corsurl)
@@ -85,7 +85,7 @@ func ConfigDeleteCors(params operations.DeleteConfigCorsCorsURLParams, principal
 		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(msg)}
 	}
 	// Remove the Cors URL
-	corsManager := cors.GetCORSManager()
+	corsManager := cmn.GetCORSManager()
 	err := corsManager.RemoveOrigin(params.CorsURL)
 	if err != nil {
 		tk.LogIt(tk.LogError, "Failed to delete Cors URL: %s\n", params.CorsURL)

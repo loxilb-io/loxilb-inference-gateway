@@ -30,3 +30,12 @@ loxilb-ebpf/libbpf/src/build
 
 # The host-built binary; the image builds its own.
 /loxilb
+
+# cicd suite run state: root-owned config volumes, staged fixtures and
+# evidence written by live scenario runs. Unreadable by the context
+# sender (permission denied aborts the build) and never image content.
+cicd/**/llb1_config
+cicd/**/loxilb.io
+cicd/**/artifacts
+cicd/**/.certs-stage
+cicd/**/.kvprofiles-stage

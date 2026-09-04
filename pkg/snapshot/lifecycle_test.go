@@ -167,18 +167,15 @@ func TestExcludedDomainsDerivation(t *testing.T) {
 		AreaAIKeys,
 		AreaAIRateLimit,
 		AreaAuthUsers,
-		AreaCert,
+		AreaSNI,
 		AreaCluster,
-		AreaCORS,
 		AreaGPUMode,
 		AreaInterface,
-		AreaL7Policy,
 		AreaLlamaFW,
 		AreaMetrics,
 		AreaOPA,
 		AreaParams,
 		AreaPII,
-		AreaTracing,
 	}
 	sort.Strings(want)
 	got := ExcludedDomainsFromLifecycle()

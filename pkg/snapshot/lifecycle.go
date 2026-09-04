@@ -93,14 +93,12 @@ const (
 	AreaAuthUsers    = "auth_users"
 	AreaAIKeys       = "ai_keys"
 	AreaAIRateLimit  = "ai_ratelimit"
-	AreaCert         = "cert"
+	AreaSNI          = "sni"
 	AreaCluster      = "cluster"
-	AreaCORS         = "cors"
 	AreaGPU          = "gpu"
 	AreaGPUMode      = "gpu_mode"
 	AreaInterface    = "interface"
 	AreaL4Trace      = "l4trace"
-	AreaL7Policy     = "l7policy"
 	AreaLifecycle    = "config_lifecycle"
 	AreaLlamaFW      = "llamafirewall"
 	AreaMetrics      = "metrics"
@@ -193,27 +191,37 @@ var RouteLifecycles = []RouteLifecycle{
 	{Method: "post", Path: "/config/ipsec/tunnels/{name}/action", Class: ClassRuntimeRebuilt, Area: DomainIPsec},
 	{Method: "delete", Path: "/config/ipsec/stats", Class: ClassRuntimeRebuilt, Area: DomainIPsec},
 
-	// --- L7 desired state with no persistence yet: runtime-only today.
-	// Listing these areas in excluded_domains (via the derivation below)
-	// is exactly the honesty the marker exists for; reclassify to
-	// ClassSnapshot (or ClassExternalStore) when persistence lands.
-	{Method: "post", Path: "/config/l7policy", Class: ClassRuntimeRebuilt, Area: AreaL7Policy, DesiredState: true},
-	{Method: "delete", Path: "/config/l7policy/id/{id}", Class: ClassRuntimeRebuilt, Area: AreaL7Policy, DesiredState: true},
-	{Method: "post", Path: "/config/cors", Class: ClassRuntimeRebuilt, Area: AreaCORS, DesiredState: true},
-	{Method: "delete", Path: "/config/cors/{cors_url}", Class: ClassRuntimeRebuilt, Area: AreaCORS, DesiredState: true},
+	// --- L7 policies: snapshot domain since schema 1.3 (the desired-state
+	// registry lives control-plane side and round-trips through capture/
+	// restore).
+	{Method: "post", Path: "/config/l7policy", Class: ClassSnapshot, Area: DomainL7Policy, DesiredState: true},
+	{Method: "delete", Path: "/config/l7policy/id/{id}", Class: ClassSnapshot, Area: DomainL7Policy, DesiredState: true},
 
-	// --- TLS certificate store: PEM material lives on disk under the
-	// certificate directory (external store), not in the snapshot.
-	{Method: "post", Path: "/config/cert", Class: ClassExternalStore, Area: AreaCert, DesiredState: true},
-	{Method: "put", Path: "/config/cert/{certId}", Class: ClassExternalStore, Area: AreaCert, DesiredState: true},
-	{Method: "delete", Path: "/config/cert/{certId}", Class: ClassExternalStore, Area: AreaCert, DesiredState: true},
-	{Method: "post", Path: "/sni/certificates", Class: ClassExternalStore, Area: AreaCert, DesiredState: true},
-	{Method: "delete", Path: "/sni/certificates", Class: ClassExternalStore, Area: AreaCert, DesiredState: true},
+	// --- CORS: snapshot domain since schema 1.3 (explicit allowlist +
+	// wildcard opt-in round-trip; the unconfigured factory default is not
+	// captured).
+	{Method: "post", Path: "/config/cors", Class: ClassSnapshot, Area: DomainCORS, DesiredState: true},
+	{Method: "delete", Path: "/config/cors/{cors_url}", Class: ClassSnapshot, Area: DomainCORS, DesiredState: true},
+
+	// --- certId TLS material: snapshot domain since schema 1.3 as
+	// {id, digest} metadata (PEM/keys stay in the node-local managed
+	// directory; restore verifies the digest before re-registering).
+	{Method: "post", Path: "/config/cert", Class: ClassSnapshot, Area: DomainCert, DesiredState: true},
+	{Method: "put", Path: "/config/cert/{certId}", Class: ClassSnapshot, Area: DomainCert, DesiredState: true},
+	{Method: "delete", Path: "/config/cert/{certId}", Class: ClassSnapshot, Area: DomainCert, DesiredState: true},
+	// The legacy path-based SNI registration API carries no certId, so
+	// its registrations are NOT captured by the cert domain -- its own
+	// area keeps that honest in excluded_domains.
+	{Method: "post", Path: "/sni/certificates", Class: ClassExternalStore, Area: AreaSNI, DesiredState: true},
+	{Method: "delete", Path: "/sni/certificates", Class: ClassExternalStore, Area: AreaSNI, DesiredState: true},
 
 	// --- Tracing/observability. The OTLP collector endpoint is product
 	// configuration (desired state, runtime-only today); trace toggles,
 	// catalog parsers and L4 trace sampling are diagnostics.
-	{Method: "post", Path: "/config/trace/otlp", Class: ClassRuntimeRebuilt, Area: AreaTracing, DesiredState: true},
+	// OTLP export product config: snapshot domain since schema 1.3
+	// (header values stay node-local; only names ride the document). The
+	// remaining trace routes are runtime toggles/diagnostics.
+	{Method: "post", Path: "/config/trace/otlp", Class: ClassSnapshot, Area: DomainTracing, DesiredState: true},
 	{Method: "post", Path: "/config/trace/enable", Class: ClassRuntimeRebuilt, Area: AreaTracing},
 	{Method: "post", Path: "/config/trace/disable", Class: ClassRuntimeRebuilt, Area: AreaTracing},
 	{Method: "put", Path: "/config/trace/catalog/{catalog_id}/parser", Class: ClassRuntimeRebuilt, Area: AreaTracing},
@@ -302,6 +310,7 @@ var snapshotDomainSet = map[string]bool{
 	DomainEndpoint:       true,
 	DomainLoadBalancer:   true,
 	DomainKvExactBinding: true,
+	DomainL7Policy:       true,
 	DomainFirewall:       true,
 	DomainPolicy:         true,
 	DomainMirror:         true,
@@ -312,6 +321,9 @@ var snapshotDomainSet = map[string]bool{
 	DomainBFD:            true,
 	DomainBGP:            true,
 	DomainIPsec:          true,
+	DomainCORS:           true,
+	DomainTracing:        true,
+	DomainCert:           true,
 }
 
 // ExcludedDomainsFromLifecycle derives the excluded_domains honesty list

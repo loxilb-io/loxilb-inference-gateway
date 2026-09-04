@@ -17,6 +17,7 @@
 package snapshot
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 
@@ -43,6 +44,7 @@ type mockHooks struct {
 	endpoints []cmn.EndPointMod
 	lbRules   []cmn.LbRuleMod
 	kvBinds   []cmn.KvExactBindingMod
+	l7Pols    []cmn.L7PolicyArg
 	fwRules   []cmn.FwRuleMod
 	policies  []cmn.PolMod
 	mirrors   []cmn.MirrGetMod
@@ -56,6 +58,10 @@ type mockHooks struct {
 	bgpDefined    map[string][]cmn.GoBGPPolicyDefinedSetMod // by DefinedTypeString
 	bgpPolicyDefs []cmn.GoBGPPolicyDefinitionsMod
 	bgpGC         *cmn.GoBGPGlobalConfig
+
+	corsCfg    *cmn.CORSConfig
+	tracingCfg *cmn.TracingConfig
+	certMetas  []cmn.CertMeta
 
 	ipsecConfig  *cmn.IPsecConfig
 	ipsecTunnels []*cmn.IPsecTunnel
@@ -294,6 +300,187 @@ func (m *mockHooks) NetKvExactBindingDel(b *cmn.KvExactBindingMod) (int, error) 
 		}
 	}
 	m.kvBinds = out
+	return 0, nil
+}
+
+// --- l7policy ---
+//
+// The mock mirrors the real registry's identity semantics (pkg/loxinet):
+// re-adding a byte-identical policy is the idempotent "l7policy-exists
+// error" no-op, a same-id-different-content add is the non-idempotent
+// "cant modify" conflict, and deleting an unknown id is "not-exists" --
+// the restore engine's boot-retry tolerance branches on exactly these
+// error shapes.
+
+func (m *mockHooks) NetL7PolicyGet() ([]cmn.L7PolicyArg, error) {
+	m.log("NetL7PolicyGet")
+	return resizeOverride(m, "NetL7PolicyGet", func() []cmn.L7PolicyArg { return append([]cmn.L7PolicyArg(nil), m.l7Pols...) }), nil
+}
+func (m *mockHooks) NetL7PolicyAdd(p *cmn.L7PolicyArg) (int, error) {
+	m.log("NetL7PolicyAdd:%s", p.Id)
+	if err := m.failIfConfigured("NetL7PolicyAdd"); err != nil {
+		return -1, err
+	}
+	for i := range m.l7Pols {
+		if m.l7Pols[i].Id == p.Id {
+			if reflect.DeepEqual(m.l7Pols[i], *p) {
+				return -1, errors.New("l7policy-exists error")
+			}
+			return -1, fmt.Errorf("l7policy-exist error: cant modify existing policy %s (delete and re-create)", p.Id)
+		}
+	}
+	m.l7Pols = append(m.l7Pols, *p)
+	return 0, nil
+}
+func (m *mockHooks) NetL7PolicyDel(id string) (int, error) {
+	m.log("NetL7PolicyDel:%s", id)
+	if err := m.failIfConfigured("NetL7PolicyDel"); err != nil {
+		return -1, err
+	}
+	out := m.l7Pols[:0]
+	found := false
+	for _, p := range m.l7Pols {
+		if p.Id == id {
+			found = true
+			continue
+		}
+		out = append(out, p)
+	}
+	if !found {
+		return -1, errors.New("l7policy not-exists error")
+	}
+	m.l7Pols = out
+	return 0, nil
+}
+
+// --- cors ---
+//
+// Singleton mirroring the real manager's export/set/reset semantics: nil
+// = unconfigured factory default; Set overwrites and makes it explicit;
+// Reset returns to nil.
+
+func (m *mockHooks) NetCORSGet() (*cmn.CORSConfig, error) {
+	m.log("NetCORSGet")
+	if err := m.failIfConfigured("NetCORSGet"); err != nil {
+		return nil, err
+	}
+	if m.corsCfg == nil {
+		return nil, nil
+	}
+	cp := *m.corsCfg
+	cp.Origins = append([]string(nil), m.corsCfg.Origins...)
+	return &cp, nil
+}
+func (m *mockHooks) NetCORSSet(cfg *cmn.CORSConfig) (int, error) {
+	m.log("NetCORSSet")
+	if err := m.failIfConfigured("NetCORSSet"); err != nil {
+		return -1, err
+	}
+	if cfg == nil {
+		return -1, errors.New("cors: nil config (use reset for the factory default)")
+	}
+	cp := *cfg
+	cp.Origins = append([]string(nil), cfg.Origins...)
+	m.corsCfg = &cp
+	return 0, nil
+}
+func (m *mockHooks) NetCORSReset() (int, error) {
+	m.log("NetCORSReset")
+	if err := m.failIfConfigured("NetCORSReset"); err != nil {
+		return -1, err
+	}
+	m.corsCfg = nil
+	return 0, nil
+}
+
+// --- tracing ---
+//
+// Singleton mirroring the real store's export/set/reset semantics: nil =
+// boot default only; Set overwrites and makes it explicit; Reset returns
+// to nil. (The real Set also re-joins header values from the node-local
+// secret store -- value handling never crosses the Hooks surface, so the
+// mock has nothing to model there.)
+
+func (m *mockHooks) NetTracingGet() (*cmn.TracingConfig, error) {
+	m.log("NetTracingGet")
+	if err := m.failIfConfigured("NetTracingGet"); err != nil {
+		return nil, err
+	}
+	if m.tracingCfg == nil {
+		return nil, nil
+	}
+	cp := *m.tracingCfg
+	cp.HeaderNames = append([]string(nil), m.tracingCfg.HeaderNames...)
+	return &cp, nil
+}
+func (m *mockHooks) NetTracingSet(cfg *cmn.TracingConfig) (int, error) {
+	m.log("NetTracingSet")
+	if err := m.failIfConfigured("NetTracingSet"); err != nil {
+		return -1, err
+	}
+	if cfg == nil {
+		return -1, errors.New("tracing: nil config (use reset for the boot default)")
+	}
+	cp := *cfg
+	cp.HeaderNames = append([]string(nil), cfg.HeaderNames...)
+	m.tracingCfg = &cp
+	return 0, nil
+}
+func (m *mockHooks) NetTracingReset() (int, error) {
+	m.log("NetTracingReset")
+	if err := m.failIfConfigured("NetTracingReset"); err != nil {
+		return -1, err
+	}
+	m.tracingCfg = nil
+	return 0, nil
+}
+
+// --- cert ---
+//
+// The mock mirrors the real registry's identity semantics: identical
+// re-add (same id, same digest) is the idempotent "cert-exists error"
+// no-op; the same id with a different digest is the non-idempotent
+// divergent-material conflict; deleting keeps nothing to model (the
+// managed-directory material never crosses the Hooks surface).
+
+func (m *mockHooks) NetCertGet() ([]cmn.CertMeta, error) {
+	m.log("NetCertGet")
+	return resizeOverride(m, "NetCertGet", func() []cmn.CertMeta { return append([]cmn.CertMeta(nil), m.certMetas...) }), nil
+}
+func (m *mockHooks) NetCertAdd(c *cmn.CertMeta) (int, error) {
+	m.log("NetCertAdd:%s", c.CertId)
+	if err := m.failIfConfigured("NetCertAdd"); err != nil {
+		return -1, err
+	}
+	for i := range m.certMetas {
+		if m.certMetas[i].CertId == c.CertId {
+			if m.certMetas[i].Digest == c.Digest {
+				return -1, errors.New("cert-exists error")
+			}
+			return -1, fmt.Errorf("cert-exist error: cant apply %s -- managed material on disk diverges from the captured digest", c.CertId)
+		}
+	}
+	m.certMetas = append(m.certMetas, *c)
+	return 0, nil
+}
+func (m *mockHooks) NetCertDel(id string) (int, error) {
+	m.log("NetCertDel:%s", id)
+	if err := m.failIfConfigured("NetCertDel"); err != nil {
+		return -1, err
+	}
+	out := m.certMetas[:0]
+	found := false
+	for _, c := range m.certMetas {
+		if c.CertId == id {
+			found = true
+			continue
+		}
+		out = append(out, c)
+	}
+	if !found {
+		return -1, errors.New("cert not-exists error")
+	}
+	m.certMetas = out
 	return 0, nil
 }
 

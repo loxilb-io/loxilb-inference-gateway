@@ -715,6 +715,15 @@ func loxiNetInit() {
 		snapshot.MarkBootConfigSettled()
 	}
 
+	// Re-register managed TLS material from disk BEFORE the API server
+	// (and with it the boot snapshot replay) starts: a reboot used to
+	// orphan every uploaded certificate -- the SNI store came up empty
+	// while the material sat on disk, invisible to and undeletable via
+	// the API. Needs the sockproxy datapath (skip on BGP-only nodes).
+	if !opts.Opts.BgpPeerMode && mh.dpEbpf != nil {
+		handler.CertBootReconcile()
+	}
+
 	// Initialize and spawn the api server subsystem
 	if !opts.Opts.NoAPI {
 		apiserver.RegisterAPIHooks(NetAPIInit(opts.Opts.BgpPeerMode))

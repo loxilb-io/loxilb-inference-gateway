@@ -1875,6 +1875,61 @@ type NetHookInterface interface {
 	// NetL7PolicyRemove detaches any L7 policy from the VIP:port:proto rule
 	// (regfrees every compiled REGEX program on the C side).
 	NetL7PolicyRemove(vip string, port uint16, proto string) (int, error)
+	// NetL7PolicyGet returns every stored L7_POLICY resource (deep copies,
+	// sorted by id). The desired-state policy registry lives control-plane
+	// side (pkg/loxinet), so REST CRUD and config snapshot/restore share
+	// one store.
+	NetL7PolicyGet() ([]L7PolicyArg, error)
+	// NetL7PolicyAdd validates the policy, resolves its load-balancer by
+	// stable opaque id, attaches the route IR to the running sockproxy
+	// rule and stores the policy. An empty Id is minted server-side
+	// (UUID) and written back to the argument; a caller-supplied Id is
+	// honored when unique.
+	NetL7PolicyAdd(*L7PolicyArg) (int, error)
+	// NetL7PolicyDel detaches the policy's routes from the dataplane (a
+	// no-op when the referenced load-balancer is already gone) and removes
+	// the stored resource.
+	NetL7PolicyDel(id string) (int, error)
+	// NetCORSGet returns the explicit CORS desired configuration (origin
+	// allowlist + wildcard opt-in), or nil while the gateway is
+	// unconfigured (factory default, not persisted).
+	NetCORSGet() (*CORSConfig, error)
+	// NetCORSSet replaces the whole CORS configuration (overwrite/Set
+	// semantics -- the snapshot restore path).
+	NetCORSSet(*CORSConfig) (int, error)
+	// NetCORSReset discards any explicit CORS configuration, returning to
+	// the unconfigured factory default (the snapshot wipe path).
+	NetCORSReset() (int, error)
+	// NetTracingGet returns the explicit OTLP trace-export configuration
+	// (header names only, never values), or nil while only the
+	// compiled/environment default is in effect.
+	NetTracingGet() (*TracingConfig, error)
+	// NetTracingSet replaces the OTLP trace-export configuration
+	// (overwrite/Set semantics -- the snapshot restore path). Header
+	// values are re-joined from the node-local secret store; unresolvable
+	// names are warned about loudly, never silently dropped from the
+	// desired state.
+	NetTracingSet(*TracingConfig) (int, error)
+	// NetTracingReset returns the OTLP configuration to the node's boot
+	// default (the snapshot wipe path). Node-local header secrets are
+	// deliberately NOT shredded -- they are node material, like
+	// certificate keys on disk, and the apply that follows a wipe must
+	// still be able to re-join them.
+	NetTracingReset() (int, error)
+	// NetCertGet returns the registered TLS certificates as desired-state
+	// metadata (stable id + content digest of the node-local managed
+	// material; PEM and keys never cross this surface).
+	NetCertGet() ([]CertMeta, error)
+	// NetCertAdd re-registers one certificate from the node-local managed
+	// directory after verifying its material matches the given digest --
+	// missing or divergent material is a loud error, never a silent
+	// different-cert handshake.
+	NetCertAdd(*CertMeta) (int, error)
+	// NetCertDel unregisters one certificate's hostnames from the SNI
+	// store and drops its metadata (the snapshot wipe path). The managed
+	// on-disk material is deliberately KEPT -- it is node secret material,
+	// and the apply that follows a wipe must be able to re-register it.
+	NetCertDel(id string) (int, error)
 	NetCtInfoGet() ([]CtInfo, error)
 	NetSessionGet() ([]SessionMod, error)
 	NetSessionUlClGet() ([]SessionUlClMod, error)
