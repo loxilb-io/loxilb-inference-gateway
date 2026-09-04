@@ -543,5 +543,28 @@ echo "$resp" | grep -q 'X-Echo-Backend' \
 # snapshot alone (the write-through above re-persisted the good state).
 sudo rm -f "$CFG/lbconfig.txt"
 
+#################################################################################
+echo "=== boot arbitration: a persisted lineage outranks a NEWER legacy mtime ==="
+#################################################################################
+# snapshot.json now carries a lineage generation (the recovery commit's
+# write-through). A hand-dropped lbconfig.txt with a FRESHER mtime (cp
+# without -p, clock skew) must NOT flip the boot source any more: the
+# lineage wins, mtimes only arbitrate for pre-generation snapshots.
+fgen=$(sudo cat "$CFG/snapshot.json" | jq -r '.generation // 0')
+[[ "$fgen" -ge 1 ]] || fail "expected a lineage generation on snapshot.json, got $fgen"
+sudo cp "$PLIB_ARTIFACTS/legacy-lb.txt" "$CFG/lbconfig.txt"   # fresh mtime, NEWER than the snapshot
+plib_start_gw llb1 || fail "gateway did not come back on the arbitration boot"
+plib_wait_api llb1 || fail "API after arbitration boot"
+wait_replay_receipt llb1
+docker exec llb1 grep -aq "persisted lineage wins" /tmp/loxilb.out \
+    && pass "arbitration log names the lineage authority" \
+    || fail "no lineage-wins log line"
+lb2020=$(plib_curl llb1 "$PLIB_API/config/loadbalancer/all" | jq '[.lbAttr[]? | select(.serviceArguments.port==2020)] | length')
+lb2021=$(plib_curl llb1 "$PLIB_API/config/loadbalancer/all" | jq '[.lbAttr[]? | select(.serviceArguments.port==2021)] | length')
+[[ "$lb2020" == "1" && "$lb2021" == "0" ]] \
+    && pass "boot restored the snapshot lineage, not the fresher legacy txt" \
+    || fail "arbitration state: port-2020=$lb2020 port-2021=$lb2021"
+sudo rm -f "$CFG/lbconfig.txt"
+
 plib_collect_logs llb1
 exit $code

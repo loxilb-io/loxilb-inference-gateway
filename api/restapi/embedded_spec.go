@@ -9980,6 +9980,22 @@ func init() {
         }
       }
     },
+    "AutoPersistStatus": {
+      "description": "Auto-persist failure streak (present only while failing; any successful persist clears it). Nonzero means recent config changes may not survive a restart - also surfaced as a not-ready reason and in the loxilb_autopersist_consecutive_failures gauge.",
+      "type": "object",
+      "properties": {
+        "consecutive_failures": {
+          "type": "integer"
+        },
+        "last_attempt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "last_error": {
+          "type": "string"
+        }
+      }
+    },
     "BGPApplyPolicyToNeighborMod": {
       "type": "object",
       "required": [
@@ -15087,7 +15103,13 @@ func init() {
     "ReadyStatus": {
       "description": "Configuration readiness verdict with the evidence behind it - the boot replay outcome, live external-dependency probes, and the most recent successful persist/restore identities.",
       "type": "object",
+      "required": [
+        "ready"
+      ],
       "properties": {
+        "auto_persist": {
+          "$ref": "#/definitions/AutoPersistStatus"
+        },
         "boot": {
           "$ref": "#/definitions/BootStatus"
         },
@@ -26003,6 +26025,22 @@ func init() {
         }
       }
     },
+    "AutoPersistStatus": {
+      "description": "Auto-persist failure streak (present only while failing; any successful persist clears it). Nonzero means recent config changes may not survive a restart - also surfaced as a not-ready reason and in the loxilb_autopersist_consecutive_failures gauge.",
+      "type": "object",
+      "properties": {
+        "consecutive_failures": {
+          "type": "integer"
+        },
+        "last_attempt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "last_error": {
+          "type": "string"
+        }
+      }
+    },
     "BGPApplyPolicyToNeighborMod": {
       "type": "object",
       "required": [
@@ -32613,7 +32651,13 @@ func init() {
     "ReadyStatus": {
       "description": "Configuration readiness verdict with the evidence behind it - the boot replay outcome, live external-dependency probes, and the most recent successful persist/restore identities.",
       "type": "object",
+      "required": [
+        "ready"
+      ],
       "properties": {
+        "auto_persist": {
+          "$ref": "#/definitions/AutoPersistStatus"
+        },
         "boot": {
           "$ref": "#/definitions/BootStatus"
         },

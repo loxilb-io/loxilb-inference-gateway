@@ -22,10 +22,12 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	nlp "github.com/loxilb-io/loxilb/api/loxinlp"
 	cmn "github.com/loxilb-io/loxilb/common"
+	opts "github.com/loxilb-io/loxilb/options"
 	bfd "github.com/loxilb-io/loxilb/pkg/proto"
 	utils "github.com/loxilb-io/loxilb/pkg/utils"
 	tk "github.com/loxilb-io/loxilib"
@@ -137,7 +139,10 @@ func (ch *CIStateH) CITicker() {
 func (ch *CIStateH) CISpawn() {
 	bs := bfd.StructNew(3784)
 	ch.Bs = bs
-	if _, err := os.Stat("/etc/loxilb/BFDconfig.txt"); !errors.Is(err, os.ErrNotExist) {
+	// The existence gate and ApplyBFDConfig's reader must agree on the
+	// directory: a hardcoded /etc/loxilb here silently skipped the replay
+	// (or replayed the wrong file) under a non-default --config-path.
+	if _, err := os.Stat(filepath.Join(opts.Opts.ConfigPath, "BFDconfig.txt")); !errors.Is(err, os.ErrNotExist) {
 		nlp.ApplyBFDConfig()
 		return
 	}

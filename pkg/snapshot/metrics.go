@@ -51,6 +51,16 @@ var (
 		Name: "loxilb_boot_config_conflict_total",
 		Help: "Boots that found BOTH snapshot.json and legacy *.txt config artifacts and had to arbitrate newest-wins (§6.2).",
 	})
+
+	persistTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "loxilb_persist_total",
+		Help: "snapshot.json persist attempts (write-through, manual, auto-persist), partitioned by result (ok, error).",
+	}, []string{"result"})
+
+	autoPersistFailStreak = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "loxilb_autopersist_consecutive_failures",
+		Help: "Consecutive auto-persist failures; 0 when the last persist succeeded. Nonzero means recent config changes may not survive a restart.",
+	})
 )
 
 // Additional restoreTotal result label values beyond the §5.2 Result.Result
@@ -73,6 +83,9 @@ func init() {
 		for _, result := range []string{ResultOK, ResultRolledBack, ResultRollbackFailed, resultLabelRejected, resultLabelError} {
 			restoreTotal.WithLabelValues(mode, result)
 		}
+	}
+	for _, result := range []string{"ok", resultLabelError} {
+		persistTotal.WithLabelValues(result)
 	}
 }
 

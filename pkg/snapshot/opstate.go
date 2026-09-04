@@ -31,18 +31,62 @@ type OpRecord struct {
 	At         time.Time `json:"at"`
 }
 
+// AutoPersistState is the auto-persist health record for the status
+// surface: one permanently failing domain Get used to disable ALL
+// auto-persistence with a log line as the only signal -- this is the
+// louder signal (plus the gauge/counter metrics and a readiness reason).
+type AutoPersistState struct {
+	ConsecutiveFailures int       `json:"consecutive_failures"`
+	LastError           string    `json:"last_error,omitempty"`
+	LastAttempt         time.Time `json:"last_attempt,omitempty"`
+}
+
+// AutoPersistRetryBudget bounds the debouncer's self-rescheduled retries
+// after a failure: beyond it the debouncer stops re-kicking itself and
+// waits for the next config mutation (the failure state stays surfaced
+// either way; an unbounded self-kick loop against a permanently failing
+// capture would just burn CPU every quiet period forever).
+const AutoPersistRetryBudget = 5
+
 var (
-	opStateMu   sync.Mutex
-	lastPersist *OpRecord
-	lastRestore *OpRecord
+	opStateMu        sync.Mutex
+	lastPersist      *OpRecord
+	lastRestore      *OpRecord
+	autoPersistState AutoPersistState
 )
 
 // recordPersistSuccess is called by Persist after the document is durably
-// on disk.
+// on disk. Any successful persist also clears the auto-persist failure
+// streak: the running config just reached disk, so durability is restored
+// whichever path wrote it.
 func recordPersistSuccess(gen uint64, checksum string, trigger Trigger) {
 	opStateMu.Lock()
 	defer opStateMu.Unlock()
 	lastPersist = &OpRecord{Generation: gen, Checksum: checksum, Mode: string(trigger), At: time.Now().UTC()}
+	autoPersistState = AutoPersistState{}
+	autoPersistFailStreak.Set(0)
+	persistTotal.WithLabelValues("ok").Inc()
+}
+
+// RecordAutoPersistFailure records one failed auto-persist attempt
+// (capture or write) and reports whether the debouncer still has retry
+// budget for a self-rescheduled attempt.
+func RecordAutoPersistFailure(err error) bool {
+	opStateMu.Lock()
+	defer opStateMu.Unlock()
+	autoPersistState.ConsecutiveFailures++
+	autoPersistState.LastError = err.Error()
+	autoPersistState.LastAttempt = time.Now().UTC()
+	autoPersistFailStreak.Set(float64(autoPersistState.ConsecutiveFailures))
+	persistTotal.WithLabelValues(resultLabelError).Inc()
+	return autoPersistState.ConsecutiveFailures < AutoPersistRetryBudget
+}
+
+// AutoPersistStateGet returns a copy of the auto-persist health record.
+func AutoPersistStateGet() AutoPersistState {
+	opStateMu.Lock()
+	defer opStateMu.Unlock()
+	return autoPersistState
 }
 
 // recordRestoreSuccess is called by the engine when a mutating restore
@@ -87,12 +131,20 @@ func LastRestore() *OpRecord {
 //     operator's commit restore succeeds in this process (lastRestore
 //     with mode "commit"): recovery is the designed exit from degraded,
 //     and nothing else silently clears it;
+//   - auto-persist must not be in a failure streak (config changes that
+//     are not reaching disk are exactly the silent-degradation class this
+//     surface exists to expose);
 //   - every REQUIRED external dependency must be live right now
 //     (depFailures carries the probe errors, one per failing store).
-func ReadinessReasons(settled bool, boot BootRestoreState, lastRestore *OpRecord, depFailures []string) []string {
+func ReadinessReasons(settled bool, boot BootRestoreState, lastRestore *OpRecord, autoPersist AutoPersistState, depFailures []string) []string {
 	var reasons []string
 	if !settled {
 		reasons = append(reasons, "boot config replay has not settled")
+	}
+	if autoPersist.ConsecutiveFailures > 0 {
+		reasons = append(reasons, fmt.Sprintf(
+			"auto-persist failing (%d consecutive; last: %s) -- recent config changes may not survive a restart",
+			autoPersist.ConsecutiveFailures, autoPersist.LastError))
 	}
 	if boot.Degraded {
 		recovered := lastRestore != nil && lastRestore.Mode == string(ModeCommit)

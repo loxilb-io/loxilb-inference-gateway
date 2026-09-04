@@ -12,12 +12,16 @@ import (
 	"github.com/go-openapi/errors"
 	"github.com/go-openapi/strfmt"
 	"github.com/go-openapi/swag"
+	"github.com/go-openapi/validate"
 )
 
 // ReadyStatus Configuration readiness verdict with the evidence behind it - the boot replay outcome, live external-dependency probes, and the most recent successful persist/restore identities.
 //
 // swagger:model ReadyStatus
 type ReadyStatus struct {
+
+	// auto persist
+	AutoPersist *AutoPersistStatus `json:"auto_persist,omitempty"`
 
 	// boot
 	Boot *BootStatus `json:"boot,omitempty"`
@@ -32,7 +36,8 @@ type ReadyStatus struct {
 	LastRestore *ConfigOpRecord `json:"last_restore,omitempty"`
 
 	// ready
-	Ready bool `json:"ready,omitempty"`
+	// Required: true
+	Ready *bool `json:"ready"`
 
 	// Why the gateway is not ready; empty when ready.
 	Reasons []string `json:"reasons"`
@@ -41,6 +46,10 @@ type ReadyStatus struct {
 // Validate validates this ready status
 func (m *ReadyStatus) Validate(formats strfmt.Registry) error {
 	var res []error
+
+	if err := m.validateAutoPersist(formats); err != nil {
+		res = append(res, err)
+	}
 
 	if err := m.validateBoot(formats); err != nil {
 		res = append(res, err)
@@ -58,9 +67,32 @@ func (m *ReadyStatus) Validate(formats strfmt.Registry) error {
 		res = append(res, err)
 	}
 
+	if err := m.validateReady(formats); err != nil {
+		res = append(res, err)
+	}
+
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
+	return nil
+}
+
+func (m *ReadyStatus) validateAutoPersist(formats strfmt.Registry) error {
+	if swag.IsZero(m.AutoPersist) { // not required
+		return nil
+	}
+
+	if m.AutoPersist != nil {
+		if err := m.AutoPersist.Validate(formats); err != nil {
+			if ve, ok := err.(*errors.Validation); ok {
+				return ve.ValidateName("auto_persist")
+			} else if ce, ok := err.(*errors.CompositeError); ok {
+				return ce.ValidateName("auto_persist")
+			}
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -147,9 +179,22 @@ func (m *ReadyStatus) validateLastRestore(formats strfmt.Registry) error {
 	return nil
 }
 
+func (m *ReadyStatus) validateReady(formats strfmt.Registry) error {
+
+	if err := validate.Required("ready", "body", m.Ready); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // ContextValidate validate this ready status based on the context it is used
 func (m *ReadyStatus) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
 	var res []error
+
+	if err := m.contextValidateAutoPersist(ctx, formats); err != nil {
+		res = append(res, err)
+	}
 
 	if err := m.contextValidateBoot(ctx, formats); err != nil {
 		res = append(res, err)
@@ -170,6 +215,22 @@ func (m *ReadyStatus) ContextValidate(ctx context.Context, formats strfmt.Regist
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
+	return nil
+}
+
+func (m *ReadyStatus) contextValidateAutoPersist(ctx context.Context, formats strfmt.Registry) error {
+
+	if m.AutoPersist != nil {
+		if err := m.AutoPersist.ContextValidate(ctx, formats); err != nil {
+			if ve, ok := err.(*errors.Validation); ok {
+				return ve.ValidateName("auto_persist")
+			} else if ce, ok := err.(*errors.CompositeError); ok {
+				return ce.ValidateName("auto_persist")
+			}
+			return err
+		}
+	}
+
 	return nil
 }
 

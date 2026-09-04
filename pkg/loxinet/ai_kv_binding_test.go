@@ -322,9 +322,26 @@ func TestKvBindingExportRestoreRoundTrip(t *testing.T) {
 	if !reflect.DeepEqual(exported, again) {
 		t.Fatalf("round trip drifted:\n before %+v\n after  %+v", exported, again)
 	}
-	// Duplicate restore of the same rule is refused.
-	if err := KvBindingRestore(&exported[0]); err == nil {
-		t.Fatal("second restore over live binding state accepted")
+	// Re-restoring the IDENTICAL proven identity is an idempotent no-op:
+	// a retried boot replay re-applies the same document over the partial
+	// state an earlier attempt left behind, and refusing it wedged every
+	// boot retry into a self-conflict (found live; the boot loader
+	// converges instead of wiping between attempts).
+	if err := KvBindingRestore(&exported[0]); err != nil {
+		t.Fatalf("identical re-restore refused (boot retries would self-conflict): %v", err)
+	}
+	if after := KvBindingExport(); !reflect.DeepEqual(again, after) {
+		t.Fatalf("idempotent re-restore drifted state:\n before %+v\n after  %+v", again, after)
+	}
+	// A DIVERGENT identity for the same rule stays a hard conflict: two
+	// documents disagreeing about a rule's binding identity is never
+	// reconcilable here. (The binding digest covers components, not the
+	// generation, so a bumped generation passes the digest gate and must
+	// be caught by the live-state conflict check.)
+	mut := exported[0]
+	mut.BindingGen++
+	if err := KvBindingRestore(&mut); err == nil {
+		t.Fatal("divergent binding identity accepted over live state")
 	}
 }
 

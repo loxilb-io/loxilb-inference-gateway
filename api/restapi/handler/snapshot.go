@@ -360,10 +360,14 @@ func ConfigGetStatusReady(params operations.GetStatusReadyParams, principal any)
 	}
 
 	lastRestore := snapshot.LastRestore()
-	reasons := snapshot.ReadinessReasons(snapshot.BootConfigSettled(), boot, lastRestore, depFailures)
+	autoPersistState := snapshot.AutoPersistStateGet()
+	reasons := snapshot.ReadinessReasons(snapshot.BootConfigSettled(), boot, lastRestore, autoPersistState, depFailures)
 
+	ready := len(reasons) == 0
 	payload := &models.ReadyStatus{
-		Ready:   len(reasons) == 0,
+		// Required in the contract (pointer in the generated model): the
+		// 503 body must carry an explicit ready=false, never omit it.
+		Ready:   &ready,
 		Reasons: reasons,
 		Boot: &models.BootStatus{
 			Profile:        boot.Profile,
@@ -379,7 +383,14 @@ func ConfigGetStatusReady(params operations.GetStatusReadyParams, principal any)
 		LastPersist:          opRecordModel(snapshot.LastPersist()),
 		LastRestore:          opRecordModel(lastRestore),
 	}
-	if payload.Ready {
+	if autoPersistState.ConsecutiveFailures > 0 {
+		payload.AutoPersist = &models.AutoPersistStatus{
+			ConsecutiveFailures: int64(autoPersistState.ConsecutiveFailures),
+			LastError:           autoPersistState.LastError,
+			LastAttempt:         strfmt.DateTime(autoPersistState.LastAttempt),
+		}
+	}
+	if ready {
 		return operations.NewGetStatusReadyOK().WithPayload(payload)
 	}
 	return operations.NewGetStatusReadyServiceUnavailable().WithPayload(payload)
@@ -461,7 +472,18 @@ func autoPersistFire() {
 	}
 	defer snapshotGate.Store(false)
 	if path, _, err := snapshot.WriteThrough(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath); err != nil {
+		// Loud, bounded, surfaced: the failure streak feeds the metrics
+		// and the readiness surface (config changes not reaching disk
+		// must never be a log-line-only signal), and the debouncer
+		// re-kicks itself only within the retry budget -- after that it
+		// waits for the next config mutation instead of burning a retry
+		// every quiet period against a permanently failing capture.
 		tk.LogIt(tk.LogError, "auto-persist: write-through failed: %v\n", err)
+		if snapshot.RecordAutoPersistFailure(err) {
+			autoPersist.Kick()
+		} else {
+			tk.LogIt(tk.LogError, "auto-persist: retry budget exhausted; surfaced as not-ready, next config change retries\n")
+		}
 	} else {
 		tk.LogIt(tk.LogDebug, "auto-persist: running config persisted to %s\n", path)
 	}

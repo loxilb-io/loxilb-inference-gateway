@@ -7011,6 +7011,8 @@ definitions:
   ReadyStatus:
     type: object
     description: Configuration readiness verdict with the evidence behind it - the boot replay outcome, live external-dependency probes, and the most recent successful persist/restore identities.
+    required:
+      - ready
     properties:
       ready:
         type: boolean
@@ -7030,6 +7032,19 @@ definitions:
         $ref: '#/definitions/ConfigOpRecord'
       last_restore:
         $ref: '#/definitions/ConfigOpRecord'
+      auto_persist:
+        $ref: '#/definitions/AutoPersistStatus'
+  AutoPersistStatus:
+    type: object
+    description: Auto-persist failure streak (present only while failing; any successful persist clears it). Nonzero means recent config changes may not survive a restart - also surfaced as a not-ready reason and in the loxilb_autopersist_consecutive_failures gauge.
+    properties:
+      consecutive_failures:
+        type: integer
+      last_error:
+        type: string
+      last_attempt:
+        type: string
+        format: date-time
   BootStatus:
     type: object
     description: The boot config replay's recorded outcome.

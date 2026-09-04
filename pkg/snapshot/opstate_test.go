@@ -16,6 +16,7 @@
 package snapshot
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -82,35 +83,75 @@ func TestReadinessReasons(t *testing.T) {
 	cleanBoot := BootRestoreState{Profile: "compat", SnapshotFound: true, Succeeded: true}
 	degraded := BootRestoreState{Profile: "strict", SnapshotFound: true, Degraded: true}
 
-	if r := ReadinessReasons(true, cleanBoot, nil, nil); len(r) != 0 {
+	if r := ReadinessReasons(true, cleanBoot, nil, AutoPersistState{}, nil); len(r) != 0 {
 		t.Fatalf("clean settled boot not ready: %v", r)
 	}
-	if r := ReadinessReasons(false, cleanBoot, nil, nil); len(r) != 1 || !strings.Contains(r[0], "not settled") {
+	if r := ReadinessReasons(false, cleanBoot, nil, AutoPersistState{}, nil); len(r) != 1 || !strings.Contains(r[0], "not settled") {
 		t.Fatalf("unsettled boot verdict wrong: %v", r)
 	}
-	if r := ReadinessReasons(true, degraded, nil, nil); len(r) != 1 || !strings.Contains(r[0], "restore failed") {
+	if r := ReadinessReasons(true, degraded, nil, AutoPersistState{}, nil); len(r) != 1 || !strings.Contains(r[0], "restore failed") {
 		t.Fatalf("degraded boot verdict wrong: %v", r)
 	}
 	// A BOOT-mode restore record is the failed boot's own history -- it
 	// must not count as recovery.
 	bootRec := &OpRecord{Mode: "boot", Generation: 3}
-	if r := ReadinessReasons(true, degraded, bootRec, nil); len(r) != 1 {
+	if r := ReadinessReasons(true, degraded, bootRec, AutoPersistState{}, nil); len(r) != 1 {
 		t.Fatalf("boot-mode record cleared degraded: %v", r)
 	}
 	// An operator's commit restore is the designed recovery.
 	commitRec := &OpRecord{Mode: string(ModeCommit), Generation: 4}
-	if r := ReadinessReasons(true, degraded, commitRec, nil); len(r) != 0 {
+	if r := ReadinessReasons(true, degraded, commitRec, AutoPersistState{}, nil); len(r) != 0 {
 		t.Fatalf("commit recovery did not clear degraded: %v", r)
 	}
 	// Dependency failures surface regardless.
-	if r := ReadinessReasons(true, cleanBoot, nil, []string{"dependency api-key-db: down"}); len(r) != 1 {
+	if r := ReadinessReasons(true, cleanBoot, nil, AutoPersistState{}, []string{"dependency api-key-db: down"}); len(r) != 1 {
 		t.Fatalf("dep failure not surfaced: %v", r)
 	}
 	// Compat fallback names the legacy-replay degradation.
 	fallback := degraded
 	fallback.Profile = "compat"
 	fallback.LegacyFallback = true
-	if r := ReadinessReasons(true, fallback, nil, nil); len(r) != 1 || !strings.Contains(r[0], "legacy-replayed") {
+	if r := ReadinessReasons(true, fallback, nil, AutoPersistState{}, nil); len(r) != 1 || !strings.Contains(r[0], "legacy-replayed") {
 		t.Fatalf("fallback verdict wrong: %v", r)
 	}
+	// An auto-persist failure streak blocks READY (config changes not
+	// reaching disk is the silent-degradation class this surface exists
+	// to expose).
+	apFail := AutoPersistState{ConsecutiveFailures: 2, LastError: "capture failed: firewall get: boom"}
+	if r := ReadinessReasons(true, cleanBoot, nil, apFail, nil); len(r) != 1 || !strings.Contains(r[0], "auto-persist failing") {
+		t.Fatalf("auto-persist failure verdict wrong: %v", r)
+	}
 }
+
+// TestAutoPersistFailureRecord pins the F-class auto-persist signal: the
+// streak counts up, retry budget bounds self-rescheduling, and ANY
+// successful persist clears it.
+func TestAutoPersistFailureRecord(t *testing.T) {
+	resetOpState(t)
+
+	for i := 1; i < AutoPersistRetryBudget; i++ {
+		if !RecordAutoPersistFailure(errStoreProbe(i)) {
+			t.Fatalf("retry budget exhausted early at failure %d", i)
+		}
+	}
+	if RecordAutoPersistFailure(errStoreProbe(AutoPersistRetryBudget)) {
+		t.Fatalf("retry allowed past the budget (%d)", AutoPersistRetryBudget)
+	}
+	st := AutoPersistStateGet()
+	if st.ConsecutiveFailures != AutoPersistRetryBudget || st.LastError == "" {
+		t.Fatalf("failure state wrong: %+v", st)
+	}
+
+	// Any successful persist clears the streak.
+	dir := t.TempDir()
+	doc := goldenDocument()
+	doc.RecoveryDependencies = nil
+	if _, _, _, err := Persist(doc, dir); err != nil {
+		t.Fatalf("Persist: %v", err)
+	}
+	if st := AutoPersistStateGet(); st.ConsecutiveFailures != 0 || st.LastError != "" {
+		t.Fatalf("successful persist did not clear the streak: %+v", st)
+	}
+}
+
+func errStoreProbe(i int) error { return fmt.Errorf("capture failed: attempt %d", i) }

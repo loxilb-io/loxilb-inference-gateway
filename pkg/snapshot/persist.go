@@ -138,6 +138,16 @@ func nextGeneration(dir string) uint64 {
 	return highest + 1
 }
 
+// LineageGeneration reports the lineage generation carried by
+// dir/snapshot.json: zero when the file is absent, unreadable, corrupt or
+// predates generations (schema <1.5). The boot arbitration uses it --
+// a positive generation proves the file was written by a gateway's
+// persisted lineage rather than hand-dropped, so it outranks mtime
+// comparisons against legacy artifacts.
+func LineageGeneration(dir string) uint64 {
+	return persistedGeneration(filepath.Join(dir, PersistFileName))
+}
+
 // Persist atomically writes doc's canonical encoding to dir/snapshot.json
 // (§6 write-through target), returning the final path, the document
 // checksum Encode computed, and the lineage generation stamped into the

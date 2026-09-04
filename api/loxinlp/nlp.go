@@ -1998,13 +1998,27 @@ func LbSessionGet(done bool) int {
 		switch {
 		case snapExists && txtExists:
 			snapshot.BootConfigConflictInc()
-			useSnapshot = !snapInfo.ModTime().Before(txtNewest)
-			chosen, ts := snapshot.PersistFileName, snapInfo.ModTime()
-			if !useSnapshot {
-				chosen, ts = "legacy *.txt files", txtNewest
+			if gen := snapshot.LineageGeneration(opt.Opts.ConfigPath); gen > 0 {
+				// The snapshot carries a lineage generation: it was
+				// written by a gateway's persisted lineage, not
+				// hand-dropped. That authority outranks mtime -- a cp
+				// without -p or clock skew must not flip the boot source.
+				// The operator override is explicit: remove snapshot.json
+				// to boot from the *.txt set.
+				useSnapshot = true
+				tk.LogIt(tk.LogWarning, "nlp: boot: BOTH %s (lineage generation %d) and legacy *.txt files exist; the persisted lineage wins regardless of mtimes. Remove %s to boot from the *.txt set, or remove the *.txt files to silence this warning.\n",
+					snapshot.PersistFileName, gen, snapshot.PersistFileName)
+			} else {
+				// Pre-generation or unreadable snapshot: newest-mtime
+				// arbitration, as before generations existed.
+				useSnapshot = !snapInfo.ModTime().Before(txtNewest)
+				chosen, ts := snapshot.PersistFileName, snapInfo.ModTime()
+				if !useSnapshot {
+					chosen, ts = "legacy *.txt files", txtNewest
+				}
+				tk.LogIt(tk.LogWarning, "nlp: boot: BOTH %s (mtime %s) and legacy *.txt files (newest mtime %s) exist; loading the newer: %s (mtime %s). Remove the stale artifact to silence this warning.\n",
+					snapshot.PersistFileName, snapInfo.ModTime().Format(time.RFC3339), txtNewest.Format(time.RFC3339), chosen, ts.Format(time.RFC3339))
 			}
-			tk.LogIt(tk.LogWarning, "nlp: boot: BOTH %s (mtime %s) and legacy *.txt files (newest mtime %s) exist; loading the newer: %s (mtime %s). Remove the stale artifact to silence this warning.\n",
-				snapshot.PersistFileName, snapInfo.ModTime().Format(time.RFC3339), txtNewest.Format(time.RFC3339), chosen, ts.Format(time.RFC3339))
 		case snapExists:
 			useSnapshot = true
 		}
