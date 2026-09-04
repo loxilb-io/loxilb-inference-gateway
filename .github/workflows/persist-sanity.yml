@@ -1,0 +1,64 @@
+name: Persist-Sanity-CI
+
+# Configuration-persistence gates, self-contained on a hosted runner.
+#
+#   unit-gates    vet + the snapshot/restore unit suites (document codec,
+#                 domain registry, restore engine, wipe/rollback, boot
+#                 write-through) and the route-lifecycle guard: every
+#                 mutating REST route in api/swagger.yml must carry an
+#                 explicit persistence classification
+#                 (pkg/snapshot/lifecycle.go), so a new mutating API
+#                 cannot merge without a reboot-recovery decision.
+#
+# The snapshot package is pure Go (no eBPF userland, no cgo), so this
+# workflow needs neither the submodule checkout nor the datapath build.
+# Docker scenario suites for persistence land here as they are proven out.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'pkg/snapshot/**'
+      - 'api/swagger.yml'
+      - 'api/loxinlp/**'
+      - 'api/restapi/handler/snapshot.go'
+      - 'api/restapi/handler/l7policy.go'
+      - 'api/restapi/handler/cert.go'
+      - 'api/restapi/handler/cors.go'
+      - 'api/restapi/handler/configure_trace.go'
+      - 'common/**'
+      - '.github/workflows/persist-sanity.yml'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'pkg/snapshot/**'
+      - 'api/swagger.yml'
+      - 'api/loxinlp/**'
+      - 'api/restapi/handler/snapshot.go'
+      - 'api/restapi/handler/l7policy.go'
+      - 'api/restapi/handler/cert.go'
+      - 'api/restapi/handler/cors.go'
+      - 'api/restapi/handler/configure_trace.go'
+      - 'common/**'
+      - '.github/workflows/persist-sanity.yml'
+  schedule:
+    # Nightly, so a regression arriving through an untouched path (a
+    # dependency bump, runner image drift) still surfaces within a day.
+    - cron: '50 17 * * *'
+  workflow_dispatch:
+
+jobs:
+  unit-gates:
+    name: unit-gates
+    runs-on: ubuntu-22.04
+    if: github.actor != 'dependabot[bot]'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Snapshot unit suites and route-lifecycle guard
+        run: |
+          go vet ./pkg/snapshot/...
+          go test -count=1 ./pkg/snapshot/...
