@@ -101,11 +101,20 @@ canonical_get_all llb1 "$PLIB_ARTIFACTS/base" || fail "baseline canonical dump"
     || fail "fixture: lb=$(lb_count) fw=$(fw_count)"
 assert_traffic "baseline"
 
-# RED-TWIN hook (inert unless PLIB_RED_MUTATE=1): each injection targets a
-# DIFFERENT mode's own assert class, so a red run shows all three oracles
-# firing rather than one failure cascading. Run deliberately, never in a
-# green gate -- a harness whose asserts cannot go red proves nothing.
-if [[ "$PLIB_RED_MUTATE" == "1" ]]; then
+# RED-TWIN hooks (inert unless PLIB_RED_MUTATE is set): each injection
+# targets a DIFFERENT mode's own assert class. PLIB_RED_MUTATE=1 arms all
+# three at once -- useful, but mode (b)'s break wedges the node, so the
+# later modes then fail on the cascade rather than on their own class.
+# PLIB_RED_MUTATE=a|b|c arms exactly one, which is how a single class is
+# proven able to fire. Run deliberately, never in a green gate.
+red_mode() { # red_mode <a|b|c> — is this injection armed?
+    case "$PLIB_RED_MUTATE" in
+    1|all) return 0 ;;
+    "$1")  return 0 ;;
+    *)     return 1 ;;
+    esac
+}
+if red_mode a; then
     echo "  RED-TWIN: dropping the firewall rule after the baseline capture (mode (a) deep-compare must fire)"
     plib_curl llb1 -o /dev/null -X DELETE \
         "$PLIB_API/config/firewall?sourceIP=77.77.77.7%2F32&destinationIP=20.20.20.1%2F32"
@@ -132,7 +141,7 @@ echo "=== mode (b): container stop/start — new netns, same config volume ==="
 # die, the host-mounted config volume does not. This is the class a
 # container image upgrade or a node reboot lands in, and the one where a
 # gateway that kept its state only in memory silently comes back empty.
-if [[ "$PLIB_RED_MUTATE" == "1" ]]; then
+if red_mode b; then
     echo "  RED-TWIN: removing the managed cert material before the recreate (mode (b) volume assert must fire)"
     sudo rm -rf "$CFG/certs/rm-cert1"
 fi
@@ -191,7 +200,7 @@ echo "=== mode (c): cold config — an empty boot must be reported as empty ==="
 # configuration for good. Legacy *.txt artifacts are removed too: the
 # legacy-fallback class is the negative suite's compat leg, this leg is
 # about the empty class.
-if [[ "$PLIB_RED_MUTATE" == "1" ]]; then
+if red_mode c; then
     echo "  RED-TWIN: leaving snapshot.json in place (mode (c) empty-boot classification must fire)"
 else
     sudo rm -f "$CFG/snapshot.json" "$CFG"/*.txt

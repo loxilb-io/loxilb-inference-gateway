@@ -33,13 +33,15 @@ traffic happens to take fails the diff.
   boot on its own via the restore's write-through.
 ## Red twin
 
-`PLIB_RED_MUTATE=1 ./validation.sh` injects one deliberate break per
-class — the firewall rule dropped after the baseline capture (mode (a)'s
-deep-compare), the managed cert material removed before the recreate
-(mode (b)'s volume assert), and `snapshot.json` left in place for the
-cold boot (mode (c)'s empty-boot classification, including the inverted
-"the oracle can fail" leg). A red run must exit 1 with those three
-classes firing and nothing else; run it whenever the suite changes.
+`PLIB_RED_MUTATE=a|b|c` arms ONE deliberate break — the firewall rule
+dropped after the baseline capture (mode (a)'s deep-compare), the managed
+cert material removed before the recreate (mode (b)'s volume assert), or
+`snapshot.json` left in place for the cold boot (mode (c)'s empty-boot
+classification). `PLIB_RED_MUTATE=1` arms all three, which is a fine
+smoke test but not a proof of each class: mode (b)'s break wedges the
+node, so the later modes then fail on the cascade instead of on their own
+oracle. Prove a class with its own letter; run a red whenever the suite
+changes.
 
 
 ## Traps
