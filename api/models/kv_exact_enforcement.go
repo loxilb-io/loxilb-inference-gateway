@@ -8,20 +8,24 @@ package models
 import (
 	"context"
 
+	"github.com/go-openapi/errors"
 	"github.com/go-openapi/strfmt"
 	"github.com/go-openapi/swag"
+	"github.com/go-openapi/validate"
 )
 
-// KvExactEnforcement Data-plane enforcement position of a strict KV-exact rule (absent on legacy rules) - what the control plane wants vs what the data plane provably enforces, per the fence-first contract-word transaction.
+// KvExactEnforcement Data-plane enforcement position of a strict KV-exact rule (absent on legacy rules) - what the control plane wants vs what the data plane provably enforces, per the fence-first contract-word transaction. desired and enforced are always present; lastAckAt is absent before the first full ACK after registration or restart; fault is absent when none.
 //
 // swagger:model KvExactEnforcement
 type KvExactEnforcement struct {
 
 	// Desired attestation-ladder state.
-	Desired string `json:"desired,omitempty"`
+	// Required: true
+	Desired *string `json:"desired"`
 
 	// State the data plane actually enforces.
-	Enforced string `json:"enforced,omitempty"`
+	// Required: true
+	Enforced *string `json:"enforced"`
 
 	// Last enforcement fault reason (absent when none).
 	Fault string `json:"fault,omitempty"`
@@ -35,6 +39,37 @@ type KvExactEnforcement struct {
 
 // Validate validates this kv exact enforcement
 func (m *KvExactEnforcement) Validate(formats strfmt.Registry) error {
+	var res []error
+
+	if err := m.validateDesired(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateEnforced(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if len(res) > 0 {
+		return errors.CompositeValidationError(res...)
+	}
+	return nil
+}
+
+func (m *KvExactEnforcement) validateDesired(formats strfmt.Registry) error {
+
+	if err := validate.Required("desired", "body", m.Desired); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *KvExactEnforcement) validateEnforced(formats strfmt.Registry) error {
+
+	if err := validate.Required("enforced", "body", m.Enforced); err != nil {
+		return err
+	}
+
 	return nil
 }
 

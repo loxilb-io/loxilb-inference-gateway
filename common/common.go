@@ -1790,6 +1790,12 @@ func IsValidApiKeyAuth(policy string) bool {
 // "admit everything" and "reject everything".
 var ErrInvalidApiKeyAuth = errors.New("invalid api_key_auth: must be one of disabled, required")
 
+// ErrKvExactKeyUnservable marks a kvexactstatus read whose composite key can
+// never hold a rule (e.g. an unsupported protocol). It is a read answer, not
+// a fault: the REST layer serves it as the same coalesced 404 as a key with
+// nothing on it.
+var ErrKvExactKeyUnservable = errors.New("kv-exact status: unservable key")
+
 // ErrDBUnavailable is returned when the credential store is not initialised or
 // its connection has been lost. It is a server-side condition, not a verdict on
 // the credential, and maps to HTTP 503.

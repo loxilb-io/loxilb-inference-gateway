@@ -79,32 +79,43 @@ func kvExactStatusRespCode(t *testing.T, ip string, port float64, proto string) 
 	return rec.Code
 }
 
-// TestKvExactStatusEmitsOnlyDeclaredStatuses: any hook error surfacing from
-// the kvexactstatus read path must map onto a status the operation declares
-// (200/401/404/500). An error message that happens to contain a conflict-class
-// substring (" exists") must not turn a read-only GET into an undeclared 409.
+// kvExactStatusDeclared is the operation's declared response surface — keep
+// in lockstep with the kvexactstatus responses section of api/swagger.yml.
+var kvExactStatusDeclared = map[int]bool{
+	200: true, 401: true, 403: true, 404: true, 422: true, 500: true, 503: true,
+}
+
+// TestKvExactStatusEmitsOnlyDeclaredStatuses: the error-path status matrix.
+// Every hook error must map onto a status the operation declares, through the
+// handler's explicit mapping — never the shared message-text classifier,
+// whose conflict class (substring " exists") once leaked an undeclared 409
+// from this read-only GET.
 func TestKvExactStatusEmitsOnlyDeclaredStatuses(t *testing.T) {
 	prev := ApiHooks
 	defer func() { ApiHooks = prev }()
 
-	declared := map[int]bool{200: true, 401: true, 404: true, 500: true}
-
 	cases := []struct {
 		name string
 		err  error
+		want int
 	}{
-		// Collides with the classifier's conflict class via " exists".
-		{"conflict-worded lookup failure", errors.New("kv-exact shard exists in a degraded generation")},
-		// Neutral wording, the fall-through class.
-		{"plain lookup failure", errors.New("kv-exact status snapshot walk failed")},
+		// Collides with the classifier's conflict class via " exists" —
+		// a server-side read fault, so 500, never 409.
+		{"conflict-worded lookup failure", errors.New("kv-exact shard exists in a degraded generation"), http.StatusInternalServerError},
+		// Neutral wording, same answer.
+		{"plain lookup failure", errors.New("kv-exact status snapshot walk failed"), http.StatusInternalServerError},
+		// A key that can never hold a rule is the coalesced 404, not a fault.
+		{"unservable key", fmt.Errorf("%w: unsupported protocol %q", cmn.ErrKvExactKeyUnservable, "gre"), http.StatusNotFound},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			ApiHooks = &stubKvExactStatusHook{err: c.err}
 			code := kvExactStatusRespCode(t, "10.10.10.1", 8080, "tcp")
-			if !declared[code] {
-				t.Fatalf("undeclared status %d escaped the kvexactstatus error path (declared: 200/401/404/500) for error %q",
-					code, c.err)
+			if !kvExactStatusDeclared[code] {
+				t.Fatalf("undeclared status %d escaped the kvexactstatus error path for error %q", code, c.err)
+			}
+			if code != c.want {
+				t.Fatalf("error %q answered %d, want %d", c.err, code, c.want)
 			}
 		})
 	}
