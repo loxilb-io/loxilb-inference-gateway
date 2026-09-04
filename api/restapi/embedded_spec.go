@@ -9792,6 +9792,35 @@ func init() {
         }
       }
     },
+    "/status/ready": {
+      "get": {
+        "description": "READY means the boot config replay settled without degradation (or an operator's commit restore has since recovered it) and every REQUIRED external recovery dependency answers right now. A not-ready gateway returns 503 with the same body shape, carrying the reasons - a failed boot restore is never silently READY.",
+        "produces": [
+          "application/json"
+        ],
+        "summary": "Configuration readiness of this gateway",
+        "responses": {
+          "200": {
+            "description": "Ready",
+            "schema": {
+              "$ref": "#/definitions/ReadyStatus"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Not ready (body carries the reasons)",
+            "schema": {
+              "$ref": "#/definitions/ReadyStatus"
+            }
+          }
+        }
+      }
+    },
     "/version": {
       "get": {
         "security": [],
@@ -10391,6 +10420,45 @@ func init() {
         }
       }
     },
+    "BootStatus": {
+      "description": "The boot config replay's recorded outcome.",
+      "type": "object",
+      "properties": {
+        "degraded": {
+          "description": "The boot snapshot restore failed (strict booted empty; compat may be running legacy-replayed configuration).",
+          "type": "boolean"
+        },
+        "generation": {
+          "description": "Applied boot document's lineage generation (success only).",
+          "type": "integer",
+          "format": "uint64"
+        },
+        "legacy_fallback": {
+          "description": "The compat profile replayed the legacy *.txt artifacts after a failed snapshot restore.",
+          "type": "boolean"
+        },
+        "profile": {
+          "description": "The --config-boot-profile the boot ran under (strict or compat).",
+          "type": "string"
+        },
+        "quarantine_path": {
+          "description": "Where a failing snapshot was preserved (failure only).",
+          "type": "string"
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "snapshot_found": {
+          "type": "boolean"
+        },
+        "succeeded": {
+          "type": "boolean"
+        }
+      }
+    },
     "CIStatusEntry": {
       "type": "object",
       "properties": {
@@ -10494,6 +10562,27 @@ func init() {
           "description": "Private key in PEM. Required on POST/PUT. Persisted 0600 (key-at-rest). Never returned on GET.",
           "type": "string",
           "x-nullable": true
+        }
+      }
+    },
+    "ConfigOpRecord": {
+      "description": "One successful persist or restore - identity of what is durable/applied.",
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "checksum": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "mode": {
+          "description": "For persists, the capture trigger (write-through, manual); for restores, commit or boot.",
+          "type": "string"
         }
       }
     },
@@ -14992,6 +15081,38 @@ func init() {
         },
         "processed_udp_bytes": {
           "type": "number"
+        }
+      }
+    },
+    "ReadyStatus": {
+      "description": "Configuration readiness verdict with the evidence behind it - the boot replay outcome, live external-dependency probes, and the most recent successful persist/restore identities.",
+      "type": "object",
+      "properties": {
+        "boot": {
+          "$ref": "#/definitions/BootStatus"
+        },
+        "external_dependencies": {
+          "description": "Live availability of the stores this gateway is wired to (status ready or failed - a probe, unlike the restore engine's configured-only checks).",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ExternalDependencyStatus"
+          }
+        },
+        "last_persist": {
+          "$ref": "#/definitions/ConfigOpRecord"
+        },
+        "last_restore": {
+          "$ref": "#/definitions/ConfigOpRecord"
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "reasons": {
+          "description": "Why the gateway is not ready; empty when ready.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
@@ -25694,6 +25815,35 @@ func init() {
         }
       }
     },
+    "/status/ready": {
+      "get": {
+        "description": "READY means the boot config replay settled without degradation (or an operator's commit restore has since recovered it) and every REQUIRED external recovery dependency answers right now. A not-ready gateway returns 503 with the same body shape, carrying the reasons - a failed boot restore is never silently READY.",
+        "produces": [
+          "application/json"
+        ],
+        "summary": "Configuration readiness of this gateway",
+        "responses": {
+          "200": {
+            "description": "Ready",
+            "schema": {
+              "$ref": "#/definitions/ReadyStatus"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Not ready (body carries the reasons)",
+            "schema": {
+              "$ref": "#/definitions/ReadyStatus"
+            }
+          }
+        }
+      }
+    },
     "/version": {
       "get": {
         "security": [],
@@ -26748,6 +26898,45 @@ func init() {
         }
       }
     },
+    "BootStatus": {
+      "description": "The boot config replay's recorded outcome.",
+      "type": "object",
+      "properties": {
+        "degraded": {
+          "description": "The boot snapshot restore failed (strict booted empty; compat may be running legacy-replayed configuration).",
+          "type": "boolean"
+        },
+        "generation": {
+          "description": "Applied boot document's lineage generation (success only).",
+          "type": "integer",
+          "format": "uint64"
+        },
+        "legacy_fallback": {
+          "description": "The compat profile replayed the legacy *.txt artifacts after a failed snapshot restore.",
+          "type": "boolean"
+        },
+        "profile": {
+          "description": "The --config-boot-profile the boot ran under (strict or compat).",
+          "type": "string"
+        },
+        "quarantine_path": {
+          "description": "Where a failing snapshot was preserved (failure only).",
+          "type": "string"
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "snapshot_found": {
+          "type": "boolean"
+        },
+        "succeeded": {
+          "type": "boolean"
+        }
+      }
+    },
     "CIStatusEntry": {
       "type": "object",
       "properties": {
@@ -26868,6 +27057,27 @@ func init() {
         "refCount": {
           "description": "Number of proxies using this certificate",
           "type": "integer"
+        }
+      }
+    },
+    "ConfigOpRecord": {
+      "description": "One successful persist or restore - identity of what is durable/applied.",
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "checksum": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "mode": {
+          "description": "For persists, the capture trigger (write-through, manual); for restores, commit or boot.",
+          "type": "string"
         }
       }
     },
@@ -32397,6 +32607,38 @@ func init() {
         },
         "processed_udp_bytes": {
           "type": "number"
+        }
+      }
+    },
+    "ReadyStatus": {
+      "description": "Configuration readiness verdict with the evidence behind it - the boot replay outcome, live external-dependency probes, and the most recent successful persist/restore identities.",
+      "type": "object",
+      "properties": {
+        "boot": {
+          "$ref": "#/definitions/BootStatus"
+        },
+        "external_dependencies": {
+          "description": "Live availability of the stores this gateway is wired to (status ready or failed - a probe, unlike the restore engine's configured-only checks).",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ExternalDependencyStatus"
+          }
+        },
+        "last_persist": {
+          "$ref": "#/definitions/ConfigOpRecord"
+        },
+        "last_restore": {
+          "$ref": "#/definitions/ConfigOpRecord"
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "reasons": {
+          "description": "Why the gateway is not ready; empty when ready.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },

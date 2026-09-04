@@ -26,6 +26,7 @@ import (
 
 	"github.com/go-openapi/runtime"
 	"github.com/go-openapi/runtime/middleware"
+	"github.com/go-openapi/strfmt"
 	"github.com/loxilb-io/loxilb/api/models"
 	"github.com/loxilb-io/loxilb/api/restapi/operations"
 	cmn "github.com/loxilb-io/loxilb/common"
@@ -322,6 +323,80 @@ func ConfigPostPersist(params operations.PostConfigPersistParams, principal any)
 		ExternalDependencies: depStatusModels(snapshot.CaptureDependencyStatuses(doc.RecoveryDependencies)),
 		Warnings:             []string{},
 	})
+}
+
+// ConfigGetStatusReady implements GET /status/ready: the configuration
+// readiness verdict with its evidence -- the boot replay outcome, LIVE
+// external-dependency probes (unlike the restore engine's deliberately
+// configured-only checks), and the most recent successful persist/restore
+// identities. A not-ready gateway answers 503 with the same body so
+// probes and operators read the reasons from either status; a failed boot
+// restore is never silently READY.
+func ConfigGetStatusReady(params operations.GetStatusReadyParams, principal any) middleware.Responder {
+	boot := snapshot.BootRestoreStateGet()
+
+	var depStatuses []*models.ExternalDependencyStatus
+	var depFailures []string
+	if deps, err := ApiHooks.NetRecoveryDepsGet(); err != nil {
+		depFailures = append(depFailures, "dependency identities unavailable: "+err.Error())
+	} else {
+		for _, d := range deps {
+			st := &models.ExternalDependencyStatus{
+				Type:       d.Type,
+				ID:         d.ID,
+				Generation: d.Generation,
+				Digest:     d.Digest,
+				Required:   d.Required,
+				Status:     snapshot.DepStatusReady,
+			}
+			if perr := ApiHooks.NetRecoveryDepReady(d.Type); perr != nil {
+				st.Status = snapshot.DepStatusFailed
+				if d.Required {
+					depFailures = append(depFailures, fmt.Sprintf("dependency %s: %v", d.Type, perr))
+				}
+			}
+			depStatuses = append(depStatuses, st)
+		}
+	}
+
+	lastRestore := snapshot.LastRestore()
+	reasons := snapshot.ReadinessReasons(snapshot.BootConfigSettled(), boot, lastRestore, depFailures)
+
+	payload := &models.ReadyStatus{
+		Ready:   len(reasons) == 0,
+		Reasons: reasons,
+		Boot: &models.BootStatus{
+			Profile:        boot.Profile,
+			SnapshotFound:  boot.SnapshotFound,
+			Succeeded:      boot.Succeeded,
+			Generation:     boot.Generation,
+			QuarantinePath: boot.QuarantinePath,
+			LegacyFallback: boot.LegacyFallback,
+			Degraded:       boot.Degraded,
+			Reasons:        boot.Reasons,
+		},
+		ExternalDependencies: depStatuses,
+		LastPersist:          opRecordModel(snapshot.LastPersist()),
+		LastRestore:          opRecordModel(lastRestore),
+	}
+	if payload.Ready {
+		return operations.NewGetStatusReadyOK().WithPayload(payload)
+	}
+	return operations.NewGetStatusReadyServiceUnavailable().WithPayload(payload)
+}
+
+// opRecordModel converts a snapshot.OpRecord to its swagger model; nil in,
+// nil out (the field is simply absent until the first success).
+func opRecordModel(rec *snapshot.OpRecord) *models.ConfigOpRecord {
+	if rec == nil {
+		return nil
+	}
+	return &models.ConfigOpRecord{
+		Generation: rec.Generation,
+		Checksum:   rec.Checksum,
+		Mode:       rec.Mode,
+		At:         strfmt.DateTime(rec.At),
+	}
 }
 
 // depStatusModels converts the engine's dependency statuses to the

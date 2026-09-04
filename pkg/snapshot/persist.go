@@ -155,6 +155,7 @@ func Persist(doc *Document, dir string) (string, string, uint64, error) {
 	if err != nil {
 		return "", "", 0, err
 	}
+	recordPersistSuccess(doc.Generation, doc.Checksum, doc.Trigger)
 	return path, doc.Checksum, doc.Generation, nil
 }
 

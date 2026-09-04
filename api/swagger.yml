@@ -4277,6 +4277,25 @@ paths:
           description: Maintenance mode
           schema:
             $ref: '#/definitions/Error'
+  '/status/ready':
+    get:
+      summary: Configuration readiness of this gateway
+      description: READY means the boot config replay settled without degradation (or an operator's commit restore has since recovered it) and every REQUIRED external recovery dependency answers right now. A not-ready gateway returns 503 with the same body shape, carrying the reasons - a failed boot restore is never silently READY.
+      produces:
+        - application/json
+      responses:
+        '200':
+          description: Ready
+          schema:
+            $ref: '#/definitions/ReadyStatus'
+        '401':
+          description: Invalid authentication credentials
+          schema:
+            $ref: '#/definitions/Error'
+        '503':
+          description: Not ready (body carries the reasons)
+          schema:
+            $ref: '#/definitions/ReadyStatus'
 #----------------------------------------------
 # LoxiLB Operational Config
 #----------------------------------------------
@@ -6989,6 +7008,71 @@ definitions:
       pre_restore_snapshot_persisted:
         type: string
         description: On-disk path of the pre-restore snapshot captured before APPLY (commit mode only).
+  ReadyStatus:
+    type: object
+    description: Configuration readiness verdict with the evidence behind it - the boot replay outcome, live external-dependency probes, and the most recent successful persist/restore identities.
+    properties:
+      ready:
+        type: boolean
+      reasons:
+        type: array
+        description: Why the gateway is not ready; empty when ready.
+        items:
+          type: string
+      boot:
+        $ref: '#/definitions/BootStatus'
+      external_dependencies:
+        type: array
+        description: Live availability of the stores this gateway is wired to (status ready or failed - a probe, unlike the restore engine's configured-only checks).
+        items:
+          $ref: '#/definitions/ExternalDependencyStatus'
+      last_persist:
+        $ref: '#/definitions/ConfigOpRecord'
+      last_restore:
+        $ref: '#/definitions/ConfigOpRecord'
+  BootStatus:
+    type: object
+    description: The boot config replay's recorded outcome.
+    properties:
+      profile:
+        type: string
+        description: The --config-boot-profile the boot ran under (strict or compat).
+      snapshot_found:
+        type: boolean
+      succeeded:
+        type: boolean
+      generation:
+        type: integer
+        format: uint64
+        description: Applied boot document's lineage generation (success only).
+      quarantine_path:
+        type: string
+        description: Where a failing snapshot was preserved (failure only).
+      legacy_fallback:
+        type: boolean
+        description: The compat profile replayed the legacy *.txt artifacts after a failed snapshot restore.
+      degraded:
+        type: boolean
+        description: The boot snapshot restore failed (strict booted empty; compat may be running legacy-replayed configuration).
+      reasons:
+        type: array
+        items:
+          type: string
+  ConfigOpRecord:
+    type: object
+    description: One successful persist or restore - identity of what is durable/applied.
+    properties:
+      generation:
+        type: integer
+        format: uint64
+      checksum:
+        type: string
+      mode:
+        type: string
+        description: For persists, the capture trigger (write-through, manual); for restores, commit or boot.
+      at:
+        type: string
+        format: date-time
   ExternalDependencyStatus:
     type: object
     description: Identity of one external recovery dependency (from the snapshot document's recovery_dependencies manifest) plus the reporting operation's disposition toward it. Identity only - never store content or credentials.

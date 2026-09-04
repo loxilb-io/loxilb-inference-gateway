@@ -34,7 +34,10 @@ lb_count() {
     plib_curl llb1 "$PLIB_API/config/loadbalancer/all" | jq '[.lbAttr[]?] | length'
 }
 quarantine_count() {
-    sudo sh -c "ls $CFG/snapshot.json.failed-* 2>/dev/null | wc -l"
+    # ls -d: a quarantined artifact can be a DIRECTORY (the read-failure
+    # leg plants one), and a bare ls would list its contents (zero lines
+    # for an empty dir) instead of the entry itself.
+    sudo sh -c "ls -d $CFG/snapshot.json.failed-* 2>/dev/null | wc -l"
 }
 
 #################################################################################

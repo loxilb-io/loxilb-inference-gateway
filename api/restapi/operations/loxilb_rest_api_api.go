@@ -379,6 +379,9 @@ func NewLoxilbRestAPIAPI(spec *loads.Document) *LoxilbRestAPIAPI {
 		GetStatusProcessHandler: GetStatusProcessHandlerFunc(func(params GetStatusProcessParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation GetStatusProcess has not yet been implemented")
 		}),
+		GetStatusReadyHandler: GetStatusReadyHandlerFunc(func(params GetStatusReadyParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetStatusReady has not yet been implemented")
+		}),
 		GetVersionHandler: GetVersionHandlerFunc(func(params GetVersionParams) middleware.Responder {
 			return middleware.NotImplemented("operation GetVersion has not yet been implemented")
 		}),
@@ -936,6 +939,8 @@ type LoxilbRestAPIAPI struct {
 	GetStatusFilesystemHandler GetStatusFilesystemHandler
 	// GetStatusProcessHandler sets the operation handler for the get status process operation
 	GetStatusProcessHandler GetStatusProcessHandler
+	// GetStatusReadyHandler sets the operation handler for the get status ready operation
+	GetStatusReadyHandler GetStatusReadyHandler
 	// GetVersionHandler sets the operation handler for the get version operation
 	GetVersionHandler GetVersionHandler
 	// AuthPostAuthLoginHandler sets the operation handler for the post auth login operation
@@ -1537,6 +1542,9 @@ func (o *LoxilbRestAPIAPI) Validate() error {
 	}
 	if o.GetStatusProcessHandler == nil {
 		unregistered = append(unregistered, "GetStatusProcessHandler")
+	}
+	if o.GetStatusReadyHandler == nil {
+		unregistered = append(unregistered, "GetStatusReadyHandler")
 	}
 	if o.GetVersionHandler == nil {
 		unregistered = append(unregistered, "GetVersionHandler")
@@ -2359,6 +2367,10 @@ func (o *LoxilbRestAPIAPI) initHandlerCache() {
 		o.handlers["GET"] = make(map[string]http.Handler)
 	}
 	o.handlers["GET"]["/status/process"] = NewGetStatusProcess(o.context, o.GetStatusProcessHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/status/ready"] = NewGetStatusReady(o.context, o.GetStatusReadyHandler)
 	if o.handlers["GET"] == nil {
 		o.handlers["GET"] = make(map[string]http.Handler)
 	}

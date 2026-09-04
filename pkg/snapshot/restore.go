@@ -339,6 +339,7 @@ func (e *Engine) restore(raw []byte, opts RestoreOptions) (*Result, error) {
 	if len(applyErrs) == 0 {
 		// 7. COMMIT.
 		result.Result = ResultOK
+		recordRestoreSuccess(doc.Generation, doc.Checksum, opts.modeString())
 		return result, nil
 	}
 
