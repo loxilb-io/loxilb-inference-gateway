@@ -101,6 +101,17 @@ canonical_get_all llb1 "$PLIB_ARTIFACTS/base" || fail "baseline canonical dump"
     || fail "fixture: lb=$(lb_count) fw=$(fw_count)"
 assert_traffic "baseline"
 
+# RED-TWIN hook (inert unless PLIB_RED_MUTATE=1): each injection targets a
+# DIFFERENT mode's own assert class, so a red run shows all three oracles
+# firing rather than one failure cascading. Run deliberately, never in a
+# green gate -- a harness whose asserts cannot go red proves nothing.
+if [[ "$PLIB_RED_MUTATE" == "1" ]]; then
+    echo "  RED-TWIN: dropping the firewall rule after the baseline capture (mode (a) deep-compare must fire)"
+    plib_curl llb1 -o /dev/null -X DELETE \
+        "$PLIB_API/config/firewall?sourceIP=77.77.77.7%2F32&destinationIP=20.20.20.1%2F32"
+    persist_and_verify llb1 >/dev/null
+fi
+
 #################################################################################
 echo "=== mode (a): in-place process restart ==="
 #################################################################################
@@ -121,6 +132,10 @@ echo "=== mode (b): container stop/start — new netns, same config volume ==="
 # die, the host-mounted config volume does not. This is the class a
 # container image upgrade or a node reboot lands in, and the one where a
 # gateway that kept its state only in memory silently comes back empty.
+if [[ "$PLIB_RED_MUTATE" == "1" ]]; then
+    echo "  RED-TWIN: removing the managed cert material before the recreate (mode (b) volume assert must fire)"
+    sudo rm -rf "$CFG/certs/rm-cert1"
+fi
 sum_b=$(sudo jq -r '.checksum' "$CFG/snapshot.json")
 pid_before=$(docker inspect --format '{{.State.Pid}}' llb1)
 docker stop -t 5 llb1 >/dev/null 2>&1
@@ -176,7 +191,11 @@ echo "=== mode (c): cold config — an empty boot must be reported as empty ==="
 # configuration for good. Legacy *.txt artifacts are removed too: the
 # legacy-fallback class is the negative suite's compat leg, this leg is
 # about the empty class.
-sudo rm -f "$CFG/snapshot.json" "$CFG"/*.txt
+if [[ "$PLIB_RED_MUTATE" == "1" ]]; then
+    echo "  RED-TWIN: leaving snapshot.json in place (mode (c) empty-boot classification must fire)"
+else
+    sudo rm -f "$CFG/snapshot.json" "$CFG"/*.txt
+fi
 plib_start_gw llb1 || fail "mode (c): gateway did not come back"
 plib_wait_api llb1 || fail "mode (c): API never came back"
 wait_boot_settled || fail "mode (c): the boot gate never opened"
