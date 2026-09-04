@@ -1,0 +1,1 @@
+{"model": "Qwen/Qwen3-0.6B", "messages": [{"role": "user", "content": "  leading and trailing spaces  "}, {"role": "assistant", "content": "\nnewline-wrapped reply\n"}, {"role": "user", "content": "final\nmulti-line\nquestion"}]}

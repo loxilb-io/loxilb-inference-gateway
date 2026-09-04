@@ -317,9 +317,19 @@ func TestRepoArtifactsValid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("repo support-catalog.yaml invalid: %v", err)
 	}
+	// Promotion pipeline invariants: a validated tuple must have earned
+	// its word through the evidence rules ParseCatalog enforces (exact
+	// revision, image digest, bundle reference, real-engine passes — each
+	// with its own red-path test above). Pin here that no validated entry
+	// re-widens: the identity fields a promotion recorded must never be
+	// blanked while the word stays validated (ParseCatalog would catch
+	// blanking too; this guard keeps the intent readable at the seed).
 	for _, e := range cat.Entries {
-		if e.Promotion == PromotionValidated {
-			t.Fatalf("seed catalog carries a validated tuple (%s/%s) — promotion requires the evidence pipeline", e.Engine, e.Version)
+		if e.Promotion != PromotionValidated {
+			continue
+		}
+		if e.Revision == "" || e.Image.PlatformDigest == "" || e.EvidenceBundle == "" {
+			t.Fatalf("validated tuple (%s/%s) lost its promotion evidence fields", e.Engine, e.Version)
 		}
 	}
 	ob, err := os.ReadFile(filepath.Join(root, "observed-releases.json"))

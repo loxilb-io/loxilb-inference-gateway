@@ -15,24 +15,27 @@
  */
 
 /*
- * ai_kv_chat_template.go — Gap-B1: chat-template parity for KV-exact.
+ * ai_kv_chat_template.go — chat-template parity for KV-exact.
  *
- * For /v1/chat/completions, vLLM caches the tokens of the CHAT-TEMPLATE-APPLIED
- * prompt, not the raw user-message text. loxilb previously hashed the raw
- * first-user-message content un-templated, so its KV-exact block hashes never
- * matched vLLM's inventory (the Rung-1 blocker). daulet/tokenizers has no
- * apply_chat_template, so loxilb renders the template itself, in Go, and then
- * feeds the rendered string through the SAME Encode path completions uses
- * (WithEncodeSpecialTokens, add_special_tokens=false).
+ * For /v1/chat/completions, engines cache the tokens of the
+ * CHAT-TEMPLATE-APPLIED prompt, not the raw user-message text.
+ * daulet/tokenizers has no apply_chat_template, so loxilb renders the
+ * template itself and feeds the rendered string through the SAME Encode path
+ * completions uses (WithEncodeSpecialTokens, add_special_tokens=false).
  *
- * This is correct because — confirmed live on Qwen/Qwen2.5-7B-Instruct
- * (cicd/common/kv_hash/fixtures/kv_chat_template_parity.json) —
+ * This is correct because — confirmed live on Qwen/Qwen2.5-7B-Instruct and
+ * re-proven per model by the offline HF oracle
+ * (cicd/common/kv_hash/fixtures/kv_chat_render_parity.json) —
  *   Encode(apply_chat_template(msgs, tokenize=False)) == apply_chat_template(msgs, tokenize=True)
  * for every case, so one tokenizer path serves both chat and completions.
  *
- * v1 hardcodes the Qwen2.5/ChatML template keyed by model slug, with a registry
- * seam for future models (one-model-per-rule production target; the full Qwen2.5
- * Jinja template additionally handles tool-calls — deferred, out of v1 scope).
+ * Rendering is profile-driven: the model resolves to a published
+ * ModelPromptProfile whose digest-pinned template artifact is executed by the
+ * in-process Jinja executor (ai_kv_jinja.go) over the request's messages.
+ * There are deliberately NO per-model Go renderers and NO vendor-prefix
+ * fallback: template dialects vary within a vendor line (Qwen3 renders
+ * without Qwen2.5's default system prompt, for example), so a model without
+ * a published profile must fall back, never inherit a relative's template.
  */
 
 package loxinet
@@ -48,76 +51,76 @@ type kvChatMessage struct {
 	Content string
 }
 
-// kvChatTemplateFn renders an ordered message list into the model's
-// chat-template-applied prompt string (with the generation prompt appended,
-// matching vLLM's add_generation_prompt=True).
-type kvChatTemplateFn func(messages []kvChatMessage) string
-
-// qwenDefaultSystem is the system message Qwen2.5-Instruct's chat template
-// injects when the request supplies no system message. Verified verbatim
-// against vLLM apply_chat_template (kv_chat_template_parity.json).
-const qwenDefaultSystem = "You are Qwen, created by Alibaba Cloud. You are a helpful assistant."
-
-// kvChatTemplateRegistry maps a model slug (modelName with "/" -> "__") to its
-// chat-template renderer. v1 ships the Qwen2.5 family; add entries here as new
-// models gain one-model-per-rule deployments.
-var kvChatTemplateRegistry = map[string]kvChatTemplateFn{
-	"Qwen__Qwen2.5-7B-Instruct": renderChatMLQwen,
-}
-
-// renderChatMLQwen renders the Qwen2.5 / ChatML template:
-//
-//	[<|im_start|>system\n{default or supplied system}<|im_end|>\n]
-//	(<|im_start|>{role}\n{content}<|im_end|>\n)*
-//	<|im_start|>assistant\n
-//
-// If the first message is role=system it is used verbatim and the default is NOT
-// injected; otherwise the Qwen default system block is prepended. The trailing
-// "<|im_start|>assistant\n" is the generation prompt (add_generation_prompt=True).
-func renderChatMLQwen(messages []kvChatMessage) string {
-	var b strings.Builder
-	hasSystem := len(messages) > 0 && messages[0].Role == "system"
-	if !hasSystem {
-		b.WriteString("<|im_start|>system\n")
-		b.WriteString(qwenDefaultSystem)
-		b.WriteString("<|im_end|>\n")
-	}
+// kvJinjaChatContext builds the render context the engine's own renderer
+// receives: the message list, the generation-prompt knob, and the tokenizer's
+// special-token strings (HF passes special_tokens_map into
+// apply_chat_template; a template referencing a token the profile does not
+// declare fails the render loudly instead of rendering different bytes).
+func kvJinjaChatContext(messages []kvChatMessage, pol KvRenderPolicy) map[string]any {
+	msgs := make([]any, 0, len(messages))
 	for _, m := range messages {
-		b.WriteString("<|im_start|>")
-		b.WriteString(m.Role)
-		b.WriteString("\n")
-		b.WriteString(m.Content)
-		b.WriteString("<|im_end|>\n")
+		msgs = append(msgs, map[string]any{"role": m.Role, "content": m.Content})
 	}
-	b.WriteString("<|im_start|>assistant\n")
-	return b.String()
+	ctx := map[string]any{
+		"messages":              msgs,
+		"add_generation_prompt": pol.AddGenerationPrompt,
+	}
+	if pol.BosToken != "" {
+		ctx["bos_token"] = pol.BosToken
+	}
+	if pol.EosToken != "" {
+		ctx["eos_token"] = pol.EosToken
+	}
+	return ctx
 }
 
-// kvRenderChatTemplate renders the chat-template-applied prompt for modelName.
-// Returns ok=false when no template is registered for the exact model — the
-// caller must NOT route such a request through KV-exact chat tokenization (it
-// would silently mis-hash); it should fall back rather than guess a template.
-//
-// Registry lookup is exact-slug only. There is deliberately NO vendor-prefix
-// fallback: template dialects vary within a vendor line (Qwen3 renders without
-// Qwen2.5's default system prompt, for example), so an unregistered sibling
-// model must fall back, never inherit a relative's template.
+// kvRenderChatTemplate renders the chat-template-applied prompt for modelName
+// through its published profile's pinned template artifact. Returns ok=false
+// when no chat-declaring profile serves the exact model or the render fails —
+// the caller must NOT route such a request through KV-exact chat tokenization
+// (it would silently mis-hash); it should fall back rather than guess a
+// template.
 func kvRenderChatTemplate(modelName string, messages []kvChatMessage) (string, bool) {
-	slug := kvModelSlug(modelName)
-	if fn, ok := kvChatTemplateRegistry[slug]; ok {
-		return fn(messages), true
+	e, ok := kvProfileByModel(modelName)
+	if !ok || !kvProfileDeclaresChat(&e.Profile) {
+		return "", false
 	}
-	return "", false
+	tpl, err := e.chatTemplate()
+	if err != nil {
+		return "", false
+	}
+	out, err := tpl.Render(kvJinjaChatContext(messages, e.Profile.RenderPolicy))
+	if err != nil || out == "" {
+		return "", false
+	}
+	return out, true
+}
+
+// kvProfileDeclaresChat reports whether a profile declares the chat surface.
+func kvProfileDeclaresChat(p *ModelPromptProfile) bool {
+	for _, a := range p.SupportedApis {
+		if a == KvProfileAPIChat {
+			return true
+		}
+	}
+	return false
 }
 
 // kvChatTemplateSupported reports whether a validated chat renderer exists
-// for modelName. Deliberately a wrapper over kvRenderChatTemplate so this
-// answer can never drift from the decision the serving path actually makes —
-// admission refuses a declared chat surface exactly when the serving path
-// would have to fall back untemplated.
+// for modelName: a published profile serves the model, declares chat, and its
+// pinned template artifact compiles. Admission consults this so a declared
+// chat surface is refused at create time exactly when the serving path would
+// have to fall back untemplated. It deliberately does NOT execute the
+// template — support is a property of the published identity, and a render
+// error on live traffic is a runtime fault the bridge already fences
+// (kvBridgeTokenizeChat), never a reason to admit-then-degrade.
 func kvChatTemplateSupported(modelName string) bool {
-	_, ok := kvRenderChatTemplate(modelName, nil)
-	return ok
+	e, ok := kvProfileByModel(modelName)
+	if !ok || !kvProfileDeclaresChat(&e.Profile) {
+		return false
+	}
+	_, err := e.chatTemplate()
+	return err == nil
 }
 
 // kvParseChatMessages extracts the ordered role/content turns from a raw chat
@@ -221,21 +224,4 @@ func kvChatExcludedFeature(body string) string {
 		}
 	}
 	return ""
-}
-
-// kvTokenizeChatBody renders modelName's chat template over the messages in the
-// raw chat request body, then tokenizes the rendered prompt through the shared
-// Encode path with addSpecialTokens=false (the render carries its own special
-// tokens) so the token_ids are byte-identical to vLLM's cached chat prompt. Returns nil if the body has no messages, no chat
-// template is known, or tokenization fails.
-func kvTokenizeChatBody(body, modelName string, maxTokens int) []uint32 {
-	msgs, ok := kvParseChatMessages(body)
-	if !ok || len(msgs) == 0 {
-		return nil
-	}
-	rendered, ok := kvRenderChatTemplate(modelName, msgs)
-	if !ok || rendered == "" {
-		return nil
-	}
-	return kvTokenizeWithCache(rendered, modelName, maxTokens, false)
 }

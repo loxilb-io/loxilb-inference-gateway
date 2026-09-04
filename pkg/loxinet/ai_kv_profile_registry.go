@@ -94,6 +94,27 @@ type kvProfileEntry struct {
 	TokenizerBytes []byte
 	TemplateBytes  []byte
 	Receipts       []kvProfileArtifactReceipt
+
+	// Compiled form of TemplateBytes, built once per entry (entries are
+	// immutable, so the compile can never observe different bytes than the
+	// digest-verified load did).
+	tplOnce sync.Once
+	tpl     *kvJinjaTemplate
+	tplErr  error
+}
+
+// chatTemplate returns the compiled chat template for this entry. Load
+// verifies compilability at publish time, so a runtime error here means the
+// entry has no template artifact at all.
+func (e *kvProfileEntry) chatTemplate() (*kvJinjaTemplate, error) {
+	e.tplOnce.Do(func() {
+		if len(e.TemplateBytes) == 0 {
+			e.tplErr = fmt.Errorf("kv-profile: %s has no template artifact", e.Profile.ProfileID)
+			return
+		}
+		e.tpl, e.tplErr = kvJinjaCompile(string(e.TemplateBytes))
+	})
+	return e.tpl, e.tplErr
 }
 
 // kvProfileGeneration is one atomically published registry state.
@@ -331,6 +352,12 @@ func kvProfileLoadOne(rootFd int, name string) (*kvProfileEntry, error) {
 		}
 		entry.TemplateBytes = tplBytes
 		entry.Receipts = append(entry.Receipts, tplReceipt)
+		// Fail-closed at publish: a template the executor cannot compile
+		// must refuse the whole generation now, not fault the first chat
+		// request later.
+		if _, err := entry.chatTemplate(); err != nil {
+			return nil, fmt.Errorf("%s: template artifact: %w", name, err)
+		}
 	}
 	return entry, nil
 }
