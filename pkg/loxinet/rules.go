@@ -3089,7 +3089,10 @@ func (R *RuleH) GetKvExactStatus(vip string, port uint16, proto string, modelNam
 	case "sctp":
 		ipProto = 132
 	default:
-		return nil, fmt.Errorf("kv-exact status: unsupported protocol %q", proto)
+		// A key that can never hold a rule is the same read answer as a key
+		// with nothing on it — typed so the API layer can serve it as the
+		// coalesced 404 instead of a server fault.
+		return nil, fmt.Errorf("%w: unsupported protocol %q", cmn.ErrKvExactKeyUnservable, proto)
 	}
 
 	res := make([]cmn.KvExactStatusMod, 0, 2)
@@ -3137,7 +3140,7 @@ func (R *RuleH) GetKvExactStatus(vip string, port uint16, proto string, modelNam
 			// Legacy profile-less rule: active, unattested, and says so.
 			m.DesiredState = KvExactStateLegacyActive
 			m.EnforcedState = KvExactStateLegacyActive
-			m.ReasonCodes = []string{"no_model_profile_bound"}
+			m.ReasonCodes = []string{KvAttestReasonNoProfileBound}
 			res = append(res, m)
 			continue
 		}
@@ -3150,7 +3153,7 @@ func (R *RuleH) GetKvExactStatus(vip string, port uint16, proto string, modelNam
 			m.ModelProfileID = data.kvModelProfile
 			m.DesiredState = KvExactStateProfileValidated
 			m.EnforcedState = KvExactStateEnforcementFault
-			m.ReasonCodes = []string{"binding_state_missing"}
+			m.ReasonCodes = []string{KvAttestReasonBindingStateMissing}
 			m.Enforcement = kvExactEnforcementInfo(uint32(data.ruleNum), m.DesiredState, m.EnforcedState)
 			res = append(res, m)
 			continue
@@ -3195,7 +3198,7 @@ func (R *RuleH) GetKvExactStatus(vip string, port uint16, proto string, modelNam
 		} else {
 			m.DesiredState = KvExactStateProfileValidated
 			m.EnforcedState = KvExactStatePendingDataplane
-			m.ReasonCodes = []string{"binding_dataplane_pending", "attestation_pending"}
+			m.ReasonCodes = []string{KvAttestReasonBindingDataplanePending, KvAttestReasonAttestationPending}
 		}
 		m.Enforcement = kvExactEnforcementInfo(uint32(data.ruleNum), m.DesiredState, m.EnforcedState)
 		res = append(res, m)
@@ -3203,10 +3206,13 @@ func (R *RuleH) GetKvExactStatus(vip string, port uint16, proto string, modelNam
 	return res, nil
 }
 
-// kvExactBindingImmutabilityCheck guards: kvModelProfile and
-// kvExactApiMode on an existing rule are IMMUTABLE — delete+recreate is the
-// sanctioned path. A live rebind would re-key the binding identity under
-// in-flight requests with no data-plane fence to order the switch.
+// kvExactBindingImmutabilityCheck guards kvModelProfile and kvExactApiMode on
+// an existing rule. kvExactApiMode is immutable outright, and a bound profile
+// can be neither dropped nor swapped — delete+recreate is the path for those.
+// The ONE sanctioned transition is the migration attach: a profile-less rule
+// may gain a profile on replace, and that upgrade re-runs the full strict
+// bring-up. Everything else would re-key the binding identity under in-flight
+// requests with no data-plane fence to order the switch.
 func kvExactBindingImmutabilityCheck(existingProfile, incomingProfile, existingApiMode, incomingApiMode string) error {
 	if existingProfile != incomingProfile {
 		// Migration attach is the ONE sanctioned transition: a profile-less
@@ -3373,6 +3379,39 @@ func kvEngineMixDetect(newEngine string, otherEngines []string) (string, bool) {
 func aiGwModeFor(sseMode, pdDisagg bool, apiKeyAuth string) bool {
 	return sseMode || pdDisagg ||
 		cmn.ResolveApiKeyAuth(apiKeyAuth) == cmn.ApiKeyAuthRequired
+}
+
+// apiKeyAuthWireValue maps the declared X-Api-Key policy to the value the
+// data plane is pushed (llb_dpapi.h apikey_auth). Three wire values, not two,
+// because "disabled" arrives in two shapes that must not be conflated: an
+// UNSET policy (0) declares nothing and keeps byte-identical proxying, while
+// an EXPLICIT "disabled" (2) declares the service AI-facing — no key is
+// checked, but the X-Api-Key header is stripped before dispatch. "required"
+// (1) enforces and strips.
+func apiKeyAuthWireValue(declared string) uint8 {
+	switch {
+	case cmn.ResolveApiKeyAuth(declared) == cmn.ApiKeyAuthRequired:
+		return 1
+	case declared != "":
+		return 2
+	default:
+		return 0
+	}
+}
+
+// apiKeyAuthOnReplace resolves the api_key_auth declaration a replace-POST
+// leaves on the rule: PRESERVE on omit, unlike most fields around it. An
+// unset api_key_auth resolves to "disabled" when a rule is CREATED, but on an
+// update it means "the caller did not mention this", not "turn it off" —
+// POST against an existing rule is a full replace, so any client that cannot
+// express the field would otherwise switch authentication off on a service
+// the operator believed protected, with no error and no warning. Clearing
+// the policy is still possible: send "disabled" explicitly.
+func apiKeyAuthOnReplace(existing, incoming string) string {
+	if incoming != "" {
+		return incoming
+	}
+	return existing
 }
 
 // aiGwMode reports whether this rule's connections do AI-gateway accounting.
@@ -3982,22 +4021,10 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		}
 		eRule.sessionHeaderName = serv.SessionHeaderName
 		eRule.sseMode = serv.SSEMode
-		// PRESERVE on omit, unlike the fields around it.
-		//
-		// An unset api_key_auth resolves to "disabled" when a rule is
-		// CREATED, but on an update it means "the caller did not mention
-		// this", not "turn it off". POST against an existing rule is a full
-		// replace, so any client that cannot express the field -- loxicmd
-		// carries 18 of this struct's fields -- would otherwise switch
-		// authentication off on a service the operator believed protected,
-		// with no error and no warning. Clearing the policy is still
-		// possible: send "disabled" explicitly.
-		//
-		// backend_protocol immediately above is guarded the same way and for
-		// the same reason.
-		if serv.ApiKeyAuth != "" {
-			eRule.apiKeyAuth = serv.ApiKeyAuth
-		}
+		// PRESERVE on omit, unlike the fields around it — the why lives on
+		// apiKeyAuthOnReplace. backend_protocol immediately above is guarded
+		// the same way and for the same reason.
+		eRule.apiKeyAuth = apiKeyAuthOnReplace(eRule.apiKeyAuth, serv.ApiKeyAuth)
 		eRule.maxStreamDurationSec = serv.MaxStreamDurationSec
 		eRule.backendKeepaliveIntervalSec = serv.BackendKeepaliveIntervalSec
 		// update per-listener member timeouts (ms). Assigned

@@ -22,6 +22,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-openapi/swag"
 	"github.com/loxilb-io/loxilb/api/models"
 	cmn "github.com/loxilb-io/loxilb/common"
 )
@@ -83,7 +84,7 @@ func TestResultErrorResponseTypedKvAdmissionRefusalIsBadRequest(t *testing.T) {
 // would erase the lifted-fence verdict from every status read and turn a
 // suite's goFenced=false assertion vacuous.
 func TestKvExactEnforcementMarshalsExplicitGoFenced(t *testing.T) {
-	b, err := json.Marshal(&models.KvExactEnforcement{Desired: "READY", GoFenced: false})
+	b, err := json.Marshal(&models.KvExactEnforcement{Desired: swag.String("READY"), GoFenced: false})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}

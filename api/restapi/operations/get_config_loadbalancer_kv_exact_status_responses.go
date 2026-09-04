@@ -62,7 +62,7 @@ func (o *GetConfigLoadbalancerKvExactStatusOK) WriteResponse(rw http.ResponseWri
 const GetConfigLoadbalancerKvExactStatusUnauthorizedCode int = 401
 
 /*
-GetConfigLoadbalancerKvExactStatusUnauthorized Invalid authentication credentials
+GetConfigLoadbalancerKvExactStatusUnauthorized Invalid authentication credentials (unknown, expired or missing token, or a credential that is not a management identity — the cases are deliberately indistinguishable)
 
 swagger:response getConfigLoadbalancerKvExactStatusUnauthorized
 */
@@ -103,11 +103,56 @@ func (o *GetConfigLoadbalancerKvExactStatusUnauthorized) WriteResponse(rw http.R
 	}
 }
 
+// GetConfigLoadbalancerKvExactStatusForbiddenCode is the HTTP code returned for type GetConfigLoadbalancerKvExactStatusForbidden
+const GetConfigLoadbalancerKvExactStatusForbiddenCode int = 403
+
+/*
+GetConfigLoadbalancerKvExactStatusForbidden Authenticated management identity whose role does not authorize this operation
+
+swagger:response getConfigLoadbalancerKvExactStatusForbidden
+*/
+type GetConfigLoadbalancerKvExactStatusForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigLoadbalancerKvExactStatusForbidden creates GetConfigLoadbalancerKvExactStatusForbidden with default headers values
+func NewGetConfigLoadbalancerKvExactStatusForbidden() *GetConfigLoadbalancerKvExactStatusForbidden {
+
+	return &GetConfigLoadbalancerKvExactStatusForbidden{}
+}
+
+// WithPayload adds the payload to the get config loadbalancer kv exact status forbidden response
+func (o *GetConfigLoadbalancerKvExactStatusForbidden) WithPayload(payload *models.Error) *GetConfigLoadbalancerKvExactStatusForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config loadbalancer kv exact status forbidden response
+func (o *GetConfigLoadbalancerKvExactStatusForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigLoadbalancerKvExactStatusForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigLoadbalancerKvExactStatusNotFoundCode is the HTTP code returned for type GetConfigLoadbalancerKvExactStatusNotFound
 const GetConfigLoadbalancerKvExactStatusNotFoundCode int = 404
 
 /*
-GetConfigLoadbalancerKvExactStatusNotFound Resource not found
+GetConfigLoadbalancerKvExactStatusNotFound No KV-exact status on this key. Deliberately coalesced: no rule exists on the composite key, the rule(s) on the key are not KV-exact, or the model_name filter matched no rule — all three answer 404. A 200 body always carries at least one entry (empty result sets are never emitted as 200).
 
 swagger:response getConfigLoadbalancerKvExactStatusNotFound
 */
@@ -140,6 +185,51 @@ func (o *GetConfigLoadbalancerKvExactStatusNotFound) SetPayload(payload *models.
 func (o *GetConfigLoadbalancerKvExactStatusNotFound) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(404)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetConfigLoadbalancerKvExactStatusUnprocessableEntityCode is the HTTP code returned for type GetConfigLoadbalancerKvExactStatusUnprocessableEntity
+const GetConfigLoadbalancerKvExactStatusUnprocessableEntityCode int = 422
+
+/*
+GetConfigLoadbalancerKvExactStatusUnprocessableEntity Malformed path or query parameter (e.g. a non-numeric port). Emitted by request validation before the handler runs; the body code field carries a validation code, not an HTTP status.
+
+swagger:response getConfigLoadbalancerKvExactStatusUnprocessableEntity
+*/
+type GetConfigLoadbalancerKvExactStatusUnprocessableEntity struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigLoadbalancerKvExactStatusUnprocessableEntity creates GetConfigLoadbalancerKvExactStatusUnprocessableEntity with default headers values
+func NewGetConfigLoadbalancerKvExactStatusUnprocessableEntity() *GetConfigLoadbalancerKvExactStatusUnprocessableEntity {
+
+	return &GetConfigLoadbalancerKvExactStatusUnprocessableEntity{}
+}
+
+// WithPayload adds the payload to the get config loadbalancer kv exact status unprocessable entity response
+func (o *GetConfigLoadbalancerKvExactStatusUnprocessableEntity) WithPayload(payload *models.Error) *GetConfigLoadbalancerKvExactStatusUnprocessableEntity {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config loadbalancer kv exact status unprocessable entity response
+func (o *GetConfigLoadbalancerKvExactStatusUnprocessableEntity) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigLoadbalancerKvExactStatusUnprocessableEntity) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(422)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {
@@ -185,6 +275,51 @@ func (o *GetConfigLoadbalancerKvExactStatusInternalServerError) SetPayload(paylo
 func (o *GetConfigLoadbalancerKvExactStatusInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetConfigLoadbalancerKvExactStatusServiceUnavailableCode is the HTTP code returned for type GetConfigLoadbalancerKvExactStatusServiceUnavailable
+const GetConfigLoadbalancerKvExactStatusServiceUnavailableCode int = 503
+
+/*
+GetConfigLoadbalancerKvExactStatusServiceUnavailable Credential store unavailable — the credential was never examined; retry after a moment
+
+swagger:response getConfigLoadbalancerKvExactStatusServiceUnavailable
+*/
+type GetConfigLoadbalancerKvExactStatusServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigLoadbalancerKvExactStatusServiceUnavailable creates GetConfigLoadbalancerKvExactStatusServiceUnavailable with default headers values
+func NewGetConfigLoadbalancerKvExactStatusServiceUnavailable() *GetConfigLoadbalancerKvExactStatusServiceUnavailable {
+
+	return &GetConfigLoadbalancerKvExactStatusServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the get config loadbalancer kv exact status service unavailable response
+func (o *GetConfigLoadbalancerKvExactStatusServiceUnavailable) WithPayload(payload *models.Error) *GetConfigLoadbalancerKvExactStatusServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config loadbalancer kv exact status service unavailable response
+func (o *GetConfigLoadbalancerKvExactStatusServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigLoadbalancerKvExactStatusServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

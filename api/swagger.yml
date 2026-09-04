@@ -1092,15 +1092,27 @@ paths:
                 items:
                   $ref: '#/definitions/KvExactStatusEntry'
         '401':
-          description: Invalid authentication credentials
+          description: Invalid authentication credentials (unknown, expired or missing token, or a credential that is not a management identity — the cases are deliberately indistinguishable)
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Authenticated management identity whose role does not authorize this operation
           schema:
             $ref: '#/definitions/Error'
         '404':
-          description: Resource not found
+          description: 'No KV-exact status on this key. Deliberately coalesced: no rule exists on the composite key, the rule(s) on the key are not KV-exact, or the model_name filter matched no rule — all three answer 404. A 200 body always carries at least one entry (empty result sets are never emitted as 200).'
+          schema:
+            $ref: '#/definitions/Error'
+        '422':
+          description: 'Malformed path or query parameter (e.g. a non-numeric port). Emitted by request validation before the handler runs; the body code field carries a validation code, not an HTTP status.'
           schema:
             $ref: '#/definitions/Error'
         '500':
           description: Internal service error
+          schema:
+            $ref: '#/definitions/Error'
+        '503':
+          description: Credential store unavailable — the credential was never examined; retry after a moment
           schema:
             $ref: '#/definitions/Error'
   '/config/loadbalancer/externalipaddress/{ip_address}/port/{port}/protocol/{proto}/stats':
@@ -6855,6 +6867,93 @@ paths:
       operationId: getConfigAiTenantRatelimitTenantID
       tags:
         - ai
+  '/config/ai/model-profiles':
+    get:
+      summary: List the published model-prompt profiles
+      description: >-
+        Returns every profile of the currently PUBLISHED registry generation.
+        Publication is all-or-nothing: a profile that appears here has already
+        passed artifact digest verification, tokenizer load, and (when chat is
+        declared) chat-template compilation - there is no partial or invalid
+        availability state to represent, and disabled/unpublished profiles
+        simply do not appear. Discovery is a CACHE, never an admission
+        authority: a registry reload can change the available set at any time
+        (rule POST admission re-validates against the generation current at
+        POST time); clients detect staleness by comparing registryGeneration
+        and setDigest against the kvexactstatus read-back after create.
+        profiles is deterministically ordered by profileId ascending with no
+        pagination (the registry is a bounded operator-curated set). Artifact
+        locator paths and host filesystem information are deliberately
+        excluded from the response.
+      operationId: getConfigAiModelProfiles
+      responses:
+        '200':
+          description: >-
+            OK. When no registry is published the response carries
+            registryGeneration 0 and an empty profiles array - the documented
+            legacy-mode state, not an error.
+          schema:
+            $ref: '#/definitions/AiModelProfileRegistry'
+        '401':
+          description: Invalid authentication credentials (unknown, expired or missing token, or a credential that is not a management identity — the cases are deliberately indistinguishable)
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Authenticated management identity whose role does not authorize this operation
+          schema:
+            $ref: '#/definitions/Error'
+        '500':
+          description: Internal service error
+          schema:
+            $ref: '#/definitions/Error'
+        '503':
+          description: Credential store unavailable — the credential was never examined; retry after a moment
+          schema:
+            $ref: '#/definitions/Error'
+      tags:
+        - ai
+  '/config/ai/model-profiles/{profile_id}':
+    get:
+      summary: Get one published model-prompt profile
+      description: >-
+        Returns the single profile identified by profile_id in the currently
+        PUBLISHED registry generation (so a client can refresh one profile
+        cheaply). Schema is identical to a list entry. Same cache-not-authority
+        and exclusion rules as the list operation.
+      operationId: getConfigAiModelProfilesProfileID
+      parameters:
+        - name: profile_id
+          in: path
+          type: string
+          required: true
+          description: Profile identifier (the registry key; a single path-safe segment)
+      responses:
+        '200':
+          description: OK
+          schema:
+            $ref: '#/definitions/AiModelProfileEntry'
+        '401':
+          description: Invalid authentication credentials (unknown, expired or missing token, or a credential that is not a management identity — the cases are deliberately indistinguishable)
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Authenticated management identity whose role does not authorize this operation
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: 'Unknown profile_id in the currently published registry generation - or no registry is published at all (the list operation answers 200/generation 0 for that state; the detail operation has no profile to serve).'
+          schema:
+            $ref: '#/definitions/Error'
+        '500':
+          description: Internal service error
+          schema:
+            $ref: '#/definitions/Error'
+        '503':
+          description: Credential store unavailable — the credential was never examined; retry after a moment
+          schema:
+            $ref: '#/definitions/Error'
+      tags:
+        - ai
 #----------------------------------------------
 # OPA Policy Watcher
 #----------------------------------------------
@@ -7018,7 +7117,74 @@ definitions:
         description: In-memory last-mutation timestamp (RFC3339). Reset-to-now on restart, never persisted.
   KvExactStatusEntry:
     type: object
-    description: Resolved KV-exact composition status of one rule. Every identity field is a scalar by schema - one rule composes exactly one model profile with exactly one engine contract at exactly one generation each; arrays and repeated identity fields are rejected representations.
+    description: >-
+      Resolved KV-exact composition status of one rule. Every identity field
+      is a scalar by schema - one rule composes exactly one model profile with
+      exactly one engine contract at exactly one generation each; arrays and
+      repeated identity fields are rejected representations.
+      Field presence groups: the required fields are present on EVERY entry
+      (legacy and strict); modelProfileId, modelProfileGen, engineContractId,
+      engineContractGen, bindingGen, bindingDigest, hashContractId,
+      requiredEvidenceLevel and enforcement are present iff the rule is strict
+      (profile-bound); wireSchemaId and pdDialectId are present iff an
+      engine-contract registry serves them.
+      State and reason vocabularies are published in the x-kv-status-states /
+      x-kv-status-reason-codes blocks below as an OPEN vocabulary versioned by
+      x-kv-status-vocabulary-version (new values bump the version; existing
+      values are never renamed or re-used). Forward-compatibility rule,
+      binding on clients: an unrecognized desiredState/enforcedState MUST be
+      treated as "not ready / in transition" and rendered raw; an unrecognized
+      reasonCode MUST be rendered raw and MUST NOT be treated as fatal.
+    required:
+      - ruleIdentity
+      - modelName
+      - engineFamily
+      - apiMode
+      - desiredState
+      - enforcedState
+      - reasonCodes
+    x-kv-status-vocabulary-version: 1
+    x-kv-status-states:
+      LEGACY_ACTIVE_UNATTESTED: Profile-less rule running the legacy behavior - active, unattested, and says so.
+      PROFILE_VALIDATED: Strict admission passed (profile published, alias admits the model, tokenizer artifacts digest-matched, binding composed); the attestation ladder has not yet earned the parity/hash rungs.
+      PENDING_DATAPLANE_CONTRACT: Waiting for the data-plane contract word to install and the attestation controller to enforce the binding.
+      TOKEN_PARITY_VERIFIED: Tokenizer parity proven against the engine's tokenize surface.
+      TOKEN_PARITY_NOT_AVAILABLE_WITH_APPROVED_ORACLE: Alternate second rung for engines without a tokenize endpoint - parity vouched through an approved oracle.
+      ENGINE_HASH_ATTESTED: Engine block-hash behavior attested via the echo challenge.
+      READY: Fully attested and enforced - the only state in which exact routing serves.
+      READY_FUNCTIONAL_ONLY: Manifest-less READY through the privileged/audited/expiring opt-in - functionally attested, identity trust root absent, exposed distinctly so the risk acceptance is visible.
+      DEGRADING: Fence-first re-attestation in progress after a drift/fault/staleness signal.
+      DEGRADED: Fenced after a confirmed degradation; exact routing denied until the ladder is re-earned.
+      ENFORCEMENT_FAULT: Strict rule whose binding or enforcement state is missing or failed - fenced, never silently downgraded to legacy.
+      REQUIRES_MIGRATION: Restored profile-less rule - exact routing fenced until a profile is attached by rule replace.
+    x-kv-status-reason-codes:
+      no_endpoints: Rule has no live endpoints to attest.
+      adapter_unavailable: No attestation adapter is available for the rule's engine family.
+      identity_mismatch: Endpoint identity probe disagreed with the deployment manifest.
+      probe_schema_mismatch: Attestation probe response did not match the expected schema.
+      token_mismatch: Tokenizer parity probe produced diverging tokens.
+      endpoint_unreachable: Attestation probe could not reach the endpoint.
+      challenge_failed: Hash echo challenge failed verification.
+      challenge_timeout: Hash echo challenge timed out.
+      manifest_missing: No deployment manifest is provisioned for the rule's profile.
+      attestation_stale: Attestation receipts aged past the freshness window.
+      profile_resolution_fault: Bound profile failed to resolve from the registry.
+      peer_capability_mismatch: An eligible HA peer disagrees on the composed identity.
+      enforcement_fault: Data-plane fence/contract transaction could not be acknowledged.
+      runtime_fault: Engine runtime fault reported through the inventory stream.
+      restored_profile_less_requires_migration: Profile-less rule arrived via restore; fenced until a profile is attached by replace.
+      drain_sequence_gap: Destructive-read drain stream shows a sequence gap - inventory evidence untrustworthy.
+      drain_ownership_lost: Drain ownership lost to another consumer - inventory evidence untrustworthy.
+      attestation_pending: Attestation controller registered but has not published a verdict yet.
+      binding_dataplane_pending: Composed binding awaits its data-plane contract install.
+      no_model_profile_bound: Legacy rule - no model profile bound, nothing to attest.
+      binding_state_missing: Strict rule without binding state (partial restore or allocation fault).
+      hash_attestation_pending: Token parity earned; hash echo attestation still outstanding.
+      challenge_cadence: Periodic re-challenge cadence exceeded without a fresh receipt.
+      manifest_changed: Deployment-manifest trust root changed under a READY rule; full re-attestation.
+      engine_geometry_mismatch: Engine KV geometry (block size/layout) disagrees with the bound contract.
+      probe_fixtures_missing: Attestation probe fixture set is missing for the profile's declared API surfaces.
+      probe_fixture_drift: Attestation probe fixtures no longer match the profile's pinned artifacts.
     properties:
       ruleIdentity:
         type: string
@@ -7075,12 +7241,15 @@ definitions:
         type: array
         items:
           type: string
-        description: Bounded typed reasons explaining enforcedState.
+        description: Typed reasons explaining enforcedState (x-kv-status-reason-codes vocabulary). Always present; MAY be empty - an empty array means "no qualifying reason", not "unknown".
       enforcement:
         $ref: '#/definitions/KvExactEnforcement'
   KvExactEnforcement:
     type: object
-    description: Data-plane enforcement position of a strict KV-exact rule (absent on legacy rules) - what the control plane wants vs what the data plane provably enforces, per the fence-first contract-word transaction.
+    description: Data-plane enforcement position of a strict KV-exact rule (absent on legacy rules) - what the control plane wants vs what the data plane provably enforces, per the fence-first contract-word transaction. desired and enforced are always present; lastAckAt is absent before the first full ACK after registration or restart; fault is absent when none.
+    required:
+      - desired
+      - enforced
     properties:
       desired:
         type: string
@@ -7098,6 +7267,115 @@ definitions:
         type: boolean
         x-omitempty: false
         description: Whether the authoritative tokenize-bridge deny-set fence currently denies the rule (fail-closed backstop - denied rules produce no tokens, so no hashes, regardless of C-side state). Always serialized - a lifted fence (false) must stay distinguishable from an unreported one.
+  AiModelProfileRegistry:
+    type: object
+    description: >-
+      The currently published model-profile registry generation as a read-only
+      discovery envelope. registryGeneration and profiles are always present;
+      registryGeneration 0 with an empty profiles array is the documented
+      no-registry-published (legacy-mode) state. setDigest is the immutable
+      digest over the generation's profiles AND their verified artifacts -
+      present whenever a generation is published, absent at generation 0.
+    required:
+      - registryGeneration
+      - profiles
+    properties:
+      registryGeneration:
+        type: integer
+        format: uint64
+        description: Monotonic generation number of the published registry (0 = no registry published).
+      setDigest:
+        type: string
+        description: Digest over the published generation's profile documents and verified artifact bytes. Compare against later reads (and the kvexactstatus read-back) to detect a reload between discovery and rule creation.
+      profiles:
+        type: array
+        items:
+          $ref: '#/definitions/AiModelProfileEntry'
+        description: Every published profile, deterministically ordered by profileId ascending. No pagination - the registry is a bounded operator-curated set. Always present; empty array means "no profiles published", never "unknown".
+  AiModelProfileEntry:
+    type: object
+    description: >-
+      One published model-prompt profile (list and detail representations are
+      identical). Presence conveys validity by construction - publication is
+      all-or-nothing, so every entry has already passed artifact digest
+      verification and tokenizer load; there is no partial or invalid state.
+      tokenizerSha256 is always present (publication requires it);
+      templateSha256/templateContentFormat are present iff a chat template is
+      bound. The sha256 digests are the immutable audit/drift identities of
+      the profile's artifacts. Artifact locator paths, the registry root, and
+      any host filesystem information are deliberately EXCLUDED from this
+      representation.
+    required:
+      - profileId
+      - gen
+      - baseModel
+      - aliasPolicy
+      - supportedApis
+      - tokenizerSha256
+    properties:
+      profileId:
+        type: string
+        description: Registry key of the profile (a single path-safe segment).
+      gen:
+        type: integer
+        format: uint64
+        description: Registry generation this entry was published at (equals the envelope's registryGeneration on the list operation).
+      baseModel:
+        type: string
+        description: Served base-model identity (e.g. "Qwen/Qwen3-32B").
+      aliasPolicy:
+        type: string
+        enum:
+          - base_model_only
+          - list
+        description: base_model_only (only the base model name routes to this profile) or list (allowedAliases route additionally). There is no "any".
+      allowedAliases:
+        type: array
+        x-omitempty: true
+        items:
+          type: string
+        description: Additional served model names (present iff aliasPolicy is list).
+      supportedApis:
+        type: array
+        items:
+          type: string
+        description: Request surfaces this profile serves (completions/chat). Always present and non-empty.
+      supportedFeatures:
+        type: array
+        x-omitempty: true
+        items:
+          type: string
+        description: Request features the profile explicitly supports (absent when none declared).
+      excludedFeatures:
+        type: array
+        x-omitempty: true
+        items:
+          type: string
+        description: Request features the profile explicitly refuses (absent when none declared).
+      tokenizerRevision:
+        type: string
+        description: Upstream tokenizer revision the artifact was captured from (informational provenance; absent when not recorded).
+      tokenizerSha256:
+        type: string
+        description: Pinned sha256 of the tokenizer artifact bytes. Always present - the registry refuses to publish a profile without a verified tokenizer.
+      templateSha256:
+        type: string
+        description: Pinned sha256 of the chat-template artifact bytes (present iff a chat template is bound).
+      templateContentFormat:
+        type: string
+        description: Declared message content format of the bound chat template (present iff a chat template is bound and the profile declares it).
+      rendererEngine:
+        type: string
+        description: Engine that renders the template on the serving path (absent when not declared).
+      rendererVersion:
+        type: string
+        description: Version of the serving-path renderer (absent when not declared).
+      oracleEngine:
+        type: string
+        description: Parity-oracle engine the rendered bytes are attested against (absent when not declared).
+      oracleVersion:
+        type: string
+        description: Version of the parity oracle (absent when not declared).
   LoadbalanceStats:
     type: object
     description: Per-LB statistics quad (Octavia).
@@ -7445,16 +7723,25 @@ definitions:
           api_key_auth:
             type: string
             enum: [disabled, required]
-            default: disabled
             description: >-
-              Data-plane X-Api-Key enforcement policy for this service.
-              "required" makes the data plane validate the X-Api-Key header
-              against the API-key store before the request reaches a backend;
-              "disabled" (the default, and what an unset value resolves to)
-              admits requests without a key. Independent of sse_mode and
-              pd_disagg_mode, and independent of the management-plane
-              authentication mode. Reading a service back always reports the
-              resolved value, never an empty string.
+              Data-plane X-Api-Key enforcement declaration for this service.
+              Three states, and omission is one of them. OMITTED declares
+              nothing: the service is not marked AI-facing, proxying stays
+              byte-identical, and a backend-owned X-Api-Key header passes
+              through untouched. An explicit "disabled" declares the service
+              AI-facing without enforcement: no key is validated, but
+              X-Api-Key is the gateway's credential namespace and the header
+              is stripped before dispatch. "required" makes the data plane
+              validate the X-Api-Key header against the API-key store before
+              the request reaches a backend, fails closed when the policy
+              cannot be evaluated, and likewise strips the header. Reading a
+              service back preserves the declaration exactly: an omitted
+              policy reads back with this field absent, never resolved to a
+              value. On a replace of an existing service, omitting this field
+              leaves the declared policy unchanged — it never silently turns
+              enforcement off; to clear a declared policy, send "disabled"
+              explicitly. Independent of sse_mode and pd_disagg_mode, and
+              independent of the management-plane authentication mode.
           max_stream_duration_sec:
             type: integer
             format: int32
@@ -7589,11 +7876,11 @@ definitions:
             type: string
             x-nullable: false
             enum: ["completions", "chat", "both"]
-            description: "Request API surfaces this KV-exact rule serves. Absent on a profile-less rule keeps the legacy behavior (both surfaces, unattested); with kvModelProfile bound, the effective surfaces default to the profile's declared supportedApis and an explicit value must be a subset of them. Declaring a chat surface requires a validated chat renderer for the rule's model_name — an unsupported chat declaration is refused at create time, never degraded into a silent runtime fallback. Meaningless without kvExactMode (rejected). Immutable after create (delete+recreate to change). Scalar by schema — arrays are rejected representations."
+            description: "Request API surfaces this KV-exact rule serves. Absent on a profile-less rule keeps the legacy behavior (both surfaces, unattested); with kvModelProfile bound, the effective surfaces default to the profile's declared supportedApis and an explicit value must be a subset of them. Declaring a chat surface requires a validated chat renderer for the rule's model_name — an unsupported chat declaration is refused at create time, never degraded into a silent runtime fallback. Meaningless without kvExactMode (rejected). Immutable after create with NO exception (delete+recreate to change): even the sanctioned migration attach (see kvModelProfile) must carry the SAME raw declaration as the live rule — the guard compares raw declared strings, so an unset value matches only unset. Scalar by schema — arrays are rejected representations."
           kvModelProfile:
             type: string
             x-nullable: false
-            description: "ID of the ModelPromptProfile this rule binds to. Naming a profile makes the rule STRICT: the profile must be published in the gateway's profile registry, its alias policy must admit the rule's model_name, its pinned tokenizer artifacts must load and digest-match, and a composed KV-exact binding (model-profile@generation + engine-contract@generation) is allocated at create time — admission fails closed while no engine-contract registry is available. Absent = legacy profile-less rule (no binding; documented migration behavior). Immutable after create (delete+recreate to change). Scalar by schema — exactly one profile per rule; arrays are rejected representations."
+            description: "ID of the ModelPromptProfile this rule binds to. Naming a profile makes the rule STRICT: the profile must be published in the gateway's profile registry, its alias policy must admit the rule's model_name, its pinned tokenizer artifacts must load and digest-match, and a composed KV-exact binding (model-profile@generation + engine-contract@generation) is allocated at create time — admission fails closed while no engine-contract registry is available. Absent = legacy profile-less rule (no binding; documented migration behavior). Immutable after create (delete+recreate to change), with ONE sanctioned exception: the migration attach. A replace-POST that names a profile on a live profile-less rule is admitted and re-runs the full strict bring-up (admission checks run BEFORE any mutation, so a refused attach leaves the rule, binding, and data plane untouched; enforcement reports pending until the data-plane contract installs and is acknowledged). The reverse transitions — dropping the profile or changing it to another — stay refused, as does any kvExactApiMode change during the attach (raw-string equality; an undeclared apiMode must stay undeclared in the attach POST). CAVEAT operators must be shown: attaching changes the rule's EFFECTIVE surface from the legacy both-surfaces default to the profile's declared supportedApis — attaching a completions-only profile to a rule that was serving chat traffic narrows the served surface. Scalar by schema — exactly one profile per rule; arrays are rejected representations."
           pdBootstrapPort:
             type: integer
             format: int32
