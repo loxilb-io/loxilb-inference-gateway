@@ -1,0 +1,1 @@
+{"model": "LGAI-EXAONE/EXAONE-3.5-7.8B-Instruct", "messages": [{"role": "user", "content": "  leading and trailing spaces  "}, {"role": "assistant", "content": "\nnewline-wrapped reply\n"}, {"role": "user", "content": "final\nmulti-line\nquestion"}]}

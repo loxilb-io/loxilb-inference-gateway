@@ -1,0 +1,1 @@
+{"model": "LGAI-EXAONE/EXAONE-3.5-7.8B-Instruct", "messages": [{"role": "system", "content": "You are a helpful assistant."}, {"role": "user", "content": "Name a prime number."}, {"role": "assistant", "content": "Seven."}, {"role": "user", "content": "And the next one after it?"}]}

@@ -114,6 +114,12 @@ func TestKvProfileValidationMatrix(t *testing.T) {
 		{"unknown api", func(p *ModelPromptProfile) { p.SupportedApis = []string{"embeddings"} }, "unsupported api"},
 		{"duplicate api", func(p *ModelPromptProfile) { p.SupportedApis = []string{"completions", "completions"} }, "duplicate api"},
 		{"chat without template", func(p *ModelPromptProfile) { p.SupportedApis = []string{"chat"} }, "chat api requires"},
+		{"chat without addGenerationPrompt", func(p *ModelPromptProfile) {
+			p.SupportedApis = []string{"chat"}
+			p.TemplateArtifact = "acme__m1/template.jinja"
+			p.TemplateSha256 = kvTestShaB
+			p.TemplateContentFormat = "string"
+		}, "addGenerationPrompt"},
 		{"alias policy any", func(p *ModelPromptProfile) { p.AliasPolicy = "any" }, "aliasPolicy"},
 		{"alias policy empty", func(p *ModelPromptProfile) { p.AliasPolicy = "" }, "aliasPolicy"},
 		{"aliases without list policy", func(p *ModelPromptProfile) { p.AllowedAliases = []string{"x"} }, "allowedAliases"},
