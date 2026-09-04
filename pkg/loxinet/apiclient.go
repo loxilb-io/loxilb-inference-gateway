@@ -442,6 +442,25 @@ func (na *NetAPIStruct) NetKvExactStatusGet(vip string, port uint16, proto strin
 	return mh.zr.Rules.GetKvExactStatus(vip, port, proto, modelName)
 }
 
+// NetAiModelProfileList - the published model-profile registry generation as
+// the discovery envelope. Lock-free: the projection rides the same atomic
+// generation pointer the serving path uses, never mh.mtx.
+func (na *NetAPIStruct) NetAiModelProfileList() (cmn.AiModelProfileRegistryMod, error) {
+	if na.BgpPeerMode {
+		return cmn.AiModelProfileRegistryMod{}, errors.New("running in bgp only mode")
+	}
+	return KvProfileDiscovery(), nil
+}
+
+// NetAiModelProfileGet - one published profile by id (typed not-found when
+// the id is absent from the published generation).
+func (na *NetAPIStruct) NetAiModelProfileGet(profileID string) (cmn.AiModelProfileMod, error) {
+	if na.BgpPeerMode {
+		return cmn.AiModelProfileMod{}, errors.New("running in bgp only mode")
+	}
+	return KvProfileDiscoveryByID(profileID)
+}
+
 // NetKvExactBindingDel - remove one rule's KV-exact binding state.
 func (na *NetAPIStruct) NetKvExactBindingDel(b *cmn.KvExactBindingMod) (int, error) {
 	if na.BgpPeerMode {

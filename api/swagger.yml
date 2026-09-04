@@ -6867,6 +6867,93 @@ paths:
       operationId: getConfigAiTenantRatelimitTenantID
       tags:
         - ai
+  '/config/ai/model-profiles':
+    get:
+      summary: List the published model-prompt profiles
+      description: >-
+        Returns every profile of the currently PUBLISHED registry generation.
+        Publication is all-or-nothing: a profile that appears here has already
+        passed artifact digest verification, tokenizer load, and (when chat is
+        declared) chat-template compilation - there is no partial or invalid
+        availability state to represent, and disabled/unpublished profiles
+        simply do not appear. Discovery is a CACHE, never an admission
+        authority: a registry reload can change the available set at any time
+        (rule POST admission re-validates against the generation current at
+        POST time); clients detect staleness by comparing registryGeneration
+        and setDigest against the kvexactstatus read-back after create.
+        profiles is deterministically ordered by profileId ascending with no
+        pagination (the registry is a bounded operator-curated set). Artifact
+        locator paths and host filesystem information are deliberately
+        excluded from the response.
+      operationId: getConfigAiModelProfiles
+      responses:
+        '200':
+          description: >-
+            OK. When no registry is published the response carries
+            registryGeneration 0 and an empty profiles array - the documented
+            legacy-mode state, not an error.
+          schema:
+            $ref: '#/definitions/AiModelProfileRegistry'
+        '401':
+          description: Invalid authentication credentials (unknown, expired or missing token, or a credential that is not a management identity — the cases are deliberately indistinguishable)
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Authenticated management identity whose role does not authorize this operation
+          schema:
+            $ref: '#/definitions/Error'
+        '500':
+          description: Internal service error
+          schema:
+            $ref: '#/definitions/Error'
+        '503':
+          description: Credential store unavailable — the credential was never examined; retry after a moment
+          schema:
+            $ref: '#/definitions/Error'
+      tags:
+        - ai
+  '/config/ai/model-profiles/{profile_id}':
+    get:
+      summary: Get one published model-prompt profile
+      description: >-
+        Returns the single profile identified by profile_id in the currently
+        PUBLISHED registry generation (so a client can refresh one profile
+        cheaply). Schema is identical to a list entry. Same cache-not-authority
+        and exclusion rules as the list operation.
+      operationId: getConfigAiModelProfilesProfileID
+      parameters:
+        - name: profile_id
+          in: path
+          type: string
+          required: true
+          description: Profile identifier (the registry key; a single path-safe segment)
+      responses:
+        '200':
+          description: OK
+          schema:
+            $ref: '#/definitions/AiModelProfileEntry'
+        '401':
+          description: Invalid authentication credentials (unknown, expired or missing token, or a credential that is not a management identity — the cases are deliberately indistinguishable)
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Authenticated management identity whose role does not authorize this operation
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: 'Unknown profile_id in the currently published registry generation - or no registry is published at all (the list operation answers 200/generation 0 for that state; the detail operation has no profile to serve).'
+          schema:
+            $ref: '#/definitions/Error'
+        '500':
+          description: Internal service error
+          schema:
+            $ref: '#/definitions/Error'
+        '503':
+          description: Credential store unavailable — the credential was never examined; retry after a moment
+          schema:
+            $ref: '#/definitions/Error'
+      tags:
+        - ai
 #----------------------------------------------
 # OPA Policy Watcher
 #----------------------------------------------
@@ -7180,6 +7267,115 @@ definitions:
         type: boolean
         x-omitempty: false
         description: Whether the authoritative tokenize-bridge deny-set fence currently denies the rule (fail-closed backstop - denied rules produce no tokens, so no hashes, regardless of C-side state). Always serialized - a lifted fence (false) must stay distinguishable from an unreported one.
+  AiModelProfileRegistry:
+    type: object
+    description: >-
+      The currently published model-profile registry generation as a read-only
+      discovery envelope. registryGeneration and profiles are always present;
+      registryGeneration 0 with an empty profiles array is the documented
+      no-registry-published (legacy-mode) state. setDigest is the immutable
+      digest over the generation's profiles AND their verified artifacts -
+      present whenever a generation is published, absent at generation 0.
+    required:
+      - registryGeneration
+      - profiles
+    properties:
+      registryGeneration:
+        type: integer
+        format: uint64
+        description: Monotonic generation number of the published registry (0 = no registry published).
+      setDigest:
+        type: string
+        description: Digest over the published generation's profile documents and verified artifact bytes. Compare against later reads (and the kvexactstatus read-back) to detect a reload between discovery and rule creation.
+      profiles:
+        type: array
+        items:
+          $ref: '#/definitions/AiModelProfileEntry'
+        description: Every published profile, deterministically ordered by profileId ascending. No pagination - the registry is a bounded operator-curated set. Always present; empty array means "no profiles published", never "unknown".
+  AiModelProfileEntry:
+    type: object
+    description: >-
+      One published model-prompt profile (list and detail representations are
+      identical). Presence conveys validity by construction - publication is
+      all-or-nothing, so every entry has already passed artifact digest
+      verification and tokenizer load; there is no partial or invalid state.
+      tokenizerSha256 is always present (publication requires it);
+      templateSha256/templateContentFormat are present iff a chat template is
+      bound. The sha256 digests are the immutable audit/drift identities of
+      the profile's artifacts. Artifact locator paths, the registry root, and
+      any host filesystem information are deliberately EXCLUDED from this
+      representation.
+    required:
+      - profileId
+      - gen
+      - baseModel
+      - aliasPolicy
+      - supportedApis
+      - tokenizerSha256
+    properties:
+      profileId:
+        type: string
+        description: Registry key of the profile (a single path-safe segment).
+      gen:
+        type: integer
+        format: uint64
+        description: Registry generation this entry was published at (equals the envelope's registryGeneration on the list operation).
+      baseModel:
+        type: string
+        description: Served base-model identity (e.g. "Qwen/Qwen3-32B").
+      aliasPolicy:
+        type: string
+        enum:
+          - base_model_only
+          - list
+        description: base_model_only (only the base model name routes to this profile) or list (allowedAliases route additionally). There is no "any".
+      allowedAliases:
+        type: array
+        x-omitempty: true
+        items:
+          type: string
+        description: Additional served model names (present iff aliasPolicy is list).
+      supportedApis:
+        type: array
+        items:
+          type: string
+        description: Request surfaces this profile serves (completions/chat). Always present and non-empty.
+      supportedFeatures:
+        type: array
+        x-omitempty: true
+        items:
+          type: string
+        description: Request features the profile explicitly supports (absent when none declared).
+      excludedFeatures:
+        type: array
+        x-omitempty: true
+        items:
+          type: string
+        description: Request features the profile explicitly refuses (absent when none declared).
+      tokenizerRevision:
+        type: string
+        description: Upstream tokenizer revision the artifact was captured from (informational provenance; absent when not recorded).
+      tokenizerSha256:
+        type: string
+        description: Pinned sha256 of the tokenizer artifact bytes. Always present - the registry refuses to publish a profile without a verified tokenizer.
+      templateSha256:
+        type: string
+        description: Pinned sha256 of the chat-template artifact bytes (present iff a chat template is bound).
+      templateContentFormat:
+        type: string
+        description: Declared message content format of the bound chat template (present iff a chat template is bound and the profile declares it).
+      rendererEngine:
+        type: string
+        description: Engine that renders the template on the serving path (absent when not declared).
+      rendererVersion:
+        type: string
+        description: Version of the serving-path renderer (absent when not declared).
+      oracleEngine:
+        type: string
+        description: Parity-oracle engine the rendered bytes are attested against (absent when not declared).
+      oracleVersion:
+        type: string
+        description: Version of the parity oracle (absent when not declared).
   LoadbalanceStats:
     type: object
     description: Per-LB statistics quad (Octavia).
