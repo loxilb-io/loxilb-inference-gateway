@@ -59,3 +59,8 @@ changes.
   boot-gate reason is the receipt (`wait_boot_settled`).
 - The gateway writes `snapshot.json` root-owned 0600 — host-side reads go
   through sudo.
+- The baseline drains the auto-persist debounce before pinning the
+  lineage generation. A debounce still pending from the fixture build
+  writes snapshot.json again a few seconds later, and the boot then
+  replays a generation the leg never recorded — a race, not a defect, and
+  it only shows up on some runs.

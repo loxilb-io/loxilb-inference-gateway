@@ -72,6 +72,22 @@ assert_replayed_boot() {
 #################################################################################
 echo "=== baseline: persist the fixture and record the canonical dump ==="
 #################################################################################
+# Drain first: an auto-persist debounce still pending from the fixture
+# build is a legitimate concurrent writer of snapshot.json, and it would
+# bump the lineage between this persist and the restarts below -- the
+# generation the boot then replays is a REAL one, just not the one this
+# leg recorded. Wait until the on-disk generation holds still for longer
+# than the 3s quiet period, then pin it.
+drain_ok=""
+for _ in $(seq 1 8); do
+    g_a=$(sudo jq -r '.generation // 0' "$CFG/snapshot.json" 2>/dev/null)
+    sleep 4
+    g_b=$(sudo jq -r '.generation // 0' "$CFG/snapshot.json" 2>/dev/null)
+    if [[ "$g_a" == "$g_b" ]]; then drain_ok=1; break; fi
+done
+[[ -n "$drain_ok" ]] \
+    && pass "auto-persist debounce drained before the baseline persist" \
+    || fail "auto-persist debounce never drained (generation kept moving)"
 persist_and_verify llb1 || fail "baseline persist"
 GEN=$(jq -r '.generation // 0' < "$PLIB_ARTIFACTS/persist-response.json")
 [[ "$GEN" -ge 1 ]] \
