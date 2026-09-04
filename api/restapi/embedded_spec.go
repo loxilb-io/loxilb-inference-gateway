@@ -9792,6 +9792,35 @@ func init() {
         }
       }
     },
+    "/status/ready": {
+      "get": {
+        "description": "READY means the boot config replay settled without degradation (or an operator's commit restore has since recovered it) and every REQUIRED external recovery dependency answers right now. A not-ready gateway returns 503 with the same body shape, carrying the reasons - a failed boot restore is never silently READY.",
+        "produces": [
+          "application/json"
+        ],
+        "summary": "Configuration readiness of this gateway",
+        "responses": {
+          "200": {
+            "description": "Ready",
+            "schema": {
+              "$ref": "#/definitions/ReadyStatus"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Not ready (body carries the reasons)",
+            "schema": {
+              "$ref": "#/definitions/ReadyStatus"
+            }
+          }
+        }
+      }
+    },
     "/version": {
       "get": {
         "security": [],
@@ -9948,6 +9977,22 @@ func init() {
           "description": "Maximum LLM tokens per minute for this key",
           "type": "integer",
           "format": "int64"
+        }
+      }
+    },
+    "AutoPersistStatus": {
+      "description": "Auto-persist failure streak (present only while failing; any successful persist clears it). Nonzero means recent config changes may not survive a restart - also surfaced as a not-ready reason and in the loxilb_autopersist_consecutive_failures gauge.",
+      "type": "object",
+      "properties": {
+        "consecutive_failures": {
+          "type": "integer"
+        },
+        "last_attempt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "last_error": {
+          "type": "string"
         }
       }
     },
@@ -10391,6 +10436,51 @@ func init() {
         }
       }
     },
+    "BootStatus": {
+      "description": "The boot config replay's recorded outcome.",
+      "type": "object",
+      "required": [
+        "snapshot_found",
+        "succeeded",
+        "legacy_fallback",
+        "degraded"
+      ],
+      "properties": {
+        "degraded": {
+          "description": "The boot snapshot restore failed (strict booted empty; compat may be running legacy-replayed configuration).",
+          "type": "boolean"
+        },
+        "generation": {
+          "description": "Applied boot document's lineage generation (success only).",
+          "type": "integer",
+          "format": "uint64"
+        },
+        "legacy_fallback": {
+          "description": "The compat profile replayed the legacy *.txt artifacts after a failed snapshot restore.",
+          "type": "boolean"
+        },
+        "profile": {
+          "description": "The --config-boot-profile the boot ran under (strict or compat).",
+          "type": "string"
+        },
+        "quarantine_path": {
+          "description": "Where a failing snapshot was preserved (failure only).",
+          "type": "string"
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "snapshot_found": {
+          "type": "boolean"
+        },
+        "succeeded": {
+          "type": "boolean"
+        }
+      }
+    },
     "CIStatusEntry": {
       "type": "object",
       "properties": {
@@ -10494,6 +10584,27 @@ func init() {
           "description": "Private key in PEM. Required on POST/PUT. Persisted 0600 (key-at-rest). Never returned on GET.",
           "type": "string",
           "x-nullable": true
+        }
+      }
+    },
+    "ConfigOpRecord": {
+      "description": "One successful persist or restore - identity of what is durable/applied.",
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "checksum": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "mode": {
+          "description": "For persists, the capture trigger (write-through, manual); for restores, commit or boot.",
+          "type": "string"
         }
       }
     },
@@ -10882,6 +10993,44 @@ func init() {
       "type": "object",
       "properties": {
         "message": {
+          "type": "string"
+        }
+      }
+    },
+    "ExternalDependencyStatus": {
+      "description": "Identity of one external recovery dependency (from the snapshot document's recovery_dependencies manifest) plus the reporting operation's disposition toward it. Identity only - never store content or credentials.",
+      "type": "object",
+      "properties": {
+        "digest": {
+          "description": "Store content digest at capture (\"sha256:\u003chex\u003e\"); absent for stores without content digests.",
+          "type": "string"
+        },
+        "generation": {
+          "description": "Store generation at capture (decimal string or opaque version token); absent for stores without generation tracking.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Stable identity of the concrete store instance (database name, registry root); absent for single-instance types.",
+          "type": "string"
+        },
+        "required": {
+          "description": "Whether recovery of the captured configuration requires this store (restore verifies required entries before planning anything).",
+          "type": "boolean"
+        },
+        "status": {
+          "description": "Persist responses report ready (identity read from the live process) or configured (store wired; reachability deliberately unclaimed - the readiness surface owns liveness). Restore responses report verified, warning (detail in warnings), failed (detail in errors; the restore stopped before mutating anything), or declared (optional entry, informational only).",
+          "type": "string",
+          "enum": [
+            "ready",
+            "configured",
+            "verified",
+            "warning",
+            "failed",
+            "declared"
+          ]
+        },
+        "type": {
+          "description": "Dependency type (api-key-db, auth-db, engine-contracts, kv-model-profiles, cert-store).",
           "type": "string"
         }
       }
@@ -14600,12 +14749,38 @@ func init() {
       }
     },
     "PersistResult": {
-      "description": "Result of POST /config/persist.",
+      "description": "Result of POST /config/persist - the persisted document's identity and coverage, so automation can verify what was saved without re-reading the file.",
       "type": "object",
       "properties": {
         "checksum": {
           "description": "SHA-256 checksum of the persisted snapshot document.",
           "type": "string"
+        },
+        "excluded_domains": {
+          "description": "Configuration areas deliberately never captured by snapshots (honesty marker).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "external_dependencies": {
+          "description": "The persisted document's recovery-dependency manifest with capture-time dispositions.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ExternalDependencyStatus"
+          }
+        },
+        "generation": {
+          "description": "Monotonic lineage generation stamped into the persisted document.",
+          "type": "integer",
+          "format": "uint64"
+        },
+        "included_domains": {
+          "description": "The snapshot domains the persisted document covers.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "path": {
           "description": "On-disk path of the persisted snapshot (config-path/snapshot.json).",
@@ -14614,6 +14789,17 @@ func init() {
         "result": {
           "description": "Always \"ok\" on 200.",
           "type": "string"
+        },
+        "schema_version": {
+          "description": "Schema version of the persisted document.",
+          "type": "string"
+        },
+        "warnings": {
+          "description": "Non-fatal anomalies of this persist; empty on a clean save.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
@@ -14920,6 +15106,44 @@ func init() {
         }
       }
     },
+    "ReadyStatus": {
+      "description": "Configuration readiness verdict with the evidence behind it - the boot replay outcome, live external-dependency probes, and the most recent successful persist/restore identities.",
+      "type": "object",
+      "required": [
+        "ready"
+      ],
+      "properties": {
+        "auto_persist": {
+          "$ref": "#/definitions/AutoPersistStatus"
+        },
+        "boot": {
+          "$ref": "#/definitions/BootStatus"
+        },
+        "external_dependencies": {
+          "description": "Live availability of the stores this gateway is wired to (status ready or failed - a probe, unlike the restore engine's configured-only checks).",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ExternalDependencyStatus"
+          }
+        },
+        "last_persist": {
+          "$ref": "#/definitions/ConfigOpRecord"
+        },
+        "last_restore": {
+          "$ref": "#/definitions/ConfigOpRecord"
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "reasons": {
+          "description": "Why the gateway is not ready; empty when ready.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "ReqCountPerClientMetrics": {
       "type": "object",
       "additionalProperties": {
@@ -14979,6 +15203,13 @@ func init() {
             "type": "string"
           }
         },
+        "external_dependencies": {
+          "description": "The document's recovery-dependency manifest with this restore's per-entry disposition. Required entries are verified before anything is planned, wiped, or applied.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ExternalDependencyStatus"
+          }
+        },
         "mode": {
           "type": "string",
           "enum": [
@@ -14986,6 +15217,15 @@ func init() {
             "commit",
             "boot"
           ]
+        },
+        "persisted": {
+          "description": "Write-through disposition of a committed restore. true when the committed state was persisted to snapshot.json; false when the restore applied but the write-through failed - the applied state will NOT survive a restart until a later persist succeeds (the failure detail is in errors). Absent for dry-run and for pipelines that never reached a successful commit.",
+          "type": "boolean"
+        },
+        "persisted_generation": {
+          "description": "Lineage generation stamped by the successful write-through (present with persisted=true only).",
+          "type": "integer",
+          "format": "uint64"
         },
         "plan": {
           "type": "array",
@@ -15006,6 +15246,18 @@ func init() {
         },
         "snapshot_gateway_version": {
           "type": "string"
+        },
+        "snapshot_generation": {
+          "description": "The restored document's lineage generation (absent for documents that predate generations and for bare captures).",
+          "type": "integer",
+          "format": "uint64"
+        },
+        "warnings": {
+          "description": "Non-fatal anomalies the pipeline tolerated (degraded external stores, duplicate document items skipped at boot). Warnings never change the result field or trigger rollback.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
@@ -25591,6 +25843,35 @@ func init() {
         }
       }
     },
+    "/status/ready": {
+      "get": {
+        "description": "READY means the boot config replay settled without degradation (or an operator's commit restore has since recovered it) and every REQUIRED external recovery dependency answers right now. A not-ready gateway returns 503 with the same body shape, carrying the reasons - a failed boot restore is never silently READY.",
+        "produces": [
+          "application/json"
+        ],
+        "summary": "Configuration readiness of this gateway",
+        "responses": {
+          "200": {
+            "description": "Ready",
+            "schema": {
+              "$ref": "#/definitions/ReadyStatus"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Not ready (body carries the reasons)",
+            "schema": {
+              "$ref": "#/definitions/ReadyStatus"
+            }
+          }
+        }
+      }
+    },
     "/version": {
       "get": {
         "security": [],
@@ -25747,6 +26028,22 @@ func init() {
           "description": "Maximum LLM tokens per minute for this key",
           "type": "integer",
           "format": "int64"
+        }
+      }
+    },
+    "AutoPersistStatus": {
+      "description": "Auto-persist failure streak (present only while failing; any successful persist clears it). Nonzero means recent config changes may not survive a restart - also surfaced as a not-ready reason and in the loxilb_autopersist_consecutive_failures gauge.",
+      "type": "object",
+      "properties": {
+        "consecutive_failures": {
+          "type": "integer"
+        },
+        "last_attempt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "last_error": {
+          "type": "string"
         }
       }
     },
@@ -26645,6 +26942,51 @@ func init() {
         }
       }
     },
+    "BootStatus": {
+      "description": "The boot config replay's recorded outcome.",
+      "type": "object",
+      "required": [
+        "snapshot_found",
+        "succeeded",
+        "legacy_fallback",
+        "degraded"
+      ],
+      "properties": {
+        "degraded": {
+          "description": "The boot snapshot restore failed (strict booted empty; compat may be running legacy-replayed configuration).",
+          "type": "boolean"
+        },
+        "generation": {
+          "description": "Applied boot document's lineage generation (success only).",
+          "type": "integer",
+          "format": "uint64"
+        },
+        "legacy_fallback": {
+          "description": "The compat profile replayed the legacy *.txt artifacts after a failed snapshot restore.",
+          "type": "boolean"
+        },
+        "profile": {
+          "description": "The --config-boot-profile the boot ran under (strict or compat).",
+          "type": "string"
+        },
+        "quarantine_path": {
+          "description": "Where a failing snapshot was preserved (failure only).",
+          "type": "string"
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "snapshot_found": {
+          "type": "boolean"
+        },
+        "succeeded": {
+          "type": "boolean"
+        }
+      }
+    },
     "CIStatusEntry": {
       "type": "object",
       "properties": {
@@ -26765,6 +27107,27 @@ func init() {
         "refCount": {
           "description": "Number of proxies using this certificate",
           "type": "integer"
+        }
+      }
+    },
+    "ConfigOpRecord": {
+      "description": "One successful persist or restore - identity of what is durable/applied.",
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "checksum": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "mode": {
+          "description": "For persists, the capture trigger (write-through, manual); for restores, commit or boot.",
+          "type": "string"
         }
       }
     },
@@ -27159,6 +27522,44 @@ func init() {
       "type": "object",
       "properties": {
         "message": {
+          "type": "string"
+        }
+      }
+    },
+    "ExternalDependencyStatus": {
+      "description": "Identity of one external recovery dependency (from the snapshot document's recovery_dependencies manifest) plus the reporting operation's disposition toward it. Identity only - never store content or credentials.",
+      "type": "object",
+      "properties": {
+        "digest": {
+          "description": "Store content digest at capture (\"sha256:\u003chex\u003e\"); absent for stores without content digests.",
+          "type": "string"
+        },
+        "generation": {
+          "description": "Store generation at capture (decimal string or opaque version token); absent for stores without generation tracking.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Stable identity of the concrete store instance (database name, registry root); absent for single-instance types.",
+          "type": "string"
+        },
+        "required": {
+          "description": "Whether recovery of the captured configuration requires this store (restore verifies required entries before planning anything).",
+          "type": "boolean"
+        },
+        "status": {
+          "description": "Persist responses report ready (identity read from the live process) or configured (store wired; reachability deliberately unclaimed - the readiness surface owns liveness). Restore responses report verified, warning (detail in warnings), failed (detail in errors; the restore stopped before mutating anything), or declared (optional entry, informational only).",
+          "type": "string",
+          "enum": [
+            "ready",
+            "configured",
+            "verified",
+            "warning",
+            "failed",
+            "declared"
+          ]
+        },
+        "type": {
+          "description": "Dependency type (api-key-db, auth-db, engine-contracts, kv-model-profiles, cert-store).",
           "type": "string"
         }
       }
@@ -31717,12 +32118,38 @@ func init() {
       }
     },
     "PersistResult": {
-      "description": "Result of POST /config/persist.",
+      "description": "Result of POST /config/persist - the persisted document's identity and coverage, so automation can verify what was saved without re-reading the file.",
       "type": "object",
       "properties": {
         "checksum": {
           "description": "SHA-256 checksum of the persisted snapshot document.",
           "type": "string"
+        },
+        "excluded_domains": {
+          "description": "Configuration areas deliberately never captured by snapshots (honesty marker).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "external_dependencies": {
+          "description": "The persisted document's recovery-dependency manifest with capture-time dispositions.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ExternalDependencyStatus"
+          }
+        },
+        "generation": {
+          "description": "Monotonic lineage generation stamped into the persisted document.",
+          "type": "integer",
+          "format": "uint64"
+        },
+        "included_domains": {
+          "description": "The snapshot domains the persisted document covers.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "path": {
           "description": "On-disk path of the persisted snapshot (config-path/snapshot.json).",
@@ -31731,6 +32158,17 @@ func init() {
         "result": {
           "description": "Always \"ok\" on 200.",
           "type": "string"
+        },
+        "schema_version": {
+          "description": "Schema version of the persisted document.",
+          "type": "string"
+        },
+        "warnings": {
+          "description": "Non-fatal anomalies of this persist; empty on a clean save.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
@@ -32222,6 +32660,44 @@ func init() {
         }
       }
     },
+    "ReadyStatus": {
+      "description": "Configuration readiness verdict with the evidence behind it - the boot replay outcome, live external-dependency probes, and the most recent successful persist/restore identities.",
+      "type": "object",
+      "required": [
+        "ready"
+      ],
+      "properties": {
+        "auto_persist": {
+          "$ref": "#/definitions/AutoPersistStatus"
+        },
+        "boot": {
+          "$ref": "#/definitions/BootStatus"
+        },
+        "external_dependencies": {
+          "description": "Live availability of the stores this gateway is wired to (status ready or failed - a probe, unlike the restore engine's configured-only checks).",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ExternalDependencyStatus"
+          }
+        },
+        "last_persist": {
+          "$ref": "#/definitions/ConfigOpRecord"
+        },
+        "last_restore": {
+          "$ref": "#/definitions/ConfigOpRecord"
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "reasons": {
+          "description": "Why the gateway is not ready; empty when ready.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "ReqCountPerClientMetrics": {
       "type": "object",
       "additionalProperties": {
@@ -32284,6 +32760,13 @@ func init() {
             "type": "string"
           }
         },
+        "external_dependencies": {
+          "description": "The document's recovery-dependency manifest with this restore's per-entry disposition. Required entries are verified before anything is planned, wiped, or applied.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ExternalDependencyStatus"
+          }
+        },
         "mode": {
           "type": "string",
           "enum": [
@@ -32291,6 +32774,15 @@ func init() {
             "commit",
             "boot"
           ]
+        },
+        "persisted": {
+          "description": "Write-through disposition of a committed restore. true when the committed state was persisted to snapshot.json; false when the restore applied but the write-through failed - the applied state will NOT survive a restart until a later persist succeeds (the failure detail is in errors). Absent for dry-run and for pipelines that never reached a successful commit.",
+          "type": "boolean"
+        },
+        "persisted_generation": {
+          "description": "Lineage generation stamped by the successful write-through (present with persisted=true only).",
+          "type": "integer",
+          "format": "uint64"
         },
         "plan": {
           "type": "array",
@@ -32311,6 +32803,18 @@ func init() {
         },
         "snapshot_gateway_version": {
           "type": "string"
+        },
+        "snapshot_generation": {
+          "description": "The restored document's lineage generation (absent for documents that predate generations and for bare captures).",
+          "type": "integer",
+          "format": "uint64"
+        },
+        "warnings": {
+          "description": "Non-fatal anomalies the pipeline tolerated (degraded external stores, duplicate document items skipped at boot). Warnings never change the result field or trigger rollback.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },

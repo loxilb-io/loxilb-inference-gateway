@@ -41,6 +41,23 @@ import (
 
 var updateGolden = flag.Bool("update", false, "regenerate golden snapshot fixtures in testdata/")
 
+// goldenNodeSecret pins the node secret the golden fixture's encrypted
+// secret values are computed under: the ciphertext is deterministic per
+// (secret, plaintext), so the golden bytes stay stable -- and any
+// accidental change to the encryption scheme or its key derivation
+// breaks the golden comparison loudly.
+var goldenNodeSecret = bytes.Repeat([]byte{0x42}, nodeSecretLen)
+
+func goldenEncrypt(plain string) string {
+	restore := SetNodeSecretForTest(goldenNodeSecret)
+	defer restore()
+	enc, err := EncryptSecretValue(plain)
+	if err != nil {
+		panic(err)
+	}
+	return enc
+}
+
 // goldenDocument is the deterministic fixture: pinned timestamp, pinned
 // identity, at least one item in every domain (kvexactbinding included).
 func goldenDocument() *Document {
@@ -48,6 +65,22 @@ func goldenDocument() *Document {
 	doc.CreatedAt = time.Date(2026, 9, 3, 0, 0, 0, 0, time.UTC)
 	doc.GatewayVersion = "golden-fixture"
 	doc.Hostname = "golden-host"
+	// Pinned lineage position (schema 1.5+): the current golden encodes
+	// the generation field the way a persisted snapshot.json carries it.
+	doc.Generation = 7
+	// Secret-bearing IPsec entries, 1.5 fixture only (legacyGoldenDocument
+	// strips them): a persisted document carries these values in the
+	// deterministic enc:v1 encoding, never plaintext.
+	doc.Domains.IPsec.Tunnels = append(doc.Domains.IPsec.Tunnels, &cmn.IPsecTunnel{
+		IPsecTunnelMod: cmn.IPsecTunnelMod{
+			Name: "tun-psk", LocalIP: "3.3.3.3", RemoteIP: "4.4.4.4",
+			AuthMode: "psk", PSK: goldenEncrypt("golden-psk-fixture"),
+		},
+	})
+	doc.Domains.IPsec.Certificates = []cmn.IPsecCertificateMod{{
+		Name: "ipsec-cert-1", CertificatePEM: "GOLDEN-CERT-PEM",
+		PrivateKeyPEM: goldenEncrypt("GOLDEN-KEY-PEM"), Description: "golden ipsec cert",
+	}}
 	return doc
 }
 
@@ -57,6 +90,19 @@ func goldenDocument() *Document {
 func legacyGoldenDocument(schemaVersion string) *Document {
 	doc := goldenDocument()
 	doc.SchemaVersion = schemaVersion
+	doc.Generation = 0 // predates 1.5
+	// The secret-bearing IPsec entries are a 1.5-fixture-only addition
+	// (they landed with encrypted secret values on the 1.5 train).
+	// Stripping them keeps the pre-1.5 fixture files byte-stable; it is
+	// NOT schema history -- older gateways really did persist plaintext
+	// PSKs, which is exactly the posture 1.5 ends.
+	doc.Domains.IPsec.Tunnels = doc.Domains.IPsec.Tunnels[:1]
+	doc.Domains.IPsec.Certificates = nil
+	if schemaVersion == "1.4" {
+		// 1.4 already had the recovery_dependencies manifest and every
+		// current domain; only the generation lineage field postdates it.
+		return doc
+	}
 	doc.RecoveryDependencies = nil // predates 1.4
 	if schemaVersion == "1.3" {
 		// 1.3 already had every current domain and today's coverage
@@ -129,7 +175,7 @@ func TestGoldenCurrentSchema(t *testing.T) {
 // TestGoldenLegacySchemas: every older-schema golden still decodes,
 // verifies, migrates to the current schema, and passes a dry-run restore.
 func TestGoldenLegacySchemas(t *testing.T) {
-	legacy := []string{"1.0", "1.1", "1.2", "1.3"}
+	legacy := []string{"1.0", "1.1", "1.2", "1.3", "1.4"}
 	for _, version := range legacy {
 		version := version
 		t.Run("v"+version, func(t *testing.T) {
@@ -160,6 +206,9 @@ func TestGoldenLegacySchemas(t *testing.T) {
 			}
 			if doc.Domains.L7Policy == nil {
 				t.Fatalf("migration left l7policy nil (want normalized empty)")
+			}
+			if doc.Generation != 0 {
+				t.Fatalf("migration invented a lineage generation (%d) for a pre-1.5 document", doc.Generation)
 			}
 			if version == "1.2" {
 				// 1.2 declared its coverage; migration must keep the 1.3

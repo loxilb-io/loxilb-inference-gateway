@@ -26,6 +26,7 @@ import (
 
 	"github.com/go-openapi/runtime"
 	"github.com/go-openapi/runtime/middleware"
+	"github.com/go-openapi/strfmt"
 	"github.com/loxilb-io/loxilb/api/models"
 	"github.com/loxilb-io/loxilb/api/restapi/operations"
 	cmn "github.com/loxilb-io/loxilb/common"
@@ -219,13 +220,38 @@ func ConfigPostRestore(params operations.PostConfigRestoreParams, principal any)
 	defer snapshotGate.Store(false)
 
 	engine := snapshot.NewEngine(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath)
-	result, err := engine.Restore(raw, snapshot.RestoreOptions{
+	restoreOpts := snapshot.RestoreOptions{
 		Mode: mode,
 		// Selection semantics live in the engine: components intersects
 		// the document's included_domains, an uncovered component is
 		// refused, and empty means "everything the document covers".
 		Components: parseComponents(params.Components),
-	})
+	}
+	result, err := engine.Restore(raw, restoreOpts)
+	// The optional subsystems a restore may apply to (IPsec, BGP) finish
+	// initializing AFTER the API starts serving and after the boot config
+	// replay settles -- so there is a window, measured at 3-4s on the
+	// testbed, in which /status/ready answers READY while a commit restore
+	// of a document covering those domains fails with "IPsec not
+	// initialized". An operator (or an orchestrator gating recovery on
+	// readiness) restoring a node right after boot lands in it. The boot
+	// replay already rides this window out by retrying; the REST path
+	// retries on the same shared rule, for a bounded time, and then fails
+	// loudly exactly as before -- a subsystem this gateway genuinely does
+	// not run must still refuse the document, just a few seconds later.
+	// Retrying is safe because a failed commit rolled the live config back
+	// to its pre-restore state; a ROLLBACK-FAILED result is NOT retried,
+	// since the node is no longer in a known state.
+	const restoreStartupRetries = 8
+	for attempt := 1; err == nil && attempt < restoreStartupRetries &&
+		mode == snapshot.ModeCommit &&
+		result.Result == snapshot.ResultRolledBack &&
+		snapshot.SubsystemStartupErrors(result.Errors); attempt++ {
+		tk.LogIt(tk.LogWarning, "snapshot: restore attempt %d hit subsystem startup ordering (%v); retrying\n",
+			attempt, result.Errors)
+		time.Sleep(time.Second)
+		result, err = engine.Restore(raw, restoreOpts)
+	}
 	if err != nil {
 		// Engine-level precondition failure (not a document/apply problem).
 		return &ErrorResponse{Payload: &models.Error{
@@ -237,16 +263,21 @@ func ConfigPostRestore(params operations.PostConfigRestoreParams, principal any)
 
 	// §6 write-through: a committed restore must survive a daemon restart,
 	// so persist the (post-commit) live config to {ConfigPath}/snapshot.json.
-	// A persist failure does not undo the applied restore -- report it in
-	// the errors array (result stays "ok") so the caller knows restart
-	// survival is NOT guaranteed until a later persist succeeds.
+	// A persist failure does not undo the applied restore -- the response
+	// carries an EXPLICIT degraded marker (persisted=false) plus the
+	// failure in the errors array, never a bare "ok": the caller must know
+	// restart survival is NOT guaranteed until a later persist succeeds.
 	if mode == snapshot.ModeCommit && result.Result == snapshot.ResultOK {
-		if path, _, werr := snapshot.WriteThrough(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath); werr != nil {
+		persisted := false
+		if path, pdoc, werr := snapshot.WriteThrough(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath); werr != nil {
 			tk.LogIt(tk.LogError, "snapshot: write-through persist failed after commit: %v\n", werr)
 			result.Errors = append(result.Errors, "warning: write-through persist failed (restore applied but will not survive restart): "+werr.Error())
 		} else {
-			tk.LogIt(tk.LogInfo, "snapshot: write-through persisted to %s\n", path)
+			persisted = true
+			result.PersistedGeneration = pdoc.Generation
+			tk.LogIt(tk.LogInfo, "snapshot: write-through persisted to %s (generation %d)\n", path, pdoc.Generation)
 		}
+		result.Persisted = &persisted
 	}
 
 	status := http.StatusOK
@@ -293,7 +324,7 @@ func ConfigPostPersist(params operations.PostConfigPersistParams, principal any)
 	}
 	defer snapshotGate.Store(false)
 
-	path, sum, err := snapshot.WriteThrough(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath)
+	path, doc, err := snapshot.WriteThrough(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath)
 	if err != nil {
 		return &ErrorResponse{Payload: &models.Error{
 			Code:    500,
@@ -301,23 +332,135 @@ func ConfigPostPersist(params operations.PostConfigPersistParams, principal any)
 			Result:  "persist failed: " + err.Error(),
 		}}
 	}
-	tk.LogIt(tk.LogInfo, "config/persist: running config persisted to %s\n", path)
+	tk.LogIt(tk.LogInfo, "config/persist: running config persisted to %s (generation %d)\n", path, doc.Generation)
 
-	payload, merr := json.Marshal(map[string]string{"result": "ok", "path": path, "checksum": sum})
-	if merr != nil {
-		return &ErrorResponse{Payload: &models.Error{
-			Code:    500,
-			Message: "Internal service error",
-			Result:  "marshal persist result: " + merr.Error(),
-		}}
-	}
-	return middleware.ResponderFunc(func(w http.ResponseWriter, _ runtime.Producer) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		if _, werr := w.Write(payload); werr != nil {
-			tk.LogIt(tk.LogError, "persist: failed to write response: %v\n", werr)
-		}
+	// §9 response contract, through the swagger model: the persisted
+	// document's identity and coverage, so automation can verify what was
+	// saved without re-reading the file.
+	return operations.NewPostConfigPersistOK().WithPayload(&models.PersistResult{
+		Result:               "ok",
+		Path:                 path,
+		Checksum:             doc.Checksum,
+		SchemaVersion:        doc.SchemaVersion,
+		Generation:           doc.Generation,
+		IncludedDomains:      doc.IncludedDomains,
+		ExcludedDomains:      doc.ExcludedDomains,
+		ExternalDependencies: depStatusModels(snapshot.CaptureDependencyStatuses(doc.RecoveryDependencies)),
+		Warnings:             []string{},
 	})
+}
+
+// ConfigGetStatusReady implements GET /status/ready: the configuration
+// readiness verdict with its evidence -- the boot replay outcome, LIVE
+// external-dependency probes (unlike the restore engine's deliberately
+// configured-only checks), and the most recent successful persist/restore
+// identities. A not-ready gateway answers 503 with the same body so
+// probes and operators read the reasons from either status; a failed boot
+// restore is never silently READY.
+func ConfigGetStatusReady(params operations.GetStatusReadyParams, principal any) middleware.Responder {
+	boot := snapshot.BootRestoreStateGet()
+
+	var depStatuses []*models.ExternalDependencyStatus
+	var depFailures []string
+	if deps, err := ApiHooks.NetRecoveryDepsGet(); err != nil {
+		depFailures = append(depFailures, "dependency identities unavailable: "+err.Error())
+	} else {
+		for _, d := range deps {
+			st := &models.ExternalDependencyStatus{
+				Type:       d.Type,
+				ID:         d.ID,
+				Generation: d.Generation,
+				Digest:     d.Digest,
+				Required:   d.Required,
+				Status:     snapshot.DepStatusReady,
+			}
+			if perr := ApiHooks.NetRecoveryDepReady(d.Type); perr != nil {
+				st.Status = snapshot.DepStatusFailed
+				if d.Required {
+					depFailures = append(depFailures, fmt.Sprintf("dependency %s: %v", d.Type, perr))
+				}
+			}
+			depStatuses = append(depStatuses, st)
+		}
+	}
+
+	lastRestore := snapshot.LastRestore()
+	autoPersistState := snapshot.AutoPersistStateGet()
+	reasons := snapshot.ReadinessReasons(snapshot.BootConfigSettled(), boot, lastRestore, autoPersistState, depFailures)
+
+	ready := len(reasons) == 0
+	bootFound, bootSucceeded := boot.SnapshotFound, boot.Succeeded
+	bootLegacy, bootDegraded := boot.LegacyFallback, boot.Degraded
+	payload := &models.ReadyStatus{
+		// Required in the contract (pointer in the generated model): the
+		// 503 body must carry an explicit ready=false, never omit it.
+		Ready:   &ready,
+		Reasons: reasons,
+		// Required in the contract (pointers in the generated model) for
+		// the same reason `ready` is: a plain bool is omitempty, so the
+		// FALSE cases -- no snapshot found, boot did not succeed -- would
+		// vanish from the payload, and a missing volume would read
+		// exactly like a healthy replay. The empty-boot classification is
+		// precisely what an operator needs off this surface.
+		Boot: &models.BootStatus{
+			Profile:        boot.Profile,
+			SnapshotFound:  &bootFound,
+			Succeeded:      &bootSucceeded,
+			Generation:     boot.Generation,
+			QuarantinePath: boot.QuarantinePath,
+			LegacyFallback: &bootLegacy,
+			Degraded:       &bootDegraded,
+			Reasons:        boot.Reasons,
+		},
+		ExternalDependencies: depStatuses,
+		LastPersist:          opRecordModel(snapshot.LastPersist()),
+		LastRestore:          opRecordModel(lastRestore),
+	}
+	if autoPersistState.ConsecutiveFailures > 0 {
+		payload.AutoPersist = &models.AutoPersistStatus{
+			ConsecutiveFailures: int64(autoPersistState.ConsecutiveFailures),
+			LastError:           autoPersistState.LastError,
+			LastAttempt:         strfmt.DateTime(autoPersistState.LastAttempt),
+		}
+	}
+	if ready {
+		return operations.NewGetStatusReadyOK().WithPayload(payload)
+	}
+	return operations.NewGetStatusReadyServiceUnavailable().WithPayload(payload)
+}
+
+// opRecordModel converts a snapshot.OpRecord to its swagger model; nil in,
+// nil out (the field is simply absent until the first success).
+func opRecordModel(rec *snapshot.OpRecord) *models.ConfigOpRecord {
+	if rec == nil {
+		return nil
+	}
+	return &models.ConfigOpRecord{
+		Generation: rec.Generation,
+		Checksum:   rec.Checksum,
+		Mode:       rec.Mode,
+		At:         strfmt.DateTime(rec.At),
+	}
+}
+
+// depStatusModels converts the engine's dependency statuses to the
+// generated swagger model entries.
+func depStatusModels(statuses []snapshot.DependencyStatus) []*models.ExternalDependencyStatus {
+	if len(statuses) == 0 {
+		return nil
+	}
+	out := make([]*models.ExternalDependencyStatus, 0, len(statuses))
+	for _, s := range statuses {
+		out = append(out, &models.ExternalDependencyStatus{
+			Type:       s.Type,
+			ID:         s.ID,
+			Generation: s.Generation,
+			Digest:     s.Digest,
+			Required:   s.Required,
+			Status:     s.Status,
+		})
+	}
+	return out
 }
 
 // ---------------------------------------------------------------------
@@ -362,7 +505,18 @@ func autoPersistFire() {
 	}
 	defer snapshotGate.Store(false)
 	if path, _, err := snapshot.WriteThrough(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath); err != nil {
+		// Loud, bounded, surfaced: the failure streak feeds the metrics
+		// and the readiness surface (config changes not reaching disk
+		// must never be a log-line-only signal), and the debouncer
+		// re-kicks itself only within the retry budget -- after that it
+		// waits for the next config mutation instead of burning a retry
+		// every quiet period against a permanently failing capture.
 		tk.LogIt(tk.LogError, "auto-persist: write-through failed: %v\n", err)
+		if snapshot.RecordAutoPersistFailure(err) {
+			autoPersist.Kick()
+		} else {
+			tk.LogIt(tk.LogError, "auto-persist: retry budget exhausted; surfaced as not-ready, next config change retries\n")
+		}
 	} else {
 		tk.LogIt(tk.LogDebug, "auto-persist: running config persisted to %s\n", path)
 	}

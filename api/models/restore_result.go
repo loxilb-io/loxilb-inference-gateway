@@ -30,9 +30,18 @@ type RestoreResult struct {
 	// errors
 	Errors []string `json:"errors"`
 
+	// The document's recovery-dependency manifest with this restore's per-entry disposition. Required entries are verified before anything is planned, wiped, or applied.
+	ExternalDependencies []*ExternalDependencyStatus `json:"external_dependencies"`
+
 	// mode
 	// Enum: [dry-run commit boot]
 	Mode string `json:"mode,omitempty"`
+
+	// Write-through disposition of a committed restore. true when the committed state was persisted to snapshot.json; false when the restore applied but the write-through failed - the applied state will NOT survive a restart until a later persist succeeds (the failure detail is in errors). Absent for dry-run and for pipelines that never reached a successful commit.
+	Persisted bool `json:"persisted,omitempty"`
+
+	// Lineage generation stamped by the successful write-through (present with persisted=true only).
+	PersistedGeneration uint64 `json:"persisted_generation,omitempty"`
 
 	// plan
 	Plan []*RestorePlanItem `json:"plan"`
@@ -48,11 +57,21 @@ type RestoreResult struct {
 
 	// snapshot gateway version
 	SnapshotGatewayVersion string `json:"snapshot_gateway_version,omitempty"`
+
+	// The restored document's lineage generation (absent for documents that predate generations and for bare captures).
+	SnapshotGeneration uint64 `json:"snapshot_generation,omitempty"`
+
+	// Non-fatal anomalies the pipeline tolerated (degraded external stores, duplicate document items skipped at boot). Warnings never change the result field or trigger rollback.
+	Warnings []string `json:"warnings"`
 }
 
 // Validate validates this restore result
 func (m *RestoreResult) Validate(formats strfmt.Registry) error {
 	var res []error
+
+	if err := m.validateExternalDependencies(formats); err != nil {
+		res = append(res, err)
+	}
 
 	if err := m.validateMode(formats); err != nil {
 		res = append(res, err)
@@ -65,6 +84,32 @@ func (m *RestoreResult) Validate(formats strfmt.Registry) error {
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
+	return nil
+}
+
+func (m *RestoreResult) validateExternalDependencies(formats strfmt.Registry) error {
+	if swag.IsZero(m.ExternalDependencies) { // not required
+		return nil
+	}
+
+	for i := 0; i < len(m.ExternalDependencies); i++ {
+		if swag.IsZero(m.ExternalDependencies[i]) { // not required
+			continue
+		}
+
+		if m.ExternalDependencies[i] != nil {
+			if err := m.ExternalDependencies[i].Validate(formats); err != nil {
+				if ve, ok := err.(*errors.Validation); ok {
+					return ve.ValidateName("external_dependencies" + "." + strconv.Itoa(i))
+				} else if ce, ok := err.(*errors.CompositeError); ok {
+					return ce.ValidateName("external_dependencies" + "." + strconv.Itoa(i))
+				}
+				return err
+			}
+		}
+
+	}
+
 	return nil
 }
 
@@ -143,6 +188,10 @@ func (m *RestoreResult) validatePlan(formats strfmt.Registry) error {
 func (m *RestoreResult) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
 	var res []error
 
+	if err := m.contextValidateExternalDependencies(ctx, formats); err != nil {
+		res = append(res, err)
+	}
+
 	if err := m.contextValidatePlan(ctx, formats); err != nil {
 		res = append(res, err)
 	}
@@ -150,6 +199,26 @@ func (m *RestoreResult) ContextValidate(ctx context.Context, formats strfmt.Regi
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
+	return nil
+}
+
+func (m *RestoreResult) contextValidateExternalDependencies(ctx context.Context, formats strfmt.Registry) error {
+
+	for i := 0; i < len(m.ExternalDependencies); i++ {
+
+		if m.ExternalDependencies[i] != nil {
+			if err := m.ExternalDependencies[i].ContextValidate(ctx, formats); err != nil {
+				if ve, ok := err.(*errors.Validation); ok {
+					return ve.ValidateName("external_dependencies" + "." + strconv.Itoa(i))
+				} else if ce, ok := err.(*errors.CompositeError); ok {
+					return ce.ValidateName("external_dependencies" + "." + strconv.Itoa(i))
+				}
+				return err
+			}
+		}
+
+	}
+
 	return nil
 }
 

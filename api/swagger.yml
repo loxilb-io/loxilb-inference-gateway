@@ -4277,6 +4277,25 @@ paths:
           description: Maintenance mode
           schema:
             $ref: '#/definitions/Error'
+  '/status/ready':
+    get:
+      summary: Configuration readiness of this gateway
+      description: READY means the boot config replay settled without degradation (or an operator's commit restore has since recovered it) and every REQUIRED external recovery dependency answers right now. A not-ready gateway returns 503 with the same body shape, carrying the reasons - a failed boot restore is never silently READY.
+      produces:
+        - application/json
+      responses:
+        '200':
+          description: Ready
+          schema:
+            $ref: '#/definitions/ReadyStatus'
+        '401':
+          description: Invalid authentication credentials
+          schema:
+            $ref: '#/definitions/Error'
+        '503':
+          description: Not ready (body carries the reasons)
+          schema:
+            $ref: '#/definitions/ReadyStatus'
 #----------------------------------------------
 # LoxiLB Operational Config
 #----------------------------------------------
@@ -6965,12 +6984,141 @@ definitions:
       result:
         type: string
         description: ok, rolled-back, or ROLLBACK-FAILED; empty when the pipeline stopped before APPLY.
+      snapshot_generation:
+        type: integer
+        format: uint64
+        description: The restored document's lineage generation (absent for documents that predate generations and for bare captures).
+      warnings:
+        type: array
+        description: Non-fatal anomalies the pipeline tolerated (degraded external stores, duplicate document items skipped at boot). Warnings never change the result field or trigger rollback.
+        items:
+          type: string
+      external_dependencies:
+        type: array
+        description: The document's recovery-dependency manifest with this restore's per-entry disposition. Required entries are verified before anything is planned, wiped, or applied.
+        items:
+          $ref: '#/definitions/ExternalDependencyStatus'
+      persisted:
+        type: boolean
+        description: Write-through disposition of a committed restore. true when the committed state was persisted to snapshot.json; false when the restore applied but the write-through failed - the applied state will NOT survive a restart until a later persist succeeds (the failure detail is in errors). Absent for dry-run and for pipelines that never reached a successful commit.
+      persisted_generation:
+        type: integer
+        format: uint64
+        description: Lineage generation stamped by the successful write-through (present with persisted=true only).
       pre_restore_snapshot_persisted:
         type: string
         description: On-disk path of the pre-restore snapshot captured before APPLY (commit mode only).
+  ReadyStatus:
+    type: object
+    description: Configuration readiness verdict with the evidence behind it - the boot replay outcome, live external-dependency probes, and the most recent successful persist/restore identities.
+    required:
+      - ready
+    properties:
+      ready:
+        type: boolean
+      reasons:
+        type: array
+        description: Why the gateway is not ready; empty when ready.
+        items:
+          type: string
+      boot:
+        $ref: '#/definitions/BootStatus'
+      external_dependencies:
+        type: array
+        description: Live availability of the stores this gateway is wired to (status ready or failed - a probe, unlike the restore engine's configured-only checks).
+        items:
+          $ref: '#/definitions/ExternalDependencyStatus'
+      last_persist:
+        $ref: '#/definitions/ConfigOpRecord'
+      last_restore:
+        $ref: '#/definitions/ConfigOpRecord'
+      auto_persist:
+        $ref: '#/definitions/AutoPersistStatus'
+  AutoPersistStatus:
+    type: object
+    description: Auto-persist failure streak (present only while failing; any successful persist clears it). Nonzero means recent config changes may not survive a restart - also surfaced as a not-ready reason and in the loxilb_autopersist_consecutive_failures gauge.
+    properties:
+      consecutive_failures:
+        type: integer
+      last_error:
+        type: string
+      last_attempt:
+        type: string
+        format: date-time
+  BootStatus:
+    type: object
+    description: The boot config replay's recorded outcome.
+    required:
+      - snapshot_found
+      - succeeded
+      - legacy_fallback
+      - degraded
+    properties:
+      profile:
+        type: string
+        description: The --config-boot-profile the boot ran under (strict or compat).
+      snapshot_found:
+        type: boolean
+      succeeded:
+        type: boolean
+      generation:
+        type: integer
+        format: uint64
+        description: Applied boot document's lineage generation (success only).
+      quarantine_path:
+        type: string
+        description: Where a failing snapshot was preserved (failure only).
+      legacy_fallback:
+        type: boolean
+        description: The compat profile replayed the legacy *.txt artifacts after a failed snapshot restore.
+      degraded:
+        type: boolean
+        description: The boot snapshot restore failed (strict booted empty; compat may be running legacy-replayed configuration).
+      reasons:
+        type: array
+        items:
+          type: string
+  ConfigOpRecord:
+    type: object
+    description: One successful persist or restore - identity of what is durable/applied.
+    properties:
+      generation:
+        type: integer
+        format: uint64
+      checksum:
+        type: string
+      mode:
+        type: string
+        description: For persists, the capture trigger (write-through, manual); for restores, commit or boot.
+      at:
+        type: string
+        format: date-time
+  ExternalDependencyStatus:
+    type: object
+    description: Identity of one external recovery dependency (from the snapshot document's recovery_dependencies manifest) plus the reporting operation's disposition toward it. Identity only - never store content or credentials.
+    properties:
+      type:
+        type: string
+        description: Dependency type (api-key-db, auth-db, engine-contracts, kv-model-profiles, cert-store).
+      id:
+        type: string
+        description: Stable identity of the concrete store instance (database name, registry root); absent for single-instance types.
+      generation:
+        type: string
+        description: Store generation at capture (decimal string or opaque version token); absent for stores without generation tracking.
+      digest:
+        type: string
+        description: Store content digest at capture ("sha256:<hex>"); absent for stores without content digests.
+      required:
+        type: boolean
+        description: Whether recovery of the captured configuration requires this store (restore verifies required entries before planning anything).
+      status:
+        type: string
+        enum: [ready, configured, verified, warning, failed, declared]
+        description: Persist responses report ready (identity read from the live process) or configured (store wired; reachability deliberately unclaimed - the readiness surface owns liveness). Restore responses report verified, warning (detail in warnings), failed (detail in errors; the restore stopped before mutating anything), or declared (optional entry, informational only).
   PersistResult:
     type: object
-    description: Result of POST /config/persist.
+    description: Result of POST /config/persist - the persisted document's identity and coverage, so automation can verify what was saved without re-reading the file.
     properties:
       result:
         type: string
@@ -6981,6 +7129,33 @@ definitions:
       checksum:
         type: string
         description: SHA-256 checksum of the persisted snapshot document.
+      schema_version:
+        type: string
+        description: Schema version of the persisted document.
+      generation:
+        type: integer
+        format: uint64
+        description: Monotonic lineage generation stamped into the persisted document.
+      included_domains:
+        type: array
+        description: The snapshot domains the persisted document covers.
+        items:
+          type: string
+      excluded_domains:
+        type: array
+        description: Configuration areas deliberately never captured by snapshots (honesty marker).
+        items:
+          type: string
+      external_dependencies:
+        type: array
+        description: The persisted document's recovery-dependency manifest with capture-time dispositions.
+        items:
+          $ref: '#/definitions/ExternalDependencyStatus'
+      warnings:
+        type: array
+        description: Non-fatal anomalies of this persist; empty on a clean save.
+        items:
+          type: string
   Error:
     type: object
     properties:

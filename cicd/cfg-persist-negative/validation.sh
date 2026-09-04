@@ -34,7 +34,10 @@ lb_count() {
     plib_curl llb1 "$PLIB_API/config/loadbalancer/all" | jq '[.lbAttr[]?] | length'
 }
 quarantine_count() {
-    sudo sh -c "ls $CFG/snapshot.json.failed-* 2>/dev/null | wc -l"
+    # ls -d: a quarantined artifact can be a DIRECTORY (the read-failure
+    # leg plants one), and a bare ls would list its contents (zero lines
+    # for an empty dir) instead of the entry itself.
+    sudo sh -c "ls -d $CFG/snapshot.json.failed-* 2>/dev/null | wc -l"
 }
 
 #################################################################################
@@ -44,6 +47,14 @@ persist_and_verify llb1 || fail "baseline persist"
 plib_curl llb1 "$PLIB_API/config/snapshot" -o "$PLIB_ARTIFACTS/good.json"
 [[ $(sudo jq -r '.kind' "$PLIB_ARTIFACTS/good.json" 2>/dev/null) == "loxilb-snapshot" ]] \
     && pass "known-good document captured" || fail "good capture"
+# Readiness baseline: a healthy gateway answers 200 ready=true and the
+# status surface reports the persist we just made (generation+checksum).
+rrc=$(plib_curl llb1 -o "$PLIB_ARTIFACTS/ready-baseline.json" -w "%{http_code}" "$PLIB_API/status/ready")
+rready=$(jq -r '.ready' < "$PLIB_ARTIFACTS/ready-baseline.json")
+rpgen=$(jq -r '.last_persist.generation // 0' < "$PLIB_ARTIFACTS/ready-baseline.json")
+[[ "$rrc" == "200" && "$rready" == "true" && "$rpgen" -ge 1 ]] \
+    && pass "healthy gateway is READY and reports its last persist (gen $rpgen)" \
+    || fail "baseline readiness: HTTP $rrc ready=$rready last_persist.gen=$rpgen"
 
 #################################################################################
 echo "=== partial document must not wipe omitted domains ==="
@@ -415,6 +426,503 @@ rc=$(restore_commit llb1 "$PLIB_ARTIFACTS/good.json")
 resp=$($hexec l3h1 curl -s -m 5 "http://${VIP}:2020/" 2>/dev/null | head -3)
 echo "$resp" | grep -q 'X-Echo-Backend' \
     && pass "recovered L4 VIP routes traffic" || fail "recovered VIP probe: $resp"
+
+#################################################################################
+echo "=== boot quarantines an UNREADABLE snapshot.json (read-failure branch) ==="
+#################################################################################
+# A directory planted where the snapshot file belongs makes os.ReadFile
+# fail with a real I/O error (EISDIR) -- the read-failure branch, distinct
+# from the parse/pipeline failures above. It must quarantine like every
+# other boot failure: left in place, the next persist would overwrite the
+# only forensic copy of whatever is wrong on disk.
+q0=$(quarantine_count)
+sudo rm -rf "$CFG/snapshot.json"
+sudo mkdir "$CFG/snapshot.json"
+plib_start_gw llb1 || fail "gateway did not come back after unreadable-snapshot boot"
+plib_wait_api llb1 || fail "API after unreadable-snapshot boot"
+[[ "$(quarantine_count)" == "$((q0+1))" ]] \
+    && pass "unreadable snapshot quarantined at boot (read-failure branch)" \
+    || fail "no quarantine artifact for the unreadable snapshot"
+docker exec llb1 grep -aq "boot snapshot: read" /tmp/loxilb.out \
+    && pass "read failure logged loudly" || fail "no read-failure log line"
+[[ "$(lb_count)" == "0" ]] \
+    && pass "clean empty boot after the read-failure quarantine" \
+    || fail "unexpected config after read-failure boot"
+rc=$(restore_commit llb1 "$PLIB_ARTIFACTS/good.json")
+[[ "$rc" == "200" && "$(lb_count)" == "1" ]] \
+    && pass "recovery via REST restore after the read-failure quarantine" \
+    || fail "recovery restore failed (HTTP $rc lb=$(lb_count))"
+
+#################################################################################
+echo "=== compat boot profile: legacy fallback runs and is loudly degraded ==="
+#################################################################################
+# A failing snapshot AND a legacy lbconfig.txt both present, snapshot
+# newer (arbitration picks it). The default compat profile must
+# quarantine the snapshot, then fall back to the *.txt replay -- and say
+# so loudly, because the replayed config may be older than what the
+# quarantined snapshot carried.
+cat > "$PLIB_ARTIFACTS/legacy-lb.txt" <<'EOF'
+{
+  "lbAttr": [
+    {
+      "serviceArguments": {
+        "externalIP": "20.20.20.1", "port": 2021, "protocol": "tcp",
+        "sel": 0, "mode": 0, "BGP": false, "Monitor": false,
+        "inactiveTimeOut": 240, "block": 0
+      },
+      "secondaryIPs": null,
+      "endpoints": [
+        { "endpointIP": "31.31.31.1", "targetPort": 80, "weight": 1, "state": "active", "counter": "" }
+      ]
+    }
+  ]
+}
+EOF
+q0=$(quarantine_count)
+sudo cp "$PLIB_ARTIFACTS/legacy-lb.txt" "$CFG/lbconfig.txt"
+sudo touch -t 202601010000 "$CFG/lbconfig.txt"
+sudo cp "$PLIB_ARTIFACTS/dep-kv.json" "$CFG/snapshot.json"
+plib_start_gw llb1 || fail "gateway did not come back on the compat-fallback boot"
+plib_wait_api llb1 || fail "API after compat-fallback boot"
+[[ "$(quarantine_count)" == "$((q0+1))" ]] \
+    && pass "failing snapshot quarantined before the compat fallback" \
+    || fail "no quarantine artifact on the compat-fallback boot"
+docker exec llb1 grep -aq "compat profile: falling back" /tmp/loxilb.out \
+    && pass "compat fallback logged as degraded" || fail "no compat-fallback log line"
+lb_legacy=$(plib_curl llb1 "$PLIB_API/config/loadbalancer/all" | jq '[.lbAttr[]? | select(.serviceArguments.port==2021)] | length')
+[[ "$lb_legacy" == "1" && "$(lb_count)" == "1" ]] \
+    && pass "legacy *.txt replay ran under compat (the port-2021 rule is live)" \
+    || fail "compat fallback state: lb=$(lb_count) legacy-rule=$lb_legacy"
+
+#################################################################################
+echo "=== strict boot profile: NO legacy fallback after a failed restore ==="
+#################################################################################
+# Same double-artifact setup, booted with --config-boot-profile strict:
+# replaying stale *.txt artifacts over a failed restore would run the
+# gateway on older configuration while looking alive, so strict must boot
+# EMPTY (quarantine + loud log), leaving recovery to the operator.
+q0=$(quarantine_count)
+sudo cp "$PLIB_ARTIFACTS/legacy-lb.txt" "$CFG/lbconfig.txt"
+sudo touch -t 202601010000 "$CFG/lbconfig.txt"
+sudo cp "$PLIB_ARTIFACTS/dep-kv.json" "$CFG/snapshot.json"
+plib_start_gw llb1 --config-boot-profile strict || fail "gateway did not come back on the strict boot"
+plib_wait_api llb1 || fail "API after strict boot"
+[[ "$(quarantine_count)" == "$((q0+1))" ]] \
+    && pass "failing snapshot quarantined under strict" \
+    || fail "no quarantine artifact on the strict boot"
+docker exec llb1 grep -aq "strict profile: snapshot restore failed; legacy fallback disabled" /tmp/loxilb.out \
+    && pass "strict profile logged the disabled fallback" || fail "no strict-profile log line"
+[[ "$(lb_count)" == "0" ]] \
+    && pass "strict boot is EMPTY: the legacy lbconfig.txt was NOT replayed" \
+    || fail "strict boot applied config anyway (lb=$(lb_count))"
+# No silent READY: the degraded strict boot must answer 503 ready=false
+# with the boot record naming the degradation.
+rrc=$(plib_curl llb1 -o "$PLIB_ARTIFACTS/ready-degraded.json" -w "%{http_code}" "$PLIB_API/status/ready")
+rready=$(jq -r '.ready' < "$PLIB_ARTIFACTS/ready-degraded.json")
+rdeg=$(jq -r '.boot.degraded' < "$PLIB_ARTIFACTS/ready-degraded.json")
+rwhy=$(jq -r '(.reasons // []) | join(" ")' < "$PLIB_ARTIFACTS/ready-degraded.json")
+[[ "$rrc" == "503" && "$rready" == "false" && "$rdeg" == "true" && "$rwhy" == *"restore failed"* ]] \
+    && pass "degraded strict boot is NOT ready (503, reason names the failed restore)" \
+    || fail "degraded readiness: HTTP $rrc ready=$rready degraded=$rdeg reasons=$rwhy"
+rc=$(restore_commit llb1 "$PLIB_ARTIFACTS/good.json")
+[[ "$rc" == "200" && "$(lb_count)" == "1" ]] \
+    && pass "operator recovery via REST restore works under strict" \
+    || fail "strict recovery restore failed (HTTP $rc lb=$(lb_count))"
+# The commit restore is the designed exit from degraded: READY flips back.
+rrc=$(plib_curl llb1 -o "$PLIB_ARTIFACTS/ready-recovered.json" -w "%{http_code}" "$PLIB_API/status/ready")
+rready=$(jq -r '.ready' < "$PLIB_ARTIFACTS/ready-recovered.json")
+rmode=$(jq -r '.last_restore.mode // ""' < "$PLIB_ARTIFACTS/ready-recovered.json")
+[[ "$rrc" == "200" && "$rready" == "true" && "$rmode" == "commit" ]] \
+    && pass "commit-restore recovery flips READY back on (last_restore mode commit)" \
+    || fail "post-recovery readiness: HTTP $rrc ready=$rready last_restore.mode=$rmode"
+resp=$($hexec l3h1 curl -s -m 5 "http://${VIP}:2020/" 2>/dev/null | head -3)
+echo "$resp" | grep -q 'X-Echo-Backend' \
+    && pass "recovered VIP routes traffic after the strict-boot recovery" \
+    || fail "post-strict recovery VIP probe: $resp"
+# Drop the planted legacy artifact so later boots arbitrate on the
+# snapshot alone (the write-through above re-persisted the good state).
+sudo rm -f "$CFG/lbconfig.txt"
+
+#################################################################################
+echo "=== boot arbitration: a persisted lineage outranks a NEWER legacy mtime ==="
+#################################################################################
+# snapshot.json now carries a lineage generation (the recovery commit's
+# write-through). A hand-dropped lbconfig.txt with a FRESHER mtime (cp
+# without -p, clock skew) must NOT flip the boot source any more: the
+# lineage wins, mtimes only arbitrate for pre-generation snapshots.
+fgen=$(sudo cat "$CFG/snapshot.json" | jq -r '.generation // 0')
+[[ "$fgen" -ge 1 ]] || fail "expected a lineage generation on snapshot.json, got $fgen"
+sudo cp "$PLIB_ARTIFACTS/legacy-lb.txt" "$CFG/lbconfig.txt"   # fresh mtime, NEWER than the snapshot
+plib_start_gw llb1 || fail "gateway did not come back on the arbitration boot"
+plib_wait_api llb1 || fail "API after arbitration boot"
+wait_replay_receipt llb1
+docker exec llb1 grep -aq "persisted lineage wins" /tmp/loxilb.out \
+    && pass "arbitration log names the lineage authority" \
+    || fail "no lineage-wins log line"
+lb2020=$(plib_curl llb1 "$PLIB_API/config/loadbalancer/all" | jq '[.lbAttr[]? | select(.serviceArguments.port==2020)] | length')
+lb2021=$(plib_curl llb1 "$PLIB_API/config/loadbalancer/all" | jq '[.lbAttr[]? | select(.serviceArguments.port==2021)] | length')
+[[ "$lb2020" == "1" && "$lb2021" == "0" ]] \
+    && pass "boot restored the snapshot lineage, not the fresher legacy txt" \
+    || fail "arbitration state: port-2020=$lb2020 port-2021=$lb2021"
+sudo rm -f "$CFG/lbconfig.txt"
+
+#################################################################################
+echo "=== node-secret loss: encrypted document refused pre-wipe, quarantined at boot ==="
+#################################################################################
+# Snapshot secret values (the IPsec PSK below) are encrypted under
+# CFG/snapshot-node.secret. Replacing/losing that secret must be LOUD in
+# both directions: the boot replay quarantines the now-undecryptable
+# snapshot instead of half-applying, and a REST restore of the foreign
+# document is refused BEFORE anything is wiped -- live config survives.
+NGPSK="ng-psk-negative-fixture"
+rc=$(plib_curl llb1 -o /dev/null -w "%{http_code}" -X POST "$PLIB_API/config/ipsec/tunnels" \
+    -H 'Content-Type: application/json' \
+    -d "{\"name\":\"ng-tun1\",\"localIp\":\"31.31.31.250\",\"remoteIp\":\"31.31.31.249\",\"authMode\":\"psk\",\"psk\":\"$NGPSK\",\"localId\":\"ng-a\",\"remoteId\":\"ng-b\",\"ikeVersion\":\"ikev2\",\"tunnelMode\":\"tunnel\",\"auto\":\"add\"}")
+[[ "$rc" == "204" || "$rc" == "200" ]] \
+    && pass "ipsec PSK tunnel staged (encrypted-value subject)" \
+    || fail "ipsec tunnel POST: HTTP $rc"
+persist_and_verify llb1 \
+    && pass "persist carries the tunnel" || fail "persist with ipsec tunnel"
+if sudo grep -q 'enc:v1:' "$CFG/snapshot.json" && ! sudo grep -q "$NGPSK" "$CFG/snapshot.json"; then
+    pass "persisted document carries the PSK encrypted, never plaintext"
+else
+    fail "snapshot.json plaintext/ciphertext posture wrong"
+fi
+sudo cat "$CFG/snapshot.json" > "$PLIB_ARTIFACTS/enc-under-old-secret.json"
+# The secret backup deliberately stays OUT of PLIB_ARTIFACTS: uploading
+# the secret next to the ciphertext document would hand evidence readers
+# the decryption key.
+NGSECBAK=$(mktemp /tmp/ng-node-secret.XXXXXX)
+sudo cat "$CFG/snapshot-node.secret" > "$NGSECBAK"
+
+# Replace the node secret with a fresh, VALID-format one (the corrupt-file
+# case is a unit-level refusal; this is the ops-relevant "wrong node" /
+# re-provisioned case) and reboot onto the now-undecryptable snapshot.
+q0=$(quarantine_count)
+python3 -c "print('ab'*32)" | sudo tee "$CFG/snapshot-node.secret" >/dev/null
+sudo chmod 600 "$CFG/snapshot-node.secret"
+plib_start_gw llb1 || fail "gateway did not come back after the wrong-secret boot"
+plib_wait_api llb1 || fail "API after wrong-secret boot"
+[[ "$(quarantine_count)" == "$((q0+1))" ]] \
+    && pass "undecryptable snapshot quarantined at boot (fail closed)" \
+    || fail "no quarantine artifact for the wrong-secret boot"
+docker exec llb1 grep -aq "snapshot-node.secret" /tmp/loxilb.out \
+    && pass "boot log names the node secret file (operator-actionable)" \
+    || fail "node secret not named in the boot log"
+[[ "$(lb_count)" == "0" ]] \
+    && pass "clean empty boot after the wrong-secret quarantine" \
+    || fail "unexpected config after wrong-secret boot"
+
+# Pre-wipe refusal on the RUNNING node: seed live state, then push the
+# old-secret document -- it must be refused with the live state untouched
+# (a mid-apply failure would have wiped and rolled back instead).
+rc=$(restore_commit llb1 "$PLIB_ARTIFACTS/good.json")
+[[ "$rc" == "200" && "$(lb_count)" == "1" ]] \
+    && pass "canary state restored under the new secret" \
+    || fail "canary restore: HTTP $rc lb=$(lb_count)"
+q1=$(quarantine_count)
+rc=$(restore_commit llb1 "$PLIB_ARTIFACTS/enc-under-old-secret.json")
+body=$(cat "$PLIB_ARTIFACTS/restore-response.json")
+if [[ "$rc" == "400" ]] && echo "$body" | grep -q "snapshot-node.secret"; then
+    pass "old-secret document refused pre-wipe (HTTP 400, names the secret file)"
+else
+    fail "old-secret restore: HTTP $rc body=$(echo "$body" | head -c 200)"
+fi
+[[ "$(lb_count)" == "1" && "$(quarantine_count)" == "$q1" ]] \
+    && pass "live state survived the refusal untouched (nothing wiped)" \
+    || fail "refusal side effects: lb=$(lb_count) quarantines moved"
+
+# Recovery through the real operator path: put the original secret back,
+# reboot, and REST-restore the old-secret document -- everything decrypts
+# again, down to strongSwan holding the plaintext PSK.
+sudo cp "$NGSECBAK" "$CFG/snapshot-node.secret"
+sudo chmod 600 "$CFG/snapshot-node.secret"
+plib_start_gw llb1 || fail "gateway did not come back after secret recovery"
+plib_wait_api llb1 || fail "API after secret recovery"
+# This boot has a VALID snapshot.json (the canary write-through, no
+# secret values) to replay -- the write gate holds mutating calls (503)
+# until it settles, so wait for the receipt before restoring.
+wait_replay_receipt llb1 || fail "canary snapshot never settled on the recovery boot"
+rc=$(restore_commit llb1 "$PLIB_ARTIFACTS/enc-under-old-secret.json")
+[[ "$rc" == "200" ]] \
+    && pass "old-secret document restores once its secret is back" \
+    || fail "recovery restore: HTTP $rc"
+docker exec llb1 grep -aq "$NGPSK" /etc/ipsec.secrets \
+    && pass "recovered tunnel handed strongSwan the plaintext PSK" \
+    || fail "strongSwan secrets missing the PSK after recovery"
+rm -f "$NGSECBAK"
+resp=$($hexec l3h1 curl -s -m 5 "http://${VIP}:2020/" 2>/dev/null | head -3)
+echo "$resp" | grep -q 'X-Echo-Backend' \
+    && pass "recovered VIP routes traffic after the secret-recovery boot" \
+    || fail "recovered VIP probe: $resp"
+
+#################################################################################
+echo "=== injected capture failure: persist refused, old snapshot kept, auto-persist surfaced ==="
+#################################################################################
+# LOXI_TEST_FAULT=capture-domain-error:firewall makes every capture fail
+# on the firewall Get. A manual persist must answer 5xx with the previous
+# snapshot.json untouched, and a config change whose auto-persist then
+# fails must surface on the readiness API instead of dying silently.
+sum_before=$(sudo jq -r '.checksum' "$CFG/snapshot.json")
+PLIB_GW_ENV="LOXI_TEST_FAULT=capture-domain-error:firewall" plib_start_gw llb1 \
+    || fail "gateway did not come back with the capture fault armed"
+plib_wait_api llb1 || fail "API with capture fault armed"
+wait_replay_receipt llb1 || fail "boot replay under capture fault (apply path is unfaulted)"
+rc=$(plib_curl llb1 -o "$PLIB_ARTIFACTS/persist-fault.json" -w "%{http_code}" -X POST "$PLIB_API/config/persist")
+[[ "$rc" == "500" ]] \
+    && pass "manual persist fails loudly when a domain capture fails (500)" \
+    || fail "faulted persist: HTTP $rc, want 500"
+[[ "$(sudo jq -r '.checksum' "$CFG/snapshot.json")" == "$sum_before" ]] \
+    && pass "previous snapshot.json survived the failed persist" \
+    || fail "snapshot.json changed under a failed capture"
+rc=$(plib_curl llb1 -o /dev/null -w "%{http_code}" -X POST "$PLIB_API/config/firewall" \
+    -H 'Content-Type: application/json' \
+    -d '{"ruleArguments":{"sourceIP":"7.7.7.7/32","destinationIP":"6.6.6.6/32"},"opts":{"drop":true}}')
+[[ "$rc" == "200" || "$rc" == "204" ]] || fail "canary firewall add: HTTP $rc"
+sleep 6   # let the auto-persist debounce fire and fail
+rrc=$(plib_curl llb1 -o "$PLIB_ARTIFACTS/ready-autopersist.json" -w "%{http_code}" "$PLIB_API/status/ready")
+rready=$(jq -r '.ready' < "$PLIB_ARTIFACTS/ready-autopersist.json")
+rreason=$(jq -r '(.reasons // []) | join(" ")' < "$PLIB_ARTIFACTS/ready-autopersist.json")
+if [[ "$rrc" == "503" && "$rready" == "false" ]] && echo "$rreason" | grep -qi "auto-persist"; then
+    pass "auto-persist failure surfaces as NOT-READY with an auto-persist reason"
+else
+    fail "readiness under auto-persist failure: HTTP $rrc ready=$rready reasons=$rreason"
+fi
+PLIB_GW_ENV="" plib_start_gw llb1 || fail "gateway did not come back fault-free"
+plib_wait_api llb1 || fail "API after clearing the capture fault"
+wait_replay_receipt llb1 || fail "clean replay after capture-fault leg"
+rc=$(restore_commit llb1 "$PLIB_ARTIFACTS/good.json")
+[[ "$rc" == "200" && "$(fw_count)" == "1" ]] \
+    && pass "recovered to the good document after the capture-fault leg" \
+    || fail "capture-fault recovery: HTTP $rc fw=$(fw_count)"
+
+#################################################################################
+echo "=== deterministic persist crashes: previous snapshot survives both points ==="
+#################################################################################
+# The fault hook kills the process at the exact points a real crash could
+# hit: after the temp write and just before the rename. Both must leave
+# the previous snapshot.json byte-identical, leave the orphan temp file
+# unconsumed, and boot back cleanly from the old snapshot.
+for point in persist-after-temp-write persist-before-rename; do
+    sum0=$(sudo jq -r '.checksum' "$CFG/snapshot.json")
+    PLIB_GW_ENV="LOXI_TEST_FAULT=$point" plib_start_gw llb1 \
+        || fail "gateway did not come back with $point armed"
+    plib_wait_api llb1 || fail "API with $point armed"
+    wait_replay_receipt llb1 || fail "boot replay with $point armed (persist path untouched at boot)"
+    plib_curl llb1 -o /dev/null -m 10 -X POST "$PLIB_API/config/persist" 2>/dev/null
+    sleep 2
+    if docker exec llb1 pgrep -f '/root/loxilb-io/loxilb/loxilb' >/dev/null 2>&1; then
+        fail "$point: gateway survived the crash point (fault did not fire)"
+    else
+        pass "$point: persist crashed the process at the injected point"
+    fi
+    [[ "$(sudo jq -r '.checksum' "$CFG/snapshot.json")" == "$sum0" ]] \
+        && pass "$point: previous snapshot.json byte-survived the crash" \
+        || fail "$point: snapshot.json changed across the crash"
+    tmpn=$(sudo sh -c "ls $CFG/.snapshot.json-*.tmp 2>/dev/null | wc -l")
+    [[ "$tmpn" -ge 1 ]] \
+        && pass "$point: orphan temp file left behind, never consumed" \
+        || fail "$point: no orphan temp file after the crash"
+    sudo rm -f "$CFG"/.snapshot.json-*.tmp
+    PLIB_GW_ENV="" plib_start_gw llb1 || fail "gateway did not boot after the $point crash"
+    plib_wait_api llb1 || fail "API after the $point crash"
+    wait_replay_receipt llb1 || fail "boot from the previous snapshot after $point"
+    [[ "$(lb_count)" == "1" ]] \
+        && pass "$point: booted from the previous valid snapshot" \
+        || fail "$point: lb=$(lb_count) after crash reboot"
+done
+
+#################################################################################
+echo "=== injected mid-apply failure rolls back; double fault surfaces ROLLBACK-FAILED ==="
+#################################################################################
+# restore-mid-apply:firewall fails the forward APPLY of the firewall
+# domain: the pipeline must roll back to the preserved pre-state and say
+# rolled-back. The -double variant fails the rollback re-apply too and
+# must surface ROLLBACK-FAILED -- never a silent ok. The armed fault
+# would also fire on a boot replay that applies firewall, so these boots
+# run WITHOUT a snapshot (that interaction is the quarantine legs' story,
+# not this one).
+sudo rm -f "$CFG/snapshot.json"
+PLIB_GW_ENV="LOXI_TEST_FAULT=restore-mid-apply:firewall" plib_start_gw llb1 \
+    || fail "gateway did not come back with the mid-apply fault armed"
+plib_wait_api llb1 || fail "API with mid-apply fault armed"
+rc=$(restore_commit llb1 "$PLIB_ARTIFACTS/good.json")
+rres=$(jq -r '.result' < "$PLIB_ARTIFACTS/restore-response.json")
+[[ "$rc" == "500" && "$rres" == "rolled-back" ]] \
+    && pass "mid-apply fault -> 500 rolled-back" \
+    || fail "mid-apply restore: HTTP $rc result=$rres"
+[[ "$(fw_count)" == "0" && "$(lb_count)" == "0" ]] \
+    && pass "rollback restored the (empty) pre-state deep-equal" \
+    || fail "post-rollback state: fw=$(fw_count) lb=$(lb_count), want 0/0"
+
+sudo rm -f "$CFG/snapshot.json"
+PLIB_GW_ENV="LOXI_TEST_FAULT=restore-mid-apply-double:firewall" plib_start_gw llb1 \
+    || fail "gateway did not come back with the double fault armed"
+plib_wait_api llb1 || fail "API with double fault armed"
+rc=$(restore_commit llb1 "$PLIB_ARTIFACTS/good.json")
+rres=$(jq -r '.result' < "$PLIB_ARTIFACTS/restore-response.json")
+[[ "$rc" == "500" && "$rres" == "ROLLBACK-FAILED" ]] \
+    && pass "double fault -> ROLLBACK-FAILED surfaced, not a silent ok" \
+    || fail "double-fault restore: HTTP $rc result=$rres"
+
+PLIB_GW_ENV="" plib_start_gw llb1 || fail "gateway did not come back fault-free after NG-10"
+plib_wait_api llb1 || fail "API after the fault legs"
+rc=$(restore_commit llb1 "$PLIB_ARTIFACTS/good.json")
+[[ "$rc" == "200" && "$(lb_count)" == "1" && "$(fw_count)" == "1" ]] \
+    && pass "clean recovery after the fault-injection legs" \
+    || fail "fault-leg recovery: HTTP $rc lb=$(lb_count) fw=$(fw_count)"
+resp=$($hexec l3h1 curl -s -m 5 "http://${VIP}:2020/" 2>/dev/null | head -3)
+echo "$resp" | grep -q 'X-Echo-Backend' \
+    && pass "VIP routes traffic after the fault-injection legs" \
+    || fail "post-fault VIP probe: $resp"
+
+#################################################################################
+echo "=== concurrency storm: the gate serializes, nothing tears ==="
+#################################################################################
+# Persists, captures, a commit restore and config mutations all fired at
+# once, three rounds. The contract: the snapshot endpoints serialize on
+# the gate and answer 409 when it is held, every OTHER mutating call is
+# frozen with 503 while a restore holds it, and nothing anywhere answers
+# 5xx. A round that produced no rejection at all never contended the gate
+# -- three such rounds fail the leg rather than pass it vacuously.
+STORM="$PLIB_ARTIFACTS/ng08"
+mkdir -p "$STORM"
+storm_round() { # storm_round <round> — fire the whole storm, wait for all of it
+    local r=$1 i
+    rm -f "$STORM/r$r-"*.code
+    for i in 1 2 3; do
+        ( plib_curl llb1 -o "$STORM/r$r-persist-$i.body" -w "%{http_code}" \
+            -X POST "$PLIB_API/config/persist" > "$STORM/r$r-persist-$i.code" ) &
+    done
+    for i in 1 2; do
+        ( plib_curl llb1 -o "$STORM/r$r-capture-$i.body" -w "%{http_code}" \
+            "$PLIB_API/config/snapshot" > "$STORM/r$r-capture-$i.code" ) &
+    done
+    ( plib_curl llb1 -o "$STORM/r$r-restore.body" -w "%{http_code}" \
+        -X POST "$PLIB_API/config/restore?mode=commit" \
+        -H 'Content-Type: application/json' --data-binary @"$PLIB_ARTIFACTS/good.json" \
+        > "$STORM/r$r-restore.code" ) &
+    for i in $(seq 1 6); do
+        ( plib_curl llb1 -o /dev/null -w "%{http_code}" \
+            -X POST "$PLIB_API/config/firewall" -H 'Content-Type: application/json' \
+            -d "{\"ruleArguments\":{\"sourceIP\":\"9.$r.0.$i/32\",\"destinationIP\":\"6.6.6.6/32\"},\"opts\":{\"drop\":true}}" \
+            > "$STORM/r$r-mutate-$i.code" ) &
+    done
+    wait
+}
+q_storm=$(quarantine_count)
+storm_contract_ok=1
+storm_rejections=0
+for r in 1 2 3; do
+    storm_round "$r"
+    for f in "$STORM/r$r-persist-"*.code "$STORM/r$r-capture-"*.code "$STORM/r$r-restore.code"; do
+        c=$(cat "$f" 2>/dev/null)
+        case "$c" in
+        200) ;;
+        409) storm_rejections=$((storm_rejections + 1)) ;;
+        *)  fail "storm round $r: $(basename "$f" .code) answered HTTP $c (contract: 200 or 409)"
+            storm_contract_ok=0 ;;
+        esac
+    done
+    for f in "$STORM/r$r-mutate-"*.code; do
+        c=$(cat "$f" 2>/dev/null)
+        case "$c" in
+        200|204) ;;
+        503) storm_rejections=$((storm_rejections + 1)) ;;
+        *)  fail "storm round $r: mutation $(basename "$f" .code) answered HTTP $c (contract: 200/204 or 503)"
+            storm_contract_ok=0 ;;
+        esac
+    done
+done
+[[ "$storm_contract_ok" == 1 ]] \
+    && pass "3 storm rounds: every response inside the gate contract (no 5xx, no torn semantics)" \
+    || fail "storm rounds broke the response-code contract"
+[[ "$storm_rejections" -ge 1 ]] \
+    && pass "the gate actually rejected concurrent callers ($storm_rejections rejections across 3 rounds)" \
+    || fail "no 409/503 in 3 storm rounds: the gate was never contended, so the leg proved nothing"
+# The gate must not leak: a plain persist after the storm has to succeed.
+sleep 6   # let the storm's auto-persist debounce drain first
+if persist_and_verify llb1; then
+    pass "gate released after the storm: a fresh persist succeeds"
+else
+    fail "persist after the storm failed (gate leak or unpersistable state)"
+fi
+ondisk_doc_valid llb1 storm \
+    && pass "post-storm snapshot.json parses, checksum-verifies and plans cleanly" \
+    || fail "post-storm document integrity check failed"
+[[ "$(quarantine_count)" == "$q_storm" ]] \
+    && pass "the storm produced no quarantine artifacts" \
+    || fail "storm quarantined a snapshot: $(quarantine_count) artifacts, was $q_storm"
+# Whatever the storm left must survive a restart deep-equal: a capture torn
+# by a concurrent mutation would surface here as a post-reboot diff.
+canonical_get_all llb1 "$PLIB_ARTIFACTS/ng08-before" || fail "post-storm canonical dump"
+restart_inplace_keep llb1 || fail "restart after the storm"
+canonical_get_all llb1 "$PLIB_ARTIFACTS/ng08-after" || fail "post-restart canonical dump"
+deep_diff "$PLIB_ARTIFACTS/ng08-before" "$PLIB_ARTIFACTS/ng08-after" ng08 \
+    && pass "post-storm state round-trips a restart deep-equal (nothing tore)" \
+    || fail "post-storm state changed across the restart (torn capture)"
+
+#################################################################################
+echo "=== SIGKILL inside the auto-persist debounce: integrity always, loss documented ==="
+#################################################################################
+# Ten rounds, each killing the gateway at a different offset inside the 3s
+# auto-persist quiet window. The contract here is INTEGRITY, not no-loss:
+# a mutation that never made it out of the debounce is DOCUMENTED loss, so
+# the asserts are that snapshot.json is always a parseable, checksum-valid
+# document, that the boot never quarantines it, and that the pre-existing
+# state always comes back. A round is allowed to keep or lose its own
+# mutation -- never anything else.
+ng11_ok=1
+ng11_kept=0
+for i in $(seq 1 10); do
+    delay=$(awk -v n="$i" 'BEGIN{printf "%.1f", 0.2 + (n-1)*0.3}')   # 0.2s .. 2.9s
+    fw_before=$(fw_count)
+    rc=$(plib_curl llb1 -o /dev/null -w "%{http_code}" -X POST "$PLIB_API/config/firewall" \
+        -H 'Content-Type: application/json' \
+        -d "{\"ruleArguments\":{\"sourceIP\":\"8.8.$i.1/32\",\"destinationIP\":\"6.6.6.6/32\"},\"opts\":{\"drop\":true}}")
+    if [[ "$rc" != "200" && "$rc" != "204" ]]; then
+        fail "SIGKILL round $i: mutation refused (HTTP $rc)"; ng11_ok=0; break
+    fi
+    q_round=$(quarantine_count)
+    sleep "$delay"
+    docker exec llb1 pkill -9 -f '/root/loxilb-io/loxilb/loxilb' >/dev/null 2>&1
+    for _ in $(seq 1 10); do
+        docker exec llb1 pgrep -f '/root/loxilb-io/loxilb/loxilb' >/dev/null 2>&1 || break
+        sleep 1
+    done
+    if ! sudo test -s "$CFG/snapshot.json"; then
+        fail "SIGKILL round $i (kill at ${delay}s): snapshot.json missing or empty on disk"
+        ng11_ok=0; break
+    fi
+    plib_start_gw llb1 || { fail "SIGKILL round $i: gateway did not come back"; ng11_ok=0; break; }
+    plib_wait_api llb1 || { fail "SIGKILL round $i: API never returned"; ng11_ok=0; break; }
+    if ! wait_replay_receipt llb1; then
+        fail "SIGKILL round $i (kill at ${delay}s): boot never replayed the snapshot"; ng11_ok=0; break
+    fi
+    if [[ "$(quarantine_count)" != "$q_round" ]]; then
+        fail "SIGKILL round $i (kill at ${delay}s): boot quarantined the snapshot (corruption)"; ng11_ok=0; break
+    fi
+    if ! ondisk_doc_valid llb1 "sigkill-$i"; then
+        fail "SIGKILL round $i (kill at ${delay}s): snapshot.json is not a valid document"
+        ng11_ok=0; break
+    fi
+    if [[ "$(lb_count)" != "1" ]]; then
+        fail "SIGKILL round $i (kill at ${delay}s): pre-existing LB state lost (lb=$(lb_count), want 1)"
+        ng11_ok=0; break
+    fi
+    fw_after=$(fw_count)
+    if [[ "$fw_after" == "$((fw_before + 1))" ]]; then
+        ng11_kept=$((ng11_kept + 1))
+    elif [[ "$fw_after" != "$fw_before" ]]; then
+        fail "SIGKILL round $i (kill at ${delay}s): firewall count $fw_after, want $fw_before or $((fw_before + 1)) (torn state)"
+        ng11_ok=0; break
+    fi
+done
+if [[ "$ng11_ok" == 1 ]]; then
+    pass "10 SIGKILL rounds across the debounce window: snapshot.json always a valid document"
+    pass "10 SIGKILL rounds: no quarantine, boot replay settled, pre-existing state intact every time"
+    echo "  (mutations that survived their kill: $ng11_kept/10 -- loss inside the debounce is documented behavior, not a defect)"
+fi
 
 plib_collect_logs llb1
 exit $code

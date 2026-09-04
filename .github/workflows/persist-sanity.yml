@@ -13,10 +13,19 @@ name: Persist-Sanity-CI
 #
 #   persist-scenarios   the docker scenario suites: cfg-persist-roundtrip
 #                 (persist + in-place restart must be field-identical,
-#                 canonical deep-diff oracle) and cfg-persist-negative
+#                 canonical deep-diff oracle), cfg-persist-negative
 #                 (corrupted/truncated snapshots quarantine loudly,
 #                 hostile documents are refused, partial documents never
-#                 wipe what they do not cover).
+#                 wipe what they do not cover) and cfg-persist-restartmatrix
+#                 (the three restart classes: in-place, container
+#                 recreate, cold config -- each ending on the same
+#                 deep-compare plus traffic probe).
+#
+#   persist-soak / persist-upgrade   nightly and dispatch only, never a
+#                 per-PR gate: the drift/leak classes that need repetition
+#                 (cfg-persist-soak) and the two-image version matrix
+#                 (cfg-persist-upgrade), which needs a released image on
+#                 the other side of the volume.
 
 on:
   push:
@@ -119,6 +128,13 @@ jobs:
           ./config.sh && ./validation.sh || rc=$?
           ./rmconfig.sh || true
           exit $rc
+      - name: Restart matrix (in-place, container recreate, cold config)
+        run: |
+          cd cicd/cfg-persist-restartmatrix/
+          rc=0
+          ./config.sh && ./validation.sh || rc=$?
+          ./rmconfig.sh || true
+          exit $rc
       - name: Upload evidence artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -127,4 +143,109 @@ jobs:
           path: |
             cicd/cfg-persist-roundtrip/artifacts/
             cicd/cfg-persist-negative/artifacts/
+            cicd/cfg-persist-restartmatrix/artifacts/
+          if-no-files-found: ignore
+
+  persist-soak:
+    name: persist-soak
+    runs-on: ubuntu-22.04
+    # Repetition-class coverage (cumulative restore drift, checksum churn,
+    # descriptor growth, debounce collapse under a config storm). Long by
+    # construction -- nightly and dispatch only, never a per-PR gate.
+    if: github.actor != 'dependabot[bot]' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: sudo apt-get update
+      - run: sudo apt-get -y install clang llvm libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip build-essential bison flex iproute2 socat ethtool libjson-c-dev libnghttp2-dev jq
+      - name: Install libtokenizers (cgo link dependency of the router)
+        run: arch=$(dpkg --print-architecture) && wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz -O /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
+      - run: loxilb-ebpf/utils/mkllb_bpffs.sh
+      - run: sudo -E env "PATH=$PATH" make
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN || github.token }}
+      - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
+      - run: docker run -u root --cap-add SYS_ADMIN --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: sudo -E env "PATH=$PATH" make docker-cp
+      - run: docker exec -dit loxilb mkllb_bpffs
+      - run: id=`docker ps -f name=loxilb | cut -d " " -f 1 | grep -iv "CONTAINER"` && docker commit $id ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: docker stop loxilb && docker rm loxilb
+
+      - name: Soak (drift, stability, storm, concurrency)
+        run: |
+          cd cicd/cfg-persist-soak/
+          rc=0
+          ./config.sh && ./validation.sh || rc=$?
+          ./rmconfig.sh || true
+          exit $rc
+      - name: Upload soak artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: persist-soak-artifacts
+          path: cicd/cfg-persist-soak/artifacts/
+          if-no-files-found: ignore
+
+  persist-upgrade:
+    name: persist-upgrade
+    runs-on: ubuntu-22.04
+    # The version matrix: a released image on one side of the config
+    # volume, this build on the other. Needs two distinct images, so it is
+    # dispatch/nightly only and fails loudly rather than running vacuously
+    # when both sides resolve to the same reference.
+    if: github.actor != 'dependabot[bot]' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: sudo apt-get update
+      - run: sudo apt-get -y install clang llvm libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip build-essential bison flex iproute2 socat ethtool libjson-c-dev libnghttp2-dev jq
+      - name: Install libtokenizers (cgo link dependency of the router)
+        run: arch=$(dpkg --print-architecture) && wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz -O /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
+      - run: loxilb-ebpf/utils/mkllb_bpffs.sh
+      - run: sudo -E env "PATH=$PATH" make
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN || github.token }}
+      - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
+      - run: docker run -u root --cap-add SYS_ADMIN --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: sudo -E env "PATH=$PATH" make docker-cp
+      - run: docker exec -dit loxilb mkllb_bpffs
+      - run: id=`docker ps -f name=loxilb | cut -d " " -f 1 | grep -iv "CONTAINER"` && docker commit $id ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: docker stop loxilb && docker rm loxilb
+      - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:${{ vars.PERSIST_UPGRADE_OLD_TAG || 'v0.9.8.9-rc.1-u24' }}
+      - name: Upgrade matrix (released image <-> this build, one volume)
+        env:
+          UP_OLD_IMAGE: ghcr.io/loxilb-io/loxilb-inference-gateway:${{ vars.PERSIST_UPGRADE_OLD_TAG || 'v0.9.8.9-rc.1-u24' }}
+          UP_NEW_IMAGE: ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+        run: |
+          cd cicd/cfg-persist-upgrade/
+          rc=0
+          ./config.sh && ./validation.sh || rc=$?
+          ./rmconfig.sh || true
+          exit $rc
+      - name: Upload upgrade artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: persist-upgrade-artifacts
+          path: cicd/cfg-persist-upgrade/artifacts/
           if-no-files-found: ignore

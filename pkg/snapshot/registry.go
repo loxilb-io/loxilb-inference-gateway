@@ -332,6 +332,45 @@ func isIdempotentExists(err error) bool {
 	return false
 }
 
+// SubsystemStartupErrors reports whether EVERY error in errs looks like an
+// optional subsystem that has not finished initializing yet (the loxinet
+// nil-guard messages, plus the transport shapes a gRPC-backed daemon emits
+// while its socket is still coming up). It is the shared rule behind two
+// retries of the same startup window: the boot replay's (api/loxinlp,
+// which runs before NewIPsecH and the BGP speaker are up) and the REST
+// commit restore's.
+//
+// It says nothing about whether a subsystem is PERMANENTLY absent -- the
+// two are indistinguishable from the message alone, which is why both
+// callers retry for a bounded time and then fail loudly: a document
+// carrying configuration for a subsystem this gateway does not run must
+// still be refused, just a few seconds later.
+func SubsystemStartupErrors(errs []string) bool {
+	if len(errs) == 0 {
+		return false
+	}
+	for _, e := range errs {
+		if !isStartupMessage(strings.ToLower(e)) {
+			return false
+		}
+	}
+	return true
+}
+
+func isStartupMessage(m string) bool {
+	return strings.Contains(m, "not initialized") ||
+		strings.Contains(m, "not running") ||
+		strings.Contains(m, "mode is disabled") ||
+		strings.Contains(m, "bgp only mode") ||
+		// gRPC-backed subsystems (gobgpd) report "not up yet" as a
+		// transport error while their socket is still coming up, and as
+		// "bgp server hasn't started yet" between socket-up and the
+		// global-config push that starts the speaker.
+		strings.Contains(m, "code = unavailable") ||
+		strings.Contains(m, "connection refused") ||
+		strings.Contains(m, "hasn't started")
+}
+
 // isSubsystemUnavailable reports whether err is an optional subsystem
 // (BFD, BGP, IPsec) telling us it is not running/enabled on this gateway
 // (loxinet nil-guard convention: "bfd session not running", "loxilb BGP
@@ -1278,6 +1317,39 @@ func getIPsec(hooks Hooks, doc *Document) error {
 	if err != nil {
 		return fmt.Errorf("get ipsec ca_certificates: %w", err)
 	}
+	// Secret values leave this function encrypted, never plaintext
+	// (secretbox.go): getIPsec feeds capture AND the VERIFY-stage scratch
+	// Get, so encrypting here keeps both sides byte-symmetric -- the
+	// deterministic ciphertext is what makes doc-vs-live digests
+	// comparable. Failing to encrypt is a capture failure, not a
+	// downgrade-to-plaintext.
+	for i, t := range tunnels {
+		if t == nil {
+			continue
+		}
+		enc, eerr := EncryptSecretValue(t.PSK)
+		if eerr != nil {
+			return fmt.Errorf("get ipsec tunnel %q: secure pre-shared key: %w", t.Name, eerr)
+		}
+		if enc != t.PSK {
+			// Copy before mutating: the hook may return pointers into
+			// live tunnel state.
+			c := *t
+			c.PSK = enc
+			tunnels[i] = &c
+		}
+	}
+	for i := range certs {
+		key, eerr := EncryptSecretValue(certs[i].PrivateKeyPEM)
+		if eerr != nil {
+			return fmt.Errorf("get ipsec certificate %q: secure private key: %w", certs[i].Name, eerr)
+		}
+		pass, eerr := EncryptSecretValue(certs[i].Passphrase)
+		if eerr != nil {
+			return fmt.Errorf("get ipsec certificate %q: secure passphrase: %w", certs[i].Name, eerr)
+		}
+		certs[i].PrivateKeyPEM, certs[i].Passphrase = key, pass
+	}
 	doc.Domains.IPsec = IPsecDomain{
 		Config:         cfg,
 		Tunnels:        tunnels,
@@ -1311,6 +1383,20 @@ func applyIPsec(hooks Hooks, doc *Document, tolerateExists bool) (int, int, erro
 		n++
 	}
 	for _, c := range doc.Domains.IPsec.Certificates {
+		// Decrypt document-carried secret values before they reach the
+		// backend (the live subsystem works in plaintext; only the
+		// document encoding is encrypted). A decrypt failure is fatal
+		// both modes -- proceeding would install a certificate without
+		// its key material.
+		key, derr := DecryptSecretValue(c.PrivateKeyPEM)
+		if derr != nil {
+			return n, skipped, fmt.Errorf("apply ipsec certificate %q: %w", c.Name, derr)
+		}
+		pass, derr := DecryptSecretValue(c.Passphrase)
+		if derr != nil {
+			return n, skipped, fmt.Errorf("apply ipsec certificate %q: %w", c.Name, derr)
+		}
+		c.PrivateKeyPEM, c.Passphrase = key, pass
 		if _, err := hooks.NetIPsecCertificateAdd(&c); err != nil {
 			if tolerateExists && isIdempotentExists(err) {
 				skipped++
@@ -1325,6 +1411,11 @@ func applyIPsec(hooks Hooks, doc *Document, tolerateExists bool) (int, int, erro
 			continue
 		}
 		mod := t.IPsecTunnelMod
+		psk, derr := DecryptSecretValue(mod.PSK)
+		if derr != nil {
+			return n, skipped, fmt.Errorf("apply ipsec tunnel %q: %w", t.Name, derr)
+		}
+		mod.PSK = psk
 		if _, err := hooks.NetIPsecTunnelAdd(&mod); err != nil {
 			if tolerateExists && isIdempotentExists(err) {
 				skipped++
