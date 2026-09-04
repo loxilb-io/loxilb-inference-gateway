@@ -156,6 +156,11 @@ type KvAttestFinding struct {
 	OK     bool
 	Reason string // typed reason code on failure
 	Detail string
+	// Oracle marks a green token-parity finding earned through the
+	// approved-oracle path (§16.5 — engines with no tokenize surface): the
+	// ladder then holds TOKEN_PARITY_NOT_AVAILABLE_WITH_APPROVED_ORACLE
+	// instead of TOKEN_PARITY_VERIFIED so the evidence class stays visible.
+	Oracle bool
 }
 
 // kvAttestRuleInfo is the immutable identity the controller attests against.
@@ -211,6 +216,7 @@ type kvAttestDeps struct {
 	apply            func(svcID uint32, eligible uint8) error
 	manifest         func(profileID string) (*KvAttestManifest, bool)
 	profileFreshness func(profileID string) error
+	drainOwnership   func(svcID uint32, epIdx int) (KvTrtllmOwnershipReceipt, bool)
 	peerGate         func(info kvAttestRuleInfo) (bool, string)
 	now              func() time.Time
 	requireManifest  bool
@@ -563,6 +569,15 @@ func (c *kvAttestController) runLadder() {
 		}
 	}
 
+	// Drain ownership gates the ladder for destructive-read engines: an
+	// unproven or violated consumer role means the inventory evidence the
+	// later rungs would attest is not trustworthy to begin with.
+	if reason := c.drainOwnershipFault(eps); reason != "" {
+		log.Errorf("kv-attest: rule %s drain ownership %s — holding fenced", info.ruleIdent, reason)
+		c.publish(KvExactStateProfileValidated, reason)
+		return
+	}
+
 	manifest, haveManifest := c.deps.manifest(info.profileID)
 	manifestDigest := ""
 	if haveManifest {
@@ -574,7 +589,10 @@ func (c *kvAttestController) runLadder() {
 
 	// Rung 1 — TOKEN_PARITY_VERIFIED: identity consistency (when a manifest
 	// names the expected identity) plus §5 byte-exact fixture probes, every
-	// endpoint.
+	// endpoint. An adapter with no engine tokenize surface earns the rung
+	// through the approved-oracle path instead (Oracle finding), and the
+	// rung's published state says so (§16.5).
+	parityState := KvExactStateTokenParity
 	for _, ep := range eps {
 		if haveManifest {
 			f := ad.IdentityProbe(ep, manifest)
@@ -594,10 +612,13 @@ func (c *kvAttestController) runLadder() {
 			c.publish(KvExactStateProfileValidated, f.Reason)
 			return
 		}
+		if f.Oracle {
+			parityState = KvExactStateTokenParityNoOracle
+		}
 	}
 	c.mu.Lock()
 	c.lastProbeOK = now()
-	alreadyTokenParity := c.enforced == KvExactStateTokenParity
+	alreadyTokenParity := c.enforced == parityState
 	c.mu.Unlock()
 	// First arrival at rung 1 publishes the transitional reason; re-climbs
 	// of a rule already holding here must NOT — the retry ladder runs every
@@ -606,7 +627,7 @@ func (c *kvAttestController) runLadder() {
 	// all but a sliver of each cycle, leaving status readers with a
 	// permanent "pending" and no cause.
 	if !alreadyTokenParity {
-		c.publish(KvExactStateTokenParity, "hash_attestation_pending")
+		c.publish(parityState, "hash_attestation_pending")
 	}
 
 	// Rung 2 — ENGINE_HASH_ATTESTED: the §6.2 echo challenge, every endpoint.
@@ -616,7 +637,7 @@ func (c *kvAttestController) runLadder() {
 			Reason: f.Reason, Detail: f.Detail, At: now(), ManifestDigest: manifestDigest})
 		if !f.OK {
 			kvAttestEchoFn("fail")
-			c.publish(KvExactStateTokenParity, f.Reason)
+			c.publish(parityState, f.Reason)
 			return
 		}
 		kvAttestEchoFn("ok")
@@ -688,6 +709,34 @@ func (c *kvAttestController) cadenceCheck() {
 	}
 }
 
+// drainOwnershipFault returns the typed fault reason when the rule's engine
+// drain ownership is unprovable or violated, "" otherwise. For the trtllm
+// engine every attested endpoint must hold a clean ownership receipt
+// (§17.4 / engine-contracts/adr/DEC-007): the drain is a destructive read,
+// so a green challenge without proven sole consumption proves only that the
+// challenge's own events were observed. A missing receipt (subscriber not
+// yet started, or torn down) is unprovable ownership — fail closed; the
+// ladder re-runs and heals once the stream binds. Faulted receipts carry
+// their own bounded reason (drain_sequence_gap / drain_ownership_lost).
+func (c *kvAttestController) drainOwnershipFault(eps []KvAttestEndpoint) string {
+	if c.info.engine != "trtllm" || c.deps.drainOwnership == nil {
+		return ""
+	}
+	for _, ep := range eps {
+		r, ok := c.deps.drainOwnership(c.info.svcID, ep.EpIdx)
+		if !ok {
+			return KvTrtllmFaultOwnershipLost
+		}
+		if r.Faulted {
+			if r.FaultReason != "" {
+				return r.FaultReason
+			}
+			return KvTrtllmFaultOwnershipLost
+		}
+	}
+	return ""
+}
+
 // probeSweep re-runs the identity + token-parity probes against every
 // endpoint of a READY rule. A failure fences (fence-first) and returns
 // false.
@@ -713,6 +762,16 @@ func (c *kvAttestController) probeSweep() bool {
 			c.fenceAndReattest(KvAttestReasonProfileResolution)
 			return false
 		}
+	}
+	// A drain-ownership fault detected since the last sweep knocks READY
+	// off within one cadence: the subscriber already invalidated the
+	// inventory in-band; this fences serving until the stream is provably
+	// complete again (fresh engine cache or re-acquire).
+	if reason := c.drainOwnershipFault(eps); reason != "" {
+		log.Errorf("kv-attest: rule %s drain ownership %s — fencing", info.ruleIdent, reason)
+		kvAttestProbeFailFn(reason)
+		c.fenceAndReattest(reason)
+		return false
 	}
 	manifest, haveManifest := c.deps.manifest(info.profileID)
 	c.mu.Lock()
@@ -891,6 +950,7 @@ func kvAttestProductionDeps() kvAttestDeps {
 		},
 		manifest:         kvAttestManifestLoad,
 		profileFreshness: KvProfileVerifyDisk,
+		drainOwnership:   KvTrtllmOwnership,
 		peerGate:         kvClusterCapabilityGate,
 		now:              time.Now,
 		requireManifest:  reqManifest,
@@ -910,6 +970,8 @@ func kvAttestAdapterFor(engine string) kvAttestAdapter {
 		return kvVllmAdapter()
 	case "sglang":
 		return kvSglangAdapter()
+	case "trtllm":
+		return kvTrtllmAdapter()
 	default:
 		return nil
 	}
