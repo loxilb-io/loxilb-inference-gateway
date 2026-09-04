@@ -36,20 +36,6 @@ fw_count() {
     plib_curl llb1 "$PLIB_API/config/firewall/all" | jq '[.fwAttr[]?] | length'
 }
 
-# wait_boot_settled — the readiness surface cites the boot gate until the
-# boot config replay finishes; a cold boot has no replay receipt to poll,
-# so this is the receipt for the empty class.
-wait_boot_settled() {
-    local i r
-    for i in $(seq 1 30); do
-        r=$(plib_curl llb1 "$PLIB_API/status/ready" | jq -r '(.reasons // []) | join(" ")')
-        [[ "$r" != *"boot config replay has not settled"* ]] && return 0
-        sleep 2
-    done
-    echo "  boot config replay never settled; readiness reasons: $r"
-    return 1
-}
-
 assert_traffic() { # assert_traffic <label>
     local resp
     resp=$($hexec l3h1 curl -s -m 5 "http://${VIP}:2020/" 2>/dev/null | head -3)
@@ -207,7 +193,7 @@ else
 fi
 plib_start_gw llb1 || fail "mode (c): gateway did not come back"
 plib_wait_api llb1 || fail "mode (c): API never came back"
-wait_boot_settled || fail "mode (c): the boot gate never opened"
+wait_boot_settled llb1 || fail "mode (c): the boot gate never opened"
 f="$PLIB_ARTIFACTS/ready-mode-c.json"
 rc=$(plib_curl llb1 -o "$f" -w "%{http_code}" "$PLIB_API/status/ready")
 cready=$(jq -r '.ready' < "$f")

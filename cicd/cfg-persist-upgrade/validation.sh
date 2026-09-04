@@ -63,14 +63,30 @@ assert_traffic() { # assert_traffic <label>
         || fail "$1: VIP probe returned: $resp"
 }
 
-# swap_image <image> — replace llb1's container with one running <image>,
-# keeping the host-mounted config volume exactly as it is. The veths die
-# with the old container, so both pairs are rebuilt and re-addressed.
-swap_image() {
-    local image=$1
+# The cross-version deep-compare deliberately runs over a RESTRICTED
+# domain set. snapshotdoc is the document itself -- its schema version,
+# lineage and manifest legitimately differ between the two sides, so
+# comparing it across a version step would fail on the very thing the
+# step is supposed to change. The remaining domains are the ones both
+# API vintages serve; the fixture lives entirely inside them.
+PLIB_DOMAINS="endpoint loadbalancer firewall policy mirror session sessionulcl ipfilter securityrate bfd bgpneigh"
+
+# teardown_llb1 — stop and remove the gateway container, leaving the
+# host-mounted config volume untouched. Nothing is running afterwards,
+# which is what makes volume surgery (removing the document, planting a
+# legacy artifact) deterministic: a live gateway's auto-persist can
+# rewrite a file the moment a leg deletes it.
+teardown_llb1() {
     disconnect_docker_hosts l3h1  llb1
     disconnect_docker_hosts l3ep1 llb1
     delete_docker_host llb1
+}
+
+# spawn_llb1 <image> — bring the gateway back on <image> against the same
+# volume, rebuild both veth pairs (they died with the old container) and
+# wait for the boot replay to settle before any leg measures anything.
+spawn_llb1() {
+    local image=$1
     pick_config="yes"
     lxdocker="$image"
     spawn_docker_host --dock-type loxilb --dock-name llb1
@@ -82,7 +98,38 @@ swap_image() {
     config_docker_host --host1 l3ep1 --host2 llb1 --ptype phy --addr 31.31.31.1/24 --gw 31.31.31.254
     config_docker_host --host1 llb1 --host2 l3h1  --ptype phy --addr 10.10.10.254/24
     config_docker_host --host1 llb1 --host2 l3ep1 --ptype phy --addr 31.31.31.254/24
-    plib_wait_api llb1
+    plib_wait_api llb1 || return 1
+    # The old image predates the readiness surface; there the API being up
+    # plus a settling pause is all the receipt available.
+    if plib_curl llb1 -o /dev/null -w "%{http_code}" "$PLIB_API/status/ready" | grep -qE '200|503'; then
+        wait_boot_settled llb1 || return 1
+    else
+        sleep 8
+    fi
+    return 0
+}
+
+swap_image() { # swap_image <image>
+    teardown_llb1
+    spawn_llb1 "$1"
+}
+
+# build_fixture — the same LB + firewall rule config.sh builds, re-posted
+# after a volume wipe so a leg that starts from an empty volume is
+# comparing real configuration rather than empty to empty.
+build_fixture() {
+    plib_curl llb1 -o /dev/null -w "%{http_code}" -X POST "$PLIB_API/config/loadbalancer" \
+        -H 'Content-Type: application/json' -d '{
+          "serviceArguments": {
+            "externalIP": "20.20.20.1", "port": 2020, "protocol": "tcp",
+            "sel": 0, "mode": 2, "name": "up-l4"
+          },
+          "endpoints": [ { "endpointIP": "31.31.31.1", "targetPort": 80, "weight": 1 } ]
+        }' >/dev/null
+    plib_curl llb1 -o /dev/null -w "%{http_code}" -X POST "$PLIB_API/config/firewall" \
+        -H 'Content-Type: application/json' \
+        -d '{"ruleArguments":{"sourceIP":"77.77.77.7/32","destinationIP":"20.20.20.1/32"},"opts":{"drop":true}}' >/dev/null
+    sleep 5   # let the auto-persist debounce settle before anything reads the volume
 }
 
 # snapshot_api_present — does the running gateway speak the snapshot API?
@@ -126,8 +173,9 @@ echo "=== UP-04: a legacy-only volume taken over by the new image ==="
 # path (a legacy replay is not a snapshot recovery and must never be
 # reported as one) and migrate the volume forward via the boot
 # write-through.
-sudo rm -f "$CFG/snapshot.json"
-swap_image "$UP_NEW_IMAGE" || fail "new image did not come up on the legacy volume"
+teardown_llb1                       # nothing running: the volume surgery below is deterministic
+sudo rm -f "$CFG/snapshot.json"     # legacy artifacts only, no document
+spawn_llb1 "$UP_NEW_IMAGE" || fail "new image did not come up on the legacy volume"
 f="$PLIB_ARTIFACTS/ready-up04.json"
 plib_curl llb1 -o "$f" -w "%{http_code}" "$PLIB_API/status/ready" >/dev/null
 bfound=$(jq -r '.boot.snapshot_found' < "$f")
@@ -168,13 +216,21 @@ fi
 echo "=== UP-01: a document persisted by the old image, restored by the new ==="
 #################################################################################
 # Back to the old side, persist there, then hand the volume forward.
+teardown_llb1
 sudo rm -f "$CFG/snapshot.json" "$CFG"/*.txt
-swap_image "$UP_OLD_IMAGE" || fail "old image did not come back"
+spawn_llb1 "$UP_OLD_IMAGE" || fail "old image did not come back"
+# The wipe above leaves the old side empty: rebuild the fixture, or the
+# leg would persist an empty document and then "prove" empty == empty.
+build_fixture
+[[ "$(lb_count)" == "1" && "$(fw_count)" == "1" ]] \
+    && pass "UP-01: fixture rebuilt on the old image" \
+    || fail "UP-01: old-side fixture rebuild: lb=$(lb_count) fw=$(fw_count)"
 persist_and_verify llb1 || fail "UP-01: persist on the old image"
 OLD_DISK_SCHEMA=$(sudo jq -r '.schema_version' "$CFG/snapshot.json")
 canonical_get_all llb1 "$PLIB_ARTIFACTS/up01-old" || fail "UP-01 old-side dump"
 swap_image "$UP_NEW_IMAGE" || fail "new image did not come up on the old document"
-wait_replay_receipt llb1 || fail "UP-01: the new image never replayed the old document"
+# A respawned container has no /tmp/loxilb.out to grep (spawn_docker_host
+# launches the gateway itself): the boot surface is the receipt here.
 f="$PLIB_ARTIFACTS/ready-up01.json"
 plib_curl llb1 -o "$f" -w "%{http_code}" "$PLIB_API/status/ready" >/dev/null
 [[ "$(jq -r '.boot.succeeded' < "$f")" == "true" ]] \
@@ -234,7 +290,6 @@ fi
 # The upgrade back must recover the node exactly.
 swap_image "$UP_NEW_IMAGE" || fail "new image did not come back after the downgrade leg"
 if sudo test -s "$CFG/snapshot.json"; then
-    wait_replay_receipt llb1 || fail "UP-02: the new image did not replay after the downgrade leg"
     [[ "$(lb_count)" == "1" ]] \
         && pass "UP-02: upgrading back restores the node from its own document" \
         || fail "UP-02: lb=$(lb_count) after upgrading back"

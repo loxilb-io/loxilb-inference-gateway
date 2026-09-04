@@ -234,6 +234,21 @@ wait_replay_receipt() { # wait_replay_receipt <llb>
     return 1
 }
 
+# wait_boot_settled <llb> — the readiness surface cites the boot gate until
+# the boot config replay finishes. A boot that replays nothing (cold or
+# legacy-only volume) has no snapshot receipt to poll, so this is the
+# receipt for those classes -- and the settle point after ANY respawn.
+wait_boot_settled() {
+    local llb=$1 i r
+    for i in $(seq 1 45); do
+        r=$(plib_curl "$llb" "$PLIB_API/status/ready" | jq -r '(.reasons // []) | join(" ")' 2>/dev/null)
+        [[ "$r" != *"boot config replay has not settled"* ]] && return 0
+        sleep 2
+    done
+    echo "  boot config replay never settled; readiness reasons: $r"
+    return 1
+}
+
 plib_start_gw() { # plib_start_gw <llb> <flags...> — kill + scrub + relaunch
     local llb=$1; shift
     docker exec "$llb" pkill -f '/root/loxilb-io/loxilb/loxilb' >/dev/null 2>&1

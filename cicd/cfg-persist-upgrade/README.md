@@ -31,6 +31,22 @@ than running a matrix against itself.
 
 ## Traps
 
+- Volume surgery happens with **nothing running**: `teardown_llb1` first,
+  then remove the document, then `spawn_llb1`. A live gateway's
+  auto-persist will rewrite a file the moment a leg deletes it, and the
+  next boot then classifies against an artifact the leg thought was gone.
+- A respawned container has no `/tmp/loxilb.out` to grep — `spawn_docker_host`
+  launches the gateway itself — so the boot **surface** is the receipt
+  after an image swap, not the log line. `spawn_llb1` waits for the boot
+  replay to settle before any leg measures anything; counting rules or
+  probing the VIP before that reads a half-applied node.
+- The cross-version deep-compare runs over a restricted domain set: the
+  captured document (`snapshotdoc`) legitimately differs across a schema
+  step, and the older API does not serve every domain the current one
+  does. The fixture lives entirely inside the compared domains.
+- A leg that wipes the volume must rebuild the fixture before persisting,
+  or it proves empty equals empty.
+
 - UP-01/02/03 need an old image that already speaks the snapshot API. The
   suite probes for it and SKIPS them **loudly**; set
   `UP_REQUIRE_SNAPSHOT_OLD=1` to turn that skip into a failure once a
