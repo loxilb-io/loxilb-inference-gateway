@@ -16,6 +16,7 @@
 package snapshot
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -172,6 +173,97 @@ func TestQuarantinePersistedDirSyncFailureSurfaces(t *testing.T) {
 
 	if _, err := QuarantinePersisted(dir, time.Now()); !errors.Is(err, injected) {
 		t.Fatalf("QuarantinePersisted err = %v, want injected fault", err)
+	}
+}
+
+// TestPersistStampsMonotonicGeneration pins the lineage semantics: a fresh
+// directory starts at generation 1, each persist increments, and a
+// quarantine does NOT reset the counter -- the quarantined file's
+// generation is already spent, so the next persist continues past it
+// instead of restarting at 1 (which would make the older quarantined
+// document look newer than the current state).
+func TestPersistStampsMonotonicGeneration(t *testing.T) {
+	dir := t.TempDir()
+
+	doc := goldenDocument()
+	doc.Generation = 0
+	path, sum, gen, err := Persist(doc, dir)
+	if err != nil {
+		t.Fatalf("Persist: %v", err)
+	}
+	if gen != 1 || doc.Generation != 1 {
+		t.Fatalf("first persist gen = %d (doc %d), want 1", gen, doc.Generation)
+	}
+	if sum == "" || path != filepath.Join(dir, PersistFileName) {
+		t.Fatalf("path/checksum missing: %q %q", path, sum)
+	}
+	// The persisted bytes must carry the stamped generation (and a
+	// checksum computed over it): re-decode from disk.
+	raw, err := LoadPersisted(dir)
+	if err != nil {
+		t.Fatalf("LoadPersisted: %v", err)
+	}
+	ondisk, err := Decode(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatalf("Decode persisted: %v", err)
+	}
+	if ondisk.Generation != 1 {
+		t.Fatalf("on-disk generation = %d, want 1", ondisk.Generation)
+	}
+	if err := VerifyChecksum(ondisk); err != nil {
+		t.Fatalf("persisted checksum does not cover generation: %v", err)
+	}
+
+	if _, _, gen, err = Persist(doc, dir); err != nil || gen != 2 {
+		t.Fatalf("second persist gen = %d err = %v, want 2", gen, err)
+	}
+
+	// Quarantine the gen-2 snapshot, then persist again: generation must
+	// continue at 3, not restart at 1.
+	if _, err := QuarantinePersisted(dir, time.Now()); err != nil {
+		t.Fatalf("QuarantinePersisted: %v", err)
+	}
+	if _, _, gen, err = Persist(doc, dir); err != nil || gen != 3 {
+		t.Fatalf("post-quarantine persist gen = %d err = %v, want 3 (lineage must not restart)", gen, err)
+	}
+}
+
+// TestNextGenerationIgnoresCorruptLineageFiles pins that a truncated or
+// non-JSON quarantine file (quarantined snapshots are often quarantined
+// BECAUSE they are corrupt) does not break the lineage scan.
+func TestNextGenerationIgnoresCorruptLineageFiles(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, PersistFileName+".failed-20260904-000000.000000000"),
+		[]byte(`{"generation": 41, "domains": {truncated`), 0o600); err != nil {
+		t.Fatalf("seed corrupt quarantine: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, PersistFileName+".failed-20260904-000000.000000001"),
+		[]byte(`{"generation": 5}`), 0o600); err != nil {
+		t.Fatalf("seed parseable quarantine: %v", err)
+	}
+	if got := nextGeneration(dir); got != 6 {
+		t.Fatalf("nextGeneration = %d, want 6 (max parseable lineage gen 5 + 1; corrupt file ignored)", got)
+	}
+}
+
+// TestCaptureDoesNotStampGeneration pins that a bare capture (the GET
+// /config/snapshot path) has no lineage position: only Persist assigns
+// generations, and the encoded document omits the field entirely.
+func TestCaptureDoesNotStampGeneration(t *testing.T) {
+	hooks := newMockHooks()
+	doc, err := Capture(hooks, "v-test", "host-test", TriggerManual, nil)
+	if err != nil {
+		t.Fatalf("Capture: %v", err)
+	}
+	if doc.Generation != 0 {
+		t.Fatalf("capture stamped generation %d, want 0", doc.Generation)
+	}
+	enc, err := Encode(doc)
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	if strings.Contains(string(enc), `"generation"`) {
+		t.Fatalf("bare capture encodes a generation field")
 	}
 }
 

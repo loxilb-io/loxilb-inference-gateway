@@ -16,6 +16,7 @@
 package snapshot
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -97,30 +98,78 @@ func writeAtomic(dir, name string, data []byte) (string, error) {
 	return finalPath, nil
 }
 
+// persistedGeneration loosely reads just the generation field out of one
+// on-disk snapshot document. Corrupt or unreadable files report 0 -- a
+// quarantined snapshot may be quarantined precisely because it is
+// truncated, and the lineage scan must not fail on it.
+func persistedGeneration(path string) uint64 {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	var probe struct {
+		Generation uint64 `json:"generation"`
+	}
+	if err := json.Unmarshal(data, &probe); err != nil {
+		return 0
+	}
+	return probe.Generation
+}
+
+// nextGeneration returns the generation the next persisted snapshot in dir
+// must carry: one past the highest generation the lineage has already
+// spent, across the live snapshot.json AND the quarantined
+// snapshot.json.failed-* files -- without the quarantines a post-quarantine
+// persist would restart at 1 and make an older quarantined document look
+// newer than the current state. Monotonicity is best-effort by design:
+// callers serialize persists (the REST snapshotGate / the single-threaded
+// boot), and if every lineage file is deleted the counter honestly
+// restarts.
+func nextGeneration(dir string) uint64 {
+	highest := persistedGeneration(filepath.Join(dir, PersistFileName))
+	quarantines, err := filepath.Glob(filepath.Join(dir, PersistFileName+".failed-*"))
+	if err == nil {
+		for _, q := range quarantines {
+			if g := persistedGeneration(q); g > highest {
+				highest = g
+			}
+		}
+	}
+	return highest + 1
+}
+
 // Persist atomically writes doc's canonical encoding to dir/snapshot.json
-// (§6 write-through target), returning the final path and the document
-// checksum Encode computed (reported by POST /config/persist, task G-9).
-func Persist(doc *Document, dir string) (string, string, error) {
+// (§6 write-through target), returning the final path, the document
+// checksum Encode computed, and the lineage generation stamped into the
+// document (all reported by POST /config/persist, task G-9). Persist owns
+// generation assignment: it stamps the next monotonic value BEFORE
+// encoding, so the persisted bytes (and their checksum) carry the lineage
+// position they claim.
+func Persist(doc *Document, dir string) (string, string, uint64, error) {
+	doc.Generation = nextGeneration(dir)
 	data, err := Encode(doc)
 	if err != nil {
-		return "", "", err
+		return "", "", 0, err
 	}
 	path, err := writeAtomic(dir, PersistFileName, data)
 	if err != nil {
-		return "", "", err
+		return "", "", 0, err
 	}
-	return path, doc.Checksum, nil
+	return path, doc.Checksum, doc.Generation, nil
 }
 
 // WriteThrough captures the full live configuration and persists it to
 // dir/snapshot.json (§6: on successful restore commit, on explicit
 // POST /config/persist, on debounced auto-persist, and after a successful
 // legacy-txt boot). The capture runs against the post-commit live state so
-// server-assigned fields are recorded as they now exist.
-func WriteThrough(hooks Hooks, gatewayVersion, hostname, dir string) (string, string, error) {
+// server-assigned fields are recorded as they now exist. Every caller
+// holds the REST snapshotGate (or runs in the pre-API boot window), so the
+// capture reads one frozen configuration point and the stamped generation
+// labels exactly that point.
+func WriteThrough(hooks Hooks, gatewayVersion, hostname, dir string) (string, string, uint64, error) {
 	doc, err := Capture(hooks, gatewayVersion, hostname, TriggerWriteThrough, nil)
 	if err != nil {
-		return "", "", err
+		return "", "", 0, err
 	}
 	return Persist(doc, dir)
 }

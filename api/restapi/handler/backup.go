@@ -231,7 +231,7 @@ func ConfigPostImport(params operations.PostConfigImportParams, principal any) m
 
 	// §6 write-through, same as POST /config/restore.
 	if result.Result == snapshot.ResultOK {
-		if path, _, werr := snapshot.WriteThrough(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath); werr != nil {
+		if path, _, _, werr := snapshot.WriteThrough(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath); werr != nil {
 			tk.LogIt(tk.LogError, "config/import: write-through persist failed after commit: %v\n", werr)
 			result.Errors = append(result.Errors, "warning: write-through persist failed (import applied but will not survive restart): "+werr.Error())
 		} else {

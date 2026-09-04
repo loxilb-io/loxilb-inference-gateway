@@ -241,7 +241,7 @@ func ConfigPostRestore(params operations.PostConfigRestoreParams, principal any)
 	// the errors array (result stays "ok") so the caller knows restart
 	// survival is NOT guaranteed until a later persist succeeds.
 	if mode == snapshot.ModeCommit && result.Result == snapshot.ResultOK {
-		if path, _, werr := snapshot.WriteThrough(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath); werr != nil {
+		if path, _, _, werr := snapshot.WriteThrough(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath); werr != nil {
 			tk.LogIt(tk.LogError, "snapshot: write-through persist failed after commit: %v\n", werr)
 			result.Errors = append(result.Errors, "warning: write-through persist failed (restore applied but will not survive restart): "+werr.Error())
 		} else {
@@ -293,7 +293,7 @@ func ConfigPostPersist(params operations.PostConfigPersistParams, principal any)
 	}
 	defer snapshotGate.Store(false)
 
-	path, sum, err := snapshot.WriteThrough(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath)
+	path, sum, gen, err := snapshot.WriteThrough(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath)
 	if err != nil {
 		return &ErrorResponse{Payload: &models.Error{
 			Code:    500,
@@ -301,9 +301,12 @@ func ConfigPostPersist(params operations.PostConfigPersistParams, principal any)
 			Result:  "persist failed: " + err.Error(),
 		}}
 	}
-	tk.LogIt(tk.LogInfo, "config/persist: running config persisted to %s\n", path)
+	tk.LogIt(tk.LogInfo, "config/persist: running config persisted to %s (generation %d)\n", path, gen)
 
-	payload, merr := json.Marshal(map[string]string{"result": "ok", "path": path, "checksum": sum})
+	// Interim ad-hoc shape; the full §9 response contract (swagger model
+	// with schema version, coverage, dependency status, warnings) replaces
+	// this map wholesale.
+	payload, merr := json.Marshal(map[string]any{"result": "ok", "path": path, "checksum": sum, "generation": gen})
 	if merr != nil {
 		return &ErrorResponse{Payload: &models.Error{
 			Code:    500,
@@ -361,7 +364,7 @@ func autoPersistFire() {
 		return
 	}
 	defer snapshotGate.Store(false)
-	if path, _, err := snapshot.WriteThrough(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath); err != nil {
+	if path, _, _, err := snapshot.WriteThrough(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath); err != nil {
 		tk.LogIt(tk.LogError, "auto-persist: write-through failed: %v\n", err)
 	} else {
 		tk.LogIt(tk.LogDebug, "auto-persist: running config persisted to %s\n", path)
