@@ -57,6 +57,15 @@ type KvRenderPolicy struct {
 	// AddGenerationPrompt appends the assistant generation prompt, matching
 	// the engine's add_generation_prompt=true default for chat serving.
 	AddGenerationPrompt bool `yaml:"addGenerationPrompt"`
+	// BosToken/EosToken are the special-token strings the engine's renderer
+	// exposes to the template context (HF passes the tokenizer's
+	// special_tokens_map into apply_chat_template). Required only when the
+	// pinned template references them — Llama-3.1's template concatenates
+	// bos_token, the ChatML family's do not. An unset token a template does
+	// reference fails the render loudly (undefined concat), never renders
+	// different bytes silently.
+	BosToken string `yaml:"bosToken,omitempty"`
+	EosToken string `yaml:"eosToken,omitempty"`
 }
 
 // Alias policies. "any" is deliberately not a value: an unconstrained alias
@@ -211,6 +220,13 @@ func (p *ModelPromptProfile) Validate() error {
 	}
 	if seenAPI[KvProfileAPIChat] && p.TemplateArtifact == "" {
 		return errors.New("kv-profile: chat api requires templateArtifact")
+	}
+	if seenAPI[KvProfileAPIChat] && !p.RenderPolicy.AddGenerationPrompt {
+		// The serving path renders with the engine's chat default
+		// (add_generation_prompt=true). A chat profile omitting the knob
+		// would silently render different bytes than the engine caches, so
+		// the declaration is required to be explicit and true.
+		return errors.New("kv-profile: chat api requires renderPolicy.addGenerationPrompt: true (the only supported chat render shape)")
 	}
 	switch p.AliasPolicy {
 	case KvAliasPolicyBaseModelOnly:

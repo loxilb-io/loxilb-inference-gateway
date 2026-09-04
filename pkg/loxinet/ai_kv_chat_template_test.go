@@ -60,11 +60,27 @@ func loadChatParityFixture(t *testing.T) *chatParityFixture {
 	return &f
 }
 
+// kvTestPublishQwen25Profile publishes the real banked Qwen2.5 template
+// artifact behind the fixture's model, so these tests exercise the exact
+// bytes the production trust root pins (the hardcoded Go renderer this file
+// originally guarded was migrated to that artifact).
+func kvTestPublishQwen25Profile(t *testing.T, modelName string) {
+	t.Helper()
+	src, err := os.ReadFile(kvHashFixturePath(t, "templates",
+		"Qwen__Qwen2.5-7B-Instruct", "chat_template.jinja"))
+	if err != nil {
+		t.Skipf("banked Qwen2.5 template missing: %v", err)
+	}
+	kvTestPublishChatProfile(t, modelName, string(src),
+		KvRenderPolicy{AddGenerationPrompt: true, EosToken: "<|im_end|>"})
+}
+
 // TestChatTemplate_RenderMatchesVLLM asserts kvRenderChatTemplate reproduces
 // vLLM's apply_chat_template string for every fixture case (default-system
 // injection, per-message format, and generation prompt all included).
 func TestChatTemplate_RenderMatchesVLLM(t *testing.T) {
 	f := loadChatParityFixture(t)
+	kvTestPublishQwen25Profile(t, f.Model)
 	for name, c := range f.Cases {
 		name, c := name, c
 		t.Run(name, func(t *testing.T) {
@@ -89,6 +105,7 @@ func TestChatTemplate_RenderMatchesVLLM(t *testing.T) {
 // cgo export (llb_ai_kv_tokenize_chat) drives is faithful end to end.
 func TestChatTemplate_ParseMessagesFromBody(t *testing.T) {
 	f := loadChatParityFixture(t)
+	kvTestPublishQwen25Profile(t, f.Model)
 	for name, c := range f.Cases {
 		name, c := name, c
 		t.Run(name, func(t *testing.T) {
@@ -137,33 +154,37 @@ func TestChatTemplate_ContentPartsJoinWithNewline(t *testing.T) {
 	}
 }
 
-// TestChatTemplate_UnknownModelNoTemplate asserts a non-Qwen model with no
-// registered template returns ok=false (so the caller falls back instead of
-// mis-hashing with a guessed template).
+// TestChatTemplate_UnknownModelNoTemplate asserts a model with no published
+// profile returns ok=false (so the caller falls back instead of mis-hashing
+// with a guessed template).
 func TestChatTemplate_UnknownModelNoTemplate(t *testing.T) {
+	prev := kvProfileReg.Load()
+	kvProfileReg.Store(nil)
+	t.Cleanup(func() { kvProfileReg.Store(prev) })
 	if _, ok := kvRenderChatTemplate("meta-llama/Llama-3.1-8B-Instruct",
 		[]kvChatMessage{{Role: "user", Content: "hi"}}); ok {
-		t.Fatal("expected ok=false for unregistered non-Qwen model, got ok=true")
+		t.Fatal("expected ok=false for a model without a published profile, got ok=true")
 	}
 }
 
-// TestChatTemplate_UnregisteredQwenModelsNotTemplated asserts that Qwen-vendor
-// models WITHOUT an exact registry entry return ok=false. A vendor-prefix
+// TestChatTemplate_UnprofiledQwenSiblingsNotTemplated asserts that Qwen-vendor
+// models NOT served by the published profile return ok=false. A vendor-prefix
 // fallback here is a correctness defect, not a convenience: Qwen3 uses a
-// different template dialect (no default system prompt), and even a same-dialect
-// sibling size is an unvalidated identity — rendering it with the registered
-// 7B template silently mis-hashes every block. Any registry lookup broader than
-// exact-slug match must turn this test red.
-func TestChatTemplate_UnregisteredQwenModelsNotTemplated(t *testing.T) {
+// different template dialect (no default system prompt), and even a
+// same-dialect sibling size is an unvalidated identity — rendering it with the
+// published 7B template silently mis-hashes every block. Any model resolution
+// broader than the profile's declared identity must turn this test red.
+func TestChatTemplate_UnprofiledQwenSiblingsNotTemplated(t *testing.T) {
+	kvTestPublishQwen25Profile(t, "Qwen/Qwen2.5-7B-Instruct")
 	msgs := []kvChatMessage{{Role: "user", Content: "hi"}}
 	for _, model := range []string{
 		"Qwen/Qwen3-0.6B",            // different template dialect than Qwen2.5
-		"Qwen/Qwen2.5-14B-Instruct",  // same dialect, but not a validated registry entry
-		"Qwen/Qwen2.5-7B",            // base variant of the registered instruct model
-		"Qwen__Qwen2.5-7B-Instructx", // adversarial near-miss of the registered slug
+		"Qwen/Qwen2.5-14B-Instruct",  // same dialect, but not a declared identity
+		"Qwen/Qwen2.5-7B",            // base variant of the profiled instruct model
+		"Qwen__Qwen2.5-7B-Instructx", // adversarial near-miss of the profiled slug
 	} {
 		if rendered, ok := kvRenderChatTemplate(model, msgs); ok {
-			t.Errorf("model %q has no registered template but rendered %q — unregistered models must fall back, never inherit a vendor sibling's template", model, rendered)
+			t.Errorf("model %q has no published profile but rendered %q — unprofiled models must fall back, never inherit a vendor sibling's template", model, rendered)
 		}
 	}
 }

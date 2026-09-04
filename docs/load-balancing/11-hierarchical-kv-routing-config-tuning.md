@@ -195,7 +195,7 @@ What turns each layer on, and the *fastest* check that it engaged:
 
 | Layer | Enable | Verify (metrics on `GET /netlox/v1/metrics` unless noted) |
 |---|---|---|
-| P/D ladder | rule: `mode:4`, `pd_disagg_mode:true`, ≥1 `ep_role:1` + ≥1 `ep_role:2` | `loxilb_ai_pd_requests_total` advances; response `X-Request-Id` carries `___prefill_addr_…___decode_addr_…___` |
+| P/D ladder | rule: `mode:4`, `pd_disagg_mode:true`, `monitor:true`, ≥1 `ep_role:1` + ≥1 `ep_role:2` | `loxilb_ai_pd_requests_total` advances; response `X-Request-Id` carries `___prefill_addr_…___decode_addr_…___`. `monitor:true` is what demotes a dead role member — without it a dead prefill keeps 503ing the pool ([doc 5](05-rest-api-reference.md)) |
 | Tier 0 | on by default under P/D (`pd_session_ttl_sec`) | `loxilb_ai_pd_session_hits_total` advances on repeat `X-Conversation-Id` |
 | Tier 1 | rule: `pd_cache_aware_mode:true` | repeat-prefix requests pin; imbalance bypass visible in logs |
 | Tier 1.5 | rule: `kvExactMode:1` + triad + tokenizer + warmup elapsed. For `/v1/chat/completions` workloads additionally a registered chat template (`pkg/loxinet/ai_kv_chat_template.go`; v1 ships only the Qwen2.5/ChatML family — other models' chat requests silently route via lower tiers, `/v1/completions` unaffected) | `loxilb_pd_kv_tier15_hits_total{ep_idx}` advances; `loxilb_pd_kv_blocks` > 0; `loxilb_kv_subscriber_connected` = 1 |
