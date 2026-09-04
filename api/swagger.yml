@@ -7048,6 +7048,11 @@ definitions:
   BootStatus:
     type: object
     description: The boot config replay's recorded outcome.
+    required:
+      - snapshot_found
+      - succeeded
+      - legacy_fallback
+      - degraded
     properties:
       profile:
         type: string

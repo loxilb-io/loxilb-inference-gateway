@@ -10439,6 +10439,12 @@ func init() {
     "BootStatus": {
       "description": "The boot config replay's recorded outcome.",
       "type": "object",
+      "required": [
+        "snapshot_found",
+        "succeeded",
+        "legacy_fallback",
+        "degraded"
+      ],
       "properties": {
         "degraded": {
           "description": "The boot snapshot restore failed (strict booted empty; compat may be running legacy-replayed configuration).",
@@ -26939,6 +26945,12 @@ func init() {
     "BootStatus": {
       "description": "The boot config replay's recorded outcome.",
       "type": "object",
+      "required": [
+        "snapshot_found",
+        "succeeded",
+        "legacy_fallback",
+        "degraded"
+      ],
       "properties": {
         "degraded": {
           "description": "The boot snapshot restore failed (strict booted empty; compat may be running legacy-replayed configuration).",

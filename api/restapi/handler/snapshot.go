@@ -364,19 +364,27 @@ func ConfigGetStatusReady(params operations.GetStatusReadyParams, principal any)
 	reasons := snapshot.ReadinessReasons(snapshot.BootConfigSettled(), boot, lastRestore, autoPersistState, depFailures)
 
 	ready := len(reasons) == 0
+	bootFound, bootSucceeded := boot.SnapshotFound, boot.Succeeded
+	bootLegacy, bootDegraded := boot.LegacyFallback, boot.Degraded
 	payload := &models.ReadyStatus{
 		// Required in the contract (pointer in the generated model): the
 		// 503 body must carry an explicit ready=false, never omit it.
 		Ready:   &ready,
 		Reasons: reasons,
+		// Required in the contract (pointers in the generated model) for
+		// the same reason `ready` is: a plain bool is omitempty, so the
+		// FALSE cases -- no snapshot found, boot did not succeed -- would
+		// vanish from the payload, and a missing volume would read
+		// exactly like a healthy replay. The empty-boot classification is
+		// precisely what an operator needs off this surface.
 		Boot: &models.BootStatus{
 			Profile:        boot.Profile,
-			SnapshotFound:  boot.SnapshotFound,
-			Succeeded:      boot.Succeeded,
+			SnapshotFound:  &bootFound,
+			Succeeded:      &bootSucceeded,
 			Generation:     boot.Generation,
 			QuarantinePath: boot.QuarantinePath,
-			LegacyFallback: boot.LegacyFallback,
-			Degraded:       boot.Degraded,
+			LegacyFallback: &bootLegacy,
+			Degraded:       &bootDegraded,
 			Reasons:        boot.Reasons,
 		},
 		ExternalDependencies: depStatuses,

@@ -8,8 +8,10 @@ package models
 import (
 	"context"
 
+	"github.com/go-openapi/errors"
 	"github.com/go-openapi/strfmt"
 	"github.com/go-openapi/swag"
+	"github.com/go-openapi/validate"
 )
 
 // BootStatus The boot config replay's recorded outcome.
@@ -18,13 +20,15 @@ import (
 type BootStatus struct {
 
 	// The boot snapshot restore failed (strict booted empty; compat may be running legacy-replayed configuration).
-	Degraded bool `json:"degraded,omitempty"`
+	// Required: true
+	Degraded *bool `json:"degraded"`
 
 	// Applied boot document's lineage generation (success only).
 	Generation uint64 `json:"generation,omitempty"`
 
 	// The compat profile replayed the legacy *.txt artifacts after a failed snapshot restore.
-	LegacyFallback bool `json:"legacy_fallback,omitempty"`
+	// Required: true
+	LegacyFallback *bool `json:"legacy_fallback"`
 
 	// The --config-boot-profile the boot ran under (strict or compat).
 	Profile string `json:"profile,omitempty"`
@@ -36,14 +40,73 @@ type BootStatus struct {
 	Reasons []string `json:"reasons"`
 
 	// snapshot found
-	SnapshotFound bool `json:"snapshot_found,omitempty"`
+	// Required: true
+	SnapshotFound *bool `json:"snapshot_found"`
 
 	// succeeded
-	Succeeded bool `json:"succeeded,omitempty"`
+	// Required: true
+	Succeeded *bool `json:"succeeded"`
 }
 
 // Validate validates this boot status
 func (m *BootStatus) Validate(formats strfmt.Registry) error {
+	var res []error
+
+	if err := m.validateDegraded(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateLegacyFallback(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateSnapshotFound(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateSucceeded(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if len(res) > 0 {
+		return errors.CompositeValidationError(res...)
+	}
+	return nil
+}
+
+func (m *BootStatus) validateDegraded(formats strfmt.Registry) error {
+
+	if err := validate.Required("degraded", "body", m.Degraded); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *BootStatus) validateLegacyFallback(formats strfmt.Registry) error {
+
+	if err := validate.Required("legacy_fallback", "body", m.LegacyFallback); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *BootStatus) validateSnapshotFound(formats strfmt.Registry) error {
+
+	if err := validate.Required("snapshot_found", "body", m.SnapshotFound); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *BootStatus) validateSucceeded(formats strfmt.Registry) error {
+
+	if err := validate.Required("succeeded", "body", m.Succeeded); err != nil {
+		return err
+	}
+
 	return nil
 }
 
