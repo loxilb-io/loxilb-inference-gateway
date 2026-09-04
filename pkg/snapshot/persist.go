@@ -26,9 +26,40 @@ import (
 // {ConfigPath}/snapshot.json.
 const PersistFileName = "snapshot.json"
 
-// writeAtomic writes data to dir/name via temp-file + rename, 0600,
-// returning the final path. Shared by the PRESERVE stage (restore.go) and
-// the §6 write-through persist.
+// fileSync and dirSync are the durability syscalls behind writeAtomic and
+// QuarantinePersisted, held in vars so unit tests can fail them
+// deterministically; production code never overrides them.
+var (
+	fileSync = func(f *os.File) error { return f.Sync() }
+	dirSync  = syncDir
+)
+
+// syncDir fsyncs the directory itself so a rename recorded in it survives
+// a crash (a plain rename is only in the page cache until the directory
+// inode is flushed).
+func syncDir(dir string) error {
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	return d.Sync()
+}
+
+// writeAtomic writes data to dir/name via temp-file + fsync + rename +
+// directory fsync, 0600, returning the final path. Shared by the PRESERVE
+// stage (restore.go) and the §6 write-through persist.
+//
+// Crash-consistency claim (kept honest): at any interruption point a
+// reader of dir/name observes either the previous complete file or the new
+// complete file, never a torn mix; once writeAtomic returns nil the new
+// content and the rename have both been fsynced, so they survive a crash
+// or power loss to the extent the storage stack honors fsync (a volatile
+// write cache that lies about flushes is outside what software can
+// guarantee, and power-loss behavior is only tested where the testbed
+// allows). A dir-fsync failure is returned as an error even though the
+// rename is already visible in the namespace: durability is unconfirmed,
+// so callers must treat the persist as failed rather than report success.
 func writeAtomic(dir, name string, data []byte) (string, error) {
 	finalPath := filepath.Join(dir, name)
 	tmp, err := os.CreateTemp(dir, "."+name+"-*.tmp")
@@ -44,6 +75,13 @@ func writeAtomic(dir, name string, data []byte) (string, error) {
 		tmp.Close()
 		return "", fmt.Errorf("write temp file: %w", err)
 	}
+	// Flush file content to stable storage BEFORE the rename publishes it:
+	// otherwise a crash after rename can leave a durable name pointing at
+	// zero-length or partial content.
+	if err := fileSync(tmp); err != nil {
+		tmp.Close()
+		return "", fmt.Errorf("sync temp file: %w", err)
+	}
 	if err := tmp.Close(); err != nil {
 		return "", fmt.Errorf("close temp file: %w", err)
 	}
@@ -52,6 +90,9 @@ func writeAtomic(dir, name string, data []byte) (string, error) {
 	}
 	if err := os.Rename(tmpPath, finalPath); err != nil {
 		return "", fmt.Errorf("rename temp file: %w", err)
+	}
+	if err := dirSync(dir); err != nil {
+		return "", fmt.Errorf("sync directory after rename: %w", err)
 	}
 	return finalPath, nil
 }
@@ -91,12 +132,19 @@ func WriteThrough(hooks Hooks, gatewayVersion, hostname, dir string) (string, st
 // restore, would capture a state missing everything the snapshot carried
 // and make the loss durable), and the next boot no longer retries a
 // snapshot that is already known not to apply. Returns the quarantine path.
+// The rename is followed by a directory fsync for the same reason as
+// writeAtomic: if the quarantine is not durable, a crash right after it
+// resurrects snapshot.json and the next boot retries a snapshot already
+// known not to apply.
 func QuarantinePersisted(dir string, now time.Time) (string, error) {
 	src := filepath.Join(dir, PersistFileName)
 	dst := filepath.Join(dir, fmt.Sprintf("%s.failed-%s", PersistFileName,
 		now.UTC().Format("20060102-150405.000000000")))
 	if err := os.Rename(src, dst); err != nil {
 		return "", err
+	}
+	if err := dirSync(dir); err != nil {
+		return "", fmt.Errorf("sync directory after quarantine rename: %w", err)
 	}
 	return dst, nil
 }
