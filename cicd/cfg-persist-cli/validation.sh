@@ -43,8 +43,14 @@ fetch() {
 }
 
 lb_count() { plib_curl llb1 "$PLIB_API/config/loadbalancer/all" | jq '[.lbAttr[]?] | length'; }
-ondisk_generation() { sudo jq -r '.generation // 0' < llb1_config/snapshot.json 2>/dev/null; }
-ondisk_checksum() { sudo jq -r '.checksum // ""' < llb1_config/snapshot.json 2>/dev/null; }
+
+# The gateway writes snapshot.json root-owned 0600. Read it through `sudo cat`
+# and pipe: a redirect is performed by the CALLING shell, so `sudo jq < file`
+# silently reads nothing whenever the suite is not already running as root -
+# which is exactly how it runs under CI, and every comparison against an empty
+# oracle below would then be vacuous.
+ondisk_generation() { sudo cat llb1_config/snapshot.json 2>/dev/null | jq -r '.generation // ""'; }
+ondisk_checksum() { sudo cat llb1_config/snapshot.json 2>/dev/null | jq -r '.checksum // ""'; }
 
 # The auto-persist debounce is a legitimate concurrent writer: a leg that
 # pins a generation has to let it drain first, or it pins one the gateway
@@ -71,6 +77,14 @@ else
     fail "persist output names no path: $(cat "$PLIB_ARTIFACTS/cli-persist.out")"
 fi
 disk_sum=$(ondisk_checksum)
+# Prove the oracle before trusting it: if it reads nothing, every comparison
+# against it below compares two empty strings and passes without measuring
+# anything.
+if [[ -n "$disk_sum" && -n "$(ondisk_generation)" ]]; then
+    pass "the on-disk oracle can read the persisted document"
+else
+    fail "the on-disk oracle read nothing (checksum='$disk_sum' generation='$(ondisk_generation)') - the comparisons below would be vacuous"
+fi
 if [[ -n "$printed_sum" && "$printed_sum" == "$disk_sum" ]]; then
     pass "the checksum the CLI printed is the checksum in the file on the host"
 else
@@ -114,7 +128,7 @@ if [[ "$jcontract" == "durable" ]]; then
 else
     fail "envelope contract='$jcontract', want durable — the CLI did not see the identity fields"
 fi
-if [[ "$jsum" == "$(ondisk_checksum)" && "$jgen" == "$(ondisk_generation)" ]]; then
+if [[ -n "$jsum" && "$jsum" == "$(ondisk_checksum)" && "$jgen" == "$(ondisk_generation)" ]]; then
     pass "envelope identity matches the document on disk (checksum + generation)"
 else
     fail "envelope checksum/generation ($jsum/$jgen) != disk ($(ondisk_checksum)/$(ondisk_generation))"
