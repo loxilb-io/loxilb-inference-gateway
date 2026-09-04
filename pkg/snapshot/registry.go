@@ -1278,6 +1278,39 @@ func getIPsec(hooks Hooks, doc *Document) error {
 	if err != nil {
 		return fmt.Errorf("get ipsec ca_certificates: %w", err)
 	}
+	// Secret values leave this function encrypted, never plaintext
+	// (secretbox.go): getIPsec feeds capture AND the VERIFY-stage scratch
+	// Get, so encrypting here keeps both sides byte-symmetric -- the
+	// deterministic ciphertext is what makes doc-vs-live digests
+	// comparable. Failing to encrypt is a capture failure, not a
+	// downgrade-to-plaintext.
+	for i, t := range tunnels {
+		if t == nil {
+			continue
+		}
+		enc, eerr := EncryptSecretValue(t.PSK)
+		if eerr != nil {
+			return fmt.Errorf("get ipsec tunnel %q: secure pre-shared key: %w", t.Name, eerr)
+		}
+		if enc != t.PSK {
+			// Copy before mutating: the hook may return pointers into
+			// live tunnel state.
+			c := *t
+			c.PSK = enc
+			tunnels[i] = &c
+		}
+	}
+	for i := range certs {
+		key, eerr := EncryptSecretValue(certs[i].PrivateKeyPEM)
+		if eerr != nil {
+			return fmt.Errorf("get ipsec certificate %q: secure private key: %w", certs[i].Name, eerr)
+		}
+		pass, eerr := EncryptSecretValue(certs[i].Passphrase)
+		if eerr != nil {
+			return fmt.Errorf("get ipsec certificate %q: secure passphrase: %w", certs[i].Name, eerr)
+		}
+		certs[i].PrivateKeyPEM, certs[i].Passphrase = key, pass
+	}
 	doc.Domains.IPsec = IPsecDomain{
 		Config:         cfg,
 		Tunnels:        tunnels,
@@ -1311,6 +1344,20 @@ func applyIPsec(hooks Hooks, doc *Document, tolerateExists bool) (int, int, erro
 		n++
 	}
 	for _, c := range doc.Domains.IPsec.Certificates {
+		// Decrypt document-carried secret values before they reach the
+		// backend (the live subsystem works in plaintext; only the
+		// document encoding is encrypted). A decrypt failure is fatal
+		// both modes -- proceeding would install a certificate without
+		// its key material.
+		key, derr := DecryptSecretValue(c.PrivateKeyPEM)
+		if derr != nil {
+			return n, skipped, fmt.Errorf("apply ipsec certificate %q: %w", c.Name, derr)
+		}
+		pass, derr := DecryptSecretValue(c.Passphrase)
+		if derr != nil {
+			return n, skipped, fmt.Errorf("apply ipsec certificate %q: %w", c.Name, derr)
+		}
+		c.PrivateKeyPEM, c.Passphrase = key, pass
 		if _, err := hooks.NetIPsecCertificateAdd(&c); err != nil {
 			if tolerateExists && isIdempotentExists(err) {
 				skipped++
@@ -1325,6 +1372,11 @@ func applyIPsec(hooks Hooks, doc *Document, tolerateExists bool) (int, int, erro
 			continue
 		}
 		mod := t.IPsecTunnelMod
+		psk, derr := DecryptSecretValue(mod.PSK)
+		if derr != nil {
+			return n, skipped, fmt.Errorf("apply ipsec tunnel %q: %w", t.Name, derr)
+		}
+		mod.PSK = psk
 		if _, err := hooks.NetIPsecTunnelAdd(&mod); err != nil {
 			if tolerateExists && isIdempotentExists(err) {
 				skipped++

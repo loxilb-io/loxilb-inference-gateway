@@ -39,6 +39,10 @@ func resetOpState(t *testing.T) {
 // nothing.
 func TestPersistAndRestoreRecordOpState(t *testing.T) {
 	resetOpState(t)
+	// The golden document carries encrypted secret values (pinned under
+	// goldenNodeSecret == the test secret) -- restoring it needs the
+	// node secret installed.
+	defer withTestNodeSecret(t)()
 	dir := t.TempDir()
 
 	doc := goldenDocument()

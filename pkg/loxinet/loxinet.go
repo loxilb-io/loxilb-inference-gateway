@@ -700,6 +700,16 @@ func loxiNetInit() {
 		tk.LogIt(tk.LogWarning, "self-ip cache init failed: %v\n", err)
 	}
 
+	// The node secret for snapshot secret-value encryption must exist
+	// before any capture or restore runs (the boot replay included):
+	// without it, captures fail closed rather than ever persisting a
+	// plaintext secret. Init failure is loud but non-fatal -- a node that
+	// cannot provision the secret still serves traffic; only snapshot
+	// operations touching secret values will error.
+	if err := snapshot.InitNodeSecret(opts.Opts.ConfigPath); err != nil {
+		tk.LogIt(tk.LogError, "snapshot node secret init failed: %v\n", err)
+	}
+
 	// The boot-config gate: mutating REST calls are held (503) while the
 	// boot config replay is pending, because a write racing the replay can
 	// make the restore fail on state it did not create, roll back the whole

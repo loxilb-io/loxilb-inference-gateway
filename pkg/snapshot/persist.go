@@ -213,6 +213,7 @@ func QuarantinePersisted(dir string, now time.Time) (string, error) {
 	if err := dirSync(dir); err != nil {
 		return "", fmt.Errorf("sync directory after quarantine rename: %w", err)
 	}
+	snapshotQuarantineTotal.Inc()
 	return dst, nil
 }
 

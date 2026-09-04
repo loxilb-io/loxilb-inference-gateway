@@ -76,6 +76,7 @@ func RecordBootLegacyFallback() {
 	bootStateMu.Lock()
 	defer bootStateMu.Unlock()
 	bootState.LegacyFallback = true
+	bootLegacyFallbackTotal.Inc()
 }
 
 // BootRestoreStateGet returns a copy of the recorded boot replay outcome.

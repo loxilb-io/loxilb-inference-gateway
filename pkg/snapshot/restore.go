@@ -255,6 +255,22 @@ func (e *Engine) restore(raw []byte, opts RestoreOptions) (*Result, error) {
 		return result, nil
 	}
 
+	// 2c. NORMALIZE SECRETS -- documents written before secret-value
+	// encryption (and hand-built ones) may carry plaintext secrets;
+	// re-encrypt them in memory under this node's secret so every later
+	// stage (apply, VERIFY's doc-side digest, the post-commit
+	// write-through persist) sees only ciphertext. This is the ADR-decided
+	// migrate-and-re-encrypt path: the next persist makes the encrypted
+	// form durable. Failure (node secret unavailable) fails closed here,
+	// before anything is planned or wiped -- proceeding would either apply
+	// unusable values or write plaintext back to disk.
+	secWarns, secErr := normalizeInboundSecrets(doc)
+	if secErr != nil {
+		result.Errors = []string{secErr.Error()}
+		return result, nil
+	}
+	result.Warnings = append(result.Warnings, secWarns...)
+
 	// 2b. VERIFY DEPENDENCIES -- every REQUIRED recovery_dependencies
 	// entry is checked against this node's actual stores (hooks) while
 	// nothing has been planned, wiped, or applied: a restore whose
@@ -521,6 +537,69 @@ func stageValidate(doc *Document) (compatible bool, errs []string) {
 	// write-through/auto-persisted snapshot containing an LB whose
 	// endpoints are all rule-managed failed VALIDATE on boot restore.
 	return true, nil
+}
+
+// normalizeInboundSecrets re-encrypts any plaintext secret value the
+// document carries (stage 2c). Values already encrypted pass through
+// untouched; each re-encryption is surfaced as a warning naming the item
+// -- never the value (secret-free logging). Runs after migrations so it
+// sees the current-schema shape, and before VERIFY DEPS / PLAN so a
+// failure has mutated nothing.
+func normalizeInboundSecrets(doc *Document) (warns []string, err error) {
+	// normalizeOne re-encrypts a plaintext value, and PROVES an
+	// already-encrypted value decryptable under this node's secret while
+	// nothing has been wiped: a wrong-secret document must be refused
+	// here, cleanly, not discovered mid-apply after the wipe and paid for
+	// with a rollback.
+	normalizeOne := func(v string) (out string, reencrypted bool, err error) {
+		if v == "" {
+			return v, false, nil
+		}
+		if IsEncryptedSecretValue(v) {
+			if _, derr := DecryptSecretValue(v); derr != nil {
+				return "", false, derr
+			}
+			return v, false, nil
+		}
+		enc, eerr := EncryptSecretValue(v)
+		if eerr != nil {
+			return "", false, eerr
+		}
+		return enc, true, nil
+	}
+
+	for i, t := range doc.Domains.IPsec.Tunnels {
+		if t == nil {
+			continue
+		}
+		v, reenc, verr := normalizeOne(t.PSK)
+		if verr != nil {
+			return nil, fmt.Errorf("ipsec tunnel %q pre-shared key: %w", t.Name, verr)
+		}
+		if !reenc {
+			continue
+		}
+		c := *t
+		c.PSK = v
+		doc.Domains.IPsec.Tunnels[i] = &c
+		warns = append(warns, fmt.Sprintf("ipsec tunnel %q carried a plaintext pre-shared key (pre-encryption document); re-encrypted under this node's secret", t.Name))
+	}
+	for i := range doc.Domains.IPsec.Certificates {
+		c := &doc.Domains.IPsec.Certificates[i]
+		reenc := false
+		for _, field := range []*string{&c.PrivateKeyPEM, &c.Passphrase} {
+			v, r, verr := normalizeOne(*field)
+			if verr != nil {
+				return nil, fmt.Errorf("ipsec certificate %q key material: %w", c.Name, verr)
+			}
+			*field = v
+			reenc = reenc || r
+		}
+		if reenc {
+			warns = append(warns, fmt.Sprintf("ipsec certificate %q carried plaintext key material (pre-encryption document); re-encrypted under this node's secret", c.Name))
+		}
+	}
+	return warns, nil
 }
 
 // selectForRestore derives the effective restore selection: the document's

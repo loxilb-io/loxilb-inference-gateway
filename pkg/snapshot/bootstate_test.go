@@ -69,6 +69,9 @@ func TestBootRestoreStateRecord(t *testing.T) {
 // lineage generation is reported in the result (the boot loader records it
 // as the applied boot generation), and that older documents report zero.
 func TestRestoreReportsSnapshotGeneration(t *testing.T) {
+	// The golden document carries encrypted secret values; restoring it
+	// needs the (pinned) node secret installed.
+	defer withTestNodeSecret(t)()
 	dir := t.TempDir()
 	doc := goldenDocument()
 	doc.RecoveryDependencies = nil

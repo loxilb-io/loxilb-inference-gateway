@@ -61,6 +61,16 @@ var (
 		Name: "loxilb_autopersist_consecutive_failures",
 		Help: "Consecutive auto-persist failures; 0 when the last persist succeeded. Nonzero means recent config changes may not survive a restart.",
 	})
+
+	snapshotQuarantineTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "loxilb_snapshot_quarantine_total",
+		Help: "snapshot.json files quarantined (renamed to .failed-<ts>) after a failed boot restore; each one is a boot that could not replay its persisted config.",
+	})
+
+	bootLegacyFallbackTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "loxilb_boot_legacy_fallback_total",
+		Help: "Boots that fell back to legacy *.txt config replay after the snapshot path failed (compat profile only); the gateway is running degraded desired state.",
+	})
 )
 
 // Additional restoreTotal result label values beyond the §5.2 Result.Result
