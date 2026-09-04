@@ -10886,6 +10886,44 @@ func init() {
         }
       }
     },
+    "ExternalDependencyStatus": {
+      "description": "Identity of one external recovery dependency (from the snapshot document's recovery_dependencies manifest) plus the reporting operation's disposition toward it. Identity only - never store content or credentials.",
+      "type": "object",
+      "properties": {
+        "digest": {
+          "description": "Store content digest at capture (\"sha256:\u003chex\u003e\"); absent for stores without content digests.",
+          "type": "string"
+        },
+        "generation": {
+          "description": "Store generation at capture (decimal string or opaque version token); absent for stores without generation tracking.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Stable identity of the concrete store instance (database name, registry root); absent for single-instance types.",
+          "type": "string"
+        },
+        "required": {
+          "description": "Whether recovery of the captured configuration requires this store (restore verifies required entries before planning anything).",
+          "type": "boolean"
+        },
+        "status": {
+          "description": "Persist responses report ready (identity read from the live process) or configured (store wired; reachability deliberately unclaimed - the readiness surface owns liveness). Restore responses report verified, warning (detail in warnings), failed (detail in errors; the restore stopped before mutating anything), or declared (optional entry, informational only).",
+          "type": "string",
+          "enum": [
+            "ready",
+            "configured",
+            "verified",
+            "warning",
+            "failed",
+            "declared"
+          ]
+        },
+        "type": {
+          "description": "Dependency type (api-key-db, auth-db, engine-contracts, kv-model-profiles, cert-store).",
+          "type": "string"
+        }
+      }
+    },
     "FDBEntry": {
       "type": "object",
       "required": [
@@ -14600,12 +14638,38 @@ func init() {
       }
     },
     "PersistResult": {
-      "description": "Result of POST /config/persist.",
+      "description": "Result of POST /config/persist - the persisted document's identity and coverage, so automation can verify what was saved without re-reading the file.",
       "type": "object",
       "properties": {
         "checksum": {
           "description": "SHA-256 checksum of the persisted snapshot document.",
           "type": "string"
+        },
+        "excluded_domains": {
+          "description": "Configuration areas deliberately never captured by snapshots (honesty marker).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "external_dependencies": {
+          "description": "The persisted document's recovery-dependency manifest with capture-time dispositions.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ExternalDependencyStatus"
+          }
+        },
+        "generation": {
+          "description": "Monotonic lineage generation stamped into the persisted document.",
+          "type": "integer",
+          "format": "uint64"
+        },
+        "included_domains": {
+          "description": "The snapshot domains the persisted document covers.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "path": {
           "description": "On-disk path of the persisted snapshot (config-path/snapshot.json).",
@@ -14614,6 +14678,17 @@ func init() {
         "result": {
           "description": "Always \"ok\" on 200.",
           "type": "string"
+        },
+        "schema_version": {
+          "description": "Schema version of the persisted document.",
+          "type": "string"
+        },
+        "warnings": {
+          "description": "Non-fatal anomalies of this persist; empty on a clean save.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
@@ -14979,6 +15054,13 @@ func init() {
             "type": "string"
           }
         },
+        "external_dependencies": {
+          "description": "The document's recovery-dependency manifest with this restore's per-entry disposition. Required entries are verified before anything is planned, wiped, or applied.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ExternalDependencyStatus"
+          }
+        },
         "mode": {
           "type": "string",
           "enum": [
@@ -14986,6 +15068,15 @@ func init() {
             "commit",
             "boot"
           ]
+        },
+        "persisted": {
+          "description": "Write-through disposition of a committed restore. true when the committed state was persisted to snapshot.json; false when the restore applied but the write-through failed - the applied state will NOT survive a restart until a later persist succeeds (the failure detail is in errors). Absent for dry-run and for pipelines that never reached a successful commit.",
+          "type": "boolean"
+        },
+        "persisted_generation": {
+          "description": "Lineage generation stamped by the successful write-through (present with persisted=true only).",
+          "type": "integer",
+          "format": "uint64"
         },
         "plan": {
           "type": "array",
@@ -15006,6 +15097,13 @@ func init() {
         },
         "snapshot_gateway_version": {
           "type": "string"
+        },
+        "warnings": {
+          "description": "Non-fatal anomalies the pipeline tolerated (degraded external stores, duplicate document items skipped at boot). Warnings never change the result field or trigger rollback.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
@@ -27163,6 +27261,44 @@ func init() {
         }
       }
     },
+    "ExternalDependencyStatus": {
+      "description": "Identity of one external recovery dependency (from the snapshot document's recovery_dependencies manifest) plus the reporting operation's disposition toward it. Identity only - never store content or credentials.",
+      "type": "object",
+      "properties": {
+        "digest": {
+          "description": "Store content digest at capture (\"sha256:\u003chex\u003e\"); absent for stores without content digests.",
+          "type": "string"
+        },
+        "generation": {
+          "description": "Store generation at capture (decimal string or opaque version token); absent for stores without generation tracking.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Stable identity of the concrete store instance (database name, registry root); absent for single-instance types.",
+          "type": "string"
+        },
+        "required": {
+          "description": "Whether recovery of the captured configuration requires this store (restore verifies required entries before planning anything).",
+          "type": "boolean"
+        },
+        "status": {
+          "description": "Persist responses report ready (identity read from the live process) or configured (store wired; reachability deliberately unclaimed - the readiness surface owns liveness). Restore responses report verified, warning (detail in warnings), failed (detail in errors; the restore stopped before mutating anything), or declared (optional entry, informational only).",
+          "type": "string",
+          "enum": [
+            "ready",
+            "configured",
+            "verified",
+            "warning",
+            "failed",
+            "declared"
+          ]
+        },
+        "type": {
+          "description": "Dependency type (api-key-db, auth-db, engine-contracts, kv-model-profiles, cert-store).",
+          "type": "string"
+        }
+      }
+    },
     "FDBEntry": {
       "type": "object",
       "required": [
@@ -31717,12 +31853,38 @@ func init() {
       }
     },
     "PersistResult": {
-      "description": "Result of POST /config/persist.",
+      "description": "Result of POST /config/persist - the persisted document's identity and coverage, so automation can verify what was saved without re-reading the file.",
       "type": "object",
       "properties": {
         "checksum": {
           "description": "SHA-256 checksum of the persisted snapshot document.",
           "type": "string"
+        },
+        "excluded_domains": {
+          "description": "Configuration areas deliberately never captured by snapshots (honesty marker).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "external_dependencies": {
+          "description": "The persisted document's recovery-dependency manifest with capture-time dispositions.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ExternalDependencyStatus"
+          }
+        },
+        "generation": {
+          "description": "Monotonic lineage generation stamped into the persisted document.",
+          "type": "integer",
+          "format": "uint64"
+        },
+        "included_domains": {
+          "description": "The snapshot domains the persisted document covers.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "path": {
           "description": "On-disk path of the persisted snapshot (config-path/snapshot.json).",
@@ -31731,6 +31893,17 @@ func init() {
         "result": {
           "description": "Always \"ok\" on 200.",
           "type": "string"
+        },
+        "schema_version": {
+          "description": "Schema version of the persisted document.",
+          "type": "string"
+        },
+        "warnings": {
+          "description": "Non-fatal anomalies of this persist; empty on a clean save.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
@@ -32284,6 +32457,13 @@ func init() {
             "type": "string"
           }
         },
+        "external_dependencies": {
+          "description": "The document's recovery-dependency manifest with this restore's per-entry disposition. Required entries are verified before anything is planned, wiped, or applied.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ExternalDependencyStatus"
+          }
+        },
         "mode": {
           "type": "string",
           "enum": [
@@ -32291,6 +32471,15 @@ func init() {
             "commit",
             "boot"
           ]
+        },
+        "persisted": {
+          "description": "Write-through disposition of a committed restore. true when the committed state was persisted to snapshot.json; false when the restore applied but the write-through failed - the applied state will NOT survive a restart until a later persist succeeds (the failure detail is in errors). Absent for dry-run and for pipelines that never reached a successful commit.",
+          "type": "boolean"
+        },
+        "persisted_generation": {
+          "description": "Lineage generation stamped by the successful write-through (present with persisted=true only).",
+          "type": "integer",
+          "format": "uint64"
         },
         "plan": {
           "type": "array",
@@ -32311,6 +32500,13 @@ func init() {
         },
         "snapshot_gateway_version": {
           "type": "string"
+        },
+        "warnings": {
+          "description": "Non-fatal anomalies the pipeline tolerated (degraded external stores, duplicate document items skipped at boot). Warnings never change the result field or trigger rollback.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },

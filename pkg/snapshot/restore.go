@@ -122,6 +122,24 @@ type Result struct {
 	// snapshot (§5.3 step 4), empty for dry-run, failed-before-PRESERVE, and
 	// Boot (which never captures one) cases.
 	PreRestoreSnapshotPersisted string `json:"pre_restore_snapshot_persisted,omitempty"`
+	// ExternalDependencies reports the document's recovery_dependencies
+	// manifest with this restore's per-entry disposition (verified /
+	// warning / failed / declared -- see depstatus.go). Populated by the
+	// VERIFY-DEPENDENCIES stage; empty for documents without a manifest
+	// and for pipelines that stop before VALIDATE completes.
+	ExternalDependencies []DependencyStatus `json:"external_dependencies,omitempty"`
+	// Persisted is the §6 write-through disposition, set by the REST
+	// layer (the engine does not persist): true when the committed state
+	// reached snapshot.json, false when the restore applied but the
+	// write-through FAILED -- the applied state will not survive a restart
+	// until a later persist succeeds, so a result carrying persisted=false
+	// is explicitly degraded, never a bare "ok" (the failure detail is
+	// appended to Errors). nil (absent) for dry-run and for pipelines that
+	// never reached a successful commit.
+	Persisted *bool `json:"persisted,omitempty"`
+	// PersistedGeneration is the lineage generation the write-through
+	// stamped (set with Persisted=true only).
+	PersistedGeneration uint64 `json:"persisted_generation,omitempty"`
 }
 
 // Clock lets tests control "now" (used for the pre-restore file's
@@ -239,7 +257,8 @@ func (e *Engine) restore(raw []byte, opts RestoreOptions) (*Result, error) {
 	// mid-apply after the wipe. Optional entries are informational and
 	// never verified. Runs in dry-run too -- preflighting exactly this is
 	// what dry-run is for.
-	depWarns, depErrs := e.stageVerifyDeps(doc)
+	depStatuses, depWarns, depErrs := e.stageVerifyDeps(doc)
+	result.ExternalDependencies = depStatuses
 	result.Warnings = append(result.Warnings, depWarns...)
 	if len(depErrs) > 0 {
 		result.Errors = depErrs
@@ -378,22 +397,35 @@ func stageParse(raw []byte) (*Document, error) {
 // with zero mutations -- the wipe-then-fail-mid-apply alternative costs a
 // rollback and, at boot, the whole replay. Warnings (a store that is
 // wired but degraded, an older-generation registry the per-item apply
-// will re-verify) surface in the result without blocking.
-func (e *Engine) stageVerifyDeps(doc *Document) (warns, errs []string) {
+// will re-verify) surface in the result without blocking. The returned
+// statuses mirror the whole manifest (optional entries included, as
+// declared) for the response's external_dependencies surface.
+func (e *Engine) stageVerifyDeps(doc *Document) (statuses []DependencyStatus, warns, errs []string) {
 	for _, dep := range doc.RecoveryDependencies {
-		if !dep.Required {
-			continue
+		status := DependencyStatus{
+			Type:       dep.Type,
+			ID:         dep.ID,
+			Generation: dep.Generation,
+			Digest:     dep.Digest,
+			Required:   dep.Required,
+			Status:     DepStatusDeclared,
 		}
-		warn, err := e.Hooks.NetRecoveryDepVerify(dep)
-		if err != nil {
-			errs = append(errs, fmt.Sprintf("dependency %s: %v", dep.Type, err))
-			continue
+		if dep.Required {
+			warn, err := e.Hooks.NetRecoveryDepVerify(dep)
+			switch {
+			case err != nil:
+				status.Status = DepStatusFailed
+				errs = append(errs, fmt.Sprintf("dependency %s: %v", dep.Type, err))
+			case warn != "":
+				status.Status = DepStatusWarning
+				warns = append(warns, fmt.Sprintf("dependency %s: %s", dep.Type, warn))
+			default:
+				status.Status = DepStatusVerified
+			}
 		}
-		if warn != "" {
-			warns = append(warns, fmt.Sprintf("dependency %s: %s", dep.Type, warn))
-		}
+		statuses = append(statuses, status)
 	}
-	return warns, errs
+	return statuses, warns, errs
 }
 
 // ---------------------------------------------------------------------

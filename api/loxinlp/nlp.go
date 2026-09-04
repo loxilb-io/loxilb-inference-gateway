@@ -1908,7 +1908,7 @@ func bootWriteThrough() {
 	if herr != nil {
 		hostname = "unknown"
 	}
-	path, _, _, err := snapshot.WriteThrough(hooks, cmn.Version, hostname, opt.Opts.ConfigPath)
+	path, _, err := snapshot.WriteThrough(hooks, cmn.Version, hostname, opt.Opts.ConfigPath)
 	if err != nil {
 		tk.LogIt(tk.LogError, "nlp: boot: post-legacy write-through failed: %v\n", err)
 		return

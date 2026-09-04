@@ -229,14 +229,19 @@ func ConfigPostImport(params operations.PostConfigImportParams, principal any) m
 		}}
 	}
 
-	// §6 write-through, same as POST /config/restore.
+	// §6 write-through, same as POST /config/restore: an explicit
+	// persisted marker, never a bare "ok" over a failed persist.
 	if result.Result == snapshot.ResultOK {
-		if path, _, _, werr := snapshot.WriteThrough(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath); werr != nil {
+		persisted := false
+		if path, pdoc, werr := snapshot.WriteThrough(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath); werr != nil {
 			tk.LogIt(tk.LogError, "config/import: write-through persist failed after commit: %v\n", werr)
 			result.Errors = append(result.Errors, "warning: write-through persist failed (import applied but will not survive restart): "+werr.Error())
 		} else {
-			tk.LogIt(tk.LogInfo, "config/import: write-through persisted to %s\n", path)
+			persisted = true
+			result.PersistedGeneration = pdoc.Generation
+			tk.LogIt(tk.LogInfo, "config/import: write-through persisted to %s (generation %d)\n", path, pdoc.Generation)
 		}
+		result.Persisted = &persisted
 	}
 
 	status := http.StatusOK

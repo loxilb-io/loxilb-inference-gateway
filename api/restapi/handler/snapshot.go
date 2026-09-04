@@ -237,16 +237,21 @@ func ConfigPostRestore(params operations.PostConfigRestoreParams, principal any)
 
 	// §6 write-through: a committed restore must survive a daemon restart,
 	// so persist the (post-commit) live config to {ConfigPath}/snapshot.json.
-	// A persist failure does not undo the applied restore -- report it in
-	// the errors array (result stays "ok") so the caller knows restart
-	// survival is NOT guaranteed until a later persist succeeds.
+	// A persist failure does not undo the applied restore -- the response
+	// carries an EXPLICIT degraded marker (persisted=false) plus the
+	// failure in the errors array, never a bare "ok": the caller must know
+	// restart survival is NOT guaranteed until a later persist succeeds.
 	if mode == snapshot.ModeCommit && result.Result == snapshot.ResultOK {
-		if path, _, _, werr := snapshot.WriteThrough(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath); werr != nil {
+		persisted := false
+		if path, pdoc, werr := snapshot.WriteThrough(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath); werr != nil {
 			tk.LogIt(tk.LogError, "snapshot: write-through persist failed after commit: %v\n", werr)
 			result.Errors = append(result.Errors, "warning: write-through persist failed (restore applied but will not survive restart): "+werr.Error())
 		} else {
-			tk.LogIt(tk.LogInfo, "snapshot: write-through persisted to %s\n", path)
+			persisted = true
+			result.PersistedGeneration = pdoc.Generation
+			tk.LogIt(tk.LogInfo, "snapshot: write-through persisted to %s (generation %d)\n", path, pdoc.Generation)
 		}
+		result.Persisted = &persisted
 	}
 
 	status := http.StatusOK
@@ -293,7 +298,7 @@ func ConfigPostPersist(params operations.PostConfigPersistParams, principal any)
 	}
 	defer snapshotGate.Store(false)
 
-	path, sum, gen, err := snapshot.WriteThrough(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath)
+	path, doc, err := snapshot.WriteThrough(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath)
 	if err != nil {
 		return &ErrorResponse{Payload: &models.Error{
 			Code:    500,
@@ -301,26 +306,42 @@ func ConfigPostPersist(params operations.PostConfigPersistParams, principal any)
 			Result:  "persist failed: " + err.Error(),
 		}}
 	}
-	tk.LogIt(tk.LogInfo, "config/persist: running config persisted to %s (generation %d)\n", path, gen)
+	tk.LogIt(tk.LogInfo, "config/persist: running config persisted to %s (generation %d)\n", path, doc.Generation)
 
-	// Interim ad-hoc shape; the full §9 response contract (swagger model
-	// with schema version, coverage, dependency status, warnings) replaces
-	// this map wholesale.
-	payload, merr := json.Marshal(map[string]any{"result": "ok", "path": path, "checksum": sum, "generation": gen})
-	if merr != nil {
-		return &ErrorResponse{Payload: &models.Error{
-			Code:    500,
-			Message: "Internal service error",
-			Result:  "marshal persist result: " + merr.Error(),
-		}}
-	}
-	return middleware.ResponderFunc(func(w http.ResponseWriter, _ runtime.Producer) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		if _, werr := w.Write(payload); werr != nil {
-			tk.LogIt(tk.LogError, "persist: failed to write response: %v\n", werr)
-		}
+	// §9 response contract, through the swagger model: the persisted
+	// document's identity and coverage, so automation can verify what was
+	// saved without re-reading the file.
+	return operations.NewPostConfigPersistOK().WithPayload(&models.PersistResult{
+		Result:               "ok",
+		Path:                 path,
+		Checksum:             doc.Checksum,
+		SchemaVersion:        doc.SchemaVersion,
+		Generation:           doc.Generation,
+		IncludedDomains:      doc.IncludedDomains,
+		ExcludedDomains:      doc.ExcludedDomains,
+		ExternalDependencies: depStatusModels(snapshot.CaptureDependencyStatuses(doc.RecoveryDependencies)),
+		Warnings:             []string{},
 	})
+}
+
+// depStatusModels converts the engine's dependency statuses to the
+// generated swagger model entries.
+func depStatusModels(statuses []snapshot.DependencyStatus) []*models.ExternalDependencyStatus {
+	if len(statuses) == 0 {
+		return nil
+	}
+	out := make([]*models.ExternalDependencyStatus, 0, len(statuses))
+	for _, s := range statuses {
+		out = append(out, &models.ExternalDependencyStatus{
+			Type:       s.Type,
+			ID:         s.ID,
+			Generation: s.Generation,
+			Digest:     s.Digest,
+			Required:   s.Required,
+			Status:     s.Status,
+		})
+	}
+	return out
 }
 
 // ---------------------------------------------------------------------
@@ -364,7 +385,7 @@ func autoPersistFire() {
 		return
 	}
 	defer snapshotGate.Store(false)
-	if path, _, _, err := snapshot.WriteThrough(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath); err != nil {
+	if path, _, err := snapshot.WriteThrough(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath); err != nil {
 		tk.LogIt(tk.LogError, "auto-persist: write-through failed: %v\n", err)
 	} else {
 		tk.LogIt(tk.LogDebug, "auto-persist: running config persisted to %s\n", path)

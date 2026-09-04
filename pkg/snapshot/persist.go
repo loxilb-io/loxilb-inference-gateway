@@ -165,13 +165,20 @@ func Persist(doc *Document, dir string) (string, string, uint64, error) {
 // server-assigned fields are recorded as they now exist. Every caller
 // holds the REST snapshotGate (or runs in the pre-API boot window), so the
 // capture reads one frozen configuration point and the stamped generation
-// labels exactly that point.
-func WriteThrough(hooks Hooks, gatewayVersion, hostname, dir string) (string, string, uint64, error) {
+// labels exactly that point. The returned Document is the persisted one
+// (generation and checksum stamped) -- the §9 response contract reports
+// its metadata, so callers get the whole document rather than loose
+// fields.
+func WriteThrough(hooks Hooks, gatewayVersion, hostname, dir string) (string, *Document, error) {
 	doc, err := Capture(hooks, gatewayVersion, hostname, TriggerWriteThrough, nil)
 	if err != nil {
-		return "", "", 0, err
+		return "", nil, err
 	}
-	return Persist(doc, dir)
+	path, _, _, err := Persist(doc, dir)
+	if err != nil {
+		return "", nil, err
+	}
+	return path, doc, nil
 }
 
 // QuarantinePersisted renames dir/snapshot.json to

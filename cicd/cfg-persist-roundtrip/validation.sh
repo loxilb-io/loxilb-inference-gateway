@@ -177,6 +177,49 @@ dep_m2=$(jq -S '.recovery_dependencies' < "$PLIB_ARTIFACTS/snap-idle-2.json")
     || fail "manifest churned between idle captures"
 
 #################################################################################
+echo "=== persist response contract: identity, coverage, dependency status ==="
+#################################################################################
+# POST /config/persist answers with the persisted document's identity
+# (schema/generation/checksum), its coverage, and the dependency manifest
+# with capture-time statuses, so automation can verify what was saved
+# without re-reading the file.
+persist_and_verify llb1 || fail "persist for the response-contract legs failed"
+presp="$PLIB_ARTIFACTS/persist-response.json"
+psv=$(jq -r '.schema_version' < "$presp")
+[[ "$psv" == "1.5" ]] \
+    && pass "persist response carries the persisted document's schema (1.5)" \
+    || fail "persist response schema_version=$psv, want 1.5"
+pgen1=$(jq -r '.generation' < "$presp")
+[[ "$pgen1" =~ ^[0-9]+$ && "$pgen1" -ge 1 ]] \
+    && pass "persist response carries a lineage generation ($pgen1)" \
+    || fail "persist response generation=$pgen1, want a positive integer"
+fgen=$(sudo cat llb1_config/snapshot.json | jq -r '.generation')
+[[ "$fgen" == "$pgen1" ]] \
+    && pass "on-disk snapshot carries the same generation as the response" \
+    || fail "file generation $fgen != response generation $pgen1"
+persist_and_verify llb1 || fail "second persist for the monotonicity leg failed"
+pgen2=$(jq -r '.generation' < "$presp")
+[[ "$pgen2" == "$((pgen1 + 1))" ]] \
+    && pass "back-to-back persists increment the generation ($pgen1 -> $pgen2)" \
+    || fail "generation went $pgen1 -> $pgen2, want exactly +1"
+pcov=$(jq -r '.included_domains | index("loadbalancer") != null and length >= 17' < "$presp")
+[[ "$pcov" == "true" ]] \
+    && pass "persist response declares full domain coverage" \
+    || fail "persist response included_domains=$(jq -c '.included_domains' < "$presp")"
+pdep_types=$(jq -c '[.external_dependencies[].type]' < "$presp")
+[[ "$pdep_types" == '["cert-store","engine-contracts","kv-model-profiles"]' ]] \
+    && pass "persist response reports the manifest's dependency identities" \
+    || fail "persist response dependency types=$pdep_types"
+pdep_status=$(jq -c '[.external_dependencies[].status] | unique' < "$presp")
+[[ "$pdep_status" == '["ready"]' ]] \
+    && pass "capture-time dependency statuses all ready (no DB wired here)" \
+    || fail "persist response dependency statuses=$pdep_status, want all ready"
+pwarn=$(jq -c '.warnings' < "$presp")
+[[ "$pwarn" == "[]" ]] \
+    && pass "clean save reports no warnings" \
+    || fail "persist response warnings=$pwarn, want []"
+
+#################################################################################
 echo "=== L7 policy / CORS / TLS-SNI datapath baselines (before) ==="
 #################################################################################
 # With a policy ATTACHED, the routing table is authoritative: the matched
