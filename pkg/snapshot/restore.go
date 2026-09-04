@@ -219,26 +219,30 @@ func (e *Engine) restore(raw []byte, opts RestoreOptions) (*Result, error) {
 	result.SchemaVersion = doc.SchemaVersion
 	result.SnapshotGatewayVersion = doc.GatewayVersion
 
-	selected, err := Select(opts.Components)
-	if err != nil {
-		result.Errors = []string{err.Error()}
-		return result, nil
-	}
-
-	// 2. VALIDATE -- schema-version gate + per-domain semantic checks.
+	// 2. VALIDATE -- schema-version gate + migrations + coverage checks.
 	// Stage gating: a VALIDATE failure returns here and never reaches
 	// PLAN/PRESERVE/APPLY (no Get/Add/Del call has happened yet beyond the
 	// pure in-memory decode).
-	compatible, verrs := stageValidate(doc, selected)
+	compatible, verrs := stageValidate(doc)
 	result.Compatible = compatible
 	if len(verrs) > 0 {
 		result.Errors = verrs
 		return result, nil
 	}
 
+	// Selection runs AFTER validate so migrations have stamped
+	// included_domains onto pre-1.2 documents: what a restore may wipe and
+	// apply is included_domains ∩ the caller's components -- a partial
+	// document must never wipe domains it does not cover.
+	selected, err := selectForRestore(doc, opts.Components)
+	if err != nil {
+		result.Errors = []string{err.Error()}
+		return result, nil
+	}
+
 	// 3. PLAN -- ordered per-domain {to_delete (live), to_apply (doc)}.
 	// Read-only (Get calls only); dry-run stops here.
-	plan, err := e.stagePlan(doc, selected)
+	plan, err := e.stagePlan(doc, selected, opts.Boot)
 	if err != nil {
 		result.Errors = []string{err.Error()}
 		return result, nil
@@ -284,11 +288,12 @@ func (e *Engine) restore(raw []byte, opts RestoreOptions) (*Result, error) {
 			"apply %s: skipped %d already-existing identical item(s) (duplicate document entries)", domain, count))
 	}
 
-	// 6. VERIFY -- only meaningful if APPLY fully succeeded. Skipped
-	// duplicates lower the expected live count: the item exists exactly
-	// once no matter how many document entries named it.
+	// 6. VERIFY -- only meaningful if APPLY fully succeeded. Counts and
+	// digests compare DISTINCT normalized items on both sides, so
+	// tolerated idempotent duplicates (in-document or pre-existing from a
+	// boot retry) need no special arithmetic.
 	if len(applyErrs) == 0 {
-		applyErrs = append(applyErrs, e.stageVerify(doc, plan, selected, skipped)...)
+		applyErrs = append(applyErrs, e.stageVerify(doc, selected)...)
 	}
 
 	if len(applyErrs) == 0 {
@@ -301,9 +306,24 @@ func (e *Engine) restore(raw []byte, opts RestoreOptions) (*Result, error) {
 		result.Errors = append(result.Errors, ae.Error())
 	}
 
-	// ROLLBACK: wipe again + re-apply the step-4 (or implicit-empty, for
-	// Boot) pre-restore document. "already exists" apply errors are
-	// tolerated (item-level idempotency, §5.3) -- see rollback().
+	// A BOOT apply that failed only on still-starting subsystems does not
+	// roll back: the boot loader retries, boot applies tolerate
+	// idempotent duplicates, and the next attempt converges over the
+	// partial state. Rolling back between attempts made the replayed
+	// config flap in and out for the whole retry window, and let the
+	// rollback's own wipe fail against the same still-starting subsystem,
+	// escalating a transient startup race into ROLLBACK-FAILED plus a
+	// quarantined snapshot (observed live on a BGP-enabled gateway).
+	// Any OTHER boot failure (a real conflict, a bad document) still
+	// rolls back -- a permanent failure must not leave partial state for
+	// the legacy fallback to collide with.
+	if opts.Boot && allSubsystemStartup(applyErrs) {
+		return result, nil
+	}
+
+	// ROLLBACK: wipe again + re-apply the step-4 pre-restore document.
+	// "already exists" apply errors are tolerated (item-level
+	// idempotency, §5.3) -- see rollback().
 	rollbackErrs := e.rollback(preDoc, selected)
 	if len(rollbackErrs) == 0 {
 		result.Result = ResultRolledBack
@@ -336,16 +356,49 @@ func stageParse(raw []byte) (*Document, error) {
 // ---------------------------------------------------------------------
 
 // stageValidate implements §5.3 step 2: the schema-version gate (§4.2),
-// then ApplyMigrations (migrate.go's stable call site, a no-op today), then
-// per-domain semantic checks. compatible reflects the schema-version gate
+// then ApplyMigrations (migrate.go's stable call site), then per-domain
+// semantic checks. compatible reflects the schema-version gate
 // specifically (true even if semantic checks below it fail -- those are a
 // different failure mode from cross-version incompatibility).
-func stageValidate(doc *Document, selected []DomainEntry) (compatible bool, errs []string) {
+func stageValidate(doc *Document) (compatible bool, errs []string) {
 	if err := CheckSchemaVersion(doc.SchemaVersion); err != nil {
 		return false, []string{err.Error()}
 	}
 	if err := ApplyMigrations(doc); err != nil {
 		return true, []string{err.Error()}
+	}
+
+	// Coverage declaration checks (schema 1.2+; migrations stamped full
+	// coverage onto older documents just above). All fail closed: restore
+	// selection is derived from included_domains, so an absent, unknown,
+	// duplicated, or contradicted declaration must stop the pipeline
+	// before anything is planned, wiped, or applied.
+	if len(doc.IncludedDomains) == 0 {
+		return true, []string{"snapshot: document declares no included_domains (required in schema 1.2+); refusing to guess restore coverage"}
+	}
+	included := make(map[string]bool, len(doc.IncludedDomains))
+	for _, name := range doc.IncludedDomains {
+		if included[name] {
+			errs = append(errs, fmt.Sprintf("snapshot: included_domains lists %q more than once", name))
+		}
+		included[name] = true
+	}
+	if _, err := Select(doc.IncludedDomains); err != nil {
+		errs = append(errs, err.Error())
+	}
+	if len(errs) > 0 {
+		return true, errs
+	}
+	// A domain carrying content but not declared as included is a torn or
+	// hand-edited document: applying it would be guesswork, skipping it
+	// would silently drop configuration.
+	for _, name := range DomainNames() {
+		if !included[name] && countDomain(name, &doc.Domains) > 0 {
+			errs = append(errs, fmt.Sprintf("snapshot: domain %q carries content but is not listed in included_domains", name))
+		}
+	}
+	if len(errs) > 0 {
+		return true, errs
 	}
 
 	// NOTE (G-8/G-9 E2E finding, 2026-07-20): the §5.3 example semantic
@@ -361,20 +414,55 @@ func stageValidate(doc *Document, selected []DomainEntry) (compatible bool, errs
 	return true, nil
 }
 
+// selectForRestore derives the effective restore selection: the document's
+// included_domains intersected with the caller's `components`. With no
+// components given, the document's own coverage is the selection -- so a
+// partial document wipes and applies exactly what it covers, nothing more.
+// An explicitly requested component the document does not cover is an
+// error, not a silent no-op: the caller asked to restore state this
+// document cannot provide.
+func selectForRestore(doc *Document, components []string) ([]DomainEntry, error) {
+	if len(components) == 0 {
+		return Select(doc.IncludedDomains)
+	}
+	included := make(map[string]bool, len(doc.IncludedDomains))
+	for _, name := range doc.IncludedDomains {
+		included[name] = true
+	}
+	for _, name := range components {
+		if !included[name] {
+			return nil, fmt.Errorf("snapshot: component %q is not covered by this document (included_domains: %v)", name, doc.IncludedDomains)
+		}
+	}
+	return Select(components)
+}
+
 // ---------------------------------------------------------------------
 // Stage 3: PLAN
 // ---------------------------------------------------------------------
 
-func (e *Engine) stagePlan(doc *Document, selected []DomainEntry) ([]PlanItem, error) {
+// stagePlan builds the ordered per-domain plan. The Boot variant never
+// calls Get: the datapath is empty at boot BY THE SAME PREMISE that lets
+// Boot skip PRESERVE and the pre-apply wipe, so to_delete is 0 by
+// definition -- and, critically, a boot-time Get can race an optional
+// subsystem (gobgpd, ipsec) that has not finished starting, turning a
+// startup-ordering hiccup into a failed (and quarantined) boot restore.
+// Discovered live: a BGP-enabled gateway quarantined its snapshot on
+// EVERY boot because PLAN's bgp Get hit the not-yet-listening gobgpd.
+func (e *Engine) stagePlan(doc *Document, selected []DomainEntry, boot bool) ([]PlanItem, error) {
 	plan := make([]PlanItem, 0, len(selected))
 	for _, entry := range selected {
-		scratch := &Document{}
-		if err := entry.Get(e.Hooks, scratch); err != nil {
-			return nil, fmt.Errorf("plan: get %s: %w", entry.Name, err)
+		toDelete := 0
+		if !boot {
+			scratch := &Document{}
+			if err := entry.Get(e.Hooks, scratch); err != nil {
+				return nil, fmt.Errorf("plan: get %s: %w", entry.Name, err)
+			}
+			toDelete = countDomain(entry.Name, &scratch.Domains)
 		}
 		plan = append(plan, PlanItem{
 			Domain:   entry.Name,
-			ToDelete: countDomain(entry.Name, &scratch.Domains),
+			ToDelete: toDelete,
 			ToApply:  countDomain(entry.Name, &doc.Domains),
 		})
 	}
@@ -400,6 +488,8 @@ func countDomain(name string, d *Domains) int {
 		return len(d.Session)
 	case DomainSessionUlCl:
 		return len(d.SessionUlCl)
+	case DomainKvExactBinding:
+		return len(d.KvExactBinding)
 	case DomainIPFilter:
 		return len(d.IPFilter)
 	case DomainSecurityRate:
@@ -436,10 +526,19 @@ func countDomain(name string, d *Domains) int {
 
 func (e *Engine) stagePreserve(selected []DomainEntry) (*Document, error) {
 	preDoc := NewDocument(e.GatewayVersion, e.Hostname, TriggerPreRestore)
+	// The pre-restore capture covers exactly the restore's selection: its
+	// own included_domains must say so, or restoring it later (manually,
+	// after a rollback) would wipe domains it never captured.
+	preDoc.IncludedDomains = entryNames(selected)
 	for _, entry := range selected {
 		if err := entry.Get(e.Hooks, preDoc); err != nil {
 			return nil, fmt.Errorf("get %s: %w", entry.Name, err)
 		}
+	}
+	// Same canonicalization as Capture: the pre-restore document is a
+	// persisted artifact too.
+	if err := NormalizeDomains(&preDoc.Domains); err != nil {
+		return nil, fmt.Errorf("normalize: %w", err)
 	}
 	snapshotTotal.WithLabelValues(string(TriggerPreRestore)).Inc()
 	return preDoc, nil
@@ -519,26 +618,41 @@ func (e *Engine) stageApply(doc *Document, selected []DomainEntry, boot bool) ([
 // Stage 6: VERIFY
 // ---------------------------------------------------------------------
 
-// stageVerify re-Gets each selected domain and compares its live count
-// against the plan's to_apply value (§5.3 step 6), minus any items the
-// apply stage skipped as idempotent duplicates (a duplicate document entry
-// materializes once, not twice). It is only reached when stageApply
-// reported zero errors, at which point every selected domain's Apply
-// necessarily added exactly its full doc-side item count -- so a mismatch
-// here means the backend silently didn't persist what it acknowledged, not
-// a normal apply failure.
-func (e *Engine) stageVerify(doc *Document, plan []PlanItem, selected []DomainEntry, skipped map[string]int) []error {
+// stageVerify re-Gets each selected domain and checks, per §5.3 step 6:
+// first the cheap count pre-check (live count vs the plan's to_apply,
+// minus items the apply stage skipped as idempotent duplicates -- a
+// duplicate document entry materializes once, not twice), then the content
+// digest (DomainDigest, digest.go): the normalized desired-state content
+// the backend now reports must equal the normalized content of the
+// document that was just applied. The count alone lets a backend that
+// silently dropped a field -- or replaced one item with another -- pass;
+// the digest does not. stageVerify is only reached when stageApply
+// reported zero errors, so any mismatch here means the backend didn't
+// persist what it acknowledged.
+func (e *Engine) stageVerify(doc *Document, selected []DomainEntry) []error {
 	var errs []error
-	for i, entry := range selected {
+	for _, entry := range selected {
 		scratch := &Document{}
 		if err := entry.Get(e.Hooks, scratch); err != nil {
 			errs = append(errs, fmt.Errorf("verify: get %s: %w", entry.Name, err))
 			continue
 		}
-		got := countDomain(entry.Name, &scratch.Domains)
-		want := plan[i].ToApply - skipped[entry.Name]
-		if got != want {
-			errs = append(errs, fmt.Errorf("verify: %s: expected %d item(s) after apply, found %d", entry.Name, want, got))
+		wantCount, wantDigest, err := DomainContent(entry.Name, &doc.Domains)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("verify: %s: %w", entry.Name, err))
+			continue
+		}
+		gotCount, gotDigest, err := DomainContent(entry.Name, &scratch.Domains)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("verify: %s: %w", entry.Name, err))
+			continue
+		}
+		if gotCount != wantCount {
+			errs = append(errs, fmt.Errorf("verify: %s: expected %d item(s) after apply, found %d", entry.Name, wantCount, gotCount))
+			continue
+		}
+		if wantDigest != gotDigest {
+			errs = append(errs, fmt.Errorf("verify: %s: content mismatch after apply: live state digests to %s, document to %s", entry.Name, gotDigest, wantDigest))
 		}
 	}
 	return errs
@@ -576,6 +690,21 @@ func (e *Engine) rollback(preDoc *Document, selected []DomainEntry) []error {
 		}
 	}
 	return errs
+}
+
+// allSubsystemStartup reports whether every error is a still-starting
+// subsystem condition (isSubsystemUnavailable, registry.go) -- the
+// boot-retryable class.
+func allSubsystemStartup(errs []error) bool {
+	if len(errs) == 0 {
+		return false
+	}
+	for _, err := range errs {
+		if !isSubsystemUnavailable(err) {
+			return false
+		}
+	}
+	return true
 }
 
 // entryNames extracts DomainEntry.Name in order, for passing a selected

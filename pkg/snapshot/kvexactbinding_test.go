@@ -47,8 +47,8 @@ func TestKvExactBindingDocumentRoundTrip(t *testing.T) {
 	doc.Domains.KvExactBinding = []cmn.KvExactBindingMod{
 		kvTestBindingMod("rule-a"), kvTestBindingMod("rule-b"),
 	}
-	if doc.SchemaVersion != "1.1" {
-		t.Fatalf("new document schema version = %q, want 1.1", doc.SchemaVersion)
+	if doc.SchemaVersion != SchemaVersion {
+		t.Fatalf("new document schema version = %q, want %q", doc.SchemaVersion, SchemaVersion)
 	}
 	enc, err := Encode(doc)
 	if err != nil {

@@ -124,6 +124,10 @@ paths:
           type: string
           enum: [dry-run, commit]
           default: dry-run
+        - name: components
+          in: query
+          description: Comma-separated snapshot domains to restore. Defaults to every domain the document covers (its included_domains). Requesting a domain the document does not cover is refused.
+          type: string
         - name: snapshot
           in: body
           required: true
@@ -9806,6 +9810,12 @@ definitions:
       updowntime:
         type: string
         description: Current uptime
+      remotePort:
+        type: integer
+        description: Configured non-default BGP peering port (0 means the default, 179)
+      multiHop:
+        type: boolean
+        description: Whether eBGP multihop is enabled for this neighbor
 
 
   BGPGlobalConfig:
