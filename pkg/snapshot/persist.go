@@ -76,6 +76,7 @@ func writeAtomic(dir, name string, data []byte) (string, error) {
 		tmp.Close()
 		return "", fmt.Errorf("write temp file: %w", err)
 	}
+	faultCrashPoint("persist-after-temp-write")
 	// Flush file content to stable storage BEFORE the rename publishes it:
 	// otherwise a crash after rename can leave a durable name pointing at
 	// zero-length or partial content.
@@ -89,6 +90,7 @@ func writeAtomic(dir, name string, data []byte) (string, error) {
 	if err := os.Chmod(tmpPath, 0o600); err != nil {
 		return "", fmt.Errorf("chmod temp file: %w", err)
 	}
+	faultCrashPoint("persist-before-rename")
 	if err := os.Rename(tmpPath, finalPath); err != nil {
 		return "", fmt.Errorf("rename temp file: %w", err)
 	}

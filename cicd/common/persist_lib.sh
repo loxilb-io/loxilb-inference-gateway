@@ -220,7 +220,10 @@ plib_start_gw() { # plib_start_gw <llb> <flags...> — kill + scrub + relaunch
         docker exec "$llb" tc qdisc del dev "$ifc" clsact >/dev/null 2>&1
     done
     docker exec "$llb" umount /opt/loxilb/dp >/dev/null 2>&1
-    docker exec -d "$llb" bash -c "ulimit -l unlimited; /root/loxilb-io/loxilb/loxilb $* > /tmp/loxilb.out 2> /tmp/loxilb.err"
+    # PLIB_GW_ENV lets a leg arm per-boot environment (the deterministic
+    # fault hook, LOXI_TEST_FAULT=...) without touching the container.
+    # Empty by default: production-identical launch.
+    docker exec -d "$llb" bash -c "ulimit -l unlimited; ${PLIB_GW_ENV:-} /root/loxilb-io/loxilb/loxilb $* > /tmp/loxilb.out 2> /tmp/loxilb.err"
     for _ in $(seq 1 40); do
         if docker exec "$llb" curl -sf -m 3 "$PLIB_API/version" >/dev/null 2>&1; then
             sleep 5; return 0

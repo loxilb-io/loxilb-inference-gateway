@@ -801,6 +801,10 @@ func (e *Engine) stageApply(doc *Document, selected []DomainEntry, boot bool) ([
 	var errs []error
 	var skipped map[string]int
 	for _, entry := range selected {
+		if ferr := faultApplyError(entry.Name, false); ferr != nil {
+			errs = append(errs, fmt.Errorf("apply %s: %w", entry.Name, ferr))
+			break
+		}
 		_, nskip, err := entry.Apply(e.Hooks, doc, boot)
 		if nskip > 0 {
 			if skipped == nil {
@@ -887,6 +891,10 @@ func (e *Engine) rollback(preDoc *Document, selected []DomainEntry) []error {
 	}
 
 	for _, entry := range selected {
+		if ferr := faultApplyError(entry.Name, true); ferr != nil {
+			errs = append(errs, fmt.Errorf("rollback apply %s: %w", entry.Name, ferr))
+			continue
+		}
 		if _, _, err := entry.Apply(e.Hooks, preDoc, true); err != nil {
 			errs = append(errs, fmt.Errorf("rollback apply %s: %w", entry.Name, err))
 		}

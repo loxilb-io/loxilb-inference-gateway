@@ -656,5 +656,125 @@ echo "$resp" | grep -q 'X-Echo-Backend' \
     && pass "recovered VIP routes traffic after the secret-recovery boot" \
     || fail "recovered VIP probe: $resp"
 
+#################################################################################
+echo "=== injected capture failure: persist refused, old snapshot kept, auto-persist surfaced ==="
+#################################################################################
+# LOXI_TEST_FAULT=capture-domain-error:firewall makes every capture fail
+# on the firewall Get. A manual persist must answer 5xx with the previous
+# snapshot.json untouched, and a config change whose auto-persist then
+# fails must surface on the readiness API instead of dying silently.
+sum_before=$(sudo jq -r '.checksum' "$CFG/snapshot.json")
+PLIB_GW_ENV="LOXI_TEST_FAULT=capture-domain-error:firewall" plib_start_gw llb1 \
+    || fail "gateway did not come back with the capture fault armed"
+plib_wait_api llb1 || fail "API with capture fault armed"
+wait_replay_receipt llb1 || fail "boot replay under capture fault (apply path is unfaulted)"
+rc=$(plib_curl llb1 -o "$PLIB_ARTIFACTS/persist-fault.json" -w "%{http_code}" -X POST "$PLIB_API/config/persist")
+[[ "$rc" == "500" ]] \
+    && pass "manual persist fails loudly when a domain capture fails (500)" \
+    || fail "faulted persist: HTTP $rc, want 500"
+[[ "$(sudo jq -r '.checksum' "$CFG/snapshot.json")" == "$sum_before" ]] \
+    && pass "previous snapshot.json survived the failed persist" \
+    || fail "snapshot.json changed under a failed capture"
+rc=$(plib_curl llb1 -o /dev/null -w "%{http_code}" -X POST "$PLIB_API/config/firewall" \
+    -H 'Content-Type: application/json' \
+    -d '{"ruleArguments":{"sourceIP":"7.7.7.7/32","destinationIP":"6.6.6.6/32"},"opts":{"drop":true}}')
+[[ "$rc" == "200" || "$rc" == "204" ]] || fail "canary firewall add: HTTP $rc"
+sleep 6   # let the auto-persist debounce fire and fail
+rrc=$(plib_curl llb1 -o "$PLIB_ARTIFACTS/ready-autopersist.json" -w "%{http_code}" "$PLIB_API/status/ready")
+rready=$(jq -r '.ready' < "$PLIB_ARTIFACTS/ready-autopersist.json")
+rreason=$(jq -r '(.reasons // []) | join(" ")' < "$PLIB_ARTIFACTS/ready-autopersist.json")
+if [[ "$rrc" == "503" && "$rready" == "false" ]] && echo "$rreason" | grep -qi "auto-persist"; then
+    pass "auto-persist failure surfaces as NOT-READY with an auto-persist reason"
+else
+    fail "readiness under auto-persist failure: HTTP $rrc ready=$rready reasons=$rreason"
+fi
+PLIB_GW_ENV="" plib_start_gw llb1 || fail "gateway did not come back fault-free"
+plib_wait_api llb1 || fail "API after clearing the capture fault"
+wait_replay_receipt llb1 || fail "clean replay after capture-fault leg"
+rc=$(restore_commit llb1 "$PLIB_ARTIFACTS/good.json")
+[[ "$rc" == "200" && "$(fw_count)" == "1" ]] \
+    && pass "recovered to the good document after the capture-fault leg" \
+    || fail "capture-fault recovery: HTTP $rc fw=$(fw_count)"
+
+#################################################################################
+echo "=== deterministic persist crashes: previous snapshot survives both points ==="
+#################################################################################
+# The fault hook kills the process at the exact points a real crash could
+# hit: after the temp write and just before the rename. Both must leave
+# the previous snapshot.json byte-identical, leave the orphan temp file
+# unconsumed, and boot back cleanly from the old snapshot.
+for point in persist-after-temp-write persist-before-rename; do
+    sum0=$(sudo jq -r '.checksum' "$CFG/snapshot.json")
+    PLIB_GW_ENV="LOXI_TEST_FAULT=$point" plib_start_gw llb1 \
+        || fail "gateway did not come back with $point armed"
+    plib_wait_api llb1 || fail "API with $point armed"
+    wait_replay_receipt llb1 || fail "boot replay with $point armed (persist path untouched at boot)"
+    plib_curl llb1 -o /dev/null -m 10 -X POST "$PLIB_API/config/persist" 2>/dev/null
+    sleep 2
+    if docker exec llb1 pgrep -f '/root/loxilb-io/loxilb/loxilb' >/dev/null 2>&1; then
+        fail "$point: gateway survived the crash point (fault did not fire)"
+    else
+        pass "$point: persist crashed the process at the injected point"
+    fi
+    [[ "$(sudo jq -r '.checksum' "$CFG/snapshot.json")" == "$sum0" ]] \
+        && pass "$point: previous snapshot.json byte-survived the crash" \
+        || fail "$point: snapshot.json changed across the crash"
+    tmpn=$(sudo sh -c "ls $CFG/.snapshot.json-*.tmp 2>/dev/null | wc -l")
+    [[ "$tmpn" -ge 1 ]] \
+        && pass "$point: orphan temp file left behind, never consumed" \
+        || fail "$point: no orphan temp file after the crash"
+    sudo rm -f "$CFG"/.snapshot.json-*.tmp
+    PLIB_GW_ENV="" plib_start_gw llb1 || fail "gateway did not boot after the $point crash"
+    plib_wait_api llb1 || fail "API after the $point crash"
+    wait_replay_receipt llb1 || fail "boot from the previous snapshot after $point"
+    [[ "$(lb_count)" == "1" ]] \
+        && pass "$point: booted from the previous valid snapshot" \
+        || fail "$point: lb=$(lb_count) after crash reboot"
+done
+
+#################################################################################
+echo "=== injected mid-apply failure rolls back; double fault surfaces ROLLBACK-FAILED ==="
+#################################################################################
+# restore-mid-apply:firewall fails the forward APPLY of the firewall
+# domain: the pipeline must roll back to the preserved pre-state and say
+# rolled-back. The -double variant fails the rollback re-apply too and
+# must surface ROLLBACK-FAILED -- never a silent ok. The armed fault
+# would also fire on a boot replay that applies firewall, so these boots
+# run WITHOUT a snapshot (that interaction is the quarantine legs' story,
+# not this one).
+sudo rm -f "$CFG/snapshot.json"
+PLIB_GW_ENV="LOXI_TEST_FAULT=restore-mid-apply:firewall" plib_start_gw llb1 \
+    || fail "gateway did not come back with the mid-apply fault armed"
+plib_wait_api llb1 || fail "API with mid-apply fault armed"
+rc=$(restore_commit llb1 "$PLIB_ARTIFACTS/good.json")
+rres=$(jq -r '.result' < "$PLIB_ARTIFACTS/restore-response.json")
+[[ "$rc" == "500" && "$rres" == "rolled-back" ]] \
+    && pass "mid-apply fault -> 500 rolled-back" \
+    || fail "mid-apply restore: HTTP $rc result=$rres"
+[[ "$(fw_count)" == "0" && "$(lb_count)" == "0" ]] \
+    && pass "rollback restored the (empty) pre-state deep-equal" \
+    || fail "post-rollback state: fw=$(fw_count) lb=$(lb_count), want 0/0"
+
+sudo rm -f "$CFG/snapshot.json"
+PLIB_GW_ENV="LOXI_TEST_FAULT=restore-mid-apply-double:firewall" plib_start_gw llb1 \
+    || fail "gateway did not come back with the double fault armed"
+plib_wait_api llb1 || fail "API with double fault armed"
+rc=$(restore_commit llb1 "$PLIB_ARTIFACTS/good.json")
+rres=$(jq -r '.result' < "$PLIB_ARTIFACTS/restore-response.json")
+[[ "$rc" == "500" && "$rres" == "ROLLBACK-FAILED" ]] \
+    && pass "double fault -> ROLLBACK-FAILED surfaced, not a silent ok" \
+    || fail "double-fault restore: HTTP $rc result=$rres"
+
+PLIB_GW_ENV="" plib_start_gw llb1 || fail "gateway did not come back fault-free after NG-10"
+plib_wait_api llb1 || fail "API after the fault legs"
+rc=$(restore_commit llb1 "$PLIB_ARTIFACTS/good.json")
+[[ "$rc" == "200" && "$(lb_count)" == "1" && "$(fw_count)" == "1" ]] \
+    && pass "clean recovery after the fault-injection legs" \
+    || fail "fault-leg recovery: HTTP $rc lb=$(lb_count) fw=$(fw_count)"
+resp=$($hexec l3h1 curl -s -m 5 "http://${VIP}:2020/" 2>/dev/null | head -3)
+echo "$resp" | grep -q 'X-Echo-Backend' \
+    && pass "VIP routes traffic after the fault-injection legs" \
+    || fail "post-fault VIP probe: $resp"
+
 plib_collect_logs llb1
 exit $code
