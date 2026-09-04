@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// DeleteConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoNoContentCode is the HTTP code returned for type DeleteConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoNoContent
-const DeleteConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoNoContentCode int = 204
+// DeleteConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoOKCode is the HTTP code returned for type DeleteConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoOK
+const DeleteConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoOKCode int = 200
 
 /*
-DeleteConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoNoContent OK
+DeleteConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoOK OK
 
-swagger:response deleteConfigLoadbalancerExternalipaddressIpAddressPortPortProtocolProtoNoContent
+swagger:response deleteConfigLoadbalancerExternalipaddressIpAddressPortPortProtocolProtoOK
 */
-type DeleteConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoNoContent struct {
+type DeleteConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewDeleteConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoNoContent creates DeleteConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoNoContent with default headers values
-func NewDeleteConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoNoContent() *DeleteConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoNoContent {
+// NewDeleteConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoOK creates DeleteConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoOK with default headers values
+func NewDeleteConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoOK() *DeleteConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoOK {
 
-	return &DeleteConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoNoContent{}
+	return &DeleteConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoOK{}
+}
+
+// WithPayload adds the payload to the delete config loadbalancer externalipaddress Ip address port port protocol proto o k response
+func (o *DeleteConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoOK) WithPayload(payload *models.OperationResult) *DeleteConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config loadbalancer externalipaddress Ip address port port protocol proto o k response
+func (o *DeleteConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *DeleteConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *DeleteConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // DeleteConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoBadRequestCode is the HTTP code returned for type DeleteConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoBadRequest

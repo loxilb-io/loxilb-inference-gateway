@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// PostConfigSecurityrateNoContentCode is the HTTP code returned for type PostConfigSecurityrateNoContent
-const PostConfigSecurityrateNoContentCode int = 204
+// PostConfigSecurityrateOKCode is the HTTP code returned for type PostConfigSecurityrateOK
+const PostConfigSecurityrateOKCode int = 200
 
 /*
-PostConfigSecurityrateNoContent OK
+PostConfigSecurityrateOK OK
 
-swagger:response postConfigSecurityrateNoContent
+swagger:response postConfigSecurityrateOK
 */
-type PostConfigSecurityrateNoContent struct {
+type PostConfigSecurityrateOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewPostConfigSecurityrateNoContent creates PostConfigSecurityrateNoContent with default headers values
-func NewPostConfigSecurityrateNoContent() *PostConfigSecurityrateNoContent {
+// NewPostConfigSecurityrateOK creates PostConfigSecurityrateOK with default headers values
+func NewPostConfigSecurityrateOK() *PostConfigSecurityrateOK {
 
-	return &PostConfigSecurityrateNoContent{}
+	return &PostConfigSecurityrateOK{}
+}
+
+// WithPayload adds the payload to the post config securityrate o k response
+func (o *PostConfigSecurityrateOK) WithPayload(payload *models.OperationResult) *PostConfigSecurityrateOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config securityrate o k response
+func (o *PostConfigSecurityrateOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *PostConfigSecurityrateNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *PostConfigSecurityrateOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // PostConfigSecurityrateBadRequestCode is the HTTP code returned for type PostConfigSecurityrateBadRequest

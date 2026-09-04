@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// PostConfigFdbNoContentCode is the HTTP code returned for type PostConfigFdbNoContent
-const PostConfigFdbNoContentCode int = 204
+// PostConfigFdbOKCode is the HTTP code returned for type PostConfigFdbOK
+const PostConfigFdbOKCode int = 200
 
 /*
-PostConfigFdbNoContent OK
+PostConfigFdbOK OK
 
-swagger:response postConfigFdbNoContent
+swagger:response postConfigFdbOK
 */
-type PostConfigFdbNoContent struct {
+type PostConfigFdbOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewPostConfigFdbNoContent creates PostConfigFdbNoContent with default headers values
-func NewPostConfigFdbNoContent() *PostConfigFdbNoContent {
+// NewPostConfigFdbOK creates PostConfigFdbOK with default headers values
+func NewPostConfigFdbOK() *PostConfigFdbOK {
 
-	return &PostConfigFdbNoContent{}
+	return &PostConfigFdbOK{}
+}
+
+// WithPayload adds the payload to the post config fdb o k response
+func (o *PostConfigFdbOK) WithPayload(payload *models.OperationResult) *PostConfigFdbOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config fdb o k response
+func (o *PostConfigFdbOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *PostConfigFdbNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *PostConfigFdbOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // PostConfigFdbBadRequestCode is the HTTP code returned for type PostConfigFdbBadRequest

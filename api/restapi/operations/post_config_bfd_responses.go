@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// PostConfigBfdNoContentCode is the HTTP code returned for type PostConfigBfdNoContent
-const PostConfigBfdNoContentCode int = 204
+// PostConfigBfdOKCode is the HTTP code returned for type PostConfigBfdOK
+const PostConfigBfdOKCode int = 200
 
 /*
-PostConfigBfdNoContent OK
+PostConfigBfdOK OK
 
-swagger:response postConfigBfdNoContent
+swagger:response postConfigBfdOK
 */
-type PostConfigBfdNoContent struct {
+type PostConfigBfdOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewPostConfigBfdNoContent creates PostConfigBfdNoContent with default headers values
-func NewPostConfigBfdNoContent() *PostConfigBfdNoContent {
+// NewPostConfigBfdOK creates PostConfigBfdOK with default headers values
+func NewPostConfigBfdOK() *PostConfigBfdOK {
 
-	return &PostConfigBfdNoContent{}
+	return &PostConfigBfdOK{}
+}
+
+// WithPayload adds the payload to the post config bfd o k response
+func (o *PostConfigBfdOK) WithPayload(payload *models.OperationResult) *PostConfigBfdOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config bfd o k response
+func (o *PostConfigBfdOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *PostConfigBfdNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *PostConfigBfdOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // PostConfigBfdBadRequestCode is the HTTP code returned for type PostConfigBfdBadRequest

@@ -9,29 +9,51 @@ import (
 	"net/http"
 
 	"github.com/go-openapi/runtime"
+
+	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// PostConfigImportNoContentCode is the HTTP code returned for type PostConfigImportNoContent
-const PostConfigImportNoContentCode int = 204
+// PostConfigImportOKCode is the HTTP code returned for type PostConfigImportOK
+const PostConfigImportOKCode int = 200
 
 /*
-PostConfigImportNoContent OK
+PostConfigImportOK OK
 
-swagger:response postConfigImportNoContent
+swagger:response postConfigImportOK
 */
-type PostConfigImportNoContent struct {
+type PostConfigImportOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewPostConfigImportNoContent creates PostConfigImportNoContent with default headers values
-func NewPostConfigImportNoContent() *PostConfigImportNoContent {
+// NewPostConfigImportOK creates PostConfigImportOK with default headers values
+func NewPostConfigImportOK() *PostConfigImportOK {
 
-	return &PostConfigImportNoContent{}
+	return &PostConfigImportOK{}
+}
+
+// WithPayload adds the payload to the post config import o k response
+func (o *PostConfigImportOK) WithPayload(payload *models.OperationResult) *PostConfigImportOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config import o k response
+func (o *PostConfigImportOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *PostConfigImportNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *PostConfigImportOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }

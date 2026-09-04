@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// PostConfigNeighborNoContentCode is the HTTP code returned for type PostConfigNeighborNoContent
-const PostConfigNeighborNoContentCode int = 204
+// PostConfigNeighborOKCode is the HTTP code returned for type PostConfigNeighborOK
+const PostConfigNeighborOKCode int = 200
 
 /*
-PostConfigNeighborNoContent OK
+PostConfigNeighborOK OK
 
-swagger:response postConfigNeighborNoContent
+swagger:response postConfigNeighborOK
 */
-type PostConfigNeighborNoContent struct {
+type PostConfigNeighborOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewPostConfigNeighborNoContent creates PostConfigNeighborNoContent with default headers values
-func NewPostConfigNeighborNoContent() *PostConfigNeighborNoContent {
+// NewPostConfigNeighborOK creates PostConfigNeighborOK with default headers values
+func NewPostConfigNeighborOK() *PostConfigNeighborOK {
 
-	return &PostConfigNeighborNoContent{}
+	return &PostConfigNeighborOK{}
+}
+
+// WithPayload adds the payload to the post config neighbor o k response
+func (o *PostConfigNeighborOK) WithPayload(payload *models.OperationResult) *PostConfigNeighborOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config neighbor o k response
+func (o *PostConfigNeighborOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *PostConfigNeighborNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *PostConfigNeighborOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // PostConfigNeighborBadRequestCode is the HTTP code returned for type PostConfigNeighborBadRequest

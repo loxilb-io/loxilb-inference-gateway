@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// DeleteConfigVlanVlanIDNoContentCode is the HTTP code returned for type DeleteConfigVlanVlanIDNoContent
-const DeleteConfigVlanVlanIDNoContentCode int = 204
+// DeleteConfigVlanVlanIDOKCode is the HTTP code returned for type DeleteConfigVlanVlanIDOK
+const DeleteConfigVlanVlanIDOKCode int = 200
 
 /*
-DeleteConfigVlanVlanIDNoContent OK
+DeleteConfigVlanVlanIDOK OK
 
-swagger:response deleteConfigVlanVlanIdNoContent
+swagger:response deleteConfigVlanVlanIdOK
 */
-type DeleteConfigVlanVlanIDNoContent struct {
+type DeleteConfigVlanVlanIDOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewDeleteConfigVlanVlanIDNoContent creates DeleteConfigVlanVlanIDNoContent with default headers values
-func NewDeleteConfigVlanVlanIDNoContent() *DeleteConfigVlanVlanIDNoContent {
+// NewDeleteConfigVlanVlanIDOK creates DeleteConfigVlanVlanIDOK with default headers values
+func NewDeleteConfigVlanVlanIDOK() *DeleteConfigVlanVlanIDOK {
 
-	return &DeleteConfigVlanVlanIDNoContent{}
+	return &DeleteConfigVlanVlanIDOK{}
+}
+
+// WithPayload adds the payload to the delete config vlan vlan Id o k response
+func (o *DeleteConfigVlanVlanIDOK) WithPayload(payload *models.OperationResult) *DeleteConfigVlanVlanIDOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config vlan vlan Id o k response
+func (o *DeleteConfigVlanVlanIDOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *DeleteConfigVlanVlanIDNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *DeleteConfigVlanVlanIDOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // DeleteConfigVlanVlanIDBadRequestCode is the HTTP code returned for type DeleteConfigVlanVlanIDBadRequest

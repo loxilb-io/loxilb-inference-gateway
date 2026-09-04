@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// DeleteConfigPolicyIdentIdentNoContentCode is the HTTP code returned for type DeleteConfigPolicyIdentIdentNoContent
-const DeleteConfigPolicyIdentIdentNoContentCode int = 204
+// DeleteConfigPolicyIdentIdentOKCode is the HTTP code returned for type DeleteConfigPolicyIdentIdentOK
+const DeleteConfigPolicyIdentIdentOKCode int = 200
 
 /*
-DeleteConfigPolicyIdentIdentNoContent OK
+DeleteConfigPolicyIdentIdentOK OK
 
-swagger:response deleteConfigPolicyIdentIdentNoContent
+swagger:response deleteConfigPolicyIdentIdentOK
 */
-type DeleteConfigPolicyIdentIdentNoContent struct {
+type DeleteConfigPolicyIdentIdentOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewDeleteConfigPolicyIdentIdentNoContent creates DeleteConfigPolicyIdentIdentNoContent with default headers values
-func NewDeleteConfigPolicyIdentIdentNoContent() *DeleteConfigPolicyIdentIdentNoContent {
+// NewDeleteConfigPolicyIdentIdentOK creates DeleteConfigPolicyIdentIdentOK with default headers values
+func NewDeleteConfigPolicyIdentIdentOK() *DeleteConfigPolicyIdentIdentOK {
 
-	return &DeleteConfigPolicyIdentIdentNoContent{}
+	return &DeleteConfigPolicyIdentIdentOK{}
+}
+
+// WithPayload adds the payload to the delete config policy ident ident o k response
+func (o *DeleteConfigPolicyIdentIdentOK) WithPayload(payload *models.OperationResult) *DeleteConfigPolicyIdentIdentOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config policy ident ident o k response
+func (o *DeleteConfigPolicyIdentIdentOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *DeleteConfigPolicyIdentIdentNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *DeleteConfigPolicyIdentIdentOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // DeleteConfigPolicyIdentIdentBadRequestCode is the HTTP code returned for type DeleteConfigPolicyIdentIdentBadRequest

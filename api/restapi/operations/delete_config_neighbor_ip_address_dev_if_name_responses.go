@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// DeleteConfigNeighborIPAddressDevIfNameNoContentCode is the HTTP code returned for type DeleteConfigNeighborIPAddressDevIfNameNoContent
-const DeleteConfigNeighborIPAddressDevIfNameNoContentCode int = 204
+// DeleteConfigNeighborIPAddressDevIfNameOKCode is the HTTP code returned for type DeleteConfigNeighborIPAddressDevIfNameOK
+const DeleteConfigNeighborIPAddressDevIfNameOKCode int = 200
 
 /*
-DeleteConfigNeighborIPAddressDevIfNameNoContent OK
+DeleteConfigNeighborIPAddressDevIfNameOK OK
 
-swagger:response deleteConfigNeighborIpAddressDevIfNameNoContent
+swagger:response deleteConfigNeighborIpAddressDevIfNameOK
 */
-type DeleteConfigNeighborIPAddressDevIfNameNoContent struct {
+type DeleteConfigNeighborIPAddressDevIfNameOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewDeleteConfigNeighborIPAddressDevIfNameNoContent creates DeleteConfigNeighborIPAddressDevIfNameNoContent with default headers values
-func NewDeleteConfigNeighborIPAddressDevIfNameNoContent() *DeleteConfigNeighborIPAddressDevIfNameNoContent {
+// NewDeleteConfigNeighborIPAddressDevIfNameOK creates DeleteConfigNeighborIPAddressDevIfNameOK with default headers values
+func NewDeleteConfigNeighborIPAddressDevIfNameOK() *DeleteConfigNeighborIPAddressDevIfNameOK {
 
-	return &DeleteConfigNeighborIPAddressDevIfNameNoContent{}
+	return &DeleteConfigNeighborIPAddressDevIfNameOK{}
+}
+
+// WithPayload adds the payload to the delete config neighbor Ip address dev if name o k response
+func (o *DeleteConfigNeighborIPAddressDevIfNameOK) WithPayload(payload *models.OperationResult) *DeleteConfigNeighborIPAddressDevIfNameOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config neighbor Ip address dev if name o k response
+func (o *DeleteConfigNeighborIPAddressDevIfNameOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *DeleteConfigNeighborIPAddressDevIfNameNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *DeleteConfigNeighborIPAddressDevIfNameOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // DeleteConfigNeighborIPAddressDevIfNameBadRequestCode is the HTTP code returned for type DeleteConfigNeighborIPAddressDevIfNameBadRequest

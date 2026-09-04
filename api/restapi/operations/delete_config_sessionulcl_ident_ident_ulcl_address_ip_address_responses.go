@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// DeleteConfigSessionulclIdentIdentUlclAddressIPAddressNoContentCode is the HTTP code returned for type DeleteConfigSessionulclIdentIdentUlclAddressIPAddressNoContent
-const DeleteConfigSessionulclIdentIdentUlclAddressIPAddressNoContentCode int = 204
+// DeleteConfigSessionulclIdentIdentUlclAddressIPAddressOKCode is the HTTP code returned for type DeleteConfigSessionulclIdentIdentUlclAddressIPAddressOK
+const DeleteConfigSessionulclIdentIdentUlclAddressIPAddressOKCode int = 200
 
 /*
-DeleteConfigSessionulclIdentIdentUlclAddressIPAddressNoContent OK
+DeleteConfigSessionulclIdentIdentUlclAddressIPAddressOK OK
 
-swagger:response deleteConfigSessionulclIdentIdentUlclAddressIpAddressNoContent
+swagger:response deleteConfigSessionulclIdentIdentUlclAddressIpAddressOK
 */
-type DeleteConfigSessionulclIdentIdentUlclAddressIPAddressNoContent struct {
+type DeleteConfigSessionulclIdentIdentUlclAddressIPAddressOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewDeleteConfigSessionulclIdentIdentUlclAddressIPAddressNoContent creates DeleteConfigSessionulclIdentIdentUlclAddressIPAddressNoContent with default headers values
-func NewDeleteConfigSessionulclIdentIdentUlclAddressIPAddressNoContent() *DeleteConfigSessionulclIdentIdentUlclAddressIPAddressNoContent {
+// NewDeleteConfigSessionulclIdentIdentUlclAddressIPAddressOK creates DeleteConfigSessionulclIdentIdentUlclAddressIPAddressOK with default headers values
+func NewDeleteConfigSessionulclIdentIdentUlclAddressIPAddressOK() *DeleteConfigSessionulclIdentIdentUlclAddressIPAddressOK {
 
-	return &DeleteConfigSessionulclIdentIdentUlclAddressIPAddressNoContent{}
+	return &DeleteConfigSessionulclIdentIdentUlclAddressIPAddressOK{}
+}
+
+// WithPayload adds the payload to the delete config sessionulcl ident ident ulcl address Ip address o k response
+func (o *DeleteConfigSessionulclIdentIdentUlclAddressIPAddressOK) WithPayload(payload *models.OperationResult) *DeleteConfigSessionulclIdentIdentUlclAddressIPAddressOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config sessionulcl ident ident ulcl address Ip address o k response
+func (o *DeleteConfigSessionulclIdentIdentUlclAddressIPAddressOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *DeleteConfigSessionulclIdentIdentUlclAddressIPAddressNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *DeleteConfigSessionulclIdentIdentUlclAddressIPAddressOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // DeleteConfigSessionulclIdentIdentUlclAddressIPAddressBadRequestCode is the HTTP code returned for type DeleteConfigSessionulclIdentIdentUlclAddressIPAddressBadRequest

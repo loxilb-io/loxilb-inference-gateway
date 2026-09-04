@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// PostConfigBgpNeighNoContentCode is the HTTP code returned for type PostConfigBgpNeighNoContent
-const PostConfigBgpNeighNoContentCode int = 204
+// PostConfigBgpNeighOKCode is the HTTP code returned for type PostConfigBgpNeighOK
+const PostConfigBgpNeighOKCode int = 200
 
 /*
-PostConfigBgpNeighNoContent OK
+PostConfigBgpNeighOK OK
 
-swagger:response postConfigBgpNeighNoContent
+swagger:response postConfigBgpNeighOK
 */
-type PostConfigBgpNeighNoContent struct {
+type PostConfigBgpNeighOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewPostConfigBgpNeighNoContent creates PostConfigBgpNeighNoContent with default headers values
-func NewPostConfigBgpNeighNoContent() *PostConfigBgpNeighNoContent {
+// NewPostConfigBgpNeighOK creates PostConfigBgpNeighOK with default headers values
+func NewPostConfigBgpNeighOK() *PostConfigBgpNeighOK {
 
-	return &PostConfigBgpNeighNoContent{}
+	return &PostConfigBgpNeighOK{}
+}
+
+// WithPayload adds the payload to the post config bgp neigh o k response
+func (o *PostConfigBgpNeighOK) WithPayload(payload *models.OperationResult) *PostConfigBgpNeighOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config bgp neigh o k response
+func (o *PostConfigBgpNeighOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *PostConfigBgpNeighNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *PostConfigBgpNeighOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // PostConfigBgpNeighBadRequestCode is the HTTP code returned for type PostConfigBgpNeighBadRequest

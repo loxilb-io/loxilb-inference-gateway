@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// DeleteConfigBgpPolicyDefinitionsPolicyNameNoContentCode is the HTTP code returned for type DeleteConfigBgpPolicyDefinitionsPolicyNameNoContent
-const DeleteConfigBgpPolicyDefinitionsPolicyNameNoContentCode int = 204
+// DeleteConfigBgpPolicyDefinitionsPolicyNameOKCode is the HTTP code returned for type DeleteConfigBgpPolicyDefinitionsPolicyNameOK
+const DeleteConfigBgpPolicyDefinitionsPolicyNameOKCode int = 200
 
 /*
-DeleteConfigBgpPolicyDefinitionsPolicyNameNoContent OK
+DeleteConfigBgpPolicyDefinitionsPolicyNameOK OK
 
-swagger:response deleteConfigBgpPolicyDefinitionsPolicyNameNoContent
+swagger:response deleteConfigBgpPolicyDefinitionsPolicyNameOK
 */
-type DeleteConfigBgpPolicyDefinitionsPolicyNameNoContent struct {
+type DeleteConfigBgpPolicyDefinitionsPolicyNameOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewDeleteConfigBgpPolicyDefinitionsPolicyNameNoContent creates DeleteConfigBgpPolicyDefinitionsPolicyNameNoContent with default headers values
-func NewDeleteConfigBgpPolicyDefinitionsPolicyNameNoContent() *DeleteConfigBgpPolicyDefinitionsPolicyNameNoContent {
+// NewDeleteConfigBgpPolicyDefinitionsPolicyNameOK creates DeleteConfigBgpPolicyDefinitionsPolicyNameOK with default headers values
+func NewDeleteConfigBgpPolicyDefinitionsPolicyNameOK() *DeleteConfigBgpPolicyDefinitionsPolicyNameOK {
 
-	return &DeleteConfigBgpPolicyDefinitionsPolicyNameNoContent{}
+	return &DeleteConfigBgpPolicyDefinitionsPolicyNameOK{}
+}
+
+// WithPayload adds the payload to the delete config bgp policy definitions policy name o k response
+func (o *DeleteConfigBgpPolicyDefinitionsPolicyNameOK) WithPayload(payload *models.OperationResult) *DeleteConfigBgpPolicyDefinitionsPolicyNameOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config bgp policy definitions policy name o k response
+func (o *DeleteConfigBgpPolicyDefinitionsPolicyNameOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *DeleteConfigBgpPolicyDefinitionsPolicyNameNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *DeleteConfigBgpPolicyDefinitionsPolicyNameOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // DeleteConfigBgpPolicyDefinitionsPolicyNameBadRequestCode is the HTTP code returned for type DeleteConfigBgpPolicyDefinitionsPolicyNameBadRequest

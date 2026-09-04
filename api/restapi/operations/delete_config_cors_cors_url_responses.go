@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// DeleteConfigCorsCorsURLNoContentCode is the HTTP code returned for type DeleteConfigCorsCorsURLNoContent
-const DeleteConfigCorsCorsURLNoContentCode int = 204
+// DeleteConfigCorsCorsURLOKCode is the HTTP code returned for type DeleteConfigCorsCorsURLOK
+const DeleteConfigCorsCorsURLOKCode int = 200
 
 /*
-DeleteConfigCorsCorsURLNoContent OK
+DeleteConfigCorsCorsURLOK OK
 
-swagger:response deleteConfigCorsCorsUrlNoContent
+swagger:response deleteConfigCorsCorsUrlOK
 */
-type DeleteConfigCorsCorsURLNoContent struct {
+type DeleteConfigCorsCorsURLOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewDeleteConfigCorsCorsURLNoContent creates DeleteConfigCorsCorsURLNoContent with default headers values
-func NewDeleteConfigCorsCorsURLNoContent() *DeleteConfigCorsCorsURLNoContent {
+// NewDeleteConfigCorsCorsURLOK creates DeleteConfigCorsCorsURLOK with default headers values
+func NewDeleteConfigCorsCorsURLOK() *DeleteConfigCorsCorsURLOK {
 
-	return &DeleteConfigCorsCorsURLNoContent{}
+	return &DeleteConfigCorsCorsURLOK{}
+}
+
+// WithPayload adds the payload to the delete config cors cors Url o k response
+func (o *DeleteConfigCorsCorsURLOK) WithPayload(payload *models.OperationResult) *DeleteConfigCorsCorsURLOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config cors cors Url o k response
+func (o *DeleteConfigCorsCorsURLOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *DeleteConfigCorsCorsURLNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *DeleteConfigCorsCorsURLOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // DeleteConfigCorsCorsURLBadRequestCode is the HTTP code returned for type DeleteConfigCorsCorsURLBadRequest

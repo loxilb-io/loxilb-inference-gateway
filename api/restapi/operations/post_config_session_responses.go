@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// PostConfigSessionNoContentCode is the HTTP code returned for type PostConfigSessionNoContent
-const PostConfigSessionNoContentCode int = 204
+// PostConfigSessionOKCode is the HTTP code returned for type PostConfigSessionOK
+const PostConfigSessionOKCode int = 200
 
 /*
-PostConfigSessionNoContent OK
+PostConfigSessionOK OK
 
-swagger:response postConfigSessionNoContent
+swagger:response postConfigSessionOK
 */
-type PostConfigSessionNoContent struct {
+type PostConfigSessionOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewPostConfigSessionNoContent creates PostConfigSessionNoContent with default headers values
-func NewPostConfigSessionNoContent() *PostConfigSessionNoContent {
+// NewPostConfigSessionOK creates PostConfigSessionOK with default headers values
+func NewPostConfigSessionOK() *PostConfigSessionOK {
 
-	return &PostConfigSessionNoContent{}
+	return &PostConfigSessionOK{}
+}
+
+// WithPayload adds the payload to the post config session o k response
+func (o *PostConfigSessionOK) WithPayload(payload *models.OperationResult) *PostConfigSessionOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config session o k response
+func (o *PostConfigSessionOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *PostConfigSessionNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *PostConfigSessionOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // PostConfigSessionBadRequestCode is the HTTP code returned for type PostConfigSessionBadRequest

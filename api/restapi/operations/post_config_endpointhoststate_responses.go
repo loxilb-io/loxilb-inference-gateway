@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// PostConfigEndpointhoststateNoContentCode is the HTTP code returned for type PostConfigEndpointhoststateNoContent
-const PostConfigEndpointhoststateNoContentCode int = 204
+// PostConfigEndpointhoststateOKCode is the HTTP code returned for type PostConfigEndpointhoststateOK
+const PostConfigEndpointhoststateOKCode int = 200
 
 /*
-PostConfigEndpointhoststateNoContent OK
+PostConfigEndpointhoststateOK OK
 
-swagger:response postConfigEndpointhoststateNoContent
+swagger:response postConfigEndpointhoststateOK
 */
-type PostConfigEndpointhoststateNoContent struct {
+type PostConfigEndpointhoststateOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewPostConfigEndpointhoststateNoContent creates PostConfigEndpointhoststateNoContent with default headers values
-func NewPostConfigEndpointhoststateNoContent() *PostConfigEndpointhoststateNoContent {
+// NewPostConfigEndpointhoststateOK creates PostConfigEndpointhoststateOK with default headers values
+func NewPostConfigEndpointhoststateOK() *PostConfigEndpointhoststateOK {
 
-	return &PostConfigEndpointhoststateNoContent{}
+	return &PostConfigEndpointhoststateOK{}
+}
+
+// WithPayload adds the payload to the post config endpointhoststate o k response
+func (o *PostConfigEndpointhoststateOK) WithPayload(payload *models.OperationResult) *PostConfigEndpointhoststateOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config endpointhoststate o k response
+func (o *PostConfigEndpointhoststateOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *PostConfigEndpointhoststateNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *PostConfigEndpointhoststateOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // PostConfigEndpointhoststateBadRequestCode is the HTTP code returned for type PostConfigEndpointhoststateBadRequest

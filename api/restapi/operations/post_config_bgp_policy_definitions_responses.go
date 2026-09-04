@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// PostConfigBgpPolicyDefinitionsNoContentCode is the HTTP code returned for type PostConfigBgpPolicyDefinitionsNoContent
-const PostConfigBgpPolicyDefinitionsNoContentCode int = 204
+// PostConfigBgpPolicyDefinitionsOKCode is the HTTP code returned for type PostConfigBgpPolicyDefinitionsOK
+const PostConfigBgpPolicyDefinitionsOKCode int = 200
 
 /*
-PostConfigBgpPolicyDefinitionsNoContent OK
+PostConfigBgpPolicyDefinitionsOK OK
 
-swagger:response postConfigBgpPolicyDefinitionsNoContent
+swagger:response postConfigBgpPolicyDefinitionsOK
 */
-type PostConfigBgpPolicyDefinitionsNoContent struct {
+type PostConfigBgpPolicyDefinitionsOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewPostConfigBgpPolicyDefinitionsNoContent creates PostConfigBgpPolicyDefinitionsNoContent with default headers values
-func NewPostConfigBgpPolicyDefinitionsNoContent() *PostConfigBgpPolicyDefinitionsNoContent {
+// NewPostConfigBgpPolicyDefinitionsOK creates PostConfigBgpPolicyDefinitionsOK with default headers values
+func NewPostConfigBgpPolicyDefinitionsOK() *PostConfigBgpPolicyDefinitionsOK {
 
-	return &PostConfigBgpPolicyDefinitionsNoContent{}
+	return &PostConfigBgpPolicyDefinitionsOK{}
+}
+
+// WithPayload adds the payload to the post config bgp policy definitions o k response
+func (o *PostConfigBgpPolicyDefinitionsOK) WithPayload(payload *models.OperationResult) *PostConfigBgpPolicyDefinitionsOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config bgp policy definitions o k response
+func (o *PostConfigBgpPolicyDefinitionsOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *PostConfigBgpPolicyDefinitionsNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *PostConfigBgpPolicyDefinitionsOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // PostConfigBgpPolicyDefinitionsBadRequestCode is the HTTP code returned for type PostConfigBgpPolicyDefinitionsBadRequest

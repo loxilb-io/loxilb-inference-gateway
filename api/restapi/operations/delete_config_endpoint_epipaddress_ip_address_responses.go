@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// DeleteConfigEndpointEpipaddressIPAddressNoContentCode is the HTTP code returned for type DeleteConfigEndpointEpipaddressIPAddressNoContent
-const DeleteConfigEndpointEpipaddressIPAddressNoContentCode int = 204
+// DeleteConfigEndpointEpipaddressIPAddressOKCode is the HTTP code returned for type DeleteConfigEndpointEpipaddressIPAddressOK
+const DeleteConfigEndpointEpipaddressIPAddressOKCode int = 200
 
 /*
-DeleteConfigEndpointEpipaddressIPAddressNoContent OK
+DeleteConfigEndpointEpipaddressIPAddressOK OK
 
-swagger:response deleteConfigEndpointEpipaddressIpAddressNoContent
+swagger:response deleteConfigEndpointEpipaddressIpAddressOK
 */
-type DeleteConfigEndpointEpipaddressIPAddressNoContent struct {
+type DeleteConfigEndpointEpipaddressIPAddressOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewDeleteConfigEndpointEpipaddressIPAddressNoContent creates DeleteConfigEndpointEpipaddressIPAddressNoContent with default headers values
-func NewDeleteConfigEndpointEpipaddressIPAddressNoContent() *DeleteConfigEndpointEpipaddressIPAddressNoContent {
+// NewDeleteConfigEndpointEpipaddressIPAddressOK creates DeleteConfigEndpointEpipaddressIPAddressOK with default headers values
+func NewDeleteConfigEndpointEpipaddressIPAddressOK() *DeleteConfigEndpointEpipaddressIPAddressOK {
 
-	return &DeleteConfigEndpointEpipaddressIPAddressNoContent{}
+	return &DeleteConfigEndpointEpipaddressIPAddressOK{}
+}
+
+// WithPayload adds the payload to the delete config endpoint epipaddress Ip address o k response
+func (o *DeleteConfigEndpointEpipaddressIPAddressOK) WithPayload(payload *models.OperationResult) *DeleteConfigEndpointEpipaddressIPAddressOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config endpoint epipaddress Ip address o k response
+func (o *DeleteConfigEndpointEpipaddressIPAddressOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *DeleteConfigEndpointEpipaddressIPAddressNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *DeleteConfigEndpointEpipaddressIPAddressOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // DeleteConfigEndpointEpipaddressIPAddressBadRequestCode is the HTTP code returned for type DeleteConfigEndpointEpipaddressIPAddressBadRequest

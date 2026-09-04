@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// PostConfigPolicyNoContentCode is the HTTP code returned for type PostConfigPolicyNoContent
-const PostConfigPolicyNoContentCode int = 204
+// PostConfigPolicyOKCode is the HTTP code returned for type PostConfigPolicyOK
+const PostConfigPolicyOKCode int = 200
 
 /*
-PostConfigPolicyNoContent OK
+PostConfigPolicyOK OK
 
-swagger:response postConfigPolicyNoContent
+swagger:response postConfigPolicyOK
 */
-type PostConfigPolicyNoContent struct {
+type PostConfigPolicyOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewPostConfigPolicyNoContent creates PostConfigPolicyNoContent with default headers values
-func NewPostConfigPolicyNoContent() *PostConfigPolicyNoContent {
+// NewPostConfigPolicyOK creates PostConfigPolicyOK with default headers values
+func NewPostConfigPolicyOK() *PostConfigPolicyOK {
 
-	return &PostConfigPolicyNoContent{}
+	return &PostConfigPolicyOK{}
+}
+
+// WithPayload adds the payload to the post config policy o k response
+func (o *PostConfigPolicyOK) WithPayload(payload *models.OperationResult) *PostConfigPolicyOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config policy o k response
+func (o *PostConfigPolicyOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *PostConfigPolicyNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *PostConfigPolicyOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // PostConfigPolicyBadRequestCode is the HTTP code returned for type PostConfigPolicyBadRequest

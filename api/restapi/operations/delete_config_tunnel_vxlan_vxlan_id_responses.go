@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// DeleteConfigTunnelVxlanVxlanIDNoContentCode is the HTTP code returned for type DeleteConfigTunnelVxlanVxlanIDNoContent
-const DeleteConfigTunnelVxlanVxlanIDNoContentCode int = 204
+// DeleteConfigTunnelVxlanVxlanIDOKCode is the HTTP code returned for type DeleteConfigTunnelVxlanVxlanIDOK
+const DeleteConfigTunnelVxlanVxlanIDOKCode int = 200
 
 /*
-DeleteConfigTunnelVxlanVxlanIDNoContent OK
+DeleteConfigTunnelVxlanVxlanIDOK OK
 
-swagger:response deleteConfigTunnelVxlanVxlanIdNoContent
+swagger:response deleteConfigTunnelVxlanVxlanIdOK
 */
-type DeleteConfigTunnelVxlanVxlanIDNoContent struct {
+type DeleteConfigTunnelVxlanVxlanIDOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewDeleteConfigTunnelVxlanVxlanIDNoContent creates DeleteConfigTunnelVxlanVxlanIDNoContent with default headers values
-func NewDeleteConfigTunnelVxlanVxlanIDNoContent() *DeleteConfigTunnelVxlanVxlanIDNoContent {
+// NewDeleteConfigTunnelVxlanVxlanIDOK creates DeleteConfigTunnelVxlanVxlanIDOK with default headers values
+func NewDeleteConfigTunnelVxlanVxlanIDOK() *DeleteConfigTunnelVxlanVxlanIDOK {
 
-	return &DeleteConfigTunnelVxlanVxlanIDNoContent{}
+	return &DeleteConfigTunnelVxlanVxlanIDOK{}
+}
+
+// WithPayload adds the payload to the delete config tunnel vxlan vxlan Id o k response
+func (o *DeleteConfigTunnelVxlanVxlanIDOK) WithPayload(payload *models.OperationResult) *DeleteConfigTunnelVxlanVxlanIDOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config tunnel vxlan vxlan Id o k response
+func (o *DeleteConfigTunnelVxlanVxlanIDOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *DeleteConfigTunnelVxlanVxlanIDNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *DeleteConfigTunnelVxlanVxlanIDOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // DeleteConfigTunnelVxlanVxlanIDUnauthorizedCode is the HTTP code returned for type DeleteConfigTunnelVxlanVxlanIDUnauthorized
