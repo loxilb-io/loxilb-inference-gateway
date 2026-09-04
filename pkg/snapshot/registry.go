@@ -332,6 +332,45 @@ func isIdempotentExists(err error) bool {
 	return false
 }
 
+// SubsystemStartupErrors reports whether EVERY error in errs looks like an
+// optional subsystem that has not finished initializing yet (the loxinet
+// nil-guard messages, plus the transport shapes a gRPC-backed daemon emits
+// while its socket is still coming up). It is the shared rule behind two
+// retries of the same startup window: the boot replay's (api/loxinlp,
+// which runs before NewIPsecH and the BGP speaker are up) and the REST
+// commit restore's.
+//
+// It says nothing about whether a subsystem is PERMANENTLY absent -- the
+// two are indistinguishable from the message alone, which is why both
+// callers retry for a bounded time and then fail loudly: a document
+// carrying configuration for a subsystem this gateway does not run must
+// still be refused, just a few seconds later.
+func SubsystemStartupErrors(errs []string) bool {
+	if len(errs) == 0 {
+		return false
+	}
+	for _, e := range errs {
+		if !isStartupMessage(strings.ToLower(e)) {
+			return false
+		}
+	}
+	return true
+}
+
+func isStartupMessage(m string) bool {
+	return strings.Contains(m, "not initialized") ||
+		strings.Contains(m, "not running") ||
+		strings.Contains(m, "mode is disabled") ||
+		strings.Contains(m, "bgp only mode") ||
+		// gRPC-backed subsystems (gobgpd) report "not up yet" as a
+		// transport error while their socket is still coming up, and as
+		// "bgp server hasn't started yet" between socket-up and the
+		// global-config push that starts the speaker.
+		strings.Contains(m, "code = unavailable") ||
+		strings.Contains(m, "connection refused") ||
+		strings.Contains(m, "hasn't started")
+}
+
 // isSubsystemUnavailable reports whether err is an optional subsystem
 // (BFD, BGP, IPsec) telling us it is not running/enabled on this gateway
 // (loxinet nil-guard convention: "bfd session not running", "loxilb BGP

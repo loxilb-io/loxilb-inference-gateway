@@ -584,3 +584,43 @@ func TestIPsecCertificateDeleteByNameStillWorks(t *testing.T) {
 		t.Fatalf("expected 2 deletions (cert + ca), got %d", n)
 	}
 }
+
+// TestSubsystemStartupErrors pins the rule both retry loops share -- the
+// boot replay's (api/loxinlp) and the REST commit restore's. It must
+// recognize every nil-guard message an optional subsystem emits while it
+// is still coming up, and must NOT swallow a genuine apply failure: a
+// mixed batch is not a startup window, it is a real error that happens to
+// arrive next to one.
+func TestSubsystemStartupErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		errs []string
+		want bool
+	}{
+		{"no errors is not a startup window", nil, false},
+		{"empty slice", []string{}, false},
+		{"ipsec nil guard", []string{"apply ipsec: apply ipsec config: IPsec not initialized"}, true},
+		{"bfd nil guard", []string{"apply bfd: bfd session not running"}, true},
+		{"bgp disabled", []string{"apply bgp: loxilb BGP mode is disabled"}, true},
+		{"bgp only mode", []string{"apply lb: running in bgp only mode"}, true},
+		{"grpc socket not up", []string{"rpc error: code = Unavailable desc = connection refused"}, true},
+		{"speaker not started", []string{"apply bgp: bgp server hasn't started yet"}, true},
+		{"several startup errors together", []string{
+			"apply ipsec: IPsec not initialized",
+			"apply bgp: loxilb BGP mode is disabled",
+		}, true},
+		{"a real apply failure is not a startup window", []string{
+			"apply cert: cert rt-cert1: managed material missing on this node",
+		}, false},
+		{"one real failure among startup ones fails the whole batch", []string{
+			"apply ipsec: IPsec not initialized",
+			"apply cert: digest mismatch",
+		}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := SubsystemStartupErrors(tc.errs); got != tc.want {
+				t.Errorf("SubsystemStartupErrors(%v) = %v, want %v", tc.errs, got, tc.want)
+			}
+		})
+	}
+}

@@ -1946,29 +1946,12 @@ func bootWriteThrough() {
 	tk.LogIt(tk.LogInfo, "nlp: boot: legacy config persisted to %s; the *.txt files are now redundant and can be removed\n", path)
 }
 
-// subsystemStartupErrors reports whether every restore error looks like an
-// optional subsystem that has not finished initializing yet (retryable at
-// boot), as opposed to a genuinely bad document or apply failure.
+// subsystemStartupErrors defers to the shared rule in pkg/snapshot so the
+// boot replay and the REST commit restore retry on exactly the same set of
+// startup-window messages; a rule that drifts between them means one path
+// gives up on a window the other rides out.
 func subsystemStartupErrors(errs []string) bool {
-	if len(errs) == 0 {
-		return false
-	}
-	for _, e := range errs {
-		m := strings.ToLower(e)
-		if !strings.Contains(m, "not initialized") &&
-			!strings.Contains(m, "not running") &&
-			!strings.Contains(m, "mode is disabled") &&
-			// gRPC-backed subsystems (gobgpd) report "not up yet" as a
-			// transport error while their socket is still coming up, and
-			// as "bgp server hasn't started yet" between socket-up and
-			// the global-config push that starts the speaker.
-			!strings.Contains(m, "code = unavailable") &&
-			!strings.Contains(m, "connection refused") &&
-			!strings.Contains(m, "hasn't started") {
-			return false
-		}
-	}
-	return true
+	return snapshot.SubsystemStartupErrors(errs)
 }
 
 func LbSessionGet(done bool) int {

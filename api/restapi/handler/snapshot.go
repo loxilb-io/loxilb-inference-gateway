@@ -220,13 +220,38 @@ func ConfigPostRestore(params operations.PostConfigRestoreParams, principal any)
 	defer snapshotGate.Store(false)
 
 	engine := snapshot.NewEngine(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath)
-	result, err := engine.Restore(raw, snapshot.RestoreOptions{
+	restoreOpts := snapshot.RestoreOptions{
 		Mode: mode,
 		// Selection semantics live in the engine: components intersects
 		// the document's included_domains, an uncovered component is
 		// refused, and empty means "everything the document covers".
 		Components: parseComponents(params.Components),
-	})
+	}
+	result, err := engine.Restore(raw, restoreOpts)
+	// The optional subsystems a restore may apply to (IPsec, BGP) finish
+	// initializing AFTER the API starts serving and after the boot config
+	// replay settles -- so there is a window, measured at 3-4s on the
+	// testbed, in which /status/ready answers READY while a commit restore
+	// of a document covering those domains fails with "IPsec not
+	// initialized". An operator (or an orchestrator gating recovery on
+	// readiness) restoring a node right after boot lands in it. The boot
+	// replay already rides this window out by retrying; the REST path
+	// retries on the same shared rule, for a bounded time, and then fails
+	// loudly exactly as before -- a subsystem this gateway genuinely does
+	// not run must still refuse the document, just a few seconds later.
+	// Retrying is safe because a failed commit rolled the live config back
+	// to its pre-restore state; a ROLLBACK-FAILED result is NOT retried,
+	// since the node is no longer in a known state.
+	const restoreStartupRetries = 8
+	for attempt := 1; err == nil && attempt < restoreStartupRetries &&
+		mode == snapshot.ModeCommit &&
+		result.Result == snapshot.ResultRolledBack &&
+		snapshot.SubsystemStartupErrors(result.Errors); attempt++ {
+		tk.LogIt(tk.LogWarning, "snapshot: restore attempt %d hit subsystem startup ordering (%v); retrying\n",
+			attempt, result.Errors)
+		time.Sleep(time.Second)
+		result, err = engine.Restore(raw, restoreOpts)
+	}
 	if err != nil {
 		// Engine-level precondition failure (not a document/apply problem).
 		return &ErrorResponse{Payload: &models.Error{
