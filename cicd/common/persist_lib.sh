@@ -192,6 +192,35 @@ restore_dryrun() { # restore_dryrun <llb> <docfile> — echoes http code, body i
         -H 'Content-Type: application/json' --data-binary @"$doc"
 }
 
+# ondisk_doc_valid <llb> <label> — integrity oracle for the document as it
+# sits on disk. It stages a copy under the artifacts (evidence, and the
+# live file is root-owned 0600 and gets replaced under us by auto-persist)
+# and feeds it to the dry-run pipeline THROUGH STDIN: curl's own @file
+# reader has been seen to fail on the staged path mid-suite, and the
+# oracle must fail on a bad DOCUMENT, never on how it was handed over.
+# The dry-run parses, checksum-verifies and plans without mutating, so a
+# torn or half-written document cannot answer 200/ok.
+ondisk_doc_valid() {
+    local llb="$1"
+    local label="$2"
+    local src="${llb}_config/snapshot.json"
+    local stage="$PLIB_ARTIFACTS/ondisk-$label.json"
+    local rc res
+    if ! sudo cp "$src" "$stage" 2>"$PLIB_ARTIFACTS/ondisk-$label.err"; then
+        echo "  on-disk document unreadable: $(cat "$PLIB_ARTIFACTS/ondisk-$label.err")"
+        echo "  ${llb}_config contents: $(sudo ls -la "${llb}_config" | tr '\n' ' ')"
+        return 1
+    fi
+    sudo chmod 644 "$stage"
+    rc=$(sudo cat "$stage" | plib_curl "$llb" -o "$PLIB_ARTIFACTS/restore-response.json" \
+        -w "%{http_code}" -X POST "$PLIB_API/config/restore?mode=dry-run" \
+        -H 'Content-Type: application/json' --data-binary @-)
+    res=$(jq -r '.result' < "$PLIB_ARTIFACTS/restore-response.json")
+    [[ "$rc" == "200" && "$res" == "ok" ]] && return 0
+    echo "  dry-run of the on-disk document ($stage, $(sudo stat -c '%a %s bytes' "$stage" 2>&1)): HTTP $rc result=$res"
+    return 1
+}
+
 # --- restarts --------------------------------------------------------------
 
 wait_replay_receipt() { # wait_replay_receipt <llb>

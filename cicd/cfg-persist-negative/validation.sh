@@ -847,11 +847,9 @@ if persist_and_verify llb1; then
 else
     fail "persist after the storm failed (gate leak or unpersistable state)"
 fi
-rc=$(restore_dryrun llb1 "$CFG/snapshot.json")
-rres=$(jq -r '.result' < "$PLIB_ARTIFACTS/restore-response.json")
-[[ "$rc" == "200" && "$rres" == "ok" ]] \
+ondisk_doc_valid llb1 storm \
     && pass "post-storm snapshot.json parses, checksum-verifies and plans cleanly" \
-    || fail "post-storm document integrity: HTTP $rc result=$rres"
+    || fail "post-storm document integrity check failed"
 [[ "$(quarantine_count)" == "$q_storm" ]] \
     && pass "the storm produced no quarantine artifacts" \
     || fail "storm quarantined a snapshot: $(quarantine_count) artifacts, was $q_storm"
@@ -904,10 +902,8 @@ for i in $(seq 1 10); do
     if [[ "$(quarantine_count)" != "$q_round" ]]; then
         fail "SIGKILL round $i (kill at ${delay}s): boot quarantined the snapshot (corruption)"; ng11_ok=0; break
     fi
-    rc=$(restore_dryrun llb1 "$CFG/snapshot.json")
-    rres=$(jq -r '.result' < "$PLIB_ARTIFACTS/restore-response.json")
-    if [[ "$rc" != "200" || "$rres" != "ok" ]]; then
-        fail "SIGKILL round $i (kill at ${delay}s): snapshot.json not a valid document (HTTP $rc result=$rres)"
+    if ! ondisk_doc_valid llb1 "sigkill-$i"; then
+        fail "SIGKILL round $i (kill at ${delay}s): snapshot.json is not a valid document"
         ng11_ok=0; break
     fi
     if [[ "$(lb_count)" != "1" ]]; then

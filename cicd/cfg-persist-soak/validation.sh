@@ -65,20 +65,6 @@ doc_fingerprint() {
 metric_val() { # metric_val <full metric selector>
     plib_curl llb1 "$PLIB_API/metrics" 2>/dev/null | awk -v m="$1" '$1 == m {print $2}' | tail -1
 }
-ondisk_doc_valid() { # ondisk_doc_valid <label>
-    local label=$1 stage="$PLIB_ARTIFACTS/ondisk-$label.json" rc res
-    if ! sudo cp "$CFG/snapshot.json" "$stage" 2>"$PLIB_ARTIFACTS/ondisk-$label.err"; then
-        echo "  on-disk document unreadable: $(cat "$PLIB_ARTIFACTS/ondisk-$label.err")"
-        echo "  $CFG contents: $(sudo ls -la "$CFG" | tr '\n' ' ')"
-        return 1
-    fi
-    sudo chmod 644 "$stage"
-    rc=$(restore_dryrun llb1 "$stage")
-    res=$(jq -r '.result' < "$PLIB_ARTIFACTS/restore-response.json")
-    [[ "$rc" == "200" && "$res" == "ok" ]] && return 0
-    echo "  dry-run of the on-disk document: HTTP $rc result=$res"
-    return 1
-}
 assert_traffic() { # assert_traffic <label>
     local resp
     resp=$($hexec l3h1 curl -s -m 5 "http://${VIP}:2020/" 2>/dev/null | head -3)
@@ -248,7 +234,7 @@ for r in $(seq 1 "$CONC_ROUNDS"); do
     *)  fail "SK-04 round $r: mutation answered HTTP $c (contract: 200/204 or 503)"; sk04_ok=0 ;;
     esac
     sleep 5   # let the round's debounce drain before reading the document
-    if ! ondisk_doc_valid "sk04-$r"; then
+    if ! ondisk_doc_valid llb1 "sk04-$r"; then
         fail "SK-04 round $r: the persisted document is not valid after the round"; sk04_ok=0; break
     fi
     plib_curl llb1 "$PLIB_API/config/snapshot" -o "$PLIB_ARTIFACTS/sk04-$r-cap1.json"
