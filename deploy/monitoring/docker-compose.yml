@@ -1,5 +1,5 @@
 # LoxiLB Inference Gateway monitoring stack (Prometheus + Grafana).
-# Design: docs/MONITORING-DESIGN.md — quick start: ./README.md
+# Internal monitoring design; quick start: ./README.md
 #
 # host networking: Prometheus must reach the loxilb container on its docker
 # bridge IP; inter-bridge container traffic is blocked by docker's isolation
@@ -26,7 +26,12 @@ services:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time=15d
-      - --web.listen-address=0.0.0.0:9090
+      # Prometheus has no authentication of its own; bind it to loopback so
+      # only same-host consumers (Grafana on the host network, the sweep and
+      # drill tooling) can reach it. To expose it beyond this host, front it
+      # with an authenticated proxy on the management network instead of
+      # widening this bind.
+      - --web.listen-address=127.0.0.1:9090
 
   grafana:
     image: grafana/grafana:11.6.16
