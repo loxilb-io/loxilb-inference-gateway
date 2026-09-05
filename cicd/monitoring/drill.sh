@@ -138,16 +138,18 @@ if wait_alert LoxilbRestoreProblem inactive 1020; then ok "resolved"; else fail 
 # ── D5: LoxilbUnmeteredTraffic ───────────────────────────────────────────────
 echo ""
 echo "D5: LoxilbUnmeteredTraffic fire→resolve (sustained keyless AI traffic)"
-# The scenario's AI rules run with api_key_auth disabled, so the data-plane
+# The scenario's AI rule runs with api_key_auth disabled, so the data-plane
 # gate reports every admitted request as unmetered — sustained traffic IS the
-# alert condition.
+# alert condition. Drive the :2020 SSE rule: it is the AI-accounted one
+# (:2021 is sse_mode=false and deliberately outside AI accounting — the T3b
+# guard — so nothing on it ever records as unmetered).
 DRIVE_FLAG=$(mktemp /tmp/unmetered.XXXXXX)
 (
   while [ -f "$DRIVE_FLAG" ]; do
-    $hexec l3h1 curl -s --max-time 5 -X POST \
-      -H "Content-Type: application/json" -H "X-Model: nosse-test" \
-      -d '{"model":"nosse-test","messages":[{"role":"user","content":"drill"}]}' \
-      "http://10.10.10.254:2021/v1/chat/completions" >/dev/null 2>&1
+    $hexec l3h1 curl -s --max-time 10 -N -X POST \
+      -H "Content-Type: application/json" -H "X-Model: sse-test" \
+      -d '{"model":"sse-test","messages":[{"role":"user","content":"drill"}]}' \
+      "http://10.10.10.254:2020/v1/chat/completions" >/dev/null 2>&1
     sleep 2
   done
 ) &
@@ -174,6 +176,7 @@ $hexec l3h1 curl -s -X POST \
       "protocol":        "tcp",
       "sel":              0,
       "mode":             4,
+      "name":            "authdrill",
       "host":            "10.10.10.254",
       "path_prefix":     "/",
       "path_match_mode": "prefix",
@@ -199,7 +202,9 @@ DRIVE_FLAG=$(mktemp /tmp/policystore.XXXXXX)
 if wait_alert LoxilbPolicyStoreUnavailable firing 300; then ok "fired"; else fail "did not fire"; fi
 rm -f "$DRIVE_FLAG"
 wait
-$dexec llb1 loxicmd delete lb 10.10.10.254 --tcp=2026
+# L7/AI rules are keyed by host+path+model — delete by the rule's name (a
+# bare --tcp=2026 delete answers 404 and leaks the rule into the soak).
+$dexec llb1 loxicmd delete lb --name=authdrill
 if wait_alert LoxilbPolicyStoreUnavailable inactive 420; then ok "resolved"; else fail "did not resolve"; fi
 
 # ── Restore production rules ─────────────────────────────────────────────────
