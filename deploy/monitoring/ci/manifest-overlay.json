@@ -337,6 +337,7 @@
  "locked_revision": {
   "rev": "f08b18beda587217265c9ba6419159119914795c",
   "expect_missing_at_locked": [
+   "loxilb_ai_keyed_services",
    "loxilb_ai_kv_attest_echo_total",
    "loxilb_ai_kv_attest_probe_fail_total",
    "loxilb_ai_kv_attest_state",
