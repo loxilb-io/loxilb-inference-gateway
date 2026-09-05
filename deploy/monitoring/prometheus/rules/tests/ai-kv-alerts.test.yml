@@ -1,0 +1,292 @@
+# promtool unit tests for loxilb-ai-kv-alerts.yml.
+#
+# One firing case and one must-stay-silent case per alert. The silent cases
+# pin the two failure modes this rule set is most exposed to:
+#   - lazy-vector absence: a deployment that never exercises a feature has NO
+#     series, and the alert must not fire on absence
+#   - presence guards: gauges that legitimately sit at 0 from boot must not
+#     fire before the feature was ever seen healthy
+#
+# Run: promtool test rules tests/ai-kv-alerts.test.yml
+
+rule_files:
+  - ../loxilb-ai-kv-alerts.yml
+
+evaluation_interval: 30s
+
+tests:
+  # ── silence on a completely idle / non-KV deployment ─────────────────────
+  - interval: 30s
+    input_series: []
+    alert_rule_test:
+      - alertname: LoxilbKvWireReject
+        eval_time: 30m
+        exp_alerts: []
+      - alertname: LoxilbKvSubscriberDisconnected
+        eval_time: 30m
+        exp_alerts: []
+      - alertname: LoxilbKvReconnectStorm
+        eval_time: 30m
+        exp_alerts: []
+      - alertname: LoxilbKvZeroHitWatchdog
+        eval_time: 30m
+        exp_alerts: []
+      - alertname: LoxilbTrtllmDrainOwnershipFault
+        eval_time: 30m
+        exp_alerts: []
+      - alertname: LoxilbPdSameEpRetryExhausted
+        eval_time: 30m
+        exp_alerts: []
+      - alertname: LoxilbPdEndpointDied
+        eval_time: 30m
+        exp_alerts: []
+      - alertname: LoxilbRestoreProblem
+        eval_time: 30m
+        exp_alerts: []
+      - alertname: LoxilbRestoreRollbackFailed
+        eval_time: 30m
+        exp_alerts: []
+      - alertname: LoxilbPolicyStoreUnavailable
+        eval_time: 30m
+        exp_alerts: []
+      - alertname: LoxilbUnmeteredTraffic
+        eval_time: 30m
+        exp_alerts: []
+      - alertname: LoxilbKvEnforcementFault
+        eval_time: 30m
+        exp_alerts: []
+      - alertname: LoxilbKvAttestProbeFailing
+        eval_time: 30m
+        exp_alerts: []
+      - alertname: LoxilbKvAttestEchoFailure
+        eval_time: 30m
+        exp_alerts: []
+
+  # ── wire rejects fire; resolve after the rejects stop ────────────────────
+  - interval: 30s
+    input_series:
+      - series: 'loxilb_kv_subscriber_wire_reject_total{service="svc1",ep="ep-a",reason="bad_epoch",cluster="c1",instance="gw-a",job="loxilb"}'
+        values: '0+10x20 200x40'    # rejects for 10m, then flat
+    alert_rule_test:
+      - alertname: LoxilbKvWireReject
+        eval_time: 8m
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              cluster: c1
+              instance: gw-a
+              service: svc1
+              reason: bad_epoch
+            exp_annotations:
+              summary: "KV events rejected at the wire (bad_epoch)"
+              description: "Subscriber svc1 on gw-a is discarding KV events (reason bad_epoch). KV-exact routing is running on a stale inventory until this clears."
+              dashboard: "LoxiLB / AI Gateway"
+              panel: "KV event integrity"
+      - alertname: LoxilbKvWireReject
+        eval_time: 25m
+        exp_alerts: []
+
+  # ── subscriber down fires only with the was-up guard satisfied ───────────
+  - interval: 30s
+    input_series:
+      # was up for 10m, then down
+      - series: 'loxilb_kv_subscriber_connected{service="svc1",ep="ep-a",cluster="c1",instance="gw-a",job="loxilb"}'
+        values: '1x20 0x20'
+      # never up: must NOT fire (fresh deployment registering at 0)
+      - series: 'loxilb_kv_subscriber_connected{service="svc1",ep="ep-b",cluster="c1",instance="gw-a",job="loxilb"}'
+        values: '0x40'
+    alert_rule_test:
+      - alertname: LoxilbKvSubscriberDisconnected
+        eval_time: 14m
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              cluster: c1
+              instance: gw-a
+              job: loxilb
+              service: svc1
+              ep: ep-a
+            exp_annotations:
+              summary: "KV subscriber disconnected (svc1/ep-a)"
+              description: "A previously connected KV event subscriber has been down for 2m; the inventory for its endpoint is frozen and will drift."
+              dashboard: "LoxiLB / AI Gateway"
+              panel: "KV subscribers up"
+
+  # ── reconnect storm: sustained flapping fires, one reconnect does not ────
+  - interval: 30s
+    input_series:
+      - series: 'loxilb_kv_subscriber_reconnect_total{service="svc1",ep="ep-a",cluster="c1",instance="gw-a",job="loxilb"}'
+        values: '0+2x60'            # 4 reconnects / 10m sustained
+      - series: 'loxilb_kv_subscriber_reconnect_total{service="svc1",ep="ep-b",cluster="c1",instance="gw-a",job="loxilb"}'
+        values: '0 1 1x58'          # a single reconnect, then quiet
+    alert_rule_test:
+      - alertname: LoxilbKvReconnectStorm
+        eval_time: 25m
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              cluster: c1
+              instance: gw-a
+              service: svc1
+              ep: ep-a
+            exp_annotations:
+              summary: "KV subscriber reconnect storm (svc1/ep-a)"
+              description: "More than 3 reconnects in 10m sustained for 10m: the ZMQ session is flapping (network, engine restart loop, or publisher overload). Each reconnect risks a gap in KV events."
+              dashboard: "LoxiLB / AI Gateway"
+              panel: "KV event integrity"
+
+  # ── same-EP retries: failing retries fire, succeeding retries do not ─────
+  - interval: 30s
+    input_series:
+      - series: 'loxilb_pd_connect_retry_same_ep_total{cluster="c1",instance="gw-a",job="loxilb"}'
+        values: '0+5x40'
+      - series: 'loxilb_pd_connect_retry_same_ep_ok_total{cluster="c1",instance="gw-a",job="loxilb"}'
+        values: '0x40'              # none of them succeed
+      - series: 'loxilb_pd_connect_retry_same_ep_total{cluster="c1",instance="gw-b",job="loxilb"}'
+        values: '0+5x40'
+      - series: 'loxilb_pd_connect_retry_same_ep_ok_total{cluster="c1",instance="gw-b",job="loxilb"}'
+        values: '0+5x40'            # all of them succeed
+    alert_rule_test:
+      - alertname: LoxilbPdSameEpRetryExhausted
+        eval_time: 16m
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              cluster: c1
+              instance: gw-a
+            exp_annotations:
+              summary: "P/D same-endpoint connect retries failing"
+              description: "Same-endpoint connect retries are not succeeding (>3 unrecovered in 10m). Prefill/decode attach is degraded; check endpoint health and connection limits."
+              dashboard: "LoxiLB / AI Gateway"
+              panel: "P/D endpoint failures"
+
+  # ── endpoint death fires on either phase dying ───────────────────────────
+  - interval: 30s
+    input_series:
+      - series: 'loxilb_pd_prefill_ep_died_total{cluster="c1",instance="gw-a",job="loxilb"}'
+        values: '0x10 1x30'
+      - series: 'loxilb_pd_decode_ep_died_total{cluster="c1",instance="gw-a",job="loxilb"}'
+        values: '0x40'
+    alert_rule_test:
+      - alertname: LoxilbPdEndpointDied
+        eval_time: 7m
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              cluster: c1
+              instance: gw-a
+            exp_annotations:
+              summary: "P/D endpoint died mid-stream"
+              description: "A prefill or decode endpoint died with streams attached in the last 10m. In-flight requests failed over or aborted; investigate the engine that dropped."
+              dashboard: "LoxiLB / AI Gateway"
+              panel: "P/D endpoint failures"
+
+  # ── restore results: rolled-back warns, ROLLBACK-FAILED is critical,
+  #    ok-only traffic stays silent ─────────────────────────────────────────
+  - interval: 30s
+    input_series:
+      - series: 'loxilb_restore_total{mode="boot",result="ok",cluster="c1",instance="gw-a",job="loxilb"}'
+        values: '0 1x40'
+      - series: 'loxilb_restore_total{mode="commit",result="rolled-back",cluster="c1",instance="gw-a",job="loxilb"}'
+        values: '0x10 1x30'
+      - series: 'loxilb_restore_total{mode="commit",result="ROLLBACK-FAILED",cluster="c1",instance="gw-b",job="loxilb"}'
+        values: '0x10 1x30'
+    alert_rule_test:
+      - alertname: LoxilbRestoreProblem
+        eval_time: 7m
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              cluster: c1
+              instance: gw-a
+              mode: commit
+              result: rolled-back
+            exp_annotations:
+              summary: "Configuration restore problem (commit: rolled-back)"
+              description: "A restore run ended rolled-back. rolled-back means the safety net worked but the persisted config did not apply; rejected/error mean the snapshot never applied. The running config may be older than operators expect."
+              dashboard: "LoxiLB / Overview"
+              panel: "Restore results"
+      - alertname: LoxilbRestoreRollbackFailed
+        eval_time: 7m
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              cluster: c1
+              instance: gw-b
+              mode: commit
+            exp_annotations:
+              summary: "Restore rollback FAILED — config state undefined"
+              description: "A restore failed AND its rollback failed. The gateway's runtime config is in an undefined state; manual inspection required before the next restart persists it."
+              dashboard: "LoxiLB / Overview"
+              panel: "Restore results"
+
+  # ── policy store & unmetered traffic ─────────────────────────────────────
+  - interval: 30s
+    input_series:
+      - series: 'loxilb_ai_policy_store_unavailable_total{cluster="c1",instance="gw-a",job="loxilb"}'
+        values: '0+5x40'
+      - series: 'loxilb_ai_unmetered_requests_total{vip="10.0.0.1",cluster="c1",instance="gw-a",job="loxilb"}'
+        values: '0+10x40'
+    alert_rule_test:
+      - alertname: LoxilbPolicyStoreUnavailable
+        eval_time: 12m
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              cluster: c1
+              instance: gw-a
+            exp_annotations:
+              summary: "AI policy store unavailable"
+              description: "Requests are being admitted/denied without the policy store for 5m+. Quota, rate-limit, and model-allowlist decisions are running degraded."
+              dashboard: "LoxiLB / AI Gateway"
+              panel: "Policy store / unmetered"
+      - alertname: LoxilbUnmeteredTraffic
+        eval_time: 15m
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              cluster: c1
+              instance: gw-a
+              vip: 10.0.0.1
+            exp_annotations:
+              summary: "AI traffic bypassing metering (vip 10.0.0.1)"
+              description: "Requests on 10.0.0.1 are completing without token metering for 10m+. Billing/quota accounting is undercounting; check key attribution and usage-object parsing on that service."
+              dashboard: "LoxiLB / AI Gateway"
+              panel: "Policy store / unmetered"
+
+  # ── attestation: enforcement fault gauge + echo failure counter ──────────
+  - interval: 30s
+    input_series:
+      - series: 'loxilb_ai_kv_enforcement_fault{rule="42",cluster="c1",instance="gw-a",job="loxilb"}'
+        values: '0x10 1x20'
+      - series: 'loxilb_ai_kv_attest_echo_total{result="fail",cluster="c1",instance="gw-a",job="loxilb"}'
+        values: '0x10 2x30'
+      - series: 'loxilb_ai_kv_attest_echo_total{result="ok",cluster="c1",instance="gw-b",job="loxilb"}'
+        values: '0+100x40'          # healthy echoes never fire the alert
+    alert_rule_test:
+      - alertname: LoxilbKvEnforcementFault
+        eval_time: 8m
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              cluster: c1
+              instance: gw-a
+              job: loxilb
+              rule: "42"
+            exp_annotations:
+              summary: "KV attestation enforcement fault (rule 42)"
+              description: "The KV attestation enforcement gate is reporting a fault on rule 42 — engine capability enforcement is not being applied as configured."
+              dashboard: "LoxiLB / AI Gateway"
+              panel: "KV attestation"
+      - alertname: LoxilbKvAttestEchoFailure
+        eval_time: 7m
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              cluster: c1
+              instance: gw-a
+            exp_annotations:
+              summary: "KV attestation echo-challenge failures"
+              description: "Echo challenges failed in the last 15m: an engine answered attestation incorrectly. Possible engine misconfiguration or identity mismatch on the attested endpoint."
+              dashboard: "LoxiLB / AI Gateway"
+              panel: "KV attestation"

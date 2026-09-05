@@ -76,16 +76,25 @@ if wait_alert LoxilbScrapeDown inactive 120; then ok "resolved"; else fail "did 
 # ── D2: LoxilbL4ErrorBurst ───────────────────────────────────────────────────
 echo ""
 echo "D2: LoxilbL4ErrorBurst fire→resolve (sustained server-RST drive)"
-# rate[5m] > 1/s needs ≳300 error events in the window; each RST conn yields ≥1.
-# Drive ~600 abortive conns over ~90s.
-(
-  for i in $(seq 1 600); do
-    $hexec l3h1 curl -s --max-time 2 http://10.10.10.254:2024/ >/dev/null 2>&1
-  done
-) &
-DRIVE_PID=$!
-if wait_alert LoxilbL4ErrorBurst firing 300; then ok "fired"; else fail "did not fire"; fi
-kill $DRIVE_PID 2>/dev/null; wait $DRIVE_PID 2>/dev/null
+# The shipped rule pages at rate[5m] > 50/s (interim threshold while the CT
+# state machine still misclassifies benign teardown as reason="error"). The
+# driver must clear that bar on its own RST volume — each abortive conn
+# yields ≥1 error event, so we need a sustained ≥50 conns/s and enough burst
+# length for the 5m rate window to average above 50: 12 parallel workers of
+# back-to-back aborted requests sustain roughly 100-200 conns/s on the cicd
+# topology. When the kernel-side classification fix lands and the threshold
+# returns to >1/s, shrink this drive together with the rule and description.
+DRIVE_FLAG=$(mktemp /tmp/l4drive.XXXXXX)
+for w in $(seq 1 12); do
+  (
+    while [ -f "$DRIVE_FLAG" ]; do
+      $hexec l3h1 curl -s --max-time 2 http://10.10.10.254:2024/ >/dev/null 2>&1
+    done
+  ) &
+done
+if wait_alert LoxilbL4ErrorBurst firing 420; then ok "fired"; else fail "did not fire"; fi
+rm -f "$DRIVE_FLAG"
+wait
 # rate[5m] needs the burst to age out of the window before the alert clears
 if wait_alert LoxilbL4ErrorBurst inactive 420; then ok "resolved"; else fail "did not resolve"; fi
 
