@@ -560,6 +560,10 @@ sudo ./loxilb                           # REST API on :11111
 
 ### 선택적 AI 구성 요소
 
+아래는 개발자 빌드 타겟일 뿐이며, 실험적(experimental) 구성 요소로 패키지
+릴리스에는 포함되지 않습니다(공개 이미지/패키지에 포함되지 않으며, 게이트웨이는
+명시적으로 설정하지 않는 한 이 기능들을 활성화하지 않습니다).
+
 ```bash
 make ai-controller            # → loxilb-ai-controller (TTFT/weight advisory controller; pure Go)
 make kv-agent HAVE_DOCA=0     # → loxilb-kv-agent (KV-cache offload agent; HAVE_DOCA=1 on BlueField)
