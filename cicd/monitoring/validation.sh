@@ -211,6 +211,16 @@ echo ""
 echo "T11: no package-excluded family has live series"
 if python3 "$SWEEP" excluded-absent --prom "$PROM"; then ok "excluded families absent"; else fail "excluded families present in live TSDB"; fi
 
+# ── T12: label hygiene + series budgets ───────────────────────────────────────
+# Per-family live series stay under budget and every live label is
+# manifest-declared; prohibited labels (prompts, keys, request ids, free-form
+# errors) are denied both declared and live. Budgets are the CI-topology
+# defaults; fleet qualification runs pass explicit --budget/--max-total.
+echo ""
+echo "T12: cardinality budgets + prohibited-label audit"
+if python3 "$SWEEP" cardinality --prom "$PROM" --max-total "${CARD_MAX_TOTAL:-3000}"; then
+  ok "cardinality + label hygiene"; else fail "cardinality budget or label hygiene violated"; fi
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
 if [[ $code == 0 ]]; then
