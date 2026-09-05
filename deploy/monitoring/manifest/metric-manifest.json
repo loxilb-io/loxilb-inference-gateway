@@ -1,13 +1,13 @@
 {
  "contract": {
-  "total": 231,
+  "total": 232,
   "owners": {
-   "loxilb": 208,
+   "loxilb": 209,
    "loxilb-ai-controller": 19,
    "loxilb-kv-agent": 4
   },
   "classes": {
-   "default": 175,
+   "default": 176,
    "dpu-doca": 24,
    "aictrl-bridge": 8,
    "kv-agent-health": 1,
@@ -16,8 +16,8 @@
   }
  },
  "coverage": {
-  "default_families": 175,
-  "default_referenced": 154,
+  "default_families": 176,
+  "default_referenced": 155,
   "default_waived": 21,
   "default_unreferenced": 0
  },
@@ -442,6 +442,22 @@
    "consumers": [],
    "waiver": "Info metric (constant 1) for PromQL joins and legend enrichment of engine identity; standalone display would duplicate configuration.",
    "source": "api/prometheus/sockproxy_metrics.go:397"
+  },
+  {
+   "name": "loxilb_ai_keyed_services",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-ai-kv-alerts.yml"
+   ],
+   "waiver": "",
+   "source": "api/prometheus/prometheus.go:261"
   },
   {
    "name": "loxilb_ai_kv_attest_echo_total",
@@ -1013,7 +1029,7 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:374"
+   "source": "api/prometheus/prometheus.go:380"
   },
   {
    "name": "loxilb_backend_traffic_connections_total",
@@ -1032,7 +1048,7 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:388"
+   "source": "api/prometheus/prometheus.go:394"
   },
   {
    "name": "loxilb_backend_traffic_packets_total",
@@ -1051,7 +1067,7 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:381"
+   "source": "api/prometheus/prometheus.go:387"
   },
   {
    "name": "loxilb_boot_config_conflict_total",
@@ -1100,7 +1116,7 @@
     "loxilb-l4.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:354"
+   "source": "api/prometheus/prometheus.go:360"
   },
   {
    "name": "loxilb_closed_connections_processed_total",
@@ -1114,7 +1130,7 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "Internal conntrack-sweep finalization bookkeeping; a stall surfaces as missing closed-flow traffic in the dashboarded counters \u2014 diagnostic query only.",
-   "source": "api/prometheus/prometheus.go:508"
+   "source": "api/prometheus/prometheus.go:514"
   },
   {
    "name": "loxilb_config_dirty",
@@ -1147,7 +1163,7 @@
     "loxilb-l4.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:2254"
+   "source": "api/prometheus/prometheus.go:2274"
   },
   {
    "name": "loxilb_conntrack_stat_resets_total",
@@ -1164,7 +1180,7 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:502"
+   "source": "api/prometheus/prometheus.go:508"
   },
   {
    "name": "loxilb_doca_collector_query_errors_total",
@@ -1214,7 +1230,7 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "Superseded on dashboards by loxilb_backend_traffic_bytes_total (exact DP counters, ip:port attribution); kept exported for persistent-flow comparison and external consumers.",
-   "source": "api/prometheus/prometheus.go:347"
+   "source": "api/prometheus/prometheus.go:353"
   },
   {
    "name": "loxilb_errors_total",
@@ -1228,7 +1244,7 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "Instance-level aggregate of loxilb_service_errors_total, which is dashboarded; sum() of the per-service sibling answers it exactly.",
-   "source": "api/prometheus/prometheus.go:413"
+   "source": "api/prometheus/prometheus.go:419"
   },
   {
    "name": "loxilb_firewall_rules",
@@ -1244,7 +1260,7 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:445"
+   "source": "api/prometheus/prometheus.go:451"
   },
   {
    "name": "loxilb_fw_drop_packets_total",
@@ -1262,7 +1278,7 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:430"
+   "source": "api/prometheus/prometheus.go:436"
   },
   {
    "name": "loxilb_fw_rule_drop_packets_total",
@@ -1281,7 +1297,7 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:437"
+   "source": "api/prometheus/prometheus.go:443"
   },
   {
    "name": "loxilb_healthy_endpoints",
@@ -1312,7 +1328,7 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "Legacy duplicate of loxilb_system_cpu_utilization_percent, which the overview CPU/Memory/Disk panel shows; kept exported for older external dashboards.",
-   "source": "api/prometheus/prometheus.go:530"
+   "source": "api/prometheus/prometheus.go:536"
   },
   {
    "name": "loxilb_ipfilter_blacklist_bytes_total",
@@ -1330,7 +1346,7 @@
    "privacy": "label-review",
    "consumers": [],
    "waiver": "Byte-volume twin of the dashboarded ipfilter packet counters; filter verdicts are judged by packet counts, byte volume stays an ad-hoc query.",
-   "source": "api/prometheus/prometheus.go:630"
+   "source": "api/prometheus/prometheus.go:636"
   },
   {
    "name": "loxilb_ipfilter_blacklist_packets_total",
@@ -1350,7 +1366,7 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:622"
+   "source": "api/prometheus/prometheus.go:628"
   },
   {
    "name": "loxilb_ipfilter_rules",
@@ -1368,7 +1384,7 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:654"
+   "source": "api/prometheus/prometheus.go:660"
   },
   {
    "name": "loxilb_ipfilter_whitelist_bytes_total",
@@ -1386,7 +1402,7 @@
    "privacy": "label-review",
    "consumers": [],
    "waiver": "Byte-volume twin of the dashboarded ipfilter packet counters; filter verdicts are judged by packet counts, byte volume stays an ad-hoc query.",
-   "source": "api/prometheus/prometheus.go:646"
+   "source": "api/prometheus/prometheus.go:652"
   },
   {
    "name": "loxilb_ipfilter_whitelist_packets_total",
@@ -1406,7 +1422,7 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:638"
+   "source": "api/prometheus/prometheus.go:644"
   },
   {
    "name": "loxilb_kernel_bridge_bytes",
@@ -1629,7 +1645,7 @@
    "privacy": "label-review",
    "consumers": [],
    "waiver": "Flow-identity (service x sip x dip) forensic counter with unbounded client cardinality; deliberately not dashboarded \u2014 client-traffic and per-backend panels answer the operational question, ad-hoc query for forensics.",
-   "source": "api/prometheus/prometheus.go:317"
+   "source": "api/prometheus/prometheus.go:323"
   },
   {
    "name": "loxilb_lb_rule_interaction_packets_total",
@@ -1647,7 +1663,7 @@
    "privacy": "label-review",
    "consumers": [],
    "waiver": "Flow-identity (service x sip x dip) forensic counter with unbounded client cardinality; deliberately not dashboarded \u2014 client-traffic and per-backend panels answer the operational question, ad-hoc query for forensics.",
-   "source": "api/prometheus/prometheus.go:324"
+   "source": "api/prometheus/prometheus.go:330"
   },
   {
    "name": "loxilb_lb_rules",
@@ -1697,7 +1713,7 @@
     "loxilb-l4.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:261"
+   "source": "api/prometheus/prometheus.go:267"
   },
   {
    "name": "loxilb_opa_circuit_breaker_state",
@@ -2440,7 +2456,7 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:267"
+   "source": "api/prometheus/prometheus.go:273"
   },
   {
    "name": "loxilb_processed_packets_total",
@@ -2454,7 +2470,7 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "Aggregate of the per-protocol packet counters already dashboarded on Packets/s by protocol; sum() over those series answers it exactly.",
-   "source": "api/prometheus/prometheus.go:309"
+   "source": "api/prometheus/prometheus.go:315"
   },
   {
    "name": "loxilb_processed_sctp_bytes_total",
@@ -2468,7 +2484,7 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "Per-protocol byte split of total throughput; the Throughput (DP bytes) and Packets/s-by-protocol panels answer the question \u2014 per-proto bytes stay an ad-hoc query.",
-   "source": "api/prometheus/prometheus.go:285"
+   "source": "api/prometheus/prometheus.go:291"
   },
   {
    "name": "loxilb_processed_sctp_packets_total",
@@ -2484,7 +2500,7 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:303"
+   "source": "api/prometheus/prometheus.go:309"
   },
   {
    "name": "loxilb_processed_tcp_bytes_total",
@@ -2498,7 +2514,7 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "Per-protocol byte split of total throughput; the Throughput (DP bytes) and Packets/s-by-protocol panels answer the question \u2014 per-proto bytes stay an ad-hoc query.",
-   "source": "api/prometheus/prometheus.go:273"
+   "source": "api/prometheus/prometheus.go:279"
   },
   {
    "name": "loxilb_processed_tcp_packets_total",
@@ -2514,7 +2530,7 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:291"
+   "source": "api/prometheus/prometheus.go:297"
   },
   {
    "name": "loxilb_processed_udp_bytes_total",
@@ -2528,7 +2544,7 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "Per-protocol byte split of total throughput; the Throughput (DP bytes) and Packets/s-by-protocol panels answer the question \u2014 per-proto bytes stay an ad-hoc query.",
-   "source": "api/prometheus/prometheus.go:279"
+   "source": "api/prometheus/prometheus.go:285"
   },
   {
    "name": "loxilb_processed_udp_packets_total",
@@ -2544,7 +2560,7 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:297"
+   "source": "api/prometheus/prometheus.go:303"
   },
   {
    "name": "loxilb_proxy_active_connections",
@@ -3040,7 +3056,7 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:398"
+   "source": "api/prometheus/prometheus.go:404"
   },
   {
    "name": "loxilb_restore_duration_seconds",
@@ -3092,7 +3108,7 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:572"
+   "source": "api/prometheus/prometheus.go:578"
   },
   {
    "name": "loxilb_security_conn_passed_total",
@@ -3108,7 +3124,7 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:579"
+   "source": "api/prometheus/prometheus.go:585"
   },
   {
    "name": "loxilb_security_syn_blocked_total",
@@ -3125,7 +3141,7 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:551"
+   "source": "api/prometheus/prometheus.go:557"
   },
   {
    "name": "loxilb_security_syn_cookies_total",
@@ -3141,7 +3157,7 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:565"
+   "source": "api/prometheus/prometheus.go:571"
   },
   {
    "name": "loxilb_security_syn_passed_total",
@@ -3157,7 +3173,7 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:558"
+   "source": "api/prometheus/prometheus.go:564"
   },
   {
    "name": "loxilb_security_udp_blocked_total",
@@ -3174,7 +3190,7 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:593"
+   "source": "api/prometheus/prometheus.go:599"
   },
   {
    "name": "loxilb_security_udp_bytes_blocked_total",
@@ -3190,7 +3206,7 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:607"
+   "source": "api/prometheus/prometheus.go:613"
   },
   {
    "name": "loxilb_security_udp_bytes_passed_total",
@@ -3204,7 +3220,7 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "Byte twin of the dashboarded UDP passed/blocked packet counters and blocked-bytes panel; passed-byte volume adds no verdict signal.",
-   "source": "api/prometheus/prometheus.go:614"
+   "source": "api/prometheus/prometheus.go:620"
   },
   {
    "name": "loxilb_security_udp_passed_total",
@@ -3220,7 +3236,7 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:600"
+   "source": "api/prometheus/prometheus.go:606"
   },
   {
    "name": "loxilb_security_unique_ips",
@@ -3236,7 +3252,7 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:586"
+   "source": "api/prometheus/prometheus.go:592"
   },
   {
    "name": "loxilb_service_errors_total",
@@ -3254,7 +3270,7 @@
     "loxilb-l4.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:420"
+   "source": "api/prometheus/prometheus.go:426"
   },
   {
    "name": "loxilb_service_requests_total",
@@ -3272,7 +3288,7 @@
     "loxilb-l4.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:405"
+   "source": "api/prometheus/prometheus.go:411"
   },
   {
    "name": "loxilb_service_traffic_bytes_total",
@@ -3290,7 +3306,7 @@
     "loxilb-l4.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:333"
+   "source": "api/prometheus/prometheus.go:339"
   },
   {
    "name": "loxilb_service_traffic_packets_total",
@@ -3306,7 +3322,7 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "Per-service packet twin of the dashboarded bytes counter; the exact per-backend packets/s panel covers the packet-rate question with finer attribution.",
-   "source": "api/prometheus/prometheus.go:340"
+   "source": "api/prometheus/prometheus.go:346"
   },
   {
    "name": "loxilb_snapshot_quarantine_total",
@@ -3517,7 +3533,7 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:522"
+   "source": "api/prometheus/prometheus.go:528"
   },
   {
    "name": "loxilb_system_disk_utilization_percent",
@@ -3534,7 +3550,7 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:543"
+   "source": "api/prometheus/prometheus.go:549"
   },
   {
    "name": "loxilb_system_memory_utilization_percent",
@@ -3551,7 +3567,7 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:537"
+   "source": "api/prometheus/prometheus.go:543"
   },
   {
    "name": "loxilb_unhealthy_endpoints",

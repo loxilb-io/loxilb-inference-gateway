@@ -138,11 +138,35 @@ if wait_alert LoxilbRestoreProblem inactive 1020; then ok "resolved"; else fail 
 # ── D5: LoxilbUnmeteredTraffic ───────────────────────────────────────────────
 echo ""
 echo "D5: LoxilbUnmeteredTraffic fire→resolve (sustained keyless AI traffic)"
-# The scenario's AI rule runs with api_key_auth disabled, so the data-plane
-# gate reports every admitted request as unmetered — sustained traffic IS the
-# alert condition. Drive the :2020 SSE rule: it is the AI-accounted one
-# (:2021 is sse_mode=false and deliberately outside AI accounting — the T3b
-# guard — so nothing on it ever records as unmetered).
+# The alert is guarded on loxilb_ai_keyed_services > 0: a fully keyless
+# deployment is a posture, not an incident (the guard exists because this
+# drill's own soak proved the unguarded alert fires forever on this
+# topology). Arm the guard with a transient api_key_auth=required rule, then
+# drive the :2020 SSE rule — the AI-accounted one (:2021 is sse_mode=false
+# and deliberately outside AI accounting, the T3b guard), whose keyless
+# traffic is exactly the "forgot to put it behind enforcement" anomaly.
+$hexec l3h1 curl -s -X POST \
+  http://10.10.10.254:11111/netlox/v1/config/loadbalancer \
+  -H "Content-Type: application/json" \
+  -d '{
+    "serviceArguments": {
+      "externalIP":      "10.10.10.254",
+      "port":             2027,
+      "protocol":        "tcp",
+      "sel":              0,
+      "mode":             4,
+      "name":            "guardarm",
+      "host":            "10.10.10.254",
+      "path_prefix":     "/",
+      "path_match_mode": "prefix",
+      "model_name":      "guardarm-test",
+      "api_key_auth":    "required",
+      "inactiveTimeOut":  60
+    },
+    "endpoints": [
+      {"endpointIP": "32.32.32.1", "targetPort": 8080, "weight": 1}
+    ]
+  }' >/dev/null
 DRIVE_FLAG=$(mktemp /tmp/unmetered.XXXXXX)
 (
   while [ -f "$DRIVE_FLAG" ]; do
@@ -156,7 +180,9 @@ DRIVE_FLAG=$(mktemp /tmp/unmetered.XXXXXX)
 if wait_alert LoxilbUnmeteredTraffic firing 300; then ok "fired"; else fail "did not fire"; fi
 rm -f "$DRIVE_FLAG"
 wait
-# rate[5m] ages out after the drive stops
+$dexec llb1 loxicmd delete lb --name=guardarm
+# rate[5m] ages out after the drive stops (and the guard disarms with the
+# rule gone — either alone resolves the alert; both must, together)
 if wait_alert LoxilbUnmeteredTraffic inactive 420; then ok "resolved"; else fail "did not resolve"; fi
 
 # ── D6: LoxilbPolicyStoreUnavailable ─────────────────────────────────────────
