@@ -10,14 +10,14 @@
   "Combined codes (D+P etc.) apply both behaviors."
  ],
  "expected": {
-  "total": 223,
+  "total": 225,
   "owners": {
-   "loxilb": 200,
+   "loxilb": 202,
    "loxilb-ai-controller": 19,
    "loxilb-kv-agent": 4
   },
   "classes": {
-   "default": 167,
+   "default": 169,
    "dpu-doca": 24,
    "aictrl-bridge": 8,
    "kv-agent-health": 1,
@@ -174,7 +174,9 @@
   "loxilb_kv_fetch_errors_total": "E",
   "loxilb_kv_fetch_total": "E",
   "loxilb_kv_inv_cap_evictions_total": "V",
+  "loxilb_kv_inventory_fresh": "V",
   "loxilb_kv_subscriber_connected": "V",
+  "loxilb_kv_subscriber_last_event_timestamp_seconds": "V",
   "loxilb_kv_subscriber_reconnect_total": "V",
   "loxilb_kv_subscriber_recv_error_total": "V",
   "loxilb_kv_subscriber_wire_reject_total": "V",
@@ -305,7 +307,9 @@
    "loxilb_ai_policy_store_unavailable_total": "p0",
    "loxilb_ai_unmetered_requests_total": "p0",
    "loxilb_boot_config_conflict_total": "p0",
+   "loxilb_kv_inventory_fresh": "p0",
    "loxilb_kv_subscriber_connected": "p0",
+   "loxilb_kv_subscriber_last_event_timestamp_seconds": "p0",
    "loxilb_kv_subscriber_reconnect_total": "p0",
    "loxilb_kv_subscriber_wire_reject_total": "p0",
    "loxilb_kv_zero_hit_watchdog_total": "p0",
@@ -338,6 +342,8 @@
    "loxilb_backend_traffic_connections_total",
    "loxilb_backend_traffic_packets_total",
    "loxilb_config_dirty",
+   "loxilb_kv_inventory_fresh",
+   "loxilb_kv_subscriber_last_event_timestamp_seconds",
    "loxilb_kv_subscriber_wire_reject_total",
    "loxilb_pd_connect_retry_same_ep_ok_total",
    "loxilb_pd_connect_retry_same_ep_total"

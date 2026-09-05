@@ -469,6 +469,36 @@ var (
 		[]string{"service", "ep"},
 	)
 
+	// Last-event freshness gauge — unix time of the most recent event batch
+	// the subscriber ACCEPTED (decoded by the wire binding and past the rank
+	// identity check; rejected payloads do not count — they cannot prove
+	// healthy event flow). Absence means no batch has been accepted since
+	// the subscriber started. time() - this value is the event-staleness a
+	// connected=1 socket cannot expose on its own: a publisher that stays
+	// connected but silently stops publishing reads as up everywhere else.
+	kvSubscriberLastEventTs = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "loxilb_kv_subscriber_last_event_timestamp_seconds",
+			Help: "Unix time of the last KV event batch accepted from this endpoint's publisher (decoded and rank-verified; rejected payloads excluded).",
+		},
+		[]string{"service", "ep"},
+	)
+
+	// Inventory-freshness gauge — 1 while the shared per-EP KV inventory
+	// holds content attributable to the CURRENT publisher incarnation: set
+	// on every applied BlockStored, cleared to 0 by every inventory CLEAR
+	// (publisher-restart resync, unreplayable seq gap, live-stream seq
+	// regression, AllBlocksCleared) and at subscriber start until the first
+	// stored block arrives. 0 with connected=1 means Tier-1.5 routing is
+	// running cold/unproven for this EP even though the socket looks fine.
+	kvInventoryFresh = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "loxilb_kv_inventory_fresh",
+			Help: "1 while the per-endpoint KV inventory holds blocks from the current publisher incarnation; 0 after any inventory clear (publisher restart, lossy gap, AllBlocksCleared) until the next stored block.",
+		},
+		[]string{"service", "ep"},
+	)
+
 	// Recv-error counter — increments on every RecvMultipart error before the
 	// subscriber decides whether to rebuild. Useful for detecting flaky links
 	// vs. outright EP crashes.
@@ -1206,6 +1236,8 @@ func ClearKvEpInfo(service, epIdx string) {
 func ClearKvEpSeries(service, epIdx string) {
 	pdKvBlocks.DeleteLabelValues(service, epIdx)
 	kvSubscriberConnected.DeleteLabelValues(service, epIdx)
+	kvSubscriberLastEventTs.DeleteLabelValues(service, epIdx)
+	kvInventoryFresh.DeleteLabelValues(service, epIdx)
 	kvSubscriberReconnectTotal.DeleteLabelValues(service, epIdx)
 	kvSubscriberRecvErrorTotal.DeleteLabelValues(service, epIdx)
 	// The wire-reject counter carries a third (bounded) reason label, so
@@ -1280,6 +1312,59 @@ func KvSubscriberSeriesCount(service string) int {
 	return n
 }
 
+// KvFreshnessSeriesCount returns how many last-event-timestamp plus
+// inventory-fresh children currently exist for the given service label.
+// Test-only getter (mirrors KvSubscriberSeriesCount) — the two freshness
+// gauges share the resurrect-after-delete lifecycle hazard of the other
+// per-EP KV series, so teardown tests must prove ZERO children remain.
+func KvFreshnessSeriesCount(service string) int {
+	n := 0
+	for _, vec := range []*prometheus.GaugeVec{
+		kvSubscriberLastEventTs, kvInventoryFresh,
+	} {
+		ch := make(chan prometheus.Metric, 256)
+		go func(v *prometheus.GaugeVec) {
+			v.Collect(ch)
+			close(ch)
+		}(vec)
+		for metric := range ch {
+			m := &dto.Metric{}
+			if err := metric.Write(m); err != nil {
+				continue
+			}
+			for _, l := range m.Label {
+				if l.GetName() == "service" && l.GetValue() == service {
+					n++
+				}
+			}
+		}
+	}
+	return n
+}
+
+// KvInventoryFreshValue returns the current inventory-freshness gauge value
+// for (service, ep). Test-only getter — dto read keeps prometheus/testutil
+// out of the loxinet import graph.
+func KvInventoryFreshValue(service, ep string) float64 {
+	g := kvInventoryFresh.WithLabelValues(service, ep)
+	m := &dto.Metric{}
+	if err := g.Write(m); err != nil || m.Gauge == nil || m.Gauge.Value == nil {
+		return 0
+	}
+	return *m.Gauge.Value
+}
+
+// KvSubscriberLastEventValue returns the current last-event timestamp gauge
+// value for (service, ep). Test-only getter (mirrors KvInventoryFreshValue).
+func KvSubscriberLastEventValue(service, ep string) float64 {
+	g := kvSubscriberLastEventTs.WithLabelValues(service, ep)
+	m := &dto.Metric{}
+	if err := g.Write(m); err != nil || m.Gauge == nil || m.Gauge.Value == nil {
+		return 0
+	}
+	return *m.Gauge.Value
+}
+
 // KvEpCounterSeriesCount returns how many kv_subscriber_reconnect_total plus
 // kv_subscriber_recv_error_total children currently exist for the given service
 // label. Test-only getter (mirrors KvSubscriberSeriesCount). Exists because the
@@ -1317,6 +1402,21 @@ func KvEpCounterSeriesCount(service string) int {
 // transitions.
 func SetKvSubscriberConnected(service, ep string, connected int) {
 	kvSubscriberConnected.WithLabelValues(service, ep).Set(float64(connected))
+}
+
+// SetKvSubscriberLastEvent records the unix time of the most recent
+// ACCEPTED event batch for (service, ep). Called from the subscriber loop
+// after wire-binding decode and rank verification succeed.
+func SetKvSubscriberLastEvent(service, ep string, unixSeconds float64) {
+	kvSubscriberLastEventTs.WithLabelValues(service, ep).Set(unixSeconds)
+}
+
+// SetKvInventoryFresh sets the per-EP inventory freshness flag (1 = holds
+// blocks from the current publisher incarnation, 0 = cleared/unproven).
+// Called from the subscriber loop on BlockStored application and on every
+// inventory-clear decision.
+func SetKvInventoryFresh(service, ep string, fresh int) {
+	kvInventoryFresh.WithLabelValues(service, ep).Set(float64(fresh))
 }
 
 // IncKvSubscriberReconnect increments the reconnect counter for (service, ep).

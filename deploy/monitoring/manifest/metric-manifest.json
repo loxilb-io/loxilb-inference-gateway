@@ -1,13 +1,13 @@
 {
  "contract": {
-  "total": 223,
+  "total": 225,
   "owners": {
-   "loxilb": 200,
+   "loxilb": 202,
    "loxilb-ai-controller": 19,
    "loxilb-kv-agent": 4
   },
   "classes": {
-   "default": 167,
+   "default": 169,
    "dpu-doca": 24,
    "aictrl-bridge": 8,
    "kv-agent-health": 1,
@@ -16,9 +16,9 @@
   }
  },
  "coverage": {
-  "default_families": 167,
+  "default_families": 169,
   "default_referenced": 110,
-  "default_unreferenced": 57
+  "default_unreferenced": 59
  },
  "families": [
   {
@@ -432,7 +432,7 @@
     "loxilb-ai.json",
     "loxilb-alerts.yml"
    ],
-   "source": "api/prometheus/sockproxy_metrics.go:1428"
+   "source": "api/prometheus/sockproxy_metrics.go:1528"
   },
   {
    "name": "loxilb_ai_kv_attest_probe_fail_total",
@@ -451,7 +451,7 @@
     "loxilb-ai.json",
     "loxilb-alerts.yml"
    ],
-   "source": "api/prometheus/sockproxy_metrics.go:1420"
+   "source": "api/prometheus/sockproxy_metrics.go:1520"
   },
   {
    "name": "loxilb_ai_kv_attest_state",
@@ -470,7 +470,7 @@
     "loxilb-ai.json",
     "loxilb-alerts.yml"
    ],
-   "source": "api/prometheus/sockproxy_metrics.go:1401"
+   "source": "api/prometheus/sockproxy_metrics.go:1501"
   },
   {
    "name": "loxilb_ai_kv_enforcement_fault",
@@ -489,7 +489,7 @@
     "loxilb-ai.json",
     "loxilb-alerts.yml"
    ],
-   "source": "api/prometheus/sockproxy_metrics.go:1412"
+   "source": "api/prometheus/sockproxy_metrics.go:1512"
   },
   {
    "name": "loxilb_ai_kv_trtllm_drain_ownership_fault_total",
@@ -507,7 +507,7 @@
     "loxilb-ai-kv-alerts.yml",
     "loxilb-ai.json"
    ],
-   "source": "api/prometheus/sockproxy_metrics.go:1440"
+   "source": "api/prometheus/sockproxy_metrics.go:1540"
   },
   {
    "name": "loxilb_ai_kv_trtllm_drain_ownership_heal_total",
@@ -522,7 +522,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
-   "source": "api/prometheus/sockproxy_metrics.go:1448"
+   "source": "api/prometheus/sockproxy_metrics.go:1548"
   },
   {
    "name": "loxilb_ai_llamacpp_probe_warnings_total",
@@ -1325,7 +1325,23 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
-   "source": "api/prometheus/sockproxy_metrics.go:506"
+   "source": "api/prometheus/sockproxy_metrics.go:536"
+  },
+  {
+   "name": "loxilb_kv_inventory_fresh",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [
+    "service",
+    "ep"
+   ],
+   "activation": "V",
+   "priority": "p0",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:494"
   },
   {
    "name": "loxilb_kv_subscriber_connected",
@@ -1346,6 +1362,22 @@
     "loxilb-recording.yml"
    ],
    "source": "api/prometheus/sockproxy_metrics.go:453"
+  },
+  {
+   "name": "loxilb_kv_subscriber_last_event_timestamp_seconds",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [
+    "service",
+    "ep"
+   ],
+   "activation": "V",
+   "priority": "p0",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:479"
   },
   {
    "name": "loxilb_kv_subscriber_reconnect_total",
@@ -1382,7 +1414,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
-   "source": "api/prometheus/sockproxy_metrics.go:475"
+   "source": "api/prometheus/sockproxy_metrics.go:505"
   },
   {
    "name": "loxilb_kv_subscriber_wire_reject_total",
@@ -1402,7 +1434,7 @@
     "loxilb-ai-kv-alerts.yml",
     "loxilb-ai.json"
    ],
-   "source": "api/prometheus/sockproxy_metrics.go:491"
+   "source": "api/prometheus/sockproxy_metrics.go:521"
   },
   {
    "name": "loxilb_l4_error_events_total",
@@ -1501,7 +1533,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
-   "source": "api/prometheus/sockproxy_metrics.go:645"
+   "source": "api/prometheus/sockproxy_metrics.go:675"
   },
   {
    "name": "loxilb_new_flows",
@@ -1652,7 +1684,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
-   "source": "api/prometheus/sockproxy_metrics.go:581"
+   "source": "api/prometheus/sockproxy_metrics.go:611"
   },
   {
    "name": "loxilb_pd_admission_shed_total",
@@ -1665,7 +1697,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
-   "source": "api/prometheus/sockproxy_metrics.go:573"
+   "source": "api/prometheus/sockproxy_metrics.go:603"
   },
   {
    "name": "loxilb_pd_cb_flips_total",
@@ -1691,7 +1723,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
-   "source": "api/prometheus/sockproxy_metrics.go:589"
+   "source": "api/prometheus/sockproxy_metrics.go:619"
   },
   {
    "name": "loxilb_pd_connect_failover_total",
@@ -1704,7 +1736,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
-   "source": "api/prometheus/sockproxy_metrics.go:621"
+   "source": "api/prometheus/sockproxy_metrics.go:651"
   },
   {
    "name": "loxilb_pd_connect_retry_same_ep_ok_total",
@@ -1720,7 +1752,7 @@
     "loxilb-ai-kv-alerts.yml",
     "loxilb-ai.json"
    ],
-   "source": "api/prometheus/sockproxy_metrics.go:637"
+   "source": "api/prometheus/sockproxy_metrics.go:667"
   },
   {
    "name": "loxilb_pd_connect_retry_same_ep_total",
@@ -1736,7 +1768,7 @@
     "loxilb-ai-kv-alerts.yml",
     "loxilb-ai.json"
    ],
-   "source": "api/prometheus/sockproxy_metrics.go:631"
+   "source": "api/prometheus/sockproxy_metrics.go:661"
   },
   {
    "name": "loxilb_pd_ctrl_alpha",
@@ -1864,7 +1896,7 @@
     "loxilb-ai-kv-alerts.yml",
     "loxilb-ai.json"
    ],
-   "source": "api/prometheus/sockproxy_metrics.go:605"
+   "source": "api/prometheus/sockproxy_metrics.go:635"
   },
   {
    "name": "loxilb_pd_decode_zero_byte_eof_total",
@@ -1877,7 +1909,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
-   "source": "api/prometheus/sockproxy_metrics.go:613"
+   "source": "api/prometheus/sockproxy_metrics.go:643"
   },
   {
    "name": "loxilb_pd_ep_info",
@@ -1938,7 +1970,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
-   "source": "api/prometheus/sockproxy_metrics.go:537"
+   "source": "api/prometheus/sockproxy_metrics.go:567"
   },
   {
    "name": "loxilb_pd_kv_tier15_fallthrough_total",
@@ -2004,7 +2036,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
-   "source": "api/prometheus/sockproxy_metrics.go:522"
+   "source": "api/prometheus/sockproxy_metrics.go:552"
   },
   {
    "name": "loxilb_pd_kv_zero_hit_watchdog_total",
@@ -2022,7 +2054,7 @@
     "loxilb-ai-kv-alerts.yml",
     "loxilb-ai.json"
    ],
-   "source": "api/prometheus/sockproxy_metrics.go:554"
+   "source": "api/prometheus/sockproxy_metrics.go:584"
   },
   {
    "name": "loxilb_pd_prefill_ep_died_total",
@@ -2038,7 +2070,7 @@
     "loxilb-ai-kv-alerts.yml",
     "loxilb-ai.json"
    ],
-   "source": "api/prometheus/sockproxy_metrics.go:597"
+   "source": "api/prometheus/sockproxy_metrics.go:627"
   },
   {
    "name": "loxilb_pd_sessions_active",
@@ -2064,7 +2096,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
-   "source": "api/prometheus/sockproxy_metrics.go:661"
+   "source": "api/prometheus/sockproxy_metrics.go:691"
   },
   {
    "name": "loxilb_pd_sg_oversize_reject_total",
@@ -2077,7 +2109,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
-   "source": "api/prometheus/sockproxy_metrics.go:685"
+   "source": "api/prometheus/sockproxy_metrics.go:715"
   },
   {
    "name": "loxilb_pd_sg_prefill_abort_decode_total",
@@ -2090,7 +2122,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
-   "source": "api/prometheus/sockproxy_metrics.go:653"
+   "source": "api/prometheus/sockproxy_metrics.go:683"
   },
   {
    "name": "loxilb_pd_sg_prefill_reject_relay_total",
@@ -2103,7 +2135,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
-   "source": "api/prometheus/sockproxy_metrics.go:677"
+   "source": "api/prometheus/sockproxy_metrics.go:707"
   },
   {
    "name": "loxilb_pd_sg_room_retry_total",
@@ -2116,7 +2148,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
-   "source": "api/prometheus/sockproxy_metrics.go:669"
+   "source": "api/prometheus/sockproxy_metrics.go:699"
   },
   {
    "name": "loxilb_pd_trie_nodes",
@@ -2142,7 +2174,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
-   "source": "api/prometheus/sockproxy_metrics.go:693"
+   "source": "api/prometheus/sockproxy_metrics.go:723"
   },
   {
    "name": "loxilb_processed_bytes_total",
@@ -2526,7 +2558,7 @@
     "loxilb-alerts.yml",
     "loxilb-l7.json"
    ],
-   "source": "api/prometheus/sockproxy_metrics.go:826"
+   "source": "api/prometheus/sockproxy_metrics.go:856"
   },
   {
    "name": "loxilb_proxy_pd_kv_params_overflow_total",

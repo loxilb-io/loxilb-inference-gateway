@@ -94,6 +94,8 @@ func TestKvSubscriberTeardownLeavesNoSeries(t *testing.T) {
 				setKvConnectedIfLive(ctx, svcLabel, epLabel, 1)
 				incKvReconnectIfLive(ctx, svcLabel, epLabel)
 				incKvRecvErrorIfLive(ctx, svcLabel, epLabel)
+				setKvLastEventIfLive(ctx, svcLabel, epLabel)
+				setKvInventoryFreshIfLive(ctx, svcLabel, epLabel, 1)
 			}
 		}()
 	}
@@ -132,5 +134,9 @@ func TestKvSubscriberTeardownLeavesNoSeries(t *testing.T) {
 	if got := prom.KvEpCounterSeriesCount(svcLabel); got != 0 {
 		t.Fatalf("post-teardown: %d reconnect/recv-error counter series for service %s survived, want 0 "+
 			"(unguarded Inc() after ClearKvEpSeries resurrects the child)", got, svcLabel)
+	}
+	if got := prom.KvFreshnessSeriesCount(svcLabel); got != 0 {
+		t.Fatalf("post-teardown: %d last-event/inventory-fresh series for service %s survived, want 0 "+
+			"(the freshness gauges share the resurrect-after-delete hazard)", got, svcLabel)
 	}
 }

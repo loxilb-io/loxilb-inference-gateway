@@ -762,6 +762,14 @@ func runKvSubscriberLoopBinding(ctx context.Context, epIdx int, rank uint16, ser
 	setKvConnectedIfLive(ctx, svcLabel, epLabel, 1)
 	defer setKvConnectedIfLive(ctx, svcLabel, epLabel, 0)
 
+	// Freshness starts UNPROVEN: the series exists from subscriber start so
+	// "no stored blocks yet" reads as 0, distinguishable from absence. Only
+	// rank 0 writes the initial state — a later-starting sibling rank must
+	// not stomp a 1 that rank 0's already-flowing stream just established.
+	if rank == 0 {
+		setKvInventoryFreshIfLive(ctx, svcLabel, epLabel, 0)
+	}
+
 	// rankLastSeq is the per-rank seq gap detector. It
 	// replaces inv.lastSeq as the decision input: the shared field cannot
 	// discriminate gaps once N ranks interleave into one inventory. Rank 0
@@ -864,6 +872,7 @@ func runKvSubscriberLoopBinding(ctx context.Context, epIdx int, rank uint16, ser
 				log.Infof("kv-subscriber: ep %d rank %d resync CLEAR — first post-reconnect seq=%d vs lastSeq=%d indicates publisher restart/ambiguous; clearing stale inventory",
 					epIdx, rank, seq, rankLastSeq)
 				inv.ClearAll()
+				setKvInventoryFreshIfLive(ctx, svcLabel, epLabel, 0)
 			}
 		}
 
@@ -894,6 +903,7 @@ func runKvSubscriberLoopBinding(ctx context.Context, epIdx int, rank uint16, ser
 					log.Infof("kv-subscriber: ep %d rank %d seq gap %d -> %d (missing %d, no replay) decision=CLEAR — large forward jump; clearing stale inventory",
 						epIdx, rank, rankLastSeq, seq, gap)
 					inv.ClearAll()
+					setKvInventoryFreshIfLive(ctx, svcLabel, epLabel, 0)
 				}
 			}
 		}
@@ -914,6 +924,7 @@ func runKvSubscriberLoopBinding(ctx context.Context, epIdx int, rank uint16, ser
 			log.Infof("kv-subscriber: ep %d rank %d live-stream seq REGRESSION %d -> %d decision=CLEAR — publisher restarted behind transparent reconnect; clearing stale inventory (size=%d)",
 				epIdx, rank, rankLastSeq, seq, inv.Size())
 			inv.ClearAll()
+			setKvInventoryFreshIfLive(ctx, svcLabel, epLabel, 0)
 		}
 
 		// Decode and apply events from payload (frame 2) via the resolved
@@ -940,12 +951,24 @@ func runKvSubscriberLoopBinding(ctx context.Context, epIdx int, rank uint16, ser
 				epIdx, rank, *batch.DPRank)
 			continue
 		}
+		// Batch accepted: decoded by the wire binding and past the rank
+		// identity check. Stamp event freshness BEFORE applying — an apply
+		// is unconditional from here, and the stamp must cover event-only
+		// batches (e.g. pure BlockRemoved) too.
+		setKvLastEventIfLive(ctx, svcLabel, epLabel)
+
 		events := batch.Events
 
 		for _, ev := range events {
 			switch ev.Type {
 			case kvEventBlockStored:
 				inv.AddBlocks(ev.Hashes)
+				if len(ev.Hashes) > 0 {
+					// Applied content from the current publisher
+					// incarnation — the inventory is proven fresh. An
+					// empty BlockStored proves nothing.
+					setKvInventoryFreshIfLive(ctx, svcLabel, epLabel, 1)
+				}
 				// Echo-challenge watch (ai_kv_attest_echo.go): resolves an
 				// armed challenge's expected hashes; no-op otherwise.
 				kvHashWatchObserve(serviceID, epIdx, int(rank), ev)
@@ -965,6 +988,7 @@ func runKvSubscriberLoopBinding(ctx context.Context, epIdx int, rank uint16, ser
 				// warmth loss from rank-restart churn.
 				log.Infof("kv-subscriber: AllBlocksCleared received for ep %d (rank %d) — clearing shared inventory", epIdx, rank)
 				inv.ClearAll()
+				setKvInventoryFreshIfLive(ctx, svcLabel, epLabel, 0)
 			}
 		}
 
@@ -1049,6 +1073,33 @@ func incKvWireRejectIfLive(ctx context.Context, svcLabel, epLabel, reason string
 		return
 	}
 	prom.IncKvSubscriberWireReject(svcLabel, epLabel, reason)
+}
+
+// setKvLastEventIfLive stamps the last-accepted-event-batch timestamp under
+// the same teardown discipline as the other per-EP KV series. Called only
+// after wire-binding decode and rank verification succeed — a rejected
+// payload must not read as event freshness.
+func setKvLastEventIfLive(ctx context.Context, svcLabel, epLabel string) {
+	kvSeriesMu.Lock()
+	defer kvSeriesMu.Unlock()
+	if ctx.Err() != nil {
+		return
+	}
+	prom.SetKvSubscriberLastEvent(svcLabel, epLabel, float64(time.Now().UnixMilli())/1000.0)
+}
+
+// setKvInventoryFreshIfLive sets the per-EP inventory-freshness flag under
+// the same teardown discipline. The flag is a UNION property of the shared
+// per-EP inventory (like the inventory itself): any rank's applied
+// BlockStored proves current-incarnation content (1), any rank's clear
+// decision invalidates it (0).
+func setKvInventoryFreshIfLive(ctx context.Context, svcLabel, epLabel string, fresh int) {
+	kvSeriesMu.Lock()
+	defer kvSeriesMu.Unlock()
+	if ctx.Err() != nil {
+		return
+	}
+	prom.SetKvInventoryFresh(svcLabel, epLabel, fresh)
 }
 
 // rebuildKvSubscriber closes the current SUB socket and redials the same
