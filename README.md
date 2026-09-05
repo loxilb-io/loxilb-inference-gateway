@@ -620,7 +620,7 @@ make HAVE_HTTP_TRACE=1 HAVE_L4_TRACE=1 HAVE_MTLS=1 EXTRA_CFLAGS="-DHAVE_L4_TRACE
 | `HAVE_L4_TRACE=1` **and** `EXTRA_CFLAGS="-DHAVE_L4_TRACE"` | L4 flow tracing and span assembly — Go tag `l4trace` | off |
 | `HAVE_DOCA=1` | BlueField DPU offload — Go tag `doca` (see also `make dpu`) | off |
 | `HAVE_DP_DPU_SLIM=1` | DPU slim `dp_proxy_tacts` layout | off |
-| `HAVE_PII_DETECTION=1` | PII detection — Go tag `piidetection` | off |
+| `HAVE_PII_DETECTION=1` | PII detection — Go tag `piidetection` (experimental; not compiled into packaged releases) | off |
 
 Two things that are easy to get wrong:
 
@@ -644,6 +644,10 @@ sudo ./loxilb                           # REST API on :11111
 ```
 
 ### Optional AI components
+
+These are developer build targets only — they are experimental and are not
+part of the packaged releases (no published image or package ships them; the
+gateway leaves them dormant unless explicitly configured).
 
 ```bash
 make ai-controller            # → loxilb-ai-controller (TTFT/weight advisory controller; pure Go)
