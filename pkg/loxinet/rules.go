@@ -3061,6 +3061,25 @@ func kvExactRuntimeValidate(engine string, kvExactMode uint8, modelName, apiMode
 	return res, nil
 }
 
+// kvEngineAdmissionValidate is the single admission sequence for a rule's
+// KV/engine shape: the per-engine capability guards run FIRST, then the
+// runtime-dependency validation. The order is the contract — a shape the
+// engine can never support must refuse with the capability answer, never
+// with a fixable-sounding dependency message (staging a tokenizer cannot
+// make llama.cpp grow a KV event plane, so a "stage ... before retry" hint
+// there would promise a retry path the capability guard then refuses).
+func kvEngineAdmissionValidate(serv *cmn.LbServiceArg, deps kvExactAdmissionDeps) (kvExactAdmissionResult, error) {
+	var res kvExactAdmissionResult
+	if err := kvTrtllmFeatureGuard(serv.KvEngineType, serv.KvExactMode, serv.PDDisaggMode, serv.KvZmqPort, serv.KvDpRankCount); err != nil {
+		return res, err
+	}
+	if err := kvLlamacppFeatureGuard(serv.KvEngineType, serv.KvExactMode, serv.PDDisaggMode, serv.KvZmqPort, serv.KvDpRankCount, serv.KvBlockSize); err != nil {
+		return res, err
+	}
+	return kvExactRuntimeValidate(serv.KvEngineType, serv.KvExactMode, serv.ModelName,
+		serv.KvExactApiMode, serv.KvModelProfile, deps)
+}
+
 // KV-exact resolved-status states. Legacy profile-less rules run today's
 // unattested behavior and say so; strict rules report the validated desired
 // state and an honestly-pending enforced state until the data-plane contract
@@ -3744,15 +3763,16 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		return RuleUnknownServiceErr, kvAdmissionRefuse(err)
 	}
 
-	// KV-exact routing parity is a runtime prerequisite, not an operator
-	// convention — for EVERY exact engine, not just vllm. Validate it before
-	// any rule, subscriber, or data-plane state is mutated so a
-	// management-API success can never conceal permanent Tier-1.5 fallback,
-	// and so a rejected POST provably leaves zero state behind. On a strict
-	// (profile-bound) rule the returned components are fully validated here;
-	// the binding itself is allocated only after the rule commits.
-	kvAdmission, err := kvExactRuntimeValidate(serv.KvEngineType, serv.KvExactMode, serv.ModelName,
-		serv.KvExactApiMode, serv.KvModelProfile,
+	// Engine capability guards + KV-exact runtime validation, in that order
+	// (kvEngineAdmissionValidate owns the sequence and its rationale).
+	// Runtime parity is a prerequisite, not an operator convention — for
+	// EVERY exact engine, not just vllm. Validate before any rule,
+	// subscriber, or data-plane state is mutated so a management-API
+	// success can never conceal permanent Tier-1.5 fallback, and so a
+	// rejected POST provably leaves zero state behind. On a strict
+	// (profile-bound) rule the returned components are fully validated
+	// here; the binding itself is allocated only after the rule commits.
+	kvAdmission, err := kvEngineAdmissionValidate(&serv,
 		kvExactAdmissionDeps{
 			getenv:         os.LookupEnv,
 			tokenizerReady: func(modelName string) bool { return kvLoadTokenizerFresh(modelName) != nil },
@@ -3773,22 +3793,6 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	// pdBootstrapPort is meaningful only on an sglang P/D rule — anywhere else
 	// it would be silently dead config.
 	if err := pdBootstrapPortValidate(serv.PDBootstrapPort, serv.PDDisaggMode, serv.KvEngineType); err != nil {
-		return RuleUnknownServiceErr, kvAdmissionRefuse(err)
-	}
-
-	// TRT-LLM per-feature guards: plain LB and the HTTP-polled KV-exact
-	// shapes (modes 1/3) are accepted — production readiness is fenced
-	// separately by the attestation ladder until the ownership mechanism
-	// lands. The engine's meaningless knobs (a real kvZmqPort, DP ranks)
-	// fail loudly instead of riding as dead config.
-	if err := kvTrtllmFeatureGuard(serv.KvEngineType, serv.KvExactMode, serv.PDDisaggMode, serv.KvZmqPort, serv.KvDpRankCount); err != nil {
-		return RuleUnknownServiceErr, kvAdmissionRefuse(err)
-	}
-
-	// llama.cpp per-feature guards: plain LB (+ CHWBL/session affinity) is the
-	// whole supported surface — the engine has no KV event plane and no P/D,
-	// so every kv*/pd* shape fails loudly instead of riding as dead config.
-	if err := kvLlamacppFeatureGuard(serv.KvEngineType, serv.KvExactMode, serv.PDDisaggMode, serv.KvZmqPort, serv.KvDpRankCount, serv.KvBlockSize); err != nil {
 		return RuleUnknownServiceErr, kvAdmissionRefuse(err)
 	}
 
