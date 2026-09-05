@@ -58,6 +58,19 @@ def lint_dashboard_fixture(expr, exporter=frozenset()):
     return rep
 
 
+def lint_dashboard_fixture_with_legend(expr, legend, exporter_map):
+    rep = lint.Report()
+    d = dashboard_with_expr(expr)
+    d["panels"][0]["targets"][0]["legendFormat"] = legend
+    with tempfile.TemporaryDirectory() as td:
+        dash_dir = os.path.join(td, "grafana", "dashboards")
+        os.makedirs(dash_dir)
+        with open(os.path.join(dash_dir, "fixture.json"), "w") as fh:
+            json.dump(d, fh)
+        lint.lint_dashboards(td, dict(exporter_map), rep)
+    return rep
+
+
 def lint_rules_fixture(rule_expr, exporter=frozenset()):
     rep = lint.Report()
     with tempfile.TemporaryDirectory() as td:
@@ -154,6 +167,30 @@ class NameResolution(unittest.TestCase):
     def test_repo_manifest_resolves_composed_family(self):
         names = lint.collect_exporter_metrics(REPO)
         self.assertIn("loxilb_pd_kv_tier15_miss_reason_total", names)
+
+
+class LegendValidation(unittest.TestCase):
+    """A legend variable must be producible by the query (family label,
+    by-clause label, or ambient label). The fixture reproduces the original
+    echo-panel defect: {{rule}} on a family whose only label is result."""
+
+    def test_legend_var_not_on_family_fails(self):
+        rep = lint_dashboard_fixture_with_legend(
+            'increase(loxilb_x_total{result="fail"}[5m])', "oops {{rule}}",
+            {"loxilb_x_total": ["result"]})
+        self.assertTrue(any("legend" in e for e in rep.errors), rep.errors)
+
+    def test_legend_var_on_family_passes(self):
+        rep = lint_dashboard_fixture_with_legend(
+            'rate(loxilb_x_total[5m])', "{{result}}",
+            {"loxilb_x_total": ["result"]})
+        self.assertFalse(rep.errors, rep.errors)
+
+    def test_by_clause_var_passes(self):
+        rep = lint_dashboard_fixture_with_legend(
+            'sum by (reason) (rate(loxilb_x_total[5m]))', "{{reason}}",
+            {"loxilb_x_total": ["reason", "result"]})
+        self.assertFalse(rep.errors, rep.errors)
 
 
 class PromtoolRequired(unittest.TestCase):

@@ -283,6 +283,62 @@
       "targets": [{ "refId": "A", "expr": "rate(loxilb_conntrack_stat_resets_total{instance=~\"$instance\"}[$__rate_interval])", "legendFormat": "{{instance}}" }],
       "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
       "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
+    },
+    {
+      "id": 22,
+      "type": "timeseries",
+      "title": "Scrape health",
+      "description": "Why is data missing? up==1: scraped fine. up==0 with the target reporting HTTP 503: metrics collection is disabled on the gateway (POST /netlox/v1/config/metrics enables it). up==0 with a connection error: the gateway or the network path is down. Rising scrape duration warns before timeouts start dropping samples.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 33 },
+      "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+      "targets": [
+        { "refId": "A", "expr": "up{job=\"loxilb\", instance=~\"$instance\"}", "legendFormat": "up {{instance}}" },
+        { "refId": "B", "expr": "scrape_duration_seconds{job=\"loxilb\", instance=~\"$instance\"}", "legendFormat": "scrape_duration {{instance}}" }
+      ],
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
+    },
+    {
+      "id": 23,
+      "type": "row",
+      "title": "Persistence (config snapshot / restore)",
+      "collapsed": true,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 41 },
+      "panels": [
+        {
+          "id": 24,
+          "type": "timeseries",
+          "title": "Restore results",
+          "description": "Restore pipeline outcomes by mode and result. ok is healthy; rolled-back means the safety net caught a bad snapshot (config did NOT apply); rejected/error mean the snapshot never applied; ROLLBACK-FAILED is critical — runtime config state is undefined. These series exist at 0 from boot, so a flat 0 means genuinely no restores.",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 42 },
+          "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+          "targets": [{ "refId": "A", "expr": "increase(loxilb_restore_total{instance=~\"$instance\"}[$__rate_interval])", "legendFormat": "{{mode}}/{{result}}" }],
+          "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+          "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
+        },
+        {
+          "id": 25,
+          "type": "timeseries",
+          "title": "Snapshots taken",
+          "description": "Config snapshots by trigger (periodic, on-change, shutdown). A gateway that changes config but never snapshots will boot stale after a crash.",
+          "gridPos": { "h": 8, "w": 6, "x": 12, "y": 42 },
+          "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+          "targets": [{ "refId": "A", "expr": "increase(loxilb_snapshot_total{instance=~\"$instance\"}[$__rate_interval])", "legendFormat": "{{trigger}}" }],
+          "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+          "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
+        },
+        {
+          "id": 26,
+          "type": "stat",
+          "title": "Time since last restore",
+          "description": "Age of the last successful restore-from-snapshot. Only meaningful right after boot or an explicit restore; N/A means this process has never restored.",
+          "gridPos": { "h": 8, "w": 6, "x": 18, "y": 42 },
+          "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
+          "targets": [{ "refId": "A", "expr": "time() - (loxilb_last_restore_timestamp_seconds{instance=~\"$instance\"} > 0)", "legendFormat": "{{instance}}" }],
+          "options": {},
+          "fieldConfig": { "defaults": { "unit": "s", "noValue": "never restored" }, "overrides": [] }
+        }
+      ]
     }
   ]
 }

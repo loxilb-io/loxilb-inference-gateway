@@ -1,0 +1,133 @@
+# promtool unit tests for loxilb-recording.yml.
+#
+# These pin the four semantic contracts the recording layer must never lose:
+#   1. label preservation — instance rules keep (cluster, instance)
+#   2. two-instance masking — a faulty instance is visible on its own series
+#      and a healthy instance's traffic does not dilute the faulty ratio
+#   3. absence != zero — idle/no-series windows yield ABSENT recordings,
+#      while traffic-without-errors yields a real 0
+#   4. counter-reset tolerance — rate() over a reset stays sane (no negative
+#      or inflated rates)
+#
+# Run: promtool test rules tests/recording-rules.test.yml
+
+rule_files:
+  - ../loxilb-recording.yml
+
+evaluation_interval: 30s
+
+tests:
+  # ── 1+2: two instances, one faulty; labels preserved; no dilution ────────
+  - interval: 30s
+    input_series:
+      # healthy instance: lots of traffic, zero 5xx (5xx child never created)
+      - series: 'loxilb_proxy_http_responses_by_status_total{status_class="2xx",cluster="c1",instance="gw-a",job="loxilb"}'
+        values: '0+600x20'          # 20 req/s
+      # faulty instance: half its responses are 5xx
+      - series: 'loxilb_proxy_http_responses_by_status_total{status_class="2xx",cluster="c1",instance="gw-b",job="loxilb"}'
+        values: '0+30x20'
+      - series: 'loxilb_proxy_http_responses_by_status_total{status_class="5xx",cluster="c1",instance="gw-b",job="loxilb"}'
+        values: '0+30x20'
+    promql_expr_test:
+      - expr: instance:loxilb_l7_5xx_ratio:rate5m{instance="gw-b"}
+        eval_time: 10m
+        exp_samples:
+          - labels: 'instance:loxilb_l7_5xx_ratio:rate5m{cluster="c1",instance="gw-b"}'
+            value: 0.5
+      # healthy instance reads 0 (traffic, no errors) — not absent, not >0
+      - expr: instance:loxilb_l7_5xx_ratio:rate5m{instance="gw-a"}
+        eval_time: 10m
+        exp_samples:
+          - labels: 'instance:loxilb_l7_5xx_ratio:rate5m{cluster="c1",instance="gw-a"}'
+            value: 0
+      # fleet ratio is traffic-weighted from raw counters:
+      # 1 err/s over 21+1 req/s total = 1/22 — NOT the instance-ratio average
+      # (0.5+0)/2 = 0.25 that a naive fleet rule would produce.
+      - expr: cluster:loxilb_l7_5xx_ratio:rate5m
+        eval_time: 10m
+        exp_samples:
+          - labels: 'cluster:loxilb_l7_5xx_ratio:rate5m{cluster="c1"}'
+            value: 0.045454545454545456
+
+  # ── 3a: complete silence -> recordings ABSENT (never 0, never NaN) ───────
+  - interval: 30s
+    input_series: []
+    promql_expr_test:
+      - expr: instance:loxilb_l7_5xx_ratio:rate5m
+        eval_time: 10m
+        exp_samples: []
+      - expr: instance:loxilb_l4_error_events:rate5m
+        eval_time: 10m
+        exp_samples: []
+      - expr: instance:loxilb_kv_subscriber_connected:min
+        eval_time: 10m
+        exp_samples: []
+
+  # ── 3b: series exist but idle (zero increase) -> ratio ABSENT (0/0 guard),
+  #        l4 error rate reads a true 0 ─────────────────────────────────────
+  - interval: 30s
+    input_series:
+      - series: 'loxilb_proxy_http_responses_by_status_total{status_class="2xx",cluster="c1",instance="gw-a",job="loxilb"}'
+        values: '100x20'            # flat: no traffic in the window
+      - series: 'loxilb_l4_error_events_total{proto="tcp",reason="error",cluster="c1",instance="gw-a",job="loxilb"}'
+        values: '40x20'
+    promql_expr_test:
+      - expr: instance:loxilb_l7_5xx_ratio:rate5m
+        eval_time: 10m
+        exp_samples: []             # zero traffic -> no ratio, not NaN
+      - expr: instance:loxilb_l4_error_events:rate5m
+        eval_time: 10m
+        exp_samples:
+          - labels: 'instance:loxilb_l4_error_events:rate5m{cluster="c1",instance="gw-a"}'
+            value: 0
+
+  # ── 3c: rst_client exclusion — benign client RSTs never count ────────────
+  - interval: 30s
+    input_series:
+      - series: 'loxilb_l4_error_events_total{proto="tcp",reason="rst_client",cluster="c1",instance="gw-a",job="loxilb"}'
+        values: '0+300x20'          # 10/s of benign client RSTs
+      - series: 'loxilb_l4_error_events_total{proto="tcp",reason="error",cluster="c1",instance="gw-a",job="loxilb"}'
+        values: '0+30x20'           # 1/s of real errors
+    promql_expr_test:
+      - expr: instance:loxilb_l4_error_events:rate5m
+        eval_time: 10m
+        exp_samples:
+          - labels: 'instance:loxilb_l4_error_events:rate5m{cluster="c1",instance="gw-a"}'
+            value: 1
+
+  # ── 4: counter reset (process restart) does not produce negative or
+  #       inflated rates ────────────────────────────────────────────────────
+  - interval: 30s
+    input_series:
+      # 1 err/s, process restarts at t=5m (counter back to 0), continues 1 err/s.
+      # rate() sees samples 0..270 inside the 5m window after the reset and
+      # extrapolates: 270 observed over 4.5m of in-window samples -> 0.9/s.
+      # The contract under test: never negative, never reset-inflated
+      # (a naive delta would read (270-300)/300 < 0 or spike to ~2/s).
+      - series: 'loxilb_l4_error_events_total{proto="tcp",reason="error",cluster="c1",instance="gw-a",job="loxilb"}'
+        values: '0+30x10 0+30x10'
+    promql_expr_test:
+      - expr: instance:loxilb_l4_error_events:rate5m
+        eval_time: 10m
+        exp_samples:
+          - labels: 'instance:loxilb_l4_error_events:rate5m{cluster="c1",instance="gw-a"}'
+            value: 0.9
+
+  # ── KV subscriber floor: min over subscribers, per instance ──────────────
+  - interval: 30s
+    input_series:
+      - series: 'loxilb_kv_subscriber_connected{service="svc1",ep="ep-a",cluster="c1",instance="gw-a",job="loxilb"}'
+        values: '1x20'
+      - series: 'loxilb_kv_subscriber_connected{service="svc1",ep="ep-b",cluster="c1",instance="gw-a",job="loxilb"}'
+        values: '1x10 0x10'         # drops at t=5m
+    promql_expr_test:
+      - expr: instance:loxilb_kv_subscriber_connected:min
+        eval_time: 4m
+        exp_samples:
+          - labels: 'instance:loxilb_kv_subscriber_connected:min{cluster="c1",instance="gw-a"}'
+            value: 1
+      - expr: instance:loxilb_kv_subscriber_connected:min
+        eval_time: 9m
+        exp_samples:
+          - labels: 'instance:loxilb_kv_subscriber_connected:min{cluster="c1",instance="gw-a"}'
+            value: 0

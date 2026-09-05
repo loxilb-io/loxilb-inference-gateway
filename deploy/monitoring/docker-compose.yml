@@ -33,6 +33,23 @@ services:
       # widening this bind.
       - --web.listen-address=127.0.0.1:9090
 
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: loxilb-alertmanager
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      # Example config with a local webhook receiver. Site receivers carry
+      # secrets: bind-mount a site file over this path at deploy time instead
+      # of editing the repository copy.
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      # Loopback-only, same reasoning as Prometheus: no built-in auth.
+      - --web.listen-address=127.0.0.1:9093
+
   grafana:
     image: grafana/grafana:11.6.16
     container_name: loxilb-grafana
@@ -51,4 +68,5 @@ services:
 
 volumes:
   prometheus-data:
+  alertmanager-data:
   grafana-data:

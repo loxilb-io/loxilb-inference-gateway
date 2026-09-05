@@ -17,8 +17,8 @@
  },
  "coverage": {
   "default_families": 163,
-  "default_referenced": 95,
-  "default_unreferenced": 68
+  "default_referenced": 110,
+  "default_unreferenced": 53
  },
  "families": [
   {
@@ -428,6 +428,7 @@
    "priority": "p0",
    "privacy": "none",
    "consumers": [
+    "loxilb-ai-kv-alerts.yml",
     "loxilb-ai.json",
     "loxilb-alerts.yml"
    ],
@@ -446,6 +447,7 @@
    "priority": "p0",
    "privacy": "none",
    "consumers": [
+    "loxilb-ai-kv-alerts.yml",
     "loxilb-ai.json",
     "loxilb-alerts.yml"
    ],
@@ -483,6 +485,7 @@
    "priority": "p0",
    "privacy": "none",
    "consumers": [
+    "loxilb-ai-kv-alerts.yml",
     "loxilb-ai.json",
     "loxilb-alerts.yml"
    ],
@@ -500,7 +503,10 @@
    "activation": "V",
    "priority": "p0",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai-kv-alerts.yml",
+    "loxilb-ai.json"
+   ],
    "source": "api/prometheus/sockproxy_metrics.go:1440"
   },
   {
@@ -513,7 +519,9 @@
    "activation": "E",
    "priority": "p0",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
    "source": "api/prometheus/sockproxy_metrics.go:1448"
   },
   {
@@ -673,7 +681,10 @@
    "activation": "E",
    "priority": "p0",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai-kv-alerts.yml",
+    "loxilb-ai.json"
+   ],
    "source": "api/prometheus/ai_metrics.go:313"
   },
   {
@@ -729,7 +740,8 @@
    "privacy": "label-review",
    "consumers": [
     "loxilb-ai.json",
-    "loxilb-alerts.yml"
+    "loxilb-alerts.yml",
+    "loxilb-recording.yml"
    ],
    "source": "api/prometheus/ai_metrics.go:104"
   },
@@ -900,7 +912,10 @@
    "activation": "V",
    "priority": "p0",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai-kv-alerts.yml",
+    "loxilb-ai.json"
+   ],
    "source": "api/prometheus/ai_metrics.go:296"
   },
   {
@@ -1265,7 +1280,9 @@
    "priority": "p0",
    "privacy": "none",
    "consumers": [
-    "loxilb-ai.json"
+    "loxilb-ai-kv-alerts.yml",
+    "loxilb-ai.json",
+    "loxilb-recording.yml"
    ],
    "source": "api/prometheus/sockproxy_metrics.go:453"
   },
@@ -1282,7 +1299,10 @@
    "activation": "V",
    "priority": "p0",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai-kv-alerts.yml",
+    "loxilb-ai.json"
+   ],
    "source": "api/prometheus/sockproxy_metrics.go:464"
   },
   {
@@ -1298,7 +1318,9 @@
    "activation": "V",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
    "source": "api/prometheus/sockproxy_metrics.go:475"
   },
   {
@@ -1315,7 +1337,10 @@
    "activation": "V",
    "priority": "p0",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai-kv-alerts.yml",
+    "loxilb-ai.json"
+   ],
    "source": "api/prometheus/sockproxy_metrics.go:491"
   },
   {
@@ -1333,7 +1358,8 @@
    "privacy": "none",
    "consumers": [
     "loxilb-alerts.yml",
-    "loxilb-overview.json"
+    "loxilb-overview.json",
+    "loxilb-recording.yml"
    ],
    "source": "api/prometheus/l4_error_metrics.go:43"
   },
@@ -1347,7 +1373,9 @@
    "activation": "E",
    "priority": "p0",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-overview.json"
+   ],
    "source": "pkg/snapshot/metrics.go:45"
   },
   {
@@ -1627,7 +1655,10 @@
    "activation": "E",
    "priority": "p0",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai-kv-alerts.yml",
+    "loxilb-ai.json"
+   ],
    "source": "api/prometheus/sockproxy_metrics.go:637"
   },
   {
@@ -1640,7 +1671,10 @@
    "activation": "E",
    "priority": "p0",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai-kv-alerts.yml",
+    "loxilb-ai.json"
+   ],
    "source": "api/prometheus/sockproxy_metrics.go:631"
   },
   {
@@ -1765,7 +1799,10 @@
    "activation": "E",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai-kv-alerts.yml",
+    "loxilb-ai.json"
+   ],
    "source": "api/prometheus/sockproxy_metrics.go:605"
   },
   {
@@ -1920,7 +1957,10 @@
    "activation": "V",
    "priority": "p0",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai-kv-alerts.yml",
+    "loxilb-ai.json"
+   ],
    "source": "api/prometheus/sockproxy_metrics.go:554"
   },
   {
@@ -1933,7 +1973,10 @@
    "activation": "E",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai-kv-alerts.yml",
+    "loxilb-ai.json"
+   ],
    "source": "api/prometheus/sockproxy_metrics.go:597"
   },
   {
@@ -2387,7 +2430,8 @@
    "consumers": [
     "loxilb-alerts.yml",
     "loxilb-l7.json",
-    "loxilb-overview.json"
+    "loxilb-overview.json",
+    "loxilb-recording.yml"
    ],
    "source": "api/prometheus/sockproxy_metrics.go:291"
   },
@@ -2637,7 +2681,10 @@
    "activation": "P",
    "priority": "p0",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai-kv-alerts.yml",
+    "loxilb-overview.json"
+   ],
    "source": "pkg/snapshot/metrics.go:34"
   },
   {
@@ -2868,7 +2915,9 @@
    "activation": "P",
    "priority": "p0",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-overview.json"
+   ],
    "source": "pkg/snapshot/metrics.go:29"
   },
   {
