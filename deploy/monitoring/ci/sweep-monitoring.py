@@ -24,6 +24,13 @@ Subcommands:
                  ANY live series — proves the running build actually excludes
                  what the manifest says it excludes, the live twin of the
                  static boundary deny-list
+    cardinality  label-hygiene + series-budget audit: no family (manifest or
+                 live TSDB) carries a prohibited label (prompts, keys, request
+                 ids, free-form errors); every live series' label set stays
+                 within the family's manifest-declared labels; per-family live
+                 series count stays under budget (--max-series global cap,
+                 --budget name=N overrides); families whose labels are flagged
+                 privacy=label-review are reported as an access-boundary note
 
 Exit 0 = clean, 1 = at least one failure. Stdlib-only.
 """
@@ -193,6 +200,119 @@ def cmd_excluded_absent(args):
     return 0
 
 
+# Label names that must never appear on a shipped family, declared or live:
+# request-scoped identifiers and free-form text explode cardinality and can
+# carry user content (GW-MON-014). Enumerated-constant labels like `reason`
+# or `result` are allowed; anything that would echo a prompt, credential,
+# request id, or error string is not.
+PROHIBITED_LABELS = frozenset({
+    "prompt", "api_key", "apikey", "key", "token", "secret",
+    "request_id", "req_id", "conv_id", "conversation_id",
+    "error", "err", "message", "msg",
+})
+
+# Labels the scrape/rule pipeline attaches that no family declares itself.
+PIPELINE_LABELS = frozenset({"__name__", "instance", "job", "cluster", "le", "quantile"})
+
+
+def family_pattern(names):
+    """Anchored regex matching the given family names incl. histogram series."""
+    return "^(" + "|".join(re.escape(n) for n in names) + ")(_bucket|_sum|_count)?$"
+
+
+def base_family(series_name, known):
+    """Fold a live series name back to its manifest family name."""
+    if series_name in known:
+        return series_name
+    for suf in ("_bucket", "_sum", "_count"):
+        if series_name.endswith(suf) and series_name[: -len(suf)] in known:
+            return series_name[: -len(suf)]
+    return series_name
+
+
+def cmd_cardinality(args):
+    with open(args.manifest, encoding="utf-8") as fh:
+        manifest = json.load(fh)
+    fams = {f["name"]: f for f in manifest["families"]}
+    failures = 0
+
+    # 1. Static: no family may DECLARE a prohibited label — guards the
+    #    contract itself, independent of what is currently live.
+    for name, f in sorted(fams.items()):
+        bad = sorted(set(f["labels"]) & PROHIBITED_LABELS)
+        if bad:
+            print(f"  FAIL prohibited label declared: {name} {bad}")
+            failures += 1
+
+    # 2. Live: per-family series count within budget.
+    budgets = {}
+    for spec in args.budget or []:
+        fam, _, cap = spec.partition("=")
+        if fam not in fams:
+            print(f"  FAIL --budget references unknown family: {fam}")
+            failures += 1
+            continue
+        budgets[fam] = int(cap)
+    resp = prom_query(args.prom,
+                      f'count by (__name__) ({{__name__=~"{family_pattern(fams)}"}})')
+    if resp.get("status") != "success":
+        print(f"  FAIL cardinality count query: {resp.get('error', resp)}")
+        return 1
+    live_counts = {}
+    for r in resp["data"]["result"]:
+        fam = base_family(r["metric"].get("__name__", "?"), fams)
+        live_counts[fam] = live_counts.get(fam, 0) + int(r["value"][1])
+    total = sum(live_counts.values())
+    for fam in sorted(live_counts):
+        cap = budgets.get(fam, args.max_series)
+        if live_counts[fam] > cap:
+            print(f"  FAIL series budget: {fam} has {live_counts[fam]} series "
+                  f"(cap {cap})")
+            failures += 1
+    if args.max_total and total > args.max_total:
+        print(f"  FAIL total series budget: {total} loxilb series "
+              f"(cap {args.max_total})")
+        failures += 1
+
+    # 3. Live: every live family's label names stay inside its declared set
+    #    (plus pipeline labels). Catches undeclared-label drift AND any
+    #    prohibited label that reached the wire.
+    checked = 0
+    for fam in sorted(live_counts):
+        if fam not in fams:
+            print(f"  FAIL live loxilb family not in manifest: {fam}")
+            failures += 1
+            continue
+        url = (f"{args.prom}/api/v1/labels?match[]="
+               + urllib.parse.quote(f'{{__name__=~"{family_pattern([fam])}"}}'))
+        resp = http_get(url)
+        if resp.get("status") != "success":
+            print(f"  FAIL labels query for {fam}: {resp.get('error', resp)}")
+            failures += 1
+            continue
+        checked += 1
+        live_labels = set(resp["data"])
+        extra = sorted(live_labels - set(fams[fam]["labels"]) - PIPELINE_LABELS)
+        if extra:
+            kind = ("PROHIBITED" if set(extra) & PROHIBITED_LABELS
+                    else "undeclared")
+            print(f"  FAIL {kind} live label(s) on {fam}: {extra}")
+            failures += 1
+
+    # 4. Access-boundary note (non-fatal): live families whose labels are
+    #    flagged privacy=label-review (network/tenant identifiers) — access
+    #    to this Prometheus must stay within the operator boundary.
+    review = sorted(f for f in live_counts
+                    if fams.get(f, {}).get("privacy") == "label-review")
+    if review:
+        print(f"  note: {len(review)} live famil(ies) carry privacy-review "
+              f"labels (operator-boundary data): {', '.join(review)}")
+
+    print(f"cardinality: {len(live_counts)} live families, {total} series, "
+          f"{checked} label-audited, budgets {'OK' if not failures else 'VIOLATED'}")
+    return 1 if failures else 0
+
+
 def cmd_grafana(args):
     g, u, p = args.grafana, args.user, args.password
     failures = 0
@@ -282,6 +402,18 @@ def main():
     sp.add_argument("--manifest",
                     default=os.path.join(MON_DIR, "manifest", "metric-manifest.json"))
     sp.set_defaults(fn=cmd_excluded_absent)
+
+    sp = sub.add_parser("cardinality")
+    sp.add_argument("--prom", default="http://127.0.0.1:9090")
+    sp.add_argument("--manifest",
+                    default=os.path.join(MON_DIR, "manifest", "metric-manifest.json"))
+    sp.add_argument("--max-series", type=int, default=500,
+                    help="per-family live series cap (default 500)")
+    sp.add_argument("--max-total", type=int, default=0,
+                    help="total loxilb series cap (0 = unchecked)")
+    sp.add_argument("--budget", action="append", metavar="FAMILY=N",
+                    help="per-family cap override (repeatable)")
+    sp.set_defaults(fn=cmd_cardinality)
 
     args = ap.parse_args()
     sys.exit(args.fn(args))
