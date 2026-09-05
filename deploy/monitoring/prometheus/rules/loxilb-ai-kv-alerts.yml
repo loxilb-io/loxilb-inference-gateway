@@ -160,35 +160,7 @@ groups:
           dashboard: "LoxiLB / AI Gateway"
           panel: "Policy store / unmetered"
 
-      - alert: LoxilbKvEnforcementFault
-        expr: loxilb_ai_kv_enforcement_fault > 0
-        for: 2m
-        labels: { severity: warning }
-        annotations:
-          summary: "KV attestation enforcement fault (rule {{ $labels.rule }})"
-          description: "The KV attestation enforcement gate is reporting a fault on rule {{ $labels.rule }} — engine capability enforcement is not being applied as configured."
-          dashboard: "LoxiLB / AI Gateway"
-          panel: "KV attestation"
-
-      - alert: LoxilbKvAttestProbeFailing
-        expr: >-
-          sum by (cluster, instance, reason)
-          (rate(loxilb_ai_kv_attest_probe_fail_total[10m])) > 0
-        for: 10m
-        labels: { severity: warning }
-        annotations:
-          summary: "KV attestation probes failing ({{ $labels.reason }})"
-          description: "Attestation probes have been failing for 10m ({{ $labels.reason }}). The gateway cannot verify engine KV capability; affected endpoints may be excluded from KV-exact routing."
-          dashboard: "LoxiLB / AI Gateway"
-          panel: "KV attestation"
-
-      - alert: LoxilbKvAttestEchoFailure
-        expr: >-
-          sum by (cluster, instance)
-          (increase(loxilb_ai_kv_attest_echo_total{result="fail"}[15m])) > 0
-        labels: { severity: warning }
-        annotations:
-          summary: "KV attestation echo-challenge failures"
-          description: "Echo challenges failed in the last 15m: an engine answered attestation incorrectly. Possible engine misconfiguration or identity mismatch on the attested endpoint."
-          dashboard: "LoxiLB / AI Gateway"
-          panel: "KV attestation"
+      # KV attestation conditions (enforcement fault, probe failures, echo
+      # failures) are alerted by the KvExact* group in loxilb-alerts.yml —
+      # do not re-alert the same series here (duplicate pages with divergent
+      # severities/windows).
