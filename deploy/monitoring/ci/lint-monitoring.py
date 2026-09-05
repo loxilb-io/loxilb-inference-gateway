@@ -34,8 +34,21 @@ INFRA_PREFIXES = (
     "up", "scrape_", "prometheus_", "process_", "go_", "promhttp_", "ALERTS",
 )
 # Metric families that are registered lazily / conditionally: absent on an idle
-# or non-DPU system by design (§3.5). Panels over these SHOULD set noValue.
-LAZY_PREFIXES = ("doca_", "aictrl_", "loxilb_ai_", "loxilb_l4_error_")
+# system by design (§3.5). Panels over these SHOULD set noValue.
+LAZY_PREFIXES = ("loxilb_ai_", "loxilb_l4_error_")
+
+# Package-boundary deny-list: metric surfaces owned by components outside the
+# default product profile (DPU/DOCA hardware profile, the standalone AI
+# controller, the standalone KV agent's gateway-side liveness gauge). The
+# default dashboards and rules must not reference them at all — not as hidden
+# panels, fallbacks inside a larger expression, or "No data" placeholders. A
+# separately versioned profile is the only way to consume them.
+BOUNDARY_DENY_PREFIXES = ("doca_", "aictrl_")
+BOUNDARY_DENY_EXACT = {"loxilb_kv_agent_up"}
+
+
+def boundary_violation(ref):
+    return ref.startswith(BOUNDARY_DENY_PREFIXES) or ref in BOUNDARY_DENY_EXACT
 
 METRIC_TOKEN = re.compile(r"\b((?:loxilb|doca|aictrl)_[a-z0-9_]+)\b")
 HIST_SUFFIXES = ("_bucket", "_count", "_sum")
@@ -72,17 +85,32 @@ class Report:
 # Exporter metric surface (the ground truth for name resolution)
 # ---------------------------------------------------------------------------
 def collect_exporter_metrics(repo_root):
-    """Every "loxilb_*"/"doca_*"/"aictrl_*" string literal in the Go tree
-    (excluding the eBPF submodule). This is the set of names the binary can
-    actually emit — the same source the manual step-3 validation resolved
-    against."""
+    """The family names the binaries can actually emit.
+
+    Primary source: the committed metric ownership manifest, which is derived
+    from Go AST extraction (tools/metric-manifest) and therefore knows about
+    Namespace/Subsystem-composed names that never appear as a single string
+    literal. gen-metric-manifest.py --check keeps that file honest in the same
+    CI run, so trusting it here does not weaken the gate.
+
+    Fallback (manifest missing, e.g. an old checkout): a literal scan over
+    non-test Go sources. Test files are excluded either way — a mock metric
+    name in *_test.go is not part of the exporter surface and must not make a
+    dashboard reference resolve."""
+    manifest = os.path.join(repo_root, "deploy", "monitoring", "manifest",
+                            "metric-manifest.json")
+    try:
+        data = json.load(open(manifest, encoding="utf-8"))
+        return {f["name"] for f in data["families"]}
+    except (OSError, KeyError, json.JSONDecodeError):
+        pass
     names = set()
-    skip = {".git", "loxilb-ebpf", "vendor", "node_modules"}
+    skip = {".git", "loxilb-ebpf", "vendor", "node_modules", "3rdparty"}
     lit = re.compile(r'"((?:loxilb|doca|aictrl)_[a-z0-9_]+)"')
     for dirpath, dirnames, filenames in os.walk(repo_root):
         dirnames[:] = [d for d in dirnames if d not in skip]
         for fn in filenames:
-            if not fn.endswith(".go"):
+            if not fn.endswith(".go") or fn.endswith("_test.go"):
                 continue
             try:
                 with open(os.path.join(dirpath, fn), encoding="utf-8",
@@ -193,7 +221,11 @@ def lint_dashboards(mon_dir, exporter, rep):
                 all_exprs.append((name, expr))
                 for m in METRIC_TOKEN.finditer(expr):
                     ref = m.group(1)
-                    if not is_known_metric(ref, exporter):
+                    if boundary_violation(ref):
+                        rep.err(name, f"panel '{p.get('title')}' references "
+                                      f"'{ref}', which belongs to a component "
+                                      f"outside the default package boundary")
+                    elif not is_known_metric(ref, exporter):
                         rep.err(name, f"panel '{p.get('title')}' references "
                                       f"unknown metric '{ref}' "
                                       f"(not in exporter source)")
@@ -269,7 +301,11 @@ def lint_rules(mon_dir, exporter, title_to_panels, rep):
 
     for m in METRIC_TOKEN.finditer(expr_blob):
         ref = m.group(1)
-        if not is_known_metric(ref, exporter):
+        if boundary_violation(ref):
+            rep.err("loxilb-alerts.yml",
+                    f"alert expr references '{ref}', which belongs to a "
+                    f"component outside the default package boundary")
+        elif not is_known_metric(ref, exporter):
             rep.err("loxilb-alerts.yml",
                     f"alert expr references unknown metric '{ref}'")
 
@@ -340,6 +376,9 @@ def main():
     ap.add_argument("--repo-root", default=None)
     ap.add_argument("--promtool", default=None,
                     help="path to promtool (default: $PATH)")
+    ap.add_argument("--require-promtool", action="store_true",
+                    help="fail (instead of warn) when promtool is absent, so "
+                         "CI cannot silently skip rule and PromQL validation")
     args = ap.parse_args()
 
     here = os.path.dirname(os.path.abspath(__file__))
@@ -366,6 +405,9 @@ def main():
         print(f"  promtool: {promtool}")
         promtool_check_rules(promtool, mon_dir, rep)
         promtool_check_exprs(promtool, exprs, rep)
+    elif args.require_promtool:
+        rep.err("promtool", "not found but required — rule-validity and "
+                            "PromQL syntax checks did not run")
     else:
         rep.warn("promtool", "not found — skipped rule-validity and PromQL "
                              "syntax checks (CI installs promtool)")

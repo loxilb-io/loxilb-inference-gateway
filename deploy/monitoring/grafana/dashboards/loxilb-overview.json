@@ -283,55 +283,6 @@
       "targets": [{ "refId": "A", "expr": "rate(loxilb_conntrack_stat_resets_total{instance=~\"$instance\"}[$__rate_interval])", "legendFormat": "{{instance}}" }],
       "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
       "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
-    },
-    {
-      "id": 17,
-      "type": "row",
-      "title": "DPU offload (DOCA) — N/A when no DPU attached",
-      "collapsed": true,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
-      "panels": [
-        {
-          "id": 18,
-          "type": "timeseries",
-          "title": "DOCA active offloaded flows",
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 33 },
-          "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
-          "targets": [{ "refId": "A", "expr": "doca_offload_active_flows{instance=~\"$instance\"}", "legendFormat": "{{instance}}" }],
-          "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
-          "fieldConfig": { "defaults": { "unit": "short", "noValue": "N/A (no DPU attached)" }, "overrides": [] }
-        },
-        {
-          "id": 19,
-          "type": "timeseries",
-          "title": "DOCA offload failures/s",
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 33 },
-          "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
-          "targets": [{ "refId": "A", "expr": "rate(doca_offload_failures_total{instance=~\"$instance\"}[$__rate_interval])", "legendFormat": "{{instance}}" }],
-          "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
-          "fieldConfig": { "defaults": { "unit": "short", "noValue": "N/A (no DPU attached)" }, "overrides": [] }
-        },
-        {
-          "id": 20,
-          "type": "timeseries",
-          "title": "DOCA CT pipe utilization",
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 41 },
-          "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
-          "targets": [{ "refId": "A", "expr": "doca_ct_pipe_utilization{instance=~\"$instance\"}", "legendFormat": "{{instance}}" }],
-          "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
-          "fieldConfig": { "defaults": { "unit": "percentunit", "noValue": "N/A (no DPU attached)" }, "overrides": [] }
-        },
-        {
-          "id": 21,
-          "type": "timeseries",
-          "title": "DOCA meter pool exhausted/s",
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 41 },
-          "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
-          "targets": [{ "refId": "A", "expr": "rate(doca_meter_pool_exhausted_total{instance=~\"$instance\"}[$__rate_interval])", "legendFormat": "{{instance}}" }],
-          "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
-          "fieldConfig": { "defaults": { "unit": "short", "noValue": "N/A (no DPU attached)" }, "overrides": [] }
-        }
-      ]
     }
   ]
 }

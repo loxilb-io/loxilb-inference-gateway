@@ -72,9 +72,7 @@
    "activation": "D+V",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [
-    "loxilb-overview.json"
-   ],
+   "consumers": [],
    "source": "pkg/loxinet/dpu_metrics.go:56"
   },
   {
@@ -150,9 +148,7 @@
    "activation": "D+E",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [
-    "loxilb-overview.json"
-   ],
+   "consumers": [],
    "source": "pkg/loxinet/dpu_metrics.go:79"
   },
   {
@@ -165,9 +161,7 @@
    "activation": "D+E",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [
-    "loxilb-overview.json"
-   ],
+   "consumers": [],
    "source": "pkg/loxinet/dpu_metrics.go:34"
   },
   {
@@ -208,9 +202,7 @@
    "activation": "D+E",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [
-    "loxilb-overview.json"
-   ],
+   "consumers": [],
    "source": "pkg/loxinet/dpu_metrics.go:46"
   },
   {
@@ -1240,10 +1232,7 @@
    "activation": "E",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [
-    "loxilb-ai.json",
-    "loxilb-alerts.yml"
-   ],
+   "consumers": [],
    "source": "pkg/loxinet/kv_agent_client.go:46"
   },
   {
@@ -3296,9 +3285,7 @@
    "activation": "T",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [
-    "loxilb-ai.json"
-   ],
+   "consumers": [],
    "source": "cmd/loxilb-ai-controller/metrics.go:155"
   },
   {
