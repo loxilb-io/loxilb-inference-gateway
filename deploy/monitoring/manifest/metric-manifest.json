@@ -1,13 +1,13 @@
 {
  "contract": {
-  "total": 226,
+  "total": 227,
   "owners": {
-   "loxilb": 203,
+   "loxilb": 204,
    "loxilb-ai-controller": 19,
    "loxilb-kv-agent": 4
   },
   "classes": {
-   "default": 170,
+   "default": 171,
    "dpu-doca": 24,
    "aictrl-bridge": 8,
    "kv-agent-health": 1,
@@ -16,9 +16,9 @@
   }
  },
  "coverage": {
-  "default_families": 170,
+  "default_families": 171,
   "default_referenced": 110,
-  "default_unreferenced": 60
+  "default_unreferenced": 61
  },
  "families": [
   {
@@ -929,7 +929,7 @@
    "priority": "p0",
    "privacy": "none",
    "consumers": [],
-   "source": "pkg/snapshot/metrics.go:60"
+   "source": "pkg/snapshot/metrics.go:61"
   },
   {
    "name": "loxilb_backend_traffic_bytes_total",
@@ -990,7 +990,7 @@
    "priority": "p0",
    "privacy": "none",
    "consumers": [],
-   "source": "pkg/snapshot/metrics.go:50"
+   "source": "pkg/snapshot/metrics.go:51"
   },
   {
    "name": "loxilb_boot_legacy_fallback_total",
@@ -1003,7 +1003,7 @@
    "priority": "p0",
    "privacy": "none",
    "consumers": [],
-   "source": "pkg/snapshot/metrics.go:70"
+   "source": "pkg/snapshot/metrics.go:71"
   },
   {
    "name": "loxilb_client_traffic_packets_total",
@@ -1035,6 +1035,19 @@
    "privacy": "none",
    "consumers": [],
    "source": "api/prometheus/prometheus.go:508"
+  },
+  {
+   "name": "loxilb_config_dirty",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/snapshot/metrics.go:76"
   },
   {
    "name": "loxilb_conntrack_max_entries",
@@ -1450,7 +1463,7 @@
    "consumers": [
     "loxilb-overview.json"
    ],
-   "source": "pkg/snapshot/metrics.go:45"
+   "source": "pkg/snapshot/metrics.go:46"
   },
   {
    "name": "loxilb_lb_rule_interaction_bytes_total",
@@ -2170,7 +2183,7 @@
    "priority": "p0",
    "privacy": "none",
    "consumers": [],
-   "source": "pkg/snapshot/metrics.go:55"
+   "source": "pkg/snapshot/metrics.go:56"
   },
   {
    "name": "loxilb_processed_bytes_total",
@@ -2755,7 +2768,7 @@
    "priority": "p0",
    "privacy": "none",
    "consumers": [],
-   "source": "pkg/snapshot/metrics.go:39"
+   "source": "pkg/snapshot/metrics.go:40"
   },
   {
    "name": "loxilb_restore_total",
@@ -2774,7 +2787,7 @@
     "loxilb-ai-kv-alerts.yml",
     "loxilb-overview.json"
    ],
-   "source": "pkg/snapshot/metrics.go:34"
+   "source": "pkg/snapshot/metrics.go:35"
   },
   {
    "name": "loxilb_security_conn_blocked_total",
@@ -3003,7 +3016,7 @@
    "priority": "p0",
    "privacy": "none",
    "consumers": [],
-   "source": "pkg/snapshot/metrics.go:65"
+   "source": "pkg/snapshot/metrics.go:66"
   },
   {
    "name": "loxilb_snapshot_total",
@@ -3020,7 +3033,7 @@
    "consumers": [
     "loxilb-overview.json"
    ],
-   "source": "pkg/snapshot/metrics.go:29"
+   "source": "pkg/snapshot/metrics.go:30"
   },
   {
    "name": "loxilb_sockproxy_sync_apply_errors_total",
