@@ -52,15 +52,6 @@ tests:
       - alertname: LoxilbUnmeteredTraffic
         eval_time: 30m
         exp_alerts: []
-      - alertname: LoxilbKvEnforcementFault
-        eval_time: 30m
-        exp_alerts: []
-      - alertname: LoxilbKvAttestProbeFailing
-        eval_time: 30m
-        exp_alerts: []
-      - alertname: LoxilbKvAttestEchoFailure
-        eval_time: 30m
-        exp_alerts: []
 
   # ── wire rejects fire; resolve after the rejects stop ────────────────────
   - interval: 30s
@@ -253,40 +244,3 @@ tests:
               description: "Requests on 10.0.0.1 are completing without token metering for 10m+. Billing/quota accounting is undercounting; check key attribution and usage-object parsing on that service."
               dashboard: "LoxiLB / AI Gateway"
               panel: "Policy store / unmetered"
-
-  # ── attestation: enforcement fault gauge + echo failure counter ──────────
-  - interval: 30s
-    input_series:
-      - series: 'loxilb_ai_kv_enforcement_fault{rule="42",cluster="c1",instance="gw-a",job="loxilb"}'
-        values: '0x10 1x20'
-      - series: 'loxilb_ai_kv_attest_echo_total{result="fail",cluster="c1",instance="gw-a",job="loxilb"}'
-        values: '0x10 2x30'
-      - series: 'loxilb_ai_kv_attest_echo_total{result="ok",cluster="c1",instance="gw-b",job="loxilb"}'
-        values: '0+100x40'          # healthy echoes never fire the alert
-    alert_rule_test:
-      - alertname: LoxilbKvEnforcementFault
-        eval_time: 8m
-        exp_alerts:
-          - exp_labels:
-              severity: warning
-              cluster: c1
-              instance: gw-a
-              job: loxilb
-              rule: "42"
-            exp_annotations:
-              summary: "KV attestation enforcement fault (rule 42)"
-              description: "The KV attestation enforcement gate is reporting a fault on rule 42 — engine capability enforcement is not being applied as configured."
-              dashboard: "LoxiLB / AI Gateway"
-              panel: "KV attestation"
-      - alertname: LoxilbKvAttestEchoFailure
-        eval_time: 7m
-        exp_alerts:
-          - exp_labels:
-              severity: warning
-              cluster: c1
-              instance: gw-a
-            exp_annotations:
-              summary: "KV attestation echo-challenge failures"
-              description: "Echo challenges failed in the last 15m: an engine answered attestation incorrectly. Possible engine misconfiguration or identity mismatch on the attested endpoint."
-              dashboard: "LoxiLB / AI Gateway"
-              panel: "KV attestation"

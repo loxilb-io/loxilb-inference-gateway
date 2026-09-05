@@ -456,7 +456,6 @@
    "priority": "p0",
    "privacy": "none",
    "consumers": [
-    "loxilb-ai-kv-alerts.yml",
     "loxilb-ai.json",
     "loxilb-alerts.yml"
    ],
@@ -476,7 +475,6 @@
    "priority": "p0",
    "privacy": "none",
    "consumers": [
-    "loxilb-ai-kv-alerts.yml",
     "loxilb-ai.json",
     "loxilb-alerts.yml"
    ],
@@ -516,7 +514,6 @@
    "priority": "p0",
    "privacy": "none",
    "consumers": [
-    "loxilb-ai-kv-alerts.yml",
     "loxilb-ai.json",
     "loxilb-alerts.yml"
    ],
