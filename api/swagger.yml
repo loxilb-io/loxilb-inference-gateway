@@ -7262,8 +7262,9 @@ definitions:
       requiredEvidenceLevel and enforcement are present iff the rule is strict
       (profile-bound); wireSchemaId and pdDialectId are present iff an
       engine-contract registry serves them.
-      State and reason vocabularies are published in the x-kv-status-states /
-      x-kv-status-reason-codes blocks below as an OPEN vocabulary versioned by
+      State, reason and enforcement-fault vocabularies are published in the
+      x-kv-status-states / x-kv-status-reason-codes / x-kv-status-fault-codes
+      blocks below as an OPEN vocabulary versioned by
       x-kv-status-vocabulary-version (new values bump the version; existing
       values are never renamed or re-used). Forward-compatibility rule,
       binding on clients: an unrecognized desiredState/enforcedState MUST be
@@ -7277,7 +7278,7 @@ definitions:
       - desiredState
       - enforcedState
       - reasonCodes
-    x-kv-status-vocabulary-version: 1
+    x-kv-status-vocabulary-version: 2
     x-kv-status-states:
       LEGACY_ACTIVE_UNATTESTED: Profile-less rule running the legacy behavior - active, unattested, and says so.
       PROFILE_VALIDATED: Strict admission passed (profile published, alias admits the model, tokenizer artifacts digest-matched, binding composed); the attestation ladder has not yet earned the parity/hash rungs.
@@ -7319,6 +7320,12 @@ definitions:
       engine_geometry_mismatch: Engine KV geometry (block size/layout) disagrees with the bound contract.
       probe_fixtures_missing: Attestation probe fixture set is missing for the profile's declared API surfaces.
       probe_fixture_drift: Attestation probe fixtures no longer match the profile's pinned artifacts.
+    x-kv-status-fault-codes:
+      no_dataplane_setter: No data-plane contract setter is registered in this gateway build.
+      binding_state_missing: Strict rule had no binding state at contract install time (partial restore or allocation fault).
+      dataplane_setter_failed: The data-plane contract setter refused the install transaction.
+      dataplane_ack_mismatch: Data-plane readback disagreed with the requested contract word.
+      binding_changed_during_install: A binding re-allocation raced the install; the applied word was stale.
     properties:
       ruleIdentity:
         type: string
@@ -7396,7 +7403,7 @@ definitions:
         description: RFC3339 time of the last full contract-word ACK (readback and binding-digest halves both verified). Absent before the first ACK after registration or restart.
       fault:
         type: string
-        description: Last enforcement fault reason (absent when none).
+        description: Last enforcement fault code (x-kv-status-fault-codes vocabulary; absent when none). Same forward-compatibility rule as reasonCodes - an unrecognized value MUST be rendered raw and MUST NOT be treated as fatal.
       goFenced:
         type: boolean
         x-omitempty: false
@@ -7417,7 +7424,7 @@ definitions:
       registryGeneration:
         type: integer
         format: uint64
-        description: Monotonic generation number of the published registry (0 = no registry published).
+        description: Generation number of the published registry, derived from setDigest - stable across gateway restarts and different exactly when the published content differs (0 = no registry published). NOT a monotonic counter; compare for equality, never for order. setDigest remains the authoritative cache key; this value is its integer projection.
       setDigest:
         type: string
         description: Digest over the published generation's profile documents and verified artifact bytes. Compare against later reads (and the kvexactstatus read-back) to detect a reload between discovery and rule creation.
@@ -8014,7 +8021,7 @@ definitions:
           kvModelProfile:
             type: string
             x-nullable: false
-            description: "ID of the ModelPromptProfile this rule binds to. Naming a profile makes the rule STRICT: the profile must be published in the gateway's profile registry, its alias policy must admit the rule's model_name, its pinned tokenizer artifacts must load and digest-match, and a composed KV-exact binding (model-profile@generation + engine-contract@generation) is allocated at create time — admission fails closed while no engine-contract registry is available. Absent = legacy profile-less rule (no binding; documented migration behavior). Immutable after create (delete+recreate to change), with ONE sanctioned exception: the migration attach. A replace-POST that names a profile on a live profile-less rule is admitted and re-runs the full strict bring-up (admission checks run BEFORE any mutation, so a refused attach leaves the rule, binding, and data plane untouched; enforcement reports pending until the data-plane contract installs and is acknowledged). The reverse transitions — dropping the profile or changing it to another — stay refused, as does any kvExactApiMode change during the attach (raw-string equality; an undeclared apiMode must stay undeclared in the attach POST). CAVEAT operators must be shown: attaching changes the rule's EFFECTIVE surface from the legacy both-surfaces default to the profile's declared supportedApis — attaching a completions-only profile to a rule that was serving chat traffic narrows the served surface. Scalar by schema — exactly one profile per rule; arrays are rejected representations."
+            description: "ID of the ModelPromptProfile this rule binds to. Naming a profile makes the rule STRICT: the profile must be published in the gateway's profile registry, its alias policy must admit the rule's model_name, its pinned tokenizer artifacts must load and digest-match, and a composed KV-exact binding (model-profile@generation + engine-contract@generation) is allocated at create time — admission fails closed while no engine-contract registry is available. Absent = legacy profile-less rule (no binding; documented migration behavior). Immutable after create (delete+recreate to change), with ONE sanctioned exception: the migration attach. A replace-POST that names a profile on a live profile-less rule is admitted and re-runs the full strict bring-up (admission checks run BEFORE any mutation, so a refused attach leaves the rule, binding, and data plane untouched; enforcement reports pending until the data-plane contract installs and is acknowledged). The reverse transitions — dropping the profile or changing it to another — stay refused, as does any kvExactApiMode change during the attach (raw-string equality; an undeclared apiMode must stay undeclared in the attach POST). CAVEAT operators must be shown: attaching changes the rule's DECLARED surface from the legacy both-surfaces default to the profile's declared supportedApis, and the excluded surface loses KV-exact scoring eligibility — requests on it are NOT refused; they keep routing through the fallback tiers and still answer. Attaching a completions-only profile to a rule serving chat traffic therefore silently downgrades chat routing quality, not chat availability, and the attach POST reports plain success with no warning. Scalar by schema — exactly one profile per rule; arrays are rejected representations."
           pdBootstrapPort:
             type: integer
             format: int32

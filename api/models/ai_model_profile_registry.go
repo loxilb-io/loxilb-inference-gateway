@@ -24,7 +24,7 @@ type AiModelProfileRegistry struct {
 	// Required: true
 	Profiles []*AiModelProfileEntry `json:"profiles"`
 
-	// Monotonic generation number of the published registry (0 = no registry published).
+	// Generation number of the published registry, derived from setDigest - stable across gateway restarts and different exactly when the published content differs (0 = no registry published). NOT a monotonic counter; compare for equality, never for order. setDigest remains the authoritative cache key; this value is its integer projection.
 	// Required: true
 	RegistryGeneration *uint64 `json:"registryGeneration"`
 
