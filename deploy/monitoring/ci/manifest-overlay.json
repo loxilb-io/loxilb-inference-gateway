@@ -10,14 +10,14 @@
   "Combined codes (D+P etc.) apply both behaviors."
  ],
  "expected": {
-  "total": 219,
+  "total": 222,
   "owners": {
-   "loxilb": 196,
+   "loxilb": 199,
    "loxilb-ai-controller": 19,
    "loxilb-kv-agent": 4
   },
   "classes": {
-   "default": 163,
+   "default": 166,
    "dpu-doca": 24,
    "aictrl-bridge": 8,
    "kv-agent-health": 1,
@@ -144,6 +144,9 @@
   "loxilb_ai_tokens_estimated_total": "V",
   "loxilb_ai_tokens_missing_total": "V",
   "loxilb_ai_unmetered_requests_total": "V",
+  "loxilb_backend_traffic_bytes_total": "P",
+  "loxilb_backend_traffic_connections_total": "V",
+  "loxilb_backend_traffic_packets_total": "P",
   "loxilb_boot_config_conflict_total": "E",
   "loxilb_client_traffic_packets_total": "V",
   "loxilb_closed_connections_processed_total": "E",
@@ -330,6 +333,9 @@
    "loxilb_ai_kv_enforcement_fault",
    "loxilb_ai_kv_trtllm_drain_ownership_fault_total",
    "loxilb_ai_kv_trtllm_drain_ownership_heal_total",
+   "loxilb_backend_traffic_bytes_total",
+   "loxilb_backend_traffic_connections_total",
+   "loxilb_backend_traffic_packets_total",
    "loxilb_kv_subscriber_wire_reject_total",
    "loxilb_pd_connect_retry_same_ep_ok_total",
    "loxilb_pd_connect_retry_same_ep_total"

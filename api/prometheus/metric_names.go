@@ -91,4 +91,10 @@ const (
 	MetricServiceTrafficPackets = "loxilb_service_traffic_packets_total"
 	MetricEndpointTrafficBytes  = "loxilb_endpoint_traffic_bytes_total"
 	MetricClientTrafficPackets  = "loxilb_client_traffic_packets_total"
+
+	// Exact per-backend traffic metrics (service x endpoint, data-plane rule
+	// counters; connections stay conntrack-sweep derived)
+	MetricBackendTrafficBytes       = "loxilb_backend_traffic_bytes_total"
+	MetricBackendTrafficPackets     = "loxilb_backend_traffic_packets_total"
+	MetricBackendTrafficConnections = "loxilb_backend_traffic_connections_total"
 )

@@ -359,6 +359,40 @@ var (
 		[]string{"service", "sip"},
 	)
 
+	// Per-backend exact traffic counters. Unlike loxilb_endpoint_traffic_bytes
+	// (conntrack persistent-flow view, dip only), bytes/packets here come from
+	// the CUMULATIVE data-plane rule counters, so flows of any lifetime are
+	// counted and the endpoint label carries the configured "ip:port". Series
+	// cardinality is bounded by the configured named-service x endpoint set;
+	// bytes/packets children are deleted when the endpoint leaves the rule
+	// config (same sweep that detects it). Connections children are NOT
+	// deleted on endpoint removal: they are fed by the separate conntrack
+	// sweep goroutine, and a cross-goroutine delete can be resurrected by an
+	// in-flight Add for a draining flow (the ghost-series class fixed under
+	// kvSeriesMu for the KV subscriber gauges) — a frozen counter child is
+	// harmless, a resurrected one is not.
+	backendTrafficBytes = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricBackendTrafficBytes,
+			Help: "Total bytes per endpoint per NAMED service, from the exact cumulative data-plane rule counters (flows of any lifetime). endpoint is \"ip:port\".",
+		},
+		[]string{"service", "endpoint"},
+	)
+	backendTrafficPackets = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricBackendTrafficPackets,
+			Help: "Total packets per endpoint per NAMED service, from the exact cumulative data-plane rule counters (flows of any lifetime). endpoint is \"ip:port\".",
+		},
+		[]string{"service", "endpoint"},
+	)
+	backendTrafficConnections = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricBackendTrafficConnections,
+			Help: "Sampled new sessions per endpoint per NAMED service. PERSISTENT-FLOW VIEW: conntrack-sweep derived; sessions born and closed within one 10s sweep are not counted. endpoint is \"ip:port\".",
+		},
+		[]string{"service", "endpoint"},
+	)
+
 	// Request counters; requests-per-second is derived in PromQL:
 	// rate(loxilb_requests_total[1m])
 	totalRequests = promauto.NewCounter(
@@ -445,6 +479,12 @@ var (
 	// and service_traffic_* counters, because the sweep misses every flow shorter
 	// than one collection period (finding D2: 869 DP packets vs 43 sweep-observed).
 	prevLbEpStats = make(map[string]Stats)
+
+	// prevBackendEpPairs is the (named service, "ip:port" endpoint) set seen by
+	// the previous RunGetLBRule sweep — the departure signal for deleting
+	// backend_traffic_{bytes,packets} children when an endpoint leaves the rule
+	// config. Only touched by the RunGetLBRule goroutine.
+	prevBackendEpPairs = make(map[[2]string]bool)
 
 	// lbStatsFirstCycle marks the first RunGetLBRule pass after Init: baselines
 	// are seeded without adding, so pre-existing cumulative DP totals do not
@@ -734,6 +774,7 @@ func Init() {
 		Bytes   uint64
 	})
 	prevLbEpStats = make(map[string]Stats)
+	prevBackendEpPairs = make(map[[2]string]bool)
 	lbStatsFirstCycle = true
 	conntrackRWMutex.Lock()
 	prevConntrackStats = make(map[ConntrackKey]Stats)
@@ -934,6 +975,9 @@ func collectLbRuleTraffic(info []cmn.LbRuleMod) {
 	protoPackets := make(map[string]uint64, 3)
 	svcBytes := make(map[string]uint64)
 	svcPackets := make(map[string]uint64)
+	epBytes := make(map[[2]string]uint64)
+	epPackets := make(map[[2]string]uint64)
+	currentPairs := make(map[[2]string]bool, len(prevBackendEpPairs))
 
 	currentEps := make(map[string]bool, len(prevLbEpStats))
 	for i := range info {
@@ -952,6 +996,15 @@ func collectLbRuleTraffic(info []cmn.LbRuleMod) {
 			}
 			key := fmt.Sprintf("%s|%s|%d", ruleIdent, ep.EpIP, ep.EpPort)
 			currentEps[key] = true
+
+			// Register config presence for the per-backend series even on the
+			// seed cycle, so the departure detector below never mistakes a
+			// seed pass for a mass endpoint removal.
+			var pair [2]string
+			if svc != "" {
+				pair = [2]string{svc, fmt.Sprintf("%s:%d", ep.EpIP, ep.EpPort)}
+				currentPairs[pair] = true
+			}
 
 			// First sight or counter reset (rule/endpoint re-created with a
 			// fresh DP counter): the full current value is the delta
@@ -974,6 +1027,8 @@ func collectLbRuleTraffic(info []cmn.LbRuleMod) {
 			if svc != "" {
 				svcBytes[svc] += deltaBytes
 				svcPackets[svc] += deltaPkts
+				epBytes[pair] += deltaBytes
+				epPackets[pair] += deltaPkts
 			}
 		}
 	}
@@ -988,6 +1043,7 @@ func collectLbRuleTraffic(info []cmn.LbRuleMod) {
 
 	lbStatsFirstCycle = false
 	if seed {
+		prevBackendEpPairs = currentPairs
 		return
 	}
 
@@ -1006,6 +1062,24 @@ func collectLbRuleTraffic(info []cmn.LbRuleMod) {
 	for svc, p := range svcPackets {
 		serviceTrafficPackets.WithLabelValues(svc).Add(float64(p))
 	}
+
+	for pair, b := range epBytes {
+		backendTrafficBytes.WithLabelValues(pair[0], pair[1]).Add(float64(b))
+	}
+	for pair, p := range epPackets {
+		backendTrafficPackets.WithLabelValues(pair[0], pair[1]).Add(float64(p))
+	}
+	// Reap per-backend series whose endpoint left the rule config, so churn
+	// cannot accumulate stale children (same hygiene as the prevLbEpStats
+	// baseline cleanup above). Both vecs are fed only by this goroutine, so
+	// a delete cannot race a concurrent Add back into existence.
+	for pair := range prevBackendEpPairs {
+		if !currentPairs[pair] {
+			backendTrafficBytes.DeleteLabelValues(pair[0], pair[1])
+			backendTrafficPackets.DeleteLabelValues(pair[0], pair[1])
+		}
+	}
+	prevBackendEpPairs = currentPairs
 
 	if enableSharedMetrics {
 		AddSharedMetric("processed_bytes", float64(totBytes))
@@ -1081,10 +1155,30 @@ type UnifiedMetrics struct {
 	ServiceBytes    map[string]uint64
 	ServicePackets  map[string]uint64
 
+	// New sessions per (service, "dip:dport" endpoint) — mirrors the
+	// ServiceRequests exactly-once semantics (counted at creation, or at
+	// close for flows never seen active) with the backend attribution kept.
+	ServiceEpConnections map[string]map[string]uint64
+
 	// Distribution metrics
 	ServiceTraffic    map[string]float64
 	ServiceDipTraffic map[string]map[string]float64
 	ServiceSipPackets map[string]map[string]float64 // NEW: service -> client_ip -> packet_count
+}
+
+// addEpConnection records one new session for (service, "dip:dport") in the
+// unified accumulator; flushed to backend_traffic_connections_total by
+// updateAllMetricSystems on non-seed sweeps.
+func (u *UnifiedMetrics) addEpConnection(service, dip, dport string) {
+	if service == "" || dip == "" {
+		return
+	}
+	m := u.ServiceEpConnections[service]
+	if m == nil {
+		m = make(map[string]uint64)
+		u.ServiceEpConnections[service] = m
+	}
+	m[dip+":"+dport]++
 }
 
 // processConntrackDataOptimized processes conntrack data with unified metrics across all systems.
@@ -1099,13 +1193,14 @@ type UnifiedMetrics struct {
 func processConntrackDataOptimized(info []cmn.CtInfo) {
 	// Initialize unified metrics structure
 	unified := &UnifiedMetrics{
-		ServiceRequests:   make(map[string]uint64),
-		ServiceErrors:     make(map[string]uint64),
-		ServiceBytes:      make(map[string]uint64),
-		ServicePackets:    make(map[string]uint64),
-		ServiceTraffic:    make(map[string]float64, MaxPoolStatsServiceSize),
-		ServiceDipTraffic: make(map[string]map[string]float64, MaxPoolStatsServiceSize),
-		ServiceSipPackets: make(map[string]map[string]float64, MaxPoolStatsServiceSize),
+		ServiceRequests:      make(map[string]uint64),
+		ServiceErrors:        make(map[string]uint64),
+		ServiceBytes:         make(map[string]uint64),
+		ServicePackets:       make(map[string]uint64),
+		ServiceEpConnections: make(map[string]map[string]uint64),
+		ServiceTraffic:       make(map[string]float64, MaxPoolStatsServiceSize),
+		ServiceDipTraffic:    make(map[string]map[string]float64, MaxPoolStatsServiceSize),
+		ServiceSipPackets:    make(map[string]map[string]float64, MaxPoolStatsServiceSize),
 	}
 
 	currentConntrackInfo := make(map[ConntrackKey]bool)
@@ -1160,7 +1255,7 @@ func processConntrackDataOptimized(info []cmn.CtInfo) {
 			// Extract serviceName from KEY (always available): for closed
 			// connections ct.ServiceName may be empty/cleared by eBPF, but the
 			// serviceName is preserved in the ConntrackKey from establishment
-			sip, _, dip, _, _, serviceName := parseConntrackKey(key)
+			sip, _, dip, dport, _, serviceName := parseConntrackKey(key)
 
 			// Capture final metrics for closed connection
 			if currentStats, exists := localConntrackStats[key]; exists && !seedOnly {
@@ -1212,6 +1307,7 @@ func processConntrackDataOptimized(info []cmn.CtInfo) {
 					if !wasTracked {
 						unified.NewFlows++
 						unified.ServiceRequests[serviceName]++
+						unified.addEpConnection(serviceName, dip, dport)
 					}
 
 					// Update Prometheus counters for traffic visibility
@@ -1249,9 +1345,10 @@ func processConntrackDataOptimized(info []cmn.CtInfo) {
 
 			// Request counting: a request is counted exactly once, at flow creation.
 			// CRITICAL: Extract serviceName from KEY (always preserved) not ct.ServiceName (may be empty)
-			_, _, _, _, _, serviceNameForRequest := parseConntrackKey(key)
+			_, _, newDip, newDport, _, serviceNameForRequest := parseConntrackKey(key)
 			if serviceNameForRequest != "" {
 				unified.ServiceRequests[serviceNameForRequest]++
+				unified.addEpConnection(serviceNameForRequest, newDip, newDport)
 			}
 		}
 		unified.ActiveCount++
@@ -1560,6 +1657,11 @@ func updateAllMetricSystems(unified *UnifiedMetrics, seedOnly bool) {
 	}
 	for service, count := range unified.ServiceErrors {
 		totalErrorsPerService.WithLabelValues(service).Add(float64(count))
+	}
+	for service, eps := range unified.ServiceEpConnections {
+		for endpoint, count := range eps {
+			backendTrafficConnections.WithLabelValues(service, endpoint).Add(float64(count))
+		}
 	}
 
 	// Mirror the cumulative counters into the shared-metrics store (the
