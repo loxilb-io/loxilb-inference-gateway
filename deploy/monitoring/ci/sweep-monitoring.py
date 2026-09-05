@@ -16,7 +16,14 @@ Subcommands:
     grafana      /api/health, all shipped dashboards provisioned, datasource
                  healthy, every panel target executes through the datasource
                  proxy (success required; non-empty counted and reported,
-                 enforced globally via --min-nonempty)
+                 enforced globally via --min-nonempty and per-panel via
+                 --require-panel "file.json:Panel title", repeatable — every
+                 target of a required panel must return data)
+    excluded-absent
+                 no package-excluded family (manifest class != default) has
+                 ANY live series — proves the running build actually excludes
+                 what the manifest says it excludes, the live twin of the
+                 static boundary deny-list
 
 Exit 0 = clean, 1 = at least one failure. Stdlib-only.
 """
@@ -160,6 +167,32 @@ def cmd_alerts_idle(args):
     return 0
 
 
+def cmd_excluded_absent(args):
+    with open(args.manifest, encoding="utf-8") as fh:
+        manifest = json.load(fh)
+    excluded = sorted(f["name"] for f in manifest["families"]
+                      if f.get("class") != "default")
+    if not excluded:
+        print("excluded-absent: manifest lists no excluded families")
+        return 0
+    # One query for the whole set; histogram families expose their series as
+    # <name>_bucket/_sum/_count, so the suffix alternation covers every type.
+    pat = "^(" + "|".join(re.escape(n) for n in excluded) + ")(_bucket|_sum|_count)?$"
+    resp = prom_query(args.prom, f'count by (__name__) ({{__name__=~"{pat}"}})')
+    if resp.get("status") != "success":
+        print(f"  FAIL excluded-absent query: {resp.get('error', resp)}")
+        return 1
+    present = sorted(r["metric"].get("__name__", "?") for r in resp["data"]["result"])
+    if present:
+        for name in present:
+            print(f"  FAIL excluded family live in TSDB: {name}")
+        print(f"excluded-absent: {len(present)} excluded serie(s) present — "
+              "the running build emits families the package boundary bans")
+        return 1
+    print(f"excluded-absent: 0 of {len(excluded)} excluded families live — boundary holds")
+    return 0
+
+
 def cmd_grafana(args):
     g, u, p = args.grafana, args.user, args.password
     failures = 0
@@ -183,26 +216,43 @@ def cmd_grafana(args):
         print(f"  FAIL datasource uid loxilb-prom not provisioned: {ds}")
         failures += 1
 
+    required = {}  # "file.json:title" → [seen_any_target, all_targets_nonempty]
+    for spec in args.require_panel or []:
+        required[spec] = [False, True]
+
     proxy = f"{g}/api/datasources/proxy/uid/loxilb-prom/api/v1/query"
     total = nonempty = 0
     for src, title, expr in dashboard_exprs():
         total += 1
         live = substitute(expr)
+        key = f"{src}:{title}"
         try:
             resp = http_get(f"{proxy}?query={urllib.parse.quote(live)}", u, p)
+            got_data = resp.get("status") == "success" and bool(resp["data"]["result"])
             if resp.get("status") != "success":
                 print(f"  FAIL {src} [{title}] via proxy: {resp.get('error', resp)}")
                 failures += 1
-            elif resp["data"]["result"]:
+            elif got_data:
                 nonempty += 1
         except Exception as e:  # noqa: BLE001
+            got_data = False
             print(f"  FAIL {src} [{title}] via proxy: {e}")
             failures += 1
+        if key in required:
+            required[key][0] = True
+            required[key][1] = required[key][1] and got_data
     print(f"grafana panel sweep: {total} targets executed, {nonempty} returned data")
     if args.min_nonempty and nonempty < args.min_nonempty:
         print(f"  FAIL only {nonempty} panels returned data (< {args.min_nonempty}) — "
               "datasource wiring or traffic drive is broken")
         failures += 1
+    for spec, (seen, all_ok) in sorted(required.items()):
+        if not seen:
+            print(f"  FAIL required panel not found in any dashboard: {spec}")
+            failures += 1
+        elif not all_ok:
+            print(f"  FAIL required panel returned no data: {spec}")
+            failures += 1
     return 1 if failures else 0
 
 
@@ -223,7 +273,15 @@ def main():
     sp.add_argument("--user", default="admin")
     sp.add_argument("--password", default="ci-admin")
     sp.add_argument("--min-nonempty", type=int, default=0)
+    sp.add_argument("--require-panel", action="append", metavar="FILE.json:TITLE",
+                    help="panel whose every target must return data (repeatable)")
     sp.set_defaults(fn=cmd_grafana)
+
+    sp = sub.add_parser("excluded-absent")
+    sp.add_argument("--prom", default="http://127.0.0.1:9090")
+    sp.add_argument("--manifest",
+                    default=os.path.join(MON_DIR, "manifest", "metric-manifest.json"))
+    sp.set_defaults(fn=cmd_excluded_absent)
 
     args = ap.parse_args()
     sys.exit(args.fn(args))

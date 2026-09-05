@@ -190,14 +190,26 @@ echo "T8: every shipped rule + dashboard expression executes"
 if python3 "$SWEEP" promql --prom "$PROM"; then ok "promql sweep"; else fail "promql sweep"; fi
 
 # ── T9: Grafana end-to-end ────────────────────────────────────────────────────
+# The required panels are the P0 surfaces this scenario's drives feed: if any
+# comes back empty after the T1-T7 traffic, the panel (not the drive) broke.
 echo ""
 echo "T9: Grafana provisioning + datasource + panel proxy sweep"
-if python3 "$SWEEP" grafana --min-nonempty 10; then ok "grafana sweep"; else fail "grafana sweep"; fi
+if python3 "$SWEEP" grafana --min-nonempty 10 \
+    --require-panel "loxilb-overview.json:Gateway up" \
+    --require-panel "loxilb-overview.json:Healthy endpoints" \
+    --require-panel "loxilb-ai.json:AI requests/s by status" \
+    --require-panel "loxilb-l4.json:Requests/s per service"; then
+  ok "grafana sweep"; else fail "grafana sweep"; fi
 
 # ── T10: idle-alert guard ─────────────────────────────────────────────────────
 echo ""
 echo "T10: zero alerts firing (0/0 false-positive guard)"
 if python3 "$SWEEP" alerts-idle --prom "$PROM"; then ok "no alerts firing"; else fail "alerts firing on a healthy system"; fi
+
+# ── T11: package boundary holds live ──────────────────────────────────────────
+echo ""
+echo "T11: no package-excluded family has live series"
+if python3 "$SWEEP" excluded-absent --prom "$PROM"; then ok "excluded families absent"; else fail "excluded families present in live TSDB"; fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
