@@ -1,6 +1,7 @@
 #!/bin/bash
 # Validates the three monitoring correctness surfaces against driver-controlled
-# ground truth (docs/MONITORING-CICD.md §5, assertion catalog §7).
+# ground truth (Tier 1 of the internal monitoring CI plan, incl. its assertion
+# catalog).
 #
 # T0:  Prometheus scrapes loxilb (up==1) within scrape-duration budget
 # T1:  metrics disable → up==0; re-enable → up==1 (scrape access matrix)

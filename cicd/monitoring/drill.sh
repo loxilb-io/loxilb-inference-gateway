@@ -1,6 +1,6 @@
 #!/bin/bash
 # Tier 2 — nightly alert fire→resolve drills + short soak
-# (docs/MONITORING-CICD.md §6). Run between config.sh and validation.sh:
+# (Tier 2 of the internal monitoring CI plan). Run between config.sh and validation.sh:
 #
 #   ./config.sh && ./drill.sh && ./validation.sh && ./rmconfig.sh
 #

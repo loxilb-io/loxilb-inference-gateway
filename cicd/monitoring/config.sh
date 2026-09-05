@@ -1,5 +1,5 @@
 #!/bin/bash
-# CICD scenario: monitoring (Tier 1 — docs/MONITORING-CICD.md §5)
+# CICD scenario: monitoring (Tier 1 of the internal monitoring CI plan)
 # Stands up loxilb + the shipped Prometheus/Grafana stack and validates the
 # three correctness surfaces (exporter, Prometheus, Grafana) against ground
 # truth the driver controls.

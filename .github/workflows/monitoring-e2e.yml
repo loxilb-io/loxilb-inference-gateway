@@ -1,6 +1,6 @@
 name: Monitoring-E2E-CI
 
-# Tier 1 of docs/MONITORING-CICD.md: builds loxilb from source (Go + eBPF),
+# Tier 1 of the internal monitoring CI plan: builds loxilb from source (Go + eBPF),
 # overlays the fresh binary onto the container image, and runs the
 # cicd/monitoring scenario — the shipped Prometheus/Grafana stack wired to a
 # live loxilb, with ground-truth metric assertions, a full PromQL sweep of

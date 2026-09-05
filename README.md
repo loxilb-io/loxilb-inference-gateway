@@ -392,7 +392,7 @@ Classic L4 load balancing and general L7 policy routing are inherited from
 | [10 — Hierarchical KV routing architecture](docs/load-balancing/10-hierarchical-kv-routing-architecture.md) | Design |
 | [11 — Hierarchical KV routing tuning](docs/load-balancing/11-hierarchical-kv-routing-config-tuning.md) | Config tuning |
 | [14 — KV-cache observability](docs/load-balancing/14-kv-cache-observability-design.md) | Metrics & tracing |
-| [Monitoring stack](deploy/monitoring/README.md) · [design](docs/MONITORING-DESIGN.md) | Prometheus + Grafana setup & dashboards (see [Monitoring & observability](#monitoring--observability-prometheus--grafana)) |
+| [Monitoring stack](deploy/monitoring/README.md) | Prometheus + Grafana setup and dashboards (see [Monitoring & observability](#monitoring--observability-prometheus--grafana)) |
 | [15 — SGLang KV-cache-aware routing](docs/load-balancing/15-sglang-kv-cache-aware-routing.md) | SGLang routing |
 | [16 — SGLang vs vLLM routing](docs/load-balancing/16-sglang-vs-vllm-routing-differences.md) | Engine differences |
 | [17 — SGLang config tuning](docs/load-balancing/17-sglang-config-tuning.md) | SGLang tuning |
@@ -460,9 +460,11 @@ curl -X POST http://127.0.0.1:11111/netlox/v1/config/metrics   # enable collecti
 ```
 
 Prometheus scrapes loxilb's `/netlox/v1/metrics` route on the same host over localhost;
-dashboards land in Grafana's **LoxiLB** folder. The metrics endpoint is control-plane REST,
-so the default posture is **network isolation** (bind the plain listener to localhost or
-firewall `:11111`) rather than TLS — see the setup guide for the auth/encryption details.
+dashboards land in Grafana's **LoxiLB** folder. The metrics operation is intentionally
+unauthenticated (`security: []`), including when API auth is enabled, so the default posture
+is **network isolation** (bind the plain listener to localhost or firewall `:11111`). For
+remote access, use API-listener client-certificate verification (`--tls-ca`) or an
+authenticated proxy/service-mesh boundary; see the setup guide.
 
 Provisioned dashboards ([`grafana/dashboards/`](deploy/monitoring/grafana/dashboards/)):
 **Overview**, **L4**, **L7**, **AI Gateway** (KV routing / P·D / SSE / TTFT), **Security**
@@ -472,7 +474,6 @@ Provisioned dashboards ([`grafana/dashboards/`](deploy/monitoring/grafana/dashbo
 |---|---|
 | [`deploy/monitoring/README.md`](deploy/monitoring/README.md) | Stack setup — quick start, security posture, cross-network TLS, operational notes |
 | [`deploy/monitoring/TESTING.md`](deploy/monitoring/TESTING.md) | Live-test guide — drive real traffic through the cicd topology and verify panels against data-plane ground truth |
-| [`docs/MONITORING-DESIGN.md`](docs/MONITORING-DESIGN.md) | Design rationale — every panel, alert and metric, and the findings behind them |
 | [`docs/load-balancing/14-kv-cache-observability-design.md`](docs/load-balancing/14-kv-cache-observability-design.md) | AI/KV-cache observability metrics & tracing design |
 
 ## Manage the gateway from an MCP client (loxilb-mcp)

@@ -1,4 +1,4 @@
-# CI profile of the LoxiLB monitoring stack (Tier 1 — docs/MONITORING-CICD.md §5).
+# CI profile of the LoxiLB monitoring stack (Tier 1 of the internal monitoring CI plan).
 # Differences from deploy/monitoring/docker-compose.yml:
 #   - prometheus.yml is the scenario-generated prometheus-ci.yml (target = the
 #     llb1 container bridge IP instead of 127.0.0.1)
