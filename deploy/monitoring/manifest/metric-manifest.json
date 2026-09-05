@@ -17,8 +17,8 @@
  },
  "coverage": {
   "default_families": 175,
-  "default_referenced": 110,
-  "default_unreferenced": 65
+  "default_referenced": 118,
+  "default_unreferenced": 57
  },
  "families": [
   {
@@ -944,7 +944,9 @@
    "activation": "P",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-overview.json"
+   ],
    "source": "api/prometheus/prometheus.go:374"
   },
   {
@@ -960,7 +962,9 @@
    "activation": "V",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-overview.json"
+   ],
    "source": "api/prometheus/prometheus.go:388"
   },
   {
@@ -976,7 +980,9 @@
    "activation": "P",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-overview.json"
+   ],
    "source": "api/prometheus/prometheus.go:381"
   },
   {
@@ -1046,7 +1052,9 @@
    "activation": "E",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-overview.json"
+   ],
    "source": "pkg/snapshot/metrics.go:76"
   },
   {
@@ -1366,7 +1374,9 @@
    "activation": "V",
    "priority": "p0",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
    "source": "api/prometheus/sockproxy_metrics.go:494"
   },
   {
@@ -1402,7 +1412,9 @@
    "activation": "V",
    "priority": "p0",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
    "source": "api/prometheus/sockproxy_metrics.go:479"
   },
   {
@@ -3176,7 +3188,9 @@
    "activation": "V",
    "priority": "p0",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-overview.json"
+   ],
    "source": "api/prometheus/sockproxy_sync_metrics.go:144"
   },
   {
@@ -3191,7 +3205,9 @@
    "activation": "V",
    "priority": "p0",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-overview.json"
+   ],
    "source": "api/prometheus/sockproxy_sync_metrics.go:129"
   },
   {
