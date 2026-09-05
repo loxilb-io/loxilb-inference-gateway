@@ -10,14 +10,14 @@
   "Combined codes (D+P etc.) apply both behaviors."
  ],
  "expected": {
-  "total": 227,
+  "total": 228,
   "owners": {
-   "loxilb": 204,
+   "loxilb": 205,
    "loxilb-ai-controller": 19,
    "loxilb-kv-agent": 4
   },
   "classes": {
-   "default": 171,
+   "default": 172,
    "dpu-doca": 24,
    "aictrl-bridge": 8,
    "kv-agent-health": 1,
@@ -115,6 +115,7 @@
   "loxilb_active_flow_count_udp": "E",
   "loxilb_ai_active_streams": "V",
   "loxilb_ai_engine_info": "V",
+  "loxilb_ai_keyed_services": "E",
   "loxilb_ai_kv_attest_echo_total": "V",
   "loxilb_ai_kv_attest_probe_fail_total": "V",
   "loxilb_ai_kv_attest_state": "V",

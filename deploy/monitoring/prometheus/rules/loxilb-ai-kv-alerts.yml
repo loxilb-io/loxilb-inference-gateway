@@ -149,14 +149,21 @@ groups:
           panel: "Policy store / unmetered"
 
       - alert: LoxilbUnmeteredTraffic
+        # Guarded on the keyed-services gauge: a deployment where NO service
+        # declares api_key_auth=required has chosen keyless operation, and
+        # sustained unmetered traffic there is the designed posture — paging
+        # on it forever only trains operators to silence the alert. With at
+        # least one keyed service declared, an unmetered VIP is a service the
+        # operator forgot to put behind enforcement: that is the anomaly.
         expr: >-
           sum by (cluster, instance, vip)
           (rate(loxilb_ai_unmetered_requests_total[5m])) > 0
+          and on (cluster, instance) loxilb_ai_keyed_services > 0
         for: 10m
         labels: { severity: warning }
         annotations:
           summary: "AI traffic bypassing metering (vip {{ $labels.vip }})"
-          description: "Requests on {{ $labels.vip }} are completing without token metering for 10m+. Billing/quota accounting is undercounting; check key attribution and usage-object parsing on that service."
+          description: "This gateway declares key enforcement on at least one service, yet requests on {{ $labels.vip }} are completing without token metering for 10m+. Billing/quota accounting is undercounting; check key attribution and usage-object parsing on that service."
           dashboard: "LoxiLB / AI Gateway"
           panel: "Policy store / unmetered"
 

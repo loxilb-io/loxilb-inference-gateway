@@ -211,13 +211,16 @@ tests:
               dashboard: "LoxiLB / Overview"
               panel: "Restore results"
 
-  # ── policy store & unmetered traffic ─────────────────────────────────────
+  # ── policy store & unmetered traffic (keyed service declared → alert) ────
   - interval: 30s
     input_series:
       - series: 'loxilb_ai_policy_store_unavailable_total{cluster="c1",instance="gw-a",job="loxilb"}'
         values: '0+5x40'
       - series: 'loxilb_ai_unmetered_requests_total{vip="10.0.0.1",cluster="c1",instance="gw-a",job="loxilb"}'
         values: '0+10x40'
+      # the guard: this gateway declares key enforcement somewhere
+      - series: 'loxilb_ai_keyed_services{cluster="c1",instance="gw-a",job="loxilb"}'
+        values: '1x40'
     alert_rule_test:
       - alertname: LoxilbPolicyStoreUnavailable
         eval_time: 12m
@@ -241,6 +244,24 @@ tests:
               vip: 10.0.0.1
             exp_annotations:
               summary: "AI traffic bypassing metering (vip 10.0.0.1)"
-              description: "Requests on 10.0.0.1 are completing without token metering for 10m+. Billing/quota accounting is undercounting; check key attribution and usage-object parsing on that service."
+              description: "This gateway declares key enforcement on at least one service, yet requests on 10.0.0.1 are completing without token metering for 10m+. Billing/quota accounting is undercounting; check key attribution and usage-object parsing on that service."
               dashboard: "LoxiLB / AI Gateway"
               panel: "Policy store / unmetered"
+
+  # ── unmetered traffic on a KEYLESS deployment stays silent ───────────────
+  # No service declares api_key_auth=required (gauge at 0, and separately a
+  # deployment where the gauge never appeared): sustained keyless AI traffic
+  # is the designed posture, not an incident. This is the exact false-positive
+  # the first live drill+soak run surfaced.
+  - interval: 30s
+    input_series:
+      - series: 'loxilb_ai_unmetered_requests_total{vip="10.0.0.1",cluster="c1",instance="gw-a",job="loxilb"}'
+        values: '0+10x40'
+      - series: 'loxilb_ai_keyed_services{cluster="c1",instance="gw-a",job="loxilb"}'
+        values: '0x40'
+      - series: 'loxilb_ai_unmetered_requests_total{vip="10.0.0.2",cluster="c1",instance="gw-b",job="loxilb"}'
+        values: '0+10x40'          # gw-b never even exposes the gauge
+    alert_rule_test:
+      - alertname: LoxilbUnmeteredTraffic
+        eval_time: 15m
+        exp_alerts: []
