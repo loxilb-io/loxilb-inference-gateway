@@ -1678,6 +1678,89 @@
           }
         }
       ]
+    },
+    {
+      "id": 42,
+      "type": "timeseries",
+      "title": "KV event staleness",
+      "description": "Age of the last ACCEPTED event batch per publisher (decoded + rank-verified; rejected payloads never count). A connected socket with steadily rising age is a publisher that silently stopped publishing - or an idle engine; read together with request traffic. Absent until a first batch is accepted.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 43
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "time() - loxilb_kv_subscriber_last_event_timestamp_seconds{instance=~\"$instance\"}",
+          "legendFormat": "age {{service}}/{{ep}}"
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "No accepted KV events yet"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 43,
+      "type": "timeseries",
+      "title": "KV inventory freshness",
+      "description": "1 while the per-endpoint KV inventory holds blocks from the current publisher incarnation; 0 after any clear (publisher restart, lossy gap, AllBlocksCleared) until the next stored block. fresh=0 with connected=1 means Tier-1.5 routing is running cold for that endpoint even though the socket looks healthy.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 51
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "loxilb_kv_inventory_fresh{instance=~\"$instance\"}",
+          "legendFormat": "fresh {{service}}/{{ep}}"
+        },
+        {
+          "refId": "B",
+          "expr": "loxilb_kv_subscriber_connected{instance=~\"$instance\"}",
+          "legendFormat": "connected {{service}}/{{ep}}"
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No KV-exact activity"
+        },
+        "overrides": []
+      }
     }
   ]
 }
