@@ -77,11 +77,19 @@ func Persist(doc *Document, dir string) (string, string, error) {
 // legacy-txt boot). The capture runs against the post-commit live state so
 // server-assigned fields are recorded as they now exist.
 func WriteThrough(hooks Hooks, gatewayVersion, hostname, dir string) (string, string, error) {
+	// Watermark read before the capture: mutations racing the capture stay
+	// unclaimed so the config_dirty gauge can only over-report (metrics.go).
+	seq := beginPersistSeq()
 	doc, err := Capture(hooks, gatewayVersion, hostname, TriggerWriteThrough, nil)
 	if err != nil {
 		return "", "", err
 	}
-	return Persist(doc, dir)
+	path, sum, err := Persist(doc, dir)
+	if err != nil {
+		return "", "", err
+	}
+	completePersistSeq(seq)
+	return path, sum, nil
 }
 
 // QuarantinePersisted renames dir/snapshot.json to

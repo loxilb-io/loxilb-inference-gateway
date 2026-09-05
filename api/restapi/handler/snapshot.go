@@ -404,17 +404,22 @@ func (r *statusRecorder) Flush() {
 
 // AutoPersistMiddleware kicks the auto-persist debouncer after every
 // successful mutating config API call (wired in setupMiddlewares next to
-// the snapshot freeze).
+// the snapshot freeze). It also records the mutation for the config-dirty
+// gauge — including when auto-persist is disabled, where the gauge staying
+// 1 until a manual persist is exactly the operational signal.
 func AutoPersistMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if autoPersist == nil || !autoPersistEligible(r) {
+		if !autoPersistEligible(r) {
 			next.ServeHTTP(w, r)
 			return
 		}
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
 		if rec.status >= 200 && rec.status < 300 {
-			autoPersist.Kick()
+			snapshot.MarkConfigMutated()
+			if autoPersist != nil {
+				autoPersist.Kick()
+			}
 		}
 	})
 }

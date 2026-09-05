@@ -10,14 +10,14 @@
   "Combined codes (D+P etc.) apply both behaviors."
  ],
  "expected": {
-  "total": 222,
+  "total": 223,
   "owners": {
-   "loxilb": 199,
+   "loxilb": 200,
    "loxilb-ai-controller": 19,
    "loxilb-kv-agent": 4
   },
   "classes": {
-   "default": 166,
+   "default": 167,
    "dpu-doca": 24,
    "aictrl-bridge": 8,
    "kv-agent-health": 1,
@@ -150,6 +150,7 @@
   "loxilb_boot_config_conflict_total": "E",
   "loxilb_client_traffic_packets_total": "V",
   "loxilb_closed_connections_processed_total": "E",
+  "loxilb_config_dirty": "E",
   "loxilb_conntrack_max_entries": "DP",
   "loxilb_conntrack_stat_resets_total": "E",
   "loxilb_doca_collector_query_errors_total": "BD+P",
@@ -336,6 +337,7 @@
    "loxilb_backend_traffic_bytes_total",
    "loxilb_backend_traffic_connections_total",
    "loxilb_backend_traffic_packets_total",
+   "loxilb_config_dirty",
    "loxilb_kv_subscriber_wire_reject_total",
    "loxilb_pd_connect_retry_same_ep_ok_total",
    "loxilb_pd_connect_retry_same_ep_total"

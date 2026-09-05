@@ -16,6 +16,7 @@
 package snapshot
 
 import (
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -51,7 +52,61 @@ var (
 		Name: "loxilb_boot_config_conflict_total",
 		Help: "Boots that found BOTH snapshot.json and legacy *.txt config artifacts and had to arbitrate newest-wins (§6.2).",
 	})
+
+	configDirty = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "loxilb_config_dirty",
+		Help: "1 when the running config carries mutations not yet persisted to snapshot.json; 0 once a write-through has covered every recorded mutation. Tracks the mutating config REST surface (same eligibility as auto-persist), so a sustained 1 means recent config changes would not survive a restart.",
+	})
 )
+
+// Dirty tracking is a pair of sequence numbers, not a boolean: a mutation
+// that lands while a persist is already capturing must keep the config
+// dirty even though that persist completes successfully afterwards.
+// mutationSeq advances on every successful mutating config call;
+// persistedSeq advances to the mutationSeq observed BEFORE a successful
+// persist's capture started. dirty == (persistedSeq != mutationSeq).
+var (
+	dirtyMu      sync.Mutex
+	mutationSeq  uint64
+	persistedSeq uint64
+)
+
+// MarkConfigMutated records one successful mutating config API call whose
+// effect is not yet known to be persisted. Called by the REST layer's
+// auto-persist middleware on every 2xx eligible mutation — including when
+// auto-persist is disabled, where the gauge staying 1 is exactly the
+// operational signal (nothing will ever write the mutations through).
+func MarkConfigMutated() {
+	dirtyMu.Lock()
+	defer dirtyMu.Unlock()
+	mutationSeq++
+	configDirty.Set(1)
+}
+
+// beginPersistSeq returns the mutation watermark a starting persist can
+// claim on success. Read BEFORE the capture: a mutation racing the capture
+// may or may not be inside the document, so it must stay unclaimed (the
+// safe direction — dirty over-reports for one debounce period, never
+// under-reports).
+func beginPersistSeq() uint64 {
+	dirtyMu.Lock()
+	defer dirtyMu.Unlock()
+	return mutationSeq
+}
+
+// completePersistSeq marks the watermark persisted after a successful
+// snapshot.json write and clears the dirty gauge iff no mutation landed
+// since the persist began.
+func completePersistSeq(seq uint64) {
+	dirtyMu.Lock()
+	defer dirtyMu.Unlock()
+	if seq > persistedSeq {
+		persistedSeq = seq
+	}
+	if persistedSeq == mutationSeq {
+		configDirty.Set(0)
+	}
+}
 
 // Additional restoreTotal result label values beyond the §5.2 Result.Result
 // enum: the pipeline stopped before APPLY (nothing mutated), or the engine
