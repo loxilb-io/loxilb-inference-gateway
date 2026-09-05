@@ -243,13 +243,13 @@ var (
 	healthyHostCount = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: MetricHealthyEndpointsCount,
-			Help: "Number of healthy targets.",
+			Help: "Distinct endpoint hosts known to the health prober (deduplicated across LB rules) in state ok. Hosts without an activated probe report ok unless forced down.",
 		},
 	)
 	unHealthyHostCount = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: MetricUnhealthyEndpointsCount,
-			Help: "Number of unhealthy targets.",
+			Help: "Distinct endpoint hosts known to the health prober (deduplicated across LB rules) in any state other than ok (probe-inactive or forced down).",
 		},
 	)
 	ruleCount = promauto.NewGauge(
