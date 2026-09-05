@@ -67,6 +67,8 @@ jobs:
           cd cicd/monitoring/
           ./config.sh
           ./validation.sh
+          ./security-matrix.sh
+          ./notify-canary.sh
           ./rmconfig.sh
           cd -
       - run: echo "Monitoring E2E complete"
