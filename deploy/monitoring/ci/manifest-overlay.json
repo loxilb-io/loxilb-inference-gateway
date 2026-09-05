@@ -354,5 +354,24 @@
    "loxilb_sockproxy_sync_peer_lag_seconds",
    "loxilb_sockproxy_sync_peer_up"
   ]
+ },
+ "coverage_waivers": {
+  "loxilb_ai_engine_info": "Info metric (constant 1) for PromQL joins and legend enrichment of engine identity; standalone display would duplicate configuration.",
+  "loxilb_ai_token_quota_model_limit_tokens": "Join denominator behind the dashboarded quota-utilization ratios; displaying raw configured limits duplicates config, utilization panels answer headroom.",
+  "loxilb_closed_connections_processed_total": "Internal conntrack-sweep finalization bookkeeping; a stall surfaces as missing closed-flow traffic in the dashboarded counters \u2014 diagnostic query only.",
+  "loxilb_endpoint_traffic_bytes_total": "Superseded on dashboards by loxilb_backend_traffic_bytes_total (exact DP counters, ip:port attribution); kept exported for persistent-flow comparison and external consumers.",
+  "loxilb_errors_total": "Instance-level aggregate of loxilb_service_errors_total, which is dashboarded; sum() of the per-service sibling answers it exactly.",
+  "loxilb_host_cpu_utilization_percent": "Legacy duplicate of loxilb_system_cpu_utilization_percent, which the overview CPU/Memory/Disk panel shows; kept exported for older external dashboards.",
+  "loxilb_ipfilter_blacklist_bytes_total": "Byte-volume twin of the dashboarded ipfilter packet counters; filter verdicts are judged by packet counts, byte volume stays an ad-hoc query.",
+  "loxilb_ipfilter_whitelist_bytes_total": "Byte-volume twin of the dashboarded ipfilter packet counters; filter verdicts are judged by packet counts, byte volume stays an ad-hoc query.",
+  "loxilb_lb_rule_interaction_bytes_total": "Flow-identity (service x sip x dip) forensic counter with unbounded client cardinality; deliberately not dashboarded \u2014 client-traffic and per-backend panels answer the operational question, ad-hoc query for forensics.",
+  "loxilb_lb_rule_interaction_packets_total": "Flow-identity (service x sip x dip) forensic counter with unbounded client cardinality; deliberately not dashboarded \u2014 client-traffic and per-backend panels answer the operational question, ad-hoc query for forensics.",
+  "loxilb_pd_ep_info": "Info metric (constant 1) mapping ep_idx to endpoint IP for PromQL joins; standalone display would duplicate configuration.",
+  "loxilb_processed_packets_total": "Aggregate of the per-protocol packet counters already dashboarded on Packets/s by protocol; sum() over those series answers it exactly.",
+  "loxilb_processed_sctp_bytes_total": "Per-protocol byte split of total throughput; the Throughput (DP bytes) and Packets/s-by-protocol panels answer the question \u2014 per-proto bytes stay an ad-hoc query.",
+  "loxilb_processed_tcp_bytes_total": "Per-protocol byte split of total throughput; the Throughput (DP bytes) and Packets/s-by-protocol panels answer the question \u2014 per-proto bytes stay an ad-hoc query.",
+  "loxilb_processed_udp_bytes_total": "Per-protocol byte split of total throughput; the Throughput (DP bytes) and Packets/s-by-protocol panels answer the question \u2014 per-proto bytes stay an ad-hoc query.",
+  "loxilb_security_udp_bytes_passed_total": "Byte twin of the dashboarded UDP passed/blocked packet counters and blocked-bytes panel; passed-byte volume adds no verdict signal.",
+  "loxilb_service_traffic_packets_total": "Per-service packet twin of the dashboarded bytes counter; the exact per-backend packets/s panel covers the packet-rate question with finer attribution."
  }
 }

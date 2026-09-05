@@ -1761,6 +1761,404 @@
         },
         "overrides": []
       }
+    },
+    {
+      "id": 44,
+      "type": "timeseries",
+      "title": "P/D & KV inventory levels",
+      "description": "Point-in-time capacity state of KV-exact routing: per-endpoint inventory block counts, prefix-trie node count, and active P/D conversation sessions. A pinned-at-cap blocks count pairs with the eviction-pressure panel.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 51
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "loxilb_pd_kv_blocks{instance=~\"$instance\"}",
+          "legendFormat": "blocks {{service}}/{{ep_idx}}"
+        },
+        {
+          "refId": "B",
+          "expr": "loxilb_pd_trie_nodes{instance=~\"$instance\"}",
+          "legendFormat": "trie nodes"
+        },
+        {
+          "refId": "C",
+          "expr": "loxilb_pd_sessions_active{instance=~\"$instance\"}",
+          "legendFormat": "sessions active"
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No KV-exact activity"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 45,
+      "type": "timeseries",
+      "title": "KV inventory pressure",
+      "description": "Cap-eviction rate (publisher emitting BlockStored without matching BlockRemoved \u2014 the authoritative misbehaving-publisher signal) and Tier-1.5 cold-start seeds (bounded compensation diverting hits to cold prefill endpoints).",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 59
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(loxilb_kv_inv_cap_evictions_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "cap evictions {{service}}/{{ep}}"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(loxilb_pd_kv_tier15_cold_seeds_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "cold seeds ep {{ep_idx}}"
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No KV-exact activity"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 46,
+      "type": "timeseries",
+      "title": "P/D robustness events",
+      "description": "Backpressure and failover machinery: admission queueing/shedding, circuit-breaker flips and proactive heals, connect failovers, P/D-to-normal fallbacks, raw client shutdowns on selection failure, and llama.cpp admission-probe advisories.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 59
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(loxilb_pd_admission_queued_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "admission queued"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(loxilb_pd_admission_shed_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "admission shed"
+        },
+        {
+          "refId": "C",
+          "expr": "rate(loxilb_pd_cb_flips_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "cb flips"
+        },
+        {
+          "refId": "D",
+          "expr": "rate(loxilb_pd_cb_proactive_heal_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "cb proactive heals"
+        },
+        {
+          "refId": "E",
+          "expr": "rate(loxilb_pd_connect_failover_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "connect failover"
+        },
+        {
+          "refId": "F",
+          "expr": "rate(loxilb_pd_fallback_to_normal_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "fallback to normal"
+        },
+        {
+          "refId": "G",
+          "expr": "rate(loxilb_lb_select_failure_shutdown_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "select-failure shutdowns"
+        },
+        {
+          "refId": "H",
+          "expr": "rate(loxilb_ai_llamacpp_probe_warnings_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "llamacpp probe {{service}}/{{kind}}"
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No P/D activity"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 47,
+      "type": "timeseries",
+      "title": "P/D stream terminations",
+      "description": "Abnormal stream endings on the P/D path: SGLang decode close-drains, oversize rejects, prefill aborts/reject relays, room retries, TRT context early exits, and zero-byte decode EOFs. Sustained nonzero here with healthy endpoints is an engine-side stream problem.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 67
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(loxilb_pd_sg_decode_close_drain_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "sg decode close-drain"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(loxilb_pd_sg_oversize_reject_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "sg oversize reject"
+        },
+        {
+          "refId": "C",
+          "expr": "rate(loxilb_pd_sg_prefill_abort_decode_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "sg prefill abort"
+        },
+        {
+          "refId": "D",
+          "expr": "rate(loxilb_pd_sg_prefill_reject_relay_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "sg prefill reject relay"
+        },
+        {
+          "refId": "E",
+          "expr": "rate(loxilb_pd_sg_room_retry_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "sg room retry"
+        },
+        {
+          "refId": "F",
+          "expr": "rate(loxilb_pd_trt_ctx_early_exit_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "trt ctx early exit"
+        },
+        {
+          "refId": "G",
+          "expr": "rate(loxilb_pd_decode_zero_byte_eof_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "decode zero-byte EOF"
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No P/D activity"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 48,
+      "type": "timeseries",
+      "title": "Session & KV-param routing",
+      "description": "Conversation-affinity and KV-parameter extraction health per model: P/D vs normal session hits, KV params found vs missing on the request path, and full-proxy KV-param buffer overflows (params arriving past the buffered window).",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 67
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(loxilb_ai_pd_session_hits_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "pd session hits {{model}}"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(loxilb_ai_normal_session_hits_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "normal session hits {{model}}"
+        },
+        {
+          "refId": "C",
+          "expr": "rate(loxilb_ai_pd_kv_params_found_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "kv params found {{model}}"
+        },
+        {
+          "refId": "D",
+          "expr": "rate(loxilb_ai_pd_kv_params_missing_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "kv params missing {{model}}"
+        },
+        {
+          "refId": "E",
+          "expr": "rate(loxilb_proxy_pd_kv_params_overflow_total{instance=~\"$instance\"}[$__rate_interval])",
+          "legendFormat": "kv params overflow"
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No AI traffic"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 49,
+      "type": "timeseries",
+      "title": "Full-proxy cache",
+      "description": "L7 full-proxy buffering state: total cached bytes, the largest single-connection buffer, and connections queued on cache pressure. bytes-series are byte-valued, conns queued is a count.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 75
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "loxilb_proxy_cache_bytes{instance=~\"$instance\"}",
+          "legendFormat": "cache bytes"
+        },
+        {
+          "refId": "B",
+          "expr": "loxilb_proxy_cache_bytes_max_conn{instance=~\"$instance\"}",
+          "legendFormat": "max per-conn bytes"
+        },
+        {
+          "refId": "C",
+          "expr": "loxilb_proxy_cache_conns_queued{instance=~\"$instance\"}",
+          "legendFormat": "conns queued"
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No full-proxy activity"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 50,
+      "type": "timeseries",
+      "title": "Payload parser",
+      "description": "AI payload parsing health: call rate by protocol and outcome, p95 parse latency and p95 body size per protocol, and attribute-extraction rate. Latency series are seconds and body size is bytes; rates are per-second.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 75
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (protocol, status) (rate(loxilb_parser_calls_total{instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "calls {{protocol}}/{{status}}"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le, protocol) (rate(loxilb_parser_duration_seconds_bucket{instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "p95 latency {{protocol}}"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.95, sum by (le, protocol) (rate(loxilb_parser_body_size_bytes_bucket{instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "p95 body {{protocol}}"
+        },
+        {
+          "refId": "D",
+          "expr": "sum by (protocol) (rate(loxilb_parser_attributes_extracted_total{instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "attrs {{protocol}}"
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No parsed payloads"
+        },
+        "overrides": []
+      }
     }
   ]
 }

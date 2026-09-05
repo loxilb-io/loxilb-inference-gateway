@@ -249,11 +249,51 @@ def attach_consumers(fams, mon_dir):
             by_base.setdefault(base(ref), set()).update(files)
     for e in fams:
         e["consumers"] = sorted(by_base.get(e["name"], ()))
+
+
+def check_waivers(fams, overlay, errors):
+    """Attach and validate coverage waivers.
+
+    A waiver is the deliberate, documented decision that a default-class
+    family has NO dashboard/rule consumer: the overlay entry must name the
+    operational question and the alternative diagnostic. The gate keeps
+    waivers honest: unknown names, non-default families, referenced
+    families (stale waiver), and throwaway reasons all fail.
+    """
+    waivers = overlay.get("coverage_waivers", {})
+    names = {e["name"] for e in fams}
+    for wname in sorted(waivers):
+        if wname not in names:
+            errors.append(f"coverage waiver names unknown family '{wname}' "
+                          f"— typo, or the family was removed")
+    for e in fams:
+        e["waiver"] = waivers.get(e["name"], "")
+        if not e["waiver"]:
+            continue
+        if e["class"] != "default":
+            errors.append(f"coverage waiver on '{e['name']}' is meaningless: "
+                          f"class '{e['class']}' is outside the default "
+                          f"coverage surface")
+        if e["consumers"]:
+            errors.append(f"stale coverage waiver: '{e['name']}' is now "
+                          f"referenced by {e['consumers']} — drop the waiver")
+        if len(e["waiver"]) < 40:
+            errors.append(f"coverage waiver for '{e['name']}' is too thin "
+                          f"({len(e['waiver'])} chars): state the operational "
+                          f"question and the alternative diagnostic")
+
+
+def coverage_counts(fams):
     packaged = [e for e in fams if e["class"] == "default"]
     referenced = [e for e in packaged if e["consumers"]]
+    waived = [e for e in packaged
+              if e.get("waiver") and not e["consumers"]]
+    unref = [e for e in packaged
+             if not e["consumers"] and not e.get("waiver")]
     return {"default_families": len(packaged),
             "default_referenced": len(referenced),
-            "default_unreferenced": len(packaged) - len(referenced)}
+            "default_waived": len(waived),
+            "default_unreferenced": len(unref)}
 
 
 # ---------------------------------------------------------------------------
@@ -330,6 +370,7 @@ def build_manifest(fams, overlay, coverage):
             "privacy": ("label-review"
                         if set(e["labels"]) & review else "none"),
             "consumers": e["consumers"],
+            "waiver": e.get("waiver", ""),
             "source": f"{e['file']}:{e['line']}",
         })
     return {"contract": overlay["expected"], "coverage": coverage,
@@ -371,6 +412,32 @@ def self_test(overlay):
     fams = classify(base, overlay, [])
     check_activation(fams, overlay, errs)
     expect_red("activation entry missing/stale", errs)
+
+    errs = []
+    ovl = json.loads(json.dumps(overlay))
+    ovl["coverage_waivers"] = {"loxilb_no_such_family_total":
+                               "long enough reason " * 3}
+    fams = classify(base, ovl, [])
+    for e in fams:
+        e["consumers"] = []
+    check_waivers(fams, ovl, errs)
+    expect_red("waiver naming unknown family", errs)
+
+    errs = []
+    ovl["coverage_waivers"] = {"loxilb_x_total": "long enough reason " * 3}
+    fams = classify(base, ovl, [])
+    for e in fams:
+        e["consumers"] = ["loxilb-overview.json"]
+    check_waivers(fams, ovl, errs)
+    expect_red("stale waiver on referenced family", errs)
+
+    errs = []
+    ovl["coverage_waivers"] = {"loxilb_x_total": "meh"}
+    fams = classify(base, ovl, [])
+    for e in fams:
+        e["consumers"] = []
+    check_waivers(fams, ovl, errs)
+    expect_red("throwaway waiver reason", errs)
 
     errs = []
     ovl = json.loads(json.dumps(overlay))
@@ -425,7 +492,9 @@ def main():
     check_counts(fams, overlay, errors)
     check_activation(fams, overlay, errors)
     check_literals(fams, overlay, repo_root, errors)
-    coverage = attach_consumers(fams, mon_dir)
+    attach_consumers(fams, mon_dir)
+    check_waivers(fams, overlay, errors)
+    coverage = coverage_counts(fams)
     if args.locked_rev_check:
         check_locked_rev(fams, overlay, repo_root, args.go, errors)
     if errors:
@@ -435,6 +504,7 @@ def main():
     print(f"metric-manifest: {len(fams)} families | default "
           f"{coverage['default_families']} "
           f"({coverage['default_referenced']} referenced / "
+          f"{coverage['default_waived']} waived / "
           f"{coverage['default_unreferenced']} unreferenced)")
 
     rendered = json.dumps(manifest, indent=1, sort_keys=False) + "\n"
