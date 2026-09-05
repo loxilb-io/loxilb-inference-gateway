@@ -1,0 +1,3385 @@
+{
+ "contract": {
+  "total": 219,
+  "owners": {
+   "loxilb": 196,
+   "loxilb-ai-controller": 19,
+   "loxilb-kv-agent": 4
+  },
+  "classes": {
+   "default": 163,
+   "dpu-doca": 24,
+   "aictrl-bridge": 8,
+   "kv-agent-health": 1,
+   "standalone-controller": 19,
+   "standalone-kv-agent": 4
+  }
+ },
+ "coverage": {
+  "default_families": 163,
+  "default_referenced": 95,
+  "default_unreferenced": 68
+ },
+ "families": [
+  {
+   "name": "doca_acl_entries_active",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "packaged": false,
+   "type": "gauge",
+   "labels": [],
+   "activation": "D+E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/loxinet/dpu_metrics.go:134"
+  },
+  {
+   "name": "doca_aging_cycle_duration_seconds",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "packaged": false,
+   "type": "histogram",
+   "labels": [],
+   "activation": "D+E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/loxinet/dpu_metrics.go:60"
+  },
+  {
+   "name": "doca_circuit_breaker_state",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "packaged": false,
+   "type": "gauge",
+   "labels": [],
+   "activation": "D+E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/loxinet/dpu_metrics.go:38"
+  },
+  {
+   "name": "doca_ct_pipe_utilization",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "packaged": false,
+   "type": "gauge",
+   "labels": [
+    "pipe"
+   ],
+   "activation": "D+V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-overview.json"
+   ],
+   "source": "pkg/loxinet/dpu_metrics.go:56"
+  },
+  {
+   "name": "doca_fdb_entries_active",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "packaged": false,
+   "type": "gauge",
+   "labels": [
+    "port"
+   ],
+   "activation": "D+V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/loxinet/dpu_metrics.go:122"
+  },
+  {
+   "name": "doca_meter_bytes_total",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "packaged": false,
+   "type": "counter",
+   "labels": [
+    "meter_id",
+    "name"
+   ],
+   "activation": "D+V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/loxinet/dpu_metrics.go:71"
+  },
+  {
+   "name": "doca_meter_offload_active",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "packaged": false,
+   "type": "gauge",
+   "labels": [
+    "meter_id",
+    "name"
+   ],
+   "activation": "D+V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/loxinet/dpu_metrics.go:75"
+  },
+  {
+   "name": "doca_meter_packets_total",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "packaged": false,
+   "type": "counter",
+   "labels": [
+    "meter_id",
+    "name"
+   ],
+   "activation": "D+V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/loxinet/dpu_metrics.go:67"
+  },
+  {
+   "name": "doca_meter_pool_exhausted_total",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "packaged": false,
+   "type": "counter",
+   "labels": [],
+   "activation": "D+E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-overview.json"
+   ],
+   "source": "pkg/loxinet/dpu_metrics.go:79"
+  },
+  {
+   "name": "doca_offload_active_flows",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "packaged": false,
+   "type": "gauge",
+   "labels": [],
+   "activation": "D+E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-overview.json"
+   ],
+   "source": "pkg/loxinet/dpu_metrics.go:34"
+  },
+  {
+   "name": "doca_offload_attempts_total",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "packaged": false,
+   "type": "counter",
+   "labels": [],
+   "activation": "D+E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/loxinet/dpu_metrics.go:42"
+  },
+  {
+   "name": "doca_offload_deferred_retry_total",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "packaged": false,
+   "type": "counter",
+   "labels": [
+    "result"
+   ],
+   "activation": "D+P",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/loxinet/dpu_metrics.go:180"
+  },
+  {
+   "name": "doca_offload_failures_total",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "packaged": false,
+   "type": "counter",
+   "labels": [],
+   "activation": "D+E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-overview.json"
+   ],
+   "source": "pkg/loxinet/dpu_metrics.go:46"
+  },
+  {
+   "name": "doca_offload_install_errors_total",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "packaged": false,
+   "type": "counter",
+   "labels": [
+    "pipe",
+    "reason"
+   ],
+   "activation": "D+P",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/loxinet/dpu_metrics.go:210"
+  },
+  {
+   "name": "doca_pipe_hw_bytes_total",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "packaged": false,
+   "type": "counter",
+   "labels": [
+    "pipe",
+    "direction"
+   ],
+   "activation": "D+P",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/loxinet/dpu_metrics.go:115"
+  },
+  {
+   "name": "doca_pipe_hw_pkts_total",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "packaged": false,
+   "type": "counter",
+   "labels": [
+    "pipe",
+    "direction"
+   ],
+   "activation": "D+P",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/loxinet/dpu_metrics.go:110"
+  },
+  {
+   "name": "doca_route_entries_active",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "packaged": false,
+   "type": "gauge",
+   "labels": [],
+   "activation": "D+E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/loxinet/dpu_metrics.go:128"
+  },
+  {
+   "name": "doca_stale_entries_evicted_total",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "packaged": false,
+   "type": "counter",
+   "labels": [],
+   "activation": "D+E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/loxinet/dpu_metrics.go:52"
+  },
+  {
+   "name": "loxilb_acl_hw_allow_entries",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "packaged": false,
+   "type": "gauge",
+   "labels": [],
+   "activation": "D+E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/loxinet/dpu_metrics.go:154"
+  },
+  {
+   "name": "loxilb_acl_hw_deny_entries",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "packaged": false,
+   "type": "gauge",
+   "labels": [],
+   "activation": "D+E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/loxinet/dpu_metrics.go:148"
+  },
+  {
+   "name": "loxilb_acl_hw_offload_rules_total",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "packaged": false,
+   "type": "counter",
+   "labels": [
+    "action"
+   ],
+   "activation": "D+P",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/loxinet/dpu_metrics.go:163"
+  },
+  {
+   "name": "loxilb_active_conntrack_entries",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-alerts.yml",
+    "loxilb-l4.json",
+    "loxilb-overview.json"
+   ],
+   "source": "api/prometheus/prometheus.go:219"
+  },
+  {
+   "name": "loxilb_active_flow_count_sctp",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-l4.json"
+   ],
+   "source": "api/prometheus/prometheus.go:237"
+  },
+  {
+   "name": "loxilb_active_flow_count_tcp",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-l4.json"
+   ],
+   "source": "api/prometheus/prometheus.go:225"
+  },
+  {
+   "name": "loxilb_active_flow_count_udp",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-l4.json"
+   ],
+   "source": "api/prometheus/prometheus.go:231"
+  },
+  {
+   "name": "loxilb_ai_active_streams",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [
+    "model"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "source": "api/prometheus/ai_metrics.go:134"
+  },
+  {
+   "name": "loxilb_ai_engine_info",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [
+    "service",
+    "engine"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:397"
+  },
+  {
+   "name": "loxilb_ai_kv_attest_echo_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "result"
+   ],
+   "activation": "V",
+   "priority": "p0",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-ai.json",
+    "loxilb-alerts.yml"
+   ],
+   "source": "api/prometheus/sockproxy_metrics.go:1428"
+  },
+  {
+   "name": "loxilb_ai_kv_attest_probe_fail_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "reason"
+   ],
+   "activation": "V",
+   "priority": "p0",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-ai.json",
+    "loxilb-alerts.yml"
+   ],
+   "source": "api/prometheus/sockproxy_metrics.go:1420"
+  },
+  {
+   "name": "loxilb_ai_kv_attest_state",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [
+    "rule",
+    "state"
+   ],
+   "activation": "V",
+   "priority": "p0",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-ai.json",
+    "loxilb-alerts.yml"
+   ],
+   "source": "api/prometheus/sockproxy_metrics.go:1401"
+  },
+  {
+   "name": "loxilb_ai_kv_enforcement_fault",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [
+    "rule"
+   ],
+   "activation": "V",
+   "priority": "p0",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-ai.json",
+    "loxilb-alerts.yml"
+   ],
+   "source": "api/prometheus/sockproxy_metrics.go:1412"
+  },
+  {
+   "name": "loxilb_ai_kv_trtllm_drain_ownership_fault_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "reason"
+   ],
+   "activation": "V",
+   "priority": "p0",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:1440"
+  },
+  {
+   "name": "loxilb_ai_kv_trtllm_drain_ownership_heal_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "p0",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:1448"
+  },
+  {
+   "name": "loxilb_ai_llamacpp_probe_warnings_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "service",
+    "kind"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:409"
+  },
+  {
+   "name": "loxilb_ai_model_not_allowed_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "model",
+    "tenant"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "label-review",
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "source": "api/prometheus/ai_metrics.go:143"
+  },
+  {
+   "name": "loxilb_ai_normal_session_hits_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "model"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/ai_metrics.go:279"
+  },
+  {
+   "name": "loxilb_ai_pd_decode_ttft_seconds",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "histogram",
+   "labels": [
+    "model"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "source": "api/prometheus/ai_metrics.go:233"
+  },
+  {
+   "name": "loxilb_ai_pd_kv_params_found_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "model"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/ai_metrics.go:252"
+  },
+  {
+   "name": "loxilb_ai_pd_kv_params_missing_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "model"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/ai_metrics.go:261"
+  },
+  {
+   "name": "loxilb_ai_pd_prefill_duration_seconds",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "histogram",
+   "labels": [
+    "model"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "source": "api/prometheus/ai_metrics.go:223"
+  },
+  {
+   "name": "loxilb_ai_pd_requests_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "model",
+    "phase",
+    "status"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "source": "api/prometheus/ai_metrics.go:243"
+  },
+  {
+   "name": "loxilb_ai_pd_session_hits_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "model"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/ai_metrics.go:270"
+  },
+  {
+   "name": "loxilb_ai_policy_store_unavailable_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "p0",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/ai_metrics.go:313"
+  },
+  {
+   "name": "loxilb_ai_rate_limit_hits_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "tenant",
+    "reason"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "label-review",
+   "consumers": [
+    "loxilb-ai.json",
+    "loxilb-alerts.yml"
+   ],
+   "source": "api/prometheus/ai_metrics.go:125"
+  },
+  {
+   "name": "loxilb_ai_request_duration_seconds",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "histogram",
+   "labels": [
+    "model",
+    "tenant"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "label-review",
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "source": "api/prometheus/ai_metrics.go:115"
+  },
+  {
+   "name": "loxilb_ai_requests_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "model",
+    "tenant",
+    "status"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "label-review",
+   "consumers": [
+    "loxilb-ai.json",
+    "loxilb-alerts.yml"
+   ],
+   "source": "api/prometheus/ai_metrics.go:104"
+  },
+  {
+   "name": "loxilb_ai_token_quota_cold_open_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "source": "api/prometheus/ai_metrics.go:211"
+  },
+  {
+   "name": "loxilb_ai_token_quota_denied_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "tenant"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "label-review",
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "source": "api/prometheus/ai_metrics.go:198"
+  },
+  {
+   "name": "loxilb_ai_token_quota_limit_tokens",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "desc",
+   "labels": [
+    "tenant"
+   ],
+   "activation": "Q",
+   "priority": "diagnostic",
+   "privacy": "label-review",
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "source": "api/prometheus/ai_metrics.go:405"
+  },
+  {
+   "name": "loxilb_ai_token_quota_model_limit_tokens",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "desc",
+   "labels": [
+    "tenant",
+    "model"
+   ],
+   "activation": "Q",
+   "priority": "diagnostic",
+   "privacy": "label-review",
+   "consumers": [],
+   "source": "api/prometheus/ai_metrics.go:415"
+  },
+  {
+   "name": "loxilb_ai_token_quota_model_utilization",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "desc",
+   "labels": [
+    "tenant",
+    "model"
+   ],
+   "activation": "Q",
+   "priority": "diagnostic",
+   "privacy": "label-review",
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "source": "api/prometheus/ai_metrics.go:410"
+  },
+  {
+   "name": "loxilb_ai_token_quota_utilization",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "desc",
+   "labels": [
+    "tenant"
+   ],
+   "activation": "Q",
+   "priority": "diagnostic",
+   "privacy": "label-review",
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "source": "api/prometheus/ai_metrics.go:400"
+  },
+  {
+   "name": "loxilb_ai_tokens_consumed_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "model",
+    "tenant",
+    "kind"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "label-review",
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "source": "api/prometheus/ai_metrics.go:159"
+  },
+  {
+   "name": "loxilb_ai_tokens_estimated_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "model",
+    "tenant"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "label-review",
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "source": "api/prometheus/ai_metrics.go:172"
+  },
+  {
+   "name": "loxilb_ai_tokens_missing_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "model",
+    "tenant"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "label-review",
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "source": "api/prometheus/ai_metrics.go:184"
+  },
+  {
+   "name": "loxilb_ai_unmetered_requests_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "vip"
+   ],
+   "activation": "V",
+   "priority": "p0",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/ai_metrics.go:296"
+  },
+  {
+   "name": "loxilb_boot_config_conflict_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "p0",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/snapshot/metrics.go:50"
+  },
+  {
+   "name": "loxilb_client_traffic_packets_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "service",
+    "sip"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "label-review",
+   "consumers": [
+    "loxilb-l4.json"
+   ],
+   "source": "api/prometheus/prometheus.go:354"
+  },
+  {
+   "name": "loxilb_closed_connections_processed_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/prometheus.go:468"
+  },
+  {
+   "name": "loxilb_conntrack_max_entries",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [],
+   "activation": "DP",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-alerts.yml",
+    "loxilb-l4.json"
+   ],
+   "source": "api/prometheus/prometheus.go:2152"
+  },
+  {
+   "name": "loxilb_conntrack_stat_resets_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-alerts.yml",
+    "loxilb-overview.json"
+   ],
+   "source": "api/prometheus/prometheus.go:462"
+  },
+  {
+   "name": "loxilb_doca_collector_query_errors_total",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "packaged": false,
+   "type": "counter",
+   "labels": [
+    "api",
+    "reason"
+   ],
+   "activation": "BD+P",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/loxinet/dpu_doca_bf2_metrics.go:100"
+  },
+  {
+   "name": "loxilb_doca_egress_counters_available",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "packaged": false,
+   "type": "gauge",
+   "labels": [
+    "value"
+   ],
+   "activation": "BD+P",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/loxinet/dpu_doca_bf2_metrics.go:109"
+  },
+  {
+   "name": "loxilb_endpoint_traffic_bytes_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "service",
+    "dip"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/prometheus.go:347"
+  },
+  {
+   "name": "loxilb_errors_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/prometheus.go:379"
+  },
+  {
+   "name": "loxilb_firewall_rules",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-security.json"
+   ],
+   "source": "api/prometheus/prometheus.go:411"
+  },
+  {
+   "name": "loxilb_fw_drop_packets_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-alerts.yml",
+    "loxilb-l4.json",
+    "loxilb-security.json"
+   ],
+   "source": "api/prometheus/prometheus.go:396"
+  },
+  {
+   "name": "loxilb_fw_rule_drop_packets_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "fw_rule"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-l4.json",
+    "loxilb-security.json"
+   ],
+   "source": "api/prometheus/prometheus.go:403"
+  },
+  {
+   "name": "loxilb_healthy_endpoints",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-alerts.yml",
+    "loxilb-overview.json"
+   ],
+   "source": "api/prometheus/prometheus.go:243"
+  },
+  {
+   "name": "loxilb_host_cpu_utilization_percent",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/prometheus.go:490"
+  },
+  {
+   "name": "loxilb_ipfilter_blacklist_bytes_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "cidr",
+    "priority",
+    "zone"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "label-review",
+   "consumers": [],
+   "source": "api/prometheus/prometheus.go:590"
+  },
+  {
+   "name": "loxilb_ipfilter_blacklist_packets_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "cidr",
+    "priority",
+    "zone"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "label-review",
+   "consumers": [
+    "loxilb-security.json"
+   ],
+   "source": "api/prometheus/prometheus.go:582"
+  },
+  {
+   "name": "loxilb_ipfilter_rules",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [
+    "type"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-security.json"
+   ],
+   "source": "api/prometheus/prometheus.go:614"
+  },
+  {
+   "name": "loxilb_ipfilter_whitelist_bytes_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "cidr",
+    "priority",
+    "zone"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "label-review",
+   "consumers": [],
+   "source": "api/prometheus/prometheus.go:606"
+  },
+  {
+   "name": "loxilb_ipfilter_whitelist_packets_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "cidr",
+    "priority",
+    "zone"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "label-review",
+   "consumers": [
+    "loxilb-security.json"
+   ],
+   "source": "api/prometheus/prometheus.go:598"
+  },
+  {
+   "name": "loxilb_kernel_bridge_bytes",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "packaged": false,
+   "type": "gauge",
+   "labels": [
+    "bridge"
+   ],
+   "activation": "D+V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/loxinet/dpu_metrics.go:221"
+  },
+  {
+   "name": "loxilb_kv_agent_up",
+   "owner": "loxilb",
+   "class": "kv-agent-health",
+   "packaged": false,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-ai.json",
+    "loxilb-alerts.yml"
+   ],
+   "source": "pkg/loxinet/kv_agent_client.go:46"
+  },
+  {
+   "name": "loxilb_kv_inv_cap_evictions_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "service",
+    "ep"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:506"
+  },
+  {
+   "name": "loxilb_kv_subscriber_connected",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [
+    "service",
+    "ep"
+   ],
+   "activation": "V",
+   "priority": "p0",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "source": "api/prometheus/sockproxy_metrics.go:453"
+  },
+  {
+   "name": "loxilb_kv_subscriber_reconnect_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "service",
+    "ep"
+   ],
+   "activation": "V",
+   "priority": "p0",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:464"
+  },
+  {
+   "name": "loxilb_kv_subscriber_recv_error_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "service",
+    "ep"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:475"
+  },
+  {
+   "name": "loxilb_kv_subscriber_wire_reject_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "service",
+    "ep",
+    "reason"
+   ],
+   "activation": "V",
+   "priority": "p0",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:491"
+  },
+  {
+   "name": "loxilb_l4_error_events_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "proto",
+    "reason"
+   ],
+   "activation": "V",
+   "priority": "p0",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-alerts.yml",
+    "loxilb-overview.json"
+   ],
+   "source": "api/prometheus/l4_error_metrics.go:43"
+  },
+  {
+   "name": "loxilb_last_restore_timestamp_seconds",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "p0",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/snapshot/metrics.go:45"
+  },
+  {
+   "name": "loxilb_lb_rule_interaction_bytes_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "service",
+    "sip",
+    "dip"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "label-review",
+   "consumers": [],
+   "source": "api/prometheus/prometheus.go:317"
+  },
+  {
+   "name": "loxilb_lb_rule_interaction_packets_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "service",
+    "sip",
+    "dip"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "label-review",
+   "consumers": [],
+   "source": "api/prometheus/prometheus.go:324"
+  },
+  {
+   "name": "loxilb_lb_rules",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-alerts.yml",
+    "loxilb-overview.json",
+    "loxilb-security.json"
+   ],
+   "source": "api/prometheus/prometheus.go:255"
+  },
+  {
+   "name": "loxilb_lb_select_failure_shutdown_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:645"
+  },
+  {
+   "name": "loxilb_new_flows",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-l4.json"
+   ],
+   "source": "api/prometheus/prometheus.go:261"
+  },
+  {
+   "name": "loxilb_opa_circuit_breaker_state",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-security.json"
+   ],
+   "source": "api/prometheus/opa_metrics.go:60"
+  },
+  {
+   "name": "loxilb_opa_firewall_rules",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-security.json"
+   ],
+   "source": "api/prometheus/opa_metrics.go:52"
+  },
+  {
+   "name": "loxilb_opa_sync_duration_seconds",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "histogram",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-security.json"
+   ],
+   "source": "api/prometheus/opa_metrics.go:43"
+  },
+  {
+   "name": "loxilb_opa_watcher_syncs_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "status"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-security.json"
+   ],
+   "source": "api/prometheus/opa_metrics.go:34"
+  },
+  {
+   "name": "loxilb_parser_attributes_extracted_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "protocol"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/loxinet/payload_metrics.go:55"
+  },
+  {
+   "name": "loxilb_parser_body_size_bytes",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "histogram",
+   "labels": [
+    "protocol"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/loxinet/payload_metrics.go:45"
+  },
+  {
+   "name": "loxilb_parser_calls_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "protocol",
+    "status"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/loxinet/payload_metrics.go:26"
+  },
+  {
+   "name": "loxilb_parser_duration_seconds",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "histogram",
+   "labels": [
+    "protocol"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/loxinet/payload_metrics.go:35"
+  },
+  {
+   "name": "loxilb_pd_admission_queued_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:581"
+  },
+  {
+   "name": "loxilb_pd_admission_shed_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:573"
+  },
+  {
+   "name": "loxilb_pd_cb_flips_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:339"
+  },
+  {
+   "name": "loxilb_pd_cb_proactive_heal_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:589"
+  },
+  {
+   "name": "loxilb_pd_connect_failover_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:621"
+  },
+  {
+   "name": "loxilb_pd_connect_retry_same_ep_ok_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "p0",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:637"
+  },
+  {
+   "name": "loxilb_pd_connect_retry_same_ep_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "p0",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:631"
+  },
+  {
+   "name": "loxilb_pd_ctrl_alpha",
+   "owner": "loxilb",
+   "class": "aictrl-bridge",
+   "packaged": false,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/aictrl_metrics.go:79"
+  },
+  {
+   "name": "loxilb_pd_ctrl_applied_epoch",
+   "owner": "loxilb",
+   "class": "aictrl-bridge",
+   "packaged": false,
+   "type": "gauge",
+   "labels": [
+    "service"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/aictrl_metrics.go:62"
+  },
+  {
+   "name": "loxilb_pd_ctrl_effective_weight",
+   "owner": "loxilb",
+   "class": "aictrl-bridge",
+   "packaged": false,
+   "type": "gauge",
+   "labels": [
+    "service",
+    "ep_idx"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/aictrl_metrics.go:44"
+  },
+  {
+   "name": "loxilb_pd_ctrl_mode",
+   "owner": "loxilb",
+   "class": "aictrl-bridge",
+   "packaged": false,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/aictrl_metrics.go:71"
+  },
+  {
+   "name": "loxilb_pd_ctrl_nacks_total",
+   "owner": "loxilb",
+   "class": "aictrl-bridge",
+   "packaged": false,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/aictrl_metrics.go:95"
+  },
+  {
+   "name": "loxilb_pd_ctrl_override_events_total",
+   "owner": "loxilb",
+   "class": "aictrl-bridge",
+   "packaged": false,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/aictrl_metrics.go:87"
+  },
+  {
+   "name": "loxilb_pd_ctrl_snapshots_applied_total",
+   "owner": "loxilb",
+   "class": "aictrl-bridge",
+   "packaged": false,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/aictrl_metrics.go:103"
+  },
+  {
+   "name": "loxilb_pd_ctrl_state",
+   "owner": "loxilb",
+   "class": "aictrl-bridge",
+   "packaged": false,
+   "type": "gauge",
+   "labels": [
+    "service",
+    "ep_idx"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/aictrl_metrics.go:53"
+  },
+  {
+   "name": "loxilb_pd_decode_ep_died_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:605"
+  },
+  {
+   "name": "loxilb_pd_decode_zero_byte_eof_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:613"
+  },
+  {
+   "name": "loxilb_pd_ep_info",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [
+    "service",
+    "ep_idx",
+    "ep"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:385"
+  },
+  {
+   "name": "loxilb_pd_fallback_to_normal_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:347"
+  },
+  {
+   "name": "loxilb_pd_kv_blocks",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [
+    "service",
+    "ep_idx"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:357"
+  },
+  {
+   "name": "loxilb_pd_kv_tier15_cold_seeds_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "ep_idx"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:537"
+  },
+  {
+   "name": "loxilb_pd_kv_tier15_fallthrough_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "source": "api/prometheus/sockproxy_metrics.go:437"
+  },
+  {
+   "name": "loxilb_pd_kv_tier15_hits_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "ep_idx"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "source": "api/prometheus/sockproxy_metrics.go:369"
+  },
+  {
+   "name": "loxilb_pd_kv_tier15_miss_reason_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "reason"
+   ],
+   "activation": "P",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "source": "api/prometheus/sockproxy_metrics.go:426"
+  },
+  {
+   "name": "loxilb_pd_kv_tier15_spills_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "ep_idx"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "source": "api/prometheus/sockproxy_metrics.go:522"
+  },
+  {
+   "name": "loxilb_pd_kv_zero_hit_watchdog_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "service_id"
+   ],
+   "activation": "V",
+   "priority": "p0",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:554"
+  },
+  {
+   "name": "loxilb_pd_prefill_ep_died_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:597"
+  },
+  {
+   "name": "loxilb_pd_sessions_active",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:323"
+  },
+  {
+   "name": "loxilb_pd_sg_decode_close_drain_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:661"
+  },
+  {
+   "name": "loxilb_pd_sg_oversize_reject_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:685"
+  },
+  {
+   "name": "loxilb_pd_sg_prefill_abort_decode_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:653"
+  },
+  {
+   "name": "loxilb_pd_sg_prefill_reject_relay_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:677"
+  },
+  {
+   "name": "loxilb_pd_sg_room_retry_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:669"
+  },
+  {
+   "name": "loxilb_pd_trie_nodes",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:331"
+  },
+  {
+   "name": "loxilb_pd_trt_ctx_early_exit_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:693"
+  },
+  {
+   "name": "loxilb_processed_bytes_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-overview.json"
+   ],
+   "source": "api/prometheus/prometheus.go:267"
+  },
+  {
+   "name": "loxilb_processed_packets_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/prometheus.go:309"
+  },
+  {
+   "name": "loxilb_processed_sctp_bytes_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/prometheus.go:285"
+  },
+  {
+   "name": "loxilb_processed_sctp_packets_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-overview.json"
+   ],
+   "source": "api/prometheus/prometheus.go:303"
+  },
+  {
+   "name": "loxilb_processed_tcp_bytes_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/prometheus.go:273"
+  },
+  {
+   "name": "loxilb_processed_tcp_packets_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-overview.json"
+   ],
+   "source": "api/prometheus/prometheus.go:291"
+  },
+  {
+   "name": "loxilb_processed_udp_bytes_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/prometheus.go:279"
+  },
+  {
+   "name": "loxilb_processed_udp_packets_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-overview.json"
+   ],
+   "source": "api/prometheus/prometheus.go:297"
+  },
+  {
+   "name": "loxilb_proxy_active_connections",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-l7.json",
+    "loxilb-overview.json"
+   ],
+   "source": "api/prometheus/sockproxy_metrics.go:207"
+  },
+  {
+   "name": "loxilb_proxy_active_ssl_connections",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-l7.json"
+   ],
+   "source": "api/prometheus/sockproxy_metrics.go:215"
+  },
+  {
+   "name": "loxilb_proxy_cache_backpressure_ratio",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-l7.json"
+   ],
+   "source": "api/prometheus/sockproxy_metrics.go:145"
+  },
+  {
+   "name": "loxilb_proxy_cache_bytes",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:183"
+  },
+  {
+   "name": "loxilb_proxy_cache_bytes_max_conn",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:189"
+  },
+  {
+   "name": "loxilb_proxy_cache_conns_queued",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:195"
+  },
+  {
+   "name": "loxilb_proxy_cache_drain_partial_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-l7.json"
+   ],
+   "source": "api/prometheus/sockproxy_metrics.go:255"
+  },
+  {
+   "name": "loxilb_proxy_cache_high_water_events_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-l7.json"
+   ],
+   "source": "api/prometheus/sockproxy_metrics.go:171"
+  },
+  {
+   "name": "loxilb_proxy_chunked_responses_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-l7.json"
+   ],
+   "source": "api/prometheus/sockproxy_metrics.go:231"
+  },
+  {
+   "name": "loxilb_proxy_conversation_hits_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-l7.json"
+   ],
+   "source": "api/prometheus/sockproxy_metrics.go:157"
+  },
+  {
+   "name": "loxilb_proxy_conversation_misses_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-l7.json"
+   ],
+   "source": "api/prometheus/sockproxy_metrics.go:163"
+  },
+  {
+   "name": "loxilb_proxy_conversation_sessions",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-l7.json"
+   ],
+   "source": "api/prometheus/sockproxy_metrics.go:223"
+  },
+  {
+   "name": "loxilb_proxy_conversation_ttl_expired_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-l7.json"
+   ],
+   "source": "api/prometheus/sockproxy_metrics.go:271"
+  },
+  {
+   "name": "loxilb_proxy_graceful_close_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-l7.json"
+   ],
+   "source": "api/prometheus/sockproxy_metrics.go:263"
+  },
+  {
+   "name": "loxilb_proxy_http2_sessions_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-l7.json"
+   ],
+   "source": "api/prometheus/sockproxy_metrics.go:243"
+  },
+  {
+   "name": "loxilb_proxy_http_responses_by_status_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "status_class"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-alerts.yml",
+    "loxilb-l7.json",
+    "loxilb-overview.json"
+   ],
+   "source": "api/prometheus/sockproxy_metrics.go:291"
+  },
+  {
+   "name": "loxilb_proxy_http_responses_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-alerts.yml",
+    "loxilb-overview.json"
+   ],
+   "source": "api/prometheus/sockproxy_metrics.go:283"
+  },
+  {
+   "name": "loxilb_proxy_http_ttfb_seconds",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "desc",
+   "labels": [],
+   "activation": "H",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-alerts.yml",
+    "loxilb-l7.json"
+   ],
+   "source": "api/prometheus/sockproxy_metrics.go:826"
+  },
+  {
+   "name": "loxilb_proxy_pd_kv_params_overflow_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_metrics.go:311"
+  },
+  {
+   "name": "loxilb_proxy_qos_bytes_delayed_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "desc",
+   "labels": [
+    "vip",
+    "port",
+    "proto",
+    "direction"
+   ],
+   "activation": "C",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "source": "api/prometheus/qos_shaper_metrics.go:108"
+  },
+  {
+   "name": "loxilb_proxy_qos_bytes_passed_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "desc",
+   "labels": [
+    "vip",
+    "port",
+    "proto",
+    "direction"
+   ],
+   "activation": "C",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "source": "api/prometheus/qos_shaper_metrics.go:103"
+  },
+  {
+   "name": "loxilb_proxy_qos_cbs_bytes",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "desc",
+   "labels": [
+    "vip",
+    "port",
+    "proto",
+    "direction"
+   ],
+   "activation": "C",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "source": "api/prometheus/qos_shaper_metrics.go:138"
+  },
+  {
+   "name": "loxilb_proxy_qos_cir_bytes_per_second",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "desc",
+   "labels": [
+    "vip",
+    "port",
+    "proto",
+    "direction"
+   ],
+   "activation": "C",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "source": "api/prometheus/qos_shaper_metrics.go:133"
+  },
+  {
+   "name": "loxilb_proxy_qos_park_seconds_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "desc",
+   "labels": [
+    "vip",
+    "port",
+    "proto",
+    "direction"
+   ],
+   "activation": "C",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "source": "api/prometheus/qos_shaper_metrics.go:118"
+  },
+  {
+   "name": "loxilb_proxy_qos_parked_connections",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "desc",
+   "labels": [
+    "vip",
+    "port",
+    "proto",
+    "direction"
+   ],
+   "activation": "C",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "source": "api/prometheus/qos_shaper_metrics.go:123"
+  },
+  {
+   "name": "loxilb_proxy_qos_parks_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "desc",
+   "labels": [
+    "vip",
+    "port",
+    "proto",
+    "direction"
+   ],
+   "activation": "C",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "source": "api/prometheus/qos_shaper_metrics.go:113"
+  },
+  {
+   "name": "loxilb_proxy_qos_tokens_bytes",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "desc",
+   "labels": [
+    "vip",
+    "port",
+    "proto",
+    "direction"
+   ],
+   "activation": "C",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "source": "api/prometheus/qos_shaper_metrics.go:128"
+  },
+  {
+   "name": "loxilb_requests_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-overview.json"
+   ],
+   "source": "api/prometheus/prometheus.go:364"
+  },
+  {
+   "name": "loxilb_restore_duration_seconds",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "histogram",
+   "labels": [],
+   "activation": "E",
+   "priority": "p0",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/snapshot/metrics.go:39"
+  },
+  {
+   "name": "loxilb_restore_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "mode",
+    "result"
+   ],
+   "activation": "P",
+   "priority": "p0",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/snapshot/metrics.go:34"
+  },
+  {
+   "name": "loxilb_security_conn_blocked_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-security.json"
+   ],
+   "source": "api/prometheus/prometheus.go:532"
+  },
+  {
+   "name": "loxilb_security_conn_passed_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-security.json"
+   ],
+   "source": "api/prometheus/prometheus.go:539"
+  },
+  {
+   "name": "loxilb_security_syn_blocked_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-alerts.yml",
+    "loxilb-security.json"
+   ],
+   "source": "api/prometheus/prometheus.go:511"
+  },
+  {
+   "name": "loxilb_security_syn_cookies_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-security.json"
+   ],
+   "source": "api/prometheus/prometheus.go:525"
+  },
+  {
+   "name": "loxilb_security_syn_passed_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-security.json"
+   ],
+   "source": "api/prometheus/prometheus.go:518"
+  },
+  {
+   "name": "loxilb_security_udp_blocked_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-alerts.yml",
+    "loxilb-security.json"
+   ],
+   "source": "api/prometheus/prometheus.go:553"
+  },
+  {
+   "name": "loxilb_security_udp_bytes_blocked_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-security.json"
+   ],
+   "source": "api/prometheus/prometheus.go:567"
+  },
+  {
+   "name": "loxilb_security_udp_bytes_passed_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/prometheus.go:574"
+  },
+  {
+   "name": "loxilb_security_udp_passed_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-security.json"
+   ],
+   "source": "api/prometheus/prometheus.go:560"
+  },
+  {
+   "name": "loxilb_security_unique_ips",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-security.json"
+   ],
+   "source": "api/prometheus/prometheus.go:546"
+  },
+  {
+   "name": "loxilb_service_errors_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "service"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-l4.json"
+   ],
+   "source": "api/prometheus/prometheus.go:386"
+  },
+  {
+   "name": "loxilb_service_requests_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "service"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-l4.json"
+   ],
+   "source": "api/prometheus/prometheus.go:371"
+  },
+  {
+   "name": "loxilb_service_traffic_bytes_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "service"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-l4.json"
+   ],
+   "source": "api/prometheus/prometheus.go:333"
+  },
+  {
+   "name": "loxilb_service_traffic_packets_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "service"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/prometheus.go:340"
+  },
+  {
+   "name": "loxilb_snapshot_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "trigger"
+   ],
+   "activation": "P",
+   "priority": "p0",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/snapshot/metrics.go:29"
+  },
+  {
+   "name": "loxilb_sockproxy_sync_apply_errors_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-alerts.yml",
+    "loxilb-overview.json"
+   ],
+   "source": "api/prometheus/sockproxy_sync_metrics.go:61"
+  },
+  {
+   "name": "loxilb_sockproxy_sync_conflict_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "outcome"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-overview.json"
+   ],
+   "source": "api/prometheus/sockproxy_sync_metrics.go:71"
+  },
+  {
+   "name": "loxilb_sockproxy_sync_drop_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "reason"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-overview.json"
+   ],
+   "source": "api/prometheus/sockproxy_sync_metrics.go:115"
+  },
+  {
+   "name": "loxilb_sockproxy_sync_health_reject_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "reason"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_sync_metrics.go:48"
+  },
+  {
+   "name": "loxilb_sockproxy_sync_inflight_rpc",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [
+    "peer"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_sync_metrics.go:96"
+  },
+  {
+   "name": "loxilb_sockproxy_sync_overflow_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "kind"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-overview.json"
+   ],
+   "source": "api/prometheus/sockproxy_sync_metrics.go:34"
+  },
+  {
+   "name": "loxilb_sockproxy_sync_push_latency_seconds",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "histogram",
+   "labels": [
+    "peer",
+    "rpc"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-overview.json"
+   ],
+   "source": "api/prometheus/sockproxy_sync_metrics.go:84"
+  },
+  {
+   "name": "loxilb_system_cpu_utilization_percent",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-alerts.yml",
+    "loxilb-overview.json"
+   ],
+   "source": "api/prometheus/prometheus.go:482"
+  },
+  {
+   "name": "loxilb_system_disk_utilization_percent",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-alerts.yml",
+    "loxilb-overview.json"
+   ],
+   "source": "api/prometheus/prometheus.go:503"
+  },
+  {
+   "name": "loxilb_system_memory_utilization_percent",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-alerts.yml",
+    "loxilb-overview.json"
+   ],
+   "source": "api/prometheus/prometheus.go:497"
+  },
+  {
+   "name": "loxilb_unhealthy_endpoints",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-alerts.yml",
+    "loxilb-overview.json"
+   ],
+   "source": "api/prometheus/prometheus.go:249"
+  },
+  {
+   "name": "aictrl_acks_applied_total",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "packaged": false,
+   "type": "counter",
+   "labels": [
+    "gateway"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "cmd/loxilb-ai-controller/metrics.go:84"
+  },
+  {
+   "name": "aictrl_acks_rejected_total",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "packaged": false,
+   "type": "counter",
+   "labels": [
+    "gateway"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "cmd/loxilb-ai-controller/metrics.go:88"
+  },
+  {
+   "name": "aictrl_current_epoch",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "packaged": false,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "cmd/loxilb-ai-controller/metrics.go:40"
+  },
+  {
+   "name": "aictrl_ep_weight",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "packaged": false,
+   "type": "gauge",
+   "labels": [
+    "service",
+    "ep_idx"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "cmd/loxilb-ai-controller/metrics.go:65"
+  },
+  {
+   "name": "aictrl_fingerprint_mismatch_total",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "packaged": false,
+   "type": "counter",
+   "labels": [
+    "source"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "cmd/loxilb-ai-controller/metrics.go:165"
+  },
+  {
+   "name": "aictrl_fleet_stale",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "packaged": false,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "cmd/loxilb-ai-controller/metrics.go:58"
+  },
+  {
+   "name": "aictrl_lmc_cost_active",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "packaged": false,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "cmd/loxilb-ai-controller/main.go:67"
+  },
+  {
+   "name": "aictrl_negative_control_active",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "packaged": false,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "cmd/loxilb-ai-controller/metrics.go:95"
+  },
+  {
+   "name": "aictrl_registry_mismatch_total",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "packaged": false,
+   "type": "counter",
+   "labels": [
+    "source"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "cmd/loxilb-ai-controller/metrics.go:72"
+  },
+  {
+   "name": "aictrl_snapshots_emitted_total",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "packaged": false,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "cmd/loxilb-ai-controller/metrics.go:34"
+  },
+  {
+   "name": "aictrl_source_stale",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "packaged": false,
+   "type": "gauge",
+   "labels": [
+    "source"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "cmd/loxilb-ai-controller/metrics.go:52"
+  },
+  {
+   "name": "aictrl_source_staleness_seconds",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "packaged": false,
+   "type": "gauge",
+   "labels": [
+    "source"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "cmd/loxilb-ai-controller/metrics.go:46"
+  },
+  {
+   "name": "aictrl_ttft_active",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "packaged": false,
+   "type": "gauge",
+   "labels": [
+    "model_version"
+   ],
+   "activation": "S",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "cmd/loxilb-ai-controller/metrics.go:113"
+  },
+  {
+   "name": "aictrl_ttft_alpha",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "packaged": false,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "cmd/loxilb-ai-controller/metrics.go:131"
+  },
+  {
+   "name": "aictrl_ttft_model_version",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "packaged": false,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "cmd/loxilb-ai-controller/metrics.go:122"
+  },
+  {
+   "name": "aictrl_ttft_pred_err_ratio_p50",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "packaged": false,
+   "type": "gauge",
+   "labels": [],
+   "activation": "T",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "cmd/loxilb-ai-controller/metrics.go:151"
+  },
+  {
+   "name": "aictrl_ttft_pred_err_ratio_p90",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "packaged": false,
+   "type": "gauge",
+   "labels": [],
+   "activation": "T",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "source": "cmd/loxilb-ai-controller/metrics.go:155"
+  },
+  {
+   "name": "aictrl_watcher_dropped_snapshots_total",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "packaged": false,
+   "type": "counter",
+   "labels": [
+    "gateway"
+   ],
+   "activation": "V",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "cmd/loxilb-ai-controller/metrics.go:102"
+  },
+  {
+   "name": "aictrl_watchers_connected",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "packaged": false,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "cmd/loxilb-ai-controller/metrics.go:78"
+  },
+  {
+   "name": "loxilb_kv_bytes_transferred_total",
+   "owner": "loxilb-kv-agent",
+   "class": "standalone-kv-agent",
+   "packaged": false,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "cmd/loxilb-kv-agent/kv_metrics.go:65"
+  },
+  {
+   "name": "loxilb_kv_evictions_total",
+   "owner": "loxilb-kv-agent",
+   "class": "standalone-kv-agent",
+   "packaged": false,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "cmd/loxilb-kv-agent/kv_metrics.go:71"
+  },
+  {
+   "name": "loxilb_kv_fetch_errors_total",
+   "owner": "loxilb-kv-agent",
+   "class": "standalone-kv-agent",
+   "packaged": false,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "cmd/loxilb-kv-agent/kv_metrics.go:58"
+  },
+  {
+   "name": "loxilb_kv_fetch_total",
+   "owner": "loxilb-kv-agent",
+   "class": "standalone-kv-agent",
+   "packaged": false,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "source": "cmd/loxilb-kv-agent/kv_metrics.go:50"
+  }
+ ]
+}

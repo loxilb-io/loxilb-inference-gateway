@@ -18,17 +18,15 @@ on:
     branches: [ "main" ]
     paths:
       - 'deploy/monitoring/**'
-      - 'api/prometheus/**'
-      - 'cmd/loxilb-ai-controller/**'
-      - 'doca/**'
+      - 'tools/metric-manifest/**'
+      - '**/*.go'
       - '.github/workflows/monitoring-lint.yml'
   pull_request:
     branches: [ "main" ]
     paths:
       - 'deploy/monitoring/**'
-      - 'api/prometheus/**'
-      - 'cmd/loxilb-ai-controller/**'
-      - 'doca/**'
+      - 'tools/metric-manifest/**'
+      - '**/*.go'
       - '.github/workflows/monitoring-lint.yml'
   workflow_dispatch:
 
@@ -59,5 +57,14 @@ jobs:
           sudo install "/tmp/prometheus-${PROM_VERSION}.linux-${arch}/promtool" /usr/local/bin/promtool
           promtool --version
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+
       - name: Run monitoring lint (Tier 0)
         run: python3 deploy/monitoring/ci/lint-monitoring.py
+
+      - name: Verify metric ownership manifest
+        run: |
+          python3 deploy/monitoring/ci/gen-metric-manifest.py --self-test
+          python3 deploy/monitoring/ci/gen-metric-manifest.py --check --locked-rev-check
