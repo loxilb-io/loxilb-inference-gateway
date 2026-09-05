@@ -152,6 +152,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
+          "noValue": "0",
           "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "#EAB839", "value": 0.001 } ] },
           "links": [ { "title": "L4 Load Balancer", "url": "/d/loxilb-l4/loxilb-l4-load-balancer" } ]
         },
