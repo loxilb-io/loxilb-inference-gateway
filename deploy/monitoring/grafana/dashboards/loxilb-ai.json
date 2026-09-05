@@ -200,7 +200,7 @@
       "id": 3,
       "type": "stat",
       "title": "KV subscribers up",
-      "description": "KV-cache routing health. ZMQ deployments: min(loxilb_kv_subscriber_connected) across prefill EPs (1=all connected, 0=any rebuilding). Falls back to loxilb_kv_agent_up for REST auto-discovery deployments. NOTE: loxilb_kv_agent_up alone reads DOWN on a ZMQ KV-exact deployment even when routing is fully healthy \u2014 subscriber_connected is the correct signal there.",
+      "description": "KV-cache routing health: min(loxilb_kv_subscriber_connected) across prefill EPs (1=all connected, 0=any rebuilding). Absent until a KV-exact deployment registers its first subscriber.",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -214,7 +214,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "min(loxilb_kv_subscriber_connected{instance=~\"$instance\"}) or on() max(loxilb_kv_agent_up{instance=~\"$instance\"})"
+          "expr": "min(loxilb_kv_subscriber_connected{instance=~\"$instance\"})"
         }
       ],
       "fieldConfig": {
@@ -728,7 +728,7 @@
       "id": 19,
       "type": "row",
       "collapsed": true,
-      "title": "Requires AI controller / API-key security (not in pure-loxilb baseline)",
+      "title": "API-key security (needs API-key auth enabled)",
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -737,44 +737,6 @@
       },
       "panels": [
         {
-          "id": 11,
-          "type": "timeseries",
-          "title": "TTFT prediction error p90",
-          "description": "Emitted by the loxilb-ai-controller (aictrl_* metrics) \u2014 a SEPARATE component with its own metrics endpoint, NOT the loxilb data plane. 'No data' unless you deploy that controller AND add it as its own Prometheus scrape job (the $instance var only covers job=loxilb).",
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 0,
-            "y": 31
-          },
-          "datasource": {
-            "type": "prometheus",
-            "uid": "loxilb-prom"
-          },
-          "targets": [
-            {
-              "refId": "A",
-              "expr": "aictrl_ttft_pred_err_ratio_p90{instance=~\"$instance\"}"
-            }
-          ],
-          "options": {
-            "tooltip": {
-              "mode": "multi"
-            },
-            "legend": {
-              "displayMode": "list",
-              "placement": "bottom"
-            }
-          },
-          "fieldConfig": {
-            "defaults": {
-              "unit": "short",
-              "noValue": "No data"
-            },
-            "overrides": []
-          }
-        },
-        {
           "id": 8,
           "type": "timeseries",
           "title": "Rate-limit hits/s",
@@ -782,7 +744,7 @@
           "gridPos": {
             "h": 8,
             "w": 12,
-            "x": 12,
+            "x": 0,
             "y": 31
           },
           "datasource": {
@@ -820,8 +782,8 @@
           "gridPos": {
             "h": 8,
             "w": 12,
-            "x": 0,
-            "y": 39
+            "x": 12,
+            "y": 31
           },
           "datasource": {
             "type": "prometheus",
