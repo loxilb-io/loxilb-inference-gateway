@@ -1408,7 +1408,7 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "pkg/loxinet/kv_agent_client.go:46"
+   "source": "pkg/loxinet/kv_agent_client.go:49"
   },
   {
    "name": "loxilb_kv_inv_cap_evictions_total",
@@ -1936,7 +1936,7 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "api/prometheus/aictrl_metrics.go:79"
+   "source": "api/prometheus/aictrl_metrics.go:82"
   },
   {
    "name": "loxilb_pd_ctrl_applied_epoch",
@@ -1952,7 +1952,7 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "api/prometheus/aictrl_metrics.go:62"
+   "source": "api/prometheus/aictrl_metrics.go:65"
   },
   {
    "name": "loxilb_pd_ctrl_effective_weight",
@@ -1969,7 +1969,7 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "api/prometheus/aictrl_metrics.go:44"
+   "source": "api/prometheus/aictrl_metrics.go:47"
   },
   {
    "name": "loxilb_pd_ctrl_mode",
@@ -1983,7 +1983,7 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "api/prometheus/aictrl_metrics.go:71"
+   "source": "api/prometheus/aictrl_metrics.go:74"
   },
   {
    "name": "loxilb_pd_ctrl_nacks_total",
@@ -1997,7 +1997,7 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "api/prometheus/aictrl_metrics.go:95"
+   "source": "api/prometheus/aictrl_metrics.go:98"
   },
   {
    "name": "loxilb_pd_ctrl_override_events_total",
@@ -2011,7 +2011,7 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "api/prometheus/aictrl_metrics.go:87"
+   "source": "api/prometheus/aictrl_metrics.go:90"
   },
   {
    "name": "loxilb_pd_ctrl_snapshots_applied_total",
@@ -2025,7 +2025,7 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "api/prometheus/aictrl_metrics.go:103"
+   "source": "api/prometheus/aictrl_metrics.go:106"
   },
   {
    "name": "loxilb_pd_ctrl_state",
@@ -2042,7 +2042,7 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "api/prometheus/aictrl_metrics.go:53"
+   "source": "api/prometheus/aictrl_metrics.go:56"
   },
   {
    "name": "loxilb_pd_decode_ep_died_total",

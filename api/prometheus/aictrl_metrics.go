@@ -20,9 +20,12 @@
 // influence is fully reconstructable from /metrics: who weighs what, which
 // epoch, which mode, how decayed, how often vetoed.
 //
-// Pure promauto file — no C bridge of any kind (auto-registers at import;
-// a zero-valued series is NOT a behavior change; gauge REFRESH only happens
-// while the env-gated applier is running, so G3 default-OFF is unaffected).
+// Registration is DEFERRED to applier start (EnsureAictrlMetricsRegistered),
+// not import time: the pd_ctrl_* families are classed outside the default
+// package profile in the metric manifest, so a gateway with the env-gated
+// applier off must not expose even zero-valued series — absence is the
+// boundary contract, and the live sweep asserts it. G3 default-OFF holds:
+// off ⇒ no registration ⇒ no series.
 //
 // Per-EP series are keyed by the opaque ep_idx label and join to endpoint
 // IPs via the EXISTING loxilb_pd_ep_info info-metric:
@@ -34,14 +37,14 @@ package prometheus
 
 import (
 	"strconv"
+	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 var (
 	// #1: per-EP effective routing weight actually written to C.
-	aictrlEpEffectiveWeight = promauto.NewGaugeVec(
+	aictrlEpEffectiveWeight = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "loxilb_pd_ctrl_effective_weight",
 			Help: "AI-controller effective per-EP routing weight (post-alpha, the value written to the data plane). Join ep_idx to an IP via: * on(ep_idx) group_left(ep) loxilb_pd_ep_info.",
@@ -50,7 +53,7 @@ var (
 	)
 
 	// #2: per-EP controller lifecycle state.
-	aictrlEpState = promauto.NewGaugeVec(
+	aictrlEpState = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "loxilb_pd_ctrl_state",
 			Help: "AI-controller per-EP state instruction: 0 none / 1 ACTIVE / 2 DRAINING / 3 DISABLED. Join ep_idx to an IP via: * on(ep_idx) group_left(ep) loxilb_pd_ep_info.",
@@ -59,7 +62,7 @@ var (
 	)
 
 	// #3: last applied snapshot epoch per service.
-	aictrlAppliedEpoch = promauto.NewGaugeVec(
+	aictrlAppliedEpoch = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "loxilb_pd_ctrl_applied_epoch",
 			Help: "Epoch of the last successfully applied AI-controller snapshot for the service.",
@@ -68,7 +71,7 @@ var (
 	)
 
 	// #4: applier mode ladder position (derived from alpha).
-	aictrlMode = promauto.NewGauge(
+	aictrlMode = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "loxilb_pd_ctrl_mode",
 			Help: "AI-controller applier mode: 0 autonomous / 1 stale / 2 smart (a derived label of alpha — one continuous mechanism, not code paths).",
@@ -76,7 +79,7 @@ var (
 	)
 
 	// #5: the continuous controller-influence decay scalar.
-	aictrlAlpha = promauto.NewGauge(
+	aictrlAlpha = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "loxilb_pd_ctrl_alpha",
 			Help: "AI-controller influence scalar alpha(t) in [0,1]: 1 Smart, linear decay over the staleness window, 0 Autonomous.",
@@ -84,7 +87,7 @@ var (
 	)
 
 	// local-health veto counter — every suppressed controller write.
-	aictrlOverrideEventsTotal = promauto.NewCounter(
+	aictrlOverrideEventsTotal = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_pd_ctrl_override_events_total",
 			Help: "Total controller directives vetoed by LOCAL health (pure-intersection merge; local health always wins — G4 non-resurrection).",
@@ -92,7 +95,7 @@ var (
 	)
 
 	// NACKed (rejected) snapshots.
-	aictrlNacksTotal = promauto.NewCounter(
+	aictrlNacksTotal = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_pd_ctrl_nacks_total",
 			Help: "Total AI-controller snapshots rejected by V5 validation (NACK ACK_STATUS_REJECTED; last-good kept, staleness clock keeps running).",
@@ -100,13 +103,34 @@ var (
 	)
 
 	// Successfully applied snapshots.
-	aictrlSnapshotsAppliedTotal = promauto.NewCounter(
+	aictrlSnapshotsAppliedTotal = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "loxilb_pd_ctrl_snapshots_applied_total",
 			Help: "Total AI-controller snapshots validated and applied (ACK ACK_STATUS_APPLIED).",
 		},
 	)
+
+	aictrlRegisterOnce sync.Once
 )
+
+// EnsureAictrlMetricsRegistered registers every pd_ctrl_* family with the
+// default registry. Call it from the applier's start path, AFTER the
+// enablement gate passes — a gateway with the applier off must expose none
+// of these series. Idempotent.
+func EnsureAictrlMetricsRegistered() {
+	aictrlRegisterOnce.Do(func() {
+		prometheus.MustRegister(
+			aictrlEpEffectiveWeight,
+			aictrlEpState,
+			aictrlAppliedEpoch,
+			aictrlMode,
+			aictrlAlpha,
+			aictrlOverrideEventsTotal,
+			aictrlNacksTotal,
+			aictrlSnapshotsAppliedTotal,
+		)
+	})
+}
 
 // SetAictrlEpWeight updates loxilb_pd_ctrl_effective_weight for one EP.
 // Called from the applier's recording Sink on every C write (and by the

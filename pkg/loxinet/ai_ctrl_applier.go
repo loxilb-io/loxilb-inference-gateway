@@ -60,6 +60,10 @@ func AiCtrlApplierStart(ctx context.Context) {
 		return
 	}
 
+	// The pd_ctrl_* families are outside the default package profile;
+	// they exist on /metrics only once the applier is actually enabled.
+	prom.EnsureAictrlMetricsRegistered()
+
 	// Knob set (locked names) — all getenv-once at start.
 	decayWindow := aiCtrlEnvSec("LOXILB_AI_CTRL_DECAY_WINDOW_SEC", 30) //
 	hysteresis := aiCtrlEnvSec("LOXILB_AI_CTRL_HYSTERESIS_SEC", 5)

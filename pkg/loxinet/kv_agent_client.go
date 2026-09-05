@@ -37,16 +37,21 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	log "github.com/sirupsen/logrus"
 )
 
 // kvAgentUpGauge is the loxilb-side health gauge for the kv-agent.
 // Updated from /kv/health poll results. No CGO or libloxilb_kv.a dependency.
-var kvAgentUpGauge = promauto.NewGauge(prometheus.GaugeOpts{
-	Name: "loxilb_kv_agent_up",
-	Help: "KV agent health: 1.0=ok, 0.5=degraded, 0.0=down",
-})
+// Registered only when a client is actually created: the family is outside
+// the default package profile (kv-agent-health class), so a gateway that
+// never talks to a kv-agent must not expose the series at all.
+var (
+	kvAgentUpGauge = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "loxilb_kv_agent_up",
+		Help: "KV agent health: 1.0=ok, 0.5=degraded, 0.0=down",
+	})
+	kvAgentUpRegisterOnce sync.Once
+)
 
 const (
 	// kvAgentDefaultAddr is the default kv-agent REST address (IPv6 loopback).
@@ -90,6 +95,7 @@ type KVAgentClient struct {
 // NewKVAgentClient creates a new KV agent client with the given address.
 // If addr is empty, defaults to [::1]:9099.
 func NewKVAgentClient(addr string) *KVAgentClient {
+	kvAgentUpRegisterOnce.Do(func() { prometheus.MustRegister(kvAgentUpGauge) })
 	if addr == "" {
 		addr = kvAgentDefaultAddr
 	}
