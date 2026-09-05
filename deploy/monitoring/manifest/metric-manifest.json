@@ -17,8 +17,9 @@
  },
  "coverage": {
   "default_families": 175,
-  "default_referenced": 118,
-  "default_unreferenced": 57
+  "default_referenced": 154,
+  "default_waived": 21,
+  "default_unreferenced": 0
  },
  "families": [
   {
@@ -32,6 +33,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "pkg/loxinet/dpu_metrics.go:134"
   },
   {
@@ -45,6 +47,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "pkg/loxinet/dpu_metrics.go:60"
   },
   {
@@ -58,6 +61,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "pkg/loxinet/dpu_metrics.go:38"
   },
   {
@@ -73,6 +77,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "pkg/loxinet/dpu_metrics.go:56"
   },
   {
@@ -88,6 +93,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "pkg/loxinet/dpu_metrics.go:122"
   },
   {
@@ -104,6 +110,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "pkg/loxinet/dpu_metrics.go:71"
   },
   {
@@ -120,6 +127,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "pkg/loxinet/dpu_metrics.go:75"
   },
   {
@@ -136,6 +144,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "pkg/loxinet/dpu_metrics.go:67"
   },
   {
@@ -149,6 +158,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "pkg/loxinet/dpu_metrics.go:79"
   },
   {
@@ -162,6 +172,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "pkg/loxinet/dpu_metrics.go:34"
   },
   {
@@ -175,6 +186,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "pkg/loxinet/dpu_metrics.go:42"
   },
   {
@@ -190,6 +202,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "pkg/loxinet/dpu_metrics.go:180"
   },
   {
@@ -203,6 +216,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "pkg/loxinet/dpu_metrics.go:46"
   },
   {
@@ -219,6 +233,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "pkg/loxinet/dpu_metrics.go:210"
   },
   {
@@ -235,6 +250,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "pkg/loxinet/dpu_metrics.go:115"
   },
   {
@@ -251,6 +267,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "pkg/loxinet/dpu_metrics.go:110"
   },
   {
@@ -264,6 +281,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "pkg/loxinet/dpu_metrics.go:128"
   },
   {
@@ -277,6 +295,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "pkg/loxinet/dpu_metrics.go:52"
   },
   {
@@ -290,6 +309,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "pkg/loxinet/dpu_metrics.go:154"
   },
   {
@@ -303,6 +323,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "pkg/loxinet/dpu_metrics.go:148"
   },
   {
@@ -318,6 +339,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "pkg/loxinet/dpu_metrics.go:163"
   },
   {
@@ -335,6 +357,7 @@
     "loxilb-l4.json",
     "loxilb-overview.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:219"
   },
   {
@@ -350,6 +373,7 @@
    "consumers": [
     "loxilb-l4.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:237"
   },
   {
@@ -365,6 +389,7 @@
    "consumers": [
     "loxilb-l4.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:225"
   },
   {
@@ -380,6 +405,7 @@
    "consumers": [
     "loxilb-l4.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:231"
   },
   {
@@ -397,6 +423,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/ai_metrics.go:134"
   },
   {
@@ -413,6 +440,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "Info metric (constant 1) for PromQL joins and legend enrichment of engine identity; standalone display would duplicate configuration.",
    "source": "api/prometheus/sockproxy_metrics.go:397"
   },
   {
@@ -432,6 +460,7 @@
     "loxilb-ai.json",
     "loxilb-alerts.yml"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:1528"
   },
   {
@@ -451,6 +480,7 @@
     "loxilb-ai.json",
     "loxilb-alerts.yml"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:1520"
   },
   {
@@ -470,6 +500,7 @@
     "loxilb-ai.json",
     "loxilb-alerts.yml"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:1501"
   },
   {
@@ -489,6 +520,7 @@
     "loxilb-ai.json",
     "loxilb-alerts.yml"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:1512"
   },
   {
@@ -507,6 +539,7 @@
     "loxilb-ai-kv-alerts.yml",
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:1540"
   },
   {
@@ -522,6 +555,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:1548"
   },
   {
@@ -537,7 +571,10 @@
    "activation": "V",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:409"
   },
   {
@@ -556,6 +593,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/ai_metrics.go:143"
   },
   {
@@ -570,7 +608,10 @@
    "activation": "V",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
    "source": "api/prometheus/ai_metrics.go:279"
   },
   {
@@ -588,6 +629,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/ai_metrics.go:233"
   },
   {
@@ -602,7 +644,10 @@
    "activation": "V",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
    "source": "api/prometheus/ai_metrics.go:252"
   },
   {
@@ -617,7 +662,10 @@
    "activation": "V",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
    "source": "api/prometheus/ai_metrics.go:261"
   },
   {
@@ -635,6 +683,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/ai_metrics.go:223"
   },
   {
@@ -654,6 +703,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/ai_metrics.go:243"
   },
   {
@@ -668,7 +718,10 @@
    "activation": "V",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
    "source": "api/prometheus/ai_metrics.go:270"
   },
   {
@@ -685,6 +738,7 @@
     "loxilb-ai-kv-alerts.yml",
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/ai_metrics.go:313"
   },
   {
@@ -704,6 +758,7 @@
     "loxilb-ai.json",
     "loxilb-alerts.yml"
    ],
+   "waiver": "",
    "source": "api/prometheus/ai_metrics.go:125"
   },
   {
@@ -722,6 +777,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/ai_metrics.go:115"
   },
   {
@@ -743,6 +799,7 @@
     "loxilb-alerts.yml",
     "loxilb-recording.yml"
    ],
+   "waiver": "",
    "source": "api/prometheus/ai_metrics.go:104"
   },
   {
@@ -758,6 +815,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/ai_metrics.go:211"
   },
   {
@@ -775,6 +833,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/ai_metrics.go:198"
   },
   {
@@ -792,6 +851,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/ai_metrics.go:405"
   },
   {
@@ -808,6 +868,7 @@
    "priority": "diagnostic",
    "privacy": "label-review",
    "consumers": [],
+   "waiver": "Join denominator behind the dashboarded quota-utilization ratios; displaying raw configured limits duplicates config, utilization panels answer headroom.",
    "source": "api/prometheus/ai_metrics.go:415"
   },
   {
@@ -826,6 +887,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/ai_metrics.go:410"
   },
   {
@@ -843,6 +905,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/ai_metrics.go:400"
   },
   {
@@ -862,6 +925,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/ai_metrics.go:159"
   },
   {
@@ -880,6 +944,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/ai_metrics.go:172"
   },
   {
@@ -898,6 +963,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/ai_metrics.go:184"
   },
   {
@@ -916,6 +982,7 @@
     "loxilb-ai-kv-alerts.yml",
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/ai_metrics.go:296"
   },
   {
@@ -929,6 +996,7 @@
    "priority": "p0",
    "privacy": "none",
    "consumers": [],
+   "waiver": "Is auto-persist silently failing so config changes would not survive a restart? Interim: loxilb_config_dirty held at 1 across the debounce window surfaces the same exposure. Panel + alert arrive with the persistence-panel extension in the config generation follow-up.",
    "source": "pkg/snapshot/metrics.go:61"
   },
   {
@@ -947,6 +1015,7 @@
    "consumers": [
     "loxilb-overview.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:374"
   },
   {
@@ -965,6 +1034,7 @@
    "consumers": [
     "loxilb-overview.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:388"
   },
   {
@@ -983,6 +1053,7 @@
    "consumers": [
     "loxilb-overview.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:381"
   },
   {
@@ -995,7 +1066,10 @@
    "activation": "E",
    "priority": "p0",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-overview.json"
+   ],
+   "waiver": "",
    "source": "pkg/snapshot/metrics.go:51"
   },
   {
@@ -1009,6 +1083,7 @@
    "priority": "p0",
    "privacy": "none",
    "consumers": [],
+   "waiver": "Did a boot degrade to legacy txt config replay? Interim: LoxilbRestore alerts cover the failed snapshot path that precedes the fallback, and boot logs record the arbitration. Panel arrives with the persistence-panel extension in the config generation follow-up.",
    "source": "pkg/snapshot/metrics.go:71"
   },
   {
@@ -1027,6 +1102,7 @@
    "consumers": [
     "loxilb-l4.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:354"
   },
   {
@@ -1040,6 +1116,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "Internal conntrack-sweep finalization bookkeeping; a stall surfaces as missing closed-flow traffic in the dashboarded counters \u2014 diagnostic query only.",
    "source": "api/prometheus/prometheus.go:508"
   },
   {
@@ -1055,6 +1132,7 @@
    "consumers": [
     "loxilb-overview.json"
    ],
+   "waiver": "",
    "source": "pkg/snapshot/metrics.go:76"
   },
   {
@@ -1071,6 +1149,7 @@
     "loxilb-alerts.yml",
     "loxilb-l4.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:2254"
   },
   {
@@ -1087,6 +1166,7 @@
     "loxilb-alerts.yml",
     "loxilb-overview.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:502"
   },
   {
@@ -1103,6 +1183,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "pkg/loxinet/dpu_doca_bf2_metrics.go:100"
   },
   {
@@ -1118,6 +1199,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "pkg/loxinet/dpu_doca_bf2_metrics.go:109"
   },
   {
@@ -1134,6 +1216,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "Superseded on dashboards by loxilb_backend_traffic_bytes_total (exact DP counters, ip:port attribution); kept exported for persistent-flow comparison and external consumers.",
    "source": "api/prometheus/prometheus.go:347"
   },
   {
@@ -1147,6 +1230,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "Instance-level aggregate of loxilb_service_errors_total, which is dashboarded; sum() of the per-service sibling answers it exactly.",
    "source": "api/prometheus/prometheus.go:413"
   },
   {
@@ -1162,6 +1246,7 @@
    "consumers": [
     "loxilb-security.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:445"
   },
   {
@@ -1179,6 +1264,7 @@
     "loxilb-l4.json",
     "loxilb-security.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:430"
   },
   {
@@ -1197,6 +1283,7 @@
     "loxilb-l4.json",
     "loxilb-security.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:437"
   },
   {
@@ -1213,6 +1300,7 @@
     "loxilb-alerts.yml",
     "loxilb-overview.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:243"
   },
   {
@@ -1226,6 +1314,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "Legacy duplicate of loxilb_system_cpu_utilization_percent, which the overview CPU/Memory/Disk panel shows; kept exported for older external dashboards.",
    "source": "api/prometheus/prometheus.go:530"
   },
   {
@@ -1243,6 +1332,7 @@
    "priority": "diagnostic",
    "privacy": "label-review",
    "consumers": [],
+   "waiver": "Byte-volume twin of the dashboarded ipfilter packet counters; filter verdicts are judged by packet counts, byte volume stays an ad-hoc query.",
    "source": "api/prometheus/prometheus.go:630"
   },
   {
@@ -1262,6 +1352,7 @@
    "consumers": [
     "loxilb-security.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:622"
   },
   {
@@ -1279,6 +1370,7 @@
    "consumers": [
     "loxilb-security.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:654"
   },
   {
@@ -1296,6 +1388,7 @@
    "priority": "diagnostic",
    "privacy": "label-review",
    "consumers": [],
+   "waiver": "Byte-volume twin of the dashboarded ipfilter packet counters; filter verdicts are judged by packet counts, byte volume stays an ad-hoc query.",
    "source": "api/prometheus/prometheus.go:646"
   },
   {
@@ -1315,6 +1408,7 @@
    "consumers": [
     "loxilb-security.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:638"
   },
   {
@@ -1330,6 +1424,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "pkg/loxinet/dpu_metrics.go:221"
   },
   {
@@ -1343,6 +1438,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "pkg/loxinet/kv_agent_client.go:46"
   },
   {
@@ -1358,7 +1454,10 @@
    "activation": "V",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:536"
   },
   {
@@ -1377,6 +1476,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:494"
   },
   {
@@ -1397,6 +1497,7 @@
     "loxilb-ai.json",
     "loxilb-recording.yml"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:453"
   },
   {
@@ -1415,6 +1516,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:479"
   },
   {
@@ -1434,6 +1536,7 @@
     "loxilb-ai-kv-alerts.yml",
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:464"
   },
   {
@@ -1452,6 +1555,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:505"
   },
   {
@@ -1472,6 +1576,7 @@
     "loxilb-ai-kv-alerts.yml",
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:521"
   },
   {
@@ -1492,6 +1597,7 @@
     "loxilb-overview.json",
     "loxilb-recording.yml"
    ],
+   "waiver": "",
    "source": "api/prometheus/l4_error_metrics.go:43"
   },
   {
@@ -1507,6 +1613,7 @@
    "consumers": [
     "loxilb-overview.json"
    ],
+   "waiver": "",
    "source": "pkg/snapshot/metrics.go:46"
   },
   {
@@ -1524,6 +1631,7 @@
    "priority": "diagnostic",
    "privacy": "label-review",
    "consumers": [],
+   "waiver": "Flow-identity (service x sip x dip) forensic counter with unbounded client cardinality; deliberately not dashboarded \u2014 client-traffic and per-backend panels answer the operational question, ad-hoc query for forensics.",
    "source": "api/prometheus/prometheus.go:317"
   },
   {
@@ -1541,6 +1649,7 @@
    "priority": "diagnostic",
    "privacy": "label-review",
    "consumers": [],
+   "waiver": "Flow-identity (service x sip x dip) forensic counter with unbounded client cardinality; deliberately not dashboarded \u2014 client-traffic and per-backend panels answer the operational question, ad-hoc query for forensics.",
    "source": "api/prometheus/prometheus.go:324"
   },
   {
@@ -1558,6 +1667,7 @@
     "loxilb-overview.json",
     "loxilb-security.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:255"
   },
   {
@@ -1570,7 +1680,10 @@
    "activation": "E",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:675"
   },
   {
@@ -1586,6 +1699,7 @@
    "consumers": [
     "loxilb-l4.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:261"
   },
   {
@@ -1601,6 +1715,7 @@
    "consumers": [
     "loxilb-security.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/opa_metrics.go:60"
   },
   {
@@ -1616,6 +1731,7 @@
    "consumers": [
     "loxilb-security.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/opa_metrics.go:52"
   },
   {
@@ -1631,6 +1747,7 @@
    "consumers": [
     "loxilb-security.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/opa_metrics.go:43"
   },
   {
@@ -1648,6 +1765,7 @@
    "consumers": [
     "loxilb-security.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/opa_metrics.go:34"
   },
   {
@@ -1662,7 +1780,10 @@
    "activation": "V",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
    "source": "pkg/loxinet/payload_metrics.go:55"
   },
   {
@@ -1677,7 +1798,10 @@
    "activation": "V",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
    "source": "pkg/loxinet/payload_metrics.go:45"
   },
   {
@@ -1693,7 +1817,10 @@
    "activation": "V",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
    "source": "pkg/loxinet/payload_metrics.go:26"
   },
   {
@@ -1708,7 +1835,10 @@
    "activation": "V",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
    "source": "pkg/loxinet/payload_metrics.go:35"
   },
   {
@@ -1721,7 +1851,10 @@
    "activation": "E",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:611"
   },
   {
@@ -1734,7 +1867,10 @@
    "activation": "E",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:603"
   },
   {
@@ -1747,7 +1883,10 @@
    "activation": "E",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:339"
   },
   {
@@ -1760,7 +1899,10 @@
    "activation": "E",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:619"
   },
   {
@@ -1773,7 +1915,10 @@
    "activation": "E",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:651"
   },
   {
@@ -1790,6 +1935,7 @@
     "loxilb-ai-kv-alerts.yml",
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:667"
   },
   {
@@ -1806,6 +1952,7 @@
     "loxilb-ai-kv-alerts.yml",
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:661"
   },
   {
@@ -1819,6 +1966,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "api/prometheus/aictrl_metrics.go:79"
   },
   {
@@ -1834,6 +1982,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "api/prometheus/aictrl_metrics.go:62"
   },
   {
@@ -1850,6 +1999,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "api/prometheus/aictrl_metrics.go:44"
   },
   {
@@ -1863,6 +2013,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "api/prometheus/aictrl_metrics.go:71"
   },
   {
@@ -1876,6 +2027,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "api/prometheus/aictrl_metrics.go:95"
   },
   {
@@ -1889,6 +2041,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "api/prometheus/aictrl_metrics.go:87"
   },
   {
@@ -1902,6 +2055,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "api/prometheus/aictrl_metrics.go:103"
   },
   {
@@ -1918,6 +2072,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "api/prometheus/aictrl_metrics.go:53"
   },
   {
@@ -1934,6 +2089,7 @@
     "loxilb-ai-kv-alerts.yml",
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:635"
   },
   {
@@ -1946,7 +2102,10 @@
    "activation": "E",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:643"
   },
   {
@@ -1964,6 +2123,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "Info metric (constant 1) mapping ep_idx to endpoint IP for PromQL joins; standalone display would duplicate configuration.",
    "source": "api/prometheus/sockproxy_metrics.go:385"
   },
   {
@@ -1976,7 +2136,10 @@
    "activation": "E",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:347"
   },
   {
@@ -1992,7 +2155,10 @@
    "activation": "V",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:357"
   },
   {
@@ -2007,7 +2173,10 @@
    "activation": "V",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:567"
   },
   {
@@ -2023,6 +2192,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:437"
   },
   {
@@ -2040,6 +2210,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:369"
   },
   {
@@ -2057,6 +2228,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:426"
   },
   {
@@ -2074,6 +2246,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:552"
   },
   {
@@ -2092,6 +2265,7 @@
     "loxilb-ai-kv-alerts.yml",
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:584"
   },
   {
@@ -2108,6 +2282,7 @@
     "loxilb-ai-kv-alerts.yml",
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:627"
   },
   {
@@ -2120,7 +2295,10 @@
    "activation": "E",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:323"
   },
   {
@@ -2133,7 +2311,10 @@
    "activation": "E",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:691"
   },
   {
@@ -2146,7 +2327,10 @@
    "activation": "E",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:715"
   },
   {
@@ -2159,7 +2343,10 @@
    "activation": "E",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:683"
   },
   {
@@ -2172,7 +2359,10 @@
    "activation": "E",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:707"
   },
   {
@@ -2185,7 +2375,10 @@
    "activation": "E",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:699"
   },
   {
@@ -2198,7 +2391,10 @@
    "activation": "E",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:331"
   },
   {
@@ -2211,7 +2407,10 @@
    "activation": "E",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:723"
   },
   {
@@ -2227,6 +2426,7 @@
    "priority": "p0",
    "privacy": "none",
    "consumers": [],
+   "waiver": "Did the last persist attempts succeed? Interim: the config persistence API (GET /config/persist/status) reports last-persist outcome, and loxilb_config_dirty staying 1 exposes a persist that never lands. Panel arrives with the persistence-panel extension shipped alongside the config generation gauge follow-up.",
    "source": "pkg/snapshot/metrics.go:56"
   },
   {
@@ -2242,6 +2442,7 @@
    "consumers": [
     "loxilb-overview.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:267"
   },
   {
@@ -2255,6 +2456,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "Aggregate of the per-protocol packet counters already dashboarded on Packets/s by protocol; sum() over those series answers it exactly.",
    "source": "api/prometheus/prometheus.go:309"
   },
   {
@@ -2268,6 +2470,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "Per-protocol byte split of total throughput; the Throughput (DP bytes) and Packets/s-by-protocol panels answer the question \u2014 per-proto bytes stay an ad-hoc query.",
    "source": "api/prometheus/prometheus.go:285"
   },
   {
@@ -2283,6 +2486,7 @@
    "consumers": [
     "loxilb-overview.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:303"
   },
   {
@@ -2296,6 +2500,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "Per-protocol byte split of total throughput; the Throughput (DP bytes) and Packets/s-by-protocol panels answer the question \u2014 per-proto bytes stay an ad-hoc query.",
    "source": "api/prometheus/prometheus.go:273"
   },
   {
@@ -2311,6 +2516,7 @@
    "consumers": [
     "loxilb-overview.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:291"
   },
   {
@@ -2324,6 +2530,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "Per-protocol byte split of total throughput; the Throughput (DP bytes) and Packets/s-by-protocol panels answer the question \u2014 per-proto bytes stay an ad-hoc query.",
    "source": "api/prometheus/prometheus.go:279"
   },
   {
@@ -2339,6 +2546,7 @@
    "consumers": [
     "loxilb-overview.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:297"
   },
   {
@@ -2355,6 +2563,7 @@
     "loxilb-l7.json",
     "loxilb-overview.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:207"
   },
   {
@@ -2370,6 +2579,7 @@
    "consumers": [
     "loxilb-l7.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:215"
   },
   {
@@ -2385,6 +2595,7 @@
    "consumers": [
     "loxilb-l7.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:145"
   },
   {
@@ -2397,7 +2608,10 @@
    "activation": "E",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:183"
   },
   {
@@ -2410,7 +2624,10 @@
    "activation": "E",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:189"
   },
   {
@@ -2423,7 +2640,10 @@
    "activation": "E",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:195"
   },
   {
@@ -2439,6 +2659,7 @@
    "consumers": [
     "loxilb-l7.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:255"
   },
   {
@@ -2454,6 +2675,7 @@
    "consumers": [
     "loxilb-l7.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:171"
   },
   {
@@ -2469,6 +2691,7 @@
    "consumers": [
     "loxilb-l7.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:231"
   },
   {
@@ -2484,6 +2707,7 @@
    "consumers": [
     "loxilb-l7.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:157"
   },
   {
@@ -2499,6 +2723,7 @@
    "consumers": [
     "loxilb-l7.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:163"
   },
   {
@@ -2514,6 +2739,7 @@
    "consumers": [
     "loxilb-l7.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:223"
   },
   {
@@ -2529,6 +2755,7 @@
    "consumers": [
     "loxilb-l7.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:271"
   },
   {
@@ -2544,6 +2771,7 @@
    "consumers": [
     "loxilb-l7.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:263"
   },
   {
@@ -2559,6 +2787,7 @@
    "consumers": [
     "loxilb-l7.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:243"
   },
   {
@@ -2579,6 +2808,7 @@
     "loxilb-overview.json",
     "loxilb-recording.yml"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:291"
   },
   {
@@ -2595,6 +2825,7 @@
     "loxilb-alerts.yml",
     "loxilb-overview.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:283"
   },
   {
@@ -2611,6 +2842,7 @@
     "loxilb-alerts.yml",
     "loxilb-l7.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:856"
   },
   {
@@ -2623,7 +2855,10 @@
    "activation": "E",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_metrics.go:311"
   },
   {
@@ -2644,6 +2879,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/qos_shaper_metrics.go:108"
   },
   {
@@ -2664,6 +2900,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/qos_shaper_metrics.go:103"
   },
   {
@@ -2684,6 +2921,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/qos_shaper_metrics.go:138"
   },
   {
@@ -2704,6 +2942,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/qos_shaper_metrics.go:133"
   },
   {
@@ -2724,6 +2963,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/qos_shaper_metrics.go:118"
   },
   {
@@ -2744,6 +2984,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/qos_shaper_metrics.go:123"
   },
   {
@@ -2764,6 +3005,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/qos_shaper_metrics.go:113"
   },
   {
@@ -2784,6 +3026,7 @@
    "consumers": [
     "loxilb-ai.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/qos_shaper_metrics.go:128"
   },
   {
@@ -2799,6 +3042,7 @@
    "consumers": [
     "loxilb-overview.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:398"
   },
   {
@@ -2811,7 +3055,10 @@
    "activation": "E",
    "priority": "p0",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-overview.json"
+   ],
+   "waiver": "",
    "source": "pkg/snapshot/metrics.go:40"
   },
   {
@@ -2831,6 +3078,7 @@
     "loxilb-ai-kv-alerts.yml",
     "loxilb-overview.json"
    ],
+   "waiver": "",
    "source": "pkg/snapshot/metrics.go:35"
   },
   {
@@ -2846,6 +3094,7 @@
    "consumers": [
     "loxilb-security.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:572"
   },
   {
@@ -2861,6 +3110,7 @@
    "consumers": [
     "loxilb-security.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:579"
   },
   {
@@ -2877,6 +3127,7 @@
     "loxilb-alerts.yml",
     "loxilb-security.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:551"
   },
   {
@@ -2892,6 +3143,7 @@
    "consumers": [
     "loxilb-security.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:565"
   },
   {
@@ -2907,6 +3159,7 @@
    "consumers": [
     "loxilb-security.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:558"
   },
   {
@@ -2923,6 +3176,7 @@
     "loxilb-alerts.yml",
     "loxilb-security.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:593"
   },
   {
@@ -2938,6 +3192,7 @@
    "consumers": [
     "loxilb-security.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:607"
   },
   {
@@ -2951,6 +3206,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "Byte twin of the dashboarded UDP passed/blocked packet counters and blocked-bytes panel; passed-byte volume adds no verdict signal.",
    "source": "api/prometheus/prometheus.go:614"
   },
   {
@@ -2966,6 +3222,7 @@
    "consumers": [
     "loxilb-security.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:600"
   },
   {
@@ -2981,6 +3238,7 @@
    "consumers": [
     "loxilb-security.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:586"
   },
   {
@@ -2998,6 +3256,7 @@
    "consumers": [
     "loxilb-l4.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:420"
   },
   {
@@ -3015,6 +3274,7 @@
    "consumers": [
     "loxilb-l4.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:405"
   },
   {
@@ -3032,6 +3292,7 @@
    "consumers": [
     "loxilb-l4.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:333"
   },
   {
@@ -3047,6 +3308,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "Per-service packet twin of the dashboarded bytes counter; the exact per-backend packets/s panel covers the packet-rate question with finer attribution.",
    "source": "api/prometheus/prometheus.go:340"
   },
   {
@@ -3060,6 +3322,7 @@
    "priority": "p0",
    "privacy": "none",
    "consumers": [],
+   "waiver": "Did a boot quarantine an unreplayable snapshot.json? Interim: quarantine events land in the gateway log and loxilb_boot_legacy_fallback_total or restore alerts fire on the same boot path. Panel arrives with the persistence-panel extension in the config generation follow-up.",
    "source": "pkg/snapshot/metrics.go:66"
   },
   {
@@ -3077,6 +3340,7 @@
    "consumers": [
     "loxilb-overview.json"
    ],
+   "waiver": "",
    "source": "pkg/snapshot/metrics.go:30"
   },
   {
@@ -3093,6 +3357,7 @@
     "loxilb-alerts.yml",
     "loxilb-overview.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_sync_metrics.go:61"
   },
   {
@@ -3110,6 +3375,7 @@
    "consumers": [
     "loxilb-overview.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_sync_metrics.go:71"
   },
   {
@@ -3127,6 +3393,7 @@
    "consumers": [
     "loxilb-overview.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_sync_metrics.go:115"
   },
   {
@@ -3141,7 +3408,10 @@
    "activation": "V",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-overview.json"
+   ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_sync_metrics.go:48"
   },
   {
@@ -3156,7 +3426,10 @@
    "activation": "V",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [],
+   "consumers": [
+    "loxilb-overview.json"
+   ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_sync_metrics.go:96"
   },
   {
@@ -3174,6 +3447,7 @@
    "consumers": [
     "loxilb-overview.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_sync_metrics.go:34"
   },
   {
@@ -3191,6 +3465,7 @@
    "consumers": [
     "loxilb-overview.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_sync_metrics.go:144"
   },
   {
@@ -3208,6 +3483,7 @@
    "consumers": [
     "loxilb-overview.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_sync_metrics.go:129"
   },
   {
@@ -3226,6 +3502,7 @@
    "consumers": [
     "loxilb-overview.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/sockproxy_sync_metrics.go:84"
   },
   {
@@ -3242,6 +3519,7 @@
     "loxilb-alerts.yml",
     "loxilb-overview.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:522"
   },
   {
@@ -3258,6 +3536,7 @@
     "loxilb-alerts.yml",
     "loxilb-overview.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:543"
   },
   {
@@ -3274,6 +3553,7 @@
     "loxilb-alerts.yml",
     "loxilb-overview.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:537"
   },
   {
@@ -3290,6 +3570,7 @@
     "loxilb-alerts.yml",
     "loxilb-overview.json"
    ],
+   "waiver": "",
    "source": "api/prometheus/prometheus.go:249"
   },
   {
@@ -3305,6 +3586,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "cmd/loxilb-ai-controller/metrics.go:84"
   },
   {
@@ -3320,6 +3602,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "cmd/loxilb-ai-controller/metrics.go:88"
   },
   {
@@ -3333,6 +3616,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "cmd/loxilb-ai-controller/metrics.go:40"
   },
   {
@@ -3349,6 +3633,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "cmd/loxilb-ai-controller/metrics.go:65"
   },
   {
@@ -3364,6 +3649,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "cmd/loxilb-ai-controller/metrics.go:165"
   },
   {
@@ -3377,6 +3663,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "cmd/loxilb-ai-controller/metrics.go:58"
   },
   {
@@ -3390,6 +3677,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "cmd/loxilb-ai-controller/main.go:67"
   },
   {
@@ -3403,6 +3691,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "cmd/loxilb-ai-controller/metrics.go:95"
   },
   {
@@ -3418,6 +3707,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "cmd/loxilb-ai-controller/metrics.go:72"
   },
   {
@@ -3431,6 +3721,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "cmd/loxilb-ai-controller/metrics.go:34"
   },
   {
@@ -3446,6 +3737,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "cmd/loxilb-ai-controller/metrics.go:52"
   },
   {
@@ -3461,6 +3753,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "cmd/loxilb-ai-controller/metrics.go:46"
   },
   {
@@ -3476,6 +3769,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "cmd/loxilb-ai-controller/metrics.go:113"
   },
   {
@@ -3489,6 +3783,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "cmd/loxilb-ai-controller/metrics.go:131"
   },
   {
@@ -3502,6 +3797,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "cmd/loxilb-ai-controller/metrics.go:122"
   },
   {
@@ -3515,6 +3811,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "cmd/loxilb-ai-controller/metrics.go:151"
   },
   {
@@ -3528,6 +3825,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "cmd/loxilb-ai-controller/metrics.go:155"
   },
   {
@@ -3543,6 +3841,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "cmd/loxilb-ai-controller/metrics.go:102"
   },
   {
@@ -3556,6 +3855,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "cmd/loxilb-ai-controller/metrics.go:78"
   },
   {
@@ -3569,6 +3869,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "cmd/loxilb-kv-agent/kv_metrics.go:65"
   },
   {
@@ -3582,6 +3883,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "cmd/loxilb-kv-agent/kv_metrics.go:71"
   },
   {
@@ -3595,6 +3897,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "cmd/loxilb-kv-agent/kv_metrics.go:58"
   },
   {
@@ -3608,6 +3911,7 @@
    "priority": "diagnostic",
    "privacy": "none",
    "consumers": [],
+   "waiver": "",
    "source": "cmd/loxilb-kv-agent/kv_metrics.go:50"
   }
  ]
