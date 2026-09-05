@@ -1,13 +1,13 @@
 {
  "contract": {
-  "total": 229,
+  "total": 231,
   "owners": {
-   "loxilb": 206,
+   "loxilb": 208,
    "loxilb-ai-controller": 19,
    "loxilb-kv-agent": 4
   },
   "classes": {
-   "default": 173,
+   "default": 175,
    "dpu-doca": 24,
    "aictrl-bridge": 8,
    "kv-agent-health": 1,
@@ -16,9 +16,9 @@
   }
  },
  "coverage": {
-  "default_families": 173,
+  "default_families": 175,
   "default_referenced": 110,
-  "default_unreferenced": 63
+  "default_unreferenced": 65
  },
  "families": [
   {
@@ -3163,6 +3163,36 @@
     "loxilb-overview.json"
    ],
    "source": "api/prometheus/sockproxy_sync_metrics.go:34"
+  },
+  {
+   "name": "loxilb_sockproxy_sync_peer_lag_seconds",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [
+    "peer"
+   ],
+   "activation": "V",
+   "priority": "p0",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_sync_metrics.go:144"
+  },
+  {
+   "name": "loxilb_sockproxy_sync_peer_up",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [
+    "peer"
+   ],
+   "activation": "V",
+   "priority": "p0",
+   "privacy": "none",
+   "consumers": [],
+   "source": "api/prometheus/sockproxy_sync_metrics.go:129"
   },
   {
    "name": "loxilb_sockproxy_sync_push_latency_seconds",

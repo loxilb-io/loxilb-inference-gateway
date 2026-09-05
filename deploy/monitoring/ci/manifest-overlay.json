@@ -10,14 +10,14 @@
   "Combined codes (D+P etc.) apply both behaviors."
  ],
  "expected": {
-  "total": 229,
+  "total": 231,
   "owners": {
-   "loxilb": 206,
+   "loxilb": 208,
    "loxilb-ai-controller": 19,
    "loxilb-kv-agent": 4
   },
   "classes": {
-   "default": 173,
+   "default": 175,
    "dpu-doca": 24,
    "aictrl-bridge": 8,
    "kv-agent-health": 1,
@@ -293,6 +293,8 @@
   "loxilb_sockproxy_sync_health_reject_total": "V",
   "loxilb_sockproxy_sync_inflight_rpc": "V",
   "loxilb_sockproxy_sync_overflow_total": "V",
+  "loxilb_sockproxy_sync_peer_lag_seconds": "V",
+  "loxilb_sockproxy_sync_peer_up": "V",
   "loxilb_sockproxy_sync_push_latency_seconds": "V",
   "loxilb_system_cpu_utilization_percent": "E",
   "loxilb_system_disk_utilization_percent": "E",
@@ -328,7 +330,9 @@
    "loxilb_restore_duration_seconds": "p0",
    "loxilb_restore_total": "p0",
    "loxilb_snapshot_quarantine_total": "p0",
-   "loxilb_snapshot_total": "p0"
+   "loxilb_snapshot_total": "p0",
+   "loxilb_sockproxy_sync_peer_lag_seconds": "p0",
+   "loxilb_sockproxy_sync_peer_up": "p0"
   }
  },
  "privacy_review_labels": [
@@ -358,7 +362,9 @@
    "loxilb_pd_connect_retry_same_ep_ok_total",
    "loxilb_pd_connect_retry_same_ep_total",
    "loxilb_persist_total",
-   "loxilb_snapshot_quarantine_total"
+   "loxilb_snapshot_quarantine_total",
+   "loxilb_sockproxy_sync_peer_lag_seconds",
+   "loxilb_sockproxy_sync_peer_up"
   ]
  }
 }
