@@ -548,6 +548,15 @@ func TestPeerConsumerDrainsQueue(t *testing.T) {
 		t.Fatalf("expected 3 SockproxySessionMod calls reaching mock server, got %d", got)
 	}
 
+	// Successful replication must mark the peer up and stamp the
+	// enqueue-to-sent lag (nonzero: even in-process delivery takes time).
+	if got := prom.SockproxySyncPeerUpValue(peerKey); got != 1 {
+		t.Errorf("peer_up = %v after successful pushes, want 1", got)
+	}
+	if got := prom.SockproxySyncPeerLagValue(peerKey); got <= 0 {
+		t.Errorf("peer_lag_seconds = %v after successful pushes, want > 0", got)
+	}
+
 	// Stop must return within 2s.
 	done := make(chan struct{})
 	go func() {
@@ -632,6 +641,15 @@ func TestPeerConsumerRetriesAndDrops(t *testing.T) {
 	if delta != 1 {
 		t.Errorf("expected loxilb_sockproxy_sync_drop_total{reason=peer_unreachable} delta=1, got %v (before=%v after=%v)",
 			delta, beforeDrops, afterDrops)
+	}
+
+	// (c) retry exhaustion marks the peer down, and the lag gauge stays
+	// unstamped — no successful replication ever happened to this peer.
+	if got := prom.SockproxySyncPeerUpValue(peerKey); got != 0 {
+		t.Errorf("peer_up = %v after retry exhaustion, want 0", got)
+	}
+	if got := prom.SockproxySyncPeerLagValue(peerKey); got != 0 {
+		t.Errorf("peer_lag_seconds = %v with zero successful pushes, want 0 (unstamped)", got)
 	}
 
 	// Stop must return cleanly.

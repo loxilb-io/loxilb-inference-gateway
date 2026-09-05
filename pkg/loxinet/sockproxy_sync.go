@@ -197,7 +197,7 @@ type SockproxySync struct {
 
 	// Per-peer outbound queues. Each peer drains its own queue serially —
 	// single in-flight RPC per peer per RPC family (CONTEXT discretion).
-	outboundQueues sync.Map // map[string]chan *SockproxySessionModReq
+	outboundQueues sync.Map // map[string]chan outboundBatch
 
 	// peers references the live DpPeer slice via the dpbroker.
 	peersFn func() []DpPeer
@@ -437,17 +437,24 @@ func (s *SockproxySync) consumerLoop(peer *DpPeer, peerKey string, clientFn func
 	q := s.peerQueue(peerKey)
 	tk.LogIt(tk.LogInfo, "[SOCKPROXY_SYNC] consumerLoop start peer=%s\n", peerKey)
 
+	// The peer is discovered but no push has completed yet: the peer-up
+	// series exists at 0 from consumer start so a peer that never manages
+	// a single successful push is visible, not absent. Children persist
+	// for the process lifetime (peer set is small and static — same rule
+	// as every other per-peer sync series).
+	prom.SockproxySyncPeerUpSet(peerKey, 0)
+
 	for {
 		// Outer select: wait for either a queued message or shutdown.
 		select {
 		case <-s.shutdownCh:
 			tk.LogIt(tk.LogInfo, "[SOCKPROXY_SYNC] consumerLoop exit peer=%s\n", peerKey)
 			return
-		case msg := <-q:
-			if msg == nil {
+		case b := <-q:
+			if b.msg == nil {
 				continue
 			}
-			s.sendWithRetry(peer, peerKey, clientFn, msg)
+			s.sendWithRetry(peer, peerKey, clientFn, b)
 		}
 	}
 }
@@ -455,11 +462,12 @@ func (s *SockproxySync) consumerLoop(peer *DpPeer, peerKey string, clientFn func
 // sendWithRetry encapsulates retry loop for a single batch.
 // Separated from consumerLoop so the shutdown branch and the message
 // branch can both share the retry shape without nested-select sprawl.
-func (s *SockproxySync) sendWithRetry(peer *DpPeer, peerKey string, clientFn func() XSyncClient, msg *SockproxySessionModReq) {
+func (s *SockproxySync) sendWithRetry(peer *DpPeer, peerKey string, clientFn func() XSyncClient, b outboundBatch) {
 	const maxRetries = 3
 	const baseBackoff = 100 * time.Millisecond
 	const maxBackoff = 5 * time.Second
 
+	msg := b.msg
 	attempt := 0
 	for {
 		client := clientFn()
@@ -477,12 +485,15 @@ func (s *SockproxySync) sendWithRetry(peer *DpPeer, peerKey string, clientFn fun
 			if client == nil {
 				tk.LogIt(tk.LogDebug, "[XSYNC] peer=%s still no client after RPCConnect; skipping batch (entries=%d)\n",
 					peerKey, len(msg.Entries))
+				prom.SockproxySyncPeerUpSet(peerKey, 0)
 				return
 			}
 		}
 		err, _ := s.sendOnce(peer, client, msg)
 		if err == nil {
 			tk.LogIt(tk.LogInfo, "[XSYNC_SEND] peer=%s entries=%d sent ok\n", peerKey, len(msg.Entries))
+			prom.SockproxySyncPeerUpSet(peerKey, 1)
+			prom.SockproxySyncPeerLagSet(peerKey, time.Since(b.enqueuedAt).Seconds())
 			return
 		}
 		// On error, decide whether to retry.
@@ -491,6 +502,7 @@ func (s *SockproxySync) sendWithRetry(peer *DpPeer, peerKey string, clientFn fun
 			tk.LogIt(tk.LogWarning, "[SOCKPROXY_SYNC] consumerLoop peer=%s dropping batch after %d retries: %v\n",
 				peerKey, maxRetries, err)
 			prom.SockproxySyncDropInc("peer_unreachable")
+			prom.SockproxySyncPeerUpSet(peerKey, 0)
 			return
 		}
 		attempt++
@@ -710,6 +722,14 @@ func (s *SockproxySync) eventToEntry(ev proxySyncEvent) *SockproxySessionEntry {
 	}
 }
 
+// outboundBatch pairs a queued session batch with its enqueue time, so the
+// consumer can report the enqueue-to-sent delay (peer lag) on successful
+// replication. In-process only — never crosses the wire.
+type outboundBatch struct {
+	msg        *SockproxySessionModReq
+	enqueuedAt time.Time
+}
+
 // enqueueForPeer pushes msg onto the per-peer outbound queue. Drop-oldest on
 // overflow (CONTEXT "Backpressure shape").
 //
@@ -719,9 +739,10 @@ func (s *SockproxySync) eventToEntry(ev proxySyncEvent) *SockproxySessionEntry {
 // receive and the second send, silently losing the new batch.
 func (s *SockproxySync) enqueueForPeer(peerKey string, msg *SockproxySessionModReq) {
 	q := s.peerQueue(peerKey)
+	b := outboundBatch{msg: msg, enqueuedAt: time.Now()}
 	// Fast path: lock-free send.
 	select {
-	case q <- msg:
+	case q <- b:
 		return
 	default:
 	}
@@ -731,7 +752,7 @@ func (s *SockproxySync) enqueueForPeer(peerKey string, msg *SockproxySessionModR
 	defer mu.Unlock()
 	// Re-check under the lock — peer dispatcher may have drained.
 	select {
-	case q <- msg:
+	case q <- b:
 		return
 	default:
 	}
@@ -742,14 +763,14 @@ func (s *SockproxySync) enqueueForPeer(peerKey string, msg *SockproxySessionModR
 		// Queue raced empty between our two non-blocking sends. Best-
 		// effort push; if it still fails, count as overflow.
 		select {
-		case q <- msg:
+		case q <- b:
 		default:
 			prom.SockproxySyncOverflowInc("outbound_batch")
 		}
 		return
 	}
 	select {
-	case q <- msg:
+	case q <- b:
 	default:
 		prom.SockproxySyncOverflowInc("outbound_batch")
 	}
@@ -769,14 +790,14 @@ func (s *SockproxySync) peerDropMutex(peerKey string) *sync.Mutex {
 
 // peerQueue returns (creating on first reference) the outbound channel for
 // peerKey. The channel is goroutine-fed; a per-peer dispatcher reads from it.
-func (s *SockproxySync) peerQueue(peerKey string) chan *SockproxySessionModReq {
+func (s *SockproxySync) peerQueue(peerKey string) chan outboundBatch {
 	if v, ok := s.outboundQueues.Load(peerKey); ok {
-		return v.(chan *SockproxySessionModReq)
+		return v.(chan outboundBatch)
 	}
-	q := make(chan *SockproxySessionModReq, outboundQueueDepth)
+	q := make(chan outboundBatch, outboundQueueDepth)
 	actual, loaded := s.outboundQueues.LoadOrStore(peerKey, q)
 	if loaded {
-		return actual.(chan *SockproxySessionModReq)
+		return actual.(chan outboundBatch)
 	}
 	return q
 }
@@ -1191,6 +1212,10 @@ func (s *SockproxySync) sendRateLimiterBatch(peer *DpPeer, client XSyncClient,
 					"peer returned Unimplemented; clearing capRateLimiterSync bit and degrading gracefully")
 				return nil
 			}
+			// A real push failure: the peer's sync channel is not working.
+			// (Unimplemented above is a capability degrade, not a peer
+			// outage, and deliberately leaves peer_up untouched.)
+			prom.SockproxySyncPeerUpSet(peerKey, 0)
 			return err
 		}
 	}
@@ -1201,6 +1226,7 @@ func (s *SockproxySync) sendRateLimiterBatch(peer *DpPeer, client XSyncClient,
 	if isDelta {
 		s.updatePrevSnapshot(peerKey, entries)
 	}
+	prom.SockproxySyncPeerUpSet(peerKey, 1)
 	return nil
 }
 
