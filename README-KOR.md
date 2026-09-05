@@ -393,7 +393,7 @@ L4 로드 밸런싱과 일반 L7 정책 라우팅은 [업스트림 loxilb](https
 | [10 — 계층적 KV 라우팅 아키텍처](docs/load-balancing/10-hierarchical-kv-routing-architecture.md) | 설계 |
 | [11 — 계층적 KV 라우팅 튜닝](docs/load-balancing/11-hierarchical-kv-routing-config-tuning.md) | 구성 튜닝 |
 | [14 — KV-cache 관측성](docs/load-balancing/14-kv-cache-observability-design.md) | 메트릭 및 트레이싱 |
-| [모니터링 스택](deploy/monitoring/README.md) · [설계](docs/MONITORING-DESIGN.md) | Prometheus + Grafana 설정 및 대시보드([모니터링 및 관측성](#모니터링-및-관측성-prometheus--grafana) 참조) |
+| [모니터링 스택](deploy/monitoring/README.md) | Prometheus + Grafana 설정 및 대시보드([모니터링 및 관측성](#모니터링-및-관측성-prometheus--grafana) 참조) |
 | [15 — SGLang KV-cache 인식 라우팅](docs/load-balancing/15-sglang-kv-cache-aware-routing.md) | SGLang 라우팅 |
 | [16 — SGLang vs vLLM 라우팅](docs/load-balancing/16-sglang-vs-vllm-routing-differences.md) | 엔진 차이 |
 | [17 — SGLang 구성 튜닝](docs/load-balancing/17-sglang-config-tuning.md) | SGLang 튜닝 |
@@ -457,10 +457,11 @@ curl -X POST http://127.0.0.1:11111/netlox/v1/config/metrics   # 수집 활성�
 ```
 
 Prometheus는 동일 호스트에서 localhost를 통해 loxilb의 `/netlox/v1/metrics` 경로를
-스크레이프하며, 대시보드는 Grafana의 **LoxiLB** 폴더에 로드됩니다. 메트릭 엔드포인트는
-컨트롤 플레인 REST 경로이므로 기본 보안 태세는 TLS가 아닌 **네트워크 격리**(plain 리스너를
-localhost에 바인딩하거나 `:11111` 방화벽 처리)입니다 — 인증/암호화 세부 사항은 설정
-가이드를 참조하세요.
+스크레이프하며, 대시보드는 Grafana의 **LoxiLB** 폴더에 로드됩니다. 이 operation은 API
+인증 활성화 여부와 관계없이 의도적으로 인증 제외(`security: []`)이므로 기본 보안 태세는
+**네트워크 격리**(plain listener를 localhost에 바인딩하거나 `:11111` 방화벽 처리)입니다.
+원격 접근에는 API listener client certificate 검증(`--tls-ca`) 또는 인증 reverse
+proxy/service-mesh 경계를 사용하세요.
 
 프로비저닝된 대시보드 ([`grafana/dashboards/`](deploy/monitoring/grafana/dashboards/)):
 **Overview**, **L4**, **L7**, **AI Gateway**(KV 라우팅 / P·D / SSE / TTFT),
@@ -470,7 +471,6 @@ localhost에 바인딩하거나 `:11111` 방화벽 처리)입니다 — 인증/�
 |---|---|
 | [`deploy/monitoring/README.md`](deploy/monitoring/README.md) | 스택 설정 — 빠른 시작, 보안 태세, 네트워크 간 TLS, 운영 참고 사항 |
 | [`deploy/monitoring/TESTING.md`](deploy/monitoring/TESTING.md) | 라이브 테스트 가이드 — cicd 토폴로지로 실제 트래픽을 흘려보내고 데이터 플레인 실측값과 패널을 검증 |
-| [`docs/MONITORING-DESIGN.md`](docs/MONITORING-DESIGN.md) | 설계 근거 — 모든 패널, 알림, 메트릭과 그 배경이 된 발견 사항 |
 | [`docs/load-balancing/14-kv-cache-observability-design.md`](docs/load-balancing/14-kv-cache-observability-design.md) | AI/KV-cache 관측성 메트릭 및 트레이싱 설계 |
 
 ## 사용해 보기 — 실행 가능한 CICD 시나리오

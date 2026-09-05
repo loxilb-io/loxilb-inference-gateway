@@ -1,6 +1,6 @@
 name: Monitoring-Drill-Nightly
 
-# Tier 2 of docs/MONITORING-CICD.md: nightly alert fire→resolve drills + short
+# Tier 2 of the internal monitoring CI plan: nightly alert fire→resolve drills + short
 # soak on top of the Tier-1 scenario. Alert `for:` windows (1–10m) and the
 # soak make this too slow for per-merge, so it runs on a schedule (offset from
 # upstream's ~11:00 UTC nightly slots) and on demand.

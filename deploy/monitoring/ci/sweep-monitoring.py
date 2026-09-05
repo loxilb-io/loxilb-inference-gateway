@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Tier-1 live API sweeps for the LoxiLB monitoring stack (docs/MONITORING-CICD.md §5).
+Tier-1 live API sweeps for the LoxiLB monitoring stack (internal monitoring CI plan).
 
 Complements lint-monitoring.py (Tier 0, static): these checks need a running
 Prometheus + Grafana wired to a live loxilb, and validate the parts a static

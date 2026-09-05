@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # OPTIONAL tooling — only for the transport-encryption scrape path
-# (docs/MONITORING-DESIGN.md §2 "Optional"). The default monitoring deployment
+# (deploy/monitoring/README.md, "Optional: transport encryption across a
+# network"). The default monitoring deployment
 # uses a same-host, network-isolated plaintext scrape and needs NO certs. TLS on
 # the loxilb API listener is transport encryption, not scraper authentication
 # (finding F11); the client cert below is transport hardening only.

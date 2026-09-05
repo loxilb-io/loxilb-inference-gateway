@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Hold N TCP connections open against a VIP for T seconds.
 
-Ground-truth driver for the conntrack-gauge assertion (docs/MONITORING-CICD.md
-§7): while the connections are held, loxilb_active_conntrack_entries must
+Ground-truth driver for the conntrack-gauge assertion (internal monitoring CI
+plan, assertion catalog): while the connections are held,
+loxilb_active_conntrack_entries must
 reflect them. Prints READY once all connections are established so the caller
 knows when to sample Prometheus.
 """
