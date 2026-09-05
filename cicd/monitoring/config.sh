@@ -117,10 +117,14 @@ $hexec l3h1 curl -s -X POST \
   }'
 
 ## ── LB rule 3: VIP:2023 → plain L4 (conntrack hold-driver) ─────────────────
-create_lb_rule llb1 10.10.10.254 --tcp=2023:8080 --endpoints=32.32.32.1:1
+## Named: only NAMED rules export the per-service L4 series
+## (loxilb_service_requests_total etc.) that the "Requests/s per service"
+## panel and the per-backend traffic panels consume — the T9 required-panel
+## assertion depends on it.
+create_lb_rule llb1 10.10.10.254 --tcp=2023:8080 --endpoints=32.32.32.1:1 --name=l4-echo
 
 ## ── LB rule 4: VIP:2024 → plain L4 (server-RST error guard) ────────────────
-create_lb_rule llb1 10.10.10.254 --tcp=2024:8081 --endpoints=32.32.32.1:1
+create_lb_rule llb1 10.10.10.254 --tcp=2024:8081 --endpoints=32.32.32.1:1 --name=l4-rst
 
 ## ── Enable the metrics endpoint ─────────────────────────────────────────────
 $hexec l3h1 curl -s -X POST http://10.10.10.254:11111/netlox/v1/config/metrics >/dev/null
