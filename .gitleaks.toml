@@ -54,4 +54,9 @@ paths = [
 # the finding.
 regexes = [
   '''rt-otlp-secret-[0-9a-z]+''',
+  # The monitoring drill scripts drive authenticated traffic with the literal
+  # placeholder "drill-key" so an alert-firing loop can exercise the API-key
+  # path; it is never an issued credential. Scoped to the literal value so a
+  # real key pasted into a drill script is still caught.
+  '''drill-key''',
 ]
