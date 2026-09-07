@@ -57,6 +57,12 @@ func goldenDocument() *Document {
 func legacyGoldenDocument(schemaVersion string) *Document {
 	doc := goldenDocument()
 	doc.SchemaVersion = schemaVersion
+	doc.RecoveryDependencies = nil // predates 1.4
+	if schemaVersion == "1.3" {
+		// 1.3 already had every current domain and today's coverage
+		// lists; only the recovery_dependencies manifest postdates it.
+		return doc
+	}
 	doc.Domains.L7Policy = nil // predates 1.3
 	doc.Domains.CORS = nil     // predates 1.3
 	doc.Domains.Tracing = nil  // predates 1.3
@@ -123,7 +129,7 @@ func TestGoldenCurrentSchema(t *testing.T) {
 // TestGoldenLegacySchemas: every older-schema golden still decodes,
 // verifies, migrates to the current schema, and passes a dry-run restore.
 func TestGoldenLegacySchemas(t *testing.T) {
-	legacy := []string{"1.0", "1.1", "1.2"}
+	legacy := []string{"1.0", "1.1", "1.2", "1.3"}
 	for _, version := range legacy {
 		version := version
 		t.Run("v"+version, func(t *testing.T) {

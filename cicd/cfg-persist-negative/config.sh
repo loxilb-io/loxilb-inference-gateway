@@ -28,7 +28,11 @@ echo "#########################################"
 
 pick_config="yes"
 mkdir -p "${CFGDIR}/llb1_config"
-spawn_docker_host --dock-type loxilb --dock-name llb1
+# The KV hash seed is container-level env so the KV-exact fixture rule the
+# dependency legs create (validation.sh) is accepted -- vllm kvExactMode
+# refuses to bind without it (must match the engine's PYTHONHASHSEED).
+spawn_docker_host --dock-type loxilb --dock-name llb1 \
+    --docker-args "-e LLB_KV_NONE_HASH_SEED=0"
 pick_config=""
 spawn_docker_host --dock-type host --dock-name l3h1
 spawn_docker_host --dock-type reflect-echo --dock-name l3ep1 --docker-args "-e ECHO_NAME=serverN"

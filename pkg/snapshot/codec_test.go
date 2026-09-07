@@ -100,6 +100,18 @@ func sampleDocument() *Document {
 			Digest: "sha256:5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03",
 		}},
 	}
+	// The recovery_dependencies manifest exactly as buildRecoveryManifest
+	// would emit it for this document (bindings present -> registries
+	// required; cert entry derived from the cert domain; sorted by type).
+	doc.RecoveryDependencies = []cmn.RecoveryDependency{
+		{Type: cmn.RecoveryDepAPIKeyDB, ID: "aigw_dp_keys", Required: true},
+		{Type: cmn.RecoveryDepAuthDB, ID: "aigw_mgmt", Required: true},
+		{Type: cmn.RecoveryDepCertStore, Digest: certSetDigest(doc.Domains.Cert), Required: true},
+		{Type: cmn.RecoveryDepEngineContracts, ID: "engine-contracts.loxilb.io/v1alpha1",
+			Generation: "1", Digest: "sha256:5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03", Required: true},
+		{Type: cmn.RecoveryDepKvModelProfiles, ID: "/etc/loxilb/kvprofiles",
+			Generation: "3", Digest: "sha256:5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03", Required: true},
+	}
 	return doc
 }
 
