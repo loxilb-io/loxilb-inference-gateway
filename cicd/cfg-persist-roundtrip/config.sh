@@ -3,12 +3,15 @@
 #
 # One gateway (llb1, BGP-enabled, config volume host-mounted so
 # snapshot.json is inspectable), one client (l3h1), three reflect-echo
-# backends. The fixture populates every restartable configuration class
-# this suite verifies: a plain L4 LB rule, an API-key-gated L7 rule, a
-# strict KV-exact P/D rule (profile registry staged before start, as a
-# production operator would), a standalone endpoint, firewall, policy,
-# session + ULCL, ipfilter, securityrate and a BGP neighbor with
-# non-default transport settings. validation.sh then proves the whole set
+# backends (one also hosting an SSE mock). The fixture populates every
+# restartable configuration class this suite verifies: a plain L4 LB
+# rule, an API-key-gated L7 rule, a strict KV-exact P/D rule (profile
+# registry staged before start, as a production operator would), an
+# SSE/keepalive streaming rule, one representative rule per remaining
+# engine family (sglang P/D, trtllm P/D, llamacpp CHWBL), a standalone
+# endpoint, firewall, policy, session + ULCL, ipfilter, securityrate and
+# a BGP neighbor with non-default transport settings. validation.sh then
+# proves the whole set
 # survives persist + in-place restart FIELD-identically (canonical
 # deep-diff, not probe re-runs) with datapath probes on top.
 
@@ -50,6 +53,16 @@ sudo chown -R root:root "${STAGE}"
 sudo chmod 0755 "${STAGE}" "${STAGE}/artifacts" "${STAGE}/artifacts/sha256"
 sudo chmod 0644 "${STAGE}"/*.yaml "${STAGE}/artifacts/sha256/"*
 
+# The trtllm engine rule keys its inventory on token content, so a
+# profile-less kvExactMode rule refuses to create unless a loadable
+# tokenizer is staged for its model_name (same recipe as the trtllm
+# dialect suite).
+TOKSTAGE="${CFGDIR}/.tokenizers-stage"
+sudo rm -rf "${TOKSTAGE}"
+mkdir -p "${TOKSTAGE}/Qwen__Qwen2.5-7B-Instruct"
+cp "${CFGDIR}/../common/kv_hash/fixtures/tokenizers/Qwen__Qwen2.5-7B-Instruct/tokenizer.json" \
+   "${TOKSTAGE}/Qwen__Qwen2.5-7B-Instruct/tokenizer.json"
+
 echo "#########################################"
 echo "Building the reflect-echo backend image"
 echo "#########################################"
@@ -65,7 +78,7 @@ pick_config="yes"
 mkdir -p "${CFGDIR}/llb1_config"
 
 spawn_docker_host --dock-type loxilb --dock-name llb1 --with-bgp yes \
-    --docker-args "-e LLB_KV_NONE_HASH_SEED=0 -v ${STAGE}:/etc/loxilb/kvprofiles:ro"
+    --docker-args "-e LLB_KV_NONE_HASH_SEED=0 -v ${STAGE}:/etc/loxilb/kvprofiles:ro -v ${TOKSTAGE}:/etc/loxilb/tokenizers:ro"
 pick_config=""
 spawn_docker_host --dock-type host --dock-name l3h1
 spawn_docker_host --dock-type reflect-echo --dock-name l3ep1 --docker-args "-e ECHO_NAME=serverA"
@@ -103,6 +116,24 @@ for _ in $(seq 1 60); do
     sleep 1
 done
 [[ "$api_ready" == 1 ]] || { echo "FATAL: loxilb REST API not ready"; exit 1; }
+
+echo "#########################################"
+echo "Starting the streaming mock backend (SSE fixture upstream)"
+echo "#########################################"
+# OpenAI-style SSE mock in the third backend's netns on a port distinct
+# from its reflect-echo :80. Host python3 entered into the netns (the
+# ai-sse-quota pattern); rmconfig.sh kills it by its unique port token so
+# the teardown stays scoped to this suite.
+$hexec l3ep3 python3 "${CFGDIR}/../ai-sse-quota/mock_sse_server.py" 8088 &
+sse_mock_up=0
+for _ in $(seq 1 15); do
+    if $hexec l3ep3 curl -s -m 2 "http://33.33.33.1:8088/health" 2>/dev/null | grep -q ok; then
+        sse_mock_up=1; break
+    fi
+    sleep 1
+done
+[[ "$sse_mock_up" == 1 ]] || { echo "FATAL: SSE mock backend never came up"; exit 1; }
+echo "  SSE mock backend ready (33.33.33.1:8088)"
 
 post_json() { # post_json <path> <body> — echoes http code
     $hexec llb1 curl -s -m 10 -o /tmp/cfgp-post.json -w "%{http_code}" \
@@ -172,6 +203,74 @@ rc=$(post_json /config/loadbalancer '{
   ]
 }')
 must_200 "KV-exact P/D rule" "$rc"
+
+# SSE/keepalive rule: the streaming-tuning fields are exactly the ones a
+# restore that "works" on plain rules could still drop -- a lost sse_mode
+# turns every stream into an inactiveTimeOut casualty, silently.
+rc=$(post_json /config/loadbalancer '{
+  "serviceArguments": {
+    "externalIP": "10.10.10.254", "port": 8083, "protocol": "tcp",
+    "sel": 0, "mode": 4, "name": "rt-sse", "host": "10.10.10.254",
+    "path_prefix": "/", "path_match_mode": "prefix",
+    "model_name": "rt-sse-model", "sse_mode": true,
+    "max_stream_duration_sec": 120, "backend_keepalive_interval_sec": 30,
+    "inactiveTimeOut": 60
+  },
+  "endpoints": [
+    { "endpointIP": "33.33.33.1", "targetPort": 8088, "weight": 1 }
+  ]
+}')
+must_200 "SSE/keepalive rule" "$rc"
+
+# The remaining engine families, one representative valid rule each
+# (kvEngineType is immutable per rule, so coverage needs one rule per
+# engine). SGLang P/D carries a NON-default bootstrap port -- the knob
+# that would silently revert to 8998 if the field were dropped. The
+# TensorRT-LLM rule is the sequential-P/D dialect shape (kvExactMode=1,
+# profile-less; no ZMQ fields -- the engine rejects them). The llama.cpp
+# rule is plain CHWBL (sel=8): the engine has no KV event plane, so any
+# KV-exact shape would be refused at create time.
+rc=$(post_json /config/loadbalancer '{
+  "serviceArguments": {
+    "externalIP": "10.10.10.254", "port": 8084, "protocol": "tcp",
+    "sel": 0, "mode": 4, "name": "rt-sglang-pd", "host": "10.10.10.254",
+    "pd_disagg_mode": true, "kvEngineType": "sglang",
+    "pdBootstrapPort": 9998, "sse_mode": true
+  },
+  "endpoints": [
+    { "endpointIP": "31.31.31.1", "targetPort": 80, "weight": 1, "ep_role": 1 },
+    { "endpointIP": "32.32.32.1", "targetPort": 80, "weight": 1, "ep_role": 2 }
+  ]
+}')
+must_200 "SGLang P/D rule (bootstrap port 9998)" "$rc"
+
+rc=$(post_json /config/loadbalancer '{
+  "serviceArguments": {
+    "externalIP": "10.10.10.254", "port": 8085, "protocol": "tcp",
+    "sel": 0, "mode": 4, "name": "rt-trtllm-pd", "host": "10.10.10.254",
+    "pd_disagg_mode": true, "kvEngineType": "trtllm", "kvExactMode": 1,
+    "model_name": "Qwen/Qwen2.5-7B-Instruct", "kvBlockSize": 32,
+    "kvWarmupSec": 5, "sse_mode": true
+  },
+  "endpoints": [
+    { "endpointIP": "31.31.31.1", "targetPort": 80, "weight": 1, "ep_role": 1 },
+    { "endpointIP": "32.32.32.1", "targetPort": 80, "weight": 1, "ep_role": 2 }
+  ]
+}')
+must_200 "TensorRT-LLM P/D rule (kvExactMode=1)" "$rc"
+
+rc=$(post_json /config/loadbalancer '{
+  "serviceArguments": {
+    "externalIP": "10.10.10.254", "port": 8086, "protocol": "tcp",
+    "sel": 8, "mode": 4, "name": "rt-llamacpp", "host": "10.10.10.254",
+    "kvEngineType": "llamacpp", "sse_mode": true
+  },
+  "endpoints": [
+    { "endpointIP": "31.31.31.1", "targetPort": 80, "weight": 1 },
+    { "endpointIP": "32.32.32.1", "targetPort": 80, "weight": 1 }
+  ]
+}')
+must_200 "llama.cpp CHWBL rule (sel=8)" "$rc"
 
 # Standalone (non-rule-managed) endpoint on the third backend.
 rc=$(post_json /config/endpoint '{

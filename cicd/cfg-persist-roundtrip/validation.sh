@@ -315,6 +315,24 @@ rc_before=$($hexec l3h1 curl -s -m 5 -o /dev/null -w "%{http_code}" -X POST \
     && pass "api-key-required VIP refuses keyless request (before, $rc_before)" \
     || fail "api-key probe (before) HTTP $rc_before, want a 401/503 refusal"
 
+# SSE relay through the streaming rule: a completed stream is the frames
+# plus the [DONE] terminator. The same probe re-runs after the restart --
+# a rule that came back without sse_mode would still answer, so the
+# terminator arriving through the relay is paired with the FIELD legs
+# after the restart, not a substitute for them.
+sse_probe() { # streams one completion through the rt-sse rule, prints the body
+    $hexec l3h1 curl -s -m 15 -N -X POST \
+        "http://${PVIP}:8083/v1/chat/completions" \
+        -H 'Content-Type: application/json' -H 'X-Model: rt-sse-model' \
+        -d '{"model":"rt-sse-model","messages":[{"role":"user","content":"probe"}]}' 2>/dev/null
+}
+sse_out=$(sse_probe)
+if echo "$sse_out" | grep -q '^data: ' && echo "$sse_out" | grep -q '\[DONE\]'; then
+    pass "SSE stream relayed end-to-end with terminator (before)"
+else
+    fail "SSE probe (before): $(echo "$sse_out" | head -2)"
+fi
+
 #################################################################################
 echo "=== persist + in-place restart (replay receipt polled) ==="
 #################################################################################
@@ -326,7 +344,7 @@ persist_and_verify llb1 >/dev/null || fail "pre-restart persist"
 # fail. Run deliberately (never in a green gate) to prove the oracle can
 # fire; a harness whose asserts cannot go red proves nothing.
 if [[ "$PLIB_RED_MUTATE" == "1" ]]; then
-    echo "  RED-TWIN: mutating fw + l7policy + cors + otlp secret after the baseline capture"
+    echo "  RED-TWIN: mutating fw + l7policy + cors + otlp secret + sse/sglang rules after the baseline capture"
     plib_curl llb1 -o /dev/null -X DELETE \
         "$PLIB_API/config/firewall?sourceIP=77.77.77.7%2F32&destinationIP=20.20.20.1%2F32"
     # Each mutation targets one NEW assert class: the policy delete must
@@ -336,6 +354,17 @@ if [[ "$PLIB_RED_MUTATE" == "1" ]]; then
     plib_curl llb1 -o /dev/null -X DELETE "$PLIB_API/config/l7policy/id/rt-l7pol1"
     plib_curl llb1 -o /dev/null -X DELETE "$PLIB_API/config/cors/http%3A%2F%2Frt-allowed.example"
     sudo rm -f llb1_config/otlp-headers.json
+    # The engine-fixture red classes: the SSE-rule delete must trip both
+    # the after-restart stream probe and the streaming-field leg; the
+    # SGLang-rule delete must trip the engine-field leg -- each on top of
+    # the loadbalancer deep-diff.
+    # The SSE rule was created with path/model key components, and a
+    # delete that omits a key component the rule carries matches nothing
+    # (404) -- the full rule key must be spelled out.
+    plib_curl llb1 -o /dev/null -X DELETE \
+        "$PLIB_API/config/loadbalancer/hosturl/${PVIP}/externalipaddress/${PVIP}/port/8083/protocol/tcp?path_prefix=%2F&path_match_mode=prefix&model_name=rt-sse-model"
+    plib_curl llb1 -o /dev/null -X DELETE \
+        "$PLIB_API/config/loadbalancer/hosturl/${PVIP}/externalipaddress/${PVIP}/port/8084/protocol/tcp"
     persist_and_verify llb1 >/dev/null
 fi
 if restart_inplace_keep llb1 -b; then
@@ -391,6 +420,42 @@ if [[ ( "$rc_after" == "401" || "$rc_after" == "503" ) && "$rc_after" == "$rc_be
 else
     fail "api-key probe (after) HTTP $rc_after (before was $rc_before), want the same 401/503 refusal"
 fi
+sse_out=$(sse_probe)
+if echo "$sse_out" | grep -q '^data: ' && echo "$sse_out" | grep -q '\[DONE\]'; then
+    pass "SSE stream still relays end-to-end after restart"
+else
+    fail "SSE probe (after): $(echo "$sse_out" | head -2)"
+fi
+
+#################################################################################
+echo "=== engine-family rules survived field-faithfully ==="
+#################################################################################
+# The deep-diff above already proves the whole loadbalancer domain is
+# field-identical; these legs re-state the engine-distinctive fields BY
+# NAME so a drift in exactly the shape §restore could plausibly drop
+# (immutable engine identity, non-default transport knobs, streaming
+# tuning) fails with a message naming the field, not a raw diff artifact.
+lb_after="$PLIB_ARTIFACTS/lb-after.json"
+plib_curl llb1 "$PLIB_API/config/loadbalancer/all" -o "$lb_after"
+lb_args() { # lb_args <rule-name> <jq-expr over .serviceArguments>
+    jq -r ".lbAttr[]? | select(.serviceArguments.name==\"$1\") | .serviceArguments | $2" < "$lb_after"
+}
+sse_f=$(lb_args rt-sse '"\(.sse_mode)/\(.max_stream_duration_sec)/\(.backend_keepalive_interval_sec)"')
+[[ "$sse_f" == "true/120/30" ]] \
+    && pass "streaming rule kept sse_mode + duration cap + backend keepalive (true/120/30)" \
+    || fail "rt-sse streaming fields after restart: $sse_f, want true/120/30"
+sg_f=$(lb_args rt-sglang-pd '"\(.kvEngineType)/\(.pdBootstrapPort)/\(.pd_disagg_mode)"')
+[[ "$sg_f" == "sglang/9998/true" ]] \
+    && pass "sglang P/D rule kept engine identity + NON-default bootstrap port (9998)" \
+    || fail "rt-sglang-pd fields after restart: $sg_f, want sglang/9998/true"
+tr_f=$(lb_args rt-trtllm-pd '"\(.kvEngineType)/\(.kvExactMode)/\(.kvBlockSize)"')
+[[ "$tr_f" == "trtllm/1/32" ]] \
+    && pass "trtllm P/D rule kept engine identity + exact-mode + block size (1/32)" \
+    || fail "rt-trtllm-pd fields after restart: $tr_f, want trtllm/1/32"
+lc_f=$(lb_args rt-llamacpp '"\(.kvEngineType)/\(.sel)"')
+[[ "$lc_f" == "llamacpp/8" ]] \
+    && pass "llamacpp rule kept engine identity + CHWBL selector (sel=8)" \
+    || fail "rt-llamacpp fields after restart: $lc_f, want llamacpp/8"
 
 #################################################################################
 echo "=== L7 REJECT still rejects after restart ==="
