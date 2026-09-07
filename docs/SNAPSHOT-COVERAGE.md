@@ -169,9 +169,18 @@ forward on read.
   `{id, digest}` metadata only. PEM and keys stay in the node-local managed
   directory; restore verifies the digest before re-registering and fails
   loudly on missing or divergent material.
-- **IPsec certificates are the exception**: the `ipsec` domain embeds
-  certificate material so tunnels round-trip through a restore. A snapshot
-  document must therefore be stored and transported as sensitive data.
+- **IPsec secret material rides the document encrypted, never in
+  plaintext**: pre-shared keys, certificate private keys and passphrases
+  are stored as `enc:v1:` values — AES-256-GCM under a node-local secret
+  (`snapshot-node.secret` in the gateway's configuration directory, next to
+  `snapshot.json`, so the pair persists or perishes together). A captured
+  document is shippable without being a credential dump; failing to encrypt
+  fails the capture, it never downgrades to plaintext. Public certificate
+  bodies (certificates, CA certificates) ride as-is. Restoring a document
+  on a *different* node requires transporting the node secret through an
+  operator-controlled channel first — the snapshot file itself never
+  carries the key that opens it, and the backup surface is therefore the
+  configuration-directory pair, never `snapshot.json` alone.
 
 ## Recovery dependencies
 
