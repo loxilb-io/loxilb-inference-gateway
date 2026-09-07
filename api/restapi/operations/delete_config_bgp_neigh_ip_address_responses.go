@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// DeleteConfigBgpNeighIPAddressNoContentCode is the HTTP code returned for type DeleteConfigBgpNeighIPAddressNoContent
-const DeleteConfigBgpNeighIPAddressNoContentCode int = 204
+// DeleteConfigBgpNeighIPAddressOKCode is the HTTP code returned for type DeleteConfigBgpNeighIPAddressOK
+const DeleteConfigBgpNeighIPAddressOKCode int = 200
 
 /*
-DeleteConfigBgpNeighIPAddressNoContent OK
+DeleteConfigBgpNeighIPAddressOK OK
 
-swagger:response deleteConfigBgpNeighIpAddressNoContent
+swagger:response deleteConfigBgpNeighIpAddressOK
 */
-type DeleteConfigBgpNeighIPAddressNoContent struct {
+type DeleteConfigBgpNeighIPAddressOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewDeleteConfigBgpNeighIPAddressNoContent creates DeleteConfigBgpNeighIPAddressNoContent with default headers values
-func NewDeleteConfigBgpNeighIPAddressNoContent() *DeleteConfigBgpNeighIPAddressNoContent {
+// NewDeleteConfigBgpNeighIPAddressOK creates DeleteConfigBgpNeighIPAddressOK with default headers values
+func NewDeleteConfigBgpNeighIPAddressOK() *DeleteConfigBgpNeighIPAddressOK {
 
-	return &DeleteConfigBgpNeighIPAddressNoContent{}
+	return &DeleteConfigBgpNeighIPAddressOK{}
+}
+
+// WithPayload adds the payload to the delete config bgp neigh Ip address o k response
+func (o *DeleteConfigBgpNeighIPAddressOK) WithPayload(payload *models.OperationResult) *DeleteConfigBgpNeighIPAddressOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config bgp neigh Ip address o k response
+func (o *DeleteConfigBgpNeighIPAddressOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *DeleteConfigBgpNeighIPAddressNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *DeleteConfigBgpNeighIPAddressOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // DeleteConfigBgpNeighIPAddressBadRequestCode is the HTTP code returned for type DeleteConfigBgpNeighIPAddressBadRequest
