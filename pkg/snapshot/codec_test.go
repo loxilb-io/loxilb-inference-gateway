@@ -44,6 +44,29 @@ func sampleDocument() *Document {
 			EngineContractID:  "ec-vllm",
 			EngineContractGen: 2,
 		}},
+		L7Policy: []cmn.L7PolicyArg{{
+			Id:   "l7pol-1",
+			Name: "content-routes",
+			LbId: "lb-opaque-1",
+			Rules: []cmn.L7RuleArg{{
+				Position: 1,
+				MatchSets: []cmn.L7MatchSetArg{{
+					Conditions: []cmn.L7ConditionArg{{Field: "PATH", Op: "STARTS_WITH", Value: "/v1/"}},
+				}},
+				Action: cmn.L7ActionArg{Kind: "FORWARD", Forward: &cmn.L7ForwardArg{
+					PoolId:      1,
+					BackendRefs: []cmn.L7BackendRefArg{{Ep: 1, Weight: 10}},
+				}},
+				InsertHeaders:      []cmn.L7HeaderFilterArg{{Op: "SET", Name: "X-Route", Value: "v1"}},
+				SessionPersistence: "HTTP_COOKIE",
+			}, {
+				Position: 2,
+				MatchSets: []cmn.L7MatchSetArg{{
+					Conditions: []cmn.L7ConditionArg{{Field: "HEADER", Op: "EQUAL_TO", Key: "X-Env", Value: "prod", Invert: true}},
+				}},
+				Action: cmn.L7ActionArg{Kind: "REJECT", Reject: &cmn.L7RejectArg{StatusCode: 403}},
+			}},
+		}},
 		Firewall:    []cmn.FwRuleMod{{Rule: cmn.FwRuleArg{SrcIP: "1.2.3.4/32", DstIP: "5.6.7.8/32"}}},
 		Policy:      []cmn.PolMod{{Ident: "pol1"}},
 		Mirror:      []cmn.MirrGetMod{{Ident: "mirr1"}},
@@ -65,6 +88,17 @@ func sampleDocument() *Document {
 				IPsecTunnelMod: cmn.IPsecTunnelMod{Name: "tun1", LocalIP: "1.1.1.1", RemoteIP: "2.2.2.2"},
 			}},
 		},
+		CORS: &cmn.CORSConfig{Origins: []string{"https://ops.example.com", "https://ui.example.com"}},
+		Tracing: &cmn.TracingConfig{
+			Endpoint:    "collector.example.com:4317",
+			Protocol:    "grpc",
+			UseTLS:      true,
+			HeaderNames: []string{"x-otlp-api-key"},
+		},
+		Cert: []cmn.CertMeta{{
+			CertId: "edge-tls-1",
+			Digest: "sha256:5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03",
+		}},
 	}
 	return doc
 }

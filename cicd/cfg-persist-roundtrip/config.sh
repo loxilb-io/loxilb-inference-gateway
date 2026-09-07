@@ -241,4 +241,116 @@ rc=$(post_json /config/bgp/neigh '{
 }')
 must_200 "BGP neighbor (port 1790, multihop)" "$rc"
 
+echo "#########################################"
+echo "TLS material + HTTPS proxy (cert domain fixture)"
+echo "#########################################"
+
+# Two self-signed pairs generated fresh per run: a DEFAULT server cert the
+# HTTPS proxy falls back to, and a distinct SNI cert uploaded through
+# /config/cert so the managed-store + SNI-registration path is what the
+# handshake probes exercise. Keys stay in the run directory (never
+# committed); rmconfig.sh removes the stage.
+CERTSTAGE="${CFGDIR}/.certs-stage"
+rm -rf "${CERTSTAGE}"; mkdir -p "${CERTSTAGE}"
+openssl req -x509 -newkey rsa:2048 -nodes -days 2 \
+    -keyout "${CERTSTAGE}/default.key" -out "${CERTSTAGE}/default.crt" \
+    -subj "/CN=10.10.10.254" -addext "subjectAltName=IP:10.10.10.254" 2>/dev/null
+openssl req -x509 -newkey rsa:2048 -nodes -days 2 \
+    -keyout "${CERTSTAGE}/sni.key" -out "${CERTSTAGE}/sni.crt" \
+    -subj "/CN=rt-sni.test" -addext "subjectAltName=DNS:rt-sni.test" 2>/dev/null
+[[ -s "${CERTSTAGE}/default.crt" && -s "${CERTSTAGE}/sni.crt" ]] || {
+    echo "FATAL: openssl certificate generation failed"; exit 1; }
+
+docker exec llb1 mkdir -p /opt/loxilb/cert
+docker cp "${CERTSTAGE}/default.crt" llb1:/opt/loxilb/cert/server.crt
+docker cp "${CERTSTAGE}/default.key" llb1:/opt/loxilb/cert/server.key
+
+# HTTPS-terminating proxy in front of the echo backends (plain HTTP
+# upstream): the LB whose handshakes the SNI probes drive.
+rc=$(post_json /config/loadbalancer '{
+  "serviceArguments": {
+    "externalIP": "10.10.10.254", "port": 8443, "protocol": "tcp",
+    "sel": 0, "mode": 4, "security": 1, "name": "rt-https",
+    "host": "10.10.10.254"
+  },
+  "endpoints": [
+    { "endpointIP": "31.31.31.1", "targetPort": 80, "weight": 1 }
+  ]
+}')
+must_200 "HTTPS proxy LB" "$rc"
+
+# Managed-store certificate upload: PEM goes to /etc/loxilb/certs/<id>/
+# (host-visible under llb1_config/certs/) and the SAN hostname lands in
+# the SNI store. The snapshot document must carry only {cert_id, digest}.
+CERT_BODY=$(jq -n --arg id "rt-cert1" \
+    --rawfile crt "${CERTSTAGE}/sni.crt" --rawfile key "${CERTSTAGE}/sni.key" \
+    '{certId: $id, certPem: $crt, keyPem: $key}')
+rc=$($hexec llb1 curl -s -m 10 -o /tmp/cfgp-post.json -w "%{http_code}" \
+    -X POST "${API}/config/cert" -H 'Content-Type: application/json' -d "$CERT_BODY")
+if [[ "$rc" != "201" ]]; then
+    echo "FATAL: fixture cert upload refused (HTTP $rc):"
+    cat /tmp/cfgp-post.json 2>/dev/null; echo
+    exit 1
+fi
+echo "  fixture: managed cert rt-cert1 (SNI rt-sni.test) [OK]"
+
+echo "#########################################"
+echo "L7 policy fixture (REJECT route on a plain proxy)"
+echo "#########################################"
+
+# A plain (non-AI, non-TLS) L7 proxy carries the policy: enforcement is
+# what the restart legs probe, so the rule must not share a VIP:port with
+# the api-key or KV rules.
+rc=$(post_json /config/loadbalancer '{
+  "serviceArguments": {
+    "externalIP": "10.10.10.254", "port": 8082, "protocol": "tcp",
+    "sel": 0, "mode": 4, "name": "rt-l7-routes", "host": "10.10.10.254"
+  },
+  "endpoints": [
+    { "endpointIP": "31.31.31.1", "targetPort": 80, "weight": 1 },
+    { "endpointIP": "32.32.32.1", "targetPort": 80, "weight": 1 }
+  ]
+}')
+must_200 "plain L7 proxy LB" "$rc"
+
+RT_LBID=$($hexec llb1 curl -s -m 10 "${API}/config/loadbalancer/all" \
+    | jq -r '.lbAttr[] | select(.serviceArguments.name=="rt-l7-routes") | .serviceArguments.id')
+[[ -n "$RT_LBID" && "$RT_LBID" != "null" ]] || {
+    echo "FATAL: could not resolve the stable id of rt-l7-routes"; exit 1; }
+
+# REJECT with a NON-default status code (451, default is 403): a restart
+# that resurrects the policy but loses the field would still fail the leg.
+rc=$(post_json /config/l7policy "{
+  \"id\": \"rt-l7pol1\", \"name\": \"rt-block-blocked\", \"lbId\": \"${RT_LBID}\",
+  \"rules\": [ {
+    \"position\": 1,
+    \"matchSets\": [ { \"conditions\": [
+      { \"field\": \"PATH\", \"op\": \"STARTS_WITH\", \"value\": \"/blocked\" } ] } ],
+    \"action\": { \"kind\": \"REJECT\", \"reject\": { \"statusCode\": 451 } }
+  } ]
+}")
+must_200 "L7 REJECT policy (451 on /blocked)" "$rc"
+
+echo "#########################################"
+echo "CORS allowlist + OTLP export fixtures"
+echo "#########################################"
+
+rc=$(post_json /config/cors '{ "cors": [ "http://rt-allowed.example" ] }')
+must_200 "CORS allowlist (one origin)" "$rc"
+
+# The OTLP endpoint handler answers 200 with a result STRING even on
+# refusal, so the fixture gates on the message, not the status code. The
+# header value below is the secret-split subject: it must reach the
+# node-local otlp-headers.json and never the snapshot document.
+rc=$(post_json /config/trace/otlp '{
+  "endpoint": "127.0.0.1:4317", "protocol": "grpc", "use_tls": false,
+  "headers": { "X-API-Key": "rt-otlp-secret-a1b2c3d4" }
+}')
+otlp_msg=$(jq -r '.result // empty' /tmp/cfgp-post.json 2>/dev/null)
+if [[ "$rc" != "200" || "$otlp_msg" != *"configured"* || "$otlp_msg" == *"could not be persisted"* ]]; then
+    echo "FATAL: fixture OTLP config refused (HTTP $rc): $otlp_msg"
+    exit 1
+fi
+echo "  fixture: OTLP export config (grpc, auth header) [OK]"
+
 echo "cfg-persist-roundtrip config done"

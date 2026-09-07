@@ -88,6 +88,12 @@ func NormalizeDomains(d *Domains) error {
 		return err
 	}
 
+	// L7 policies carry no runtime measurement fields; sorting by canonical
+	// JSON (id leads the encoding) keeps captures byte-stable.
+	if err := sortByJSON(d.L7Policy); err != nil {
+		return err
+	}
+
 	for i := range d.Firewall {
 		d.Firewall[i].Opts.Counter = "" // traffic counter
 	}
@@ -235,6 +241,8 @@ func domainItemJSONs(name string, d *Domains) ([]string, error) {
 		return itemJSONs(d.LoadBalancer)
 	case DomainKvExactBinding:
 		return itemJSONs(d.KvExactBinding)
+	case DomainL7Policy:
+		return itemJSONs(d.L7Policy)
 	case DomainFirewall:
 		return itemJSONs(d.Firewall)
 	case DomainPolicy:
@@ -256,6 +264,22 @@ func domainItemJSONs(name string, d *Domains) ([]string, error) {
 			cfg = d.SecurityRate.Config
 		}
 		return itemJSONs([]cmn.SecurityRateConfig{cfg})
+	case DomainCORS:
+		// Singleton: nil (unconfigured factory default) digests as no
+		// items -- absent-vs-configured is exactly the difference VERIFY
+		// must see, unlike securityrate where nil and zeroed coincide.
+		if d.CORS == nil {
+			return nil, nil
+		}
+		return itemJSONs([]cmn.CORSConfig{*d.CORS})
+	case DomainTracing:
+		// Same nil-vs-configured distinction as cors.
+		if d.Tracing == nil {
+			return nil, nil
+		}
+		return itemJSONs([]cmn.TracingConfig{*d.Tracing})
+	case DomainCert:
+		return itemJSONs(d.Cert)
 	case DomainBFD:
 		return itemJSONs(d.BFD)
 	case DomainBGP:

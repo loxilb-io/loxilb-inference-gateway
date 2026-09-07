@@ -74,6 +74,91 @@ toapply=$(jq -r '.plan[]? | select(.domain=="kvexactbinding") | .to_apply' < "$P
     || fail "restore PLAN kvexactbinding to_apply=$toapply, want 1"
 
 #################################################################################
+echo "=== snapshot document: new domains + secret split ==="
+#################################################################################
+# The four newest domains must be IN the document as desired state -- and
+# the two secret-bearing ones must carry references only: header VALUES
+# live in the node-local otlp-headers.json, PEM/keys only under
+# llb1_config/certs/. A snapshot that embeds either is a defect, never a
+# convenience.
+tr_ep=$(jq -r '.domains.tracing.endpoint' < "$PLIB_ARTIFACTS/snap-idle-1.json")
+tr_names=$(jq -c '.domains.tracing.header_names' < "$PLIB_ARTIFACTS/snap-idle-1.json")
+[[ "$tr_ep" == "127.0.0.1:4317" && "$tr_names" == '["X-API-Key"]' ]] \
+    && pass "tracing domain captured (endpoint + header NAME)" \
+    || fail "tracing domain endpoint=$tr_ep header_names=$tr_names"
+if grep -q 'rt-otlp-secret' "$PLIB_ARTIFACTS/snap-idle-1.json"; then
+    fail "OTLP header VALUE leaked into the snapshot document"
+else
+    pass "OTLP header value absent from the document (secret split)"
+fi
+if sudo test -f llb1_config/otlp-headers.json \
+   && [[ "$(sudo stat -c %a llb1_config/otlp-headers.json)" == "600" ]] \
+   && sudo grep -q 'rt-otlp-secret' llb1_config/otlp-headers.json; then
+    pass "header value persisted node-locally (otlp-headers.json, 0600)"
+else
+    fail "node-local otlp-headers.json missing/wrong mode/missing value"
+fi
+
+cert_id=$(jq -r '.domains.cert[0].cert_id' < "$PLIB_ARTIFACTS/snap-idle-1.json")
+cert_dig=$(jq -r '.domains.cert[0].digest' < "$PLIB_ARTIFACTS/snap-idle-1.json")
+[[ "$cert_id" == "rt-cert1" && "$cert_dig" == sha256:* ]] \
+    && pass "cert domain captured as {cert_id, digest} metadata" \
+    || fail "cert domain: id=$cert_id digest=$cert_dig"
+if grep -q 'PRIVATE KEY\|BEGIN CERTIFICATE' "$PLIB_ARTIFACTS/snap-idle-1.json"; then
+    fail "PEM material leaked into the snapshot document"
+else
+    pass "no PEM material in the document (cert secret split)"
+fi
+
+corig=$(jq -c '.domains.cors.origins' < "$PLIB_ARTIFACTS/snap-idle-1.json")
+[[ "$corig" == '["http://rt-allowed.example"]' ]] \
+    && pass "cors domain captured (explicit allowlist)" \
+    || fail "cors domain origins=$corig"
+npol=$(jq -r '.domains.l7policy | length' < "$PLIB_ARTIFACTS/snap-idle-1.json")
+[[ "$npol" == "1" ]] \
+    && pass "l7policy domain captured (1 policy)" \
+    || fail "l7policy domain count=$npol, want 1"
+
+#################################################################################
+echo "=== L7 policy / CORS / TLS-SNI datapath baselines (before) ==="
+#################################################################################
+# With a policy ATTACHED, the routing table is authoritative: the matched
+# route answers its OWN status (451 here, non-default on purpose) and a
+# non-matching path gets the Gateway-API no-match default 404
+# (sockproxy_l7policy.c route dispatch). A LOST policy flips both probes
+# to plain forwarding -- the pair pins presence AND field fidelity.
+rc_blk=$($hexec l3h1 curl -s -m 5 -o /dev/null -w "%{http_code}" "http://${PVIP}:8082/blocked" 2>/dev/null)
+[[ "$rc_blk" == "451" ]] \
+    && pass "L7 REJECT enforced with its configured status (before, 451)" \
+    || fail "GET /blocked -> HTTP $rc_blk, want 451"
+rc_open=$($hexec l3h1 curl -s -m 5 -o /dev/null -w "%{http_code}" "http://${PVIP}:8082/open" 2>/dev/null)
+[[ "$rc_open" == "404" ]] \
+    && pass "non-matching path gets the no-match default (before, 404)" \
+    || fail "GET /open -> HTTP $rc_open, want the 404 no-match default"
+
+cors_probe() { # cors_probe <origin> — prints the allow-origin grant (empty = none)
+    plib_curl llb1 -D - -o /dev/null -X OPTIONS -H "Origin: $1" "$PLIB_API/version" 2>/dev/null \
+        | tr -d '\r' | awk -F': ' 'tolower($1)=="access-control-allow-origin" {print $2}'
+}
+g_ok=$(cors_probe "http://rt-allowed.example")
+g_evil=$(cors_probe "http://rt-evil.example")
+[[ "$g_ok" == "http://rt-allowed.example" ]] \
+    && pass "allowlisted origin granted (before)" \
+    || fail "allowlisted origin grant='$g_ok' (before)"
+[[ -z "$g_evil" ]] \
+    && pass "unlisted origin gets NO grant -- no reflection (before)" \
+    || fail "unlisted origin was granted '$g_evil' (before)"
+
+sni_subject() { # prints the leaf-cert subject served for SNI rt-sni.test
+    $hexec l3h1 bash -c \
+        "echo | openssl s_client -servername rt-sni.test -connect ${PVIP}:8443 2>/dev/null | openssl x509 -noout -subject" 2>/dev/null
+}
+subj=$(sni_subject)
+echo "$subj" | grep -q 'rt-sni.test' \
+    && pass "SNI handshake serves the managed cert (before)" \
+    || fail "SNI handshake subject '$subj' (before)"
+
+#################################################################################
 echo "=== canonical capture BEFORE restart ==="
 #################################################################################
 if canonical_get_all llb1 "$PLIB_ARTIFACTS/before"; then
@@ -107,9 +192,16 @@ persist_and_verify llb1 >/dev/null || fail "pre-restart persist"
 # fail. Run deliberately (never in a green gate) to prove the oracle can
 # fire; a harness whose asserts cannot go red proves nothing.
 if [[ "$PLIB_RED_MUTATE" == "1" ]]; then
-    echo "  RED-TWIN: deleting the firewall rule + re-persisting after the baseline capture"
+    echo "  RED-TWIN: mutating fw + l7policy + cors + otlp secret after the baseline capture"
     plib_curl llb1 -o /dev/null -X DELETE \
         "$PLIB_API/config/firewall?sourceIP=77.77.77.7%2F32&destinationIP=20.20.20.1%2F32"
+    # Each mutation targets one NEW assert class: the policy delete must
+    # trip the RT-07 enforcement leg, the cors delete the grant leg, the
+    # secret-file removal the node-local survival leg (persist rewrites
+    # only snapshot.json, so the file stays gone across the restart).
+    plib_curl llb1 -o /dev/null -X DELETE "$PLIB_API/config/l7policy/id/rt-l7pol1"
+    plib_curl llb1 -o /dev/null -X DELETE "$PLIB_API/config/cors/http%3A%2F%2Frt-allowed.example"
+    sudo rm -f llb1_config/otlp-headers.json
     persist_and_verify llb1 >/dev/null
 fi
 if restart_inplace_keep llb1 -b; then
@@ -167,6 +259,53 @@ else
 fi
 
 #################################################################################
+echo "=== L7 REJECT still rejects after restart ==="
+#################################################################################
+rc_blk=$($hexec l3h1 curl -s -m 5 -o /dev/null -w "%{http_code}" "http://${PVIP}:8082/blocked" 2>/dev/null)
+[[ "$rc_blk" == "451" ]] \
+    && pass "L7 REJECT survived the restart field-faithfully (451, not default 403)" \
+    || fail "GET /blocked after restart -> HTTP $rc_blk, want 451"
+rc_open=$($hexec l3h1 curl -s -m 5 -o /dev/null -w "%{http_code}" "http://${PVIP}:8082/open" 2>/dev/null)
+[[ "$rc_open" == "404" ]] \
+    && pass "no-match default intact after restart (404 -- policy still attached)" \
+    || fail "GET /open after restart -> HTTP $rc_open, want 404 (200 would mean the policy detached)"
+
+#################################################################################
+echo "=== CORS allowlist survived the restart (no fail-open, no reflection) ==="
+#################################################################################
+g_ok=$(cors_probe "http://rt-allowed.example")
+g_evil=$(cors_probe "http://rt-evil.example")
+[[ "$g_ok" == "http://rt-allowed.example" ]] \
+    && pass "allowlisted origin still granted after restart" \
+    || fail "allowlisted origin grant='$g_ok' after restart"
+[[ -z "$g_evil" ]] \
+    && pass "unlisted origin still refused after restart (no fail-open to *)" \
+    || fail "unlisted origin granted '$g_evil' after restart"
+
+#################################################################################
+echo "=== OTLP export config + node-local header secret survived ==="
+#################################################################################
+plib_curl llb1 "$PLIB_API/config/trace/otlp" -o "$PLIB_ARTIFACTS/otlp-after.json"
+o_ep=$(jq -r '.endpoint' < "$PLIB_ARTIFACTS/otlp-after.json")
+[[ "$o_ep" == "127.0.0.1:4317" ]] \
+    && pass "OTLP endpoint survived the restart" \
+    || fail "OTLP endpoint after restart '$o_ep'"
+if sudo test -f llb1_config/otlp-headers.json \
+   && sudo grep -q 'rt-otlp-secret' llb1_config/otlp-headers.json; then
+    pass "node-local header secret survived (value re-joinable by name)"
+else
+    fail "otlp-headers.json missing/empty after restart"
+fi
+
+#################################################################################
+echo "=== managed cert re-registered at boot: SNI handshake (the reboot probe) ==="
+#################################################################################
+subj=$(sni_subject)
+echo "$subj" | grep -q 'rt-sni.test' \
+    && pass "SNI handshake still serves the managed cert after restart" \
+    || fail "SNI handshake subject '$subj' after restart"
+
+#################################################################################
 echo "=== kvexactbinding survived the restart ==="
 #################################################################################
 plib_curl llb1 "$PLIB_API/config/snapshot" -o "$PLIB_ARTIFACTS/snap-after.json"
@@ -179,6 +318,39 @@ gen_a=$(jq -S '.domains.kvexactbinding[0]' < "$PLIB_ARTIFACTS/snap-after.json")
 [[ -n "$gen_b" && "$gen_b" == "$gen_a" ]] \
     && pass "binding identity + generations field-identical across restart" \
     || fail "binding drifted across restart"
+
+#################################################################################
+echo "=== configured-EMPTY cors: deny-all survives a restart (no re-seed) ==="
+#################################################################################
+# Removing the last origin must leave DENY-ALL, and a restart must NOT
+# quietly re-seed the factory-open default: configured-empty and
+# unconfigured are different desired states and the document must keep
+# them apart. (This leg mutates config, so it runs after every
+# deep-diff/baseline assert, and re-persists before its restart.)
+plib_curl llb1 -o /dev/null -X DELETE "$PLIB_API/config/cors/http%3A%2F%2Frt-allowed.example"
+g_ok=$(cors_probe "http://rt-allowed.example")
+[[ -z "$g_ok" && "$(cors_probe http://rt-evil.example)" == "" ]] \
+    && pass "allowlist emptied -> deny-all live (no grant for anyone)" \
+    || fail "deny-all not in effect after removing the last origin (grant='$g_ok')"
+persist_and_verify llb1 >/dev/null || fail "persist of the deny-all config"
+corig=$(sudo jq -c '.domains.cors' llb1_config/snapshot.json)
+[[ "$corig" == '{"origins":[]}' ]] \
+    && pass "document captures configured-EMPTY (not unconfigured/absent)" \
+    || fail "deny-all captured as $corig"
+if restart_inplace_keep llb1 -b; then
+    pass "second in-place restart (deny-all document)"
+else
+    fail "second restart / replay receipt"
+fi
+plib_wait_api llb1 || fail "API after second restart"
+g_ok=$(cors_probe "http://rt-allowed.example")
+g_star=$(plib_curl llb1 -D - -o /dev/null -X OPTIONS "$PLIB_API/version" 2>/dev/null \
+    | tr -d '\r' | awk -F': ' 'tolower($1)=="access-control-allow-origin" {print $2}')
+if [[ -z "$g_ok" && "$g_star" != "*" ]]; then
+    pass "deny-all survived the restart -- no re-seed to factory-open"
+else
+    fail "cors re-seeded after restart (origin grant='$g_ok', wildcard='$g_star')"
+fi
 
 plib_collect_logs llb1
 exit $code

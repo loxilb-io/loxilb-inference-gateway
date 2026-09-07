@@ -28,7 +28,6 @@ import (
 	"github.com/go-openapi/runtime"
 	"github.com/go-openapi/swag"
 
-	"github.com/loxilb-io/loxilb/api/apiutils/cors"
 	"github.com/loxilb-io/loxilb/api/restapi/handler"
 	"github.com/loxilb-io/loxilb/api/restapi/operations"
 	"github.com/loxilb-io/loxilb/api/restapi/operations/ai"
@@ -37,6 +36,7 @@ import (
 	"github.com/loxilb-io/loxilb/api/restapi/operations/metadata"
 	"github.com/loxilb-io/loxilb/api/restapi/operations/tracing"
 	"github.com/loxilb-io/loxilb/api/restapi/operations/users"
+	cmn "github.com/loxilb-io/loxilb/common"
 )
 
 // opaWatcherHandler stores the OPA watcher HTTP handler, set during configureAPI.
@@ -495,29 +495,36 @@ func setupMiddlewares(handler http.Handler) http.Handler {
 	return frozen
 }
 
-// CORS adds Cross-Origin Resource Sharing headers to responses
-func corsCheck(handler http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		allowedOrigins := cors.GetCORSManager().GetOrigin()
-		// Set CORS headers
-		origin := r.Header.Get("Origin")
-		if allowedOrigins["*"] {
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-		} else if allowedOrigins[origin] {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-		}
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+// setCORSHeaders writes the CORS grant for one request, strictly from the
+// configured allowlist (cmn.CORSManager):
+//
+//   - wildcard behavior active (unconfigured factory default, or explicit
+//     opt-in): "Access-Control-Allow-Origin: *" and NO credentials grant —
+//     credentialed wildcard responses are the combination browsers refuse
+//     and attackers want.
+//   - origin on the allowlist: echo that origin, allow credentials.
+//   - configured allowlist, origin NOT on it: no grant headers at all. An
+//     earlier version echoed ANY unlisted Origin back (with credentials)
+//     as a "development-friendly default", which made the allowlist
+//     decorative: any site could make credentialed cross-origin requests.
+//     A cross-origin caller that is not allowed must simply not get a
+//     grant.
+//
+// The non-grant headers (methods, headers, max-age, Vary) are always set;
+// without an Allow-Origin grant they permit nothing.
+func setCORSHeaders(w http.ResponseWriter, r *http.Request) {
+	mgr := cmn.GetCORSManager()
+	origin := r.Header.Get("Origin")
+	if mgr.WildcardActive() {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+	} else if origin != "" && mgr.IsAllowed(origin) {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
-		w.Header().Set("Access-Control-Max-Age", "86400") // 24 hours
-		// Handle preflight OPTIONS requests
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-		// Pass request to the next handler
-		handler.ServeHTTP(w, r)
-	})
+	}
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, Accept, Origin, Cache-Control")
+	w.Header().Set("Access-Control-Max-Age", "86400") // 24 hours
+	w.Header().Set("Vary", "Origin")                  // Important for proper caching with different origins
 }
 
 // The middleware configuration happens before anything, this middleware also applies to serving the swagger.json document.
@@ -538,38 +545,10 @@ var autoPersistKick = handler.AutoPersistMiddleware
 
 func setupGlobalMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		allowedOrigins := cors.GetCORSManager().GetOrigin()
-		// Set CORS headers
-		origin := r.Header.Get("Origin")
-
-		// Handle CORS origin header with development-friendly defaults
-		if allowedOrigins != nil && len(allowedOrigins) > 0 {
-			if allowedOrigins["*"] {
-				// Allow all origins with wildcard
-				w.Header().Set("Access-Control-Allow-Origin", "*")
-			} else if origin != "" && allowedOrigins[origin] {
-				// Allow specific origin if it's in the allowed list
-				w.Header().Set("Access-Control-Allow-Origin", origin)
-			} else {
-				// For development: allow any origin that's not explicitly configured
-				// To disable this behavior for production, set specific origins or "*" in CORS config
-				w.Header().Set("Access-Control-Allow-Origin", origin)
-			}
-		} else {
-			// Default behavior when no CORS configuration exists: allow all (development mode)
-			if origin != "" {
-				w.Header().Set("Access-Control-Allow-Origin", origin)
-			} else {
-				w.Header().Set("Access-Control-Allow-Origin", "*")
-			}
-		}
-
-		// Always set these headers regardless of origin status
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, Accept, Origin, Cache-Control")
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
-		w.Header().Set("Access-Control-Max-Age", "86400") // 24 hours
-		w.Header().Set("Vary", "Origin")                  // Important for proper caching with different origins
+		// CORS grant strictly from the configured allowlist -- see
+		// setCORSHeaders for the semantics (and the reflected-origin
+		// defect it replaces).
+		setCORSHeaders(w, r)
 
 		// Handle preflight OPTIONS requests
 		if r.Method == "OPTIONS" {

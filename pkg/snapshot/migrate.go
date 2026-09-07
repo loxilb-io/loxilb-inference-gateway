@@ -72,6 +72,28 @@ var Migrations = []Migration{
 			return nil
 		},
 	},
+	// 1.2 -> 1.3: the l7policy and cors domains were added. Purely
+	// additive like 1.0->1.1 -- normalize the absent l7policy list to its
+	// empty value (the cors singleton stays nil: nil IS its meaningful
+	// "unconfigured" value) and re-stamp the version. Deliberately NOT
+	// stamped into included_domains: a pre-1.3 document never captured
+	// these domains, so restoring it must leave their live state
+	// untouched (included_domains is what scopes the wipe). Note the
+	// 1.1->1.2 migration above runs FIRST for pre-1.2 documents, and
+	// DomainNames() there now includes the new domains -- so legacy
+	// full-coverage documents DO wipe them (l7policy to empty, cors to
+	// its factory default), which preserves their historical "restore
+	// replaces everything" semantics exactly.
+	{
+		FromVersion: "1.2",
+		ToVersion:   "1.3",
+		Apply: func(doc *Document) error {
+			if doc.Domains.L7Policy == nil {
+				doc.Domains.L7Policy = []cmn.L7PolicyArg{}
+			}
+			return nil
+		},
+	},
 }
 
 // ApplyMigrations runs every registered Migration whose FromVersion matches

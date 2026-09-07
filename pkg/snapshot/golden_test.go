@@ -57,6 +57,26 @@ func goldenDocument() *Document {
 func legacyGoldenDocument(schemaVersion string) *Document {
 	doc := goldenDocument()
 	doc.SchemaVersion = schemaVersion
+	doc.Domains.L7Policy = nil // predates 1.3
+	doc.Domains.CORS = nil     // predates 1.3
+	doc.Domains.Tracing = nil  // predates 1.3
+	doc.Domains.Cert = nil     // predates 1.3
+	if schemaVersion == "1.2" {
+		// 1.2 declared coverage explicitly (the 13 pre-1.3 domains) and
+		// derived its exclusion list at a time l7policy was unpersisted.
+		doc.IncludedDomains = []string{
+			DomainEndpoint, DomainLoadBalancer, DomainKvExactBinding,
+			DomainFirewall, DomainPolicy, DomainMirror, DomainSession,
+			DomainSessionUlCl, DomainIPFilter, DomainSecurityRate,
+			DomainBFD, DomainBGP, DomainIPsec,
+		}
+		doc.ExcludedDomains = []string{
+			"ai_keys", "ai_ratelimit", "auth_users", "cert", "cluster",
+			"cors", "gpu_mode", "interface", "l7policy", "llamafirewall",
+			"metrics", "opa", "params", "pii", "tracing",
+		}
+		return doc
+	}
 	doc.IncludedDomains = nil // predates 1.2
 	doc.ExcludedDomains = []string{"cluster", "conntrack", "ai_keys", "interface"}
 	if schemaVersion == "1.0" {
@@ -103,7 +123,7 @@ func TestGoldenCurrentSchema(t *testing.T) {
 // TestGoldenLegacySchemas: every older-schema golden still decodes,
 // verifies, migrates to the current schema, and passes a dry-run restore.
 func TestGoldenLegacySchemas(t *testing.T) {
-	legacy := []string{"1.0", "1.1"}
+	legacy := []string{"1.0", "1.1", "1.2"}
 	for _, version := range legacy {
 		version := version
 		t.Run("v"+version, func(t *testing.T) {
@@ -132,7 +152,20 @@ func TestGoldenLegacySchemas(t *testing.T) {
 			if doc.Domains.KvExactBinding == nil {
 				t.Fatalf("migration left kvexactbinding nil")
 			}
-			if len(doc.IncludedDomains) != len(Registry) {
+			if doc.Domains.L7Policy == nil {
+				t.Fatalf("migration left l7policy nil (want normalized empty)")
+			}
+			if version == "1.2" {
+				// 1.2 declared its coverage; migration must keep the 1.3
+				// domains OUT of it (an old document must not wipe live
+				// L7 policies or CORS config).
+				for _, name := range doc.IncludedDomains {
+					if name == DomainL7Policy || name == DomainCORS ||
+						name == DomainTracing || name == DomainCert {
+						t.Fatalf("1.2 golden gained %q coverage through migration: %v", name, doc.IncludedDomains)
+					}
+				}
+			} else if len(doc.IncludedDomains) != len(Registry) {
 				t.Fatalf("migration did not stamp full coverage: %v", doc.IncludedDomains)
 			}
 

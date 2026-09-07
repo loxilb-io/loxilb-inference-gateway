@@ -4502,6 +4502,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "409": {
+            "description": "Resource conflict (duplicate policy id, or the load-balancer already carries a policy)",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -20305,6 +20311,12 @@ func init() {
           },
           "404": {
             "description": "Referenced load-balancer not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "409": {
+            "description": "Resource conflict (duplicate policy id, or the load-balancer already carries a policy)",
             "schema": {
               "$ref": "#/definitions/Error"
             }

@@ -23,6 +23,18 @@ happy path.
 - **Recovery**: after each quarantine, the operator path (REST commit
   restore of the last good document) must fully recover, and the
   recovered VIP must serve traffic.
+- **Cert digest gate**: the snapshot carries `{cert_id, digest}` only.
+  Drifted on-disk material (appended bytes, PEM still parseable) must
+  fail the commit restore at apply (500, rolled back, loud digest
+  error); restoring the original bytes makes the same document apply.
+- **Cross-node cert restore**: after an API delete (the one operation
+  that removes managed material), the document must fail loudly with
+  re-provision guidance — key material is never invented from a
+  snapshot. Re-provisioning the same PEM makes the document apply again.
+- **L7 policy conflicts**: the same policy id with different content and
+  a second policy on an LB that already carries one are both 409 —
+  restore-order winners are never decided by silent overwrite. (This leg
+  runs last: it adds an LB, which would disturb the count asserts.)
 
 ## Traps
 
