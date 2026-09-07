@@ -131,7 +131,23 @@ else
     bad=""
     printf '%s' "$guard" | grep -qE 'SSEMode|sseMode' && bad="$bad sse"
     printf '%s' "$guard" | grep -qE 'PDDisagg|pdDisagg' && bad="$bad pd"
-    printf '%s' "$guard" | grep -q 'ResolveApiKeyAuth' || bad="$bad no-ResolveApiKeyAuth"
+    if printf '%s' "$guard" | grep -q 'apiKeyAuthWireValue'; then
+      # The derivation lives in the named predicate: apply the same rules to
+      # the predicate's body — it must ask ResolveApiKeyAuth and must not
+      # read the streaming modes. Scanning the body keeps this check as
+      # strong as it was when the chain was inline: a streaming term cannot
+      # hide behind the function name.
+      pred="$(awk '/^func apiKeyAuthWireValue\(/,/^}/' pkg/loxinet/rules.go | sed 's|//.*||')"
+      if [ -z "$pred" ]; then
+        bad="$bad predicate-missing"
+      else
+        printf '%s' "$pred" | grep -qE 'SSEMode|sseMode' && bad="$bad pred-sse"
+        printf '%s' "$pred" | grep -qE 'PDDisagg|pdDisagg' && bad="$bad pred-pd"
+        printf '%s' "$pred" | grep -q 'ResolveApiKeyAuth' || bad="$bad pred-no-ResolveApiKeyAuth"
+      fi
+    else
+      printf '%s' "$guard" | grep -q 'ResolveApiKeyAuth' || bad="$bad no-ResolveApiKeyAuth"
+    fi
     if [ -n "$bad" ]; then
       fail "dat.apikey_auth guard reads more than the service policy ($bad):"
       printf '%s\n' "$guard" | sed 's/^/          /'

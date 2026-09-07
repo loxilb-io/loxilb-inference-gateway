@@ -603,9 +603,9 @@ type LoadbalanceEntryServiceArguments struct {
 	// Opaque key/value map round-tripping octaviaProtocol and any future Octavia field verbatim. Store-as-given, return-as-stored; never interpreted.
 	Annotations map[string]string `json:"annotations,omitempty"`
 
-	// Data-plane X-Api-Key enforcement policy for this service. "required" makes the data plane validate the X-Api-Key header against the API-key store before the request reaches a backend; "disabled" (the default, and what an unset value resolves to) admits requests without a key. Independent of sse_mode and pd_disagg_mode, and independent of the management-plane authentication mode. Reading a service back always reports the resolved value, never an empty string.
+	// Data-plane X-Api-Key enforcement declaration for this service. Three states, and omission is one of them. OMITTED declares nothing: the service is not marked AI-facing, proxying stays byte-identical, and a backend-owned X-Api-Key header passes through untouched. An explicit "disabled" declares the service AI-facing without enforcement: no key is validated, but X-Api-Key is the gateway's credential namespace and the header is stripped before dispatch. "required" makes the data plane validate the X-Api-Key header against the API-key store before the request reaches a backend, fails closed when the policy cannot be evaluated, and likewise strips the header. Reading a service back preserves the declaration exactly: an omitted policy reads back with this field absent, never resolved to a value. On a replace of an existing service, omitting this field leaves the declared policy unchanged — it never silently turns enforcement off; to clear a declared policy, send "disabled" explicitly. Independent of sse_mode and pd_disagg_mode, and independent of the management-plane authentication mode.
 	// Enum: [disabled required]
-	APIKeyAuth *string `json:"api_key_auth,omitempty"`
+	APIKeyAuth string `json:"api_key_auth,omitempty"`
 
 	// (16) certId of the backend re-encryption CA bundle (resolved by the certId registry to the managed-dir ca.crt at backend SSL_CTX build). Optional/additive — empty = system default.
 	BackendCaCertID string `json:"backend_ca_cert_id,omitempty"`
@@ -692,7 +692,7 @@ type LoadbalanceEntryServiceArguments struct {
 	// Enum: [vllm sglang trtllm llamacpp]
 	KvEngineType string `json:"kvEngineType,omitempty"`
 
-	// Request API surfaces this KV-exact rule serves. Absent on a profile-less rule keeps the legacy behavior (both surfaces, unattested); with kvModelProfile bound, the effective surfaces default to the profile's declared supportedApis and an explicit value must be a subset of them. Declaring a chat surface requires a validated chat renderer for the rule's model_name — an unsupported chat declaration is refused at create time, never degraded into a silent runtime fallback. Meaningless without kvExactMode (rejected). Immutable after create (delete+recreate to change). Scalar by schema — arrays are rejected representations.
+	// Request API surfaces this KV-exact rule serves. Absent on a profile-less rule keeps the legacy behavior (both surfaces, unattested); with kvModelProfile bound, the effective surfaces default to the profile's declared supportedApis and an explicit value must be a subset of them. Declaring a chat surface requires a validated chat renderer for the rule's model_name — an unsupported chat declaration is refused at create time, never degraded into a silent runtime fallback. Meaningless without kvExactMode (rejected). Immutable after create with NO exception (delete+recreate to change): even the sanctioned migration attach (see kvModelProfile) must carry the SAME raw declaration as the live rule — the guard compares raw declared strings, so an unset value matches only unset. Scalar by schema — arrays are rejected representations.
 	// Enum: [completions chat both]
 	KvExactAPIMode string `json:"kvExactApiMode,omitempty"`
 
@@ -705,7 +705,7 @@ type LoadbalanceEntryServiceArguments struct {
 	// Enum: [sha256_cbor xxhash_cbor sha256_sglang blockhash_trtllm]
 	KvHashAlgo string `json:"kvHashAlgo,omitempty"`
 
-	// ID of the ModelPromptProfile this rule binds to. Naming a profile makes the rule STRICT: the profile must be published in the gateway's profile registry, its alias policy must admit the rule's model_name, its pinned tokenizer artifacts must load and digest-match, and a composed KV-exact binding (model-profile@generation + engine-contract@generation) is allocated at create time — admission fails closed while no engine-contract registry is available. Absent = legacy profile-less rule (no binding; documented migration behavior). Immutable after create (delete+recreate to change). Scalar by schema — exactly one profile per rule; arrays are rejected representations.
+	// ID of the ModelPromptProfile this rule binds to. Naming a profile makes the rule STRICT: the profile must be published in the gateway's profile registry, its alias policy must admit the rule's model_name, its pinned tokenizer artifacts must load and digest-match, and a composed KV-exact binding (model-profile@generation + engine-contract@generation) is allocated at create time — admission fails closed while no engine-contract registry is available. Absent = legacy profile-less rule (no binding; documented migration behavior). Immutable after create (delete+recreate to change), with ONE sanctioned exception: the migration attach. A replace-POST that names a profile on a live profile-less rule is admitted and re-runs the full strict bring-up (admission checks run BEFORE any mutation, so a refused attach leaves the rule, binding, and data plane untouched; enforcement reports pending until the data-plane contract installs and is acknowledged). The reverse transitions — dropping the profile or changing it to another — stay refused, as does any kvExactApiMode change during the attach (raw-string equality; an undeclared apiMode must stay undeclared in the attach POST). CAVEAT operators must be shown: attaching changes the rule's EFFECTIVE surface from the legacy both-surfaces default to the profile's declared supportedApis — attaching a completions-only profile to a rule that was serving chat traffic narrows the served surface. Scalar by schema — exactly one profile per rule; arrays are rejected representations.
 	KvModelProfile string `json:"kvModelProfile,omitempty"`
 
 	// Seconds to wait after ZMQ subscriber connects before activating Tier 1.5 routing. Allows inventory to populate.
@@ -1040,7 +1040,7 @@ func (m *LoadbalanceEntryServiceArguments) validateAPIKeyAuth(formats strfmt.Reg
 	}
 
 	// value enum
-	if err := m.validateAPIKeyAuthEnum("serviceArguments"+"."+"api_key_auth", "body", *m.APIKeyAuth); err != nil {
+	if err := m.validateAPIKeyAuthEnum("serviceArguments"+"."+"api_key_auth", "body", m.APIKeyAuth); err != nil {
 		return err
 	}
 

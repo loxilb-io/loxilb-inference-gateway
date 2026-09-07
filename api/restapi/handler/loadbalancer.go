@@ -16,7 +16,9 @@
 package handler
 
 import (
+	"errors"
 	"net"
+	"net/http"
 	"strings"
 	"time"
 
@@ -114,13 +116,11 @@ func ConfigPostLoadbalancer(params operations.PostConfigLoadbalancerParams, prin
 
 	// SSE (Server-Sent Events) streaming configuration
 	lbRules.Serv.SSEMode = params.Attr.ServiceArguments.SseMode
-	// Data-plane X-Api-Key policy. The generated field is a pointer because the
-	// schema carries an enum; nil means the caller omitted it, which resolves
-	// to "disabled" in the rule layer rather than here, so the default lives in
-	// exactly one place.
-	if params.Attr.ServiceArguments.APIKeyAuth != nil {
-		lbRules.Serv.ApiKeyAuth = *params.Attr.ServiceArguments.APIKeyAuth
-	}
+	// Data-plane X-Api-Key policy, copied verbatim. The empty string means
+	// the caller omitted it (the schema declares no default, so nothing is
+	// materialized); the create-time "disabled" resolution lives in the rule
+	// layer, in exactly one place.
+	lbRules.Serv.ApiKeyAuth = params.Attr.ServiceArguments.APIKeyAuth
 	lbRules.Serv.MaxStreamDurationSec = uint32(params.Attr.ServiceArguments.MaxStreamDurationSec)
 	lbRules.Serv.BackendKeepaliveIntervalSec = uint32(params.Attr.ServiceArguments.BackendKeepaliveIntervalSec)
 
@@ -595,9 +595,9 @@ func serializeLBRule(lb cmn.LbRuleMod) *models.LoadbalanceEntry {
 	// come back as a DECLARED-disabled one, which claims the gateway's
 	// credential namespace and strips X-Api-Key from traffic that used to
 	// pass byte-identical. The default is documented; fidelity is not.
-	if lb.Serv.ApiKeyAuth != "" {
-		tmpSvc.APIKeyAuth = swag.String(lb.Serv.ApiKeyAuth)
-	}
+	// The empty string serializes as ABSENT (omitempty), preserving the
+	// omitted declaration on the wire.
+	tmpSvc.APIKeyAuth = lb.Serv.ApiKeyAuth
 	if lb.Serv.MaxStreamDurationSec != 0 {
 		tmpSvc.MaxStreamDurationSec = int32(lb.Serv.MaxStreamDurationSec)
 	}
@@ -936,7 +936,16 @@ func ConfigGetLoadbalancerKvExactStatus(params operations.GetConfigLoadbalancerK
 	mods, err := ApiHooks.NetKvExactStatusGet(stripV6Brackets(params.IPAddress), uint16(params.Port), params.Proto, modelName)
 	if err != nil {
 		tk.LogIt(tk.LogDebug, "api: Error occur : %v\n", err)
-		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
+		// Explicit status mapping, never the shared message-text classifier:
+		// this read-only operation declares its full response surface in
+		// swagger, and the classifier can leak statuses outside it (a lookup
+		// failure worded with " exists" would surface as 409). A key that can
+		// never hold a rule is the same answer as an empty key; everything
+		// else the hook reports is a server fault.
+		if errors.Is(err, cmn.ErrKvExactKeyUnservable) {
+			return operations.NewGetConfigLoadbalancerKvExactStatusNotFound()
+		}
+		return errorResponseWithCode(http.StatusInternalServerError, err.Error())
 	}
 	if len(mods) == 0 {
 		return operations.NewGetConfigLoadbalancerKvExactStatusNotFound()
@@ -945,11 +954,14 @@ func ConfigGetLoadbalancerKvExactStatus(params operations.GetConfigLoadbalancerK
 	entries := make([]*models.KvExactStatusEntry, 0, len(mods))
 	for i := range mods {
 		m := &mods[i]
+		// The always-present fields are schema-required (generated as
+		// pointers); the strict-only and registry-served groups stay value
+		// typed and omit when empty.
 		e := &models.KvExactStatusEntry{
-			RuleIdentity:          m.RuleIdentity,
-			ModelName:             m.ModelName,
-			EngineFamily:          m.EngineFamily,
-			APIMode:               m.ApiMode,
+			RuleIdentity:          swag.String(m.RuleIdentity),
+			ModelName:             swag.String(m.ModelName),
+			EngineFamily:          swag.String(m.EngineFamily),
+			APIMode:               swag.String(m.ApiMode),
 			ModelProfileID:        m.ModelProfileID,
 			ModelProfileGen:       m.ModelProfileGen,
 			EngineContractID:      m.EngineContractID,
@@ -960,14 +972,20 @@ func ConfigGetLoadbalancerKvExactStatus(params operations.GetConfigLoadbalancerK
 			WireSchemaID:          m.WireSchemaID,
 			PdDialectID:           m.PdDialectID,
 			RequiredEvidenceLevel: m.RequiredEvidenceLevel,
-			DesiredState:          m.DesiredState,
-			EnforcedState:         m.EnforcedState,
+			DesiredState:          swag.String(m.DesiredState),
+			EnforcedState:         swag.String(m.EnforcedState),
 			ReasonCodes:           m.ReasonCodes,
+		}
+		// reasonCodes is declared required and always present: an empty set
+		// serializes as [] ("no qualifying reason"), never as null/absent
+		// ("unknown"). The attestation controller hands back nil at READY.
+		if e.ReasonCodes == nil {
+			e.ReasonCodes = []string{}
 		}
 		if m.Enforcement != nil {
 			e.Enforcement = &models.KvExactEnforcement{
-				Desired:   m.Enforcement.Desired,
-				Enforced:  m.Enforcement.Enforced,
+				Desired:   swag.String(m.Enforcement.Desired),
+				Enforced:  swag.String(m.Enforcement.Enforced),
 				LastAckAt: m.Enforcement.LastAckAt,
 				Fault:     m.Enforcement.Fault,
 				GoFenced:  m.Enforcement.GoFenced,

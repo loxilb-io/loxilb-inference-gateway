@@ -598,6 +598,12 @@ func NewLoxilbRestAPIAPI(spec *loads.Document) *LoxilbRestAPIAPI {
 		AiGetConfigAiApikeyKeyIDHandler: ai.GetConfigAiApikeyKeyIDHandlerFunc(func(params ai.GetConfigAiApikeyKeyIDParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation ai.GetConfigAiApikeyKeyID has not yet been implemented")
 		}),
+		AiGetConfigAiModelProfilesHandler: ai.GetConfigAiModelProfilesHandlerFunc(func(params ai.GetConfigAiModelProfilesParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation ai.GetConfigAiModelProfiles has not yet been implemented")
+		}),
+		AiGetConfigAiModelProfilesProfileIDHandler: ai.GetConfigAiModelProfilesProfileIDHandlerFunc(func(params ai.GetConfigAiModelProfilesProfileIDParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation ai.GetConfigAiModelProfilesProfileID has not yet been implemented")
+		}),
 		AiGetConfigAiTenantRatelimitTenantIDHandler: ai.GetConfigAiTenantRatelimitTenantIDHandlerFunc(func(params ai.GetConfigAiTenantRatelimitTenantIDParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation ai.GetConfigAiTenantRatelimitTenantID has not yet been implemented")
 		}),
@@ -1082,6 +1088,10 @@ type LoxilbRestAPIAPI struct {
 	AiGetConfigAiApikeyHandler ai.GetConfigAiApikeyHandler
 	// AiGetConfigAiApikeyKeyIDHandler sets the operation handler for the get config ai apikey key ID operation
 	AiGetConfigAiApikeyKeyIDHandler ai.GetConfigAiApikeyKeyIDHandler
+	// AiGetConfigAiModelProfilesHandler sets the operation handler for the get config ai model profiles operation
+	AiGetConfigAiModelProfilesHandler ai.GetConfigAiModelProfilesHandler
+	// AiGetConfigAiModelProfilesProfileIDHandler sets the operation handler for the get config ai model profiles profile ID operation
+	AiGetConfigAiModelProfilesProfileIDHandler ai.GetConfigAiModelProfilesProfileIDHandler
 	// AiGetConfigAiTenantRatelimitTenantIDHandler sets the operation handler for the get config ai tenant ratelimit tenant ID operation
 	AiGetConfigAiTenantRatelimitTenantIDHandler ai.GetConfigAiTenantRatelimitTenantIDHandler
 	// GetConfigCertCertIDHandler sets the operation handler for the get config cert cert Id operation
@@ -1756,6 +1766,12 @@ func (o *LoxilbRestAPIAPI) Validate() error {
 	}
 	if o.AiGetConfigAiApikeyKeyIDHandler == nil {
 		unregistered = append(unregistered, "ai.GetConfigAiApikeyKeyIDHandler")
+	}
+	if o.AiGetConfigAiModelProfilesHandler == nil {
+		unregistered = append(unregistered, "ai.GetConfigAiModelProfilesHandler")
+	}
+	if o.AiGetConfigAiModelProfilesProfileIDHandler == nil {
+		unregistered = append(unregistered, "ai.GetConfigAiModelProfilesProfileIDHandler")
 	}
 	if o.AiGetConfigAiTenantRatelimitTenantIDHandler == nil {
 		unregistered = append(unregistered, "ai.GetConfigAiTenantRatelimitTenantIDHandler")
@@ -2651,6 +2667,14 @@ func (o *LoxilbRestAPIAPI) initHandlerCache() {
 		o.handlers["GET"] = make(map[string]http.Handler)
 	}
 	o.handlers["GET"]["/config/ai/apikey/{key_id}"] = ai.NewGetConfigAiApikeyKeyID(o.context, o.AiGetConfigAiApikeyKeyIDHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/ai/model-profiles"] = ai.NewGetConfigAiModelProfiles(o.context, o.AiGetConfigAiModelProfilesHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/ai/model-profiles/{profile_id}"] = ai.NewGetConfigAiModelProfilesProfileID(o.context, o.AiGetConfigAiModelProfilesProfileIDHandler)
 	if o.handlers["GET"] == nil {
 		o.handlers["GET"] = make(map[string]http.Handler)
 	}

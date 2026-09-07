@@ -11,15 +11,17 @@ import (
 	"github.com/go-openapi/errors"
 	"github.com/go-openapi/strfmt"
 	"github.com/go-openapi/swag"
+	"github.com/go-openapi/validate"
 )
 
-// KvExactStatusEntry Resolved KV-exact composition status of one rule. Every identity field is a scalar by schema - one rule composes exactly one model profile with exactly one engine contract at exactly one generation each; arrays and repeated identity fields are rejected representations.
+// KvExactStatusEntry Resolved KV-exact composition status of one rule. Every identity field is a scalar by schema - one rule composes exactly one model profile with exactly one engine contract at exactly one generation each; arrays and repeated identity fields are rejected representations. Field presence groups: the required fields are present on EVERY entry (legacy and strict); modelProfileId, modelProfileGen, engineContractId, engineContractGen, bindingGen, bindingDigest, hashContractId, requiredEvidenceLevel and enforcement are present iff the rule is strict (profile-bound); wireSchemaId and pdDialectId are present iff an engine-contract registry serves them. State and reason vocabularies are published in the x-kv-status-states / x-kv-status-reason-codes blocks below as an OPEN vocabulary versioned by x-kv-status-vocabulary-version (new values bump the version; existing values are never renamed or re-used). Forward-compatibility rule, binding on clients: an unrecognized desiredState/enforcedState MUST be treated as "not ready / in transition" and rendered raw; an unrecognized reasonCode MUST be rendered raw and MUST NOT be treated as fatal.
 //
 // swagger:model KvExactStatusEntry
 type KvExactStatusEntry struct {
 
 	// Effective KV-exact API surface declaration (completions/chat/both; an absent kvExactApiMode resolves to the bound profile's declared surfaces, or "both" on a legacy rule).
-	APIMode string `json:"apiMode,omitempty"`
+	// Required: true
+	APIMode *string `json:"apiMode"`
 
 	// Full digest over the composed binding identity. The digest, never the generation handle, is the identity proof.
 	BindingDigest string `json:"bindingDigest,omitempty"`
@@ -28,10 +30,12 @@ type KvExactStatusEntry struct {
 	BindingGen uint32 `json:"bindingGen,omitempty"`
 
 	// Desired attestation-ladder state (LEGACY_ACTIVE_UNATTESTED on profile-less rules, PROFILE_VALIDATED and upward on strict rules).
-	DesiredState string `json:"desiredState,omitempty"`
+	// Required: true
+	DesiredState *string `json:"desiredState"`
 
 	// State the data plane actually enforces. Honest about pending machinery - a strict rule reports PENDING_DATAPLANE_CONTRACT until the data-plane contract word and attestation controller enforce its binding; a strict rule with missing binding state reports ENFORCEMENT_FAULT, never a silent legacy downgrade.
-	EnforcedState string `json:"enforcedState,omitempty"`
+	// Required: true
+	EnforcedState *string `json:"enforcedState"`
 
 	// enforcement
 	Enforcement *KvExactEnforcement `json:"enforcement,omitempty"`
@@ -43,13 +47,15 @@ type KvExactStatusEntry struct {
 	EngineContractID string `json:"engineContractId,omitempty"`
 
 	// Effective KV-event engine family (absent kvEngineType resolves to vllm).
-	EngineFamily string `json:"engineFamily,omitempty"`
+	// Required: true
+	EngineFamily *string `json:"engineFamily"`
 
 	// Block-hash contract the rule's data plane computes with (the effective kvHashAlgo).
 	HashContractID string `json:"hashContractId,omitempty"`
 
 	// Served model name the rule keys its endpoint pool on.
-	ModelName string `json:"modelName,omitempty"`
+	// Required: true
+	ModelName *string `json:"modelName"`
 
 	// Registry generation the profile was bound at.
 	ModelProfileGen uint64 `json:"modelProfileGen,omitempty"`
@@ -60,14 +66,16 @@ type KvExactStatusEntry struct {
 	// Engine-contract P/D dialect identity (absent until an engine-contract registry serves it).
 	PdDialectID string `json:"pdDialectId,omitempty"`
 
-	// Bounded typed reasons explaining enforcedState.
+	// Typed reasons explaining enforcedState (x-kv-status-reason-codes vocabulary). Always present; MAY be empty - an empty array means "no qualifying reason", not "unknown".
+	// Required: true
 	ReasonCodes []string `json:"reasonCodes"`
 
 	// Support-catalog evidence level the binding requires of its engine tuple (absent on legacy rules).
 	RequiredEvidenceLevel string `json:"requiredEvidenceLevel,omitempty"`
 
 	// Stable opaque id of the load-balancer rule.
-	RuleIdentity string `json:"ruleIdentity,omitempty"`
+	// Required: true
+	RuleIdentity *string `json:"ruleIdentity"`
 
 	// Engine-contract wire-schema identity (absent until an engine-contract registry serves it).
 	WireSchemaID string `json:"wireSchemaId,omitempty"`
@@ -77,13 +85,68 @@ type KvExactStatusEntry struct {
 func (m *KvExactStatusEntry) Validate(formats strfmt.Registry) error {
 	var res []error
 
+	if err := m.validateAPIMode(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateDesiredState(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateEnforcedState(formats); err != nil {
+		res = append(res, err)
+	}
+
 	if err := m.validateEnforcement(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateEngineFamily(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateModelName(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateReasonCodes(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateRuleIdentity(formats); err != nil {
 		res = append(res, err)
 	}
 
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
+	return nil
+}
+
+func (m *KvExactStatusEntry) validateAPIMode(formats strfmt.Registry) error {
+
+	if err := validate.Required("apiMode", "body", m.APIMode); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *KvExactStatusEntry) validateDesiredState(formats strfmt.Registry) error {
+
+	if err := validate.Required("desiredState", "body", m.DesiredState); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *KvExactStatusEntry) validateEnforcedState(formats strfmt.Registry) error {
+
+	if err := validate.Required("enforcedState", "body", m.EnforcedState); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -101,6 +164,42 @@ func (m *KvExactStatusEntry) validateEnforcement(formats strfmt.Registry) error 
 			}
 			return err
 		}
+	}
+
+	return nil
+}
+
+func (m *KvExactStatusEntry) validateEngineFamily(formats strfmt.Registry) error {
+
+	if err := validate.Required("engineFamily", "body", m.EngineFamily); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *KvExactStatusEntry) validateModelName(formats strfmt.Registry) error {
+
+	if err := validate.Required("modelName", "body", m.ModelName); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *KvExactStatusEntry) validateReasonCodes(formats strfmt.Registry) error {
+
+	if err := validate.Required("reasonCodes", "body", m.ReasonCodes); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *KvExactStatusEntry) validateRuleIdentity(formats strfmt.Registry) error {
+
+	if err := validate.Required("ruleIdentity", "body", m.RuleIdentity); err != nil {
+		return err
 	}
 
 	return nil

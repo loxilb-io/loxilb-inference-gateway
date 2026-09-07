@@ -103,6 +103,18 @@ const (
 	// A profile-less KV-exact rule that arrived via restore: exact routing
 	// is fenced (strict bypass) until a profile is attached by rule replace.
 	KvAttestReasonRequiresMigration = "restored_profile_less_requires_migration"
+
+	// Pre-controller and transitional reasons. Constants rather than inline
+	// literals: the published status vocabulary (api/swagger.yml
+	// x-kv-status-reason-codes) is verified against this package's constant
+	// set by a sync test, and a literal is invisible to that check.
+	KvAttestReasonAttestationPending      = "attestation_pending"
+	KvAttestReasonBindingDataplanePending = "binding_dataplane_pending"
+	KvAttestReasonNoProfileBound          = "no_model_profile_bound"
+	KvAttestReasonBindingStateMissing     = "binding_state_missing"
+	KvAttestReasonHashPending             = "hash_attestation_pending"
+	KvAttestReasonChallengeCadence        = "challenge_cadence"
+	KvAttestReasonManifestChanged         = "manifest_changed"
 )
 
 // KvAttestManifest is the §6.4 deployment-manifest trust root: operator- or
@@ -419,7 +431,7 @@ func newKvAttestController(info kvAttestRuleInfo, deps kvAttestDeps) *kvAttestCo
 		deps:     deps,
 		desired:  KvExactStateReady,
 		enforced: KvExactStateProfileValidated,
-		reasons:  []string{"attestation_pending"},
+		reasons:  []string{KvAttestReasonAttestationPending},
 		stop:     make(chan struct{}),
 		kick:     make(chan string, 4),
 	}
@@ -627,7 +639,7 @@ func (c *kvAttestController) runLadder() {
 	// all but a sliver of each cycle, leaving status readers with a
 	// permanent "pending" and no cause.
 	if !alreadyTokenParity {
-		c.publish(parityState, "hash_attestation_pending")
+		c.publish(parityState, KvAttestReasonHashPending)
 	}
 
 	// Rung 2 — ENGINE_HASH_ATTESTED: the §6.2 echo challenge, every endpoint.
@@ -699,7 +711,7 @@ func (c *kvAttestController) cadenceCheck() {
 			return
 		}
 		if now.Sub(lastEcho) > c.deps.challengeCadence {
-			c.fenceAndReattest("challenge_cadence")
+			c.fenceAndReattest(KvAttestReasonChallengeCadence)
 		}
 	case KvExactStateEnforcementFault:
 		// Only an explicit kick (setter recovering, operator action) retries
@@ -783,7 +795,7 @@ func (c *kvAttestController) probeSweep() bool {
 	}
 	if manifestDigest != seen {
 		// Trust root changed under a READY rule — full re-attest.
-		c.fenceAndReattest("manifest_changed")
+		c.fenceAndReattest(KvAttestReasonManifestChanged)
 		return false
 	}
 	for _, ep := range eps {

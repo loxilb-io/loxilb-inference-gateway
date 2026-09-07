@@ -11,7 +11,7 @@ const (
 	SchemaVersion               = "engine-contracts.loxilb.io/v1alpha1"
 	Generation           uint64 = 1
 	ManifestDigest              = "sha256:e7a5237e9b951b680485b867fd78453de6042dd49a45391d0bd70473865d2895"
-	SupportCatalogDigest        = "sha256:e456634ef58f0af3ce5af21af15464188b6deb170d3e300a5d8fd926646970fe"
+	SupportCatalogDigest        = "sha256:78fa40f52a5f69d613bd3bc054a9418fc43ba3e845b12541f01bdd4f95bf8ea5"
 )
 
 // EngineWireIDs is the ABI-frozen numeric kv_engine_type encoding shared
