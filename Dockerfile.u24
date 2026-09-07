@@ -5,7 +5,7 @@ FROM ubuntu:24.04 as build
 ARG DEBIAN_FRONTEND=noninteractive
 
 ARG TAG=main
-ARG LOXICMD_TAG=main
+ARG LOXICMD_TAG=507266ba91c61d08721ce54babbc9b87e0826acb
 
 # Release identifier stamped into the binary. .dockerignore strips .git, so the
 # Makefile's `git describe` cannot work in here and would silently fall back to
