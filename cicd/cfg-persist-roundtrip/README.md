@@ -14,9 +14,15 @@ before the gateway starts, the way a production operator stages it.
 
 Fixture classes: plain L4 LB (hash select, health-monitored, source
 allowlist), API-key-gated L7 fullproxy rule, strict KV-exact P/D rule
-(creates a binding), standalone endpoint, firewall, QoS policy, SPAN
-mirror, session + ULCL, ipfilter, securityrate, BGP global config and a
-neighbor with **non-default transport** (port 1790 + multihop), plus the
+(creates a binding), an **SSE/keepalive streaming rule** (relay probed
+end-to-end against a mock streaming backend before and after the
+restart, with the tuning fields re-asserted by name), one
+**representative rule per remaining engine family** — sglang P/D with a
+non-default bootstrap port, trtllm sequential P/D (`kvExactMode=1`),
+llamacpp CHWBL (`sel=8`) — standalone endpoint, firewall, QoS policy,
+SPAN mirror, session + ULCL, ipfilter, securityrate, BGP global config
+and a neighbor with **non-default transport** (port 1790 + multihop),
+plus the
 four snapshot-1.3 domains: an **L7 REJECT policy** (non-default 451) on a
 plain fullproxy, a **CORS allowlist** (one origin), an **OTLP export
 config** with an auth header (the secret-split subject), and a **managed
