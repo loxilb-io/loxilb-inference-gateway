@@ -1927,7 +1927,14 @@ func subsystemStartupErrors(errs []string) bool {
 		m := strings.ToLower(e)
 		if !strings.Contains(m, "not initialized") &&
 			!strings.Contains(m, "not running") &&
-			!strings.Contains(m, "mode is disabled") {
+			!strings.Contains(m, "mode is disabled") &&
+			// gRPC-backed subsystems (gobgpd) report "not up yet" as a
+			// transport error while their socket is still coming up, and
+			// as "bgp server hasn't started yet" between socket-up and
+			// the global-config push that starts the speaker.
+			!strings.Contains(m, "code = unavailable") &&
+			!strings.Contains(m, "connection refused") &&
+			!strings.Contains(m, "hasn't started") {
 			return false
 		}
 	}

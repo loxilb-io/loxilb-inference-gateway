@@ -356,7 +356,17 @@ func KvBindingRestore(mod *cmn.KvExactBindingMod) error {
 
 	kvBindingMu.Lock()
 	defer kvBindingMu.Unlock()
-	if _, exists := kvBindingRules[mod.RuleIdent]; exists {
+	if existing, exists := kvBindingRules[mod.RuleIdent]; exists {
+		// Idempotent re-restore: a retried boot replay re-applies the same
+		// document over the partial state an earlier attempt left behind
+		// (the loader converges instead of wiping between attempts), so
+		// restoring the IDENTICAL proven identity again must be a no-op.
+		// A different digest or generation stays a hard conflict -- two
+		// documents disagreeing about a rule's binding identity is never
+		// reconcilable here.
+		if cur := existing.current; cur != nil && cur.Digest == digest && cur.BindingGen == mod.BindingGen {
+			return nil
+		}
 		return fmt.Errorf("kv-binding: rule %s already has binding state", mod.RuleIdent)
 	}
 	b := &KvExactBinding{

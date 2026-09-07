@@ -9,10 +9,14 @@ name: Persist-Sanity-CI
 #                 explicit persistence classification
 #                 (pkg/snapshot/lifecycle.go), so a new mutating API
 #                 cannot merge without a reboot-recovery decision.
+#                 Pure Go -- no submodules, no datapath build.
 #
-# The snapshot package is pure Go (no eBPF userland, no cgo), so this
-# workflow needs neither the submodule checkout nor the datapath build.
-# Docker scenario suites for persistence land here as they are proven out.
+#   persist-scenarios   the docker scenario suites: cfg-persist-roundtrip
+#                 (persist + in-place restart must be field-identical,
+#                 canonical deep-diff oracle) and cfg-persist-negative
+#                 (corrupted/truncated snapshots quarantine loudly,
+#                 hostile documents are refused, partial documents never
+#                 wipe what they do not cover).
 
 on:
   push:
@@ -28,6 +32,8 @@ on:
       - 'api/restapi/handler/cors.go'
       - 'api/restapi/handler/configure_trace.go'
       - 'common/**'
+      - 'cicd/cfg-persist-*/**'
+      - 'cicd/common/persist_lib.sh'
       - '.github/workflows/persist-sanity.yml'
   pull_request:
     branches: [ "main" ]
@@ -41,6 +47,8 @@ on:
       - 'api/restapi/handler/cors.go'
       - 'api/restapi/handler/configure_trace.go'
       - 'common/**'
+      - 'cicd/cfg-persist-*/**'
+      - 'cicd/common/persist_lib.sh'
       - '.github/workflows/persist-sanity.yml'
   schedule:
     # Nightly, so a regression arriving through an untouched path (a
@@ -62,3 +70,61 @@ jobs:
         run: |
           go vet ./pkg/snapshot/...
           go test -count=1 ./pkg/snapshot/...
+
+  persist-scenarios:
+    name: persist-scenarios
+    runs-on: ubuntu-22.04
+    if: github.actor != 'dependabot[bot]'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: sudo apt-get update
+      - run: sudo apt-get -y install clang llvm libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip build-essential bison flex iproute2 socat ethtool libjson-c-dev libnghttp2-dev jq
+      - name: Install libtokenizers (cgo link dependency of the router)
+        run: arch=$(dpkg --print-architecture) && wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz -O /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
+      - run: loxilb-ebpf/utils/mkllb_bpffs.sh
+      - run: sudo -E env "PATH=$PATH" make
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN || github.token }}
+      # Same image recipe as the AI-gateway sanity workflow: pull the
+      # published image, overlay the freshly built binary, and commit --
+      # the scenarios then test THIS tree, not the registry.
+      - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
+      - run: docker run -u root --cap-add SYS_ADMIN --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: sudo -E env "PATH=$PATH" make docker-cp
+      - run: docker exec -dit loxilb mkllb_bpffs
+      - run: id=`docker ps -f name=loxilb | cut -d " " -f 1 | grep -iv "CONTAINER"` && docker commit $id ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: docker stop loxilb && docker rm loxilb
+
+      - name: Round-trip (persist + restart field-identical, deep-diff oracle)
+        run: |
+          cd cicd/cfg-persist-roundtrip/
+          rc=0
+          ./config.sh && ./validation.sh || rc=$?
+          ./rmconfig.sh || true
+          exit $rc
+      - name: Negative (quarantine, refusal, partial-document safety)
+        run: |
+          cd cicd/cfg-persist-negative/
+          rc=0
+          ./config.sh && ./validation.sh || rc=$?
+          ./rmconfig.sh || true
+          exit $rc
+      - name: Upload evidence artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: persist-scenario-artifacts
+          path: |
+            cicd/cfg-persist-roundtrip/artifacts/
+            cicd/cfg-persist-negative/artifacts/
+          if-no-files-found: ignore

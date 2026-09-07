@@ -56,6 +56,22 @@ var Migrations = []Migration{
 			return nil
 		},
 	},
+	// 1.1 -> 1.2: included_domains was added and is required from 1.2 on.
+	// Pre-1.2 documents never declared coverage and were always treated as
+	// covering every domain (restore wiped and applied all of them), so
+	// stamping full coverage preserves their historical semantics exactly
+	// -- the migration makes the old behavior explicit rather than
+	// changing it.
+	{
+		FromVersion: "1.1",
+		ToVersion:   "1.2",
+		Apply: func(doc *Document) error {
+			if len(doc.IncludedDomains) == 0 {
+				doc.IncludedDomains = DomainNames()
+			}
+			return nil
+		},
+	},
 }
 
 // ApplyMigrations runs every registered Migration whose FromVersion matches

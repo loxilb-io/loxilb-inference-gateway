@@ -7097,6 +7097,12 @@ func init() {
             "in": "query"
           },
           {
+            "type": "string",
+            "description": "Comma-separated snapshot domains to restore. Defaults to every domain the document covers (its included_domains). Requesting a domain the document does not cover is refused.",
+            "name": "components",
+            "in": "query"
+          },
+          {
             "description": "The snapshot document, as produced by GET /config/snapshot.",
             "name": "snapshot",
             "in": "body",
@@ -10271,8 +10277,16 @@ func init() {
           "description": "BGP Neighbor IP address",
           "type": "string"
         },
+        "multiHop": {
+          "description": "Whether eBGP multihop is enabled for this neighbor",
+          "type": "boolean"
+        },
         "remoteAs": {
           "description": "Remote AS number",
+          "type": "integer"
+        },
+        "remotePort": {
+          "description": "Configured non-default BGP peering port (0 means the default, 179)",
           "type": "integer"
         },
         "state": {
@@ -23187,6 +23201,12 @@ func init() {
             "in": "query"
           },
           {
+            "type": "string",
+            "description": "Comma-separated snapshot domains to restore. Defaults to every domain the document covers (its included_domains). Requesting a domain the document does not cover is refused.",
+            "name": "components",
+            "in": "query"
+          },
+          {
             "description": "The snapshot document, as produced by GET /config/snapshot.",
             "name": "snapshot",
             "in": "body",
@@ -26347,8 +26367,16 @@ func init() {
           "description": "BGP Neighbor IP address",
           "type": "string"
         },
+        "multiHop": {
+          "description": "Whether eBGP multihop is enabled for this neighbor",
+          "type": "boolean"
+        },
         "remoteAs": {
           "description": "Remote AS number",
+          "type": "integer"
+        },
+        "remotePort": {
+          "description": "Configured non-default BGP peering port (0 means the default, 179)",
           "type": "integer"
         },
         "state": {

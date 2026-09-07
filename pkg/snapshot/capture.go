@@ -31,10 +31,21 @@ func Capture(hooks Hooks, gatewayVersion, hostname string, trigger Trigger, comp
 		return nil, err
 	}
 	doc := NewDocument(gatewayVersion, hostname, trigger)
+	// Declare exactly what this document covers: restore selection is
+	// derived from included_domains, so a components-filtered capture must
+	// not claim (and a later restore must not wipe) domains it never read.
+	doc.IncludedDomains = entryNames(selected)
 	for _, entry := range selected {
 		if err := entry.Get(hooks, doc); err != nil {
 			return nil, fmt.Errorf("capture %s: %w", entry.Name, err)
 		}
+	}
+	// Canonicalize (digest.go): strip runtime measurement fields and sort
+	// every list, so a captured document carries desired state only and
+	// an unchanged gateway always captures the identical payload --
+	// map-ordered backend enumeration must not churn persisted checksums.
+	if err := NormalizeDomains(&doc.Domains); err != nil {
+		return nil, fmt.Errorf("capture: normalize: %w", err)
 	}
 	snapshotTotal.WithLabelValues(string(trigger)).Inc()
 	return doc, nil

@@ -38,7 +38,16 @@ import (
 // that do not understand binding state, so this is a minor bump (the
 // version gate in CheckSchemaVersion refuses newer-minor documents) rather
 // than a silently-added field.
-const SchemaVersion = "1.1"
+//
+// 1.2: added included_domains (which domains this document actually
+// covers) and BGP neighbor transport fidelity fields
+// (GoBGPNeighGetMod.RemotePort/MultiHop). included_domains changes
+// restore semantics -- selection is derived from it, so a partial
+// document no longer wipes domains it does not cover -- and is REQUIRED
+// in 1.2+ documents (the 1.1->1.2 migration stamps full coverage onto
+// older documents, which is exactly the wipe-everything behavior they
+// always had).
+const SchemaVersion = "1.2"
 
 // DocKind identifies the document type, matching §4's "kind" field.
 const DocKind = "loxilb-snapshot"
@@ -161,6 +170,14 @@ type Document struct {
 	Hostname       string    `json:"hostname"`
 	Trigger        Trigger   `json:"trigger"`
 	Domains        Domains   `json:"domains"`
+	// IncludedDomains lists exactly the snapshot domains this document
+	// covers (schema 1.2+, REQUIRED there): the domains whose state was
+	// captured, and therefore the ONLY domains a restore of this document
+	// may wipe and apply. Restore selection = included_domains ∩ the
+	// caller's `components` (see selectForRestore, restore.go). Documents
+	// older than 1.2 lack the field; the 1.1->1.2 migration stamps full
+	// coverage, preserving their historical restore semantics.
+	IncludedDomains []string `json:"included_domains,omitempty"`
 	// ExcludedDomains is an honesty marker (§4): the domains this document
 	// never captures, regardless of `components` filtering. See
 	// DefaultExcludedDomains.
@@ -173,10 +190,12 @@ type Document struct {
 
 // NewDocument builds an empty Document with the required constant/metadata
 // fields populated (SchemaVersion, Kind, CreatedAt, GatewayVersion,
-// Hostname, Trigger, ExcludedDomains) and all Domains fields left at their
-// zero value, ready for the registry's Get functions (registry.go) to fill
-// in. Domains selection (via `components`) is the caller's responsibility;
-// see Select in registry.go.
+// Hostname, Trigger, IncludedDomains, ExcludedDomains) and all Domains
+// fields left at their zero value, ready for the registry's Get functions
+// (registry.go) to fill in. IncludedDomains defaults to full coverage
+// (every registry domain); callers capturing a `components`-filtered
+// subset (Capture, the restore engine's PRESERVE stage) MUST overwrite it
+// with the actual selection.
 func NewDocument(gatewayVersion, hostname string, trigger Trigger) *Document {
 	return &Document{
 		SchemaVersion:   SchemaVersion,
@@ -185,6 +204,7 @@ func NewDocument(gatewayVersion, hostname string, trigger Trigger) *Document {
 		GatewayVersion:  gatewayVersion,
 		Hostname:        hostname,
 		Trigger:         trigger,
+		IncludedDomains: DomainNames(),
 		ExcludedDomains: append([]string(nil), DefaultExcludedDomains...),
 	}
 }

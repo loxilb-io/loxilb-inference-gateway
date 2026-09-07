@@ -13,7 +13,8 @@ import (
 
 // PostConfigRestoreURL generates an URL for the post config restore operation
 type PostConfigRestoreURL struct {
-	Mode *string
+	Components *string
+	Mode       *string
 
 	_basePath string
 	// avoid unkeyed usage
@@ -48,6 +49,14 @@ func (o *PostConfigRestoreURL) Build() (*url.URL, error) {
 	_result.Path = golangswaggerpaths.Join(_basePath, _path)
 
 	qs := make(url.Values)
+
+	var componentsQ string
+	if o.Components != nil {
+		componentsQ = *o.Components
+	}
+	if componentsQ != "" {
+		qs.Set("components", componentsQ)
+	}
 
 	var modeQ string
 	if o.Mode != nil {
