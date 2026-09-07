@@ -9346,6 +9346,76 @@ func init() {
         }
       }
     },
+    "/maintenance": {
+      "get": {
+        "description": "Reports whether an operator holds the gateway in maintenance, what is being refused while it does, and how far the drain has progressed - the in-flight streaming-session count, elapsed time against the declared drain window, and whether that window has been exceeded. Every field is the observed truth - in particular refusing_new_inference reports what the data path actually refuses, not what an operator might wish it refused.",
+        "produces": [
+          "application/json"
+        ],
+        "summary": "Operator maintenance state with drain read-back",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/MaintenanceStatus"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "put": {
+        "description": "Idempotent - entering while already in maintenance changes nothing (same operation_id, same entered_at, and the original drain window is kept; changing the window requires leave then enter), and leaving while active is a no-op. While maintenance holds, mutating configuration calls are refused with 503 except the configuration-lifecycle operations maintenance exists to make safe (snapshot, persist, restore) and this endpoint itself. The response to a leave carries the operation_id of the episode it ended.",
+        "summary": "Enter or leave operator maintenance",
+        "parameters": [
+          {
+            "description": "Desired maintenance state",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/MaintenanceRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resulting maintenance state",
+            "schema": {
+              "$ref": "#/definitions/MaintenanceStatus"
+            }
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
     "/meta": {
       "get": {
         "security": [],
@@ -11172,6 +11242,33 @@ func init() {
         },
         "uptime": {
           "description": "system uptime",
+          "type": "string"
+        }
+      }
+    },
+    "EbpfAttachmentStatus": {
+      "description": "One interface/hook attachment fact. A tc entry appears for every port the control plane dispatched a program load for, so attached=false there means the kernel and the control plane's intent disagree. An xdp entry appears only where an XDP program is verifiably attached (XDP expectation depends on datapath compile flags, so its absence is not reported as divergence).",
+      "type": "object",
+      "required": [
+        "name",
+        "mode",
+        "attached"
+      ],
+      "properties": {
+        "attached": {
+          "description": "Kernel-verified attachment state.",
+          "type": "boolean"
+        },
+        "mode": {
+          "description": "Attachment hook.",
+          "type": "string",
+          "enum": [
+            "tc",
+            "xdp"
+          ]
+        },
+        "name": {
+          "description": "Interface name.",
           "type": "string"
         }
       }
@@ -14529,6 +14626,86 @@ func init() {
         }
       }
     },
+    "MaintenanceRequest": {
+      "description": "Desired operator maintenance state.",
+      "type": "object",
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "drain_timeout_seconds": {
+          "description": "Drain window declared on enter (0 or absent = no deadline). Ignored on a repeat enter and on leave - an episode's window is immutable.",
+          "type": "integer",
+          "format": "uint32"
+        },
+        "enabled": {
+          "description": "true enters maintenance, false leaves it. Both directions are idempotent.",
+          "type": "boolean"
+        }
+      }
+    },
+    "MaintenanceStatus": {
+      "description": "Operator maintenance state with drain read-back. Refusal fields report the observed truth of what this gateway build refuses in the current state, never an aspiration.",
+      "type": "object",
+      "required": [
+        "state",
+        "refusing_new_config",
+        "refusing_new_inference",
+        "cancellable",
+        "in_flight_streams",
+        "elapsed_seconds",
+        "drain_deadline_exceeded"
+      ],
+      "properties": {
+        "cancellable": {
+          "description": "Leaving maintenance is possible right now (always true - PUT with enabled=false is never refused by the maintenance gate).",
+          "type": "boolean"
+        },
+        "drain_deadline_exceeded": {
+          "description": "The declared drain window has elapsed. The gateway never leaves maintenance on its own - the operator owns the transition; an overrun is reported, not acted on.",
+          "type": "boolean"
+        },
+        "drain_timeout_seconds": {
+          "description": "The episode's declared drain window (0 = none declared).",
+          "type": "integer",
+          "format": "uint32"
+        },
+        "elapsed_seconds": {
+          "description": "Seconds spent in the current episode (0 when active).",
+          "type": "integer",
+          "format": "int64"
+        },
+        "entered_at": {
+          "description": "When the current episode began (absent when active).",
+          "type": "string",
+          "format": "date-time"
+        },
+        "in_flight_streams": {
+          "description": "AI inference streaming sessions (SSE) currently open through the gateway. Non-streaming requests have no in-flight counter and are deliberately not estimated.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "operation_id": {
+          "description": "Identity of the maintenance episode - stable across repeated idempotent enters; a leave response carries the id of the episode it ended; empty when active.",
+          "type": "string"
+        },
+        "refusing_new_config": {
+          "description": "Mutating configuration API calls are being refused (503), except the configuration-lifecycle operations and the maintenance endpoint itself.",
+          "type": "boolean"
+        },
+        "refusing_new_inference": {
+          "description": "New data-path inference requests are being refused. Gateway-wide data-path refusal is not implemented by this management-plane state - this field reports false so no caller mistakes maintenance for a traffic drain; per-service and per-endpoint drain remain the data path's own mechanisms.",
+          "type": "boolean"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "active",
+            "maintenance"
+          ]
+        }
+      }
+    },
     "MessageResponse": {
       "type": "object",
       "properties": {
@@ -15612,6 +15789,13 @@ func init() {
         },
         "boot": {
           "$ref": "#/definitions/BootStatus"
+        },
+        "ebpf_attachments": {
+          "description": "Live per-interface eBPF attachment, verified against the kernel (netlink) rather than the control plane's bookkeeping. Informational - attachment state does not gate the ready verdict.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/EbpfAttachmentStatus"
+          }
         },
         "external_dependencies": {
           "description": "Live availability of the stores this gateway is wired to (status ready or failed - a probe, unlike the restore engine's configured-only checks).",
@@ -25905,6 +26089,76 @@ func init() {
         }
       }
     },
+    "/maintenance": {
+      "get": {
+        "description": "Reports whether an operator holds the gateway in maintenance, what is being refused while it does, and how far the drain has progressed - the in-flight streaming-session count, elapsed time against the declared drain window, and whether that window has been exceeded. Every field is the observed truth - in particular refusing_new_inference reports what the data path actually refuses, not what an operator might wish it refused.",
+        "produces": [
+          "application/json"
+        ],
+        "summary": "Operator maintenance state with drain read-back",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/MaintenanceStatus"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "put": {
+        "description": "Idempotent - entering while already in maintenance changes nothing (same operation_id, same entered_at, and the original drain window is kept; changing the window requires leave then enter), and leaving while active is a no-op. While maintenance holds, mutating configuration calls are refused with 503 except the configuration-lifecycle operations maintenance exists to make safe (snapshot, persist, restore) and this endpoint itself. The response to a leave carries the operation_id of the episode it ended.",
+        "summary": "Enter or leave operator maintenance",
+        "parameters": [
+          {
+            "description": "Desired maintenance state",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/MaintenanceRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resulting maintenance state",
+            "schema": {
+              "$ref": "#/definitions/MaintenanceStatus"
+            }
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
     "/meta": {
       "get": {
         "security": [],
@@ -28189,6 +28443,33 @@ func init() {
         },
         "uptime": {
           "description": "system uptime",
+          "type": "string"
+        }
+      }
+    },
+    "EbpfAttachmentStatus": {
+      "description": "One interface/hook attachment fact. A tc entry appears for every port the control plane dispatched a program load for, so attached=false there means the kernel and the control plane's intent disagree. An xdp entry appears only where an XDP program is verifiably attached (XDP expectation depends on datapath compile flags, so its absence is not reported as divergence).",
+      "type": "object",
+      "required": [
+        "name",
+        "mode",
+        "attached"
+      ],
+      "properties": {
+        "attached": {
+          "description": "Kernel-verified attachment state.",
+          "type": "boolean"
+        },
+        "mode": {
+          "description": "Attachment hook.",
+          "type": "string",
+          "enum": [
+            "tc",
+            "xdp"
+          ]
+        },
+        "name": {
+          "description": "Interface name.",
           "type": "string"
         }
       }
@@ -32277,6 +32558,86 @@ func init() {
         }
       }
     },
+    "MaintenanceRequest": {
+      "description": "Desired operator maintenance state.",
+      "type": "object",
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "drain_timeout_seconds": {
+          "description": "Drain window declared on enter (0 or absent = no deadline). Ignored on a repeat enter and on leave - an episode's window is immutable.",
+          "type": "integer",
+          "format": "uint32"
+        },
+        "enabled": {
+          "description": "true enters maintenance, false leaves it. Both directions are idempotent.",
+          "type": "boolean"
+        }
+      }
+    },
+    "MaintenanceStatus": {
+      "description": "Operator maintenance state with drain read-back. Refusal fields report the observed truth of what this gateway build refuses in the current state, never an aspiration.",
+      "type": "object",
+      "required": [
+        "state",
+        "refusing_new_config",
+        "refusing_new_inference",
+        "cancellable",
+        "in_flight_streams",
+        "elapsed_seconds",
+        "drain_deadline_exceeded"
+      ],
+      "properties": {
+        "cancellable": {
+          "description": "Leaving maintenance is possible right now (always true - PUT with enabled=false is never refused by the maintenance gate).",
+          "type": "boolean"
+        },
+        "drain_deadline_exceeded": {
+          "description": "The declared drain window has elapsed. The gateway never leaves maintenance on its own - the operator owns the transition; an overrun is reported, not acted on.",
+          "type": "boolean"
+        },
+        "drain_timeout_seconds": {
+          "description": "The episode's declared drain window (0 = none declared).",
+          "type": "integer",
+          "format": "uint32"
+        },
+        "elapsed_seconds": {
+          "description": "Seconds spent in the current episode (0 when active).",
+          "type": "integer",
+          "format": "int64"
+        },
+        "entered_at": {
+          "description": "When the current episode began (absent when active).",
+          "type": "string",
+          "format": "date-time"
+        },
+        "in_flight_streams": {
+          "description": "AI inference streaming sessions (SSE) currently open through the gateway. Non-streaming requests have no in-flight counter and are deliberately not estimated.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "operation_id": {
+          "description": "Identity of the maintenance episode - stable across repeated idempotent enters; a leave response carries the id of the episode it ended; empty when active.",
+          "type": "string"
+        },
+        "refusing_new_config": {
+          "description": "Mutating configuration API calls are being refused (503), except the configuration-lifecycle operations and the maintenance endpoint itself.",
+          "type": "boolean"
+        },
+        "refusing_new_inference": {
+          "description": "New data-path inference requests are being refused. Gateway-wide data-path refusal is not implemented by this management-plane state - this field reports false so no caller mistakes maintenance for a traffic drain; per-service and per-endpoint drain remain the data path's own mechanisms.",
+          "type": "boolean"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "active",
+            "maintenance"
+          ]
+        }
+      }
+    },
     "MessageResponse": {
       "type": "object",
       "properties": {
@@ -33659,6 +34020,13 @@ func init() {
         },
         "boot": {
           "$ref": "#/definitions/BootStatus"
+        },
+        "ebpf_attachments": {
+          "description": "Live per-interface eBPF attachment, verified against the kernel (netlink) rather than the control plane's bookkeeping. Informational - attachment state does not gate the ready verdict.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/EbpfAttachmentStatus"
+          }
         },
         "external_dependencies": {
           "description": "Live availability of the stores this gateway is wired to (status ready or failed - a probe, unlike the restore engine's configured-only checks).",

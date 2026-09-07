@@ -4390,6 +4390,52 @@ paths:
           description: Not ready (body carries the reasons)
           schema:
             $ref: '#/definitions/ReadyStatus'
+  '/maintenance':
+    get:
+      summary: Operator maintenance state with drain read-back
+      description: Reports whether an operator holds the gateway in maintenance, what is being refused while it does, and how far the drain has progressed - the in-flight streaming-session count, elapsed time against the declared drain window, and whether that window has been exceeded. Every field is the observed truth - in particular refusing_new_inference reports what the data path actually refuses, not what an operator might wish it refused.
+      produces:
+        - application/json
+      responses:
+        '200':
+          description: OK
+          schema:
+            $ref: '#/definitions/MaintenanceStatus'
+        '401':
+          description: Invalid authentication credentials
+          schema:
+            $ref: '#/definitions/Error'
+        '500':
+          description: Internal service error
+          schema:
+            $ref: '#/definitions/Error'
+    put:
+      summary: Enter or leave operator maintenance
+      description: Idempotent - entering while already in maintenance changes nothing (same operation_id, same entered_at, and the original drain window is kept; changing the window requires leave then enter), and leaving while active is a no-op. While maintenance holds, mutating configuration calls are refused with 503 except the configuration-lifecycle operations maintenance exists to make safe (snapshot, persist, restore) and this endpoint itself. The response to a leave carries the operation_id of the episode it ended.
+      parameters:
+        - name: attr
+          in: body
+          required: true
+          description: Desired maintenance state
+          schema:
+            $ref: '#/definitions/MaintenanceRequest'
+      responses:
+        '200':
+          description: Resulting maintenance state
+          schema:
+            $ref: '#/definitions/MaintenanceStatus'
+        '400':
+          description: Malformed arguments for API call
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Invalid authentication credentials
+          schema:
+            $ref: '#/definitions/Error'
+        '500':
+          description: Internal service error
+          schema:
+            $ref: '#/definitions/Error'
 #----------------------------------------------
 # LoxiLB Operational Config
 #----------------------------------------------
@@ -7260,6 +7306,88 @@ definitions:
         $ref: '#/definitions/ConfigOpRecord'
       auto_persist:
         $ref: '#/definitions/AutoPersistStatus'
+      ebpf_attachments:
+        type: array
+        description: Live per-interface eBPF attachment, verified against the kernel (netlink) rather than the control plane's bookkeeping. Informational - attachment state does not gate the ready verdict.
+        items:
+          $ref: '#/definitions/EbpfAttachmentStatus'
+  EbpfAttachmentStatus:
+    type: object
+    description: One interface/hook attachment fact. A tc entry appears for every port the control plane dispatched a program load for, so attached=false there means the kernel and the control plane's intent disagree. An xdp entry appears only where an XDP program is verifiably attached (XDP expectation depends on datapath compile flags, so its absence is not reported as divergence).
+    required:
+      - name
+      - mode
+      - attached
+    properties:
+      name:
+        type: string
+        description: Interface name.
+      mode:
+        type: string
+        enum: [tc, xdp]
+        description: Attachment hook.
+      attached:
+        type: boolean
+        description: Kernel-verified attachment state.
+  MaintenanceRequest:
+    type: object
+    description: Desired operator maintenance state.
+    required:
+      - enabled
+    properties:
+      enabled:
+        type: boolean
+        description: true enters maintenance, false leaves it. Both directions are idempotent.
+      drain_timeout_seconds:
+        type: integer
+        format: uint32
+        description: Drain window declared on enter (0 or absent = no deadline). Ignored on a repeat enter and on leave - an episode's window is immutable.
+  MaintenanceStatus:
+    type: object
+    description: Operator maintenance state with drain read-back. Refusal fields report the observed truth of what this gateway build refuses in the current state, never an aspiration.
+    required:
+      - state
+      - refusing_new_config
+      - refusing_new_inference
+      - cancellable
+      - in_flight_streams
+      - elapsed_seconds
+      - drain_deadline_exceeded
+    properties:
+      state:
+        type: string
+        enum: [active, maintenance]
+      operation_id:
+        type: string
+        description: Identity of the maintenance episode - stable across repeated idempotent enters; a leave response carries the id of the episode it ended; empty when active.
+      refusing_new_config:
+        type: boolean
+        description: Mutating configuration API calls are being refused (503), except the configuration-lifecycle operations and the maintenance endpoint itself.
+      refusing_new_inference:
+        type: boolean
+        description: New data-path inference requests are being refused. Gateway-wide data-path refusal is not implemented by this management-plane state - this field reports false so no caller mistakes maintenance for a traffic drain; per-service and per-endpoint drain remain the data path's own mechanisms.
+      in_flight_streams:
+        type: integer
+        format: int64
+        description: AI inference streaming sessions (SSE) currently open through the gateway. Non-streaming requests have no in-flight counter and are deliberately not estimated.
+      entered_at:
+        type: string
+        format: date-time
+        description: When the current episode began (absent when active).
+      elapsed_seconds:
+        type: integer
+        format: int64
+        description: Seconds spent in the current episode (0 when active).
+      drain_timeout_seconds:
+        type: integer
+        format: uint32
+        description: The episode's declared drain window (0 = none declared).
+      drain_deadline_exceeded:
+        type: boolean
+        description: The declared drain window has elapsed. The gateway never leaves maintenance on its own - the operator owns the transition; an overrun is reported, not acted on.
+      cancellable:
+        type: boolean
+        description: Leaving maintenance is possible right now (always true - PUT with enabled=false is never refused by the maintenance gate).
   AutoPersistStatus:
     type: object
     description: Auto-persist failure streak (present only while failing; any successful persist clears it). Nonzero means recent config changes may not survive a restart - also surfaced as a not-ready reason and in the loxilb_autopersist_consecutive_failures gauge.

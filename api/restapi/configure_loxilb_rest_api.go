@@ -169,6 +169,10 @@ func configureAPI(api *operations.LoxilbRestAPIAPI) http.Handler {
 	api.DeleteConfigMirrorIdentIdentHandler = operations.DeleteConfigMirrorIdentIdentHandlerFunc(handler.ConfigDeleteMirror)
 	api.GetConfigMirrorAllHandler = operations.GetConfigMirrorAllHandlerFunc(handler.ConfigGetMirror)
 
+	// Operator maintenance (drain read-back)
+	api.GetMaintenanceHandler = operations.GetMaintenanceHandlerFunc(handler.ConfigGetMaintenance)
+	api.PutMaintenanceHandler = operations.PutMaintenanceHandlerFunc(handler.ConfigPutMaintenance)
+
 	// Status
 	api.GetStatusReadyHandler = operations.GetStatusReadyHandlerFunc(handler.ConfigGetStatusReady)
 	api.GetStatusProcessHandler = operations.GetStatusProcessHandlerFunc(handler.ConfigGetProcess)

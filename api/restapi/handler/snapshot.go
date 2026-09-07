@@ -31,6 +31,7 @@ import (
 	"github.com/loxilb-io/loxilb/api/restapi/operations"
 	cmn "github.com/loxilb-io/loxilb/common"
 	opts "github.com/loxilb-io/loxilb/options"
+	"github.com/loxilb-io/loxilb/pkg/maintenance"
 	"github.com/loxilb-io/loxilb/pkg/snapshot"
 	tk "github.com/loxilb-io/loxilib"
 )
@@ -89,6 +90,21 @@ func SnapshotFreezeMiddleware(next http.Handler) http.Handler {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = w.Write([]byte(`{"code":503,"message":"Maintenance mode","result":"configuration is frozen while a snapshot restore is in progress"}`))
+			return
+		}
+		// Third, operator-owned gate (PUT /maintenance) -- distinct from
+		// the two self-clearing internal freezes above. The exemptions
+		// are the configuration-lifecycle operations maintenance exists
+		// to make safe, plus the maintenance endpoint itself so the
+		// operator can always leave.
+		if maintenance.Active() &&
+			!strings.HasSuffix(r.URL.Path, "/maintenance") &&
+			!strings.HasSuffix(r.URL.Path, "/config/restore") &&
+			!strings.HasSuffix(r.URL.Path, "/config/snapshot") &&
+			!strings.HasSuffix(r.URL.Path, "/config/persist") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"code":503,"message":"Maintenance mode","result":"configuration writes are rejected while operator maintenance is active"}`))
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -415,6 +431,22 @@ func ConfigGetStatusReady(params operations.GetStatusReadyParams, principal any)
 		ExternalDependencies: depStatuses,
 		LastPersist:          opRecordModel(snapshot.LastPersist()),
 		LastRestore:          opRecordModel(lastRestore),
+	}
+	// Additive, informational: per-interface eBPF attachment verified
+	// against the kernel. Never a readiness reason -- the contract adds
+	// evidence to the surface without changing the verdict; a walk
+	// failure is logged and the field simply stays absent.
+	if atts, aerr := ApiHooks.NetEbpfAttachmentGet(); aerr != nil {
+		tk.LogIt(tk.LogWarning, "status/ready: ebpf attachment walk failed: %v\n", aerr)
+	} else {
+		for _, a := range atts {
+			name, mode, attached := a.Name, a.Mode, a.Attached
+			payload.EbpfAttachments = append(payload.EbpfAttachments, &models.EbpfAttachmentStatus{
+				Name:     &name,
+				Mode:     &mode,
+				Attached: &attached,
+			})
+		}
 	}
 	if autoPersistState.ConsecutiveFailures > 0 {
 		payload.AutoPersist = &models.AutoPersistStatus{
