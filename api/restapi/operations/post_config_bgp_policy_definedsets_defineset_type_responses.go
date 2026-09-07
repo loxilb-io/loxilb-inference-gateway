@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// PostConfigBgpPolicyDefinedsetsDefinesetTypeNoContentCode is the HTTP code returned for type PostConfigBgpPolicyDefinedsetsDefinesetTypeNoContent
-const PostConfigBgpPolicyDefinedsetsDefinesetTypeNoContentCode int = 204
+// PostConfigBgpPolicyDefinedsetsDefinesetTypeOKCode is the HTTP code returned for type PostConfigBgpPolicyDefinedsetsDefinesetTypeOK
+const PostConfigBgpPolicyDefinedsetsDefinesetTypeOKCode int = 200
 
 /*
-PostConfigBgpPolicyDefinedsetsDefinesetTypeNoContent OK
+PostConfigBgpPolicyDefinedsetsDefinesetTypeOK OK
 
-swagger:response postConfigBgpPolicyDefinedsetsDefinesetTypeNoContent
+swagger:response postConfigBgpPolicyDefinedsetsDefinesetTypeOK
 */
-type PostConfigBgpPolicyDefinedsetsDefinesetTypeNoContent struct {
+type PostConfigBgpPolicyDefinedsetsDefinesetTypeOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewPostConfigBgpPolicyDefinedsetsDefinesetTypeNoContent creates PostConfigBgpPolicyDefinedsetsDefinesetTypeNoContent with default headers values
-func NewPostConfigBgpPolicyDefinedsetsDefinesetTypeNoContent() *PostConfigBgpPolicyDefinedsetsDefinesetTypeNoContent {
+// NewPostConfigBgpPolicyDefinedsetsDefinesetTypeOK creates PostConfigBgpPolicyDefinedsetsDefinesetTypeOK with default headers values
+func NewPostConfigBgpPolicyDefinedsetsDefinesetTypeOK() *PostConfigBgpPolicyDefinedsetsDefinesetTypeOK {
 
-	return &PostConfigBgpPolicyDefinedsetsDefinesetTypeNoContent{}
+	return &PostConfigBgpPolicyDefinedsetsDefinesetTypeOK{}
+}
+
+// WithPayload adds the payload to the post config bgp policy definedsets defineset type o k response
+func (o *PostConfigBgpPolicyDefinedsetsDefinesetTypeOK) WithPayload(payload *models.OperationResult) *PostConfigBgpPolicyDefinedsetsDefinesetTypeOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config bgp policy definedsets defineset type o k response
+func (o *PostConfigBgpPolicyDefinedsetsDefinesetTypeOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *PostConfigBgpPolicyDefinedsetsDefinesetTypeNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *PostConfigBgpPolicyDefinedsetsDefinesetTypeOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // PostConfigBgpPolicyDefinedsetsDefinesetTypeBadRequestCode is the HTTP code returned for type PostConfigBgpPolicyDefinedsetsDefinesetTypeBadRequest

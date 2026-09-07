@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// PostConfigFirewallNoContentCode is the HTTP code returned for type PostConfigFirewallNoContent
-const PostConfigFirewallNoContentCode int = 204
+// PostConfigFirewallOKCode is the HTTP code returned for type PostConfigFirewallOK
+const PostConfigFirewallOKCode int = 200
 
 /*
-PostConfigFirewallNoContent OK
+PostConfigFirewallOK OK
 
-swagger:response postConfigFirewallNoContent
+swagger:response postConfigFirewallOK
 */
-type PostConfigFirewallNoContent struct {
+type PostConfigFirewallOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewPostConfigFirewallNoContent creates PostConfigFirewallNoContent with default headers values
-func NewPostConfigFirewallNoContent() *PostConfigFirewallNoContent {
+// NewPostConfigFirewallOK creates PostConfigFirewallOK with default headers values
+func NewPostConfigFirewallOK() *PostConfigFirewallOK {
 
-	return &PostConfigFirewallNoContent{}
+	return &PostConfigFirewallOK{}
+}
+
+// WithPayload adds the payload to the post config firewall o k response
+func (o *PostConfigFirewallOK) WithPayload(payload *models.OperationResult) *PostConfigFirewallOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config firewall o k response
+func (o *PostConfigFirewallOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *PostConfigFirewallNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *PostConfigFirewallOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // PostConfigFirewallBadRequestCode is the HTTP code returned for type PostConfigFirewallBadRequest

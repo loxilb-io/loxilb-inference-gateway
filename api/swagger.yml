@@ -37,8 +37,10 @@ paths:
           type: file
           description: The configuration file to upload.
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
   '/config/export':
     get:
       summary: Export all configurations
@@ -526,8 +528,10 @@ paths:
       summary: Delete all Load balancer services
       description: Delete all load balancer services.
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -567,8 +571,10 @@ paths:
           required: true
           description: Attributes for load balance service name
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -674,8 +680,10 @@ paths:
             naming a model and one not, a delete without `model_name` removes the model-less rule and
             leaves the other serving.
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -1108,7 +1116,7 @@ paths:
           schema:
             $ref: '#/definitions/Error'
         '404':
-          description: 'No KV-exact status on this key. Deliberately coalesced: no rule exists on the composite key, the rule(s) on the key are not KV-exact, or the model_name filter matched no rule — all three answer 404. A 200 body always carries at least one entry (empty result sets are never emitted as 200).'
+          description: 'No KV-exact status on this key. Deliberately coalesced: no rule exists on the composite key, the rule(s) on the key are not KV-exact, the model_name filter matched no rule, or the composite key itself is unservable (for example an unsupported protocol — a key that can never hold a rule answers the same as an empty key) — all four answer 404. A 200 body always carries at least one entry (empty result sets are never emitted as 200).'
           schema:
             $ref: '#/definitions/Error'
         '422':
@@ -1206,8 +1214,10 @@ paths:
             naming a model and one not, a delete without `model_name` removes the model-less rule and
             leaves the other serving.
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -1300,8 +1310,10 @@ paths:
             naming a model and one not, a delete without `model_name` removes the model-less rule and
             leaves the other serving.
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -1389,8 +1401,10 @@ paths:
             naming a model and one not, a delete without `model_name` removes the model-less rule and
             leaves the other serving.
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -2235,8 +2249,10 @@ paths:
           schema:
             $ref: '#/definitions/RouteEntry'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -2282,8 +2298,10 @@ paths:
           required: true
           description: Attributes for destination route
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -2356,8 +2374,10 @@ paths:
           schema:
             $ref: '#/definitions/SessionEntry'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -2398,8 +2418,10 @@ paths:
           required: true
           description: Attributes 5G session Ident.
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -2468,8 +2490,10 @@ paths:
           schema:
             $ref: '#/definitions/SessionUlClEntry'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -2515,8 +2539,10 @@ paths:
           required: true
           description: Attributes for session ulcl address
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -2590,8 +2616,10 @@ paths:
           schema:
             $ref: '#/definitions/PolicyEntry'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -2632,8 +2660,10 @@ paths:
           required: true
           description: Attributes of Policy Ident.
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -2705,8 +2735,10 @@ paths:
           schema:
             $ref: '#/definitions/MirrorEntry'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -2747,8 +2779,10 @@ paths:
           required: true
           description: Attributes of Mirror Ident.
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -2821,8 +2855,10 @@ paths:
           schema:
             $ref: '#/definitions/IPv4AddressEntry'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -2873,8 +2909,10 @@ paths:
           required: true
           description: Attributes of the target device
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -2943,8 +2981,10 @@ paths:
           schema:
             $ref: '#/definitions/IPv6AddressEntry'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -2995,8 +3035,10 @@ paths:
           required: true
           description: Attributes of the target device
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -3069,8 +3111,10 @@ paths:
           schema:
             $ref: '#/definitions/NeighborEntry'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -3116,8 +3160,10 @@ paths:
           required: true
           description: Attributes of the target device
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -3189,8 +3235,10 @@ paths:
           schema:
             $ref: '#/definitions/FDBEntry'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -3236,8 +3284,10 @@ paths:
           required: true
           description: Attributes of the target device
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -3309,8 +3359,10 @@ paths:
           schema:
             $ref: '#/definitions/VlanBridgeEntry'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -3352,8 +3404,10 @@ paths:
           description: Attributes IPv4 Address in the device
         
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -3401,8 +3455,10 @@ paths:
           schema:
             $ref: '#/definitions/VlanMemberEntry'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -3453,8 +3509,10 @@ paths:
           type: boolean
           description: Tagged status
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -3517,8 +3575,10 @@ paths:
           schema:
             $ref: '#/definitions/VxlanBridgeEntry'    
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '401':
           description: Invalid authentication credentials
           schema:
@@ -3548,8 +3608,10 @@ paths:
           description: vxlan id (24-bit). Allows to remove routes with defined vnid only. Applicable for routes with nexthop_type 'vxlan-tunnel'. Otherwise '400' error will be returned
          
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '401':
           description: Invalid authentication credentials
           schema:
@@ -3675,8 +3737,10 @@ paths:
           schema:
             $ref: '#/definitions/CIStatusEntry'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -3747,8 +3811,10 @@ paths:
           schema:
             $ref: '#/definitions/EndPoint'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -3790,8 +3856,10 @@ paths:
           schema:
             $ref: '#/definitions/EndPointHostState'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -3847,8 +3915,10 @@ paths:
           required: false
           description: Probe port
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -3920,8 +3990,10 @@ paths:
           schema:
             $ref: '#/definitions/FirewallEntry'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -3993,8 +4065,10 @@ paths:
           description: User preference for ordering
   
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -4062,8 +4136,10 @@ paths:
           schema:
             $ref: '#/definitions/IPFilterEntry'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -4096,8 +4172,10 @@ paths:
           type: integer
           description: Security zone (0 = all zones)
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -4133,8 +4211,10 @@ paths:
           schema:
             $ref: '#/definitions/SecurityRateConfigMod'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -4152,8 +4232,10 @@ paths:
       summary: Disable unified security rate limiting
       description: Disable all security rate limiting (SYN flood + connection rate) and clear tracking state.
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -4323,8 +4405,10 @@ paths:
           schema:
             $ref: '#/definitions/OperParams'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -4361,6 +4445,7 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/OperParams'
+        '204':
         '204':
           description: OK
         '400':
@@ -4424,8 +4509,10 @@ paths:
           schema:
             $ref: '#/definitions/IPsecConfigMod'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -4566,8 +4653,10 @@ paths:
           required: true
           description: Tunnel name
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '401':
           description: Invalid authentication credentials
           schema:
@@ -4690,8 +4779,10 @@ paths:
       summary: Reset IPsec statistics
       description: Reset all IPsec statistics counters to zero.
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '401':
           description: Invalid authentication credentials
           schema:
@@ -4795,8 +4886,10 @@ paths:
           required: true
           description: Certificate name
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '401':
           description: Invalid authentication credentials
           schema:
@@ -4937,8 +5030,10 @@ paths:
           required: true
           description: CA certificate name
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '401':
           description: Invalid authentication credentials
           schema:
@@ -4973,6 +5068,7 @@ paths:
                 type: array
                 items:
                   $ref: '#/definitions/BGPNeighGetEntry'
+        '204':
         '204':
           description: OK
         '400':
@@ -5015,8 +5111,10 @@ paths:
           schema:
             $ref: '#/definitions/BGPNeigh'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -5063,8 +5161,10 @@ paths:
           required: false
           description: Remote ASN number
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -5121,6 +5221,7 @@ paths:
                 items:
                   $ref: '#/definitions/BGPPolicyDefinedSetGetEntry'
         '204':
+        '204':
           description: OK
         '400':
           description: Malformed arguments for API call
@@ -5166,8 +5267,10 @@ paths:
           required: true
           description: type name
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -5214,8 +5317,10 @@ paths:
           schema:
             $ref: '#/definitions/BGPPolicyDefinedSetsMod'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -5283,8 +5388,10 @@ paths:
           schema:
             $ref: '#/definitions/BGPPolicyDefinitionsMod'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -5325,8 +5432,10 @@ paths:
           required: true
           description: The name of the community
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -5369,8 +5478,10 @@ paths:
           schema:
             $ref: '#/definitions/BGPApplyPolicyToNeighborMod'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -5410,8 +5521,10 @@ paths:
           schema:
             $ref: '#/definitions/BGPApplyPolicyToNeighborMod'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -5453,8 +5566,10 @@ paths:
           schema:
             $ref: '#/definitions/BGPGlobalConfig'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -5523,8 +5638,10 @@ paths:
     post:
       summary: turn on prometheus option
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -5544,8 +5661,10 @@ paths:
     delete:
       summary: turn off prometheus option
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -6102,8 +6221,10 @@ paths:
           schema:
             $ref: '#/definitions/BfdEntry'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -6148,8 +6269,10 @@ paths:
           required: false
           description: Cluster instance name
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -6647,8 +6770,10 @@ paths:
           schema:
             $ref: '#/definitions/CorsEntry'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -6689,8 +6814,10 @@ paths:
           required: true
           description: cors url ex) http://localhost:3000
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -7255,6 +7382,13 @@ definitions:
         description: Non-fatal anomalies of this persist; empty on a clean save.
         items:
           type: string
+  OperationResult:
+    type: object
+    description: 'Result envelope returned by configuration operations that succeed with a body ({"result":"Success"} or an informational message).'
+    properties:
+      result:
+        type: string
+        description: Outcome message. "Success" for most operations; some carry an informational sentence instead.
   Error:
     type: object
     properties:

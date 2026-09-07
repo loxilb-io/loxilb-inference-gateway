@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// PostConfigMetricsNoContentCode is the HTTP code returned for type PostConfigMetricsNoContent
-const PostConfigMetricsNoContentCode int = 204
+// PostConfigMetricsOKCode is the HTTP code returned for type PostConfigMetricsOK
+const PostConfigMetricsOKCode int = 200
 
 /*
-PostConfigMetricsNoContent OK
+PostConfigMetricsOK OK
 
-swagger:response postConfigMetricsNoContent
+swagger:response postConfigMetricsOK
 */
-type PostConfigMetricsNoContent struct {
+type PostConfigMetricsOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewPostConfigMetricsNoContent creates PostConfigMetricsNoContent with default headers values
-func NewPostConfigMetricsNoContent() *PostConfigMetricsNoContent {
+// NewPostConfigMetricsOK creates PostConfigMetricsOK with default headers values
+func NewPostConfigMetricsOK() *PostConfigMetricsOK {
 
-	return &PostConfigMetricsNoContent{}
+	return &PostConfigMetricsOK{}
+}
+
+// WithPayload adds the payload to the post config metrics o k response
+func (o *PostConfigMetricsOK) WithPayload(payload *models.OperationResult) *PostConfigMetricsOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config metrics o k response
+func (o *PostConfigMetricsOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *PostConfigMetricsNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *PostConfigMetricsOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // PostConfigMetricsBadRequestCode is the HTTP code returned for type PostConfigMetricsBadRequest

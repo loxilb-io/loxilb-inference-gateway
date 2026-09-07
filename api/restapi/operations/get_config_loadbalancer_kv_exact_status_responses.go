@@ -152,7 +152,7 @@ func (o *GetConfigLoadbalancerKvExactStatusForbidden) WriteResponse(rw http.Resp
 const GetConfigLoadbalancerKvExactStatusNotFoundCode int = 404
 
 /*
-GetConfigLoadbalancerKvExactStatusNotFound No KV-exact status on this key. Deliberately coalesced: no rule exists on the composite key, the rule(s) on the key are not KV-exact, or the model_name filter matched no rule — all three answer 404. A 200 body always carries at least one entry (empty result sets are never emitted as 200).
+GetConfigLoadbalancerKvExactStatusNotFound No KV-exact status on this key. Deliberately coalesced: no rule exists on the composite key, the rule(s) on the key are not KV-exact, the model_name filter matched no rule, or the composite key itself is unservable (for example an unsupported protocol — a key that can never hold a rule answers the same as an empty key) — all four answer 404. A 200 body always carries at least one entry (empty result sets are never emitted as 200).
 
 swagger:response getConfigLoadbalancerKvExactStatusNotFound
 */

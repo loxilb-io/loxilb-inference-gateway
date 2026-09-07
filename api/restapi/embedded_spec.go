@@ -740,8 +740,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -848,8 +851,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -912,8 +918,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -976,8 +985,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -1112,8 +1124,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -1176,8 +1191,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -1238,8 +1256,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -1309,8 +1330,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -1459,8 +1483,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -1523,8 +1550,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -1625,8 +1655,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -1867,8 +1900,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -2011,8 +2047,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -2096,8 +2135,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -2160,8 +2202,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -2280,8 +2325,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -2344,8 +2392,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -2457,8 +2508,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -2566,8 +2620,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -2630,8 +2687,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -2737,8 +2797,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -2995,8 +3058,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           }
         }
       }
@@ -3017,8 +3083,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -3066,8 +3135,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -3170,8 +3242,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -3330,8 +3405,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "401": {
             "description": "Invalid authentication credentials",
@@ -3539,8 +3617,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "401": {
             "description": "Invalid authentication credentials",
@@ -3632,8 +3713,11 @@ func init() {
         "description": "Reset all IPsec statistics counters to zero.",
         "summary": "Reset IPsec statistics",
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "401": {
             "description": "Invalid authentication credentials",
@@ -3834,8 +3918,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "401": {
             "description": "Invalid authentication credentials",
@@ -3968,8 +4055,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -4084,8 +4174,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -4148,8 +4241,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -4264,8 +4360,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -5064,8 +5163,11 @@ func init() {
         "description": "Delete all load balancer services.",
         "summary": "Delete all Load balancer services",
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -5165,8 +5267,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -5313,8 +5418,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -5493,7 +5601,7 @@ func init() {
             }
           },
           "404": {
-            "description": "No KV-exact status on this key. Deliberately coalesced: no rule exists on the composite key, the rule(s) on the key are not KV-exact, or the model_name filter matched no rule — all three answer 404. A 200 body always carries at least one entry (empty result sets are never emitted as 200).",
+            "description": "No KV-exact status on this key. Deliberately coalesced: no rule exists on the composite key, the rule(s) on the key are not KV-exact, the model_name filter matched no rule, or the composite key itself is unservable (for example an unsupported protocol — a key that can never hold a rule answers the same as an empty key) — all four answer 404. A 200 body always carries at least one entry (empty result sets are never emitted as 200).",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -5703,8 +5811,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -5816,8 +5927,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -5920,8 +6034,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -6007,8 +6124,11 @@ func init() {
       "post": {
         "summary": "turn on prometheus option",
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -6039,8 +6159,11 @@ func init() {
       "delete": {
         "summary": "turn off prometheus option",
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -6085,8 +6208,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -6187,8 +6313,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -6251,8 +6380,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -6360,8 +6492,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -6568,8 +6703,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -6893,8 +7031,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -6995,8 +7136,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -7174,8 +7318,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -7307,8 +7454,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -7371,8 +7521,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -7398,8 +7551,11 @@ func init() {
         "description": "Disable all security rate limiting (SYN flood + connection rate) and clear tracking state.",
         "summary": "Disable unified security rate limiting",
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -7501,8 +7657,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -7603,8 +7762,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -7667,8 +7829,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -7776,8 +7941,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -8448,8 +8616,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "401": {
             "description": "Invalid authentication credentials",
@@ -8533,8 +8704,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "401": {
             "description": "Invalid authentication credentials",
@@ -8673,8 +8847,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -8775,8 +8952,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -8847,8 +9027,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -8924,8 +9107,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -14736,6 +14922,16 @@ func init() {
         }
       }
     },
+    "OperationResult": {
+      "description": "Result envelope returned by configuration operations that succeed with a body ({\"result\":\"Success\"} or an informational message).",
+      "type": "object",
+      "properties": {
+        "result": {
+          "description": "Outcome message. \"Success\" for most operations; some carry an informational sentence instead.",
+          "type": "string"
+        }
+      }
+    },
     "PIICircuitBreaker": {
       "type": "object",
       "properties": {
@@ -17101,8 +17297,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -17209,8 +17408,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -17273,8 +17475,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -17337,8 +17542,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -17473,8 +17681,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -17537,8 +17748,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -17599,8 +17813,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -17670,8 +17887,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -17820,8 +18040,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -17884,8 +18107,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -17986,8 +18212,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -18228,8 +18457,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -18372,8 +18604,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -18457,8 +18692,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -18521,8 +18759,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -18641,8 +18882,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -18705,8 +18949,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -18818,8 +19065,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -18927,8 +19177,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -18991,8 +19244,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -19098,8 +19354,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -19356,8 +19615,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           }
         }
       }
@@ -19378,8 +19640,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -19427,8 +19692,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -19531,8 +19799,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -19691,8 +19962,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "401": {
             "description": "Invalid authentication credentials",
@@ -19900,8 +20174,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "401": {
             "description": "Invalid authentication credentials",
@@ -19993,8 +20270,11 @@ func init() {
         "description": "Reset all IPsec statistics counters to zero.",
         "summary": "Reset IPsec statistics",
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "401": {
             "description": "Invalid authentication credentials",
@@ -20195,8 +20475,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "401": {
             "description": "Invalid authentication credentials",
@@ -20329,8 +20612,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -20445,8 +20731,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -20509,8 +20798,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -20625,8 +20917,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -21427,8 +21722,11 @@ func init() {
         "description": "Delete all load balancer services.",
         "summary": "Delete all Load balancer services",
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -21528,8 +21826,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -21676,8 +21977,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -21856,7 +22160,7 @@ func init() {
             }
           },
           "404": {
-            "description": "No KV-exact status on this key. Deliberately coalesced: no rule exists on the composite key, the rule(s) on the key are not KV-exact, or the model_name filter matched no rule — all three answer 404. A 200 body always carries at least one entry (empty result sets are never emitted as 200).",
+            "description": "No KV-exact status on this key. Deliberately coalesced: no rule exists on the composite key, the rule(s) on the key are not KV-exact, the model_name filter matched no rule, or the composite key itself is unservable (for example an unsupported protocol — a key that can never hold a rule answers the same as an empty key) — all four answer 404. A 200 body always carries at least one entry (empty result sets are never emitted as 200).",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -22066,8 +22370,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -22179,8 +22486,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -22283,8 +22593,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -22370,8 +22683,11 @@ func init() {
       "post": {
         "summary": "turn on prometheus option",
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -22402,8 +22718,11 @@ func init() {
       "delete": {
         "summary": "turn off prometheus option",
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -22448,8 +22767,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -22550,8 +22872,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -22614,8 +22939,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -22723,8 +23051,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -22931,8 +23262,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -23256,8 +23590,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -23358,8 +23695,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -23537,8 +23877,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -23670,8 +24013,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -23734,8 +24080,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -23761,8 +24110,11 @@ func init() {
         "description": "Disable all security rate limiting (SYN flood + connection rate) and clear tracking state.",
         "summary": "Disable unified security rate limiting",
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -23864,8 +24216,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -23966,8 +24321,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -24030,8 +24388,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -24139,8 +24500,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -24811,8 +25175,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "401": {
             "description": "Invalid authentication credentials",
@@ -24896,8 +25263,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "401": {
             "description": "Invalid authentication credentials",
@@ -25036,8 +25406,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -25138,8 +25511,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -25210,8 +25586,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -25287,8 +25666,11 @@ func init() {
           }
         ],
         "responses": {
-          "204": {
-            "description": "OK"
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
           },
           "400": {
             "description": "Malformed arguments for API call",
@@ -32390,6 +32772,16 @@ func init() {
             "emergency",
             "alert"
           ]
+        }
+      }
+    },
+    "OperationResult": {
+      "description": "Result envelope returned by configuration operations that succeed with a body ({\"result\":\"Success\"} or an informational message).",
+      "type": "object",
+      "properties": {
+        "result": {
+          "description": "Outcome message. \"Success\" for most operations; some carry an informational sentence instead.",
+          "type": "string"
         }
       }
     },

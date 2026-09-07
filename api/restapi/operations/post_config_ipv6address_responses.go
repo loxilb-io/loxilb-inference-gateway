@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// PostConfigIpv6addressNoContentCode is the HTTP code returned for type PostConfigIpv6addressNoContent
-const PostConfigIpv6addressNoContentCode int = 204
+// PostConfigIpv6addressOKCode is the HTTP code returned for type PostConfigIpv6addressOK
+const PostConfigIpv6addressOKCode int = 200
 
 /*
-PostConfigIpv6addressNoContent OK
+PostConfigIpv6addressOK OK
 
-swagger:response postConfigIpv6addressNoContent
+swagger:response postConfigIpv6addressOK
 */
-type PostConfigIpv6addressNoContent struct {
+type PostConfigIpv6addressOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewPostConfigIpv6addressNoContent creates PostConfigIpv6addressNoContent with default headers values
-func NewPostConfigIpv6addressNoContent() *PostConfigIpv6addressNoContent {
+// NewPostConfigIpv6addressOK creates PostConfigIpv6addressOK with default headers values
+func NewPostConfigIpv6addressOK() *PostConfigIpv6addressOK {
 
-	return &PostConfigIpv6addressNoContent{}
+	return &PostConfigIpv6addressOK{}
+}
+
+// WithPayload adds the payload to the post config ipv6address o k response
+func (o *PostConfigIpv6addressOK) WithPayload(payload *models.OperationResult) *PostConfigIpv6addressOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config ipv6address o k response
+func (o *PostConfigIpv6addressOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *PostConfigIpv6addressNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *PostConfigIpv6addressOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // PostConfigIpv6addressBadRequestCode is the HTTP code returned for type PostConfigIpv6addressBadRequest
