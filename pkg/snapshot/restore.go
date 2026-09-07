@@ -24,6 +24,8 @@ import (
 	"bytes"
 	"fmt"
 	"time"
+
+	cmn "github.com/loxilb-io/loxilb/common"
 )
 
 // ---------------------------------------------------------------------
@@ -109,6 +111,10 @@ type Result struct {
 	// left inconsistent; a dry-run that fails VALIDATE reports "" with
 	// Errors populated).
 	Result string `json:"result,omitempty"`
+	// SnapshotGeneration is the restored document's lineage generation
+	// (schema 1.5+; zero/absent for older documents and bare captures).
+	// The boot loader records it as the applied boot generation.
+	SnapshotGeneration uint64 `json:"snapshot_generation,omitempty"`
 	// Warnings reports non-fatal anomalies the pipeline tolerated -- today,
 	// document items skipped during a boot apply because a byte-identical
 	// item already existed (a duplicate entry inside the document). Kept
@@ -120,6 +126,24 @@ type Result struct {
 	// snapshot (§5.3 step 4), empty for dry-run, failed-before-PRESERVE, and
 	// Boot (which never captures one) cases.
 	PreRestoreSnapshotPersisted string `json:"pre_restore_snapshot_persisted,omitempty"`
+	// ExternalDependencies reports the document's recovery_dependencies
+	// manifest with this restore's per-entry disposition (verified /
+	// warning / failed / declared -- see depstatus.go). Populated by the
+	// VERIFY-DEPENDENCIES stage; empty for documents without a manifest
+	// and for pipelines that stop before VALIDATE completes.
+	ExternalDependencies []DependencyStatus `json:"external_dependencies,omitempty"`
+	// Persisted is the §6 write-through disposition, set by the REST
+	// layer (the engine does not persist): true when the committed state
+	// reached snapshot.json, false when the restore applied but the
+	// write-through FAILED -- the applied state will not survive a restart
+	// until a later persist succeeds, so a result carrying persisted=false
+	// is explicitly degraded, never a bare "ok" (the failure detail is
+	// appended to Errors). nil (absent) for dry-run and for pipelines that
+	// never reached a successful commit.
+	Persisted *bool `json:"persisted,omitempty"`
+	// PersistedGeneration is the lineage generation the write-through
+	// stamped (set with Persisted=true only).
+	PersistedGeneration uint64 `json:"persisted_generation,omitempty"`
 }
 
 // Clock lets tests control "now" (used for the pre-restore file's
@@ -218,6 +242,7 @@ func (e *Engine) restore(raw []byte, opts RestoreOptions) (*Result, error) {
 	}
 	result.SchemaVersion = doc.SchemaVersion
 	result.SnapshotGatewayVersion = doc.GatewayVersion
+	result.SnapshotGeneration = doc.Generation
 
 	// 2. VALIDATE -- schema-version gate + migrations + coverage checks.
 	// Stage gating: a VALIDATE failure returns here and never reaches
@@ -227,6 +252,37 @@ func (e *Engine) restore(raw []byte, opts RestoreOptions) (*Result, error) {
 	result.Compatible = compatible
 	if len(verrs) > 0 {
 		result.Errors = verrs
+		return result, nil
+	}
+
+	// 2c. NORMALIZE SECRETS -- documents written before secret-value
+	// encryption (and hand-built ones) may carry plaintext secrets;
+	// re-encrypt them in memory under this node's secret so every later
+	// stage (apply, VERIFY's doc-side digest, the post-commit
+	// write-through persist) sees only ciphertext. This is the ADR-decided
+	// migrate-and-re-encrypt path: the next persist makes the encrypted
+	// form durable. Failure (node secret unavailable) fails closed here,
+	// before anything is planned or wiped -- proceeding would either apply
+	// unusable values or write plaintext back to disk.
+	secWarns, secErr := normalizeInboundSecrets(doc)
+	if secErr != nil {
+		result.Errors = []string{secErr.Error()}
+		return result, nil
+	}
+	result.Warnings = append(result.Warnings, secWarns...)
+
+	// 2b. VERIFY DEPENDENCIES -- every REQUIRED recovery_dependencies
+	// entry is checked against this node's actual stores (hooks) while
+	// nothing has been planned, wiped, or applied: a restore whose
+	// declared-load-bearing external store is missing must stop HERE, not
+	// mid-apply after the wipe. Optional entries are informational and
+	// never verified. Runs in dry-run too -- preflighting exactly this is
+	// what dry-run is for.
+	depStatuses, depWarns, depErrs := e.stageVerifyDeps(doc)
+	result.ExternalDependencies = depStatuses
+	result.Warnings = append(result.Warnings, depWarns...)
+	if len(depErrs) > 0 {
+		result.Errors = depErrs
 		return result, nil
 	}
 
@@ -299,6 +355,7 @@ func (e *Engine) restore(raw []byte, opts RestoreOptions) (*Result, error) {
 	if len(applyErrs) == 0 {
 		// 7. COMMIT.
 		result.Result = ResultOK
+		recordRestoreSuccess(doc.Generation, doc.Checksum, opts.modeString())
 		return result, nil
 	}
 
@@ -352,6 +409,48 @@ func stageParse(raw []byte) (*Document, error) {
 }
 
 // ---------------------------------------------------------------------
+// Stage 2b: VERIFY DEPENDENCIES
+// ---------------------------------------------------------------------
+
+// stageVerifyDeps checks each REQUIRED recovery_dependencies entry against
+// this node's actual external stores, via the hooks. It runs after
+// VALIDATE (the manifest's shape and type vocabulary are already good) and
+// before PLAN, so a missing load-bearing store fails the restore closed
+// with zero mutations -- the wipe-then-fail-mid-apply alternative costs a
+// rollback and, at boot, the whole replay. Warnings (a store that is
+// wired but degraded, an older-generation registry the per-item apply
+// will re-verify) surface in the result without blocking. The returned
+// statuses mirror the whole manifest (optional entries included, as
+// declared) for the response's external_dependencies surface.
+func (e *Engine) stageVerifyDeps(doc *Document) (statuses []DependencyStatus, warns, errs []string) {
+	for _, dep := range doc.RecoveryDependencies {
+		status := DependencyStatus{
+			Type:       dep.Type,
+			ID:         dep.ID,
+			Generation: dep.Generation,
+			Digest:     dep.Digest,
+			Required:   dep.Required,
+			Status:     DepStatusDeclared,
+		}
+		if dep.Required {
+			warn, err := e.Hooks.NetRecoveryDepVerify(dep)
+			switch {
+			case err != nil:
+				status.Status = DepStatusFailed
+				errs = append(errs, fmt.Sprintf("dependency %s: %v", dep.Type, err))
+			case warn != "":
+				status.Status = DepStatusWarning
+				warns = append(warns, fmt.Sprintf("dependency %s: %s", dep.Type, warn))
+			default:
+				status.Status = DepStatusVerified
+			}
+		}
+		statuses = append(statuses, status)
+	}
+	return statuses, warns, errs
+}
+
+// ---------------------------------------------------------------------
 // Stage 2: VALIDATE
 // ---------------------------------------------------------------------
 
@@ -401,6 +500,32 @@ func stageValidate(doc *Document) (compatible bool, errs []string) {
 		return true, errs
 	}
 
+	// recovery_dependencies manifest checks (schema 1.4+; nil = none
+	// declared, valid). A REQUIRED entry of a type this build does not
+	// know cannot be verified -- proceeding would be guessing about a
+	// dependency the capturing gateway declared load-bearing, so it fails
+	// closed here, before anything is planned or wiped. Unknown OPTIONAL
+	// types pass (forward compatibility: informational entries from a
+	// newer producer must not brick an otherwise-compatible restore).
+	seenDep := make(map[string]bool, len(doc.RecoveryDependencies))
+	for _, d := range doc.RecoveryDependencies {
+		if d.Type == "" {
+			errs = append(errs, "snapshot: recovery_dependencies entry with empty type")
+			continue
+		}
+		key := d.Type + "\x00" + d.ID
+		if seenDep[key] {
+			errs = append(errs, fmt.Sprintf("snapshot: recovery_dependencies lists %s %q more than once", d.Type, d.ID))
+		}
+		seenDep[key] = true
+		if d.Required && !cmn.KnownRecoveryDepTypes[d.Type] {
+			errs = append(errs, fmt.Sprintf("snapshot: required recovery dependency of unknown type %q cannot be verified by this build; refusing to restore", d.Type))
+		}
+	}
+	if len(errs) > 0 {
+		return true, errs
+	}
+
 	// NOTE (G-8/G-9 E2E finding, 2026-07-20): the §5.3 example semantic
 	// check "every LB endpoint reference resolvable within the doc" was
 	// implemented here and then REMOVED. It contradicts the capture-side
@@ -412,6 +537,69 @@ func stageValidate(doc *Document) (compatible bool, errs []string) {
 	// write-through/auto-persisted snapshot containing an LB whose
 	// endpoints are all rule-managed failed VALIDATE on boot restore.
 	return true, nil
+}
+
+// normalizeInboundSecrets re-encrypts any plaintext secret value the
+// document carries (stage 2c). Values already encrypted pass through
+// untouched; each re-encryption is surfaced as a warning naming the item
+// -- never the value (secret-free logging). Runs after migrations so it
+// sees the current-schema shape, and before VERIFY DEPS / PLAN so a
+// failure has mutated nothing.
+func normalizeInboundSecrets(doc *Document) (warns []string, err error) {
+	// normalizeOne re-encrypts a plaintext value, and PROVES an
+	// already-encrypted value decryptable under this node's secret while
+	// nothing has been wiped: a wrong-secret document must be refused
+	// here, cleanly, not discovered mid-apply after the wipe and paid for
+	// with a rollback.
+	normalizeOne := func(v string) (out string, reencrypted bool, err error) {
+		if v == "" {
+			return v, false, nil
+		}
+		if IsEncryptedSecretValue(v) {
+			if _, derr := DecryptSecretValue(v); derr != nil {
+				return "", false, derr
+			}
+			return v, false, nil
+		}
+		enc, eerr := EncryptSecretValue(v)
+		if eerr != nil {
+			return "", false, eerr
+		}
+		return enc, true, nil
+	}
+
+	for i, t := range doc.Domains.IPsec.Tunnels {
+		if t == nil {
+			continue
+		}
+		v, reenc, verr := normalizeOne(t.PSK)
+		if verr != nil {
+			return nil, fmt.Errorf("ipsec tunnel %q pre-shared key: %w", t.Name, verr)
+		}
+		if !reenc {
+			continue
+		}
+		c := *t
+		c.PSK = v
+		doc.Domains.IPsec.Tunnels[i] = &c
+		warns = append(warns, fmt.Sprintf("ipsec tunnel %q carried a plaintext pre-shared key (pre-encryption document); re-encrypted under this node's secret", t.Name))
+	}
+	for i := range doc.Domains.IPsec.Certificates {
+		c := &doc.Domains.IPsec.Certificates[i]
+		reenc := false
+		for _, field := range []*string{&c.PrivateKeyPEM, &c.Passphrase} {
+			v, r, verr := normalizeOne(*field)
+			if verr != nil {
+				return nil, fmt.Errorf("ipsec certificate %q key material: %w", c.Name, verr)
+			}
+			*field = v
+			reenc = reenc || r
+		}
+		if reenc {
+			warns = append(warns, fmt.Sprintf("ipsec certificate %q carried plaintext key material (pre-encryption document); re-encrypted under this node's secret", c.Name))
+		}
+	}
+	return warns, nil
 }
 
 // selectForRestore derives the effective restore selection: the document's
@@ -490,6 +678,8 @@ func countDomain(name string, d *Domains) int {
 		return len(d.SessionUlCl)
 	case DomainKvExactBinding:
 		return len(d.KvExactBinding)
+	case DomainL7Policy:
+		return len(d.L7Policy)
 	case DomainIPFilter:
 		return len(d.IPFilter)
 	case DomainSecurityRate:
@@ -505,6 +695,18 @@ func countDomain(name string, d *Domains) int {
 			n++
 		}
 		return n
+	case DomainCORS:
+		if d.CORS != nil {
+			return 1
+		}
+		return 0
+	case DomainTracing:
+		if d.Tracing != nil {
+			return 1
+		}
+		return 0
+	case DomainCert:
+		return len(d.Cert)
 	case DomainIPsec:
 		// The Config singleton is deliberately NOT counted: it cannot be
 		// wiped (deleteIPsec's documented no-op) and it materializes on its
@@ -599,6 +801,10 @@ func (e *Engine) stageApply(doc *Document, selected []DomainEntry, boot bool) ([
 	var errs []error
 	var skipped map[string]int
 	for _, entry := range selected {
+		if ferr := faultApplyError(entry.Name, false); ferr != nil {
+			errs = append(errs, fmt.Errorf("apply %s: %w", entry.Name, ferr))
+			break
+		}
 		_, nskip, err := entry.Apply(e.Hooks, doc, boot)
 		if nskip > 0 {
 			if skipped == nil {
@@ -685,6 +891,10 @@ func (e *Engine) rollback(preDoc *Document, selected []DomainEntry) []error {
 	}
 
 	for _, entry := range selected {
+		if ferr := faultApplyError(entry.Name, true); ferr != nil {
+			errs = append(errs, fmt.Errorf("rollback apply %s: %w", entry.Name, ferr))
+			continue
+		}
 		if _, _, err := entry.Apply(e.Hooks, preDoc, true); err != nil {
 			errs = append(errs, fmt.Errorf("rollback apply %s: %w", entry.Name, err))
 		}
