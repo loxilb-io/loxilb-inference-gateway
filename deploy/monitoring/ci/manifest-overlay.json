@@ -10,14 +10,14 @@
   "Combined codes (D+P etc.) apply both behaviors."
  ],
  "expected": {
-  "total": 223,
+  "total": 231,
   "owners": {
-   "loxilb": 200,
+   "loxilb": 208,
    "loxilb-ai-controller": 19,
    "loxilb-kv-agent": 4
   },
   "classes": {
-   "default": 167,
+   "default": 175,
    "dpu-doca": 24,
    "aictrl-bridge": 8,
    "kv-agent-health": 1,
@@ -145,10 +145,14 @@
   "loxilb_ai_tokens_missing_total": "V",
   "loxilb_ai_unmetered_requests_total": "V",
   "loxilb_autopersist_consecutive_failures": "E",
+  "loxilb_backend_traffic_bytes_total": "P",
+  "loxilb_backend_traffic_connections_total": "V",
+  "loxilb_backend_traffic_packets_total": "P",
   "loxilb_boot_config_conflict_total": "E",
   "loxilb_boot_legacy_fallback_total": "E",
   "loxilb_client_traffic_packets_total": "V",
   "loxilb_closed_connections_processed_total": "E",
+  "loxilb_config_dirty": "E",
   "loxilb_conntrack_max_entries": "DP",
   "loxilb_conntrack_stat_resets_total": "E",
   "loxilb_doca_collector_query_errors_total": "BD+P",
@@ -172,7 +176,9 @@
   "loxilb_kv_fetch_errors_total": "E",
   "loxilb_kv_fetch_total": "E",
   "loxilb_kv_inv_cap_evictions_total": "V",
+  "loxilb_kv_inventory_fresh": "V",
   "loxilb_kv_subscriber_connected": "V",
+  "loxilb_kv_subscriber_last_event_timestamp_seconds": "V",
   "loxilb_kv_subscriber_reconnect_total": "V",
   "loxilb_kv_subscriber_recv_error_total": "V",
   "loxilb_kv_subscriber_wire_reject_total": "V",
@@ -287,6 +293,8 @@
   "loxilb_sockproxy_sync_health_reject_total": "V",
   "loxilb_sockproxy_sync_inflight_rpc": "V",
   "loxilb_sockproxy_sync_overflow_total": "V",
+  "loxilb_sockproxy_sync_peer_lag_seconds": "V",
+  "loxilb_sockproxy_sync_peer_up": "V",
   "loxilb_sockproxy_sync_push_latency_seconds": "V",
   "loxilb_system_cpu_utilization_percent": "E",
   "loxilb_system_disk_utilization_percent": "E",
@@ -307,7 +315,9 @@
    "loxilb_autopersist_consecutive_failures": "p0",
    "loxilb_boot_config_conflict_total": "p0",
    "loxilb_boot_legacy_fallback_total": "p0",
+   "loxilb_kv_inventory_fresh": "p0",
    "loxilb_kv_subscriber_connected": "p0",
+   "loxilb_kv_subscriber_last_event_timestamp_seconds": "p0",
    "loxilb_kv_subscriber_reconnect_total": "p0",
    "loxilb_kv_subscriber_wire_reject_total": "p0",
    "loxilb_kv_zero_hit_watchdog_total": "p0",
@@ -320,7 +330,9 @@
    "loxilb_restore_duration_seconds": "p0",
    "loxilb_restore_total": "p0",
    "loxilb_snapshot_quarantine_total": "p0",
-   "loxilb_snapshot_total": "p0"
+   "loxilb_snapshot_total": "p0",
+   "loxilb_sockproxy_sync_peer_lag_seconds": "p0",
+   "loxilb_sockproxy_sync_peer_up": "p0"
   }
  },
  "privacy_review_labels": [
@@ -339,12 +351,43 @@
    "loxilb_ai_kv_trtllm_drain_ownership_fault_total",
    "loxilb_ai_kv_trtllm_drain_ownership_heal_total",
    "loxilb_autopersist_consecutive_failures",
+   "loxilb_backend_traffic_bytes_total",
+   "loxilb_backend_traffic_connections_total",
+   "loxilb_backend_traffic_packets_total",
    "loxilb_boot_legacy_fallback_total",
+   "loxilb_config_dirty",
+   "loxilb_kv_inventory_fresh",
+   "loxilb_kv_subscriber_last_event_timestamp_seconds",
    "loxilb_kv_subscriber_wire_reject_total",
    "loxilb_pd_connect_retry_same_ep_ok_total",
    "loxilb_pd_connect_retry_same_ep_total",
    "loxilb_persist_total",
-   "loxilb_snapshot_quarantine_total"
+   "loxilb_snapshot_quarantine_total",
+   "loxilb_sockproxy_sync_peer_lag_seconds",
+   "loxilb_sockproxy_sync_peer_up"
   ]
+ },
+ "coverage_waivers": {
+  "loxilb_ai_engine_info": "Info metric (constant 1) for PromQL joins and legend enrichment of engine identity; standalone display would duplicate configuration.",
+  "loxilb_ai_token_quota_model_limit_tokens": "Join denominator behind the dashboarded quota-utilization ratios; displaying raw configured limits duplicates config, utilization panels answer headroom.",
+  "loxilb_autopersist_consecutive_failures": "Is auto-persist silently failing so config changes would not survive a restart? Interim: loxilb_config_dirty held at 1 across the debounce window surfaces the same exposure. Panel + alert arrive with the persistence-panel extension in the config generation follow-up.",
+  "loxilb_boot_legacy_fallback_total": "Did a boot degrade to legacy txt config replay? Interim: LoxilbRestore alerts cover the failed snapshot path that precedes the fallback, and boot logs record the arbitration. Panel arrives with the persistence-panel extension in the config generation follow-up.",
+  "loxilb_closed_connections_processed_total": "Internal conntrack-sweep finalization bookkeeping; a stall surfaces as missing closed-flow traffic in the dashboarded counters \u2014 diagnostic query only.",
+  "loxilb_endpoint_traffic_bytes_total": "Superseded on dashboards by loxilb_backend_traffic_bytes_total (exact DP counters, ip:port attribution); kept exported for persistent-flow comparison and external consumers.",
+  "loxilb_errors_total": "Instance-level aggregate of loxilb_service_errors_total, which is dashboarded; sum() of the per-service sibling answers it exactly.",
+  "loxilb_host_cpu_utilization_percent": "Legacy duplicate of loxilb_system_cpu_utilization_percent, which the overview CPU/Memory/Disk panel shows; kept exported for older external dashboards.",
+  "loxilb_ipfilter_blacklist_bytes_total": "Byte-volume twin of the dashboarded ipfilter packet counters; filter verdicts are judged by packet counts, byte volume stays an ad-hoc query.",
+  "loxilb_ipfilter_whitelist_bytes_total": "Byte-volume twin of the dashboarded ipfilter packet counters; filter verdicts are judged by packet counts, byte volume stays an ad-hoc query.",
+  "loxilb_lb_rule_interaction_bytes_total": "Flow-identity (service x sip x dip) forensic counter with unbounded client cardinality; deliberately not dashboarded \u2014 client-traffic and per-backend panels answer the operational question, ad-hoc query for forensics.",
+  "loxilb_lb_rule_interaction_packets_total": "Flow-identity (service x sip x dip) forensic counter with unbounded client cardinality; deliberately not dashboarded \u2014 client-traffic and per-backend panels answer the operational question, ad-hoc query for forensics.",
+  "loxilb_pd_ep_info": "Info metric (constant 1) mapping ep_idx to endpoint IP for PromQL joins; standalone display would duplicate configuration.",
+  "loxilb_persist_total": "Did the last persist attempts succeed? Interim: the config persistence API (GET /config/persist/status) reports last-persist outcome, and loxilb_config_dirty staying 1 exposes a persist that never lands. Panel arrives with the persistence-panel extension shipped alongside the config generation gauge follow-up.",
+  "loxilb_processed_packets_total": "Aggregate of the per-protocol packet counters already dashboarded on Packets/s by protocol; sum() over those series answers it exactly.",
+  "loxilb_processed_sctp_bytes_total": "Per-protocol byte split of total throughput; the Throughput (DP bytes) and Packets/s-by-protocol panels answer the question \u2014 per-proto bytes stay an ad-hoc query.",
+  "loxilb_processed_tcp_bytes_total": "Per-protocol byte split of total throughput; the Throughput (DP bytes) and Packets/s-by-protocol panels answer the question \u2014 per-proto bytes stay an ad-hoc query.",
+  "loxilb_processed_udp_bytes_total": "Per-protocol byte split of total throughput; the Throughput (DP bytes) and Packets/s-by-protocol panels answer the question \u2014 per-proto bytes stay an ad-hoc query.",
+  "loxilb_security_udp_bytes_passed_total": "Byte twin of the dashboarded UDP passed/blocked packet counters and blocked-bytes panel; passed-byte volume adds no verdict signal.",
+  "loxilb_service_traffic_packets_total": "Per-service packet twin of the dashboarded bytes counter; the exact per-backend packets/s panel covers the packet-rate question with finer attribution.",
+  "loxilb_snapshot_quarantine_total": "Did a boot quarantine an unreplayable snapshot.json? Interim: quarantine events land in the gateway log and loxilb_boot_legacy_fallback_total or restore alerts fire on the same boot path. Panel arrives with the persistence-panel extension in the config generation follow-up."
  }
 }

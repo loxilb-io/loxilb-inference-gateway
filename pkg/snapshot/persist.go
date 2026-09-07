@@ -183,6 +183,9 @@ func Persist(doc *Document, dir string) (string, string, uint64, error) {
 // its metadata, so callers get the whole document rather than loose
 // fields.
 func WriteThrough(hooks Hooks, gatewayVersion, hostname, dir string) (string, *Document, error) {
+	// Watermark read before the capture: mutations racing the capture stay
+	// unclaimed so the config_dirty gauge can only over-report (metrics.go).
+	seq := beginPersistSeq()
 	doc, err := Capture(hooks, gatewayVersion, hostname, TriggerWriteThrough, nil)
 	if err != nil {
 		return "", nil, err
@@ -191,6 +194,7 @@ func WriteThrough(hooks Hooks, gatewayVersion, hostname, dir string) (string, *D
 	if err != nil {
 		return "", nil, err
 	}
+	completePersistSeq(seq)
 	return path, doc, nil
 }
 
