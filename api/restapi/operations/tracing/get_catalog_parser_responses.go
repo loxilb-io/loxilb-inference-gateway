@@ -103,6 +103,51 @@ func (o *GetCatalogParserUnauthorized) WriteResponse(rw http.ResponseWriter, pro
 	}
 }
 
+// GetCatalogParserForbiddenCode is the HTTP code returned for type GetCatalogParserForbidden
+const GetCatalogParserForbiddenCode int = 403
+
+/*
+GetCatalogParserForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getCatalogParserForbidden
+*/
+type GetCatalogParserForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetCatalogParserForbidden creates GetCatalogParserForbidden with default headers values
+func NewGetCatalogParserForbidden() *GetCatalogParserForbidden {
+
+	return &GetCatalogParserForbidden{}
+}
+
+// WithPayload adds the payload to the get catalog parser forbidden response
+func (o *GetCatalogParserForbidden) WithPayload(payload *models.Error) *GetCatalogParserForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get catalog parser forbidden response
+func (o *GetCatalogParserForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetCatalogParserForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetCatalogParserNotFoundCode is the HTTP code returned for type GetCatalogParserNotFound
 const GetCatalogParserNotFoundCode int = 404
 
@@ -185,6 +230,51 @@ func (o *GetCatalogParserInternalServerError) SetPayload(payload *models.Error) 
 func (o *GetCatalogParserInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetCatalogParserServiceUnavailableCode is the HTTP code returned for type GetCatalogParserServiceUnavailable
+const GetCatalogParserServiceUnavailableCode int = 503
+
+/*
+GetCatalogParserServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response getCatalogParserServiceUnavailable
+*/
+type GetCatalogParserServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetCatalogParserServiceUnavailable creates GetCatalogParserServiceUnavailable with default headers values
+func NewGetCatalogParserServiceUnavailable() *GetCatalogParserServiceUnavailable {
+
+	return &GetCatalogParserServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the get catalog parser service unavailable response
+func (o *GetCatalogParserServiceUnavailable) WithPayload(payload *models.Error) *GetCatalogParserServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get catalog parser service unavailable response
+func (o *GetCatalogParserServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetCatalogParserServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

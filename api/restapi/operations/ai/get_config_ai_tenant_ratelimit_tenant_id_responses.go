@@ -103,6 +103,51 @@ func (o *GetConfigAiTenantRatelimitTenantIDUnauthorized) WriteResponse(rw http.R
 	}
 }
 
+// GetConfigAiTenantRatelimitTenantIDForbiddenCode is the HTTP code returned for type GetConfigAiTenantRatelimitTenantIDForbidden
+const GetConfigAiTenantRatelimitTenantIDForbiddenCode int = 403
+
+/*
+GetConfigAiTenantRatelimitTenantIDForbidden Authenticated principal is not authorized to read tenant quotas
+
+swagger:response getConfigAiTenantRatelimitTenantIdForbidden
+*/
+type GetConfigAiTenantRatelimitTenantIDForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigAiTenantRatelimitTenantIDForbidden creates GetConfigAiTenantRatelimitTenantIDForbidden with default headers values
+func NewGetConfigAiTenantRatelimitTenantIDForbidden() *GetConfigAiTenantRatelimitTenantIDForbidden {
+
+	return &GetConfigAiTenantRatelimitTenantIDForbidden{}
+}
+
+// WithPayload adds the payload to the get config ai tenant ratelimit tenant Id forbidden response
+func (o *GetConfigAiTenantRatelimitTenantIDForbidden) WithPayload(payload *models.Error) *GetConfigAiTenantRatelimitTenantIDForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config ai tenant ratelimit tenant Id forbidden response
+func (o *GetConfigAiTenantRatelimitTenantIDForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigAiTenantRatelimitTenantIDForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigAiTenantRatelimitTenantIDNotFoundCode is the HTTP code returned for type GetConfigAiTenantRatelimitTenantIDNotFound
 const GetConfigAiTenantRatelimitTenantIDNotFoundCode int = 404
 
@@ -185,6 +230,51 @@ func (o *GetConfigAiTenantRatelimitTenantIDInternalServerError) SetPayload(paylo
 func (o *GetConfigAiTenantRatelimitTenantIDInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetConfigAiTenantRatelimitTenantIDServiceUnavailableCode is the HTTP code returned for type GetConfigAiTenantRatelimitTenantIDServiceUnavailable
+const GetConfigAiTenantRatelimitTenantIDServiceUnavailableCode int = 503
+
+/*
+GetConfigAiTenantRatelimitTenantIDServiceUnavailable Management credential store or API-key store unavailable
+
+swagger:response getConfigAiTenantRatelimitTenantIdServiceUnavailable
+*/
+type GetConfigAiTenantRatelimitTenantIDServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigAiTenantRatelimitTenantIDServiceUnavailable creates GetConfigAiTenantRatelimitTenantIDServiceUnavailable with default headers values
+func NewGetConfigAiTenantRatelimitTenantIDServiceUnavailable() *GetConfigAiTenantRatelimitTenantIDServiceUnavailable {
+
+	return &GetConfigAiTenantRatelimitTenantIDServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the get config ai tenant ratelimit tenant Id service unavailable response
+func (o *GetConfigAiTenantRatelimitTenantIDServiceUnavailable) WithPayload(payload *models.Error) *GetConfigAiTenantRatelimitTenantIDServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config ai tenant ratelimit tenant Id service unavailable response
+func (o *GetConfigAiTenantRatelimitTenantIDServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigAiTenantRatelimitTenantIDServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

@@ -103,6 +103,51 @@ func (o *GetConfigFirewallAllUnauthorized) WriteResponse(rw http.ResponseWriter,
 	}
 }
 
+// GetConfigFirewallAllForbiddenCode is the HTTP code returned for type GetConfigFirewallAllForbidden
+const GetConfigFirewallAllForbiddenCode int = 403
+
+/*
+GetConfigFirewallAllForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getConfigFirewallAllForbidden
+*/
+type GetConfigFirewallAllForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigFirewallAllForbidden creates GetConfigFirewallAllForbidden with default headers values
+func NewGetConfigFirewallAllForbidden() *GetConfigFirewallAllForbidden {
+
+	return &GetConfigFirewallAllForbidden{}
+}
+
+// WithPayload adds the payload to the get config firewall all forbidden response
+func (o *GetConfigFirewallAllForbidden) WithPayload(payload *models.Error) *GetConfigFirewallAllForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config firewall all forbidden response
+func (o *GetConfigFirewallAllForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigFirewallAllForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigFirewallAllInternalServerErrorCode is the HTTP code returned for type GetConfigFirewallAllInternalServerError
 const GetConfigFirewallAllInternalServerErrorCode int = 500
 

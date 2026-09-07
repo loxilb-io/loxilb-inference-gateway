@@ -58,6 +58,96 @@ func (o *DeleteAuthUsersIDOK) WriteResponse(rw http.ResponseWriter, producer run
 	}
 }
 
+// DeleteAuthUsersIDUnauthorizedCode is the HTTP code returned for type DeleteAuthUsersIDUnauthorized
+const DeleteAuthUsersIDUnauthorizedCode int = 401
+
+/*
+DeleteAuthUsersIDUnauthorized Missing or invalid management credential
+
+swagger:response deleteAuthUsersIdUnauthorized
+*/
+type DeleteAuthUsersIDUnauthorized struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewDeleteAuthUsersIDUnauthorized creates DeleteAuthUsersIDUnauthorized with default headers values
+func NewDeleteAuthUsersIDUnauthorized() *DeleteAuthUsersIDUnauthorized {
+
+	return &DeleteAuthUsersIDUnauthorized{}
+}
+
+// WithPayload adds the payload to the delete auth users Id unauthorized response
+func (o *DeleteAuthUsersIDUnauthorized) WithPayload(payload *models.Error) *DeleteAuthUsersIDUnauthorized {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete auth users Id unauthorized response
+func (o *DeleteAuthUsersIDUnauthorized) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *DeleteAuthUsersIDUnauthorized) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(401)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// DeleteAuthUsersIDForbiddenCode is the HTTP code returned for type DeleteAuthUsersIDForbidden
+const DeleteAuthUsersIDForbiddenCode int = 403
+
+/*
+DeleteAuthUsersIDForbidden Authenticated principal is not authorized for this operation
+
+swagger:response deleteAuthUsersIdForbidden
+*/
+type DeleteAuthUsersIDForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewDeleteAuthUsersIDForbidden creates DeleteAuthUsersIDForbidden with default headers values
+func NewDeleteAuthUsersIDForbidden() *DeleteAuthUsersIDForbidden {
+
+	return &DeleteAuthUsersIDForbidden{}
+}
+
+// WithPayload adds the payload to the delete auth users Id forbidden response
+func (o *DeleteAuthUsersIDForbidden) WithPayload(payload *models.Error) *DeleteAuthUsersIDForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete auth users Id forbidden response
+func (o *DeleteAuthUsersIDForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *DeleteAuthUsersIDForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // DeleteAuthUsersIDInternalServerErrorCode is the HTTP code returned for type DeleteAuthUsersIDInternalServerError
 const DeleteAuthUsersIDInternalServerErrorCode int = 500
 
@@ -95,6 +185,51 @@ func (o *DeleteAuthUsersIDInternalServerError) SetPayload(payload *models.Error)
 func (o *DeleteAuthUsersIDInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// DeleteAuthUsersIDServiceUnavailableCode is the HTTP code returned for type DeleteAuthUsersIDServiceUnavailable
+const DeleteAuthUsersIDServiceUnavailableCode int = 503
+
+/*
+DeleteAuthUsersIDServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response deleteAuthUsersIdServiceUnavailable
+*/
+type DeleteAuthUsersIDServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewDeleteAuthUsersIDServiceUnavailable creates DeleteAuthUsersIDServiceUnavailable with default headers values
+func NewDeleteAuthUsersIDServiceUnavailable() *DeleteAuthUsersIDServiceUnavailable {
+
+	return &DeleteAuthUsersIDServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the delete auth users Id service unavailable response
+func (o *DeleteAuthUsersIDServiceUnavailable) WithPayload(payload *models.Error) *DeleteAuthUsersIDServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete auth users Id service unavailable response
+func (o *DeleteAuthUsersIDServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *DeleteAuthUsersIDServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

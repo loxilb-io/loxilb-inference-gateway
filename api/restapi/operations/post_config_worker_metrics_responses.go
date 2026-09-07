@@ -148,6 +148,51 @@ func (o *PostConfigWorkerMetricsUnauthorized) WriteResponse(rw http.ResponseWrit
 	}
 }
 
+// PostConfigWorkerMetricsForbiddenCode is the HTTP code returned for type PostConfigWorkerMetricsForbidden
+const PostConfigWorkerMetricsForbiddenCode int = 403
+
+/*
+PostConfigWorkerMetricsForbidden Authenticated principal is not authorized for this operation
+
+swagger:response postConfigWorkerMetricsForbidden
+*/
+type PostConfigWorkerMetricsForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigWorkerMetricsForbidden creates PostConfigWorkerMetricsForbidden with default headers values
+func NewPostConfigWorkerMetricsForbidden() *PostConfigWorkerMetricsForbidden {
+
+	return &PostConfigWorkerMetricsForbidden{}
+}
+
+// WithPayload adds the payload to the post config worker metrics forbidden response
+func (o *PostConfigWorkerMetricsForbidden) WithPayload(payload *models.Error) *PostConfigWorkerMetricsForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config worker metrics forbidden response
+func (o *PostConfigWorkerMetricsForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigWorkerMetricsForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // PostConfigWorkerMetricsInternalServerErrorCode is the HTTP code returned for type PostConfigWorkerMetricsInternalServerError
 const PostConfigWorkerMetricsInternalServerErrorCode int = 500
 

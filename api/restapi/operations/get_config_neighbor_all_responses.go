@@ -103,6 +103,51 @@ func (o *GetConfigNeighborAllUnauthorized) WriteResponse(rw http.ResponseWriter,
 	}
 }
 
+// GetConfigNeighborAllForbiddenCode is the HTTP code returned for type GetConfigNeighborAllForbidden
+const GetConfigNeighborAllForbiddenCode int = 403
+
+/*
+GetConfigNeighborAllForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getConfigNeighborAllForbidden
+*/
+type GetConfigNeighborAllForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigNeighborAllForbidden creates GetConfigNeighborAllForbidden with default headers values
+func NewGetConfigNeighborAllForbidden() *GetConfigNeighborAllForbidden {
+
+	return &GetConfigNeighborAllForbidden{}
+}
+
+// WithPayload adds the payload to the get config neighbor all forbidden response
+func (o *GetConfigNeighborAllForbidden) WithPayload(payload *models.Error) *GetConfigNeighborAllForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config neighbor all forbidden response
+func (o *GetConfigNeighborAllForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigNeighborAllForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigNeighborAllInternalServerErrorCode is the HTTP code returned for type GetConfigNeighborAllInternalServerError
 const GetConfigNeighborAllInternalServerErrorCode int = 500
 

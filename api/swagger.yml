@@ -41,6 +41,12 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/OperationResult'
+        '401':
+          $ref: '#/responses/ManagementUnauthorized'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
   '/config/export':
     get:
       summary: Export all configurations
@@ -65,6 +71,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error' 
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -103,6 +111,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '409':
           description: Another snapshot or restore operation is in progress
           schema:
@@ -151,6 +161,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '409':
           description: Another snapshot or restore operation is in progress
           schema:
@@ -178,6 +190,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '409':
           description: Another snapshot or restore operation is in progress
           schema:
@@ -258,6 +272,12 @@ paths:
       produces:
       - application/json
       responses:
+        '401':
+          $ref: '#/responses/ManagementUnauthorized'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
         "200":
           description: OK
           schema:
@@ -280,6 +300,18 @@ paths:
       produces:
       - application/json
       responses:
+        '401':
+          description: Invalid authentication credentials
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Authenticated principal is not authorized to list users
+          schema:
+            $ref: '#/definitions/Error'
+        '503':
+          description: Management credential store unavailable
+          schema:
+            $ref: '#/definitions/Error'
         "200":
           description: OK
           schema:
@@ -319,6 +351,10 @@ paths:
       - application/json
       security: [] # Authentication is enforced in the handler; see description
       responses:
+        '503':
+          description: Management credential store unavailable
+          schema:
+            $ref: '#/definitions/Error'
         "201":
           description: Created
           schema:
@@ -360,6 +396,12 @@ paths:
       produces:
       - application/json
       responses:
+        '401':
+          $ref: '#/responses/ManagementUnauthorized'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
         "200":
           description: OK
           schema:
@@ -392,6 +434,12 @@ paths:
       produces:
       - application/json
       responses:
+        '401':
+          $ref: '#/responses/ManagementUnauthorized'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
         "200":
           description: OK
           schema:
@@ -422,6 +470,10 @@ paths:
       produces:
       - application/json
       responses:
+        '403':
+          $ref: '#/responses/ManagementForbidden'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
         "200":
           description: OK
           schema:
@@ -516,6 +568,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -633,6 +687,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '404':
           description: Resource not found
           schema:
@@ -641,6 +697,8 @@ paths:
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
     delete:
       summary: Delete an existing Load balancer service
       description: Delete an existing load balancer service with .
@@ -758,6 +816,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '404':
           description: Resource not found
           schema:
@@ -766,6 +826,8 @@ paths:
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
   '/config/loadbalancer/id/{id}':
     get:
       summary: Get a Load balancer service by opaque id
@@ -786,6 +848,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '404':
           description: Resource not found
           schema:
@@ -794,6 +858,8 @@ paths:
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
   '/config/l7policy':
     post:
       summary: Create an L7 content-routing policy
@@ -824,6 +890,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '404':
           description: Referenced load-balancer not found
           schema:
@@ -836,6 +904,8 @@ paths:
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
     get:
       summary: Get all L7 content-routing policies
       operationId: getConfigL7PolicyAll
@@ -848,10 +918,14 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
   '/config/l7policy/id/{id}':
     get:
       summary: Get a single L7 content-routing policy by id
@@ -871,6 +945,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '404':
           description: Resource not found
           schema:
@@ -879,6 +955,8 @@ paths:
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
     delete:
       summary: Delete an L7 content-routing policy by id
       description: Detaches the policy from its load-balancer (proxy_detach_l7_policy regfrees every compiled REGEX) and removes the resource.
@@ -896,6 +974,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '404':
           description: Resource not found
           schema:
@@ -904,6 +984,8 @@ paths:
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
   '/config/cert':
     post:
       summary: Upload a TLS certificate under an opaque certId
@@ -934,10 +1016,14 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
   '/config/cert/{certId}':
     put:
       summary: Rotate the material under a stable certId
@@ -969,6 +1055,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '404':
           description: Certificate not found
           schema:
@@ -977,6 +1065,8 @@ paths:
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
     delete:
       summary: Delete a certId
       description: Removes the managed-dir material and unregisters the derived hostnames from the SNI store.
@@ -998,6 +1088,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '404':
           description: Certificate not found
           schema:
@@ -1006,6 +1098,8 @@ paths:
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
     get:
       summary: Get a certId's metadata
       description: Returns the certId metadata (id + auto-derived hostnames + public cert/chain). The private key is never returned.
@@ -1025,6 +1119,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '404':
           description: Certificate not found
           schema:
@@ -1033,6 +1129,8 @@ paths:
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
   '/config/loadbalancer/externalipaddress/{ip_address}/port/{port}/protocol/{proto}/status':
     get:
       summary: Get the lifecycle status of a Load balancer service
@@ -1063,6 +1161,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '404':
           description: Resource not found
           schema:
@@ -1071,6 +1171,8 @@ paths:
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
   '/config/loadbalancer/externalipaddress/{ip_address}/port/{port}/protocol/{proto}/kvexactstatus':
     get:
       summary: Get the resolved KV-exact composition status of Load balancer rules
@@ -1161,6 +1263,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '404':
           description: Resource not found
           schema:
@@ -1169,6 +1273,8 @@ paths:
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
   '/config/loadbalancer/externalipaddress/{ip_address}/port/{port}/portmax/{portmax}/protocol/{proto}':
     delete:
       summary: Delete an existing Load balancer service
@@ -1456,6 +1562,10 @@ paths:
           description: Bad Request - Certificate load failed or invalid parameters
           schema:
             $ref: '#/definitions/ErrorResponse'
+        '401':
+          $ref: '#/responses/ManagementUnauthorized'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '409':
           description: Conflict - Certificate already registered for this hostname
           schema:
@@ -1464,6 +1574,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/ErrorResponse'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
     delete:
       summary: Unregister SNI certificate globally
       description: Remove SNI certificate from global store
@@ -1485,6 +1597,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/SuccessResponse'
+        '401':
+          $ref: '#/responses/ManagementUnauthorized'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '404':
           description: Certificate not found
           schema:
@@ -1493,6 +1609,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/ErrorResponse'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
     get:
       summary: List all global SNI certificates
       description: Get all SNI certificates in the global certificate store (shared by all proxies)
@@ -1519,10 +1637,16 @@ paths:
               totalCertificates:
                 type: integer
                 description: Total number of registered certificates
+        '401':
+          $ref: '#/responses/ManagementUnauthorized'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal server error
           schema:
             $ref: '#/definitions/ErrorResponse'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 #----------------------------------------------
 # HTTP/HTTPS Tracing (Protocol Analyzer)
 #----------------------------------------------
@@ -1546,10 +1670,14 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
   '/config/trace/disable':
     post:
       summary: Disable HTTP/HTTPS protocol tracing
@@ -1570,10 +1698,14 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
   '/config/trace/status':
     get:
       summary: Get HTTP/HTTPS tracing status
@@ -1619,10 +1751,14 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
   '/config/trace/otlp':
     post:
       summary: Configure OTLP endpoint for trace export (with TLS security)
@@ -1696,10 +1832,14 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
     get:
       summary: Get OTLP endpoint configuration (with security settings)
       description: Returns current OTLP endpoint address, protocol, TLS settings, and connection status.
@@ -1743,10 +1883,14 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
   '/config/trace/catalogs':
     get:
       x-not-implemented: true  # declared but no handler wired (returns 501); do not build clients against this yet
@@ -1781,10 +1925,14 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
   '/config/trace/parsers':
     get:
       summary: List all available trace parsers
@@ -1817,10 +1965,14 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
   '/config/trace/catalog/{catalog_id}/parser':
     get:
       summary: Get parser assignment for a catalog
@@ -1849,6 +2001,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '404':
           description: Catalog not found
           schema:
@@ -1857,6 +2011,8 @@ paths:
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
     put:
       summary: Update parser assignment for a catalog
       description: |
@@ -1904,6 +2060,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '404':
           description: Catalog or parser not found
           schema:
@@ -1912,6 +2070,8 @@ paths:
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
     delete:
       summary: Remove parser assignment for a catalog
       description: |
@@ -1940,6 +2100,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '404':
           description: Catalog not found
           schema:
@@ -1948,6 +2110,8 @@ paths:
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 #----------------------------------------------
 # L4 Connection Tracing (TCP/SCTP)
 #----------------------------------------------
@@ -1997,10 +2161,14 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
   '/config/l4trace/disable':
     post:
       summary: Disable L4 connection tracing
@@ -2023,10 +2191,14 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
   '/config/l4trace/status':
     get:
       summary: Get L4 tracing status and statistics
@@ -2050,10 +2222,14 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
   '/config/l4trace/sampling':
     put:
       summary: Update L4 tracing sampling rate
@@ -2101,10 +2277,14 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
   '/config/l4trace/stats/reset':
     post:
       summary: Reset L4 tracing statistics
@@ -2128,10 +2308,14 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 #----------------------------------------------
 # Conntrack
 #----------------------------------------------
@@ -2153,6 +2337,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -2183,6 +2369,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -2353,6 +2541,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -2469,6 +2659,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -2595,6 +2787,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -2715,6 +2909,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -2834,6 +3030,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -2960,6 +3158,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -3090,6 +3290,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -3215,6 +3417,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -3338,6 +3542,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -3521,6 +3727,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '404':
           description: Vlan interface is not defined/Vlan member is not found on this Vlan interface
           schema:
@@ -3555,6 +3763,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -3583,6 +3793,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '409':
           description: Resource Conflict. VxLAN already exists OR dependency VRF/VNET not found
           schema:
@@ -3616,6 +3828,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -3651,6 +3865,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -3686,6 +3902,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -3716,6 +3934,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -3790,6 +4010,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -3969,6 +4191,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -4119,10 +4343,14 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
   '/config/ipfilter':
     post:
@@ -4148,10 +4376,14 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
     
     delete:
       summary: Delete an IP filter rule
@@ -4184,6 +4416,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '404':
           description: Resource not found
           schema:
@@ -4192,6 +4426,8 @@ paths:
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
 #----------------------------------------------
 # SYN Flood Protection
@@ -4223,10 +4459,14 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
     
     delete:
       summary: Disable unified security rate limiting
@@ -4244,6 +4484,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '404':
           description: Resource not found
           schema:
@@ -4252,6 +4494,8 @@ paths:
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
   '/config/securityrate/all':
     get:
@@ -4271,10 +4515,14 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
   '/config/securityrate/reset':
     put:
@@ -4287,10 +4535,14 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
 #----------------------------------------------
 # System Status
@@ -4308,6 +4560,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -4331,6 +4585,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -4353,6 +4609,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -4548,10 +4806,14 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
     
     post:
       summary: Update IPsec configuration
@@ -4576,10 +4838,14 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
   '/config/ipsec/tunnels/all':
     get:
@@ -4599,10 +4865,14 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
   '/config/ipsec/tunnels':
     post:
@@ -4626,6 +4896,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '409':
           description: Tunnel already exists
           schema:
@@ -4634,6 +4906,8 @@ paths:
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
   '/config/ipsec/tunnels/{name}':
     get:
@@ -4654,6 +4928,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '404':
           description: Tunnel not found
           schema:
@@ -4662,6 +4938,8 @@ paths:
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
     put:
       summary: Update an IPsec tunnel
@@ -4689,6 +4967,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '404':
           description: Tunnel not found
           schema:
@@ -4697,6 +4977,8 @@ paths:
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
     delete:
       summary: Delete an IPsec tunnel
@@ -4716,6 +4998,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '404':
           description: Tunnel not found
           schema:
@@ -4724,6 +5008,8 @@ paths:
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
   '/config/ipsec/tunnels/{name}/action':
     post:
@@ -4752,6 +5038,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '404':
           description: Tunnel not found
           schema:
@@ -4760,6 +5048,8 @@ paths:
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
   '/config/ipsec/tunnels/{name}/peerconfig':
     get:
@@ -4780,6 +5070,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '404':
           description: Tunnel not found
           schema:
@@ -4788,6 +5080,8 @@ paths:
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
   '/config/ipsec/sas/all':
     get:
@@ -4807,10 +5101,14 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
   '/config/ipsec/stats':
     get:
@@ -4825,10 +5123,14 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
     
     delete:
       summary: Reset IPsec statistics
@@ -4842,10 +5144,14 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
   '/config/ipsec/certificates/all':
     get:
@@ -4865,10 +5171,14 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
   '/config/ipsec/certificates':
     post:
@@ -4894,6 +5204,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '409':
           description: Certificate already exists
           schema:
@@ -4902,6 +5214,8 @@ paths:
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
   '/config/ipsec/certificates/{name}':
     get:
@@ -4922,6 +5236,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '404':
           description: Certificate not found
           schema:
@@ -4930,6 +5246,8 @@ paths:
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
     
     delete:
       summary: Delete a certificate
@@ -4949,6 +5267,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '404':
           description: Certificate not found
           schema:
@@ -4961,6 +5281,8 @@ paths:
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
   '/config/ipsec/certificates/validate':
     post:
@@ -4986,10 +5308,14 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
   '/config/ipsec/ca-certificates/all':
     get:
@@ -5009,10 +5335,14 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
   '/config/ipsec/ca-certificates':
     post:
@@ -5038,6 +5368,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '409':
           description: CA certificate already exists
           schema:
@@ -5046,6 +5378,8 @@ paths:
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
   '/config/ipsec/ca-certificates/{name}':
     get:
@@ -5066,6 +5400,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '404':
           description: CA certificate not found
           schema:
@@ -5074,6 +5410,8 @@ paths:
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
     
     delete:
       summary: Delete a CA certificate
@@ -5093,6 +5431,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '404':
           description: CA certificate not found
           schema:
@@ -5105,6 +5445,8 @@ paths:
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
 #----------------------------------------------
 # GoBGP
@@ -5422,6 +5764,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -5682,6 +6026,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -5705,6 +6051,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -5728,6 +6076,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -5756,6 +6106,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Failed to enable GPU monitoring
           schema:
@@ -5781,6 +6133,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Failed to disable GPU monitoring
           schema:
@@ -5802,6 +6156,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -5834,6 +6190,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Cleanup operation failed
           schema:
@@ -5865,6 +6223,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Failed to update metrics
           schema:
@@ -5885,6 +6245,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -5926,6 +6288,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -5958,6 +6322,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -5990,6 +6356,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -6011,6 +6379,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -6032,6 +6402,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -6073,6 +6445,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -6105,6 +6479,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -6137,6 +6513,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -6158,6 +6536,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -6179,6 +6559,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -6200,6 +6582,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error (health check failed)
           schema:
@@ -6255,6 +6639,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -6370,10 +6756,16 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/FlowCountMetrics'
+        '401':
+          $ref: '#/responses/ManagementUnauthorized'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
   '/metrics/hostcount':
     get:
@@ -6385,10 +6777,16 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/HostCountMetrics'
+        '401':
+          $ref: '#/responses/ManagementUnauthorized'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
   '/metrics/lbrulecount':
     get:
@@ -6400,10 +6798,16 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/LbRuleCountMetrics'
+        '401':
+          $ref: '#/responses/ManagementUnauthorized'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
   '/metrics/newflowcount':
     get:
@@ -6415,10 +6819,16 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/NewFlowCountMetrics'
+        '401':
+          $ref: '#/responses/ManagementUnauthorized'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
   '/metrics/requestcount':
     get:
@@ -6430,10 +6840,16 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/RequestCountMetrics'
+        '401':
+          $ref: '#/responses/ManagementUnauthorized'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
   '/metrics/errorcount':
     get:
@@ -6445,10 +6861,16 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/ErrorCountMetrics'
+        '401':
+          $ref: '#/responses/ManagementUnauthorized'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
   '/metrics/processedtraffic':
     get:
@@ -6460,10 +6882,16 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/ProcessedTrafficMetrics'
+        '401':
+          $ref: '#/responses/ManagementUnauthorized'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
   '/metrics/lbprocessedtraffic':
     get:
@@ -6475,10 +6903,16 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/LbProcessedTrafficMetrics'
+        '401':
+          $ref: '#/responses/ManagementUnauthorized'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
   '/metrics/epdisttraffic':
     get:
@@ -6490,10 +6924,16 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/EpDistTrafficMetrics'
+        '401':
+          $ref: '#/responses/ManagementUnauthorized'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
   '/metrics/servicedisttraffic':
     get:
@@ -6505,10 +6945,16 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/ServiceDistTrafficMetrics'
+        '401':
+          $ref: '#/responses/ManagementUnauthorized'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
   '/metrics/fwdrops':
     get:
@@ -6520,10 +6966,16 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/FwDropsMetrics'
+        '401':
+          $ref: '#/responses/ManagementUnauthorized'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
   '/metrics/reqcountperclient':
     get:
@@ -6535,10 +6987,16 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/ReqCountPerClientMetrics'
+        '401':
+          $ref: '#/responses/ManagementUnauthorized'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
   '/logs':
     get:
@@ -6587,10 +7045,16 @@ paths:
           description: Invalid query parameters
           schema:
             $ref: '#/definitions/Error'
+        '401':
+          $ref: '#/responses/ManagementUnauthorized'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal server error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
 #----------------------------------------------
 # Log Archives
@@ -6604,10 +7068,16 @@ paths:
           description: List of log archive files
           schema:
             $ref: '#/definitions/LogArchives'
+        '401':
+          $ref: '#/responses/ManagementUnauthorized'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal server error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
   '/log-archives/{filename}':
     get:
@@ -6634,6 +7104,10 @@ paths:
           description: Missing or invalid filename
           schema:
             $ref: '#/definitions/Error'
+        '401':
+          $ref: '#/responses/ManagementUnauthorized'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '404':
           description: File not found
           schema:
@@ -6642,6 +7116,8 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
 
 #----------------------------------------------
 # Topology
@@ -6660,6 +7136,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -6689,6 +7167,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
         '500':
           description: Internal service error
           schema:
@@ -6812,6 +7292,12 @@ paths:
                 type: array
                 items:
                   type: string
+        '401':
+          $ref: '#/responses/ManagementUnauthorized'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
     
   '/config/cors':
     post:
@@ -6927,8 +7413,16 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          description: Authenticated principal is not authorized to create API keys
+          schema:
+            $ref: '#/definitions/Error'
         '500':
           description: Internal service error
+          schema:
+            $ref: '#/definitions/Error'
+        '503':
+          description: Management credential store or API-key store unavailable
           schema:
             $ref: '#/definitions/Error'
       operationId: postConfigAiApikey
@@ -6954,8 +7448,16 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          description: Authenticated principal is not authorized to list API keys
+          schema:
+            $ref: '#/definitions/Error'
         '500':
           description: Internal service error
+          schema:
+            $ref: '#/definitions/Error'
+        '503':
+          description: Management credential store or API-key store unavailable
           schema:
             $ref: '#/definitions/Error'
       operationId: getConfigAiApikey
@@ -6980,12 +7482,20 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          description: Authenticated principal is not authorized to read API keys
+          schema:
+            $ref: '#/definitions/Error'
         '404':
           description: Resource not found
           schema:
             $ref: '#/definitions/Error'
         '500':
           description: Internal service error
+          schema:
+            $ref: '#/definitions/Error'
+        '503':
+          description: Management credential store or API-key store unavailable
           schema:
             $ref: '#/definitions/Error'
       operationId: getConfigAiApikeyKeyID
@@ -7007,12 +7517,20 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          description: Authenticated principal is not authorized to delete API keys
+          schema:
+            $ref: '#/definitions/Error'
         '404':
           description: Resource not found
           schema:
             $ref: '#/definitions/Error'
         '500':
           description: Internal service error
+          schema:
+            $ref: '#/definitions/Error'
+        '503':
+          description: Management credential store or API-key store unavailable
           schema:
             $ref: '#/definitions/Error'
       operationId: deleteConfigAiApikeyKeyID
@@ -7039,8 +7557,16 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          description: Authenticated principal is not authorized to update tenant quotas
+          schema:
+            $ref: '#/definitions/Error'
         '500':
           description: Internal service error
+          schema:
+            $ref: '#/definitions/Error'
+        '503':
+          description: Management credential store or API-key store unavailable
           schema:
             $ref: '#/definitions/Error'
       operationId: postConfigAiTenantRatelimit
@@ -7065,12 +7591,20 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          description: Authenticated principal is not authorized to read tenant quotas
+          schema:
+            $ref: '#/definitions/Error'
         '404':
           description: Resource not found
           schema:
             $ref: '#/definitions/Error'
         '500':
           description: Internal service error
+          schema:
+            $ref: '#/definitions/Error'
+        '503':
+          description: Management credential store or API-key store unavailable
           schema:
             $ref: '#/definitions/Error'
       operationId: getConfigAiTenantRatelimitTenantID
@@ -7178,6 +7712,12 @@ paths:
         schema:
           $ref: '#/definitions/OPAWatcherConfig'
       responses:
+        '401':
+          $ref: '#/responses/ManagementUnauthorized'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
         "200":
           description: OK
           schema:
@@ -7198,6 +7738,12 @@ paths:
       summary: "Get OPA L4 policy watcher status"
       description: "Returns current configuration and operational status of the OPA watcher."
       responses:
+        '401':
+          $ref: '#/responses/ManagementUnauthorized'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
         "200":
           description: OK
           schema:
@@ -7214,6 +7760,12 @@ paths:
       summary: "Stop and remove OPA L4 policy watcher"
       description: "Stops the running OPA watcher and removes its configuration."
       responses:
+        '401':
+          $ref: '#/responses/ManagementUnauthorized'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
         "200":
           description: OK
           schema:
@@ -7228,6 +7780,19 @@ paths:
 #----------------------------------------------
 # Schema definitions
 #----------------------------------------------
+responses:
+  ManagementForbidden:
+    description: Authenticated principal is not authorized for this operation
+    schema:
+      $ref: '#/definitions/Error'
+  ManagementStoreUnavailable:
+    description: Management credential store unavailable; the credential could not be evaluated
+    schema:
+      $ref: '#/definitions/Error'
+  ManagementUnauthorized:
+    description: Missing or invalid management credential
+    schema:
+      $ref: '#/definitions/Error'
 definitions:
   RestorePlanItem:
     type: object

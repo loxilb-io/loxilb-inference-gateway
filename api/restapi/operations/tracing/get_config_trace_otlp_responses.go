@@ -103,6 +103,51 @@ func (o *GetConfigTraceOtlpUnauthorized) WriteResponse(rw http.ResponseWriter, p
 	}
 }
 
+// GetConfigTraceOtlpForbiddenCode is the HTTP code returned for type GetConfigTraceOtlpForbidden
+const GetConfigTraceOtlpForbiddenCode int = 403
+
+/*
+GetConfigTraceOtlpForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getConfigTraceOtlpForbidden
+*/
+type GetConfigTraceOtlpForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigTraceOtlpForbidden creates GetConfigTraceOtlpForbidden with default headers values
+func NewGetConfigTraceOtlpForbidden() *GetConfigTraceOtlpForbidden {
+
+	return &GetConfigTraceOtlpForbidden{}
+}
+
+// WithPayload adds the payload to the get config trace otlp forbidden response
+func (o *GetConfigTraceOtlpForbidden) WithPayload(payload *models.Error) *GetConfigTraceOtlpForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config trace otlp forbidden response
+func (o *GetConfigTraceOtlpForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigTraceOtlpForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigTraceOtlpInternalServerErrorCode is the HTTP code returned for type GetConfigTraceOtlpInternalServerError
 const GetConfigTraceOtlpInternalServerErrorCode int = 500
 
@@ -140,6 +185,51 @@ func (o *GetConfigTraceOtlpInternalServerError) SetPayload(payload *models.Error
 func (o *GetConfigTraceOtlpInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetConfigTraceOtlpServiceUnavailableCode is the HTTP code returned for type GetConfigTraceOtlpServiceUnavailable
+const GetConfigTraceOtlpServiceUnavailableCode int = 503
+
+/*
+GetConfigTraceOtlpServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response getConfigTraceOtlpServiceUnavailable
+*/
+type GetConfigTraceOtlpServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigTraceOtlpServiceUnavailable creates GetConfigTraceOtlpServiceUnavailable with default headers values
+func NewGetConfigTraceOtlpServiceUnavailable() *GetConfigTraceOtlpServiceUnavailable {
+
+	return &GetConfigTraceOtlpServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the get config trace otlp service unavailable response
+func (o *GetConfigTraceOtlpServiceUnavailable) WithPayload(payload *models.Error) *GetConfigTraceOtlpServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config trace otlp service unavailable response
+func (o *GetConfigTraceOtlpServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigTraceOtlpServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

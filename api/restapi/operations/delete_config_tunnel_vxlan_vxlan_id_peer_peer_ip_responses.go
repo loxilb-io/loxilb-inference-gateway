@@ -103,6 +103,51 @@ func (o *DeleteConfigTunnelVxlanVxlanIDPeerPeerIPUnauthorized) WriteResponse(rw 
 	}
 }
 
+// DeleteConfigTunnelVxlanVxlanIDPeerPeerIPForbiddenCode is the HTTP code returned for type DeleteConfigTunnelVxlanVxlanIDPeerPeerIPForbidden
+const DeleteConfigTunnelVxlanVxlanIDPeerPeerIPForbiddenCode int = 403
+
+/*
+DeleteConfigTunnelVxlanVxlanIDPeerPeerIPForbidden Authenticated principal is not authorized for this operation
+
+swagger:response deleteConfigTunnelVxlanVxlanIdPeerPeerIpForbidden
+*/
+type DeleteConfigTunnelVxlanVxlanIDPeerPeerIPForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewDeleteConfigTunnelVxlanVxlanIDPeerPeerIPForbidden creates DeleteConfigTunnelVxlanVxlanIDPeerPeerIPForbidden with default headers values
+func NewDeleteConfigTunnelVxlanVxlanIDPeerPeerIPForbidden() *DeleteConfigTunnelVxlanVxlanIDPeerPeerIPForbidden {
+
+	return &DeleteConfigTunnelVxlanVxlanIDPeerPeerIPForbidden{}
+}
+
+// WithPayload adds the payload to the delete config tunnel vxlan vxlan Id peer peer Ip forbidden response
+func (o *DeleteConfigTunnelVxlanVxlanIDPeerPeerIPForbidden) WithPayload(payload *models.Error) *DeleteConfigTunnelVxlanVxlanIDPeerPeerIPForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config tunnel vxlan vxlan Id peer peer Ip forbidden response
+func (o *DeleteConfigTunnelVxlanVxlanIDPeerPeerIPForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *DeleteConfigTunnelVxlanVxlanIDPeerPeerIPForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // DeleteConfigTunnelVxlanVxlanIDPeerPeerIPInternalServerErrorCode is the HTTP code returned for type DeleteConfigTunnelVxlanVxlanIDPeerPeerIPInternalServerError
 const DeleteConfigTunnelVxlanVxlanIDPeerPeerIPInternalServerErrorCode int = 500
 

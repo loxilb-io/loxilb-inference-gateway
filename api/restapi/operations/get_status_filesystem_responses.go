@@ -103,6 +103,51 @@ func (o *GetStatusFilesystemUnauthorized) WriteResponse(rw http.ResponseWriter, 
 	}
 }
 
+// GetStatusFilesystemForbiddenCode is the HTTP code returned for type GetStatusFilesystemForbidden
+const GetStatusFilesystemForbiddenCode int = 403
+
+/*
+GetStatusFilesystemForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getStatusFilesystemForbidden
+*/
+type GetStatusFilesystemForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetStatusFilesystemForbidden creates GetStatusFilesystemForbidden with default headers values
+func NewGetStatusFilesystemForbidden() *GetStatusFilesystemForbidden {
+
+	return &GetStatusFilesystemForbidden{}
+}
+
+// WithPayload adds the payload to the get status filesystem forbidden response
+func (o *GetStatusFilesystemForbidden) WithPayload(payload *models.Error) *GetStatusFilesystemForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get status filesystem forbidden response
+func (o *GetStatusFilesystemForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetStatusFilesystemForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetStatusFilesystemInternalServerErrorCode is the HTTP code returned for type GetStatusFilesystemInternalServerError
 const GetStatusFilesystemInternalServerErrorCode int = 500
 

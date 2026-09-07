@@ -148,6 +148,51 @@ func (o *PostConfigGpuConversationsCleanupUnauthorized) WriteResponse(rw http.Re
 	}
 }
 
+// PostConfigGpuConversationsCleanupForbiddenCode is the HTTP code returned for type PostConfigGpuConversationsCleanupForbidden
+const PostConfigGpuConversationsCleanupForbiddenCode int = 403
+
+/*
+PostConfigGpuConversationsCleanupForbidden Authenticated principal is not authorized for this operation
+
+swagger:response postConfigGpuConversationsCleanupForbidden
+*/
+type PostConfigGpuConversationsCleanupForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigGpuConversationsCleanupForbidden creates PostConfigGpuConversationsCleanupForbidden with default headers values
+func NewPostConfigGpuConversationsCleanupForbidden() *PostConfigGpuConversationsCleanupForbidden {
+
+	return &PostConfigGpuConversationsCleanupForbidden{}
+}
+
+// WithPayload adds the payload to the post config gpu conversations cleanup forbidden response
+func (o *PostConfigGpuConversationsCleanupForbidden) WithPayload(payload *models.Error) *PostConfigGpuConversationsCleanupForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config gpu conversations cleanup forbidden response
+func (o *PostConfigGpuConversationsCleanupForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigGpuConversationsCleanupForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // PostConfigGpuConversationsCleanupInternalServerErrorCode is the HTTP code returned for type PostConfigGpuConversationsCleanupInternalServerError
 const PostConfigGpuConversationsCleanupInternalServerErrorCode int = 500
 

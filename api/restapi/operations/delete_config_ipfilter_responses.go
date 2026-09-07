@@ -148,6 +148,51 @@ func (o *DeleteConfigIpfilterUnauthorized) WriteResponse(rw http.ResponseWriter,
 	}
 }
 
+// DeleteConfigIpfilterForbiddenCode is the HTTP code returned for type DeleteConfigIpfilterForbidden
+const DeleteConfigIpfilterForbiddenCode int = 403
+
+/*
+DeleteConfigIpfilterForbidden Authenticated principal is not authorized for this operation
+
+swagger:response deleteConfigIpfilterForbidden
+*/
+type DeleteConfigIpfilterForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewDeleteConfigIpfilterForbidden creates DeleteConfigIpfilterForbidden with default headers values
+func NewDeleteConfigIpfilterForbidden() *DeleteConfigIpfilterForbidden {
+
+	return &DeleteConfigIpfilterForbidden{}
+}
+
+// WithPayload adds the payload to the delete config ipfilter forbidden response
+func (o *DeleteConfigIpfilterForbidden) WithPayload(payload *models.Error) *DeleteConfigIpfilterForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config ipfilter forbidden response
+func (o *DeleteConfigIpfilterForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *DeleteConfigIpfilterForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // DeleteConfigIpfilterNotFoundCode is the HTTP code returned for type DeleteConfigIpfilterNotFound
 const DeleteConfigIpfilterNotFoundCode int = 404
 
@@ -230,6 +275,51 @@ func (o *DeleteConfigIpfilterInternalServerError) SetPayload(payload *models.Err
 func (o *DeleteConfigIpfilterInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// DeleteConfigIpfilterServiceUnavailableCode is the HTTP code returned for type DeleteConfigIpfilterServiceUnavailable
+const DeleteConfigIpfilterServiceUnavailableCode int = 503
+
+/*
+DeleteConfigIpfilterServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response deleteConfigIpfilterServiceUnavailable
+*/
+type DeleteConfigIpfilterServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewDeleteConfigIpfilterServiceUnavailable creates DeleteConfigIpfilterServiceUnavailable with default headers values
+func NewDeleteConfigIpfilterServiceUnavailable() *DeleteConfigIpfilterServiceUnavailable {
+
+	return &DeleteConfigIpfilterServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the delete config ipfilter service unavailable response
+func (o *DeleteConfigIpfilterServiceUnavailable) WithPayload(payload *models.Error) *DeleteConfigIpfilterServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config ipfilter service unavailable response
+func (o *DeleteConfigIpfilterServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *DeleteConfigIpfilterServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

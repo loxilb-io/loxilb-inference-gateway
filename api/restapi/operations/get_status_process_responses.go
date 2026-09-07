@@ -103,6 +103,51 @@ func (o *GetStatusProcessUnauthorized) WriteResponse(rw http.ResponseWriter, pro
 	}
 }
 
+// GetStatusProcessForbiddenCode is the HTTP code returned for type GetStatusProcessForbidden
+const GetStatusProcessForbiddenCode int = 403
+
+/*
+GetStatusProcessForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getStatusProcessForbidden
+*/
+type GetStatusProcessForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetStatusProcessForbidden creates GetStatusProcessForbidden with default headers values
+func NewGetStatusProcessForbidden() *GetStatusProcessForbidden {
+
+	return &GetStatusProcessForbidden{}
+}
+
+// WithPayload adds the payload to the get status process forbidden response
+func (o *GetStatusProcessForbidden) WithPayload(payload *models.Error) *GetStatusProcessForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get status process forbidden response
+func (o *GetStatusProcessForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetStatusProcessForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetStatusProcessInternalServerErrorCode is the HTTP code returned for type GetStatusProcessInternalServerError
 const GetStatusProcessInternalServerErrorCode int = 500
 

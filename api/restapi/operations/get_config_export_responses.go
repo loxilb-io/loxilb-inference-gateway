@@ -147,6 +147,51 @@ func (o *GetConfigExportUnauthorized) WriteResponse(rw http.ResponseWriter, prod
 	}
 }
 
+// GetConfigExportForbiddenCode is the HTTP code returned for type GetConfigExportForbidden
+const GetConfigExportForbiddenCode int = 403
+
+/*
+GetConfigExportForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getConfigExportForbidden
+*/
+type GetConfigExportForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigExportForbidden creates GetConfigExportForbidden with default headers values
+func NewGetConfigExportForbidden() *GetConfigExportForbidden {
+
+	return &GetConfigExportForbidden{}
+}
+
+// WithPayload adds the payload to the get config export forbidden response
+func (o *GetConfigExportForbidden) WithPayload(payload *models.Error) *GetConfigExportForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config export forbidden response
+func (o *GetConfigExportForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigExportForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigExportInternalServerErrorCode is the HTTP code returned for type GetConfigExportInternalServerError
 const GetConfigExportInternalServerErrorCode int = 500
 

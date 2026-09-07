@@ -128,6 +128,51 @@ func (o *PostConfigAiTenantRatelimitUnauthorized) WriteResponse(rw http.Response
 	}
 }
 
+// PostConfigAiTenantRatelimitForbiddenCode is the HTTP code returned for type PostConfigAiTenantRatelimitForbidden
+const PostConfigAiTenantRatelimitForbiddenCode int = 403
+
+/*
+PostConfigAiTenantRatelimitForbidden Authenticated principal is not authorized to update tenant quotas
+
+swagger:response postConfigAiTenantRatelimitForbidden
+*/
+type PostConfigAiTenantRatelimitForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigAiTenantRatelimitForbidden creates PostConfigAiTenantRatelimitForbidden with default headers values
+func NewPostConfigAiTenantRatelimitForbidden() *PostConfigAiTenantRatelimitForbidden {
+
+	return &PostConfigAiTenantRatelimitForbidden{}
+}
+
+// WithPayload adds the payload to the post config ai tenant ratelimit forbidden response
+func (o *PostConfigAiTenantRatelimitForbidden) WithPayload(payload *models.Error) *PostConfigAiTenantRatelimitForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config ai tenant ratelimit forbidden response
+func (o *PostConfigAiTenantRatelimitForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigAiTenantRatelimitForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // PostConfigAiTenantRatelimitInternalServerErrorCode is the HTTP code returned for type PostConfigAiTenantRatelimitInternalServerError
 const PostConfigAiTenantRatelimitInternalServerErrorCode int = 500
 
@@ -165,6 +210,51 @@ func (o *PostConfigAiTenantRatelimitInternalServerError) SetPayload(payload *mod
 func (o *PostConfigAiTenantRatelimitInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// PostConfigAiTenantRatelimitServiceUnavailableCode is the HTTP code returned for type PostConfigAiTenantRatelimitServiceUnavailable
+const PostConfigAiTenantRatelimitServiceUnavailableCode int = 503
+
+/*
+PostConfigAiTenantRatelimitServiceUnavailable Management credential store or API-key store unavailable
+
+swagger:response postConfigAiTenantRatelimitServiceUnavailable
+*/
+type PostConfigAiTenantRatelimitServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigAiTenantRatelimitServiceUnavailable creates PostConfigAiTenantRatelimitServiceUnavailable with default headers values
+func NewPostConfigAiTenantRatelimitServiceUnavailable() *PostConfigAiTenantRatelimitServiceUnavailable {
+
+	return &PostConfigAiTenantRatelimitServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the post config ai tenant ratelimit service unavailable response
+func (o *PostConfigAiTenantRatelimitServiceUnavailable) WithPayload(payload *models.Error) *PostConfigAiTenantRatelimitServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config ai tenant ratelimit service unavailable response
+func (o *PostConfigAiTenantRatelimitServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigAiTenantRatelimitServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

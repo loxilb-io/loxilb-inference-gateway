@@ -103,6 +103,96 @@ func (o *PostSniCertificatesBadRequest) WriteResponse(rw http.ResponseWriter, pr
 	}
 }
 
+// PostSniCertificatesUnauthorizedCode is the HTTP code returned for type PostSniCertificatesUnauthorized
+const PostSniCertificatesUnauthorizedCode int = 401
+
+/*
+PostSniCertificatesUnauthorized Missing or invalid management credential
+
+swagger:response postSniCertificatesUnauthorized
+*/
+type PostSniCertificatesUnauthorized struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostSniCertificatesUnauthorized creates PostSniCertificatesUnauthorized with default headers values
+func NewPostSniCertificatesUnauthorized() *PostSniCertificatesUnauthorized {
+
+	return &PostSniCertificatesUnauthorized{}
+}
+
+// WithPayload adds the payload to the post sni certificates unauthorized response
+func (o *PostSniCertificatesUnauthorized) WithPayload(payload *models.Error) *PostSniCertificatesUnauthorized {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post sni certificates unauthorized response
+func (o *PostSniCertificatesUnauthorized) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostSniCertificatesUnauthorized) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(401)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// PostSniCertificatesForbiddenCode is the HTTP code returned for type PostSniCertificatesForbidden
+const PostSniCertificatesForbiddenCode int = 403
+
+/*
+PostSniCertificatesForbidden Authenticated principal is not authorized for this operation
+
+swagger:response postSniCertificatesForbidden
+*/
+type PostSniCertificatesForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostSniCertificatesForbidden creates PostSniCertificatesForbidden with default headers values
+func NewPostSniCertificatesForbidden() *PostSniCertificatesForbidden {
+
+	return &PostSniCertificatesForbidden{}
+}
+
+// WithPayload adds the payload to the post sni certificates forbidden response
+func (o *PostSniCertificatesForbidden) WithPayload(payload *models.Error) *PostSniCertificatesForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post sni certificates forbidden response
+func (o *PostSniCertificatesForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostSniCertificatesForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // PostSniCertificatesConflictCode is the HTTP code returned for type PostSniCertificatesConflict
 const PostSniCertificatesConflictCode int = 409
 
@@ -185,6 +275,51 @@ func (o *PostSniCertificatesInternalServerError) SetPayload(payload *models.Erro
 func (o *PostSniCertificatesInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// PostSniCertificatesServiceUnavailableCode is the HTTP code returned for type PostSniCertificatesServiceUnavailable
+const PostSniCertificatesServiceUnavailableCode int = 503
+
+/*
+PostSniCertificatesServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response postSniCertificatesServiceUnavailable
+*/
+type PostSniCertificatesServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostSniCertificatesServiceUnavailable creates PostSniCertificatesServiceUnavailable with default headers values
+func NewPostSniCertificatesServiceUnavailable() *PostSniCertificatesServiceUnavailable {
+
+	return &PostSniCertificatesServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the post sni certificates service unavailable response
+func (o *PostSniCertificatesServiceUnavailable) WithPayload(payload *models.Error) *PostSniCertificatesServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post sni certificates service unavailable response
+func (o *PostSniCertificatesServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostSniCertificatesServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

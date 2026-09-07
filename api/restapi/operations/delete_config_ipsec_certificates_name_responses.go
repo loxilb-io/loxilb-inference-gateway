@@ -103,6 +103,51 @@ func (o *DeleteConfigIpsecCertificatesNameUnauthorized) WriteResponse(rw http.Re
 	}
 }
 
+// DeleteConfigIpsecCertificatesNameForbiddenCode is the HTTP code returned for type DeleteConfigIpsecCertificatesNameForbidden
+const DeleteConfigIpsecCertificatesNameForbiddenCode int = 403
+
+/*
+DeleteConfigIpsecCertificatesNameForbidden Authenticated principal is not authorized for this operation
+
+swagger:response deleteConfigIpsecCertificatesNameForbidden
+*/
+type DeleteConfigIpsecCertificatesNameForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewDeleteConfigIpsecCertificatesNameForbidden creates DeleteConfigIpsecCertificatesNameForbidden with default headers values
+func NewDeleteConfigIpsecCertificatesNameForbidden() *DeleteConfigIpsecCertificatesNameForbidden {
+
+	return &DeleteConfigIpsecCertificatesNameForbidden{}
+}
+
+// WithPayload adds the payload to the delete config ipsec certificates name forbidden response
+func (o *DeleteConfigIpsecCertificatesNameForbidden) WithPayload(payload *models.Error) *DeleteConfigIpsecCertificatesNameForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config ipsec certificates name forbidden response
+func (o *DeleteConfigIpsecCertificatesNameForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *DeleteConfigIpsecCertificatesNameForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // DeleteConfigIpsecCertificatesNameNotFoundCode is the HTTP code returned for type DeleteConfigIpsecCertificatesNameNotFound
 const DeleteConfigIpsecCertificatesNameNotFoundCode int = 404
 
@@ -230,6 +275,51 @@ func (o *DeleteConfigIpsecCertificatesNameInternalServerError) SetPayload(payloa
 func (o *DeleteConfigIpsecCertificatesNameInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// DeleteConfigIpsecCertificatesNameServiceUnavailableCode is the HTTP code returned for type DeleteConfigIpsecCertificatesNameServiceUnavailable
+const DeleteConfigIpsecCertificatesNameServiceUnavailableCode int = 503
+
+/*
+DeleteConfigIpsecCertificatesNameServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response deleteConfigIpsecCertificatesNameServiceUnavailable
+*/
+type DeleteConfigIpsecCertificatesNameServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewDeleteConfigIpsecCertificatesNameServiceUnavailable creates DeleteConfigIpsecCertificatesNameServiceUnavailable with default headers values
+func NewDeleteConfigIpsecCertificatesNameServiceUnavailable() *DeleteConfigIpsecCertificatesNameServiceUnavailable {
+
+	return &DeleteConfigIpsecCertificatesNameServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the delete config ipsec certificates name service unavailable response
+func (o *DeleteConfigIpsecCertificatesNameServiceUnavailable) WithPayload(payload *models.Error) *DeleteConfigIpsecCertificatesNameServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config ipsec certificates name service unavailable response
+func (o *DeleteConfigIpsecCertificatesNameServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *DeleteConfigIpsecCertificatesNameServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

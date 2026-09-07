@@ -103,6 +103,51 @@ func (o *GetConfigIpsecTunnelsNamePeerconfigUnauthorized) WriteResponse(rw http.
 	}
 }
 
+// GetConfigIpsecTunnelsNamePeerconfigForbiddenCode is the HTTP code returned for type GetConfigIpsecTunnelsNamePeerconfigForbidden
+const GetConfigIpsecTunnelsNamePeerconfigForbiddenCode int = 403
+
+/*
+GetConfigIpsecTunnelsNamePeerconfigForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getConfigIpsecTunnelsNamePeerconfigForbidden
+*/
+type GetConfigIpsecTunnelsNamePeerconfigForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigIpsecTunnelsNamePeerconfigForbidden creates GetConfigIpsecTunnelsNamePeerconfigForbidden with default headers values
+func NewGetConfigIpsecTunnelsNamePeerconfigForbidden() *GetConfigIpsecTunnelsNamePeerconfigForbidden {
+
+	return &GetConfigIpsecTunnelsNamePeerconfigForbidden{}
+}
+
+// WithPayload adds the payload to the get config ipsec tunnels name peerconfig forbidden response
+func (o *GetConfigIpsecTunnelsNamePeerconfigForbidden) WithPayload(payload *models.Error) *GetConfigIpsecTunnelsNamePeerconfigForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config ipsec tunnels name peerconfig forbidden response
+func (o *GetConfigIpsecTunnelsNamePeerconfigForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigIpsecTunnelsNamePeerconfigForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigIpsecTunnelsNamePeerconfigNotFoundCode is the HTTP code returned for type GetConfigIpsecTunnelsNamePeerconfigNotFound
 const GetConfigIpsecTunnelsNamePeerconfigNotFoundCode int = 404
 
@@ -185,6 +230,51 @@ func (o *GetConfigIpsecTunnelsNamePeerconfigInternalServerError) SetPayload(payl
 func (o *GetConfigIpsecTunnelsNamePeerconfigInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetConfigIpsecTunnelsNamePeerconfigServiceUnavailableCode is the HTTP code returned for type GetConfigIpsecTunnelsNamePeerconfigServiceUnavailable
+const GetConfigIpsecTunnelsNamePeerconfigServiceUnavailableCode int = 503
+
+/*
+GetConfigIpsecTunnelsNamePeerconfigServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response getConfigIpsecTunnelsNamePeerconfigServiceUnavailable
+*/
+type GetConfigIpsecTunnelsNamePeerconfigServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigIpsecTunnelsNamePeerconfigServiceUnavailable creates GetConfigIpsecTunnelsNamePeerconfigServiceUnavailable with default headers values
+func NewGetConfigIpsecTunnelsNamePeerconfigServiceUnavailable() *GetConfigIpsecTunnelsNamePeerconfigServiceUnavailable {
+
+	return &GetConfigIpsecTunnelsNamePeerconfigServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the get config ipsec tunnels name peerconfig service unavailable response
+func (o *GetConfigIpsecTunnelsNamePeerconfigServiceUnavailable) WithPayload(payload *models.Error) *GetConfigIpsecTunnelsNamePeerconfigServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config ipsec tunnels name peerconfig service unavailable response
+func (o *GetConfigIpsecTunnelsNamePeerconfigServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigIpsecTunnelsNamePeerconfigServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

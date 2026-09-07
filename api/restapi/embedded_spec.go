@@ -121,11 +121,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "401": {
+            "$ref": "#/responses/ManagementUnauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal Server Error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -173,11 +182,17 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal Server Error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -202,8 +217,26 @@ func init() {
               }
             }
           },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized to list users",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -264,6 +297,12 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "description": "Management credential store unavailable",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
           }
         }
       }
@@ -317,11 +356,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "401": {
+            "$ref": "#/responses/ManagementUnauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal Server Error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       },
@@ -358,11 +406,20 @@ func init() {
               "$ref": "#/definitions/MessageResponse"
             }
           },
+          "401": {
+            "$ref": "#/responses/ManagementUnauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal Server Error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -399,8 +456,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized to list API keys",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store or API-key store unavailable",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -443,8 +512,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized to create API keys",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store or API-key store unavailable",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -482,6 +563,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized to read API keys",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "Resource not found",
             "schema": {
@@ -490,6 +577,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store or API-key store unavailable",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -522,6 +615,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized to delete API keys",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "Resource not found",
             "schema": {
@@ -530,6 +629,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store or API-key store unavailable",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -670,8 +775,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized to update tenant quotas",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store or API-key store unavailable",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -709,6 +826,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized to read tenant quotas",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "Resource not found",
             "schema": {
@@ -717,6 +840,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store or API-key store unavailable",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -815,6 +944,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
           },
           "500": {
             "description": "Internal service error",
@@ -1626,6 +1758,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -1738,11 +1873,17 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -1774,6 +1915,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "404": {
             "description": "Certificate not found",
             "schema": {
@@ -1785,6 +1929,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       },
@@ -1826,6 +1973,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "404": {
             "description": "Certificate not found",
             "schema": {
@@ -1837,6 +1987,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       },
@@ -1869,6 +2022,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "404": {
             "description": "Certificate not found",
             "schema": {
@@ -1880,6 +2036,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -1976,6 +2135,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -2015,6 +2177,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
           },
           "500": {
             "description": "Internal service error",
@@ -2117,6 +2282,15 @@ func init() {
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/responses/ManagementUnauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -2277,6 +2451,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
           },
           "500": {
             "description": "Internal service error",
@@ -2477,6 +2654,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -2583,6 +2763,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
           },
           "500": {
             "description": "Internal service error",
@@ -2873,6 +3056,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -2920,6 +3106,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Cleanup operation failed",
             "schema": {
@@ -2957,6 +3146,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
           },
           "500": {
             "description": "Failed to disable GPU monitoring",
@@ -2996,6 +3188,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Failed to enable GPU monitoring",
             "schema": {
@@ -3027,6 +3222,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
           },
           "500": {
             "description": "Internal service error",
@@ -3063,6 +3261,15 @@ func init() {
             "schema": {
               "$ref": "#/definitions/OperationResult"
             }
+          },
+          "401": {
+            "$ref": "#/responses/ManagementUnauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -3101,11 +3308,17 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       },
@@ -3153,6 +3366,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "404": {
             "description": "Resource not found",
             "schema": {
@@ -3164,6 +3380,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -3193,11 +3412,17 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -3219,11 +3444,17 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       },
@@ -3260,11 +3491,17 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -3303,6 +3540,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "409": {
             "description": "CA certificate already exists",
             "schema": {
@@ -3314,6 +3554,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -3343,11 +3586,17 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -3378,6 +3627,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "404": {
             "description": "CA certificate not found",
             "schema": {
@@ -3389,6 +3641,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       },
@@ -3417,6 +3672,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "404": {
             "description": "CA certificate not found",
             "schema": {
@@ -3434,6 +3692,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -3472,6 +3733,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "409": {
             "description": "Certificate already exists",
             "schema": {
@@ -3483,6 +3747,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -3512,11 +3779,17 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -3555,11 +3828,17 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -3590,6 +3869,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "404": {
             "description": "Certificate not found",
             "schema": {
@@ -3601,6 +3883,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       },
@@ -3629,6 +3914,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "404": {
             "description": "Certificate not found",
             "schema": {
@@ -3646,6 +3934,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -3675,11 +3966,17 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -3701,11 +3998,17 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       },
@@ -3725,11 +4028,17 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -3765,6 +4074,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "409": {
             "description": "Tunnel already exists",
             "schema": {
@@ -3776,6 +4088,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -3805,11 +4120,17 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -3840,6 +4161,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "404": {
             "description": "Tunnel not found",
             "schema": {
@@ -3851,6 +4175,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       },
@@ -3891,6 +4218,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "404": {
             "description": "Tunnel not found",
             "schema": {
@@ -3902,6 +4232,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       },
@@ -3930,6 +4263,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "404": {
             "description": "Tunnel not found",
             "schema": {
@@ -3941,6 +4277,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -3983,6 +4322,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "404": {
             "description": "Tunnel not found",
             "schema": {
@@ -3994,6 +4336,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -4024,6 +4369,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "404": {
             "description": "Tunnel not found",
             "schema": {
@@ -4035,6 +4383,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -4130,6 +4481,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
           },
           "500": {
             "description": "Internal service error",
@@ -4317,6 +4671,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -4438,11 +4795,17 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -4499,11 +4862,17 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -4563,11 +4932,17 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -4599,11 +4974,17 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -4629,11 +5010,17 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -4655,11 +5042,17 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       },
@@ -4694,6 +5087,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "404": {
             "description": "Referenced load-balancer not found",
             "schema": {
@@ -4711,6 +5107,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -4741,6 +5140,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "404": {
             "description": "Resource not found",
             "schema": {
@@ -4752,6 +5154,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       },
@@ -4778,6 +5183,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "404": {
             "description": "Resource not found",
             "schema": {
@@ -4789,6 +5197,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -4826,6 +5237,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
           },
           "500": {
             "description": "Internal service error",
@@ -4885,6 +5299,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -4916,6 +5333,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
           },
           "500": {
             "description": "Internal service error (health check failed)",
@@ -4966,6 +5386,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -4998,6 +5421,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -5029,6 +5455,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
           },
           "500": {
             "description": "Internal service error",
@@ -5144,6 +5573,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
           },
           "500": {
             "description": "Internal service error",
@@ -5359,6 +5791,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "404": {
             "description": "Resource not found",
             "schema": {
@@ -5370,6 +5805,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       },
@@ -5524,6 +5962,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "404": {
             "description": "Resource not found",
             "schema": {
@@ -5535,6 +5976,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -5668,6 +6112,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "404": {
             "description": "Resource not found",
             "schema": {
@@ -5679,6 +6126,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -5724,6 +6174,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "404": {
             "description": "Resource not found",
             "schema": {
@@ -5735,6 +6188,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -6005,6 +6461,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "404": {
             "description": "Resource not found",
             "schema": {
@@ -6016,6 +6475,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -6107,6 +6569,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -6142,6 +6607,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -6176,6 +6644,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
           },
           "500": {
             "description": "Internal service error",
@@ -6283,6 +6754,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
           },
           "500": {
             "description": "Internal service error",
@@ -6456,6 +6930,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -6558,11 +7035,20 @@ func init() {
               "$ref": "#/definitions/OPAWatcherStatus"
             }
           },
+          "401": {
+            "$ref": "#/responses/ManagementUnauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         },
         "x-raw-middleware": true
@@ -6597,11 +7083,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "401": {
+            "$ref": "#/responses/ManagementUnauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         },
         "x-raw-middleware": true
@@ -6620,11 +7115,20 @@ func init() {
               "$ref": "#/definitions/PostSuccess"
             }
           },
+          "401": {
+            "$ref": "#/responses/ManagementUnauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         },
         "x-raw-middleware": true
@@ -6774,6 +7278,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "409": {
             "description": "Another snapshot or restore operation is in progress",
             "schema": {
@@ -6828,6 +7335,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
           },
           "500": {
             "description": "Internal service error",
@@ -6887,6 +7397,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -6919,6 +7432,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -6950,6 +7466,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
           },
           "500": {
             "description": "Internal service error",
@@ -6999,6 +7518,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
           },
           "500": {
             "description": "Internal service error",
@@ -7107,6 +7629,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -7212,6 +7737,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -7280,6 +7808,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
           },
           "409": {
             "description": "Another snapshot or restore operation is in progress",
@@ -7539,11 +8070,17 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       },
@@ -7569,6 +8106,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "404": {
             "description": "Resource not found",
             "schema": {
@@ -7580,6 +8120,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -7609,11 +8152,17 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -7632,11 +8181,17 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -7732,6 +8287,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
           },
           "500": {
             "description": "Internal service error",
@@ -7905,6 +8463,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -8034,6 +8595,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "409": {
             "description": "Another snapshot or restore operation is in progress",
             "schema": {
@@ -8092,6 +8656,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "404": {
             "description": "Catalog not found",
             "schema": {
@@ -8103,6 +8670,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       },
@@ -8157,6 +8727,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "404": {
             "description": "Catalog or parser not found",
             "schema": {
@@ -8168,6 +8741,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       },
@@ -8204,6 +8780,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "404": {
             "description": "Catalog not found",
             "schema": {
@@ -8215,6 +8794,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -8248,11 +8830,17 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         },
         "x-not-implemented": true
@@ -8285,11 +8873,17 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -8321,11 +8915,17 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -8388,11 +8988,17 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       },
@@ -8480,11 +9086,17 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -8523,11 +9135,17 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -8591,11 +9209,17 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -8627,6 +9251,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
           },
           "409": {
             "description": "Resource Conflict. VxLAN already exists OR dependency VRF/VNET not found",
@@ -8674,6 +9301,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -8715,6 +9345,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
           },
           "500": {
             "description": "Internal service error",
@@ -8767,6 +9400,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -8815,6 +9451,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
           },
           "500": {
             "description": "Internal service error",
@@ -8922,6 +9561,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
           },
           "500": {
             "description": "Internal service error",
@@ -9125,6 +9767,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "404": {
             "description": "Vlan interface is not defined/Vlan member is not found on this Vlan interface",
             "schema": {
@@ -9162,6 +9807,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
           },
           "500": {
             "description": "Internal service error",
@@ -9208,6 +9856,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
           },
           "500": {
             "description": "Failed to update metrics",
@@ -9264,11 +9915,20 @@ func init() {
               "$ref": "#/definitions/LogArchives"
             }
           },
+          "401": {
+            "$ref": "#/responses/ManagementUnauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal server error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -9302,6 +9962,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "401": {
+            "$ref": "#/responses/ManagementUnauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "404": {
             "description": "File not found",
             "schema": {
@@ -9313,6 +9979,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -9366,11 +10035,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "401": {
+            "$ref": "#/responses/ManagementUnauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal server error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -9496,11 +10174,20 @@ func init() {
               "$ref": "#/definitions/EpDistTrafficMetrics"
             }
           },
+          "401": {
+            "$ref": "#/responses/ManagementUnauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         },
         "x-not-implemented": true
@@ -9517,11 +10204,20 @@ func init() {
               "$ref": "#/definitions/ErrorCountMetrics"
             }
           },
+          "401": {
+            "$ref": "#/responses/ManagementUnauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         },
         "x-not-implemented": true
@@ -9538,11 +10234,20 @@ func init() {
               "$ref": "#/definitions/FlowCountMetrics"
             }
           },
+          "401": {
+            "$ref": "#/responses/ManagementUnauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         },
         "x-not-implemented": true
@@ -9559,11 +10264,20 @@ func init() {
               "$ref": "#/definitions/FwDropsMetrics"
             }
           },
+          "401": {
+            "$ref": "#/responses/ManagementUnauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         },
         "x-not-implemented": true
@@ -9580,11 +10294,20 @@ func init() {
               "$ref": "#/definitions/HostCountMetrics"
             }
           },
+          "401": {
+            "$ref": "#/responses/ManagementUnauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         },
         "x-not-implemented": true
@@ -9601,11 +10324,20 @@ func init() {
               "$ref": "#/definitions/LbProcessedTrafficMetrics"
             }
           },
+          "401": {
+            "$ref": "#/responses/ManagementUnauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         },
         "x-not-implemented": true
@@ -9622,11 +10354,20 @@ func init() {
               "$ref": "#/definitions/LbRuleCountMetrics"
             }
           },
+          "401": {
+            "$ref": "#/responses/ManagementUnauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         },
         "x-not-implemented": true
@@ -9643,11 +10384,20 @@ func init() {
               "$ref": "#/definitions/NewFlowCountMetrics"
             }
           },
+          "401": {
+            "$ref": "#/responses/ManagementUnauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         },
         "x-not-implemented": true
@@ -9664,11 +10414,20 @@ func init() {
               "$ref": "#/definitions/ProcessedTrafficMetrics"
             }
           },
+          "401": {
+            "$ref": "#/responses/ManagementUnauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         },
         "x-not-implemented": true
@@ -9685,11 +10444,20 @@ func init() {
               "$ref": "#/definitions/ReqCountPerClientMetrics"
             }
           },
+          "401": {
+            "$ref": "#/responses/ManagementUnauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         },
         "x-not-implemented": true
@@ -9706,11 +10474,20 @@ func init() {
               "$ref": "#/definitions/RequestCountMetrics"
             }
           },
+          "401": {
+            "$ref": "#/responses/ManagementUnauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         },
         "x-not-implemented": true
@@ -9727,11 +10504,20 @@ func init() {
               "$ref": "#/definitions/ServiceDistTrafficMetrics"
             }
           },
+          "401": {
+            "$ref": "#/responses/ManagementUnauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         },
         "x-not-implemented": true
@@ -9753,6 +10539,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
           },
           "500": {
             "description": "Internal service error",
@@ -9795,6 +10584,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
           },
           "500": {
             "description": "Internal service error",
@@ -9988,11 +10780,20 @@ func init() {
               }
             }
           },
+          "401": {
+            "$ref": "#/responses/ManagementUnauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal server error",
             "schema": {
               "$ref": "#/definitions/ErrorResponse"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       },
@@ -10023,6 +10824,12 @@ func init() {
               "$ref": "#/definitions/ErrorResponse"
             }
           },
+          "401": {
+            "$ref": "#/responses/ManagementUnauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "409": {
             "description": "Conflict - Certificate already registered for this hostname",
             "schema": {
@@ -10034,6 +10841,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/ErrorResponse"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       },
@@ -10067,6 +10877,12 @@ func init() {
               "$ref": "#/definitions/SuccessResponse"
             }
           },
+          "401": {
+            "$ref": "#/responses/ManagementUnauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "404": {
             "description": "Certificate not found",
             "schema": {
@@ -10078,6 +10894,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/ErrorResponse"
             }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
           }
         }
       }
@@ -10098,6 +10917,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
           },
           "500": {
             "description": "Internal service error",
@@ -10131,6 +10953,9 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -10162,6 +10987,9 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
           },
           "500": {
             "description": "Internal service error",
@@ -16928,6 +17756,26 @@ func init() {
       }
     }
   },
+  "responses": {
+    "ManagementForbidden": {
+      "description": "Authenticated principal is not authorized for this operation",
+      "schema": {
+        "$ref": "#/definitions/Error"
+      }
+    },
+    "ManagementStoreUnavailable": {
+      "description": "Management credential store unavailable; the credential could not be evaluated",
+      "schema": {
+        "$ref": "#/definitions/Error"
+      }
+    },
+    "ManagementUnauthorized": {
+      "description": "Missing or invalid management credential",
+      "schema": {
+        "$ref": "#/definitions/Error"
+      }
+    }
+  },
   "securityDefinitions": {
     "BearerAuth": {
       "type": "apiKey",
@@ -17045,8 +17893,26 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "401": {
+            "description": "Missing or invalid management credential",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -17097,8 +17963,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -17126,8 +18004,26 @@ func init() {
               }
             }
           },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized to list users",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -17188,6 +18084,12 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "description": "Management credential store unavailable",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
           }
         }
       }
@@ -17241,8 +18143,26 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "401": {
+            "description": "Missing or invalid management credential",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -17282,8 +18202,26 @@ func init() {
               "$ref": "#/definitions/MessageResponse"
             }
           },
+          "401": {
+            "description": "Missing or invalid management credential",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -17323,8 +18261,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized to list API keys",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store or API-key store unavailable",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -17367,8 +18317,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized to create API keys",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store or API-key store unavailable",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -17406,6 +18368,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized to read API keys",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "Resource not found",
             "schema": {
@@ -17414,6 +18382,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store or API-key store unavailable",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -17446,6 +18420,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized to delete API keys",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "Resource not found",
             "schema": {
@@ -17454,6 +18434,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store or API-key store unavailable",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -17594,8 +18580,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized to update tenant quotas",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store or API-key store unavailable",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -17633,6 +18631,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized to read tenant quotas",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "Resource not found",
             "schema": {
@@ -17641,6 +18645,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store or API-key store unavailable",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -17736,6 +18746,12 @@ func init() {
           },
           "401": {
             "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -18550,6 +19566,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -18662,8 +19684,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -18698,6 +19732,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "Certificate not found",
             "schema": {
@@ -18706,6 +19746,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -18750,6 +19796,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "Certificate not found",
             "schema": {
@@ -18758,6 +19810,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -18793,6 +19851,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "Certificate not found",
             "schema": {
@@ -18801,6 +19865,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -18900,6 +19970,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -18936,6 +20012,12 @@ func init() {
           },
           "401": {
             "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -19040,6 +20122,24 @@ func init() {
                   }
                 }
               }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid management credential",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
+            "schema": {
+              "$ref": "#/definitions/Error"
             }
           }
         }
@@ -19198,6 +20298,12 @@ func init() {
           },
           "401": {
             "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -19401,6 +20507,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -19504,6 +20616,12 @@ func init() {
           },
           "401": {
             "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -19797,6 +20915,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -19844,6 +20968,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Cleanup operation failed",
             "schema": {
@@ -19878,6 +21008,12 @@ func init() {
           },
           "401": {
             "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -19920,6 +21056,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Failed to enable GPU monitoring",
             "schema": {
@@ -19948,6 +21090,12 @@ func init() {
           },
           "401": {
             "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -19987,6 +21135,24 @@ func init() {
             "schema": {
               "$ref": "#/definitions/OperationResult"
             }
+          },
+          "401": {
+            "description": "Missing or invalid management credential",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
           }
         }
       }
@@ -20025,8 +21191,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -20077,6 +21255,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "Resource not found",
             "schema": {
@@ -20085,6 +21269,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -20117,8 +21307,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -20143,8 +21345,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -20184,8 +21398,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -20227,6 +21453,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "409": {
             "description": "CA certificate already exists",
             "schema": {
@@ -20235,6 +21467,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -20267,8 +21505,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -20302,6 +21552,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "CA certificate not found",
             "schema": {
@@ -20310,6 +21566,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -20341,6 +21603,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "CA certificate not found",
             "schema": {
@@ -20355,6 +21623,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -20396,6 +21670,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "409": {
             "description": "Certificate already exists",
             "schema": {
@@ -20404,6 +21684,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -20436,8 +21722,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -20479,8 +21777,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -20514,6 +21824,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "Certificate not found",
             "schema": {
@@ -20522,6 +21838,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -20553,6 +21875,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "Certificate not found",
             "schema": {
@@ -20567,6 +21895,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -20599,8 +21933,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -20625,8 +21971,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -20649,8 +22007,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -20689,6 +22059,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "409": {
             "description": "Tunnel already exists",
             "schema": {
@@ -20697,6 +22073,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -20729,8 +22111,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -20764,6 +22158,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "Tunnel not found",
             "schema": {
@@ -20772,6 +22172,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -20815,6 +22221,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "Tunnel not found",
             "schema": {
@@ -20823,6 +22235,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -20854,6 +22272,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "Tunnel not found",
             "schema": {
@@ -20862,6 +22286,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -20907,6 +22337,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "Tunnel not found",
             "schema": {
@@ -20915,6 +22351,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -20948,6 +22390,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "Tunnel not found",
             "schema": {
@@ -20956,6 +22404,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -21051,6 +22505,12 @@ func init() {
           },
           "401": {
             "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -21241,6 +22701,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -21362,8 +22828,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -21424,8 +22902,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -21489,8 +22979,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -21525,8 +23027,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -21555,8 +23069,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -21581,8 +23107,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -21620,6 +23158,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "Referenced load-balancer not found",
             "schema": {
@@ -21634,6 +23178,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -21667,6 +23217,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "Resource not found",
             "schema": {
@@ -21675,6 +23231,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -21704,6 +23266,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "Resource not found",
             "schema": {
@@ -21712,6 +23280,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -21749,6 +23323,12 @@ func init() {
           },
           "401": {
             "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -21811,6 +23391,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -21839,6 +23425,12 @@ func init() {
           },
           "401": {
             "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -21892,6 +23484,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -21924,6 +23522,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -21952,6 +23556,12 @@ func init() {
           },
           "401": {
             "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -22067,6 +23677,12 @@ func init() {
           },
           "401": {
             "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -22285,6 +23901,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "Resource not found",
             "schema": {
@@ -22293,6 +23915,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -22450,6 +24078,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "Resource not found",
             "schema": {
@@ -22458,6 +24092,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -22594,6 +24234,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "Resource not found",
             "schema": {
@@ -22602,6 +24248,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -22650,6 +24302,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "Resource not found",
             "schema": {
@@ -22658,6 +24316,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -22931,6 +24595,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "Resource not found",
             "schema": {
@@ -22939,6 +24609,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -23033,6 +24709,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -23068,6 +24750,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -23099,6 +24787,12 @@ func init() {
           },
           "401": {
             "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -23206,6 +24900,12 @@ func init() {
           },
           "401": {
             "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -23382,6 +25082,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -23484,8 +25190,26 @@ func init() {
               "$ref": "#/definitions/OPAWatcherStatus"
             }
           },
+          "401": {
+            "description": "Missing or invalid management credential",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -23523,8 +25247,26 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "401": {
+            "description": "Missing or invalid management credential",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -23546,8 +25288,26 @@ func init() {
               "$ref": "#/definitions/PostSuccess"
             }
           },
+          "401": {
+            "description": "Missing or invalid management credential",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -23700,6 +25460,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "409": {
             "description": "Another snapshot or restore operation is in progress",
             "schema": {
@@ -23751,6 +25517,12 @@ func init() {
           },
           "401": {
             "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -23813,6 +25585,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -23845,6 +25623,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -23873,6 +25657,12 @@ func init() {
           },
           "401": {
             "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -23922,6 +25712,12 @@ func init() {
           },
           "401": {
             "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -24033,6 +25829,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -24138,6 +25940,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -24203,6 +26011,12 @@ func init() {
           },
           "401": {
             "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -24465,8 +26279,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -24495,6 +26321,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "Resource not found",
             "schema": {
@@ -24503,6 +26335,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -24535,8 +26373,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -24558,8 +26408,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -24655,6 +26517,12 @@ func init() {
           },
           "401": {
             "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -24831,6 +26699,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -24960,6 +26834,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "409": {
             "description": "Another snapshot or restore operation is in progress",
             "schema": {
@@ -25018,6 +26898,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "Catalog not found",
             "schema": {
@@ -25026,6 +26912,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -25083,6 +26975,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "Catalog or parser not found",
             "schema": {
@@ -25091,6 +26989,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -25130,6 +27034,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "Catalog not found",
             "schema": {
@@ -25138,6 +27048,12 @@ func init() {
           },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -25174,8 +27090,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -25211,8 +27139,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -25247,8 +27187,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -25314,8 +27266,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -25406,8 +27370,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -25449,8 +27425,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -25517,8 +27505,20 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -25550,6 +27550,12 @@ func init() {
           },
           "401": {
             "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -25600,6 +27606,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -25638,6 +27650,12 @@ func init() {
           },
           "401": {
             "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -25693,6 +27711,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -25738,6 +27762,12 @@ func init() {
           },
           "401": {
             "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -25845,6 +27875,12 @@ func init() {
           },
           "401": {
             "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -26051,6 +28087,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "Vlan interface is not defined/Vlan member is not found on this Vlan interface",
             "schema": {
@@ -26085,6 +28127,12 @@ func init() {
           },
           "401": {
             "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -26131,6 +28179,12 @@ func init() {
           },
           "401": {
             "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -26190,8 +28244,26 @@ func init() {
               "$ref": "#/definitions/LogArchives"
             }
           },
+          "401": {
+            "description": "Missing or invalid management credential",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -26228,6 +28300,18 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "401": {
+            "description": "Missing or invalid management credential",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "File not found",
             "schema": {
@@ -26236,6 +28320,12 @@ func init() {
           },
           "500": {
             "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -26292,8 +28382,26 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "401": {
+            "description": "Missing or invalid management credential",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -26422,8 +28530,26 @@ func init() {
               "$ref": "#/definitions/EpDistTrafficMetrics"
             }
           },
+          "401": {
+            "description": "Missing or invalid management credential",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -26443,8 +28569,26 @@ func init() {
               "$ref": "#/definitions/ErrorCountMetrics"
             }
           },
+          "401": {
+            "description": "Missing or invalid management credential",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -26464,8 +28608,26 @@ func init() {
               "$ref": "#/definitions/FlowCountMetrics"
             }
           },
+          "401": {
+            "description": "Missing or invalid management credential",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -26485,8 +28647,26 @@ func init() {
               "$ref": "#/definitions/FwDropsMetrics"
             }
           },
+          "401": {
+            "description": "Missing or invalid management credential",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -26506,8 +28686,26 @@ func init() {
               "$ref": "#/definitions/HostCountMetrics"
             }
           },
+          "401": {
+            "description": "Missing or invalid management credential",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -26527,8 +28725,26 @@ func init() {
               "$ref": "#/definitions/LbProcessedTrafficMetrics"
             }
           },
+          "401": {
+            "description": "Missing or invalid management credential",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -26548,8 +28764,26 @@ func init() {
               "$ref": "#/definitions/LbRuleCountMetrics"
             }
           },
+          "401": {
+            "description": "Missing or invalid management credential",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -26569,8 +28803,26 @@ func init() {
               "$ref": "#/definitions/NewFlowCountMetrics"
             }
           },
+          "401": {
+            "description": "Missing or invalid management credential",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -26590,8 +28842,26 @@ func init() {
               "$ref": "#/definitions/ProcessedTrafficMetrics"
             }
           },
+          "401": {
+            "description": "Missing or invalid management credential",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -26611,8 +28881,26 @@ func init() {
               "$ref": "#/definitions/ReqCountPerClientMetrics"
             }
           },
+          "401": {
+            "description": "Missing or invalid management credential",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -26632,8 +28920,26 @@ func init() {
               "$ref": "#/definitions/RequestCountMetrics"
             }
           },
+          "401": {
+            "description": "Missing or invalid management credential",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -26653,8 +28959,26 @@ func init() {
               "$ref": "#/definitions/ServiceDistTrafficMetrics"
             }
           },
+          "401": {
+            "description": "Missing or invalid management credential",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -26676,6 +29000,12 @@ func init() {
           },
           "401": {
             "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -26718,6 +29048,12 @@ func init() {
           },
           "401": {
             "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -26900,10 +29236,28 @@ func init() {
               }
             }
           },
+          "401": {
+            "description": "Missing or invalid management credential",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal server error",
             "schema": {
               "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
+            "schema": {
+              "$ref": "#/definitions/Error"
             }
           }
         }
@@ -26935,6 +29289,18 @@ func init() {
               "$ref": "#/definitions/ErrorResponse"
             }
           },
+          "401": {
+            "description": "Missing or invalid management credential",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "409": {
             "description": "Conflict - Certificate already registered for this hostname",
             "schema": {
@@ -26945,6 +29311,12 @@ func init() {
             "description": "Internal server error",
             "schema": {
               "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
+            "schema": {
+              "$ref": "#/definitions/Error"
             }
           }
         }
@@ -26979,6 +29351,18 @@ func init() {
               "$ref": "#/definitions/SuccessResponse"
             }
           },
+          "401": {
+            "description": "Missing or invalid management credential",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "404": {
             "description": "Certificate not found",
             "schema": {
@@ -26989,6 +29373,12 @@ func init() {
             "description": "Internal server error",
             "schema": {
               "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
+            "schema": {
+              "$ref": "#/definitions/Error"
             }
           }
         }
@@ -27007,6 +29397,12 @@ func init() {
           },
           "401": {
             "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -27043,6 +29439,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "500": {
             "description": "Internal service error",
             "schema": {
@@ -27071,6 +29473,12 @@ func init() {
           },
           "401": {
             "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -35424,6 +37832,26 @@ func init() {
           "description": "Number of queued requests (for confirmation)",
           "type": "integer"
         }
+      }
+    }
+  },
+  "responses": {
+    "ManagementForbidden": {
+      "description": "Authenticated principal is not authorized for this operation",
+      "schema": {
+        "$ref": "#/definitions/Error"
+      }
+    },
+    "ManagementStoreUnavailable": {
+      "description": "Management credential store unavailable; the credential could not be evaluated",
+      "schema": {
+        "$ref": "#/definitions/Error"
+      }
+    },
+    "ManagementUnauthorized": {
+      "description": "Missing or invalid management credential",
+      "schema": {
+        "$ref": "#/definitions/Error"
       }
     }
   },
