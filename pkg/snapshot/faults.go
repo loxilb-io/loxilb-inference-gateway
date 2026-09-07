@@ -117,4 +117,3 @@ func setTestFaultForTest(v string) func() {
 	testFaultVal = v
 	return func() { testFaultVal = prev }
 }
-

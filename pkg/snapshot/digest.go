@@ -295,7 +295,7 @@ func domainItemJSONs(name string, d *Domains) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		out := make([]string, 0, len(nj)+len(dj)+len(pj))
+		out := make([]string, 0)
 		for _, s := range nj {
 			out = append(out, "neighbor:"+s)
 		}
@@ -325,7 +325,7 @@ func domainItemJSONs(name string, d *Domains) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		out := make([]string, 0, len(tj)+len(cj)+len(caj))
+		out := make([]string, 0)
 		for _, s := range tj {
 			out = append(out, "tunnel:"+s)
 		}
