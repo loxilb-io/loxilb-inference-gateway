@@ -1,0 +1,194 @@
+# KV routing, P/D, persistence, and AI-policy alert rules.
+#
+# Every family here is a lazy vector or an eager scalar owned by the gateway
+# (see deploy/monitoring/manifest/metric-manifest.json). Alerts on lazy
+# families are naturally silent on deployments that never exercise the
+# feature: an absent series cannot fire. Thresholds are initial lab values —
+# tune with production baselines, and change rule + description + drill
+# together (never one of them alone).
+
+groups:
+  - name: loxilb-kv-events
+    rules:
+      # A wire reject means the subscriber DISCARDED a KV event it could not
+      # accept (bad epoch/schema/signature). Routing decisions then run on a
+      # stale inventory: real integrity loss, not noise.
+      - alert: LoxilbKvWireReject
+        expr: >-
+          sum by (cluster, instance, service, reason)
+          (rate(loxilb_kv_subscriber_wire_reject_total[5m])) > 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "KV events rejected at the wire ({{ $labels.reason }})"
+          description: "Subscriber {{ $labels.service }} on {{ $labels.instance }} is discarding KV events (reason {{ $labels.reason }}). KV-exact routing is running on a stale inventory until this clears."
+          dashboard: "LoxiLB / AI Gateway"
+          panel: "KV event integrity"
+
+      - alert: LoxilbKvSubscriberDisconnected
+        # Presence guard: the gauge exists only after first registration, and
+        # a subscriber that was never up must not page on a fresh deployment.
+        expr: >-
+          loxilb_kv_subscriber_connected == 0
+          and max_over_time(loxilb_kv_subscriber_connected[1h]) == 1
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "KV subscriber disconnected ({{ $labels.service }}/{{ $labels.ep }})"
+          description: "A previously connected KV event subscriber has been down for 2m; the inventory for its endpoint is frozen and will drift."
+          dashboard: "LoxiLB / AI Gateway"
+          panel: "KV subscribers up"
+
+      - alert: LoxilbKvReconnectStorm
+        expr: >-
+          sum by (cluster, instance, service, ep)
+          (increase(loxilb_kv_subscriber_reconnect_total[10m])) > 3
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "KV subscriber reconnect storm ({{ $labels.service }}/{{ $labels.ep }})"
+          description: "More than 3 reconnects in 10m sustained for 10m: the ZMQ session is flapping (network, engine restart loop, or publisher overload). Each reconnect risks a gap in KV events."
+          dashboard: "LoxiLB / AI Gateway"
+          panel: "KV event integrity"
+
+      - alert: LoxilbKvZeroHitWatchdog
+        expr: >-
+          sum by (cluster, instance, service_id)
+          (increase(loxilb_pd_kv_zero_hit_watchdog_total[15m])) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: "KV zero-hit watchdog tripped (service {{ $labels.service_id }})"
+          description: "The tier-1.5 watchdog observed a sustained window with zero KV exact hits while KV routing was active — inventory poisoning, hash mismatch, or an engine-side flush. Already debounced in the datapath; any increase is actionable."
+          dashboard: "LoxiLB / AI Gateway"
+          panel: "KV event integrity"
+
+      - alert: LoxilbTrtllmDrainOwnershipFault
+        expr: >-
+          sum by (cluster, instance, reason)
+          (increase(loxilb_ai_kv_trtllm_drain_ownership_fault_total[10m])) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: "TRT-LLM drain ownership fault ({{ $labels.reason }})"
+          description: "The destructive-read drain stream reported a continuity violation ({{ $labels.reason }}). Compare with the heal counter: faults without matching heals mean the drain owner is losing events."
+          dashboard: "LoxiLB / AI Gateway"
+          panel: "KV event integrity"
+
+  - name: loxilb-pd
+    rules:
+      - alert: LoxilbPdSameEpRetryExhausted
+        # Retries that never turn into successes: the endpoint accepts the
+        # connection race but the retry path is not recovering it.
+        expr: >-
+          sum by (cluster, instance)
+            (increase(loxilb_pd_connect_retry_same_ep_total[10m]))
+          -
+          sum by (cluster, instance)
+            (increase(loxilb_pd_connect_retry_same_ep_ok_total[10m]))
+          > 3
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "P/D same-endpoint connect retries failing"
+          description: "Same-endpoint connect retries are not succeeding (>3 unrecovered in 10m). Prefill/decode attach is degraded; check endpoint health and connection limits."
+          dashboard: "LoxiLB / AI Gateway"
+          panel: "P/D endpoint failures"
+
+      - alert: LoxilbPdEndpointDied
+        expr: >-
+          sum by (cluster, instance)
+            (increase(loxilb_pd_prefill_ep_died_total[10m]))
+          +
+          sum by (cluster, instance)
+            (increase(loxilb_pd_decode_ep_died_total[10m]))
+          > 0
+        labels: { severity: warning }
+        annotations:
+          summary: "P/D endpoint died mid-stream"
+          description: "A prefill or decode endpoint died with streams attached in the last 10m. In-flight requests failed over or aborted; investigate the engine that dropped."
+          dashboard: "LoxiLB / AI Gateway"
+          panel: "P/D endpoint failures"
+
+  - name: loxilb-persistence
+    rules:
+      - alert: LoxilbRestoreProblem
+        # Pre-created children: these series exist at 0 from boot, so
+        # increase() is reliable and absence is not expected on any build.
+        expr: >-
+          sum by (cluster, instance, mode, result)
+          (increase(loxilb_restore_total{result=~"rejected|error|rolled-back"}[15m])) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: "Configuration restore problem ({{ $labels.mode }}: {{ $labels.result }})"
+          description: "A restore run ended {{ $labels.result }}. rolled-back means the safety net worked but the persisted config did not apply; rejected/error mean the snapshot never applied. The running config may be older than operators expect."
+          dashboard: "LoxiLB / Overview"
+          panel: "Restore results"
+
+      - alert: LoxilbRestoreRollbackFailed
+        expr: >-
+          sum by (cluster, instance, mode)
+          (increase(loxilb_restore_total{result="ROLLBACK-FAILED"}[15m])) > 0
+        labels: { severity: critical }
+        annotations:
+          summary: "Restore rollback FAILED — config state undefined"
+          description: "A restore failed AND its rollback failed. The gateway's runtime config is in an undefined state; manual inspection required before the next restart persists it."
+          dashboard: "LoxiLB / Overview"
+          panel: "Restore results"
+
+  - name: loxilb-ai-policy
+    rules:
+      - alert: LoxilbPolicyStoreUnavailable
+        expr: >-
+          sum by (cluster, instance)
+          (increase(loxilb_ai_policy_store_unavailable_total[5m])) > 0
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "AI policy store unavailable"
+          description: "Requests are being admitted/denied without the policy store for 5m+. Quota, rate-limit, and model-allowlist decisions are running degraded."
+          dashboard: "LoxiLB / AI Gateway"
+          panel: "Policy store / unmetered"
+
+      - alert: LoxilbUnmeteredTraffic
+        expr: >-
+          sum by (cluster, instance, vip)
+          (rate(loxilb_ai_unmetered_requests_total[5m])) > 0
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "AI traffic bypassing metering (vip {{ $labels.vip }})"
+          description: "Requests on {{ $labels.vip }} are completing without token metering for 10m+. Billing/quota accounting is undercounting; check key attribution and usage-object parsing on that service."
+          dashboard: "LoxiLB / AI Gateway"
+          panel: "Policy store / unmetered"
+
+      - alert: LoxilbKvEnforcementFault
+        expr: loxilb_ai_kv_enforcement_fault > 0
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "KV attestation enforcement fault (rule {{ $labels.rule }})"
+          description: "The KV attestation enforcement gate is reporting a fault on rule {{ $labels.rule }} — engine capability enforcement is not being applied as configured."
+          dashboard: "LoxiLB / AI Gateway"
+          panel: "KV attestation"
+
+      - alert: LoxilbKvAttestProbeFailing
+        expr: >-
+          sum by (cluster, instance, reason)
+          (rate(loxilb_ai_kv_attest_probe_fail_total[10m])) > 0
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "KV attestation probes failing ({{ $labels.reason }})"
+          description: "Attestation probes have been failing for 10m ({{ $labels.reason }}). The gateway cannot verify engine KV capability; affected endpoints may be excluded from KV-exact routing."
+          dashboard: "LoxiLB / AI Gateway"
+          panel: "KV attestation"
+
+      - alert: LoxilbKvAttestEchoFailure
+        expr: >-
+          sum by (cluster, instance)
+          (increase(loxilb_ai_kv_attest_echo_total{result="fail"}[15m])) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: "KV attestation echo-challenge failures"
+          description: "Echo challenges failed in the last 15m: an engine answered attestation incorrectly. Possible engine misconfiguration or identity mismatch on the attested endpoint."
+          dashboard: "LoxiLB / AI Gateway"
+          panel: "KV attestation"

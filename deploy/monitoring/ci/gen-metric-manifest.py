@@ -45,7 +45,8 @@ import sys
 import tempfile
 
 HIST_SUFFIXES = ("_bucket", "_count", "_sum")
-METRIC_TOKEN = re.compile(r"\b((?:loxilb|doca|aictrl)_[a-z0-9_]+)\b")
+METRIC_TOKEN = re.compile(
+    r"(?<![A-Za-z0-9_:])((?:loxilb|doca|aictrl)_[a-z0-9_]+)(?![A-Za-z0-9_:])")
 LITERAL = re.compile(r'"((?:loxilb|doca|aictrl)_[a-z0-9_]+)"')
 SKIP_DIRS = {".git", "loxilb-ebpf", "vendor", "node_modules", "3rdparty",
              "__pycache__"}

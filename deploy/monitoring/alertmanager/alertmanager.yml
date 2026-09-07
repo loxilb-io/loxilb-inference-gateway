@@ -1,0 +1,44 @@
+# Alertmanager configuration — EXAMPLE receivers only.
+#
+# The shipped default delivers to a local webhook sink so the evaluation ->
+# delivery -> resolve path is testable without site secrets. Production
+# receivers (chat webhook URLs, SMTP credentials, pager keys) are SECRETS:
+# never commit them here. Inject a site config by bind-mounting over this
+# file or templating it from a secret store at deploy time; the compose file
+# mounts this path read-only either way.
+
+global:
+  resolve_timeout: 5m
+
+route:
+  # Group by alert identity per cluster/instance so one flapping instance
+  # batches into one notification stream instead of a page per evaluation.
+  group_by: ['alertname', 'cluster', 'instance']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  receiver: default-webhook
+  routes:
+    - matchers: [ 'severity="critical"' ]
+      receiver: default-webhook
+      # criticals re-notify faster while unresolved
+      repeat_interval: 1h
+
+inhibit_rules:
+  # A dead scrape target already explains every other alert from that
+  # instance; don't page twice for one outage.
+  - source_matchers: [ 'alertname="LoxilbScrapeDown"' ]
+    target_matchers: [ 'alertname!="LoxilbScrapeDown"' ]
+    equal: ['cluster', 'instance']
+  # A critical on an instance silences the warning-level version of the
+  # same alertname rather than stacking both.
+  - source_matchers: [ 'severity="critical"' ]
+    target_matchers: [ 'severity="warning"' ]
+    equal: ['alertname', 'cluster', 'instance']
+
+receivers:
+  - name: default-webhook
+    webhook_configs:
+      # Local sink (cicd/monitoring/notify-sink.py) — replace per site.
+      - url: http://127.0.0.1:9095/alerts
+        send_resolved: true

@@ -1499,7 +1499,183 @@
         {
           "refId": "D",
           "expr": "increase(loxilb_ai_kv_attest_echo_total{result=\"fail\",instance=~\"$instance\"}[$__rate_interval])",
-          "legendFormat": "echo_fail {{rule}}"
+          "legendFormat": "echo_fail"
+        }
+      ]
+    },
+    {
+      "id": 38,
+      "type": "row",
+      "collapsed": true,
+      "title": "KV event integrity & AI policy (KV-exact / API-key deployments)",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 34
+      },
+      "panels": [
+        {
+          "id": 39,
+          "type": "timeseries",
+          "title": "KV event integrity",
+          "description": "Event-stream integrity for KV-exact routing. Wire rejects mean events were DISCARDED (stale inventory); reconnects risk gaps; watchdog trips mean sustained zero exact-hits while KV routing was active; drain faults are TRT-LLM destructive-read continuity violations (heals shown for comparison). Absent until a KV-exact deployment is active.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 35
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "loxilb-prom"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (reason) (rate(loxilb_kv_subscriber_wire_reject_total{instance=~\"$instance\"}[$__rate_interval]))",
+              "legendFormat": "wire_reject {{reason}}"
+            },
+            {
+              "refId": "B",
+              "expr": "sum by (ep) (rate(loxilb_kv_subscriber_reconnect_total{instance=~\"$instance\"}[$__rate_interval]))",
+              "legendFormat": "reconnect {{ep}}"
+            },
+            {
+              "refId": "C",
+              "expr": "sum by (ep) (rate(loxilb_kv_subscriber_recv_error_total{instance=~\"$instance\"}[$__rate_interval]))",
+              "legendFormat": "recv_error {{ep}}"
+            },
+            {
+              "refId": "D",
+              "expr": "sum by (service_id) (increase(loxilb_pd_kv_zero_hit_watchdog_total{instance=~\"$instance\"}[$__rate_interval]))",
+              "legendFormat": "zero_hit_watchdog svc {{service_id}}"
+            },
+            {
+              "refId": "E",
+              "expr": "sum by (reason) (rate(loxilb_ai_kv_trtllm_drain_ownership_fault_total{instance=~\"$instance\"}[$__rate_interval]))",
+              "legendFormat": "drain_fault {{reason}}"
+            },
+            {
+              "refId": "F",
+              "expr": "rate(loxilb_ai_kv_trtllm_drain_ownership_heal_total{instance=~\"$instance\"}[$__rate_interval])",
+              "legendFormat": "drain_heal"
+            }
+          ],
+          "options": {
+            "tooltip": {
+              "mode": "multi"
+            },
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No KV-exact activity"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 40,
+          "type": "timeseries",
+          "title": "P/D endpoint failures",
+          "description": "Prefill/decode endpoint failure handling: endpoints dying mid-stream, same-endpoint connect retries, and whether those retries succeed. Sustained retries without matching successes degrade P/D attach.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 35
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "loxilb-prom"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "increase(loxilb_pd_prefill_ep_died_total{instance=~\"$instance\"}[$__rate_interval])",
+              "legendFormat": "prefill_ep_died"
+            },
+            {
+              "refId": "B",
+              "expr": "increase(loxilb_pd_decode_ep_died_total{instance=~\"$instance\"}[$__rate_interval])",
+              "legendFormat": "decode_ep_died"
+            },
+            {
+              "refId": "C",
+              "expr": "increase(loxilb_pd_connect_retry_same_ep_total{instance=~\"$instance\"}[$__rate_interval])",
+              "legendFormat": "same_ep_retry"
+            },
+            {
+              "refId": "D",
+              "expr": "increase(loxilb_pd_connect_retry_same_ep_ok_total{instance=~\"$instance\"}[$__rate_interval])",
+              "legendFormat": "same_ep_retry_ok"
+            }
+          ],
+          "options": {
+            "tooltip": {
+              "mode": "multi"
+            },
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No P/D activity"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 41,
+          "type": "timeseries",
+          "title": "Policy store / unmetered",
+          "description": "AI policy-plane health: requests handled while the policy store was unavailable (admission decisions degraded), and traffic completing without token metering (billing/quota undercount) by VIP.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 43
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "loxilb-prom"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "rate(loxilb_ai_policy_store_unavailable_total{instance=~\"$instance\"}[$__rate_interval])",
+              "legendFormat": "policy_store_unavailable"
+            },
+            {
+              "refId": "B",
+              "expr": "sum by (vip) (rate(loxilb_ai_unmetered_requests_total{instance=~\"$instance\"}[$__rate_interval]))",
+              "legendFormat": "unmetered {{vip}}"
+            }
+          ],
+          "options": {
+            "tooltip": {
+              "mode": "multi"
+            },
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "None observed"
+            },
+            "overrides": []
+          }
         }
       ]
     }

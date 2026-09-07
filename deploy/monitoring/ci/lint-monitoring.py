@@ -50,7 +50,10 @@ BOUNDARY_DENY_EXACT = {"loxilb_kv_agent_up"}
 def boundary_violation(ref):
     return ref.startswith(BOUNDARY_DENY_PREFIXES) or ref in BOUNDARY_DENY_EXACT
 
-METRIC_TOKEN = re.compile(r"\b((?:loxilb|doca|aictrl)_[a-z0-9_]+)\b")
+# Lookarounds keep recorded-rule names (level:metric:operation) from
+# matching their embedded fragments as family references.
+METRIC_TOKEN = re.compile(
+    r"(?<![A-Za-z0-9_:])((?:loxilb|doca|aictrl)_[a-z0-9_]+)(?![A-Za-z0-9_:])")
 HIST_SUFFIXES = ("_bucket", "_count", "_sum")
 
 # Grafana datasource sentinels that are not the Prometheus datasource.
@@ -101,7 +104,7 @@ def collect_exporter_metrics(repo_root):
                             "metric-manifest.json")
     try:
         data = json.load(open(manifest, encoding="utf-8"))
-        return {f["name"] for f in data["families"]}
+        return {f["name"]: f.get("labels", []) for f in data["families"]}
     except (OSError, KeyError, json.JSONDecodeError):
         pass
     names = set()
@@ -119,7 +122,8 @@ def collect_exporter_metrics(repo_root):
                         names.add(m.group(1))
             except OSError:
                 pass
-    return names
+    # literal fallback knows names only; None labels disable legend checks
+    return {n: None for n in names}
 
 
 def is_known_metric(ref, exporter):
@@ -131,6 +135,39 @@ def is_known_metric(ref, exporter):
         if ref.endswith(suf) and ref[: -len(suf)] in exporter:
             return True
     return False
+
+
+LEGEND_VAR = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
+BY_CLAUSE = re.compile(r"\bby\s*\(([^)]*)\)")
+# Labels any Prometheus target/rule can carry regardless of the family schema.
+AMBIENT_LABELS = {"instance", "job", "cluster", "le", "quantile"}
+
+
+def check_legend(panel_title, target, exporter, rep, fname):
+    """A legendFormat variable must be a label the query can actually
+    produce: a label of the (single) referenced family, a by-clause label,
+    or an ambient scrape label. A variable that matches nothing renders an
+    empty legend in every deployment — a silent dashboard defect."""
+    legend = target.get("legendFormat") or ""
+    variables = LEGEND_VAR.findall(legend)
+    if not variables:
+        return
+    expr = target.get("expr") or ""
+    fams = {m.group(1) for m in METRIC_TOKEN.finditer(expr)}
+    fams = {f for f in fams if isinstance(exporter, dict) and f in exporter}
+    if len(fams) != 1:
+        return  # multi-family or recorded-rule exprs: label set not derivable
+    labels = exporter[next(iter(fams))]
+    if labels is None:
+        return  # literal-fallback mode has no schema knowledge
+    allowed = set(labels) | AMBIENT_LABELS
+    for grp in BY_CLAUSE.findall(expr):
+        allowed.update(x.strip() for x in grp.split(",") if x.strip())
+    for v in variables:
+        if v not in allowed:
+            rep.err(fname, f"panel '{panel_title}' legend uses '{{{{{v}}}}}' "
+                           f"but the queried family has labels "
+                           f"{sorted(labels)} (legend would render empty)")
 
 
 # ---------------------------------------------------------------------------
@@ -219,6 +256,7 @@ def lint_dashboards(mon_dir, exporter, rep):
                 if not expr or not expr.strip():
                     continue
                 all_exprs.append((name, expr))
+                check_legend(p.get("title"), t, exporter, rep, name)
                 for m in METRIC_TOKEN.finditer(expr):
                     ref = m.group(1)
                     if boundary_violation(ref):
@@ -293,29 +331,34 @@ def extract_rule_exprs_and_annotations(rules_path):
 
 
 def lint_rules(mon_dir, exporter, title_to_panels, rep):
-    rules_path = os.path.join(mon_dir, "prometheus/rules/loxilb-alerts.yml")
-    if not os.path.isfile(rules_path):
-        rep.err("rules", f"{rules_path} not found")
+    rule_paths = sorted(glob.glob(os.path.join(mon_dir,
+                                               "prometheus/rules/*.yml")))
+    if not rule_paths:
+        rep.err("rules", "no rule files found under prometheus/rules/")
         return
-    expr_blob, pairs = extract_rule_exprs_and_annotations(rules_path)
+    for rules_path in rule_paths:
+        fname = os.path.basename(rules_path)
+        expr_blob, pairs = extract_rule_exprs_and_annotations(rules_path)
 
-    for m in METRIC_TOKEN.finditer(expr_blob):
-        ref = m.group(1)
-        if boundary_violation(ref):
-            rep.err("loxilb-alerts.yml",
-                    f"alert expr references '{ref}', which belongs to a "
-                    f"component outside the default package boundary")
-        elif not is_known_metric(ref, exporter):
-            rep.err("loxilb-alerts.yml",
-                    f"alert expr references unknown metric '{ref}'")
+        for m in METRIC_TOKEN.finditer(expr_blob):
+            ref = m.group(1)
+            if boundary_violation(ref):
+                rep.err(fname,
+                        f"rule expr references '{ref}', which belongs to a "
+                        f"component outside the default package boundary")
+            elif not is_known_metric(ref, exporter):
+                rep.err(fname,
+                        f"rule expr references unknown metric '{ref}'")
 
-    for dash, panel in pairs:
-        if dash not in title_to_panels:
-            rep.err("loxilb-alerts.yml",
-                    f"annotation dashboard '{dash}' matches no dashboard title")
-        elif panel not in title_to_panels[dash]:
-            rep.err("loxilb-alerts.yml",
-                    f"annotation panel '{panel}' not found on '{dash}' (§3.7)")
+        for dash, panel in pairs:
+            if dash not in title_to_panels:
+                rep.err(fname,
+                        f"annotation dashboard '{dash}' matches no dashboard "
+                        f"title")
+            elif panel not in title_to_panels[dash]:
+                rep.err(fname,
+                        f"annotation panel '{panel}' not found on '{dash}' "
+                        f"(§3.7)")
 
 
 # ---------------------------------------------------------------------------
@@ -328,12 +371,21 @@ def find_promtool(explicit):
 
 
 def promtool_check_rules(promtool, mon_dir, rep):
-    rules_path = os.path.join(mon_dir, "prometheus/rules/loxilb-alerts.yml")
-    r = subprocess.run([promtool, "check", "rules", rules_path],
-                       capture_output=True, text=True)
-    if r.returncode != 0:
-        rep.err("promtool check rules",
-                (r.stdout + r.stderr).strip() or "failed")
+    for rules_path in sorted(glob.glob(os.path.join(mon_dir,
+                                                    "prometheus/rules/*.yml"))):
+        r = subprocess.run([promtool, "check", "rules", rules_path],
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            rep.err("promtool check rules",
+                    (r.stdout + r.stderr).strip() or "failed")
+    tests = sorted(glob.glob(os.path.join(mon_dir,
+                                          "prometheus/rules/tests/*.yml")))
+    for t in tests:
+        r = subprocess.run([promtool, "test", "rules", t],
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            rep.err("promtool test rules",
+                    (r.stdout + r.stderr).strip()[:800] or "failed")
 
 
 def _sub_macros(expr):
