@@ -195,7 +195,7 @@ func TestInitNodeSecretProvisionAndReload(t *testing.T) {
 }
 
 func TestCaptureNeverEmitsPlaintextSecrets(t *testing.T) {
-	// The F-CP-07 core claim: a captured document's canonical bytes never
+	// The core claim: a captured document's canonical bytes never
 	// contain a secret value in plaintext.
 	defer withTestNodeSecret(t)()
 	hooks := newMockHooks()

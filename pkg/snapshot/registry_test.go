@@ -441,7 +441,7 @@ func TestIPsecTunnelGetApplyDelete(t *testing.T) {
 	if err := getIPsec(hooks, doc); err != nil {
 		t.Fatalf("getIPsec: %v", err)
 	}
-	// F-CP-07 contract: the captured document carries the PSK ENCRYPTED,
+	// Secret-handling contract: the captured document carries the PSK ENCRYPTED,
 	// never plaintext -- and the live tunnel the hook returned must not
 	// have been mutated in place.
 	if len(doc.Domains.IPsec.Tunnels) != 1 {

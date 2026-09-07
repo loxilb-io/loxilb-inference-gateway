@@ -169,7 +169,7 @@ func TestRestoreReportsDependencyStatuses(t *testing.T) {
 	})
 }
 
-// TestResultPersistedMarkerEncoding pins the F-CP-13 wire contract: the
+// TestResultPersistedMarkerEncoding pins the wire contract: the
 // persisted marker is absent unless the write-through disposition is
 // known, and an explicit false (restore applied, persist FAILED) survives
 // encoding -- that explicit false is what keeps a degraded commit from
