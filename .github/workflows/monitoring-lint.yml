@@ -62,7 +62,9 @@ jobs:
           go-version-file: 'go.mod'
 
       - name: Run monitoring lint (Tier 0)
-        run: python3 deploy/monitoring/ci/lint-monitoring.py
+        run: |
+          python3 deploy/monitoring/ci/test_lint_monitoring.py
+          python3 deploy/monitoring/ci/lint-monitoring.py --require-promtool
 
       - name: Verify metric ownership manifest
         run: |

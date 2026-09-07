@@ -1,13 +1,13 @@
 {
  "contract": {
-  "total": 219,
+  "total": 223,
   "owners": {
-   "loxilb": 196,
+   "loxilb": 200,
    "loxilb-ai-controller": 19,
    "loxilb-kv-agent": 4
   },
   "classes": {
-   "default": 163,
+   "default": 167,
    "dpu-doca": 24,
    "aictrl-bridge": 8,
    "kv-agent-health": 1,
@@ -16,9 +16,9 @@
   }
  },
  "coverage": {
-  "default_families": 163,
+  "default_families": 167,
   "default_referenced": 95,
-  "default_unreferenced": 68
+  "default_unreferenced": 72
  },
  "families": [
   {
@@ -72,9 +72,7 @@
    "activation": "D+V",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [
-    "loxilb-overview.json"
-   ],
+   "consumers": [],
    "source": "pkg/loxinet/dpu_metrics.go:56"
   },
   {
@@ -150,9 +148,7 @@
    "activation": "D+E",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [
-    "loxilb-overview.json"
-   ],
+   "consumers": [],
    "source": "pkg/loxinet/dpu_metrics.go:79"
   },
   {
@@ -165,9 +161,7 @@
    "activation": "D+E",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [
-    "loxilb-overview.json"
-   ],
+   "consumers": [],
    "source": "pkg/loxinet/dpu_metrics.go:34"
   },
   {
@@ -208,9 +202,7 @@
    "activation": "D+E",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [
-    "loxilb-overview.json"
-   ],
+   "consumers": [],
    "source": "pkg/loxinet/dpu_metrics.go:46"
   },
   {
@@ -912,6 +904,19 @@
    "source": "api/prometheus/ai_metrics.go:296"
   },
   {
+   "name": "loxilb_autopersist_consecutive_failures",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "labels": [],
+   "activation": "E",
+   "priority": "p0",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/snapshot/metrics.go:60"
+  },
+  {
    "name": "loxilb_boot_config_conflict_total",
    "owner": "loxilb",
    "class": "default",
@@ -923,6 +928,19 @@
    "privacy": "none",
    "consumers": [],
    "source": "pkg/snapshot/metrics.go:50"
+  },
+  {
+   "name": "loxilb_boot_legacy_fallback_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "p0",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/snapshot/metrics.go:70"
   },
   {
    "name": "loxilb_client_traffic_packets_total",
@@ -1240,10 +1258,7 @@
    "activation": "E",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [
-    "loxilb-ai.json",
-    "loxilb-alerts.yml"
-   ],
+   "consumers": [],
    "source": "pkg/loxinet/kv_agent_client.go:46"
   },
   {
@@ -2050,6 +2065,21 @@
    "privacy": "none",
    "consumers": [],
    "source": "api/prometheus/sockproxy_metrics.go:693"
+  },
+  {
+   "name": "loxilb_persist_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [
+    "result"
+   ],
+   "activation": "P",
+   "priority": "p0",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/snapshot/metrics.go:55"
   },
   {
    "name": "loxilb_processed_bytes_total",
@@ -2868,6 +2898,19 @@
    "source": "api/prometheus/prometheus.go:340"
   },
   {
+   "name": "loxilb_snapshot_quarantine_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "labels": [],
+   "activation": "E",
+   "priority": "p0",
+   "privacy": "none",
+   "consumers": [],
+   "source": "pkg/snapshot/metrics.go:65"
+  },
+  {
    "name": "loxilb_snapshot_total",
    "owner": "loxilb",
    "class": "default",
@@ -3296,9 +3339,7 @@
    "activation": "T",
    "priority": "diagnostic",
    "privacy": "none",
-   "consumers": [
-    "loxilb-ai.json"
-   ],
+   "consumers": [],
    "source": "cmd/loxilb-ai-controller/metrics.go:155"
   },
   {

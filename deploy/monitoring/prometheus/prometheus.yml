@@ -1,16 +1,24 @@
 # Prometheus scrape config for LoxiLB Inference Gateway monitoring.
-# Design: docs/MONITORING-DESIGN.md §2 — scrape access model (revised, F11).
+# Internal monitoring design: scrape access model (revised, F11).
 #
 # DEFAULT: same-host, network-isolated plaintext scrape of loxilb's plain REST
 # listener. Run Prometheus on the loxilb host and bind loxilb's plain listener to
 # localhost (--host 127.0.0.1) or firewall :11111. The metrics endpoint is a
-# control-plane REST route: our supported mTLS is data-path only and does not
-# apply here, and TLS on the API listener is transport, not authentication.
-# If an API auth mode is enabled (--userservice/--oauth2), the scraper must also
-# send an Authorization: Bearer token — see MONITORING-DESIGN.md §2 (F11).
+# control-plane REST route with Swagger `security: []`; API auth modes do not
+# add a bearer check. The API HTTPS listener can separately require and verify
+# a scraper client certificate when TLS_CA_CERTIFICATE/--tls-ca is configured.
+# Current product profile: no AI-controller, KV-agent, DPU/DOCA, or PII-detection
+# scrape job. The Gateway endpoint can still expose source-registered bridge or
+# health gauges; default dashboards/rules must not treat those as packaged
+# component health. PII detection declares no Prometheus family.
 global:
   scrape_interval: 10s      # aligned to loxilb's 10s stats sweep; do not lower
   scrape_timeout: 5s
+  external_labels:
+    # Identifies this Prometheus's fleet in recording rules and federated or
+    # remote-write setups. Instance-level rules preserve (cluster, instance);
+    # fleet roll-ups aggregate over instances within one cluster. Set per site.
+    cluster: loxilb-default
   evaluation_interval: 10s
 
 rule_files:
@@ -31,13 +39,13 @@ scrape_configs:
     #   scheme: https
     #   tls_config:
     #     ca_file: /etc/prometheus/certs/rootCA.crt
-    #     # client cert = optional transport hardening only, NOT the auth boundary:
+    #     # Required when the Gateway API listener has --tls-ca configured:
     #     cert_file: /etc/prometheus/certs/client.crt
     #     key_file: /etc/prometheus/certs/client.key
     #   static_configs:
     #     - targets: ["<loxilb-ip>:8091"]   # cert SAN must cover this address
-    # If app-auth is enabled, also add:
-    #   authorization: { type: Bearer, credentials: "<long-lived token>" }
+    # Alternatively, place an authenticated reverse proxy or service-mesh
+    # policy in front of the app-layer unauthenticated endpoint.
 
   # Prometheus self-monitoring (soak checks use prometheus_tsdb_head_series).
   - job_name: prometheus
