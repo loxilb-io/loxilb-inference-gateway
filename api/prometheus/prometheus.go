@@ -243,19 +243,25 @@ var (
 	healthyHostCount = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: MetricHealthyEndpointsCount,
-			Help: "Number of healthy targets.",
+			Help: "Distinct endpoint hosts known to the health prober (deduplicated across LB rules) in state ok. Hosts without an activated probe report ok unless forced down.",
 		},
 	)
 	unHealthyHostCount = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: MetricUnhealthyEndpointsCount,
-			Help: "Number of unhealthy targets.",
+			Help: "Distinct endpoint hosts known to the health prober (deduplicated across LB rules) in any state other than ok (probe-inactive or forced down).",
 		},
 	)
 	ruleCount = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: MetricLBRuleCount,
 			Help: "Total number of load balancing rules.",
+		},
+	)
+	keyedServiceCount = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "loxilb_ai_keyed_services",
+			Help: "Number of LB services declaring api_key_auth=required. 0 means no service expects X-Api-Key enforcement — unmetered AI traffic is then the deployment's designed posture, not an anomaly (the unmetered-traffic alert guards on this gauge).",
 		},
 	)
 	newFlowCount = promauto.NewGauge(
@@ -929,6 +935,19 @@ func RunGetEndpoint(ctx context.Context) {
 	}, "endpoint_collection", ctx)
 }
 
+// countKeyedServices counts LB services declaring api_key_auth=required —
+// the loxilb_ai_keyed_services gauge feeding the unmetered-traffic alert's
+// guard. Unset and explicit-disabled declarations both count as unkeyed.
+func countKeyedServices(info []cmn.LbRuleMod) int {
+	keyed := 0
+	for i := range info {
+		if cmn.ResolveApiKeyAuth(info[i].Serv.ApiKeyAuth) == cmn.ApiKeyAuthRequired {
+			keyed++
+		}
+	}
+	return keyed
+}
+
 func RunGetLBRule(ctx context.Context) {
 	safeGoroutineOperation(func(ctx context.Context) error {
 		if hooks == nil {
@@ -945,6 +964,7 @@ func RunGetLBRule(ctx context.Context) {
 		mutex.Unlock()
 
 		ruleCount.Set(float64(len(info)))
+		keyedServiceCount.Set(float64(countKeyedServices(info)))
 
 		if enableSharedMetrics {
 			SetSharedMetric("lb_rule_count", float64(len(info)))

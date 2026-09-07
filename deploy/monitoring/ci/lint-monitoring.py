@@ -8,7 +8,7 @@ cannot re-catch on every change: a dashboard/alert referencing a metric the
 exporter no longer emits, a broken PromQL expr, an alert annotation pointing at a
 panel that was renamed, a panel wired to the wrong datasource.
 
-See docs/MONITORING-CICD.md (Tier 0). Run locally:
+Tier 0 of the internal monitoring CI plan. Run locally:
 
     python3 deploy/monitoring/ci/lint-monitoring.py
 

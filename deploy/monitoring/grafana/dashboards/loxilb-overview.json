@@ -60,7 +60,7 @@
       "id": 2,
       "type": "stat",
       "title": "Healthy endpoints",
-      "description": "Alert home: LoxilbNoHealthyEndpoints.",
+      "description": "Alert home: LoxilbNoHealthyEndpoints. Counts distinct endpoint hosts (health-probe targets deduplicated across LB rules), not per-rule endpoint attachments; hosts without an activated probe count as healthy unless forced down.",
       "gridPos": { "h": 4, "w": 3, "x": 3, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
       "targets": [{ "refId": "A", "expr": "loxilb_healthy_endpoints{instance=~\"$instance\"}" }],
@@ -77,6 +77,7 @@
       "id": 3,
       "type": "stat",
       "title": "Unhealthy endpoints",
+      "description": "Distinct endpoint hosts (deduplicated across LB rules) whose probe state is not ok — probe-inactive or forced down. Alert home: LoxilbUnhealthyEndpoints.",
       "gridPos": { "h": 4, "w": 3, "x": 6, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "loxilb-prom" },
       "targets": [{ "refId": "A", "expr": "loxilb_unhealthy_endpoints{instance=~\"$instance\"}" }],
@@ -152,6 +153,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
+          "noValue": "0",
           "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "#EAB839", "value": 0.001 } ] },
           "links": [ { "title": "L4 Load Balancer", "url": "/d/loxilb-l4/loxilb-l4-load-balancer" } ]
         },

@@ -2,7 +2,7 @@ name: Monitoring-Lint
 
 # Tier-0 hermetic correctness gate for the Prometheus + Grafana stack
 # (deploy/monitoring/). No loxilb, no traffic, no eBPF — pure static checks that
-# run in seconds on any runner. See docs/MONITORING-CICD.md (Tier 0).
+# run in seconds on any runner. See the internal monitoring CI plan (Tier 0).
 #
 # Catches the silent-drift class that manual validation can't re-catch per change:
 #   - a dashboard/alert referencing a metric the exporter no longer emits
