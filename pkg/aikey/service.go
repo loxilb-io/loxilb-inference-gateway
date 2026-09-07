@@ -252,6 +252,19 @@ func (s *Service) Connect() error {
 	return s.connect()
 }
 
+// Ready reports whether the key store currently answers: the pool exists
+// (the background dial has succeeded at least once) and a liveness ping
+// succeeds right now. This is the readiness-surface question -- distinct
+// from the restore engine's configured-check, which deliberately never
+// asks it (a store outage must not hold a boot replay hostage).
+func (s *Service) Ready() error {
+	db, err := s.store()
+	if err != nil {
+		return err
+	}
+	return db.Ping()
+}
+
 // NewService is New followed by Connect, for callers with no reason to publish
 // the service before the dial completes.
 func NewService() (*Service, error) {

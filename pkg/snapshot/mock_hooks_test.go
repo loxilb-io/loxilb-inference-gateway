@@ -17,6 +17,7 @@
 package snapshot
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 
@@ -43,6 +44,7 @@ type mockHooks struct {
 	endpoints []cmn.EndPointMod
 	lbRules   []cmn.LbRuleMod
 	kvBinds   []cmn.KvExactBindingMod
+	l7Pols    []cmn.L7PolicyArg
 	fwRules   []cmn.FwRuleMod
 	policies  []cmn.PolMod
 	mirrors   []cmn.MirrGetMod
@@ -56,6 +58,26 @@ type mockHooks struct {
 	bgpDefined    map[string][]cmn.GoBGPPolicyDefinedSetMod // by DefinedTypeString
 	bgpPolicyDefs []cmn.GoBGPPolicyDefinitionsMod
 	bgpGC         *cmn.GoBGPGlobalConfig
+
+	corsCfg    *cmn.CORSConfig
+	tracingCfg *cmn.TracingConfig
+	certMetas  []cmn.CertMeta
+
+	// depVerifyFail/depVerifyWarn drive NetRecoveryDepVerify by dependency
+	// type: an entry in depVerifyFail fails that type's verification (the
+	// node "lacks" the store); depVerifyWarn returns a degraded-store
+	// warning. Unlisted types verify clean.
+	depVerifyFail map[string]error
+	depVerifyWarn map[string]string
+
+	// recoveryDeps is what NetRecoveryDepsGet returns: the store
+	// identities the "gateway" is wired to (required flags on the
+	// database entries included, mirroring the real producer's
+	// ownership); Capture derives the manifest from these plus the
+	// document. Empty by default -- an unwired gateway has only its
+	// compiled-in stores, and tests that assert manifest content set
+	// this explicitly.
+	recoveryDeps []cmn.RecoveryDependency
 
 	ipsecConfig  *cmn.IPsecConfig
 	ipsecTunnels []*cmn.IPsecTunnel
@@ -94,8 +116,15 @@ type mockHooks struct {
 	// must target VERIFY's call specifically, not whichever comes first.
 	lenOverrideCall map[string]int
 
+	// mutateAt, keyed by "<op>#<call-number>", runs the given function just
+	// before the Nth call to the named Get hook builds its return value --
+	// for simulating a backend whose stored content DRIFTED between apply
+	// and a later re-Get (field corruption, runtime fields filled in),
+	// which lenOverride's count-only resizing cannot express.
+	mutateAt map[string]func()
+
 	// callCounts tracks how many times each hook has been called (1-indexed
-	// on first call), backing both failOnCall and lenOverrideCall.
+	// on first call), backing failOnCall, lenOverrideCall and mutateAt.
 	callCounts map[string]int
 }
 
@@ -106,6 +135,7 @@ func newMockHooks() *mockHooks {
 		failOnCall:      make(map[string]error),
 		lenOverride:     make(map[string]int),
 		lenOverrideCall: make(map[string]int),
+		mutateAt:        make(map[string]func()),
 		callCounts:      make(map[string]int),
 	}
 }
@@ -172,12 +202,26 @@ func resizeTo[T any](items []T, n int) []T {
 	return out
 }
 
-// resizeOverride is the generic resize applied by every slice-returning Get
-// method: if op has a pending lenOverride (any call) or lenOverrideCall (this
-// specific call number), it consumes/matches it and returns items resized
-// to that length; otherwise items is returned unchanged.
-func resizeOverride[T any](m *mockHooks, op string, items []T) []T {
+// mutateAtCall registers fn to run just before the call-th (1-indexed) call
+// to the named Get hook copies out its return value, so the test can drift
+// the stored content the way a corrupting backend would.
+func (m *mockHooks) mutateAtCall(op string, call int, fn func()) {
+	m.mutateAt[fmt.Sprintf("%s#%d", op, call)] = fn
+}
+
+// resizeOverride is the generic read path of every slice-returning Get
+// method. snap builds the returned copy of the store LAZILY, so a mutateAt
+// hook registered for this call number can drift the stored content first
+// and the copy reflects it -- an eager copy taken at the call site would
+// predate the mutation. After the (possibly drifted) snapshot is taken, a
+// pending lenOverride (any call) or lenOverrideCall (this call number)
+// resizes it; otherwise it is returned unchanged.
+func resizeOverride[T any](m *mockHooks, op string, snap func() []T) []T {
 	n := m.callSeq(op)
+	if fn, ok := m.mutateAt[fmt.Sprintf("%s#%d", op, n)]; ok {
+		fn()
+	}
+	items := snap()
 	if v, ok := m.lenOverride[op]; ok {
 		delete(m.lenOverride, op)
 		return resizeTo(items, v)
@@ -192,7 +236,7 @@ func resizeOverride[T any](m *mockHooks, op string, items []T) []T {
 
 func (m *mockHooks) NetEpHostGet() ([]cmn.EndPointMod, error) {
 	m.log("NetEpHostGet")
-	return resizeOverride(m, "NetEpHostGet", append([]cmn.EndPointMod(nil), m.endpoints...)), nil
+	return resizeOverride(m, "NetEpHostGet", func() []cmn.EndPointMod { return append([]cmn.EndPointMod(nil), m.endpoints...) }), nil
 }
 func (m *mockHooks) NetEpHostAdd(e *cmn.EndPointMod) (int, error) {
 	m.log("NetEpHostAdd:%s", e.Name)
@@ -221,7 +265,7 @@ func (m *mockHooks) NetEpHostDel(e *cmn.EndPointMod) (int, error) {
 
 func (m *mockHooks) NetLbRuleGet() ([]cmn.LbRuleMod, error) {
 	m.log("NetLbRuleGet")
-	return resizeOverride(m, "NetLbRuleGet", append([]cmn.LbRuleMod(nil), m.lbRules...)), nil
+	return resizeOverride(m, "NetLbRuleGet", func() []cmn.LbRuleMod { return append([]cmn.LbRuleMod(nil), m.lbRules...) }), nil
 }
 func (m *mockHooks) NetLbRuleAdd(l *cmn.LbRuleMod) (int, error) {
 	m.log("NetLbRuleAdd:%s", l.Serv.ServIP)
@@ -250,7 +294,7 @@ func (m *mockHooks) NetLbRuleDel(l *cmn.LbRuleMod) (int, error) {
 
 func (m *mockHooks) NetKvExactBindingGet() ([]cmn.KvExactBindingMod, error) {
 	m.log("NetKvExactBindingGet")
-	return resizeOverride(m, "NetKvExactBindingGet", append([]cmn.KvExactBindingMod(nil), m.kvBinds...)), nil
+	return resizeOverride(m, "NetKvExactBindingGet", func() []cmn.KvExactBindingMod { return append([]cmn.KvExactBindingMod(nil), m.kvBinds...) }), nil
 }
 func (m *mockHooks) NetKvExactBindingAdd(b *cmn.KvExactBindingMod) (int, error) {
 	m.log("NetKvExactBindingAdd:%s", b.RuleIdent)
@@ -275,11 +319,192 @@ func (m *mockHooks) NetKvExactBindingDel(b *cmn.KvExactBindingMod) (int, error) 
 	return 0, nil
 }
 
+// --- l7policy ---
+//
+// The mock mirrors the real registry's identity semantics (pkg/loxinet):
+// re-adding a byte-identical policy is the idempotent "l7policy-exists
+// error" no-op, a same-id-different-content add is the non-idempotent
+// "cant modify" conflict, and deleting an unknown id is "not-exists" --
+// the restore engine's boot-retry tolerance branches on exactly these
+// error shapes.
+
+func (m *mockHooks) NetL7PolicyGet() ([]cmn.L7PolicyArg, error) {
+	m.log("NetL7PolicyGet")
+	return resizeOverride(m, "NetL7PolicyGet", func() []cmn.L7PolicyArg { return append([]cmn.L7PolicyArg(nil), m.l7Pols...) }), nil
+}
+func (m *mockHooks) NetL7PolicyAdd(p *cmn.L7PolicyArg) (int, error) {
+	m.log("NetL7PolicyAdd:%s", p.Id)
+	if err := m.failIfConfigured("NetL7PolicyAdd"); err != nil {
+		return -1, err
+	}
+	for i := range m.l7Pols {
+		if m.l7Pols[i].Id == p.Id {
+			if reflect.DeepEqual(m.l7Pols[i], *p) {
+				return -1, errors.New("l7policy-exists error")
+			}
+			return -1, fmt.Errorf("l7policy-exist error: cant modify existing policy %s (delete and re-create)", p.Id)
+		}
+	}
+	m.l7Pols = append(m.l7Pols, *p)
+	return 0, nil
+}
+func (m *mockHooks) NetL7PolicyDel(id string) (int, error) {
+	m.log("NetL7PolicyDel:%s", id)
+	if err := m.failIfConfigured("NetL7PolicyDel"); err != nil {
+		return -1, err
+	}
+	out := m.l7Pols[:0]
+	found := false
+	for _, p := range m.l7Pols {
+		if p.Id == id {
+			found = true
+			continue
+		}
+		out = append(out, p)
+	}
+	if !found {
+		return -1, errors.New("l7policy not-exists error")
+	}
+	m.l7Pols = out
+	return 0, nil
+}
+
+// --- cors ---
+//
+// Singleton mirroring the real manager's export/set/reset semantics: nil
+// = unconfigured factory default; Set overwrites and makes it explicit;
+// Reset returns to nil.
+
+func (m *mockHooks) NetCORSGet() (*cmn.CORSConfig, error) {
+	m.log("NetCORSGet")
+	if err := m.failIfConfigured("NetCORSGet"); err != nil {
+		return nil, err
+	}
+	if m.corsCfg == nil {
+		return nil, nil
+	}
+	cp := *m.corsCfg
+	cp.Origins = append([]string(nil), m.corsCfg.Origins...)
+	return &cp, nil
+}
+func (m *mockHooks) NetCORSSet(cfg *cmn.CORSConfig) (int, error) {
+	m.log("NetCORSSet")
+	if err := m.failIfConfigured("NetCORSSet"); err != nil {
+		return -1, err
+	}
+	if cfg == nil {
+		return -1, errors.New("cors: nil config (use reset for the factory default)")
+	}
+	cp := *cfg
+	cp.Origins = append([]string(nil), cfg.Origins...)
+	m.corsCfg = &cp
+	return 0, nil
+}
+func (m *mockHooks) NetCORSReset() (int, error) {
+	m.log("NetCORSReset")
+	if err := m.failIfConfigured("NetCORSReset"); err != nil {
+		return -1, err
+	}
+	m.corsCfg = nil
+	return 0, nil
+}
+
+// --- tracing ---
+//
+// Singleton mirroring the real store's export/set/reset semantics: nil =
+// boot default only; Set overwrites and makes it explicit; Reset returns
+// to nil. (The real Set also re-joins header values from the node-local
+// secret store -- value handling never crosses the Hooks surface, so the
+// mock has nothing to model there.)
+
+func (m *mockHooks) NetTracingGet() (*cmn.TracingConfig, error) {
+	m.log("NetTracingGet")
+	if err := m.failIfConfigured("NetTracingGet"); err != nil {
+		return nil, err
+	}
+	if m.tracingCfg == nil {
+		return nil, nil
+	}
+	cp := *m.tracingCfg
+	cp.HeaderNames = append([]string(nil), m.tracingCfg.HeaderNames...)
+	return &cp, nil
+}
+func (m *mockHooks) NetTracingSet(cfg *cmn.TracingConfig) (int, error) {
+	m.log("NetTracingSet")
+	if err := m.failIfConfigured("NetTracingSet"); err != nil {
+		return -1, err
+	}
+	if cfg == nil {
+		return -1, errors.New("tracing: nil config (use reset for the boot default)")
+	}
+	cp := *cfg
+	cp.HeaderNames = append([]string(nil), cfg.HeaderNames...)
+	m.tracingCfg = &cp
+	return 0, nil
+}
+func (m *mockHooks) NetTracingReset() (int, error) {
+	m.log("NetTracingReset")
+	if err := m.failIfConfigured("NetTracingReset"); err != nil {
+		return -1, err
+	}
+	m.tracingCfg = nil
+	return 0, nil
+}
+
+// --- cert ---
+//
+// The mock mirrors the real registry's identity semantics: identical
+// re-add (same id, same digest) is the idempotent "cert-exists error"
+// no-op; the same id with a different digest is the non-idempotent
+// divergent-material conflict; deleting keeps nothing to model (the
+// managed-directory material never crosses the Hooks surface).
+
+func (m *mockHooks) NetCertGet() ([]cmn.CertMeta, error) {
+	m.log("NetCertGet")
+	return resizeOverride(m, "NetCertGet", func() []cmn.CertMeta { return append([]cmn.CertMeta(nil), m.certMetas...) }), nil
+}
+func (m *mockHooks) NetCertAdd(c *cmn.CertMeta) (int, error) {
+	m.log("NetCertAdd:%s", c.CertId)
+	if err := m.failIfConfigured("NetCertAdd"); err != nil {
+		return -1, err
+	}
+	for i := range m.certMetas {
+		if m.certMetas[i].CertId == c.CertId {
+			if m.certMetas[i].Digest == c.Digest {
+				return -1, errors.New("cert-exists error")
+			}
+			return -1, fmt.Errorf("cert-exist error: cant apply %s -- managed material on disk diverges from the captured digest", c.CertId)
+		}
+	}
+	m.certMetas = append(m.certMetas, *c)
+	return 0, nil
+}
+func (m *mockHooks) NetCertDel(id string) (int, error) {
+	m.log("NetCertDel:%s", id)
+	if err := m.failIfConfigured("NetCertDel"); err != nil {
+		return -1, err
+	}
+	out := m.certMetas[:0]
+	found := false
+	for _, c := range m.certMetas {
+		if c.CertId == id {
+			found = true
+			continue
+		}
+		out = append(out, c)
+	}
+	if !found {
+		return -1, errors.New("cert not-exists error")
+	}
+	m.certMetas = out
+	return 0, nil
+}
+
 // --- firewall ---
 
 func (m *mockHooks) NetFwRuleGet() ([]cmn.FwRuleMod, error) {
 	m.log("NetFwRuleGet")
-	return resizeOverride(m, "NetFwRuleGet", append([]cmn.FwRuleMod(nil), m.fwRules...)), nil
+	return resizeOverride(m, "NetFwRuleGet", func() []cmn.FwRuleMod { return append([]cmn.FwRuleMod(nil), m.fwRules...) }), nil
 }
 func (m *mockHooks) NetFwRuleAdd(f *cmn.FwRuleMod) (int, error) {
 	m.log("NetFwRuleAdd")
@@ -311,7 +536,7 @@ func (m *mockHooks) NetFwRuleDel(f *cmn.FwRuleMod) (int, error) {
 
 func (m *mockHooks) NetPolicerGet() ([]cmn.PolMod, error) {
 	m.log("NetPolicerGet")
-	return resizeOverride(m, "NetPolicerGet", append([]cmn.PolMod(nil), m.policies...)), nil
+	return resizeOverride(m, "NetPolicerGet", func() []cmn.PolMod { return append([]cmn.PolMod(nil), m.policies...) }), nil
 }
 func (m *mockHooks) NetPolicerAdd(p *cmn.PolMod) (int, error) {
 	m.log("NetPolicerAdd:%s", p.Ident)
@@ -340,7 +565,7 @@ func (m *mockHooks) NetPolicerDel(p *cmn.PolMod) (int, error) {
 
 func (m *mockHooks) NetMirrorGet() ([]cmn.MirrGetMod, error) {
 	m.log("NetMirrorGet")
-	return resizeOverride(m, "NetMirrorGet", append([]cmn.MirrGetMod(nil), m.mirrors...)), nil
+	return resizeOverride(m, "NetMirrorGet", func() []cmn.MirrGetMod { return append([]cmn.MirrGetMod(nil), m.mirrors...) }), nil
 }
 func (m *mockHooks) NetMirrorAdd(mm *cmn.MirrMod) (int, error) {
 	m.log("NetMirrorAdd:%s", mm.Ident)
@@ -369,7 +594,7 @@ func (m *mockHooks) NetMirrorDel(mm *cmn.MirrMod) (int, error) {
 
 func (m *mockHooks) NetSessionGet() ([]cmn.SessionMod, error) {
 	m.log("NetSessionGet")
-	return resizeOverride(m, "NetSessionGet", append([]cmn.SessionMod(nil), m.sessions...)), nil
+	return resizeOverride(m, "NetSessionGet", func() []cmn.SessionMod { return append([]cmn.SessionMod(nil), m.sessions...) }), nil
 }
 func (m *mockHooks) NetSessionAdd(s *cmn.SessionMod) (int, error) {
 	m.log("NetSessionAdd:%s", s.Ident)
@@ -398,7 +623,7 @@ func (m *mockHooks) NetSessionDel(s *cmn.SessionMod) (int, error) {
 
 func (m *mockHooks) NetSessionUlClGet() ([]cmn.SessionUlClMod, error) {
 	m.log("NetSessionUlClGet")
-	return resizeOverride(m, "NetSessionUlClGet", append([]cmn.SessionUlClMod(nil), m.ulcl...)), nil
+	return resizeOverride(m, "NetSessionUlClGet", func() []cmn.SessionUlClMod { return append([]cmn.SessionUlClMod(nil), m.ulcl...) }), nil
 }
 func (m *mockHooks) NetSessionUlClAdd(s *cmn.SessionUlClMod) (int, error) {
 	m.log("NetSessionUlClAdd:%s", s.Ident)
@@ -427,7 +652,7 @@ func (m *mockHooks) NetSessionUlClDel(s *cmn.SessionUlClMod) (int, error) {
 
 func (m *mockHooks) NetIPFilterGet() ([]cmn.IPFilterEntry, error) {
 	m.log("NetIPFilterGet")
-	return resizeOverride(m, "NetIPFilterGet", append([]cmn.IPFilterEntry(nil), m.ipFilters...)), nil
+	return resizeOverride(m, "NetIPFilterGet", func() []cmn.IPFilterEntry { return append([]cmn.IPFilterEntry(nil), m.ipFilters...) }), nil
 }
 func (m *mockHooks) NetIPFilterAdd(f *cmn.IPFilterMod) (int, error) {
 	m.log("NetIPFilterAdd:%s", f.CIDR)
@@ -474,7 +699,7 @@ func (m *mockHooks) NetSecurityRateSet(c *cmn.SecurityRateConfig) (int, error) {
 
 func (m *mockHooks) NetBFDGet() ([]cmn.BFDMod, error) {
 	m.log("NetBFDGet")
-	return resizeOverride(m, "NetBFDGet", append([]cmn.BFDMod(nil), m.bfds...)), nil
+	return resizeOverride(m, "NetBFDGet", func() []cmn.BFDMod { return append([]cmn.BFDMod(nil), m.bfds...) }), nil
 }
 func (m *mockHooks) NetBFDAdd(b *cmn.BFDMod) (int, error) {
 	m.log("NetBFDAdd:%s", b.Instance)
@@ -503,7 +728,7 @@ func (m *mockHooks) NetBFDDel(b *cmn.BFDMod) (int, error) {
 
 func (m *mockHooks) NetGoBGPNeighGet() ([]cmn.GoBGPNeighGetMod, error) {
 	m.log("NetGoBGPNeighGet")
-	return resizeOverride(m, "NetGoBGPNeighGet", append([]cmn.GoBGPNeighGetMod(nil), m.bgpNeighbors...)), nil
+	return resizeOverride(m, "NetGoBGPNeighGet", func() []cmn.GoBGPNeighGetMod { return append([]cmn.GoBGPNeighGetMod(nil), m.bgpNeighbors...) }), nil
 }
 func (m *mockHooks) NetGoBGPNeighAdd(n *cmn.GoBGPNeighMod) (int, error) {
 	m.log("NetGoBGPNeighAdd:%s", n.Addr)
@@ -514,7 +739,10 @@ func (m *mockHooks) NetGoBGPNeighAdd(n *cmn.GoBGPNeighMod) (int, error) {
 	if n.Addr != nil {
 		addr = n.Addr.String()
 	}
-	m.bgpNeighbors = append(m.bgpNeighbors, cmn.GoBGPNeighGetMod{Addr: addr, RemoteAS: n.RemoteAS})
+	m.bgpNeighbors = append(m.bgpNeighbors, cmn.GoBGPNeighGetMod{
+		Addr: addr, RemoteAS: n.RemoteAS,
+		RemotePort: n.RemotePort, MultiHop: n.MultiHop,
+	})
 	return 0, nil
 }
 func (m *mockHooks) NetGoBGPNeighDel(n *cmn.GoBGPNeighMod) (int, error) {
@@ -555,7 +783,9 @@ func (m *mockHooks) NetGoBGPGCAdd(gc *cmn.GoBGPGlobalConfig) (int, error) {
 }
 func (m *mockHooks) NetGoBGPPolicyDefinedSetGet(name string, definedTypeString string) ([]cmn.GoBGPPolicyDefinedSetMod, error) {
 	m.log("NetGoBGPPolicyDefinedSetGet:%s:%s", name, definedTypeString)
-	return resizeOverride(m, "NetGoBGPPolicyDefinedSetGet:"+definedTypeString, append([]cmn.GoBGPPolicyDefinedSetMod(nil), m.bgpDefined[definedTypeString]...)), nil
+	return resizeOverride(m, "NetGoBGPPolicyDefinedSetGet:"+definedTypeString, func() []cmn.GoBGPPolicyDefinedSetMod {
+		return append([]cmn.GoBGPPolicyDefinedSetMod(nil), m.bgpDefined[definedTypeString]...)
+	}), nil
 }
 func (m *mockHooks) NetGoBGPPolicyDefinedSetAdd(d *cmn.GoBGPPolicyDefinedSetMod) (int, error) {
 	m.log("NetGoBGPPolicyDefinedSetAdd:%s", d.Name)
@@ -582,7 +812,9 @@ func (m *mockHooks) NetGoBGPPolicyDefinedSetDel(d *cmn.GoBGPPolicyDefinedSetMod)
 }
 func (m *mockHooks) NetGoBGPPolicyDefinitionsGet() ([]cmn.GoBGPPolicyDefinitionsMod, error) {
 	m.log("NetGoBGPPolicyDefinitionsGet")
-	return resizeOverride(m, "NetGoBGPPolicyDefinitionsGet", append([]cmn.GoBGPPolicyDefinitionsMod(nil), m.bgpPolicyDefs...)), nil
+	return resizeOverride(m, "NetGoBGPPolicyDefinitionsGet", func() []cmn.GoBGPPolicyDefinitionsMod {
+		return append([]cmn.GoBGPPolicyDefinitionsMod(nil), m.bgpPolicyDefs...)
+	}), nil
 }
 func (m *mockHooks) NetGoBGPPolicyDefinitionAdd(d *cmn.GoBGPPolicyDefinitionsMod) (int, error) {
 	m.log("NetGoBGPPolicyDefinitionAdd:%s", d.Name)
@@ -646,7 +878,7 @@ func (m *mockHooks) NetIPsecConfigSet(cfg *cmn.IPsecConfigMod) (int, error) {
 }
 func (m *mockHooks) NetIPsecTunnelGetAll() ([]*cmn.IPsecTunnel, error) {
 	m.log("NetIPsecTunnelGetAll")
-	return resizeOverride(m, "NetIPsecTunnelGetAll", append([]*cmn.IPsecTunnel(nil), m.ipsecTunnels...)), nil
+	return resizeOverride(m, "NetIPsecTunnelGetAll", func() []*cmn.IPsecTunnel { return append([]*cmn.IPsecTunnel(nil), m.ipsecTunnels...) }), nil
 }
 func (m *mockHooks) NetIPsecTunnelAdd(t *cmn.IPsecTunnelMod) (int, error) {
 	m.log("NetIPsecTunnelAdd:%s", t.Name)
@@ -672,7 +904,7 @@ func (m *mockHooks) NetIPsecTunnelDel(name string) (int, error) {
 }
 func (m *mockHooks) NetIPsecCertificateGetAll() ([]*cmn.IPsecCertificate, error) {
 	m.log("NetIPsecCertificateGetAll")
-	return resizeOverride(m, "NetIPsecCertificateGetAll", append([]*cmn.IPsecCertificate(nil), m.ipsecCerts...)), nil
+	return resizeOverride(m, "NetIPsecCertificateGetAll", func() []*cmn.IPsecCertificate { return append([]*cmn.IPsecCertificate(nil), m.ipsecCerts...) }), nil
 }
 func (m *mockHooks) NetIPsecCertificateAdd(c *cmn.IPsecCertificateMod) (int, error) {
 	m.log("NetIPsecCertificateAdd:%s", c.Name)
@@ -706,11 +938,11 @@ func (m *mockHooks) NetIPsecCertificateDel(name string) (int, error) {
 }
 func (m *mockHooks) NetIPsecCertificateExportAll() ([]cmn.IPsecCertificateMod, error) {
 	m.log("NetIPsecCertificateExportAll")
-	return resizeOverride(m, "NetIPsecCertificateExportAll", append([]cmn.IPsecCertificateMod(nil), m.ipsecCertMods...)), nil
+	return resizeOverride(m, "NetIPsecCertificateExportAll", func() []cmn.IPsecCertificateMod { return append([]cmn.IPsecCertificateMod(nil), m.ipsecCertMods...) }), nil
 }
 func (m *mockHooks) NetIPsecCACertificateGetAll() ([]*cmn.IPsecCACertificate, error) {
 	m.log("NetIPsecCACertificateGetAll")
-	return resizeOverride(m, "NetIPsecCACertificateGetAll", append([]*cmn.IPsecCACertificate(nil), m.ipsecCAs...)), nil
+	return resizeOverride(m, "NetIPsecCACertificateGetAll", func() []*cmn.IPsecCACertificate { return append([]*cmn.IPsecCACertificate(nil), m.ipsecCAs...) }), nil
 }
 func (m *mockHooks) NetIPsecCACertificateAdd(c *cmn.IPsecCACertificateMod) (int, error) {
 	m.log("NetIPsecCACertificateAdd:%s", c.Name)
@@ -744,7 +976,23 @@ func (m *mockHooks) NetIPsecCACertificateDel(name string) (int, error) {
 }
 func (m *mockHooks) NetIPsecCACertificateExportAll() ([]cmn.IPsecCACertificateMod, error) {
 	m.log("NetIPsecCACertificateExportAll")
-	return resizeOverride(m, "NetIPsecCACertificateExportAll", append([]cmn.IPsecCACertificateMod(nil), m.ipsecCAMods...)), nil
+	return resizeOverride(m, "NetIPsecCACertificateExportAll", func() []cmn.IPsecCACertificateMod { return append([]cmn.IPsecCACertificateMod(nil), m.ipsecCAMods...) }), nil
+}
+
+func (m *mockHooks) NetRecoveryDepsGet() ([]cmn.RecoveryDependency, error) {
+	m.log("NetRecoveryDepsGet")
+	if err := m.failIfConfigured("NetRecoveryDepsGet"); err != nil {
+		return nil, err
+	}
+	return append([]cmn.RecoveryDependency(nil), m.recoveryDeps...), nil
+}
+
+func (m *mockHooks) NetRecoveryDepVerify(dep cmn.RecoveryDependency) (string, error) {
+	m.log("NetRecoveryDepVerify:%s", dep.Type)
+	if err, ok := m.depVerifyFail[dep.Type]; ok {
+		return "", err
+	}
+	return m.depVerifyWarn[dep.Type], nil
 }
 
 // compile-time assertion that mockHooks satisfies Hooks.
