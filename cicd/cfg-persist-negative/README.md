@@ -53,6 +53,22 @@ happy path.
   `snapshot.json` must quarantine IMMEDIATELY at boot (dependency
   failures are not startup-class, so no retry loop), log the dependency
   by name, come up clean-empty, and recover via the operator path.
+- **Concurrency storm**: three rounds of parallel persists, captures, a
+  commit restore and six config mutations. Snapshot endpoints answer
+  200 or 409 (gate held), every other mutating call answers 200/204 or
+  503 (frozen while the gate is held); anything else — a 5xx above all —
+  fails the leg. A round set that produced no rejection at all fails
+  too, so the leg can never green without having contended the gate.
+  Afterwards the gate must be free (a plain persist succeeds), the
+  document must parse/checksum/plan cleanly, and the resulting state
+  must round-trip a restart deep-equal.
+- **SIGKILL inside the auto-persist debounce** (×10, one per offset
+  across the 3s quiet window): the contract is integrity, not no-loss.
+  `snapshot.json` must always be a valid document (proved by a dry-run
+  restore of the file itself), boot must never quarantine it, and the
+  pre-existing state must always come back. Each round may keep or lose
+  its own mutation — documented behavior — but nothing else may move;
+  the surviving count is reported for the record.
 
 ## Traps
 
@@ -62,3 +78,6 @@ happy path.
   injections must match that form and then VERIFY they took.
 - Evidence JSONs are scrubbed of the ipsec domain by
   `plib_collect_logs` before upload — snapshots embed live secrets.
+- The concurrency and SIGKILL legs restart the gateway a dozen-plus
+  extra times; on a hosted runner budget the job timeout accordingly (a
+  timeout here is a workflow tune, not a code defect).

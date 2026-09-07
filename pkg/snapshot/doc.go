@@ -74,7 +74,17 @@ import (
 // predate the manifest refuse 1.4 documents via the minor-version gate,
 // so a declared REQUIRED dependency can never be silently dropped by an
 // older build.
-const SchemaVersion = "1.4"
+//
+// 1.5: added the generation field: a monotonic counter over the node's
+// persisted snapshot lineage, stamped by Persist (never by a bare
+// capture), so every snapshot.json labels exactly one consistent
+// configuration point and "which of these two persisted states is newer"
+// has an answer that does not depend on file mtimes. Additive: documents
+// without the field (older schemas, GET /config/snapshot exports) simply
+// carry no lineage position, and the 1.4->1.5 migration is restamp-only
+// -- a generation states a fact about the persisted lineage that a
+// migration cannot know, so it must never invent one.
+const SchemaVersion = "1.5"
 
 // DocKind identifies the document type, matching §4's "kind" field.
 const DocKind = "loxilb-snapshot"
@@ -226,7 +236,16 @@ type Document struct {
 	GatewayVersion string    `json:"gateway_version"`
 	Hostname       string    `json:"hostname"`
 	Trigger        Trigger   `json:"trigger"`
-	Domains        Domains   `json:"domains"`
+	// Generation is this document's position in the node's persisted
+	// snapshot lineage (schema 1.5+): Persist stamps the next monotonic
+	// value before writing snapshot.json, taking quarantined
+	// snapshot.json.failed-* files into account so a post-quarantine
+	// persist never reuses a generation the lineage already spent. Zero
+	// means "no lineage position": bare captures (GET /config/snapshot),
+	// the restore engine's PRESERVE documents, and every pre-1.5 document.
+	// The 1.4->1.5 migration never invents one.
+	Generation uint64  `json:"generation,omitempty"`
+	Domains    Domains `json:"domains"`
 	// IncludedDomains lists exactly the snapshot domains this document
 	// covers (schema 1.2+, REQUIRED there): the domains whose state was
 	// captured, and therefore the ONLY domains a restore of this document

@@ -181,6 +181,46 @@ restore_commit() { # restore_commit <llb> <docfile> [extra-query] — echoes htt
         -H 'Content-Type: application/json' --data-binary @"$doc"
 }
 
+restore_dryrun() { # restore_dryrun <llb> <docfile> — echoes http code, body in artifacts
+    # The dry-run pipeline runs PARSE (strict decode + checksum verify),
+    # VALIDATE and PLAN without mutating anything, so it doubles as the
+    # integrity oracle for a document read straight off disk: a torn or
+    # half-written snapshot.json cannot answer 200/ok here.
+    local llb=$1 doc=$2
+    plib_curl "$llb" -o "$PLIB_ARTIFACTS/restore-response.json" -w "%{http_code}" \
+        -X POST "$PLIB_API/config/restore?mode=dry-run" \
+        -H 'Content-Type: application/json' --data-binary @"$doc"
+}
+
+# ondisk_doc_valid <llb> <label> — integrity oracle for the document as it
+# sits on disk. It stages a copy under the artifacts (evidence, and the
+# live file is root-owned 0600 and gets replaced under us by auto-persist)
+# and feeds it to the dry-run pipeline THROUGH STDIN: curl's own @file
+# reader has been seen to fail on the staged path mid-suite, and the
+# oracle must fail on a bad DOCUMENT, never on how it was handed over.
+# The dry-run parses, checksum-verifies and plans without mutating, so a
+# torn or half-written document cannot answer 200/ok.
+ondisk_doc_valid() {
+    local llb="$1"
+    local label="$2"
+    local src="${llb}_config/snapshot.json"
+    local stage="$PLIB_ARTIFACTS/ondisk-$label.json"
+    local rc res
+    if ! sudo cp "$src" "$stage" 2>"$PLIB_ARTIFACTS/ondisk-$label.err"; then
+        echo "  on-disk document unreadable: $(cat "$PLIB_ARTIFACTS/ondisk-$label.err")"
+        echo "  ${llb}_config contents: $(sudo ls -la "${llb}_config" | tr '\n' ' ')"
+        return 1
+    fi
+    sudo chmod 644 "$stage"
+    rc=$(sudo cat "$stage" | plib_curl "$llb" -o "$PLIB_ARTIFACTS/restore-response.json" \
+        -w "%{http_code}" -X POST "$PLIB_API/config/restore?mode=dry-run" \
+        -H 'Content-Type: application/json' --data-binary @-)
+    res=$(jq -r '.result' < "$PLIB_ARTIFACTS/restore-response.json")
+    [[ "$rc" == "200" && "$res" == "ok" ]] && return 0
+    echo "  dry-run of the on-disk document ($stage, $(sudo stat -c '%a %s bytes' "$stage" 2>&1)): HTTP $rc result=$res"
+    return 1
+}
+
 # --- restarts --------------------------------------------------------------
 
 wait_replay_receipt() { # wait_replay_receipt <llb>
@@ -191,6 +231,21 @@ wait_replay_receipt() { # wait_replay_receipt <llb>
     done
     echo "  boot snapshot never settled; restore lines:"
     docker exec "$llb" grep -a "boot snapshot" /tmp/loxilb.out 2>/dev/null | tail -5
+    return 1
+}
+
+# wait_boot_settled <llb> — the readiness surface cites the boot gate until
+# the boot config replay finishes. A boot that replays nothing (cold or
+# legacy-only volume) has no snapshot receipt to poll, so this is the
+# receipt for those classes -- and the settle point after ANY respawn.
+wait_boot_settled() {
+    local llb=$1 i r
+    for i in $(seq 1 45); do
+        r=$(plib_curl "$llb" "$PLIB_API/status/ready" | jq -r '(.reasons // []) | join(" ")' 2>/dev/null)
+        [[ "$r" != *"boot config replay has not settled"* ]] && return 0
+        sleep 2
+    done
+    echo "  boot config replay never settled; readiness reasons: $r"
     return 1
 }
 
@@ -220,7 +275,10 @@ plib_start_gw() { # plib_start_gw <llb> <flags...> — kill + scrub + relaunch
         docker exec "$llb" tc qdisc del dev "$ifc" clsact >/dev/null 2>&1
     done
     docker exec "$llb" umount /opt/loxilb/dp >/dev/null 2>&1
-    docker exec -d "$llb" bash -c "ulimit -l unlimited; /root/loxilb-io/loxilb/loxilb $* > /tmp/loxilb.out 2> /tmp/loxilb.err"
+    # PLIB_GW_ENV lets a leg arm per-boot environment (the deterministic
+    # fault hook, LOXI_TEST_FAULT=...) without touching the container.
+    # Empty by default: production-identical launch.
+    docker exec -d "$llb" bash -c "ulimit -l unlimited; ${PLIB_GW_ENV:-} /root/loxilb-io/loxilb/loxilb $* > /tmp/loxilb.out 2> /tmp/loxilb.err"
     for _ in $(seq 1 40); do
         if docker exec "$llb" curl -sf -m 3 "$PLIB_API/version" >/dev/null 2>&1; then
             sleep 5; return 0

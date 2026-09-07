@@ -105,6 +105,16 @@ var Migrations = []Migration{
 		ToVersion:   "1.4",
 		Apply:       func(doc *Document) error { return nil },
 	},
+	// 1.4 -> 1.5: the generation lineage field was added. Zero IS the
+	// meaningful value for a document that predates generations ("no
+	// lineage position") -- a generation states where a document sits in
+	// one node's persisted lineage, which a migration cannot know, so the
+	// migration must NOT invent one. Restamp only.
+	{
+		FromVersion: "1.4",
+		ToVersion:   "1.5",
+		Apply:       func(doc *Document) error { return nil },
+	},
 }
 
 // ApplyMigrations runs every registered Migration whose FromVersion matches

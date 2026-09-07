@@ -353,4 +353,17 @@ if [[ "$rc" != "200" || "$otlp_msg" != *"configured"* || "$otlp_msg" == *"could 
 fi
 echo "  fixture: OTLP export config (grpc, auth header) [OK]"
 
+# The IPsec PSK below is the encrypted-value subject: the plaintext may
+# reach only the node-local strongSwan secrets file inside the gateway;
+# the snapshot document must carry it enc:v1-encrypted under the
+# auto-provisioned llb1_config/snapshot-node.secret. Peer reachability is
+# irrelevant (auto=add responder), only the config surface is under test.
+rc=$(post_json /config/ipsec/tunnels '{
+  "name": "rt-tun1", "localIp": "31.31.31.254", "remoteIp": "31.31.31.253",
+  "authMode": "psk", "psk": "rt-psk-roundtrip-fixture",
+  "localId": "rt-a", "remoteId": "rt-b",
+  "ikeVersion": "ikev2", "tunnelMode": "tunnel", "auto": "add"
+}')
+must_200 "IPsec PSK tunnel (encrypted-value subject)" "$rc"
+
 echo "cfg-persist-roundtrip config done"

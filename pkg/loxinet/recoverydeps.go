@@ -162,6 +162,51 @@ func (na *NetAPIStruct) NetRecoveryDepVerify(dep cmn.RecoveryDependency) (string
 	}
 }
 
+// NetRecoveryDepReady - one dependency type's LIVE availability, for the
+// readiness surface (GET /status/ready). This is where reachability
+// belongs: NetRecoveryDepVerify keeps its configured-only database checks
+// so a store outage never holds a restore hostage, while readiness
+// truthfully reports that same outage.
+func (na *NetAPIStruct) NetRecoveryDepReady(depType string) error {
+	switch depType {
+	case cmn.RecoveryDepEngineContracts:
+		// Compiled into the binary: present by construction.
+		return nil
+
+	case cmn.RecoveryDepKvModelProfiles:
+		if kvProfileCurrent() == nil {
+			return fmt.Errorf("no model-profile registry generation is published")
+		}
+		return nil
+
+	case cmn.RecoveryDepAPIKeyDB:
+		if mh.AIKeyService == nil {
+			return fmt.Errorf("data-plane API-key store not initialized")
+		}
+		if err := mh.AIKeyService.Ready(); err != nil {
+			return fmt.Errorf("data-plane API-key store not answering: %v", err)
+		}
+		return nil
+
+	case cmn.RecoveryDepAuthDB:
+		if mh.UserService == nil {
+			return fmt.Errorf("management auth store not initialized")
+		}
+		if err := mh.UserService.Ready(); err != nil {
+			return fmt.Errorf("management auth store not answering: %v", err)
+		}
+		return nil
+
+	case cmn.RecoveryDepCertStore:
+		// Node-local directory; per-cert digests are the apply-time
+		// authority and there is no liveness to probe.
+		return nil
+
+	default:
+		return fmt.Errorf("no readiness probe for dependency type %q", depType)
+	}
+}
+
 // kvProfileSortedIDs returns the generation's profile IDs sorted, so
 // verification failures report deterministically.
 func kvProfileSortedIDs(g *kvProfileGeneration) []string {

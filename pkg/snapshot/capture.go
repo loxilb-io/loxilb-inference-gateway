@@ -43,6 +43,9 @@ func Capture(hooks Hooks, gatewayVersion, hostname string, trigger Trigger, comp
 	// not claim (and a later restore must not wipe) domains it never read.
 	doc.IncludedDomains = entryNames(selected)
 	for _, entry := range selected {
+		if err := faultCaptureError(entry.Name); err != nil {
+			return nil, fmt.Errorf("capture %s: %w", entry.Name, err)
+		}
 		if err := entry.Get(hooks, doc); err != nil {
 			return nil, fmt.Errorf("capture %s: %w", entry.Name, err)
 		}

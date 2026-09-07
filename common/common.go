@@ -1944,6 +1944,13 @@ type NetHookInterface interface {
 	// non-empty warning is surfaced but does not block -- the degraded
 	// path is deliberate for stores that heal asynchronously.
 	NetRecoveryDepVerify(dep RecoveryDependency) (string, error)
+	// NetRecoveryDepReady reports one dependency type's LIVE availability
+	// for the readiness surface: nil when the store answers right now, an
+	// error naming why not. Deliberately separate from
+	// NetRecoveryDepVerify, whose database checks are configured-only so
+	// a store outage can never hold a restore hostage -- readiness is
+	// where reachability belongs.
+	NetRecoveryDepReady(depType string) error
 	NetCtInfoGet() ([]CtInfo, error)
 	NetSessionGet() ([]SessionMod, error)
 	NetSessionUlClGet() ([]SessionUlClMod, error)

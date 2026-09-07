@@ -116,6 +116,18 @@ func (s *UserService) store() (DBTX, error) {
 	return h, nil
 }
 
+// Ready reports whether the management auth store currently answers: the
+// pool exists (a dial has succeeded) and a liveness ping succeeds right
+// now. Readiness-surface question only -- the auth chain itself keeps its
+// degraded-503-and-heal behavior.
+func (s *UserService) Ready() error {
+	h, err := s.store()
+	if err != nil {
+		return err
+	}
+	return h.Ping()
+}
+
 // ErrDBUnavailable is defined in common so the authentication chain can
 // recognise it without depending on this package. It maps to HTTP 503.
 var ErrDBUnavailable = cmn.ErrDBUnavailable
