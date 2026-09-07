@@ -140,7 +140,25 @@ restart_gw() { # restart_gw <flags...>
       # when the REST API answers. Judging L7 before then reads as a gateway
       # defect and is really a race in the probe.
       sleep 25
-      return 0
+      # The REST listener also answers before the boot config replay settles,
+      # and until it does the freeze middleware 503s every mutation — a fast
+      # runner's first write lands inside that window and reads as a phantom
+      # product failure. Probe the freeze itself with a write that can never
+      # apply (empty body fails validation, so nothing is created): the
+      # middleware runs before auth, which keeps this gate working in the
+      # auth-on cells where an unauthenticated /status/ready read cannot.
+      for _ in $(seq 1 40); do
+        if ! docker exec llb1 curl -s -m 3 -X POST "$API/config/loadbalancer" \
+            -H 'Content-Type: application/json' -d '{}' \
+            | grep -q 'boot config replay settles'; then
+          return 0
+        fi
+        sleep 2
+      done
+      echo "  gateway is up but its boot config replay never settled; last probe:"
+      docker exec llb1 curl -s -m 3 -X POST "$API/config/loadbalancer" \
+        -H 'Content-Type: application/json' -d '{}'
+      return 1
     fi
     sleep 2
   done
