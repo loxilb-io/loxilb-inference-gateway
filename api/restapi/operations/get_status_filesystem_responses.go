@@ -26,7 +26,7 @@ type GetStatusFilesystemOK struct {
 	/*
 	  In: Body
 	*/
-	Payload *GetStatusFilesystemOKBody `json:"body,omitempty"`
+	Payload *models.FilesystemStatus `json:"body,omitempty"`
 }
 
 // NewGetStatusFilesystemOK creates GetStatusFilesystemOK with default headers values
@@ -36,13 +36,13 @@ func NewGetStatusFilesystemOK() *GetStatusFilesystemOK {
 }
 
 // WithPayload adds the payload to the get status filesystem o k response
-func (o *GetStatusFilesystemOK) WithPayload(payload *GetStatusFilesystemOKBody) *GetStatusFilesystemOK {
+func (o *GetStatusFilesystemOK) WithPayload(payload *models.FilesystemStatus) *GetStatusFilesystemOK {
 	o.Payload = payload
 	return o
 }
 
 // SetPayload sets the payload to the get status filesystem o k response
-func (o *GetStatusFilesystemOK) SetPayload(payload *GetStatusFilesystemOKBody) {
+func (o *GetStatusFilesystemOK) SetPayload(payload *models.FilesystemStatus) {
 	o.Payload = payload
 }
 

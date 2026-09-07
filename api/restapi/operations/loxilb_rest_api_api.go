@@ -304,6 +304,9 @@ func NewLoxilbRestAPIAPI(spec *loads.Document) *LoxilbRestAPIAPI {
 		GetConfigWorkerMetricsHandler: GetConfigWorkerMetricsHandlerFunc(func(params GetConfigWorkerMetricsParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation GetConfigWorkerMetrics has not yet been implemented")
 		}),
+		GetDiagnosticsHandler: GetDiagnosticsHandlerFunc(func(params GetDiagnosticsParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetDiagnostics has not yet been implemented")
+		}),
 		GetLogArchivesHandler: GetLogArchivesHandlerFunc(func(params GetLogArchivesParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation GetLogArchives has not yet been implemented")
 		}),
@@ -901,6 +904,8 @@ type LoxilbRestAPIAPI struct {
 	GetConfigVlanAllHandler GetConfigVlanAllHandler
 	// GetConfigWorkerMetricsHandler sets the operation handler for the get config worker metrics operation
 	GetConfigWorkerMetricsHandler GetConfigWorkerMetricsHandler
+	// GetDiagnosticsHandler sets the operation handler for the get diagnostics operation
+	GetDiagnosticsHandler GetDiagnosticsHandler
 	// GetLogArchivesHandler sets the operation handler for the get log archives operation
 	GetLogArchivesHandler GetLogArchivesHandler
 	// GetLogArchivesFilenameHandler sets the operation handler for the get log archives filename operation
@@ -1487,6 +1492,9 @@ func (o *LoxilbRestAPIAPI) Validate() error {
 	}
 	if o.GetConfigWorkerMetricsHandler == nil {
 		unregistered = append(unregistered, "GetConfigWorkerMetricsHandler")
+	}
+	if o.GetDiagnosticsHandler == nil {
+		unregistered = append(unregistered, "GetDiagnosticsHandler")
 	}
 	if o.GetLogArchivesHandler == nil {
 		unregistered = append(unregistered, "GetLogArchivesHandler")
@@ -2299,6 +2307,10 @@ func (o *LoxilbRestAPIAPI) initHandlerCache() {
 		o.handlers["GET"] = make(map[string]http.Handler)
 	}
 	o.handlers["GET"]["/config/worker/metrics"] = NewGetConfigWorkerMetrics(o.context, o.GetConfigWorkerMetricsHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/diagnostics"] = NewGetDiagnostics(o.context, o.GetDiagnosticsHandler)
 	if o.handlers["GET"] == nil {
 		o.handlers["GET"] = make(map[string]http.Handler)
 	}

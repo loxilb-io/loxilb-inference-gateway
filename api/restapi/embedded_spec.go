@@ -9224,6 +9224,35 @@ func init() {
         }
       }
     },
+    "/diagnostics": {
+      "get": {
+        "description": "A bounded, allowlist-only diagnostic assembly - build identity, served API contract, process uptime, readiness verdict with reasons, operator maintenance state, per-interface eBPF attachment, per-map utilization against capacity, external-dependency reachability with a latency class (identity only, never credentials or connection strings), and the last configuration lifecycle outcomes with their checksums and identities. Request/response bodies, prompts, rule contents, key material, and environment are never collected here. Failed internal errors elsewhere in the API carry a short correlation ref in their 500 body that ties them to the gateway log; this endpoint carries no raw log content.",
+        "produces": [
+          "application/json"
+        ],
+        "summary": "Secret-safe gateway diagnostics",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/DiagnosticsStatus"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
     "/log-archives": {
       "get": {
         "description": "Retrieve a list of all rotated log archive files available for download.",
@@ -10093,15 +10122,7 @@ func init() {
           "200": {
             "description": "OK",
             "schema": {
-              "type": "object",
-              "properties": {
-                "filesystemAttr": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/definitions/FileSystemInfoEntry"
-                  }
-                }
-              }
+              "$ref": "#/definitions/FilesystemStatus"
             }
           },
           "401": {
@@ -10133,15 +10154,7 @@ func init() {
           "200": {
             "description": "OK",
             "schema": {
-              "type": "object",
-              "properties": {
-                "processAttr": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/definitions/ProcessInfoEntry"
-                  }
-                }
-              }
+              "$ref": "#/definitions/ProcessStatus"
             }
           },
           "401": {
@@ -11213,6 +11226,43 @@ func init() {
         }
       }
     },
+    "DependencyDiagnostic": {
+      "description": "One external dependency's live reachability with a latency class. Identity by type only - IDs, digests, credentials and connection strings are deliberately absent from this surface.",
+      "type": "object",
+      "required": [
+        "type",
+        "required",
+        "status",
+        "latency_class"
+      ],
+      "properties": {
+        "latency_class": {
+          "description": "Probe round-trip class - fast is under 250ms, slow is 250ms or more, failed means the probe errored (its latency is meaningless).",
+          "type": "string",
+          "enum": [
+            "fast",
+            "slow",
+            "failed"
+          ]
+        },
+        "required": {
+          "description": "Whether recovery treats this dependency as required.",
+          "type": "boolean"
+        },
+        "status": {
+          "description": "The probe's verdict, taken live for this response.",
+          "type": "string",
+          "enum": [
+            "ready",
+            "failed"
+          ]
+        },
+        "type": {
+          "description": "Dependency type (e.g. keystore, certstore).",
+          "type": "string"
+        }
+      }
+    },
     "DeviceInfoEntry": {
       "type": "object",
       "properties": {
@@ -11242,6 +11292,90 @@ func init() {
         },
         "uptime": {
           "description": "system uptime",
+          "type": "string"
+        }
+      }
+    },
+    "DiagnosticsStatus": {
+      "description": "The allowlist-only diagnostic assembly served by /diagnostics.",
+      "type": "object",
+      "required": [
+        "version",
+        "uptime_seconds",
+        "ready",
+        "maintenance_state"
+      ],
+      "properties": {
+        "api_version": {
+          "description": "Served API contract identity (base path and spec version), read from the embedded spec at startup.",
+          "type": "string"
+        },
+        "auto_persist": {
+          "$ref": "#/definitions/AutoPersistStatus"
+        },
+        "boot": {
+          "$ref": "#/definitions/BootStatus"
+        },
+        "build_info": {
+          "description": "Build/source-revision identity string.",
+          "type": "string"
+        },
+        "ebpf_attachments": {
+          "description": "Live per-interface eBPF attachment, kernel-verified.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/EbpfAttachmentStatus"
+          }
+        },
+        "external_dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/DependencyDiagnostic"
+          }
+        },
+        "last_persist": {
+          "$ref": "#/definitions/ConfigOpRecord"
+        },
+        "last_restore": {
+          "$ref": "#/definitions/ConfigOpRecord"
+        },
+        "maintenance_state": {
+          "description": "The operator maintenance state (see /maintenance for the full drain read-back).",
+          "type": "string",
+          "enum": [
+            "active",
+            "maintenance"
+          ]
+        },
+        "maps": {
+          "description": "Bounded per-table utilization/capacity.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MapUtilization"
+          }
+        },
+        "product": {
+          "description": "Product identifier.",
+          "type": "string"
+        },
+        "ready": {
+          "description": "The same configuration-readiness verdict /status/ready serves.",
+          "type": "boolean"
+        },
+        "ready_reasons": {
+          "description": "Why the gateway is not ready; empty when ready.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "uptime_seconds": {
+          "description": "Seconds since this gateway's API layer initialized.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "version": {
+          "description": "Gateway version.",
           "type": "string"
         }
       }
@@ -11606,6 +11740,18 @@ func init() {
         "used": {
           "description": "size of used the disk",
           "type": "string"
+        }
+      }
+    },
+    "FilesystemStatus": {
+      "description": "Filesystem usage report (the /status/filesystem body, formalized - the wire shape is unchanged).",
+      "type": "object",
+      "properties": {
+        "filesystemAttr": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/FileSystemInfoEntry"
+          }
         }
       }
     },
@@ -14706,6 +14852,31 @@ func init() {
         }
       }
     },
+    "MapUtilization": {
+      "description": "Bounded utilization of one datapath table against its capacity. Counts only - never entry contents.",
+      "type": "object",
+      "required": [
+        "name",
+        "count",
+        "capacity"
+      ],
+      "properties": {
+        "capacity": {
+          "description": "Maximum entries the table can hold.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "count": {
+          "description": "Entries currently held, as last observed by the gateway's own periodic collector (shares its source with the metrics surface - no second counting layer).",
+          "type": "integer",
+          "format": "int64"
+        },
+        "name": {
+          "description": "Table name (e.g. conntrack).",
+          "type": "string"
+        }
+      }
+    },
     "MessageResponse": {
       "type": "object",
       "properties": {
@@ -15754,6 +15925,18 @@ func init() {
         "virtMemory": {
           "description": "virtual memory usage",
           "type": "string"
+        }
+      }
+    },
+    "ProcessStatus": {
+      "description": "Per-process CPU usage report (the /status/process body, formalized - the wire shape is unchanged).",
+      "type": "object",
+      "properties": {
+        "processAttr": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ProcessInfoEntry"
+          }
         }
       }
     },
@@ -25967,6 +26150,35 @@ func init() {
         }
       }
     },
+    "/diagnostics": {
+      "get": {
+        "description": "A bounded, allowlist-only diagnostic assembly - build identity, served API contract, process uptime, readiness verdict with reasons, operator maintenance state, per-interface eBPF attachment, per-map utilization against capacity, external-dependency reachability with a latency class (identity only, never credentials or connection strings), and the last configuration lifecycle outcomes with their checksums and identities. Request/response bodies, prompts, rule contents, key material, and environment are never collected here. Failed internal errors elsewhere in the API carry a short correlation ref in their 500 body that ties them to the gateway log; this endpoint carries no raw log content.",
+        "produces": [
+          "application/json"
+        ],
+        "summary": "Secret-safe gateway diagnostics",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/DiagnosticsStatus"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
     "/log-archives": {
       "get": {
         "description": "Retrieve a list of all rotated log archive files available for download.",
@@ -26822,15 +27034,7 @@ func init() {
           "200": {
             "description": "OK",
             "schema": {
-              "type": "object",
-              "properties": {
-                "filesystemAttr": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/definitions/FileSystemInfoEntry"
-                  }
-                }
-              }
+              "$ref": "#/definitions/FilesystemStatus"
             }
           },
           "401": {
@@ -26862,15 +27066,7 @@ func init() {
           "200": {
             "description": "OK",
             "schema": {
-              "type": "object",
-              "properties": {
-                "processAttr": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/definitions/ProcessInfoEntry"
-                  }
-                }
-              }
+              "$ref": "#/definitions/ProcessStatus"
             }
           },
           "401": {
@@ -28414,6 +28610,43 @@ func init() {
         }
       }
     },
+    "DependencyDiagnostic": {
+      "description": "One external dependency's live reachability with a latency class. Identity by type only - IDs, digests, credentials and connection strings are deliberately absent from this surface.",
+      "type": "object",
+      "required": [
+        "type",
+        "required",
+        "status",
+        "latency_class"
+      ],
+      "properties": {
+        "latency_class": {
+          "description": "Probe round-trip class - fast is under 250ms, slow is 250ms or more, failed means the probe errored (its latency is meaningless).",
+          "type": "string",
+          "enum": [
+            "fast",
+            "slow",
+            "failed"
+          ]
+        },
+        "required": {
+          "description": "Whether recovery treats this dependency as required.",
+          "type": "boolean"
+        },
+        "status": {
+          "description": "The probe's verdict, taken live for this response.",
+          "type": "string",
+          "enum": [
+            "ready",
+            "failed"
+          ]
+        },
+        "type": {
+          "description": "Dependency type (e.g. keystore, certstore).",
+          "type": "string"
+        }
+      }
+    },
     "DeviceInfoEntry": {
       "type": "object",
       "properties": {
@@ -28443,6 +28676,90 @@ func init() {
         },
         "uptime": {
           "description": "system uptime",
+          "type": "string"
+        }
+      }
+    },
+    "DiagnosticsStatus": {
+      "description": "The allowlist-only diagnostic assembly served by /diagnostics.",
+      "type": "object",
+      "required": [
+        "version",
+        "uptime_seconds",
+        "ready",
+        "maintenance_state"
+      ],
+      "properties": {
+        "api_version": {
+          "description": "Served API contract identity (base path and spec version), read from the embedded spec at startup.",
+          "type": "string"
+        },
+        "auto_persist": {
+          "$ref": "#/definitions/AutoPersistStatus"
+        },
+        "boot": {
+          "$ref": "#/definitions/BootStatus"
+        },
+        "build_info": {
+          "description": "Build/source-revision identity string.",
+          "type": "string"
+        },
+        "ebpf_attachments": {
+          "description": "Live per-interface eBPF attachment, kernel-verified.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/EbpfAttachmentStatus"
+          }
+        },
+        "external_dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/DependencyDiagnostic"
+          }
+        },
+        "last_persist": {
+          "$ref": "#/definitions/ConfigOpRecord"
+        },
+        "last_restore": {
+          "$ref": "#/definitions/ConfigOpRecord"
+        },
+        "maintenance_state": {
+          "description": "The operator maintenance state (see /maintenance for the full drain read-back).",
+          "type": "string",
+          "enum": [
+            "active",
+            "maintenance"
+          ]
+        },
+        "maps": {
+          "description": "Bounded per-table utilization/capacity.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MapUtilization"
+          }
+        },
+        "product": {
+          "description": "Product identifier.",
+          "type": "string"
+        },
+        "ready": {
+          "description": "The same configuration-readiness verdict /status/ready serves.",
+          "type": "boolean"
+        },
+        "ready_reasons": {
+          "description": "Why the gateway is not ready; empty when ready.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "uptime_seconds": {
+          "description": "Seconds since this gateway's API layer initialized.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "version": {
+          "description": "Gateway version.",
           "type": "string"
         }
       }
@@ -28813,6 +29130,18 @@ func init() {
         "used": {
           "description": "size of used the disk",
           "type": "string"
+        }
+      }
+    },
+    "FilesystemStatus": {
+      "description": "Filesystem usage report (the /status/filesystem body, formalized - the wire shape is unchanged).",
+      "type": "object",
+      "properties": {
+        "filesystemAttr": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/FileSystemInfoEntry"
+          }
         }
       }
     },
@@ -32638,6 +32967,31 @@ func init() {
         }
       }
     },
+    "MapUtilization": {
+      "description": "Bounded utilization of one datapath table against its capacity. Counts only - never entry contents.",
+      "type": "object",
+      "required": [
+        "name",
+        "count",
+        "capacity"
+      ],
+      "properties": {
+        "capacity": {
+          "description": "Maximum entries the table can hold.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "count": {
+          "description": "Entries currently held, as last observed by the gateway's own periodic collector (shares its source with the metrics surface - no second counting layer).",
+          "type": "integer",
+          "format": "int64"
+        },
+        "name": {
+          "description": "Table name (e.g. conntrack).",
+          "type": "string"
+        }
+      }
+    },
     "MessageResponse": {
       "type": "object",
       "properties": {
@@ -33985,6 +34339,18 @@ func init() {
         "virtMemory": {
           "description": "virtual memory usage",
           "type": "string"
+        }
+      }
+    },
+    "ProcessStatus": {
+      "description": "Per-process CPU usage report (the /status/process body, formalized - the wire shape is unchanged).",
+      "type": "object",
+      "properties": {
+        "processAttr": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ProcessInfoEntry"
+          }
         }
       }
     },

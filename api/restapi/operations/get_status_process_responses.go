@@ -26,7 +26,7 @@ type GetStatusProcessOK struct {
 	/*
 	  In: Body
 	*/
-	Payload *GetStatusProcessOKBody `json:"body,omitempty"`
+	Payload *models.ProcessStatus `json:"body,omitempty"`
 }
 
 // NewGetStatusProcessOK creates GetStatusProcessOK with default headers values
@@ -36,13 +36,13 @@ func NewGetStatusProcessOK() *GetStatusProcessOK {
 }
 
 // WithPayload adds the payload to the get status process o k response
-func (o *GetStatusProcessOK) WithPayload(payload *GetStatusProcessOKBody) *GetStatusProcessOK {
+func (o *GetStatusProcessOK) WithPayload(payload *models.ProcessStatus) *GetStatusProcessOK {
 	o.Payload = payload
 	return o
 }
 
 // SetPayload sets the payload to the get status process o k response
-func (o *GetStatusProcessOK) SetPayload(payload *GetStatusProcessOKBody) {
+func (o *GetStatusProcessOK) SetPayload(payload *models.ProcessStatus) {
 	o.Payload = payload
 }
 

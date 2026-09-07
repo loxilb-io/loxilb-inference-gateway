@@ -4303,12 +4303,7 @@ paths:
         '200':
           description: OK
           schema:
-            type: object
-            properties:
-              processAttr:
-                type: array
-                items:
-                  $ref: '#/definitions/ProcessInfoEntry'
+            $ref: '#/definitions/ProcessStatus'
         '401':
           description: Invalid authentication credentials
           schema:
@@ -4353,12 +4348,7 @@ paths:
         '200':
           description: OK
           schema:
-            type: object
-            properties:
-              filesystemAttr:
-                type: array
-                items:
-                  $ref: '#/definitions/FileSystemInfoEntry'
+            $ref: '#/definitions/FilesystemStatus'
         '401':
           description: Invalid authentication credentials
           schema:
@@ -4428,6 +4418,25 @@ paths:
           description: Malformed arguments for API call
           schema:
             $ref: '#/definitions/Error'
+        '401':
+          description: Invalid authentication credentials
+          schema:
+            $ref: '#/definitions/Error'
+        '500':
+          description: Internal service error
+          schema:
+            $ref: '#/definitions/Error'
+  '/diagnostics':
+    get:
+      summary: Secret-safe gateway diagnostics
+      description: A bounded, allowlist-only diagnostic assembly - build identity, served API contract, process uptime, readiness verdict with reasons, operator maintenance state, per-interface eBPF attachment, per-map utilization against capacity, external-dependency reachability with a latency class (identity only, never credentials or connection strings), and the last configuration lifecycle outcomes with their checksums and identities. Request/response bodies, prompts, rule contents, key material, and environment are never collected here. Failed internal errors elsewhere in the API carry a short correlation ref in their 500 body that ties them to the gateway log; this endpoint carries no raw log content.
+      produces:
+        - application/json
+      responses:
+        '200':
+          description: OK
+          schema:
+            $ref: '#/definitions/DiagnosticsStatus'
         '401':
           description: Invalid authentication credentials
           schema:
@@ -7311,6 +7320,123 @@ definitions:
         description: Live per-interface eBPF attachment, verified against the kernel (netlink) rather than the control plane's bookkeeping. Informational - attachment state does not gate the ready verdict.
         items:
           $ref: '#/definitions/EbpfAttachmentStatus'
+  ProcessStatus:
+    type: object
+    description: Per-process CPU usage report (the /status/process body, formalized - the wire shape is unchanged).
+    properties:
+      processAttr:
+        type: array
+        items:
+          $ref: '#/definitions/ProcessInfoEntry'
+  FilesystemStatus:
+    type: object
+    description: Filesystem usage report (the /status/filesystem body, formalized - the wire shape is unchanged).
+    properties:
+      filesystemAttr:
+        type: array
+        items:
+          $ref: '#/definitions/FileSystemInfoEntry'
+  MapUtilization:
+    type: object
+    description: Bounded utilization of one datapath table against its capacity. Counts only - never entry contents.
+    required:
+      - name
+      - count
+      - capacity
+    properties:
+      name:
+        type: string
+        description: Table name (e.g. conntrack).
+      count:
+        type: integer
+        format: int64
+        description: Entries currently held, as last observed by the gateway's own periodic collector (shares its source with the metrics surface - no second counting layer).
+      capacity:
+        type: integer
+        format: int64
+        description: Maximum entries the table can hold.
+  DependencyDiagnostic:
+    type: object
+    description: One external dependency's live reachability with a latency class. Identity by type only - IDs, digests, credentials and connection strings are deliberately absent from this surface.
+    required:
+      - type
+      - required
+      - status
+      - latency_class
+    properties:
+      type:
+        type: string
+        description: Dependency type (e.g. keystore, certstore).
+      required:
+        type: boolean
+        description: Whether recovery treats this dependency as required.
+      status:
+        type: string
+        enum: [ready, failed]
+        description: The probe's verdict, taken live for this response.
+      latency_class:
+        type: string
+        enum: [fast, slow, failed]
+        description: Probe round-trip class - fast is under 250ms, slow is 250ms or more, failed means the probe errored (its latency is meaningless).
+  DiagnosticsStatus:
+    type: object
+    description: The allowlist-only diagnostic assembly served by /diagnostics.
+    required:
+      - version
+      - uptime_seconds
+      - ready
+      - maintenance_state
+    properties:
+      version:
+        type: string
+        description: Gateway version.
+      build_info:
+        type: string
+        description: Build/source-revision identity string.
+      product:
+        type: string
+        description: Product identifier.
+      api_version:
+        type: string
+        description: Served API contract identity (base path and spec version), read from the embedded spec at startup.
+      uptime_seconds:
+        type: integer
+        format: int64
+        description: Seconds since this gateway's API layer initialized.
+      ready:
+        type: boolean
+        description: The same configuration-readiness verdict /status/ready serves.
+      ready_reasons:
+        type: array
+        description: Why the gateway is not ready; empty when ready.
+        items:
+          type: string
+      maintenance_state:
+        type: string
+        enum: [active, maintenance]
+        description: The operator maintenance state (see /maintenance for the full drain read-back).
+      ebpf_attachments:
+        type: array
+        description: Live per-interface eBPF attachment, kernel-verified.
+        items:
+          $ref: '#/definitions/EbpfAttachmentStatus'
+      maps:
+        type: array
+        description: Bounded per-table utilization/capacity.
+        items:
+          $ref: '#/definitions/MapUtilization'
+      external_dependencies:
+        type: array
+        items:
+          $ref: '#/definitions/DependencyDiagnostic'
+      boot:
+        $ref: '#/definitions/BootStatus'
+      last_persist:
+        $ref: '#/definitions/ConfigOpRecord'
+      last_restore:
+        $ref: '#/definitions/ConfigOpRecord'
+      auto_persist:
+        $ref: '#/definitions/AutoPersistStatus'
   EbpfAttachmentStatus:
     type: object
     description: One interface/hook attachment fact. A tc entry appears for every port the control plane dispatched a program load for, so attached=false there means the kernel and the control plane's intent disagree. An xdp entry appears only where an XDP program is verifiably attached (XDP expectation depends on datapath compile flags, so its absence is not reported as divergence).
