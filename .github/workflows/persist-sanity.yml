@@ -19,7 +19,13 @@ name: Persist-Sanity-CI
 #                 wipe what they do not cover) and cfg-persist-restartmatrix
 #                 (the three restart classes: in-place, container
 #                 recreate, cold config -- each ending on the same
-#                 deep-compare plus traffic probe).
+#                 deep-compare plus traffic probe) and cfg-persist-cli
+#                 (the packaged CLI as subject, REST as oracle: the
+#                 identity it reports is the identity on disk, and every
+#                 failure path exits non-zero). The CLI it measures is
+#                 built here from the CLI repository, so a change on
+#                 either side of that contract shows up as a red gate
+#                 rather than as drift discovered at a release.
 #
 #   persist-soak / persist-upgrade   nightly and dispatch only, never a
 #                 per-PR gate: the drift/leak classes that need repetition
@@ -80,6 +86,25 @@ jobs:
           go vet ./pkg/snapshot/...
           go test -count=1 ./pkg/snapshot/...
 
+      # The producer half of the config-lifecycle contract check. The CLI
+      # repository pins the operations and fields it decodes from the
+      # persist and restore responses and checks them against a checkout
+      # of this repository; running the same fixture here means a change
+      # to swagger.yml that breaks the consumer goes red on the PR that
+      # makes it, instead of on a CLI release weeks later.
+      - name: Check out the CLI repository
+        uses: actions/checkout@v4
+        with:
+          repository: loxilb-io/loxicmd-inference-gateway
+          ref: main
+          path: .loxicmd-contract
+          persist-credentials: false
+      - name: Config-lifecycle contract as the CLI consumes it
+        working-directory: .loxicmd-contract
+        env:
+          GATEWAY_REPO: ${{ github.workspace }}
+        run: go test -count=1 ./pkg/api/ -run 'TestGatewayContract|TestLifecycleModels|TestLifecycleEnums' -v
+
   persist-scenarios:
     name: persist-scenarios
     runs-on: ubuntu-22.04
@@ -114,6 +139,23 @@ jobs:
       - run: id=`docker ps -f name=loxilb | cut -d " " -f 1 | grep -iv "CONTAINER"` && docker commit $id ghcr.io/loxilb-io/loxilb-inference-gateway:latest
       - run: docker stop loxilb && docker rm loxilb
 
+      # The CLI is a subject of cfg-persist-cli, not a bystander, so it is
+      # built from its own repository rather than taken from whatever was
+      # baked into the published image. Static, so it runs inside the
+      # container regardless of the image's libc.
+      - name: Check out the CLI repository
+        uses: actions/checkout@v4
+        with:
+          repository: loxilb-io/loxicmd-inference-gateway
+          ref: main
+          path: .loxicmd-under-test
+          persist-credentials: false
+      - name: Build the CLI under test
+        run: |
+          cd .loxicmd-under-test
+          CGO_ENABLED=0 go build -o "$GITHUB_WORKSPACE/loxicmd-under-test" .
+          "$GITHUB_WORKSPACE/loxicmd-under-test" version
+
       - name: Round-trip (persist + restart field-identical, deep-diff oracle)
         run: |
           cd cicd/cfg-persist-roundtrip/
@@ -135,6 +177,15 @@ jobs:
           ./config.sh && ./validation.sh || rc=$?
           ./rmconfig.sh || true
           exit $rc
+      - name: CLI (packaged binary as subject, REST as oracle)
+        env:
+          LOXICMD_BIN: ${{ github.workspace }}/loxicmd-under-test
+        run: |
+          cd cicd/cfg-persist-cli/
+          rc=0
+          ./config.sh && ./validation.sh || rc=$?
+          ./rmconfig.sh || true
+          exit $rc
       - name: Upload evidence artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -144,6 +195,7 @@ jobs:
             cicd/cfg-persist-roundtrip/artifacts/
             cicd/cfg-persist-negative/artifacts/
             cicd/cfg-persist-restartmatrix/artifacts/
+            cicd/cfg-persist-cli/artifacts/
           if-no-files-found: ignore
 
   persist-soak:
