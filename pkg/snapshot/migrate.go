@@ -56,6 +56,65 @@ var Migrations = []Migration{
 			return nil
 		},
 	},
+	// 1.1 -> 1.2: included_domains was added and is required from 1.2 on.
+	// Pre-1.2 documents never declared coverage and were always treated as
+	// covering every domain (restore wiped and applied all of them), so
+	// stamping full coverage preserves their historical semantics exactly
+	// -- the migration makes the old behavior explicit rather than
+	// changing it.
+	{
+		FromVersion: "1.1",
+		ToVersion:   "1.2",
+		Apply: func(doc *Document) error {
+			if len(doc.IncludedDomains) == 0 {
+				doc.IncludedDomains = DomainNames()
+			}
+			return nil
+		},
+	},
+	// 1.2 -> 1.3: the l7policy and cors domains were added. Purely
+	// additive like 1.0->1.1 -- normalize the absent l7policy list to its
+	// empty value (the cors singleton stays nil: nil IS its meaningful
+	// "unconfigured" value) and re-stamp the version. Deliberately NOT
+	// stamped into included_domains: a pre-1.3 document never captured
+	// these domains, so restoring it must leave their live state
+	// untouched (included_domains is what scopes the wipe). Note the
+	// 1.1->1.2 migration above runs FIRST for pre-1.2 documents, and
+	// DomainNames() there now includes the new domains -- so legacy
+	// full-coverage documents DO wipe them (l7policy to empty, cors to
+	// its factory default), which preserves their historical "restore
+	// replaces everything" semantics exactly.
+	{
+		FromVersion: "1.2",
+		ToVersion:   "1.3",
+		Apply: func(doc *Document) error {
+			if doc.Domains.L7Policy == nil {
+				doc.Domains.L7Policy = []cmn.L7PolicyArg{}
+			}
+			return nil
+		},
+	},
+	// 1.3 -> 1.4: the recovery_dependencies manifest was added. Purely
+	// additive at the document level (no new domains): a 1.3 document
+	// simply declares no dependencies, and nil IS that meaningful value
+	// -- the migration must NOT invent a manifest for a document captured
+	// by a build that never recorded one (the entries carry generations
+	// and digests only a live capture can know). Restamp only.
+	{
+		FromVersion: "1.3",
+		ToVersion:   "1.4",
+		Apply:       func(doc *Document) error { return nil },
+	},
+	// 1.4 -> 1.5: the generation lineage field was added. Zero IS the
+	// meaningful value for a document that predates generations ("no
+	// lineage position") -- a generation states where a document sits in
+	// one node's persisted lineage, which a migration cannot know, so the
+	// migration must NOT invent one. Restamp only.
+	{
+		FromVersion: "1.4",
+		ToVersion:   "1.5",
+		Apply:       func(doc *Document) error { return nil },
+	},
 }
 
 // ApplyMigrations runs every registered Migration whose FromVersion matches
