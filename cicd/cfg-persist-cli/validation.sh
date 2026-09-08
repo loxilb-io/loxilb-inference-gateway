@@ -112,16 +112,22 @@ if [[ $CLI_RC -eq 0 ]] && jq -e . "$PLIB_ARTIFACTS/cli-persist-json.out" >/dev/n
 else
     fail "json mode: rc=$CLI_RC body=$(cat "$PLIB_ARTIFACTS/cli-persist-json.out")"
 fi
-jresult=$(jq -r '.result // ""'   < "$PLIB_ARTIFACTS/cli-persist-json.out")
-jreason=$(jq -r '.reason // ""'   < "$PLIB_ARTIFACTS/cli-persist-json.out")
-jcontract=$(jq -r '.contract // ""' < "$PLIB_ARTIFACTS/cli-persist-json.out")
-jsum=$(jq -r '.persist.checksum // ""' < "$PLIB_ARTIFACTS/cli-persist-json.out")
-jgen=$(jq -r '.persist.generation // -1' < "$PLIB_ARTIFACTS/cli-persist-json.out")
-jdom=$(jq -r '.persist.included_domains | length' < "$PLIB_ARTIFACTS/cli-persist-json.out" 2>/dev/null)
-if [[ "$jresult" == "ok" && "$jreason" == "ok" ]]; then
-    pass "envelope carries result=ok reason=ok"
+# The -o json document is the CommandResult envelope
+# (contracts/command-result.schema.json in the CLI repository): the verdict
+# lives on the envelope, the operation payload under .data.
+japi=$(jq -r '.apiVersion // ""' < "$PLIB_ARTIFACTS/cli-persist-json.out")
+jkind=$(jq -r '.kind // ""' < "$PLIB_ARTIFACTS/cli-persist-json.out")
+jsuccess=$(jq -r '.success // false' < "$PLIB_ARTIFACTS/cli-persist-json.out")
+jcode=$(jq -r '.code // ""' < "$PLIB_ARTIFACTS/cli-persist-json.out")
+jcontract=$(jq -r '.data.contract // ""' < "$PLIB_ARTIFACTS/cli-persist-json.out")
+jsum=$(jq -r '.data.persist.checksum // ""' < "$PLIB_ARTIFACTS/cli-persist-json.out")
+jgen=$(jq -r '.data.persist.generation // -1' < "$PLIB_ARTIFACTS/cli-persist-json.out")
+jdom=$(jq -r '.data.persist.included_domains | length' < "$PLIB_ARTIFACTS/cli-persist-json.out" 2>/dev/null)
+if [[ "$japi" == "loxilb.io/appliance/v1" && "$jkind" == "CommandResult" \
+      && "$jsuccess" == "true" && "$jcode" == "OK" ]]; then
+    pass "envelope is a successful CommandResult (identity, success and code agree)"
 else
-    fail "envelope result='$jresult' reason='$jreason'"
+    fail "envelope apiVersion='$japi' kind='$jkind' success='$jsuccess' code='$jcode'"
 fi
 if [[ "$jcontract" == "durable" ]]; then
     pass "envelope reports the durable contract (this gateway does report identity)"
@@ -215,16 +221,18 @@ done
 docker exec llb1 pkill -9 -f '/root/loxilb-io/loxilb/loxilb' >/dev/null 2>&1
 
 cli snap-down get snapshot -f /tmp/cli-keep.json -o json
-if [[ $CLI_RC -ne 0 ]]; then
-    pass "get snapshot against a dead gateway exits non-zero ($CLI_RC)"
+# Taxonomy row 5 (UNAVAILABLE): the peer is unreachable, bounded-backoff
+# retry is safe. The exact code is the contract, not merely "non-zero".
+if [[ $CLI_RC -eq 5 ]]; then
+    pass "get snapshot against a dead gateway exits 5 (unavailable)"
 else
-    fail "get snapshot against a dead gateway exited 0"
+    fail "get snapshot against a dead gateway exited $CLI_RC, want the taxonomy's 5"
 fi
-downreason=$(jq -r '.reason // ""' < "$PLIB_ARTIFACTS/cli-snap-down.out" 2>/dev/null)
+downreason=$(jq -r '.data.componentCode // ""' < "$PLIB_ARTIFACTS/cli-snap-down.out" 2>/dev/null)
 if [[ "$downreason" == "request-failed" ]]; then
-    pass "the failure carries the transport reason code"
+    pass "the failure carries the transport reason code verbatim in data.componentCode"
 else
-    fail "reason='$downreason', want request-failed"
+    fail "data.componentCode='$downreason', want request-failed"
 fi
 after_hash=$($dexec llb1 sha256sum /tmp/cli-keep.json 2>/dev/null | cut -d' ' -f1)
 if [[ -n "$after_hash" && "$after_hash" == "$before_hash" ]]; then
@@ -240,10 +248,10 @@ else
 fi
 
 cli persist-down create persist
-if [[ $CLI_RC -ne 0 ]]; then
-    pass "create persist against a dead gateway exits non-zero ($CLI_RC)"
+if [[ $CLI_RC -eq 5 ]]; then
+    pass "create persist against a dead gateway exits 5 (unavailable)"
 else
-    fail "create persist against a dead gateway exited 0"
+    fail "create persist against a dead gateway exited $CLI_RC, want the taxonomy's 5"
 fi
 
 echo "  restarting the gateway"
@@ -319,20 +327,22 @@ else
 fi
 lb_before=$(lb_count)
 cli restore-corrupt create restore -f /tmp/cli-corrupt.json --commit -o json
-if [[ $CLI_RC -ne 0 ]]; then
-    pass "a corrupt document restore exits non-zero ($CLI_RC)"
+# Taxonomy row 6 (CONTRACT_MISMATCH): the document does not fit this
+# gateway; do not retry unchanged.
+if [[ $CLI_RC -eq 6 ]]; then
+    pass "a corrupt document restore exits 6 (contract mismatch)"
 else
-    fail "a corrupt document restore exited 0"
+    fail "a corrupt document restore exited $CLI_RC, want the taxonomy's 6"
 fi
 # The gateway answers a checksum mismatch with compatible=false, so the CLI
 # reports the gateway's own signal rather than inventing a code of its own -
 # and the message keeps the gateway's detail, which is what names the field
 # that failed.
-creason=$(jq -r '.reason // ""' < "$PLIB_ARTIFACTS/cli-restore-corrupt.out" 2>/dev/null)
+creason=$(jq -r '.data.componentCode // ""' < "$PLIB_ARTIFACTS/cli-restore-corrupt.out" 2>/dev/null)
 if [[ "$creason" == "incompatible-snapshot" ]]; then
     pass "the refusal carries the reason the gateway's own answer implies ($creason)"
 else
-    fail "reason='$creason', want incompatible-snapshot"
+    fail "data.componentCode='$creason', want incompatible-snapshot"
 fi
 if grep -q "checksum mismatch" "$PLIB_ARTIFACTS/cli-restore-corrupt.out"; then
     pass "the refusal keeps the gateway's detail (which check failed)"
@@ -346,10 +356,12 @@ else
 fi
 
 cli restore-absent create restore -f /tmp/no-such-document.json -o json
-if [[ $CLI_RC -ne 0 && "$(jq -r '.reason // ""' < "$PLIB_ARTIFACTS/cli-restore-absent.out")" == "file-read-failed" ]]; then
-    pass "a missing document fails locally with the file reason code"
+# Taxonomy row 4 (PRECONDITION): the input file is missing; supply it and
+# retry.
+if [[ $CLI_RC -eq 4 && "$(jq -r '.data.componentCode // ""' < "$PLIB_ARTIFACTS/cli-restore-absent.out")" == "file-read-failed" ]]; then
+    pass "a missing document exits 4 with the file reason code"
 else
-    fail "missing document: rc=$CLI_RC body=$(cat "$PLIB_ARTIFACTS/cli-restore-absent.out")"
+    fail "missing document: rc=$CLI_RC (want 4) body=$(cat "$PLIB_ARTIFACTS/cli-restore-absent.out")"
 fi
 
 #################################################################################
@@ -372,10 +384,10 @@ fi
 
 gen_before=$(ondisk_generation)
 cli save-api-all save --api --all
-if [[ $CLI_RC -ne 0 ]]; then
-    pass "save --api --all is refused ($CLI_RC)"
+if [[ $CLI_RC -eq 2 ]]; then
+    pass "save --api --all is refused with exit 2 (invalid invocation)"
 else
-    fail "save --api --all exited 0 while writing none of the dumps --all names"
+    fail "save --api --all exited $CLI_RC, want the taxonomy's 2"
 fi
 if grep -q -- "--all" "$PLIB_ARTIFACTS/cli-save-api-all.err"; then
     pass "the refusal names the offending flag"
@@ -389,10 +401,38 @@ else
 fi
 
 cli save-api-cfgpath save --api --config-path /tmp/cli-dumps
-if [[ $CLI_RC -ne 0 ]] && grep -q "does not change where the gateway" "$PLIB_ARTIFACTS/cli-save-api-cfgpath.err"; then
-    pass "save --api --config-path is refused with the client/server split explained"
+if [[ $CLI_RC -eq 2 ]] && grep -q "does not change where the gateway" "$PLIB_ARTIFACTS/cli-save-api-cfgpath.err"; then
+    pass "save --api --config-path is refused (exit 2) with the client/server split explained"
 else
-    fail "save --api --config-path: rc=$CLI_RC err=$(cat "$PLIB_ARTIFACTS/cli-save-api-cfgpath.err")"
+    fail "save --api --config-path: rc=$CLI_RC (want 2) err=$(cat "$PLIB_ARTIFACTS/cli-save-api-cfgpath.err")"
+fi
+
+#################################################################################
+echo "=== exit taxonomy: the consumer-side contract holds on a real gateway ==="
+#################################################################################
+# The CLI repository proves the taxonomy against a fake gateway; this leg
+# proves the packaged binary honors it where this suite's automation runs.
+cli tax-usage get lb --no-such-flag
+if [[ $CLI_RC -eq 2 ]]; then
+    pass "an unknown flag exits 2 (invalid invocation)"
+else
+    fail "an unknown flag exited $CLI_RC, want the taxonomy's 2"
+fi
+if grep -q "Error:" "$PLIB_ARTIFACTS/cli-tax-usage.err" \
+   && [[ "$(grep -c "Error:" "$PLIB_ARTIFACTS/cli-tax-usage.err")" == "1" ]]; then
+    pass "the failure prints exactly one Error: line, on stderr"
+else
+    fail "stderr: $(cat "$PLIB_ARTIFACTS/cli-tax-usage.err")"
+fi
+# Exit 1 is reserved: automation seeing it knows it is talking to a
+# pre-taxonomy binary, so a conforming release must never emit it. The
+# failure legs above each pinned their specific code; this guards the
+# reservation explicitly on one more shape (a wrong subcommand).
+cli tax-unknown no-such-command
+if [[ $CLI_RC -eq 2 ]]; then
+    pass "an unknown command exits 2, never the reserved legacy 1"
+else
+    fail "an unknown command exited $CLI_RC, want 2 (and never 1)"
 fi
 
 drain_debounce
