@@ -11,7 +11,7 @@ var Opts struct {
 	Bgp               bool           `short:"b" long:"bgp" description:"Connect and Sync with GoBGP server"`
 	Ka                string         `short:"k" long:"ka" description:"KeepAlive/BFD RemoteIP:SourceIP:Interval" default:"none"`
 	Version           bool           `short:"v" long:"version" description:"Show loxilb version"`
-	NoAPI             bool           `short:"a" long:"api" description:"Run Rest API server"`
+	NoAPI             bool           `short:"a" long:"api" description:"Do not run the Rest API server (the API runs by default; this flag disables it)"`
 	NoNlp             bool           `short:"n" long:"nonlp" description:"Do not register with nlp"`
 	Host              string         `long:"host" description:"the IP to listen on" default:"0.0.0.0" env:"HOST"`
 	Port              int            `long:"port" description:"the port to listen on for insecure connections" default:"11111" env:"PORT"`
