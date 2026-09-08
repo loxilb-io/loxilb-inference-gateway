@@ -14,7 +14,7 @@ package loxinet
 #cgo CFLAGS: -I../../loxilb-ebpf/common -DHAVE_L4_TRACE
 #include <stdint.h>
 #include <linux/types.h>
-#include "../../../loxilb-ebpf/kernel/loxilb_libdp.h"
+#include "../../loxilb-ebpf/kernel/loxilb_libdp.h"
 
 extern int llb_map2fd(int mapidx);
 */
