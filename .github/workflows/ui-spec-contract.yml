@@ -1,0 +1,56 @@
+name: UI-Spec-Contract-CI
+
+# Compares the gateway API spec vendored by the UI dashboard
+# (loxilb-io/loxilb-ui, api-spec/gateway-swagger*.yml) against the spec in
+# this repository, so divergence goes red here instead of surfacing at a
+# release:
+#   - breaking drift (the vendored copy relies on surface this repo does
+#     not declare, or declares differently) fails the job;
+#   - release-ahead additions are logged as staleness for the UI's next
+#     vendoring refresh.
+# The pull_request paths trigger catches gateway-side spec edits
+# immediately; the weekly run catches movement on the UI side.
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "api/swagger.yml"
+      - "api/swagger-extras.yml"
+      - "api/check_ui_spec_drift.sh"
+      - ".github/workflows/ui-spec-contract.yml"
+  schedule:
+    - cron: "17 1 * * 1"
+  workflow_dispatch: {}
+
+jobs:
+  drift:
+    name: ui-vendored-spec-vs-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: gateway
+
+      - uses: actions/checkout@v4
+        with:
+          repository: loxilb-io/loxilb-ui
+          ref: main
+          path: ui
+          persist-credentials: false
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: gateway/go.mod
+          cache: true
+          cache-dependency-path: gateway/go.sum
+
+      # The codegen toolchain pin (0.30.3 in api/build_api.sh) panics in
+      # `swagger diff` on these specs; the diff subcommand carries its own
+      # newer pin and is never used for code generation.
+      - name: Install go-swagger for diffing
+        run: go install github.com/go-swagger/go-swagger/cmd/swagger@v0.36.5
+
+      - name: Compare vendored UI spec against the release spec
+        run: bash gateway/api/check_ui_spec_drift.sh ui/api-spec gateway/api
