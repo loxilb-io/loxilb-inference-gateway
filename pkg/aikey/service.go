@@ -413,16 +413,24 @@ func hashKey(rawKey string) string {
 // an import path — migrating a tenant from another gateway — so it is not
 // required to look like a generated one, only to be a usable credential:
 // long enough to resist guessing, and safe to carry in an HTTP header.
+//
+// Both rejections are typed. They are two branches of one validator reached
+// from one call site, so they must classify alike; leaving them as plain
+// errors left that to whether their wording happened to match a phrase in the
+// API layer's fallback classifier, and it did for one branch and not the
+// other.
 func validateSuppliedKey(raw string) error {
 	if len(raw) < minSuppliedKeyLen || len(raw) > maxSuppliedKeyLen {
-		return fmt.Errorf("supplied API key must be between %d and %d characters", minSuppliedKeyLen, maxSuppliedKeyLen)
+		return cmn.NewValidationError("api_key",
+			"supplied API key must be between %d and %d characters", minSuppliedKeyLen, maxSuppliedKeyLen)
 	}
 	for i := 0; i < len(raw); i++ {
 		// Printable US-ASCII excluding space: anything else cannot survive a
 		// header round-trip intact, and a key that changes in transit is an
 		// authentication failure nobody can diagnose.
 		if raw[i] < 0x21 || raw[i] > 0x7e {
-			return errors.New("supplied API key must contain only printable non-space ASCII characters")
+			return cmn.NewValidationError("api_key",
+				"supplied API key must contain only printable non-space ASCII characters")
 		}
 	}
 	return nil
