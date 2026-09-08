@@ -2,7 +2,7 @@
 
 The assigned surface has material contract and safety gaps. Several Swagger fields have no effective REST-to-dataplane path, and some accepted L7 inputs are truncated or interpreted differently in C. Documentation changes alone cannot establish support for those cases. Implementation follow-up: S02 closes the LB `host`, `path_prefix`, `session_header_name` and `model_name` fixed-string admission/Go-to-C defect with remote packaged-runtime evidence; it does not close the separate L7 fixed-field findings below.
 
-Read-only audit of `/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd`, based on HEAD `f8e6ace22f0f2262d56829e781a83e4b7075fef7` plus existing working changes; eBPF HEAD `c5e468f28a2fa2acc6ea9110bfedc8de687b5fcb` plus working changes. Swagger changed concurrently during the audit, so references identify the source locations observed. No edits, tests, builds, SSH, or agents were performed. CodeGraph was used for discovery; findings were checked against this checkout.
+Read-only audit in an isolated campaign worktree, based on HEAD `f8e6ace22f0f2262d56829e781a83e4b7075fef7` plus existing working changes; eBPF HEAD `c5e468f28a2fa2acc6ea9110bfedc8de687b5fcb` plus working changes. Swagger changed concurrently during the audit, so references identify the source locations observed. No edits, tests, builds, SSH, or agents were performed. CodeGraph was used for discovery; findings were checked against this checkout.
 
 **Reviewed scope and trace coverage**
 
@@ -15,7 +15,7 @@ All four L7 policy operations were traced:
 | `GET /config/l7policy/id/{id}` | Registry lookup and serialization; missing ID `404`. |
 | `DELETE /config/l7policy/id/{id}` | Detach when the referenced LB still exists, then remove registry entry; missing policy `404`; detach failure retains registry entry. |
 
-Registration: [configure_loxilb_rest_api.go:127](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/configure_loxilb_rest_api.go:127). Handlers: [l7policy.go:133](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/l7policy.go:133). Registry: [l7policy.go:124](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/l7policy.go:124). Attach bridge: [apiclient.go:501](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/apiclient.go:501).
+Registration: [configure_loxilb_rest_api.go:127](../../api/restapi/configure_loxilb_rest_api.go:127). Handlers: [l7policy.go:133](../../api/restapi/handler/l7policy.go:133). Registry: [l7policy.go:124](../../pkg/loxinet/l7policy.go:124). Attach bridge: [apiclient.go:501](../../pkg/loxinet/apiclient.go:501).
 
 Every assigned L7 schema leaf was followed through inbound/outbound conversion and its applicable validator/C consumer:
 
@@ -30,7 +30,7 @@ Every assigned L7 schema leaf was followed through inbound/outbound conversion a
 | `insertHeaders[].op`, `.name`, `.value` | Mapped, validated and applied through shared header-filter logic; maximum 8 filters, 63-byte names, 255-byte values. REMOVE values remain subject to validation even though emission ignores them. |
 | `sessionPersistence` | REST accepts `HTTP_COOKIE`; marker reaches C cookie generation/readback. Shared validator also accepts APP_COOKIE/SOURCE_IP, but those are outside the REST enum. Its incompatibility check is policy-wide, not an actual pool-affinity lookup. |
 
-Conversion: [handler/l7policy.go:228](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/l7policy.go:228). Validation: [common/l7policy.go:107](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/common/l7policy.go:107). C encoding: [dpebpf_linux.go:6009](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/dpebpf_linux.go:6009). Matching/actions: [sockproxy_l7policy.c:149](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/loxilb-ebpf/common/sockproxy_l7policy.c:149), [dispatch:730](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/loxilb-ebpf/common/sockproxy_l7policy.c:730), [headers:889](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/loxilb-ebpf/common/sockproxy_l7policy.c:889), [cookies:954](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/loxilb-ebpf/common/sockproxy_l7policy.c:954).
+Conversion: [handler/l7policy.go:228](../../api/restapi/handler/l7policy.go:228). Validation: [common/l7policy.go:107](../../common/l7policy.go:107). C encoding: [dpebpf_linux.go:6009](../../pkg/loxinet/dpebpf_linux.go:6009). Matching/actions: [sockproxy_l7policy.c:149](../../loxilb-ebpf/common/sockproxy_l7policy.c:149), [dispatch:730](../../loxilb-ebpf/common/sockproxy_l7policy.c:730), [headers:889](../../loxilb-ebpf/common/sockproxy_l7policy.c:889), [cookies:954](../../loxilb-ebpf/common/sockproxy_l7policy.c:954).
 
 For `LoadbalanceEntry`, the reviewed non-AI field inventory is:
 
@@ -56,73 +56,73 @@ For `LoadbalanceEntry`, the reviewed non-AI field inventory is:
 | `allowedSources[].prefix` | Handler → domain source-prefix association → source-check flag; readback present. |
 | `offload_state`, `hw_pkts`, `hw_bytes` | Schema/model and common REST serializer reviewed; serializer does not populate them. Hardware telemetry producers excluded. |
 
-Core LB references: [handler intake:53](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/loadbalancer.go:53), [serializer:520](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/loadbalancer.go:520), [domain intake:3518](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/rules.go:3518), [domain readback:1138](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/rules.go:1138), [LB2DP:6209](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/rules.go:6209).
+Core LB references: [handler intake:53](../../api/restapi/handler/loadbalancer.go:53), [serializer:520](../../api/restapi/handler/loadbalancer.go:520), [domain intake:3518](../../pkg/loxinet/rules.go:3518), [domain readback:1138](../../pkg/loxinet/rules.go:1138), [LB2DP:6209](../../pkg/loxinet/rules.go:6209).
 
 **Findings requiring implementation attention**
 
 1. **RESOLVED S02 — LB session-name fixed-array admission and copy.**
    The original audit found an unchecked `len+1` copy into `session_header_name[128]`. S02 now rejects invalid UTF-8, embedded NUL and values above 127 encoded bytes before mutation, repeats validation at the Go-to-C boundary and uses a bounded direct copy. Exact-boundary and failure-side-effect cases pass in the packaged runtime. Session extraction behavior and restore remain separate open dimensions.
-   Evidence: [S02 report](stages/S02-FIXED-CSTRING-ADMISSION.md), [rules.go](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/rules.go), [dpebpf_linux.go](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/dpebpf_linux.go).
+   Evidence: [S02 report](stages/S02-FIXED-CSTRING-ADMISSION.md), [rules.go](../../pkg/loxinet/rules.go), [dpebpf_linux.go](../../pkg/loxinet/dpebpf_linux.go).
 
 2. **P1 — Backend verification and legacy mTLS material are not wired into the active create path.**
    `mtls_backend` is stored and queued, but `DpLBRuleSetMTLS` only encodes frontend path-based fields. `DpProxyConfigureMTLS`, which copies backend settings and inline frontend CA material, has no caller in the searched source. No assignment to active `backend_verify_cert` was found. Consequently, storing `verify_server_cert=true` is not evidence of backend certificate verification. `client_ca_cert_data` similarly does not reach the active frontend encoder.
-   Evidence: [dpebpf_mtls.go:36](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/dpebpf_mtls.go:36), [active invocation:1854](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/dpebpf_linux.go:1854), [unused bridge:5713](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/dpebpf_linux.go:5713), [C verification gate:449](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/loxilb-ebpf/common/sockproxy_ssl.c:449).
+   Evidence: [dpebpf_mtls.go:36](../../pkg/loxinet/dpebpf_mtls.go:36), [active invocation:1854](../../pkg/loxinet/dpebpf_linux.go:1854), [unused bridge:5713](../../pkg/loxinet/dpebpf_linux.go:5713), [C verification gate:449](../../loxilb-ebpf/common/sockproxy_ssl.c:449).
 
 3. **P1 — L7 admission permits silent policy truncation.**
    Shared validation does not bound match sets, conditions, backend references, condition strings, or reference weights. Conversion truncates to 8 sets, 8 conditions/set, 32 references, 63-byte keys and 255-byte values; weights narrow to `uint8`. Dropping an AND condition can broaden a match. GET returns the original registry policy, concealing the effective truncation.
-   Evidence: [validation:117](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/common/l7policy.go:117), [encoding:6015](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/dpebpf_linux.go:6015).
+   Evidence: [validation:117](../../common/l7policy.go:117), [encoding:6015](../../pkg/loxinet/dpebpf_linux.go:6015).
 
 4. **P1 — LB-ID isolation does not match L7 attachment identity.**
    The registry enforces one policy per `lbId`, but C attach identifies only VIP/port/protocol. Distinct LB rules can share that tuple while differing in host/path/block/model. Their policies can therefore replace the same attached C policy despite passing the per-LB-ID check. `privateIP` adds another mismatch: LB2DP can use translated private addressing, while L7 attach uses `lb.Serv.ServIP`. IPv6 attach is explicitly unsupported.
-   Evidence: [registry check:162](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/l7policy.go:162), [LB key:3889](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/rules.go:3889), [DP address:6230](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/rules.go:6230), [attach key:5988](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/dpebpf_linux.go:5988), [C replacement:1197](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/loxilb-ebpf/common/sockproxy_l7policy.c:1197).
+   Evidence: [registry check:162](../../pkg/loxinet/l7policy.go:162), [LB key:3889](../../pkg/loxinet/rules.go:3889), [DP address:6230](../../pkg/loxinet/rules.go:6230), [attach key:5988](../../pkg/loxinet/dpebpf_linux.go:5988), [C replacement:1197](../../loxilb-ebpf/common/sockproxy_l7policy.c:1197).
 
 5. **P1 — Listener/policy lifecycle is not reconciled with LB deletion and replacement.**
    Correction to the preliminary hypothesis: C deletion keeps the listener and attached L7 state; it does not establish policy removal. On last-pool deletion it clears `arg_ptr`. Existing-listener addition returns without restoring that pointer or rebuilding listener TLS contexts. Thus a replacement can retain routes/old TLS context while losing timeout/HSTS argument access. Separately, deleting an L7 policy after its LB disappeared skips C detach, although the listener may still exist.
-   Evidence: [FullProxy removal:4057](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/rules.go:4057), [listener retained:912](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/loxilb-ebpf/common/sockproxy_conn.c:912), [argument cleared:961](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/loxilb-ebpf/common/sockproxy_conn.c:961), [existing-listener add:2261](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/loxilb-ebpf/common/sockproxy_http.c:2261), [conditional detach:206](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/l7policy.go:206).
+   Evidence: [FullProxy removal:4057](../../pkg/loxinet/rules.go:4057), [listener retained:912](../../loxilb-ebpf/common/sockproxy_conn.c:912), [argument cleared:961](../../loxilb-ebpf/common/sockproxy_conn.c:961), [existing-listener add:2261](../../loxilb-ebpf/common/sockproxy_http.c:2261), [conditional detach:206](../../pkg/loxinet/l7policy.go:206).
 
 6. **P1 — REST drops lifecycle and enforcement settings.**
    POST never copies `adminStateUp`, `connectionLimit`, or `snat`. A new rule submitted with `adminStateUp=false` reaches the domain with nil and resolves enabled. `connectionLimit` remains zero/unlimited through this intake. PATCH supports admin-state changes for L4 rules but has no connection-limit overlay.
-   Evidence: [complete POST handler:53](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/loadbalancer.go:53), [domain defaults:4353](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/rules.go:4353), [PATCH overlays:196](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/loadbalancer_octavia_patch.go:196).
+   Evidence: [complete POST handler:53](../../api/restapi/handler/loadbalancer.go:53), [domain defaults:4353](../../pkg/loxinet/rules.go:4353), [PATCH overlays:196](../../api/restapi/handler/loadbalancer_octavia_patch.go:196).
 
 7. **P1 — Normal GET is a lossy configuration export.**
    `serializeLBRule` omits `connectionLimit`, all three member/inspect timeouts, ALPN/TLS/HSTS settings, backend cert IDs, `vip_qos_policy_id`, and frontend `client_crl_path`. `privateIP` is missing from domain readback as well. A UI load/edit/save workflow cannot reconstruct those settings from GET.
-   Evidence: [serializer:520](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/loadbalancer.go:520), [domain values available:1194](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/rules.go:1194).
+   Evidence: [serializer:520](../../api/restapi/handler/loadbalancer.go:520), [domain values available:1194](../../pkg/loxinet/rules.go:1194).
 
 8. **P1 — Configured cipher failure reaches an assertion.**
    The same cipher string must pass both TLS 1.3 and TLS ≤1.2 configuration functions, even when only one protocol version is selected. Either failure returns NULL; listener creation then calls `assert(ssl_ctx)`. This is not a cleanly demonstrated REST validation failure and can terminate assertion-enabled builds.
-   Evidence: [cipher validation:221](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/loxilb-ebpf/common/sockproxy_ssl.c:221), [assertion:2580](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/loxilb-ebpf/common/sockproxy_http.c:2580).
+   Evidence: [cipher validation:221](../../loxilb-ebpf/common/sockproxy_ssl.c:221), [assertion:2580](../../loxilb-ebpf/common/sockproxy_http.c:2580).
 
 9. **P1 — H1 synthetic responses bypass the SSL write path.**
    REJECT and REDIRECT try the H2 responder, then use raw `send()` on the client FD without an H1 TLS branch. That does not establish correct encrypted H1 synthetic responses.
-   Evidence: [reject:424](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/loxilb-ebpf/common/sockproxy_l7policy.c:424), [redirect:477](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/loxilb-ebpf/common/sockproxy_l7policy.c:477). Runtime impact remains untested.
+   Evidence: [reject:424](../../loxilb-ebpf/common/sockproxy_l7policy.c:424), [redirect:477](../../loxilb-ebpf/common/sockproxy_l7policy.c:477). Runtime impact remains untested.
 
 10. **P1/P2 — Forward targets and redirect prefixes overstate supported semantics.**
     `poolId` is copied but ignored; references address internal endpoint slots, not arbitrary pools. Endpoint creation sorts by IP, so POST list order is not a reliable slot contract. Allocation failure in subset resolution returns the unrestricted base pool. `REPLACE_PREFIX` prepends the configured value to the whole request path rather than removing the matched prefix.
-    Evidence: [sorting:3876](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/rules.go:3876), [pool resolution/fallback:540](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/loxilb-ebpf/common/sockproxy_l7policy.c:540), [prefix implementation:690](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/loxilb-ebpf/common/sockproxy_l7policy.c:690).
+    Evidence: [sorting:3876](../../pkg/loxinet/rules.go:3876), [pool resolution/fallback:540](../../loxilb-ebpf/common/sockproxy_l7policy.c:540), [prefix implementation:690](../../loxilb-ebpf/common/sockproxy_l7policy.c:690).
 
 11. **P2 — PATCH is a restricted overlay, not general merge-patch over this schema.**
     FullProxy is rejected. Many present schema fields are ignored. `probeTimeout` and `probeRetries` are checked as lowercase `probetimeout` and `proberetries`, so canonical requests miss those overlays. `serviceArguments:null` does nothing; empty/null endpoints are rejected.
-    Evidence: [mode/presence handling:133](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/loadbalancer_octavia_patch.go:133), [wrong key casing:221](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/loadbalancer_octavia_patch.go:221), [empty endpoints:243](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/loadbalancer_octavia_patch.go:243).
+    Evidence: [mode/presence handling:133](../../api/restapi/handler/loadbalancer_octavia_patch.go:133), [wrong key casing:221](../../api/restapi/handler/loadbalancer_octavia_patch.go:221), [empty endpoints:243](../../api/restapi/handler/loadbalancer_octavia_patch.go:243).
 
 12. **P2 — Member metadata and monitor updates are incomplete.**
     The five HTTP monitor fields are not copied by POST/PATCH/GET and are absent from the LB member construction. For an existing `(IP,port)` member, reconciliation updates weight but does not copy `backup`, `subnetId`, or `monitorAddress`. Their create-time wiring does not prove update support. Also, `oper=1` takes the same omission/removal branch as normal replacement; do not describe it as append-only.
-    Evidence: [endpoint intake:279](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/loadbalancer.go:279), [member construction:3713](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/rules.go:3713), [reconciliation:2523](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/rules.go:2523).
+    Evidence: [endpoint intake:279](../../api/restapi/handler/loadbalancer.go:279), [member construction:3713](../../pkg/loxinet/rules.go:3713), [reconciliation:2523](../../pkg/loxinet/rules.go:2523).
 
 13. **P2 — Structured VIPs and annotations have inaccurate fidelity claims.**
     `secondaryVIPs` is stored separately and never fed into SCTP `secIP`/`pmhh`; “SCTP consumes them” is unsupported. Annotations are limited to the first 32 sorted keys, and values are truncated to at most 256 UTF-8-safe bytes. “Stored verbatim” is therefore false for oversized input. Metadata-only updates can also hit the unchanged-rule return before metadata assignments.
-    Evidence: [secondary separation:1262](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/rules.go:1262), [DP flat list:6311](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/rules.go:6311), [annotation truncation:1493](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/rules.go:1493), [early return:4035](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/rules.go:4035).
+    Evidence: [secondary separation:1262](../../pkg/loxinet/rules.go:1262), [DP flat list:6311](../../pkg/loxinet/rules.go:6311), [annotation truncation:1493](../../pkg/loxinet/rules.go:1493), [early return:4035](../../pkg/loxinet/rules.go:4035).
 
 14. **P2 — Numeric narrowing and timeout bounds are missing.**
     Service/member ports narrow to `uint16`; member weights to `uint8`, without corresponding normal-field bounds. `timeoutMemberConnect` narrows unsigned milliseconds to signed `int` before `poll`; large values can become negative. Member-data rounding adds 999 in `uint32`, allowing overflow.
-    Evidence: [port casts:62](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/loadbalancer.go:62), [member casts:287](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/loadbalancer.go:287), [connect cast:468](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/loxilb-ebpf/common/sockproxy_conn.c:468), [idle rounding:557](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/loxilb-ebpf/common/sockproxy_health.c:557).
+    Evidence: [port casts:62](../../api/restapi/handler/loadbalancer.go:62), [member casts:287](../../api/restapi/handler/loadbalancer.go:287), [connect cast:468](../../loxilb-ebpf/common/sockproxy_conn.c:468), [idle rounding:557](../../loxilb-ebpf/common/sockproxy_health.c:557).
 
 15. **P2 — QoS association failure is not atomic with LB creation.**
     Association runs after LB creation/programming; its error returns without removing the created LB. The existing-rule update path returns before this association block. A failed request therefore does not establish “nothing created.”
-    Evidence: [rules.go:4788](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/rules.go:4788).
+    Evidence: [rules.go:4788](../../pkg/loxinet/rules.go:4788).
 
 16. **P2 — Validation/export claims exceed the active path.**
     Go validates REGEX with Go syntax, while C compiles POSIX extended syntax and truncates the operand to 1023 bytes. Equal positions have no defined stable tie order. The purported Gateway export guard has only test callers; POST performs no Gateway export. Header validation admits interior tabs in names that C subsequently skips, and operator filters can overwrite the synthesized `X-Forwarded-*` headers.
-    Evidence: [Go regex:252](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/common/l7policy.go:252), [C regex:117](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/loxilb-ebpf/common/sockproxy_l7policy.c:117), [export helper:86](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/l7policy.go:86), [header ordering:889](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/loxilb-ebpf/common/sockproxy_l7policy.c:889).
+    Evidence: [Go regex:252](../../common/l7policy.go:252), [C regex:117](../../loxilb-ebpf/common/sockproxy_l7policy.c:117), [export helper:86](../../api/restapi/handler/l7policy.go:86), [header ordering:889](../../loxilb-ebpf/common/sockproxy_l7policy.c:889).
 
 **Documentation-only English replacement text**
 

@@ -4,7 +4,7 @@
 
 Stopped exploration. **No files edited, tests/builds executed, SSH used, or subagents launched.**
 
-Reviewed checkout: `/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd`, HEAD `f8e6ace22f0f2262d56829e781a83e4b7075fef7` plus WIP. WIP changed externally during review; this is **not an immutable whole-checkout snapshot**.
+Reviewed an isolated campaign worktree at HEAD `f8e6ace22f0f2262d56829e781a83e4b7075fef7` plus WIP. WIP changed externally during review; this is **not an immutable whole-checkout snapshot**.
 
 Coverage reached **50 Swagger paths, 58 operations, and their 55 referenced definitions**, including inline request/response schemas. Review followed routing → handler → relevant validation/state/consumer code. This is **static contract evidence, not runtime qualification or closure of every subsystem gap**.
 
@@ -75,9 +75,9 @@ GET           /nodegraph/{service}                           [unwired]
 GET           /version
 ```
 
-All twelve JSON metrics operations are explicitly wired at [configure_loxilb_rest_api.go:370](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/configure_loxilb_rest_api.go:370). Their `x-not-implemented: true` annotations are stale.
+All twelve JSON metrics operations are explicitly wired at [configure_loxilb_rest_api.go:370](../../api/restapi/configure_loxilb_rest_api.go:370). Their `x-not-implemented: true` annotations are stale.
 
-Catalog-list and nodegraph defaults remain `middleware.NotImplemented` at [loxilb_rest_api_api.go:361](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/operations/loxilb_rest_api_api.go:361) and [loxilb_rest_api_api.go:652](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/operations/loxilb_rest_api_api.go:652). Their descriptions must not promise usable results; the response contracts omit 501.
+Catalog-list and nodegraph defaults remain `middleware.NotImplemented` at [loxilb_rest_api_api.go:361](../../api/restapi/operations/loxilb_rest_api_api.go:361) and [loxilb_rest_api_api.go:652](../../api/restapi/operations/loxilb_rest_api_api.go:652). Their descriptions must not promise usable results; the response contracts omit 501.
 
 ## 2. Findings and English replacement guidance
 
@@ -100,7 +100,7 @@ Crucially:
 - Primary Swagger wins over extras for overlapping definitions and methods.
 - Extraction errors are logged, but the handler still returns its 200 responder.
 
-Evidence: [metadata.go:34](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/metadata.go:34), [metadata.go:149](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/metadata.go:149), [metadata.go:163](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/metadata.go:163), [metadata.go:235](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/metadata.go:235).
+Evidence: [metadata.go:34](../../api/restapi/handler/metadata.go:34), [metadata.go:149](../../api/restapi/handler/metadata.go:149), [metadata.go:163](../../api/restapi/handler/metadata.go:163), [metadata.go:235](../../api/restapi/handler/metadata.go:235).
 
 **Replacement:**
 
@@ -116,7 +116,7 @@ The file parameter is optional in Swagger but required by the handler. Recognize
 
 Import always commits, returns a `RestoreResult` rather than the declared `OperationResult`, and has additional 400/409/500 outcomes.
 
-Evidence: [backup.go:133](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/backup.go:133), [backup.go:169](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/backup.go:169).
+Evidence: [backup.go:133](../../api/restapi/handler/backup.go:133), [backup.go:169](../../api/restapi/handler/backup.go:169).
 
 **Replacement, accompanied by an explicit implementation warning:**
 
@@ -134,7 +134,7 @@ Snapshot schema is **1.5**, not 1.0. Current domains are:
 
 Export delegates to the snapshot engine, adds deprecation headers, and ignores legacy `cluster`. A cluster-only selection becomes empty after filtering, which means all snapshot domains—an unexpected widening requiring policy.
 
-Evidence: [doc.go:87](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/snapshot/doc.go:87), [backup.go:77](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/backup.go:77).
+Evidence: [doc.go:87](../../pkg/snapshot/doc.go:87), [backup.go:77](../../api/restapi/handler/backup.go:77).
 
 **Replacement:**
 
@@ -156,7 +156,7 @@ Dry-run validates document structure, checksum, compatibility, coverage and requ
 - A successful apply can return HTTP 200 with `persisted:false`; write-through failure does not undo the applied configuration.
 - `persisted` is absent for dry-run and unsuccessful commits; absence is not equivalent to false.
 
-Evidence: [restore.go:400](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/snapshot/restore.go:400), [restore.go:612](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/snapshot/restore.go:612), [snapshot.go:198](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/snapshot.go:198).
+Evidence: [restore.go:400](../../pkg/snapshot/restore.go:400), [restore.go:612](../../pkg/snapshot/restore.go:612), [snapshot.go:198](../../api/restapi/handler/snapshot.go:198).
 
 **Replacement:**
 
@@ -170,7 +170,7 @@ Persistence covers snapshot domains, not every runtime setting. Auto-persist is 
 
 OTLP configuration belongs to the tracing snapshot domain, but authentication header values remain node-local.
 
-Evidence: [lifecycle.go:230](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/snapshot/lifecycle.go:230), [snapshot.go:510](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/snapshot.go:510), [persist.go:64](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/snapshot/persist.go:64).
+Evidence: [lifecycle.go:230](../../pkg/snapshot/lifecycle.go:230), [snapshot.go:510](../../api/restapi/handler/snapshot.go:510), [persist.go:64](../../pkg/snapshot/persist.go:64).
 
 **Replacement:**
 
@@ -192,7 +192,7 @@ The freeze middleware precedes operation authentication:
 - `/status/ready` 503 may be a readiness body or an authentication/store error.
 - Readiness/maintenance/diagnostics Swagger still omits applicable authorization/error alternatives.
 
-Evidence: [auth.go:47](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/auth.go:47), [authz.go:112](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/authz/authz.go:112), [snapshot.go:71](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/snapshot.go:71).
+Evidence: [auth.go:47](../../api/restapi/handler/auth.go:47), [authz.go:112](../../pkg/authz/authz.go:112), [snapshot.go:71](../../api/restapi/handler/snapshot.go:71).
 
 **Replacement for `cancellable`:**
 
@@ -208,7 +208,7 @@ Readiness is configuration-recovery readiness—not inference readiness, GPU rea
 
 Some dependency “live” checks return success from configured/builtin state rather than probing an external service or certificate files. Diagnostics exposes cached map counts and includes raw boot, dependency and auto-persist error strings in nested fields/reasons. Therefore a universal “never connection strings” guarantee is not established.
 
-Evidence: [opstate.go:139](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/snapshot/opstate.go:139), [recoverydeps.go:170](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/recoverydeps.go:170), [diagnostics.go:58](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/diagnostics.go:58).
+Evidence: [opstate.go:139](../../pkg/snapshot/opstate.go:139), [recoverydeps.go:170](../../pkg/loxinet/recoverydeps.go:170), [diagnostics.go:58](../../api/restapi/handler/diagnostics.go:58).
 
 **Replacement:**
 
@@ -222,7 +222,7 @@ Diagnostics normally returns 200 even when its embedded `ready` is false.
 
 `enabled` is required. Omitted/zero timeout means no deadline. Repeat enter preserves the original timeout, operation ID and start time; changing timeout requires leave/re-enter. Deadline expiry does not automatically exit maintenance. Only SSE streams are counted; new inference refusal is explicitly false.
 
-Evidence: [maintenance.go:70](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/maintenance.go:70), [maintenance.go:101](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/maintenance/maintenance.go:101).
+Evidence: [maintenance.go:70](../../api/restapi/handler/maintenance.go:70), [maintenance.go:101](../../pkg/maintenance/maintenance.go:101).
 
 **Replacement:**
 
@@ -238,7 +238,7 @@ Device information reads Linux files directly; uptime is raw `/proc/uptime` cont
 
 Params POST sets one runtime log level; it is not resource creation. GET has no observed 204 branch.
 
-Evidence: [status.go:29](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/apiutils/status/status.go:29), [status.go:95](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/apiutils/status/status.go:95), [params.go:27](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/params.go:27).
+Evidence: [status.go:29](../../api/apiutils/status/status.go:29), [status.go:95](../../api/apiutils/status/status.go:95), [params.go:27](../../api/restapi/handler/params.go:27).
 
 **Replacements:** “Returns Linux process observations assembled from top and ps”; “Raw Linux device-identification fields”; “Filesystem capacity as a human-readable df value”; “Sets the runtime logging level.”
 
@@ -250,7 +250,7 @@ Tracing status uses a C statistics stub returning zeros. Advertised event totals
 
 Enable/disable and several OTLP failure branches return `ResultResponse`, which does not set an error status; failure messages can arrive with HTTP 200.
 
-Evidence: [configure_trace.go:37](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/configure_trace.go:37), [configure_trace.go:194](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/configure_trace.go:194), [common.go:45](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/common.go:45).
+Evidence: [configure_trace.go:37](../../api/restapi/handler/configure_trace.go:37), [configure_trace.go:194](../../api/restapi/handler/configure_trace.go:194), [common.go:45](../../api/restapi/handler/common.go:45).
 
 **Replacement:**
 
@@ -270,7 +270,7 @@ GET returns redaction/reprovision markers, not reusable credentials. `connected`
 
 Configuration changes precede secret persistence/reconnection, so failure can leave partial state.
 
-Evidence: [configure_trace.go:310](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/configure_trace.go:310), [configure_trace.go:389](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/configure_trace.go:389), [lxb_otlp_exporter.go:38](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/lxb_otlp_exporter.go:38).
+Evidence: [configure_trace.go:310](../../api/restapi/handler/configure_trace.go:310), [configure_trace.go:389](../../api/restapi/handler/configure_trace.go:389), [lxb_otlp_exporter.go:38](../../pkg/loxinet/lxb_otlp_exporter.go:38).
 
 **Replacement:**
 
@@ -284,7 +284,7 @@ Discovery returns metadata names `openai_v1`, `mcp_v1`, `mock_parser`; assignmen
 
 PUT validates the parser, not existence of the catalog. GET maps all mapping-lookup errors—including unavailable tracing—to 404, and can return a mapping without catalog metadata. DELETE succeeds when a mapping is absent. PUT success has **an empty body**, despite its `PostSuccess` schema.
 
-Evidence: [dpebpf_linux.go:5624](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/dpebpf_linux.go:5624), [lxb_ring_consumer.go:287](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/lxb_ring_consumer.go:287), [trace_parser.go:104](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/trace_parser.go:104).
+Evidence: [dpebpf_linux.go:5624](../../pkg/loxinet/dpebpf_linux.go:5624), [lxb_ring_consumer.go:287](../../pkg/loxinet/lxb_ring_consumer.go:287), [trace_parser.go:104](../../api/restapi/handler/trace_parser.go:104).
 
 Catalog IDs are assigned from sorted loaded catalogs, not durable identities. YAML `catalog_name`, not filename, supplies the name. YAML body-size zero defaults to 16384 bytes, not unlimited; maximum is 10 MiB. Catalog-list remains unwired.
 
@@ -302,7 +302,7 @@ REST statistics read C globals; the inspected source has no call sites updating 
 
 Kernel sampling includes cached decisions and special handling for uncached close/reset/error events; “same connection always gets the same decision” is too broad. Disable does not guarantee all in-flight spans complete. Builds without L4 tracing may return default-looking status while mutations fail.
 
-Evidence: [lxb_l4_trace_config.go:148](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/lxb_l4_trace_config.go:148), [lxb_l4_trace.c:90](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/loxilb-ebpf/liblxb/lxb_l4_trace.c:90), [lxb_l4_ring_consumer.go:576](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/lxb_l4_ring_consumer.go:576), [llb_kern_ct.c:116](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/loxilb-ebpf/kernel/llb_kern_ct.c:116).
+Evidence: [lxb_l4_trace_config.go:148](../../pkg/loxinet/lxb_l4_trace_config.go:148), [lxb_l4_trace.c:90](../../loxilb-ebpf/liblxb/lxb_l4_trace.c:90), [lxb_l4_ring_consumer.go:576](../../pkg/loxinet/lxb_l4_ring_consumer.go:576), [llb_kern_ct.c:116](../../loxilb-ebpf/kernel/llb_kern_ct.c:116).
 
 **Replacement:**
 
@@ -320,7 +320,7 @@ Enable/disable are non-idempotent: already-in-state yields 400. Disable closes t
 
 Status `ebpf_map_loaded` checks only one map FD; worker count includes cached entries. Uncompiled mode returns `routing_mode:"disabled"`, absent from the description.
 
-Evidence: [dpebpf_linux.go:4922](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/dpebpf_linux.go:4922), [dpebpf_linux.go:5126](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/dpebpf_linux.go:5126), [sockproxy_pd.c:2018](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/loxilb-ebpf/common/sockproxy_pd.c:2018).
+Evidence: [dpebpf_linux.go:4922](../../pkg/loxinet/dpebpf_linux.go:4922), [dpebpf_linux.go:5126](../../pkg/loxinet/dpebpf_linux.go:5126), [sockproxy_pd.c:2018](../../loxilb-ebpf/common/sockproxy_pd.c:2018).
 
 **Replacement:**
 
@@ -338,7 +338,7 @@ Counters are cast from int64 to uint32 without corresponding maxima. Worker keys
 
 Builtin scraping stores **waiting requests**, contradicting the schema’s “running + waiting.” GET never assigns `monitoring_enabled`.
 
-Evidence: [worker_metrics.go:200](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/worker_metrics.go:200), [dpebpf_linux.go:5163](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/dpebpf_linux.go:5163), [ai_vllm_scraper.go:155](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/ai_vllm_scraper.go:155).
+Evidence: [worker_metrics.go:200](../../api/restapi/handler/worker_metrics.go:200), [dpebpf_linux.go:5163](../../pkg/loxinet/dpebpf_linux.go:5163), [ai_vllm_scraper.go:155](../../pkg/loxinet/ai_vllm_scraper.go:155).
 
 **Replacement:**
 
@@ -361,7 +361,7 @@ Queue meaning, safe bounds, endpoint identity and future-clock tolerance need ex
 - Firewall JSON values reflect current rule cumulative counters; they can fall when rules disappear/reset.
 - Optional numeric fields may disappear at zero because of `omitempty`.
 
-Evidence: [prometheus.go:39](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/prometheus.go:39), [metric.go:26](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/metric.go:26), [prometheus.go:990](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/prometheus/prometheus.go:990), [prometheus_sm.go:472](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/prometheus/prometheus_sm.go:472).
+Evidence: [prometheus.go:39](../../api/restapi/handler/prometheus.go:39), [metric.go:26](../../api/restapi/handler/metric.go:26), [prometheus.go:990](../../api/prometheus/prometheus.go:990), [prometheus_sm.go:472](../../api/prometheus/prometheus_sm.go:472).
 
 **Replacement pattern:**
 
@@ -381,7 +381,7 @@ The advertised 32 MiB scan cap is checked between batches; reading a long line c
 
 Archive listing includes active `.log` files, not only rotated archives. Missing downloads currently return 500 rather than advertised 404.
 
-Evidence: [log.go:196](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/log.go:196), [log.go:308](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/log.go:308), [log.go:451](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/log.go:451), [log.go:681](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/log.go:681).
+Evidence: [log.go:196](../../api/restapi/handler/log.go:196), [log.go:308](../../api/restapi/handler/log.go:308), [log.go:451](../../api/restapi/handler/log.go:451), [log.go:681](../../api/restapi/handler/log.go:681).
 
 **Replacement:**
 
@@ -399,7 +399,7 @@ Version is public build identity; `VersionGetEntry.version` incorrectly describe
 
 `OperationResult.result` is a free-form message, not a reliable success discriminator. `Error` fields are optional and different handler paths populate different subsets. Correlation-reference sanitization is not universal across all 500 responders.
 
-Evidence: [nodegraph.go:65](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/nodegraph.go:65), [prometheus_sm.go:505](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/prometheus/prometheus_sm.go:505), [common.go:95](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/common.go:95).
+Evidence: [nodegraph.go:65](../../api/restapi/handler/nodegraph.go:65), [prometheus_sm.go:505](../../api/prometheus/prometheus_sm.go:505), [common.go:95](../../api/restapi/handler/common.go:95).
 
 **Replacements:** “Not implemented by the current router configuration”; “Gateway version string”; “Operation-specific outcome message; not a standardized success code.”
 
@@ -430,7 +430,7 @@ Inline coverage includes restore’s opaque object body; metadata’s open objec
 - **GPU routing linkage:** no consumer establishing the toggle’s global routing claim was found. Full selector semantics remain a handoff to the main-LB owner, not a proven runtime failure or success.
 - **Generated contract synchronization:** complete byte-for-byte WIP Swagger/embedded-spec/generated-model parity was not established.
 - **All Prometheus families/PromQL/dashboard semantics:** not part of this checkpoint; scoped REST metrics producers were reviewed.
-- **`UpdateLicenseRequest`: supplemental review completed, ownership unresolved.** It is referenced by `/auth/token/upgrade`, not orphaned. Handler writes `license_key` as the manual token and echoes it; it does not validate a license entitlement. Assign to the authentication/security owner. Evidence: [auth.go:267](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/auth.go:267).
+- **`UpdateLicenseRequest`: supplemental review completed, ownership unresolved.** It is referenced by `/auth/token/upgrade`, not orphaned. Handler writes `license_key` as the manual token and echoes it; it does not validate a license entitlement. Assign to the authentication/security owner. Evidence: [auth.go:267](../../api/restapi/handler/auth.go:267).
 - **Unreferenced definitions:** `MetricEntity` and Swagger `HealthCheckResponse` were inspected; no scoped live REST producer was found. Decide retain/remove ownership. The similarly named protobuf health response is a different type.
 - **`K8sConntrackEntry`: explicitly UNREVIEWED**, networking ownership; unreferenced by current main Swagger.
 - **`/config/metrics/all`: not a current Swagger/routed operation.** Old generated artifacts do not establish a served endpoint.

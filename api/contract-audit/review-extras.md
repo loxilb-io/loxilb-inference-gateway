@@ -1,6 +1,6 @@
 # Raw middleware contract audit
 
-Audit completed against `/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd`, HEAD `f8e6ace22f0f2262d56829e781a83e4b7075fef7` plus the local WIP. All findings below are **static source findings**, not runtime verification. No files were edited, tests/builds run, SSH used, or agents started.
+Audit completed in an isolated campaign worktree at HEAD `f8e6ace22f0f2262d56829e781a83e4b7075fef7` plus the local WIP. All findings below are **static source findings**, not runtime verification. No files were edited, tests/builds run, SSH used, or agents started.
 
 The most consequential issues are ineffective OPA `fail_open`, incomplete SSRF protection, DPU filters that do not implement their documented identities, malformed hardware-counter identity parsing, and non-atomic API-key PATCH updates.
 
@@ -23,7 +23,7 @@ Classification: `doc-defect` means source-supported documentation/schema correct
 
    The credential is the management `Authorization` header, conventionally `Bearer <token>`. Data-plane API keys are not management identities. In role-bearing modes, `viewer` may execute these GET operations; mutations require `admin`. Manual-token principals are unrestricted after validation. With all authentication modes disabled, no credential is required. Thus KV’s “admin endpoint” wording must not imply an admin-only role restriction.
 
-   Evidence: [raw dispatch and authentication](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/configure_loxilb_rest_api.go:603), [credential validation](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/auth.go:191), [role rules](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/authz/authz.go:112), [authentication-disabled behavior](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/auth.go:55).
+   Evidence: [raw dispatch and authentication](../../api/restapi/configure_loxilb_rest_api.go:603), [credential validation](../../api/restapi/handler/auth.go:191), [role rules](../../pkg/authz/authz.go:112), [authentication-disabled behavior](../../api/restapi/handler/auth.go:55).
 
    Proposed shared English description:
 
@@ -48,13 +48,13 @@ Classification: `doc-defect` means source-supported documentation/schema correct
 
    PATCH already uses `RawError` appropriately for this dual shape. Apply equivalent coverage to the first three operations.
 
-   Evidence: [authentication store failure](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/auth.go:79), [authentication envelope](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/auth.go:228), [API-key store envelopes](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/ai_apikey.go:45).
+   Evidence: [authentication store failure](../../api/restapi/handler/auth.go:79), [authentication envelope](../../api/restapi/handler/auth.go:228), [API-key store envelopes](../../api/restapi/handler/ai_apikey.go:45).
 
 3. **P2 · doc-defect — The preamble incorrectly states that all extras endpoints are absent from `swagger.yml`.**
 
    OPA GET/POST/DELETE already exist there as `x-raw-middleware: true` stubs. Actual dispatch still reaches the raw handlers first. The extras preamble at lines 20–23 contradicts the checked-out source and obscures the duplicate contract.
 
-   Evidence: [OPA generated-spec stubs](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/swagger.yml:7700), [middleware precedence](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/configure_loxilb_rest_api.go:603).
+   Evidence: [OPA generated-spec stubs](../../api/swagger.yml:7700), [middleware precedence](../../api/restapi/configure_loxilb_rest_api.go:603).
 
    Replacement:
 
@@ -66,7 +66,7 @@ Classification: `doc-defect` means source-supported documentation/schema correct
 
    Authentication runs before the method rejection. OPTIONS returns empty HTTP 200 before authentication or handler dispatch. PATCH’s other methods are delegated to the generated API; they must not be described as universally rejected by this raw handler.
 
-   Evidence: [KV method guard](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/ai_kv_inventory.go:75), [DPU method dispatch](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/dpu_debug.go:260), [OPA dispatch](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/opa_watcher.go:66), [OPTIONS handling](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/configure_loxilb_rest_api.go:576).
+   Evidence: [KV method guard](../../api/restapi/handler/ai_kv_inventory.go:75), [DPU method dispatch](../../api/restapi/handler/dpu_debug.go:260), [OPA dispatch](../../api/restapi/handler/opa_watcher.go:66), [OPTIONS handling](../../api/restapi/configure_loxilb_rest_api.go:576).
 
 5. **P2 · doc-defect — KV input bounds and inventory-registration dependency are incomplete.**
 
@@ -74,7 +74,7 @@ Classification: `doc-defect` means source-supported documentation/schema correct
 
    Importantly, 404 means no registered KV service/inventory for the pair; it does not prove the load-balancer service or endpoint itself is absent. Subscribers are created selectively: mode 1 targets prefill endpoints, while single-role mode uses its selected endpoint targets. The service ID comes from `r.ruleNum`, not the opaque load-balancer ID.
 
-   Evidence: [query parsing](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/ai_kv_inventory.go:90), [inventory lookup](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/ai_kv_subscriber.go:2298), [WIP subscriber registration](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/rules.go:4686).
+   Evidence: [query parsing](../../api/restapi/handler/ai_kv_inventory.go:90), [inventory lookup](../../pkg/loxinet/ai_kv_subscriber.go:2298), [WIP subscriber registration](../../pkg/loxinet/rules.go:4686).
 
    Replacements:
 
@@ -94,7 +94,7 @@ Classification: `doc-defect` means source-supported documentation/schema correct
 
    `blocks` is always an array; an empty registered inventory returns `blocks: []`, `total: 0`. `block_idx` is correctly documented as synthetic, and ranges from 0 to `total-1`. The block set is copied under the inventory lock, but algorithm/admission are read separately; the response has no generation or freshness proof.
 
-   Evidence: [actual response struct](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/ai_kv_inventory.go:48), [algorithm fallback and response construction](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/ai_kv_subscriber.go:2317).
+   Evidence: [actual response struct](../../api/restapi/handler/ai_kv_inventory.go:48), [algorithm fallback and response construction](../../pkg/loxinet/ai_kv_subscriber.go:2317).
 
    Replacements:
 
@@ -110,7 +110,7 @@ Classification: `doc-defect` means source-supported documentation/schema correct
 
    Filtered mode takes precedence over `flows=1`. For example, `?flows=1&limit=200` performs the filtered query and skips all four bulk enumerations. A client that automatically serializes Swagger’s default `limit: 200` silently changes the operation from aggregate to filtered mode.
 
-   Evidence: [mode selection](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/dpu_debug.go:276), [early filtered return](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/dpu_debug.go:337), [bulk enumeration](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/dpu_debug.go:349).
+   Evidence: [mode selection](../../api/restapi/handler/dpu_debug.go:276), [early filtered return](../../api/restapi/handler/dpu_debug.go:337), [bulk enumeration](../../api/restapi/handler/dpu_debug.go:349).
 
    Replacement:
 
@@ -127,7 +127,7 @@ Classification: `doc-defect` means source-supported documentation/schema correct
 
    `flows` is recognized only when exactly `"1"`; other strings are ignored rather than enum-validated. `ep` requires a final colon and a parseable port **1–65535**, but the address portion is not validated or required to be nonempty. `svc` has no validation beyond being a query string.
 
-   Evidence: [DPU parameter checks](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/dpu_debug.go:290).
+   Evidence: [DPU parameter checks](../../api/restapi/handler/dpu_debug.go:290).
 
    Replacement for `limit`:
 
@@ -143,7 +143,7 @@ Classification: `doc-defect` means source-supported documentation/schema correct
 
    Both `ct_fwd_5tuple` and `ct_rev_5tuple` match the same `pipeKey == "ct"` entries, despite forward/reply direction being stored separately. Other allowlisted pipe names are compared directly against logical entry keys. FDB and ACL entries reside in separate maps that this query does not enumerate.
 
-   Evidence: [actual query/filter logic](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/dpu_doca_bf2_metrics.go:559), [actual CT key](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/dpbroker.go:563), [direction bookkeeping](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/dpu_doca_bf2.go:1504), [separate FDB enumeration](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/dpu_doca_bf2.go:2653), [separate ACL enumeration](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/dpu_doca_bf2.go:2756).
+   Evidence: [actual query/filter logic](../../pkg/loxinet/dpu_doca_bf2_metrics.go:559), [actual CT key](../../pkg/loxinet/dpbroker.go:563), [direction bookkeeping](../../pkg/loxinet/dpu_doca_bf2.go:1504), [separate FDB enumeration](../../pkg/loxinet/dpu_doca_bf2.go:2653), [separate ACL enumeration](../../pkg/loxinet/dpu_doca_bf2.go:2756).
 
    **Disposition:** repair identity-aware filtering and pipe coverage, or explicitly redesign the public filter contract. Replacing “service name” with “substring” would describe the current mechanism but would silently ratify broken intended behavior. Until resolved, the UI must not present these filters as reliable service/endpoint/direction selectors.
 
@@ -155,7 +155,7 @@ Classification: `doc-defect` means source-supported documentation/schema correct
 
    The handler’s hard-error branch logs an error and still returns 200. Its comment mentions a warning header, but no such header is written. The current production adapter always returns a nil error, so that branch is not evidence of an operational warning mechanism.
 
-   Evidence: [filtered response and error branch](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/dpu_debug.go:440), [adapter](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/dpu_debug_adapter.go:166), [selection and skipped queries](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/dpu_doca_bf2_metrics.go:584).
+   Evidence: [filtered response and error branch](../../api/restapi/handler/dpu_debug.go:440), [adapter](../../pkg/loxinet/dpu_debug_adapter.go:166), [selection and skipped queries](../../pkg/loxinet/dpu_doca_bf2_metrics.go:584).
 
    Safe interim description:
 
@@ -171,7 +171,7 @@ Classification: `doc-defect` means source-supported documentation/schema correct
    - BF2 ACL rows assign `action`, counters, but no `RuleID`; serialized `rule_id` is therefore **0**.
    - BF2 ACL actions are `"DROP"` and `"ALLOW"` in the actual implementation.
 
-   Evidence: [age assignment](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/dpu_debug_adapter.go:173), [detail key assignment](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/dpu_doca_bf2_metrics.go:600), [route placeholders](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/dpu_doca_bf2.go:2726), [ACL row construction](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/dpu_doca_bf2.go:2778).
+   Evidence: [age assignment](../../pkg/loxinet/dpu_debug_adapter.go:173), [detail key assignment](../../pkg/loxinet/dpu_doca_bf2_metrics.go:600), [route placeholders](../../pkg/loxinet/dpu_doca_bf2.go:2726), [ACL row construction](../../pkg/loxinet/dpu_doca_bf2.go:2778).
 
    Safe English additions:
 
@@ -189,7 +189,7 @@ Classification: `doc-defect` means source-supported documentation/schema correct
 
    The operation applies to all registered CB-capable plugins. With none, it succeeds as a no-op, and `circuit_breaker_open` can remain false even after `"open"`.
 
-   Evidence: [manager fan-out/no-op](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/dpu_manager.go:344), [force-open/close implementation](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/dpu_doca_bf2.go:99).
+   Evidence: [manager fan-out/no-op](../../pkg/loxinet/dpu_manager.go:344), [force-open/close implementation](../../pkg/loxinet/dpu_doca_bf2.go:99).
 
    Replacement:
 
@@ -201,7 +201,7 @@ Classification: `doc-defect` means source-supported documentation/schema correct
 
    For `cb_force`, a later plugin error returns 400 after earlier plugins may already have changed state. The 400 description should include provider-reported action errors; it must not imply that every rejection is pre-mutation validation.
 
-   Evidence: [action handler](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/dpu_debug.go:509), [unregister lifecycle](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/dpu_manager.go:230), [multi-plugin early return](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/dpu_manager.go:348).
+   Evidence: [action handler](../../api/restapi/handler/dpu_debug.go:509), [unregister lifecycle](../../pkg/loxinet/dpu_manager.go:230), [multi-plugin early return](../../pkg/loxinet/dpu_manager.go:348).
 
    Decide whether unknown-plugin unregister is intentionally idempotent and whether shutdown/action failures need distinct status and outcome reporting. Do not claim “unload completed” from the current 200 alone.
 
@@ -215,7 +215,7 @@ Classification: `doc-defect` means source-supported documentation/schema correct
 
    The raw `flow_id` and counters remain available. The implementation also drops the provider’s direction metadata, so `total_flows` counts returned hardware entry rows, potentially forward and reply separately, rather than unique logical connections.
 
-   Evidence: [parser and projection](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/dpu_hwcounters.go:44), [BF2 row source](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/dpu_doca_bf2.go:2597), [key format](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/dpbroker.go:563).
+   Evidence: [parser and projection](../../api/restapi/handler/dpu_hwcounters.go:44), [BF2 row source](../../pkg/loxinet/dpu_doca_bf2.go:2597), [key format](../../pkg/loxinet/dpbroker.go:563).
 
    **Disposition:** repair the identity projection. Do not retain the current description promising parsed IPs, or silently define empty identities as successful parsing.
 
@@ -223,7 +223,7 @@ Classification: `doc-defect` means source-supported documentation/schema correct
 
    Failed hardware queries are skipped. `total_flows` equals the returned array length. Missing provider returns `flows: []`, `total_flows: 0`, as documented; the same empty shape can also result from no supported rows or all queries failing.
 
-   Evidence: [hardware query skip](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/dpu_doca_bf2.go:2616), [response count](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/dpu_hwcounters.go:93).
+   Evidence: [hardware query skip](../../pkg/loxinet/dpu_doca_bf2.go:2616), [response count](../../api/restapi/handler/dpu_hwcounters.go:93).
 
    Replacement:
 
@@ -233,7 +233,7 @@ Classification: `doc-defect` means source-supported documentation/schema correct
 
    The handler copies the boolean into configuration, and GET echoes it. The watcher’s fetch-failure path records an error and returns; it does not inspect `FailOpen` or remove rules to allow traffic. The complete watcher implementation contains no execution branch using the flag.
 
-   Evidence: [configuration copy](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/opa_watcher.go:113), [failure handling](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/opa/watcher.go:194).
+   Evidence: [configuration copy](../../api/restapi/handler/opa_watcher.go:113), [failure handling](../../pkg/opa/watcher.go:194).
 
    Do not preserve “Allow traffic when OPA is unreachable” as a supported feature.
 
@@ -249,7 +249,7 @@ Classification: `doc-defect` means source-supported documentation/schema correct
 
    Fetching subsequently uses an ordinary HTTP client without a guarded dialer or redirect policy. DNS answers are not pinned between validation and fetching, and redirects are not revalidated by this guard.
 
-   Evidence: [CIDR list and admission guard](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/opa_watcher.go:182), [HTTP client and fetch](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/opa/fetcher.go:45).
+   Evidence: [CIDR list and admission guard](../../api/restapi/handler/opa_watcher.go:182), [HTTP client and fetch](../../pkg/opa/fetcher.go:45).
 
    **Disposition:** retain this as a security implementation gap. Merely narrowing the wording to the five ranges is not a resolution of the claimed protection.
 
@@ -266,7 +266,7 @@ Classification: `doc-defect` means source-supported documentation/schema correct
    - On a 64-bit build, sufficiently large positive integers can overflow `time.Duration`; a resulting negative interval reaches `time.NewTicker` and can panic in the background goroutine.
    - Initial polling delay is 10 seconds and is not exposed in this request.
 
-   Evidence: [request normalization](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/opa_watcher.go:104), [watcher defaults](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/opa/watcher.go:80), [ticker creation](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/opa/watcher.go:158).
+   Evidence: [request normalization](../../api/restapi/handler/opa_watcher.go:104), [watcher defaults](../../pkg/opa/watcher.go:80), [ticker creation](../../pkg/opa/watcher.go:158).
 
    Replacements:
 
@@ -282,7 +282,7 @@ Classification: `doc-defect` means source-supported documentation/schema correct
 
    In management-authenticated deployments, these downstream operations therefore lack the credential required by the generated management API. The exposed OPA request also provides no alternative management URL, TLS, or credential configuration.
 
-   Evidence: [watcher/applier construction](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/opa/watcher.go:90), [DELETE request](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/opa/applier.go:136), [POST request](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/opa/applier.go:176), [global management security](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/swagger.yml:12907).
+   Evidence: [watcher/applier construction](../../pkg/opa/watcher.go:90), [DELETE request](../../pkg/opa/applier.go:136), [POST request](../../pkg/opa/applier.go:176), [global management security](../../api/swagger.yml:12907).
 
    **Disposition:** define an authenticated internal application mechanism. HTTP 200 from watcher configuration must not be presented as successful policy enforcement.
 
@@ -296,7 +296,7 @@ Classification: `doc-defect` means source-supported documentation/schema correct
 
    Circuit-breaker values are **0=closed, 1=open, 2=half-open**. Extras omits the mapping; the overlapping main spec currently reverses 1 and 2.
 
-   Evidence: [POST acknowledgment](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/opa_watcher.go:120), [status/cache semantics](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/opa/watcher.go:148), [partial failure and timestamp](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/opa/watcher.go:232), [breaker enum](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/opa/types.go:48), [conflicting overlapping description](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/swagger.yml:12900).
+   Evidence: [POST acknowledgment](../../api/restapi/handler/opa_watcher.go:120), [status/cache semantics](../../pkg/opa/watcher.go:148), [partial failure and timestamp](../../pkg/opa/watcher.go:232), [breaker enum](../../pkg/opa/types.go:48), [conflicting overlapping description](../../api/swagger.yml:12900).
 
    Replacements:
 
@@ -316,7 +316,7 @@ Classification: `doc-defect` means source-supported documentation/schema correct
 
    There is no firewall cleanup or persisted-cache deletion. Replacement POST similarly stops the old watcher without waiting for it to exit before constructing a new one. In-flight work can still be unwinding; source inspection does not establish atomic replacement.
 
-   Evidence: [DELETE implementation](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/opa_watcher.go:159), [Stop implementation](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/opa/watcher.go:135).
+   Evidence: [DELETE implementation](../../api/restapi/handler/opa_watcher.go:159), [Stop implementation](../../pkg/opa/watcher.go:135).
 
    Replacement:
 
@@ -338,7 +338,7 @@ Classification: `doc-defect` means source-supported documentation/schema correct
    | `enabled: true` | Enable; does not change expiration |
    | `{}` or top-level `null` | Existing-key lookup and cache invalidation, no field update; can return 204 |
 
-   Evidence: [PATCH decoding](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/ai_apikey.go:202), [non-nil update branches](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/aikey/service.go:592), [empty-model storage/readback](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/aikey/service.go:527), [model and expiry enforcement](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/ai_gateway_dp.go:239).
+   Evidence: [PATCH decoding](../../api/restapi/handler/ai_apikey.go:202), [non-nil update branches](../../pkg/aikey/service.go:592), [empty-model storage/readback](../../pkg/aikey/service.go:527), [model and expiry enforcement](../../pkg/loxinet/ai_gateway_dp.go:239).
 
    Replacements:
 
@@ -354,7 +354,7 @@ Classification: `doc-defect` means source-supported documentation/schema correct
 
    Thus `["a,b"]` becomes two allowed models after readback. `[""]` becomes an empty stored string and subsequently an unrestricted list. Null array elements decode to zero-value strings and can reach the same issue. There is no model existence, nonempty-item, delimiter, uniqueness, or length validation in this PATCH path.
 
-   Evidence: [serialization](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/aikey/service.go:602), [deserialization](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/aikey/service.go:527), [raw input type](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/ai_apikey.go:202).
+   Evidence: [serialization](../../pkg/aikey/service.go:602), [deserialization](../../pkg/aikey/service.go:527), [raw input type](../../api/restapi/handler/ai_apikey.go:202).
 
    **Disposition:** use lossless storage or explicitly validate a ratified model-name grammar. Do not silently advertise arbitrary strings while corrupting them, or represent UI-only restrictions as backend validation.
 
@@ -364,17 +364,17 @@ Classification: `doc-defect` means source-supported documentation/schema correct
 
    Consequently, a 500 does not guarantee unchanged state. Concurrent deletion after the initial key lookup is also not detected through `RowsAffected`.
 
-   Evidence: [sequential statements and delayed invalidation](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/aikey/service.go:597).
+   Evidence: [sequential statements and delayed invalidation](../../pkg/aikey/service.go:597).
 
    **Disposition:** implementation correction is required for an atomic PATCH contract. The UI should not infer rollback from failure; re-read state before presenting a definitive outcome.
 
-   On the successful path, local cache eviction is synchronous; peer invalidation is best-effort, not cluster-wide acknowledgment. Evidence: [invalidation semantics](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/aikey/invalidate.go:36).
+   On the successful path, local cache eviction is synchronous; peer invalidation is best-effort, not cluster-wide acknowledgment. Evidence: [invalidation semantics](../../pkg/aikey/invalidate.go:36).
 
 25. **P1 · implementation-gap — Browser CORS does not allow the documented PATCH operation.**
 
    Global `Access-Control-Allow-Methods` lists `GET, POST, PUT, DELETE, OPTIONS`, omitting PATCH. A direct cross-origin browser PATCH cannot obtain the advertised method permission even when its origin is allowed.
 
-   Evidence: [CORS method list](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/configure_loxilb_rest_api.go:538).
+   Evidence: [CORS method list](../../api/restapi/configure_loxilb_rest_api.go:538).
 
    This is an implementation issue affecting direct-browser integration. Same-origin access or a server-side OAM proxy is a different deployment path and was not exercised here.
 
@@ -390,7 +390,7 @@ Classification: `doc-defect` means source-supported documentation/schema correct
    - The declared media types do not establish generated 415/406 enforcement.
    - PATCH `key_id` rejects only empty/whitespace-only values, then uses the original untrimmed identifier. Prefix dispatch does not validate that the suffix is exactly one path segment.
 
-   Evidence: [DPU decoder](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/dpu_debug.go:503), [OPA decoder](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/opa_watcher.go:82), [PATCH decoder and identifier](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/ai_apikey.go:195), [PATCH prefix routing](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/configure_loxilb_rest_api.go:639).
+   Evidence: [DPU decoder](../../api/restapi/handler/dpu_debug.go:503), [OPA decoder](../../api/restapi/handler/opa_watcher.go:82), [PATCH decoder and identifier](../../api/restapi/handler/ai_apikey.go:195), [PATCH prefix routing](../../api/restapi/configure_loxilb_rest_api.go:639).
 
    Decide strict-object, unknown-field, trailing-content, null, and identifier policies before adding purported backend guarantees.
 
@@ -423,9 +423,9 @@ Classification: `doc-defect` means source-supported documentation/schema correct
    - Counts such as `total` and `total_flows` are nonnegative returned-array lengths.
    - `format: uint64` does not itself guarantee lossless JavaScript handling. The wire currently sends JSON numbers; clients must preserve integers beyond `2^53-1`, particularly KV hashes. Changing them to strings would be a separate wire-contract decision.
 
-   Evidence: [DPU response types](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/dpu_debug.go:30), [collection normalization](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/dpu_debug.go:406), [OPA response types and absent watcher](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/opa_watcher.go:48), [management envelope](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/handler/auth.go:228).
+   Evidence: [DPU response types](../../api/restapi/handler/dpu_debug.go:30), [collection normalization](../../api/restapi/handler/dpu_debug.go:406), [OPA response types and absent watcher](../../api/restapi/handler/opa_watcher.go:48), [management envelope](../../api/restapi/handler/auth.go:228).
 
-   Per-pipe map names are logical families `ct`, `udp_ct`, `route`, `fdb`, `acl`, distinct from the GET query’s hardware-pipe enum. With a registered manager, active maps additionally contain `total`; the no-provider response uses empty maps. Scalars and maps are sampled separately, so do not promise atomic equality during updates. Evidence: [per-pipe sampling](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/pkg/loxinet/dpu_manager.go:312).
+   Per-pipe map names are logical families `ct`, `udp_ct`, `route`, `fdb`, `acl`, distinct from the GET query’s hardware-pipe enum. With a registered manager, active maps additionally contain `total`; the no-provider response uses empty maps. Scalars and maps are sampled separately, so do not promise atomic equality during updates. Evidence: [per-pipe sampling](../../pkg/loxinet/dpu_manager.go:312).
 
 The following UI rules can be expressed now without inventing backend guarantees:
 
@@ -452,5 +452,5 @@ Outstanding decisions and verification boundaries:
 - Define DPU action failure/idempotency semantics and populate unavailable metadata where required.
 - Make PATCH storage lossless and updates atomic; establish model-name/null/empty-patch validation and fix CORS.
 - Resolve Swagger response-required fields, union-envelope representation, and lossless uint64 client handling.
-- Raw dispatch returns before the generated snapshot-freeze/auto-persist middleware. Whether these mutations should participate is a lifecycle-policy question; do not document those protections for extras without resolving it. Evidence: [middleware composition](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/configure_loxilb_rest_api.go:459), [generated middleware wrappers](/Users/gongseoghwan/go/src/loxilb-inference-gateway-ai-multitier-cicd/api/restapi/configure_loxilb_rest_api.go:502).
+- Raw dispatch returns before the generated snapshot-freeze/auto-persist middleware. Whether these mutations should participate is a lifecycle-policy question; do not document those protections for extras without resolving it. Evidence: [middleware composition](../../api/restapi/configure_loxilb_rest_api.go:459), [generated middleware wrappers](../../api/restapi/configure_loxilb_rest_api.go:502).
 - Hardware behavior, database failure outcomes, browser requests, OPA connectivity/enforcement, and concurrency were **not executed**. No runtime PASS or readiness claim follows from this audit.

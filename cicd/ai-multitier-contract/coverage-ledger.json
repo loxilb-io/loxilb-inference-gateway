@@ -1409,7 +1409,7 @@
           "evidence": [
             "pkg/loxinet/apikey_policy_test.go",
             "pkg/loxinet/rules_apikey_replace_test.go",
-            "/root/loxilb-ai-multitier-evidence/s03r2-regression-unit-01"
+            "runtime-evidence:s03r2-regression-unit-01"
           ],
           "note": "Closed enum, omission, explicit disabled/required, replace preservation and unknown-wire fail-closed behavior are covered by remote Go and C unit gates."
         },
@@ -1418,7 +1418,7 @@
           "evidence": [
             "pkg/loxinet/apikey_policy_test.go",
             "pkg/loxinet/rules_apikey_replace_test.go",
-            "/root/loxilb-ai-multitier-evidence/s03-authsep-validation-01.log"
+            "runtime-evidence:s03-authsep-validation-01.log"
           ],
           "note": "Create omission, declared disabled, required policy and replace omission semantics are pinned; live disabled/required behavior is distinguished."
         },
@@ -1426,24 +1426,24 @@
           "status": "VERIFIED",
           "evidence": [
             "cicd/ai-multitier-security/check_security_order.py",
-            "/root/loxilb-ai-multitier-evidence/s03r2-h2-runtime-green-02.log",
-            "/root/loxilb-ai-multitier-evidence/s03r2-regression-unit-01"
+            "runtime-evidence:s03r2-h2-runtime-green-02.log",
+            "runtime-evidence:s03r2-regression-unit-01"
           ],
           "note": "Policy reaches both HTTP/1 and per-stream HTTP/2 admission; the mandatory gate precedes all HTTP/2 route selectors and X-Api-Key is stripped before backend submission."
         },
         "behavior": {
           "status": "PARTIAL",
           "evidence": [
-            "/root/loxilb-ai-multitier-evidence/s03-authsep-validation-01.log",
-            "/root/loxilb-ai-multitier-evidence/s03r2-h2-runtime-green-02.log"
+            "runtime-evidence:s03-authsep-validation-01.log",
+            "runtime-evidence:s03r2-h2-runtime-green-02.log"
           ],
           "note": "HTTP/1 configured/storeless behavior and HTTP/2 disabled/storeless behavior are live-proven. HTTP/2 configured-store valid, invalid, model-denied and rate-limited runtime cells remain open."
         },
         "failure": {
           "status": "PARTIAL",
           "evidence": [
-            "/root/loxilb-ai-multitier-evidence/s03-authsep-validation-01.log",
-            "/root/loxilb-ai-multitier-evidence/s03r2-h2-runtime-green-02.log",
+            "runtime-evidence:s03-authsep-validation-01.log",
+            "runtime-evidence:s03r2-h2-runtime-green-02.log",
             "loxilb-ebpf/common/test_ai_security.c"
           ],
           "note": "401/403/429/503 mapping and backend non-delivery are covered across unit and live rails, but HTTP/2 configured-store denial bodies, Retry-After and every tier-hit combination are not live-qualified."
@@ -1987,8 +1987,8 @@
           "status": "VERIFIED",
           "evidence": [
             "api/contract-audit/stages/S02-FIXED-CSTRING-ADMISSION.md",
-            "kv-loxilb-ctl:/root/loxilb-ai-multitier-evidence/s02-final-unit-02",
-            "kv-loxilb-ctl:/root/loxilb-ai-multitier-evidence/s02-final-http-02a"
+            "runtime-evidence:s02-final-unit-02",
+            "runtime-evidence:s02-final-http-02a"
           ],
           "note": "ASCII and multibyte UTF-8 boundaries, overflow, embedded NUL, invalid UTF-8 at the Go boundary, and the composite-key limit are covered before mutation."
         },
@@ -2001,7 +2001,7 @@
           "status": "PARTIAL",
           "evidence": [
             "api/contract-audit/stages/S02-FIXED-CSTRING-ADMISSION.md",
-            "kv-loxilb-ctl:/root/loxilb-ai-multitier-evidence/s02-final-unit-02"
+            "runtime-evidence:s02-final-unit-02"
           ],
           "note": "The Go-to-C copy boundary and C ABI capacity are verified, but live sockproxy lookup and routing semantics are not qualified in S02."
         },
@@ -2013,10 +2013,10 @@
         "failure": {
           "status": "VERIFIED",
           "evidence": [
-            "kv-loxilb-ctl:/root/loxilb-ai-multitier-evidence/s02-fixed-cstrings-before-unit-03",
-            "kv-loxilb-ctl:/root/loxilb-ai-multitier-evidence/s02-final-http-02a",
-            "kv-loxilb-ctl:/root/loxilb-ai-multitier-evidence/s02-final-http-02b",
-            "kv-loxilb-ctl:/root/loxilb-ai-multitier-evidence/s02-final-http-02c"
+            "runtime-evidence:s02-fixed-cstrings-before-unit-03",
+            "runtime-evidence:s02-final-http-02a",
+            "runtime-evidence:s02-final-http-02b",
+            "runtime-evidence:s02-final-http-02c"
           ],
           "note": "The vulnerable baseline is RED; the fixed runtime returns HTTP 400 with the field reason and byte-for-byte equivalent normalized full rule state in three runs."
         },
@@ -2629,8 +2629,8 @@
           "status": "VERIFIED",
           "evidence": [
             "api/contract-audit/stages/S02-FIXED-CSTRING-ADMISSION.md",
-            "kv-loxilb-ctl:/root/loxilb-ai-multitier-evidence/s02-final-unit-02",
-            "kv-loxilb-ctl:/root/loxilb-ai-multitier-evidence/s02-final-http-02a"
+            "runtime-evidence:s02-final-unit-02",
+            "runtime-evidence:s02-final-http-02a"
           ],
           "note": "ASCII and multibyte UTF-8 boundaries, overflow, embedded NUL, invalid UTF-8 at the Go boundary, and the composite-key limit are covered before mutation."
         },
@@ -2643,7 +2643,7 @@
           "status": "PARTIAL",
           "evidence": [
             "api/contract-audit/stages/S02-FIXED-CSTRING-ADMISSION.md",
-            "kv-loxilb-ctl:/root/loxilb-ai-multitier-evidence/s02-final-unit-02"
+            "runtime-evidence:s02-final-unit-02"
           ],
           "note": "The Go-to-C copy boundary and C ABI capacity are verified, but live model-key routing and exact-engine behavior are not qualified in S02."
         },
@@ -2655,10 +2655,10 @@
         "failure": {
           "status": "VERIFIED",
           "evidence": [
-            "kv-loxilb-ctl:/root/loxilb-ai-multitier-evidence/s02-fixed-cstrings-before-unit-03",
-            "kv-loxilb-ctl:/root/loxilb-ai-multitier-evidence/s02-final-http-02a",
-            "kv-loxilb-ctl:/root/loxilb-ai-multitier-evidence/s02-final-http-02b",
-            "kv-loxilb-ctl:/root/loxilb-ai-multitier-evidence/s02-final-http-02c"
+            "runtime-evidence:s02-fixed-cstrings-before-unit-03",
+            "runtime-evidence:s02-final-http-02a",
+            "runtime-evidence:s02-final-http-02b",
+            "runtime-evidence:s02-final-http-02c"
           ],
           "note": "The vulnerable baseline is RED; the fixed runtime returns HTTP 400 with the field reason and unchanged normalized full rule state in three runs."
         },
@@ -3306,8 +3306,8 @@
           "status": "VERIFIED",
           "evidence": [
             "api/contract-audit/stages/S02-FIXED-CSTRING-ADMISSION.md",
-            "kv-loxilb-ctl:/root/loxilb-ai-multitier-evidence/s02-final-unit-02",
-            "kv-loxilb-ctl:/root/loxilb-ai-multitier-evidence/s02-final-http-02a"
+            "runtime-evidence:s02-final-unit-02",
+            "runtime-evidence:s02-final-http-02a"
           ],
           "note": "ASCII and multibyte UTF-8 boundaries, overflow, embedded NUL, invalid UTF-8 at the Go boundary, and the composite-key limit are covered before mutation."
         },
@@ -3320,7 +3320,7 @@
           "status": "PARTIAL",
           "evidence": [
             "api/contract-audit/stages/S02-FIXED-CSTRING-ADMISSION.md",
-            "kv-loxilb-ctl:/root/loxilb-ai-multitier-evidence/s02-final-unit-02"
+            "runtime-evidence:s02-final-unit-02"
           ],
           "note": "The Go-to-C copy boundary and C ABI capacity are verified, but live path-match and sockproxy lookup behavior are not qualified in S02."
         },
@@ -3332,10 +3332,10 @@
         "failure": {
           "status": "VERIFIED",
           "evidence": [
-            "kv-loxilb-ctl:/root/loxilb-ai-multitier-evidence/s02-fixed-cstrings-before-unit-03",
-            "kv-loxilb-ctl:/root/loxilb-ai-multitier-evidence/s02-final-http-02a",
-            "kv-loxilb-ctl:/root/loxilb-ai-multitier-evidence/s02-final-http-02b",
-            "kv-loxilb-ctl:/root/loxilb-ai-multitier-evidence/s02-final-http-02c"
+            "runtime-evidence:s02-fixed-cstrings-before-unit-03",
+            "runtime-evidence:s02-final-http-02a",
+            "runtime-evidence:s02-final-http-02b",
+            "runtime-evidence:s02-final-http-02c"
           ],
           "note": "The vulnerable baseline is RED; the fixed runtime returns HTTP 400 with the field reason and unchanged normalized full rule state in three runs."
         },
@@ -4053,8 +4053,8 @@
           "status": "VERIFIED",
           "evidence": [
             "api/contract-audit/stages/S02-FIXED-CSTRING-ADMISSION.md",
-            "kv-loxilb-ctl:/root/loxilb-ai-multitier-evidence/s02-final-unit-02",
-            "kv-loxilb-ctl:/root/loxilb-ai-multitier-evidence/s02-final-http-02a"
+            "runtime-evidence:s02-final-unit-02",
+            "runtime-evidence:s02-final-http-02a"
           ],
           "note": "ASCII and multibyte UTF-8 boundaries, overflow, embedded NUL, and invalid UTF-8 at the Go boundary are covered before mutation."
         },
@@ -4067,7 +4067,7 @@
           "status": "PARTIAL",
           "evidence": [
             "api/contract-audit/stages/S02-FIXED-CSTRING-ADMISSION.md",
-            "kv-loxilb-ctl:/root/loxilb-ai-multitier-evidence/s02-final-unit-02"
+            "runtime-evidence:s02-final-unit-02"
           ],
           "note": "The Go-to-C copy boundary and C ABI capacity are verified, but live header extraction and affinity behavior are not qualified in S02."
         },
@@ -4079,10 +4079,10 @@
         "failure": {
           "status": "VERIFIED",
           "evidence": [
-            "kv-loxilb-ctl:/root/loxilb-ai-multitier-evidence/s02-fixed-cstrings-before-unit-03",
-            "kv-loxilb-ctl:/root/loxilb-ai-multitier-evidence/s02-final-http-02a",
-            "kv-loxilb-ctl:/root/loxilb-ai-multitier-evidence/s02-final-http-02b",
-            "kv-loxilb-ctl:/root/loxilb-ai-multitier-evidence/s02-final-http-02c"
+            "runtime-evidence:s02-fixed-cstrings-before-unit-03",
+            "runtime-evidence:s02-final-http-02a",
+            "runtime-evidence:s02-final-http-02b",
+            "runtime-evidence:s02-final-http-02c"
           ],
           "note": "The vulnerable baseline is RED; the fixed runtime returns HTTP 400 with the field reason and unchanged normalized full rule state in three runs."
         },

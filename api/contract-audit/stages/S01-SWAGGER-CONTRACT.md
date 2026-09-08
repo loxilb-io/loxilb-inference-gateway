@@ -46,7 +46,7 @@ No commits, pushes, PRs or disk cleanup were performed.
 ## Final executed evidence
 
 Controller evidence root (private operational location):
-`/root/loxilb-ai-multitier-evidence/s01-swagger-20260908-2012/`.
+`runtime-evidence:s01-swagger-20260908-2012/`.
 Final complete run: `run-03/`; frozen input: `qualified-bundle/` and
 `source-qualified/`. Earlier `run-01/` and `run-02/` are preserved, not overwritten.
 Verify `run-03/SHA256SUMS` from `run-03/`. Verify its `input-sha256.txt` from

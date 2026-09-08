@@ -17,7 +17,7 @@ The investigation found an implementation defect, not merely missing test
 coverage. HTTP/1.1 passed through the `llhttp` message-complete security gate,
 but HTTP/2 bypassed `llhttp` and entered L7/model/CHWBL/fallback endpoint
 selection without capturing or validating `X-Api-Key`. The pre-fix source gate
-in `/root/loxilb-ai-multitier-evidence/s03-h2-security-red-02.log` failed on
+in `runtime-evidence:s03-h2-security-red-02.log` failed on
 that exact absence.
 
 ## Implementation
@@ -44,13 +44,13 @@ that exact absence.
 
 ## Authoritative environment and identity
 
-All verdict-bearing builds and tests ran on `ssh kv-loxilb-ctl`. Local activity
+All verdict-bearing builds and tests ran on the dedicated Ubuntu controller. Local activity
 was limited to editing, formatting and static review. No GPU model endpoint was
 contacted during this security slice.
 
 - Base Gateway revision: `f8e6ace22f0f2262d56829e781a83e4b7075fef7`
   plus the archived working-tree patch.
-- Remote source tree: `/root/loxilb-ai-multitier-evidence/s03-build-source-01`.
+- Remote source tree: `runtime-evidence:s03-build-source-01`.
 - Unit image:
   `loxilb-inference-gateway:ai-multitier-f8e6ace2-s03r2-unit-u24`, image ID
   `sha256:45597b6d7c83ea8d4a866b3914ef8fd3090d78b963ee2ae49118cdaa3d7dbec2`.
@@ -63,7 +63,7 @@ contacted during this security slice.
   `test-build` target for the unit rail and the normal runtime target for live
   data-plane tests.
 - Identity and source checksums:
-  `/root/loxilb-ai-multitier-evidence/s03r2-integrity-01`.
+  `runtime-evidence:s03r2-integrity-01`.
 
 ## Evidence and diagnosis
 

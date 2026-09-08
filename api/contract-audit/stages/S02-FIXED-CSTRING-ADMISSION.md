@@ -49,14 +49,14 @@ versioned `x-loxilb-contract-relations` metadata.
 
 ## Authoritative environment and source identity
 
-All build and verdict-bearing tests ran on `ssh kv-loxilb-ctl`. Local activity
+All build and verdict-bearing tests ran on the dedicated Ubuntu controller. Local activity
 was limited to editing, formatting and static review. No local macOS result is
 used as product evidence.
 
 - Base Gateway revision: `f8e6ace22f0f2262d56829e781a83e4b7075fef7`
   plus the archived working-tree patch.
 - Final frozen source:
-  `/root/loxilb-ai-multitier-evidence/s02-final-source-02`.
+  `runtime-evidence:s02-final-source-02`.
 - Final test image:
   `loxilb-inference-gateway:ai-multitier-f8e6ace2-s02r2-unit-u24`, image ID
   `sha256:9d84aa916f98cb7369fb425dcf08c77429868b94ead8819741ff55d8281bab40`.
@@ -73,7 +73,7 @@ used as product evidence.
 
 ### Before-fix product RED
 
-`/root/loxilb-ai-multitier-evidence/s02-fixed-cstrings-before-unit-03`
+`runtime-evidence:s02-fixed-cstrings-before-unit-03`
 injects a black-box test that uses no new implementation symbols into image
 `sha256:023c34613f795ee5c9117a12f7fc75d9c47fa53e36f0f97c2b92a2b9026255e3`.
 All nine invalid cases reached the later `endpoints-range` check instead of a
@@ -81,14 +81,14 @@ pre-mutation argument refusal. Other baseline gates passed. Classification:
 IMPLEMENTATION defect.
 
 An earlier overlay at
-`/root/loxilb-ai-multitier-evidence/s02-fixed-cstrings-before-unit-02` failed to
+`runtime-evidence:s02-fixed-cstrings-before-unit-02` failed to
 compile because it referenced helper symbols absent from the old image.
 It is retained and classified as TEST-OVERLAY/HARNESS incompatibility, not as
 product proof. The independent black-box rerun above removes that ambiguity.
 
 ### Intermediate packaged-runtime RED
 
-`/root/loxilb-ai-multitier-evidence/s02-final-http-01` used the first fixed
+`runtime-evidence:s02-final-http-01` used the first fixed
 runtime image. Internal validation rejected every unsafe value and preserved
 rule state, but REST returned HTTP 500 because the generic classifier did not
 recognize the new messages. Classification: IMPLEMENTATION defect in REST
@@ -97,7 +97,7 @@ dedicated `api-handler` unit gate.
 
 ### Final GREEN
 
-`/root/loxilb-ai-multitier-evidence/s02-final-unit-02` records exit 0 for all
+`runtime-evidence:s02-final-unit-02` records exit 0 for all
 nine gates: `api-models`, `api-handler`, `kv-admission`, `pd-cache`,
 `pd-adjacent`, `kv-dataplane`, `swagger-contract`, `inventory` and `harness`.
 
@@ -113,7 +113,7 @@ Every fixed-string rejection includes the relevant field/relation reason and
 preserves the complete normalized rule set. Evidence checksum verification,
 matching runtime binary manifests, no residual campaign container, unchanged
 running-container inventory and the unchanged `loxilb-mon-p6` image ID are in
-`/root/loxilb-ai-multitier-evidence/s02-final-integrity-01`.
+`runtime-evidence:s02-final-integrity-01`.
 
 ## Testbed cleanup
 
