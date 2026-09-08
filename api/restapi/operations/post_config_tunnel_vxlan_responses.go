@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// PostConfigTunnelVxlanNoContentCode is the HTTP code returned for type PostConfigTunnelVxlanNoContent
-const PostConfigTunnelVxlanNoContentCode int = 204
+// PostConfigTunnelVxlanOKCode is the HTTP code returned for type PostConfigTunnelVxlanOK
+const PostConfigTunnelVxlanOKCode int = 200
 
 /*
-PostConfigTunnelVxlanNoContent OK
+PostConfigTunnelVxlanOK OK
 
-swagger:response postConfigTunnelVxlanNoContent
+swagger:response postConfigTunnelVxlanOK
 */
-type PostConfigTunnelVxlanNoContent struct {
+type PostConfigTunnelVxlanOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewPostConfigTunnelVxlanNoContent creates PostConfigTunnelVxlanNoContent with default headers values
-func NewPostConfigTunnelVxlanNoContent() *PostConfigTunnelVxlanNoContent {
+// NewPostConfigTunnelVxlanOK creates PostConfigTunnelVxlanOK with default headers values
+func NewPostConfigTunnelVxlanOK() *PostConfigTunnelVxlanOK {
 
-	return &PostConfigTunnelVxlanNoContent{}
+	return &PostConfigTunnelVxlanOK{}
+}
+
+// WithPayload adds the payload to the post config tunnel vxlan o k response
+func (o *PostConfigTunnelVxlanOK) WithPayload(payload *models.OperationResult) *PostConfigTunnelVxlanOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config tunnel vxlan o k response
+func (o *PostConfigTunnelVxlanOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *PostConfigTunnelVxlanNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *PostConfigTunnelVxlanOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // PostConfigTunnelVxlanUnauthorizedCode is the HTTP code returned for type PostConfigTunnelVxlanUnauthorized

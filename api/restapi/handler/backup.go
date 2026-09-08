@@ -135,6 +135,17 @@ func legacyDumpToSnapshot(legacy *DumpFile) ([]byte, error) {
 		tk.LogIt(tk.LogWarning, "config/import: ignoring %d legacy cluster entrie(s): cluster state is not restorable via snapshots\n", len(legacy.Cluster))
 	}
 	doc := snapshot.NewDocument(cmn.Version, snapshotHostname(), snapshot.TriggerManual)
+	// The legacy dump format can only express these five domains, so the
+	// converted document declares exactly that coverage: importing it must
+	// not wipe domains (sessions, bgp, ipsec, ...) the legacy file could
+	// never have carried.
+	doc.IncludedDomains = []string{
+		snapshot.DomainEndpoint,
+		snapshot.DomainLoadBalancer,
+		snapshot.DomainFirewall,
+		snapshot.DomainPolicy,
+		snapshot.DomainMirror,
+	}
 	doc.Domains.Endpoint = legacy.Endpoint
 	doc.Domains.LoadBalancer = legacy.Lbrule
 	doc.Domains.Firewall = legacy.Firewall
@@ -218,14 +229,19 @@ func ConfigPostImport(params operations.PostConfigImportParams, principal any) m
 		}}
 	}
 
-	// §6 write-through, same as POST /config/restore.
+	// §6 write-through, same as POST /config/restore: an explicit
+	// persisted marker, never a bare "ok" over a failed persist.
 	if result.Result == snapshot.ResultOK {
-		if path, _, werr := snapshot.WriteThrough(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath); werr != nil {
+		persisted := false
+		if path, pdoc, werr := snapshot.WriteThrough(ApiHooks, cmn.Version, snapshotHostname(), opts.Opts.ConfigPath); werr != nil {
 			tk.LogIt(tk.LogError, "config/import: write-through persist failed after commit: %v\n", werr)
 			result.Errors = append(result.Errors, "warning: write-through persist failed (import applied but will not survive restart): "+werr.Error())
 		} else {
-			tk.LogIt(tk.LogInfo, "config/import: write-through persisted to %s\n", path)
+			persisted = true
+			result.PersistedGeneration = pdoc.Generation
+			tk.LogIt(tk.LogInfo, "config/import: write-through persisted to %s (generation %d)\n", path, pdoc.Generation)
 		}
+		result.Persisted = &persisted
 	}
 
 	status := http.StatusOK

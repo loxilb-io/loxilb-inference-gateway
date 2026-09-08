@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// DeleteConfigIpsecStatsNoContentCode is the HTTP code returned for type DeleteConfigIpsecStatsNoContent
-const DeleteConfigIpsecStatsNoContentCode int = 204
+// DeleteConfigIpsecStatsOKCode is the HTTP code returned for type DeleteConfigIpsecStatsOK
+const DeleteConfigIpsecStatsOKCode int = 200
 
 /*
-DeleteConfigIpsecStatsNoContent OK
+DeleteConfigIpsecStatsOK OK
 
-swagger:response deleteConfigIpsecStatsNoContent
+swagger:response deleteConfigIpsecStatsOK
 */
-type DeleteConfigIpsecStatsNoContent struct {
+type DeleteConfigIpsecStatsOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewDeleteConfigIpsecStatsNoContent creates DeleteConfigIpsecStatsNoContent with default headers values
-func NewDeleteConfigIpsecStatsNoContent() *DeleteConfigIpsecStatsNoContent {
+// NewDeleteConfigIpsecStatsOK creates DeleteConfigIpsecStatsOK with default headers values
+func NewDeleteConfigIpsecStatsOK() *DeleteConfigIpsecStatsOK {
 
-	return &DeleteConfigIpsecStatsNoContent{}
+	return &DeleteConfigIpsecStatsOK{}
+}
+
+// WithPayload adds the payload to the delete config ipsec stats o k response
+func (o *DeleteConfigIpsecStatsOK) WithPayload(payload *models.OperationResult) *DeleteConfigIpsecStatsOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config ipsec stats o k response
+func (o *DeleteConfigIpsecStatsOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *DeleteConfigIpsecStatsNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *DeleteConfigIpsecStatsOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // DeleteConfigIpsecStatsUnauthorizedCode is the HTTP code returned for type DeleteConfigIpsecStatsUnauthorized

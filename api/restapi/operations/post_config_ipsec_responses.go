@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// PostConfigIpsecNoContentCode is the HTTP code returned for type PostConfigIpsecNoContent
-const PostConfigIpsecNoContentCode int = 204
+// PostConfigIpsecOKCode is the HTTP code returned for type PostConfigIpsecOK
+const PostConfigIpsecOKCode int = 200
 
 /*
-PostConfigIpsecNoContent OK
+PostConfigIpsecOK OK
 
-swagger:response postConfigIpsecNoContent
+swagger:response postConfigIpsecOK
 */
-type PostConfigIpsecNoContent struct {
+type PostConfigIpsecOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewPostConfigIpsecNoContent creates PostConfigIpsecNoContent with default headers values
-func NewPostConfigIpsecNoContent() *PostConfigIpsecNoContent {
+// NewPostConfigIpsecOK creates PostConfigIpsecOK with default headers values
+func NewPostConfigIpsecOK() *PostConfigIpsecOK {
 
-	return &PostConfigIpsecNoContent{}
+	return &PostConfigIpsecOK{}
+}
+
+// WithPayload adds the payload to the post config ipsec o k response
+func (o *PostConfigIpsecOK) WithPayload(payload *models.OperationResult) *PostConfigIpsecOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config ipsec o k response
+func (o *PostConfigIpsecOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *PostConfigIpsecNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *PostConfigIpsecOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // PostConfigIpsecBadRequestCode is the HTTP code returned for type PostConfigIpsecBadRequest

@@ -7,12 +7,14 @@ package models
 
 import (
 	"context"
+	"strconv"
 
+	"github.com/go-openapi/errors"
 	"github.com/go-openapi/strfmt"
 	"github.com/go-openapi/swag"
 )
 
-// PersistResult Result of POST /config/persist.
+// PersistResult Result of POST /config/persist - the persisted document's identity and coverage, so automation can verify what was saved without re-reading the file.
 //
 // swagger:model PersistResult
 type PersistResult struct {
@@ -20,20 +22,102 @@ type PersistResult struct {
 	// SHA-256 checksum of the persisted snapshot document.
 	Checksum string `json:"checksum,omitempty"`
 
+	// Configuration areas deliberately never captured by snapshots (honesty marker).
+	ExcludedDomains []string `json:"excluded_domains"`
+
+	// The persisted document's recovery-dependency manifest with capture-time dispositions.
+	ExternalDependencies []*ExternalDependencyStatus `json:"external_dependencies"`
+
+	// Monotonic lineage generation stamped into the persisted document.
+	Generation uint64 `json:"generation,omitempty"`
+
+	// The snapshot domains the persisted document covers.
+	IncludedDomains []string `json:"included_domains"`
+
 	// On-disk path of the persisted snapshot (config-path/snapshot.json).
 	Path string `json:"path,omitempty"`
 
 	// Always "ok" on 200.
 	Result string `json:"result,omitempty"`
+
+	// Schema version of the persisted document.
+	SchemaVersion string `json:"schema_version,omitempty"`
+
+	// Non-fatal anomalies of this persist; empty on a clean save.
+	Warnings []string `json:"warnings"`
 }
 
 // Validate validates this persist result
 func (m *PersistResult) Validate(formats strfmt.Registry) error {
+	var res []error
+
+	if err := m.validateExternalDependencies(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if len(res) > 0 {
+		return errors.CompositeValidationError(res...)
+	}
 	return nil
 }
 
-// ContextValidate validates this persist result based on context it is used
+func (m *PersistResult) validateExternalDependencies(formats strfmt.Registry) error {
+	if swag.IsZero(m.ExternalDependencies) { // not required
+		return nil
+	}
+
+	for i := 0; i < len(m.ExternalDependencies); i++ {
+		if swag.IsZero(m.ExternalDependencies[i]) { // not required
+			continue
+		}
+
+		if m.ExternalDependencies[i] != nil {
+			if err := m.ExternalDependencies[i].Validate(formats); err != nil {
+				if ve, ok := err.(*errors.Validation); ok {
+					return ve.ValidateName("external_dependencies" + "." + strconv.Itoa(i))
+				} else if ce, ok := err.(*errors.CompositeError); ok {
+					return ce.ValidateName("external_dependencies" + "." + strconv.Itoa(i))
+				}
+				return err
+			}
+		}
+
+	}
+
+	return nil
+}
+
+// ContextValidate validate this persist result based on the context it is used
 func (m *PersistResult) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
+	var res []error
+
+	if err := m.contextValidateExternalDependencies(ctx, formats); err != nil {
+		res = append(res, err)
+	}
+
+	if len(res) > 0 {
+		return errors.CompositeValidationError(res...)
+	}
+	return nil
+}
+
+func (m *PersistResult) contextValidateExternalDependencies(ctx context.Context, formats strfmt.Registry) error {
+
+	for i := 0; i < len(m.ExternalDependencies); i++ {
+
+		if m.ExternalDependencies[i] != nil {
+			if err := m.ExternalDependencies[i].ContextValidate(ctx, formats); err != nil {
+				if ve, ok := err.(*errors.Validation); ok {
+					return ve.ValidateName("external_dependencies" + "." + strconv.Itoa(i))
+				} else if ce, ok := err.(*errors.CompositeError); ok {
+					return ce.ValidateName("external_dependencies" + "." + strconv.Itoa(i))
+				}
+				return err
+			}
+		}
+
+	}
+
 	return nil
 }
 
