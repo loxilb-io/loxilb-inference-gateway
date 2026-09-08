@@ -209,6 +209,9 @@ paths:
     get:
       summary: "Get metadata for all POST APIs"
       description: "Returns metadata about required fields for each POST API."
+      # Overrides global security: this returns the shape of the published API
+      # derived from the embedded specifications, which is documentation, not
+      # runtime state. The handler takes no principal.
       security: []
       operationId: "getMeta"
       tags:
@@ -355,10 +358,10 @@ paths:
           description: Management credential store unavailable
           schema:
             $ref: '#/definitions/Error'
-        "201":
-          description: Created
+        "200":
+          description: OK
           schema:
-            $ref: '#/definitions/User'
+            $ref: '#/definitions/OperationResult'
         "400":
           description: Bad Request
           schema:
@@ -4634,6 +4637,10 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
+        '403':
+          description: Authenticated principal's role carries no authority for this operation
+          schema:
+            $ref: '#/definitions/Error'
         '503':
           description: Not ready (body carries the reasons)
           schema:
@@ -4653,8 +4660,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
-        '500':
-          description: Internal service error
+        '403':
+          description: Authenticated principal's role carries no authority for this operation
           schema:
             $ref: '#/definitions/Error'
     put:
@@ -4680,8 +4687,12 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
-        '500':
-          description: Internal service error
+        '403':
+          description: Authenticated principal's role carries no authority for this operation
+          schema:
+            $ref: '#/definitions/Error'
+        '503':
+          description: Refused while the boot config replay has not settled, or while a snapshot restore is in progress
           schema:
             $ref: '#/definitions/Error'
   '/diagnostics':
@@ -4699,8 +4710,8 @@ paths:
           description: Invalid authentication credentials
           schema:
             $ref: '#/definitions/Error'
-        '500':
-          description: Internal service error
+        '403':
+          description: Authenticated principal's role carries no authority for this operation
           schema:
             $ref: '#/definitions/Error'
 #----------------------------------------------
@@ -4758,7 +4769,6 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/OperParams'
-        '204':
         '204':
           description: OK
         '400':
@@ -5466,7 +5476,6 @@ paths:
                 items:
                   $ref: '#/definitions/BGPNeighGetEntry'
         '204':
-        '204':
           description: OK
         '400':
           description: Malformed arguments for API call
@@ -5617,7 +5626,6 @@ paths:
                 type: array
                 items:
                   $ref: '#/definitions/BGPPolicyDefinedSetGetEntry'
-        '204':
         '204':
           description: OK
         '400':
@@ -7190,7 +7198,9 @@ paths:
         name: provider
         required: true
         type: string
-      security: [] 
+      # Overrides global security: this initiates the login flow, so by
+      # construction the caller holds no credential yet.
+      security: []
       responses:
         "302":
           description: Found
@@ -12715,6 +12725,10 @@ definitions:
     type: object
     required:
       - raw_key
+      # key_id is always set by the create handler, so it must serialize
+      # unconditionally; without 'required' go-swagger emits omitempty and a
+      # client has to null-check a field the server never omits.
+      - key_id
     properties:
       raw_key:
         type: string

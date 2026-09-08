@@ -582,7 +582,11 @@ func ConfigPostIPsecCertificates(params operations.PostConfigIpsecCertificatesPa
 		return operations.NewPostConfigIpsecCertificatesCreated().WithPayload(result)
 	}
 
-	return &ResultResponse{Result: "Success"}
+	// As above: the certificate is installed, so the response stays a 201.
+	return operations.NewPostConfigIpsecCertificatesCreated().WithPayload(&models.IPsecCertificate{
+		Name:        certMod.Name,
+		Description: certMod.Description,
+	})
 }
 
 // ConfigGetIPsecCertificatesName - Get certificate details
@@ -713,7 +717,13 @@ func ConfigPostIPsecCaCertificates(params operations.PostConfigIpsecCaCertificat
 		return operations.NewPostConfigIpsecCaCertificatesCreated().WithPayload(result)
 	}
 
-	return &ResultResponse{Result: "Success"}
+	// The certificate was installed; only the read-back of its parsed details
+	// failed. The outcome is still a create, so it keeps the declared 201
+	// rather than falling through to the shared responder's implicit 200.
+	return operations.NewPostConfigIpsecCaCertificatesCreated().WithPayload(&models.IPsecCACertificate{
+		Name:        caCertMod.Name,
+		Description: caCertMod.Description,
+	})
 }
 
 // ConfigGetIPsecCaCertificatesName - Get CA certificate details
