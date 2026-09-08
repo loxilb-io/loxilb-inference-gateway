@@ -103,6 +103,51 @@ func (o *PostConfigL4traceDisableUnauthorized) WriteResponse(rw http.ResponseWri
 	}
 }
 
+// PostConfigL4traceDisableForbiddenCode is the HTTP code returned for type PostConfigL4traceDisableForbidden
+const PostConfigL4traceDisableForbiddenCode int = 403
+
+/*
+PostConfigL4traceDisableForbidden Authenticated principal is not authorized for this operation
+
+swagger:response postConfigL4traceDisableForbidden
+*/
+type PostConfigL4traceDisableForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigL4traceDisableForbidden creates PostConfigL4traceDisableForbidden with default headers values
+func NewPostConfigL4traceDisableForbidden() *PostConfigL4traceDisableForbidden {
+
+	return &PostConfigL4traceDisableForbidden{}
+}
+
+// WithPayload adds the payload to the post config l4trace disable forbidden response
+func (o *PostConfigL4traceDisableForbidden) WithPayload(payload *models.Error) *PostConfigL4traceDisableForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config l4trace disable forbidden response
+func (o *PostConfigL4traceDisableForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigL4traceDisableForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // PostConfigL4traceDisableInternalServerErrorCode is the HTTP code returned for type PostConfigL4traceDisableInternalServerError
 const PostConfigL4traceDisableInternalServerErrorCode int = 500
 
@@ -140,6 +185,51 @@ func (o *PostConfigL4traceDisableInternalServerError) SetPayload(payload *models
 func (o *PostConfigL4traceDisableInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// PostConfigL4traceDisableServiceUnavailableCode is the HTTP code returned for type PostConfigL4traceDisableServiceUnavailable
+const PostConfigL4traceDisableServiceUnavailableCode int = 503
+
+/*
+PostConfigL4traceDisableServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response postConfigL4traceDisableServiceUnavailable
+*/
+type PostConfigL4traceDisableServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigL4traceDisableServiceUnavailable creates PostConfigL4traceDisableServiceUnavailable with default headers values
+func NewPostConfigL4traceDisableServiceUnavailable() *PostConfigL4traceDisableServiceUnavailable {
+
+	return &PostConfigL4traceDisableServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the post config l4trace disable service unavailable response
+func (o *PostConfigL4traceDisableServiceUnavailable) WithPayload(payload *models.Error) *PostConfigL4traceDisableServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config l4trace disable service unavailable response
+func (o *PostConfigL4traceDisableServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigL4traceDisableServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

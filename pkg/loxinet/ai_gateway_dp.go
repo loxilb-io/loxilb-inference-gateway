@@ -819,6 +819,20 @@ func getSSECounter(model string) *int64 {
 	return v.(*int64)
 }
 
+// AiInFlightStreamsTotal sums the per-model in-flight SSE counters. This
+// is the maintenance drain read-back's in-flight figure: it deliberately
+// reuses the counters llb_ai_stream_start/end already maintain (the
+// loxilb_ai_active_streams gauge's backing state) rather than inventing
+// a second counting layer that could disagree with the metrics surface.
+func AiInFlightStreamsTotal() int64 {
+	var total int64
+	activeSSECounters.Range(func(_, v any) bool {
+		total += atomic.LoadInt64(v.(*int64))
+		return true
+	})
+	return total
+}
+
 // llb_ai_stream_start records the opening of an SSE stream for Prometheus tracking.
 //
 // Call once from sockproxy when the Content-Type: text/event-stream response

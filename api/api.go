@@ -128,17 +128,44 @@ func RunAPIServer() {
 	}
 
 	server.ConfigureAPI()
+
+	// The management-listener profile decides where the API may listen and
+	// which listeners exist at all. A failed plan is fatal before any socket
+	// binds: every failure means a security precondition of the requested
+	// profile does not hold, and serving anyway would expose an interface
+	// the profile promises is closed.
+	plan, err := options.MgmtListenPlan()
+	if err != nil {
+		tk.LogIt(tk.LogCritical, "api: %s\n", err.Error())
+		log.Fatalln(err)
+	}
+	tk.LogIt(tk.LogInfo, "api: mgmt-profile %s: http=%v https=%v\n",
+		options.Opts.MgmtProfile, plan.HTTP, plan.HTTPS)
+
 	// API server host list
-	server.Host = options.Opts.Host
+	server.Host = plan.Host
 	server.Port = options.Opts.Port
 
 	// HTTPs List
 	if options.Opts.TLS {
-		server.TLSHost = options.Opts.TLSHost
+		server.TLSHost = plan.TLSHost
 		server.TLSPort = options.Opts.TLSPort
 
 		server.TLSCertificateKey = options.Opts.TLSCertificateKey
 		server.TLSCertificate = options.Opts.TLSCertificate
+	}
+
+	// Only the non-legacy profiles take ownership of the enabled-listener
+	// set; under legacy the server keeps its historical defaulting so the
+	// pre-profile behavior stays untouched.
+	if plan.Explicit {
+		server.EnabledListeners = nil
+		if plan.HTTP {
+			server.EnabledListeners = append(server.EnabledListeners, "http")
+		}
+		if plan.HTTPS {
+			server.EnabledListeners = append(server.EnabledListeners, "https")
+		}
 	}
 
 	api.ServerShutdown = func() {

@@ -148,6 +148,51 @@ func (o *PostConfigSecurityrateUnauthorized) WriteResponse(rw http.ResponseWrite
 	}
 }
 
+// PostConfigSecurityrateForbiddenCode is the HTTP code returned for type PostConfigSecurityrateForbidden
+const PostConfigSecurityrateForbiddenCode int = 403
+
+/*
+PostConfigSecurityrateForbidden Authenticated principal is not authorized for this operation
+
+swagger:response postConfigSecurityrateForbidden
+*/
+type PostConfigSecurityrateForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigSecurityrateForbidden creates PostConfigSecurityrateForbidden with default headers values
+func NewPostConfigSecurityrateForbidden() *PostConfigSecurityrateForbidden {
+
+	return &PostConfigSecurityrateForbidden{}
+}
+
+// WithPayload adds the payload to the post config securityrate forbidden response
+func (o *PostConfigSecurityrateForbidden) WithPayload(payload *models.Error) *PostConfigSecurityrateForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config securityrate forbidden response
+func (o *PostConfigSecurityrateForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigSecurityrateForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // PostConfigSecurityrateInternalServerErrorCode is the HTTP code returned for type PostConfigSecurityrateInternalServerError
 const PostConfigSecurityrateInternalServerErrorCode int = 500
 
@@ -185,6 +230,51 @@ func (o *PostConfigSecurityrateInternalServerError) SetPayload(payload *models.E
 func (o *PostConfigSecurityrateInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// PostConfigSecurityrateServiceUnavailableCode is the HTTP code returned for type PostConfigSecurityrateServiceUnavailable
+const PostConfigSecurityrateServiceUnavailableCode int = 503
+
+/*
+PostConfigSecurityrateServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response postConfigSecurityrateServiceUnavailable
+*/
+type PostConfigSecurityrateServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigSecurityrateServiceUnavailable creates PostConfigSecurityrateServiceUnavailable with default headers values
+func NewPostConfigSecurityrateServiceUnavailable() *PostConfigSecurityrateServiceUnavailable {
+
+	return &PostConfigSecurityrateServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the post config securityrate service unavailable response
+func (o *PostConfigSecurityrateServiceUnavailable) WithPayload(payload *models.Error) *PostConfigSecurityrateServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config securityrate service unavailable response
+func (o *PostConfigSecurityrateServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigSecurityrateServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

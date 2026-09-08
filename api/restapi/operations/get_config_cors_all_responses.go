@@ -9,6 +9,8 @@ import (
 	"net/http"
 
 	"github.com/go-openapi/runtime"
+
+	"github.com/loxilb-io/loxilb/api/models"
 )
 
 // GetConfigCorsAllOKCode is the HTTP code returned for type GetConfigCorsAllOK
@@ -48,6 +50,141 @@ func (o *GetConfigCorsAllOK) SetPayload(payload *GetConfigCorsAllOKBody) {
 func (o *GetConfigCorsAllOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetConfigCorsAllUnauthorizedCode is the HTTP code returned for type GetConfigCorsAllUnauthorized
+const GetConfigCorsAllUnauthorizedCode int = 401
+
+/*
+GetConfigCorsAllUnauthorized Missing or invalid management credential
+
+swagger:response getConfigCorsAllUnauthorized
+*/
+type GetConfigCorsAllUnauthorized struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigCorsAllUnauthorized creates GetConfigCorsAllUnauthorized with default headers values
+func NewGetConfigCorsAllUnauthorized() *GetConfigCorsAllUnauthorized {
+
+	return &GetConfigCorsAllUnauthorized{}
+}
+
+// WithPayload adds the payload to the get config cors all unauthorized response
+func (o *GetConfigCorsAllUnauthorized) WithPayload(payload *models.Error) *GetConfigCorsAllUnauthorized {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config cors all unauthorized response
+func (o *GetConfigCorsAllUnauthorized) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigCorsAllUnauthorized) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(401)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetConfigCorsAllForbiddenCode is the HTTP code returned for type GetConfigCorsAllForbidden
+const GetConfigCorsAllForbiddenCode int = 403
+
+/*
+GetConfigCorsAllForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getConfigCorsAllForbidden
+*/
+type GetConfigCorsAllForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigCorsAllForbidden creates GetConfigCorsAllForbidden with default headers values
+func NewGetConfigCorsAllForbidden() *GetConfigCorsAllForbidden {
+
+	return &GetConfigCorsAllForbidden{}
+}
+
+// WithPayload adds the payload to the get config cors all forbidden response
+func (o *GetConfigCorsAllForbidden) WithPayload(payload *models.Error) *GetConfigCorsAllForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config cors all forbidden response
+func (o *GetConfigCorsAllForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigCorsAllForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetConfigCorsAllServiceUnavailableCode is the HTTP code returned for type GetConfigCorsAllServiceUnavailable
+const GetConfigCorsAllServiceUnavailableCode int = 503
+
+/*
+GetConfigCorsAllServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response getConfigCorsAllServiceUnavailable
+*/
+type GetConfigCorsAllServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigCorsAllServiceUnavailable creates GetConfigCorsAllServiceUnavailable with default headers values
+func NewGetConfigCorsAllServiceUnavailable() *GetConfigCorsAllServiceUnavailable {
+
+	return &GetConfigCorsAllServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the get config cors all service unavailable response
+func (o *GetConfigCorsAllServiceUnavailable) WithPayload(payload *models.Error) *GetConfigCorsAllServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config cors all service unavailable response
+func (o *GetConfigCorsAllServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigCorsAllServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

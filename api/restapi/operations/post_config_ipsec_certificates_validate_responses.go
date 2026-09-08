@@ -148,6 +148,51 @@ func (o *PostConfigIpsecCertificatesValidateUnauthorized) WriteResponse(rw http.
 	}
 }
 
+// PostConfigIpsecCertificatesValidateForbiddenCode is the HTTP code returned for type PostConfigIpsecCertificatesValidateForbidden
+const PostConfigIpsecCertificatesValidateForbiddenCode int = 403
+
+/*
+PostConfigIpsecCertificatesValidateForbidden Authenticated principal is not authorized for this operation
+
+swagger:response postConfigIpsecCertificatesValidateForbidden
+*/
+type PostConfigIpsecCertificatesValidateForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigIpsecCertificatesValidateForbidden creates PostConfigIpsecCertificatesValidateForbidden with default headers values
+func NewPostConfigIpsecCertificatesValidateForbidden() *PostConfigIpsecCertificatesValidateForbidden {
+
+	return &PostConfigIpsecCertificatesValidateForbidden{}
+}
+
+// WithPayload adds the payload to the post config ipsec certificates validate forbidden response
+func (o *PostConfigIpsecCertificatesValidateForbidden) WithPayload(payload *models.Error) *PostConfigIpsecCertificatesValidateForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config ipsec certificates validate forbidden response
+func (o *PostConfigIpsecCertificatesValidateForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigIpsecCertificatesValidateForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // PostConfigIpsecCertificatesValidateInternalServerErrorCode is the HTTP code returned for type PostConfigIpsecCertificatesValidateInternalServerError
 const PostConfigIpsecCertificatesValidateInternalServerErrorCode int = 500
 
@@ -185,6 +230,51 @@ func (o *PostConfigIpsecCertificatesValidateInternalServerError) SetPayload(payl
 func (o *PostConfigIpsecCertificatesValidateInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// PostConfigIpsecCertificatesValidateServiceUnavailableCode is the HTTP code returned for type PostConfigIpsecCertificatesValidateServiceUnavailable
+const PostConfigIpsecCertificatesValidateServiceUnavailableCode int = 503
+
+/*
+PostConfigIpsecCertificatesValidateServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response postConfigIpsecCertificatesValidateServiceUnavailable
+*/
+type PostConfigIpsecCertificatesValidateServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigIpsecCertificatesValidateServiceUnavailable creates PostConfigIpsecCertificatesValidateServiceUnavailable with default headers values
+func NewPostConfigIpsecCertificatesValidateServiceUnavailable() *PostConfigIpsecCertificatesValidateServiceUnavailable {
+
+	return &PostConfigIpsecCertificatesValidateServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the post config ipsec certificates validate service unavailable response
+func (o *PostConfigIpsecCertificatesValidateServiceUnavailable) WithPayload(payload *models.Error) *PostConfigIpsecCertificatesValidateServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config ipsec certificates validate service unavailable response
+func (o *PostConfigIpsecCertificatesValidateServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigIpsecCertificatesValidateServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

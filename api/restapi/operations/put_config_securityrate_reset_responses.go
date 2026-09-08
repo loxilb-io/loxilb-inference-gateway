@@ -83,6 +83,51 @@ func (o *PutConfigSecurityrateResetUnauthorized) WriteResponse(rw http.ResponseW
 	}
 }
 
+// PutConfigSecurityrateResetForbiddenCode is the HTTP code returned for type PutConfigSecurityrateResetForbidden
+const PutConfigSecurityrateResetForbiddenCode int = 403
+
+/*
+PutConfigSecurityrateResetForbidden Authenticated principal is not authorized for this operation
+
+swagger:response putConfigSecurityrateResetForbidden
+*/
+type PutConfigSecurityrateResetForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPutConfigSecurityrateResetForbidden creates PutConfigSecurityrateResetForbidden with default headers values
+func NewPutConfigSecurityrateResetForbidden() *PutConfigSecurityrateResetForbidden {
+
+	return &PutConfigSecurityrateResetForbidden{}
+}
+
+// WithPayload adds the payload to the put config securityrate reset forbidden response
+func (o *PutConfigSecurityrateResetForbidden) WithPayload(payload *models.Error) *PutConfigSecurityrateResetForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the put config securityrate reset forbidden response
+func (o *PutConfigSecurityrateResetForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PutConfigSecurityrateResetForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // PutConfigSecurityrateResetInternalServerErrorCode is the HTTP code returned for type PutConfigSecurityrateResetInternalServerError
 const PutConfigSecurityrateResetInternalServerErrorCode int = 500
 
@@ -120,6 +165,51 @@ func (o *PutConfigSecurityrateResetInternalServerError) SetPayload(payload *mode
 func (o *PutConfigSecurityrateResetInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// PutConfigSecurityrateResetServiceUnavailableCode is the HTTP code returned for type PutConfigSecurityrateResetServiceUnavailable
+const PutConfigSecurityrateResetServiceUnavailableCode int = 503
+
+/*
+PutConfigSecurityrateResetServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response putConfigSecurityrateResetServiceUnavailable
+*/
+type PutConfigSecurityrateResetServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPutConfigSecurityrateResetServiceUnavailable creates PutConfigSecurityrateResetServiceUnavailable with default headers values
+func NewPutConfigSecurityrateResetServiceUnavailable() *PutConfigSecurityrateResetServiceUnavailable {
+
+	return &PutConfigSecurityrateResetServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the put config securityrate reset service unavailable response
+func (o *PutConfigSecurityrateResetServiceUnavailable) WithPayload(payload *models.Error) *PutConfigSecurityrateResetServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the put config securityrate reset service unavailable response
+func (o *PutConfigSecurityrateResetServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PutConfigSecurityrateResetServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

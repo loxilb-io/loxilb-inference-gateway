@@ -103,6 +103,51 @@ func (o *GetConfigIpfilterAllUnauthorized) WriteResponse(rw http.ResponseWriter,
 	}
 }
 
+// GetConfigIpfilterAllForbiddenCode is the HTTP code returned for type GetConfigIpfilterAllForbidden
+const GetConfigIpfilterAllForbiddenCode int = 403
+
+/*
+GetConfigIpfilterAllForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getConfigIpfilterAllForbidden
+*/
+type GetConfigIpfilterAllForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigIpfilterAllForbidden creates GetConfigIpfilterAllForbidden with default headers values
+func NewGetConfigIpfilterAllForbidden() *GetConfigIpfilterAllForbidden {
+
+	return &GetConfigIpfilterAllForbidden{}
+}
+
+// WithPayload adds the payload to the get config ipfilter all forbidden response
+func (o *GetConfigIpfilterAllForbidden) WithPayload(payload *models.Error) *GetConfigIpfilterAllForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config ipfilter all forbidden response
+func (o *GetConfigIpfilterAllForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigIpfilterAllForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigIpfilterAllInternalServerErrorCode is the HTTP code returned for type GetConfigIpfilterAllInternalServerError
 const GetConfigIpfilterAllInternalServerErrorCode int = 500
 
@@ -140,6 +185,51 @@ func (o *GetConfigIpfilterAllInternalServerError) SetPayload(payload *models.Err
 func (o *GetConfigIpfilterAllInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetConfigIpfilterAllServiceUnavailableCode is the HTTP code returned for type GetConfigIpfilterAllServiceUnavailable
+const GetConfigIpfilterAllServiceUnavailableCode int = 503
+
+/*
+GetConfigIpfilterAllServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response getConfigIpfilterAllServiceUnavailable
+*/
+type GetConfigIpfilterAllServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigIpfilterAllServiceUnavailable creates GetConfigIpfilterAllServiceUnavailable with default headers values
+func NewGetConfigIpfilterAllServiceUnavailable() *GetConfigIpfilterAllServiceUnavailable {
+
+	return &GetConfigIpfilterAllServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the get config ipfilter all service unavailable response
+func (o *GetConfigIpfilterAllServiceUnavailable) WithPayload(payload *models.Error) *GetConfigIpfilterAllServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config ipfilter all service unavailable response
+func (o *GetConfigIpfilterAllServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigIpfilterAllServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

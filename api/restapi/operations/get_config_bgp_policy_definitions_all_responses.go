@@ -103,6 +103,51 @@ func (o *GetConfigBgpPolicyDefinitionsAllUnauthorized) WriteResponse(rw http.Res
 	}
 }
 
+// GetConfigBgpPolicyDefinitionsAllForbiddenCode is the HTTP code returned for type GetConfigBgpPolicyDefinitionsAllForbidden
+const GetConfigBgpPolicyDefinitionsAllForbiddenCode int = 403
+
+/*
+GetConfigBgpPolicyDefinitionsAllForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getConfigBgpPolicyDefinitionsAllForbidden
+*/
+type GetConfigBgpPolicyDefinitionsAllForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigBgpPolicyDefinitionsAllForbidden creates GetConfigBgpPolicyDefinitionsAllForbidden with default headers values
+func NewGetConfigBgpPolicyDefinitionsAllForbidden() *GetConfigBgpPolicyDefinitionsAllForbidden {
+
+	return &GetConfigBgpPolicyDefinitionsAllForbidden{}
+}
+
+// WithPayload adds the payload to the get config bgp policy definitions all forbidden response
+func (o *GetConfigBgpPolicyDefinitionsAllForbidden) WithPayload(payload *models.Error) *GetConfigBgpPolicyDefinitionsAllForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config bgp policy definitions all forbidden response
+func (o *GetConfigBgpPolicyDefinitionsAllForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigBgpPolicyDefinitionsAllForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigBgpPolicyDefinitionsAllInternalServerErrorCode is the HTTP code returned for type GetConfigBgpPolicyDefinitionsAllInternalServerError
 const GetConfigBgpPolicyDefinitionsAllInternalServerErrorCode int = 500
 

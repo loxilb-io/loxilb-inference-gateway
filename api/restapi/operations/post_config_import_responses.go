@@ -57,3 +57,138 @@ func (o *PostConfigImportOK) WriteResponse(rw http.ResponseWriter, producer runt
 		}
 	}
 }
+
+// PostConfigImportUnauthorizedCode is the HTTP code returned for type PostConfigImportUnauthorized
+const PostConfigImportUnauthorizedCode int = 401
+
+/*
+PostConfigImportUnauthorized Missing or invalid management credential
+
+swagger:response postConfigImportUnauthorized
+*/
+type PostConfigImportUnauthorized struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigImportUnauthorized creates PostConfigImportUnauthorized with default headers values
+func NewPostConfigImportUnauthorized() *PostConfigImportUnauthorized {
+
+	return &PostConfigImportUnauthorized{}
+}
+
+// WithPayload adds the payload to the post config import unauthorized response
+func (o *PostConfigImportUnauthorized) WithPayload(payload *models.Error) *PostConfigImportUnauthorized {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config import unauthorized response
+func (o *PostConfigImportUnauthorized) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigImportUnauthorized) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(401)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// PostConfigImportForbiddenCode is the HTTP code returned for type PostConfigImportForbidden
+const PostConfigImportForbiddenCode int = 403
+
+/*
+PostConfigImportForbidden Authenticated principal is not authorized for this operation
+
+swagger:response postConfigImportForbidden
+*/
+type PostConfigImportForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigImportForbidden creates PostConfigImportForbidden with default headers values
+func NewPostConfigImportForbidden() *PostConfigImportForbidden {
+
+	return &PostConfigImportForbidden{}
+}
+
+// WithPayload adds the payload to the post config import forbidden response
+func (o *PostConfigImportForbidden) WithPayload(payload *models.Error) *PostConfigImportForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config import forbidden response
+func (o *PostConfigImportForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigImportForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// PostConfigImportServiceUnavailableCode is the HTTP code returned for type PostConfigImportServiceUnavailable
+const PostConfigImportServiceUnavailableCode int = 503
+
+/*
+PostConfigImportServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response postConfigImportServiceUnavailable
+*/
+type PostConfigImportServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigImportServiceUnavailable creates PostConfigImportServiceUnavailable with default headers values
+func NewPostConfigImportServiceUnavailable() *PostConfigImportServiceUnavailable {
+
+	return &PostConfigImportServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the post config import service unavailable response
+func (o *PostConfigImportServiceUnavailable) WithPayload(payload *models.Error) *PostConfigImportServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config import service unavailable response
+func (o *PostConfigImportServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigImportServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}

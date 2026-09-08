@@ -180,6 +180,20 @@ type PortDump struct {
 	Sync DpStatusT `json:"DataplaneSync"`
 }
 
+// EbpfAttachmentDump - live per-interface eBPF attachment status. Mode
+// "tc" entries cover every port the control plane dispatched a program
+// load for (Attached is the kernel-verified truth, so false means the
+// intent and the kernel disagree); mode "xdp" entries are emitted only
+// for interfaces where an XDP program is verifiably attached.
+type EbpfAttachmentDump struct {
+	// Name - interface name
+	Name string `json:"name"`
+	// Mode - attachment hook, "tc" or "xdp"
+	Mode string `json:"mode"`
+	// Attached - kernel-verified attachment state
+	Attached bool `json:"attached"`
+}
+
 // PortStatsInfo - stats information of port
 type PortStatsInfo struct {
 	// RxBytes - rx Byte count
@@ -1848,6 +1862,17 @@ type NetHookInterface interface {
 	NetMirrorAdd(*MirrMod) (int, error)
 	NetMirrorDel(*MirrMod) (int, error)
 	NetPortGet() ([]PortDump, error)
+	// NetEbpfAttachmentGet reports live per-interface eBPF attachment as
+	// verified against the kernel (netlink), not the control plane's
+	// intent flags -- an entry with Attached=false on a port whose
+	// bpfLoaded intent is true is exactly the divergence signal the
+	// readiness surface exists to expose.
+	NetEbpfAttachmentGet() ([]EbpfAttachmentDump, error)
+	// NetAiInFlightStreamsGet returns the number of AI inference
+	// streaming sessions (SSE) currently open through the gateway. It
+	// counts streams only: short-lived non-streaming requests have no
+	// Go-side in-flight counter and are deliberately not estimated.
+	NetAiInFlightStreamsGet() int64
 	NetPortAdd(*PortMod) (int, error)
 	NetPortDel(*PortMod) (int, error)
 	NetVlanGet() ([]VlanGet, error)

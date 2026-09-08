@@ -103,6 +103,51 @@ func (o *DeleteConfigTunnelVxlanVxlanIDUnauthorized) WriteResponse(rw http.Respo
 	}
 }
 
+// DeleteConfigTunnelVxlanVxlanIDForbiddenCode is the HTTP code returned for type DeleteConfigTunnelVxlanVxlanIDForbidden
+const DeleteConfigTunnelVxlanVxlanIDForbiddenCode int = 403
+
+/*
+DeleteConfigTunnelVxlanVxlanIDForbidden Authenticated principal is not authorized for this operation
+
+swagger:response deleteConfigTunnelVxlanVxlanIdForbidden
+*/
+type DeleteConfigTunnelVxlanVxlanIDForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewDeleteConfigTunnelVxlanVxlanIDForbidden creates DeleteConfigTunnelVxlanVxlanIDForbidden with default headers values
+func NewDeleteConfigTunnelVxlanVxlanIDForbidden() *DeleteConfigTunnelVxlanVxlanIDForbidden {
+
+	return &DeleteConfigTunnelVxlanVxlanIDForbidden{}
+}
+
+// WithPayload adds the payload to the delete config tunnel vxlan vxlan Id forbidden response
+func (o *DeleteConfigTunnelVxlanVxlanIDForbidden) WithPayload(payload *models.Error) *DeleteConfigTunnelVxlanVxlanIDForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config tunnel vxlan vxlan Id forbidden response
+func (o *DeleteConfigTunnelVxlanVxlanIDForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *DeleteConfigTunnelVxlanVxlanIDForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // DeleteConfigTunnelVxlanVxlanIDInternalServerErrorCode is the HTTP code returned for type DeleteConfigTunnelVxlanVxlanIDInternalServerError
 const DeleteConfigTunnelVxlanVxlanIDInternalServerErrorCode int = 500
 

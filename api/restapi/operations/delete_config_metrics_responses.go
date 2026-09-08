@@ -148,6 +148,51 @@ func (o *DeleteConfigMetricsUnauthorized) WriteResponse(rw http.ResponseWriter, 
 	}
 }
 
+// DeleteConfigMetricsForbiddenCode is the HTTP code returned for type DeleteConfigMetricsForbidden
+const DeleteConfigMetricsForbiddenCode int = 403
+
+/*
+DeleteConfigMetricsForbidden Authenticated principal is not authorized for this operation
+
+swagger:response deleteConfigMetricsForbidden
+*/
+type DeleteConfigMetricsForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewDeleteConfigMetricsForbidden creates DeleteConfigMetricsForbidden with default headers values
+func NewDeleteConfigMetricsForbidden() *DeleteConfigMetricsForbidden {
+
+	return &DeleteConfigMetricsForbidden{}
+}
+
+// WithPayload adds the payload to the delete config metrics forbidden response
+func (o *DeleteConfigMetricsForbidden) WithPayload(payload *models.Error) *DeleteConfigMetricsForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config metrics forbidden response
+func (o *DeleteConfigMetricsForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *DeleteConfigMetricsForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // DeleteConfigMetricsInternalServerErrorCode is the HTTP code returned for type DeleteConfigMetricsInternalServerError
 const DeleteConfigMetricsInternalServerErrorCode int = 500
 

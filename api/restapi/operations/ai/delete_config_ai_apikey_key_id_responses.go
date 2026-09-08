@@ -83,6 +83,51 @@ func (o *DeleteConfigAiApikeyKeyIDUnauthorized) WriteResponse(rw http.ResponseWr
 	}
 }
 
+// DeleteConfigAiApikeyKeyIDForbiddenCode is the HTTP code returned for type DeleteConfigAiApikeyKeyIDForbidden
+const DeleteConfigAiApikeyKeyIDForbiddenCode int = 403
+
+/*
+DeleteConfigAiApikeyKeyIDForbidden Authenticated principal is not authorized to delete API keys
+
+swagger:response deleteConfigAiApikeyKeyIdForbidden
+*/
+type DeleteConfigAiApikeyKeyIDForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewDeleteConfigAiApikeyKeyIDForbidden creates DeleteConfigAiApikeyKeyIDForbidden with default headers values
+func NewDeleteConfigAiApikeyKeyIDForbidden() *DeleteConfigAiApikeyKeyIDForbidden {
+
+	return &DeleteConfigAiApikeyKeyIDForbidden{}
+}
+
+// WithPayload adds the payload to the delete config ai apikey key Id forbidden response
+func (o *DeleteConfigAiApikeyKeyIDForbidden) WithPayload(payload *models.Error) *DeleteConfigAiApikeyKeyIDForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config ai apikey key Id forbidden response
+func (o *DeleteConfigAiApikeyKeyIDForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *DeleteConfigAiApikeyKeyIDForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // DeleteConfigAiApikeyKeyIDNotFoundCode is the HTTP code returned for type DeleteConfigAiApikeyKeyIDNotFound
 const DeleteConfigAiApikeyKeyIDNotFoundCode int = 404
 
@@ -165,6 +210,51 @@ func (o *DeleteConfigAiApikeyKeyIDInternalServerError) SetPayload(payload *model
 func (o *DeleteConfigAiApikeyKeyIDInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// DeleteConfigAiApikeyKeyIDServiceUnavailableCode is the HTTP code returned for type DeleteConfigAiApikeyKeyIDServiceUnavailable
+const DeleteConfigAiApikeyKeyIDServiceUnavailableCode int = 503
+
+/*
+DeleteConfigAiApikeyKeyIDServiceUnavailable Management credential store or API-key store unavailable
+
+swagger:response deleteConfigAiApikeyKeyIdServiceUnavailable
+*/
+type DeleteConfigAiApikeyKeyIDServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewDeleteConfigAiApikeyKeyIDServiceUnavailable creates DeleteConfigAiApikeyKeyIDServiceUnavailable with default headers values
+func NewDeleteConfigAiApikeyKeyIDServiceUnavailable() *DeleteConfigAiApikeyKeyIDServiceUnavailable {
+
+	return &DeleteConfigAiApikeyKeyIDServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the delete config ai apikey key Id service unavailable response
+func (o *DeleteConfigAiApikeyKeyIDServiceUnavailable) WithPayload(payload *models.Error) *DeleteConfigAiApikeyKeyIDServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config ai apikey key Id service unavailable response
+func (o *DeleteConfigAiApikeyKeyIDServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *DeleteConfigAiApikeyKeyIDServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

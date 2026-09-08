@@ -148,6 +148,51 @@ func (o *PostConfigAiApikeyUnauthorized) WriteResponse(rw http.ResponseWriter, p
 	}
 }
 
+// PostConfigAiApikeyForbiddenCode is the HTTP code returned for type PostConfigAiApikeyForbidden
+const PostConfigAiApikeyForbiddenCode int = 403
+
+/*
+PostConfigAiApikeyForbidden Authenticated principal is not authorized to create API keys
+
+swagger:response postConfigAiApikeyForbidden
+*/
+type PostConfigAiApikeyForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigAiApikeyForbidden creates PostConfigAiApikeyForbidden with default headers values
+func NewPostConfigAiApikeyForbidden() *PostConfigAiApikeyForbidden {
+
+	return &PostConfigAiApikeyForbidden{}
+}
+
+// WithPayload adds the payload to the post config ai apikey forbidden response
+func (o *PostConfigAiApikeyForbidden) WithPayload(payload *models.Error) *PostConfigAiApikeyForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config ai apikey forbidden response
+func (o *PostConfigAiApikeyForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigAiApikeyForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // PostConfigAiApikeyInternalServerErrorCode is the HTTP code returned for type PostConfigAiApikeyInternalServerError
 const PostConfigAiApikeyInternalServerErrorCode int = 500
 
@@ -185,6 +230,51 @@ func (o *PostConfigAiApikeyInternalServerError) SetPayload(payload *models.Error
 func (o *PostConfigAiApikeyInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// PostConfigAiApikeyServiceUnavailableCode is the HTTP code returned for type PostConfigAiApikeyServiceUnavailable
+const PostConfigAiApikeyServiceUnavailableCode int = 503
+
+/*
+PostConfigAiApikeyServiceUnavailable Management credential store or API-key store unavailable
+
+swagger:response postConfigAiApikeyServiceUnavailable
+*/
+type PostConfigAiApikeyServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigAiApikeyServiceUnavailable creates PostConfigAiApikeyServiceUnavailable with default headers values
+func NewPostConfigAiApikeyServiceUnavailable() *PostConfigAiApikeyServiceUnavailable {
+
+	return &PostConfigAiApikeyServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the post config ai apikey service unavailable response
+func (o *PostConfigAiApikeyServiceUnavailable) WithPayload(payload *models.Error) *PostConfigAiApikeyServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config ai apikey service unavailable response
+func (o *PostConfigAiApikeyServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigAiApikeyServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

@@ -61,6 +61,96 @@ func (o *GetAuthUsersOK) WriteResponse(rw http.ResponseWriter, producer runtime.
 	}
 }
 
+// GetAuthUsersUnauthorizedCode is the HTTP code returned for type GetAuthUsersUnauthorized
+const GetAuthUsersUnauthorizedCode int = 401
+
+/*
+GetAuthUsersUnauthorized Invalid authentication credentials
+
+swagger:response getAuthUsersUnauthorized
+*/
+type GetAuthUsersUnauthorized struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetAuthUsersUnauthorized creates GetAuthUsersUnauthorized with default headers values
+func NewGetAuthUsersUnauthorized() *GetAuthUsersUnauthorized {
+
+	return &GetAuthUsersUnauthorized{}
+}
+
+// WithPayload adds the payload to the get auth users unauthorized response
+func (o *GetAuthUsersUnauthorized) WithPayload(payload *models.Error) *GetAuthUsersUnauthorized {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get auth users unauthorized response
+func (o *GetAuthUsersUnauthorized) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetAuthUsersUnauthorized) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(401)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetAuthUsersForbiddenCode is the HTTP code returned for type GetAuthUsersForbidden
+const GetAuthUsersForbiddenCode int = 403
+
+/*
+GetAuthUsersForbidden Authenticated principal is not authorized to list users
+
+swagger:response getAuthUsersForbidden
+*/
+type GetAuthUsersForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetAuthUsersForbidden creates GetAuthUsersForbidden with default headers values
+func NewGetAuthUsersForbidden() *GetAuthUsersForbidden {
+
+	return &GetAuthUsersForbidden{}
+}
+
+// WithPayload adds the payload to the get auth users forbidden response
+func (o *GetAuthUsersForbidden) WithPayload(payload *models.Error) *GetAuthUsersForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get auth users forbidden response
+func (o *GetAuthUsersForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetAuthUsersForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetAuthUsersInternalServerErrorCode is the HTTP code returned for type GetAuthUsersInternalServerError
 const GetAuthUsersInternalServerErrorCode int = 500
 
@@ -98,6 +188,51 @@ func (o *GetAuthUsersInternalServerError) SetPayload(payload *models.Error) {
 func (o *GetAuthUsersInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetAuthUsersServiceUnavailableCode is the HTTP code returned for type GetAuthUsersServiceUnavailable
+const GetAuthUsersServiceUnavailableCode int = 503
+
+/*
+GetAuthUsersServiceUnavailable Management credential store unavailable
+
+swagger:response getAuthUsersServiceUnavailable
+*/
+type GetAuthUsersServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetAuthUsersServiceUnavailable creates GetAuthUsersServiceUnavailable with default headers values
+func NewGetAuthUsersServiceUnavailable() *GetAuthUsersServiceUnavailable {
+
+	return &GetAuthUsersServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the get auth users service unavailable response
+func (o *GetAuthUsersServiceUnavailable) WithPayload(payload *models.Error) *GetAuthUsersServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get auth users service unavailable response
+func (o *GetAuthUsersServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetAuthUsersServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {
