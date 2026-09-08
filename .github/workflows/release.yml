@@ -135,6 +135,60 @@ jobs:
           cache-from: type=gha,scope=release-${{ matrix.variant }}-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=release-${{ matrix.variant }}-${{ matrix.arch }}
 
+      # The image embeds the operator CLI cloned at the Dockerfile's pinned
+      # revision. Extract it, bind its identity to this build leg, and refuse
+      # to publish an image whose embedded CLI cannot prove where it came from.
+      - name: Verify and record the embedded CLI
+        env:
+          IMG: ${{ env.IMAGE }}:${{ needs.meta.outputs.tag }}${{ matrix.suffix }}-${{ matrix.arch }}
+          DOCKERFILE: ${{ matrix.dockerfile }}
+          VARIANT: ${{ matrix.variant }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          # The effective CLI revision is the Dockerfile default: this
+          # workflow passes no LOXICMD_TAG build-arg, and the Dockerfile
+          # fails closed on any value that is not a full commit SHA
+          # resolving to exactly itself.
+          CLI_REV="$(sed -n 's/^ARG LOXICMD_TAG=\([0-9a-f]\{40\}\)$/\1/p' "$DOCKERFILE")"
+          if [ -z "$CLI_REV" ]; then
+            echo "::error::${DOCKERFILE} does not pin LOXICMD_TAG to a full commit SHA"
+            exit 1
+          fi
+          CID="$(docker create "$IMG")"
+          docker cp "$CID:/usr/local/sbin/loxicmd" ./embedded-loxicmd
+          docker rm "$CID" >/dev/null
+          SHA256="$(sha256sum ./embedded-loxicmd | awk '{print $1}')"
+          # The binary must run. Once the CLI ships build identity through
+          # `version -o json`, its self-reported source revision must equal
+          # the pinned one. An older CLI answers the same invocation with
+          # human text; that is recorded rather than failed, so this gate
+          # hardens itself automatically at the CLI bump instead of going
+          # red before it.
+          docker run --rm --entrypoint /usr/local/sbin/loxicmd "$IMG" version -o json > cli-version.out
+          if jq -e . cli-version.out >/dev/null 2>&1; then
+            SELF="$(jq -r '.data.sourceRevision' cli-version.out)"
+            if [ "$SELF" != "$CLI_REV" ]; then
+              echo "::error::embedded CLI reports source revision '${SELF}', but the image was built from '${CLI_REV}'"
+              exit 1
+            fi
+            SELF_REPORT="verified"
+          else
+            SELF_REPORT="unsupported"
+          fi
+          jq -n --arg variant "$VARIANT" --arg arch "$ARCH" \
+                --arg cliRevision "$CLI_REV" --arg sha256 "$SHA256" \
+                --arg selfReport "$SELF_REPORT" \
+            '{variant: $variant, arch: $arch, cliRevision: $cliRevision,
+              embeddedSha256: $sha256, identitySelfReport: $selfReport}' \
+            > "cli-attestation-${VARIANT}-${ARCH}.json"
+          cat "cli-attestation-${VARIANT}-${ARCH}.json"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-attestation-${{ matrix.variant }}-${{ matrix.arch }}
+          path: cli-attestation-${{ matrix.variant }}-${{ matrix.arch }}.json
+          if-no-files-found: error
+
       - name: Trivy gate (CRITICAL + fixable) — blocks publish
         uses: aquasecurity/trivy-action@0.35.0
         with:
@@ -259,6 +313,83 @@ jobs:
           path: sbom-${{ matrix.variant }}.spdx.json
           if-no-files-found: error
 
+  release-metadata:
+    name: component metadata
+    needs: [meta, build-image, merge-image]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.meta.outputs.tag }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cli-attestation-*
+          merge-multiple: true
+          path: cli
+
+      - name: Assemble machine-readable release metadata
+        env:
+          TAG: ${{ needs.meta.outputs.tag }}
+        run: |
+          # All four image legs must have embedded the same CLI revision;
+          # their agreement is the cross-check between Dockerfile and
+          # Dockerfile.u24, and this single value is what downstream
+          # product-lock intake compares against its own pin.
+          REVS="$(jq -r '.cliRevision' cli/*.json | sort -u)"
+          if [ "$(echo "$REVS" | wc -l)" -ne 1 ]; then
+            echo "::error::image legs disagree on the embedded CLI revision:"
+            echo "$REVS"
+            exit 1
+          fi
+          GW_REV="$(git rev-parse HEAD)"
+          U22_DIGEST="$(docker buildx imagetools inspect "${IMAGE}:${TAG}" --format '{{.Manifest.Digest}}')"
+          U24_DIGEST="$(docker buildx imagetools inspect "${IMAGE}:${TAG}-u24" --format '{{.Manifest.Digest}}')"
+          case "$U22_DIGEST" in sha256:*) ;; *) echo "::error::bad u22 digest '${U22_DIGEST}'"; exit 1 ;; esac
+          case "$U24_DIGEST" in sha256:*) ;; *) echo "::error::bad u24 digest '${U24_DIGEST}'"; exit 1 ;; esac
+          jq -s '.' cli/*.json > legs.json
+          mkdir -p meta
+          jq -n \
+            --arg tag "$TAG" \
+            --arg gatewayRevision "$GW_REV" \
+            --arg cliRevision "$REVS" \
+            --arg u22Digest "$U22_DIGEST" \
+            --arg u24Digest "$U24_DIGEST" \
+            --arg image "$IMAGE" \
+            --slurpfile legs legs.json \
+            '{
+              apiVersion: "loxilb.io/appliance/v1",
+              kind: "ReleaseMetadata",
+              component: "loxilb-inference-gateway",
+              version: $tag,
+              gatewayRevision: $gatewayRevision,
+              embeddedCli: {revision: $cliRevision, legs: $legs[0]},
+              images: {
+                u22: {ref: ($image + ":" + $tag), digest: $u22Digest},
+                u24: {ref: ($image + ":" + $tag + "-u24"), digest: $u24Digest}
+              }
+            }' > "meta/release-metadata_${TAG}.json"
+          cat "meta/release-metadata_${TAG}.json"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-metadata
+          path: meta/release-metadata_*.json
+          if-no-files-found: error
+
   build-packages:
     name: packages ${{ matrix.arch }}
     needs: [meta, authorize]
@@ -331,7 +462,7 @@ jobs:
   release:
     name: publish release
     if: github.event_name == 'push'
-    needs: [meta, merge-image, package-sanity, trivy]
+    needs: [meta, merge-image, package-sanity, trivy, release-metadata]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -357,6 +488,13 @@ jobs:
           merge-multiple: true
           path: sbom
 
+      # Same reasoning as the SBOMs: metadata describes the release, it is not
+      # an installable artifact, so it stays out of dist/ and SHA256SUMS.
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-metadata
+          path: meta
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
@@ -366,6 +504,7 @@ jobs:
           files: |
             dist/*
             sbom/*
+            meta/*
           body: |
             LoxiLB Inference Gateway `${{ needs.meta.outputs.tag }}`.
 
