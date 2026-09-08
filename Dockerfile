@@ -57,9 +57,15 @@ RUN mkdir -p /opt/loxilb && \
     tar -xvzf bpftool-libbpf-v7.2.0-sources.tar.gz && cd bpftool/src/ && \
     make clean && 	make -j $(nproc) && cp -f ./bpftool /usr/local/sbin/bpftool && \
     cd - && rm -fr bpftool* && \
-    # Install loxicmd (inference-gateway CLI)
+    # Install loxicmd (inference-gateway CLI). The revision must be a full
+    # commit SHA and the checkout must resolve to exactly it: a build-arg
+    # override with a branch or tag name would silently reintroduce a moving
+    # ref, so the build fails closed instead.
+    echo "$LOXICMD_TAG" | grep -Eq '^[0-9a-f]{40}$' || { echo "LOXICMD_TAG must be a full 40-hex commit SHA, got '$LOXICMD_TAG'" >&2; exit 1; } && \
     git clone https://github.com/loxilb-io/loxicmd-inference-gateway.git loxicmd && cd loxicmd && git fetch --all --tags && \
-    git checkout $LOXICMD_TAG && go get . && \
+    git checkout $LOXICMD_TAG && \
+    [ "$(git rev-parse HEAD)" = "$LOXICMD_TAG" ] || { echo "loxicmd checkout resolved to $(git rev-parse HEAD), not the requested $LOXICMD_TAG" >&2; exit 1; } && \
+    go get . && \
     make && cp ./loxicmd /usr/local/sbin/loxicmd && cd - && rm -fr loxicmd && \
     /usr/local/sbin/loxicmd completion bash > /etc/bash_completion.d/loxi_completion && \
     # Pre-built libtokenizers static library (KV router HF tokenizer backend)

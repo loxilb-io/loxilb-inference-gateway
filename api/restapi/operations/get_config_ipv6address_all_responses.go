@@ -103,6 +103,51 @@ func (o *GetConfigIpv6addressAllUnauthorized) WriteResponse(rw http.ResponseWrit
 	}
 }
 
+// GetConfigIpv6addressAllForbiddenCode is the HTTP code returned for type GetConfigIpv6addressAllForbidden
+const GetConfigIpv6addressAllForbiddenCode int = 403
+
+/*
+GetConfigIpv6addressAllForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getConfigIpv6addressAllForbidden
+*/
+type GetConfigIpv6addressAllForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigIpv6addressAllForbidden creates GetConfigIpv6addressAllForbidden with default headers values
+func NewGetConfigIpv6addressAllForbidden() *GetConfigIpv6addressAllForbidden {
+
+	return &GetConfigIpv6addressAllForbidden{}
+}
+
+// WithPayload adds the payload to the get config ipv6address all forbidden response
+func (o *GetConfigIpv6addressAllForbidden) WithPayload(payload *models.Error) *GetConfigIpv6addressAllForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config ipv6address all forbidden response
+func (o *GetConfigIpv6addressAllForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigIpv6addressAllForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigIpv6addressAllInternalServerErrorCode is the HTTP code returned for type GetConfigIpv6addressAllInternalServerError
 const GetConfigIpv6addressAllInternalServerErrorCode int = 500
 

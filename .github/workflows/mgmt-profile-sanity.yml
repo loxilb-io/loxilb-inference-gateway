@@ -1,0 +1,75 @@
+name: Mgmt-Profile-Sanity-CI
+
+# Management-listener profile enforcement, self-contained on a hosted runner:
+# builds the gateway from source, overlays the fresh binary onto the container
+# image, and runs cicd/mgmt-profile-sanity — the legacy reachability baseline,
+# the appliance-local loopback-only legs, the three fail-closed refused-start
+# legs, and the remote-tls serve-and-enforce leg.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'options/**'
+      - 'api/**'
+      - 'cicd/mgmt-profile-sanity/**'
+      - 'loxilb-ebpf'
+      - '.github/workflows/mgmt-profile-sanity.yml'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'options/**'
+      - 'api/**'
+      - 'cicd/mgmt-profile-sanity/**'
+      - 'loxilb-ebpf'
+      - '.github/workflows/mgmt-profile-sanity.yml'
+  workflow_dispatch:
+
+jobs:
+  mgmt-profile-sanity:
+    name: mgmt-profile-sanity
+    runs-on: ubuntu-22.04
+    # Dependabot PRs have no submodule token; the private eBPF checkout fails.
+    if: github.actor != 'dependabot[bot]'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '>=1.18.0'
+      - run: sudo apt-get update
+      - run: sudo apt-get -y install clang llvm libelf-dev gcc-multilib libpcap-dev linux-tools-$(uname -r) elfutils dwarves git libbsd-dev bridge-utils unzip build-essential bison flex iproute2 socat ethtool libjson-c-dev libnghttp2-dev
+      - name: Install libtokenizers (cgo link dependency of the router)
+        run: arch=$(dpkg --print-architecture) && wget -q https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-${arch}.tar.gz -O /tmp/libtokenizers.tar.gz && sudo tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz
+      - run: loxilb-ebpf/utils/mkllb_bpffs.sh
+      - run: sudo -E env "PATH=$PATH" make
+      # Gateway image: pull the published one, or build locally when not yet
+      # published. The GHCR image is public; authenticate anyway (GHCR_TOKEN
+      # when present, else the built-in token) to avoid anonymous pull rate
+      # limits and the fragile full from-source docker build fallback.
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN || github.token }}
+      - run: docker pull ghcr.io/loxilb-io/loxilb-inference-gateway:latest || docker build -t ghcr.io/loxilb-io/loxilb-inference-gateway:latest .
+      # Overlay the branch-built binary onto the image: the profile flag under
+      # test exists only in this build, so running the published binary would
+      # test nothing.
+      - run: docker run -u root --cap-add SYS_ADMIN --restart unless-stopped --privileged -dit -v /dev/log:/dev/log --name loxilb ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: pwd && ls && sudo -E env "PATH=$PATH" make docker-cp
+      - run: docker exec -dit loxilb mkllb_bpffs
+      - run: id=`docker ps -f name=loxilb | cut -d " " -f 1 | grep -iv "CONTAINER"` && docker commit $id ghcr.io/loxilb-io/loxilb-inference-gateway:latest
+      - run: docker stop loxilb && docker rm loxilb
+      - name: Management-listener profile enforcement
+        run: |
+          cd cicd/mgmt-profile-sanity/
+          ./config.sh
+          ./validation.sh
+          ./rmconfig.sh
+          cd -
+      - run: echo "mgmt-profile sanity complete"

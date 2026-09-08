@@ -128,6 +128,51 @@ func (o *DeleteConfigCertCertIDUnauthorized) WriteResponse(rw http.ResponseWrite
 	}
 }
 
+// DeleteConfigCertCertIDForbiddenCode is the HTTP code returned for type DeleteConfigCertCertIDForbidden
+const DeleteConfigCertCertIDForbiddenCode int = 403
+
+/*
+DeleteConfigCertCertIDForbidden Authenticated principal is not authorized for this operation
+
+swagger:response deleteConfigCertCertIdForbidden
+*/
+type DeleteConfigCertCertIDForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewDeleteConfigCertCertIDForbidden creates DeleteConfigCertCertIDForbidden with default headers values
+func NewDeleteConfigCertCertIDForbidden() *DeleteConfigCertCertIDForbidden {
+
+	return &DeleteConfigCertCertIDForbidden{}
+}
+
+// WithPayload adds the payload to the delete config cert cert Id forbidden response
+func (o *DeleteConfigCertCertIDForbidden) WithPayload(payload *models.Error) *DeleteConfigCertCertIDForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config cert cert Id forbidden response
+func (o *DeleteConfigCertCertIDForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *DeleteConfigCertCertIDForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // DeleteConfigCertCertIDNotFoundCode is the HTTP code returned for type DeleteConfigCertCertIDNotFound
 const DeleteConfigCertCertIDNotFoundCode int = 404
 
@@ -210,6 +255,51 @@ func (o *DeleteConfigCertCertIDInternalServerError) SetPayload(payload *models.E
 func (o *DeleteConfigCertCertIDInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// DeleteConfigCertCertIDServiceUnavailableCode is the HTTP code returned for type DeleteConfigCertCertIDServiceUnavailable
+const DeleteConfigCertCertIDServiceUnavailableCode int = 503
+
+/*
+DeleteConfigCertCertIDServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response deleteConfigCertCertIdServiceUnavailable
+*/
+type DeleteConfigCertCertIDServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewDeleteConfigCertCertIDServiceUnavailable creates DeleteConfigCertCertIDServiceUnavailable with default headers values
+func NewDeleteConfigCertCertIDServiceUnavailable() *DeleteConfigCertCertIDServiceUnavailable {
+
+	return &DeleteConfigCertCertIDServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the delete config cert cert Id service unavailable response
+func (o *DeleteConfigCertCertIDServiceUnavailable) WithPayload(payload *models.Error) *DeleteConfigCertCertIDServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config cert cert Id service unavailable response
+func (o *DeleteConfigCertCertIDServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *DeleteConfigCertCertIDServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

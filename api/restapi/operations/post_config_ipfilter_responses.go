@@ -148,6 +148,51 @@ func (o *PostConfigIpfilterUnauthorized) WriteResponse(rw http.ResponseWriter, p
 	}
 }
 
+// PostConfigIpfilterForbiddenCode is the HTTP code returned for type PostConfigIpfilterForbidden
+const PostConfigIpfilterForbiddenCode int = 403
+
+/*
+PostConfigIpfilterForbidden Authenticated principal is not authorized for this operation
+
+swagger:response postConfigIpfilterForbidden
+*/
+type PostConfigIpfilterForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigIpfilterForbidden creates PostConfigIpfilterForbidden with default headers values
+func NewPostConfigIpfilterForbidden() *PostConfigIpfilterForbidden {
+
+	return &PostConfigIpfilterForbidden{}
+}
+
+// WithPayload adds the payload to the post config ipfilter forbidden response
+func (o *PostConfigIpfilterForbidden) WithPayload(payload *models.Error) *PostConfigIpfilterForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config ipfilter forbidden response
+func (o *PostConfigIpfilterForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigIpfilterForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // PostConfigIpfilterInternalServerErrorCode is the HTTP code returned for type PostConfigIpfilterInternalServerError
 const PostConfigIpfilterInternalServerErrorCode int = 500
 
@@ -185,6 +230,51 @@ func (o *PostConfigIpfilterInternalServerError) SetPayload(payload *models.Error
 func (o *PostConfigIpfilterInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// PostConfigIpfilterServiceUnavailableCode is the HTTP code returned for type PostConfigIpfilterServiceUnavailable
+const PostConfigIpfilterServiceUnavailableCode int = 503
+
+/*
+PostConfigIpfilterServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response postConfigIpfilterServiceUnavailable
+*/
+type PostConfigIpfilterServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigIpfilterServiceUnavailable creates PostConfigIpfilterServiceUnavailable with default headers values
+func NewPostConfigIpfilterServiceUnavailable() *PostConfigIpfilterServiceUnavailable {
+
+	return &PostConfigIpfilterServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the post config ipfilter service unavailable response
+func (o *PostConfigIpfilterServiceUnavailable) WithPayload(payload *models.Error) *PostConfigIpfilterServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config ipfilter service unavailable response
+func (o *PostConfigIpfilterServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigIpfilterServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

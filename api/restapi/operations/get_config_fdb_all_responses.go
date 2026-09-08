@@ -103,6 +103,51 @@ func (o *GetConfigFdbAllUnauthorized) WriteResponse(rw http.ResponseWriter, prod
 	}
 }
 
+// GetConfigFdbAllForbiddenCode is the HTTP code returned for type GetConfigFdbAllForbidden
+const GetConfigFdbAllForbiddenCode int = 403
+
+/*
+GetConfigFdbAllForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getConfigFdbAllForbidden
+*/
+type GetConfigFdbAllForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigFdbAllForbidden creates GetConfigFdbAllForbidden with default headers values
+func NewGetConfigFdbAllForbidden() *GetConfigFdbAllForbidden {
+
+	return &GetConfigFdbAllForbidden{}
+}
+
+// WithPayload adds the payload to the get config fdb all forbidden response
+func (o *GetConfigFdbAllForbidden) WithPayload(payload *models.Error) *GetConfigFdbAllForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config fdb all forbidden response
+func (o *GetConfigFdbAllForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigFdbAllForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigFdbAllInternalServerErrorCode is the HTTP code returned for type GetConfigFdbAllInternalServerError
 const GetConfigFdbAllInternalServerErrorCode int = 500
 

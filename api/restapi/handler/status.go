@@ -17,6 +17,7 @@ package handler
 
 import (
 	"github.com/loxilb-io/loxilb/api/apiutils/status"
+	"github.com/loxilb-io/loxilb/api/models"
 	"github.com/loxilb-io/loxilb/api/restapi/operations"
 	tk "github.com/loxilb-io/loxilib"
 
@@ -28,7 +29,7 @@ func ConfigGetProcess(params operations.GetStatusProcessParams, principal interf
 	//var result []*models.ProcessInfoEntry
 	process := status.ProcessInfoGet()
 
-	return operations.NewGetStatusProcessOK().WithPayload(&operations.GetStatusProcessOKBody{ProcessAttr: process})
+	return operations.NewGetStatusProcessOK().WithPayload(&models.ProcessStatus{ProcessAttr: process})
 }
 
 func ConfigGetDevice(params operations.GetStatusDeviceParams, principal interface{}) middleware.Responder {
@@ -49,5 +50,5 @@ func ConfigGetFileSystem(params operations.GetStatusFilesystemParams, principal 
 		tk.LogIt(tk.LogDebug, "api: Error occur : %v\n", err)
 		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
 	}
-	return operations.NewGetStatusFilesystemOK().WithPayload(&operations.GetStatusFilesystemOKBody{FilesystemAttr: res})
+	return operations.NewGetStatusFilesystemOK().WithPayload(&models.FilesystemStatus{FilesystemAttr: res})
 }

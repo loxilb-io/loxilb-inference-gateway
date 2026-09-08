@@ -59,6 +59,24 @@ chk_has() { # chk_has <name> <needle> <haystack>
 }
 
 lcurl() { docker exec llb1 curl -s -m 30 "$@"; }
+
+# lcurl_mut is lcurl for mutating management calls: the freeze middleware
+# answers 503 + Retry-After from two transient windows (boot config replay,
+# and the snapshot gate a write-through or restore holds — auto-persist
+# takes it about three seconds after any config mutation), and its
+# documented client behavior is to retry. Only those two exact bodies are
+# retried, bounded; every other answer returns on the first try.
+lcurl_mut() {
+  local i out
+  for i in 1 2 3 4 5 6; do
+    out=$(lcurl "$@")
+    case "$out" in
+      *"boot config replay settles"*|*"frozen while a snapshot restore is in progress"*) sleep 2 ;;
+      *) break ;;
+    esac
+  done
+  printf '%s\n' "$out"
+}
 vip_code() { docker exec l3h1 curl -s -o /dev/null -m 20 -w '%{http_code}' "$@"; }
 vip_body() { docker exec l3h1 curl -s -m 20 "$@"; }
 jf() { echo "$1" | python3 -c "import sys,json; print(json.load(sys.stdin).get('$2',''))" 2>/dev/null; }
@@ -193,7 +211,7 @@ chk_has "A4 the old streaming shape still strips the key (unchanged behaviour)" 
 chk_has "A4 a service that declared nothing forwards the key untouched" "x_api_key=True" "$(backend_line probe=bc-a4-plain)"
 
 # Pre-upgrade management bodies: the minimal field set that era's clients sent.
-R_OLD=$(lcurl -X POST $API/config/ai/apikey -H 'Content-Type: application/json' \
+R_OLD=$(lcurl_mut -X POST $API/config/ai/apikey -H 'Content-Type: application/json' \
   -d '{"tenant_id":"bc-tenant","name":"bc-old-shape","rate_limit_rps":200,"tokens_per_min":0,"enabled":true}')
 K_OLD=$(jf "$R_OLD" raw_key)
 if [ -n "$K_OLD" ]; then
@@ -246,7 +264,7 @@ chk "B4 the same quota write no longer warns" "$W2" "$W3"
 
 # Enforcement is live end to end, not just at the door: a key limited to one
 # request per second draws a rate-limit verdict inside a six-request burst.
-R_SLOW=$(lcurl -X POST $API/config/ai/apikey -H 'Content-Type: application/json' \
+R_SLOW=$(lcurl_mut -X POST $API/config/ai/apikey -H 'Content-Type: application/json' \
   -d '{"tenant_id":"bc-tenant","name":"bc-slow","rate_limit_rps":1,"burst_size":1,"tokens_per_min":0,"enabled":true}')
 K_SLOW=$(jf "$R_SLOW" raw_key)
 CODES=""

@@ -380,3 +380,46 @@ func TestKvAdmissionRefuseWrapsTyped(t *testing.T) {
 		t.Fatal("KvContractError no longer reachable through the admission wrap")
 	}
 }
+
+// TestKvEngineAdmissionCapabilityBeforeDependencies: the admission sequence
+// must answer with the engine's capability refusal before any
+// runtime-dependency refusal. A dependency message reads as fixable
+// ("stage a tokenizer ... before retry", "model_name is required") — for a
+// shape the capability guard forbids outright, that hint promises a retry
+// path the guard would then refuse, so the capability answer has to win.
+func TestKvEngineAdmissionCapabilityBeforeDependencies(t *testing.T) {
+	// llama.cpp with kvExactMode and NO staged tokenizer: under a
+	// dependency-first order this answers "tokenizer is required ... before
+	// retry" — unfulfillable, the engine has no KV event plane.
+	noTok := admissionDeps(func(d *kvExactAdmissionDeps) {
+		d.tokenizerReady = func(string) bool { return false }
+	})
+	serv := &cmn.LbServiceArg{KvEngineType: "llamacpp", KvExactMode: 3, ModelName: "m-a"}
+	if _, err := kvEngineAdmissionValidate(serv, noTok); err == nil ||
+		!strings.Contains(err.Error(), "kvExactMode is unsupported for kv-engine-type llamacpp") {
+		t.Fatalf("llamacpp+kvExactMode without tokenizer: want the capability refusal, got %v", err)
+	}
+
+	// Same precedence when model_name is absent (the other dependency gate).
+	serv = &cmn.LbServiceArg{KvEngineType: "llamacpp", KvExactMode: 3}
+	if _, err := kvEngineAdmissionValidate(serv, noTok); err == nil ||
+		!strings.Contains(err.Error(), "kvExactMode is unsupported for kv-engine-type llamacpp") {
+		t.Fatalf("llamacpp+kvExactMode without model_name: want the capability refusal, got %v", err)
+	}
+
+	// TRT-LLM: a forbidden knob (real kvZmqPort) must out-rank the missing
+	// model_name dependency the same way.
+	serv = &cmn.LbServiceArg{KvEngineType: "trtllm", KvExactMode: 3, KvZmqPort: 5561}
+	if _, err := kvEngineAdmissionValidate(serv, noTok); err == nil ||
+		!strings.Contains(err.Error(), "kvZmqPort is meaningless for kv-engine-type trtllm") {
+		t.Fatalf("trtllm+kvZmqPort without model_name: want the capability refusal, got %v", err)
+	}
+
+	// Engines whose guards pass keep their dependency-first answers
+	// unchanged: vllm still reports the missing model_name.
+	serv = &cmn.LbServiceArg{KvEngineType: "vllm", KvExactMode: 1}
+	if _, err := kvEngineAdmissionValidate(serv, noTok); err == nil ||
+		!strings.Contains(err.Error(), "model_name is required for vllm kvExactMode") {
+		t.Fatalf("vllm missing model_name: dependency answer changed: %v", err)
+	}
+}

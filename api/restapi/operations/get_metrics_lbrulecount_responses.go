@@ -58,6 +58,96 @@ func (o *GetMetricsLbrulecountOK) WriteResponse(rw http.ResponseWriter, producer
 	}
 }
 
+// GetMetricsLbrulecountUnauthorizedCode is the HTTP code returned for type GetMetricsLbrulecountUnauthorized
+const GetMetricsLbrulecountUnauthorizedCode int = 401
+
+/*
+GetMetricsLbrulecountUnauthorized Missing or invalid management credential
+
+swagger:response getMetricsLbrulecountUnauthorized
+*/
+type GetMetricsLbrulecountUnauthorized struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetMetricsLbrulecountUnauthorized creates GetMetricsLbrulecountUnauthorized with default headers values
+func NewGetMetricsLbrulecountUnauthorized() *GetMetricsLbrulecountUnauthorized {
+
+	return &GetMetricsLbrulecountUnauthorized{}
+}
+
+// WithPayload adds the payload to the get metrics lbrulecount unauthorized response
+func (o *GetMetricsLbrulecountUnauthorized) WithPayload(payload *models.Error) *GetMetricsLbrulecountUnauthorized {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get metrics lbrulecount unauthorized response
+func (o *GetMetricsLbrulecountUnauthorized) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetMetricsLbrulecountUnauthorized) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(401)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetMetricsLbrulecountForbiddenCode is the HTTP code returned for type GetMetricsLbrulecountForbidden
+const GetMetricsLbrulecountForbiddenCode int = 403
+
+/*
+GetMetricsLbrulecountForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getMetricsLbrulecountForbidden
+*/
+type GetMetricsLbrulecountForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetMetricsLbrulecountForbidden creates GetMetricsLbrulecountForbidden with default headers values
+func NewGetMetricsLbrulecountForbidden() *GetMetricsLbrulecountForbidden {
+
+	return &GetMetricsLbrulecountForbidden{}
+}
+
+// WithPayload adds the payload to the get metrics lbrulecount forbidden response
+func (o *GetMetricsLbrulecountForbidden) WithPayload(payload *models.Error) *GetMetricsLbrulecountForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get metrics lbrulecount forbidden response
+func (o *GetMetricsLbrulecountForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetMetricsLbrulecountForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetMetricsLbrulecountInternalServerErrorCode is the HTTP code returned for type GetMetricsLbrulecountInternalServerError
 const GetMetricsLbrulecountInternalServerErrorCode int = 500
 
@@ -95,6 +185,51 @@ func (o *GetMetricsLbrulecountInternalServerError) SetPayload(payload *models.Er
 func (o *GetMetricsLbrulecountInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetMetricsLbrulecountServiceUnavailableCode is the HTTP code returned for type GetMetricsLbrulecountServiceUnavailable
+const GetMetricsLbrulecountServiceUnavailableCode int = 503
+
+/*
+GetMetricsLbrulecountServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response getMetricsLbrulecountServiceUnavailable
+*/
+type GetMetricsLbrulecountServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetMetricsLbrulecountServiceUnavailable creates GetMetricsLbrulecountServiceUnavailable with default headers values
+func NewGetMetricsLbrulecountServiceUnavailable() *GetMetricsLbrulecountServiceUnavailable {
+
+	return &GetMetricsLbrulecountServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the get metrics lbrulecount service unavailable response
+func (o *GetMetricsLbrulecountServiceUnavailable) WithPayload(payload *models.Error) *GetMetricsLbrulecountServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get metrics lbrulecount service unavailable response
+func (o *GetMetricsLbrulecountServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetMetricsLbrulecountServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

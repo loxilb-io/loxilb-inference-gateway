@@ -103,6 +103,51 @@ func (o *PostConfigPersistUnauthorized) WriteResponse(rw http.ResponseWriter, pr
 	}
 }
 
+// PostConfigPersistForbiddenCode is the HTTP code returned for type PostConfigPersistForbidden
+const PostConfigPersistForbiddenCode int = 403
+
+/*
+PostConfigPersistForbidden Authenticated principal is not authorized for this operation
+
+swagger:response postConfigPersistForbidden
+*/
+type PostConfigPersistForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigPersistForbidden creates PostConfigPersistForbidden with default headers values
+func NewPostConfigPersistForbidden() *PostConfigPersistForbidden {
+
+	return &PostConfigPersistForbidden{}
+}
+
+// WithPayload adds the payload to the post config persist forbidden response
+func (o *PostConfigPersistForbidden) WithPayload(payload *models.Error) *PostConfigPersistForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config persist forbidden response
+func (o *PostConfigPersistForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigPersistForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // PostConfigPersistConflictCode is the HTTP code returned for type PostConfigPersistConflict
 const PostConfigPersistConflictCode int = 409
 

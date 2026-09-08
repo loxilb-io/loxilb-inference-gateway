@@ -103,6 +103,51 @@ func (o *GetConfigIpsecStatsUnauthorized) WriteResponse(rw http.ResponseWriter, 
 	}
 }
 
+// GetConfigIpsecStatsForbiddenCode is the HTTP code returned for type GetConfigIpsecStatsForbidden
+const GetConfigIpsecStatsForbiddenCode int = 403
+
+/*
+GetConfigIpsecStatsForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getConfigIpsecStatsForbidden
+*/
+type GetConfigIpsecStatsForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigIpsecStatsForbidden creates GetConfigIpsecStatsForbidden with default headers values
+func NewGetConfigIpsecStatsForbidden() *GetConfigIpsecStatsForbidden {
+
+	return &GetConfigIpsecStatsForbidden{}
+}
+
+// WithPayload adds the payload to the get config ipsec stats forbidden response
+func (o *GetConfigIpsecStatsForbidden) WithPayload(payload *models.Error) *GetConfigIpsecStatsForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config ipsec stats forbidden response
+func (o *GetConfigIpsecStatsForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigIpsecStatsForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigIpsecStatsInternalServerErrorCode is the HTTP code returned for type GetConfigIpsecStatsInternalServerError
 const GetConfigIpsecStatsInternalServerErrorCode int = 500
 
@@ -140,6 +185,51 @@ func (o *GetConfigIpsecStatsInternalServerError) SetPayload(payload *models.Erro
 func (o *GetConfigIpsecStatsInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetConfigIpsecStatsServiceUnavailableCode is the HTTP code returned for type GetConfigIpsecStatsServiceUnavailable
+const GetConfigIpsecStatsServiceUnavailableCode int = 503
+
+/*
+GetConfigIpsecStatsServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response getConfigIpsecStatsServiceUnavailable
+*/
+type GetConfigIpsecStatsServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigIpsecStatsServiceUnavailable creates GetConfigIpsecStatsServiceUnavailable with default headers values
+func NewGetConfigIpsecStatsServiceUnavailable() *GetConfigIpsecStatsServiceUnavailable {
+
+	return &GetConfigIpsecStatsServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the get config ipsec stats service unavailable response
+func (o *GetConfigIpsecStatsServiceUnavailable) WithPayload(payload *models.Error) *GetConfigIpsecStatsServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config ipsec stats service unavailable response
+func (o *GetConfigIpsecStatsServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigIpsecStatsServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

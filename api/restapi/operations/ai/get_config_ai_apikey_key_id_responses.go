@@ -103,6 +103,51 @@ func (o *GetConfigAiApikeyKeyIDUnauthorized) WriteResponse(rw http.ResponseWrite
 	}
 }
 
+// GetConfigAiApikeyKeyIDForbiddenCode is the HTTP code returned for type GetConfigAiApikeyKeyIDForbidden
+const GetConfigAiApikeyKeyIDForbiddenCode int = 403
+
+/*
+GetConfigAiApikeyKeyIDForbidden Authenticated principal is not authorized to read API keys
+
+swagger:response getConfigAiApikeyKeyIdForbidden
+*/
+type GetConfigAiApikeyKeyIDForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigAiApikeyKeyIDForbidden creates GetConfigAiApikeyKeyIDForbidden with default headers values
+func NewGetConfigAiApikeyKeyIDForbidden() *GetConfigAiApikeyKeyIDForbidden {
+
+	return &GetConfigAiApikeyKeyIDForbidden{}
+}
+
+// WithPayload adds the payload to the get config ai apikey key Id forbidden response
+func (o *GetConfigAiApikeyKeyIDForbidden) WithPayload(payload *models.Error) *GetConfigAiApikeyKeyIDForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config ai apikey key Id forbidden response
+func (o *GetConfigAiApikeyKeyIDForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigAiApikeyKeyIDForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigAiApikeyKeyIDNotFoundCode is the HTTP code returned for type GetConfigAiApikeyKeyIDNotFound
 const GetConfigAiApikeyKeyIDNotFoundCode int = 404
 
@@ -185,6 +230,51 @@ func (o *GetConfigAiApikeyKeyIDInternalServerError) SetPayload(payload *models.E
 func (o *GetConfigAiApikeyKeyIDInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetConfigAiApikeyKeyIDServiceUnavailableCode is the HTTP code returned for type GetConfigAiApikeyKeyIDServiceUnavailable
+const GetConfigAiApikeyKeyIDServiceUnavailableCode int = 503
+
+/*
+GetConfigAiApikeyKeyIDServiceUnavailable Management credential store or API-key store unavailable
+
+swagger:response getConfigAiApikeyKeyIdServiceUnavailable
+*/
+type GetConfigAiApikeyKeyIDServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigAiApikeyKeyIDServiceUnavailable creates GetConfigAiApikeyKeyIDServiceUnavailable with default headers values
+func NewGetConfigAiApikeyKeyIDServiceUnavailable() *GetConfigAiApikeyKeyIDServiceUnavailable {
+
+	return &GetConfigAiApikeyKeyIDServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the get config ai apikey key Id service unavailable response
+func (o *GetConfigAiApikeyKeyIDServiceUnavailable) WithPayload(payload *models.Error) *GetConfigAiApikeyKeyIDServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config ai apikey key Id service unavailable response
+func (o *GetConfigAiApikeyKeyIDServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigAiApikeyKeyIDServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

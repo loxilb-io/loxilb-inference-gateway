@@ -103,6 +103,51 @@ func (o *PostConfigTunnelVxlanVxlanIDPeerUnauthorized) WriteResponse(rw http.Res
 	}
 }
 
+// PostConfigTunnelVxlanVxlanIDPeerForbiddenCode is the HTTP code returned for type PostConfigTunnelVxlanVxlanIDPeerForbidden
+const PostConfigTunnelVxlanVxlanIDPeerForbiddenCode int = 403
+
+/*
+PostConfigTunnelVxlanVxlanIDPeerForbidden Authenticated principal is not authorized for this operation
+
+swagger:response postConfigTunnelVxlanVxlanIdPeerForbidden
+*/
+type PostConfigTunnelVxlanVxlanIDPeerForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigTunnelVxlanVxlanIDPeerForbidden creates PostConfigTunnelVxlanVxlanIDPeerForbidden with default headers values
+func NewPostConfigTunnelVxlanVxlanIDPeerForbidden() *PostConfigTunnelVxlanVxlanIDPeerForbidden {
+
+	return &PostConfigTunnelVxlanVxlanIDPeerForbidden{}
+}
+
+// WithPayload adds the payload to the post config tunnel vxlan vxlan Id peer forbidden response
+func (o *PostConfigTunnelVxlanVxlanIDPeerForbidden) WithPayload(payload *models.Error) *PostConfigTunnelVxlanVxlanIDPeerForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config tunnel vxlan vxlan Id peer forbidden response
+func (o *PostConfigTunnelVxlanVxlanIDPeerForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigTunnelVxlanVxlanIDPeerForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // PostConfigTunnelVxlanVxlanIDPeerInternalServerErrorCode is the HTTP code returned for type PostConfigTunnelVxlanVxlanIDPeerInternalServerError
 const PostConfigTunnelVxlanVxlanIDPeerInternalServerErrorCode int = 500
 

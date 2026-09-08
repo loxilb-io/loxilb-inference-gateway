@@ -103,6 +103,51 @@ func (o *GetConfigCistateAllUnauthorized) WriteResponse(rw http.ResponseWriter, 
 	}
 }
 
+// GetConfigCistateAllForbiddenCode is the HTTP code returned for type GetConfigCistateAllForbidden
+const GetConfigCistateAllForbiddenCode int = 403
+
+/*
+GetConfigCistateAllForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getConfigCistateAllForbidden
+*/
+type GetConfigCistateAllForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigCistateAllForbidden creates GetConfigCistateAllForbidden with default headers values
+func NewGetConfigCistateAllForbidden() *GetConfigCistateAllForbidden {
+
+	return &GetConfigCistateAllForbidden{}
+}
+
+// WithPayload adds the payload to the get config cistate all forbidden response
+func (o *GetConfigCistateAllForbidden) WithPayload(payload *models.Error) *GetConfigCistateAllForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config cistate all forbidden response
+func (o *GetConfigCistateAllForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigCistateAllForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigCistateAllInternalServerErrorCode is the HTTP code returned for type GetConfigCistateAllInternalServerError
 const GetConfigCistateAllInternalServerErrorCode int = 500
 

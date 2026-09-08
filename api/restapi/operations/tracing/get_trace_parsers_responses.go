@@ -103,6 +103,51 @@ func (o *GetTraceParsersUnauthorized) WriteResponse(rw http.ResponseWriter, prod
 	}
 }
 
+// GetTraceParsersForbiddenCode is the HTTP code returned for type GetTraceParsersForbidden
+const GetTraceParsersForbiddenCode int = 403
+
+/*
+GetTraceParsersForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getTraceParsersForbidden
+*/
+type GetTraceParsersForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetTraceParsersForbidden creates GetTraceParsersForbidden with default headers values
+func NewGetTraceParsersForbidden() *GetTraceParsersForbidden {
+
+	return &GetTraceParsersForbidden{}
+}
+
+// WithPayload adds the payload to the get trace parsers forbidden response
+func (o *GetTraceParsersForbidden) WithPayload(payload *models.Error) *GetTraceParsersForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get trace parsers forbidden response
+func (o *GetTraceParsersForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetTraceParsersForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetTraceParsersInternalServerErrorCode is the HTTP code returned for type GetTraceParsersInternalServerError
 const GetTraceParsersInternalServerErrorCode int = 500
 
@@ -140,6 +185,51 @@ func (o *GetTraceParsersInternalServerError) SetPayload(payload *models.Error) {
 func (o *GetTraceParsersInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetTraceParsersServiceUnavailableCode is the HTTP code returned for type GetTraceParsersServiceUnavailable
+const GetTraceParsersServiceUnavailableCode int = 503
+
+/*
+GetTraceParsersServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response getTraceParsersServiceUnavailable
+*/
+type GetTraceParsersServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetTraceParsersServiceUnavailable creates GetTraceParsersServiceUnavailable with default headers values
+func NewGetTraceParsersServiceUnavailable() *GetTraceParsersServiceUnavailable {
+
+	return &GetTraceParsersServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the get trace parsers service unavailable response
+func (o *GetTraceParsersServiceUnavailable) WithPayload(payload *models.Error) *GetTraceParsersServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get trace parsers service unavailable response
+func (o *GetTraceParsersServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetTraceParsersServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

@@ -103,6 +103,51 @@ func (o *GetConfigL7PolicyAllUnauthorized) WriteResponse(rw http.ResponseWriter,
 	}
 }
 
+// GetConfigL7PolicyAllForbiddenCode is the HTTP code returned for type GetConfigL7PolicyAllForbidden
+const GetConfigL7PolicyAllForbiddenCode int = 403
+
+/*
+GetConfigL7PolicyAllForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getConfigL7PolicyAllForbidden
+*/
+type GetConfigL7PolicyAllForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigL7PolicyAllForbidden creates GetConfigL7PolicyAllForbidden with default headers values
+func NewGetConfigL7PolicyAllForbidden() *GetConfigL7PolicyAllForbidden {
+
+	return &GetConfigL7PolicyAllForbidden{}
+}
+
+// WithPayload adds the payload to the get config l7 policy all forbidden response
+func (o *GetConfigL7PolicyAllForbidden) WithPayload(payload *models.Error) *GetConfigL7PolicyAllForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config l7 policy all forbidden response
+func (o *GetConfigL7PolicyAllForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigL7PolicyAllForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigL7PolicyAllInternalServerErrorCode is the HTTP code returned for type GetConfigL7PolicyAllInternalServerError
 const GetConfigL7PolicyAllInternalServerErrorCode int = 500
 
@@ -140,6 +185,51 @@ func (o *GetConfigL7PolicyAllInternalServerError) SetPayload(payload *models.Err
 func (o *GetConfigL7PolicyAllInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetConfigL7PolicyAllServiceUnavailableCode is the HTTP code returned for type GetConfigL7PolicyAllServiceUnavailable
+const GetConfigL7PolicyAllServiceUnavailableCode int = 503
+
+/*
+GetConfigL7PolicyAllServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response getConfigL7PolicyAllServiceUnavailable
+*/
+type GetConfigL7PolicyAllServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigL7PolicyAllServiceUnavailable creates GetConfigL7PolicyAllServiceUnavailable with default headers values
+func NewGetConfigL7PolicyAllServiceUnavailable() *GetConfigL7PolicyAllServiceUnavailable {
+
+	return &GetConfigL7PolicyAllServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the get config l7 policy all service unavailable response
+func (o *GetConfigL7PolicyAllServiceUnavailable) WithPayload(payload *models.Error) *GetConfigL7PolicyAllServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config l7 policy all service unavailable response
+func (o *GetConfigL7PolicyAllServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigL7PolicyAllServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

@@ -61,6 +61,96 @@ func (o *GetMetricsEpdisttrafficOK) WriteResponse(rw http.ResponseWriter, produc
 	}
 }
 
+// GetMetricsEpdisttrafficUnauthorizedCode is the HTTP code returned for type GetMetricsEpdisttrafficUnauthorized
+const GetMetricsEpdisttrafficUnauthorizedCode int = 401
+
+/*
+GetMetricsEpdisttrafficUnauthorized Missing or invalid management credential
+
+swagger:response getMetricsEpdisttrafficUnauthorized
+*/
+type GetMetricsEpdisttrafficUnauthorized struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetMetricsEpdisttrafficUnauthorized creates GetMetricsEpdisttrafficUnauthorized with default headers values
+func NewGetMetricsEpdisttrafficUnauthorized() *GetMetricsEpdisttrafficUnauthorized {
+
+	return &GetMetricsEpdisttrafficUnauthorized{}
+}
+
+// WithPayload adds the payload to the get metrics epdisttraffic unauthorized response
+func (o *GetMetricsEpdisttrafficUnauthorized) WithPayload(payload *models.Error) *GetMetricsEpdisttrafficUnauthorized {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get metrics epdisttraffic unauthorized response
+func (o *GetMetricsEpdisttrafficUnauthorized) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetMetricsEpdisttrafficUnauthorized) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(401)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetMetricsEpdisttrafficForbiddenCode is the HTTP code returned for type GetMetricsEpdisttrafficForbidden
+const GetMetricsEpdisttrafficForbiddenCode int = 403
+
+/*
+GetMetricsEpdisttrafficForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getMetricsEpdisttrafficForbidden
+*/
+type GetMetricsEpdisttrafficForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetMetricsEpdisttrafficForbidden creates GetMetricsEpdisttrafficForbidden with default headers values
+func NewGetMetricsEpdisttrafficForbidden() *GetMetricsEpdisttrafficForbidden {
+
+	return &GetMetricsEpdisttrafficForbidden{}
+}
+
+// WithPayload adds the payload to the get metrics epdisttraffic forbidden response
+func (o *GetMetricsEpdisttrafficForbidden) WithPayload(payload *models.Error) *GetMetricsEpdisttrafficForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get metrics epdisttraffic forbidden response
+func (o *GetMetricsEpdisttrafficForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetMetricsEpdisttrafficForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetMetricsEpdisttrafficInternalServerErrorCode is the HTTP code returned for type GetMetricsEpdisttrafficInternalServerError
 const GetMetricsEpdisttrafficInternalServerErrorCode int = 500
 
@@ -98,6 +188,51 @@ func (o *GetMetricsEpdisttrafficInternalServerError) SetPayload(payload *models.
 func (o *GetMetricsEpdisttrafficInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetMetricsEpdisttrafficServiceUnavailableCode is the HTTP code returned for type GetMetricsEpdisttrafficServiceUnavailable
+const GetMetricsEpdisttrafficServiceUnavailableCode int = 503
+
+/*
+GetMetricsEpdisttrafficServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response getMetricsEpdisttrafficServiceUnavailable
+*/
+type GetMetricsEpdisttrafficServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetMetricsEpdisttrafficServiceUnavailable creates GetMetricsEpdisttrafficServiceUnavailable with default headers values
+func NewGetMetricsEpdisttrafficServiceUnavailable() *GetMetricsEpdisttrafficServiceUnavailable {
+
+	return &GetMetricsEpdisttrafficServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the get metrics epdisttraffic service unavailable response
+func (o *GetMetricsEpdisttrafficServiceUnavailable) WithPayload(payload *models.Error) *GetMetricsEpdisttrafficServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get metrics epdisttraffic service unavailable response
+func (o *GetMetricsEpdisttrafficServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetMetricsEpdisttrafficServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

@@ -304,6 +304,9 @@ func NewLoxilbRestAPIAPI(spec *loads.Document) *LoxilbRestAPIAPI {
 		GetConfigWorkerMetricsHandler: GetConfigWorkerMetricsHandlerFunc(func(params GetConfigWorkerMetricsParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation GetConfigWorkerMetrics has not yet been implemented")
 		}),
+		GetDiagnosticsHandler: GetDiagnosticsHandlerFunc(func(params GetDiagnosticsParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetDiagnostics has not yet been implemented")
+		}),
 		GetLogArchivesHandler: GetLogArchivesHandlerFunc(func(params GetLogArchivesParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation GetLogArchives has not yet been implemented")
 		}),
@@ -312,6 +315,9 @@ func NewLoxilbRestAPIAPI(spec *loads.Document) *LoxilbRestAPIAPI {
 		}),
 		GetLogsHandler: GetLogsHandlerFunc(func(params GetLogsParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation GetLogs has not yet been implemented")
+		}),
+		GetMaintenanceHandler: GetMaintenanceHandlerFunc(func(params GetMaintenanceParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation GetMaintenance has not yet been implemented")
 		}),
 		GetMetricsHandler: GetMetricsHandlerFunc(func(params GetMetricsParams) middleware.Responder {
 			return middleware.NotImplemented("operation GetMetrics has not yet been implemented")
@@ -576,6 +582,9 @@ func NewLoxilbRestAPIAPI(spec *loads.Document) *LoxilbRestAPIAPI {
 		}),
 		PutConfigSecurityrateResetHandler: PutConfigSecurityrateResetHandlerFunc(func(params PutConfigSecurityrateResetParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation PutConfigSecurityrateReset has not yet been implemented")
+		}),
+		PutMaintenanceHandler: PutMaintenanceHandlerFunc(func(params PutMaintenanceParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation PutMaintenance has not yet been implemented")
 		}),
 		TracingDeleteCatalogParserHandler: tracing.DeleteCatalogParserHandlerFunc(func(params tracing.DeleteCatalogParserParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation tracing.DeleteCatalogParser has not yet been implemented")
@@ -895,12 +904,16 @@ type LoxilbRestAPIAPI struct {
 	GetConfigVlanAllHandler GetConfigVlanAllHandler
 	// GetConfigWorkerMetricsHandler sets the operation handler for the get config worker metrics operation
 	GetConfigWorkerMetricsHandler GetConfigWorkerMetricsHandler
+	// GetDiagnosticsHandler sets the operation handler for the get diagnostics operation
+	GetDiagnosticsHandler GetDiagnosticsHandler
 	// GetLogArchivesHandler sets the operation handler for the get log archives operation
 	GetLogArchivesHandler GetLogArchivesHandler
 	// GetLogArchivesFilenameHandler sets the operation handler for the get log archives filename operation
 	GetLogArchivesFilenameHandler GetLogArchivesFilenameHandler
 	// GetLogsHandler sets the operation handler for the get logs operation
 	GetLogsHandler GetLogsHandler
+	// GetMaintenanceHandler sets the operation handler for the get maintenance operation
+	GetMaintenanceHandler GetMaintenanceHandler
 	// GetMetricsHandler sets the operation handler for the get metrics operation
 	GetMetricsHandler GetMetricsHandler
 	// GetMetricsEpdisttrafficHandler sets the operation handler for the get metrics epdisttraffic operation
@@ -1077,6 +1090,8 @@ type LoxilbRestAPIAPI struct {
 	L4TracingPutConfigL4traceSamplingHandler l4_tracing.PutConfigL4traceSamplingHandler
 	// PutConfigSecurityrateResetHandler sets the operation handler for the put config securityrate reset operation
 	PutConfigSecurityrateResetHandler PutConfigSecurityrateResetHandler
+	// PutMaintenanceHandler sets the operation handler for the put maintenance operation
+	PutMaintenanceHandler PutMaintenanceHandler
 	// TracingDeleteCatalogParserHandler sets the operation handler for the delete catalog parser operation
 	TracingDeleteCatalogParserHandler tracing.DeleteCatalogParserHandler
 	// AiDeleteConfigAiApikeyKeyIDHandler sets the operation handler for the delete config ai apikey key ID operation
@@ -1478,6 +1493,9 @@ func (o *LoxilbRestAPIAPI) Validate() error {
 	if o.GetConfigWorkerMetricsHandler == nil {
 		unregistered = append(unregistered, "GetConfigWorkerMetricsHandler")
 	}
+	if o.GetDiagnosticsHandler == nil {
+		unregistered = append(unregistered, "GetDiagnosticsHandler")
+	}
 	if o.GetLogArchivesHandler == nil {
 		unregistered = append(unregistered, "GetLogArchivesHandler")
 	}
@@ -1486,6 +1504,9 @@ func (o *LoxilbRestAPIAPI) Validate() error {
 	}
 	if o.GetLogsHandler == nil {
 		unregistered = append(unregistered, "GetLogsHandler")
+	}
+	if o.GetMaintenanceHandler == nil {
+		unregistered = append(unregistered, "GetMaintenanceHandler")
 	}
 	if o.GetMetricsHandler == nil {
 		unregistered = append(unregistered, "GetMetricsHandler")
@@ -1750,6 +1771,9 @@ func (o *LoxilbRestAPIAPI) Validate() error {
 	}
 	if o.PutConfigSecurityrateResetHandler == nil {
 		unregistered = append(unregistered, "PutConfigSecurityrateResetHandler")
+	}
+	if o.PutMaintenanceHandler == nil {
+		unregistered = append(unregistered, "PutMaintenanceHandler")
 	}
 	if o.TracingDeleteCatalogParserHandler == nil {
 		unregistered = append(unregistered, "tracing.DeleteCatalogParserHandler")
@@ -2286,6 +2310,10 @@ func (o *LoxilbRestAPIAPI) initHandlerCache() {
 	if o.handlers["GET"] == nil {
 		o.handlers["GET"] = make(map[string]http.Handler)
 	}
+	o.handlers["GET"]["/diagnostics"] = NewGetDiagnostics(o.context, o.GetDiagnosticsHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
 	o.handlers["GET"]["/log-archives"] = NewGetLogArchives(o.context, o.GetLogArchivesHandler)
 	if o.handlers["GET"] == nil {
 		o.handlers["GET"] = make(map[string]http.Handler)
@@ -2295,6 +2323,10 @@ func (o *LoxilbRestAPIAPI) initHandlerCache() {
 		o.handlers["GET"] = make(map[string]http.Handler)
 	}
 	o.handlers["GET"]["/logs"] = NewGetLogs(o.context, o.GetLogsHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/maintenance"] = NewGetMaintenance(o.context, o.GetMaintenanceHandler)
 	if o.handlers["GET"] == nil {
 		o.handlers["GET"] = make(map[string]http.Handler)
 	}
@@ -2647,6 +2679,10 @@ func (o *LoxilbRestAPIAPI) initHandlerCache() {
 		o.handlers["PUT"] = make(map[string]http.Handler)
 	}
 	o.handlers["PUT"]["/config/securityrate/reset"] = NewPutConfigSecurityrateReset(o.context, o.PutConfigSecurityrateResetHandler)
+	if o.handlers["PUT"] == nil {
+		o.handlers["PUT"] = make(map[string]http.Handler)
+	}
+	o.handlers["PUT"]["/maintenance"] = NewPutMaintenance(o.context, o.PutMaintenanceHandler)
 	if o.handlers["DELETE"] == nil {
 		o.handlers["DELETE"] = make(map[string]http.Handler)
 	}

@@ -2279,4 +2279,25 @@ func SetConntrackMaxEntries(n int) {
 		)
 	})
 	conntrackMaxGauge.Set(float64(n))
+	atomic.StoreInt64(&conntrackMaxEntries, int64(n))
+}
+
+// conntrackMaxEntries mirrors the capacity gauge for read-back (the
+// diagnostics surface); Prometheus gauges are write-only from here.
+var conntrackMaxEntries int64
+
+// ConntrackCapacity returns the conntrack table capacity recorded by
+// SetConntrackMaxEntries, or 0 on builds without a datapath capacity.
+func ConntrackCapacity() int64 {
+	return atomic.LoadInt64(&conntrackMaxEntries)
+}
+
+// ConntrackCachedCount returns the number of conntrack entries in the
+// collector's last snapshot. It shares its source with the
+// loxilb_active_conntrack_entries metric rather than re-walking the
+// datapath, so diagnostics and metrics can never disagree.
+func ConntrackCachedCount() int64 {
+	mutex.Lock()
+	defer mutex.Unlock()
+	return int64(len(ConntrackInfo))
 }

@@ -6,16 +6,9 @@ package operations
 // Editing this file might prove futile when you re-run the generate command
 
 import (
-	"context"
 	"net/http"
-	"strconv"
 
-	"github.com/go-openapi/errors"
 	"github.com/go-openapi/runtime/middleware"
-	"github.com/go-openapi/strfmt"
-	"github.com/go-openapi/swag"
-
-	"github.com/loxilb-io/loxilb/api/models"
 )
 
 // GetStatusFilesystemHandlerFunc turns a function with the right signature into a get status filesystem handler
@@ -75,105 +68,4 @@ func (o *GetStatusFilesystem) ServeHTTP(rw http.ResponseWriter, r *http.Request)
 	res := o.Handler.Handle(Params, principal) // actually handle the request
 	o.Context.Respond(rw, r, route.Produces, route, res)
 
-}
-
-// GetStatusFilesystemOKBody get status filesystem o k body
-//
-// swagger:model GetStatusFilesystemOKBody
-type GetStatusFilesystemOKBody struct {
-
-	// filesystem attr
-	FilesystemAttr []*models.FileSystemInfoEntry `json:"filesystemAttr"`
-}
-
-// Validate validates this get status filesystem o k body
-func (o *GetStatusFilesystemOKBody) Validate(formats strfmt.Registry) error {
-	var res []error
-
-	if err := o.validateFilesystemAttr(formats); err != nil {
-		res = append(res, err)
-	}
-
-	if len(res) > 0 {
-		return errors.CompositeValidationError(res...)
-	}
-	return nil
-}
-
-func (o *GetStatusFilesystemOKBody) validateFilesystemAttr(formats strfmt.Registry) error {
-	if swag.IsZero(o.FilesystemAttr) { // not required
-		return nil
-	}
-
-	for i := 0; i < len(o.FilesystemAttr); i++ {
-		if swag.IsZero(o.FilesystemAttr[i]) { // not required
-			continue
-		}
-
-		if o.FilesystemAttr[i] != nil {
-			if err := o.FilesystemAttr[i].Validate(formats); err != nil {
-				if ve, ok := err.(*errors.Validation); ok {
-					return ve.ValidateName("getStatusFilesystemOK" + "." + "filesystemAttr" + "." + strconv.Itoa(i))
-				} else if ce, ok := err.(*errors.CompositeError); ok {
-					return ce.ValidateName("getStatusFilesystemOK" + "." + "filesystemAttr" + "." + strconv.Itoa(i))
-				}
-				return err
-			}
-		}
-
-	}
-
-	return nil
-}
-
-// ContextValidate validate this get status filesystem o k body based on the context it is used
-func (o *GetStatusFilesystemOKBody) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
-	var res []error
-
-	if err := o.contextValidateFilesystemAttr(ctx, formats); err != nil {
-		res = append(res, err)
-	}
-
-	if len(res) > 0 {
-		return errors.CompositeValidationError(res...)
-	}
-	return nil
-}
-
-func (o *GetStatusFilesystemOKBody) contextValidateFilesystemAttr(ctx context.Context, formats strfmt.Registry) error {
-
-	for i := 0; i < len(o.FilesystemAttr); i++ {
-
-		if o.FilesystemAttr[i] != nil {
-			if err := o.FilesystemAttr[i].ContextValidate(ctx, formats); err != nil {
-				if ve, ok := err.(*errors.Validation); ok {
-					return ve.ValidateName("getStatusFilesystemOK" + "." + "filesystemAttr" + "." + strconv.Itoa(i))
-				} else if ce, ok := err.(*errors.CompositeError); ok {
-					return ce.ValidateName("getStatusFilesystemOK" + "." + "filesystemAttr" + "." + strconv.Itoa(i))
-				}
-				return err
-			}
-		}
-
-	}
-
-	return nil
-}
-
-// MarshalBinary interface implementation
-func (o *GetStatusFilesystemOKBody) MarshalBinary() ([]byte, error) {
-	if o == nil {
-		return nil, nil
-	}
-	return swag.WriteJSON(o)
-}
-
-// UnmarshalBinary interface implementation
-func (o *GetStatusFilesystemOKBody) UnmarshalBinary(b []byte) error {
-	var res GetStatusFilesystemOKBody
-	if err := swag.ReadJSON(b, &res); err != nil {
-		return err
-	}
-	*o = res
-	return nil
 }

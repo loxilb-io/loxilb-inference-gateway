@@ -103,6 +103,51 @@ func (o *GetConfigLoadbalancerIDUnauthorized) WriteResponse(rw http.ResponseWrit
 	}
 }
 
+// GetConfigLoadbalancerIDForbiddenCode is the HTTP code returned for type GetConfigLoadbalancerIDForbidden
+const GetConfigLoadbalancerIDForbiddenCode int = 403
+
+/*
+GetConfigLoadbalancerIDForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getConfigLoadbalancerIdForbidden
+*/
+type GetConfigLoadbalancerIDForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigLoadbalancerIDForbidden creates GetConfigLoadbalancerIDForbidden with default headers values
+func NewGetConfigLoadbalancerIDForbidden() *GetConfigLoadbalancerIDForbidden {
+
+	return &GetConfigLoadbalancerIDForbidden{}
+}
+
+// WithPayload adds the payload to the get config loadbalancer Id forbidden response
+func (o *GetConfigLoadbalancerIDForbidden) WithPayload(payload *models.Error) *GetConfigLoadbalancerIDForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config loadbalancer Id forbidden response
+func (o *GetConfigLoadbalancerIDForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigLoadbalancerIDForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigLoadbalancerIDNotFoundCode is the HTTP code returned for type GetConfigLoadbalancerIDNotFound
 const GetConfigLoadbalancerIDNotFoundCode int = 404
 
@@ -185,6 +230,51 @@ func (o *GetConfigLoadbalancerIDInternalServerError) SetPayload(payload *models.
 func (o *GetConfigLoadbalancerIDInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetConfigLoadbalancerIDServiceUnavailableCode is the HTTP code returned for type GetConfigLoadbalancerIDServiceUnavailable
+const GetConfigLoadbalancerIDServiceUnavailableCode int = 503
+
+/*
+GetConfigLoadbalancerIDServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response getConfigLoadbalancerIdServiceUnavailable
+*/
+type GetConfigLoadbalancerIDServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigLoadbalancerIDServiceUnavailable creates GetConfigLoadbalancerIDServiceUnavailable with default headers values
+func NewGetConfigLoadbalancerIDServiceUnavailable() *GetConfigLoadbalancerIDServiceUnavailable {
+
+	return &GetConfigLoadbalancerIDServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the get config loadbalancer Id service unavailable response
+func (o *GetConfigLoadbalancerIDServiceUnavailable) WithPayload(payload *models.Error) *GetConfigLoadbalancerIDServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config loadbalancer Id service unavailable response
+func (o *GetConfigLoadbalancerIDServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigLoadbalancerIDServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {
