@@ -8928,6 +8928,7 @@ definitions:
             format: int32
             x-nullable: false
             minimum: 0
+            maximum: 255
             default: 3
             description: Load imbalance threshold for P/D cache-aware routing. If max-min active connections exceeds this, bypass cache affinity.
           kvExactMode:
@@ -8958,6 +8959,7 @@ definitions:
             format: int64
             x-nullable: false
             minimum: 1
+            maximum: 4294967295
             default: 16
             description: Token block size for KV hash computation. Must match the engine's block granularity - vLLM --block-size, SGLang --page-size, TRT-LLM tokens_per_block (whose engine default is 32, NOT this field's 16). A mismatch makes every hash miss.
           kvHashAlgo:
@@ -8993,6 +8995,7 @@ definitions:
             format: int64
             x-nullable: false
             minimum: 0
+            maximum: 4294967295
             default: 30
             description: Seconds to wait after ZMQ subscriber connects before activating Tier 1.5 routing. Allows inventory to populate.
           kvEngineType:
@@ -9182,11 +9185,15 @@ definitions:
             ep_role:
               type: integer
               format: int32
+              enum: [0, 1, 2]
               default: 0
               description: Endpoint role for P/D disaggregation - 0=normal (no role), 1=prefill, 2=decode. Only used when pd_disagg_mode is true.
             nixl_port:
               type: integer
               format: int32
+              x-nullable: false
+              minimum: 0
+              maximum: 65535
               default: 0
               description: NIXL side-channel port for KV cache transfer. 0=use targetPort (backward compatible). Only meaningful when pd_disagg_mode is true.
             backup:

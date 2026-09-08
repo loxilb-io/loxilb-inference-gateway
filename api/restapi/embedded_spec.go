@@ -14819,7 +14819,12 @@ func init() {
                 "description": "Endpoint role for P/D disaggregation - 0=normal (no role), 1=prefill, 2=decode. Only used when pd_disagg_mode is true.",
                 "type": "integer",
                 "format": "int32",
-                "default": 0
+                "default": 0,
+                "enum": [
+                  0,
+                  1,
+                  2
+                ]
               },
               "expectedCodes": {
                 "description": "Octavia expected_codes — single \"200\", list \"200,202\", or range \"200-204\". Optional/additive — empty defaults to \"200\".",
@@ -14841,7 +14846,9 @@ func init() {
                 "description": "NIXL side-channel port for KV cache transfer. 0=use targetPort (backward compatible). Only meaningful when pd_disagg_mode is true.",
                 "type": "integer",
                 "format": "int32",
-                "default": 0
+                "default": 0,
+                "maximum": 65535,
+                "x-nullable": false
               },
               "state": {
                 "description": "state of the endpoint",
@@ -15068,6 +15075,7 @@ func init() {
               "type": "integer",
               "format": "int64",
               "default": 16,
+              "maximum": 4294967295,
               "minimum": 1,
               "x-nullable": false
             },
@@ -15131,6 +15139,7 @@ func init() {
               "type": "integer",
               "format": "int64",
               "default": 30,
+              "maximum": 4294967295,
               "x-nullable": false
             },
             "kvZmqPort": {
@@ -15283,6 +15292,7 @@ func init() {
               "type": "integer",
               "format": "int32",
               "default": 3,
+              "maximum": 255,
               "x-nullable": false
             },
             "pd_cache_aware_mode": {
@@ -34032,6 +34042,7 @@ func init() {
               "type": "integer",
               "format": "int64",
               "default": 16,
+              "maximum": 4294967295,
               "minimum": 1,
               "x-nullable": false
             },
@@ -34096,6 +34107,7 @@ func init() {
               "type": "integer",
               "format": "int64",
               "default": 30,
+              "maximum": 4294967295,
               "minimum": 0,
               "x-nullable": false
             },
@@ -34251,6 +34263,7 @@ func init() {
               "type": "integer",
               "format": "int32",
               "default": 3,
+              "maximum": 255,
               "minimum": 0,
               "x-nullable": false
             },
@@ -34465,7 +34478,12 @@ func init() {
           "description": "Endpoint role for P/D disaggregation - 0=normal (no role), 1=prefill, 2=decode. Only used when pd_disagg_mode is true.",
           "type": "integer",
           "format": "int32",
-          "default": 0
+          "default": 0,
+          "enum": [
+            0,
+            1,
+            2
+          ]
         },
         "expectedCodes": {
           "description": "Octavia expected_codes — single \"200\", list \"200,202\", or range \"200-204\". Optional/additive — empty defaults to \"200\".",
@@ -34487,7 +34505,10 @@ func init() {
           "description": "NIXL side-channel port for KV cache transfer. 0=use targetPort (backward compatible). Only meaningful when pd_disagg_mode is true.",
           "type": "integer",
           "format": "int32",
-          "default": 0
+          "default": 0,
+          "maximum": 65535,
+          "minimum": 0,
+          "x-nullable": false
         },
         "state": {
           "description": "state of the endpoint",
@@ -34690,6 +34711,7 @@ func init() {
           "type": "integer",
           "format": "int64",
           "default": 16,
+          "maximum": 4294967295,
           "minimum": 1,
           "x-nullable": false
         },
@@ -34754,6 +34776,7 @@ func init() {
           "type": "integer",
           "format": "int64",
           "default": 30,
+          "maximum": 4294967295,
           "minimum": 0,
           "x-nullable": false
         },
@@ -34909,6 +34932,7 @@ func init() {
           "type": "integer",
           "format": "int32",
           "default": 3,
+          "maximum": 255,
           "minimum": 0,
           "x-nullable": false
         },

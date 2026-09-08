@@ -1,5 +1,5 @@
 # Download base image ubuntu 24.04 for build
-FROM ubuntu:24.04 as build
+FROM ubuntu:24.04 as test-build
 
 # Disable Prompt During Packages Installation
 ARG DEBIAN_FRONTEND=noninteractive
@@ -185,6 +185,11 @@ RUN cd /root/loxilb-io/loxilb/ && \
     cp loxilb-ebpf/utils/mkllb_cgroup.sh /usr/local/sbin/mkllb_cgroup && \
     cp loxilb-ebpf/kernel/loxilb_dp_debug /usr/local/sbin/loxilb_dp_debug && \
     cp loxilb /usr/local/sbin/loxilb
+
+# Retain the source, libraries and matching compiler flags for unit tests via
+# `make docker DOCKER_BUILD_FLAGS="--target test-build"`. Runtime packaging
+# continues from exactly this stage and preserves its existing cleanup.
+FROM test-build as build
 
 # Build loxilb - Step 4: Cleanup and preserve binary
 RUN cd /root/loxilb-io/loxilb/ && \

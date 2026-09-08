@@ -3102,6 +3102,12 @@ func kvExactRuntimeValidate(engine string, kvExactMode uint8, modelName, apiMode
 // there would promise a retry path the capability guard then refuses).
 func kvEngineAdmissionValidate(serv *cmn.LbServiceArg, deps kvExactAdmissionDeps) (kvExactAdmissionResult, error) {
 	var res kvExactAdmissionResult
+	// No engine implements the reserved NATS transport. Reject before
+	// consulting runtime dependencies: staging a tokenizer cannot make an
+	// unsupported mode functional. This also covers non-REST callers.
+	if serv.KvExactMode != 0 && serv.KvExactMode != 1 && serv.KvExactMode != KvExactModeSingleRole {
+		return res, errors.New("kvExactMode must be 0, 1 or 3 (mode 2 is reserved and not implemented)")
+	}
 	if err := kvTrtllmFeatureGuard(serv.KvEngineType, serv.KvExactMode, serv.PDDisaggMode, serv.KvZmqPort, serv.KvDpRankCount); err != nil {
 		return res, err
 	}

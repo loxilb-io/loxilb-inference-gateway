@@ -399,6 +399,7 @@ type LoadbalanceEntryEndpointsItems0 struct {
 	EndpointIP *string `json:"endpointIP"`
 
 	// Endpoint role for P/D disaggregation - 0=normal (no role), 1=prefill, 2=decode. Only used when pd_disagg_mode is true.
+	// Enum: [0 1 2]
 	EpRole int32 `json:"ep_role,omitempty"`
 
 	// Octavia expected_codes — single "200", list "200,202", or range "200-204". Optional/additive — empty defaults to "200".
@@ -414,6 +415,8 @@ type LoadbalanceEntryEndpointsItems0 struct {
 	MonitorAddress string `json:"monitorAddress,omitempty"`
 
 	// NIXL side-channel port for KV cache transfer. 0=use targetPort (backward compatible). Only meaningful when pd_disagg_mode is true.
+	// Maximum: 65535
+	// Minimum: 0
 	NixlPort int32 `json:"nixl_port,omitempty"`
 
 	// state of the endpoint
@@ -442,6 +445,14 @@ func (m *LoadbalanceEntryEndpointsItems0) Validate(formats strfmt.Registry) erro
 		res = append(res, err)
 	}
 
+	if err := m.validateEpRole(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateNixlPort(formats); err != nil {
+		res = append(res, err)
+	}
+
 	if err := m.validateTargetPort(formats); err != nil {
 		res = append(res, err)
 	}
@@ -459,6 +470,55 @@ func (m *LoadbalanceEntryEndpointsItems0) Validate(formats strfmt.Registry) erro
 func (m *LoadbalanceEntryEndpointsItems0) validateEndpointIP(formats strfmt.Registry) error {
 
 	if err := validate.Required("endpointIP", "body", m.EndpointIP); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+var loadbalanceEntryEndpointsItems0TypeEpRolePropEnum []interface{}
+
+func init() {
+	var res []int32
+	if err := json.Unmarshal([]byte(`[0,1,2]`), &res); err != nil {
+		panic(err)
+	}
+	for _, v := range res {
+		loadbalanceEntryEndpointsItems0TypeEpRolePropEnum = append(loadbalanceEntryEndpointsItems0TypeEpRolePropEnum, v)
+	}
+}
+
+// prop value enum
+func (m *LoadbalanceEntryEndpointsItems0) validateEpRoleEnum(path, location string, value int32) error {
+	if err := validate.EnumCase(path, location, value, loadbalanceEntryEndpointsItems0TypeEpRolePropEnum, true); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (m *LoadbalanceEntryEndpointsItems0) validateEpRole(formats strfmt.Registry) error {
+	if swag.IsZero(m.EpRole) { // not required
+		return nil
+	}
+
+	// value enum
+	if err := m.validateEpRoleEnum("ep_role", "body", m.EpRole); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *LoadbalanceEntryEndpointsItems0) validateNixlPort(formats strfmt.Registry) error {
+	if swag.IsZero(m.NixlPort) { // not required
+		return nil
+	}
+
+	if err := validate.MinimumInt("nixl_port", "body", int64(m.NixlPort), 0, false); err != nil {
+		return err
+	}
+
+	if err := validate.MaximumInt("nixl_port", "body", int64(m.NixlPort), 65535, false); err != nil {
 		return err
 	}
 
@@ -680,6 +740,7 @@ type LoadbalanceEntryServiceArguments struct {
 	InactiveTimeOut int32 `json:"inactiveTimeOut,omitempty"`
 
 	// Token block size for KV hash computation. Must match the engine's block granularity - vLLM --block-size, SGLang --page-size, TRT-LLM tokens_per_block (whose engine default is 32, NOT this field's 16). A mismatch makes every hash miss.
+	// Maximum: 4.294967295e+09
 	// Minimum: 1
 	KvBlockSize int64 `json:"kvBlockSize,omitempty"`
 
@@ -709,6 +770,7 @@ type LoadbalanceEntryServiceArguments struct {
 	KvModelProfile string `json:"kvModelProfile,omitempty"`
 
 	// Seconds to wait after ZMQ subscriber connects before activating Tier 1.5 routing. Allows inventory to populate.
+	// Maximum: 4.294967295e+09
 	// Minimum: 0
 	KvWarmupSec int64 `json:"kvWarmupSec,omitempty"`
 
@@ -760,6 +822,7 @@ type LoadbalanceEntryServiceArguments struct {
 	PdBootstrapPort int32 `json:"pdBootstrapPort,omitempty"`
 
 	// Load imbalance threshold for P/D cache-aware routing. If max-min active connections exceeds this, bypass cache affinity.
+	// Maximum: 255
 	// Minimum: 0
 	PdBalanceAbsThreshold int32 `json:"pd_balance_abs_threshold,omitempty"`
 
@@ -1194,6 +1257,10 @@ func (m *LoadbalanceEntryServiceArguments) validateKvBlockSize(formats strfmt.Re
 		return err
 	}
 
+	if err := validate.MaximumInt("serviceArguments"+"."+"kvBlockSize", "body", m.KvBlockSize, 4.294967295e+09, false); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -1376,6 +1443,10 @@ func (m *LoadbalanceEntryServiceArguments) validateKvWarmupSec(formats strfmt.Re
 	}
 
 	if err := validate.MinimumInt("serviceArguments"+"."+"kvWarmupSec", "body", m.KvWarmupSec, 0, false); err != nil {
+		return err
+	}
+
+	if err := validate.MaximumInt("serviceArguments"+"."+"kvWarmupSec", "body", m.KvWarmupSec, 4.294967295e+09, false); err != nil {
 		return err
 	}
 
@@ -1581,6 +1652,10 @@ func (m *LoadbalanceEntryServiceArguments) validatePdBalanceAbsThreshold(formats
 	}
 
 	if err := validate.MinimumInt("serviceArguments"+"."+"pd_balance_abs_threshold", "body", int64(m.PdBalanceAbsThreshold), 0, false); err != nil {
+		return err
+	}
+
+	if err := validate.MaximumInt("serviceArguments"+"."+"pd_balance_abs_threshold", "body", int64(m.PdBalanceAbsThreshold), 255, false); err != nil {
 		return err
 	}
 
