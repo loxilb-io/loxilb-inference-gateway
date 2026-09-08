@@ -1,0 +1,91 @@
+# Recording rules for the LoxiLB Inference Gateway monitoring stack.
+#
+# Naming follows level:metric:operations. Instance-level rules preserve
+# (cluster, instance) so a faulty instance is attributable and a healthy
+# fleet cannot dilute its error ratio; fleet roll-ups aggregate the SAME raw
+# counters by cluster (never averages of per-instance ratios, which would
+# weight instances equally regardless of traffic).
+#
+# Absence semantics (deliberate, tested in tests/recording-rules.test.yml):
+#   - No scraped series in the window        -> recording is ABSENT, not 0.
+#     Most gateway counters are lazy vectors; absence means "never happened
+#     on this deployment", which must stay distinguishable from measured 0.
+#   - Traffic but no errors                  -> error ratios are 0, because
+#     the numerator falls back to denominator*0 when the error child has
+#     never been created (lazy-children guard).
+#   - Zero traffic in the window (0/0)       -> ratios are ABSENT (the `> 0`
+#     denominator filter), never NaN: an idle gateway has no error ratio.
+
+groups:
+  - name: loxilb-recording-instance
+    rules:
+      # Backend-facing L4 error event rate, benign client RSTs excluded —
+      # the same selector the LoxilbL4ErrorBurst alert pages on.
+      - record: instance:loxilb_l4_error_events:rate5m
+        expr: >-
+          sum by (cluster, instance)
+          (rate(loxilb_l4_error_events_total{reason!="rst_client"}[5m]))
+
+      # L7 5xx ratio per instance, lazy-children- and 0/0-guarded.
+      - record: instance:loxilb_l7_5xx_ratio:rate5m
+        expr: >-
+          (
+            sum by (cluster, instance)
+              (rate(loxilb_proxy_http_responses_by_status_total{status_class="5xx"}[5m]))
+            or
+            sum by (cluster, instance)
+              (rate(loxilb_proxy_http_responses_by_status_total[5m])) * 0
+          )
+          /
+          (
+            sum by (cluster, instance)
+              (rate(loxilb_proxy_http_responses_by_status_total[5m])) > 0
+          )
+
+      # AI gateway 5xx ratio per instance (status label carries HTTP codes).
+      - record: instance:loxilb_ai_5xx_ratio:rate5m
+        expr: >-
+          (
+            sum by (cluster, instance)
+              (rate(loxilb_ai_requests_total{status=~"5.."}[5m]))
+            or
+            sum by (cluster, instance)
+              (rate(loxilb_ai_requests_total[5m])) * 0
+          )
+          /
+          (
+            sum by (cluster, instance)
+              (rate(loxilb_ai_requests_total[5m])) > 0
+          )
+
+      # KV subscriber health floor: 1 = every subscriber connected,
+      # 0 = at least one disconnected. Absent on non-KV deployments.
+      - record: instance:loxilb_kv_subscriber_connected:min
+        expr: >-
+          min by (cluster, instance) (loxilb_kv_subscriber_connected)
+
+  - name: loxilb-recording-cluster
+    rules:
+      - record: cluster:loxilb_instances_up:sum
+        expr: sum by (cluster) (up{job="loxilb"})
+
+      - record: cluster:loxilb_l4_error_events:rate5m
+        expr: >-
+          sum by (cluster)
+          (rate(loxilb_l4_error_events_total{reason!="rst_client"}[5m]))
+
+      # Fleet 5xx ratio from raw counters (not an average of instance ratios).
+      - record: cluster:loxilb_l7_5xx_ratio:rate5m
+        expr: >-
+          (
+            sum by (cluster)
+              (rate(loxilb_proxy_http_responses_by_status_total{status_class="5xx"}[5m]))
+            or
+            sum by (cluster)
+              (rate(loxilb_proxy_http_responses_by_status_total[5m])) * 0
+          )
+          /
+          (
+            sum by (cluster)
+              (rate(loxilb_proxy_http_responses_by_status_total[5m])) > 0
+          )

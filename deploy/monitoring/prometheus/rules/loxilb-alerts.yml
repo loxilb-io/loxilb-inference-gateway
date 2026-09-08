@@ -190,17 +190,6 @@ groups:
           dashboard: "LoxiLB / Overview"
           panel: "HA sync errors/s"
 
-      - alert: LoxilbKvAgentDown
-        # Guard: the gauge registers 0 even on deployments with no KV agent at all
-        # (T1 finding) — only alert if the agent was seen up in the last hour.
-        expr: loxilb_kv_agent_up == 0 and max_over_time(loxilb_kv_agent_up[1h]) == 1
-        for: 2m
-        labels: { severity: warning }
-        annotations:
-          summary: "KV agent down (loxilb-side liveness gauge)"
-          dashboard: "LoxiLB / AI Gateway"
-          panel: "KV subscribers up"
-
   - name: loxilb-security
     rules:
       - alert: LoxilbSynFloodActive

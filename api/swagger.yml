@@ -37,8 +37,10 @@ paths:
           type: file
           description: The configuration file to upload.
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
   '/config/export':
     get:
       summary: Export all configurations
@@ -124,6 +126,10 @@ paths:
           type: string
           enum: [dry-run, commit]
           default: dry-run
+        - name: components
+          in: query
+          description: Comma-separated snapshot domains to restore. Defaults to every domain the document covers (its included_domains). Requesting a domain the document does not cover is refused.
+          type: string
         - name: snapshot
           in: body
           required: true
@@ -522,8 +528,10 @@ paths:
       summary: Delete all Load balancer services
       description: Delete all load balancer services.
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -563,8 +571,10 @@ paths:
           required: true
           description: Attributes for load balance service name
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -670,8 +680,10 @@ paths:
             naming a model and one not, a delete without `model_name` removes the model-less rule and
             leaves the other serving.
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -814,6 +826,10 @@ paths:
             $ref: '#/definitions/Error'
         '404':
           description: Referenced load-balancer not found
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Resource conflict (duplicate policy id, or the load-balancer already carries a policy)
           schema:
             $ref: '#/definitions/Error'
         '500':
@@ -1100,7 +1116,7 @@ paths:
           schema:
             $ref: '#/definitions/Error'
         '404':
-          description: 'No KV-exact status on this key. Deliberately coalesced: no rule exists on the composite key, the rule(s) on the key are not KV-exact, or the model_name filter matched no rule — all three answer 404. A 200 body always carries at least one entry (empty result sets are never emitted as 200).'
+          description: 'No KV-exact status on this key. Deliberately coalesced: no rule exists on the composite key, the rule(s) on the key are not KV-exact, the model_name filter matched no rule, or the composite key itself is unservable (for example an unsupported protocol — a key that can never hold a rule answers the same as an empty key) — all four answer 404. A 200 body always carries at least one entry (empty result sets are never emitted as 200).'
           schema:
             $ref: '#/definitions/Error'
         '422':
@@ -1198,8 +1214,10 @@ paths:
             naming a model and one not, a delete without `model_name` removes the model-less rule and
             leaves the other serving.
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -1292,8 +1310,10 @@ paths:
             naming a model and one not, a delete without `model_name` removes the model-less rule and
             leaves the other serving.
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -1381,8 +1401,10 @@ paths:
             naming a model and one not, a delete without `model_name` removes the model-less rule and
             leaves the other serving.
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -2227,8 +2249,10 @@ paths:
           schema:
             $ref: '#/definitions/RouteEntry'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -2274,8 +2298,10 @@ paths:
           required: true
           description: Attributes for destination route
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -2348,8 +2374,10 @@ paths:
           schema:
             $ref: '#/definitions/SessionEntry'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -2390,8 +2418,10 @@ paths:
           required: true
           description: Attributes 5G session Ident.
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -2460,8 +2490,10 @@ paths:
           schema:
             $ref: '#/definitions/SessionUlClEntry'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -2507,8 +2539,10 @@ paths:
           required: true
           description: Attributes for session ulcl address
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -2582,8 +2616,10 @@ paths:
           schema:
             $ref: '#/definitions/PolicyEntry'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -2624,8 +2660,10 @@ paths:
           required: true
           description: Attributes of Policy Ident.
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -2697,8 +2735,10 @@ paths:
           schema:
             $ref: '#/definitions/MirrorEntry'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -2739,8 +2779,10 @@ paths:
           required: true
           description: Attributes of Mirror Ident.
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -2813,8 +2855,10 @@ paths:
           schema:
             $ref: '#/definitions/IPv4AddressEntry'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -2865,8 +2909,10 @@ paths:
           required: true
           description: Attributes of the target device
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -2935,8 +2981,10 @@ paths:
           schema:
             $ref: '#/definitions/IPv6AddressEntry'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -2987,8 +3035,10 @@ paths:
           required: true
           description: Attributes of the target device
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -3061,8 +3111,10 @@ paths:
           schema:
             $ref: '#/definitions/NeighborEntry'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -3108,8 +3160,10 @@ paths:
           required: true
           description: Attributes of the target device
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -3181,8 +3235,10 @@ paths:
           schema:
             $ref: '#/definitions/FDBEntry'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -3228,8 +3284,10 @@ paths:
           required: true
           description: Attributes of the target device
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -3301,8 +3359,10 @@ paths:
           schema:
             $ref: '#/definitions/VlanBridgeEntry'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -3344,8 +3404,10 @@ paths:
           description: Attributes IPv4 Address in the device
         
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -3393,8 +3455,10 @@ paths:
           schema:
             $ref: '#/definitions/VlanMemberEntry'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -3445,8 +3509,10 @@ paths:
           type: boolean
           description: Tagged status
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -3509,8 +3575,10 @@ paths:
           schema:
             $ref: '#/definitions/VxlanBridgeEntry'    
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '401':
           description: Invalid authentication credentials
           schema:
@@ -3540,8 +3608,10 @@ paths:
           description: vxlan id (24-bit). Allows to remove routes with defined vnid only. Applicable for routes with nexthop_type 'vxlan-tunnel'. Otherwise '400' error will be returned
          
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '401':
           description: Invalid authentication credentials
           schema:
@@ -3667,8 +3737,10 @@ paths:
           schema:
             $ref: '#/definitions/CIStatusEntry'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -3739,8 +3811,10 @@ paths:
           schema:
             $ref: '#/definitions/EndPoint'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -3782,8 +3856,10 @@ paths:
           schema:
             $ref: '#/definitions/EndPointHostState'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -3839,8 +3915,10 @@ paths:
           required: false
           description: Probe port
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -3912,8 +3990,10 @@ paths:
           schema:
             $ref: '#/definitions/FirewallEntry'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -3985,8 +4065,10 @@ paths:
           description: User preference for ordering
   
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -4054,8 +4136,10 @@ paths:
           schema:
             $ref: '#/definitions/IPFilterEntry'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -4088,8 +4172,10 @@ paths:
           type: integer
           description: Security zone (0 = all zones)
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -4125,8 +4211,10 @@ paths:
           schema:
             $ref: '#/definitions/SecurityRateConfigMod'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -4144,8 +4232,10 @@ paths:
       summary: Disable unified security rate limiting
       description: Disable all security rate limiting (SYN flood + connection rate) and clear tracking state.
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -4281,6 +4371,25 @@ paths:
           description: Maintenance mode
           schema:
             $ref: '#/definitions/Error'
+  '/status/ready':
+    get:
+      summary: Configuration readiness of this gateway
+      description: READY means the boot config replay settled without degradation (or an operator's commit restore has since recovered it) and every REQUIRED external recovery dependency answers right now. A not-ready gateway returns 503 with the same body shape, carrying the reasons - a failed boot restore is never silently READY.
+      produces:
+        - application/json
+      responses:
+        '200':
+          description: Ready
+          schema:
+            $ref: '#/definitions/ReadyStatus'
+        '401':
+          description: Invalid authentication credentials
+          schema:
+            $ref: '#/definitions/Error'
+        '503':
+          description: Not ready (body carries the reasons)
+          schema:
+            $ref: '#/definitions/ReadyStatus'
 #----------------------------------------------
 # LoxiLB Operational Config
 #----------------------------------------------
@@ -4296,8 +4405,10 @@ paths:
           schema:
             $ref: '#/definitions/OperParams'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -4334,6 +4445,7 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/OperParams'
+        '204':
         '204':
           description: OK
         '400':
@@ -4397,8 +4509,10 @@ paths:
           schema:
             $ref: '#/definitions/IPsecConfigMod'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -4539,8 +4653,10 @@ paths:
           required: true
           description: Tunnel name
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '401':
           description: Invalid authentication credentials
           schema:
@@ -4663,8 +4779,10 @@ paths:
       summary: Reset IPsec statistics
       description: Reset all IPsec statistics counters to zero.
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '401':
           description: Invalid authentication credentials
           schema:
@@ -4768,8 +4886,10 @@ paths:
           required: true
           description: Certificate name
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '401':
           description: Invalid authentication credentials
           schema:
@@ -4910,8 +5030,10 @@ paths:
           required: true
           description: CA certificate name
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '401':
           description: Invalid authentication credentials
           schema:
@@ -4946,6 +5068,7 @@ paths:
                 type: array
                 items:
                   $ref: '#/definitions/BGPNeighGetEntry'
+        '204':
         '204':
           description: OK
         '400':
@@ -4988,8 +5111,10 @@ paths:
           schema:
             $ref: '#/definitions/BGPNeigh'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -5036,8 +5161,10 @@ paths:
           required: false
           description: Remote ASN number
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -5094,6 +5221,7 @@ paths:
                 items:
                   $ref: '#/definitions/BGPPolicyDefinedSetGetEntry'
         '204':
+        '204':
           description: OK
         '400':
           description: Malformed arguments for API call
@@ -5139,8 +5267,10 @@ paths:
           required: true
           description: type name
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -5187,8 +5317,10 @@ paths:
           schema:
             $ref: '#/definitions/BGPPolicyDefinedSetsMod'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -5256,8 +5388,10 @@ paths:
           schema:
             $ref: '#/definitions/BGPPolicyDefinitionsMod'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -5298,8 +5432,10 @@ paths:
           required: true
           description: The name of the community
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -5342,8 +5478,10 @@ paths:
           schema:
             $ref: '#/definitions/BGPApplyPolicyToNeighborMod'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -5383,8 +5521,10 @@ paths:
           schema:
             $ref: '#/definitions/BGPApplyPolicyToNeighborMod'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -5426,8 +5566,10 @@ paths:
           schema:
             $ref: '#/definitions/BGPGlobalConfig'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -5496,8 +5638,10 @@ paths:
     post:
       summary: turn on prometheus option
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -5517,8 +5661,10 @@ paths:
     delete:
       summary: turn off prometheus option
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -6075,8 +6221,10 @@ paths:
           schema:
             $ref: '#/definitions/BfdEntry'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -6121,8 +6269,10 @@ paths:
           required: false
           description: Cluster instance name
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -6620,8 +6770,10 @@ paths:
           schema:
             $ref: '#/definitions/CorsEntry'
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -6662,8 +6814,10 @@ paths:
           required: true
           description: cors url ex) http://localhost:3000
       responses:
-        '204':
+        '200':
           description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
         '400':
           description: Malformed arguments for API call
           schema:
@@ -7056,12 +7210,141 @@ definitions:
       result:
         type: string
         description: ok, rolled-back, or ROLLBACK-FAILED; empty when the pipeline stopped before APPLY.
+      snapshot_generation:
+        type: integer
+        format: uint64
+        description: The restored document's lineage generation (absent for documents that predate generations and for bare captures).
+      warnings:
+        type: array
+        description: Non-fatal anomalies the pipeline tolerated (degraded external stores, duplicate document items skipped at boot). Warnings never change the result field or trigger rollback.
+        items:
+          type: string
+      external_dependencies:
+        type: array
+        description: The document's recovery-dependency manifest with this restore's per-entry disposition. Required entries are verified before anything is planned, wiped, or applied.
+        items:
+          $ref: '#/definitions/ExternalDependencyStatus'
+      persisted:
+        type: boolean
+        description: Write-through disposition of a committed restore. true when the committed state was persisted to snapshot.json; false when the restore applied but the write-through failed - the applied state will NOT survive a restart until a later persist succeeds (the failure detail is in errors). Absent for dry-run and for pipelines that never reached a successful commit.
+      persisted_generation:
+        type: integer
+        format: uint64
+        description: Lineage generation stamped by the successful write-through (present with persisted=true only).
       pre_restore_snapshot_persisted:
         type: string
         description: On-disk path of the pre-restore snapshot captured before APPLY (commit mode only).
+  ReadyStatus:
+    type: object
+    description: Configuration readiness verdict with the evidence behind it - the boot replay outcome, live external-dependency probes, and the most recent successful persist/restore identities.
+    required:
+      - ready
+    properties:
+      ready:
+        type: boolean
+      reasons:
+        type: array
+        description: Why the gateway is not ready; empty when ready.
+        items:
+          type: string
+      boot:
+        $ref: '#/definitions/BootStatus'
+      external_dependencies:
+        type: array
+        description: Live availability of the stores this gateway is wired to (status ready or failed - a probe, unlike the restore engine's configured-only checks).
+        items:
+          $ref: '#/definitions/ExternalDependencyStatus'
+      last_persist:
+        $ref: '#/definitions/ConfigOpRecord'
+      last_restore:
+        $ref: '#/definitions/ConfigOpRecord'
+      auto_persist:
+        $ref: '#/definitions/AutoPersistStatus'
+  AutoPersistStatus:
+    type: object
+    description: Auto-persist failure streak (present only while failing; any successful persist clears it). Nonzero means recent config changes may not survive a restart - also surfaced as a not-ready reason and in the loxilb_autopersist_consecutive_failures gauge.
+    properties:
+      consecutive_failures:
+        type: integer
+      last_error:
+        type: string
+      last_attempt:
+        type: string
+        format: date-time
+  BootStatus:
+    type: object
+    description: The boot config replay's recorded outcome.
+    required:
+      - snapshot_found
+      - succeeded
+      - legacy_fallback
+      - degraded
+    properties:
+      profile:
+        type: string
+        description: The --config-boot-profile the boot ran under (strict or compat).
+      snapshot_found:
+        type: boolean
+      succeeded:
+        type: boolean
+      generation:
+        type: integer
+        format: uint64
+        description: Applied boot document's lineage generation (success only).
+      quarantine_path:
+        type: string
+        description: Where a failing snapshot was preserved (failure only).
+      legacy_fallback:
+        type: boolean
+        description: The compat profile replayed the legacy *.txt artifacts after a failed snapshot restore.
+      degraded:
+        type: boolean
+        description: The boot snapshot restore failed (strict booted empty; compat may be running legacy-replayed configuration).
+      reasons:
+        type: array
+        items:
+          type: string
+  ConfigOpRecord:
+    type: object
+    description: One successful persist or restore - identity of what is durable/applied.
+    properties:
+      generation:
+        type: integer
+        format: uint64
+      checksum:
+        type: string
+      mode:
+        type: string
+        description: For persists, the capture trigger (write-through, manual); for restores, commit or boot.
+      at:
+        type: string
+        format: date-time
+  ExternalDependencyStatus:
+    type: object
+    description: Identity of one external recovery dependency (from the snapshot document's recovery_dependencies manifest) plus the reporting operation's disposition toward it. Identity only - never store content or credentials.
+    properties:
+      type:
+        type: string
+        description: Dependency type (api-key-db, auth-db, engine-contracts, kv-model-profiles, cert-store).
+      id:
+        type: string
+        description: Stable identity of the concrete store instance (database name, registry root); absent for single-instance types.
+      generation:
+        type: string
+        description: Store generation at capture (decimal string or opaque version token); absent for stores without generation tracking.
+      digest:
+        type: string
+        description: Store content digest at capture ("sha256:<hex>"); absent for stores without content digests.
+      required:
+        type: boolean
+        description: Whether recovery of the captured configuration requires this store (restore verifies required entries before planning anything).
+      status:
+        type: string
+        enum: [ready, configured, verified, warning, failed, declared]
+        description: Persist responses report ready (identity read from the live process) or configured (store wired; reachability deliberately unclaimed - the readiness surface owns liveness). Restore responses report verified, warning (detail in warnings), failed (detail in errors; the restore stopped before mutating anything), or declared (optional entry, informational only).
   PersistResult:
     type: object
-    description: Result of POST /config/persist.
+    description: Result of POST /config/persist - the persisted document's identity and coverage, so automation can verify what was saved without re-reading the file.
     properties:
       result:
         type: string
@@ -7072,6 +7355,40 @@ definitions:
       checksum:
         type: string
         description: SHA-256 checksum of the persisted snapshot document.
+      schema_version:
+        type: string
+        description: Schema version of the persisted document.
+      generation:
+        type: integer
+        format: uint64
+        description: Monotonic lineage generation stamped into the persisted document.
+      included_domains:
+        type: array
+        description: The snapshot domains the persisted document covers.
+        items:
+          type: string
+      excluded_domains:
+        type: array
+        description: Configuration areas deliberately never captured by snapshots (honesty marker).
+        items:
+          type: string
+      external_dependencies:
+        type: array
+        description: The persisted document's recovery-dependency manifest with capture-time dispositions.
+        items:
+          $ref: '#/definitions/ExternalDependencyStatus'
+      warnings:
+        type: array
+        description: Non-fatal anomalies of this persist; empty on a clean save.
+        items:
+          type: string
+  OperationResult:
+    type: object
+    description: 'Result envelope returned by configuration operations that succeed with a body ({"result":"Success"} or an informational message).'
+    properties:
+      result:
+        type: string
+        description: Outcome message. "Success" for most operations; some carry an informational sentence instead.
   Error:
     type: object
     properties:
@@ -7173,6 +7490,7 @@ definitions:
       enforcement_fault: Data-plane fence/contract transaction could not be acknowledged.
       runtime_fault: Engine runtime fault reported through the inventory stream.
       restored_profile_less_requires_migration: Profile-less rule arrived via restore; fenced until a profile is attached by replace.
+      profile_registry_unavailable: Restored rule's declared profile could not be resolved because no registry generation is published; the declaration is preserved and the exact path stays fenced until the registry is repaired.
       drain_sequence_gap: Destructive-read drain stream shows a sequence gap - inventory evidence untrustworthy.
       drain_ownership_lost: Drain ownership lost to another consumer - inventory evidence untrustworthy.
       attestation_pending: Attestation controller registered but has not published a verdict yet.
@@ -10093,6 +10411,12 @@ definitions:
       updowntime:
         type: string
         description: Current uptime
+      remotePort:
+        type: integer
+        description: Configured non-default BGP peering port (0 means the default, 179)
+      multiHop:
+        type: boolean
+        description: Whether eBGP multihop is enabled for this neighbor
 
 
   BGPGlobalConfig:

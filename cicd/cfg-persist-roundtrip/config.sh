@@ -1,0 +1,468 @@
+#!/bin/bash
+# config.sh — cfg-persist-roundtrip topology (GPU-free).
+#
+# One gateway (llb1, BGP-enabled, config volume host-mounted so
+# snapshot.json is inspectable), one client (l3h1), three reflect-echo
+# backends (one also hosting an SSE mock). The fixture populates every
+# restartable configuration class this suite verifies: a plain L4 LB
+# rule, an API-key-gated L7 rule, a strict KV-exact P/D rule (profile
+# registry staged before start, as a production operator would), an
+# SSE/keepalive streaming rule, one representative rule per remaining
+# engine family (sglang P/D, trtllm P/D, llamacpp CHWBL), a standalone
+# endpoint, firewall, policy, session + ULCL, ipfilter, securityrate and
+# a BGP neighbor with non-default transport settings. validation.sh then
+# proves the whole set
+# survives persist + in-place restart FIELD-identically (canonical
+# deep-diff, not probe re-runs) with datapath probes on top.
+
+export LLB_HOST_PORTS=""
+source ../common.sh
+
+CFGDIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Idempotency: always self-clean a prior aborted run first.
+"${CFGDIR}/rmconfig.sh" >/dev/null 2>&1 || true
+# Stale evidence from a prior run must not masquerade as this run's.
+sudo rm -rf "${CFGDIR}/artifacts" >/dev/null 2>&1 || true
+
+TOK_SLUG="Qwen__Qwen3-0.6B"
+TOK_SRC="${CFGDIR}/../common/kv_hash/fixtures/tokenizers/${TOK_SLUG}/tokenizer.json"
+if [[ ! -f "${TOK_SRC}" ]]; then
+    echo "FATAL: committed tokenizer fixture missing: ${TOK_SRC}"
+    exit 1
+fi
+
+echo "#########################################"
+echo "Staging the trusted ModelPromptProfile registry (host side)"
+echo "#########################################"
+STAGE="${CFGDIR}/.kvprofiles-stage"
+sudo rm -rf "${STAGE}"
+mkdir -p "${STAGE}/artifacts/sha256"
+TOK_SHA=$(sha256sum "${TOK_SRC}" | cut -d' ' -f1)
+cp "${TOK_SRC}" "${STAGE}/artifacts/sha256/${TOK_SHA}"
+cat > "${STAGE}/qwen3-06b-completions-v1.yaml" <<EOF
+profileId: qwen3-06b-completions-v1
+baseModel: Qwen/Qwen3-0.6B
+tokenizerArtifact: sha256/${TOK_SHA}
+tokenizerSha256: ${TOK_SHA}
+supportedApis:
+  - completions
+aliasPolicy: base_model_only
+EOF
+sudo chown -R root:root "${STAGE}"
+sudo chmod 0755 "${STAGE}" "${STAGE}/artifacts" "${STAGE}/artifacts/sha256"
+sudo chmod 0644 "${STAGE}"/*.yaml "${STAGE}/artifacts/sha256/"*
+
+# The trtllm engine rule keys its inventory on token content, so a
+# profile-less kvExactMode rule refuses to create unless a loadable
+# tokenizer is staged for its model_name (same recipe as the trtllm
+# dialect suite).
+TOKSTAGE="${CFGDIR}/.tokenizers-stage"
+sudo rm -rf "${TOKSTAGE}"
+mkdir -p "${TOKSTAGE}/Qwen__Qwen2.5-7B-Instruct"
+cp "${CFGDIR}/../common/kv_hash/fixtures/tokenizers/Qwen__Qwen2.5-7B-Instruct/tokenizer.json" \
+   "${TOKSTAGE}/Qwen__Qwen2.5-7B-Instruct/tokenizer.json"
+
+echo "#########################################"
+echo "Building the reflect-echo backend image"
+echo "#########################################"
+"${CFGDIR}/../common/reflect-echo/docker-build.sh"
+
+echo "#########################################"
+echo "Spawning hosts (llb1 + client + 3 echo EPs)"
+echo "#########################################"
+
+# pick_config mounts ./llb1_config at /etc/loxilb so the persisted
+# snapshot.json is host-inspectable and survives in-place restarts.
+pick_config="yes"
+mkdir -p "${CFGDIR}/llb1_config"
+
+spawn_docker_host --dock-type loxilb --dock-name llb1 --with-bgp yes \
+    --docker-args "-e LLB_KV_NONE_HASH_SEED=0 -v ${STAGE}:/etc/loxilb/kvprofiles:ro -v ${TOKSTAGE}:/etc/loxilb/tokenizers:ro"
+pick_config=""
+spawn_docker_host --dock-type host --dock-name l3h1
+spawn_docker_host --dock-type reflect-echo --dock-name l3ep1 --docker-args "-e ECHO_NAME=serverA"
+spawn_docker_host --dock-type reflect-echo --dock-name l3ep2 --docker-args "-e ECHO_NAME=serverB"
+spawn_docker_host --dock-type reflect-echo --dock-name l3ep3 --docker-args "-e ECHO_NAME=serverC"
+
+echo "#########################################"
+echo "Connecting and configuring hosts"
+echo "#########################################"
+
+connect_docker_hosts l3h1  llb1
+connect_docker_hosts l3ep1 llb1
+connect_docker_hosts l3ep2 llb1
+connect_docker_hosts l3ep3 llb1
+
+sleep 5
+
+config_docker_host --host1 l3h1  --host2 llb1 --ptype phy --addr 10.10.10.1/24 --gw 10.10.10.254
+config_docker_host --host1 l3ep1 --host2 llb1 --ptype phy --addr 31.31.31.1/24 --gw 31.31.31.254
+config_docker_host --host1 l3ep2 --host2 llb1 --ptype phy --addr 32.32.32.1/24 --gw 32.32.32.254
+config_docker_host --host1 l3ep3 --host2 llb1 --ptype phy --addr 33.33.33.1/24 --gw 33.33.33.254
+config_docker_host --host1 llb1 --host2 l3h1  --ptype phy --addr 10.10.10.254/24
+config_docker_host --host1 llb1 --host2 l3ep1 --ptype phy --addr 31.31.31.254/24
+config_docker_host --host1 llb1 --host2 l3ep2 --ptype phy --addr 32.32.32.254/24
+config_docker_host --host1 llb1 --host2 l3ep3 --ptype phy --addr 33.33.33.254/24
+
+sleep 5
+
+API="http://localhost:11111/netlox/v1"
+echo "Waiting for loxilb REST API to be ready..."
+api_ready=0
+for _ in $(seq 1 60); do
+    rc=$($hexec llb1 curl -s -m 3 -o /dev/null -w "%{http_code}" "${API}/config/loadbalancer/all" 2>/dev/null)
+    if [[ "$rc" == "200" ]]; then api_ready=1; echo "  loxilb REST API ready"; break; fi
+    sleep 1
+done
+[[ "$api_ready" == 1 ]] || { echo "FATAL: loxilb REST API not ready"; exit 1; }
+
+echo "#########################################"
+echo "Starting the streaming mock backend (SSE fixture upstream)"
+echo "#########################################"
+# OpenAI-style SSE mock in the third backend's netns on a port distinct
+# from its reflect-echo :80. Host python3 entered into the netns (the
+# ai-sse-quota pattern); rmconfig.sh kills it by its unique port token so
+# the teardown stays scoped to this suite.
+$hexec l3ep3 python3 "${CFGDIR}/../ai-sse-quota/mock_sse_server.py" 8088 &
+sse_mock_up=0
+for _ in $(seq 1 15); do
+    if $hexec l3ep3 curl -s -m 2 "http://33.33.33.1:8088/health" 2>/dev/null | grep -q ok; then
+        sse_mock_up=1; break
+    fi
+    sleep 1
+done
+[[ "$sse_mock_up" == 1 ]] || { echo "FATAL: SSE mock backend never came up"; exit 1; }
+echo "  SSE mock backend ready (33.33.33.1:8088)"
+
+post_json() { # post_json <path> <body> — echoes http code
+    $hexec llb1 curl -s -m 10 -o /tmp/cfgp-post.json -w "%{http_code}" \
+        -X POST "${API}$1" -H 'Content-Type: application/json' -d "$2"
+}
+must_200() { # must_200 <label> <code>
+    if [[ "$2" != "200" && "$2" != "204" ]]; then
+        echo "FATAL: fixture $1 refused (HTTP $2):"
+        cat /tmp/cfgp-post.json 2>/dev/null; echo
+        exit 1
+    fi
+    echo "  fixture: $1 [OK]"
+}
+
+echo "#########################################"
+echo "Building the restartable-config fixture"
+echo "#########################################"
+
+# Plain L4 LB rule: hash selector, health-monitored endpoint, source
+# allowlist wide enough for the client probes. Its endpoint deliberately
+# does NOT overlap the L7 rules' endpoints: epHost options are shared per
+# endpoint key and first-writer-wins, so a non-monitored rule applying
+# first would silently strip this rule's probe config (a pre-existing
+# shared-endpoint precedence gap, tracked separately from persistence).
+rc=$(post_json /config/loadbalancer '{
+  "serviceArguments": {
+    "externalIP": "20.20.20.1", "port": 2020, "protocol": "tcp",
+    "sel": 1, "mode": 2, "name": "rt-l4-full",
+    "monitor": true, "probetype": "tcp", "probeport": 80,
+    "inactiveTimeout": 240, "persistTimeout": 0
+  },
+  "allowedSources": [ { "prefix": "10.10.10.0/24" } ],
+  "endpoints": [
+    { "endpointIP": "33.33.33.1", "targetPort": 80, "weight": 1 }
+  ]
+}')
+must_200 "L4 LB rule" "$rc"
+
+# API-key-gated L7 rule: enforcement must hold across a restart.
+rc=$(post_json /config/loadbalancer '{
+  "serviceArguments": {
+    "externalIP": "10.10.10.254", "port": 8080, "protocol": "tcp",
+    "sel": 0, "mode": 4, "name": "rt-l7-apikey", "host": "10.10.10.254",
+    "model_name": "test-model", "api_key_auth": "required"
+  },
+  "endpoints": [
+    { "endpointIP": "31.31.31.1", "targetPort": 80, "weight": 1 },
+    { "endpointIP": "32.32.32.1", "targetPort": 80, "weight": 1 }
+  ]
+}')
+must_200 "API-key L7 rule" "$rc"
+
+# Strict KV-exact P/D rule: creates a kvexactbinding entry, the domain
+# that used to be invisible to restore verification.
+rc=$(post_json /config/loadbalancer '{
+  "serviceArguments": {
+    "externalIP": "10.10.10.254", "port": 8081, "protocol": "tcp",
+    "sel": 0, "mode": 4, "host": "10.10.10.254",
+    "pd_disagg_mode": true, "probeRetries": 1,
+    "kvExactMode": 1, "kvZmqPort": 5557, "kvBlockSize": 16,
+    "kvEngineType": "vllm", "model_name": "Qwen/Qwen3-0.6B",
+    "kvExactApiMode": "completions", "kvModelProfile": "qwen3-06b-completions-v1"
+  },
+  "endpoints": [
+    { "endpointIP": "31.31.31.1", "targetPort": 80, "weight": 1, "ep_role": 1 },
+    { "endpointIP": "32.32.32.1", "targetPort": 80, "weight": 1, "ep_role": 2 }
+  ]
+}')
+must_200 "KV-exact P/D rule" "$rc"
+
+# SSE/keepalive rule: the streaming-tuning fields are exactly the ones a
+# restore that "works" on plain rules could still drop -- a lost sse_mode
+# turns every stream into an inactiveTimeOut casualty, silently.
+rc=$(post_json /config/loadbalancer '{
+  "serviceArguments": {
+    "externalIP": "10.10.10.254", "port": 8083, "protocol": "tcp",
+    "sel": 0, "mode": 4, "name": "rt-sse", "host": "10.10.10.254",
+    "path_prefix": "/", "path_match_mode": "prefix",
+    "model_name": "rt-sse-model", "sse_mode": true,
+    "max_stream_duration_sec": 120, "backend_keepalive_interval_sec": 30,
+    "inactiveTimeOut": 60
+  },
+  "endpoints": [
+    { "endpointIP": "33.33.33.1", "targetPort": 8088, "weight": 1 }
+  ]
+}')
+must_200 "SSE/keepalive rule" "$rc"
+
+# The remaining engine families, one representative valid rule each
+# (kvEngineType is immutable per rule, so coverage needs one rule per
+# engine). SGLang P/D carries a NON-default bootstrap port -- the knob
+# that would silently revert to 8998 if the field were dropped. The
+# TensorRT-LLM rule is the sequential-P/D dialect shape (kvExactMode=1,
+# profile-less; no ZMQ fields -- the engine rejects them). The llama.cpp
+# rule is plain CHWBL (sel=8): the engine has no KV event plane, so any
+# KV-exact shape would be refused at create time.
+rc=$(post_json /config/loadbalancer '{
+  "serviceArguments": {
+    "externalIP": "10.10.10.254", "port": 8084, "protocol": "tcp",
+    "sel": 0, "mode": 4, "name": "rt-sglang-pd", "host": "10.10.10.254",
+    "pd_disagg_mode": true, "kvEngineType": "sglang",
+    "pdBootstrapPort": 9998, "sse_mode": true
+  },
+  "endpoints": [
+    { "endpointIP": "31.31.31.1", "targetPort": 80, "weight": 1, "ep_role": 1 },
+    { "endpointIP": "32.32.32.1", "targetPort": 80, "weight": 1, "ep_role": 2 }
+  ]
+}')
+must_200 "SGLang P/D rule (bootstrap port 9998)" "$rc"
+
+rc=$(post_json /config/loadbalancer '{
+  "serviceArguments": {
+    "externalIP": "10.10.10.254", "port": 8085, "protocol": "tcp",
+    "sel": 0, "mode": 4, "name": "rt-trtllm-pd", "host": "10.10.10.254",
+    "pd_disagg_mode": true, "kvEngineType": "trtllm", "kvExactMode": 1,
+    "model_name": "Qwen/Qwen2.5-7B-Instruct", "kvBlockSize": 32,
+    "kvWarmupSec": 5, "sse_mode": true
+  },
+  "endpoints": [
+    { "endpointIP": "31.31.31.1", "targetPort": 80, "weight": 1, "ep_role": 1 },
+    { "endpointIP": "32.32.32.1", "targetPort": 80, "weight": 1, "ep_role": 2 }
+  ]
+}')
+must_200 "TensorRT-LLM P/D rule (kvExactMode=1)" "$rc"
+
+rc=$(post_json /config/loadbalancer '{
+  "serviceArguments": {
+    "externalIP": "10.10.10.254", "port": 8086, "protocol": "tcp",
+    "sel": 8, "mode": 4, "name": "rt-llamacpp", "host": "10.10.10.254",
+    "kvEngineType": "llamacpp", "sse_mode": true
+  },
+  "endpoints": [
+    { "endpointIP": "31.31.31.1", "targetPort": 80, "weight": 1 },
+    { "endpointIP": "32.32.32.1", "targetPort": 80, "weight": 1 }
+  ]
+}')
+must_200 "llama.cpp CHWBL rule (sel=8)" "$rc"
+
+# Standalone (non-rule-managed) endpoint on the third backend.
+rc=$(post_json /config/endpoint '{
+  "hostName": "33.33.33.1", "name": "rt-ep-standalone",
+  "inactiveReTries": 2, "probeType": "ping", "probeDuration": 10
+}')
+must_200 "standalone endpoint" "$rc"
+
+# Firewall drop rule for a source that never appears in probes.
+rc=$(post_json /config/firewall '{
+  "ruleArguments": { "sourceIP": "77.77.77.7/32", "destinationIP": "20.20.20.1/32" },
+  "opts": { "drop": true }
+}')
+must_200 "firewall drop rule" "$rc"
+
+# QoS policy object attached to the third backend's port.
+rc=$(post_json /config/policy '{
+  "policyIdent": "rt-pol1",
+  "policyInfo": { "type": 0, "colorAware": false,
+                  "committedInfoRate": 100, "peakInfoRate": 200 },
+  "targetObject": { "attachment": 1, "polObjName": "ellb1l3ep3" }
+}')
+must_200 "policy" "$rc"
+
+# SPAN mirror: monitor the client port, mirror to the third backend port.
+rc=$(post_json /config/mirror '{
+  "mirrorIdent": "rt-mirr1",
+  "mirrorInfo": { "type": 0, "port": "ellb1l3ep3" },
+  "targetObject": { "attachment": 1, "mirrObjName": "ellb1l3h1" }
+}')
+must_200 "mirror" "$rc"
+
+# Session + ULCL classification (CLI path, same recipe as the ulcl suites).
+$dexec llb1 loxicmd create session rt-user1 88.88.88.88 \
+    --accessNetworkTunnel 1:10.10.10.56 --coreNetworkTunnel=1:10.10.10.59 || {
+    echo "FATAL: fixture session refused"; exit 1; }
+echo "  fixture: session [OK]"
+$dexec llb1 loxicmd create sessionulcl rt-user1 --ulclArgs=11:33.33.33.1 || {
+    echo "FATAL: fixture sessionulcl refused"; exit 1; }
+echo "  fixture: sessionulcl [OK]"
+
+# ipfilter blacklist for a prefix that never appears in probes.
+rc=$(post_json /config/ipfilter '{
+  "filterType": "blacklist", "cidr": "77.77.77.0/24",
+  "action": "drop", "priority": 200
+}')
+must_200 "ipfilter blacklist" "$rc"
+
+# securityrate config (valid shape from the secfilter suite).
+rc=$(post_json /config/securityrate '{
+  "synEnabled": true, "synThreshold": 200, "cookieThreshold": 50,
+  "connRateEnabled": false, "ratePerSec": 50,
+  "udpEnabled": false, "udpPktThreshold": 1000, "udpBandwidthMB": 100
+}')
+must_200 "securityrate config" "$rc"
+
+# BGP global config first (a neighbor cannot be added to a speaker with
+# no local AS / router id), then a neighbor with NON-default transport
+# (port + multihop): the fields that used to silently revert to defaults
+# across a restart.
+rc=$(post_json /config/bgp/global '{ "localAs": 64511, "routerId": "10.10.10.254" }')
+must_200 "BGP global config" "$rc"
+
+rc=$(post_json /config/bgp/neigh '{
+  "ipAddress": "10.10.10.1", "remoteAs": 64512,
+  "remotePort": 1790, "setMultiHop": true
+}')
+must_200 "BGP neighbor (port 1790, multihop)" "$rc"
+
+echo "#########################################"
+echo "TLS material + HTTPS proxy (cert domain fixture)"
+echo "#########################################"
+
+# Two self-signed pairs generated fresh per run: a DEFAULT server cert the
+# HTTPS proxy falls back to, and a distinct SNI cert uploaded through
+# /config/cert so the managed-store + SNI-registration path is what the
+# handshake probes exercise. Keys stay in the run directory (never
+# committed); rmconfig.sh removes the stage.
+CERTSTAGE="${CFGDIR}/.certs-stage"
+rm -rf "${CERTSTAGE}"; mkdir -p "${CERTSTAGE}"
+openssl req -x509 -newkey rsa:2048 -nodes -days 2 \
+    -keyout "${CERTSTAGE}/default.key" -out "${CERTSTAGE}/default.crt" \
+    -subj "/CN=10.10.10.254" -addext "subjectAltName=IP:10.10.10.254" 2>/dev/null
+openssl req -x509 -newkey rsa:2048 -nodes -days 2 \
+    -keyout "${CERTSTAGE}/sni.key" -out "${CERTSTAGE}/sni.crt" \
+    -subj "/CN=rt-sni.test" -addext "subjectAltName=DNS:rt-sni.test" 2>/dev/null
+[[ -s "${CERTSTAGE}/default.crt" && -s "${CERTSTAGE}/sni.crt" ]] || {
+    echo "FATAL: openssl certificate generation failed"; exit 1; }
+
+docker exec llb1 mkdir -p /opt/loxilb/cert
+docker cp "${CERTSTAGE}/default.crt" llb1:/opt/loxilb/cert/server.crt
+docker cp "${CERTSTAGE}/default.key" llb1:/opt/loxilb/cert/server.key
+
+# HTTPS-terminating proxy in front of the echo backends (plain HTTP
+# upstream): the LB whose handshakes the SNI probes drive.
+rc=$(post_json /config/loadbalancer '{
+  "serviceArguments": {
+    "externalIP": "10.10.10.254", "port": 8443, "protocol": "tcp",
+    "sel": 0, "mode": 4, "security": 1, "name": "rt-https",
+    "host": "10.10.10.254"
+  },
+  "endpoints": [
+    { "endpointIP": "31.31.31.1", "targetPort": 80, "weight": 1 }
+  ]
+}')
+must_200 "HTTPS proxy LB" "$rc"
+
+# Managed-store certificate upload: PEM goes to /etc/loxilb/certs/<id>/
+# (host-visible under llb1_config/certs/) and the SAN hostname lands in
+# the SNI store. The snapshot document must carry only {cert_id, digest}.
+CERT_BODY=$(jq -n --arg id "rt-cert1" \
+    --rawfile crt "${CERTSTAGE}/sni.crt" --rawfile key "${CERTSTAGE}/sni.key" \
+    '{certId: $id, certPem: $crt, keyPem: $key}')
+rc=$($hexec llb1 curl -s -m 10 -o /tmp/cfgp-post.json -w "%{http_code}" \
+    -X POST "${API}/config/cert" -H 'Content-Type: application/json' -d "$CERT_BODY")
+if [[ "$rc" != "201" ]]; then
+    echo "FATAL: fixture cert upload refused (HTTP $rc):"
+    cat /tmp/cfgp-post.json 2>/dev/null; echo
+    exit 1
+fi
+echo "  fixture: managed cert rt-cert1 (SNI rt-sni.test) [OK]"
+
+echo "#########################################"
+echo "L7 policy fixture (REJECT route on a plain proxy)"
+echo "#########################################"
+
+# A plain (non-AI, non-TLS) L7 proxy carries the policy: enforcement is
+# what the restart legs probe, so the rule must not share a VIP:port with
+# the api-key or KV rules.
+rc=$(post_json /config/loadbalancer '{
+  "serviceArguments": {
+    "externalIP": "10.10.10.254", "port": 8082, "protocol": "tcp",
+    "sel": 0, "mode": 4, "name": "rt-l7-routes", "host": "10.10.10.254"
+  },
+  "endpoints": [
+    { "endpointIP": "31.31.31.1", "targetPort": 80, "weight": 1 },
+    { "endpointIP": "32.32.32.1", "targetPort": 80, "weight": 1 }
+  ]
+}')
+must_200 "plain L7 proxy LB" "$rc"
+
+RT_LBID=$($hexec llb1 curl -s -m 10 "${API}/config/loadbalancer/all" \
+    | jq -r '.lbAttr[] | select(.serviceArguments.name=="rt-l7-routes") | .serviceArguments.id')
+[[ -n "$RT_LBID" && "$RT_LBID" != "null" ]] || {
+    echo "FATAL: could not resolve the stable id of rt-l7-routes"; exit 1; }
+
+# REJECT with a NON-default status code (451, default is 403): a restart
+# that resurrects the policy but loses the field would still fail the leg.
+rc=$(post_json /config/l7policy "{
+  \"id\": \"rt-l7pol1\", \"name\": \"rt-block-blocked\", \"lbId\": \"${RT_LBID}\",
+  \"rules\": [ {
+    \"position\": 1,
+    \"matchSets\": [ { \"conditions\": [
+      { \"field\": \"PATH\", \"op\": \"STARTS_WITH\", \"value\": \"/blocked\" } ] } ],
+    \"action\": { \"kind\": \"REJECT\", \"reject\": { \"statusCode\": 451 } }
+  } ]
+}")
+must_200 "L7 REJECT policy (451 on /blocked)" "$rc"
+
+echo "#########################################"
+echo "CORS allowlist + OTLP export fixtures"
+echo "#########################################"
+
+rc=$(post_json /config/cors '{ "cors": [ "http://rt-allowed.example" ] }')
+must_200 "CORS allowlist (one origin)" "$rc"
+
+# The OTLP endpoint handler answers 200 with a result STRING even on
+# refusal, so the fixture gates on the message, not the status code. The
+# header value below is the secret-split subject: it must reach the
+# node-local otlp-headers.json and never the snapshot document.
+rc=$(post_json /config/trace/otlp '{
+  "endpoint": "127.0.0.1:4317", "protocol": "grpc", "use_tls": false,
+  "headers": { "X-API-Key": "rt-otlp-secret-a1b2c3d4" }
+}')
+otlp_msg=$(jq -r '.result // empty' /tmp/cfgp-post.json 2>/dev/null)
+if [[ "$rc" != "200" || "$otlp_msg" != *"configured"* || "$otlp_msg" == *"could not be persisted"* ]]; then
+    echo "FATAL: fixture OTLP config refused (HTTP $rc): $otlp_msg"
+    exit 1
+fi
+echo "  fixture: OTLP export config (grpc, auth header) [OK]"
+
+# The IPsec PSK below is the encrypted-value subject: the plaintext may
+# reach only the node-local strongSwan secrets file inside the gateway;
+# the snapshot document must carry it enc:v1-encrypted under the
+# auto-provisioned llb1_config/snapshot-node.secret. Peer reachability is
+# irrelevant (auto=add responder), only the config surface is under test.
+rc=$(post_json /config/ipsec/tunnels '{
+  "name": "rt-tun1", "localIp": "31.31.31.254", "remoteIp": "31.31.31.253",
+  "authMode": "psk", "psk": "rt-psk-roundtrip-fixture",
+  "localId": "rt-a", "remoteId": "rt-b",
+  "ikeVersion": "ikev2", "tunnelMode": "tunnel", "auto": "add"
+}')
+must_200 "IPsec PSK tunnel (encrypted-value subject)" "$rc"
+
+echo "cfg-persist-roundtrip config done"

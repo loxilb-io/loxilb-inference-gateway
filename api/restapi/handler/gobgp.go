@@ -40,6 +40,8 @@ func ConfigGetBGPNeigh(params operations.GetConfigBgpNeighAllParams, principal i
 		tmpNeigh.RemoteAs = int64(nei.RemoteAS)
 		tmpNeigh.State = nei.State
 		tmpNeigh.Updowntime = nei.Uptime
+		tmpNeigh.RemotePort = int64(nei.RemotePort)
+		tmpNeigh.MultiHop = nei.MultiHop
 
 		result = append(result, &tmpNeigh)
 	}

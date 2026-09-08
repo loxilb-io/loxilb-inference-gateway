@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// PostConfigMirrorNoContentCode is the HTTP code returned for type PostConfigMirrorNoContent
-const PostConfigMirrorNoContentCode int = 204
+// PostConfigMirrorOKCode is the HTTP code returned for type PostConfigMirrorOK
+const PostConfigMirrorOKCode int = 200
 
 /*
-PostConfigMirrorNoContent OK
+PostConfigMirrorOK OK
 
-swagger:response postConfigMirrorNoContent
+swagger:response postConfigMirrorOK
 */
-type PostConfigMirrorNoContent struct {
+type PostConfigMirrorOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewPostConfigMirrorNoContent creates PostConfigMirrorNoContent with default headers values
-func NewPostConfigMirrorNoContent() *PostConfigMirrorNoContent {
+// NewPostConfigMirrorOK creates PostConfigMirrorOK with default headers values
+func NewPostConfigMirrorOK() *PostConfigMirrorOK {
 
-	return &PostConfigMirrorNoContent{}
+	return &PostConfigMirrorOK{}
+}
+
+// WithPayload adds the payload to the post config mirror o k response
+func (o *PostConfigMirrorOK) WithPayload(payload *models.OperationResult) *PostConfigMirrorOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config mirror o k response
+func (o *PostConfigMirrorOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *PostConfigMirrorNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *PostConfigMirrorOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // PostConfigMirrorBadRequestCode is the HTTP code returned for type PostConfigMirrorBadRequest

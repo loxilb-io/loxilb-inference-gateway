@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// PostConfigIpfilterNoContentCode is the HTTP code returned for type PostConfigIpfilterNoContent
-const PostConfigIpfilterNoContentCode int = 204
+// PostConfigIpfilterOKCode is the HTTP code returned for type PostConfigIpfilterOK
+const PostConfigIpfilterOKCode int = 200
 
 /*
-PostConfigIpfilterNoContent OK
+PostConfigIpfilterOK OK
 
-swagger:response postConfigIpfilterNoContent
+swagger:response postConfigIpfilterOK
 */
-type PostConfigIpfilterNoContent struct {
+type PostConfigIpfilterOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewPostConfigIpfilterNoContent creates PostConfigIpfilterNoContent with default headers values
-func NewPostConfigIpfilterNoContent() *PostConfigIpfilterNoContent {
+// NewPostConfigIpfilterOK creates PostConfigIpfilterOK with default headers values
+func NewPostConfigIpfilterOK() *PostConfigIpfilterOK {
 
-	return &PostConfigIpfilterNoContent{}
+	return &PostConfigIpfilterOK{}
+}
+
+// WithPayload adds the payload to the post config ipfilter o k response
+func (o *PostConfigIpfilterOK) WithPayload(payload *models.OperationResult) *PostConfigIpfilterOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config ipfilter o k response
+func (o *PostConfigIpfilterOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *PostConfigIpfilterNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *PostConfigIpfilterOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // PostConfigIpfilterBadRequestCode is the HTTP code returned for type PostConfigIpfilterBadRequest
