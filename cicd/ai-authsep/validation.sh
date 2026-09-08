@@ -67,6 +67,25 @@ chk_hasnt() { # chk_hasnt <name> <needle> <haystack>
 }
 
 lcurl() { docker exec llb1 curl -s -m 30 "$@"; }
+
+# lcurl_mut is lcurl for mutating management calls. The freeze middleware
+# answers 503 + Retry-After from two TRANSIENT windows — the boot config
+# replay, and the snapshot gate that a write-through or restore holds
+# (auto-persist takes it about three seconds after any config mutation) —
+# and the middleware's documented client behavior is to retry. Only those
+# two exact bodies are retried, bounded; every other answer, a real 503
+# included, returns on the first try and still fails its leg loudly.
+lcurl_mut() {
+  local i out
+  for i in 1 2 3 4 5 6; do
+    out=$(lcurl "$@")
+    case "$out" in
+      *"boot config replay settles"*|*"frozen while a snapshot restore is in progress"*) sleep 2 ;;
+      *) break ;;
+    esac
+  done
+  printf '%s\n' "$out"
+}
 lcode() { docker exec llb1 curl -s -o /dev/null -m 30 -w '%{http_code}' "$@"; }
 vip_code() { docker exec l3h1 curl -s -o /dev/null -m 20 -w '%{http_code}' "$@"; }
 psql_as() { # psql_as <container> <role> <password> <sql>
@@ -150,7 +169,7 @@ restart_gw() { # restart_gw <flags...>
       for _ in $(seq 1 40); do
         if ! docker exec llb1 curl -s -m 3 -X POST "$API/config/loadbalancer" \
             -H 'Content-Type: application/json' -d '{}' \
-            | grep -q 'boot config replay settles'; then
+            | grep -qE 'boot config replay settles|frozen while a snapshot restore is in progress'; then
           return 0
         fi
         sleep 2
@@ -186,7 +205,7 @@ restart_gw() { # restart_gw <flags...>
 mk_rules() {
   for spec in "2020 true required" "2021 false disabled"; do
     set -- $spec
-    lcurl -X POST $API/config/loadbalancer -H 'Content-Type: application/json' \
+    lcurl_mut -X POST $API/config/loadbalancer -H 'Content-Type: application/json' \
       -d "{\"serviceArguments\":{\"externalIP\":\"$VIP\",\"port\":$1,\"protocol\":\"tcp\",\"mode\":4,\"sse_mode\":$2,\"api_key_auth\":\"$3\",\"inactiveTimeOut\":60,\"host\":\"$VIP\"},\"endpoints\":[{\"endpointIP\":\"31.31.31.1\",\"targetPort\":8080,\"weight\":1}]}" >/dev/null
   done
   sleep 3
@@ -273,7 +292,7 @@ restart_gw $AIKEY_ARGS || exit 1
 mk_rules
 
 mkkey() { # mkkey <name> <models-json> -> raw key on stdout, id on fd 3
-  lcurl -X POST $API/config/ai/apikey -H 'Content-Type: application/json' \
+  lcurl_mut -X POST $API/config/ai/apikey -H 'Content-Type: application/json' \
     -d "{\"tenant_id\":\"authsep-tenant\",\"name\":\"$1\",\"allowed_models\":$2,\"rate_limit_rps\":200,\"burst_size\":400,\"tokens_per_min\":1000000,\"enabled\":true}"
 }
 R_GOOD=$(mkkey good '[]')
@@ -289,7 +308,7 @@ if [ -z "$K_GOOD" ] || [ -z "$K_OFF" ] || [ -z "$K_MODEL" ]; then
   echo "SCENARIO-ai-authsep [FAILED]"
   exit 1
 fi
-lcurl -X PATCH $API/config/ai/apikey/$ID_OFF -H 'Content-Type: application/json' \
+lcurl_mut -X PATCH $API/config/ai/apikey/$ID_OFF -H 'Content-Type: application/json' \
   -d '{"enabled":false}' >/dev/null
 sleep 1
 
@@ -641,19 +660,19 @@ echo ""
 echo "--- DP-23: tenant quota with no enforcing service ---"
 restart_gw $AIKEY_ARGS || exit 1
 for p23 in 2020 2021 2022; do
-  lcurl -o /dev/null -X DELETE "$API/config/loadbalancer/hosturl/$VIP/externalipaddress/$VIP/port/$p23/protocol/tcp"
-  lcurl -o /dev/null -X DELETE "$API/config/loadbalancer/externalipaddress/$VIP/port/$p23/protocol/tcp"
+  lcurl_mut -X DELETE "$API/config/loadbalancer/hosturl/$VIP/externalipaddress/$VIP/port/$p23/protocol/tcp" >/dev/null
+  lcurl_mut -X DELETE "$API/config/loadbalancer/externalipaddress/$VIP/port/$p23/protocol/tcp" >/dev/null
 done
 NRULES=$(lcurl "$API/config/loadbalancer/all" | python3 -c 'import sys,json;print(len(json.load(sys.stdin).get("lbAttr",[])))' 2>/dev/null)
 chk "DP-23 precondition: the rule table is actually empty" "0" "$NRULES"
-lcurl -o /dev/null -X POST $API/config/ai/tenant/ratelimit -H 'Content-Type: application/json' \
-  -d '{"tenant_id":"dp23-tenant","rps":100,"tokens_per_min":50000}'
+lcurl_mut -X POST $API/config/ai/tenant/ratelimit -H 'Content-Type: application/json' \
+  -d '{"tenant_id":"dp23-tenant","rps":100,"tokens_per_min":50000}' >/dev/null
 sleep 1
 W1=$(docker exec llb1 grep -c "quota configured but NO service has api_key_auth=required" /tmp/loxilb.out /tmp/loxilb.err 2>/dev/null | awk -F: '{n+=$2} END{print n+0}')
 chk "DP-23 the write is warned about, out loud" "1" "$W1"
 mk_rules
-lcurl -o /dev/null -X POST $API/config/ai/tenant/ratelimit -H 'Content-Type: application/json' \
-  -d '{"tenant_id":"dp23-tenant","rps":100,"tokens_per_min":50000}'
+lcurl_mut -X POST $API/config/ai/tenant/ratelimit -H 'Content-Type: application/json' \
+  -d '{"tenant_id":"dp23-tenant","rps":100,"tokens_per_min":50000}' >/dev/null
 sleep 1
 W2=$(docker exec llb1 grep -c "quota configured but NO service has api_key_auth=required" /tmp/loxilb.out /tmp/loxilb.err 2>/dev/null | awk -F: '{n+=$2} END{print n+0}')
 chk "DP-23 with an enforcing rule present the same write is NOT warned about" "$W1" "$W2"
@@ -663,10 +682,10 @@ R_E=$(mkkey dp4-expired '[]')
 K_EXP=$(echo "$R_E" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("raw_key",""))' 2>/dev/null)
 # Expired at create time on purpose: expiry is checked at validation, and a
 # key that was born expired is the cheapest honest way to exercise it.
-R_E2=$(lcurl -X POST $API/config/ai/apikey -H 'Content-Type: application/json' \
+R_E2=$(lcurl_mut -X POST $API/config/ai/apikey -H 'Content-Type: application/json' \
   -d '{"tenant_id":"dp4-tenant","name":"born-expired","allowed_models":[],"rate_limit_rps":200,"tokens_per_min":0,"enabled":true,"expires_at":"2020-01-01T00:00:00.000Z"}')
 K_DEAD=$(echo "$R_E2" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("raw_key",""))' 2>/dev/null)
-R_S=$(lcurl -X POST $API/config/ai/apikey -H 'Content-Type: application/json' \
+R_S=$(lcurl_mut -X POST $API/config/ai/apikey -H 'Content-Type: application/json' \
   -d '{"tenant_id":"dp6-tenant","name":"slow","allowed_models":[],"rate_limit_rps":1,"burst_size":1,"tokens_per_min":0,"enabled":true}')
 K_SLOW=$(echo "$R_S" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("raw_key",""))' 2>/dev/null)
 BODY5='{"model":"test-model","messages":[{"role":"user","content":"hi"}]}'
@@ -715,8 +734,8 @@ echo "--- DP-22: enforcement on a service that does not stream ---"
 # flag, so this service — auth without SSE — could not exist at all; a
 # datapath that quietly re-derived one from the other would serve :2022
 # keyless and never rate-limit it.
-lcurl -o /dev/null -X POST $API/config/loadbalancer -H 'Content-Type: application/json' \
-  -d "{\"serviceArguments\":{\"externalIP\":\"$VIP\",\"port\":2022,\"protocol\":\"tcp\",\"mode\":4,\"sse_mode\":false,\"api_key_auth\":\"required\",\"inactiveTimeOut\":60,\"host\":\"$VIP\"},\"endpoints\":[{\"endpointIP\":\"31.31.31.1\",\"targetPort\":8080,\"weight\":1}]}"
+lcurl_mut -X POST $API/config/loadbalancer -H 'Content-Type: application/json' \
+  -d "{\"serviceArguments\":{\"externalIP\":\"$VIP\",\"port\":2022,\"protocol\":\"tcp\",\"mode\":4,\"sse_mode\":false,\"api_key_auth\":\"required\",\"inactiveTimeOut\":60,\"host\":\"$VIP\"},\"endpoints\":[{\"endpointIP\":\"31.31.31.1\",\"targetPort\":8080,\"weight\":1}]}" >/dev/null
 sleep 3
 chk "DP-22 keyless on the non-streaming enforcing service is denied" "401" \
   "$(vip_code -X POST http://$VIP:2022/v1/chat/completions -H 'Content-Type: application/json' -d "$BODY5")"

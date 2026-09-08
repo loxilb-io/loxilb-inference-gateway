@@ -75,7 +75,7 @@ done
 # body fails validation, so nothing is created); the middleware runs before
 # auth, so the gate holds regardless of the auth flags in play.
 for i in $(seq 1 40); do
-  if ! $hexec l3h1 curl -s -m 3 -X POST http://10.10.10.254:11111/netlox/v1/config/loadbalancer -H 'Content-Type: application/json' -d '{}' | grep -q 'boot config replay settles'; then
+  if ! $hexec l3h1 curl -s -m 3 -X POST http://10.10.10.254:11111/netlox/v1/config/loadbalancer -H 'Content-Type: application/json' -d '{}' | grep -qE 'boot config replay settles|frozen while a snapshot restore is in progress'; then
     echo "  boot config settled (${i})"; break
   fi
   if [ "$i" -eq 40 ]; then

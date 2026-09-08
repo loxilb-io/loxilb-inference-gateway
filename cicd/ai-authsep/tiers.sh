@@ -55,6 +55,24 @@ lcurl() {
   fi
 }
 
+# lcurl_mut is lcurl for mutating management calls: the freeze middleware
+# answers 503 + Retry-After from two transient windows (boot config replay,
+# and the snapshot gate a write-through or restore holds — auto-persist
+# takes it about three seconds after any config mutation), and its
+# documented client behavior is to retry. Only those two exact bodies are
+# retried, bounded; every other answer returns on the first try.
+lcurl_mut() {
+  local i out
+  for i in 1 2 3 4 5 6; do
+    out=$(lcurl "$@")
+    case "$out" in
+      *"boot config replay settles"*|*"frozen while a snapshot restore is in progress"*) sleep 2 ;;
+      *) break ;;
+    esac
+  done
+  printf '%s\n' "$out"
+}
+
 MGMT_USER=tiersadmin
 MGMT_PASS='TiersAdm1n!pass'
 mgmt_login() { # mgmt_login <none|usvc|manual> — arms AUTH_HDR for lcurl
@@ -204,7 +222,7 @@ pg_ready() {
 }
 
 mkkey() { # mkkey <tenant> <name> <models-json> <rps> <burst> <tpm> → raw key
-  lcurl -X POST $API/config/ai/apikey -H 'Content-Type: application/json' \
+  lcurl_mut -X POST $API/config/ai/apikey -H 'Content-Type: application/json' \
     -d "{\"tenant_id\":\"$1\",\"name\":\"$2\",\"allowed_models\":$3,\"rate_limit_rps\":$4,\"burst_size\":$5,\"tokens_per_min\":$6,\"enabled\":true}" \
     | python3 -c 'import sys,json;print(json.load(sys.stdin).get("raw_key",""))' 2>/dev/null
 }
@@ -411,7 +429,7 @@ lcurl -o /dev/null -X PATCH "$API/config/ai/apikey/$KID_OFF" -H 'Content-Type: a
 sleep 1
 chk "C enabled=0 key"        "401 invalid_api_key" "$(probe 2020 -H "X-Api-Key: $K_OFF" -d "$BODY_OK")"
 
-K_EXPIRED=$(lcurl -X POST $API/config/ai/apikey -H 'Content-Type: application/json' \
+K_EXPIRED=$(lcurl_mut -X POST $API/config/ai/apikey -H 'Content-Type: application/json' \
   -d '{"tenant_id":"tiers-t1","name":"expired","allowed_models":[],"rate_limit_rps":500,"tokens_per_min":0,"enabled":true,"expires_at":"2020-01-01T00:00:00.000Z"}' \
   | python3 -c 'import sys,json;print(json.load(sys.stdin).get("raw_key",""))' 2>/dev/null)
 chk "C expired key"          "401 invalid_api_key" "$(probe 2020 -H "X-Api-Key: $K_EXPIRED" -d "$BODY_OK")"
