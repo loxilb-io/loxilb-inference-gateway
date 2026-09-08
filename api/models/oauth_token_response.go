@@ -12,7 +12,7 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// OauthTokenResponse oauth token response
+// OauthTokenResponse Refresh result for a still-cached access-token/refresh-token pair. A rotated refresh token is not returned by this schema, and replacement of stored credentials is not atomic. Do not describe this as a complete post-expiry refresh or refresh-token-rotation workflow.
 //
 // swagger:model OauthTokenResponse
 type OauthTokenResponse struct {

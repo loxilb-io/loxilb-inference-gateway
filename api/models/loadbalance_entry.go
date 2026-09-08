@@ -16,15 +16,15 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// LoadbalanceEntry loadbalance entry
+// LoadbalanceEntry Shared request/readback representation. POST can create or replace an existing rule; PATCH supports only the restricted L4 overlay described on its operation. Create callers must supply serviceArguments and usable endpoints. Implementation warning: the POST handler dereferences serviceArguments without a nil guard, although the shared schema permits its omission for PATCH. Configuration acceptance and GET readback do not establish runtime enforcement. See serviceArguments and endpoints for intake, update and readback gaps.
 //
 // swagger:model LoadbalanceEntry
 type LoadbalanceEntry struct {
 
-	// values of allowed source IP
+	// Source-address prefixes associated with the LB source-check path. A nonempty domain list enables source checking; GET returns the stored prefixes. This is an address filter, not projectId-based tenant authorization.
 	AllowedSources []*LoadbalanceEntryAllowedSourcesItems0 `json:"allowedSources"`
 
-	// values of End point servers
+	// Backend members; the domain accepts 1 through 32 input members. Creation sorts members by IP and updates reconcile existing slots, so input-array order is not a stable L7 backend-reference identity. Implementation warnings: POST/PATCH do not copy httpMethod, urlPath, expectedCodes, httpVersion or domainName into LB members, and GET does not return them. Their presence in this schema does not configure an HTTP monitor. Existing-member reconciliation updates weight but does not copy backup, subnetId or monitorAddress, so their create-time storage does not establish update support. Weight and port narrowing lack original-value range validation. state and counter are derived output and are ignored as configuration input.
 	Endpoints []*LoadbalanceEntryEndpointsItems0 `json:"endpoints"`
 
 	// aggregate DOCA hardware byte count for this LB service (omitempty). Generated Go field HwBytes (camelCase alias hwBytes).
@@ -36,10 +36,10 @@ type LoadbalanceEntry struct {
 	// aggregate DOCA HW offload state for this LB service ("none", "hw"), derived from the dominant CT offload state across active flows. Absent when no DOCA plugin is active (omitempty). Generated Go field OffloadState (camelCase alias offloadState).
 	OffloadState string `json:"offload_state,omitempty"`
 
-	// values of Secondary IPs
+	// Flat SCTP secondary service addresses. The POST handler copies this list only for SCTP; the domain permits at most three, validates addresses and rejects IPv6 secondary addresses on an IPv4 service. Existing-rule changes to the flat list are rejected. Unlike secondaryVIPs, this list reaches the SCTP dataplane and the BGP advertisement hook when enabled.
 	SecondaryIPs []*LoadbalanceEntrySecondaryIPsItems0 `json:"secondaryIPs"`
 
-	// Structured secondary VIPs (Octavia additional_vips). Additive ALONGSIDE the flat secondaryIPs (kept unchanged). Stored and round-tripped for all protocols; only SCTP consumes them at the dataplane. All fields opaque.
+	// Opaque additional-VIP metadata stored and returned for all protocols, separately from secondaryIPs. Implementation gap: this collection does not feed additional addresses to SCTP or another dataplane, nor to the BGP advertisement hook. It must not be presented as active additional VIPs. Storage is uncapped here; metadata-only update handling has the shared serviceArguments limitation. Whether these addresses should become active remains a policy/implementation decision.
 	SecondaryVIPs []*LoadbalanceEntrySecondaryVIPsItems0 `json:"secondaryVIPs"`
 
 	// service arguments
@@ -348,7 +348,7 @@ func (m *LoadbalanceEntry) UnmarshalBinary(b []byte) error {
 // swagger:model LoadbalanceEntryAllowedSourcesItems0
 type LoadbalanceEntryAllowedSourcesItems0 struct {
 
-	// IP address for allowed source access
+	// Source IP prefix in CIDR notation, validated when the domain creates the source-prefix association.
 	Prefix string `json:"prefix,omitempty"`
 }
 
@@ -385,16 +385,16 @@ func (m *LoadbalanceEntryAllowedSourcesItems0) UnmarshalBinary(b []byte) error {
 // swagger:model LoadbalanceEntryEndpointsItems0
 type LoadbalanceEntryEndpointsItems0 struct {
 
-	// Octavia standby member flag. A backup endpoint carries traffic only when all primaries are unavailable. Absent/false = primary (today's behavior).
+	// Standby member marker. The selection builder enables an available backup only when no primary is available; zero-weight or unhealthy primaries are unavailable. False means primary. This is create-time selection wiring, subject to the existing-member update gap documented on endpoints.
 	Backup *bool `json:"backup,omitempty"`
 
-	// traffic counters of the endpoint
+	// Derived endpoint packet and byte counters formatted as packets:bytes. Not applied from POST/PATCH input.
 	Counter string `json:"counter,omitempty"`
 
-	// doubles as TLS SNI for HTTPS monitors AND the Host header. Optional/additive.
+	// Requested monitor TLS SNI/HTTP Host name. This LoadbalanceEntry field is not wired; setting it here does not configure either value.
 	DomainName string `json:"domainName,omitempty"`
 
-	// IP address for external access
+	// Backend traffic IP address, validated by the domain. An IPv6 member is rejected for an IPv4 service. monitorAddress changes the probe destination only.
 	// Required: true
 	EndpointIP *string `json:"endpointIP"`
 
@@ -402,16 +402,16 @@ type LoadbalanceEntryEndpointsItems0 struct {
 	// Enum: [0 1 2]
 	EpRole int32 `json:"ep_role,omitempty"`
 
-	// Octavia expected_codes — single "200", list "200,202", or range "200-204". Optional/additive — empty defaults to "200".
+	// Requested HTTP status-code selection, expressed as a single code, comma-separated list or range. This LoadbalanceEntry field is not wired into monitoring; these forms describe intent, not effective LB monitor configuration.
 	ExpectedCodes string `json:"expectedCodes,omitempty"`
 
-	// HTTP(S) health-monitor method (e.g. GET, HEAD). Optional/additive — empty defaults to GET. Control-plane only (probeReq/probeResp retained as the escape hatch).
+	// Requested HTTP monitor method, for example GET or HEAD. This LoadbalanceEntry field is not wired; see the endpoints implementation warning.
 	HTTPMethod string `json:"httpMethod,omitempty"`
 
-	// HM HTTP version "1.0" or "1.1". When "1.1" a Host header is sent (domainName, else the member address). Optional/additive.
+	// Requested HTTP monitor version, such as 1.0 or 1.1. This LoadbalanceEntry field is not wired and does not establish a monitor HTTP version or Host-header behavior.
 	HTTPVersion string `json:"httpVersion,omitempty"`
 
-	// Octavia per-member health-probe address. When set, the health probe targets this address instead of the traffic IP; absent = probe the traffic IP.
+	// Probe destination address override, using the service-wide probe port. Empty probes the member traffic IP; backend traffic still uses endpointIP. Existing-member updates have the reconciliation gap documented on endpoints.
 	MonitorAddress string `json:"monitorAddress,omitempty"`
 
 	// NIXL side-channel port for KV cache transfer. 0=use targetPort (backward compatible). Only meaningful when pd_disagg_mode is true.
@@ -419,20 +419,20 @@ type LoadbalanceEntryEndpointsItems0 struct {
 	// Minimum: 0
 	NixlPort int32 `json:"nixl_port,omitempty"`
 
-	// state of the endpoint
+	// Derived member status on GET, such as active or inactive. Not applied from POST/PATCH input and not an independent proof of backend readiness.
 	State string `json:"state,omitempty"`
 
-	// Octavia member subnet identifier. Opaque store-verbatim round-trip field; not interpreted (no routing effect this phase).
+	// Opaque subnet metadata stored for a new member and returned on GET; it has no routing effect. Existing-member updates have the reconciliation gap documented on endpoints.
 	SubnetID string `json:"subnetId,omitempty"`
 
-	// port number for access service
+	// Backend traffic port. ICMP requires zero; DSR requires the service port. The handler narrows to uint16 without checking the original range, so clients must avoid values outside 0 through 65535.
 	// Required: true
 	TargetPort *int64 `json:"targetPort"`
 
-	// HM request path (e.g. /healthz). Optional/additive — empty falls back to probeReq or "/".
+	// Requested HTTP monitor path, for example /healthz. This LoadbalanceEntry field is not wired; its presence does not override the service-level probereq path.
 	URLPath string `json:"urlPath,omitempty"`
 
-	// Weight for the load balancing
+	// Member selection weight; zero marks the member unavailable for new selection while retaining membership. Interpretation depends on the selector. Implementation gap - the handler narrows to uint8 without rejecting negative or oversized input; use values within 0 through 255 without relying on wrapping.
 	// Required: true
 	Weight *int64 `json:"weight"`
 }
@@ -608,7 +608,7 @@ func (m *LoadbalanceEntrySecondaryIPsItems0) UnmarshalBinary(b []byte) error {
 // swagger:model LoadbalanceEntrySecondaryVIPsItems0
 type LoadbalanceEntrySecondaryVIPsItems0 struct {
 
-	// secondary VIP address
+	// Opaque address metadata; does not create or advertise an active VIP through this collection.
 	Address string `json:"address,omitempty"`
 
 	// opaque Octavia port identifier for this VIP (round-trip only)
@@ -649,107 +649,107 @@ func (m *LoadbalanceEntrySecondaryVIPsItems0) UnmarshalBinary(b []byte) error {
 	return nil
 }
 
-// LoadbalanceEntryServiceArguments loadbalance entry service arguments
+// LoadbalanceEntryServiceArguments Service configuration. Implementation warnings for this REST representation: POST does not copy adminStateUp, connectionLimit or snat into the domain. GET omits privateIP, connectionLimit, timeoutMemberConnect, timeoutMemberData, timeoutTcpInspect, vip_qos_policy_id, alpn_protocols, tls_ciphers, tls_versions, hsts_max_age, hsts_include_subdomains, hsts_preload, backend_ca_cert_id, backend_client_cert_id and mtls_frontend.client_crl_path. GET/edit/POST is therefore not a lossless configuration round trip. PATCH has a limited overlay and does not update arbitrary properties. Metadata-only POSTs can return an unchanged-rule error before applying metadata; managed is not assigned on the existing-rule update path. FullProxy replacement removes its pool but C retains the listener; reuse does not reliably restore listener arguments or rebuild TLS contexts, so updated TLS/HSTS/timeout settings are not established by stored state. Requested-security fail-closed behavior and LB-resource/listener policy ownership remain unresolved; these defects are not supported fallback or update semantics.
 //
 // swagger:model LoadbalanceEntryServiceArguments
 type LoadbalanceEntryServiceArguments struct {
 
-	// Octavia admin_state_up lifecycle flag. Absent/true = enabled; false = paused.
+	// Service lifecycle flag. In the domain, absent/true enables new selection and false pauses new selection while retaining members. Implementation gap: POST drops this property, so false does not create a paused rule. The restricted L4 PATCH path handles explicit changes and GET reports effective state. Source behavior does not prove established-connection preservation.
 	AdminStateUp bool `json:"adminStateUp,omitempty"`
 
-	// Octavia alpn_protocols list (e.g. ["h2","http/1.1"]). Mapped to the existing backend_protocol_cap enum ([h2,http/1.1]=2, [h2]=1, [http/1.1]=0). Advertised on listener + pool. Optional/additive — empty preserves the backendProtocol-driven value.
+	// HTTP ALPN capability list, typically [h2, http/1.1], [h2] or [http/1.1]. Recognized values override backend_protocol through a shared capability used by listener and backend TLS setup; list order is not preserved as preference order. Empty leaves backend_protocol in use. Implementation limitations: unknown tokens are ignored, an entirely unrecognized list falls back to backend_protocol, and the H1/both listener callback can select H1 without a common advertised protocol. This is not strict ALPN allow-list enforcement. See shared readback/update warnings.
 	AlpnProtocols []string `json:"alpn_protocols"`
 
-	// Opaque key/value map round-tripping octaviaProtocol and any future Octavia field verbatim. Store-as-given, return-as-stored; never interpreted.
+	// Opaque metadata, not interpreted as configuration. Implementation limitation: storage retains only the first 32 keys in sorted order and truncates values to at most 256 bytes without splitting UTF-8. Oversized input is therefore not stored verbatim. See the shared metadata-update warning; these lossy bounds are not admission guarantees.
 	Annotations map[string]string `json:"annotations,omitempty"`
 
 	// Data-plane X-Api-Key enforcement declaration for this service. Three states, and omission is one of them. OMITTED declares nothing: the service is not marked AI-facing, proxying stays byte-identical, and a backend-owned X-Api-Key header passes through untouched. An explicit "disabled" declares the service AI-facing without enforcement: no key is validated, but X-Api-Key is the gateway's credential namespace and the header is stripped before dispatch. "required" makes the data plane validate the X-Api-Key header against the API-key store before the request reaches a backend, fails closed when the policy cannot be evaluated, and likewise strips the header. Reading a service back preserves the declaration exactly: an omitted policy reads back with this field absent, never resolved to a value. On a replace of an existing service, omitting this field leaves the declared policy unchanged — it never silently turns enforcement off; to clear a declared policy, send "disabled" explicitly. Independent of sse_mode and pd_disagg_mode, and independent of the management-plane authentication mode.
 	// Enum: [disabled required]
 	APIKeyAuth string `json:"api_key_auth,omitempty"`
 
-	// (16) certId of the backend re-encryption CA bundle (resolved by the certId registry to the managed-dir ca.crt at backend SSL_CTX build). Optional/additive — empty = system default.
+	// Reference used by the backend TLS material resolver for a managed CA bundle. It does not enable verification by itself; mtls_backend has missing verification-flag wiring. The C copy limits IDs to 63 bytes without admission rejection. Missing material can resolve to an empty path and select system CA paths if verification is otherwise enabled. Requested-security fail-closed semantics and material precedence are unresolved; this fallback is not an authenticated-backend guarantee.
 	BackendCaCertID string `json:"backend_ca_cert_id,omitempty"`
 
-	// (16) certId of loxilb's backend client cert+key. Optional/additive — empty = no backend client cert (today's behaviour).
+	// Reference for backend client certificate/key material. The resolver consults this ID when it did not obtain client material from the CA-ID directory. Missing material can leave no client certificate; the ID alone does not establish mTLS or server verification. IDs are copied into 63-byte payload capacity without admission rejection. Strict missing-material handling and precedence remain unresolved.
 	BackendClientCertID string `json:"backend_client_cert_id,omitempty"`
 
 	// Sets SO_KEEPALIVE + TCP_KEEPIDLE on backend socket in seconds. Keeps TCP CT entries alive through cloud NAT during long SSE streams. 0 = disabled. Recommended value 60 for most cloud environments.
 	// Minimum: 0
 	BackendKeepaliveIntervalSec int32 `json:"backend_keepalive_interval_sec,omitempty"`
 
-	// Backend protocol capability for ALPN negotiation - http1 (HTTP/1.1 only, safest default), http2 (HTTP/2 only), both (supports both HTTP/1.1 and HTTP/2)
+	// FullProxy HTTP capability - http1 selects HTTP/1.1, http2 selects HTTP/2, and both prefers HTTP/2 with HTTP/1.1 fallback. The capability is shared by listener/backend ALPN configuration; recognized alpn_protocols values override it. GET reports this field only for FullProxy.
 	// Enum: [http1 http2 both]
 	BackendProtocol *string `json:"backend_protocol,omitempty"`
 
-	// value for BGP enable or not
+	// Requests BGP advertisement of the service and flat secondary IPs after a successful add when the BGP component is available. This flag alone does not establish a BGP session or route advertisement; structured secondaryVIPs are not advertised by this hook.
 	Bgp bool `json:"bgp,omitempty"`
 
-	// block-number if any of this LB entry
+	// Rule block identifier included in the LB key. VIP/port/protocol alone may therefore identify more than one logical rule; it is not sufficient to establish L7 policy ownership.
 	Block uint32 `json:"block,omitempty"`
 
-	// Enable the per-endpoint circuit breaker for full-proxy rules. After 5 consecutive backend connect failures an endpoint is skipped by all selection paths until a 30s open-timeout expires and a half-open probe succeeds. Complements the liveness probe (probetype) - the breaker reacts within one failed request, the probe within one probe interval.
+	// Enable the per-endpoint circuit breaker for full-proxy rules. Five consecutive backend connect failures open the breaker; an open endpoint is excluded from selection. Recovery uses a 30-second open interval followed by half-open probing. This is independent of the configured health monitor (probetype); one failed request does not by itself meet the opening threshold.
 	CbEnable bool `json:"cb_enable,omitempty"`
 
-	// Require cache_salt field in requests for CHWBL/WRR_HASH (sel=8 or sel=10) - enforces strict multi-tenant isolation. If false, cache_salt is optional. Only used when sel=8 or sel=10
+	// Intended request cache_salt requirement for sel=8/10. Known implementation gap: this declaration is not wired to active C configuration, which initializes the option disabled. It does not currently enforce salt presence or tenant isolation. Retained for implementation. A client-supplied hash salt is not itself an authenticated tenant-isolation boundary; identity binding and missing-salt behavior need an explicit security contract.
 	ChwblEnableCacheSalt *bool `json:"chwbl_enable_cache_salt,omitempty"`
 
-	// Maximum load factor percentage for CHWBL/WRR_HASH (sel=8 or sel=10) - max_load = avg_load × factor / 100. Range 100-300, default 125 (allows 25% overload). Only used when sel=8 or sel=10
+	// Intended bounded-load factor in percent for sel=8/10, with a nominal bound of average load multiplied by factor/100. The schema declares 125, but current C initialization uses 175 and does not consume this API override. Do not interpret a returned value as the effective bound. The option is retained; the final default and complete configuration propagation require reconciliation.
 	// Maximum: 300
 	// Minimum: 100
 	ChwblMeanLoadFactor int64 `json:"chwbl_mean_load_factor,omitempty"`
 
-	// Optional field inclusion flags for CHWBL/WRR_HASH (sel=8 or sel=10) - Bit 0=LoRA, Bit 1=image, Bit 2=audio, Bit 3=cache_salt, Bit 4=tools, Bit 5=session, Bit 6=RAG template, Bit 7=RAG docs. 0=auto-detect. Only used when sel=8 or sel=10
+	// Intended optional hash-input flags for sel=8/10: bits 0..7 name LoRA, image, audio, cache_salt, tools, session, RAG template, and RAG documents respectively; 0 declares automatic selection. Known implementation gap: API declarations are stored but are not propagated into the active C configuration, which initializes this field to 0. Per-bit behavior is not an implemented API guarantee. Retained for implementation and behavior verification.
 	// Maximum: 255
 	// Minimum: 0
 	ChwblPrefixHashFlags *int64 `json:"chwbl_prefix_hash_flags,omitempty"`
 
-	// Prefix hash level for CHWBL/WRR_HASH modes (sel=8 or sel=10) - 1=Level1 only (system prompt+model), 2=Level1+Level2 (session context), 3=Level1+Level2+Level3 (RAG). Only used when sel=8 or sel=10. Optional - defaults to 1 for backward compatibility
+	// Intended prefix level for sel=8 (CHWBL) or sel=10 (WRR_HASH), both requiring mode=4: 1=system prompt/model, 2=also session context, 3=also RAG context. Known wiring limitation: the declaration is forwarded to the C configuration for sel=8, but not for sel=10. The WRR_HASH path therefore uses its internal level-1 default. Readback of an explicit value does not prove it affects routing. The option is retained; complete propagation and parser behavior verification are required before claiming all levels are qualified.
 	// Enum: [1 2 3]
 	ChwblPrefixHashLevel *int64 `json:"chwbl_prefix_hash_level,omitempty"`
 
-	// Virtual nodes per physical endpoint for CHWBL/WRR_HASH (sel=8 or sel=10) - higher values improve distribution but use more memory. Range 1-1024, default 100. For WRR_HASH, this is the total vnode count distributed proportionally by weight. Only used when sel=8 or sel=10
+	// Intended hash-ring replication setting for sel=8/10. CHWBL uses virtual nodes per endpoint; WRR_HASH distributes a ring budget by endpoint weight. The schema declares 100, but current C setup uses 256 and does not consume this API override. Retained for implementation; default, weight interaction, allocation limits, and live ring-rebuild behavior must be reconciled before the UI treats this as an effective tuning control.
 	// Maximum: 1024
 	// Minimum: 1
 	ChwblReplication int64 `json:"chwbl_replication,omitempty"`
 
-	// Octavia per-service concurrent-connection ceiling. Per-rule max simultaneous connections across all endpoints. 0/absent = unlimited (legacy). eBPF-CT enforced (SYN refused at sel=-1 -> pm.nf=0 when live count >= limit). DISTINCT from the SecurityRateConfig per-SOURCE-IP concurrentLimit (P0-6); not per-EP.
+	// Requested concurrent-connection ceiling across the service's endpoints; zero represents unlimited. Distinct from a per-source-IP security limit. The domain and eBPF conntrack selector contain a per-rule limit gate, but this REST POST does not copy the value, PATCH does not overlay it, and normal GET omits it. This field cannot currently establish an enforced connection limit through these REST operations.
 	ConnectionLimit uint32 `json:"connectionLimit,omitempty"`
 
-	// flag to indicate an egress rule
+	// Marks an egress rule. The ordinary LB2DP programming path returns early for this marker; do not infer ordinary ingress FullProxy behavior. The existing-rule path rejects changes to this flag.
 	Egress bool `json:"egress,omitempty"`
 
-	// IP address for external access
+	// External service IP used in the LB rule key. The domain validates the address. Create callers must provide it; shared PATCH-compatible schema optionality does not make an omitted create address usable.
 	ExternalIP *string `json:"externalIP,omitempty"`
 
-	// Ingress specific host URL path
+	// Host routing key for the proxy pool, distinct from path_prefix. It participates in the LB rule key, but L7 policy attachment is currently keyed only by listener VIP/port/protocol. The server accepts at most 255 UTF-8 bytes and rejects embedded NUL or invalid UTF-8 before changing rule state. This byte limit reserves the terminator in the 256-byte data-plane field; UI validation must count encoded bytes rather than characters. Together with path_prefix and model_name, the conditional host, host|path, host||model or host|path|model key must not exceed 511 UTF-8 bytes including separators.
 	Host string `json:"host,omitempty"`
 
-	// append "; includeSubDomains" to the HSTS header. Only meaningful when hsts_max_age > 0.
+	// Appends includeSubDomains to the generated HSTS value when hsts_max_age is nonzero and the HTTPS/L7 injection path is active.
 	HstsIncludeSubdomains bool `json:"hsts_include_subdomains,omitempty"`
 
-	// Strict-Transport-Security max-age (seconds). The data plane synthesizes the header and injects it on HTTPS listeners only (L7-gated). Optional/additive — 0/absent = no HSTS injection.
+	// HSTS max-age in seconds, injected on qualifying HTTPS responses when an L7 policy is attached and this value is nonzero. Zero disables injection; it does not emit max-age=0 to clear a browser policy. See shared listener lifecycle and readback gaps.
 	HstsMaxAge uint32 `json:"hsts_max_age,omitempty"`
 
-	// append "; preload" to the HSTS header. Only meaningful when hsts_max_age > 0.
+	// Appends preload to the generated HSTS value when hsts_max_age is nonzero and the HTTPS/L7 injection path is active. It does not register the domain in a browser preload list.
 	HstsPreload bool `json:"hsts_preload,omitempty"`
 
-	// Stable opaque identifier for the LB rule (Octavia). Client-supplied verbatim or minted (UUIDv4) when absent.
+	// Opaque LB identifier, supplied by the client or minted as UUIDv4 when absent. Collisions with another rule are rejected. The update path can replace an ID when another change is applied; do not assume immutable identity or automatic L7 reference migration.
 	ID string `json:"id,omitempty"`
 
-	// value for inactivity timeout (in seconds)
+	// Inactivity timeout in seconds. The domain rejects values above 86400; zero resolves to 240 for TCP/SCTP and 20 for other protocols. On an attached L7 policy, a nonzero timeoutMemberData overrides the relay idle deadline.
 	InactiveTimeOut int32 `json:"inactiveTimeOut,omitempty"`
 
-	// Token block size for KV hash computation. Must match the engine's block granularity - vLLM --block-size, SGLang --page-size, TRT-LLM tokens_per_block (whose engine default is 32, NOT this field's 16). A mismatch makes every hash miss.
+	// Token block size for KV hashing. Omission or 0 resolves to 16 in the current implementation; choose the value from the deployed engine tuple, not from the schema default. Must match vLLM block-size, SGLang page-size, or TRT-LLM tokens_per_block. A mismatch can cause hash misses; TRT-LLM server-info validation can instead refuse the endpoint's KV event poller while plain load balancing remains available. Implementation limitation: the schema's uint32 ceiling is not a safe operational range; downstream hashing converts the size to signed int. Use only a qualified engine block size until the numeric contract and C arithmetic are hardened. API acceptance is not geometry validation.
 	// Maximum: 4.294967295e+09
 	// Minimum: 1
 	KvBlockSize int64 `json:"kvBlockSize,omitempty"`
 
-	// SGLang data-parallel rank count. Rank N publishes KV events at kvZmqPort+N; all ranks union into one per-EP inventory.
+	// SGLang event-publisher rank count, not the number of LB endpoints. Omission or 0 resolves to 1; accepted positive values are 1..8. Values above 1 require kvEngineType=sglang. Rank N uses kvZmqPort+N for N=0..count-1; after resolving defaults the highest port must be at most 65535. Inventories are unioned per endpoint. Fan-out support does not by itself qualify every engine/model/DP deployment.
 	// Maximum: 8
 	// Minimum: 1
 	KvDpRankCount int32 `json:"kvDpRankCount,omitempty"`
 
-	// KV-event engine behind this rule. One framework per load-balancer Rule — different rules (ports) on one VIP IP MAY run different engines (accepted multi-framework coexistence, warned at create); immutable after create (delete+recreate to change). Drives hash-algo default: sglang => sha256_sglang, trtllm => blockhash_trtllm. trtllm supports plain LB, kvExactMode=3 (single-role Tier 1.5 over HTTP-polled KV events on each endpoint's own serving port — the gateway must be the SOLE consumer of /kv_cache_events per endpoint) and pd_disagg_mode with kvExactMode=1 (sequential P/D dialect); kvZmqPort/kvDpRankCount are meaningless for it (rejected when set — no ZMQ, no client-visible DP ranks). llamacpp supports plain LB with CHWBL/session affinity ONLY — the engine has no KV event plane and no P/D disaggregation, so kvExactMode, pd_disagg_mode, kvHashAlgo and non-default kvZmqPort/kvDpRankCount/kvBlockSize are all rejected. NOTE: LOXILB_KV_* env knobs (unified mode, eps/lambda, cap-sum, max-blocks) are process-global and shared across all KV VIPs (accepted limitation).
+	// Serving-engine family for this rule; omission resolves to vllm. One family per rule, immutable after creation (delete/recreate to change); omitted and explicit vllm are equivalent for this guard. Different ports on one VIP may use different families. The family derives kvHashAlgo but does not discover backend serve arguments. vllm and sglang use ZMQ KV events; only sglang permits rank fan-out above one. trtllm supports plain LB, exact mode 3, and P/D with exact mode 1 using HTTP-polled events on endpoint targetPort. The Gateway must be the sole consumer of each endpoint's drain-on-read /kv_cache_events resource. For trtllm, kvZmqPort accepts only omitted/0/5557 and kvDpRankCount accepts only omitted/0/1; these default declarations have no transport effect. llamacpp has no Gateway KV-event or P/D path: nonzero kvExactMode, enabled pd_disagg_mode, explicit kvHashAlgo, and non-default ZMQ/rank/block settings are rejected. Plain-LB selector constraints still apply. Process-level LOXILB_KV_* tuning is shared across KV rules, not isolated by this field. Engine-family acceptance is not model, tokenizer, template, or engine-version qualification.
 	// Enum: [vllm sglang trtllm llamacpp]
 	KvEngineType string `json:"kvEngineType,omitempty"`
 
@@ -757,43 +757,43 @@ type LoadbalanceEntryServiceArguments struct {
 	// Enum: [completions chat both]
 	KvExactAPIMode string `json:"kvExactApiMode,omitempty"`
 
-	// KV-cache exact (Tier 1.5) routing mode. Selects the ENDPOINT TOPOLOGY only — the serving framework is chosen independently by kvEngineType, and engine support for each mode is bounded by the per-engine capability matrix in the kvEngineType description (NOT every mode works with every engine). 0 = off. 1 = zmq over a P/D role-partitioned pool: requires pd_disagg_mode=true (rejected otherwise) and endpoints tagged ep_role 1/2; only ep_role=1 (prefill) endpoints are subscribed and scored, and Tier 1.5 sits between Tier 1 (trie) and Tier 2 (min-load) in the P/D ladder. 2 = nats (reserved, not implemented). 3 = zmq single-role over a role-less pool: requires mode=4 (fullproxy) and pd_disagg_mode=false (both rejected otherwise); ALL endpoints are subscribed and scored. Mode 3 does NOT reproduce the P/D ladder — there is no Tier-0 session stickiness, no Tier-1 trie and no admission gate on this path; a Tier-1.5 miss falls back to the rule's own sel selector (CHWBL/RR/persist).
+	// KV-cache exact (Tier 1.5) routing mode. Selects the ENDPOINT TOPOLOGY only — the serving framework is chosen independently by kvEngineType, and engine support for each mode is bounded by the per-engine capability matrix in the kvEngineType description (NOT every mode works with every engine). 0 = off. 1 = exact routing over a P/D role-partitioned pool: requires pd_disagg_mode=true (rejected otherwise) and endpoints tagged ep_role 1/2; only ep_role=1 (prefill) endpoints are subscribed and scored, and Tier 1.5 sits between Tier 1 (trie) and Tier 2 (min-load) in the P/D ladder. 2 = reserved and rejected; no NATS implementation is available. 3 = single-pool exact routing: requires mode=4 (fullproxy) and pd_disagg_mode=false (both rejected otherwise); ALL endpoints are subscribed and scored. Mode 3 does NOT reproduce the P/D ladder — there is no Tier-0 P/D session-affinity stage, no Tier-1 P/D trie and no P/D backpressure admission stage on this path; management admission and strict binding enforcement still apply. A Tier-1.5 miss falls back to the rule's own sel selector. vllm/sglang consume ZMQ events; trtllm consumes HTTP-polled events. All enabled exact modes require model_name and a loadable tokenizer. Profile/API-surface constraints apply independently; see kvModelProfile and kvExactApiMode.
 	// Maximum: 3
 	// Minimum: 0
 	KvExactMode int64 `json:"kvExactMode,omitempty"`
 
-	// Block-hash contract used to match the prompt against the engine-published KV inventory. PREFER OMITTING THIS FIELD — when absent, the contract is derived from kvEngineType (vllm => sha256_cbor, sglang => sha256_sglang, trtllm => blockhash_trtllm), which is always the coherent choice. An explicit value overrides that default and MUST match the engine, or every computed hash misses and Tier 1.5 is silently dead; incoherent pairs are therefore rejected at config time. vLLM engines: "sha256_cbor" (must equal --prefix-caching-hash-algo) or "xxhash_cbor". SGLang engines: "sha256_sglang" only — SGLang hashes parent||tokens raw (no CBOR, no NONE seed) and truncates to the FIRST 8 digest bytes, where vLLM CBOR-encodes and truncates to the LAST 8. TRT-LLM engines: "blockhash_trtllm" only — the same raw chained-SHA256 contract applied on both sides by the gateway itself (requests and the token lists carried in stored KV events); the engine's own unversioned uint64 mixing hash is never used as a routing key.
+	// Block-hash contract used to match the prompt against the engine-published KV inventory. PREFER OMITTING THIS FIELD — when absent, the contract is derived from kvEngineType (vllm => sha256_cbor, sglang => sha256_sglang, trtllm => blockhash_trtllm). These are Gateway defaults, not discovery of the backend's actual hash settings. An explicit value overrides that default and MUST match the engine, or every computed hash misses and Tier 1.5 is silently dead; incoherent pairs are therefore rejected at config time. vLLM engines: "sha256_cbor" (must equal --prefix-caching-hash-algo) or "xxhash_cbor". SGLang engines: "sha256_sglang" only — SGLang hashes parent||tokens raw (no CBOR, no NONE seed) and truncates to the FIRST 8 digest bytes, where vLLM CBOR-encodes and truncates to the LAST 8. TRT-LLM engines: "blockhash_trtllm" only — the same raw chained-SHA256 contract applied on both sides by the gateway itself (requests and the token lists carried in stored KV events); the engine's own unversioned uint64 mixing hash is never used as a routing key. For vLLM Exact routing, Gateway admission also requires a non-empty LLB_KV_NONE_HASH_SEED of at most 23 bytes; deployment must ensure it matches the engine PYTHONHASHSEED. Tokenizer, template, and block geometry must agree independently of this enum.
 	// Enum: [sha256_cbor xxhash_cbor sha256_sglang blockhash_trtllm]
 	KvHashAlgo string `json:"kvHashAlgo,omitempty"`
 
-	// ID of the ModelPromptProfile this rule binds to. Naming a profile makes the rule STRICT: the profile must be published in the gateway's profile registry, its alias policy must admit the rule's model_name, its pinned tokenizer artifacts must load and digest-match, and a composed KV-exact binding (model-profile@generation + engine-contract@generation) is allocated at create time — admission fails closed while no engine-contract registry is available. Absent = legacy profile-less rule (no binding; documented migration behavior). Immutable after create (delete+recreate to change), with ONE sanctioned exception: the migration attach. A replace-POST that names a profile on a live profile-less rule is admitted and re-runs the full strict bring-up (admission checks run BEFORE any mutation, so a refused attach leaves the rule, binding, and data plane untouched; enforcement reports pending until the data-plane contract installs and is acknowledged). The reverse transitions — dropping the profile or changing it to another — stay refused, as does any kvExactApiMode change during the attach (raw-string equality; an undeclared apiMode must stay undeclared in the attach POST). CAVEAT operators must be shown: attaching changes the rule's EFFECTIVE surface from the legacy both-surfaces default to the profile's declared supportedApis — attaching a completions-only profile to a rule that was serving chat traffic narrows the served surface. Scalar by schema — exactly one profile per rule; arrays are rejected representations.
+	// ID of the ModelPromptProfile this rule binds to. Naming a profile makes the rule STRICT: the profile must be published in the gateway's profile registry, its alias policy must admit the rule's model_name, its pinned tokenizer artifacts must load and digest-match, and a composed KV-exact binding (model-profile@generation + engine-contract@generation) is allocated at create time — admission fails closed while no engine-contract registry is available. Absent = legacy profile-less rule (no binding; documented migration behavior). Immutable after create (delete+recreate to change), with ONE sanctioned exception: the migration attach. A replace-POST that names a profile on a live profile-less rule is admitted and re-runs the full strict bring-up (admission checks run BEFORE any mutation, so a refused attach leaves the rule, binding, and data plane untouched; enforcement reports pending until the data-plane contract installs and is acknowledged). The reverse transitions — dropping the profile or changing it to another — stay refused, as does any kvExactApiMode change during the attach (raw-string equality; an undeclared apiMode must stay undeclared in the attach POST). CAVEAT operators must be shown: attaching changes the rule's EFFECTIVE surface from the legacy both-surfaces default to the profile's declared supportedApis — attaching a completions-only profile to a rule that was serving chat traffic narrows the served surface. Scalar by schema — exactly one profile per rule; arrays are rejected representations. Requires kvExactMode=1 or 3; a profile declaration with Exact disabled is rejected. Snapshot restore has a separate recovery contract: it may preserve an unresolved profile declaration while fencing Exact routing; consult kvexactstatus rather than treating restored storage as a successful fresh admission.
 	KvModelProfile string `json:"kvModelProfile,omitempty"`
 
-	// Seconds to wait after ZMQ subscriber connects before activating Tier 1.5 routing. Allows inventory to populate.
+	// Intended Tier-1.5 inventory warm-up duration in seconds. Known implementation gap: the runtime guard needs kv_warmup_start, but the production connection lifecycle does not set that start timestamp. A positive declaration currently does not provide a working warm-up barrier, and the schema default 30 must not be interpreted as an effective startup delay. The feature is retained for implementation; connect/reconnect, per-rank, and HTTP-poller start conditions require an explicit lifecycle contract. Do not rely on this option as a readiness or admission guarantee.
 	// Maximum: 4.294967295e+09
 	// Minimum: 0
 	KvWarmupSec int64 `json:"kvWarmupSec,omitempty"`
 
-	// Base ZMQ PUB socket port on the endpoints publishing KV-cache events. Which endpoints are subscribed depends on kvExactMode - mode 1 subscribes ep_role=1 (prefill) endpoints only, mode 3 subscribes every endpoint. With kvDpRankCount > 1, data-parallel rank N is subscribed at kvZmqPort+N.
+	// Base ZMQ event port for vllm/sglang exact routing. Omission or 0 resolves to 5557 in the current implementation. Mode 1 subscribes prefill endpoints only; mode 3 subscribes all endpoints. SGLang rank N uses base+N for N=0..kvDpRankCount-1; the effective base plus effective rank count minus one must not exceed 65535. trtllm uses HTTP on targetPort instead: only omitted/0/default 5557 declarations are accepted there, and no ZMQ connection is made.
 	// Maximum: 65535
 	// Minimum: 1
 	KvZmqPort int64 `json:"kvZmqPort,omitempty"`
 
-	// externally managed rule or not
+	// Externally managed rule marker stored at creation. Implementation gap - the existing-rule path does not assign a new value, so create support does not establish update support.
 	Managed bool `json:"managed,omitempty"`
 
-	// Absolute wall-clock cap for SSE streams in seconds. 0 = use system hard cap (86400s / 24h). Set to a lower value (e.g. 300) to bound runaway streams.
+	// Duration limit for an active detected SSE response, in seconds. Omission or 0 uses the system cap of 86400 seconds; a positive value uses min(value, 86400). The periodic timeout walk terminates a stream when tracked elapsed time reaches the effective cap. QoS parking currently advances the stream start anchor to exclude parked time, so this is not a strict end-to-end wall-clock SLA. This limit is distinct from backend keepalive, connection idle timeout, and P/D session-affinity TTL.
 	// Minimum: 0
 	MaxStreamDurationSec int32 `json:"max_stream_duration_sec,omitempty"`
 
-	// value for NAT mode (0-DNAT,1-onearm, 2-fullnat, 3-dsr, 4-fullproxy, 5-hostonearm, 0-default)
+	// NAT/proxy mode (0=DNAT, 1=one-arm, 2=FullNAT, 3=DSR, 4=FullProxy, 5=host one-arm). Zero selects DNAT. DSR requires hash selection and endpoint ports equal to the service port. Host one-arm requires an unspecified VIP. FullProxy is the userspace proxy path; PATCH rejects it, and POST replacement has the listener-state limitations documented on serviceArguments.
 	// Enum: [0 1 2 3 4 5]
 	Mode int32 `json:"mode,omitempty"`
 
-	// LB endpoint pool selection key for AI model routing (e.g. "llama-70b"); empty = wildcard pool (backward compatible)
+	// Model routing key for the endpoint pool. Empty selects the legacy wildcard pool only when KV Exact is disabled. kvExactMode=1 or 3 requires a non-empty name with a loadable matching tokenizer; a bound kvModelProfile must also admit this name through its alias policy. A family-name match alone does not establish tokenizer, template, or engine compatibility. The server accepts at most 127 UTF-8 bytes and rejects embedded NUL or invalid UTF-8 before changing rule state. This byte limit reserves the terminator in the 128-byte data-plane field; UI validation must count encoded bytes rather than characters. The encoded host/path_prefix/model_name relationship is separately limited to 511 UTF-8 bytes including conditional separators.
 	ModelName string `json:"model_name,omitempty"`
 
-	// value for monitoring enabled or not
+	// Requests active endpoint monitoring. An explicit probetype other than none forces this flag true in the domain; some NAT modes also activate probes. False alone is not a universal disable switch.
 	Monitor bool `json:"monitor,omitempty"`
 
 	// mtls backend
@@ -802,143 +802,119 @@ type LoadbalanceEntryServiceArguments struct {
 	// mtls frontend
 	MtlsFrontend *LoadbalanceEntryServiceArgumentsMtlsFrontend `json:"mtls_frontend,omitempty"`
 
-	// service name
+	// Service name stored and returned with the rule. A colon-separated name also participates in the domain's instance-name selection; it is not the opaque rule ID.
 	Name string `json:"name,omitempty"`
 
-	// end-point specific op (0-create, 1-attachEP, 2-detachEP)
+	// Endpoint operation label (0=create/replace, 1=attachEP, 2=detachEP). Implementation gap: on an existing rule, operation 1 takes the same omission/removal branch as replacement, so it is not a safe append-only operation. Detaching the last endpoint can delete the rule. PATCH separately rejects clearing all endpoints.
 	// Enum: [0 1 2]
 	Oper int32 `json:"oper,omitempty"`
 
-	// Path matching mode - disabled (hostname-only, backward compat), prefix (longest prefix match), exact (exact path match)
+	// Proxy pool path mode - disabled uses host-only matching, prefix uses longest-prefix selection, and exact uses an exact path. The mode participates in the logical LB key and is distinct from L7Condition comparison operators.
 	// Enum: [disabled prefix exact]
 	PathMatchMode *string `json:"path_match_mode,omitempty"`
 
-	// URL path prefix for L7 routing (e.g., /v1/users). Optional - empty means hostname-only matching (backward compatible)
+	// Path component of the proxy pool's routing key, interpreted with path_match_mode. Empty preserves host-only routing unless model_name adds a host||model identity. This field is separate from conditions in an independently attached L7Policy. The server accepts at most 255 UTF-8 bytes and rejects embedded NUL or invalid UTF-8 before changing rule state. This byte limit reserves the terminator in the 256-byte data-plane field; UI validation must count encoded bytes rather than characters. The encoded host/path_prefix/model_name relationship is separately limited to 511 UTF-8 bytes including separators.
 	PathPrefix string `json:"path_prefix,omitempty"`
 
-	// SGLang disaggregation bootstrap port on every prefill endpoint (the port passed to --disaggregation-bootstrap-port). 0 = SGLang's default 8998. Only meaningful with pd_disagg_mode=true and kvEngineType=sglang; rejected on any other rule shape so dead config fails loudly at create time.
+	// SGLang bootstrap port on every prefill endpoint; must match the engine disaggregation-bootstrap-port. Omitted/0 resolves to 8998 on the SGLang P/D path. A nonzero declaration requires both pd_disagg_mode=true and kvEngineType=sglang; it is rejected on other shapes. Zero is accepted on other shapes but has no effect.
 	// Maximum: 65535
 	// Minimum: 0
 	PdBootstrapPort int32 `json:"pdBootstrapPort,omitempty"`
 
-	// Load imbalance threshold for P/D cache-aware routing. If max-min active connections exceeds this, bypass cache affinity.
+	// Absolute active-connection imbalance threshold for P/D cache affinity. Tier-1 trie selection requires max-min to be at most this value; Tier-1.5 uses the check only when the process-level LLB_KV_LOADGUARD is enabled. A Tier-0 session hit returns before these checks. On creation, omission or 0 resolves to 3. Current replace behavior retains the previous value for incoming 0. The approved future contract is omission=retain and explicit 0=reset to 3; this update distinction is not implemented yet.
 	// Maximum: 255
 	// Minimum: 0
 	PdBalanceAbsThreshold int32 `json:"pd_balance_abs_threshold,omitempty"`
 
-	// Enable P/D cache-aware routing. When true, uses session stickiness, radix trie prefix matching, and min-load balancing for endpoint selection. Requires pd_disagg_mode=true.
+	// Enable Tier-1 radix-trie prefix affinity for P/D routing. Requires pd_disagg_mode=true. Tier-0 session stickiness is active independently of this flag when a client session key is present; Tier-2 load-based selection remains the fallback.
 	PdCacheAwareMode bool `json:"pd_cache_aware_mode,omitempty"`
 
-	// Cache match threshold (0-100) for P/D cache-aware routing. Lower values make cache routing more aggressive.
+	// Minimum prefix-match percentage for Tier-1 trie affinity when pd_cache_aware_mode=true. Lower positive values allow shorter prefix matches. On creation, omission or 0 resolves to 20, not a literal zero-percent threshold. Current replace behavior retains the previous value when the incoming value is 0. The approved future update contract separates omission (retain) from explicit 0 (reset to 20); that presence-aware change is not implemented yet. UI clients must not assume a zero-valued update resets the current deployment. This field does not set the Tier-0 session TTL.
 	// Maximum: 100
 	// Minimum: 0
 	PdCacheThreshold int32 `json:"pd_cache_threshold,omitempty"`
 
-	// Enable vLLM prefill/decode disaggregation mode. When true, the proxy orchestrates a two-phase flow - prefill request to a prefill endpoint, then decode request to a decode endpoint using KV transfer parameters from the prefill response.
+	// Enable Gateway prefill/decode orchestration. Requires mode=4 and at least one endpoint with ep_role=1 (prefill) and one with ep_role=2 (decode). kvEngineType selects the dialect: vllm and trtllm use sequential prefill-then-decode flows; sglang uses a concurrent bootstrap-based pair. llamacpp is not supported on this path. If KV Exact is also enabled, use kvExactMode=1, not 3. Engine transport, tokenizer, and deployment prerequisites remain necessary; this flag alone does not qualify an engine/model tuple.
 	PdDisaggMode bool `json:"pd_disagg_mode,omitempty"`
 
-	// Session stickiness TTL in seconds for P/D cache-aware routing. 0 = no automatic expiry. Only used when pd_cache_aware_mode is true.
+	// Tier-0 P/D session-stickiness idle TTL in seconds. Omitted or 0 uses the Gateway default of 300 seconds; a positive value overrides the default for this service. Successful session lookup or store refreshes the last-access time. A mapping expires when elapsed idle time exceeds the effective TTL; periodic cleanup may reclaim it later. Applies to P/D routing when a client session key is present, independently of pd_cache_aware_mode. This is a Gateway endpoint-affinity policy, not an engine KV-cache retention, KV-transfer timeout, or active-request timeout. Zero does not disable expiry or stickiness. Capacity eviction and endpoint-health checks still apply. No no-expiry mode is exposed.
 	// Minimum: 0
 	PdSessionTTLSec int32 `json:"pd_session_ttl_sec,omitempty"`
 
-	// (Min) port number for the access
+	// Service port, or inclusive range start when portMax is nonzero. ICMP requires zero. Implementation gap - the handler narrows to uint16 without validating the original integer range; clients should supply 0 through 65535 and not rely on narrowing.
 	Port *int64 `json:"port,omitempty"`
 
-	// Max port number(range) for the access
+	// Inclusive range end. Zero uses a single service port; a nonzero end below port is rejected after uint16 conversion. Original input range validation is missing, and a port range does not establish FullProxy/L7 attachment support.
 	PortMax int64 `json:"portMax,omitempty"`
 
-	// private IP (NAT'd) address for external access
+	// Optional translated/private service IP used for dataplane programming and validated as an IP address. Normal GET does not reconstruct it. L7 attachment still uses externalIP, so private-address listener attachment is not established.
 	PrivateIP string `json:"privateIP,omitempty"`
 
-	// value for probe retries
+	// Probe failure threshold passed to endpoint monitoring; zero uses the probe builder's default. Canonical PATCH updates currently miss the handler's presence check. Negative input has no matching schema range restriction and is not a qualified setting.
 	ProbeRetries int32 `json:"probeRetries,omitempty"`
 
-	// value for probe timer (in seconds)
+	// Probe scheduling interval in seconds; zero selects the probe builder's default. It is distinct from the backend connect timeout. Canonical PATCH updates currently miss the handler's presence check; see the operation warning.
 	ProbeTimeout uint32 `json:"probeTimeout,omitempty"`
 
-	// probe port if probetype is tcp/udp/sctp
+	// Service-wide probe destination port, also used with monitorAddress. Required nonzero for explicit TCP/UDP/SCTP/HTTP/HTTPS probes; zero for ping, none or an omitted probe type. There is no per-member monitor-port property here.
 	Probeport uint16 `json:"probeport,omitempty"`
 
-	// probe request string
+	// Probe request payload or request-path input interpreted by the selected probe implementation. This service-level field is wired; the separate endpoint HTTP monitor properties have the wiring gaps documented on endpoints.
 	Probereq string `json:"probereq,omitempty"`
 
-	// probe response string
+	// Expected probe response content interpreted by the selected probe implementation. This is not the endpoint expectedCodes HTTP status-code property.
 	Proberesp string `json:"proberesp,omitempty"`
 
-	// probe type for any end-point of this entry
+	// Service-wide probe type. TCP, UDP, SCTP, HTTP and HTTPS require a nonzero probeport; ping and none require zero. An omitted type requires zero probeport and allows the probe builder to derive transport and port from each member.
 	// Enum: [tcp udp sctp http https ping none]
 	Probetype string `json:"probetype,omitempty"`
 
-	// Octavia tenant/project identifier. Opaque store-verbatim string, filtered on GET /all. NOT a tenant-isolation boundary.
+	// Opaque project identifier stored on creation and available as an exact GET /all filter. The filter is not tenant authorization or isolation. Empty values do not clear an existing project ID; see the shared update limitations.
 	ProjectID string `json:"projectId,omitempty"`
 
-	// value for access protocol
+	// Transport protocol of the service. ICMP requires zero service and endpoint ports. PROXY protocol v2 requires TCP; N3 selection requires UDP.
 	// Enum: [tcp udp sctp icmp]
 	Protocol string `json:"protocol,omitempty"`
 
-	// flag to enable proxy protocol v2
+	// Enables PROXY protocol v2 on the supported backend path. The domain rejects non-TCP services when this flag is true; configure a backend that accepts the protocol header.
 	Proxyprotocolv2 bool `json:"proxyprotocolv2,omitempty"`
 
-	// 0 - plain HTTP, 1 - TLS terminated at the gateway (https), 2 - end-to-end HTTPS (re-encrypt to backend). Matches common.LBSec; the datapath has no mode beyond 2, so any other value must be rejected here rather than silently serving plaintext.
+	// Proxy TLS mode (0=no proxy TLS, 1=frontend TLS termination, 2=frontend TLS plus backend re-encryption). Zero does not imply that an arbitrary L4 service speaks HTTP. Values outside this enum are rejected by generated validation. These are FullProxy TLS settings; admission does not comprehensively reject ineffective cross-mode configurations. Mode 2 does not establish backend certificate verification; see mtls_backend and the requested-security warning.
 	// Enum: [0 1 2]
 	Security int32 `json:"security,omitempty"`
 
-	// value for load balance algorithim(0-rr, 1-hash, 2-priority/wrr, 3-persist, 4-lc, 5-n2, 6-n3, 7-reserved, 8-chwbl, 9-gpuaware, 10-wrr-hash, 0-default)
+	// Endpoint selection algorithm (0=RR, 1=hash, 2=priority/WRR, 3=persistence, 4=least connections, 5=N2, 6=N3, 7=reserved, 8=CHWBL, 9=GPU-aware, 10=WRR-hash). Zero selects RR. DSR requires hash; N3 requires UDP; N2 requires FullProxy in the current domain guard. Reserved value 7 has no supported selector contract. Consult the corresponding AI field descriptions for AI selector prerequisites.
 	// Enum: [0 1 2 3 4 5 6 7 8 9 10]
 	Sel int64 `json:"sel,omitempty"`
 
-	// Session affinity configuration for persist mode (sel=3). Supports multiple methods:
-	//
-	// **Regular Header** (full value extraction):
-	// - "X-Session-ID" - Extracts full header value
-	// - "mcp-session-id" - Custom application header
-	// - "authorization" - Full Authorization header
-	//
-	// **Cookie-based** (specific cookie extraction):
-	// - "cookie:JSESSIONID" - Java/Tomcat session cookie
-	// - "cookie:PHPSESSID" - PHP session cookie
-	// - "cookie:ASP.NET_SessionId" - ASP.NET session
-	// - "cookie:connect.sid" - Node.js/Express session
-	// - "cookie:SESSION_TOKEN" - Custom cookie name
-	//
-	// **Query Parameter** (URL parameter extraction):
-	// - "query:sessionid" - Extract from ?sessionid=value
-	// - "query:token" - Extract from ?token=value
-	// - "query:jsessionid" - Common Java fallback
-	//
-	// **Basic Authentication** (username extraction):
-	// - "basic-auth" - Extract username from Authorization: Basic header
-	//
-	// If empty and sel=3, falls back to IP-based persistence.
-	// Cookie/query methods ignore other cookies/parameters, ensuring consistent routing.
-	//
+	// Session-key extraction setting for proxy affinity. Use a header name such as X-Session-ID, cookie:NAME for one cookie, query:NAME for one query parameter, or basic-auth for the Basic Authorization username. RR (sel=0) and persistence (sel=3) paths contain handling; a missing usable key follows their RR or IP-based fallback respectively. This setting is not authentication. GET includes it only for those selectors. The server accepts at most 127 UTF-8 bytes and rejects embedded NUL or invalid UTF-8 before changing rule state. This byte limit reserves the terminator in the 128-byte data-plane field; UI validation must count encoded bytes rather than characters. Cross-mode interaction with L7 HTTP_COOKIE remains unresolved.
 	SessionHeaderName string `json:"session_header_name,omitempty"`
 
-	// snat rule
+	// SNAT rule indicator on domain readback. Implementation gap - this REST POST does not copy the property and PATCH does not overlay it, so setting it here does not create a SNAT rule.
 	Snat bool `json:"snat,omitempty"`
 
-	// Enable SSE (Server-Sent Events) streaming mode. When true, idle-timeout is suppressed while a streaming LLM response is active (Content-Type text/event-stream detected). Required for OpenAI-compatible streaming endpoints.
+	// Enable detection of text/event-stream responses and the associated streaming idle-timeout protection. This flag controls Gateway SSE handling, not whether the backend implements an OpenAI API. Active detected streams remain subject to max_stream_duration_sec and the system stream cap; enabling SSE does not make them unbounded.
 	SseMode bool `json:"sse_mode,omitempty"`
 
-	// backend connect timeout in MILLISECONDS (Octavia native unit). Optional/additive — 0/absent preserves today's 500ms default (NOT Octavia's 5000ms). Enforced only on the L7_Proxy peer (has_l7_policy==1).
+	// Backend connect timeout in milliseconds, used when an L7 policy is attached. Zero uses 500 ms. Implementation gap: the value narrows to signed C int for poll without an admission bound; values above 2147483647 can become negative and must not be treated as supported deadlines. See serviceArguments for update/readback limitations.
 	TimeoutMemberConnect uint32 `json:"timeoutMemberConnect,omitempty"`
 
-	// member-side relay idle timeout in MILLISECONDS. Optional/additive — 0/absent preserves the existing client-idle value.
+	// Relay idle timeout in milliseconds on a listener with an attached L7 policy. A nonzero value overrides the existing deadline and is rounded up to whole seconds; zero leaves the existing idle deadline in use. Implementation gap: uint32 addition during rounding can overflow near its maximum. Millisecond input does not imply subsecond enforcement.
 	TimeoutMemberData uint32 `json:"timeoutMemberData,omitempty"`
 
-	// header-accumulation deadline in MILLISECONDS (slowloris protection). Optional/additive — 0/absent uses a sane bounded default. NO Gateway-API equivalent — Octavia-only; a future Gateway controller MUST hard-error, never silent-drop.
+	// Header-accumulation deadline in milliseconds on the attached L7 policy path. Zero uses 10000 ms. This is not a general transport-level TCP inspection timeout or a claim of controller export support.
 	TimeoutTCPInspect uint32 `json:"timeoutTcpInspect,omitempty"`
 
-	// OpenSSL cipher string, applied to BOTH SSL_CTX_set_cipher_list (TLS1.2) and SSL_CTX_set_ciphersuites (TLS1.3) on listener + pool. Optional/additive — empty preserves today's hardcoded ciphers.
+	// Cipher string passed to both the TLS 1.3 ciphersuite and TLS 1.2 cipher configuration calls for listener/backend contexts, regardless of the selected version range. Empty uses the built-in lists. Implementation warnings: the C copy limits the string to 255 bytes without admission rejection; either OpenSSL call can fail, and listener creation then reaches an SSL-context assertion. Invalid input is not guaranteed to produce a clean REST rejection. See shared readback/update warnings.
 	TLSCiphers string `json:"tls_ciphers,omitempty"`
 
-	// Octavia tls_versions list (e.g. ["TLSv1.2","TLSv1.3"]). Collapsed to a minmax protocol-version range. Optional/additive — empty preserves today's TLS1.21.3.
+	// TLS version selection for listener/backend context setup. The encoder recognizes TLSv1.0 through TLSv1.3 and collapses recognized entries to an inclusive minimum/maximum range; empty uses TLS 1.2 through 1.3. Implementation limitations: noncontiguous selections include intermediate versions, unknown tokens are ignored, and an entirely unrecognized list uses default bounds. This is not exact allow-list enforcement; version policy and strict rejection require separate decisions and fixes.
 	TLSVersions []string `json:"tls_versions"`
 
-	// Tracing catalog name for deep inspection and protocol analysis (e.g., v1, anthropic, default). Enables body capture and parser invocation for observability.
+	// Tracing catalog name, for example v1, anthropic or default. The domain resolves and maps it for the FullProxy tracing path when the catalog component is available. A configured name alone does not prove capture or parser execution.
 	TraceType string `json:"trace_type,omitempty"`
 
-	// references an EXISTING loxilb /config/policy ident (pre-created by the external Octavia driver). On create, when non-empty, loxilb ASSOCIATES that policy to the VIP rule (policer association). Optional/additive — empty/absent leaves the rule unchanged. An unresolvable ident is an error (no silent-drop).
+	// Identifier of a pre-existing /config/policy to associate after LB creation, when the policy component is available. Empty skips the association. Implementation gaps: association occurs after LB creation, so an association error can leave the LB created; the existing-rule update path does not reach this block, and GET omits the identifier. A failed request is not evidence of an atomic rollback.
 	VipQosPolicyID string `json:"vip_qos_policy_id,omitempty"`
 }
 
@@ -1929,27 +1905,27 @@ func (m *LoadbalanceEntryServiceArguments) UnmarshalBinary(b []byte) error {
 	return nil
 }
 
-// LoadbalanceEntryServiceArgumentsMtlsBackend Backend mTLS configuration for server certificate verification and client certificate presentation. Only valid with security=2 (E2E HTTPS) and mode=4 (FullProxy)
+// LoadbalanceEntryServiceArgumentsMtlsBackend Requested backend verification and client-certificate settings for FullProxy re-encryption (mode=4, security=2) with mTLS support. Implementation warning: REST stores and returns this object, but the active create encoder does not wire its verification flag or legacy path/inline material into the backend TLS configuration. The separate configuration bridge has no caller in the reviewed path. These fields therefore do not establish backend authentication, even after a successful POST. Backend cert-ID fields have separate C consumers; their existence does not repair this missing verification wiring. Requested-security fail-closed behavior and material precedence remain pending policy decisions, not supported fallback guarantees.
 //
 // swagger:model LoadbalanceEntryServiceArgumentsMtlsBackend
 type LoadbalanceEntryServiceArgumentsMtlsBackend struct {
 
-	// Path to backend CA bundle (PEM format). Empty uses system CA store (/etc/ssl/certs/). Example /opt/loxilb/cert/backend_ca.crt
+	// Requested gateway-local backend PEM CA bundle path. Stored/read back, but not wired into the active backend TLS material path; see mtls_backend. Omitting it does not by itself establish system-CA verification.
 	BackendCaPath string `json:"backend_ca_path,omitempty"`
 
-	// Inline client certificate (base64-encoded PEM). Alternative to client_cert_path
+	// Requested inline client certificate declared as base64-encoded PEM. Stored/read back but not an effective substitute for a backend client certificate through the current active path.
 	ClientCertData string `json:"client_cert_data,omitempty"`
 
-	// Path to loxilb's client certificate for backend mTLS. Example /opt/loxilb/cert/loxilb_client.crt
+	// Requested gateway-local client certificate path for backend mTLS, paired with client_key_path. Stored/read back but not wired into the active backend TLS material path.
 	ClientCertPath string `json:"client_cert_path,omitempty"`
 
-	// Inline client key (base64-encoded PEM). Alternative to client_key_path
+	// Requested inline client private key declared as base64-encoded PEM. Stored/read back with the object; active backend material wiring is missing. Treat the input and readback as sensitive key material.
 	ClientKeyData string `json:"client_key_data,omitempty"`
 
-	// Path to loxilb's private key for backend mTLS. Example /opt/loxilb/cert/loxilb_client.key
+	// Requested gateway-local client private-key path paired with client_cert_path. Stored/read back but not wired into the active backend TLS material path.
 	ClientKeyPath string `json:"client_key_path,omitempty"`
 
-	// Enable backend server certificate verification (SSL_VERIFY_PEER). False skips verification (SSL_VERIFY_NONE, default for backward compatibility)
+	// Requests backend server-certificate verification. False leaves verification unrequested. Implementation gap - true is stored but does not reach the active backend_verify_cert flag through this intake; it must not be displayed as effective verification.
 	VerifyServerCert *bool `json:"verify_server_cert,omitempty"`
 }
 
@@ -1981,28 +1957,28 @@ func (m *LoadbalanceEntryServiceArgumentsMtlsBackend) UnmarshalBinary(b []byte) 
 	return nil
 }
 
-// LoadbalanceEntryServiceArgumentsMtlsFrontend Frontend mTLS configuration for client certificate verification. Only valid with security=1 (HTTPS) or security=2 (E2E HTTPS) and mode=4 (FullProxy)
+// LoadbalanceEntryServiceArgumentsMtlsFrontend Frontend client-certificate verification settings for FullProxy with security 1 or 2 and an mTLS-enabled build. The active encoder carries path-based CA, CN and CRL settings. Implementation gaps: admission does not comprehensively enforce these prerequisites, inline CA data is stored but not carried by the active encoder, and TLS-context updates have the serviceArguments lifecycle limitation. A stored required mode does not establish effective verification on an ineligible service.
 //
 // swagger:model LoadbalanceEntryServiceArgumentsMtlsFrontend
 type LoadbalanceEntryServiceArgumentsMtlsFrontend struct {
 
-	// Inline CA certificate data (base64-encoded PEM). Alternative to client_ca_path for Kubernetes secrets
+	// Inline CA material declared as base64-encoded PEM. Implementation gap - stored and returned by REST but not passed by the active frontend encoder; it is not currently a working substitute for client_ca_path through this path.
 	ClientCaCertData string `json:"client_ca_cert_data,omitempty"`
 
-	// Path to client CA certificate bundle (PEM format). Example /opt/loxilb/cert/client_ca_bundle.crt
+	// Gateway-local PEM CA bundle path used by the active frontend verification path. The encoder carries at most 255 bytes without a corresponding admission bound. An enabled verification mode with no CA path only logs a warning during C configuration; this is not a validated trust configuration.
 	ClientCaPath string `json:"client_ca_path,omitempty"`
 
-	// Client certificate requirement - disabled (no verification, default), optional (accept with/without cert), required (reject without valid cert)
+	// Requested verification mode - disabled performs no client verification, optional permits omission but verifies a supplied certificate, and required requires a valid certificate on the active mTLS TLS path. See the containing object's prerequisite and wiring warnings.
 	// Enum: [disabled optional required]
 	ClientCertMode *string `json:"client_cert_mode,omitempty"`
 
-	// Required CN pattern (e.g., *.corp.example.com). Supports wildcard matching. Only used if require_client_cn is true
+	// Certificate-name pattern, for example *.corp.example.com, used when require_client_cn is true. The C path contains wildcard matching; the encoder carries at most 255 bytes. This field alone does not enable client certificate verification.
 	ClientCnPattern string `json:"client_cn_pattern,omitempty"`
 
-	// (08) operator-supplied static CRL file (PEM) loaded into the verify X509_STORE with leaf-only X509_V_FLAG_CRL_CHECK. A revoked client LEAF cert is rejected; a valid one passes. Optional/additive — empty preserves today's behaviour (the 77-04 sibling crl.pem convention).
+	// Optional gateway-local static PEM CRL path for leaf-certificate revocation checking on the configured frontend CA path. When empty, the implementation may use a sibling crl.pem beside the CA bundle. It is not automatic CRL retrieval or chain-wide revocation validation. The encoder carries at most 255 bytes; normal GET omits this field.
 	ClientCrlPath string `json:"client_crl_path,omitempty"`
 
-	// Require specific CN pattern in client certificate for additional security
+	// Requests certificate-name pattern checking on the active frontend mTLS path. Supply a nonempty client_cn_pattern; an empty pattern does not establish an additional identity restriction.
 	RequireClientCn *bool `json:"require_client_cn,omitempty"`
 }
 

@@ -19,15 +19,15 @@ import (
 // swagger:model TraceParserInfo
 type TraceParserInfo struct {
 
-	// Supported features
+	// Intended capability metadata; currently not populated by the parser-list handler and not evidence of verified parser behavior.
 	// Example: ["streaming","cost_estimation","tool_calls"]
 	Capabilities []string `json:"capabilities"`
 
-	// Human-readable description
+	// Intended descriptive metadata; currently not populated by the parser-list handler.
 	// Example: Parses OpenAI API requests including GPT models, token usage, and streaming responses
 	Description string `json:"description,omitempty"`
 
-	// Parser identifier (e.g., "openai", "mcp", "mock")
+	// Metadata name returned by discovery, such as openai_v1, mcp_v1 or mock_parser. These differ from assignment keys openai, mcp and mock and must not be used interchangeably.
 	// Example: openai
 	// Required: true
 	Name *string `json:"name"`

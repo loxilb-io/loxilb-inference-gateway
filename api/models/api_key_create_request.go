@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// APIKeyCreateRequest Api key create request
+// APIKeyCreateRequest Management creation of a data-plane credential; management authorization and data-plane enforcement are separate. Protection requires a service requiring API-key authentication. Quotas lack complete nonnegative/range validation. Whitespace-only tenant IDs are rejected but surrounding spaces are retained. Empty allowed_models permits all models; otherwise matching is exact. Embedded commas do not round-trip as one model identifier.
 //
 // swagger:model ApiKeyCreateRequest
 type APIKeyCreateRequest struct {
@@ -22,16 +22,16 @@ type APIKeyCreateRequest struct {
 	// List of model identifiers this key may access
 	AllowedModels []string `json:"allowed_models"`
 
-	// Optional caller-supplied key material to register instead of generating one, for importing keys minted elsewhere. Write-only: it is never returned by GET or by the list, and the create response omits raw_key when it is set, because the caller already holds the value.
+	// Optional imported credential; absent or empty generates a new key. Imports require 16-512 printable non-space ASCII bytes. GET/list never returns the credential. Create currently emits an empty raw_key string for imports, not omission. Length rejection maps to 400; invalid character errors currently fall through to generic 500.
 	APIKey string `json:"api_key,omitempty"`
 
-	// Burst capacity above the steady-state RPS limit
+	// Total request-bucket capacity, not additional capacity above RPS. Zero uses per-key RPS. Nonpositive RPS skips this limiter; negative-value validation remains incomplete.
 	BurstSize int64 `json:"burst_size,omitempty"`
 
 	// Whether the API key is active. Absent = enabled (optional, nullable to distinguish unset).
 	Enabled *bool `json:"enabled,omitempty"`
 
-	// Optional expiry timestamp (RFC3339)
+	// Optional RFC3339 expiry. Omitted, zero-time, or Unix-epoch values mean no expiry in this handler. Other past timestamps are accepted, so successful creation does not establish a currently usable key.
 	// Format: date-time
 	ExpiresAt strfmt.DateTime `json:"expires_at,omitempty"`
 
@@ -45,7 +45,7 @@ type APIKeyCreateRequest struct {
 	// Required: true
 	TenantID *string `json:"tenant_id"`
 
-	// Maximum LLM tokens per minute for this key
+	// Stored per-key token-quota metadata; enforcement is not connected in the reviewed token-accounting consumer. Tenant and tenant/model quotas are separate.
 	TokensPerMin int64 `json:"tokens_per_min,omitempty"`
 }
 

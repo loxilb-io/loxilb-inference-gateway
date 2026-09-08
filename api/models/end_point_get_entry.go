@@ -12,7 +12,7 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// EndPointGetEntry end point get entry
+// EndPointGetEntry Endpoint monitor readback with observed health. The structured HTTP monitor fields are omitted, so this is not a full configuration round-trip. currState is ok, nok, or red. Delay strings are formatted durations from recorded probe measurements, not guarantees for every probe type.
 //
 // swagger:model EndPointGetEntry
 type EndPointGetEntry struct {
@@ -20,7 +20,7 @@ type EndPointGetEntry struct {
 	// Average delay seen for endpoint
 	AvgDelay string `json:"avgDelay,omitempty"`
 
-	// Current state of this endpoint
+	// Observed state, ok, nok, or red. This is not a direct round-trip of green/yellow/red host-state input.
 	CurrState string `json:"currState,omitempty"`
 
 	// Host name

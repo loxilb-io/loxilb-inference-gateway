@@ -29,7 +29,7 @@ type ReadyStatus struct {
 	// Live per-interface eBPF attachment, verified against the kernel (netlink) rather than the control plane's bookkeeping. Informational - attachment state does not gate the ready verdict.
 	EbpfAttachments []*EbpfAttachmentStatus `json:"ebpf_attachments"`
 
-	// Live availability of the stores this gateway is wired to (status ready or failed - a probe, unlike the restore engine's configured-only checks).
+	// Dependency-specific availability checks with ready or failed status. Some checks use configured or builtin state rather than external I/O; this is not uniform live reachability verification of every store or certificate file.
 	ExternalDependencies []*ExternalDependencyStatus `json:"external_dependencies"`
 
 	// last persist

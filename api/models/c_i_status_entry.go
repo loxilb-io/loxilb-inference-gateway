@@ -12,18 +12,18 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// CIStatusEntry c i status entry
+// CIStatusEntry Cluster state transition input. State must be MASTER, BACKUP, FAULT, STOP, or NOT_DEFINED. VIP must be treated as a literal IP, but parsing is not fully checked. Current code creates instances before validating state and ignores VIP changes when state is unchanged. Instance text is passed through shell-hook construction without safe argument isolation. Dependent updates are asynchronous.
 //
 // swagger:model CIStatusEntry
 type CIStatusEntry struct {
 
-	// Instance name
+	// Cluster instance name. Current shell-hook construction does not safely isolate this input as an argument; unrestricted names are not a safe supported contract.
 	Instance string `json:"instance,omitempty"`
 
-	// Current Cluster Instance State
+	// Requested cluster state: MASTER, BACKUP, FAULT, STOP, or NOT_DEFINED. Repeating the current state skips VIP changes.
 	State string `json:"state,omitempty"`
 
-	// Instance Virtual IP address
+	// Literal instance VIP. Parsing is not fully validated, and a same-state request does not update this value.
 	Vip string `json:"vip,omitempty"`
 }
 

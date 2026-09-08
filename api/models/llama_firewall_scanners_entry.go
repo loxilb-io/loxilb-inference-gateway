@@ -12,7 +12,7 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// LlamaFirewallScannersEntry llama firewall scanners entry
+// LlamaFirewallScannersEntry Stored flags; omission preserves values and false is stored. Current request scanning nevertheless selects prompt_guard and regex directly, rather than consuming these flags. A response-scanning function exists but no production caller was located. These switches do not establish implemented end-to-end scanner selection.
 //
 // swagger:model LlamaFirewallScannersEntry
 type LlamaFirewallScannersEntry struct {

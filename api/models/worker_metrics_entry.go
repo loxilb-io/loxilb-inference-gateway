@@ -19,7 +19,7 @@ import (
 // swagger:model WorkerMetricsEntry
 type WorkerMetricsEntry struct {
 
-	// Worker endpoint IP:port (e.g., "192.168.1.10:8000")
+	// Worker endpoint label, conventionally IP:port. The handler does not establish endpoint registration or fully validate address syntax; GPU indexing uses an IP-like key, so different supplied ports can alias map state.
 	// Required: true
 	EndpointIP *string `json:"endpoint_ip"`
 
@@ -29,20 +29,20 @@ type WorkerMetricsEntry struct {
 	// Minimum: 0
 	KvCacheUsagePerc *int64 `json:"kv_cache_usage_perc"`
 
-	// Static config from vllm:cache_config_info{num_gpu_blocks}
+	// Advertised GPU-block capacity observation. Omitted values replace the previous sample with zero. The handler does not verify engine capacity and converts to uint32 without a matching schema maximum.
 	// Minimum: 0
 	NumGpuBlocks *int64 `json:"num_gpu_blocks,omitempty"`
 
-	// vllm:num_requests_running + vllm:num_requests_waiting (total queue depth)
+	// Caller-supplied queue observation. The builtin scraper stores waiting requests, not running plus waiting. Values are converted to uint32 without a matching schema maximum; safe bounds and a uniform producer contract remain unresolved.
 	// Required: true
 	// Minimum: 0
 	QueuedRequests *int64 `json:"queued_requests"`
 
-	// Delta of vllm:num_preemptions_total since last update
+	// Caller-supplied swap/preemption observation; the handler does not compute or verify a delta. Omitted values replace the previous sample with zero. Conversion to uint32 lacks a matching schema maximum.
 	// Minimum: 0
 	SwappedRequests *int64 `json:"swapped_requests,omitempty"`
 
-	// Timestamp of metrics collection
+	// Sample collection time. Omitted or zero time becomes the server's current time. Samples older than ten seconds are rejected; future timestamps currently lack an upper bound. Readback reports the cached sample time.
 	// Format: date-time
 	Timestamp strfmt.DateTime `json:"timestamp,omitempty"`
 }

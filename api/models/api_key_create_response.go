@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// APIKeyCreateResponse Api key create response
+// APIKeyCreateResponse HTTP 201 creation result. key_id is the management handle. raw_key contains a secret only for generated credentials and is currently empty for imports. Protect generated secrets from logs; subsequent reads expose metadata only.
 //
 // swagger:model ApiKeyCreateResponse
 type APIKeyCreateResponse struct {
@@ -22,7 +22,7 @@ type APIKeyCreateResponse struct {
 	// Unique identifier of the created API key
 	KeyID string `json:"key_id,omitempty"`
 
-	// The plaintext API key — returned ONLY at creation time
+	// Generated plaintext credential returned only at creation; currently an empty string, not omission, when the caller imported api_key.
 	// Required: true
 	RawKey *string `json:"raw_key"`
 }

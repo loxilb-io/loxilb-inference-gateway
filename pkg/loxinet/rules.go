@@ -1520,6 +1520,65 @@ func boundAnnotations(in map[string]string) map[string]string {
 	return out
 }
 
+// These limits reserve one byte for the terminating NUL in the corresponding
+// fixed-size fields of struct dp_proxy_tacts. They are byte limits because the
+// C ABI stores UTF-8 bytes, not Unicode code points.
+const (
+	lbHostURLMaxBytes           = 255
+	lbPathPrefixMaxBytes        = 255
+	lbSessionHeaderNameMaxBytes = 127
+	lbModelNameMaxBytes         = 127
+	lbEndpointHashKeyMaxBytes   = 511
+)
+
+func validateLBFixedCString(field, value string, maxBytes int) error {
+	if strings.IndexByte(value, 0) >= 0 {
+		return fmt.Errorf("%s must not contain NUL", field)
+	}
+	if !utf8.ValidString(value) {
+		return fmt.Errorf("%s must be valid UTF-8", field)
+	}
+	if len(value) > maxBytes {
+		return fmt.Errorf("%s exceeds %d UTF-8 bytes", field, maxBytes)
+	}
+	return nil
+}
+
+func validateLBFixedCStringFields(serv cmn.LbServiceArg) error {
+	for _, field := range []struct {
+		name     string
+		value    string
+		maxBytes int
+	}{
+		{name: "host", value: serv.HostUrl, maxBytes: lbHostURLMaxBytes},
+		{name: "path_prefix", value: serv.PathPrefix, maxBytes: lbPathPrefixMaxBytes},
+		{name: "session_header_name", value: serv.SessionHeaderName, maxBytes: lbSessionHeaderNameMaxBytes},
+		{name: "model_name", value: serv.ModelName, maxBytes: lbModelNameMaxBytes},
+	} {
+		if err := validateLBFixedCString(field.name, field.value, field.maxBytes); err != nil {
+			return err
+		}
+	}
+
+	// sockproxy builds one of host, host|path, host||model or
+	// host|path|model in a 512-byte buffer. Refuse a value that would make
+	// snprintf truncate this routing identity even when every field fits its
+	// own C array.
+	compositeBytes := len(serv.HostUrl)
+	if serv.PathPrefix != "" {
+		compositeBytes += 1 + len(serv.PathPrefix)
+		if serv.ModelName != "" {
+			compositeBytes += 1 + len(serv.ModelName)
+		}
+	} else if serv.ModelName != "" {
+		compositeBytes += 2 + len(serv.ModelName)
+	}
+	if compositeBytes > lbEndpointHashKeyMaxBytes {
+		return fmt.Errorf("host/path_prefix/model_name composite key exceeds %d UTF-8 bytes", lbEndpointHashKeyMaxBytes)
+	}
+	return nil
+}
+
 // applyAdminStateUpDrain - Octavia block-new (Option B, STATE-BASED).
 //
 // adminUp is the EFFECTIVE admin_state of the rule (ruleEnt.adminStateUp, already
@@ -2702,6 +2761,13 @@ func kvEngineConfigValidate(engine string, dpRankCount uint16) error {
 	if dpRankCount > 8 {
 		return errors.New("kv-dp-rank-count must be within 1..8 (0 = default 1)")
 	}
+	// The public rank fan-out contract belongs to SGLang only. Applying
+	// it to vLLM silently subscribes unrelated ports and invents inventories;
+	// HTTP-polled and event-less engines have no rank-port surface at all.
+	// Keep omitted/default single-rank declarations backward compatible.
+	if dpRankCount > 1 && engine != "sglang" {
+		return errors.New("kvDpRankCount greater than 1 requires kvEngineType=sglang (SGLang-only rank fan-out)")
+	}
 	return nil
 }
 
@@ -3513,6 +3579,12 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	var nSecIP []ruleLBSIP
 	var ipProto uint8
 	var privIP net.IP
+
+	// Reject values that cannot be represented by the fixed-size C data-plane
+	// ABI before looking up, allocating, deleting or updating any rule state.
+	if err := validateLBFixedCStringFields(serv); err != nil {
+		return RuleArgsErr, &cmn.RuleArgumentError{Err: err}
+	}
 
 	// Validate service args
 	service := ""

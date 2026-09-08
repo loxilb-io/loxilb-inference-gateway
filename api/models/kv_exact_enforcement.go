@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// KvExactEnforcement Data-plane enforcement position of a strict KV-exact rule (absent on legacy rules) - what the control plane wants vs what the data plane provably enforces, per the fence-first contract-word transaction. desired and enforced are always present; lastAckAt is absent before the first full ACK after registration or restart; fault is absent when none.
+// KvExactEnforcement Enforcement position of a strict KV-exact rule or a restored legacy rule fenced for migration. Ordinary active legacy rules omit this object. desired and enforced distinguish requested and acknowledged enforcement; lastAckAt is absent before the first full ACK after registration/restart, and fault is absent when none. Inspect goFenced independently as the tokenize-bridge backstop; declaration/readback alone is not enforcement.
 //
 // swagger:model KvExactEnforcement
 type KvExactEnforcement struct {

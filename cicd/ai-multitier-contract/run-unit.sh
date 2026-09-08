@@ -55,9 +55,28 @@ run_gate() {
   printf '%s: exit=%d\n' "$name" "$rc"
 }
 run_gate api-models -ec 'go test -json -count=1 ./api/models'
+run_gate api-handler -ec 'go test -json -count=1 ./api/restapi/handler -run "TestResultErrorResponseTyped(RuleArgument|KvAdmission)RefusalIsBadRequest"'
 run_gate kv-admission -ec 'go test -json -tags=mtls,l4trace -count=1 ./pkg/loxinet -run "Test(AIMultitier|KvEngine|KvExactAdmission|KvTrtllmFeatureGuard|KvLlamacppFeatureGuard|KvSubscriberRankPortsBounds)"'
+run_gate security-precedence -ec '
+  go test -json -tags=mtls,l4trace -count=1 ./pkg/loxinet \
+    -run "Test(AiGwModeForTruthTable|ApiKeyAuth|AbsentApiKeyAuth|KeyStoreVerdict|RateLimitCheck)" &&
+  python3 -B cicd/ai-multitier-security/check_security_order.py &&
+  make -C loxilb-ebpf/common test_aisec
+'
 run_gate pd-cache -ec 'make -C loxilb-ebpf/common test_pd_cache'
+run_gate pd-adjacent -ec 'make -C loxilb-ebpf/common test_pd_admission test_pd_ctrl && loxilb-ebpf/common/test_pd_admission && loxilb-ebpf/common/test_pd_ctrl'
 run_gate kv-dataplane -ec 'make -C loxilb-ebpf/common test_kv'
+# The old baseline image predates this inventory. Do not silently call its
+# absence PASS; the overlay baseline is a deliberately narrower evidence rail.
+if [[ -z ${TEST_SOURCE_DIR:-} ]]; then
+  run_gate swagger-contract -ec 'go test -json -count=1 ./api/cmd/sync-swagger && go run ./api/cmd/sync-swagger -check'
+  run_gate inventory -ec 'go test -json -count=1 ./cicd/ai-multitier-contract/inventory && go run ./cicd/ai-multitier-contract/inventory -check cicd/ai-multitier-contract/argument-inventory.json'
+  run_gate harness -ec 'python3 -B -m unittest discover -s cicd/ai-multitier-contract -p "test_*.py" && python3 -B cicd/ai-multitier-contract/coverage.py cicd/ai-multitier-contract/argument-inventory.json cicd/ai-multitier-contract/coverage-ledger.json'
+else
+  printf 'swagger-contract\tNOT_RUN_BASELINE_TEST_OVERLAY\n' >> "$evidence/results.tsv"
+  printf 'inventory\tNOT_RUN_BASELINE_TEST_OVERLAY\n' >> "$evidence/results.tsv"
+  printf 'harness\tNOT_RUN_BASELINE_TEST_OVERLAY\n' >> "$evidence/results.tsv"
+fi
 df -Pk "$evidence" > "$evidence/disk-after.txt"
 (cd "$evidence" && sha256sum ./*.log ./*.txt ./*.json ./*.tsv > SHA256SUMS)
 exit "$failed"

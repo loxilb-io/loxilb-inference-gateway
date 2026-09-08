@@ -12,12 +12,12 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// CorsEntry cors entry
+// CorsEntry Management CORS origin additions, applied sequentially rather than atomically; a later failure does not undo earlier entries. Omitted or empty cors is a no-op. CRUD rejects wildcard origin entries. Removing the last explicit origin leaves an empty allowlist, not the factory wildcard state. GET uses corsAttr. Current preflight grants omit PATCH and X-Api-Key; CORS is not management authentication or data-plane API-key enforcement.
 //
 // swagger:model CorsEntry
 type CorsEntry struct {
 
-	// Interface device name
+	// Origin strings to add. Values are trimmed; empty values and '*' are rejected, and duplicates conflict. Deletion identifies the exact origin encoded as one path parameter.
 	Cors []string `json:"cors"`
 }
 

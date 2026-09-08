@@ -14,15 +14,15 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// Cert cert
+// Cert Managed PEM input and partial read model. POST currently returns empty 201, including when it mints an ID; callers cannot obtain that minted handle from the response. PUT uses the path ID and ignores body ID and hostnames. Known lifecycle gaps: duplicate POST persists before rejecting registration and can remove existing material; failed rotation does not roll back files; hostname ownership conflicts and multi-host swaps are not transactional; rotation retains the old hostname set. Do not claim atomic certificate transactions, automatic SAN migration, or verified zero downtime. GET returns no private-key material, although the shared schema still requires keyPem and the generated response can serialize it as null.
 //
 // swagger:model Cert
 type Cert struct {
 
-	// Opaque certificate management handle. Client-supplied verbatim or server-minted when absent. Stable across rotation (PUT). Max 63 chars; no path separators.
+	// Opaque handle, client-supplied or minted when absent/empty on POST. PUT uses the path handle. Current validation permits at most 63 bytes and rejects path separators and any '..' substring; NUL validation is incomplete. Minted handles are currently not returned by POST.
 	CertID *string `json:"certId,omitempty"`
 
-	// Leaf (server) certificate in PEM. Required on POST/PUT. Try-parsed as X.509 — malformed PEM is rejected with 400.
+	// Leaf certificate PEM required on POST/PUT. The Go handler checks PEM armor; authoritative X.509/key parsing occurs in the OpenSSL loader after persistence. A 400 load failure does not imply transactional rollback of persisted material.
 	// Required: true
 	CertPem *string `json:"certPem"`
 

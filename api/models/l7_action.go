@@ -16,7 +16,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// L7Action The single tagged-union action for a route.
+// L7Action Action selected by kind. FORWARD requires forward; REDIRECT requires redirect; REJECT permits an omitted reject object. Implementation warning: validation does not reject extra objects for other kinds. H1 synthetic REJECT/REDIRECT responses use raw socket writes without an SSL write branch; encrypted H1 response correctness is not established. H2 uses a separate framed responder.
 //
 // swagger:model L7Action
 type L7Action struct {
@@ -24,7 +24,7 @@ type L7Action struct {
 	// forward
 	Forward *L7ActionForward `json:"forward,omitempty"`
 
-	// FORWARD to a (weighted) pool; REDIRECT (synthetic 3xx); REJECT (synthetic 4xx, terminal). REJECT is NOT representable on Gateway API — a HARD ERROR on export.
+	// FORWARD selects a backend target; REDIRECT emits a terminal synthetic 3xx; REJECT emits a terminal synthetic 4xx. No Gateway API export is performed by these operations.
 	// Required: true
 	// Enum: [FORWARD REDIRECT REJECT]
 	Kind *string `json:"kind"`
@@ -253,15 +253,15 @@ func (m *L7Action) UnmarshalBinary(b []byte) error {
 	return nil
 }
 
-// L7ActionForward FORWARD target (re-enters the existing intra-pool EP-select, never the AI engine).
+// L7ActionForward Target within the listener's base endpoint pool. With no references the resolver returns the base pool; with references it constructs a subset using RR or WRR selection. Implementation warnings: poolId is not used to resolve an independent pool, and allocation failure can return the whole base pool instead of the subset. The fallback is a safety defect, not a promised routing policy.
 //
 // swagger:model L7ActionForward
 type L7ActionForward struct {
 
-	// backend refs
+	// Endpoint-slot references within the base pool. Empty means the whole base pool. Invalid indices are skipped at resolution; admission does not check pool membership or enforce the 32-reference C limit.
 	BackendRefs []*L7ActionForwardBackendRefsItems0 `json:"backendRefs"`
 
-	// pool Id
+	// Stored and copied identifier. Implementation gap - the current C resolver does not use it to select a pool.
 	PoolID uint32 `json:"poolId,omitempty"`
 }
 
@@ -362,10 +362,10 @@ func (m *L7ActionForward) UnmarshalBinary(b []byte) error {
 // swagger:model L7ActionForwardBackendRefsItems0
 type L7ActionForwardBackendRefsItems0 struct {
 
-	// ep
+	// Internal base-pool endpoint slot. This is not a stable endpoint ID or necessarily the original POST-array position; creation sorts endpoints and updates reconcile existing slots.
 	Ep uint32 `json:"ep,omitempty"`
 
-	// weight
+	// Nonzero weight overrides the member weight; zero inherits it. Implementation gap - the value narrows to uint8 without an admission range check, so negative or oversized values can change meaning.
 	Weight int64 `json:"weight,omitempty"`
 }
 
@@ -402,23 +402,23 @@ func (m *L7ActionForwardBackendRefsItems0) UnmarshalBinary(b []byte) error {
 // swagger:model L7ActionRedirect
 type L7ActionRedirect struct {
 
-	// host
+	// Explicit host or the request Host/authority when empty, with its port stripped. Use port for an override. The C field carries at most 255 bytes; admission does not reject oversized input.
 	Host string `json:"host,omitempty"`
 
-	// path op
+	// NONE retains the request path; REPLACE_FULL uses value. Implementation gap: REPLACE_PREFIX currently joins value with the entire request path instead of removing the matched prefix. It does not implement correct matched-prefix replacement and must not be presented as such.
 	// Enum: [NONE REPLACE_FULL REPLACE_PREFIX]
 	PathOp string `json:"pathOp,omitempty"`
 
-	// port
+	// Optional destination port; zero omits the port and an explicit scheme-default port is also omitted. The value narrows to uint16 without an admission range check.
 	Port int64 `json:"port,omitempty"`
 
-	// scheme
+	// Explicit scheme or, when empty, http/https derived from the client TLS state. No scheme allow-list is enforced; the C field carries at most 7 bytes.
 	Scheme string `json:"scheme,omitempty"`
 
 	// One of 301/302/303/307/308; 0 or absent defaults to 302 (server-side allow-list, 400 otherwise).
 	StatusCode int64 `json:"statusCode,omitempty"`
 
-	// value
+	// Replacement path value. The C field carries at most 255 bytes without an admission bound. Redirect assembly rejects CR/LF or an unusable target at request time; configuration admission does not fully validate the URL.
 	Value string `json:"value,omitempty"`
 }
 

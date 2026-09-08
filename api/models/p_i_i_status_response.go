@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// PIIStatusResponse p i i status response
+// PIIStatusResponse Stored configuration, not scanner readiness. scan_mode is not mapped by the handler; optional zero/false fields can be omitted. V2/encryption settings are neither returned nor applied by the configuration handler. Without the compiled feature or initialized manager, status fails.
 //
 // swagger:model PIIStatusResponse
 type PIIStatusResponse struct {

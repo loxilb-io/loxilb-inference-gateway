@@ -27,6 +27,37 @@ class VerdictTests(unittest.TestCase):
         self.installed["lbAttr"][0]["endpoints"][0]["targetPort"] += 1
         self.assertFalse(verdict(self.body, 200, {}, self.empty, self.installed, None))
 
+    def test_lost_argument_fails(self):
+        self.body["serviceArguments"]["kvDpRankCount"] = 8
+        self.assertFalse(verdict(self.body, 200, {}, self.empty, self.installed, None))
+
+    def test_ttl_zero_may_be_omitted_in_readback(self):
+        self.body["serviceArguments"]["pd_session_ttl_sec"] = 0
+        self.assertTrue(verdict(self.body, 200, {}, self.empty, self.installed, None))
+
+    def test_ttl_positive_must_not_be_lost(self):
+        self.body["serviceArguments"]["pd_session_ttl_sec"] = 600
+        self.assertFalse(verdict(self.body, 200, {}, self.empty, self.installed, None))
+
+    def test_ttl_declaration_must_not_be_replaced_by_effective_default(self):
+        self.installed["lbAttr"][0]["serviceArguments"]["pd_session_ttl_sec"] = 300
+        self.assertFalse(verdict(self.body, 200, {}, self.empty, self.installed, None))
+
+    def test_unordered_readback_is_not_mutation(self):
+        other = copy.deepcopy(self.body)
+        other["serviceArguments"]["port"] += 1
+        before = {"lbAttr": [self.body, other]}
+        after = {"lbAttr": [other, self.body]}
+        self.assertTrue(verdict(self.body, 400, {"error": "rank"}, before, after, "rank"))
+
+    def test_reordering_cannot_hide_field_mutation(self):
+        other = copy.deepcopy(self.body)
+        before = {"lbAttr": [self.body, other]}
+        after = copy.deepcopy(before)
+        after["lbAttr"].reverse()
+        after["lbAttr"][0]["endpoints"][0]["weight"] = 2
+        self.assertFalse(verdict(self.body, 400, {"error": "rank"}, before, after, "rank"))
+
     def test_rejection_control(self):
         for status in (400, 422):
             self.assertTrue(verdict(self.body, status, {"message": "kvBlockSize out of range"},

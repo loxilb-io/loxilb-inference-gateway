@@ -19,7 +19,7 @@ import (
 // swagger:model CatalogParserMapping
 type CatalogParserMapping struct {
 
-	// Catalog ID
+	// Runtime catalog identifier assigned from the loaded catalog set, not a durable identity across changes to that set.
 	// Example: 1
 	// Required: true
 	// Maximum: 255

@@ -12,7 +12,7 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// OauthMessageResponse oauth message response
+// OauthMessageResponse Legacy message schema. OAuth authorization initiation currently returns HTTP 307 with Location, not a JSON success message or HTTP 302. OAuth routes require Oauth2Enable. State is single-use, process-local, and expires after ten minutes; browser/session and provider binding are not established.
 //
 // swagger:model OauthMessageResponse
 type OauthMessageResponse struct {

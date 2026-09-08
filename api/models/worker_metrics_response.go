@@ -19,7 +19,7 @@ import (
 // swagger:model WorkerMetricsResponse
 type WorkerMetricsResponse struct {
 
-	// Whether GPU monitoring is enabled
+	// Intended monitoring-state readback, currently not assigned by the GET handler and therefore omitted. Do not interpret absence as an authoritative disabled verdict.
 	MonitoringEnabled bool `json:"monitoring_enabled,omitempty"`
 
 	// workers

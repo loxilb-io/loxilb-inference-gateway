@@ -14,12 +14,12 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// SNICertificateEntry s n i certificate entry
+// SNICertificateEntry Registration in the node's shared hostname-keyed certificate store, not a PEM upload. DELETE uses hostname and ignores certPath; it unregisters without deleting files. Mutations currently return HTTP 200 result strings for both success and failure. GET returns sniAttr entries, not certificates/count or reference-count fields. Hostname and path validation is incomplete. Loading a root CA file alone does not enable mTLS on this registration path.
 //
 // swagger:model SNICertificateEntry
 type SNICertificateEntry struct {
 
-	// Optional certificate directory path (defaults to /opt/loxilb/cert/{hostname}). Directory must contain server.crt, server.key, and optionally rootCA.crt for mTLS.
+	// Optional directory on the gateway node containing server.crt and server.key; omitted uses the hostname-relative location under /opt/loxilb/cert. This is not a client-side path or upload. The registration loader is invoked with mTLS disabled, so rootCA.crt alone does not enable client-certificate enforcement.
 	CertPath string `json:"certPath,omitempty"`
 
 	// Hostname for SNI certificate (e.g., api.example.com). This certificate will be automatically used by all loadbalancer rules that have matching 'host' field.

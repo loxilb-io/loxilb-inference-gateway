@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// IPV4AddressEntry IPv4 address entry
+// IPV4AddressEntry IPv4 address configuration: supply an interface name and CIDR, not a bare address. The shared mutation helper does not enforce IPv4 family. Missing Linux interfaces may fall back to internal address objects; backend failures can return HTTP 200 with result set to fail.
 //
 // swagger:model IPv4AddressEntry
 type IPV4AddressEntry struct {
@@ -23,7 +23,7 @@ type IPV4AddressEntry struct {
 	// Required: true
 	Dev *string `json:"dev"`
 
-	// IP address to modify.
+	// IPv4 address with prefix length in CIDR notation. The shared helper does not enforce this endpoint's family.
 	// Required: true
 	IPAddress *string `json:"ipAddress"`
 }

@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// VxlanPeerEntry vxlan peer entry
+// VxlanPeerEntry Literal VXLAN flood-list peer IP. Parsing and address-family validation are incomplete. The POST peer handler returns an operation-result object rather than this request shape.
 //
 // swagger:model VxlanPeerEntry
 type VxlanPeerEntry struct {

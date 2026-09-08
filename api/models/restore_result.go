@@ -21,7 +21,7 @@ import (
 // swagger:model RestoreResult
 type RestoreResult struct {
 
-	// compatible
+	// Schema-compatibility verdict only, not proof that all validation, apply, verification or persistence stages will succeed.
 	Compatible bool `json:"compatible,omitempty"`
 
 	// current gateway version

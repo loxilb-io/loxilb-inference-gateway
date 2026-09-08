@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// L7PolicyGetEntry GET wrapper for the L7_POLICY collection.
+// L7PolicyGetEntry Registry collection wrapper, sorted by policy ID. Values are stored configuration, not effective dataplane or runtime validation results.
 //
 // swagger:model L7PolicyGetEntry
 type L7PolicyGetEntry struct {

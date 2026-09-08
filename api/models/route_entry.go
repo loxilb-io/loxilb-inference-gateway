@@ -14,20 +14,20 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// RouteEntry route entry
+// RouteEntry Create-time route input. destinationIPNet is a CIDR and gateway is a literal IP. Only protocol static explicitly selects a protocol on this path; returned protocol strings are not a write-time enumeration. Gateway parsing and family agreement are not fully validated.
 //
 // swagger:model RouteEntry
 type RouteEntry struct {
 
-	// IP address and netmask
+	// Destination network in CIDR notation.
 	// Required: true
 	DestinationIPNet *string `json:"destinationIPNet"`
 
-	// IP address for nexthop
+	// Literal next-hop IP address, not CIDR. Local gateway validity and family checks are incomplete.
 	// Required: true
 	Gateway *string `json:"gateway"`
 
-	// Protocol type of the route like "static"
+	// Only static explicitly sets the create-time protocol; GET may report additional symbolic or numeric protocol values.
 	Protocol string `json:"protocol,omitempty"`
 }
 

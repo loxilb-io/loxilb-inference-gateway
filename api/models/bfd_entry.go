@@ -12,24 +12,24 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// BfdEntry bfd entry
+// BfdEntry BFD session input for an existing cluster instance. New sessions require interval >= 100000 microseconds and retryCount > 0. Interval narrows from uint64 to uint32 without an upper-bound check. On an existing session, zero interval/retryCount preserves the current value, source-IP changes are not applied, and an unchanged request conflicts. Initial setup can return success before asynchronous creation fails.
 //
 // swagger:model BfdEntry
 type BfdEntry struct {
 
-	// Instance name running BFD session
+	// Existing cluster instance name; omission does not select an implicit default instance.
 	Instance string `json:"instance,omitempty"`
 
-	// Tx interval between BFD packets(in microseconds)
+	// Transmit interval in microseconds. New sessions require at least 100000; existing-session zero preserves the current interval. Conversion to uint32 lacks an upper-bound check.
 	Interval uint64 `json:"interval,omitempty"`
 
 	// Remote IP
 	RemoteIP string `json:"remoteIp,omitempty"`
 
-	// Retry Count to detect failure
+	// Detection multiplier. New sessions require a positive value; existing-session zero preserves the current multiplier.
 	RetryCount uint8 `json:"retryCount,omitempty"`
 
-	// Remote IP
+	// Literal local source IP, validated during first setup. Existing-session updates do not apply a changed source IP.
 	SourceIP string `json:"sourceIp,omitempty"`
 }
 

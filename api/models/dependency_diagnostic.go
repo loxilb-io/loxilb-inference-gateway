@@ -15,7 +15,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// DependencyDiagnostic One external dependency's live reachability with a latency class. Identity by type only - IDs, digests, credentials and connection strings are deliberately absent from this surface.
+// DependencyDiagnostic One dependency-specific check with a latency class. Identity is reported by type rather than store contents. Not every check performs external I/O; the latency class is not an end-to-end service-health guarantee.
 //
 // swagger:model DependencyDiagnostic
 type DependencyDiagnostic struct {
@@ -29,12 +29,12 @@ type DependencyDiagnostic struct {
 	// Required: true
 	Required *bool `json:"required"`
 
-	// The probe's verdict, taken live for this response.
+	// Verdict of the check performed for this response; its depth depends on the dependency type.
 	// Required: true
 	// Enum: [ready failed]
 	Status *string `json:"status"`
 
-	// Dependency type (e.g. keystore, certstore).
+	// Recovery dependency type, such as api-key-db, auth-db, engine-contracts, kv-model-profiles or cert-store.
 	// Required: true
 	Type *string `json:"type"`
 }

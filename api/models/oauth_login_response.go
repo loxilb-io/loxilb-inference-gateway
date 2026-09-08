@@ -12,7 +12,7 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// OauthLoginResponse oauth login response
+// OauthLoginResponse Provider token response, not a local JWT. Current OAuth admission assigns administrator authority unconditionally; identity admission and role mapping require explicit policy and implementation. GitHub configuration currently uses the Google OAuth endpoint, and provider user-info parsing is incomplete; this schema is not evidence of qualified provider support.
 //
 // swagger:model OauthLoginResponse
 type OauthLoginResponse struct {
@@ -23,7 +23,7 @@ type OauthLoginResponse struct {
 	// The unique identifier for the authenticated user (e.g., Google user ID).
 	ID string `json:"id,omitempty"`
 
-	// The refresh token used to obtain new access tokens once the current one expires.
+	// Provider refresh token. The current refresh endpoint also requires the original access-token entry to remain cached, so refresh after access-token expiry is not supported by that path.
 	Refreshtoken string `json:"refreshtoken,omitempty"`
 
 	// The access token used for API requests. Typically expires after a short duration.

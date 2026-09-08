@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// IPsecCertValidation i psec cert validation
+// IPsecCertValidation Result of implemented PEM, date, and limited private-key checks, not a chain-trust or handshake attestation. Current key matching does not reject all mismatched key types, and passphrase decryption is absent. Validity timestamps are not mapped. The serializer can omit valid when false; require an explicit true and inspect errors, while retaining these limitations.
 //
 // swagger:model IPsecCertValidation
 type IPsecCertValidation struct {

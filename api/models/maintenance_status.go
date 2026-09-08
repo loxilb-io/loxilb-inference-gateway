@@ -20,7 +20,7 @@ import (
 // swagger:model MaintenanceStatus
 type MaintenanceStatus struct {
 
-	// Leaving maintenance is possible right now (always true - PUT with enabled=false is never refused by the maintenance gate).
+	// The maintenance gate itself permits leaving and reports true. Independent boot or restore freezes, authentication and authorization can still reject the request; this is not an unconditional ability to leave right now.
 	// Required: true
 	Cancellable *bool `json:"cancellable"`
 

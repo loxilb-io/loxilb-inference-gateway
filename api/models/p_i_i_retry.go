@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// PIIRetry p i i retry
+// PIIRetry Stored C-scanner settings. Explicit zero is ignored by the manager, so max_retries=0 cannot currently disable retries. Defaults are one retry and 100 ms backoff; the consumer waits backoff_ms times the attempt number. Values are narrowed to uint32 without upper bounds.
 //
 // swagger:model PIIRetry
 type PIIRetry struct {

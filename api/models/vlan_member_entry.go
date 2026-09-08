@@ -12,15 +12,15 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// VlanMemberEntry vlan member entry
+// VlanMemberEntry Member interface and tagging choice. Omitted tagged means false. Tagged membership creates <dev>.<ID>; untagged membership attaches dev directly. The current helpers do not consistently enforce current-master ownership, and partial failures can leave intermediate state.
 //
 // swagger:model VlanMemberEntry
 type VlanMemberEntry struct {
 
-	// Interface device name
+	// Existing member interface name. The current helper does not verify existing-master ownership before mutation.
 	Dev string `json:"dev,omitempty"`
 
-	// Tagged status added
+	// True creates a tagged child <interface>.<ID>; false or omission attaches the named interface directly.
 	Tagged bool `json:"tagged,omitempty"`
 }
 

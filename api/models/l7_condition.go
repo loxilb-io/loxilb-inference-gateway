@@ -20,23 +20,23 @@ import (
 // swagger:model L7Condition
 type L7Condition struct {
 
-	// Request field to match. HOST/PATH/HEADER/COOKIE/FILE_TYPE are the Octavia l7rule types; METHOD/QUERY are Gateway API additions. The SSL_* field range is reserved for is NOT accepted here.
+	// Request field to match. HOST strips the authority port; PATH reads the parsed request path; HEADER, COOKIE and QUERY use the named field; FILE_TYPE extracts the final path segment's extension without the dot. METHOD reads the captured method only in builds with HAVE_HTTP_TRACE; other builds have no METHOD operand, an implementation limitation. SSL_* fields are rejected.
 	// Required: true
 	// Enum: [HOST PATH HEADER COOKIE FILE_TYPE METHOD QUERY]
 	Field *string `json:"field"`
 
-	// Negate this condition's result (Octavia invert semantics). NOT representable on Gateway API — a policy carrying invert is a HARD ERROR on Gateway export, never silently dropped.
+	// Negates the comparison result. An absent request field is a non-match before inversion and therefore matches an inverted condition. The REST operation does not export to Gateway API; the standalone export guard is not connected to an export operation.
 	Invert bool `json:"invert,omitempty"`
 
-	// Header/cookie/query NAME. REQUIRED for HEADER, COOKIE, and QUERY (400 if absent).
+	// Name required for HEADER, COOKIE and QUERY. Implementation warning - conversion limits this string to 63 bytes without rejecting oversized input; embedded NULs also cannot preserve the submitted string in C.
 	Key string `json:"key,omitempty"`
 
-	// Compare op. FILE_TYPE accepts ONLY EQUAL_TO or REGEX (Octavia constraint — server-side validated, 400 otherwise).
+	// Comparison operator. FILE_TYPE accepts only EQUAL_TO or REGEX. String comparisons are case-sensitive; HEADER name lookup is separately case-insensitive. SEGMENT_PREFIX checks a segment boundary. Implementation warning: the current root-slash prefix handling does not match all paths; do not rely on it as a catch-all without a runtime fix.
 	// Required: true
 	// Enum: [EQUAL_TO STARTS_WITH SEGMENT_PREFIX ENDS_WITH CONTAINS REGEX]
 	Op *string `json:"op"`
 
-	// Operand the request field is compared against. A REGEX value is try-compiled at config time (400 on a malformed pattern) and recompiled once at attach.
+	// Comparison operand. REGEX requires a nonempty pattern, validated with Go regular-expression syntax and compiled again as POSIX extended syntax on attachment; those syntaxes are not equivalent. Implementation warning: conversion limits the configured value to 255 bytes without admission rejection, and runtime REGEX operands are limited to 1023 bytes. Embedded NULs or truncation can change meaning. Passing admission does not establish full-length or cross-engine matching equivalence.
 	Value string `json:"value,omitempty"`
 }
 

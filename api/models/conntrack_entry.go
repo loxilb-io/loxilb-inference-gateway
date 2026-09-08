@@ -12,12 +12,12 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// ConntrackEntry conntrack entry
+// ConntrackEntry Gateway datapath connection record. packets and bytes include reported eBPF and hardware totals when reconciliation is available. Hardware fields may be omitted and ageMs is not populated by the current handler. Signed counter serialization does not preserve the entire unsigned counter range.
 //
 // swagger:model ConntrackEntry
 type ConntrackEntry struct {
 
-	// DOCA detail: age of this conntrack/offload flow in milliseconds (age-query estimate; 0 when unavailable). Declared so a `swagger generate server` reproduces the hand-maintained DOCA age field instead of clobbering it. Additive/optional.
+	// Currently unavailable from this handler: ageMs is not populated and its zero value is omitted. This declaration does not establish DOCA age-query support.
 	AgeMs uint64 `json:"ageMs,omitempty"`
 
 	// Packet bytes of the conntrack

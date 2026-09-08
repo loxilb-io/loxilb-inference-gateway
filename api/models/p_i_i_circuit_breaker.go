@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// PIICircuitBreaker p i i circuit breaker
+// PIICircuitBreaker Stored C-scanner settings. Omission preserves values; explicit zero is accepted but ignored, not a disable command. Defaults are 5 failures, 60 seconds, and 3 successes. Values are narrowed to uint32 without upper bounds.
 //
 // swagger:model PIICircuitBreaker
 type PIICircuitBreaker struct {

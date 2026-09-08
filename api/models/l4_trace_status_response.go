@@ -22,11 +22,11 @@ type L4TraceStatusResponse struct {
 	// Example: 5
 	ConfigVersion int64 `json:"config_version,omitempty"`
 
-	// Whether L4 tracing is enabled
+	// Reported enablement; false can be omitted. Default-looking status does not establish compiled support or usable maps.
 	// Example: true
 	Enabled bool `json:"enabled,omitempty"`
 
-	// Current sampling rate (0-100)
+	// Reported sampling percentage. Explicit zero can be omitted by response serialization; absence is not proof of the enable operation's default of 100.
 	// Example: 100
 	SamplingRate int64 `json:"sampling_rate,omitempty"`
 

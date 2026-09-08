@@ -15,7 +15,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// IPsecTunnel i psec tunnel
+// IPsecTunnel Stored declaration with best-effort daemon state, not traffic-readiness evidence. State refresh is throttled and failures retain the previous state; counters and timestamps are incomplete. Known deletion implementation gap: deleting a marked tunnel issues unfiltered XFRM state and policy flushes, which can affect other tunnels in the same network namespace. Isolated per-tunnel deletion is not currently guaranteed.
 //
 // swagger:model IPsecTunnel
 type IPsecTunnel struct {

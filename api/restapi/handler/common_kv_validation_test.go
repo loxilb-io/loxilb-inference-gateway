@@ -78,6 +78,23 @@ func TestResultErrorResponseTypedKvAdmissionRefusalIsBadRequest(t *testing.T) {
 	}
 }
 
+func TestResultErrorResponseTypedRuleArgumentRefusalIsBadRequest(t *testing.T) {
+	for _, msg := range []string{
+		"host exceeds 255 UTF-8 bytes",
+		"session_header_name must not contain NUL",
+		"host/path_prefix/model_name composite key exceeds 511 UTF-8 bytes",
+	} {
+		wrapped := &cmn.RuleArgumentError{Err: errors.New(msg)}
+		got := ResultErrorResponseError(wrapped)
+		if got.Code != 400 || got.Result != msg {
+			t.Fatalf("typed refusal %q: want HTTP 400 with detail, got %#v", msg, got)
+		}
+		if plain := ResultErrorResponseError(errors.New(msg)); plain.Code != 500 {
+			t.Fatalf("unwrapped %q: structured marker is not load-bearing, got %d", msg, plain.Code)
+		}
+	}
+}
+
 // The status sub-resource's goFenced field is the fence verdict: FALSE (the
 // fence is lifted, exact routing is eligible) is as load-bearing an answer
 // as true, so the field must marshal explicitly — an omitempty regression

@@ -1,11 +1,47 @@
 package models
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/go-openapi/strfmt"
 )
+
+// This checks the declared transport value, not the effective C TTL. Both
+// omission and explicit zero select the 300s default in the data plane.
+func TestAIMultitierSessionTTLDeclaration(t *testing.T) {
+	for _, tc := range []struct {
+		body  string
+		want  int32
+		valid bool
+	}{
+		{`{}`, 0, true},
+		{`{"pd_session_ttl_sec":0}`, 0, true},
+		{`{"pd_session_ttl_sec":1}`, 1, true},
+		{`{"pd_session_ttl_sec":300}`, 300, true},
+		{`{"pd_session_ttl_sec":600}`, 600, true},
+		{`{"pd_session_ttl_sec":2147483647}`, 2147483647, true},
+		{`{"pd_session_ttl_sec":-1}`, -1, false},
+	} {
+		t.Run(tc.body, func(t *testing.T) {
+			var arg LoadbalanceEntryServiceArguments
+			if err := json.Unmarshal([]byte(tc.body), &arg); err != nil {
+				t.Fatal(err)
+			}
+			if arg.PdSessionTTLSec != tc.want {
+				t.Fatalf("TTL=%d, want %d", arg.PdSessionTTLSec, tc.want)
+			}
+			if err := arg.Validate(strfmt.Default); (err == nil) != tc.valid {
+				t.Fatalf("valid=%v, error=%v", tc.valid, err)
+			}
+		})
+	}
+	var arg LoadbalanceEntryServiceArguments
+	if err := json.Unmarshal([]byte(`{"pd_session_ttl_sec":2147483648}`), &arg); err == nil {
+		t.Fatal("int32 overflow must fail JSON decoding")
+	}
+}
 
 // These are transport-boundary tests: accepted JSON values must fit the
 // downstream uint8/uint16/uint32 fields without changing their meaning.

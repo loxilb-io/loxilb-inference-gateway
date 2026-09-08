@@ -16,7 +16,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// L7Rule One L7 routing rule: an ordered route with OR-of-AND match sets and a single tagged-union action (FORWARD / REDIRECT / REJECT). The translation-neutral superset of an OpenStack Octavia l7policy+l7rules group AND a Kubernetes Gateway API HTTPRoute rule. Routes are evaluated FIRST-MATCH-WINS in ascending `position`.
+// L7Rule One ordered route with OR-combined match sets, AND-combined conditions and a FORWARD, REDIRECT or REJECT action. The first matching route in ascending position order wins. No match produces a synthetic 404. Implementation warning: admission does not reject every input exceeding C capacity. Conversion silently limits each route to 8 match sets, each set to 8 conditions and each forward target to 32 references. This can change policy meaning while GET retains the original document; these are defects requiring admission/runtime fixes, not supported truncation semantics. This schema does not establish complete Octavia or Gateway API translation compatibility.
 //
 // swagger:model L7Rule
 type L7Rule struct {
@@ -24,16 +24,16 @@ type L7Rule struct {
 	// action
 	Action *L7Action `json:"action,omitempty"`
 
-	// bounded request-header insertion filter — a tagged op {SET|ADD|REMOVE} + name(+value). A faithful superset of BOTH Octavia insert_headers (SET/ADD) AND Gateway API RequestHeaderModifier (set/add/remove). Optional/additive — omit for no header insertion. Bounded server-side (DoS guard).
+	// Ordered SET, ADD or REMOVE request-header operations. The shared validator permits at most 8 entries, 63-byte names and 255-byte values, and rejects CR/LF and other prohibited control characters. Omitting this list disables configured operations, but the L7 path still synthesizes X-Forwarded-For, X-Forwarded-Port and X-Forwarded-Proto before applying these operations. Configured operations can overwrite that synthesized metadata; trust-boundary policy remains to be decided. Implementation warning: Go validation admits interior tabs in names that C later skips. This is not supported header syntax.
 	InsertHeaders []*L7RuleInsertHeadersItems0 `json:"insertHeaders"`
 
-	// OR across sets; AND within a set. Each element is a list of conditions.
+	// OR across sets; AND within each conditions array. An empty array or a set with no conditions does not match. See the L7Rule warning about unvalidated capacity limits.
 	MatchSets []*L7RuleMatchSetsItems0 `json:"matchSets"`
 
-	// Explicit precedence; routes are evaluated in ascending position order.
+	// Evaluation precedence, ascending. Equal-position ordering is unspecified. The value narrows to a C int without a matching admission range check; unique positions within that range avoid this implementation gap.
 	Position int64 `json:"position,omitempty"`
 
-	// session-persistence mode for this route. HTTP_COOKIE enables LB-generated Set-Cookie + read-back affinity; omit for off. Mutually exclusive with APP_COOKIE/SOURCE_IP per pool (Octavia semantics). Optional/additive.
+	// HTTP_COOKIE enables generated-cookie affinity on matching routes; omit to disable this marker. The REST enum does not expose APP_COOKIE or SOURCE_IP. Implementation warning: shared validation checks a policy-wide mixture of affinity labels, but does not inspect the LB's selector or session-header settings to enforce per-pool mutual exclusion. Cross-mode policy and runtime qualification remain outstanding.
 	// Enum: [HTTP_COOKIE]
 	SessionPersistence string `json:"sessionPersistence,omitempty"`
 }
@@ -275,14 +275,14 @@ func (m *L7Rule) UnmarshalBinary(b []byte) error {
 // swagger:model L7RuleInsertHeadersItems0
 type L7RuleInsertHeadersItems0 struct {
 
-	// name
+	// Header name, required by shared validation and limited to 63 bytes. Use an HTTP token name; see the containing schema's validation-gap warning.
 	Name string `json:"name,omitempty"`
 
-	// op
+	// SET replaces a header, ADD appends a value, and REMOVE removes the named header. Use the canonical uppercase enum spelling.
 	// Enum: [SET ADD REMOVE]
 	Op string `json:"op,omitempty"`
 
-	// Header value; ignored for REMOVE.
+	// Header value, limited to 255 bytes. Empty values are accepted. REMOVE ignores the value when applying the operation but still validates its length and control characters.
 	Value string `json:"value,omitempty"`
 }
 

@@ -26,7 +26,7 @@ type FileSystemInfoEntry struct {
 	// path of the mounted on
 	MountedOn string `json:"mountedOn,omitempty"`
 
-	// Boot ID in the linux
+	// Filesystem size as a formatted string from the system filesystem report, not a numeric byte count.
 	Size string `json:"size,omitempty"`
 
 	// File type (ex. nfs, ext4..)

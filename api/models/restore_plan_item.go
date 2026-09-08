@@ -12,7 +12,7 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// RestorePlanItem Per-domain apply/delete counts computed by the restore PLAN stage.
+// RestorePlanItem Per-domain replacement counts computed by PLAN, not a minimal difference. to_delete counts current entries and to_apply counts document entries; dry-run does not exercise all apply-time validation.
 //
 // swagger:model RestorePlanItem
 type RestorePlanItem struct {

@@ -15,7 +15,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// BGPPolicyDefinedSetGetEntry b g p policy defined set get entry
+// BGPPolicyDefinedSetGetEntry Named defined-set readback. Prefix sets use prefixList and other types use lowercase list. Use lowercase prefix in requests: a broader internal alias is not faithfully emitted by the handler. The name all selects all names only on the GET path.
 //
 // swagger:model BGPPolicyDefinedSetGetEntry
 type BGPPolicyDefinedSetGetEntry struct {

@@ -13,7 +13,7 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// LlamaFirewallStatsResponse llama firewall stats response
+// LlamaFirewallStatsResponse Management telemetry is not connected to scanner counters. Values come from an unpopulated object, including in the disabled build. Zero or omitted values do not prove no scans, threats, blocks, errors, or cache use.
 //
 // swagger:model LlamaFirewallStatsResponse
 type LlamaFirewallStatsResponse struct {

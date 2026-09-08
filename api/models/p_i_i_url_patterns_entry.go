@@ -16,7 +16,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// PIIURLPatternsEntry p i i URL patterns entry
+// PIIURLPatternsEntry Ordered update with required mode. clear ignores patterns; replace with omitted/empty patterns clears the list; add appends. Empty configuration scans all eligible URLs. A nonempty list is an include list with first match winning, so an exclude-only list scans nothing. The resulting limit is 64 entries; excess count currently maps to generic 500. Null entries can pass generated validation and be dereferenced by the handler.
 //
 // swagger:model PIIURLPatternsEntry
 type PIIURLPatternsEntry struct {

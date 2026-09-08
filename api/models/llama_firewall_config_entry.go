@@ -14,12 +14,12 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// LlamaFirewallConfigEntry llama firewall config entry
+// LlamaFirewallConfigEntry Stored settings, not verified active policy. Omitted nullable fields preserve values; explicit booleans are stored. Timeout, cache, connection pool, fail-policy, threshold, and scanner-selection settings are not connected end-to-end to the reviewed consumer. The RPC client uses a fixed 15-second timeout and insecure transport. The HTTP error path continues processing after scan failures, and oversized scan content also follows an allow/error path. Fail-closed protection is not currently guaranteed; implementation correction is required, not client reinterpretation.
 //
 // swagger:model LlamaFirewallConfigEntry
 type LlamaFirewallConfigEntry struct {
 
-	// Minimum confidence score to block (0.0-1.0)
+	// Intended blocking threshold. Zero is accepted but ignored by the manager, and the stored value is not connected to the C policy configuration; effective threshold enforcement is not established.
 	// Example: 0.9
 	// Maximum: 1
 	// Minimum: 0
@@ -29,7 +29,7 @@ type LlamaFirewallConfigEntry struct {
 	// Example: true
 	CacheEnabled *bool `json:"cache_enabled,omitempty"`
 
-	// Cache TTL in seconds
+	// Stored cache TTL in seconds. Explicit zero is ignored, and this setting is not connected to caching in the reviewed RPC consumer.
 	// Example: 300
 	// Minimum: 0
 	CacheTTLSec *int64 `json:"cache_ttl_sec,omitempty"`
@@ -40,11 +40,11 @@ type LlamaFirewallConfigEntry struct {
 	// Minimum: 1
 	ConnectionPoolSize *int64 `json:"connection_pool_size,omitempty"`
 
-	// Fail-closed (true=block on error) vs fail-open (false=allow on error)
+	// Intended error policy, stored but not reliably enforced by the HTTP consumer. true does not currently guarantee blocking on scanner errors; do not claim fail-closed protection from this setting.
 	// Example: false
 	FailClosed *bool `json:"fail_closed,omitempty"`
 
-	// URL patterns to scan (empty = scan all)
+	// Intended inclusion patterns, currently discarded by the manager. Supplied patterns do not restrict scanning through this setting.
 	// Example: ["/api/v1/chat*","/api/*/code"]
 	ScanPatterns []string `json:"scan_patterns"`
 
@@ -52,7 +52,7 @@ type LlamaFirewallConfigEntry struct {
 	// Example: localhost:50052
 	ServerURL string `json:"server_url,omitempty"`
 
-	// URL patterns to skip scanning
+	// Intended exclusions, currently discarded by the manager. Supplying a path does not guarantee exclusion from scanning.
 	// Example: ["/health","/metrics"]
 	SkipPatterns []string `json:"skip_patterns"`
 

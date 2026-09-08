@@ -15,7 +15,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// TenantRateLimitEntry tenant rate limit entry
+// TenantRateLimitEntry Stored quotas, not enforcement status. Missing aggregate and model records produce 404; model-only state may lack an aggregate update timestamp. Zero aggregate rates disable their limiter while model quotas remain separate. burst_pct controls token capacity, not request-rate burst; zero uses the server default and positive values are clamped to 1-1000.
 //
 // swagger:model TenantRateLimitEntry
 type TenantRateLimitEntry struct {

@@ -19,7 +19,7 @@ import (
 // swagger:model ConversationCleanupResponse
 type ConversationCleanupResponse struct {
 
-	// Number of conversations deleted
+	// Currently always zero from a placeholder backend that performs no deletion; this does not prove the table is empty.
 	// Required: true
 	DeletedCount *int64 `json:"deleted_count"`
 
@@ -27,7 +27,7 @@ type ConversationCleanupResponse struct {
 	// Required: true
 	Message *string `json:"message"`
 
-	// Age in hours of oldest remaining conversation
+	// Currently a placeholder zero, not a measured age of remaining conversations.
 	// Required: true
 	OldestRemainingHours *float32 `json:"oldest_remaining_hours"`
 }

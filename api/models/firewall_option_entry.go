@@ -12,7 +12,7 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// FirewallOptionEntry firewall option entry
+// FirewallOptionEntry Firewall action options. Avoid combining terminal actions: the current precedence is allow, drop, redirect, trap, then SNAT, with default drop, while doSnat also has independent side effects. record is independent. SNAT requires a literal toIP and zero explicit fwMark; toPort zero preserves the port. Mark narrowing and reserved-bit handling are not fully validated. These limitations are not a supported multi-action policy.
 //
 // swagger:model FirewallOptionEntry
 type FirewallOptionEntry struct {
@@ -20,7 +20,7 @@ type FirewallOptionEntry struct {
 	// Allow any matching rule
 	Allow bool `json:"allow,omitempty"`
 
-	// traffic counters
+	// Readback traffic counters formatted as packets:bytes; not a configurable traffic limit.
 	Counter string `json:"counter,omitempty"`
 
 	// Do SNAT on matching rule
@@ -29,7 +29,7 @@ type FirewallOptionEntry struct {
 	// Drop any matching rule
 	Drop bool `json:"drop,omitempty"`
 
-	// Set a fwmark for any matching rule
+	// Packet mark, narrowed to uint32 without complete bounds or reserved-bit validation. Explicit mark must be zero for SNAT; duplicate POST can change this value before returning conflict.
 	FwMark int64 `json:"fwMark,omitempty"`
 
 	// Trigger only on default cases
@@ -41,10 +41,10 @@ type FirewallOptionEntry struct {
 	// Redirect any matching rule
 	Redirect bool `json:"redirect,omitempty"`
 
-	// Redirect any matching rule
+	// Target interface name for the redirect action.
 	RedirectPortName string `json:"redirectPortName,omitempty"`
 
-	// Modify to given IP in CIDR notation
+	// Literal translated source IP, not CIDR. Required for the SNAT action.
 	ToIP string `json:"toIP,omitempty"`
 
 	// Modify to given Port (Zero if port is not to be modified)

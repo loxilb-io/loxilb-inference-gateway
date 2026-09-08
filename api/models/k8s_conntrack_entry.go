@@ -12,7 +12,7 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// K8sConntrackEntry k8s conntrack entry
+// K8sConntrackEntry Legacy Kubernetes-enriched connection shape. The assigned /config/conntrack/all operation does not reference this definition and does not provide these enrichment fields.
 //
 // swagger:model K8sConntrackEntry
 type K8sConntrackEntry struct {

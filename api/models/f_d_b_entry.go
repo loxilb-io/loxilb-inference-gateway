@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// FDBEntry f d b entry
+// FDBEntry Bridge-family forwarding entry identified here by interface and MAC address. This model omits additional kernel FDB selectors, including VLAN and tunnel destination; GET only enumerates interfaces with a bridge master.
 //
 // swagger:model FDBEntry
 type FDBEntry struct {
