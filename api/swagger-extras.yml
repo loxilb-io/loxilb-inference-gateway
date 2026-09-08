@@ -88,6 +88,14 @@ paths:
           description: Invalid service_id or ep_idx
           schema:
             $ref: '#/definitions/SimpleError'
+        '401':
+          description: Missing or invalid management credential
+          schema:
+            $ref: '#/definitions/ManagementError'
+        '403':
+          description: Authenticated principal is not authorized for this operation
+          schema:
+            $ref: '#/definitions/ManagementError'
         '404':
           description: Service or endpoint not found
           schema:
@@ -143,6 +151,14 @@ paths:
           description: Invalid pipe or endpoint parameter
           schema:
             $ref: '#/definitions/SimpleError'
+        '401':
+          description: Missing or invalid management credential
+          schema:
+            $ref: '#/definitions/ManagementError'
+        '403':
+          description: Authenticated principal is not authorized for this operation
+          schema:
+            $ref: '#/definitions/ManagementError'
         '503':
           description: DPU manager not initialized (filtered path only)
           schema:
@@ -188,6 +204,14 @@ paths:
           description: Invalid JSON, unsupported action, or missing field
           schema:
             $ref: '#/definitions/SimpleError'
+        '401':
+          description: Missing or invalid management credential
+          schema:
+            $ref: '#/definitions/ManagementError'
+        '403':
+          description: Authenticated principal is not authorized for this operation
+          schema:
+            $ref: '#/definitions/ManagementError'
         '405':
           description: Method not allowed
         '503':
@@ -230,8 +254,20 @@ paths:
                       format: uint64
               total_flows:
                 type: integer
+        '401':
+          description: Missing or invalid management credential
+          schema:
+            $ref: '#/definitions/ManagementError'
+        '403':
+          description: Authenticated principal is not authorized for this operation
+          schema:
+            $ref: '#/definitions/ManagementError'
         '405':
           description: Method not allowed (GET only)
+        '503':
+          description: Management credential store unavailable
+          schema:
+            $ref: '#/definitions/ManagementError'
 
   '/config/opa/watcher':
     get:
@@ -265,6 +301,18 @@ paths:
                 type: integer
               last_error:
                 type: string
+        '401':
+          description: Missing or invalid management credential
+          schema:
+            $ref: '#/definitions/ManagementError'
+        '403':
+          description: Authenticated principal is not authorized for this operation
+          schema:
+            $ref: '#/definitions/ManagementError'
+        '503':
+          description: Management credential store unavailable
+          schema:
+            $ref: '#/definitions/ManagementError'
     post:
       summary: Configure and start the OPA policy watcher
       description: >
@@ -307,8 +355,20 @@ paths:
           description: Invalid JSON, missing opa_url, or URL blocked by SSRF protection
           schema:
             $ref: '#/definitions/SimpleError'
+        '401':
+          description: Missing or invalid management credential
+          schema:
+            $ref: '#/definitions/ManagementError'
+        '403':
+          description: Authenticated principal is not authorized for this operation
+          schema:
+            $ref: '#/definitions/ManagementError'
         '405':
           description: Method not allowed
+        '503':
+          description: Management credential store unavailable
+          schema:
+            $ref: '#/definitions/ManagementError'
     delete:
       summary: Stop and remove the OPA policy watcher
       description: Stops the watcher if running. Succeeds even when no watcher is configured.
@@ -320,6 +380,18 @@ paths:
             properties:
               result:
                 type: string
+        '401':
+          description: Missing or invalid management credential
+          schema:
+            $ref: '#/definitions/ManagementError'
+        '403':
+          description: Authenticated principal is not authorized for this operation
+          schema:
+            $ref: '#/definitions/ManagementError'
+        '503':
+          description: Management credential store unavailable
+          schema:
+            $ref: '#/definitions/ManagementError'
 
   '/config/ai/apikey/{key_id}':
     patch:
@@ -357,6 +429,14 @@ paths:
           description: Missing key_id or invalid request body
           schema:
             $ref: '#/definitions/SimpleError'
+        '401':
+          description: Missing or invalid management credential
+          schema:
+            $ref: '#/definitions/ManagementError'
+        '403':
+          description: Authenticated principal is not authorized for this operation
+          schema:
+            $ref: '#/definitions/ManagementError'
         '404':
           description: Key not found
           schema:
@@ -365,8 +445,44 @@ paths:
           description: Update failed
           schema:
             $ref: '#/definitions/SimpleError'
+        '503':
+          description: Management credential store or API-key store unavailable
+          schema:
+            $ref: '#/definitions/RawError'
 
 definitions:
+  RawError:
+    description: Error returned before or after raw-route dispatch. Authentication errors use code/message/result/fields; raw handlers use error.
+    properties:
+      code:
+        format: int32
+        type: integer
+      error:
+        type: string
+      fields:
+        items:
+          type: string
+        type: array
+      message:
+        type: string
+      result:
+        type: string
+    type: object
+  ManagementError:
+    description: Error envelope emitted by management authentication and authorization middleware.
+    properties:
+      code:
+        format: int32
+        type: integer
+      fields:
+        items:
+          type: string
+        type: array
+      message:
+        type: string
+      result:
+        type: string
+    type: object
   SimpleError:
     type: object
     description: Minimal error envelope returned by the raw handlers.

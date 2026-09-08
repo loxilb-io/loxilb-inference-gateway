@@ -103,6 +103,51 @@ func (o *GetStatusDeviceUnauthorized) WriteResponse(rw http.ResponseWriter, prod
 	}
 }
 
+// GetStatusDeviceForbiddenCode is the HTTP code returned for type GetStatusDeviceForbidden
+const GetStatusDeviceForbiddenCode int = 403
+
+/*
+GetStatusDeviceForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getStatusDeviceForbidden
+*/
+type GetStatusDeviceForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetStatusDeviceForbidden creates GetStatusDeviceForbidden with default headers values
+func NewGetStatusDeviceForbidden() *GetStatusDeviceForbidden {
+
+	return &GetStatusDeviceForbidden{}
+}
+
+// WithPayload adds the payload to the get status device forbidden response
+func (o *GetStatusDeviceForbidden) WithPayload(payload *models.Error) *GetStatusDeviceForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get status device forbidden response
+func (o *GetStatusDeviceForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetStatusDeviceForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetStatusDeviceInternalServerErrorCode is the HTTP code returned for type GetStatusDeviceInternalServerError
 const GetStatusDeviceInternalServerErrorCode int = 500
 

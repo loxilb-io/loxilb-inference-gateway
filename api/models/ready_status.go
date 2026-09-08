@@ -26,6 +26,9 @@ type ReadyStatus struct {
 	// boot
 	Boot *BootStatus `json:"boot,omitempty"`
 
+	// Live per-interface eBPF attachment, verified against the kernel (netlink) rather than the control plane's bookkeeping. Informational - attachment state does not gate the ready verdict.
+	EbpfAttachments []*EbpfAttachmentStatus `json:"ebpf_attachments"`
+
 	// Live availability of the stores this gateway is wired to (status ready or failed - a probe, unlike the restore engine's configured-only checks).
 	ExternalDependencies []*ExternalDependencyStatus `json:"external_dependencies"`
 
@@ -52,6 +55,10 @@ func (m *ReadyStatus) Validate(formats strfmt.Registry) error {
 	}
 
 	if err := m.validateBoot(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateEbpfAttachments(formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -110,6 +117,32 @@ func (m *ReadyStatus) validateBoot(formats strfmt.Registry) error {
 			}
 			return err
 		}
+	}
+
+	return nil
+}
+
+func (m *ReadyStatus) validateEbpfAttachments(formats strfmt.Registry) error {
+	if swag.IsZero(m.EbpfAttachments) { // not required
+		return nil
+	}
+
+	for i := 0; i < len(m.EbpfAttachments); i++ {
+		if swag.IsZero(m.EbpfAttachments[i]) { // not required
+			continue
+		}
+
+		if m.EbpfAttachments[i] != nil {
+			if err := m.EbpfAttachments[i].Validate(formats); err != nil {
+				if ve, ok := err.(*errors.Validation); ok {
+					return ve.ValidateName("ebpf_attachments" + "." + strconv.Itoa(i))
+				} else if ce, ok := err.(*errors.CompositeError); ok {
+					return ce.ValidateName("ebpf_attachments" + "." + strconv.Itoa(i))
+				}
+				return err
+			}
+		}
+
 	}
 
 	return nil
@@ -200,6 +233,10 @@ func (m *ReadyStatus) ContextValidate(ctx context.Context, formats strfmt.Regist
 		res = append(res, err)
 	}
 
+	if err := m.contextValidateEbpfAttachments(ctx, formats); err != nil {
+		res = append(res, err)
+	}
+
 	if err := m.contextValidateExternalDependencies(ctx, formats); err != nil {
 		res = append(res, err)
 	}
@@ -245,6 +282,26 @@ func (m *ReadyStatus) contextValidateBoot(ctx context.Context, formats strfmt.Re
 			}
 			return err
 		}
+	}
+
+	return nil
+}
+
+func (m *ReadyStatus) contextValidateEbpfAttachments(ctx context.Context, formats strfmt.Registry) error {
+
+	for i := 0; i < len(m.EbpfAttachments); i++ {
+
+		if m.EbpfAttachments[i] != nil {
+			if err := m.EbpfAttachments[i].ContextValidate(ctx, formats); err != nil {
+				if ve, ok := err.(*errors.Validation); ok {
+					return ve.ValidateName("ebpf_attachments" + "." + strconv.Itoa(i))
+				} else if ce, ok := err.(*errors.CompositeError); ok {
+					return ce.ValidateName("ebpf_attachments" + "." + strconv.Itoa(i))
+				}
+				return err
+			}
+		}
+
 	}
 
 	return nil

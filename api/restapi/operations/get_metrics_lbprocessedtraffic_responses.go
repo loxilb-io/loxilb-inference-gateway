@@ -58,6 +58,96 @@ func (o *GetMetricsLbprocessedtrafficOK) WriteResponse(rw http.ResponseWriter, p
 	}
 }
 
+// GetMetricsLbprocessedtrafficUnauthorizedCode is the HTTP code returned for type GetMetricsLbprocessedtrafficUnauthorized
+const GetMetricsLbprocessedtrafficUnauthorizedCode int = 401
+
+/*
+GetMetricsLbprocessedtrafficUnauthorized Missing or invalid management credential
+
+swagger:response getMetricsLbprocessedtrafficUnauthorized
+*/
+type GetMetricsLbprocessedtrafficUnauthorized struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetMetricsLbprocessedtrafficUnauthorized creates GetMetricsLbprocessedtrafficUnauthorized with default headers values
+func NewGetMetricsLbprocessedtrafficUnauthorized() *GetMetricsLbprocessedtrafficUnauthorized {
+
+	return &GetMetricsLbprocessedtrafficUnauthorized{}
+}
+
+// WithPayload adds the payload to the get metrics lbprocessedtraffic unauthorized response
+func (o *GetMetricsLbprocessedtrafficUnauthorized) WithPayload(payload *models.Error) *GetMetricsLbprocessedtrafficUnauthorized {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get metrics lbprocessedtraffic unauthorized response
+func (o *GetMetricsLbprocessedtrafficUnauthorized) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetMetricsLbprocessedtrafficUnauthorized) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(401)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetMetricsLbprocessedtrafficForbiddenCode is the HTTP code returned for type GetMetricsLbprocessedtrafficForbidden
+const GetMetricsLbprocessedtrafficForbiddenCode int = 403
+
+/*
+GetMetricsLbprocessedtrafficForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getMetricsLbprocessedtrafficForbidden
+*/
+type GetMetricsLbprocessedtrafficForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetMetricsLbprocessedtrafficForbidden creates GetMetricsLbprocessedtrafficForbidden with default headers values
+func NewGetMetricsLbprocessedtrafficForbidden() *GetMetricsLbprocessedtrafficForbidden {
+
+	return &GetMetricsLbprocessedtrafficForbidden{}
+}
+
+// WithPayload adds the payload to the get metrics lbprocessedtraffic forbidden response
+func (o *GetMetricsLbprocessedtrafficForbidden) WithPayload(payload *models.Error) *GetMetricsLbprocessedtrafficForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get metrics lbprocessedtraffic forbidden response
+func (o *GetMetricsLbprocessedtrafficForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetMetricsLbprocessedtrafficForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetMetricsLbprocessedtrafficInternalServerErrorCode is the HTTP code returned for type GetMetricsLbprocessedtrafficInternalServerError
 const GetMetricsLbprocessedtrafficInternalServerErrorCode int = 500
 
@@ -95,6 +185,51 @@ func (o *GetMetricsLbprocessedtrafficInternalServerError) SetPayload(payload *mo
 func (o *GetMetricsLbprocessedtrafficInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetMetricsLbprocessedtrafficServiceUnavailableCode is the HTTP code returned for type GetMetricsLbprocessedtrafficServiceUnavailable
+const GetMetricsLbprocessedtrafficServiceUnavailableCode int = 503
+
+/*
+GetMetricsLbprocessedtrafficServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response getMetricsLbprocessedtrafficServiceUnavailable
+*/
+type GetMetricsLbprocessedtrafficServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetMetricsLbprocessedtrafficServiceUnavailable creates GetMetricsLbprocessedtrafficServiceUnavailable with default headers values
+func NewGetMetricsLbprocessedtrafficServiceUnavailable() *GetMetricsLbprocessedtrafficServiceUnavailable {
+
+	return &GetMetricsLbprocessedtrafficServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the get metrics lbprocessedtraffic service unavailable response
+func (o *GetMetricsLbprocessedtrafficServiceUnavailable) WithPayload(payload *models.Error) *GetMetricsLbprocessedtrafficServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get metrics lbprocessedtraffic service unavailable response
+func (o *GetMetricsLbprocessedtrafficServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetMetricsLbprocessedtrafficServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

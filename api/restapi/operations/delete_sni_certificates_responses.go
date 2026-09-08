@@ -58,6 +58,96 @@ func (o *DeleteSniCertificatesOK) WriteResponse(rw http.ResponseWriter, producer
 	}
 }
 
+// DeleteSniCertificatesUnauthorizedCode is the HTTP code returned for type DeleteSniCertificatesUnauthorized
+const DeleteSniCertificatesUnauthorizedCode int = 401
+
+/*
+DeleteSniCertificatesUnauthorized Missing or invalid management credential
+
+swagger:response deleteSniCertificatesUnauthorized
+*/
+type DeleteSniCertificatesUnauthorized struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewDeleteSniCertificatesUnauthorized creates DeleteSniCertificatesUnauthorized with default headers values
+func NewDeleteSniCertificatesUnauthorized() *DeleteSniCertificatesUnauthorized {
+
+	return &DeleteSniCertificatesUnauthorized{}
+}
+
+// WithPayload adds the payload to the delete sni certificates unauthorized response
+func (o *DeleteSniCertificatesUnauthorized) WithPayload(payload *models.Error) *DeleteSniCertificatesUnauthorized {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete sni certificates unauthorized response
+func (o *DeleteSniCertificatesUnauthorized) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *DeleteSniCertificatesUnauthorized) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(401)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// DeleteSniCertificatesForbiddenCode is the HTTP code returned for type DeleteSniCertificatesForbidden
+const DeleteSniCertificatesForbiddenCode int = 403
+
+/*
+DeleteSniCertificatesForbidden Authenticated principal is not authorized for this operation
+
+swagger:response deleteSniCertificatesForbidden
+*/
+type DeleteSniCertificatesForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewDeleteSniCertificatesForbidden creates DeleteSniCertificatesForbidden with default headers values
+func NewDeleteSniCertificatesForbidden() *DeleteSniCertificatesForbidden {
+
+	return &DeleteSniCertificatesForbidden{}
+}
+
+// WithPayload adds the payload to the delete sni certificates forbidden response
+func (o *DeleteSniCertificatesForbidden) WithPayload(payload *models.Error) *DeleteSniCertificatesForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete sni certificates forbidden response
+func (o *DeleteSniCertificatesForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *DeleteSniCertificatesForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // DeleteSniCertificatesNotFoundCode is the HTTP code returned for type DeleteSniCertificatesNotFound
 const DeleteSniCertificatesNotFoundCode int = 404
 
@@ -140,6 +230,51 @@ func (o *DeleteSniCertificatesInternalServerError) SetPayload(payload *models.Er
 func (o *DeleteSniCertificatesInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// DeleteSniCertificatesServiceUnavailableCode is the HTTP code returned for type DeleteSniCertificatesServiceUnavailable
+const DeleteSniCertificatesServiceUnavailableCode int = 503
+
+/*
+DeleteSniCertificatesServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response deleteSniCertificatesServiceUnavailable
+*/
+type DeleteSniCertificatesServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewDeleteSniCertificatesServiceUnavailable creates DeleteSniCertificatesServiceUnavailable with default headers values
+func NewDeleteSniCertificatesServiceUnavailable() *DeleteSniCertificatesServiceUnavailable {
+
+	return &DeleteSniCertificatesServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the delete sni certificates service unavailable response
+func (o *DeleteSniCertificatesServiceUnavailable) WithPayload(payload *models.Error) *DeleteSniCertificatesServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete sni certificates service unavailable response
+func (o *DeleteSniCertificatesServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *DeleteSniCertificatesServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

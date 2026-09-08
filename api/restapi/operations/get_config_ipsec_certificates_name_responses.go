@@ -103,6 +103,51 @@ func (o *GetConfigIpsecCertificatesNameUnauthorized) WriteResponse(rw http.Respo
 	}
 }
 
+// GetConfigIpsecCertificatesNameForbiddenCode is the HTTP code returned for type GetConfigIpsecCertificatesNameForbidden
+const GetConfigIpsecCertificatesNameForbiddenCode int = 403
+
+/*
+GetConfigIpsecCertificatesNameForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getConfigIpsecCertificatesNameForbidden
+*/
+type GetConfigIpsecCertificatesNameForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigIpsecCertificatesNameForbidden creates GetConfigIpsecCertificatesNameForbidden with default headers values
+func NewGetConfigIpsecCertificatesNameForbidden() *GetConfigIpsecCertificatesNameForbidden {
+
+	return &GetConfigIpsecCertificatesNameForbidden{}
+}
+
+// WithPayload adds the payload to the get config ipsec certificates name forbidden response
+func (o *GetConfigIpsecCertificatesNameForbidden) WithPayload(payload *models.Error) *GetConfigIpsecCertificatesNameForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config ipsec certificates name forbidden response
+func (o *GetConfigIpsecCertificatesNameForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigIpsecCertificatesNameForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigIpsecCertificatesNameNotFoundCode is the HTTP code returned for type GetConfigIpsecCertificatesNameNotFound
 const GetConfigIpsecCertificatesNameNotFoundCode int = 404
 
@@ -185,6 +230,51 @@ func (o *GetConfigIpsecCertificatesNameInternalServerError) SetPayload(payload *
 func (o *GetConfigIpsecCertificatesNameInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetConfigIpsecCertificatesNameServiceUnavailableCode is the HTTP code returned for type GetConfigIpsecCertificatesNameServiceUnavailable
+const GetConfigIpsecCertificatesNameServiceUnavailableCode int = 503
+
+/*
+GetConfigIpsecCertificatesNameServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response getConfigIpsecCertificatesNameServiceUnavailable
+*/
+type GetConfigIpsecCertificatesNameServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigIpsecCertificatesNameServiceUnavailable creates GetConfigIpsecCertificatesNameServiceUnavailable with default headers values
+func NewGetConfigIpsecCertificatesNameServiceUnavailable() *GetConfigIpsecCertificatesNameServiceUnavailable {
+
+	return &GetConfigIpsecCertificatesNameServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the get config ipsec certificates name service unavailable response
+func (o *GetConfigIpsecCertificatesNameServiceUnavailable) WithPayload(payload *models.Error) *GetConfigIpsecCertificatesNameServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config ipsec certificates name service unavailable response
+func (o *GetConfigIpsecCertificatesNameServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigIpsecCertificatesNameServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

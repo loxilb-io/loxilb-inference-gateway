@@ -148,6 +148,51 @@ func (o *PostConfigLlamafirewallConfigureUnauthorized) WriteResponse(rw http.Res
 	}
 }
 
+// PostConfigLlamafirewallConfigureForbiddenCode is the HTTP code returned for type PostConfigLlamafirewallConfigureForbidden
+const PostConfigLlamafirewallConfigureForbiddenCode int = 403
+
+/*
+PostConfigLlamafirewallConfigureForbidden Authenticated principal is not authorized for this operation
+
+swagger:response postConfigLlamafirewallConfigureForbidden
+*/
+type PostConfigLlamafirewallConfigureForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigLlamafirewallConfigureForbidden creates PostConfigLlamafirewallConfigureForbidden with default headers values
+func NewPostConfigLlamafirewallConfigureForbidden() *PostConfigLlamafirewallConfigureForbidden {
+
+	return &PostConfigLlamafirewallConfigureForbidden{}
+}
+
+// WithPayload adds the payload to the post config llamafirewall configure forbidden response
+func (o *PostConfigLlamafirewallConfigureForbidden) WithPayload(payload *models.Error) *PostConfigLlamafirewallConfigureForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config llamafirewall configure forbidden response
+func (o *PostConfigLlamafirewallConfigureForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigLlamafirewallConfigureForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // PostConfigLlamafirewallConfigureInternalServerErrorCode is the HTTP code returned for type PostConfigLlamafirewallConfigureInternalServerError
 const PostConfigLlamafirewallConfigureInternalServerErrorCode int = 500
 

@@ -26,7 +26,7 @@ type GetStatusFilesystemOK struct {
 	/*
 	  In: Body
 	*/
-	Payload *GetStatusFilesystemOKBody `json:"body,omitempty"`
+	Payload *models.FilesystemStatus `json:"body,omitempty"`
 }
 
 // NewGetStatusFilesystemOK creates GetStatusFilesystemOK with default headers values
@@ -36,13 +36,13 @@ func NewGetStatusFilesystemOK() *GetStatusFilesystemOK {
 }
 
 // WithPayload adds the payload to the get status filesystem o k response
-func (o *GetStatusFilesystemOK) WithPayload(payload *GetStatusFilesystemOKBody) *GetStatusFilesystemOK {
+func (o *GetStatusFilesystemOK) WithPayload(payload *models.FilesystemStatus) *GetStatusFilesystemOK {
 	o.Payload = payload
 	return o
 }
 
 // SetPayload sets the payload to the get status filesystem o k response
-func (o *GetStatusFilesystemOK) SetPayload(payload *GetStatusFilesystemOKBody) {
+func (o *GetStatusFilesystemOK) SetPayload(payload *models.FilesystemStatus) {
 	o.Payload = payload
 }
 
@@ -95,6 +95,51 @@ func (o *GetStatusFilesystemUnauthorized) SetPayload(payload *models.Error) {
 func (o *GetStatusFilesystemUnauthorized) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(401)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetStatusFilesystemForbiddenCode is the HTTP code returned for type GetStatusFilesystemForbidden
+const GetStatusFilesystemForbiddenCode int = 403
+
+/*
+GetStatusFilesystemForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getStatusFilesystemForbidden
+*/
+type GetStatusFilesystemForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetStatusFilesystemForbidden creates GetStatusFilesystemForbidden with default headers values
+func NewGetStatusFilesystemForbidden() *GetStatusFilesystemForbidden {
+
+	return &GetStatusFilesystemForbidden{}
+}
+
+// WithPayload adds the payload to the get status filesystem forbidden response
+func (o *GetStatusFilesystemForbidden) WithPayload(payload *models.Error) *GetStatusFilesystemForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get status filesystem forbidden response
+func (o *GetStatusFilesystemForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetStatusFilesystemForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

@@ -103,6 +103,51 @@ func (o *GetConfigPortAllUnauthorized) WriteResponse(rw http.ResponseWriter, pro
 	}
 }
 
+// GetConfigPortAllForbiddenCode is the HTTP code returned for type GetConfigPortAllForbidden
+const GetConfigPortAllForbiddenCode int = 403
+
+/*
+GetConfigPortAllForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getConfigPortAllForbidden
+*/
+type GetConfigPortAllForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigPortAllForbidden creates GetConfigPortAllForbidden with default headers values
+func NewGetConfigPortAllForbidden() *GetConfigPortAllForbidden {
+
+	return &GetConfigPortAllForbidden{}
+}
+
+// WithPayload adds the payload to the get config port all forbidden response
+func (o *GetConfigPortAllForbidden) WithPayload(payload *models.Error) *GetConfigPortAllForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config port all forbidden response
+func (o *GetConfigPortAllForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigPortAllForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigPortAllInternalServerErrorCode is the HTTP code returned for type GetConfigPortAllInternalServerError
 const GetConfigPortAllInternalServerErrorCode int = 500
 

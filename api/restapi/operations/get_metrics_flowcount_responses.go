@@ -58,6 +58,96 @@ func (o *GetMetricsFlowcountOK) WriteResponse(rw http.ResponseWriter, producer r
 	}
 }
 
+// GetMetricsFlowcountUnauthorizedCode is the HTTP code returned for type GetMetricsFlowcountUnauthorized
+const GetMetricsFlowcountUnauthorizedCode int = 401
+
+/*
+GetMetricsFlowcountUnauthorized Missing or invalid management credential
+
+swagger:response getMetricsFlowcountUnauthorized
+*/
+type GetMetricsFlowcountUnauthorized struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetMetricsFlowcountUnauthorized creates GetMetricsFlowcountUnauthorized with default headers values
+func NewGetMetricsFlowcountUnauthorized() *GetMetricsFlowcountUnauthorized {
+
+	return &GetMetricsFlowcountUnauthorized{}
+}
+
+// WithPayload adds the payload to the get metrics flowcount unauthorized response
+func (o *GetMetricsFlowcountUnauthorized) WithPayload(payload *models.Error) *GetMetricsFlowcountUnauthorized {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get metrics flowcount unauthorized response
+func (o *GetMetricsFlowcountUnauthorized) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetMetricsFlowcountUnauthorized) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(401)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetMetricsFlowcountForbiddenCode is the HTTP code returned for type GetMetricsFlowcountForbidden
+const GetMetricsFlowcountForbiddenCode int = 403
+
+/*
+GetMetricsFlowcountForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getMetricsFlowcountForbidden
+*/
+type GetMetricsFlowcountForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetMetricsFlowcountForbidden creates GetMetricsFlowcountForbidden with default headers values
+func NewGetMetricsFlowcountForbidden() *GetMetricsFlowcountForbidden {
+
+	return &GetMetricsFlowcountForbidden{}
+}
+
+// WithPayload adds the payload to the get metrics flowcount forbidden response
+func (o *GetMetricsFlowcountForbidden) WithPayload(payload *models.Error) *GetMetricsFlowcountForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get metrics flowcount forbidden response
+func (o *GetMetricsFlowcountForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetMetricsFlowcountForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetMetricsFlowcountInternalServerErrorCode is the HTTP code returned for type GetMetricsFlowcountInternalServerError
 const GetMetricsFlowcountInternalServerErrorCode int = 500
 
@@ -95,6 +185,51 @@ func (o *GetMetricsFlowcountInternalServerError) SetPayload(payload *models.Erro
 func (o *GetMetricsFlowcountInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetMetricsFlowcountServiceUnavailableCode is the HTTP code returned for type GetMetricsFlowcountServiceUnavailable
+const GetMetricsFlowcountServiceUnavailableCode int = 503
+
+/*
+GetMetricsFlowcountServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response getMetricsFlowcountServiceUnavailable
+*/
+type GetMetricsFlowcountServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetMetricsFlowcountServiceUnavailable creates GetMetricsFlowcountServiceUnavailable with default headers values
+func NewGetMetricsFlowcountServiceUnavailable() *GetMetricsFlowcountServiceUnavailable {
+
+	return &GetMetricsFlowcountServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the get metrics flowcount service unavailable response
+func (o *GetMetricsFlowcountServiceUnavailable) WithPayload(payload *models.Error) *GetMetricsFlowcountServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get metrics flowcount service unavailable response
+func (o *GetMetricsFlowcountServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetMetricsFlowcountServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

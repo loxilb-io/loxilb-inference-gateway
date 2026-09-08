@@ -58,6 +58,96 @@ func (o *GetConfigOpaWatcherOK) WriteResponse(rw http.ResponseWriter, producer r
 	}
 }
 
+// GetConfigOpaWatcherUnauthorizedCode is the HTTP code returned for type GetConfigOpaWatcherUnauthorized
+const GetConfigOpaWatcherUnauthorizedCode int = 401
+
+/*
+GetConfigOpaWatcherUnauthorized Missing or invalid management credential
+
+swagger:response getConfigOpaWatcherUnauthorized
+*/
+type GetConfigOpaWatcherUnauthorized struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigOpaWatcherUnauthorized creates GetConfigOpaWatcherUnauthorized with default headers values
+func NewGetConfigOpaWatcherUnauthorized() *GetConfigOpaWatcherUnauthorized {
+
+	return &GetConfigOpaWatcherUnauthorized{}
+}
+
+// WithPayload adds the payload to the get config opa watcher unauthorized response
+func (o *GetConfigOpaWatcherUnauthorized) WithPayload(payload *models.Error) *GetConfigOpaWatcherUnauthorized {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config opa watcher unauthorized response
+func (o *GetConfigOpaWatcherUnauthorized) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigOpaWatcherUnauthorized) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(401)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetConfigOpaWatcherForbiddenCode is the HTTP code returned for type GetConfigOpaWatcherForbidden
+const GetConfigOpaWatcherForbiddenCode int = 403
+
+/*
+GetConfigOpaWatcherForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getConfigOpaWatcherForbidden
+*/
+type GetConfigOpaWatcherForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigOpaWatcherForbidden creates GetConfigOpaWatcherForbidden with default headers values
+func NewGetConfigOpaWatcherForbidden() *GetConfigOpaWatcherForbidden {
+
+	return &GetConfigOpaWatcherForbidden{}
+}
+
+// WithPayload adds the payload to the get config opa watcher forbidden response
+func (o *GetConfigOpaWatcherForbidden) WithPayload(payload *models.Error) *GetConfigOpaWatcherForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config opa watcher forbidden response
+func (o *GetConfigOpaWatcherForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigOpaWatcherForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigOpaWatcherInternalServerErrorCode is the HTTP code returned for type GetConfigOpaWatcherInternalServerError
 const GetConfigOpaWatcherInternalServerErrorCode int = 500
 
@@ -95,6 +185,51 @@ func (o *GetConfigOpaWatcherInternalServerError) SetPayload(payload *models.Erro
 func (o *GetConfigOpaWatcherInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetConfigOpaWatcherServiceUnavailableCode is the HTTP code returned for type GetConfigOpaWatcherServiceUnavailable
+const GetConfigOpaWatcherServiceUnavailableCode int = 503
+
+/*
+GetConfigOpaWatcherServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response getConfigOpaWatcherServiceUnavailable
+*/
+type GetConfigOpaWatcherServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigOpaWatcherServiceUnavailable creates GetConfigOpaWatcherServiceUnavailable with default headers values
+func NewGetConfigOpaWatcherServiceUnavailable() *GetConfigOpaWatcherServiceUnavailable {
+
+	return &GetConfigOpaWatcherServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the get config opa watcher service unavailable response
+func (o *GetConfigOpaWatcherServiceUnavailable) WithPayload(payload *models.Error) *GetConfigOpaWatcherServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config opa watcher service unavailable response
+func (o *GetConfigOpaWatcherServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigOpaWatcherServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

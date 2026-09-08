@@ -101,6 +101,7 @@ const (
 	AreaL4Trace      = "l4trace"
 	AreaLifecycle    = "config_lifecycle"
 	AreaLlamaFW      = "llamafirewall"
+	AreaMaintenance  = "maintenance"
 	AreaMetrics      = "metrics"
 	AreaOPA          = "opa"
 	AreaParams       = "params"
@@ -117,6 +118,12 @@ var RouteLifecycles = []RouteLifecycle{
 	{Method: "post", Path: "/auth/login", Class: ClassRuntimeRebuilt, Area: AreaAuthSessions},
 	{Method: "post", Path: "/auth/logout", Class: ClassRuntimeRebuilt, Area: AreaAuthSessions},
 	{Method: "post", Path: "/auth/token/upgrade", Class: ClassRuntimeRebuilt, Area: AreaAuthSessions},
+	// Operator maintenance is deliberately ephemeral: a restarted gateway
+	// always boots active, and an operator who still wants the freeze
+	// re-enters it. Persisting it would let a forgotten maintenance flag
+	// brick config management after an unrelated reboot.
+	{Method: "put", Path: "/maintenance", Class: ClassRuntimeRebuilt, Area: AreaMaintenance},
+
 	{Method: "post", Path: "/auth/users", Class: ClassExternalStore, Area: AreaAuthUsers, DesiredState: true},
 	{Method: "put", Path: "/auth/users/{id}", Class: ClassExternalStore, Area: AreaAuthUsers, DesiredState: true},
 	{Method: "delete", Path: "/auth/users/{id}", Class: ClassExternalStore, Area: AreaAuthUsers, DesiredState: true},

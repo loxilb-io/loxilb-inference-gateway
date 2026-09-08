@@ -148,6 +148,51 @@ func (o *PostConfigGpuEnableUnauthorized) WriteResponse(rw http.ResponseWriter, 
 	}
 }
 
+// PostConfigGpuEnableForbiddenCode is the HTTP code returned for type PostConfigGpuEnableForbidden
+const PostConfigGpuEnableForbiddenCode int = 403
+
+/*
+PostConfigGpuEnableForbidden Authenticated principal is not authorized for this operation
+
+swagger:response postConfigGpuEnableForbidden
+*/
+type PostConfigGpuEnableForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigGpuEnableForbidden creates PostConfigGpuEnableForbidden with default headers values
+func NewPostConfigGpuEnableForbidden() *PostConfigGpuEnableForbidden {
+
+	return &PostConfigGpuEnableForbidden{}
+}
+
+// WithPayload adds the payload to the post config gpu enable forbidden response
+func (o *PostConfigGpuEnableForbidden) WithPayload(payload *models.Error) *PostConfigGpuEnableForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config gpu enable forbidden response
+func (o *PostConfigGpuEnableForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigGpuEnableForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // PostConfigGpuEnableInternalServerErrorCode is the HTTP code returned for type PostConfigGpuEnableInternalServerError
 const PostConfigGpuEnableInternalServerErrorCode int = 500
 

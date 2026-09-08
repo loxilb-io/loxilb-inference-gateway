@@ -18,6 +18,7 @@ package restapi
 import (
 	"bytes"
 	"crypto/tls"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -88,6 +89,18 @@ func configureAPI(api *operations.LoxilbRestAPIAPI) http.Handler {
 	api.BearerAuthAuth = handler.BearerAuthAuth
 	// Set your custom authorizer if needed. Default one is security.Authorized
 	api.APIAuthorizer = handler.Authorized()
+
+	// Hand the diagnostics surface the served contract's identity, read
+	// out of the embedded spec so it cannot drift from what is served.
+	var specIdentity struct {
+		BasePath string `json:"basePath"`
+		Info     struct {
+			Version string `json:"version"`
+		} `json:"info"`
+	}
+	if err := json.Unmarshal(SwaggerJSON, &specIdentity); err == nil {
+		handler.SetAPISpecIdentity(specIdentity.BasePath, specIdentity.Info.Version)
+	}
 
 	// Load balancer add and delete and get
 	api.PostConfigLoadbalancerHandler = operations.PostConfigLoadbalancerHandlerFunc(handler.ConfigPostLoadbalancer)
@@ -168,6 +181,13 @@ func configureAPI(api *operations.LoxilbRestAPIAPI) http.Handler {
 	api.PostConfigMirrorHandler = operations.PostConfigMirrorHandlerFunc(handler.ConfigPostMirror)
 	api.DeleteConfigMirrorIdentIdentHandler = operations.DeleteConfigMirrorIdentIdentHandlerFunc(handler.ConfigDeleteMirror)
 	api.GetConfigMirrorAllHandler = operations.GetConfigMirrorAllHandlerFunc(handler.ConfigGetMirror)
+
+	// Operator maintenance (drain read-back)
+	api.GetMaintenanceHandler = operations.GetMaintenanceHandlerFunc(handler.ConfigGetMaintenance)
+	api.PutMaintenanceHandler = operations.PutMaintenanceHandlerFunc(handler.ConfigPutMaintenance)
+
+	// Secret-safe diagnostics
+	api.GetDiagnosticsHandler = operations.GetDiagnosticsHandlerFunc(handler.ConfigGetDiagnostics)
 
 	// Status
 	api.GetStatusReadyHandler = operations.GetStatusReadyHandlerFunc(handler.ConfigGetStatusReady)

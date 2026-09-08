@@ -103,6 +103,51 @@ func (o *GetConfigBfdAllUnauthorized) WriteResponse(rw http.ResponseWriter, prod
 	}
 }
 
+// GetConfigBfdAllForbiddenCode is the HTTP code returned for type GetConfigBfdAllForbidden
+const GetConfigBfdAllForbiddenCode int = 403
+
+/*
+GetConfigBfdAllForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getConfigBfdAllForbidden
+*/
+type GetConfigBfdAllForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigBfdAllForbidden creates GetConfigBfdAllForbidden with default headers values
+func NewGetConfigBfdAllForbidden() *GetConfigBfdAllForbidden {
+
+	return &GetConfigBfdAllForbidden{}
+}
+
+// WithPayload adds the payload to the get config bfd all forbidden response
+func (o *GetConfigBfdAllForbidden) WithPayload(payload *models.Error) *GetConfigBfdAllForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config bfd all forbidden response
+func (o *GetConfigBfdAllForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigBfdAllForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigBfdAllInternalServerErrorCode is the HTTP code returned for type GetConfigBfdAllInternalServerError
 const GetConfigBfdAllInternalServerErrorCode int = 500
 

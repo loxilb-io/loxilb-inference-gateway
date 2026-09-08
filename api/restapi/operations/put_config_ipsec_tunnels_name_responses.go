@@ -128,6 +128,51 @@ func (o *PutConfigIpsecTunnelsNameUnauthorized) WriteResponse(rw http.ResponseWr
 	}
 }
 
+// PutConfigIpsecTunnelsNameForbiddenCode is the HTTP code returned for type PutConfigIpsecTunnelsNameForbidden
+const PutConfigIpsecTunnelsNameForbiddenCode int = 403
+
+/*
+PutConfigIpsecTunnelsNameForbidden Authenticated principal is not authorized for this operation
+
+swagger:response putConfigIpsecTunnelsNameForbidden
+*/
+type PutConfigIpsecTunnelsNameForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPutConfigIpsecTunnelsNameForbidden creates PutConfigIpsecTunnelsNameForbidden with default headers values
+func NewPutConfigIpsecTunnelsNameForbidden() *PutConfigIpsecTunnelsNameForbidden {
+
+	return &PutConfigIpsecTunnelsNameForbidden{}
+}
+
+// WithPayload adds the payload to the put config ipsec tunnels name forbidden response
+func (o *PutConfigIpsecTunnelsNameForbidden) WithPayload(payload *models.Error) *PutConfigIpsecTunnelsNameForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the put config ipsec tunnels name forbidden response
+func (o *PutConfigIpsecTunnelsNameForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PutConfigIpsecTunnelsNameForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // PutConfigIpsecTunnelsNameNotFoundCode is the HTTP code returned for type PutConfigIpsecTunnelsNameNotFound
 const PutConfigIpsecTunnelsNameNotFoundCode int = 404
 
@@ -210,6 +255,51 @@ func (o *PutConfigIpsecTunnelsNameInternalServerError) SetPayload(payload *model
 func (o *PutConfigIpsecTunnelsNameInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// PutConfigIpsecTunnelsNameServiceUnavailableCode is the HTTP code returned for type PutConfigIpsecTunnelsNameServiceUnavailable
+const PutConfigIpsecTunnelsNameServiceUnavailableCode int = 503
+
+/*
+PutConfigIpsecTunnelsNameServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response putConfigIpsecTunnelsNameServiceUnavailable
+*/
+type PutConfigIpsecTunnelsNameServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPutConfigIpsecTunnelsNameServiceUnavailable creates PutConfigIpsecTunnelsNameServiceUnavailable with default headers values
+func NewPutConfigIpsecTunnelsNameServiceUnavailable() *PutConfigIpsecTunnelsNameServiceUnavailable {
+
+	return &PutConfigIpsecTunnelsNameServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the put config ipsec tunnels name service unavailable response
+func (o *PutConfigIpsecTunnelsNameServiceUnavailable) WithPayload(payload *models.Error) *PutConfigIpsecTunnelsNameServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the put config ipsec tunnels name service unavailable response
+func (o *PutConfigIpsecTunnelsNameServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PutConfigIpsecTunnelsNameServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

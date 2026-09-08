@@ -103,6 +103,51 @@ func (o *GetConfigTunnelVxlanAllUnauthorized) WriteResponse(rw http.ResponseWrit
 	}
 }
 
+// GetConfigTunnelVxlanAllForbiddenCode is the HTTP code returned for type GetConfigTunnelVxlanAllForbidden
+const GetConfigTunnelVxlanAllForbiddenCode int = 403
+
+/*
+GetConfigTunnelVxlanAllForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getConfigTunnelVxlanAllForbidden
+*/
+type GetConfigTunnelVxlanAllForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigTunnelVxlanAllForbidden creates GetConfigTunnelVxlanAllForbidden with default headers values
+func NewGetConfigTunnelVxlanAllForbidden() *GetConfigTunnelVxlanAllForbidden {
+
+	return &GetConfigTunnelVxlanAllForbidden{}
+}
+
+// WithPayload adds the payload to the get config tunnel vxlan all forbidden response
+func (o *GetConfigTunnelVxlanAllForbidden) WithPayload(payload *models.Error) *GetConfigTunnelVxlanAllForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config tunnel vxlan all forbidden response
+func (o *GetConfigTunnelVxlanAllForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigTunnelVxlanAllForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigTunnelVxlanAllInternalServerErrorCode is the HTTP code returned for type GetConfigTunnelVxlanAllInternalServerError
 const GetConfigTunnelVxlanAllInternalServerErrorCode int = 500
 

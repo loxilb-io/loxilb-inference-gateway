@@ -128,6 +128,51 @@ func (o *PostConfigL7PolicyUnauthorized) WriteResponse(rw http.ResponseWriter, p
 	}
 }
 
+// PostConfigL7PolicyForbiddenCode is the HTTP code returned for type PostConfigL7PolicyForbidden
+const PostConfigL7PolicyForbiddenCode int = 403
+
+/*
+PostConfigL7PolicyForbidden Authenticated principal is not authorized for this operation
+
+swagger:response postConfigL7PolicyForbidden
+*/
+type PostConfigL7PolicyForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigL7PolicyForbidden creates PostConfigL7PolicyForbidden with default headers values
+func NewPostConfigL7PolicyForbidden() *PostConfigL7PolicyForbidden {
+
+	return &PostConfigL7PolicyForbidden{}
+}
+
+// WithPayload adds the payload to the post config l7 policy forbidden response
+func (o *PostConfigL7PolicyForbidden) WithPayload(payload *models.Error) *PostConfigL7PolicyForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config l7 policy forbidden response
+func (o *PostConfigL7PolicyForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigL7PolicyForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // PostConfigL7PolicyNotFoundCode is the HTTP code returned for type PostConfigL7PolicyNotFound
 const PostConfigL7PolicyNotFoundCode int = 404
 
@@ -255,6 +300,51 @@ func (o *PostConfigL7PolicyInternalServerError) SetPayload(payload *models.Error
 func (o *PostConfigL7PolicyInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// PostConfigL7PolicyServiceUnavailableCode is the HTTP code returned for type PostConfigL7PolicyServiceUnavailable
+const PostConfigL7PolicyServiceUnavailableCode int = 503
+
+/*
+PostConfigL7PolicyServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response postConfigL7PolicyServiceUnavailable
+*/
+type PostConfigL7PolicyServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigL7PolicyServiceUnavailable creates PostConfigL7PolicyServiceUnavailable with default headers values
+func NewPostConfigL7PolicyServiceUnavailable() *PostConfigL7PolicyServiceUnavailable {
+
+	return &PostConfigL7PolicyServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the post config l7 policy service unavailable response
+func (o *PostConfigL7PolicyServiceUnavailable) WithPayload(payload *models.Error) *PostConfigL7PolicyServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config l7 policy service unavailable response
+func (o *PostConfigL7PolicyServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigL7PolicyServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {
