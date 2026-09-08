@@ -697,6 +697,51 @@ rc=$(restore_commit llb1 "$PLIB_ARTIFACTS/good.json")
     || fail "capture-fault recovery: HTTP $rc fw=$(fw_count)"
 
 #################################################################################
+echo "=== disk full: persist refused with the ENOSPC reason, snapshot survives ==="
+#################################################################################
+# A full configuration disk is staged inside the container: a small tmpfs
+# is mounted over /etc/loxilb (shadowing the bind mount, which keeps the
+# real files out of harm's way by construction), the ENTIRE directory is
+# copied in, and a filler eats every remaining byte. The full copy is
+# load-bearing: /etc/loxilb also holds the managed cert directory and the
+# node-local secrets, and a shadow missing them fails the persist in the
+# CAPTURE stage — a 500 for the wrong reason, which the exact-reason
+# assert below rightly refuses. The persist must answer 500 naming the
+# space failure, and the temp-file-then-rename discipline must leave the
+# shadowed snapshot.json byte-identical. Unmounting restores the real
+# directory, and a follow-up persist proves the gateway took no damage.
+sleep 4   # let the previous leg's auto-persist debounce land on the real disk
+sum_before=$(sudo jq -r '.checksum' "$CFG/snapshot.json")
+docker exec llb1 sh -c '
+    rm -rf /tmp/loxilb.preserve &&
+    cp -a /etc/loxilb /tmp/loxilb.preserve &&
+    mount -t tmpfs -o size=2M tmpfs /etc/loxilb &&
+    cp -a /tmp/loxilb.preserve/. /etc/loxilb/ &&
+    dd if=/dev/zero of=/etc/loxilb/.filler bs=1k >/dev/null 2>&1;
+    avail=$(df -k /etc/loxilb | awk "NR==2{print \$4}");
+    [ "$avail" = "0" ]' \
+    && pass "config disk staged full (tmpfs shadow of the whole directory, 0 bytes free)" \
+    || fail "could not stage the full disk"
+rc=$(plib_curl llb1 -o "$PLIB_ARTIFACTS/persist-enospc.json" -w "%{http_code}" -X POST "$PLIB_API/config/persist")
+[[ "$rc" == "500" ]] \
+    && pass "persist onto a full disk fails loudly (500)" \
+    || fail "full-disk persist: HTTP $rc, want 500"
+grep -qi "no space" "$PLIB_ARTIFACTS/persist-enospc.json" \
+    && pass "the failure names the space condition, not a generic error" \
+    || fail "full-disk persist body lacks the ENOSPC reason: $(cat "$PLIB_ARTIFACTS/persist-enospc.json")"
+docker exec llb1 cmp -s /etc/loxilb/snapshot.json /tmp/loxilb.preserve/snapshot.json \
+    && pass "shadowed snapshot.json byte-survived the failed persist" \
+    || fail "snapshot.json changed under ENOSPC"
+docker exec llb1 sh -c 'umount /etc/loxilb && rm -rf /tmp/loxilb.preserve' \
+    || fail "could not unmount the tmpfs shadow"
+[[ "$(sudo jq -r '.checksum' "$CFG/snapshot.json")" == "$sum_before" ]] \
+    && pass "real snapshot.json untouched behind the shadow" \
+    || fail "real snapshot.json changed across the disk-full leg"
+persist_and_verify llb1 \
+    && pass "persist succeeds again once space is back" \
+    || fail "post-recovery persist"
+
+#################################################################################
 echo "=== deterministic persist crashes: previous snapshot survives both points ==="
 #################################################################################
 # The fault hook kills the process at the exact points a real crash could
