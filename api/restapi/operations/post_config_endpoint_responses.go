@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// PostConfigEndpointNoContentCode is the HTTP code returned for type PostConfigEndpointNoContent
-const PostConfigEndpointNoContentCode int = 204
+// PostConfigEndpointOKCode is the HTTP code returned for type PostConfigEndpointOK
+const PostConfigEndpointOKCode int = 200
 
 /*
-PostConfigEndpointNoContent OK
+PostConfigEndpointOK OK
 
-swagger:response postConfigEndpointNoContent
+swagger:response postConfigEndpointOK
 */
-type PostConfigEndpointNoContent struct {
+type PostConfigEndpointOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewPostConfigEndpointNoContent creates PostConfigEndpointNoContent with default headers values
-func NewPostConfigEndpointNoContent() *PostConfigEndpointNoContent {
+// NewPostConfigEndpointOK creates PostConfigEndpointOK with default headers values
+func NewPostConfigEndpointOK() *PostConfigEndpointOK {
 
-	return &PostConfigEndpointNoContent{}
+	return &PostConfigEndpointOK{}
+}
+
+// WithPayload adds the payload to the post config endpoint o k response
+func (o *PostConfigEndpointOK) WithPayload(payload *models.OperationResult) *PostConfigEndpointOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config endpoint o k response
+func (o *PostConfigEndpointOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *PostConfigEndpointNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *PostConfigEndpointOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // PostConfigEndpointBadRequestCode is the HTTP code returned for type PostConfigEndpointBadRequest

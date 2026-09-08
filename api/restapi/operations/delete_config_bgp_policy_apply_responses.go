@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// DeleteConfigBgpPolicyApplyNoContentCode is the HTTP code returned for type DeleteConfigBgpPolicyApplyNoContent
-const DeleteConfigBgpPolicyApplyNoContentCode int = 204
+// DeleteConfigBgpPolicyApplyOKCode is the HTTP code returned for type DeleteConfigBgpPolicyApplyOK
+const DeleteConfigBgpPolicyApplyOKCode int = 200
 
 /*
-DeleteConfigBgpPolicyApplyNoContent OK
+DeleteConfigBgpPolicyApplyOK OK
 
-swagger:response deleteConfigBgpPolicyApplyNoContent
+swagger:response deleteConfigBgpPolicyApplyOK
 */
-type DeleteConfigBgpPolicyApplyNoContent struct {
+type DeleteConfigBgpPolicyApplyOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewDeleteConfigBgpPolicyApplyNoContent creates DeleteConfigBgpPolicyApplyNoContent with default headers values
-func NewDeleteConfigBgpPolicyApplyNoContent() *DeleteConfigBgpPolicyApplyNoContent {
+// NewDeleteConfigBgpPolicyApplyOK creates DeleteConfigBgpPolicyApplyOK with default headers values
+func NewDeleteConfigBgpPolicyApplyOK() *DeleteConfigBgpPolicyApplyOK {
 
-	return &DeleteConfigBgpPolicyApplyNoContent{}
+	return &DeleteConfigBgpPolicyApplyOK{}
+}
+
+// WithPayload adds the payload to the delete config bgp policy apply o k response
+func (o *DeleteConfigBgpPolicyApplyOK) WithPayload(payload *models.OperationResult) *DeleteConfigBgpPolicyApplyOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config bgp policy apply o k response
+func (o *DeleteConfigBgpPolicyApplyOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *DeleteConfigBgpPolicyApplyNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *DeleteConfigBgpPolicyApplyOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // DeleteConfigBgpPolicyApplyBadRequestCode is the HTTP code returned for type DeleteConfigBgpPolicyApplyBadRequest

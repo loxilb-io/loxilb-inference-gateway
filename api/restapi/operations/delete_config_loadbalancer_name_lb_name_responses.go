@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// DeleteConfigLoadbalancerNameLbNameNoContentCode is the HTTP code returned for type DeleteConfigLoadbalancerNameLbNameNoContent
-const DeleteConfigLoadbalancerNameLbNameNoContentCode int = 204
+// DeleteConfigLoadbalancerNameLbNameOKCode is the HTTP code returned for type DeleteConfigLoadbalancerNameLbNameOK
+const DeleteConfigLoadbalancerNameLbNameOKCode int = 200
 
 /*
-DeleteConfigLoadbalancerNameLbNameNoContent OK
+DeleteConfigLoadbalancerNameLbNameOK OK
 
-swagger:response deleteConfigLoadbalancerNameLbNameNoContent
+swagger:response deleteConfigLoadbalancerNameLbNameOK
 */
-type DeleteConfigLoadbalancerNameLbNameNoContent struct {
+type DeleteConfigLoadbalancerNameLbNameOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewDeleteConfigLoadbalancerNameLbNameNoContent creates DeleteConfigLoadbalancerNameLbNameNoContent with default headers values
-func NewDeleteConfigLoadbalancerNameLbNameNoContent() *DeleteConfigLoadbalancerNameLbNameNoContent {
+// NewDeleteConfigLoadbalancerNameLbNameOK creates DeleteConfigLoadbalancerNameLbNameOK with default headers values
+func NewDeleteConfigLoadbalancerNameLbNameOK() *DeleteConfigLoadbalancerNameLbNameOK {
 
-	return &DeleteConfigLoadbalancerNameLbNameNoContent{}
+	return &DeleteConfigLoadbalancerNameLbNameOK{}
+}
+
+// WithPayload adds the payload to the delete config loadbalancer name lb name o k response
+func (o *DeleteConfigLoadbalancerNameLbNameOK) WithPayload(payload *models.OperationResult) *DeleteConfigLoadbalancerNameLbNameOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config loadbalancer name lb name o k response
+func (o *DeleteConfigLoadbalancerNameLbNameOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *DeleteConfigLoadbalancerNameLbNameNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *DeleteConfigLoadbalancerNameLbNameOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // DeleteConfigLoadbalancerNameLbNameBadRequestCode is the HTTP code returned for type DeleteConfigLoadbalancerNameLbNameBadRequest

@@ -38,8 +38,8 @@ func TestWipeDeletesEveryDomainInReverseOrder(t *testing.T) {
 		t.Fatalf("expected %d results (one per domain), got %d", len(Registry), len(results))
 	}
 	// results must be reported in delete order: loadbalancer before endpoint.
-	if results[0].Domain != DomainIPsec || results[len(results)-1].Domain != DomainEndpoint {
-		t.Fatalf("expected delete order (ipsec ... endpoint), got: %v", domainsOf(results))
+	if results[0].Domain != DomainCert || results[len(results)-1].Domain != DomainEndpoint {
+		t.Fatalf("expected delete order (cert ... endpoint), got: %v", domainsOf(results))
 	}
 
 	// The actual hook calls must show loadbalancer's delete-side Get

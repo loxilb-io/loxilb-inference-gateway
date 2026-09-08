@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// PostConfigCorsNoContentCode is the HTTP code returned for type PostConfigCorsNoContent
-const PostConfigCorsNoContentCode int = 204
+// PostConfigCorsOKCode is the HTTP code returned for type PostConfigCorsOK
+const PostConfigCorsOKCode int = 200
 
 /*
-PostConfigCorsNoContent OK
+PostConfigCorsOK OK
 
-swagger:response postConfigCorsNoContent
+swagger:response postConfigCorsOK
 */
-type PostConfigCorsNoContent struct {
+type PostConfigCorsOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewPostConfigCorsNoContent creates PostConfigCorsNoContent with default headers values
-func NewPostConfigCorsNoContent() *PostConfigCorsNoContent {
+// NewPostConfigCorsOK creates PostConfigCorsOK with default headers values
+func NewPostConfigCorsOK() *PostConfigCorsOK {
 
-	return &PostConfigCorsNoContent{}
+	return &PostConfigCorsOK{}
+}
+
+// WithPayload adds the payload to the post config cors o k response
+func (o *PostConfigCorsOK) WithPayload(payload *models.OperationResult) *PostConfigCorsOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config cors o k response
+func (o *PostConfigCorsOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *PostConfigCorsNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *PostConfigCorsOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // PostConfigCorsBadRequestCode is the HTTP code returned for type PostConfigCorsBadRequest

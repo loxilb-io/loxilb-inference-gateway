@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// DeleteConfigMirrorIdentIdentNoContentCode is the HTTP code returned for type DeleteConfigMirrorIdentIdentNoContent
-const DeleteConfigMirrorIdentIdentNoContentCode int = 204
+// DeleteConfigMirrorIdentIdentOKCode is the HTTP code returned for type DeleteConfigMirrorIdentIdentOK
+const DeleteConfigMirrorIdentIdentOKCode int = 200
 
 /*
-DeleteConfigMirrorIdentIdentNoContent OK
+DeleteConfigMirrorIdentIdentOK OK
 
-swagger:response deleteConfigMirrorIdentIdentNoContent
+swagger:response deleteConfigMirrorIdentIdentOK
 */
-type DeleteConfigMirrorIdentIdentNoContent struct {
+type DeleteConfigMirrorIdentIdentOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewDeleteConfigMirrorIdentIdentNoContent creates DeleteConfigMirrorIdentIdentNoContent with default headers values
-func NewDeleteConfigMirrorIdentIdentNoContent() *DeleteConfigMirrorIdentIdentNoContent {
+// NewDeleteConfigMirrorIdentIdentOK creates DeleteConfigMirrorIdentIdentOK with default headers values
+func NewDeleteConfigMirrorIdentIdentOK() *DeleteConfigMirrorIdentIdentOK {
 
-	return &DeleteConfigMirrorIdentIdentNoContent{}
+	return &DeleteConfigMirrorIdentIdentOK{}
+}
+
+// WithPayload adds the payload to the delete config mirror ident ident o k response
+func (o *DeleteConfigMirrorIdentIdentOK) WithPayload(payload *models.OperationResult) *DeleteConfigMirrorIdentIdentOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config mirror ident ident o k response
+func (o *DeleteConfigMirrorIdentIdentOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *DeleteConfigMirrorIdentIdentNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *DeleteConfigMirrorIdentIdentOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // DeleteConfigMirrorIdentIdentBadRequestCode is the HTTP code returned for type DeleteConfigMirrorIdentIdentBadRequest

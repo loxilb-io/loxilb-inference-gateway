@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// PostConfigSessionulclNoContentCode is the HTTP code returned for type PostConfigSessionulclNoContent
-const PostConfigSessionulclNoContentCode int = 204
+// PostConfigSessionulclOKCode is the HTTP code returned for type PostConfigSessionulclOK
+const PostConfigSessionulclOKCode int = 200
 
 /*
-PostConfigSessionulclNoContent OK
+PostConfigSessionulclOK OK
 
-swagger:response postConfigSessionulclNoContent
+swagger:response postConfigSessionulclOK
 */
-type PostConfigSessionulclNoContent struct {
+type PostConfigSessionulclOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewPostConfigSessionulclNoContent creates PostConfigSessionulclNoContent with default headers values
-func NewPostConfigSessionulclNoContent() *PostConfigSessionulclNoContent {
+// NewPostConfigSessionulclOK creates PostConfigSessionulclOK with default headers values
+func NewPostConfigSessionulclOK() *PostConfigSessionulclOK {
 
-	return &PostConfigSessionulclNoContent{}
+	return &PostConfigSessionulclOK{}
+}
+
+// WithPayload adds the payload to the post config sessionulcl o k response
+func (o *PostConfigSessionulclOK) WithPayload(payload *models.OperationResult) *PostConfigSessionulclOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config sessionulcl o k response
+func (o *PostConfigSessionulclOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *PostConfigSessionulclNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *PostConfigSessionulclOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // PostConfigSessionulclBadRequestCode is the HTTP code returned for type PostConfigSessionulclBadRequest
