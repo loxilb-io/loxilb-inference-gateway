@@ -3,7 +3,7 @@
 End-to-end validation of the shipped monitoring stack (`deploy/monitoring/`)
 against a live loxilb: Prometheus scrape, metric ground-truth cross-checks,
 alert behavior, and Grafana provisioning. This is Tier 1/2 of
-`docs/MONITORING-CICD.md`; Tier 0 (the static lint) is
+the internal monitoring CI plan; Tier 0 (the static lint) is
 `deploy/monitoring/ci/lint-monitoring.py`.
 
 ## What it validates

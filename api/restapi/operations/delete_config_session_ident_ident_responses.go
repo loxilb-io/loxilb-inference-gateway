@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// DeleteConfigSessionIdentIdentNoContentCode is the HTTP code returned for type DeleteConfigSessionIdentIdentNoContent
-const DeleteConfigSessionIdentIdentNoContentCode int = 204
+// DeleteConfigSessionIdentIdentOKCode is the HTTP code returned for type DeleteConfigSessionIdentIdentOK
+const DeleteConfigSessionIdentIdentOKCode int = 200
 
 /*
-DeleteConfigSessionIdentIdentNoContent OK
+DeleteConfigSessionIdentIdentOK OK
 
-swagger:response deleteConfigSessionIdentIdentNoContent
+swagger:response deleteConfigSessionIdentIdentOK
 */
-type DeleteConfigSessionIdentIdentNoContent struct {
+type DeleteConfigSessionIdentIdentOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewDeleteConfigSessionIdentIdentNoContent creates DeleteConfigSessionIdentIdentNoContent with default headers values
-func NewDeleteConfigSessionIdentIdentNoContent() *DeleteConfigSessionIdentIdentNoContent {
+// NewDeleteConfigSessionIdentIdentOK creates DeleteConfigSessionIdentIdentOK with default headers values
+func NewDeleteConfigSessionIdentIdentOK() *DeleteConfigSessionIdentIdentOK {
 
-	return &DeleteConfigSessionIdentIdentNoContent{}
+	return &DeleteConfigSessionIdentIdentOK{}
+}
+
+// WithPayload adds the payload to the delete config session ident ident o k response
+func (o *DeleteConfigSessionIdentIdentOK) WithPayload(payload *models.OperationResult) *DeleteConfigSessionIdentIdentOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config session ident ident o k response
+func (o *DeleteConfigSessionIdentIdentOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *DeleteConfigSessionIdentIdentNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *DeleteConfigSessionIdentIdentOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // DeleteConfigSessionIdentIdentBadRequestCode is the HTTP code returned for type DeleteConfigSessionIdentIdentBadRequest

@@ -49,6 +49,14 @@ type Hooks interface {
 	NetKvExactBindingAdd(*cmn.KvExactBindingMod) (int, error)
 	NetKvExactBindingDel(*cmn.KvExactBindingMod) (int, error)
 
+	// l7policy (schema 1.3): dedicated L7_POLICY resources. Applied after
+	// loadbalancer (a policy attaches to a rule resolved by its stable
+	// opaque id). Add validates, resolves the LB and attaches to the
+	// dataplane; Del detaches and removes.
+	NetL7PolicyGet() ([]cmn.L7PolicyArg, error)
+	NetL7PolicyAdd(*cmn.L7PolicyArg) (int, error)
+	NetL7PolicyDel(id string) (int, error)
+
 	// firewall (§4.1 #3)
 	NetFwRuleGet() ([]cmn.FwRuleMod, error)
 	NetFwRuleAdd(*cmn.FwRuleMod) (int, error)
@@ -120,6 +128,38 @@ type Hooks interface {
 	// snapshots round-trip. SENSITIVE (§8).
 	NetIPsecCertificateExportAll() ([]cmn.IPsecCertificateMod, error)
 	NetIPsecCACertificateExportAll() ([]cmn.IPsecCACertificateMod, error)
+
+	// cors (schema 1.3) -- singleton, Set semantics; nil = unconfigured
+	// factory default (not configuration, not captured). Reset (the wipe
+	// path) returns to that default rather than a synthetic deny-all.
+	NetCORSGet() (*cmn.CORSConfig, error)
+	NetCORSSet(*cmn.CORSConfig) (int, error)
+	NetCORSReset() (int, error)
+
+	// tracing (schema 1.3) -- singleton, Set semantics; nil = boot
+	// default only. Set re-joins auth header values from the node-local
+	// secret store (names ride the document, values never do); Reset
+	// returns to the boot default without shredding node-local secrets.
+	NetTracingGet() (*cmn.TracingConfig, error)
+	NetTracingSet(*cmn.TracingConfig) (int, error)
+	NetTracingReset() (int, error)
+
+	// cert (schema 1.3) -- TLS certificates as {id, digest} metadata.
+	// Add re-registers from the node-local managed material after digest
+	// verification (missing/divergent material fails loudly); Del
+	// unregisters while KEEPING the on-disk material (node secret, wipe
+	// must not shred what the following apply re-registers).
+	NetCertGet() ([]cmn.CertMeta, error)
+	NetCertAdd(*cmn.CertMeta) (int, error)
+	NetCertDel(id string) (int, error)
+
+	// recovery_dependencies (schema 1.4) -- document-level manifest, not a
+	// domain: no wipe/apply. Get feeds capture (see buildRecoveryManifest,
+	// capture.go); Verify gates restore (stageVerifyDeps, restore.go):
+	// error = fail closed before anything is planned or wiped, non-empty
+	// warning = surfaced but tolerated.
+	NetRecoveryDepsGet() ([]cmn.RecoveryDependency, error)
+	NetRecoveryDepVerify(dep cmn.RecoveryDependency) (string, error)
 }
 
 // DomainEntry describes one v1 snapshot domain: how to fetch its live
@@ -166,6 +206,7 @@ var Registry = []DomainEntry{
 	{Name: DomainEndpoint, Get: getEndpoint, Apply: applyEndpoint, Delete: deleteEndpoint},
 	{Name: DomainLoadBalancer, Get: getLoadBalancer, Apply: applyLoadBalancer, Delete: deleteLoadBalancer},
 	{Name: DomainKvExactBinding, Get: getKvExactBinding, Apply: applyKvExactBinding, Delete: deleteKvExactBinding},
+	{Name: DomainL7Policy, Get: getL7Policy, Apply: applyL7Policy, Delete: deleteL7Policy},
 	{Name: DomainFirewall, Get: getFirewall, Apply: applyFirewall, Delete: deleteFirewall},
 	{Name: DomainPolicy, Get: getPolicy, Apply: applyPolicy, Delete: deletePolicy},
 	{Name: DomainMirror, Get: getMirror, Apply: applyMirror, Delete: deleteMirror},
@@ -176,13 +217,28 @@ var Registry = []DomainEntry{
 	{Name: DomainBFD, Get: getBFD, Apply: applyBFD, Delete: deleteBFD},
 	{Name: DomainBGP, Get: getBGP, Apply: applyBGP, Delete: deleteBGP},
 	{Name: DomainIPsec, Get: getIPsec, Apply: applyIPsec, Delete: deleteIPsec},
+	{Name: DomainCORS, Get: getCORS, Apply: applyCORS, Delete: deleteCORS},
+	{Name: DomainTracing, Get: getTracing, Apply: applyTracing, Delete: deleteTracing},
+	{Name: DomainCert, Get: getCert, Apply: applyCert, Delete: deleteCert},
 }
 
 // ApplyOrder returns the registry in apply order (table order, dependencies
-// first). It returns Registry itself (not a copy) -- callers must not
-// mutate the result.
+// first), as a fresh copy: a caller sorting/truncating/reordering the
+// returned slice cannot corrupt the package-global apply-order contract
+// every other caller depends on.
 func ApplyOrder() []DomainEntry {
-	return Registry
+	out := make([]DomainEntry, len(Registry))
+	copy(out, Registry)
+	return out
+}
+
+// DomainNames returns every registry domain name in apply order.
+func DomainNames() []string {
+	out := make([]string, len(Registry))
+	for i, e := range Registry {
+		out[i] = e.Name
+	}
+	return out
 }
 
 // DeleteOrder returns the registry in delete order: the exact reverse of
@@ -266,12 +322,53 @@ func isIdempotentExists(err error) bool {
 		"sess-exists error",
 		"ulcl-exists error",
 		"prop-exists error",
+		"l7policy-exists error",
+		"cert-exists error",
 	} {
 		if strings.Contains(m, sentinel) {
 			return true
 		}
 	}
 	return false
+}
+
+// SubsystemStartupErrors reports whether EVERY error in errs looks like an
+// optional subsystem that has not finished initializing yet (the loxinet
+// nil-guard messages, plus the transport shapes a gRPC-backed daemon emits
+// while its socket is still coming up). It is the shared rule behind two
+// retries of the same startup window: the boot replay's (api/loxinlp,
+// which runs before NewIPsecH and the BGP speaker are up) and the REST
+// commit restore's.
+//
+// It says nothing about whether a subsystem is PERMANENTLY absent -- the
+// two are indistinguishable from the message alone, which is why both
+// callers retry for a bounded time and then fail loudly: a document
+// carrying configuration for a subsystem this gateway does not run must
+// still be refused, just a few seconds later.
+func SubsystemStartupErrors(errs []string) bool {
+	if len(errs) == 0 {
+		return false
+	}
+	for _, e := range errs {
+		if !isStartupMessage(strings.ToLower(e)) {
+			return false
+		}
+	}
+	return true
+}
+
+func isStartupMessage(m string) bool {
+	return strings.Contains(m, "not initialized") ||
+		strings.Contains(m, "not running") ||
+		strings.Contains(m, "mode is disabled") ||
+		strings.Contains(m, "bgp only mode") ||
+		// gRPC-backed subsystems (gobgpd) report "not up yet" as a
+		// transport error while their socket is still coming up, and as
+		// "bgp server hasn't started yet" between socket-up and the
+		// global-config push that starts the speaker.
+		strings.Contains(m, "code = unavailable") ||
+		strings.Contains(m, "connection refused") ||
+		strings.Contains(m, "hasn't started")
 }
 
 // isSubsystemUnavailable reports whether err is an optional subsystem
@@ -292,7 +389,21 @@ func isSubsystemUnavailable(err error) bool {
 	return strings.Contains(m, "not running") ||
 		strings.Contains(m, "mode is disabled") ||
 		strings.Contains(m, "not initialized") ||
-		strings.Contains(m, "bgp only mode")
+		strings.Contains(m, "bgp only mode") ||
+		// gRPC-backed subsystems (gobgpd) surface "not up yet" as a
+		// transport error, not a domain message -- during startup the
+		// daemon's socket simply is not listening. Discovered live: boot
+		// capture/verify hit "rpc error: code = Unavailable ...
+		// connection refused" while gobgpd was still starting.
+		strings.Contains(m, "code = unavailable") ||
+		strings.Contains(m, "connection refused") ||
+		// gobgpd answers this until loxilb's global-config push runs
+		// StartBgp -- same startup window, different message.
+		strings.Contains(m, "hasn't started") ||
+		// gobgpd's ListDefinedSet rejects even the valid PREFIX type with
+		// this message until the speaker's policy table initializes --
+		// one more shape of the same startup window (only gobgp emits it).
+		strings.Contains(m, "invalid defined-set type")
 }
 
 // ---------------------------------------------------------------------
@@ -459,6 +570,67 @@ func deleteKvExactBinding(hooks Hooks) (int, error) {
 		b := &binds[i]
 		if _, err := hooks.NetKvExactBindingDel(b); err != nil {
 			errs = append(errs, fmt.Errorf("delete kvexactbinding %q: %w", b.RuleIdent, err))
+			continue
+		}
+		n++
+	}
+	return n, errors.Join(errs...)
+}
+
+// ---------------------------------------------------------------------
+// 2c. l7policy (schema 1.3)
+//
+// Dedicated L7_POLICY resources: ordered content routes attached to an L4
+// LB by its stable opaque id. Applied after loadbalancer (the referenced
+// rule must be live for the attach to succeed) and deleted before it in
+// DeleteOrder's reversal. Add validates server-side and fails loudly on a
+// missing LB or a failed dataplane attach -- a policy that cannot be
+// enforced must fail the domain (and with it a boot generation), never
+// silently restore as allow-all.
+// ---------------------------------------------------------------------
+
+func getL7Policy(hooks Hooks, doc *Document) error {
+	pols, err := hooks.NetL7PolicyGet()
+	if isSubsystemUnavailable(err) {
+		doc.Domains.L7Policy = nil
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("get l7policy: %w", err)
+	}
+	doc.Domains.L7Policy = pols
+	return nil
+}
+
+func applyL7Policy(hooks Hooks, doc *Document, tolerateExists bool) (int, int, error) {
+	n, skipped := 0, 0
+	for i := range doc.Domains.L7Policy {
+		p := &doc.Domains.L7Policy[i]
+		if _, err := hooks.NetL7PolicyAdd(p); err != nil {
+			if tolerateExists && isIdempotentExists(err) {
+				skipped++
+				continue
+			}
+			return n, skipped, fmt.Errorf("apply l7policy %q: %w", p.Id, err)
+		}
+		n++
+	}
+	return n, skipped, nil
+}
+
+func deleteL7Policy(hooks Hooks) (int, error) {
+	pols, err := hooks.NetL7PolicyGet()
+	if isSubsystemUnavailable(err) {
+		return 0, nil // subsystem not running: nothing to delete
+	}
+	if err != nil {
+		return 0, fmt.Errorf("delete l7policy: get: %w", err)
+	}
+	n := 0
+	var errs []error
+	for i := range pols {
+		if _, err := hooks.NetL7PolicyDel(pols[i].Id); err != nil {
+			errs = append(errs, fmt.Errorf("delete l7policy %q: %w", pols[i].Id, err))
 			continue
 		}
 		n++
@@ -792,10 +964,23 @@ func deleteIPFilter(hooks Hooks) (int, error) {
 
 func getSecurityRate(hooks Hooks, doc *Document) error {
 	state, err := hooks.NetSecurityRateGet()
+	if isSubsystemUnavailable(err) {
+		doc.Domains.SecurityRate = nil
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("get securityrate: %w", err)
 	}
-	doc.Domains.SecurityRate = state
+	if state == nil {
+		doc.Domains.SecurityRate = nil
+		return nil
+	}
+	// Deep-copy and keep Config only: the hook may return a pointer into
+	// live state (a later live update must not silently rewrite an
+	// already-captured document), and Stats is runtime counters, not
+	// desired configuration -- persisting it made every idle persist churn
+	// the document checksum and leaked meaningless numbers into restores.
+	doc.Domains.SecurityRate = &cmn.SecurityRateState{Config: state.Config}
 	return nil
 }
 
@@ -889,21 +1074,24 @@ func deleteBFD(hooks Hooks) (int, error) {
 
 var bgpDefinedSetTypes = []string{"prefix", "neigh", "community", "extCommunity", "largeCommunity", "asPath"}
 
+// bgpManagedPolicySuffix marks policy definitions the gateway creates and
+// owns itself (pkg/loxinet/gobgpclient.go: set-next-hop-self-gpolicy,
+// set-llb-export-gpolicy). They are excluded from capture and wipe: the
+// speaker machinery recreates them, so they are not operator desired
+// state, and deleting them would break the LB export/HA path.
+const bgpManagedPolicySuffix = "-gpolicy"
+
 // bgpNeighGetModToMod converts the Get-shaped cmn.GoBGPNeighGetMod back into
-// the Add/Del-shaped cmn.GoBGPNeighMod.
-//
-// KNOWN GAP: GoBGPNeighGetMod (Addr string, RemoteAS, State, Uptime) does not
-// carry RemotePort or MultiHop, both of which GoBGPNeighMod needs for
-// Add/Del. Those two fields are therefore NOT round-trippable through the
-// existing Get hook -- this conversion fills them with their zero values
-// (RemotePort 0, MultiHop false), which may not match the original neighbor
-// config. This is a real, distinct restore-fidelity gap on top of the
-// documented TODO(G-7) BGP-global-config gap; flagged here for the G-2
-// restore-engine author and for testbed scenario 1 (populate/restore/diff).
+// the Add/Del-shaped cmn.GoBGPNeighMod. RemotePort and MultiHop round-trip
+// through the Get shape (additive fields; a zero RemotePort means "default"
+// and the Add path normalizes it to 179), so restored neighbors keep their
+// transport configuration instead of silently reverting to defaults.
 func bgpNeighGetModToMod(n cmn.GoBGPNeighGetMod) *cmn.GoBGPNeighMod {
 	return &cmn.GoBGPNeighMod{
-		Addr:     net.ParseIP(n.Addr),
-		RemoteAS: n.RemoteAS,
+		Addr:       net.ParseIP(n.Addr),
+		RemoteAS:   n.RemoteAS,
+		RemotePort: n.RemotePort,
+		MultiHop:   n.MultiHop,
 	}
 }
 
@@ -930,11 +1118,23 @@ func getBGP(hooks Hooks, doc *Document) error {
 	if err != nil {
 		return fmt.Errorf("get bgp policy_definitions: %w", err)
 	}
+	// Gateway-managed policies (the "-gpolicy" convention: next-hop-self,
+	// LB export MED/local-pref) are (re)created by the speaker machinery
+	// itself -- capturing them double-applies on restore ("statement
+	// already defined") exactly like rule-managed endpoints would. Same
+	// filter discipline: operator config only.
+	kept := make([]cmn.GoBGPPolicyDefinitionsMod, 0, len(policyDefs))
+	for _, pd := range policyDefs {
+		if strings.HasSuffix(pd.Name, bgpManagedPolicySuffix) {
+			continue
+		}
+		kept = append(kept, pd)
+	}
 
 	doc.Domains.BGP = BGPDomain{
 		Neighbors:         neighbors,
 		DefinedSets:       definedSets,
-		PolicyDefinitions: policyDefs,
+		PolicyDefinitions: kept,
 	}
 
 	// G-7: capture global config; zero LocalAs means "not configured" and
@@ -954,6 +1154,19 @@ func getBGP(hooks Hooks, doc *Document) error {
 
 func applyBGP(hooks Hooks, doc *Document, tolerateExists bool) (int, int, error) {
 	n, skipped := 0, 0
+	// Global config FIRST: pushing it is what STARTS the BGP speaker, and
+	// every other item (AddPeer above all) is refused with "bgp server
+	// hasn't started yet" until then. With global config applied last, a
+	// boot replay of a neighbor-bearing snapshot deadlocked forever:
+	// every retry failed on the first neighbor before ever reaching the
+	// one item that would have started the speaker (observed live).
+	if doc.Domains.BGP.GlobalConfig != nil {
+		// Set-semantics singleton (overwrite): no "exists" to tolerate.
+		if _, err := hooks.NetGoBGPGCAdd(doc.Domains.BGP.GlobalConfig); err != nil {
+			return n, skipped, fmt.Errorf("apply bgp global_config: %w", err)
+		}
+		n++
+	}
 	for _, nb := range doc.Domains.BGP.Neighbors {
 		if _, err := hooks.NetGoBGPNeighAdd(bgpNeighGetModToMod(nb)); err != nil {
 			if tolerateExists && isIdempotentExists(err) {
@@ -986,13 +1199,6 @@ func applyBGP(hooks Hooks, doc *Document, tolerateExists bool) (int, int, error)
 		}
 		n++
 	}
-	if doc.Domains.BGP.GlobalConfig != nil {
-		// Set-semantics singleton (overwrite): no "exists" to tolerate.
-		if _, err := hooks.NetGoBGPGCAdd(doc.Domains.BGP.GlobalConfig); err != nil {
-			return n, skipped, fmt.Errorf("apply bgp global_config: %w", err)
-		}
-		n++
-	}
 	return n, skipped, nil
 }
 
@@ -1017,6 +1223,9 @@ func deleteBGP(hooks Hooks) (int, error) {
 
 	for _, ts := range bgpDefinedSetTypes {
 		sets, err := hooks.NetGoBGPPolicyDefinedSetGet("all", ts)
+		if isSubsystemUnavailable(err) {
+			continue // speaker (still) not up for this call: nothing to delete
+		}
 		if err != nil {
 			errs = append(errs, fmt.Errorf("delete bgp: get defined_sets (%s): %w", ts, err))
 			continue
@@ -1032,12 +1241,20 @@ func deleteBGP(hooks Hooks) (int, error) {
 	}
 
 	policyDefs, err := hooks.NetGoBGPPolicyDefinitionsGet()
+	if isSubsystemUnavailable(err) {
+		return n, errors.Join(errs...)
+	}
 	if err != nil {
 		errs = append(errs, fmt.Errorf("delete bgp: get policy_definitions: %w", err))
 		return n, errors.Join(errs...)
 	}
 	for i := range policyDefs {
 		pd := &policyDefs[i]
+		// Gateway-managed policies stay: the speaker machinery owns them
+		// (see bgpManagedPolicySuffix) and the LB export path needs them.
+		if strings.HasSuffix(pd.Name, bgpManagedPolicySuffix) {
+			continue
+		}
 		if _, err := hooks.NetGoBGPPolicyDefinitionDel(pd); err != nil {
 			errs = append(errs, fmt.Errorf("delete bgp policy_definition %q: %w", pd.Name, err))
 			continue
@@ -1100,6 +1317,39 @@ func getIPsec(hooks Hooks, doc *Document) error {
 	if err != nil {
 		return fmt.Errorf("get ipsec ca_certificates: %w", err)
 	}
+	// Secret values leave this function encrypted, never plaintext
+	// (secretbox.go): getIPsec feeds capture AND the VERIFY-stage scratch
+	// Get, so encrypting here keeps both sides byte-symmetric -- the
+	// deterministic ciphertext is what makes doc-vs-live digests
+	// comparable. Failing to encrypt is a capture failure, not a
+	// downgrade-to-plaintext.
+	for i, t := range tunnels {
+		if t == nil {
+			continue
+		}
+		enc, eerr := EncryptSecretValue(t.PSK)
+		if eerr != nil {
+			return fmt.Errorf("get ipsec tunnel %q: secure pre-shared key: %w", t.Name, eerr)
+		}
+		if enc != t.PSK {
+			// Copy before mutating: the hook may return pointers into
+			// live tunnel state.
+			c := *t
+			c.PSK = enc
+			tunnels[i] = &c
+		}
+	}
+	for i := range certs {
+		key, eerr := EncryptSecretValue(certs[i].PrivateKeyPEM)
+		if eerr != nil {
+			return fmt.Errorf("get ipsec certificate %q: secure private key: %w", certs[i].Name, eerr)
+		}
+		pass, eerr := EncryptSecretValue(certs[i].Passphrase)
+		if eerr != nil {
+			return fmt.Errorf("get ipsec certificate %q: secure passphrase: %w", certs[i].Name, eerr)
+		}
+		certs[i].PrivateKeyPEM, certs[i].Passphrase = key, pass
+	}
 	doc.Domains.IPsec = IPsecDomain{
 		Config:         cfg,
 		Tunnels:        tunnels,
@@ -1133,6 +1383,20 @@ func applyIPsec(hooks Hooks, doc *Document, tolerateExists bool) (int, int, erro
 		n++
 	}
 	for _, c := range doc.Domains.IPsec.Certificates {
+		// Decrypt document-carried secret values before they reach the
+		// backend (the live subsystem works in plaintext; only the
+		// document encoding is encrypted). A decrypt failure is fatal
+		// both modes -- proceeding would install a certificate without
+		// its key material.
+		key, derr := DecryptSecretValue(c.PrivateKeyPEM)
+		if derr != nil {
+			return n, skipped, fmt.Errorf("apply ipsec certificate %q: %w", c.Name, derr)
+		}
+		pass, derr := DecryptSecretValue(c.Passphrase)
+		if derr != nil {
+			return n, skipped, fmt.Errorf("apply ipsec certificate %q: %w", c.Name, derr)
+		}
+		c.PrivateKeyPEM, c.Passphrase = key, pass
 		if _, err := hooks.NetIPsecCertificateAdd(&c); err != nil {
 			if tolerateExists && isIdempotentExists(err) {
 				skipped++
@@ -1147,6 +1411,11 @@ func applyIPsec(hooks Hooks, doc *Document, tolerateExists bool) (int, int, erro
 			continue
 		}
 		mod := t.IPsecTunnelMod
+		psk, derr := DecryptSecretValue(mod.PSK)
+		if derr != nil {
+			return n, skipped, fmt.Errorf("apply ipsec tunnel %q: %w", t.Name, derr)
+		}
+		mod.PSK = psk
 		if _, err := hooks.NetIPsecTunnelAdd(&mod); err != nil {
 			if tolerateExists && isIdempotentExists(err) {
 				skipped++
@@ -1222,5 +1491,170 @@ func deleteIPsec(hooks Hooks) (int, error) {
 	// mirroring securityrate's own singleton caveat but without even a
 	// zero-value Set to fall back on (IPsecConfigMod's pointer fields would
 	// need real default values, not just zero values, to be safe).
+	return n, errors.Join(errs...)
+}
+
+// ---------------------------------------------------------------------
+// 13. cors -- singleton, Set semantics (schema 1.3)
+//
+// The explicit origin allowlist + wildcard opt-in. The unconfigured
+// factory default (open) is NOT configuration: capture exports nil for
+// it, and the wipe resets back to it -- never to a synthetic deny-all
+// that a failed restore would then leave behind. An explicitly-empty
+// allowlist ({origins: [], wildcard: false} = deny-all) IS configuration
+// and round-trips as such.
+// ---------------------------------------------------------------------
+
+func getCORS(hooks Hooks, doc *Document) error {
+	cfg, err := hooks.NetCORSGet()
+	if err != nil {
+		return fmt.Errorf("get cors: %w", err)
+	}
+	doc.Domains.CORS = cfg
+	return nil
+}
+
+func applyCORS(hooks Hooks, doc *Document, _ bool) (int, int, error) {
+	// Singleton with Set (overwrite) semantics: no "exists" to tolerate.
+	if doc.Domains.CORS == nil {
+		return 0, 0, nil
+	}
+	if _, err := hooks.NetCORSSet(doc.Domains.CORS); err != nil {
+		return 0, 0, fmt.Errorf("apply cors: %w", err)
+	}
+	return 1, 0, nil
+}
+
+func deleteCORS(hooks Hooks) (int, error) {
+	if _, err := hooks.NetCORSReset(); err != nil {
+		return 0, fmt.Errorf("delete cors: %w", err)
+	}
+	return 1, nil
+}
+
+// ---------------------------------------------------------------------
+// 14. tracing -- singleton, Set semantics (schema 1.3)
+//
+// OTLP trace-export product configuration. Secret split: the document
+// carries endpoint/protocol/TLS + auth header NAMES; header VALUES live
+// in a node-local secret store the Set hook re-joins from (warning loudly
+// about names it cannot resolve). The boot default (compiled + env) is
+// node-local config, not desired state: capture exports nil for it, and
+// the wipe resets back to it without touching node-local secrets.
+// ---------------------------------------------------------------------
+
+func getTracing(hooks Hooks, doc *Document) error {
+	cfg, err := hooks.NetTracingGet()
+	if err != nil {
+		return fmt.Errorf("get tracing: %w", err)
+	}
+	doc.Domains.Tracing = cfg
+	return nil
+}
+
+func applyTracing(hooks Hooks, doc *Document, _ bool) (int, int, error) {
+	// Singleton with Set (overwrite) semantics: no "exists" to tolerate.
+	if doc.Domains.Tracing == nil {
+		return 0, 0, nil
+	}
+	if _, err := hooks.NetTracingSet(doc.Domains.Tracing); err != nil {
+		return 0, 0, fmt.Errorf("apply tracing: %w", err)
+	}
+	return 1, 0, nil
+}
+
+func deleteTracing(hooks Hooks) (int, error) {
+	if _, err := hooks.NetTracingReset(); err != nil {
+		return 0, fmt.Errorf("delete tracing: %w", err)
+	}
+	return 1, nil
+}
+
+// ---------------------------------------------------------------------
+// 15. cert (schema 1.3)
+//
+// TLS certificates as {id, digest} desired-state metadata. The PEM
+// material lives only in the node-local managed directory: Apply
+// re-registers after digest verification and fails loudly on missing or
+// divergent material (a gateway must never come up silently serving
+// different TLS material than declared); Delete unregisters but KEEPS
+// the on-disk material -- a wipe removes desired state, not node secret
+// material, and the apply that follows must be able to re-register it.
+// ---------------------------------------------------------------------
+
+func getCert(hooks Hooks, doc *Document) error {
+	metas, err := hooks.NetCertGet()
+	if isSubsystemUnavailable(err) {
+		doc.Domains.Cert = nil
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("get cert: %w", err)
+	}
+	doc.Domains.Cert = metas
+	return nil
+}
+
+func applyCert(hooks Hooks, doc *Document, tolerateExists bool) (int, int, error) {
+	n, skipped := 0, 0
+	for i := range doc.Domains.Cert {
+		c := &doc.Domains.Cert[i]
+		if _, err := hooks.NetCertAdd(c); err != nil {
+			if tolerateExists && isIdempotentExists(err) {
+				skipped++
+				continue
+			}
+			return n, skipped, fmt.Errorf("apply cert %q: %w", c.CertId, err)
+		}
+		n++
+	}
+	// Boot replay (tolerateExists) runs WITHOUT the pre-apply wipe, against
+	// a store the boot cert reconcile has already re-populated from
+	// node-local managed material. Desired state wins: any registration the
+	// document does not declare is pruned (registration only -- the managed
+	// material stays on disk, exactly like a wipe). Without this, a node
+	// holding material for a cert the document dropped fails VERIFY and the
+	// WHOLE boot replay rolls back to empty.
+	if tolerateExists {
+		declared := make(map[string]bool, len(doc.Domains.Cert))
+		for i := range doc.Domains.Cert {
+			declared[doc.Domains.Cert[i].CertId] = true
+		}
+		live, err := hooks.NetCertGet()
+		if isSubsystemUnavailable(err) {
+			return n, skipped, nil
+		}
+		if err != nil {
+			return n, skipped, fmt.Errorf("apply cert: reconcile get: %w", err)
+		}
+		for i := range live {
+			if declared[live[i].CertId] {
+				continue
+			}
+			if _, err := hooks.NetCertDel(live[i].CertId); err != nil {
+				return n, skipped, fmt.Errorf("apply cert: prune undeclared %q: %w", live[i].CertId, err)
+			}
+		}
+	}
+	return n, skipped, nil
+}
+
+func deleteCert(hooks Hooks) (int, error) {
+	metas, err := hooks.NetCertGet()
+	if isSubsystemUnavailable(err) {
+		return 0, nil // subsystem not running: nothing to delete
+	}
+	if err != nil {
+		return 0, fmt.Errorf("delete cert: get: %w", err)
+	}
+	n := 0
+	var errs []error
+	for i := range metas {
+		if _, err := hooks.NetCertDel(metas[i].CertId); err != nil {
+			errs = append(errs, fmt.Errorf("delete cert %q: %w", metas[i].CertId, err))
+			continue
+		}
+		n++
+	}
 	return n, errors.Join(errs...)
 }

@@ -103,6 +103,12 @@ const (
 	// A profile-less KV-exact rule that arrived via restore: exact routing
 	// is fenced (strict bypass) until a profile is attached by rule replace.
 	KvAttestReasonRequiresMigration = "restored_profile_less_requires_migration"
+	// A restored rule whose DECLARED profile could not be resolved because
+	// the profile registry is unavailable (an all-or-nothing publish failed,
+	// so no generation is serving). The declaration is preserved and the
+	// exact path stays fenced: the remedy is repairing the registry, not
+	// re-attaching, so this must never render as a profile-less legacy rule.
+	KvAttestReasonProfileRegistryUnavailable = "profile_registry_unavailable"
 
 	// Pre-controller and transitional reasons. Constants rather than inline
 	// literals: the published status vocabulary (api/swagger.yml

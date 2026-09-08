@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// DeleteConfigIpsecCertificatesNameNoContentCode is the HTTP code returned for type DeleteConfigIpsecCertificatesNameNoContent
-const DeleteConfigIpsecCertificatesNameNoContentCode int = 204
+// DeleteConfigIpsecCertificatesNameOKCode is the HTTP code returned for type DeleteConfigIpsecCertificatesNameOK
+const DeleteConfigIpsecCertificatesNameOKCode int = 200
 
 /*
-DeleteConfigIpsecCertificatesNameNoContent OK
+DeleteConfigIpsecCertificatesNameOK OK
 
-swagger:response deleteConfigIpsecCertificatesNameNoContent
+swagger:response deleteConfigIpsecCertificatesNameOK
 */
-type DeleteConfigIpsecCertificatesNameNoContent struct {
+type DeleteConfigIpsecCertificatesNameOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewDeleteConfigIpsecCertificatesNameNoContent creates DeleteConfigIpsecCertificatesNameNoContent with default headers values
-func NewDeleteConfigIpsecCertificatesNameNoContent() *DeleteConfigIpsecCertificatesNameNoContent {
+// NewDeleteConfigIpsecCertificatesNameOK creates DeleteConfigIpsecCertificatesNameOK with default headers values
+func NewDeleteConfigIpsecCertificatesNameOK() *DeleteConfigIpsecCertificatesNameOK {
 
-	return &DeleteConfigIpsecCertificatesNameNoContent{}
+	return &DeleteConfigIpsecCertificatesNameOK{}
+}
+
+// WithPayload adds the payload to the delete config ipsec certificates name o k response
+func (o *DeleteConfigIpsecCertificatesNameOK) WithPayload(payload *models.OperationResult) *DeleteConfigIpsecCertificatesNameOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config ipsec certificates name o k response
+func (o *DeleteConfigIpsecCertificatesNameOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *DeleteConfigIpsecCertificatesNameNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *DeleteConfigIpsecCertificatesNameOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // DeleteConfigIpsecCertificatesNameUnauthorizedCode is the HTTP code returned for type DeleteConfigIpsecCertificatesNameUnauthorized

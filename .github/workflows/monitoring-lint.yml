@@ -2,7 +2,7 @@ name: Monitoring-Lint
 
 # Tier-0 hermetic correctness gate for the Prometheus + Grafana stack
 # (deploy/monitoring/). No loxilb, no traffic, no eBPF — pure static checks that
-# run in seconds on any runner. See docs/MONITORING-CICD.md (Tier 0).
+# run in seconds on any runner. See the internal monitoring CI plan (Tier 0).
 #
 # Catches the silent-drift class that manual validation can't re-catch per change:
 #   - a dashboard/alert referencing a metric the exporter no longer emits
@@ -18,17 +18,15 @@ on:
     branches: [ "main" ]
     paths:
       - 'deploy/monitoring/**'
-      - 'api/prometheus/**'
-      - 'cmd/loxilb-ai-controller/**'
-      - 'doca/**'
+      - 'tools/metric-manifest/**'
+      - '**/*.go'
       - '.github/workflows/monitoring-lint.yml'
   pull_request:
     branches: [ "main" ]
     paths:
       - 'deploy/monitoring/**'
-      - 'api/prometheus/**'
-      - 'cmd/loxilb-ai-controller/**'
-      - 'doca/**'
+      - 'tools/metric-manifest/**'
+      - '**/*.go'
       - '.github/workflows/monitoring-lint.yml'
   workflow_dispatch:
 
@@ -59,5 +57,16 @@ jobs:
           sudo install "/tmp/prometheus-${PROM_VERSION}.linux-${arch}/promtool" /usr/local/bin/promtool
           promtool --version
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+
       - name: Run monitoring lint (Tier 0)
-        run: python3 deploy/monitoring/ci/lint-monitoring.py
+        run: |
+          python3 deploy/monitoring/ci/test_lint_monitoring.py
+          python3 deploy/monitoring/ci/lint-monitoring.py --require-promtool
+
+      - name: Verify metric ownership manifest
+        run: |
+          python3 deploy/monitoring/ci/gen-metric-manifest.py --self-test
+          python3 deploy/monitoring/ci/gen-metric-manifest.py --check --locked-rev-check

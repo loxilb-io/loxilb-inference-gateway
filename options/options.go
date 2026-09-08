@@ -49,6 +49,7 @@ var Opts struct {
 	CloudInstance     string         `long:"cloudinstance" description:"instance-name to distinguish instance sets running in a same cloud-region"`
 	ConfigPath        string         `long:"config-path" description:"Config file path" default:"/etc/loxilb/"`
 	ConfigAutoPersist string         `long:"config-auto-persist" description:"Debounced write-through of the running config to snapshot.json after successful mutating API calls (on/off)" choice:"on" choice:"off" default:"on"`
+	ConfigBootProfile string         `long:"config-boot-profile" description:"Boot behavior when snapshot.json fails to restore: compat falls back to the legacy *.txt replay (degraded state exposed via the status surface), strict skips the fallback and boots empty pending operator recovery via POST /config/restore" choice:"strict" choice:"compat" default:"compat"`
 	ProxyModeOnly     bool           `long:"proxyonlymode" description:"Run loxilb in proxy mode only, no Datapath"`
 	WhiteList         string         `long:"whitelist" description:"Regex string of whitelisted interface(experimental)" default:"none"`
 	ClusterInterface  string         `long:"clusterinterface" description:"cluster interface for egress HA" default:""`

@@ -256,11 +256,25 @@ func NewOTLPExporter() (*OTLPExporter, error) {
 	return oe, nil
 }
 
+// exportableHeaders drops headers whose value is empty: an empty value
+// marks a document-declared header whose secret is not provisioned on
+// this node (restore re-join miss) — the NAME must stay in desired state,
+// but sending an empty credential to the collector helps nobody.
+func exportableHeaders(headers map[string]string) map[string]string {
+	out := make(map[string]string, len(headers))
+	for name, v := range headers {
+		if v != "" {
+			out[name] = v
+		}
+	}
+	return out
+}
+
 // createGRPCExporter creates OTLP/gRPC exporter with TLS and auth
 func createGRPCExporter(cfg handler.OtlpConfig) (sdktrace.SpanExporter, error) {
 	opts := []otlptracegrpc.Option{
 		otlptracegrpc.WithEndpoint(cfg.Endpoint),
-		otlptracegrpc.WithHeaders(cfg.Headers),
+		otlptracegrpc.WithHeaders(exportableHeaders(cfg.Headers)),
 	}
 
 	// TLS configuration
@@ -301,7 +315,7 @@ func createGRPCExporter(cfg handler.OtlpConfig) (sdktrace.SpanExporter, error) {
 func createHTTPExporter(cfg handler.OtlpConfig) (sdktrace.SpanExporter, error) {
 	opts := []otlptracehttp.Option{
 		otlptracehttp.WithEndpoint(cfg.Endpoint),
-		otlptracehttp.WithHeaders(cfg.Headers),
+		otlptracehttp.WithHeaders(exportableHeaders(cfg.Headers)),
 	}
 
 	// TLS configuration

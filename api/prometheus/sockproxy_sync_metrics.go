@@ -120,7 +120,70 @@ var sockproxySyncDropTotal = promauto.NewCounterVec(
 	[]string{"reason"},
 )
 
+// sockproxySyncPeerUp reports the outcome of the LAST completed sockproxy
+// sync push per peer: 1 after a successful RPC, 0 after a failed/abandoned
+// push (retry exhaustion, no gRPC client after a connect attempt, rate-
+// limiter push error). It is an event-driven outcome flag, not a probe —
+// on an idle cluster with no sync traffic it keeps its last value, so read
+// it together with the drop/overflow counters.
+var sockproxySyncPeerUp = promauto.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "loxilb_sockproxy_sync_peer_up",
+		Help: "1 when the last sockproxy sync push to this peer succeeded; 0 after a failed or abandoned push. Event-driven (updated per push, holds last value while idle).",
+	},
+	[]string{"peer"},
+)
+
+// sockproxySyncPeerLagSeconds is the enqueue-to-sent delay of the last
+// successfully replicated session batch per peer — queue wait plus retries
+// plus the RPC itself, i.e. how far behind the peer's replica was running
+// at that moment. Frozen at the last success while a peer is down (peer_up
+// goes 0 and drops count instead). Peer children persist for the process
+// lifetime, like every other per-peer sync series (the peer set is small
+// and static).
+var sockproxySyncPeerLagSeconds = promauto.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "loxilb_sockproxy_sync_peer_lag_seconds",
+		Help: "Enqueue-to-sent delay of the last successfully replicated sockproxy session batch per peer (queue wait + retries + RPC). Frozen at last success while the peer is down.",
+	},
+	[]string{"peer"},
+)
+
 // ---------- Exported convenience helpers (used by pkg/loxinet/sockproxy_sync.go) ----------
+
+// SockproxySyncPeerUpSet records the outcome of the last completed sync
+// push to a peer (1 = success, 0 = failure/abandoned).
+func SockproxySyncPeerUpSet(peer string, up int) {
+	sockproxySyncPeerUp.WithLabelValues(peer).Set(float64(up))
+}
+
+// SockproxySyncPeerLagSet records the enqueue-to-sent delay of a
+// successfully replicated session batch.
+func SockproxySyncPeerLagSet(peer string, seconds float64) {
+	sockproxySyncPeerLagSeconds.WithLabelValues(peer).Set(seconds)
+}
+
+// SockproxySyncPeerUpValue returns the current peer-up gauge value.
+// Test-only getter (mirrors SockproxySyncDropValue).
+func SockproxySyncPeerUpValue(peer string) float64 {
+	g := sockproxySyncPeerUp.WithLabelValues(peer)
+	m := &dto.Metric{}
+	if err := g.Write(m); err != nil || m.Gauge == nil || m.Gauge.Value == nil {
+		return 0
+	}
+	return *m.Gauge.Value
+}
+
+// SockproxySyncPeerLagValue returns the current peer-lag gauge value.
+// Test-only getter (mirrors SockproxySyncPeerUpValue).
+func SockproxySyncPeerLagValue(peer string) float64 {
+	g := sockproxySyncPeerLagSeconds.WithLabelValues(peer)
+	m := &dto.Metric{}
+	if err := g.Write(m); err != nil || m.Gauge == nil || m.Gauge.Value == nil {
+		return 0
+	}
+	return *m.Gauge.Value
+}
 
 // SockproxySyncOverflowInc increments the overflow counter for the given kind.
 func SockproxySyncOverflowInc(kind string) {

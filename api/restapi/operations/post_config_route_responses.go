@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// PostConfigRouteNoContentCode is the HTTP code returned for type PostConfigRouteNoContent
-const PostConfigRouteNoContentCode int = 204
+// PostConfigRouteOKCode is the HTTP code returned for type PostConfigRouteOK
+const PostConfigRouteOKCode int = 200
 
 /*
-PostConfigRouteNoContent OK
+PostConfigRouteOK OK
 
-swagger:response postConfigRouteNoContent
+swagger:response postConfigRouteOK
 */
-type PostConfigRouteNoContent struct {
+type PostConfigRouteOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewPostConfigRouteNoContent creates PostConfigRouteNoContent with default headers values
-func NewPostConfigRouteNoContent() *PostConfigRouteNoContent {
+// NewPostConfigRouteOK creates PostConfigRouteOK with default headers values
+func NewPostConfigRouteOK() *PostConfigRouteOK {
 
-	return &PostConfigRouteNoContent{}
+	return &PostConfigRouteOK{}
+}
+
+// WithPayload adds the payload to the post config route o k response
+func (o *PostConfigRouteOK) WithPayload(payload *models.OperationResult) *PostConfigRouteOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config route o k response
+func (o *PostConfigRouteOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *PostConfigRouteNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *PostConfigRouteOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // PostConfigRouteBadRequestCode is the HTTP code returned for type PostConfigRouteBadRequest
