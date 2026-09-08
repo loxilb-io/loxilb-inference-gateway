@@ -148,6 +148,51 @@ func (o *PostConfigIpsecUnauthorized) WriteResponse(rw http.ResponseWriter, prod
 	}
 }
 
+// PostConfigIpsecForbiddenCode is the HTTP code returned for type PostConfigIpsecForbidden
+const PostConfigIpsecForbiddenCode int = 403
+
+/*
+PostConfigIpsecForbidden Authenticated principal is not authorized for this operation
+
+swagger:response postConfigIpsecForbidden
+*/
+type PostConfigIpsecForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigIpsecForbidden creates PostConfigIpsecForbidden with default headers values
+func NewPostConfigIpsecForbidden() *PostConfigIpsecForbidden {
+
+	return &PostConfigIpsecForbidden{}
+}
+
+// WithPayload adds the payload to the post config ipsec forbidden response
+func (o *PostConfigIpsecForbidden) WithPayload(payload *models.Error) *PostConfigIpsecForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config ipsec forbidden response
+func (o *PostConfigIpsecForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigIpsecForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // PostConfigIpsecInternalServerErrorCode is the HTTP code returned for type PostConfigIpsecInternalServerError
 const PostConfigIpsecInternalServerErrorCode int = 500
 
@@ -185,6 +230,51 @@ func (o *PostConfigIpsecInternalServerError) SetPayload(payload *models.Error) {
 func (o *PostConfigIpsecInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// PostConfigIpsecServiceUnavailableCode is the HTTP code returned for type PostConfigIpsecServiceUnavailable
+const PostConfigIpsecServiceUnavailableCode int = 503
+
+/*
+PostConfigIpsecServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response postConfigIpsecServiceUnavailable
+*/
+type PostConfigIpsecServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigIpsecServiceUnavailable creates PostConfigIpsecServiceUnavailable with default headers values
+func NewPostConfigIpsecServiceUnavailable() *PostConfigIpsecServiceUnavailable {
+
+	return &PostConfigIpsecServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the post config ipsec service unavailable response
+func (o *PostConfigIpsecServiceUnavailable) WithPayload(payload *models.Error) *PostConfigIpsecServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config ipsec service unavailable response
+func (o *PostConfigIpsecServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigIpsecServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

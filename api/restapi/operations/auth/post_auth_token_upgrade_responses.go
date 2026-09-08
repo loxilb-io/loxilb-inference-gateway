@@ -148,6 +148,51 @@ func (o *PostAuthTokenUpgradeUnauthorized) WriteResponse(rw http.ResponseWriter,
 	}
 }
 
+// PostAuthTokenUpgradeForbiddenCode is the HTTP code returned for type PostAuthTokenUpgradeForbidden
+const PostAuthTokenUpgradeForbiddenCode int = 403
+
+/*
+PostAuthTokenUpgradeForbidden Authenticated principal is not authorized for this operation
+
+swagger:response postAuthTokenUpgradeForbidden
+*/
+type PostAuthTokenUpgradeForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostAuthTokenUpgradeForbidden creates PostAuthTokenUpgradeForbidden with default headers values
+func NewPostAuthTokenUpgradeForbidden() *PostAuthTokenUpgradeForbidden {
+
+	return &PostAuthTokenUpgradeForbidden{}
+}
+
+// WithPayload adds the payload to the post auth token upgrade forbidden response
+func (o *PostAuthTokenUpgradeForbidden) WithPayload(payload *models.Error) *PostAuthTokenUpgradeForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post auth token upgrade forbidden response
+func (o *PostAuthTokenUpgradeForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostAuthTokenUpgradeForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // PostAuthTokenUpgradeInternalServerErrorCode is the HTTP code returned for type PostAuthTokenUpgradeInternalServerError
 const PostAuthTokenUpgradeInternalServerErrorCode int = 500
 
@@ -185,6 +230,51 @@ func (o *PostAuthTokenUpgradeInternalServerError) SetPayload(payload *models.Err
 func (o *PostAuthTokenUpgradeInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// PostAuthTokenUpgradeServiceUnavailableCode is the HTTP code returned for type PostAuthTokenUpgradeServiceUnavailable
+const PostAuthTokenUpgradeServiceUnavailableCode int = 503
+
+/*
+PostAuthTokenUpgradeServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response postAuthTokenUpgradeServiceUnavailable
+*/
+type PostAuthTokenUpgradeServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostAuthTokenUpgradeServiceUnavailable creates PostAuthTokenUpgradeServiceUnavailable with default headers values
+func NewPostAuthTokenUpgradeServiceUnavailable() *PostAuthTokenUpgradeServiceUnavailable {
+
+	return &PostAuthTokenUpgradeServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the post auth token upgrade service unavailable response
+func (o *PostAuthTokenUpgradeServiceUnavailable) WithPayload(payload *models.Error) *PostAuthTokenUpgradeServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post auth token upgrade service unavailable response
+func (o *PostAuthTokenUpgradeServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostAuthTokenUpgradeServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

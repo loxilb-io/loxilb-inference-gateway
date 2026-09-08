@@ -103,6 +103,51 @@ func (o *GetConfigPiiStatsUnauthorized) WriteResponse(rw http.ResponseWriter, pr
 	}
 }
 
+// GetConfigPiiStatsForbiddenCode is the HTTP code returned for type GetConfigPiiStatsForbidden
+const GetConfigPiiStatsForbiddenCode int = 403
+
+/*
+GetConfigPiiStatsForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getConfigPiiStatsForbidden
+*/
+type GetConfigPiiStatsForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigPiiStatsForbidden creates GetConfigPiiStatsForbidden with default headers values
+func NewGetConfigPiiStatsForbidden() *GetConfigPiiStatsForbidden {
+
+	return &GetConfigPiiStatsForbidden{}
+}
+
+// WithPayload adds the payload to the get config pii stats forbidden response
+func (o *GetConfigPiiStatsForbidden) WithPayload(payload *models.Error) *GetConfigPiiStatsForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config pii stats forbidden response
+func (o *GetConfigPiiStatsForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigPiiStatsForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigPiiStatsInternalServerErrorCode is the HTTP code returned for type GetConfigPiiStatsInternalServerError
 const GetConfigPiiStatsInternalServerErrorCode int = 500
 

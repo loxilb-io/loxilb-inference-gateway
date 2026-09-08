@@ -103,6 +103,51 @@ func (o *GetConfigMirrorAllUnauthorized) WriteResponse(rw http.ResponseWriter, p
 	}
 }
 
+// GetConfigMirrorAllForbiddenCode is the HTTP code returned for type GetConfigMirrorAllForbidden
+const GetConfigMirrorAllForbiddenCode int = 403
+
+/*
+GetConfigMirrorAllForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getConfigMirrorAllForbidden
+*/
+type GetConfigMirrorAllForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigMirrorAllForbidden creates GetConfigMirrorAllForbidden with default headers values
+func NewGetConfigMirrorAllForbidden() *GetConfigMirrorAllForbidden {
+
+	return &GetConfigMirrorAllForbidden{}
+}
+
+// WithPayload adds the payload to the get config mirror all forbidden response
+func (o *GetConfigMirrorAllForbidden) WithPayload(payload *models.Error) *GetConfigMirrorAllForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config mirror all forbidden response
+func (o *GetConfigMirrorAllForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigMirrorAllForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigMirrorAllInternalServerErrorCode is the HTTP code returned for type GetConfigMirrorAllInternalServerError
 const GetConfigMirrorAllInternalServerErrorCode int = 500
 

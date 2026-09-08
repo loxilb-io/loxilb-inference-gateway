@@ -128,6 +128,51 @@ func (o *PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoU
 	}
 }
 
+// PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoForbiddenCode is the HTTP code returned for type PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoForbidden
+const PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoForbiddenCode int = 403
+
+/*
+PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoForbidden Authenticated principal is not authorized for this operation
+
+swagger:response patchConfigLoadbalancerExternalipaddressIpAddressPortPortProtocolProtoForbidden
+*/
+type PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoForbidden creates PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoForbidden with default headers values
+func NewPatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoForbidden() *PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoForbidden {
+
+	return &PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoForbidden{}
+}
+
+// WithPayload adds the payload to the patch config loadbalancer externalipaddress Ip address port port protocol proto forbidden response
+func (o *PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoForbidden) WithPayload(payload *models.Error) *PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the patch config loadbalancer externalipaddress Ip address port port protocol proto forbidden response
+func (o *PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoNotFoundCode is the HTTP code returned for type PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoNotFound
 const PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoNotFoundCode int = 404
 
@@ -210,6 +255,51 @@ func (o *PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoI
 func (o *PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoServiceUnavailableCode is the HTTP code returned for type PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoServiceUnavailable
+const PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoServiceUnavailableCode int = 503
+
+/*
+PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response patchConfigLoadbalancerExternalipaddressIpAddressPortPortProtocolProtoServiceUnavailable
+*/
+type PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoServiceUnavailable creates PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoServiceUnavailable with default headers values
+func NewPatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoServiceUnavailable() *PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoServiceUnavailable {
+
+	return &PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the patch config loadbalancer externalipaddress Ip address port port protocol proto service unavailable response
+func (o *PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoServiceUnavailable) WithPayload(payload *models.Error) *PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the patch config loadbalancer externalipaddress Ip address port port protocol proto service unavailable response
+func (o *PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

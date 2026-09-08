@@ -103,6 +103,51 @@ func (o *GetConfigCertCertIDUnauthorized) WriteResponse(rw http.ResponseWriter, 
 	}
 }
 
+// GetConfigCertCertIDForbiddenCode is the HTTP code returned for type GetConfigCertCertIDForbidden
+const GetConfigCertCertIDForbiddenCode int = 403
+
+/*
+GetConfigCertCertIDForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getConfigCertCertIdForbidden
+*/
+type GetConfigCertCertIDForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigCertCertIDForbidden creates GetConfigCertCertIDForbidden with default headers values
+func NewGetConfigCertCertIDForbidden() *GetConfigCertCertIDForbidden {
+
+	return &GetConfigCertCertIDForbidden{}
+}
+
+// WithPayload adds the payload to the get config cert cert Id forbidden response
+func (o *GetConfigCertCertIDForbidden) WithPayload(payload *models.Error) *GetConfigCertCertIDForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config cert cert Id forbidden response
+func (o *GetConfigCertCertIDForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigCertCertIDForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigCertCertIDNotFoundCode is the HTTP code returned for type GetConfigCertCertIDNotFound
 const GetConfigCertCertIDNotFoundCode int = 404
 
@@ -185,6 +230,51 @@ func (o *GetConfigCertCertIDInternalServerError) SetPayload(payload *models.Erro
 func (o *GetConfigCertCertIDInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetConfigCertCertIDServiceUnavailableCode is the HTTP code returned for type GetConfigCertCertIDServiceUnavailable
+const GetConfigCertCertIDServiceUnavailableCode int = 503
+
+/*
+GetConfigCertCertIDServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response getConfigCertCertIdServiceUnavailable
+*/
+type GetConfigCertCertIDServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigCertCertIDServiceUnavailable creates GetConfigCertCertIDServiceUnavailable with default headers values
+func NewGetConfigCertCertIDServiceUnavailable() *GetConfigCertCertIDServiceUnavailable {
+
+	return &GetConfigCertCertIDServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the get config cert cert Id service unavailable response
+func (o *GetConfigCertCertIDServiceUnavailable) WithPayload(payload *models.Error) *GetConfigCertCertIDServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config cert cert Id service unavailable response
+func (o *GetConfigCertCertIDServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigCertCertIDServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

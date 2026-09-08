@@ -148,6 +148,51 @@ func (o *DeleteConfigSecurityrateUnauthorized) WriteResponse(rw http.ResponseWri
 	}
 }
 
+// DeleteConfigSecurityrateForbiddenCode is the HTTP code returned for type DeleteConfigSecurityrateForbidden
+const DeleteConfigSecurityrateForbiddenCode int = 403
+
+/*
+DeleteConfigSecurityrateForbidden Authenticated principal is not authorized for this operation
+
+swagger:response deleteConfigSecurityrateForbidden
+*/
+type DeleteConfigSecurityrateForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewDeleteConfigSecurityrateForbidden creates DeleteConfigSecurityrateForbidden with default headers values
+func NewDeleteConfigSecurityrateForbidden() *DeleteConfigSecurityrateForbidden {
+
+	return &DeleteConfigSecurityrateForbidden{}
+}
+
+// WithPayload adds the payload to the delete config securityrate forbidden response
+func (o *DeleteConfigSecurityrateForbidden) WithPayload(payload *models.Error) *DeleteConfigSecurityrateForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config securityrate forbidden response
+func (o *DeleteConfigSecurityrateForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *DeleteConfigSecurityrateForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // DeleteConfigSecurityrateNotFoundCode is the HTTP code returned for type DeleteConfigSecurityrateNotFound
 const DeleteConfigSecurityrateNotFoundCode int = 404
 
@@ -230,6 +275,51 @@ func (o *DeleteConfigSecurityrateInternalServerError) SetPayload(payload *models
 func (o *DeleteConfigSecurityrateInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// DeleteConfigSecurityrateServiceUnavailableCode is the HTTP code returned for type DeleteConfigSecurityrateServiceUnavailable
+const DeleteConfigSecurityrateServiceUnavailableCode int = 503
+
+/*
+DeleteConfigSecurityrateServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response deleteConfigSecurityrateServiceUnavailable
+*/
+type DeleteConfigSecurityrateServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewDeleteConfigSecurityrateServiceUnavailable creates DeleteConfigSecurityrateServiceUnavailable with default headers values
+func NewDeleteConfigSecurityrateServiceUnavailable() *DeleteConfigSecurityrateServiceUnavailable {
+
+	return &DeleteConfigSecurityrateServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the delete config securityrate service unavailable response
+func (o *DeleteConfigSecurityrateServiceUnavailable) WithPayload(payload *models.Error) *DeleteConfigSecurityrateServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config securityrate service unavailable response
+func (o *DeleteConfigSecurityrateServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *DeleteConfigSecurityrateServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

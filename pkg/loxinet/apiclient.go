@@ -76,6 +76,12 @@ func (*NetAPIStruct) NetPortGet() ([]cmn.PortDump, error) {
 	return ret, nil
 }
 
+// NetAiInFlightStreamsGet - number of AI inference streaming sessions
+// (SSE) currently open through the gateway (see AiInFlightStreamsTotal).
+func (*NetAPIStruct) NetAiInFlightStreamsGet() int64 {
+	return AiInFlightStreamsTotal()
+}
+
 // NetPortAdd - Add a port in loxinet
 func (na *NetAPIStruct) NetPortAdd(pm *cmn.PortMod) (int, error) {
 	if na.BgpPeerMode {

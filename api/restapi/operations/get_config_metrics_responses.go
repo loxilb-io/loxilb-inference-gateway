@@ -148,6 +148,51 @@ func (o *GetConfigMetricsUnauthorized) WriteResponse(rw http.ResponseWriter, pro
 	}
 }
 
+// GetConfigMetricsForbiddenCode is the HTTP code returned for type GetConfigMetricsForbidden
+const GetConfigMetricsForbiddenCode int = 403
+
+/*
+GetConfigMetricsForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getConfigMetricsForbidden
+*/
+type GetConfigMetricsForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigMetricsForbidden creates GetConfigMetricsForbidden with default headers values
+func NewGetConfigMetricsForbidden() *GetConfigMetricsForbidden {
+
+	return &GetConfigMetricsForbidden{}
+}
+
+// WithPayload adds the payload to the get config metrics forbidden response
+func (o *GetConfigMetricsForbidden) WithPayload(payload *models.Error) *GetConfigMetricsForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config metrics forbidden response
+func (o *GetConfigMetricsForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigMetricsForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigMetricsInternalServerErrorCode is the HTTP code returned for type GetConfigMetricsInternalServerError
 const GetConfigMetricsInternalServerErrorCode int = 500
 

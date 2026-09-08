@@ -103,6 +103,51 @@ func (o *GetConfigIpsecTunnelsAllUnauthorized) WriteResponse(rw http.ResponseWri
 	}
 }
 
+// GetConfigIpsecTunnelsAllForbiddenCode is the HTTP code returned for type GetConfigIpsecTunnelsAllForbidden
+const GetConfigIpsecTunnelsAllForbiddenCode int = 403
+
+/*
+GetConfigIpsecTunnelsAllForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getConfigIpsecTunnelsAllForbidden
+*/
+type GetConfigIpsecTunnelsAllForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigIpsecTunnelsAllForbidden creates GetConfigIpsecTunnelsAllForbidden with default headers values
+func NewGetConfigIpsecTunnelsAllForbidden() *GetConfigIpsecTunnelsAllForbidden {
+
+	return &GetConfigIpsecTunnelsAllForbidden{}
+}
+
+// WithPayload adds the payload to the get config ipsec tunnels all forbidden response
+func (o *GetConfigIpsecTunnelsAllForbidden) WithPayload(payload *models.Error) *GetConfigIpsecTunnelsAllForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config ipsec tunnels all forbidden response
+func (o *GetConfigIpsecTunnelsAllForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigIpsecTunnelsAllForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigIpsecTunnelsAllInternalServerErrorCode is the HTTP code returned for type GetConfigIpsecTunnelsAllInternalServerError
 const GetConfigIpsecTunnelsAllInternalServerErrorCode int = 500
 
@@ -140,6 +185,51 @@ func (o *GetConfigIpsecTunnelsAllInternalServerError) SetPayload(payload *models
 func (o *GetConfigIpsecTunnelsAllInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetConfigIpsecTunnelsAllServiceUnavailableCode is the HTTP code returned for type GetConfigIpsecTunnelsAllServiceUnavailable
+const GetConfigIpsecTunnelsAllServiceUnavailableCode int = 503
+
+/*
+GetConfigIpsecTunnelsAllServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response getConfigIpsecTunnelsAllServiceUnavailable
+*/
+type GetConfigIpsecTunnelsAllServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigIpsecTunnelsAllServiceUnavailable creates GetConfigIpsecTunnelsAllServiceUnavailable with default headers values
+func NewGetConfigIpsecTunnelsAllServiceUnavailable() *GetConfigIpsecTunnelsAllServiceUnavailable {
+
+	return &GetConfigIpsecTunnelsAllServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the get config ipsec tunnels all service unavailable response
+func (o *GetConfigIpsecTunnelsAllServiceUnavailable) WithPayload(payload *models.Error) *GetConfigIpsecTunnelsAllServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config ipsec tunnels all service unavailable response
+func (o *GetConfigIpsecTunnelsAllServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigIpsecTunnelsAllServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

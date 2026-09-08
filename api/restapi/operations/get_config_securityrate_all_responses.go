@@ -103,6 +103,51 @@ func (o *GetConfigSecurityrateAllUnauthorized) WriteResponse(rw http.ResponseWri
 	}
 }
 
+// GetConfigSecurityrateAllForbiddenCode is the HTTP code returned for type GetConfigSecurityrateAllForbidden
+const GetConfigSecurityrateAllForbiddenCode int = 403
+
+/*
+GetConfigSecurityrateAllForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getConfigSecurityrateAllForbidden
+*/
+type GetConfigSecurityrateAllForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigSecurityrateAllForbidden creates GetConfigSecurityrateAllForbidden with default headers values
+func NewGetConfigSecurityrateAllForbidden() *GetConfigSecurityrateAllForbidden {
+
+	return &GetConfigSecurityrateAllForbidden{}
+}
+
+// WithPayload adds the payload to the get config securityrate all forbidden response
+func (o *GetConfigSecurityrateAllForbidden) WithPayload(payload *models.Error) *GetConfigSecurityrateAllForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config securityrate all forbidden response
+func (o *GetConfigSecurityrateAllForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigSecurityrateAllForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigSecurityrateAllInternalServerErrorCode is the HTTP code returned for type GetConfigSecurityrateAllInternalServerError
 const GetConfigSecurityrateAllInternalServerErrorCode int = 500
 
@@ -140,6 +185,51 @@ func (o *GetConfigSecurityrateAllInternalServerError) SetPayload(payload *models
 func (o *GetConfigSecurityrateAllInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetConfigSecurityrateAllServiceUnavailableCode is the HTTP code returned for type GetConfigSecurityrateAllServiceUnavailable
+const GetConfigSecurityrateAllServiceUnavailableCode int = 503
+
+/*
+GetConfigSecurityrateAllServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response getConfigSecurityrateAllServiceUnavailable
+*/
+type GetConfigSecurityrateAllServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigSecurityrateAllServiceUnavailable creates GetConfigSecurityrateAllServiceUnavailable with default headers values
+func NewGetConfigSecurityrateAllServiceUnavailable() *GetConfigSecurityrateAllServiceUnavailable {
+
+	return &GetConfigSecurityrateAllServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the get config securityrate all service unavailable response
+func (o *GetConfigSecurityrateAllServiceUnavailable) WithPayload(payload *models.Error) *GetConfigSecurityrateAllServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config securityrate all service unavailable response
+func (o *GetConfigSecurityrateAllServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigSecurityrateAllServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

@@ -102,6 +102,96 @@ func (o *GetLogArchivesFilenameBadRequest) WriteResponse(rw http.ResponseWriter,
 	}
 }
 
+// GetLogArchivesFilenameUnauthorizedCode is the HTTP code returned for type GetLogArchivesFilenameUnauthorized
+const GetLogArchivesFilenameUnauthorizedCode int = 401
+
+/*
+GetLogArchivesFilenameUnauthorized Missing or invalid management credential
+
+swagger:response getLogArchivesFilenameUnauthorized
+*/
+type GetLogArchivesFilenameUnauthorized struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetLogArchivesFilenameUnauthorized creates GetLogArchivesFilenameUnauthorized with default headers values
+func NewGetLogArchivesFilenameUnauthorized() *GetLogArchivesFilenameUnauthorized {
+
+	return &GetLogArchivesFilenameUnauthorized{}
+}
+
+// WithPayload adds the payload to the get log archives filename unauthorized response
+func (o *GetLogArchivesFilenameUnauthorized) WithPayload(payload *models.Error) *GetLogArchivesFilenameUnauthorized {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get log archives filename unauthorized response
+func (o *GetLogArchivesFilenameUnauthorized) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetLogArchivesFilenameUnauthorized) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(401)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetLogArchivesFilenameForbiddenCode is the HTTP code returned for type GetLogArchivesFilenameForbidden
+const GetLogArchivesFilenameForbiddenCode int = 403
+
+/*
+GetLogArchivesFilenameForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getLogArchivesFilenameForbidden
+*/
+type GetLogArchivesFilenameForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetLogArchivesFilenameForbidden creates GetLogArchivesFilenameForbidden with default headers values
+func NewGetLogArchivesFilenameForbidden() *GetLogArchivesFilenameForbidden {
+
+	return &GetLogArchivesFilenameForbidden{}
+}
+
+// WithPayload adds the payload to the get log archives filename forbidden response
+func (o *GetLogArchivesFilenameForbidden) WithPayload(payload *models.Error) *GetLogArchivesFilenameForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get log archives filename forbidden response
+func (o *GetLogArchivesFilenameForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetLogArchivesFilenameForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetLogArchivesFilenameNotFoundCode is the HTTP code returned for type GetLogArchivesFilenameNotFound
 const GetLogArchivesFilenameNotFoundCode int = 404
 
@@ -184,6 +274,51 @@ func (o *GetLogArchivesFilenameInternalServerError) SetPayload(payload *models.E
 func (o *GetLogArchivesFilenameInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetLogArchivesFilenameServiceUnavailableCode is the HTTP code returned for type GetLogArchivesFilenameServiceUnavailable
+const GetLogArchivesFilenameServiceUnavailableCode int = 503
+
+/*
+GetLogArchivesFilenameServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response getLogArchivesFilenameServiceUnavailable
+*/
+type GetLogArchivesFilenameServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetLogArchivesFilenameServiceUnavailable creates GetLogArchivesFilenameServiceUnavailable with default headers values
+func NewGetLogArchivesFilenameServiceUnavailable() *GetLogArchivesFilenameServiceUnavailable {
+
+	return &GetLogArchivesFilenameServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the get log archives filename service unavailable response
+func (o *GetLogArchivesFilenameServiceUnavailable) WithPayload(payload *models.Error) *GetLogArchivesFilenameServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get log archives filename service unavailable response
+func (o *GetLogArchivesFilenameServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetLogArchivesFilenameServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

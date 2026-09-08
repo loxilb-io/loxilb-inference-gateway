@@ -103,6 +103,51 @@ func (o *DeleteConfigIpsecTunnelsNameUnauthorized) WriteResponse(rw http.Respons
 	}
 }
 
+// DeleteConfigIpsecTunnelsNameForbiddenCode is the HTTP code returned for type DeleteConfigIpsecTunnelsNameForbidden
+const DeleteConfigIpsecTunnelsNameForbiddenCode int = 403
+
+/*
+DeleteConfigIpsecTunnelsNameForbidden Authenticated principal is not authorized for this operation
+
+swagger:response deleteConfigIpsecTunnelsNameForbidden
+*/
+type DeleteConfigIpsecTunnelsNameForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewDeleteConfigIpsecTunnelsNameForbidden creates DeleteConfigIpsecTunnelsNameForbidden with default headers values
+func NewDeleteConfigIpsecTunnelsNameForbidden() *DeleteConfigIpsecTunnelsNameForbidden {
+
+	return &DeleteConfigIpsecTunnelsNameForbidden{}
+}
+
+// WithPayload adds the payload to the delete config ipsec tunnels name forbidden response
+func (o *DeleteConfigIpsecTunnelsNameForbidden) WithPayload(payload *models.Error) *DeleteConfigIpsecTunnelsNameForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config ipsec tunnels name forbidden response
+func (o *DeleteConfigIpsecTunnelsNameForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *DeleteConfigIpsecTunnelsNameForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // DeleteConfigIpsecTunnelsNameNotFoundCode is the HTTP code returned for type DeleteConfigIpsecTunnelsNameNotFound
 const DeleteConfigIpsecTunnelsNameNotFoundCode int = 404
 
@@ -185,6 +230,51 @@ func (o *DeleteConfigIpsecTunnelsNameInternalServerError) SetPayload(payload *mo
 func (o *DeleteConfigIpsecTunnelsNameInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// DeleteConfigIpsecTunnelsNameServiceUnavailableCode is the HTTP code returned for type DeleteConfigIpsecTunnelsNameServiceUnavailable
+const DeleteConfigIpsecTunnelsNameServiceUnavailableCode int = 503
+
+/*
+DeleteConfigIpsecTunnelsNameServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response deleteConfigIpsecTunnelsNameServiceUnavailable
+*/
+type DeleteConfigIpsecTunnelsNameServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewDeleteConfigIpsecTunnelsNameServiceUnavailable creates DeleteConfigIpsecTunnelsNameServiceUnavailable with default headers values
+func NewDeleteConfigIpsecTunnelsNameServiceUnavailable() *DeleteConfigIpsecTunnelsNameServiceUnavailable {
+
+	return &DeleteConfigIpsecTunnelsNameServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the delete config ipsec tunnels name service unavailable response
+func (o *DeleteConfigIpsecTunnelsNameServiceUnavailable) WithPayload(payload *models.Error) *DeleteConfigIpsecTunnelsNameServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config ipsec tunnels name service unavailable response
+func (o *DeleteConfigIpsecTunnelsNameServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *DeleteConfigIpsecTunnelsNameServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

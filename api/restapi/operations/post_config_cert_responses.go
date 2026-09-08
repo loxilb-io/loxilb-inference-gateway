@@ -128,6 +128,51 @@ func (o *PostConfigCertUnauthorized) WriteResponse(rw http.ResponseWriter, produ
 	}
 }
 
+// PostConfigCertForbiddenCode is the HTTP code returned for type PostConfigCertForbidden
+const PostConfigCertForbiddenCode int = 403
+
+/*
+PostConfigCertForbidden Authenticated principal is not authorized for this operation
+
+swagger:response postConfigCertForbidden
+*/
+type PostConfigCertForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigCertForbidden creates PostConfigCertForbidden with default headers values
+func NewPostConfigCertForbidden() *PostConfigCertForbidden {
+
+	return &PostConfigCertForbidden{}
+}
+
+// WithPayload adds the payload to the post config cert forbidden response
+func (o *PostConfigCertForbidden) WithPayload(payload *models.Error) *PostConfigCertForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config cert forbidden response
+func (o *PostConfigCertForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigCertForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // PostConfigCertInternalServerErrorCode is the HTTP code returned for type PostConfigCertInternalServerError
 const PostConfigCertInternalServerErrorCode int = 500
 
@@ -165,6 +210,51 @@ func (o *PostConfigCertInternalServerError) SetPayload(payload *models.Error) {
 func (o *PostConfigCertInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// PostConfigCertServiceUnavailableCode is the HTTP code returned for type PostConfigCertServiceUnavailable
+const PostConfigCertServiceUnavailableCode int = 503
+
+/*
+PostConfigCertServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response postConfigCertServiceUnavailable
+*/
+type PostConfigCertServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigCertServiceUnavailable creates PostConfigCertServiceUnavailable with default headers values
+func NewPostConfigCertServiceUnavailable() *PostConfigCertServiceUnavailable {
+
+	return &PostConfigCertServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the post config cert service unavailable response
+func (o *PostConfigCertServiceUnavailable) WithPayload(payload *models.Error) *PostConfigCertServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config cert service unavailable response
+func (o *PostConfigCertServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigCertServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {
