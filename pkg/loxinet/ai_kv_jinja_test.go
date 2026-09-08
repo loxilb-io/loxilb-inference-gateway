@@ -44,7 +44,7 @@ func kvTestPublishChatProfile(t *testing.T, modelName, templateSrc string, pol K
 		TemplateBytes: []byte(templateSrc),
 	}
 	gen := &kvProfileGeneration{
-		Gen:      kvProfileRegGen.Add(1),
+		Gen:      kvProfileGenFromDigest("a1b2c3d4e5f60718"),
 		Profiles: map[string]*kvProfileEntry{},
 		ByModel:  map[string]*kvProfileEntry{},
 	}
@@ -227,7 +227,7 @@ func TestKvChatSupportRequiresChatDeclaration(t *testing.T) {
 		TemplateBytes: []byte("rendered"),
 	}
 	gen := &kvProfileGeneration{
-		Gen:      kvProfileRegGen.Add(1),
+		Gen:      kvProfileGenFromDigest("b2c3d4e5f6071829"),
 		Profiles: map[string]*kvProfileEntry{e.Profile.ProfileID: e},
 		ByModel:  map[string]*kvProfileEntry{kvModelSlug("m-completions-only"): e},
 	}

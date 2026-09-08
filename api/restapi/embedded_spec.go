@@ -10273,7 +10273,7 @@ func init() {
           }
         },
         "registryGeneration": {
-          "description": "Monotonic generation number of the published registry (0 = no registry published).",
+          "description": "Generation number of the published registry, derived from setDigest - stable across gateway restarts and different exactly when the published content differs (0 = no registry published). NOT a monotonic counter; compare for equality, never for order. setDigest remains the authoritative cache key; this value is its integer projection.",
           "type": "integer",
           "format": "uint64"
         },
@@ -12779,7 +12779,7 @@ func init() {
           "type": "string"
         },
         "fault": {
-          "description": "Last enforcement fault reason (absent when none).",
+          "description": "Last enforcement fault code (x-kv-status-fault-codes vocabulary; absent when none). Same forward-compatibility rule as reasonCodes - an unrecognized value MUST be rendered raw and MUST NOT be treated as fatal.",
           "type": "string"
         },
         "goFenced": {
@@ -12794,7 +12794,7 @@ func init() {
       }
     },
     "KvExactStatusEntry": {
-      "description": "Resolved KV-exact composition status of one rule. Every identity field is a scalar by schema - one rule composes exactly one model profile with exactly one engine contract at exactly one generation each; arrays and repeated identity fields are rejected representations. Field presence groups: the required fields are present on EVERY entry (legacy and strict); modelProfileId, modelProfileGen, engineContractId, engineContractGen, bindingGen, bindingDigest, hashContractId, requiredEvidenceLevel and enforcement are present iff the rule is strict (profile-bound); wireSchemaId and pdDialectId are present iff an engine-contract registry serves them. State and reason vocabularies are published in the x-kv-status-states / x-kv-status-reason-codes blocks below as an OPEN vocabulary versioned by x-kv-status-vocabulary-version (new values bump the version; existing values are never renamed or re-used). Forward-compatibility rule, binding on clients: an unrecognized desiredState/enforcedState MUST be treated as \"not ready / in transition\" and rendered raw; an unrecognized reasonCode MUST be rendered raw and MUST NOT be treated as fatal.",
+      "description": "Resolved KV-exact composition status of one rule. Every identity field is a scalar by schema - one rule composes exactly one model profile with exactly one engine contract at exactly one generation each; arrays and repeated identity fields are rejected representations. Field presence groups: the required fields are present on EVERY entry (legacy and strict); modelProfileId, modelProfileGen, engineContractId, engineContractGen, bindingGen, bindingDigest, hashContractId, requiredEvidenceLevel and enforcement are present iff the rule is strict (profile-bound); wireSchemaId and pdDialectId are present iff an engine-contract registry serves them. State, reason and enforcement-fault vocabularies are published in the x-kv-status-states / x-kv-status-reason-codes / x-kv-status-fault-codes blocks below as an OPEN vocabulary versioned by x-kv-status-vocabulary-version (new values bump the version; existing values are never renamed or re-used). Forward-compatibility rule, binding on clients: an unrecognized desiredState/enforcedState MUST be treated as \"not ready / in transition\" and rendered raw; an unrecognized reasonCode MUST be rendered raw and MUST NOT be treated as fatal.",
       "type": "object",
       "required": [
         "ruleIdentity",
@@ -12884,6 +12884,13 @@ func init() {
           "type": "string"
         }
       },
+      "x-kv-status-fault-codes": {
+        "binding_changed_during_install": "A binding re-allocation raced the install; the applied word was stale.",
+        "binding_state_missing": "Strict rule had no binding state at contract install time (partial restore or allocation fault).",
+        "dataplane_ack_mismatch": "Data-plane readback disagreed with the requested contract word.",
+        "dataplane_setter_failed": "The data-plane contract setter refused the install transaction.",
+        "no_dataplane_setter": "No data-plane contract setter is registered in this gateway build."
+      },
       "x-kv-status-reason-codes": {
         "adapter_unavailable": "No attestation adapter is available for the rule's engine family.",
         "attestation_pending": "Attestation controller registered but has not published a verdict yet.",
@@ -12928,7 +12935,7 @@ func init() {
         "TOKEN_PARITY_NOT_AVAILABLE_WITH_APPROVED_ORACLE": "Alternate second rung for engines without a tokenize endpoint - parity vouched through an approved oracle.",
         "TOKEN_PARITY_VERIFIED": "Tokenizer parity proven against the engine's tokenize surface."
       },
-      "x-kv-status-vocabulary-version": 1
+      "x-kv-status-vocabulary-version": 2
     },
     "L4TraceStats": {
       "type": "object",
@@ -14051,7 +14058,7 @@ func init() {
               "x-nullable": false
             },
             "kvModelProfile": {
-              "description": "ID of the ModelPromptProfile this rule binds to. Naming a profile makes the rule STRICT: the profile must be published in the gateway's profile registry, its alias policy must admit the rule's model_name, its pinned tokenizer artifacts must load and digest-match, and a composed KV-exact binding (model-profile@generation + engine-contract@generation) is allocated at create time — admission fails closed while no engine-contract registry is available. Absent = legacy profile-less rule (no binding; documented migration behavior). Immutable after create (delete+recreate to change), with ONE sanctioned exception: the migration attach. A replace-POST that names a profile on a live profile-less rule is admitted and re-runs the full strict bring-up (admission checks run BEFORE any mutation, so a refused attach leaves the rule, binding, and data plane untouched; enforcement reports pending until the data-plane contract installs and is acknowledged). The reverse transitions — dropping the profile or changing it to another — stay refused, as does any kvExactApiMode change during the attach (raw-string equality; an undeclared apiMode must stay undeclared in the attach POST). CAVEAT operators must be shown: attaching changes the rule's EFFECTIVE surface from the legacy both-surfaces default to the profile's declared supportedApis — attaching a completions-only profile to a rule that was serving chat traffic narrows the served surface. Scalar by schema — exactly one profile per rule; arrays are rejected representations.",
+              "description": "ID of the ModelPromptProfile this rule binds to. Naming a profile makes the rule STRICT: the profile must be published in the gateway's profile registry, its alias policy must admit the rule's model_name, its pinned tokenizer artifacts must load and digest-match, and a composed KV-exact binding (model-profile@generation + engine-contract@generation) is allocated at create time — admission fails closed while no engine-contract registry is available. Absent = legacy profile-less rule (no binding; documented migration behavior). Immutable after create (delete+recreate to change), with ONE sanctioned exception: the migration attach. A replace-POST that names a profile on a live profile-less rule is admitted and re-runs the full strict bring-up (admission checks run BEFORE any mutation, so a refused attach leaves the rule, binding, and data plane untouched; enforcement reports pending until the data-plane contract installs and is acknowledged). The reverse transitions — dropping the profile or changing it to another — stay refused, as does any kvExactApiMode change during the attach (raw-string equality; an undeclared apiMode must stay undeclared in the attach POST). CAVEAT operators must be shown: attaching changes the rule's DECLARED surface from the legacy both-surfaces default to the profile's declared supportedApis, and the excluded surface loses KV-exact scoring eligibility — requests on it are NOT refused; they keep routing through the fallback tiers and still answer. Attaching a completions-only profile to a rule serving chat traffic therefore silently downgrades chat routing quality, not chat availability, and the attach POST reports plain success with no warning. Scalar by schema — exactly one profile per rule; arrays are rejected representations.",
               "type": "string",
               "x-nullable": false
             },
@@ -26818,7 +26825,7 @@ func init() {
           }
         },
         "registryGeneration": {
-          "description": "Monotonic generation number of the published registry (0 = no registry published).",
+          "description": "Generation number of the published registry, derived from setDigest - stable across gateway restarts and different exactly when the published content differs (0 = no registry published). NOT a monotonic counter; compare for equality, never for order. setDigest remains the authoritative cache key; this value is its integer projection.",
           "type": "integer",
           "format": "uint64"
         },
@@ -29819,7 +29826,7 @@ func init() {
           "type": "string"
         },
         "fault": {
-          "description": "Last enforcement fault reason (absent when none).",
+          "description": "Last enforcement fault code (x-kv-status-fault-codes vocabulary; absent when none). Same forward-compatibility rule as reasonCodes - an unrecognized value MUST be rendered raw and MUST NOT be treated as fatal.",
           "type": "string"
         },
         "goFenced": {
@@ -29834,7 +29841,7 @@ func init() {
       }
     },
     "KvExactStatusEntry": {
-      "description": "Resolved KV-exact composition status of one rule. Every identity field is a scalar by schema - one rule composes exactly one model profile with exactly one engine contract at exactly one generation each; arrays and repeated identity fields are rejected representations. Field presence groups: the required fields are present on EVERY entry (legacy and strict); modelProfileId, modelProfileGen, engineContractId, engineContractGen, bindingGen, bindingDigest, hashContractId, requiredEvidenceLevel and enforcement are present iff the rule is strict (profile-bound); wireSchemaId and pdDialectId are present iff an engine-contract registry serves them. State and reason vocabularies are published in the x-kv-status-states / x-kv-status-reason-codes blocks below as an OPEN vocabulary versioned by x-kv-status-vocabulary-version (new values bump the version; existing values are never renamed or re-used). Forward-compatibility rule, binding on clients: an unrecognized desiredState/enforcedState MUST be treated as \"not ready / in transition\" and rendered raw; an unrecognized reasonCode MUST be rendered raw and MUST NOT be treated as fatal.",
+      "description": "Resolved KV-exact composition status of one rule. Every identity field is a scalar by schema - one rule composes exactly one model profile with exactly one engine contract at exactly one generation each; arrays and repeated identity fields are rejected representations. Field presence groups: the required fields are present on EVERY entry (legacy and strict); modelProfileId, modelProfileGen, engineContractId, engineContractGen, bindingGen, bindingDigest, hashContractId, requiredEvidenceLevel and enforcement are present iff the rule is strict (profile-bound); wireSchemaId and pdDialectId are present iff an engine-contract registry serves them. State, reason and enforcement-fault vocabularies are published in the x-kv-status-states / x-kv-status-reason-codes / x-kv-status-fault-codes blocks below as an OPEN vocabulary versioned by x-kv-status-vocabulary-version (new values bump the version; existing values are never renamed or re-used). Forward-compatibility rule, binding on clients: an unrecognized desiredState/enforcedState MUST be treated as \"not ready / in transition\" and rendered raw; an unrecognized reasonCode MUST be rendered raw and MUST NOT be treated as fatal.",
       "type": "object",
       "required": [
         "ruleIdentity",
@@ -29924,6 +29931,13 @@ func init() {
           "type": "string"
         }
       },
+      "x-kv-status-fault-codes": {
+        "binding_changed_during_install": "A binding re-allocation raced the install; the applied word was stale.",
+        "binding_state_missing": "Strict rule had no binding state at contract install time (partial restore or allocation fault).",
+        "dataplane_ack_mismatch": "Data-plane readback disagreed with the requested contract word.",
+        "dataplane_setter_failed": "The data-plane contract setter refused the install transaction.",
+        "no_dataplane_setter": "No data-plane contract setter is registered in this gateway build."
+      },
       "x-kv-status-reason-codes": {
         "adapter_unavailable": "No attestation adapter is available for the rule's engine family.",
         "attestation_pending": "Attestation controller registered but has not published a verdict yet.",
@@ -29968,7 +29982,7 @@ func init() {
         "TOKEN_PARITY_NOT_AVAILABLE_WITH_APPROVED_ORACLE": "Alternate second rung for engines without a tokenize endpoint - parity vouched through an approved oracle.",
         "TOKEN_PARITY_VERIFIED": "Tokenizer parity proven against the engine's tokenize surface."
       },
-      "x-kv-status-vocabulary-version": 1
+      "x-kv-status-vocabulary-version": 2
     },
     "L4TraceStats": {
       "type": "object",
@@ -31069,7 +31083,7 @@ func init() {
               "x-nullable": false
             },
             "kvModelProfile": {
-              "description": "ID of the ModelPromptProfile this rule binds to. Naming a profile makes the rule STRICT: the profile must be published in the gateway's profile registry, its alias policy must admit the rule's model_name, its pinned tokenizer artifacts must load and digest-match, and a composed KV-exact binding (model-profile@generation + engine-contract@generation) is allocated at create time — admission fails closed while no engine-contract registry is available. Absent = legacy profile-less rule (no binding; documented migration behavior). Immutable after create (delete+recreate to change), with ONE sanctioned exception: the migration attach. A replace-POST that names a profile on a live profile-less rule is admitted and re-runs the full strict bring-up (admission checks run BEFORE any mutation, so a refused attach leaves the rule, binding, and data plane untouched; enforcement reports pending until the data-plane contract installs and is acknowledged). The reverse transitions — dropping the profile or changing it to another — stay refused, as does any kvExactApiMode change during the attach (raw-string equality; an undeclared apiMode must stay undeclared in the attach POST). CAVEAT operators must be shown: attaching changes the rule's EFFECTIVE surface from the legacy both-surfaces default to the profile's declared supportedApis — attaching a completions-only profile to a rule that was serving chat traffic narrows the served surface. Scalar by schema — exactly one profile per rule; arrays are rejected representations.",
+              "description": "ID of the ModelPromptProfile this rule binds to. Naming a profile makes the rule STRICT: the profile must be published in the gateway's profile registry, its alias policy must admit the rule's model_name, its pinned tokenizer artifacts must load and digest-match, and a composed KV-exact binding (model-profile@generation + engine-contract@generation) is allocated at create time — admission fails closed while no engine-contract registry is available. Absent = legacy profile-less rule (no binding; documented migration behavior). Immutable after create (delete+recreate to change), with ONE sanctioned exception: the migration attach. A replace-POST that names a profile on a live profile-less rule is admitted and re-runs the full strict bring-up (admission checks run BEFORE any mutation, so a refused attach leaves the rule, binding, and data plane untouched; enforcement reports pending until the data-plane contract installs and is acknowledged). The reverse transitions — dropping the profile or changing it to another — stay refused, as does any kvExactApiMode change during the attach (raw-string equality; an undeclared apiMode must stay undeclared in the attach POST). CAVEAT operators must be shown: attaching changes the rule's DECLARED surface from the legacy both-surfaces default to the profile's declared supportedApis, and the excluded surface loses KV-exact scoring eligibility — requests on it are NOT refused; they keep routing through the fallback tiers and still answer. Attaching a completions-only profile to a rule serving chat traffic therefore silently downgrades chat routing quality, not chat availability, and the attach POST reports plain success with no warning. Scalar by schema — exactly one profile per rule; arrays are rejected representations.",
               "type": "string",
               "x-nullable": false
             },
@@ -31727,7 +31741,7 @@ func init() {
           "x-nullable": false
         },
         "kvModelProfile": {
-          "description": "ID of the ModelPromptProfile this rule binds to. Naming a profile makes the rule STRICT: the profile must be published in the gateway's profile registry, its alias policy must admit the rule's model_name, its pinned tokenizer artifacts must load and digest-match, and a composed KV-exact binding (model-profile@generation + engine-contract@generation) is allocated at create time — admission fails closed while no engine-contract registry is available. Absent = legacy profile-less rule (no binding; documented migration behavior). Immutable after create (delete+recreate to change), with ONE sanctioned exception: the migration attach. A replace-POST that names a profile on a live profile-less rule is admitted and re-runs the full strict bring-up (admission checks run BEFORE any mutation, so a refused attach leaves the rule, binding, and data plane untouched; enforcement reports pending until the data-plane contract installs and is acknowledged). The reverse transitions — dropping the profile or changing it to another — stay refused, as does any kvExactApiMode change during the attach (raw-string equality; an undeclared apiMode must stay undeclared in the attach POST). CAVEAT operators must be shown: attaching changes the rule's EFFECTIVE surface from the legacy both-surfaces default to the profile's declared supportedApis — attaching a completions-only profile to a rule that was serving chat traffic narrows the served surface. Scalar by schema — exactly one profile per rule; arrays are rejected representations.",
+          "description": "ID of the ModelPromptProfile this rule binds to. Naming a profile makes the rule STRICT: the profile must be published in the gateway's profile registry, its alias policy must admit the rule's model_name, its pinned tokenizer artifacts must load and digest-match, and a composed KV-exact binding (model-profile@generation + engine-contract@generation) is allocated at create time — admission fails closed while no engine-contract registry is available. Absent = legacy profile-less rule (no binding; documented migration behavior). Immutable after create (delete+recreate to change), with ONE sanctioned exception: the migration attach. A replace-POST that names a profile on a live profile-less rule is admitted and re-runs the full strict bring-up (admission checks run BEFORE any mutation, so a refused attach leaves the rule, binding, and data plane untouched; enforcement reports pending until the data-plane contract installs and is acknowledged). The reverse transitions — dropping the profile or changing it to another — stay refused, as does any kvExactApiMode change during the attach (raw-string equality; an undeclared apiMode must stay undeclared in the attach POST). CAVEAT operators must be shown: attaching changes the rule's DECLARED surface from the legacy both-surfaces default to the profile's declared supportedApis, and the excluded surface loses KV-exact scoring eligibility — requests on it are NOT refused; they keep routing through the fallback tiers and still answer. Attaching a completions-only profile to a rule serving chat traffic therefore silently downgrades chat routing quality, not chat availability, and the attach POST reports plain success with no warning. Scalar by schema — exactly one profile per rule; arrays are rejected representations.",
           "type": "string",
           "x-nullable": false
         },

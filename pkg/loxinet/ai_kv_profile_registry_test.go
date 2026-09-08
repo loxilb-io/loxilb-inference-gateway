@@ -162,17 +162,56 @@ func TestKvProfileRegistryPublishAndLookup(t *testing.T) {
 		t.Fatal("id lookup failed")
 	}
 
-	// Identical reload publishes a new generation with the same set digest.
+	// Identical reload republishes the SAME generation: the value derives
+	// from the set digest, so it is stable across process restarts and a
+	// client caching on it stays correct over a gateway restart.
 	firstGen, firstDigest := g.Gen, g.SetDigest
 	if err := KvProfileRegistryLoadFrom(root); err != nil {
 		t.Fatalf("reload: %v", err)
 	}
 	g2 := kvProfileCurrent()
-	if g2.Gen <= firstGen {
-		t.Fatalf("generation did not advance: %d -> %d", firstGen, g2.Gen)
+	if g2.Gen != firstGen {
+		t.Fatalf("identical content changed generation: %d -> %d", firstGen, g2.Gen)
 	}
 	if g2.SetDigest != firstDigest {
 		t.Fatalf("identical content changed set digest: %s -> %s", firstDigest, g2.SetDigest)
+	}
+
+	// Changed content moves BOTH the digest and the generation — the pair
+	// clients invalidate on.
+	kvWriteProfileFixture(t, root, "p-three", "acme/reg-m3", []byte("tok-three"))
+	if err := KvProfileRegistryLoadFrom(root); err != nil {
+		t.Fatalf("reload after change: %v", err)
+	}
+	g3 := kvProfileCurrent()
+	if g3.SetDigest == firstDigest {
+		t.Fatal("content change did not move the set digest")
+	}
+	if g3.Gen == firstGen {
+		t.Fatalf("content change did not move the generation (still %d)", firstGen)
+	}
+}
+
+func TestKvProfileGenFromDigest(t *testing.T) {
+	d := "16ef4d78aabbccddeeff00112233445566778899aabbccddeeff001122334455"
+	g1, g2 := kvProfileGenFromDigest(d), kvProfileGenFromDigest(d)
+	if g1 != g2 {
+		t.Fatalf("derivation not stable: %d != %d", g1, g2)
+	}
+	if g1 == 0 {
+		t.Fatal("derivation produced reserved value 0")
+	}
+	if g1 > 1<<53 {
+		t.Fatalf("derivation exceeds the interoperable integer range: %d", g1)
+	}
+	if kvProfileGenFromDigest("") != 1 {
+		t.Fatal("empty digest must map to 1, not 0")
+	}
+	if kvProfileGenFromDigest("0000000000000abc") == 0 {
+		t.Fatal("zero-prefix digest must never map to 0")
+	}
+	if kvProfileGenFromDigest(d) == kvProfileGenFromDigest("ffee4d78aabbccddeeff00112233445566778899aabbccddeeff001122334455") {
+		t.Fatal("distinct digests collided in the derived generation")
 	}
 }
 
