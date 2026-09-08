@@ -52,13 +52,33 @@ if [[ "$iperf_up" != 1 ]]; then
     echo "iperf3 server never began listening on l3ep1:8080" ; code=1
 fi
 
+# The topology is not ready until llb1 holds L2 state for both hosts: L1 is
+# the policer-suite baseline, so its first connection must not double as the
+# ARP-resolution trigger (a handshake that races neighbour resolution
+# exercises the resolution path, not the rule under test). Each host pings its
+# gateway — the ARP exchange teaches llb1 both host MACs — and the gate then
+# asserts llb1 actually learned them, failing loud otherwise: a dead veth is a
+# topology defect and every later leg would be measuring noise.
+$dexec l3h1 ping -c1 -W2 10.10.10.254 > /dev/null 2>&1
+$dexec l3ep1 ping -c1 -W2 31.31.31.254 > /dev/null 2>&1
+for h in 10.10.10.1 31.31.31.1; do
+    if ! $dexec llb1 ip neigh | grep -q "^$h "; then
+        echo "topology not ready: llb1 never learned a neighbour entry for $h" ; code=1
+    fi
+done
+
 # Measured Mbits/s of an iperf3 run through the VIP (receiver side). A run
 # with no receiver summary yields "" and surfaces iperf3's own error on the
 # console — "connection refused" vs "timeout" is the evidence that separates
 # a dead server from a blackholed first connection through the rule.
 run_bw() {
     local secs=$1 raw; shift
-    raw=$($dexec l3h1 iperf3 -c $VIP -p 2020 -t $secs "$@" 2>&1)
+    # Two bounds so a broken datapath surfaces as a loud error through the
+    # no-receiver-summary branch below, never as a hang that blocks the suite:
+    # --connect-timeout for a control connection that cannot establish, and a
+    # hard timeout for the nastier mode where the handshake completes but the
+    # session then blackholes mid-exchange (unbounded retransmit otherwise).
+    raw=$(timeout $((secs+20)) $dexec l3h1 iperf3 -c $VIP -p 2020 -t $secs --connect-timeout 4000 "$@" 2>&1)
     if ! echo "$raw" | grep -q receiver; then
         echo "iperf3 run produced no receiver summary: $(echo "$raw" | grep -v '^$' | tail -1)" >&2
     fi
