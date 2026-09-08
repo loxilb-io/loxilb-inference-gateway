@@ -148,6 +148,51 @@ func (o *PostConfigPiiConfigureUnauthorized) WriteResponse(rw http.ResponseWrite
 	}
 }
 
+// PostConfigPiiConfigureForbiddenCode is the HTTP code returned for type PostConfigPiiConfigureForbidden
+const PostConfigPiiConfigureForbiddenCode int = 403
+
+/*
+PostConfigPiiConfigureForbidden Authenticated principal is not authorized for this operation
+
+swagger:response postConfigPiiConfigureForbidden
+*/
+type PostConfigPiiConfigureForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigPiiConfigureForbidden creates PostConfigPiiConfigureForbidden with default headers values
+func NewPostConfigPiiConfigureForbidden() *PostConfigPiiConfigureForbidden {
+
+	return &PostConfigPiiConfigureForbidden{}
+}
+
+// WithPayload adds the payload to the post config pii configure forbidden response
+func (o *PostConfigPiiConfigureForbidden) WithPayload(payload *models.Error) *PostConfigPiiConfigureForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config pii configure forbidden response
+func (o *PostConfigPiiConfigureForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigPiiConfigureForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // PostConfigPiiConfigureInternalServerErrorCode is the HTTP code returned for type PostConfigPiiConfigureInternalServerError
 const PostConfigPiiConfigureInternalServerErrorCode int = 500
 

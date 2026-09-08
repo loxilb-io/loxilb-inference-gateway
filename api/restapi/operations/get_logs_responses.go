@@ -103,6 +103,96 @@ func (o *GetLogsBadRequest) WriteResponse(rw http.ResponseWriter, producer runti
 	}
 }
 
+// GetLogsUnauthorizedCode is the HTTP code returned for type GetLogsUnauthorized
+const GetLogsUnauthorizedCode int = 401
+
+/*
+GetLogsUnauthorized Missing or invalid management credential
+
+swagger:response getLogsUnauthorized
+*/
+type GetLogsUnauthorized struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetLogsUnauthorized creates GetLogsUnauthorized with default headers values
+func NewGetLogsUnauthorized() *GetLogsUnauthorized {
+
+	return &GetLogsUnauthorized{}
+}
+
+// WithPayload adds the payload to the get logs unauthorized response
+func (o *GetLogsUnauthorized) WithPayload(payload *models.Error) *GetLogsUnauthorized {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get logs unauthorized response
+func (o *GetLogsUnauthorized) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetLogsUnauthorized) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(401)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetLogsForbiddenCode is the HTTP code returned for type GetLogsForbidden
+const GetLogsForbiddenCode int = 403
+
+/*
+GetLogsForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getLogsForbidden
+*/
+type GetLogsForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetLogsForbidden creates GetLogsForbidden with default headers values
+func NewGetLogsForbidden() *GetLogsForbidden {
+
+	return &GetLogsForbidden{}
+}
+
+// WithPayload adds the payload to the get logs forbidden response
+func (o *GetLogsForbidden) WithPayload(payload *models.Error) *GetLogsForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get logs forbidden response
+func (o *GetLogsForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetLogsForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetLogsInternalServerErrorCode is the HTTP code returned for type GetLogsInternalServerError
 const GetLogsInternalServerErrorCode int = 500
 
@@ -140,6 +230,51 @@ func (o *GetLogsInternalServerError) SetPayload(payload *models.Error) {
 func (o *GetLogsInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetLogsServiceUnavailableCode is the HTTP code returned for type GetLogsServiceUnavailable
+const GetLogsServiceUnavailableCode int = 503
+
+/*
+GetLogsServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response getLogsServiceUnavailable
+*/
+type GetLogsServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetLogsServiceUnavailable creates GetLogsServiceUnavailable with default headers values
+func NewGetLogsServiceUnavailable() *GetLogsServiceUnavailable {
+
+	return &GetLogsServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the get logs service unavailable response
+func (o *GetLogsServiceUnavailable) WithPayload(payload *models.Error) *GetLogsServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get logs service unavailable response
+func (o *GetLogsServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetLogsServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

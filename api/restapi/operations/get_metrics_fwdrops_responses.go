@@ -58,6 +58,96 @@ func (o *GetMetricsFwdropsOK) WriteResponse(rw http.ResponseWriter, producer run
 	}
 }
 
+// GetMetricsFwdropsUnauthorizedCode is the HTTP code returned for type GetMetricsFwdropsUnauthorized
+const GetMetricsFwdropsUnauthorizedCode int = 401
+
+/*
+GetMetricsFwdropsUnauthorized Missing or invalid management credential
+
+swagger:response getMetricsFwdropsUnauthorized
+*/
+type GetMetricsFwdropsUnauthorized struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetMetricsFwdropsUnauthorized creates GetMetricsFwdropsUnauthorized with default headers values
+func NewGetMetricsFwdropsUnauthorized() *GetMetricsFwdropsUnauthorized {
+
+	return &GetMetricsFwdropsUnauthorized{}
+}
+
+// WithPayload adds the payload to the get metrics fwdrops unauthorized response
+func (o *GetMetricsFwdropsUnauthorized) WithPayload(payload *models.Error) *GetMetricsFwdropsUnauthorized {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get metrics fwdrops unauthorized response
+func (o *GetMetricsFwdropsUnauthorized) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetMetricsFwdropsUnauthorized) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(401)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetMetricsFwdropsForbiddenCode is the HTTP code returned for type GetMetricsFwdropsForbidden
+const GetMetricsFwdropsForbiddenCode int = 403
+
+/*
+GetMetricsFwdropsForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getMetricsFwdropsForbidden
+*/
+type GetMetricsFwdropsForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetMetricsFwdropsForbidden creates GetMetricsFwdropsForbidden with default headers values
+func NewGetMetricsFwdropsForbidden() *GetMetricsFwdropsForbidden {
+
+	return &GetMetricsFwdropsForbidden{}
+}
+
+// WithPayload adds the payload to the get metrics fwdrops forbidden response
+func (o *GetMetricsFwdropsForbidden) WithPayload(payload *models.Error) *GetMetricsFwdropsForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get metrics fwdrops forbidden response
+func (o *GetMetricsFwdropsForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetMetricsFwdropsForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetMetricsFwdropsInternalServerErrorCode is the HTTP code returned for type GetMetricsFwdropsInternalServerError
 const GetMetricsFwdropsInternalServerErrorCode int = 500
 
@@ -95,6 +185,51 @@ func (o *GetMetricsFwdropsInternalServerError) SetPayload(payload *models.Error)
 func (o *GetMetricsFwdropsInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetMetricsFwdropsServiceUnavailableCode is the HTTP code returned for type GetMetricsFwdropsServiceUnavailable
+const GetMetricsFwdropsServiceUnavailableCode int = 503
+
+/*
+GetMetricsFwdropsServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response getMetricsFwdropsServiceUnavailable
+*/
+type GetMetricsFwdropsServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetMetricsFwdropsServiceUnavailable creates GetMetricsFwdropsServiceUnavailable with default headers values
+func NewGetMetricsFwdropsServiceUnavailable() *GetMetricsFwdropsServiceUnavailable {
+
+	return &GetMetricsFwdropsServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the get metrics fwdrops service unavailable response
+func (o *GetMetricsFwdropsServiceUnavailable) WithPayload(payload *models.Error) *GetMetricsFwdropsServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get metrics fwdrops service unavailable response
+func (o *GetMetricsFwdropsServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetMetricsFwdropsServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

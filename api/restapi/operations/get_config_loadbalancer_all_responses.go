@@ -103,6 +103,51 @@ func (o *GetConfigLoadbalancerAllUnauthorized) WriteResponse(rw http.ResponseWri
 	}
 }
 
+// GetConfigLoadbalancerAllForbiddenCode is the HTTP code returned for type GetConfigLoadbalancerAllForbidden
+const GetConfigLoadbalancerAllForbiddenCode int = 403
+
+/*
+GetConfigLoadbalancerAllForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getConfigLoadbalancerAllForbidden
+*/
+type GetConfigLoadbalancerAllForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigLoadbalancerAllForbidden creates GetConfigLoadbalancerAllForbidden with default headers values
+func NewGetConfigLoadbalancerAllForbidden() *GetConfigLoadbalancerAllForbidden {
+
+	return &GetConfigLoadbalancerAllForbidden{}
+}
+
+// WithPayload adds the payload to the get config loadbalancer all forbidden response
+func (o *GetConfigLoadbalancerAllForbidden) WithPayload(payload *models.Error) *GetConfigLoadbalancerAllForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config loadbalancer all forbidden response
+func (o *GetConfigLoadbalancerAllForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigLoadbalancerAllForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigLoadbalancerAllInternalServerErrorCode is the HTTP code returned for type GetConfigLoadbalancerAllInternalServerError
 const GetConfigLoadbalancerAllInternalServerErrorCode int = 500
 

@@ -128,6 +128,51 @@ func (o *PostConfigIpsecTunnelsNameActionUnauthorized) WriteResponse(rw http.Res
 	}
 }
 
+// PostConfigIpsecTunnelsNameActionForbiddenCode is the HTTP code returned for type PostConfigIpsecTunnelsNameActionForbidden
+const PostConfigIpsecTunnelsNameActionForbiddenCode int = 403
+
+/*
+PostConfigIpsecTunnelsNameActionForbidden Authenticated principal is not authorized for this operation
+
+swagger:response postConfigIpsecTunnelsNameActionForbidden
+*/
+type PostConfigIpsecTunnelsNameActionForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigIpsecTunnelsNameActionForbidden creates PostConfigIpsecTunnelsNameActionForbidden with default headers values
+func NewPostConfigIpsecTunnelsNameActionForbidden() *PostConfigIpsecTunnelsNameActionForbidden {
+
+	return &PostConfigIpsecTunnelsNameActionForbidden{}
+}
+
+// WithPayload adds the payload to the post config ipsec tunnels name action forbidden response
+func (o *PostConfigIpsecTunnelsNameActionForbidden) WithPayload(payload *models.Error) *PostConfigIpsecTunnelsNameActionForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config ipsec tunnels name action forbidden response
+func (o *PostConfigIpsecTunnelsNameActionForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigIpsecTunnelsNameActionForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // PostConfigIpsecTunnelsNameActionNotFoundCode is the HTTP code returned for type PostConfigIpsecTunnelsNameActionNotFound
 const PostConfigIpsecTunnelsNameActionNotFoundCode int = 404
 
@@ -210,6 +255,51 @@ func (o *PostConfigIpsecTunnelsNameActionInternalServerError) SetPayload(payload
 func (o *PostConfigIpsecTunnelsNameActionInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// PostConfigIpsecTunnelsNameActionServiceUnavailableCode is the HTTP code returned for type PostConfigIpsecTunnelsNameActionServiceUnavailable
+const PostConfigIpsecTunnelsNameActionServiceUnavailableCode int = 503
+
+/*
+PostConfigIpsecTunnelsNameActionServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response postConfigIpsecTunnelsNameActionServiceUnavailable
+*/
+type PostConfigIpsecTunnelsNameActionServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigIpsecTunnelsNameActionServiceUnavailable creates PostConfigIpsecTunnelsNameActionServiceUnavailable with default headers values
+func NewPostConfigIpsecTunnelsNameActionServiceUnavailable() *PostConfigIpsecTunnelsNameActionServiceUnavailable {
+
+	return &PostConfigIpsecTunnelsNameActionServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the post config ipsec tunnels name action service unavailable response
+func (o *PostConfigIpsecTunnelsNameActionServiceUnavailable) WithPayload(payload *models.Error) *PostConfigIpsecTunnelsNameActionServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config ipsec tunnels name action service unavailable response
+func (o *PostConfigIpsecTunnelsNameActionServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigIpsecTunnelsNameActionServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

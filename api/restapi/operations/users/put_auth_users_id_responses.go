@@ -103,6 +103,96 @@ func (o *PutAuthUsersIDBadRequest) WriteResponse(rw http.ResponseWriter, produce
 	}
 }
 
+// PutAuthUsersIDUnauthorizedCode is the HTTP code returned for type PutAuthUsersIDUnauthorized
+const PutAuthUsersIDUnauthorizedCode int = 401
+
+/*
+PutAuthUsersIDUnauthorized Missing or invalid management credential
+
+swagger:response putAuthUsersIdUnauthorized
+*/
+type PutAuthUsersIDUnauthorized struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPutAuthUsersIDUnauthorized creates PutAuthUsersIDUnauthorized with default headers values
+func NewPutAuthUsersIDUnauthorized() *PutAuthUsersIDUnauthorized {
+
+	return &PutAuthUsersIDUnauthorized{}
+}
+
+// WithPayload adds the payload to the put auth users Id unauthorized response
+func (o *PutAuthUsersIDUnauthorized) WithPayload(payload *models.Error) *PutAuthUsersIDUnauthorized {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the put auth users Id unauthorized response
+func (o *PutAuthUsersIDUnauthorized) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PutAuthUsersIDUnauthorized) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(401)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// PutAuthUsersIDForbiddenCode is the HTTP code returned for type PutAuthUsersIDForbidden
+const PutAuthUsersIDForbiddenCode int = 403
+
+/*
+PutAuthUsersIDForbidden Authenticated principal is not authorized for this operation
+
+swagger:response putAuthUsersIdForbidden
+*/
+type PutAuthUsersIDForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPutAuthUsersIDForbidden creates PutAuthUsersIDForbidden with default headers values
+func NewPutAuthUsersIDForbidden() *PutAuthUsersIDForbidden {
+
+	return &PutAuthUsersIDForbidden{}
+}
+
+// WithPayload adds the payload to the put auth users Id forbidden response
+func (o *PutAuthUsersIDForbidden) WithPayload(payload *models.Error) *PutAuthUsersIDForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the put auth users Id forbidden response
+func (o *PutAuthUsersIDForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PutAuthUsersIDForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // PutAuthUsersIDInternalServerErrorCode is the HTTP code returned for type PutAuthUsersIDInternalServerError
 const PutAuthUsersIDInternalServerErrorCode int = 500
 
@@ -140,6 +230,51 @@ func (o *PutAuthUsersIDInternalServerError) SetPayload(payload *models.Error) {
 func (o *PutAuthUsersIDInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// PutAuthUsersIDServiceUnavailableCode is the HTTP code returned for type PutAuthUsersIDServiceUnavailable
+const PutAuthUsersIDServiceUnavailableCode int = 503
+
+/*
+PutAuthUsersIDServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response putAuthUsersIdServiceUnavailable
+*/
+type PutAuthUsersIDServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPutAuthUsersIDServiceUnavailable creates PutAuthUsersIDServiceUnavailable with default headers values
+func NewPutAuthUsersIDServiceUnavailable() *PutAuthUsersIDServiceUnavailable {
+
+	return &PutAuthUsersIDServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the put auth users Id service unavailable response
+func (o *PutAuthUsersIDServiceUnavailable) WithPayload(payload *models.Error) *PutAuthUsersIDServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the put auth users Id service unavailable response
+func (o *PutAuthUsersIDServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PutAuthUsersIDServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

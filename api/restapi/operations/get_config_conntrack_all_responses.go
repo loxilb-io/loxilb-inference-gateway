@@ -103,6 +103,51 @@ func (o *GetConfigConntrackAllUnauthorized) WriteResponse(rw http.ResponseWriter
 	}
 }
 
+// GetConfigConntrackAllForbiddenCode is the HTTP code returned for type GetConfigConntrackAllForbidden
+const GetConfigConntrackAllForbiddenCode int = 403
+
+/*
+GetConfigConntrackAllForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getConfigConntrackAllForbidden
+*/
+type GetConfigConntrackAllForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigConntrackAllForbidden creates GetConfigConntrackAllForbidden with default headers values
+func NewGetConfigConntrackAllForbidden() *GetConfigConntrackAllForbidden {
+
+	return &GetConfigConntrackAllForbidden{}
+}
+
+// WithPayload adds the payload to the get config conntrack all forbidden response
+func (o *GetConfigConntrackAllForbidden) WithPayload(payload *models.Error) *GetConfigConntrackAllForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config conntrack all forbidden response
+func (o *GetConfigConntrackAllForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigConntrackAllForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigConntrackAllInternalServerErrorCode is the HTTP code returned for type GetConfigConntrackAllInternalServerError
 const GetConfigConntrackAllInternalServerErrorCode int = 500
 

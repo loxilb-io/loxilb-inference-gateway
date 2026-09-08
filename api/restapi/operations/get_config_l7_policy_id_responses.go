@@ -103,6 +103,51 @@ func (o *GetConfigL7PolicyIDUnauthorized) WriteResponse(rw http.ResponseWriter, 
 	}
 }
 
+// GetConfigL7PolicyIDForbiddenCode is the HTTP code returned for type GetConfigL7PolicyIDForbidden
+const GetConfigL7PolicyIDForbiddenCode int = 403
+
+/*
+GetConfigL7PolicyIDForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getConfigL7PolicyIdForbidden
+*/
+type GetConfigL7PolicyIDForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigL7PolicyIDForbidden creates GetConfigL7PolicyIDForbidden with default headers values
+func NewGetConfigL7PolicyIDForbidden() *GetConfigL7PolicyIDForbidden {
+
+	return &GetConfigL7PolicyIDForbidden{}
+}
+
+// WithPayload adds the payload to the get config l7 policy Id forbidden response
+func (o *GetConfigL7PolicyIDForbidden) WithPayload(payload *models.Error) *GetConfigL7PolicyIDForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config l7 policy Id forbidden response
+func (o *GetConfigL7PolicyIDForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigL7PolicyIDForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigL7PolicyIDNotFoundCode is the HTTP code returned for type GetConfigL7PolicyIDNotFound
 const GetConfigL7PolicyIDNotFoundCode int = 404
 
@@ -185,6 +230,51 @@ func (o *GetConfigL7PolicyIDInternalServerError) SetPayload(payload *models.Erro
 func (o *GetConfigL7PolicyIDInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetConfigL7PolicyIDServiceUnavailableCode is the HTTP code returned for type GetConfigL7PolicyIDServiceUnavailable
+const GetConfigL7PolicyIDServiceUnavailableCode int = 503
+
+/*
+GetConfigL7PolicyIDServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response getConfigL7PolicyIdServiceUnavailable
+*/
+type GetConfigL7PolicyIDServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigL7PolicyIDServiceUnavailable creates GetConfigL7PolicyIDServiceUnavailable with default headers values
+func NewGetConfigL7PolicyIDServiceUnavailable() *GetConfigL7PolicyIDServiceUnavailable {
+
+	return &GetConfigL7PolicyIDServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the get config l7 policy Id service unavailable response
+func (o *GetConfigL7PolicyIDServiceUnavailable) WithPayload(payload *models.Error) *GetConfigL7PolicyIDServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config l7 policy Id service unavailable response
+func (o *GetConfigL7PolicyIDServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigL7PolicyIDServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

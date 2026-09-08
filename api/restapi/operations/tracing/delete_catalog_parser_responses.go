@@ -83,6 +83,51 @@ func (o *DeleteCatalogParserUnauthorized) WriteResponse(rw http.ResponseWriter, 
 	}
 }
 
+// DeleteCatalogParserForbiddenCode is the HTTP code returned for type DeleteCatalogParserForbidden
+const DeleteCatalogParserForbiddenCode int = 403
+
+/*
+DeleteCatalogParserForbidden Authenticated principal is not authorized for this operation
+
+swagger:response deleteCatalogParserForbidden
+*/
+type DeleteCatalogParserForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewDeleteCatalogParserForbidden creates DeleteCatalogParserForbidden with default headers values
+func NewDeleteCatalogParserForbidden() *DeleteCatalogParserForbidden {
+
+	return &DeleteCatalogParserForbidden{}
+}
+
+// WithPayload adds the payload to the delete catalog parser forbidden response
+func (o *DeleteCatalogParserForbidden) WithPayload(payload *models.Error) *DeleteCatalogParserForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete catalog parser forbidden response
+func (o *DeleteCatalogParserForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *DeleteCatalogParserForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // DeleteCatalogParserNotFoundCode is the HTTP code returned for type DeleteCatalogParserNotFound
 const DeleteCatalogParserNotFoundCode int = 404
 
@@ -165,6 +210,51 @@ func (o *DeleteCatalogParserInternalServerError) SetPayload(payload *models.Erro
 func (o *DeleteCatalogParserInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// DeleteCatalogParserServiceUnavailableCode is the HTTP code returned for type DeleteCatalogParserServiceUnavailable
+const DeleteCatalogParserServiceUnavailableCode int = 503
+
+/*
+DeleteCatalogParserServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response deleteCatalogParserServiceUnavailable
+*/
+type DeleteCatalogParserServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewDeleteCatalogParserServiceUnavailable creates DeleteCatalogParserServiceUnavailable with default headers values
+func NewDeleteCatalogParserServiceUnavailable() *DeleteCatalogParserServiceUnavailable {
+
+	return &DeleteCatalogParserServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the delete catalog parser service unavailable response
+func (o *DeleteCatalogParserServiceUnavailable) WithPayload(payload *models.Error) *DeleteCatalogParserServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete catalog parser service unavailable response
+func (o *DeleteCatalogParserServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *DeleteCatalogParserServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

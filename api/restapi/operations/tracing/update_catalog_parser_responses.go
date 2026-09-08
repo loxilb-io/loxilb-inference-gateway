@@ -148,6 +148,51 @@ func (o *UpdateCatalogParserUnauthorized) WriteResponse(rw http.ResponseWriter, 
 	}
 }
 
+// UpdateCatalogParserForbiddenCode is the HTTP code returned for type UpdateCatalogParserForbidden
+const UpdateCatalogParserForbiddenCode int = 403
+
+/*
+UpdateCatalogParserForbidden Authenticated principal is not authorized for this operation
+
+swagger:response updateCatalogParserForbidden
+*/
+type UpdateCatalogParserForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewUpdateCatalogParserForbidden creates UpdateCatalogParserForbidden with default headers values
+func NewUpdateCatalogParserForbidden() *UpdateCatalogParserForbidden {
+
+	return &UpdateCatalogParserForbidden{}
+}
+
+// WithPayload adds the payload to the update catalog parser forbidden response
+func (o *UpdateCatalogParserForbidden) WithPayload(payload *models.Error) *UpdateCatalogParserForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the update catalog parser forbidden response
+func (o *UpdateCatalogParserForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *UpdateCatalogParserForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // UpdateCatalogParserNotFoundCode is the HTTP code returned for type UpdateCatalogParserNotFound
 const UpdateCatalogParserNotFoundCode int = 404
 
@@ -230,6 +275,51 @@ func (o *UpdateCatalogParserInternalServerError) SetPayload(payload *models.Erro
 func (o *UpdateCatalogParserInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// UpdateCatalogParserServiceUnavailableCode is the HTTP code returned for type UpdateCatalogParserServiceUnavailable
+const UpdateCatalogParserServiceUnavailableCode int = 503
+
+/*
+UpdateCatalogParserServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response updateCatalogParserServiceUnavailable
+*/
+type UpdateCatalogParserServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewUpdateCatalogParserServiceUnavailable creates UpdateCatalogParserServiceUnavailable with default headers values
+func NewUpdateCatalogParserServiceUnavailable() *UpdateCatalogParserServiceUnavailable {
+
+	return &UpdateCatalogParserServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the update catalog parser service unavailable response
+func (o *UpdateCatalogParserServiceUnavailable) WithPayload(payload *models.Error) *UpdateCatalogParserServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the update catalog parser service unavailable response
+func (o *UpdateCatalogParserServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *UpdateCatalogParserServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

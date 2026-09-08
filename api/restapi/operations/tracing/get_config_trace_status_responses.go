@@ -103,6 +103,51 @@ func (o *GetConfigTraceStatusUnauthorized) WriteResponse(rw http.ResponseWriter,
 	}
 }
 
+// GetConfigTraceStatusForbiddenCode is the HTTP code returned for type GetConfigTraceStatusForbidden
+const GetConfigTraceStatusForbiddenCode int = 403
+
+/*
+GetConfigTraceStatusForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getConfigTraceStatusForbidden
+*/
+type GetConfigTraceStatusForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigTraceStatusForbidden creates GetConfigTraceStatusForbidden with default headers values
+func NewGetConfigTraceStatusForbidden() *GetConfigTraceStatusForbidden {
+
+	return &GetConfigTraceStatusForbidden{}
+}
+
+// WithPayload adds the payload to the get config trace status forbidden response
+func (o *GetConfigTraceStatusForbidden) WithPayload(payload *models.Error) *GetConfigTraceStatusForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config trace status forbidden response
+func (o *GetConfigTraceStatusForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigTraceStatusForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigTraceStatusInternalServerErrorCode is the HTTP code returned for type GetConfigTraceStatusInternalServerError
 const GetConfigTraceStatusInternalServerErrorCode int = 500
 
@@ -140,6 +185,51 @@ func (o *GetConfigTraceStatusInternalServerError) SetPayload(payload *models.Err
 func (o *GetConfigTraceStatusInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetConfigTraceStatusServiceUnavailableCode is the HTTP code returned for type GetConfigTraceStatusServiceUnavailable
+const GetConfigTraceStatusServiceUnavailableCode int = 503
+
+/*
+GetConfigTraceStatusServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response getConfigTraceStatusServiceUnavailable
+*/
+type GetConfigTraceStatusServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigTraceStatusServiceUnavailable creates GetConfigTraceStatusServiceUnavailable with default headers values
+func NewGetConfigTraceStatusServiceUnavailable() *GetConfigTraceStatusServiceUnavailable {
+
+	return &GetConfigTraceStatusServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the get config trace status service unavailable response
+func (o *GetConfigTraceStatusServiceUnavailable) WithPayload(payload *models.Error) *GetConfigTraceStatusServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config trace status service unavailable response
+func (o *GetConfigTraceStatusServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigTraceStatusServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

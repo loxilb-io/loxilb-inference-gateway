@@ -103,6 +103,51 @@ func (o *GetConfigPolicyAllUnauthorized) WriteResponse(rw http.ResponseWriter, p
 	}
 }
 
+// GetConfigPolicyAllForbiddenCode is the HTTP code returned for type GetConfigPolicyAllForbidden
+const GetConfigPolicyAllForbiddenCode int = 403
+
+/*
+GetConfigPolicyAllForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getConfigPolicyAllForbidden
+*/
+type GetConfigPolicyAllForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigPolicyAllForbidden creates GetConfigPolicyAllForbidden with default headers values
+func NewGetConfigPolicyAllForbidden() *GetConfigPolicyAllForbidden {
+
+	return &GetConfigPolicyAllForbidden{}
+}
+
+// WithPayload adds the payload to the get config policy all forbidden response
+func (o *GetConfigPolicyAllForbidden) WithPayload(payload *models.Error) *GetConfigPolicyAllForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config policy all forbidden response
+func (o *GetConfigPolicyAllForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigPolicyAllForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigPolicyAllInternalServerErrorCode is the HTTP code returned for type GetConfigPolicyAllInternalServerError
 const GetConfigPolicyAllInternalServerErrorCode int = 500
 
