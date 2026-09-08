@@ -161,6 +161,18 @@ forward on read.
 | 1.4 | `recovery_dependencies` manifest |
 | 1.5 | `generation` lineage counter |
 
+The resulting compatibility matrix, enforced by the version-gate and
+golden-document test suites (a golden document of every prior schema must
+decode, checksum-verify, migrate and pass a dry-run restore on the current
+build):
+
+| Document schema vs. build | Outcome |
+|---|---|
+| Same version | Restored as-is |
+| Older (any prior 1.x) | Migrated forward on read, then restored |
+| Newer minor | Refused — the build cannot know what it would silently drop |
+| Newer major | Refused |
+
 ## Secrets and sensitive material
 
 - **Tracing**: OTLP auth header *names* ride the document; header *values*
