@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// DeleteConfigRouteDestinationIPNetIPAddressMaskNoContentCode is the HTTP code returned for type DeleteConfigRouteDestinationIPNetIPAddressMaskNoContent
-const DeleteConfigRouteDestinationIPNetIPAddressMaskNoContentCode int = 204
+// DeleteConfigRouteDestinationIPNetIPAddressMaskOKCode is the HTTP code returned for type DeleteConfigRouteDestinationIPNetIPAddressMaskOK
+const DeleteConfigRouteDestinationIPNetIPAddressMaskOKCode int = 200
 
 /*
-DeleteConfigRouteDestinationIPNetIPAddressMaskNoContent OK
+DeleteConfigRouteDestinationIPNetIPAddressMaskOK OK
 
-swagger:response deleteConfigRouteDestinationIpNetIpAddressMaskNoContent
+swagger:response deleteConfigRouteDestinationIpNetIpAddressMaskOK
 */
-type DeleteConfigRouteDestinationIPNetIPAddressMaskNoContent struct {
+type DeleteConfigRouteDestinationIPNetIPAddressMaskOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewDeleteConfigRouteDestinationIPNetIPAddressMaskNoContent creates DeleteConfigRouteDestinationIPNetIPAddressMaskNoContent with default headers values
-func NewDeleteConfigRouteDestinationIPNetIPAddressMaskNoContent() *DeleteConfigRouteDestinationIPNetIPAddressMaskNoContent {
+// NewDeleteConfigRouteDestinationIPNetIPAddressMaskOK creates DeleteConfigRouteDestinationIPNetIPAddressMaskOK with default headers values
+func NewDeleteConfigRouteDestinationIPNetIPAddressMaskOK() *DeleteConfigRouteDestinationIPNetIPAddressMaskOK {
 
-	return &DeleteConfigRouteDestinationIPNetIPAddressMaskNoContent{}
+	return &DeleteConfigRouteDestinationIPNetIPAddressMaskOK{}
+}
+
+// WithPayload adds the payload to the delete config route destination Ip net Ip address mask o k response
+func (o *DeleteConfigRouteDestinationIPNetIPAddressMaskOK) WithPayload(payload *models.OperationResult) *DeleteConfigRouteDestinationIPNetIPAddressMaskOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config route destination Ip net Ip address mask o k response
+func (o *DeleteConfigRouteDestinationIPNetIPAddressMaskOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *DeleteConfigRouteDestinationIPNetIPAddressMaskNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *DeleteConfigRouteDestinationIPNetIPAddressMaskOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // DeleteConfigRouteDestinationIPNetIPAddressMaskBadRequestCode is the HTTP code returned for type DeleteConfigRouteDestinationIPNetIPAddressMaskBadRequest

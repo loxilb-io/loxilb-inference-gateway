@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// PostConfigCistateNoContentCode is the HTTP code returned for type PostConfigCistateNoContent
-const PostConfigCistateNoContentCode int = 204
+// PostConfigCistateOKCode is the HTTP code returned for type PostConfigCistateOK
+const PostConfigCistateOKCode int = 200
 
 /*
-PostConfigCistateNoContent OK
+PostConfigCistateOK OK
 
-swagger:response postConfigCistateNoContent
+swagger:response postConfigCistateOK
 */
-type PostConfigCistateNoContent struct {
+type PostConfigCistateOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewPostConfigCistateNoContent creates PostConfigCistateNoContent with default headers values
-func NewPostConfigCistateNoContent() *PostConfigCistateNoContent {
+// NewPostConfigCistateOK creates PostConfigCistateOK with default headers values
+func NewPostConfigCistateOK() *PostConfigCistateOK {
 
-	return &PostConfigCistateNoContent{}
+	return &PostConfigCistateOK{}
+}
+
+// WithPayload adds the payload to the post config cistate o k response
+func (o *PostConfigCistateOK) WithPayload(payload *models.OperationResult) *PostConfigCistateOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config cistate o k response
+func (o *PostConfigCistateOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *PostConfigCistateNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *PostConfigCistateOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // PostConfigCistateBadRequestCode is the HTTP code returned for type PostConfigCistateBadRequest

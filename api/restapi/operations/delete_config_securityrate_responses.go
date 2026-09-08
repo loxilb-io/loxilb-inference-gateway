@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// DeleteConfigSecurityrateNoContentCode is the HTTP code returned for type DeleteConfigSecurityrateNoContent
-const DeleteConfigSecurityrateNoContentCode int = 204
+// DeleteConfigSecurityrateOKCode is the HTTP code returned for type DeleteConfigSecurityrateOK
+const DeleteConfigSecurityrateOKCode int = 200
 
 /*
-DeleteConfigSecurityrateNoContent OK
+DeleteConfigSecurityrateOK OK
 
-swagger:response deleteConfigSecurityrateNoContent
+swagger:response deleteConfigSecurityrateOK
 */
-type DeleteConfigSecurityrateNoContent struct {
+type DeleteConfigSecurityrateOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewDeleteConfigSecurityrateNoContent creates DeleteConfigSecurityrateNoContent with default headers values
-func NewDeleteConfigSecurityrateNoContent() *DeleteConfigSecurityrateNoContent {
+// NewDeleteConfigSecurityrateOK creates DeleteConfigSecurityrateOK with default headers values
+func NewDeleteConfigSecurityrateOK() *DeleteConfigSecurityrateOK {
 
-	return &DeleteConfigSecurityrateNoContent{}
+	return &DeleteConfigSecurityrateOK{}
+}
+
+// WithPayload adds the payload to the delete config securityrate o k response
+func (o *DeleteConfigSecurityrateOK) WithPayload(payload *models.OperationResult) *DeleteConfigSecurityrateOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config securityrate o k response
+func (o *DeleteConfigSecurityrateOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *DeleteConfigSecurityrateNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *DeleteConfigSecurityrateOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // DeleteConfigSecurityrateBadRequestCode is the HTTP code returned for type DeleteConfigSecurityrateBadRequest

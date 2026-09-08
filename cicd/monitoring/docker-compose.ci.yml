@@ -1,4 +1,4 @@
-# CI profile of the LoxiLB monitoring stack (Tier 1 — docs/MONITORING-CICD.md §5).
+# CI profile of the LoxiLB monitoring stack (Tier 1 of the internal monitoring CI plan).
 # Differences from deploy/monitoring/docker-compose.yml:
 #   - prometheus.yml is the scenario-generated prometheus-ci.yml (target = the
 #     llb1 container bridge IP instead of 127.0.0.1)
@@ -17,7 +17,22 @@ services:
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.retention.time=1d
-      - --web.listen-address=0.0.0.0:9090
+      # Loopback bind, same posture the shipped compose documents — every CI
+      # consumer (validation.sh, sweep, Grafana datasource) queries localhost,
+      # and the security matrix S4 arm asserts non-reachability from outside.
+      - --web.listen-address=127.0.0.1:9090
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: loxilb-ci-alertmanager
+    network_mode: host
+    volumes:
+      - ../../deploy/monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      # prometheus.yml already targets 127.0.0.1:9093; the shipped example
+      # config delivers to the local webhook sink on 127.0.0.1:9095
+      - --web.listen-address=127.0.0.1:9093
 
   grafana:
     image: grafana/grafana:11.6.0

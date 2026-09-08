@@ -13,29 +13,49 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// DeleteConfigIpfilterNoContentCode is the HTTP code returned for type DeleteConfigIpfilterNoContent
-const DeleteConfigIpfilterNoContentCode int = 204
+// DeleteConfigIpfilterOKCode is the HTTP code returned for type DeleteConfigIpfilterOK
+const DeleteConfigIpfilterOKCode int = 200
 
 /*
-DeleteConfigIpfilterNoContent OK
+DeleteConfigIpfilterOK OK
 
-swagger:response deleteConfigIpfilterNoContent
+swagger:response deleteConfigIpfilterOK
 */
-type DeleteConfigIpfilterNoContent struct {
+type DeleteConfigIpfilterOK struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewDeleteConfigIpfilterNoContent creates DeleteConfigIpfilterNoContent with default headers values
-func NewDeleteConfigIpfilterNoContent() *DeleteConfigIpfilterNoContent {
+// NewDeleteConfigIpfilterOK creates DeleteConfigIpfilterOK with default headers values
+func NewDeleteConfigIpfilterOK() *DeleteConfigIpfilterOK {
 
-	return &DeleteConfigIpfilterNoContent{}
+	return &DeleteConfigIpfilterOK{}
+}
+
+// WithPayload adds the payload to the delete config ipfilter o k response
+func (o *DeleteConfigIpfilterOK) WithPayload(payload *models.OperationResult) *DeleteConfigIpfilterOK {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config ipfilter o k response
+func (o *DeleteConfigIpfilterOK) SetPayload(payload *models.OperationResult) {
+	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *DeleteConfigIpfilterNoContent) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *DeleteConfigIpfilterOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
-
-	rw.WriteHeader(204)
+	rw.WriteHeader(200)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
 }
 
 // DeleteConfigIpfilterBadRequestCode is the HTTP code returned for type DeleteConfigIpfilterBadRequest
