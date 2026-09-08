@@ -58,6 +58,96 @@ func (o *DeleteConfigOpaWatcherOK) WriteResponse(rw http.ResponseWriter, produce
 	}
 }
 
+// DeleteConfigOpaWatcherUnauthorizedCode is the HTTP code returned for type DeleteConfigOpaWatcherUnauthorized
+const DeleteConfigOpaWatcherUnauthorizedCode int = 401
+
+/*
+DeleteConfigOpaWatcherUnauthorized Missing or invalid management credential
+
+swagger:response deleteConfigOpaWatcherUnauthorized
+*/
+type DeleteConfigOpaWatcherUnauthorized struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewDeleteConfigOpaWatcherUnauthorized creates DeleteConfigOpaWatcherUnauthorized with default headers values
+func NewDeleteConfigOpaWatcherUnauthorized() *DeleteConfigOpaWatcherUnauthorized {
+
+	return &DeleteConfigOpaWatcherUnauthorized{}
+}
+
+// WithPayload adds the payload to the delete config opa watcher unauthorized response
+func (o *DeleteConfigOpaWatcherUnauthorized) WithPayload(payload *models.Error) *DeleteConfigOpaWatcherUnauthorized {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config opa watcher unauthorized response
+func (o *DeleteConfigOpaWatcherUnauthorized) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *DeleteConfigOpaWatcherUnauthorized) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(401)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// DeleteConfigOpaWatcherForbiddenCode is the HTTP code returned for type DeleteConfigOpaWatcherForbidden
+const DeleteConfigOpaWatcherForbiddenCode int = 403
+
+/*
+DeleteConfigOpaWatcherForbidden Authenticated principal is not authorized for this operation
+
+swagger:response deleteConfigOpaWatcherForbidden
+*/
+type DeleteConfigOpaWatcherForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewDeleteConfigOpaWatcherForbidden creates DeleteConfigOpaWatcherForbidden with default headers values
+func NewDeleteConfigOpaWatcherForbidden() *DeleteConfigOpaWatcherForbidden {
+
+	return &DeleteConfigOpaWatcherForbidden{}
+}
+
+// WithPayload adds the payload to the delete config opa watcher forbidden response
+func (o *DeleteConfigOpaWatcherForbidden) WithPayload(payload *models.Error) *DeleteConfigOpaWatcherForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config opa watcher forbidden response
+func (o *DeleteConfigOpaWatcherForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *DeleteConfigOpaWatcherForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // DeleteConfigOpaWatcherInternalServerErrorCode is the HTTP code returned for type DeleteConfigOpaWatcherInternalServerError
 const DeleteConfigOpaWatcherInternalServerErrorCode int = 500
 
@@ -95,6 +185,51 @@ func (o *DeleteConfigOpaWatcherInternalServerError) SetPayload(payload *models.E
 func (o *DeleteConfigOpaWatcherInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// DeleteConfigOpaWatcherServiceUnavailableCode is the HTTP code returned for type DeleteConfigOpaWatcherServiceUnavailable
+const DeleteConfigOpaWatcherServiceUnavailableCode int = 503
+
+/*
+DeleteConfigOpaWatcherServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response deleteConfigOpaWatcherServiceUnavailable
+*/
+type DeleteConfigOpaWatcherServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewDeleteConfigOpaWatcherServiceUnavailable creates DeleteConfigOpaWatcherServiceUnavailable with default headers values
+func NewDeleteConfigOpaWatcherServiceUnavailable() *DeleteConfigOpaWatcherServiceUnavailable {
+
+	return &DeleteConfigOpaWatcherServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the delete config opa watcher service unavailable response
+func (o *DeleteConfigOpaWatcherServiceUnavailable) WithPayload(payload *models.Error) *DeleteConfigOpaWatcherServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config opa watcher service unavailable response
+func (o *DeleteConfigOpaWatcherServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *DeleteConfigOpaWatcherServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

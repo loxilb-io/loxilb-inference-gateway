@@ -26,7 +26,7 @@ type GetStatusProcessOK struct {
 	/*
 	  In: Body
 	*/
-	Payload *GetStatusProcessOKBody `json:"body,omitempty"`
+	Payload *models.ProcessStatus `json:"body,omitempty"`
 }
 
 // NewGetStatusProcessOK creates GetStatusProcessOK with default headers values
@@ -36,13 +36,13 @@ func NewGetStatusProcessOK() *GetStatusProcessOK {
 }
 
 // WithPayload adds the payload to the get status process o k response
-func (o *GetStatusProcessOK) WithPayload(payload *GetStatusProcessOKBody) *GetStatusProcessOK {
+func (o *GetStatusProcessOK) WithPayload(payload *models.ProcessStatus) *GetStatusProcessOK {
 	o.Payload = payload
 	return o
 }
 
 // SetPayload sets the payload to the get status process o k response
-func (o *GetStatusProcessOK) SetPayload(payload *GetStatusProcessOKBody) {
+func (o *GetStatusProcessOK) SetPayload(payload *models.ProcessStatus) {
 	o.Payload = payload
 }
 
@@ -95,6 +95,51 @@ func (o *GetStatusProcessUnauthorized) SetPayload(payload *models.Error) {
 func (o *GetStatusProcessUnauthorized) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(401)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetStatusProcessForbiddenCode is the HTTP code returned for type GetStatusProcessForbidden
+const GetStatusProcessForbiddenCode int = 403
+
+/*
+GetStatusProcessForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getStatusProcessForbidden
+*/
+type GetStatusProcessForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetStatusProcessForbidden creates GetStatusProcessForbidden with default headers values
+func NewGetStatusProcessForbidden() *GetStatusProcessForbidden {
+
+	return &GetStatusProcessForbidden{}
+}
+
+// WithPayload adds the payload to the get status process forbidden response
+func (o *GetStatusProcessForbidden) WithPayload(payload *models.Error) *GetStatusProcessForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get status process forbidden response
+func (o *GetStatusProcessForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetStatusProcessForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

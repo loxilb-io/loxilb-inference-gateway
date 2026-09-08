@@ -148,6 +148,51 @@ func (o *DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedUnauthorized) WriteRespon
 	}
 }
 
+// DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedForbiddenCode is the HTTP code returned for type DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedForbidden
+const DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedForbiddenCode int = 403
+
+/*
+DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedForbidden Authenticated principal is not authorized for this operation
+
+swagger:response deleteConfigVlanVlanIdMemberIfNameTaggedTaggedForbidden
+*/
+type DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewDeleteConfigVlanVlanIDMemberIfNameTaggedTaggedForbidden creates DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedForbidden with default headers values
+func NewDeleteConfigVlanVlanIDMemberIfNameTaggedTaggedForbidden() *DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedForbidden {
+
+	return &DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedForbidden{}
+}
+
+// WithPayload adds the payload to the delete config vlan vlan Id member if name tagged tagged forbidden response
+func (o *DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedForbidden) WithPayload(payload *models.Error) *DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config vlan vlan Id member if name tagged tagged forbidden response
+func (o *DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedNotFoundCode is the HTTP code returned for type DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedNotFound
 const DeleteConfigVlanVlanIDMemberIfNameTaggedTaggedNotFoundCode int = 404
 

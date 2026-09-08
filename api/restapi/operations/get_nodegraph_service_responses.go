@@ -103,6 +103,51 @@ func (o *GetNodegraphServiceUnauthorized) WriteResponse(rw http.ResponseWriter, 
 	}
 }
 
+// GetNodegraphServiceForbiddenCode is the HTTP code returned for type GetNodegraphServiceForbidden
+const GetNodegraphServiceForbiddenCode int = 403
+
+/*
+GetNodegraphServiceForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getNodegraphServiceForbidden
+*/
+type GetNodegraphServiceForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetNodegraphServiceForbidden creates GetNodegraphServiceForbidden with default headers values
+func NewGetNodegraphServiceForbidden() *GetNodegraphServiceForbidden {
+
+	return &GetNodegraphServiceForbidden{}
+}
+
+// WithPayload adds the payload to the get nodegraph service forbidden response
+func (o *GetNodegraphServiceForbidden) WithPayload(payload *models.Error) *GetNodegraphServiceForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get nodegraph service forbidden response
+func (o *GetNodegraphServiceForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetNodegraphServiceForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetNodegraphServiceInternalServerErrorCode is the HTTP code returned for type GetNodegraphServiceInternalServerError
 const GetNodegraphServiceInternalServerErrorCode int = 500
 

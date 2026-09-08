@@ -103,6 +103,51 @@ func (o *GetConfigVlanAllUnauthorized) WriteResponse(rw http.ResponseWriter, pro
 	}
 }
 
+// GetConfigVlanAllForbiddenCode is the HTTP code returned for type GetConfigVlanAllForbidden
+const GetConfigVlanAllForbiddenCode int = 403
+
+/*
+GetConfigVlanAllForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getConfigVlanAllForbidden
+*/
+type GetConfigVlanAllForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigVlanAllForbidden creates GetConfigVlanAllForbidden with default headers values
+func NewGetConfigVlanAllForbidden() *GetConfigVlanAllForbidden {
+
+	return &GetConfigVlanAllForbidden{}
+}
+
+// WithPayload adds the payload to the get config vlan all forbidden response
+func (o *GetConfigVlanAllForbidden) WithPayload(payload *models.Error) *GetConfigVlanAllForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config vlan all forbidden response
+func (o *GetConfigVlanAllForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigVlanAllForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigVlanAllInternalServerErrorCode is the HTTP code returned for type GetConfigVlanAllInternalServerError
 const GetConfigVlanAllInternalServerErrorCode int = 500
 

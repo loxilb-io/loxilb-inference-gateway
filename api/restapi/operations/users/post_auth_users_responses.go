@@ -237,3 +237,48 @@ func (o *PostAuthUsersInternalServerError) WriteResponse(rw http.ResponseWriter,
 		}
 	}
 }
+
+// PostAuthUsersServiceUnavailableCode is the HTTP code returned for type PostAuthUsersServiceUnavailable
+const PostAuthUsersServiceUnavailableCode int = 503
+
+/*
+PostAuthUsersServiceUnavailable Management credential store unavailable
+
+swagger:response postAuthUsersServiceUnavailable
+*/
+type PostAuthUsersServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostAuthUsersServiceUnavailable creates PostAuthUsersServiceUnavailable with default headers values
+func NewPostAuthUsersServiceUnavailable() *PostAuthUsersServiceUnavailable {
+
+	return &PostAuthUsersServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the post auth users service unavailable response
+func (o *PostAuthUsersServiceUnavailable) WithPayload(payload *models.Error) *PostAuthUsersServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post auth users service unavailable response
+func (o *PostAuthUsersServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostAuthUsersServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}

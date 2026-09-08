@@ -6,16 +6,9 @@ package operations
 // Editing this file might prove futile when you re-run the generate command
 
 import (
-	"context"
 	"net/http"
-	"strconv"
 
-	"github.com/go-openapi/errors"
 	"github.com/go-openapi/runtime/middleware"
-	"github.com/go-openapi/strfmt"
-	"github.com/go-openapi/swag"
-
-	"github.com/loxilb-io/loxilb/api/models"
 )
 
 // GetStatusProcessHandlerFunc turns a function with the right signature into a get status process handler
@@ -75,105 +68,4 @@ func (o *GetStatusProcess) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	res := o.Handler.Handle(Params, principal) // actually handle the request
 	o.Context.Respond(rw, r, route.Produces, route, res)
 
-}
-
-// GetStatusProcessOKBody get status process o k body
-//
-// swagger:model GetStatusProcessOKBody
-type GetStatusProcessOKBody struct {
-
-	// process attr
-	ProcessAttr []*models.ProcessInfoEntry `json:"processAttr"`
-}
-
-// Validate validates this get status process o k body
-func (o *GetStatusProcessOKBody) Validate(formats strfmt.Registry) error {
-	var res []error
-
-	if err := o.validateProcessAttr(formats); err != nil {
-		res = append(res, err)
-	}
-
-	if len(res) > 0 {
-		return errors.CompositeValidationError(res...)
-	}
-	return nil
-}
-
-func (o *GetStatusProcessOKBody) validateProcessAttr(formats strfmt.Registry) error {
-	if swag.IsZero(o.ProcessAttr) { // not required
-		return nil
-	}
-
-	for i := 0; i < len(o.ProcessAttr); i++ {
-		if swag.IsZero(o.ProcessAttr[i]) { // not required
-			continue
-		}
-
-		if o.ProcessAttr[i] != nil {
-			if err := o.ProcessAttr[i].Validate(formats); err != nil {
-				if ve, ok := err.(*errors.Validation); ok {
-					return ve.ValidateName("getStatusProcessOK" + "." + "processAttr" + "." + strconv.Itoa(i))
-				} else if ce, ok := err.(*errors.CompositeError); ok {
-					return ce.ValidateName("getStatusProcessOK" + "." + "processAttr" + "." + strconv.Itoa(i))
-				}
-				return err
-			}
-		}
-
-	}
-
-	return nil
-}
-
-// ContextValidate validate this get status process o k body based on the context it is used
-func (o *GetStatusProcessOKBody) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
-	var res []error
-
-	if err := o.contextValidateProcessAttr(ctx, formats); err != nil {
-		res = append(res, err)
-	}
-
-	if len(res) > 0 {
-		return errors.CompositeValidationError(res...)
-	}
-	return nil
-}
-
-func (o *GetStatusProcessOKBody) contextValidateProcessAttr(ctx context.Context, formats strfmt.Registry) error {
-
-	for i := 0; i < len(o.ProcessAttr); i++ {
-
-		if o.ProcessAttr[i] != nil {
-			if err := o.ProcessAttr[i].ContextValidate(ctx, formats); err != nil {
-				if ve, ok := err.(*errors.Validation); ok {
-					return ve.ValidateName("getStatusProcessOK" + "." + "processAttr" + "." + strconv.Itoa(i))
-				} else if ce, ok := err.(*errors.CompositeError); ok {
-					return ce.ValidateName("getStatusProcessOK" + "." + "processAttr" + "." + strconv.Itoa(i))
-				}
-				return err
-			}
-		}
-
-	}
-
-	return nil
-}
-
-// MarshalBinary interface implementation
-func (o *GetStatusProcessOKBody) MarshalBinary() ([]byte, error) {
-	if o == nil {
-		return nil, nil
-	}
-	return swag.WriteJSON(o)
-}
-
-// UnmarshalBinary interface implementation
-func (o *GetStatusProcessOKBody) UnmarshalBinary(b []byte) error {
-	var res GetStatusProcessOKBody
-	if err := swag.ReadJSON(b, &res); err != nil {
-		return err
-	}
-	*o = res
-	return nil
 }

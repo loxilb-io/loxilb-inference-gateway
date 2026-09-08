@@ -103,6 +103,51 @@ func (o *PostConfigTunnelVxlanUnauthorized) WriteResponse(rw http.ResponseWriter
 	}
 }
 
+// PostConfigTunnelVxlanForbiddenCode is the HTTP code returned for type PostConfigTunnelVxlanForbidden
+const PostConfigTunnelVxlanForbiddenCode int = 403
+
+/*
+PostConfigTunnelVxlanForbidden Authenticated principal is not authorized for this operation
+
+swagger:response postConfigTunnelVxlanForbidden
+*/
+type PostConfigTunnelVxlanForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostConfigTunnelVxlanForbidden creates PostConfigTunnelVxlanForbidden with default headers values
+func NewPostConfigTunnelVxlanForbidden() *PostConfigTunnelVxlanForbidden {
+
+	return &PostConfigTunnelVxlanForbidden{}
+}
+
+// WithPayload adds the payload to the post config tunnel vxlan forbidden response
+func (o *PostConfigTunnelVxlanForbidden) WithPayload(payload *models.Error) *PostConfigTunnelVxlanForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post config tunnel vxlan forbidden response
+func (o *PostConfigTunnelVxlanForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostConfigTunnelVxlanForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // PostConfigTunnelVxlanConflictCode is the HTTP code returned for type PostConfigTunnelVxlanConflict
 const PostConfigTunnelVxlanConflictCode int = 409
 

@@ -83,6 +83,51 @@ func (o *DeleteConfigL7PolicyIDUnauthorized) WriteResponse(rw http.ResponseWrite
 	}
 }
 
+// DeleteConfigL7PolicyIDForbiddenCode is the HTTP code returned for type DeleteConfigL7PolicyIDForbidden
+const DeleteConfigL7PolicyIDForbiddenCode int = 403
+
+/*
+DeleteConfigL7PolicyIDForbidden Authenticated principal is not authorized for this operation
+
+swagger:response deleteConfigL7PolicyIdForbidden
+*/
+type DeleteConfigL7PolicyIDForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewDeleteConfigL7PolicyIDForbidden creates DeleteConfigL7PolicyIDForbidden with default headers values
+func NewDeleteConfigL7PolicyIDForbidden() *DeleteConfigL7PolicyIDForbidden {
+
+	return &DeleteConfigL7PolicyIDForbidden{}
+}
+
+// WithPayload adds the payload to the delete config l7 policy Id forbidden response
+func (o *DeleteConfigL7PolicyIDForbidden) WithPayload(payload *models.Error) *DeleteConfigL7PolicyIDForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config l7 policy Id forbidden response
+func (o *DeleteConfigL7PolicyIDForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *DeleteConfigL7PolicyIDForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // DeleteConfigL7PolicyIDNotFoundCode is the HTTP code returned for type DeleteConfigL7PolicyIDNotFound
 const DeleteConfigL7PolicyIDNotFoundCode int = 404
 
@@ -165,6 +210,51 @@ func (o *DeleteConfigL7PolicyIDInternalServerError) SetPayload(payload *models.E
 func (o *DeleteConfigL7PolicyIDInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// DeleteConfigL7PolicyIDServiceUnavailableCode is the HTTP code returned for type DeleteConfigL7PolicyIDServiceUnavailable
+const DeleteConfigL7PolicyIDServiceUnavailableCode int = 503
+
+/*
+DeleteConfigL7PolicyIDServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response deleteConfigL7PolicyIdServiceUnavailable
+*/
+type DeleteConfigL7PolicyIDServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewDeleteConfigL7PolicyIDServiceUnavailable creates DeleteConfigL7PolicyIDServiceUnavailable with default headers values
+func NewDeleteConfigL7PolicyIDServiceUnavailable() *DeleteConfigL7PolicyIDServiceUnavailable {
+
+	return &DeleteConfigL7PolicyIDServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the delete config l7 policy Id service unavailable response
+func (o *DeleteConfigL7PolicyIDServiceUnavailable) WithPayload(payload *models.Error) *DeleteConfigL7PolicyIDServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config l7 policy Id service unavailable response
+func (o *DeleteConfigL7PolicyIDServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *DeleteConfigL7PolicyIDServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

@@ -106,6 +106,51 @@ func (o *GetTraceCatalogsUnauthorized) WriteResponse(rw http.ResponseWriter, pro
 	}
 }
 
+// GetTraceCatalogsForbiddenCode is the HTTP code returned for type GetTraceCatalogsForbidden
+const GetTraceCatalogsForbiddenCode int = 403
+
+/*
+GetTraceCatalogsForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getTraceCatalogsForbidden
+*/
+type GetTraceCatalogsForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetTraceCatalogsForbidden creates GetTraceCatalogsForbidden with default headers values
+func NewGetTraceCatalogsForbidden() *GetTraceCatalogsForbidden {
+
+	return &GetTraceCatalogsForbidden{}
+}
+
+// WithPayload adds the payload to the get trace catalogs forbidden response
+func (o *GetTraceCatalogsForbidden) WithPayload(payload *models.Error) *GetTraceCatalogsForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get trace catalogs forbidden response
+func (o *GetTraceCatalogsForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetTraceCatalogsForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetTraceCatalogsInternalServerErrorCode is the HTTP code returned for type GetTraceCatalogsInternalServerError
 const GetTraceCatalogsInternalServerErrorCode int = 500
 
@@ -143,6 +188,51 @@ func (o *GetTraceCatalogsInternalServerError) SetPayload(payload *models.Error) 
 func (o *GetTraceCatalogsInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetTraceCatalogsServiceUnavailableCode is the HTTP code returned for type GetTraceCatalogsServiceUnavailable
+const GetTraceCatalogsServiceUnavailableCode int = 503
+
+/*
+GetTraceCatalogsServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response getTraceCatalogsServiceUnavailable
+*/
+type GetTraceCatalogsServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetTraceCatalogsServiceUnavailable creates GetTraceCatalogsServiceUnavailable with default headers values
+func NewGetTraceCatalogsServiceUnavailable() *GetTraceCatalogsServiceUnavailable {
+
+	return &GetTraceCatalogsServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the get trace catalogs service unavailable response
+func (o *GetTraceCatalogsServiceUnavailable) WithPayload(payload *models.Error) *GetTraceCatalogsServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get trace catalogs service unavailable response
+func (o *GetTraceCatalogsServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetTraceCatalogsServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

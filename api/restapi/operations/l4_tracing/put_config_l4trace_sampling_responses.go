@@ -148,6 +148,51 @@ func (o *PutConfigL4traceSamplingUnauthorized) WriteResponse(rw http.ResponseWri
 	}
 }
 
+// PutConfigL4traceSamplingForbiddenCode is the HTTP code returned for type PutConfigL4traceSamplingForbidden
+const PutConfigL4traceSamplingForbiddenCode int = 403
+
+/*
+PutConfigL4traceSamplingForbidden Authenticated principal is not authorized for this operation
+
+swagger:response putConfigL4traceSamplingForbidden
+*/
+type PutConfigL4traceSamplingForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPutConfigL4traceSamplingForbidden creates PutConfigL4traceSamplingForbidden with default headers values
+func NewPutConfigL4traceSamplingForbidden() *PutConfigL4traceSamplingForbidden {
+
+	return &PutConfigL4traceSamplingForbidden{}
+}
+
+// WithPayload adds the payload to the put config l4trace sampling forbidden response
+func (o *PutConfigL4traceSamplingForbidden) WithPayload(payload *models.Error) *PutConfigL4traceSamplingForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the put config l4trace sampling forbidden response
+func (o *PutConfigL4traceSamplingForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PutConfigL4traceSamplingForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // PutConfigL4traceSamplingInternalServerErrorCode is the HTTP code returned for type PutConfigL4traceSamplingInternalServerError
 const PutConfigL4traceSamplingInternalServerErrorCode int = 500
 
@@ -185,6 +230,51 @@ func (o *PutConfigL4traceSamplingInternalServerError) SetPayload(payload *models
 func (o *PutConfigL4traceSamplingInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// PutConfigL4traceSamplingServiceUnavailableCode is the HTTP code returned for type PutConfigL4traceSamplingServiceUnavailable
+const PutConfigL4traceSamplingServiceUnavailableCode int = 503
+
+/*
+PutConfigL4traceSamplingServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response putConfigL4traceSamplingServiceUnavailable
+*/
+type PutConfigL4traceSamplingServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPutConfigL4traceSamplingServiceUnavailable creates PutConfigL4traceSamplingServiceUnavailable with default headers values
+func NewPutConfigL4traceSamplingServiceUnavailable() *PutConfigL4traceSamplingServiceUnavailable {
+
+	return &PutConfigL4traceSamplingServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the put config l4trace sampling service unavailable response
+func (o *PutConfigL4traceSamplingServiceUnavailable) WithPayload(payload *models.Error) *PutConfigL4traceSamplingServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the put config l4trace sampling service unavailable response
+func (o *PutConfigL4traceSamplingServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PutConfigL4traceSamplingServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

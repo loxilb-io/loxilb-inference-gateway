@@ -103,6 +103,51 @@ func (o *DeleteConfigIpsecCaCertificatesNameUnauthorized) WriteResponse(rw http.
 	}
 }
 
+// DeleteConfigIpsecCaCertificatesNameForbiddenCode is the HTTP code returned for type DeleteConfigIpsecCaCertificatesNameForbidden
+const DeleteConfigIpsecCaCertificatesNameForbiddenCode int = 403
+
+/*
+DeleteConfigIpsecCaCertificatesNameForbidden Authenticated principal is not authorized for this operation
+
+swagger:response deleteConfigIpsecCaCertificatesNameForbidden
+*/
+type DeleteConfigIpsecCaCertificatesNameForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewDeleteConfigIpsecCaCertificatesNameForbidden creates DeleteConfigIpsecCaCertificatesNameForbidden with default headers values
+func NewDeleteConfigIpsecCaCertificatesNameForbidden() *DeleteConfigIpsecCaCertificatesNameForbidden {
+
+	return &DeleteConfigIpsecCaCertificatesNameForbidden{}
+}
+
+// WithPayload adds the payload to the delete config ipsec ca certificates name forbidden response
+func (o *DeleteConfigIpsecCaCertificatesNameForbidden) WithPayload(payload *models.Error) *DeleteConfigIpsecCaCertificatesNameForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config ipsec ca certificates name forbidden response
+func (o *DeleteConfigIpsecCaCertificatesNameForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *DeleteConfigIpsecCaCertificatesNameForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // DeleteConfigIpsecCaCertificatesNameNotFoundCode is the HTTP code returned for type DeleteConfigIpsecCaCertificatesNameNotFound
 const DeleteConfigIpsecCaCertificatesNameNotFoundCode int = 404
 
@@ -230,6 +275,51 @@ func (o *DeleteConfigIpsecCaCertificatesNameInternalServerError) SetPayload(payl
 func (o *DeleteConfigIpsecCaCertificatesNameInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// DeleteConfigIpsecCaCertificatesNameServiceUnavailableCode is the HTTP code returned for type DeleteConfigIpsecCaCertificatesNameServiceUnavailable
+const DeleteConfigIpsecCaCertificatesNameServiceUnavailableCode int = 503
+
+/*
+DeleteConfigIpsecCaCertificatesNameServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response deleteConfigIpsecCaCertificatesNameServiceUnavailable
+*/
+type DeleteConfigIpsecCaCertificatesNameServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewDeleteConfigIpsecCaCertificatesNameServiceUnavailable creates DeleteConfigIpsecCaCertificatesNameServiceUnavailable with default headers values
+func NewDeleteConfigIpsecCaCertificatesNameServiceUnavailable() *DeleteConfigIpsecCaCertificatesNameServiceUnavailable {
+
+	return &DeleteConfigIpsecCaCertificatesNameServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the delete config ipsec ca certificates name service unavailable response
+func (o *DeleteConfigIpsecCaCertificatesNameServiceUnavailable) WithPayload(payload *models.Error) *DeleteConfigIpsecCaCertificatesNameServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the delete config ipsec ca certificates name service unavailable response
+func (o *DeleteConfigIpsecCaCertificatesNameServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *DeleteConfigIpsecCaCertificatesNameServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

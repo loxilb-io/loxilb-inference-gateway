@@ -191,6 +191,51 @@ func (o *GetConfigSnapshotUnauthorized) WriteResponse(rw http.ResponseWriter, pr
 	}
 }
 
+// GetConfigSnapshotForbiddenCode is the HTTP code returned for type GetConfigSnapshotForbidden
+const GetConfigSnapshotForbiddenCode int = 403
+
+/*
+GetConfigSnapshotForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getConfigSnapshotForbidden
+*/
+type GetConfigSnapshotForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetConfigSnapshotForbidden creates GetConfigSnapshotForbidden with default headers values
+func NewGetConfigSnapshotForbidden() *GetConfigSnapshotForbidden {
+
+	return &GetConfigSnapshotForbidden{}
+}
+
+// WithPayload adds the payload to the get config snapshot forbidden response
+func (o *GetConfigSnapshotForbidden) WithPayload(payload *models.Error) *GetConfigSnapshotForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get config snapshot forbidden response
+func (o *GetConfigSnapshotForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetConfigSnapshotForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetConfigSnapshotConflictCode is the HTTP code returned for type GetConfigSnapshotConflict
 const GetConfigSnapshotConflictCode int = 409
 

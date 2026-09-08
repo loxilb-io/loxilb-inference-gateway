@@ -103,6 +103,96 @@ func (o *PostAuthLogoutBadRequest) WriteResponse(rw http.ResponseWriter, produce
 	}
 }
 
+// PostAuthLogoutUnauthorizedCode is the HTTP code returned for type PostAuthLogoutUnauthorized
+const PostAuthLogoutUnauthorizedCode int = 401
+
+/*
+PostAuthLogoutUnauthorized Missing or invalid management credential
+
+swagger:response postAuthLogoutUnauthorized
+*/
+type PostAuthLogoutUnauthorized struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostAuthLogoutUnauthorized creates PostAuthLogoutUnauthorized with default headers values
+func NewPostAuthLogoutUnauthorized() *PostAuthLogoutUnauthorized {
+
+	return &PostAuthLogoutUnauthorized{}
+}
+
+// WithPayload adds the payload to the post auth logout unauthorized response
+func (o *PostAuthLogoutUnauthorized) WithPayload(payload *models.Error) *PostAuthLogoutUnauthorized {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post auth logout unauthorized response
+func (o *PostAuthLogoutUnauthorized) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostAuthLogoutUnauthorized) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(401)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// PostAuthLogoutForbiddenCode is the HTTP code returned for type PostAuthLogoutForbidden
+const PostAuthLogoutForbiddenCode int = 403
+
+/*
+PostAuthLogoutForbidden Authenticated principal is not authorized for this operation
+
+swagger:response postAuthLogoutForbidden
+*/
+type PostAuthLogoutForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostAuthLogoutForbidden creates PostAuthLogoutForbidden with default headers values
+func NewPostAuthLogoutForbidden() *PostAuthLogoutForbidden {
+
+	return &PostAuthLogoutForbidden{}
+}
+
+// WithPayload adds the payload to the post auth logout forbidden response
+func (o *PostAuthLogoutForbidden) WithPayload(payload *models.Error) *PostAuthLogoutForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post auth logout forbidden response
+func (o *PostAuthLogoutForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostAuthLogoutForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // PostAuthLogoutInternalServerErrorCode is the HTTP code returned for type PostAuthLogoutInternalServerError
 const PostAuthLogoutInternalServerErrorCode int = 500
 
@@ -140,6 +230,51 @@ func (o *PostAuthLogoutInternalServerError) SetPayload(payload *models.Error) {
 func (o *PostAuthLogoutInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// PostAuthLogoutServiceUnavailableCode is the HTTP code returned for type PostAuthLogoutServiceUnavailable
+const PostAuthLogoutServiceUnavailableCode int = 503
+
+/*
+PostAuthLogoutServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response postAuthLogoutServiceUnavailable
+*/
+type PostAuthLogoutServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPostAuthLogoutServiceUnavailable creates PostAuthLogoutServiceUnavailable with default headers values
+func NewPostAuthLogoutServiceUnavailable() *PostAuthLogoutServiceUnavailable {
+
+	return &PostAuthLogoutServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the post auth logout service unavailable response
+func (o *PostAuthLogoutServiceUnavailable) WithPayload(payload *models.Error) *PostAuthLogoutServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the post auth logout service unavailable response
+func (o *PostAuthLogoutServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PostAuthLogoutServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

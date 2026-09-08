@@ -58,6 +58,96 @@ func (o *GetLogArchivesOK) WriteResponse(rw http.ResponseWriter, producer runtim
 	}
 }
 
+// GetLogArchivesUnauthorizedCode is the HTTP code returned for type GetLogArchivesUnauthorized
+const GetLogArchivesUnauthorizedCode int = 401
+
+/*
+GetLogArchivesUnauthorized Missing or invalid management credential
+
+swagger:response getLogArchivesUnauthorized
+*/
+type GetLogArchivesUnauthorized struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetLogArchivesUnauthorized creates GetLogArchivesUnauthorized with default headers values
+func NewGetLogArchivesUnauthorized() *GetLogArchivesUnauthorized {
+
+	return &GetLogArchivesUnauthorized{}
+}
+
+// WithPayload adds the payload to the get log archives unauthorized response
+func (o *GetLogArchivesUnauthorized) WithPayload(payload *models.Error) *GetLogArchivesUnauthorized {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get log archives unauthorized response
+func (o *GetLogArchivesUnauthorized) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetLogArchivesUnauthorized) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(401)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetLogArchivesForbiddenCode is the HTTP code returned for type GetLogArchivesForbidden
+const GetLogArchivesForbiddenCode int = 403
+
+/*
+GetLogArchivesForbidden Authenticated principal is not authorized for this operation
+
+swagger:response getLogArchivesForbidden
+*/
+type GetLogArchivesForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetLogArchivesForbidden creates GetLogArchivesForbidden with default headers values
+func NewGetLogArchivesForbidden() *GetLogArchivesForbidden {
+
+	return &GetLogArchivesForbidden{}
+}
+
+// WithPayload adds the payload to the get log archives forbidden response
+func (o *GetLogArchivesForbidden) WithPayload(payload *models.Error) *GetLogArchivesForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get log archives forbidden response
+func (o *GetLogArchivesForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetLogArchivesForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetLogArchivesInternalServerErrorCode is the HTTP code returned for type GetLogArchivesInternalServerError
 const GetLogArchivesInternalServerErrorCode int = 500
 
@@ -95,6 +185,51 @@ func (o *GetLogArchivesInternalServerError) SetPayload(payload *models.Error) {
 func (o *GetLogArchivesInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
 	rw.WriteHeader(500)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetLogArchivesServiceUnavailableCode is the HTTP code returned for type GetLogArchivesServiceUnavailable
+const GetLogArchivesServiceUnavailableCode int = 503
+
+/*
+GetLogArchivesServiceUnavailable Management credential store unavailable; the credential could not be evaluated
+
+swagger:response getLogArchivesServiceUnavailable
+*/
+type GetLogArchivesServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetLogArchivesServiceUnavailable creates GetLogArchivesServiceUnavailable with default headers values
+func NewGetLogArchivesServiceUnavailable() *GetLogArchivesServiceUnavailable {
+
+	return &GetLogArchivesServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the get log archives service unavailable response
+func (o *GetLogArchivesServiceUnavailable) WithPayload(payload *models.Error) *GetLogArchivesServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get log archives service unavailable response
+func (o *GetLogArchivesServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetLogArchivesServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {
