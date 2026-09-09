@@ -1,0 +1,75 @@
+name: OSS-Parity-Drift
+
+# Asks the one question the PR-time gate deliberately does not: has UPSTREAM
+# moved in a way that changes what this gateway can claim about metric parity?
+#
+# The gate in Monitoring-Lint pins the upstream revision recorded in the
+# artifact, so a pull request fails only for what that pull request changed.
+# That reproducibility is the point, and it is also the blind spot: upstream
+# renaming a family, changing its labels, or dropping it does not touch this
+# repository at all, so nothing here would ever go red — while the vendored
+# parity statement quietly became false and a consumer kept rendering a panel
+# on a family that no longer exists.
+#
+# So this runs on a schedule against upstream main. A failure is not a defect
+# in this repository: it means the artifact needs regenerating against a newer
+# upstream revision, and that the divergences it now reports need reading
+# before anyone vendors them.
+
+on:
+  schedule:
+    # Weekly. Upstream metric surfaces move on the order of releases, not
+    # hours, and a daily red mail nobody reads is worse than a weekly one
+    # somebody does.
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+  # Also on changes to the machinery itself, so a broken generator or workflow
+  # is caught by the person who broke it rather than on the next Monday.
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'deploy/monitoring/ci/gen-oss-parity.py'
+      - 'tools/metric-manifest/**'
+      - '.github/workflows/oss-parity-drift.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  parity-drift:
+    name: parity-drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false   # metric definitions live in the main tree only
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Clone upstream loxilb at main
+        run: |
+          git clone --filter=blob:none --depth 50 \
+            https://github.com/loxilb-io/loxilb.git /tmp/upstream-loxilb
+          echo "upstream main is $(git -C /tmp/upstream-loxilb rev-parse HEAD)"
+
+      - name: Compare the committed parity set against upstream main
+        run: |
+          python3 deploy/monitoring/ci/gen-oss-parity.py --self-test
+          python3 deploy/monitoring/ci/gen-oss-parity.py \
+            --upstream /tmp/upstream-loxilb --check
+
+      - name: What the artifact would say about upstream main
+        # Runs whether or not the comparison passed, because the useful output
+        # on a failure is the new parity table, not the failure itself.
+        if: always()
+        run: |
+          python3 deploy/monitoring/ci/gen-oss-parity.py \
+            --upstream /tmp/upstream-loxilb || true
+          echo "--- diff against the committed artifact ---"
+          git --no-pager diff --stat deploy/monitoring/manifest/oss-parity.json || true
