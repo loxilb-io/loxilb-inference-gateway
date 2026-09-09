@@ -75,6 +75,7 @@ func TestExpectedCodesMatch(t *testing.T) {
 		{"malformed-partial-miss", "200,xyz", 250, false},
 		{"overflow-does-not-wrap", "65736", 200, false},
 		{"negative-does-not-wrap", "-65336", 200, false},
+		{"reversed-range-does-not-match", "204-200", 202, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
