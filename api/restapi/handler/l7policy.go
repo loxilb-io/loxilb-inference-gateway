@@ -134,7 +134,10 @@ func ConfigPostL7Policy(params operations.PostConfigL7PolicyParams, principal in
 	tk.LogIt(tk.LogTrace, "api: L7Policy %s API called. url : %s\n", params.HTTPRequest.Method, params.HTTPRequest.URL)
 
 	if params.Attr == nil {
-		return &ResultResponse{Result: "l7policy: empty body"}
+		// An absent body is a client error, not a success: answering it with
+		// the shared success responder writes an implicit 200 carrying the
+		// failure text as a result string.
+		return operations.NewPostConfigL7PolicyBadRequest().WithPayload(ResultErrorResponseErrorMessage("l7policy: empty body"))
 	}
 	policy := l7PolicyFromModel(params.Attr)
 

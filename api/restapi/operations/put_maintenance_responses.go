@@ -148,15 +148,15 @@ func (o *PutMaintenanceUnauthorized) WriteResponse(rw http.ResponseWriter, produ
 	}
 }
 
-// PutMaintenanceInternalServerErrorCode is the HTTP code returned for type PutMaintenanceInternalServerError
-const PutMaintenanceInternalServerErrorCode int = 500
+// PutMaintenanceForbiddenCode is the HTTP code returned for type PutMaintenanceForbidden
+const PutMaintenanceForbiddenCode int = 403
 
 /*
-PutMaintenanceInternalServerError Internal service error
+PutMaintenanceForbidden Authenticated principal's role carries no authority for this operation
 
-swagger:response putMaintenanceInternalServerError
+swagger:response putMaintenanceForbidden
 */
-type PutMaintenanceInternalServerError struct {
+type PutMaintenanceForbidden struct {
 
 	/*
 	  In: Body
@@ -164,27 +164,72 @@ type PutMaintenanceInternalServerError struct {
 	Payload *models.Error `json:"body,omitempty"`
 }
 
-// NewPutMaintenanceInternalServerError creates PutMaintenanceInternalServerError with default headers values
-func NewPutMaintenanceInternalServerError() *PutMaintenanceInternalServerError {
+// NewPutMaintenanceForbidden creates PutMaintenanceForbidden with default headers values
+func NewPutMaintenanceForbidden() *PutMaintenanceForbidden {
 
-	return &PutMaintenanceInternalServerError{}
+	return &PutMaintenanceForbidden{}
 }
 
-// WithPayload adds the payload to the put maintenance internal server error response
-func (o *PutMaintenanceInternalServerError) WithPayload(payload *models.Error) *PutMaintenanceInternalServerError {
+// WithPayload adds the payload to the put maintenance forbidden response
+func (o *PutMaintenanceForbidden) WithPayload(payload *models.Error) *PutMaintenanceForbidden {
 	o.Payload = payload
 	return o
 }
 
-// SetPayload sets the payload to the put maintenance internal server error response
-func (o *PutMaintenanceInternalServerError) SetPayload(payload *models.Error) {
+// SetPayload sets the payload to the put maintenance forbidden response
+func (o *PutMaintenanceForbidden) SetPayload(payload *models.Error) {
 	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *PutMaintenanceInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *PutMaintenanceForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.WriteHeader(500)
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// PutMaintenanceServiceUnavailableCode is the HTTP code returned for type PutMaintenanceServiceUnavailable
+const PutMaintenanceServiceUnavailableCode int = 503
+
+/*
+PutMaintenanceServiceUnavailable Refused while the boot config replay has not settled, or while a snapshot restore is in progress
+
+swagger:response putMaintenanceServiceUnavailable
+*/
+type PutMaintenanceServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewPutMaintenanceServiceUnavailable creates PutMaintenanceServiceUnavailable with default headers values
+func NewPutMaintenanceServiceUnavailable() *PutMaintenanceServiceUnavailable {
+
+	return &PutMaintenanceServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the put maintenance service unavailable response
+func (o *PutMaintenanceServiceUnavailable) WithPayload(payload *models.Error) *PutMaintenanceServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the put maintenance service unavailable response
+func (o *PutMaintenanceServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *PutMaintenanceServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

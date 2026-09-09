@@ -18,13 +18,53 @@ on:
       - "api/swagger.yml"
       - "api/swagger-extras.yml"
       - "api/check_ui_spec_drift.sh"
+      - "api/spec_lint.py"
       - ".github/workflows/ui-spec-contract.yml"
   schedule:
     - cron: "17 1 * * 1"
   workflow_dispatch: {}
 
 jobs:
+  # Structural checks on this repository's own specs, before and independent
+  # of the UI comparison: they must run even when the UI repository cannot be
+  # checked out, and they fail fast on drift the diff cannot see. `swagger
+  # diff` parses with a duplicate-tolerant loader and compares neither
+  # securityDefinitions nor security, so a duplicate key or a spec that never
+  # states authentication exists round-trips through it cleanly.
+  spec-lint:
+    name: spec-structure
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install PyYAML
+        run: pip install --disable-pip-version-check pyyaml
+
+      - name: Duplicate keys and security metadata
+        run: python3 api/spec_lint.py api/swagger.yml api/swagger-extras.yml
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # The codegen toolchain pin (0.30.3 in api/build_api.sh) panics on these
+      # specs; validate carries its own newer pin, as the diff job does.
+      - name: Install go-swagger for validation
+        run: go install github.com/go-swagger/go-swagger/cmd/swagger@v0.36.5
+
+      - name: Validate both specifications
+        run: |
+          swagger validate api/swagger.yml
+          swagger validate api/swagger-extras.yml
+
   drift:
+    needs: spec-lint
     name: ui-vendored-spec-vs-release
     runs-on: ubuntu-latest
     timeout-minutes: 10

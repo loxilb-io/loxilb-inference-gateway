@@ -13,43 +13,43 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 )
 
-// PostAuthUsersCreatedCode is the HTTP code returned for type PostAuthUsersCreated
-const PostAuthUsersCreatedCode int = 201
+// PostAuthUsersOKCode is the HTTP code returned for type PostAuthUsersOK
+const PostAuthUsersOKCode int = 200
 
 /*
-PostAuthUsersCreated Created
+PostAuthUsersOK OK
 
-swagger:response postAuthUsersCreated
+swagger:response postAuthUsersOK
 */
-type PostAuthUsersCreated struct {
+type PostAuthUsersOK struct {
 
 	/*
 	  In: Body
 	*/
-	Payload *models.User `json:"body,omitempty"`
+	Payload *models.OperationResult `json:"body,omitempty"`
 }
 
-// NewPostAuthUsersCreated creates PostAuthUsersCreated with default headers values
-func NewPostAuthUsersCreated() *PostAuthUsersCreated {
+// NewPostAuthUsersOK creates PostAuthUsersOK with default headers values
+func NewPostAuthUsersOK() *PostAuthUsersOK {
 
-	return &PostAuthUsersCreated{}
+	return &PostAuthUsersOK{}
 }
 
-// WithPayload adds the payload to the post auth users created response
-func (o *PostAuthUsersCreated) WithPayload(payload *models.User) *PostAuthUsersCreated {
+// WithPayload adds the payload to the post auth users o k response
+func (o *PostAuthUsersOK) WithPayload(payload *models.OperationResult) *PostAuthUsersOK {
 	o.Payload = payload
 	return o
 }
 
-// SetPayload sets the payload to the post auth users created response
-func (o *PostAuthUsersCreated) SetPayload(payload *models.User) {
+// SetPayload sets the payload to the post auth users o k response
+func (o *PostAuthUsersOK) SetPayload(payload *models.OperationResult) {
 	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *PostAuthUsersCreated) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *PostAuthUsersOK) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.WriteHeader(201)
+	rw.WriteHeader(200)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {
