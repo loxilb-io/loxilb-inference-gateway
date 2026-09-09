@@ -9900,6 +9900,12 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "description": "Management credential store unavailable",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
           }
         }
       }
@@ -10075,6 +10081,12 @@ func init() {
           },
           "403": {
             "description": "Authenticated principal's role carries no authority for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -28242,6 +28254,12 @@ func init() {
             "schema": {
               "$ref": "#/definitions/Error"
             }
+          },
+          "503": {
+            "description": "Management credential store unavailable",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
           }
         }
       }
@@ -28444,6 +28462,12 @@ func init() {
           },
           "403": {
             "description": "Authenticated principal's role carries no authority for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable",
             "schema": {
               "$ref": "#/definitions/Error"
             }
