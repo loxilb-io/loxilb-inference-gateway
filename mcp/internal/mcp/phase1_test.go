@@ -135,7 +135,8 @@ func TestAlertsDocResourceContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(mref.Contents[0].Text, "SSE-terminated") {
+	if !strings.Contains(mref.Contents[0].Text, "SSE-terminated") ||
+		!strings.Contains(mref.Contents[0].Text, `outcome="completed"`) {
 		t.Error("metrics reference missing the accounting caveat")
 	}
 }

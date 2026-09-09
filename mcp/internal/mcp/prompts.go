@@ -137,9 +137,10 @@ Playbook (validated in a live high-TTFB alert drill):
    gpu_conversations_cleanup would clear them - that is a mutation).
 4. Check pressure: ai_traffic_report for rate-limit drops and active_streams;
    many concurrent streams with rising TTFB = saturation. Mind the accounting
-   caveat: rate-limit denials appear only in loxilb_ai_rate_limit_hits_total,
-   and older gateway builds count only SSE-terminated streams in
-   loxilb_ai_requests_total.
+   model: loxilb_ai_requests_total splits on outcome (completed = answered by a
+   backend, denied = refused by the gate), loxilb_ai_rate_limit_hits_total
+   carries the reason for a denial, and older gateway builds carry no outcome
+   label at all and count only SSE-terminated streams.
 5. Report: where the latency lives (LB, queue, prefill, decode), the evidence,
    and remediation proposals with risk. Await approval before any mutation.`, targetClause(args))
 		})
