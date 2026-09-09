@@ -2784,6 +2784,16 @@ func kvEngineConfigValidate(engine string, dpRankCount uint16) error {
 	return nil
 }
 
+// kvBlockSizeValidate bounds the declared geometry to the fixed token and
+// CBOR work buffers used by the hashing data path. Zero remains the established
+// declaration sentinel for the effective default of 16.
+func kvBlockSizeValidate(blockSize uint32) error {
+	if blockSize > cmn.KVBlockSizeMax {
+		return fmt.Errorf("kvBlockSize must be 0 or within 1..%d", cmn.KVBlockSizeMax)
+	}
+	return nil
+}
+
 // kvSubscriberRankPort is a validated (rank, port) pair consumed by the two
 // ZMQ subscriber gates.  Keeping the rank beside its resolved port prevents a
 // later caller from repeating the uint16 addition that used to wrap at 65535.
@@ -3888,6 +3898,9 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 
 	// engine allowlist + DP rank bounds — covers
 	// both the create and update paths (everything below flows through here).
+	if err := kvBlockSizeValidate(serv.KvBlockSize); err != nil {
+		return RuleUnknownServiceErr, kvAdmissionRefuse(err)
+	}
 	if err := kvEngineConfigValidate(serv.KvEngineType, serv.KvDpRankCount); err != nil {
 		return RuleUnknownServiceErr, kvAdmissionRefuse(err)
 	}

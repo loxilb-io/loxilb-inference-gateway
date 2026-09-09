@@ -119,6 +119,68 @@ func (p *loadbalancerRequestPresence) validatePDThresholds() error {
 	return nil
 }
 
+// validateKVNumericArguments performs the semantic and destination-width
+// checks before handlers narrow generated signed values into uint32/uint16.
+// Zero is an intentional declaration sentinel for these fields. JSON null is
+// never a sentinel: go-swagger decodes it to the same scalar zero, so the raw
+// presence map must reject it explicitly.
+func (p *loadbalancerRequestPresence) validateKVNumericArguments(
+	src *models.LoadbalanceEntryServiceArguments,
+) error {
+	for _, key := range []string{"kvBlockSize", "kvZmqPort", "kvDpRankCount", "pdBootstrapPort"} {
+		if p.svcIsNull(key) {
+			return fmt.Errorf("%s must not be null", key)
+		}
+	}
+	if src == nil {
+		return nil
+	}
+
+	if src.KvBlockSize < 0 || src.KvBlockSize > int64(cmn.KVBlockSizeMax) {
+		return fmt.Errorf("kvBlockSize must be 0 or within 1..%d", cmn.KVBlockSizeMax)
+	}
+	if src.KvZmqPort < 0 || src.KvZmqPort > 65535 {
+		return fmt.Errorf("kvZmqPort must be 0 or within 1..65535")
+	}
+	if src.KvDpRankCount < 0 || src.KvDpRankCount > 8 {
+		return fmt.Errorf("kvDpRankCount must be 0 or within 1..8")
+	}
+	if src.PdBootstrapPort < 0 || src.PdBootstrapPort > 65535 {
+		return fmt.Errorf("pdBootstrapPort must be within 0..65535")
+	}
+
+	// Only exact modes create subscribers. Resolve both zero sentinels before
+	// checking the inclusive last rank port, and keep the sum widened until it
+	// has been proven to fit uint16.
+	if src.KvExactMode == 1 || src.KvExactMode == 3 {
+		base := uint64(src.KvZmqPort)
+		if base == 0 {
+			base = 5557
+		}
+		ranks := uint64(src.KvDpRankCount)
+		if ranks == 0 {
+			ranks = 1
+		}
+		if base+ranks-1 > 65535 {
+			return fmt.Errorf("kvZmqPort + kvDpRankCount - 1 must be <= 65535 (base %d, ranks %d)", base, ranks)
+		}
+	}
+	return nil
+}
+
+// validateUnsupportedKVNumericPatch makes PATCH ownership explicit. The
+// canonical PATCH path supports the two P/D thresholds, but not KV transport
+// geometry. Silently ignoring these keys would turn a successful response into
+// false configuration evidence.
+func (p *loadbalancerRequestPresence) validateUnsupportedKVNumericPatch() error {
+	for _, key := range []string{"kvBlockSize", "kvZmqPort", "kvDpRankCount", "pdBootstrapPort"} {
+		if p.svcPresent(key) {
+			return fmt.Errorf("PATCH does not support field: %s", key)
+		}
+	}
+	return nil
+}
+
 // applyPDThresholds copies validated declarations and their presence bits.
 // A nonzero typed value remains an update for direct/legacy handler callers
 // that do not pass raw context. Explicit zero still requires wire presence.

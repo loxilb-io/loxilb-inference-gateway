@@ -832,6 +832,11 @@ type CertArg struct {
 	Hostnames []string `json:"hostnames,omitempty"`
 }
 
+// KVBlockSizeMax is the largest token block the data-plane hashing pipeline can
+// represent in one request. It matches KV_MAX_TOKENS in the pinned eBPF
+// contract and bounds every later int conversion and fixed CBOR work buffer.
+const KVBlockSizeMax uint32 = 4096
+
 // LbServiceArg - Information related to load-balancer service
 type LbServiceArg struct {
 	// ServIP - the service ip or vip  of the load-balancer rule
@@ -1016,7 +1021,9 @@ type LbServiceArg struct {
 	// KV-Cache Exact Routing configuration
 	// KvExactMode - KV-cache exact routing mode: 0=off, 1=zmq
 	KvExactMode uint8 `json:"kvExactMode,omitempty"`
-	// KvBlockSize - Token block size for KV hash computation (default 16)
+	// KvBlockSize - Token block size for KV hash computation (default 16).
+	// Values above KVBlockSizeMax cannot fit the data-plane token/CBOR work
+	// buffers and are rejected before this uint32 representation is populated.
 	KvBlockSize uint32 `json:"kvBlockSize,omitempty"`
 	// KvHashAlgo - Hash algorithm for KV block matching: "sha256_cbor" or "xxhash_cbor"
 	KvHashAlgo string `json:"kvHashAlgo,omitempty"`

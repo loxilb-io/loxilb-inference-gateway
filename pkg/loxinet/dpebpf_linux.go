@@ -2083,7 +2083,7 @@ func (e *DpEbpfH) DpKvExactContractUpdate(svcIP net.IP, svcPort uint16, proto ui
 // the uint64 inventory forms (big-endian first 8 digest bytes, matching
 // cBlockHashesToUint64) of every FULL block's hash.
 func DpKvComputeChallengeHashes(hashAlgo string, blockSize uint32, tokens []uint32) ([]uint64, bool) {
-	if len(tokens) == 0 || blockSize == 0 {
+	if len(tokens) == 0 || blockSize == 0 || blockSize > cmn.KVBlockSizeMax {
 		return nil, false
 	}
 	var algo C.uint8_t

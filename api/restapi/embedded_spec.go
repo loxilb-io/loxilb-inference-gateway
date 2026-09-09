@@ -4111,16 +4111,16 @@ func init() {
             },
             "kvBlockSize": {
               "default": 16,
-              "description": "Token block size for KV hashing. Omission or 0 resolves to 16 in the current implementation; choose the value from the deployed engine tuple, not from the schema default. Must match vLLM block-size, SGLang page-size, or TRT-LLM tokens_per_block. A mismatch can cause hash misses; TRT-LLM server-info validation can instead refuse the endpoint's KV event poller while plain load balancing remains available. Implementation limitation: the schema's uint32 ceiling is not a safe operational range; downstream hashing converts the size to signed int. Use only a qualified engine block size until the numeric contract and C arithmetic are hardened. API acceptance is not geometry validation.",
+              "description": "Token block size for KV hashing. On create and replace POST, omission or explicit 0 stores the default declaration and resolves effectively to 16; explicit JSON null is rejected. PATCH does not support this field. Positive values are limited to 1..4096, the fixed request-token and CBOR workspace bound used by the hashing data path. Choose the value from the deployed engine tuple, not from the schema default. It must match vLLM block-size, SGLang page-size, or TRT-LLM tokens_per_block. A mismatch can cause hash misses; TRT-LLM server-info validation can instead refuse the endpoint's KV event poller while plain load balancing remains available. API acceptance proves safe representation, not engine-geometry compatibility.",
               "format": "int64",
-              "maximum": 4294967295,
+              "maximum": 4096,
               "minimum": 1,
               "type": "integer",
               "x-nullable": false
             },
             "kvDpRankCount": {
               "default": 1,
-              "description": "SGLang event-publisher rank count, not the number of LB endpoints. Omission or 0 resolves to 1; accepted positive values are 1..8. Values above 1 require kvEngineType=sglang. Rank N uses kvZmqPort+N for N=0..count-1; after resolving defaults the highest port must be at most 65535. Inventories are unioned per endpoint. Fan-out support does not by itself qualify every engine/model/DP deployment.",
+              "description": "SGLang event-publisher rank count, not the number of LB endpoints. On create and replace POST, omission or explicit 0 stores the default declaration and resolves effectively to 1; explicit JSON null is rejected. PATCH does not support this field. Accepted positive values are 1..8. Values above 1 require kvEngineType=sglang. Rank N uses kvZmqPort+N for N=0..count-1; after resolving defaults the highest port must be at most 65535. Inventories are unioned per endpoint. Fan-out support does not by itself qualify every engine/model/DP deployment.",
               "format": "int32",
               "maximum": 8,
               "minimum": 1,
@@ -4185,7 +4185,7 @@ func init() {
             },
             "kvZmqPort": {
               "default": 5557,
-              "description": "Base ZMQ event port for vllm/sglang exact routing. Omission or 0 resolves to 5557 in the current implementation. Mode 1 subscribes prefill endpoints only; mode 3 subscribes all endpoints. SGLang rank N uses base+N for N=0..kvDpRankCount-1; the effective base plus effective rank count minus one must not exceed 65535. trtllm uses HTTP on targetPort instead: only omitted/0/default 5557 declarations are accepted there, and no ZMQ connection is made.",
+              "description": "Base ZMQ event port for vllm/sglang exact routing. On create and replace POST, omission or explicit 0 stores the default declaration and resolves effectively to 5557; explicit JSON null is rejected. PATCH does not support this field. Mode 1 subscribes prefill endpoints only; mode 3 subscribes all endpoints. SGLang rank N uses base+N for N=0..kvDpRankCount-1; the effective base plus effective rank count minus one must not exceed 65535. trtllm uses HTTP on targetPort instead: only omitted/0/default 5557 declarations are accepted there, and no ZMQ connection is made.",
               "format": "int64",
               "maximum": 65535,
               "minimum": 1,
@@ -4325,7 +4325,7 @@ func init() {
             },
             "pdBootstrapPort": {
               "default": 0,
-              "description": "SGLang bootstrap port on every prefill endpoint; must match the engine disaggregation-bootstrap-port. Omitted/0 resolves to 8998 on the SGLang P/D path. A nonzero declaration requires both pd_disagg_mode=true and kvEngineType=sglang; it is rejected on other shapes. Zero is accepted on other shapes but has no effect.",
+              "description": "SGLang bootstrap port on every prefill endpoint; must match the engine disaggregation-bootstrap-port. On create and replace POST, omitted or explicit 0 resolves to 8998 on the SGLang P/D path; explicit JSON null is rejected. PATCH does not support this field. A nonzero declaration requires both pd_disagg_mode=true and kvEngineType=sglang; it is rejected on other shapes. Zero is accepted on other shapes but has no effect.",
               "format": "int32",
               "maximum": 65535,
               "minimum": 0,

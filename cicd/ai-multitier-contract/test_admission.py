@@ -31,6 +31,21 @@ class VerdictTests(unittest.TestCase):
         self.body["serviceArguments"]["kvDpRankCount"] = 8
         self.assertFalse(verdict(self.body, 200, {}, self.empty, self.installed, None))
 
+    def test_kv_numeric_zero_declarations_may_be_omitted_in_readback(self):
+        for key in ("kvBlockSize", "kvZmqPort", "kvDpRankCount", "pdBootstrapPort"):
+            with self.subTest(key=key):
+                body = copy.deepcopy(self.body)
+                body["serviceArguments"][key] = 0
+                self.assertTrue(verdict(body, 200, {}, self.empty, self.installed, None))
+
+    def test_kv_numeric_positive_declarations_must_not_be_lost(self):
+        for key, value in (("kvBlockSize", 16), ("kvZmqPort", 5557),
+                           ("kvDpRankCount", 1), ("pdBootstrapPort", 8998)):
+            with self.subTest(key=key):
+                body = copy.deepcopy(self.body)
+                body["serviceArguments"][key] = value
+                self.assertFalse(verdict(body, 200, {}, self.empty, self.installed, None))
+
     def test_ttl_zero_may_be_omitted_in_readback(self):
         self.body["serviceArguments"]["pd_session_ttl_sec"] = 0
         self.assertTrue(verdict(self.body, 200, {}, self.empty, self.installed, None))

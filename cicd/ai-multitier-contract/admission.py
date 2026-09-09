@@ -192,6 +192,23 @@ def run_threshold_update_contract(container, evidence):
         if not passed:
             return results
 
+    # KV transport geometry is replace-POST-only. PATCH must reject field
+    # presence even when the value is the zero/default sentinel, and the
+    # rejection must leave the complete rule set unchanged.
+    for field, positive in (("kvBlockSize", 16), ("kvZmqPort", 5557),
+                            ("kvDpRankCount", 1), ("pdBootstrapPort", 8998)):
+        for label, value in (("zero", 0), ("positive", positive)):
+            sent = {"serviceArguments": {field: value}}
+            before = after
+            status, response = request(container, "PATCH", path, sent)
+            after = read_rules(container)
+            passed = (status == 400 and field in json.dumps(response)
+                      and canonical_rules(before) == canonical_rules(after))
+            record(f"kv-numeric-patch-{field}-{label}", passed, status,
+                   response, before, after, sent)
+            if not passed:
+                return results
+
     return results
 
 
@@ -210,9 +227,11 @@ def verdict(body, status, response, before, after, reason):
             # never substitute 300 here: effective expiry is proven by C tests.
             and matches[0]["serviceArguments"].get("pd_session_ttl_sec", 0)
                 == body["serviceArguments"].get("pd_session_ttl_sec", 0)
-            and all(matches[0]["serviceArguments"].get(key) == value
+            and all(matches[0]["serviceArguments"].get(key, 0) == value
                     for key, value in body["serviceArguments"].items()
-                    if key not in ("externalIP", "port", "protocol", "mode", "sel", "pd_session_ttl_sec"))
+                    if key not in ("externalIP", "port", "protocol", "mode", "sel", "pd_session_ttl_sec")
+                    and (value != 0 or key in ("kvBlockSize", "kvZmqPort",
+                                               "kvDpRankCount", "pdBootstrapPort")))
             and all(
                 any(all(ep.get(key) == value for key, value in expected.items())
                     for ep in matches[0].get("endpoints", []))
@@ -237,7 +256,30 @@ def main():
         ("cache-null", "serviceArguments", "pd_cache_threshold", None, "pd_cache_threshold"),
         ("balance-null", "serviceArguments", "pd_balance_abs_threshold", None, "pd_balance_abs_threshold"),
         ("balance-overflow", "serviceArguments", "pd_balance_abs_threshold", 256, "pd_balance_abs_threshold"),
-        ("block-overflow", "serviceArguments", "kvBlockSize", 1 << 32, "kvBlockSize"),
+        ("block-null", "serviceArguments", "kvBlockSize", None, "kvBlockSize"),
+        ("block-zero-default", "serviceArguments", "kvBlockSize", 0, None),
+        ("block-minimum", "serviceArguments", "kvBlockSize", 1, None),
+        ("block-maximum", "serviceArguments", "kvBlockSize", 4096, None),
+        ("block-over-maximum", "serviceArguments", "kvBlockSize", 4097, "kvBlockSize"),
+        ("block-uint32-overflow", "serviceArguments", "kvBlockSize", 1 << 32, "kvBlockSize"),
+        ("zmq-null", "serviceArguments", "kvZmqPort", None, "kvZmqPort"),
+        ("zmq-zero-default", "serviceArguments", "kvZmqPort", 0, None),
+        ("zmq-minimum", "serviceArguments", "kvZmqPort", 1, None),
+        ("zmq-maximum", "serviceArguments", "kvZmqPort", 65535, None),
+        ("zmq-negative", "serviceArguments", "kvZmqPort", -1, "kvZmqPort"),
+        ("zmq-overflow", "serviceArguments", "kvZmqPort", 65536, "kvZmqPort"),
+        ("rank-null", "serviceArguments", "kvDpRankCount", None, "kvDpRankCount"),
+        ("rank-zero-default", "serviceArguments", "kvDpRankCount", 0, None),
+        ("rank-overflow", "serviceArguments", "kvDpRankCount", 9, "kvDpRankCount"),
+        ("bootstrap-null", "serviceArguments", "pdBootstrapPort", None, "pdBootstrapPort"),
+        ("bootstrap-zero-default", "serviceArguments", "pdBootstrapPort", 0, None),
+        ("bootstrap-negative", "serviceArguments", "pdBootstrapPort", -1, "pdBootstrapPort"),
+        ("bootstrap-overflow", "serviceArguments", "pdBootstrapPort", 65536, "pdBootstrapPort"),
+        ("rank-port-overflow", "serviceArguments", "__rank_port_overflow__", None,
+         "kvZmqPort + kvDpRankCount - 1"),
+        ("trt-zmq-nondefault", "serviceArguments", "__trt_zmq__", None, "kvZmqPort"),
+        ("llama-block-default", "serviceArguments", "__llama_block__", 16, None),
+        ("llama-block-nondefault", "serviceArguments", "__llama_block__", 32, "kvBlockSize"),
         ("warmup-overflow", "serviceArguments", "kvWarmupSec", 1 << 32, "kvWarmupSec"),
         ("role-negative", "endpoint", "ep_role", -1, "ep_role"),
         ("role-unknown", "endpoint", "ep_role", 3, "ep_role"),
@@ -293,11 +335,20 @@ def main():
             target = body["endpoints"][0] if scope == "endpoint" else body[scope]
             if key == "__composite__":
                 target.update(value)
+            elif key == "__rank_port_overflow__":
+                target.update(kvExactMode=3, kvEngineType="sglang",
+                              kvZmqPort=65529, kvDpRankCount=8)
+            elif key == "__trt_zmq__":
+                target.update(kvEngineType="trtllm", kvZmqPort=5558)
+            elif key == "__llama_block__":
+                target.update(kvEngineType="llamacpp", kvBlockSize=value)
             else:
                 target[key] = value
         if name.startswith("reserved-"):
             body["serviceArguments"].update(kvExactMode=2, model_name="model-a")
-        if name.startswith("rank-"):
+        if (name.startswith("rank-control-")
+                or name.startswith(("rank-default-", "rank-vllm-", "rank-sglang-",
+                                    "rank-trtllm-", "rank-llamacpp-"))):
             engine = name.split("-")[-2]
             if engine != "default":
                 body["serviceArguments"]["kvEngineType"] = engine
@@ -305,7 +356,7 @@ def main():
         status, response = request(args.container, "POST", "/config/loadbalancer", body)
         after = read_rules(args.container)
         passed = verdict(body, status, response, before, after, reason)
-        if name in ("cache-null", "balance-null"):
+        if name.endswith("-null"):
             passed = passed and status == 400
         record = dict(case=name, passed=passed, request=body, http_status=status,
                       response=response, before=before, after=after)

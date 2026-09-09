@@ -64,7 +64,7 @@ Endpoint: `POST http://<loxilb>:11111/netlox/v1/config/loadbalancer`. Schema:
 | `cb_enable` | bool | false | — | Per-EP circuit breaker for full-proxy rules; gates all circuit-breaker checks (auto-enabled for P/D services) |
 | `kvZmqPort` | int | 5557 | 1–65535 | vLLM KV-events PUB port (prefill EPs) |
 | `kvHashAlgo` | string | `sha256_cbor` | `sha256_cbor`\|`xxhash_cbor` | Must match the vLLM fleet's `--prefix-caching-hash-algo` |
-| `kvBlockSize` | int | 16 | ≥1 | Must equal vLLM `--block-size` |
+| `kvBlockSize` | int | 16 | 1–4096 (0 ⇒ 16) | Must equal vLLM `--block-size` |
 | `kvWarmupSec` | int | 30 | ≥0 | Guard-B window after subscriber start before Tier 1.5 activates |
 | `probeRetries` | int | 0 | — | Health-probe retry count (probe state does **not** feed data-plane exclusion — see [10 §5](10-hierarchical-kv-routing-architecture.md)) |
 | `chwbl_prefix_hash_level` | int | 1 | 1–3 | Single-pool prefix-hash depth: 1 = prefix+model (+present L1 fields), 2/3 fold in more context |
