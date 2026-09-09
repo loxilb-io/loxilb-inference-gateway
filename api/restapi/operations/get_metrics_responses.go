@@ -9,6 +9,8 @@ import (
 	"net/http"
 
 	"github.com/go-openapi/runtime"
+
+	"github.com/loxilb-io/loxilb/api/models"
 )
 
 // GetMetricsOKCode is the HTTP code returned for type GetMetricsOK
@@ -52,4 +54,119 @@ func (o *GetMetricsOK) WriteResponse(rw http.ResponseWriter, producer runtime.Pr
 	if err := producer.Produce(rw, payload); err != nil {
 		panic(err) // let the recovery middleware deal with this
 	}
+}
+
+// GetMetricsUnauthorizedCode is the HTTP code returned for type GetMetricsUnauthorized
+const GetMetricsUnauthorizedCode int = 401
+
+/*
+GetMetricsUnauthorized Authentication is required for this route on this deployment and the credential was missing or invalid
+
+swagger:response getMetricsUnauthorized
+*/
+type GetMetricsUnauthorized struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetMetricsUnauthorized creates GetMetricsUnauthorized with default headers values
+func NewGetMetricsUnauthorized() *GetMetricsUnauthorized {
+
+	return &GetMetricsUnauthorized{}
+}
+
+// WithPayload adds the payload to the get metrics unauthorized response
+func (o *GetMetricsUnauthorized) WithPayload(payload *models.Error) *GetMetricsUnauthorized {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get metrics unauthorized response
+func (o *GetMetricsUnauthorized) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetMetricsUnauthorized) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(401)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetMetricsForbiddenCode is the HTTP code returned for type GetMetricsForbidden
+const GetMetricsForbiddenCode int = 403
+
+/*
+GetMetricsForbidden Authenticated principal's role carries no authority for this operation
+
+swagger:response getMetricsForbidden
+*/
+type GetMetricsForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetMetricsForbidden creates GetMetricsForbidden with default headers values
+func NewGetMetricsForbidden() *GetMetricsForbidden {
+
+	return &GetMetricsForbidden{}
+}
+
+// WithPayload adds the payload to the get metrics forbidden response
+func (o *GetMetricsForbidden) WithPayload(payload *models.Error) *GetMetricsForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get metrics forbidden response
+func (o *GetMetricsForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetMetricsForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
+// GetMetricsServiceUnavailableCode is the HTTP code returned for type GetMetricsServiceUnavailable
+const GetMetricsServiceUnavailableCode int = 503
+
+/*
+GetMetricsServiceUnavailable Metrics collection is disabled (a plain-text body, not JSON), or the credential store could not answer
+
+swagger:response getMetricsServiceUnavailable
+*/
+type GetMetricsServiceUnavailable struct {
+}
+
+// NewGetMetricsServiceUnavailable creates GetMetricsServiceUnavailable with default headers values
+func NewGetMetricsServiceUnavailable() *GetMetricsServiceUnavailable {
+
+	return &GetMetricsServiceUnavailable{}
+}
+
+// WriteResponse to the client
+func (o *GetMetricsServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.Header().Del(runtime.HeaderContentType) //Remove Content-Type on empty responses
+
+	rw.WriteHeader(503)
 }

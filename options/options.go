@@ -32,6 +32,7 @@ var Opts struct {
 	LogNoCompress     bool           `long:"log-no-compress" description:"Do not gzip rotated log files" env:"LOXILB_LOG_NO_COMPRESS"`
 	CPUProfile        string         `long:"cpuprofile" description:"Enable cpu profiling and specify file to use" default:"none" env:"CPUPROF"`
 	Prometheus        bool           `short:"p" long:"prometheus" description:"Run prometheus thread"`
+	MetricsAuth       string         `long:"metrics-auth" description:"Whether GET /metrics requires a bearer token: auto requires it only under mgmt-profile remote-tls; require always requires it; disable never does and is refused under remote-tls" default:"auto" choice:"auto" choice:"require" choice:"disable" env:"METRICS_AUTH"`
 	CRC32SumDisable   bool           `long:"disable-crc32" description:"Disable crc32 checksum update(experimental)"`
 	PassiveEPProbe    bool           `long:"passive-probe" description:"Enable passive liveness probes(experimental)"`
 	RssEnable         bool           `long:"rss-enable" description:"Enable rss optimization(experimental)"`

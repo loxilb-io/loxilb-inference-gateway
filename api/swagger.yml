@@ -6177,14 +6177,45 @@ paths:
 #----------------------------------------------
   '/metrics':
     get:
-      description: Public management-authentication-exempt Prometheus scrape, using exposition rather than JSON. Disabled collection/export returns plain-text 503. Series depend on initialization and activity; absence is not measured zero.
       summary: Scrape metrics from the cache
-      security: [] # Overrides global security: Prometheus scrapers don't carry a bearer
+      description: >-
+        Prometheus exposition rather than JSON. Whether this route requires a
+        bearer token is a deployment property, not a property of the route,
+        which is why it is declared without a security requirement while still
+        declaring 401, 403 and 503. The --metrics-auth option decides - auto
+        (the default) requires a token only under mgmt-profile remote-tls,
+        require always requires one, and disable never does and is refused
+        under remote-tls. A scraper that gets 401 here is reaching a gateway
+        that expects a credential; configure the scrape job with a bearer token
+        rather than removing the requirement. Collection or export being
+        disabled answers a plain-text 503, decided before the credential is
+        examined. Which series appear depends on initialization and activity;
+        an absent series is not a measured zero.
+      # Overrides global security. A Prometheus scraper does not carry a bearer,
+      # and on a loopback or trusted-network deployment it should not have to.
+      # It is NOT blanket-anonymous: the route declares 401/403/503 because
+      # --metrics-auth (see the description) can put it behind the same bearer
+      # chain as every other route on this listener, and under mgmt-profile
+      # remote-tls it does so by default. The requirement cannot be expressed in
+      # the generated chain, which admits only one answer for every deployment,
+      # so ConfigGetPrometheusCounter applies it from the single decision
+      # options.MetricsAuthPlan makes at startup.
+      security: []
       responses:
         '200':
           description: Metrics in prometheus text format
           schema:
             type: string
+        '401':
+          description: Authentication is required for this route on this deployment and the credential was missing or invalid
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          description: Authenticated principal's role carries no authority for this operation
+          schema:
+            $ref: '#/definitions/Error'
+        '503':
+          description: Metrics collection is disabled (a plain-text body, not JSON), or the credential store could not answer
   '/config/metrics':
     get:
       description: Returns the runtime Prometheus enablement flag, not proof of freshness or availability of every series.

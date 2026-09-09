@@ -17,6 +17,7 @@ package handler
 
 import (
 	"net/http"
+	"sync/atomic"
 
 	"github.com/loxilb-io/loxilb/api/models"
 	"github.com/loxilb-io/loxilb/api/prometheus"
@@ -33,19 +34,54 @@ import (
 // every call, so building it per scrape would leak allocations
 var promHandler = promhttp.Handler()
 
-// No principal parameter: /metrics carries security:[] in the API spec
-// (Prometheus scrapers don't send a bearer), so the generated operation is
-// unauthenticated by design.
+// metricsAuthRequired is resolved once at startup by options.MetricsAuthPlan
+// and read on every scrape. It is a plain bool behind a setter rather than a
+// read of options.Opts, so the decision -- which combines --metrics-auth with
+// the management profile -- exists in exactly one place and cannot be
+// re-derived differently here.
+var metricsAuthRequired atomic.Bool
+
+// SetMetricsAuthRequired records the startup decision. Called from api.go
+// before any listener binds.
+func SetMetricsAuthRequired(required bool) { metricsAuthRequired.Store(required) }
+
+// MetricsAuthRequired reports the resolved decision, for tests and callers
+// that need to know what the route will do.
+func MetricsAuthRequired() bool { return metricsAuthRequired.Load() }
+
+// ConfigGetPrometheusCounter serves the Prometheus exposition.
+//
+// The route keeps `security: []` in the API spec because whether a credential
+// is needed is a DEPLOYMENT property, not a property of the route: a scraper
+// on a loopback-only appliance sends no bearer and should not have to, while
+// the same route under mgmt-profile remote-tls hands out every tenant label to
+// anyone who can reach the port. The generated chain can only express one of
+// those, so the requirement is applied here instead, from the single decision
+// options.MetricsAuthPlan made at startup.
+//
+// It runs the same RequireManagementAuth the other non-generated routes use,
+// so an unauthenticated scrape is refused with byte-identical wording and
+// status to every other route on this listener -- including a credential
+// store's 503, which must not be confused with the metrics-disabled 503 below.
 func ConfigGetPrometheusCounter(params operations.GetMetricsParams) middleware.Responder {
 	tk.LogIt(tk.LogTrace, "api: Prometheus %s API called. url : %s\n", params.HTTPRequest.Method, params.HTTPRequest.URL)
 	if !options.Opts.Prometheus {
 		// 503 keeps scrapers reporting a clean "down" state instead of a
-		// 200 with a body that is invalid exposition format
+		// 200 with a body that is invalid exposition format.
+		//
+		// Answered before the credential check on purpose: whether metrics
+		// collection is switched on is not a secret, it is the same answer for
+		// every caller, and making an operator authenticate to be told the
+		// subsystem is off helps nobody. No metric values are disclosed.
 		return CustomResponder(func(w http.ResponseWriter, _ runtime.Producer) {
 			http.Error(w, "Prometheus option is disabled.", http.StatusServiceUnavailable)
 		})
 	}
 	return CustomResponder(func(w http.ResponseWriter, _ runtime.Producer) {
+		if metricsAuthRequired.Load() && !RequireManagementAuth(w, params.HTTPRequest) {
+			// RequireManagementAuth has already written 401, 403 or 503.
+			return
+		}
 		promHandler.ServeHTTP(w, params.HTTPRequest)
 	})
 }
