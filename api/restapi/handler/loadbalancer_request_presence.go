@@ -66,16 +66,18 @@ func rawPatchBodyFromContext(ctx context.Context) []byte {
 // loadbalancerRequestPresence records the exact keys and raw values supplied
 // by a caller. Typed models remain the source of validated non-null values.
 type loadbalancerRequestPresence struct {
-	top map[string]json.RawMessage
-	svc map[string]json.RawMessage
+	top     map[string]json.RawMessage
+	svc     map[string]json.RawMessage
+	tracked bool
 }
 
 type patchPresence = loadbalancerRequestPresence
 
 func parseLoadbalancerRequestPresence(raw []byte) (*loadbalancerRequestPresence, error) {
 	p := &loadbalancerRequestPresence{
-		top: map[string]json.RawMessage{},
-		svc: map[string]json.RawMessage{},
+		top:     map[string]json.RawMessage{},
+		svc:     map[string]json.RawMessage{},
+		tracked: len(raw) > 0,
 	}
 	if len(raw) == 0 {
 		return p, nil
@@ -168,12 +170,130 @@ func (p *loadbalancerRequestPresence) validateKVNumericArguments(
 	return nil
 }
 
+var chwblRequestKeys = []string{
+	"chwbl_prefix_hash_level",
+	"chwbl_prefix_hash_flags",
+	"chwbl_mean_load_factor",
+	"chwbl_replication",
+	"chwbl_enable_cache_salt",
+}
+
+func (p *loadbalancerRequestPresence) anyCHWBLPresent() bool {
+	for _, key := range chwblRequestKeys {
+		if p.svcPresent(key) {
+			return true
+		}
+	}
+	return false
+}
+
+// validateCHWBLArguments rejects declarations that would otherwise be stored
+// but ignored by the userspace selector. Scalar bounds are repeated here so
+// direct handler tests and generated-server calls share one semantic gate.
+func (p *loadbalancerRequestPresence) validateCHWBLArguments(
+	src *models.LoadbalanceEntryServiceArguments,
+) error {
+	for _, key := range chwblRequestKeys {
+		if p.svcIsNull(key) {
+			return fmt.Errorf("%s must not be null", key)
+		}
+	}
+	if src == nil {
+		return nil
+	}
+
+	declared := p.anyCHWBLPresent()
+	if !p.tracked {
+		declared = src.ChwblPrefixHashLevel != nil || src.ChwblPrefixHashFlags != nil ||
+			src.ChwblMeanLoadFactor != 0 || src.ChwblReplication != 0 ||
+			(src.ChwblEnableCacheSalt != nil && *src.ChwblEnableCacheSalt)
+	}
+	if declared && (src.Mode != int32(cmn.LBModeFullProxy) ||
+		(src.Sel != int64(cmn.LbSelCHWBL) && src.Sel != int64(cmn.LbSelWRRHash))) {
+		return fmt.Errorf("CHWBL fields require mode=4 and sel=8 or sel=10")
+	}
+
+	level := int64(cmn.CHWBLPrefixHashLevelDefault)
+	if src.ChwblPrefixHashLevel != nil {
+		level = *src.ChwblPrefixHashLevel
+	}
+	if level < 1 || level > 3 {
+		return fmt.Errorf("chwbl_prefix_hash_level must be within 1..3")
+	}
+	flags := int64(0)
+	if src.ChwblPrefixHashFlags != nil {
+		flags = *src.ChwblPrefixHashFlags
+	}
+	if flags < 0 || flags > 255 {
+		return fmt.Errorf("chwbl_prefix_hash_flags must be within 0..255")
+	}
+	levelMask := int64(0x1f)
+	if level >= 2 {
+		levelMask |= 0x20
+	}
+	if level >= 3 {
+		levelMask |= 0xc0
+	}
+	if flags != 0 && flags&^levelMask != 0 {
+		return fmt.Errorf("chwbl_prefix_hash_flags enables inputs above chwbl_prefix_hash_level")
+	}
+	if src.ChwblMeanLoadFactor != 0 &&
+		(src.ChwblMeanLoadFactor < 100 || src.ChwblMeanLoadFactor > 300) {
+		return fmt.Errorf("chwbl_mean_load_factor must be within 100..300")
+	}
+	if src.ChwblReplication != 0 &&
+		(src.ChwblReplication < 1 || src.ChwblReplication > 1024) {
+		return fmt.Errorf("chwbl_replication must be within 1..1024")
+	}
+	if src.ChwblEnableCacheSalt != nil && *src.ChwblEnableCacheSalt &&
+		flags != 0 && flags&0x08 == 0 {
+		return fmt.Errorf("chwbl_enable_cache_salt requires cache_salt flag bit 3 when flags are explicit")
+	}
+	return nil
+}
+
+func (p *loadbalancerRequestPresence) applyCHWBLArguments(
+	dst *cmn.LbServiceArg,
+	src *models.LoadbalanceEntryServiceArguments,
+) {
+	dst.CHWBLPresenceTracked = p.tracked
+	if src.ChwblPrefixHashLevel != nil {
+		dst.CHWBLPrefixHashLevel = int(*src.ChwblPrefixHashLevel)
+	}
+	dst.CHWBLPrefixHashLevelPresent = p.svcPresent("chwbl_prefix_hash_level")
+	if src.ChwblPrefixHashFlags != nil {
+		dst.CHWBLPrefixHashFlags = int(*src.ChwblPrefixHashFlags)
+	}
+	dst.CHWBLPrefixHashFlagsPresent = p.svcPresent("chwbl_prefix_hash_flags")
+	if src.ChwblMeanLoadFactor != 0 {
+		dst.CHWBLMeanLoadFactor = int(src.ChwblMeanLoadFactor)
+	}
+	dst.CHWBLMeanLoadFactorPresent = p.svcPresent("chwbl_mean_load_factor")
+	if src.ChwblReplication != 0 {
+		dst.CHWBLReplication = int(src.ChwblReplication)
+	}
+	dst.CHWBLReplicationPresent = p.svcPresent("chwbl_replication")
+	if src.ChwblEnableCacheSalt != nil {
+		dst.CHWBLEnableCacheSalt = *src.ChwblEnableCacheSalt
+	}
+	dst.CHWBLEnableCacheSaltPresent = p.svcPresent("chwbl_enable_cache_salt")
+}
+
 // validateUnsupportedKVNumericPatch makes PATCH ownership explicit. The
 // canonical PATCH path supports the two P/D thresholds, but not KV transport
 // geometry. Silently ignoring these keys would turn a successful response into
 // false configuration evidence.
 func (p *loadbalancerRequestPresence) validateUnsupportedKVNumericPatch() error {
 	for _, key := range []string{"kvBlockSize", "kvZmqPort", "kvDpRankCount", "pdBootstrapPort"} {
+		if p.svcPresent(key) {
+			return fmt.Errorf("PATCH does not support field: %s", key)
+		}
+	}
+	return nil
+}
+
+func (p *loadbalancerRequestPresence) validateUnsupportedCHWBLPatch() error {
+	for _, key := range chwblRequestKeys {
 		if p.svcPresent(key) {
 			return fmt.Errorf("PATCH does not support field: %s", key)
 		}

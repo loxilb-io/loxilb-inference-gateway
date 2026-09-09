@@ -1586,10 +1586,12 @@ func DpLBRuleMod(w *LBDpWorkQ) int {
 		dat.sel_type = C.NAT_LB_SEL_N3
 	case w.EpSel == EpCHWBL:
 		dat.sel_type = C.NAT_LB_SEL_CHWBL
-		// Propagate CHWBL prefix hash level through dp_proxy_tacts
-		// This replaces the old pad3[1] field (same size, no ABI change)
-		if w.CHWBLPrefixHashLevel > 0 {
-			dat.chwbl_prefix_hash_level = C.uint8_t(w.CHWBLPrefixHashLevel)
+		dat.chwbl_prefix_hash_level = C.uint8_t(w.CHWBLPrefixHashLevel)
+		dat.chwbl_prefix_hash_flags = C.uint8_t(w.CHWBLPrefixHashFlags)
+		dat.chwbl_mean_load_factor = C.uint16_t(w.CHWBLMeanLoadFactor)
+		dat.chwbl_replication = C.uint16_t(w.CHWBLReplication)
+		if w.CHWBLEnableCacheSalt {
+			dat.chwbl_enable_cache_salt = 1
 		}
 	case w.EpSel == EpGPUAware:
 		dat.sel_type = C.NAT_LB_SEL_GPU_AWARE
@@ -1597,6 +1599,13 @@ func DpLBRuleMod(w *LBDpWorkQ) int {
 		dat.sel_type = C.NAT_LB_SEL_PRIO
 	case w.EpSel == EpWRRHash: // P3.5: WRR_HASH (Weighted Consistent Hash + Bounded Loads)
 		dat.sel_type = C.NAT_LB_SEL_WRR_HASH
+		dat.chwbl_prefix_hash_level = C.uint8_t(w.CHWBLPrefixHashLevel)
+		dat.chwbl_prefix_hash_flags = C.uint8_t(w.CHWBLPrefixHashFlags)
+		dat.chwbl_mean_load_factor = C.uint16_t(w.CHWBLMeanLoadFactor)
+		dat.chwbl_replication = C.uint16_t(w.CHWBLReplication)
+		if w.CHWBLEnableCacheSalt {
+			dat.chwbl_enable_cache_salt = 1
+		}
 	default:
 		dat.sel_type = C.NAT_LB_SEL_RR
 	}

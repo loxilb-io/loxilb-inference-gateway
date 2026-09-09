@@ -2542,7 +2542,7 @@ func lbEndpointsAddedSince(oldEps, desired []ruleLBEp) []ruleLBEp {
 // DpCreate path). A no-op reconcile (retEps identical, no delEps) is a
 // successful pass-through that performs the same attach/elect/push but never trips
 // the rollback. Returns nil on success, a non-nil error on a rolled-back failure.
-func (R *RuleH) reconcileLBEndpointsAtomic(eRule *ruleEnt, retEps []ruleLBEp, delEps []ruleLBEp, activateProbe bool) error {
+func (R *RuleH) reconcileLBEndpointsAtomic(eRule *ruleEnt, retEps []ruleLBEp, delEps []ruleLBEp, activateProbe bool, restoreRuleState func()) error {
 	lbActs, ok := eRule.act.action.(*ruleLBActs)
 	if !ok {
 		return errors.New("lb-reconcile error: rule has no lb action")
@@ -2563,6 +2563,9 @@ func (R *RuleH) reconcileLBEndpointsAtomic(eRule *ruleEnt, retEps []ruleLBEp, de
 		// re-push so the rule is left unchanged (atomic all-or-nothing —).
 		tk.LogIt(tk.LogError, "lb-rule %s reconcile failed (rc=%d) - rolling back to pre-patch member set\n",
 			eRule.tuples.String(), rc)
+		if restoreRuleState != nil {
+			restoreRuleState()
+		}
 		lbActs.endPoints = snapshot
 		// WR-02 / : detach ONLY the members genuinely ADDED by the failed
 		// reconcile (desired-minus-snapshot by (xIP,xPort) identity), not the full retEps.
@@ -2581,6 +2584,11 @@ func (R *RuleH) reconcileLBEndpointsAtomic(eRule *ruleEnt, retEps []ruleLBEp, de
 }
 
 func getLBConsolidatedEPs(oldEps []ruleLBEp, newEps []ruleLBEp, oper cmn.LBOp) (bool, []ruleLBEp, []ruleLBEp) {
+	// Candidate reconciliation must never mutate the live rule's backing array.
+	// Both sides carry transient chkVal/inActiveEP fields that are modified below,
+	// so make independent copies before any matching work begins.
+	oldEps = snapshotLBEndpoints(oldEps)
+	newEps = snapshotLBEndpoints(newEps)
 	var retEps []ruleLBEp
 	var delEps []ruleLBEp
 	ruleChg := false
@@ -3997,6 +4005,9 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	tk.LogIt(tk.LogDebug, "lb-rule key (add): %q\n", rt.ruleKey())
 
 	eRule := R.tables[RtLB].eMap[rt.ruleKey()]
+	if err := resolveCHWBLContract(&serv, eRule, lBActs.endPoints); err != nil {
+		return RuleUnknownServiceErr, err
+	}
 
 	// two rules on the same VIP IP but different ports MAY run
 	// different engines — that IS the multi-framework coexistence story. Accepted,
@@ -4015,6 +4026,13 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	}
 
 	if eRule != nil {
+		oldSelector := eRule.act.action.(*ruleLBActs).sel
+		oldCHWBL := snapshotCHWBLRule(eRule)
+		chwblTxn := isCHWBLSelector(oldSelector) || isCHWBLSelector(lBActs.sel)
+		restoreCHWBLState := func() {
+			oldCHWBL.restore(eRule)
+			eRule.act.action.(*ruleLBActs).sel = oldSelector
+		}
 		nextPDCacheThreshold := pdThresholdOnReplace(
 			eRule.pdCacheThreshold, serv.PDCacheThreshold, serv.PDCacheThresholdPresent)
 		nextPDBalanceAbsThreshold := pdThresholdOnReplace(
@@ -4157,13 +4175,15 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 			return RuleExistsErr, errors.New("lbrule-exist error: cant modify fullproxy rule mode")
 		}
 
-		if eRule.act.action.(*ruleLBActs).mode == cmn.LBModeFullProxy || len(retEps) > MaxLBEndPoints {
-			eRule.DP(DpRemove)
-			if len(retEps) > MaxLBEndPoints {
-				tk.LogIt(tk.LogInfo, "lb-rule %s-%v-%s reset all end-points (too many)\n", serv.ServIP, serv.ServPort, serv.Proto)
-				delEps = eRule.act.action.(*ruleLBActs).endPoints
-				retEps = lBActs.endPoints
+		if len(retEps) > MaxLBEndPoints {
+			if !chwblTxn {
+				eRule.DP(DpRemove)
 			}
+			tk.LogIt(tk.LogInfo, "lb-rule %s-%v-%s reset all end-points (too many)\n", serv.ServIP, serv.ServPort, serv.Proto)
+			delEps = eRule.act.action.(*ruleLBActs).endPoints
+			retEps = lBActs.endPoints
+		} else if eRule.act.action.(*ruleLBActs).mode == cmn.LBModeFullProxy && !chwblTxn {
+			eRule.DP(DpRemove)
 		}
 
 		eSrcList := eRule.srcList
@@ -4354,7 +4374,9 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		eRule.sT = time.Now()
 		eRule.iTO = serv.InactiveTimeout
 		tk.LogIt(tk.LogDebug, "lb-rule updated - %s:%s\n", eRule.tuples.String(), eRule.act.String())
-		R.flushLBCtEntries(eRule, CtFlushRidMatchOrZero)
+		if !chwblTxn {
+			R.flushLBCtEntries(eRule, CtFlushRidMatchOrZero)
+		}
 
 		// route the L4 member reconcile through the atomic
 		// all-or-nothing guard. It performs the probe-registry detach/attach + source
@@ -4362,13 +4384,26 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		// (in place, NO DpRemove) if the dataplane push fails. The SNAT path has no
 		// per-EP NAT reconcile, so it keeps the plain in-place DpCreate.
 		if !serv.Snat {
-			if recErr := R.reconcileLBEndpointsAtomic(eRule, retEps, delEps, activateProbe); recErr != nil {
+			var restoreRuleState func()
+			if chwblTxn {
+				restoreRuleState = restoreCHWBLState
+			}
+			if recErr := R.reconcileLBEndpointsAtomic(eRule, retEps, delEps, activateProbe, restoreRuleState); recErr != nil {
 				return RuleExistsErr, recErr
 			}
 		} else {
-			eRule.DP(DpCreate)
+			if rc := eRule.DP(DpCreate); rc != 0 {
+				if chwblTxn {
+					restoreCHWBLState()
+					eRule.DP(DpCreate)
+				}
+				return RuleExistsErr, errors.New("lb-rule update error: dataplane rejected candidate")
+			}
 		}
 		DpBrokerSyncBarrier(mh.dp)
+		if chwblTxn {
+			R.flushLBCtEntries(eRule, CtFlushRidMatchOrZero)
+		}
 		R.flushLBCtEntries(eRule, CtFlushRidZeroOnly)
 
 		// Migration commit: attach the admission-validated profile identity
@@ -6439,10 +6474,16 @@ func (r *ruleEnt) LB2DP(work DpWorkT) int {
 			nWork.CHWBLPrefixHashFlags = r.chwblPrefixHashFlags
 			nWork.CHWBLMeanLoadFactor = r.chwblMeanLoadFactor
 			nWork.CHWBLReplication = r.chwblReplication
+			nWork.CHWBLEnableCacheSalt = r.chwblEnableCacheSalt
 		case at.sel == cmn.LbSelGPUAware:
 			nWork.EpSel = EpGPUAware
 		case at.sel == cmn.LbSelWRRHash: // P3.5: WRR_HASH
 			nWork.EpSel = EpWRRHash
+			nWork.CHWBLPrefixHashLevel = r.chwblPrefixHashLevel
+			nWork.CHWBLPrefixHashFlags = r.chwblPrefixHashFlags
+			nWork.CHWBLMeanLoadFactor = r.chwblMeanLoadFactor
+			nWork.CHWBLReplication = r.chwblReplication
+			nWork.CHWBLEnableCacheSalt = r.chwblEnableCacheSalt
 		default:
 			nWork.EpSel = EpRR
 		}
