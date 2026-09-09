@@ -4002,6 +4002,11 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	}
 
 	if eRule != nil {
+		nextPDCacheThreshold := pdThresholdOnReplace(
+			eRule.pdCacheThreshold, serv.PDCacheThreshold, serv.PDCacheThresholdPresent)
+		nextPDBalanceAbsThreshold := pdThresholdOnReplace(
+			eRule.pdBalanceAbsThreshold, serv.PDBalanceAbsThreshold, serv.PDBalanceAbsThresholdPresent)
+
 		if !reflect.DeepEqual(eRule.secIP, nSecIP) {
 			return RuleUnknownServiceErr, errors.New("secIP modify error")
 		}
@@ -4034,8 +4039,8 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 			eRule.pdDisaggMode != serv.PDDisaggMode ||
 			eRule.pdCacheAwareMode != serv.PDCacheAwareMode ||
 			eRule.pdSessionTTLSec != serv.PDSessionTTLSec ||
-			(serv.PDCacheThreshold != 0 && eRule.pdCacheThreshold != serv.PDCacheThreshold) ||
-			(serv.PDBalanceAbsThreshold != 0 && eRule.pdBalanceAbsThreshold != serv.PDBalanceAbsThreshold) ||
+			eRule.pdCacheThreshold != nextPDCacheThreshold ||
+			eRule.pdBalanceAbsThreshold != nextPDBalanceAbsThreshold ||
 			eRule.cbEnable != serv.CbEnable ||
 			eRule.kvExactMode != serv.KvExactMode ||
 			eRule.kvBlockSize != serv.KvBlockSize ||
@@ -4215,12 +4220,8 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		eRule.pdDisaggMode = serv.PDDisaggMode
 		eRule.pdCacheAwareMode = serv.PDCacheAwareMode
 		eRule.pdSessionTTLSec = serv.PDSessionTTLSec
-		if serv.PDCacheThreshold != 0 {
-			eRule.pdCacheThreshold = serv.PDCacheThreshold
-		}
-		if serv.PDBalanceAbsThreshold != 0 {
-			eRule.pdBalanceAbsThreshold = serv.PDBalanceAbsThreshold
-		}
+		eRule.pdCacheThreshold = nextPDCacheThreshold
+		eRule.pdBalanceAbsThreshold = nextPDBalanceAbsThreshold
 		eRule.cbEnable = serv.CbEnable
 		eRule.kvExactMode = serv.KvExactMode
 		eRule.kvBlockSize = serv.KvBlockSize

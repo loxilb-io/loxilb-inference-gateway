@@ -16,9 +16,6 @@
 package handler
 
 import (
-	"context"
-	"encoding/json"
-
 	"github.com/go-openapi/runtime/middleware"
 	"github.com/loxilb-io/loxilb/api/restapi/operations"
 	cmn "github.com/loxilb-io/loxilb/common"
@@ -35,75 +32,12 @@ import (
 // already returns 404 for the common absent case — this const only covers the apply-race).
 const ruleNotExistsErrCode = -6996
 
-// rawPatchBodyKey is the request-context key under which setupGlobalMiddleware stashes
-// the raw PATCH merge-patch body bytes (go-swagger drains r.Body during body bind, so the
-// handler cannot re-read it without this). Unexported type prevents context-key collisions.
-type rawPatchBodyKey struct{}
-
-// WithRawPatchBody returns a context carrying the raw merge-patch body bytes. Called by the
-// REST middleware (configure_loxilb_rest_api.go) for PATCH on the LB composite-key path.
-func WithRawPatchBody(ctx context.Context, raw []byte) context.Context {
-	return context.WithValue(ctx, rawPatchBodyKey{}, raw)
-}
-
-// rawPatchBodyFromContext recovers the raw merge-patch body bytes, or nil if absent.
-func rawPatchBodyFromContext(ctx context.Context) []byte {
-	if v, ok := ctx.Value(rawPatchBodyKey{}).([]byte); ok {
-		return v
-	}
-	return nil
-}
-
-// patchPresence captures which JSON keys actually appeared in the RFC 7386 merge-patch
-// body. Go cannot otherwise distinguish "absent" (leave untouched) from a zero value
-// : a presence map keeps the merge from silently resetting fields.
-type patchPresence struct {
-	// top holds the present top-level keys (e.g. "serviceArguments", "endpoints",
-	// "allowedSources").
-	top map[string]json.RawMessage
-	// svc holds the present serviceArguments sub-keys (e.g. "name", "security", "mode").
-	svc map[string]json.RawMessage
-}
-
-func parsePatchPresence(raw []byte) (*patchPresence, error) {
-	p := &patchPresence{top: map[string]json.RawMessage{}, svc: map[string]json.RawMessage{}}
-	if len(raw) == 0 {
-		return p, nil
-	}
-	if err := json.Unmarshal(raw, &p.top); err != nil {
-		return nil, err
-	}
-	if svcRaw, ok := p.top["serviceArguments"]; ok && len(svcRaw) > 0 {
-		// A serviceArguments object whose value is null leaves svc empty (nothing to overlay).
-		_ = json.Unmarshal(svcRaw, &p.svc)
-	}
-	return p, nil
-}
-
-// svcPresent reports whether a serviceArguments key appeared in the patch body.
-func (p *patchPresence) svcPresent(key string) bool {
-	_, ok := p.svc[key]
-	return ok
-}
-
-// svcIsNull reports whether a present serviceArguments key carried an explicit JSON null
-// (RFC 7386: explicit null clears a clearable field).
-func (p *patchPresence) svcIsNull(key string) bool {
-	v, ok := p.svc[key]
-	return ok && string(v) == "null"
-}
-
-// topPresent reports whether a top-level key appeared in the patch body.
-func (p *patchPresence) topPresent(key string) bool {
-	_, ok := p.top[key]
-	return ok
-}
-
 // ConfigPatchLoadbalancer applies an RFC 7386 JSON merge-patch to an existing L4 LB rule
 // identified by its VIP/port/protocol composite key (Octavia). Present fields
 // overwrite, absent fields are left untouched, explicit null clears. Immutable
 // fields (security/egress/mode/protocol/VIP composite key) are rejected with 400.
-// 200 on existing, 404 if the target rule is absent. POST behavior is UNCHANGED.
+// 200 on existing, 404 if the target rule is absent. P/D threshold fields use
+// the same omission/zero/positive contract as replace POST; numeric null is rejected.
 //
 // The headline gate — an in-flight connection survives PATCH — is satisfied by building a
 // fully-merged LbRuleMod and routing through NetLbRuleAdd, which lands on the existing-rule
@@ -115,7 +49,7 @@ func ConfigPatchLoadbalancer(params operations.PatchConfigLoadbalancerExternalip
 	patchErr := func(msg string) middleware.Responder {
 		tk.LogIt(tk.LogDebug, "api: PATCH lb error: %s\n", msg)
 		return operations.NewPatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoBadRequest().
-			WithPayload(ResultErrorResponseErrorMessage(msg))
+			WithPayload(errorResponseWithCode(400, msg).Payload)
 	}
 
 	// (1) Look up the current rule by composite key (PathMatchMode "disabled" matches the
@@ -132,10 +66,13 @@ func ConfigPatchLoadbalancer(params operations.PatchConfigLoadbalancerExternalip
 
 	// (2) Presence detection (RFC 7386): learn which keys are actually
 	// present so absent fields are left untouched (not zero-reset).
-	raw := rawPatchBodyFromContext(params.HTTPRequest.Context())
-	pres, perr := parsePatchPresence(raw)
+	raw := rawLoadbalancerBodyFromContext(params.HTTPRequest.Context())
+	pres, perr := parseLoadbalancerRequestPresence(raw)
 	if perr != nil {
 		return patchErr("malformed merge-patch body: " + perr.Error())
+	}
+	if err := pres.validatePDThresholds(); err != nil {
+		return patchErr(err.Error())
 	}
 
 	pb := params.Attr // the parsed patch body (may be nil for an empty body)
@@ -192,6 +129,7 @@ func ConfigPatchLoadbalancer(params operations.PatchConfigLoadbalancerExternalip
 
 	if pb != nil && pb.ServiceArguments != nil {
 		sa := pb.ServiceArguments
+		pres.applyPDThresholds(&merged.Serv, sa)
 
 		// mutable scalars — overlay only when present in the body.
 		if pres.svcPresent("name") {

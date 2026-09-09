@@ -45,6 +45,29 @@ func TestPDDisaggModeJSONRoundTrip(t *testing.T) {
 	}
 }
 
+func TestPDThresholdPresenceMetadataIsNotSerialized(t *testing.T) {
+	arg := LbServiceArg{
+		PDCacheThreshold:             20,
+		PDCacheThresholdPresent:      true,
+		PDBalanceAbsThreshold:        3,
+		PDBalanceAbsThresholdPresent: true,
+	}
+	data, err := json.Marshal(arg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]json.RawMessage
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got["PDCacheThresholdPresent"]; ok {
+		t.Fatal("cache presence transaction metadata leaked into JSON")
+	}
+	if _, ok := got["PDBalanceAbsThresholdPresent"]; ok {
+		t.Fatal("balance presence transaction metadata leaked into JSON")
+	}
+}
+
 func TestPDDisaggModeOmitEmpty(t *testing.T) {
 	arg := LbServiceArg{
 		ServIP:       "10.0.0.1",

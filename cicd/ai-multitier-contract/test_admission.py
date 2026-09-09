@@ -2,7 +2,7 @@
 import copy
 import unittest
 
-from admission import verdict
+from admission import find_rule, threshold_declarations, verdict
 
 
 class VerdictTests(unittest.TestCase):
@@ -42,6 +42,19 @@ class VerdictTests(unittest.TestCase):
     def test_ttl_declaration_must_not_be_replaced_by_effective_default(self):
         self.installed["lbAttr"][0]["serviceArguments"]["pd_session_ttl_sec"] = 300
         self.assertFalse(verdict(self.body, 200, {}, self.empty, self.installed, None))
+
+    def test_threshold_zero_readback_means_default_declaration(self):
+        rule = copy.deepcopy(self.body)
+        self.assertEqual(threshold_declarations(rule), (0, 0))
+        rule["serviceArguments"].update(
+            pd_cache_threshold=42, pd_balance_abs_threshold=5)
+        self.assertEqual(threshold_declarations(rule), (42, 5))
+
+    def test_find_rule_requires_one_exact_composite_match(self):
+        self.assertIsNotNone(find_rule(self.installed, "127.0.0.1", 19100, "tcp"))
+        self.assertIsNone(find_rule(self.installed, "127.0.0.1", 19101, "tcp"))
+        duplicate = {"lbAttr": [self.installed["lbAttr"][0], self.installed["lbAttr"][0]]}
+        self.assertIsNone(find_rule(duplicate, "127.0.0.1", 19100, "tcp"))
 
     def test_unordered_readback_is_not_mutation(self):
         other = copy.deepcopy(self.body)

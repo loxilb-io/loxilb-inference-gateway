@@ -69,10 +69,19 @@ run_gate kv-dataplane -ec 'make -C loxilb-ebpf/common test_kv'
 # The old baseline image predates this inventory. Do not silently call its
 # absence PASS; the overlay baseline is a deliberately narrower evidence rail.
 if [[ -z ${TEST_SOURCE_DIR:-} ]]; then
+  run_gate pd-threshold-contract -ec '
+    test -f api/restapi/handler/loadbalancer_pd_threshold_test.go &&
+    test -f api/restapi/handler/loadbalancer_request_presence.go &&
+    test -f pkg/loxinet/pd_threshold_test.go &&
+    test -f pkg/loxinet/pd_threshold.go &&
+    go test -json -count=1 ./api/restapi/handler -run "TestPDThreshold" &&
+    go test -json -tags=mtls,l4trace -count=1 ./pkg/loxinet -run "TestPDThreshold"
+  '
   run_gate swagger-contract -ec 'go test -json -count=1 ./api/cmd/sync-swagger && go run ./api/cmd/sync-swagger -check'
   run_gate inventory -ec 'go test -json -count=1 ./cicd/ai-multitier-contract/inventory && go run ./cicd/ai-multitier-contract/inventory -check cicd/ai-multitier-contract/argument-inventory.json'
   run_gate harness -ec 'python3 -B -m unittest discover -s cicd/ai-multitier-contract -p "test_*.py"'
 else
+  printf 'pd-threshold-contract\tNOT_RUN_BASELINE_TEST_OVERLAY\n' >> "$evidence/results.tsv"
   printf 'swagger-contract\tNOT_RUN_BASELINE_TEST_OVERLAY\n' >> "$evidence/results.tsv"
   printf 'inventory\tNOT_RUN_BASELINE_TEST_OVERLAY\n' >> "$evidence/results.tsv"
   printf 'harness\tNOT_RUN_BASELINE_TEST_OVERLAY\n' >> "$evidence/results.tsv"

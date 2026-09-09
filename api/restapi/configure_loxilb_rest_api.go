@@ -553,10 +553,15 @@ func setCORSHeaders(w http.ResponseWriter, r *http.Request) {
 // The middleware configuration happens before anything, this middleware also applies to serving the swagger.json document.
 // So this is a good place to plug in a panic handling middleware, logging and metrics.
 //
-// withRawPatchBody aliases handler.WithRawPatchBody at package scope. Inside
+// withRawLoadbalancerBodyBuffer aliases handler.WithRawLoadbalancerBodyBuffer at package scope. Inside
 // setupGlobalMiddleware the `handler` parameter shadows the handler package
 // import, so the package function must be referenced through this alias.
-var withRawPatchBody = handler.WithRawPatchBody
+var withRawLoadbalancerBodyBuffer = handler.WithRawLoadbalancerBodyBuffer
+
+type teeReadCloser struct {
+	io.Reader
+	io.Closer
+}
 
 // snapshotFreeze aliases handler.SnapshotFreezeMiddleware for the same
 // shadowing reason.
@@ -579,20 +584,17 @@ func setupGlobalMiddleware(next http.Handler) http.Handler {
 			return // Important: return here to prevent further processing
 		}
 
-		// capture the raw PATCH merge-patch body so the generated
-		// ConfigPatchLoadbalancer handler can do RFC 7386 presence detection
+		// Capture load-balancer POST/PATCH bodies so their handlers can perform
+		// presence detection after generated binding drains r.Body.
 		// (map[string]json.RawMessage) — distinguishing an absent field from a zero
-		// value. go-swagger's body bind drains r.Body, so we
-		// tee it here and stash the bytes in the request context, then re-attach a fresh
-		// reader for the generated consumer. Scoped to PATCH on the LB composite-key path.
-		if r.Method == http.MethodPatch &&
-			strings.HasPrefix(r.URL.Path, "/netlox/v1/config/loadbalancer/externalipaddress/") &&
-			r.Body != nil {
-			if raw, err := io.ReadAll(r.Body); err == nil {
-				r.Body.Close()
-				r.Body = io.NopCloser(bytes.NewReader(raw))
-				r = r.WithContext(withRawPatchBody(r.Context(), raw))
-			}
+		// value and JSON null. The raw copy is request-scoped and never persisted.
+		isLBPost := r.Method == http.MethodPost && r.URL.Path == "/netlox/v1/config/loadbalancer"
+		isLBPatch := r.Method == http.MethodPatch &&
+			strings.HasPrefix(r.URL.Path, "/netlox/v1/config/loadbalancer/externalipaddress/")
+		if (isLBPost || isLBPatch) && r.Body != nil {
+			raw := &bytes.Buffer{}
+			r.Body = &teeReadCloser{Reader: io.TeeReader(r.Body, raw), Closer: r.Body}
+			r = r.WithContext(withRawLoadbalancerBodyBuffer(r.Context(), raw))
 		}
 
 		// The handlers below are dispatched here rather than through the

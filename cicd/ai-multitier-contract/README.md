@@ -3,7 +3,10 @@
 This directory contains public regression tests for LoxiLB Inference Gateway
 argument validation. The tests cover schema generation, numeric and enum
 admission, engine/topology dependencies, fixed-size data-plane strings, and
-HTTP rejection behavior.
+HTTP rejection behavior. They also pin the two P/D threshold declaration
+contracts across create and replace/PATCH: omission retains an existing
+declaration, explicit zero resets to the effective default, a positive value
+replaces it, and numeric null is rejected without rule mutation.
 
 ## Local checks
 

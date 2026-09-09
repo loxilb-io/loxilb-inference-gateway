@@ -17,7 +17,7 @@ def request(container, method, path, body=None):
     result = subprocess.run(command, input=json.dumps(body) if body is not None else "",
                             text=True, capture_output=True, timeout=15, check=True)
     text, status = result.stdout.rsplit("\n", 1)
-    return int(status), json.loads(text)
+    return int(status), json.loads(text) if text else {}
 
 
 def canonical_rules(value):
@@ -26,6 +26,173 @@ def canonical_rules(value):
     result = copy.deepcopy(value)
     result["lbAttr"] = sorted(result["lbAttr"], key=lambda rule: json.dumps(rule, sort_keys=True))
     return result
+
+
+def read_rules(container):
+    status, value = request(container, "GET", "/config/loadbalancer/all")
+    if (status != 200 or not isinstance(value, dict)
+            or not isinstance(value.get("lbAttr"), list)):
+        raise RuntimeError("rule readback unavailable; no product verdict")
+    return value
+
+
+def find_rule(value, external_ip, port, protocol):
+    matches = [rule for rule in value["lbAttr"] if (
+        rule.get("serviceArguments", {}).get("externalIP") == external_ip
+        and rule.get("serviceArguments", {}).get("port") == port
+        and rule.get("serviceArguments", {}).get("protocol") == protocol)]
+    return matches[0] if len(matches) == 1 else None
+
+
+def threshold_declarations(rule):
+    service = rule.get("serviceArguments", {})
+    # Go omits a stored zero declaration. Zero here means "use the effective
+    # system default", not a literal zero-percent or zero-connection limit.
+    return (service.get("pd_cache_threshold", 0),
+            service.get("pd_balance_abs_threshold", 0))
+
+
+def run_threshold_update_contract(container, evidence):
+    """Exercise create and replace/PATCH declaration semantics on one L4 rule."""
+    external_ip, port, protocol = "127.0.0.10", 19500, "tcp"
+    path = (f"/config/loadbalancer/externalipaddress/{external_ip}"
+            f"/port/{port}/protocol/{protocol}")
+    body = {
+        "serviceArguments": {
+            "externalIP": external_ip,
+            "port": port,
+            "protocol": protocol,
+            "mode": 0,
+            "sel": 0,
+            "name": "pd-threshold-contract",
+            "pd_cache_threshold": 61,
+            "pd_balance_abs_threshold": 8,
+        },
+        "endpoints": [
+            {"endpointIP": "127.0.0.11", "targetPort": 8080, "weight": 1}
+        ],
+    }
+    results = []
+
+    def record(name, passed, status, response, before, after, sent):
+        item = dict(case=name, passed=passed, request=sent, http_status=status,
+                    response=response, before=before, after=after)
+        (evidence / (name + ".json")).write_text(json.dumps(item, indent=2) + "\n")
+        results.append(dict(case=name, passed=passed))
+        print(f"{name}: {'PASS' if passed else 'FAIL'} (HTTP {status})", flush=True)
+
+    before = read_rules(container)
+    status, response = request(container, "POST", "/config/loadbalancer", body)
+    after = read_rules(container)
+    rule = find_rule(after, external_ip, port, protocol)
+    passed = (status == 200 and len(after["lbAttr"]) == len(before["lbAttr"]) + 1
+              and rule is not None and threshold_declarations(rule) == (61, 8))
+    record("threshold-create-positive", passed, status, response, before, after, body)
+    if not passed:
+        return results
+
+    # Replace POST must preserve both declarations when their keys are absent.
+    replace = copy.deepcopy(body)
+    replace["serviceArguments"].pop("pd_cache_threshold")
+    replace["serviceArguments"].pop("pd_balance_abs_threshold")
+    replace["serviceArguments"]["name"] = "pd-threshold-omission-retained"
+    before = after
+    status, response = request(container, "POST", "/config/loadbalancer", replace)
+    after = read_rules(container)
+    rule = find_rule(after, external_ip, port, protocol)
+    passed = (status == 200 and len(after["lbAttr"]) == len(before["lbAttr"])
+              and rule is not None and threshold_declarations(rule) == (61, 8))
+    record("threshold-replace-omitted-retains", passed, status, response,
+           before, after, replace)
+    if not passed:
+        return results
+
+    replace_reset = copy.deepcopy(body)
+    replace_reset["serviceArguments"].update(
+        name="pd-threshold-replace-reset",
+        pd_cache_threshold=0,
+        pd_balance_abs_threshold=0,
+    )
+    before = after
+    status, response = request(container, "POST", "/config/loadbalancer", replace_reset)
+    after = read_rules(container)
+    rule = find_rule(after, external_ip, port, protocol)
+    passed = (status == 200 and len(after["lbAttr"]) == len(before["lbAttr"])
+              and rule is not None and threshold_declarations(rule) == (0, 0))
+    record("threshold-replace-zero-resets", passed, status, response,
+           before, after, replace_reset)
+    if not passed:
+        return results
+
+    replace_positive = copy.deepcopy(body)
+    replace_positive["serviceArguments"].update(
+        name="pd-threshold-replace-positive",
+        pd_cache_threshold=57,
+        pd_balance_abs_threshold=7,
+    )
+    before = after
+    status, response = request(container, "POST", "/config/loadbalancer", replace_positive)
+    after = read_rules(container)
+    rule = find_rule(after, external_ip, port, protocol)
+    passed = (status == 200 and len(after["lbAttr"]) == len(before["lbAttr"])
+              and rule is not None and threshold_declarations(rule) == (57, 7))
+    record("threshold-replace-positive-replaces", passed, status, response,
+           before, after, replace_positive)
+    if not passed:
+        return results
+
+    omitted = {"serviceArguments": {"name": "pd-threshold-patch-omitted"}}
+    before = after
+    status, response = request(container, "PATCH", path, omitted)
+    after = read_rules(container)
+    rule = find_rule(after, external_ip, port, protocol)
+    passed = (status == 200 and len(after["lbAttr"]) == len(before["lbAttr"])
+              and rule is not None and threshold_declarations(rule) == (57, 7))
+    record("threshold-patch-omitted-retains", passed, status, response,
+           before, after, omitted)
+    if not passed:
+        return results
+
+    positive = {"serviceArguments": {
+        "pd_cache_threshold": 42, "pd_balance_abs_threshold": 5}}
+    before = after
+    status, response = request(container, "PATCH", path, positive)
+    after = read_rules(container)
+    rule = find_rule(after, external_ip, port, protocol)
+    passed = (status == 200 and len(after["lbAttr"]) == len(before["lbAttr"])
+              and rule is not None and threshold_declarations(rule) == (42, 5))
+    record("threshold-patch-positive-replaces", passed, status, response,
+           before, after, positive)
+    if not passed:
+        return results
+
+    reset = {"serviceArguments": {
+        "pd_cache_threshold": 0, "pd_balance_abs_threshold": 0}}
+    before = after
+    status, response = request(container, "PATCH", path, reset)
+    after = read_rules(container)
+    rule = find_rule(after, external_ip, port, protocol)
+    passed = (status == 200 and len(after["lbAttr"]) == len(before["lbAttr"])
+              and rule is not None and threshold_declarations(rule) == (0, 0))
+    record("threshold-patch-zero-resets", passed, status, response,
+           before, after, reset)
+    if not passed:
+        return results
+
+    # Each numeric null must be rejected before any rule mutation.
+    for field in ("pd_cache_threshold", "pd_balance_abs_threshold"):
+        sent = {"serviceArguments": {field: None}}
+        before = after
+        status, response = request(container, "PATCH", path, sent)
+        after = read_rules(container)
+        passed = (status == 400 and field in json.dumps(response)
+                  and canonical_rules(before) == canonical_rules(after))
+        record("threshold-patch-null-" + field, passed, status, response,
+               before, after, sent)
+        if not passed:
+            return results
+
+    return results
 
 
 def verdict(body, status, response, before, after, reason):
@@ -67,6 +234,8 @@ def main():
             "endpoints": [{"endpointIP": "127.0.0.2", "targetPort": 8080, "weight": 1}]}
     cases = [
         ("control", None, None, None, None),
+        ("cache-null", "serviceArguments", "pd_cache_threshold", None, "pd_cache_threshold"),
+        ("balance-null", "serviceArguments", "pd_balance_abs_threshold", None, "pd_balance_abs_threshold"),
         ("balance-overflow", "serviceArguments", "pd_balance_abs_threshold", 256, "pd_balance_abs_threshold"),
         ("block-overflow", "serviceArguments", "kvBlockSize", 1 << 32, "kvBlockSize"),
         ("warmup-overflow", "serviceArguments", "kvWarmupSec", 1 << 32, "kvWarmupSec"),
@@ -132,14 +301,12 @@ def main():
             engine = name.split("-")[-2]
             if engine != "default":
                 body["serviceArguments"]["kvEngineType"] = engine
-        before_status, before = request(args.container, "GET", "/config/loadbalancer/all")
+        before = read_rules(args.container)
         status, response = request(args.container, "POST", "/config/loadbalancer", body)
-        after_status, after = request(args.container, "GET", "/config/loadbalancer/all")
-        if (before_status != 200 or after_status != 200
-                or not all(isinstance(value, dict) and isinstance(value.get("lbAttr"), list)
-                           for value in (before, after))):
-            raise RuntimeError("rule readback unavailable; no product verdict")
+        after = read_rules(args.container)
         passed = verdict(body, status, response, before, after, reason)
+        if name in ("cache-null", "balance-null"):
+            passed = passed and status == 400
         record = dict(case=name, passed=passed, request=body, http_status=status,
                       response=response, before=before, after=after)
         (args.evidence / (name + ".json")).write_text(json.dumps(record, indent=2) + "\n")
@@ -147,6 +314,7 @@ def main():
         print(f"{name}: {'PASS' if passed else 'FAIL'} (HTTP {status})", flush=True)
         if reason is None and not passed:
             raise RuntimeError("positive control failed; negative verdicts would be invalid")
+    results.extend(run_threshold_update_contract(args.container, args.evidence))
     (args.evidence / "results.json").write_text(json.dumps(results, indent=2) + "\n")
     return 0 if all(r["passed"] for r in results) else 1
 

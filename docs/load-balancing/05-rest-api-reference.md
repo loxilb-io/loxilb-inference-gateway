@@ -92,8 +92,8 @@ snake_case (`pd_disagg_mode`, `sse_mode`, `model_name`, …) vs camelCase (`kvEx
 | `pdBootstrapPort` | int | SGLang P/D only: the `--disaggregation-bootstrap-port` on every prefill EP; `0` = SGLang's default `8998`. Rejected unless `pd_disagg_mode` + `kvEngineType:"sglang"` |
 | `pd_cache_aware_mode` | bool | trie-based cache-affinity prefill selection |
 | `pd_session_ttl_sec` | int32 | Tier-0 P/D sliding idle TTL in seconds; omitted/`0` uses 300s, positive values override it. Independent of `pd_cache_aware_mode`; not an engine KV or request timeout. No no-expiry mode. |
-| `pd_cache_threshold` | int | cache-match threshold `0`–`100`; lower = more aggressive cache routing (default `20`) |
-| `pd_balance_abs_threshold` | int | if max−min active connections exceeds this, bypass cache affinity (default `3`) |
+| `pd_cache_threshold` | int | cache-match threshold `0`–`100`; lower = more aggressive cache routing. Create omission/`0` uses effective `20`; on replace/PATCH omission retains, explicit `0` resets to `20`, and explicit `null` is rejected. |
+| `pd_balance_abs_threshold` | int | if max−min active connections exceeds this, bypass cache affinity. Create omission/`0` uses effective `3`; on replace/PATCH omission retains, explicit `0` resets to `3`, and explicit `null` is rejected. |
 
 > **Always set `monitor: true` on a P/D rule.** Endpoint health is what
 > demotes a dead role member out of P/D selection: without monitoring (and

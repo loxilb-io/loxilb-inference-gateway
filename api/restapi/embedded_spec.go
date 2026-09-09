@@ -4334,7 +4334,7 @@ func init() {
             },
             "pd_balance_abs_threshold": {
               "default": 3,
-              "description": "Absolute active-connection imbalance threshold for P/D cache affinity. Tier-1 trie selection requires max-min to be at most this value; Tier-1.5 uses the check only when the process-level LLB_KV_LOADGUARD is enabled. A Tier-0 session hit returns before these checks. On creation, omission or 0 resolves to 3. Current replace behavior retains the previous value for incoming 0. The approved future contract is omission=retain and explicit 0=reset to 3; this update distinction is not implemented yet.",
+              "description": "Absolute active-connection imbalance threshold for P/D cache affinity. Tier-1 trie selection requires max-min to be at most this value; Tier-1.5 uses the check only when the process-level LLB_KV_LOADGUARD is enabled. A Tier-0 session hit returns before these checks. On creation, omission or 0 stores the zero declaration and resolves effectively to 3. On replace POST and supported PATCH, omission retains the stored declaration, explicit 0 resets it to the system default of 3, and a valid positive value replaces it. Explicit JSON null is rejected before rule or data-plane mutation.",
               "format": "int32",
               "maximum": 255,
               "minimum": 0,
@@ -4349,7 +4349,7 @@ func init() {
             },
             "pd_cache_threshold": {
               "default": 20,
-              "description": "Minimum prefix-match percentage for Tier-1 trie affinity when pd_cache_aware_mode=true. Lower positive values allow shorter prefix matches. On creation, omission or 0 resolves to 20, not a literal zero-percent threshold. Current replace behavior retains the previous value when the incoming value is 0. The approved future update contract separates omission (retain) from explicit 0 (reset to 20); that presence-aware change is not implemented yet. UI clients must not assume a zero-valued update resets the current deployment. This field does not set the Tier-0 session TTL.",
+              "description": "Minimum prefix-match percentage for Tier-1 trie affinity when pd_cache_aware_mode=true. Lower positive values allow shorter prefix matches. On creation, omission or 0 stores the zero declaration and resolves effectively to 20, not a literal zero-percent threshold. On replace POST and supported PATCH, omission retains the stored declaration, explicit 0 resets it to the system default of 20, and a valid positive value replaces it. Explicit JSON null is rejected before rule or data-plane mutation. This field does not set the Tier-0 session TTL.",
               "format": "int32",
               "maximum": 100,
               "minimum": 0,
@@ -12776,7 +12776,7 @@ func init() {
           "application/merge-patch+json",
           "application/json"
         ],
-        "description": "Updates an existing L4 rule selected by VIP/port/protocol; does not create a missing rule. FullProxy rules are rejected. The handler overlays name, sel, inactiveTimeOut, monitor, probetype, probeport, probereq, proberesp and adminStateUp when present, and replaces endpoints or allowedSources when their collection key is present. Changes to security, egress, mode or the identifying tuple are guarded as immutable. Empty or null endpoints are rejected; serviceArguments:null does not clear the service configuration. Implementation warning: this is a restricted overlay, not general recursive RFC 7386 support for every LoadbalanceEntry field. Other schema fields are not applied by this handler. Canonical probeTimeout/probeRetries updates miss the handler's incorrectly lowercased presence checks; this is a wiring defect, not an alternate spelling of the API. Existing-member metadata updates also have the limitations documented on endpoints. The L4 path uses in-place reconciliation, but source inspection does not establish runtime connection preservation. Returns 200 on successful apply and 404 when absent; errors, including no-change detection, can prevent a successful apply.",
+        "description": "Updates an existing L4 rule selected by VIP/port/protocol; does not create a missing rule. FullProxy rules are rejected. The handler overlays name, sel, inactiveTimeOut, monitor, probetype, probeport, probereq, proberesp, adminStateUp, pd_cache_threshold and pd_balance_abs_threshold when present, and replaces endpoints or allowedSources when their collection key is present. For the two P/D thresholds, omission retains the stored declaration, explicit 0 resets to the system default, and explicit null is rejected. Changes to security, egress, mode or the identifying tuple are guarded as immutable. Empty or null endpoints are rejected; serviceArguments:null does not clear the service configuration. Implementation warning: this is a restricted overlay, not general recursive RFC 7386 support for every LoadbalanceEntry field. Other schema fields are not applied by this handler. Canonical probeTimeout/probeRetries updates miss the handler's incorrectly lowercased presence checks; this is a wiring defect, not an alternate spelling of the API. Existing-member metadata updates also have the limitations documented on endpoints. The L4 path uses in-place reconciliation, but source inspection does not establish runtime connection preservation. Returns 200 on successful apply and 404 when absent; errors, including no-change detection, can prevent a successful apply.",
         "operationId": "patchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProto",
         "parameters": [
           {
@@ -24594,7 +24594,7 @@ func init() {
         }
       },
       "patch": {
-        "description": "Updates an existing L4 rule selected by VIP/port/protocol; does not create a missing rule. FullProxy rules are rejected. The handler overlays name, sel, inactiveTimeOut, monitor, probetype, probeport, probereq, proberesp and adminStateUp when present, and replaces endpoints or allowedSources when their collection key is present. Changes to security, egress, mode or the identifying tuple are guarded as immutable. Empty or null endpoints are rejected; serviceArguments:null does not clear the service configuration. Implementation warning: this is a restricted overlay, not general recursive RFC 7386 support for every LoadbalanceEntry field. Other schema fields are not applied by this handler. Canonical probeTimeout/probeRetries updates miss the handler's incorrectly lowercased presence checks; this is a wiring defect, not an alternate spelling of the API. Existing-member metadata updates also have the limitations documented on endpoints. The L4 path uses in-place reconciliation, but source inspection does not establish runtime connection preservation. Returns 200 on successful apply and 404 when absent; errors, including no-change detection, can prevent a successful apply.",
+        "description": "Updates an existing L4 rule selected by VIP/port/protocol; does not create a missing rule. FullProxy rules are rejected. The handler overlays name, sel, inactiveTimeOut, monitor, probetype, probeport, probereq, proberesp, adminStateUp, pd_cache_threshold and pd_balance_abs_threshold when present, and replaces endpoints or allowedSources when their collection key is present. For the two P/D thresholds, omission retains the stored declaration, explicit 0 resets to the system default, and explicit null is rejected. Changes to security, egress, mode or the identifying tuple are guarded as immutable. Empty or null endpoints are rejected; serviceArguments:null does not clear the service configuration. Implementation warning: this is a restricted overlay, not general recursive RFC 7386 support for every LoadbalanceEntry field. Other schema fields are not applied by this handler. Canonical probeTimeout/probeRetries updates miss the handler's incorrectly lowercased presence checks; this is a wiring defect, not an alternate spelling of the API. Existing-member metadata updates also have the limitations documented on endpoints. The L4 path uses in-place reconciliation, but source inspection does not establish runtime connection preservation. Returns 200 on successful apply and 404 when absent; errors, including no-change detection, can prevent a successful apply.",
         "consumes": [
           "application/json",
           "application/merge-patch+json"
@@ -34952,7 +34952,7 @@ func init() {
               "x-nullable": false
             },
             "pd_balance_abs_threshold": {
-              "description": "Absolute active-connection imbalance threshold for P/D cache affinity. Tier-1 trie selection requires max-min to be at most this value; Tier-1.5 uses the check only when the process-level LLB_KV_LOADGUARD is enabled. A Tier-0 session hit returns before these checks. On creation, omission or 0 resolves to 3. Current replace behavior retains the previous value for incoming 0. The approved future contract is omission=retain and explicit 0=reset to 3; this update distinction is not implemented yet.",
+              "description": "Absolute active-connection imbalance threshold for P/D cache affinity. Tier-1 trie selection requires max-min to be at most this value; Tier-1.5 uses the check only when the process-level LLB_KV_LOADGUARD is enabled. A Tier-0 session hit returns before these checks. On creation, omission or 0 stores the zero declaration and resolves effectively to 3. On replace POST and supported PATCH, omission retains the stored declaration, explicit 0 resets it to the system default of 3, and a valid positive value replaces it. Explicit JSON null is rejected before rule or data-plane mutation.",
               "type": "integer",
               "format": "int32",
               "default": 3,
@@ -34967,7 +34967,7 @@ func init() {
               "x-nullable": false
             },
             "pd_cache_threshold": {
-              "description": "Minimum prefix-match percentage for Tier-1 trie affinity when pd_cache_aware_mode=true. Lower positive values allow shorter prefix matches. On creation, omission or 0 resolves to 20, not a literal zero-percent threshold. Current replace behavior retains the previous value when the incoming value is 0. The approved future update contract separates omission (retain) from explicit 0 (reset to 20); that presence-aware change is not implemented yet. UI clients must not assume a zero-valued update resets the current deployment. This field does not set the Tier-0 session TTL.",
+              "description": "Minimum prefix-match percentage for Tier-1 trie affinity when pd_cache_aware_mode=true. Lower positive values allow shorter prefix matches. On creation, omission or 0 stores the zero declaration and resolves effectively to 20, not a literal zero-percent threshold. On replace POST and supported PATCH, omission retains the stored declaration, explicit 0 resets it to the system default of 20, and a valid positive value replaces it. Explicit JSON null is rejected before rule or data-plane mutation. This field does not set the Tier-0 session TTL.",
               "type": "integer",
               "format": "int32",
               "default": 20,
@@ -35626,7 +35626,7 @@ func init() {
           "x-nullable": false
         },
         "pd_balance_abs_threshold": {
-          "description": "Absolute active-connection imbalance threshold for P/D cache affinity. Tier-1 trie selection requires max-min to be at most this value; Tier-1.5 uses the check only when the process-level LLB_KV_LOADGUARD is enabled. A Tier-0 session hit returns before these checks. On creation, omission or 0 resolves to 3. Current replace behavior retains the previous value for incoming 0. The approved future contract is omission=retain and explicit 0=reset to 3; this update distinction is not implemented yet.",
+          "description": "Absolute active-connection imbalance threshold for P/D cache affinity. Tier-1 trie selection requires max-min to be at most this value; Tier-1.5 uses the check only when the process-level LLB_KV_LOADGUARD is enabled. A Tier-0 session hit returns before these checks. On creation, omission or 0 stores the zero declaration and resolves effectively to 3. On replace POST and supported PATCH, omission retains the stored declaration, explicit 0 resets it to the system default of 3, and a valid positive value replaces it. Explicit JSON null is rejected before rule or data-plane mutation.",
           "type": "integer",
           "format": "int32",
           "default": 3,
@@ -35641,7 +35641,7 @@ func init() {
           "x-nullable": false
         },
         "pd_cache_threshold": {
-          "description": "Minimum prefix-match percentage for Tier-1 trie affinity when pd_cache_aware_mode=true. Lower positive values allow shorter prefix matches. On creation, omission or 0 resolves to 20, not a literal zero-percent threshold. Current replace behavior retains the previous value when the incoming value is 0. The approved future update contract separates omission (retain) from explicit 0 (reset to 20); that presence-aware change is not implemented yet. UI clients must not assume a zero-valued update resets the current deployment. This field does not set the Tier-0 session TTL.",
+          "description": "Minimum prefix-match percentage for Tier-1 trie affinity when pd_cache_aware_mode=true. Lower positive values allow shorter prefix matches. On creation, omission or 0 stores the zero declaration and resolves effectively to 20, not a literal zero-percent threshold. On replace POST and supported PATCH, omission retains the stored declaration, explicit 0 resets it to the system default of 20, and a valid positive value replaces it. Explicit JSON null is rejected before rule or data-plane mutation. This field does not set the Tier-0 session TTL.",
           "type": "integer",
           "format": "int32",
           "default": 20,
@@ -38641,7 +38641,7 @@ func init() {
     }
   ],
   "x-loxilb-contract-relations": {
-    "description": "Project-specific UI advisory metadata, not Swagger 2.0 validation keywords. Rules refer to JSON Pointers in an effective LoadbalanceEntry body, after a PATCH has been merged with the live declaration. No UI interpreter is shipped by this metadata. Static enforcement evidence is not runtime qualification; unknown rules must be displayed as unresolved, not silently treated as passed. See api/contract-audit/relationships.md for the versioned rule semantics.",
+    "description": "Project-specific UI advisory metadata, not Swagger 2.0 validation keywords. Rules refer to JSON Pointers in an effective LoadbalanceEntry body, after a PATCH has been merged with the live declaration. No UI interpreter is shipped by this metadata. Static enforcement evidence is not runtime qualification; unknown rules must be displayed as unresolved, not silently treated as passed. See api/contract-relations.md for the versioned rule semantics.",
     "rules": [
       {
         "enforcement": "server-static",
