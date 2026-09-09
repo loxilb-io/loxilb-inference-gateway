@@ -11,6 +11,9 @@ hide in a large sockproxy diff:
   fallback endpoint selection.
 * A declared AI credential is removed after optional L7 header mutation and
   before nghttp2 submits the request to a backend.
+* HTTP/1 and HTTP/2 header ownership is derived only from api_key_auth. SSE/P/D
+  may arm accounting but cannot consume a backend-owned X-Api-Key on an
+  undeclared service.
 
 The HTTP/1 denial escape hatch is retained as a fourth invariant: a callback
 denial must leave the read loop before setup_proxy_path() can dispatch it.
@@ -26,6 +29,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 H2 = ROOT / "loxilb-ebpf/common/sockproxy_h2.c"
 H1 = ROOT / "loxilb-ebpf/common/sockproxy_http.c"
+SECURITY = ROOT / "loxilb-ebpf/common/sockproxy_ai_security.c"
 
 
 def function_body(text: str, name: str) -> str:
@@ -66,6 +70,7 @@ def code_only(text: str) -> str:
 def main() -> int:
     h2 = H2.read_text(encoding="utf-8")
     h1 = H1.read_text(encoding="utf-8")
+    security = SECURITY.read_text(encoding="utf-8")
 
     header = code_only(function_body(h2, "proxy_h2_on_header_callback"))
     if 'HEADER_MATCHES("x-api-key")' not in header:
@@ -96,6 +101,21 @@ def main() -> int:
         "nghttp2_submit_request",
     )
 
+    strip_h2 = code_only(function_body(security, "ai_security_filter_h2_headers"))
+    if "ai_security_should_strip_api_key(policy)" not in strip_h2:
+        raise AssertionError("HTTP/2 header filter bypasses the shared policy-ownership predicate")
+    if "ai_gw_mode" in strip_h2:
+        raise AssertionError("HTTP/2 header ownership still depends on ai_gw_mode")
+
+    strip_h1 = code_only(function_body(h1, "ai_strip_upstream_api_key"))
+    if "ai_security_should_strip_api_key(node->val.ephash->apikey_auth)" not in strip_h1:
+        raise AssertionError("HTTP/1 header strip bypasses the shared policy-ownership predicate")
+    if "ai_gw_mode" in strip_h1:
+        raise AssertionError("HTTP/1 header ownership still depends on ai_gw_mode")
+
+    if "security_ai_mode" in forward:
+        raise AssertionError("HTTP/2 forwarding still keys credential stripping on ai_gw_mode")
+
     # The H1 parser callback marks ai_gw_denied; the read loop must consume the
     # marker and return before its malformed-HTTP compatibility dispatch.
     denied = h1.find("else if (pfe->ai_gw_denied)")
@@ -104,7 +124,7 @@ def main() -> int:
     tail = code_only(h1[denied : denied + 5000])
     ordered(tail, "return -1", "setup_proxy_path")
 
-    print("PASS: mandatory security admission precedes HTTP/2 routing and backend submission")
+    print("PASS: mandatory admission order and policy-owned H1/H2 credential stripping")
     return 0
 
 

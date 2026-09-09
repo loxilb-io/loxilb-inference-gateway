@@ -757,6 +757,12 @@ echo "--- DP-27: the key stays on the client side of the gateway ---"
 # x-api-key material appeared in what actually arrived. Instrument control
 # first — a canary that is NOT the credential must register, or an absent
 # key proves only that the detector is blind.
+# S04 also creates an SSE-enabled service with api_key_auth omitted. This is
+# the compatibility control: ai_gw_mode is active, but the backend still owns
+# X-Api-Key and must receive it unchanged.
+lcurl_mut -X POST $API/config/loadbalancer -H 'Content-Type: application/json' \
+  -d "{\"serviceArguments\":{\"externalIP\":\"$VIP\",\"port\":2023,\"protocol\":\"tcp\",\"mode\":4,\"sse_mode\":true,\"inactiveTimeOut\":60,\"host\":\"$VIP\"},\"endpoints\":[{\"endpointIP\":\"31.31.31.1\",\"targetPort\":8080,\"weight\":1}]}" >/dev/null
+sleep 3
 sudo sh -c ': > /tmp/backend_reqs.log'
 vip_code -X POST "http://$VIP:2020/v1/chat/completions?probe=dp27-canary" \
   -H 'Content-Type: application/json' -H 'X-Canary: x-api-key-canary' -H "X-Api-Key: $K_EXP" -d "$BODY5" >/dev/null
@@ -764,13 +770,19 @@ vip_code -X POST "http://$VIP:2020/v1/chat/completions?probe=dp27-required" \
   -H 'Content-Type: application/json' -H "X-Api-Key: $K_EXP" -d "$BODY5" >/dev/null
 vip_code -X POST "http://$VIP:2021/v1/chat/completions?probe=dp27-disabled" \
   -H 'Content-Type: application/json' -H "X-Api-Key: $K_EXP" -d "$BODY5" >/dev/null
+vip_code -X POST "http://$VIP:2023/v1/chat/completions?probe=dp27-omitted-sse" \
+  -H 'Content-Type: application/json' -H "X-Api-Key: $K_EXP" -d "$BODY5" >/dev/null
 sleep 1
 L_CANARY=$(grep "probe=dp27-canary" /tmp/backend_reqs.log 2>/dev/null | head -1)
 L_REQ=$(grep "probe=dp27-required" /tmp/backend_reqs.log 2>/dev/null | head -1)
 L_DIS=$(grep "probe=dp27-disabled" /tmp/backend_reqs.log 2>/dev/null | head -1)
+L_OMIT=$(grep "probe=dp27-omitted-sse" /tmp/backend_reqs.log 2>/dev/null | head -1)
 chk_has "DP-27 control: the detector sees x-api-key-shaped bytes when they DO arrive" "x_api_key=True" "$L_CANARY"
 chk_has "DP-27 the credential is absent upstream on the enforcing service" "x_api_key=False" "$L_REQ"
 chk_has "DP-27 and absent upstream on the disabled service too" "x_api_key=False" "$L_DIS"
+chk_has "DP-27 omitted policy preserves a backend-owned key even with SSE" "x_api_key=True" "$L_OMIT"
+lcurl_mut -X DELETE "$API/config/loadbalancer/hosturl/$VIP/externalipaddress/$VIP/port/2023/protocol/tcp" >/dev/null
+lcurl_mut -X DELETE "$API/config/loadbalancer/externalipaddress/$VIP/port/2023/protocol/tcp" >/dev/null
 
 echo ""
 echo "--- DP-10 / DP-11: the store goes away mid-flight ---"

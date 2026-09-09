@@ -74,3 +74,45 @@ func TestApiKeyAuthWireValue(t *testing.T) {
 		}
 	}
 }
+
+// TestApiKeyAuthNamespaceTruthTable pins the full 3 x 4 policy/streaming
+// product. An undeclared service must preserve a backend-owned X-Api-Key even
+// when SSE, P/D, or both arm ai_gw_mode. Explicit disabled and required both
+// claim the gateway namespace and therefore strip before dispatch.
+func TestApiKeyAuthNamespaceTruthTable(t *testing.T) {
+	policies := []struct {
+		declared string
+		strip    bool
+	}{
+		{declared: "", strip: false},
+		{declared: "disabled", strip: true},
+		{declared: "required", strip: true},
+	}
+	streaming := []struct {
+		sse bool
+		pd  bool
+	}{
+		{sse: false, pd: false},
+		{sse: true, pd: false},
+		{sse: false, pd: true},
+		{sse: true, pd: true},
+	}
+
+	rows := 0
+	for _, policy := range policies {
+		for _, shape := range streaming {
+			rows++
+			if got := apiKeyAuthClaimsNamespace(policy.declared); got != policy.strip {
+				t.Errorf("sse=%v pd=%v api_key_auth=%q: strip=%v, want %v",
+					shape.sse, shape.pd, policy.declared, got, policy.strip)
+			}
+			if got := apiKeyAuthWireValue(policy.declared) != 0; got != policy.strip {
+				t.Errorf("sse=%v pd=%v api_key_auth=%q: wire ownership=%v, want %v",
+					shape.sse, shape.pd, policy.declared, got, policy.strip)
+			}
+		}
+	}
+	if rows != 12 {
+		t.Fatalf("namespace truth table has %d rows, want 12", rows)
+	}
+}

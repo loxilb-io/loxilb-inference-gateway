@@ -105,13 +105,31 @@ probe() {
 
 rule_body() {
   local policy=$1
+  local policy_json=
+  [[ $policy != - ]] && policy_json=",\"api_key_auth\":\"$policy\""
   cat <<JSON
-{"serviceArguments":{"externalIP":"$VIP","port":$PORT,"protocol":"tcp","security":2,"mode":4,"host":"$VIP","backend_protocol":"http2","api_key_auth":"$policy"},"endpoints":[{"endpointIP":"31.31.31.1","targetPort":$TARGET_PORT,"weight":1}]}
+{"serviceArguments":{"externalIP":"$VIP","port":$PORT,"protocol":"tcp","security":2,"mode":4,"host":"$VIP","backend_protocol":"http2","sse_mode":true$policy_json},"endpoints":[{"endpointIP":"31.31.31.1","targetPort":$TARGET_PORT,"weight":1}]}
 JSON
 }
 
-# Explicitly disabled is the positive control.  It must reach the backend over
-# H2, but the gateway credential must already have been stripped.
+# The compatibility control enables SSE (and therefore ai_gw_mode) while
+# omitting api_key_auth.  A backend-owned X-Api-Key must survive unchanged in
+# this state; streaming is not a declaration of Gateway credential ownership.
+$dexec llb1 curl -sS -X POST "$API" -H 'Content-Type: application/json' \
+  -d "$(rule_body -)" >/tmp/ai-security-h2-rule-omitted.json
+sleep 2
+before=$(backend_count)
+omitted=$(probe backend-owned-secret)
+printf 'OMITTED_SSE: %s\n' "$omitted"
+after=$(backend_count)
+expect_contains "omitted policy with SSE uses HTTP/2" "PROTO=HTTP/2.0" "$omitted"
+expect_contains "omitted policy with SSE reaches backend" "STATUS=200" "$omitted"
+[[ "$after" -eq $((before + 1)) ]] && ok "omitted policy increments backend oracle" || bad "omitted policy backend delta: before=$before after=$after"
+last=$($hexec l3ep1 tail -1 "$BACKEND_LOG" 2>/dev/null)
+expect_contains "omitted policy preserves backend-owned credential" "api_key=true" "$last"
+
+# Explicitly disabled is the strip-without-enforcement control.  It must reach
+# the backend over H2, but the declared Gateway credential must be absent.
 $dexec llb1 curl -sS -X POST "$API" -H 'Content-Type: application/json' \
   -d "$(rule_body disabled)" >/tmp/ai-security-h2-rule-disabled.json
 sleep 2
@@ -149,11 +167,12 @@ expect_contains "unavailable policy store fails closed" "STATUS=503" "$unknown"
 # from the credential itself.  The known test values make this a non-vacuous
 # runtime assertion against the data-plane log sink.
 control_secret_logs=$(gateway_log_count control-secret)
+backend_secret_logs=$(gateway_log_count backend-owned-secret)
 presented_secret_logs=$(gateway_log_count lxb_s03_unknown_key_0000000000000000)
 presence_logs=$(gateway_log_count credential_present=)
-[[ "$control_secret_logs" -eq 0 && "$presented_secret_logs" -eq 0 ]] && \
+[[ "$control_secret_logs" -eq 0 && "$backend_secret_logs" -eq 0 && "$presented_secret_logs" -eq 0 ]] && \
   ok "credential bytes are absent from gateway logs" || \
-  bad "credential bytes leaked to logs: control=$control_secret_logs presented=$presented_secret_logs"
+  bad "credential bytes leaked to logs: omitted=$backend_secret_logs control=$control_secret_logs presented=$presented_secret_logs"
 [[ "$presence_logs" -ge 2 ]] && ok "presence-only denial records are non-vacuous" || \
   bad "expected at least two presence-only denial records, got $presence_logs"
 

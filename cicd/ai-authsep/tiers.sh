@@ -10,7 +10,7 @@
 #           and unstable (the gateway does not reliably start under --oauth2),
 #           so covering it here would assert properties of a feature that is
 #           not finished. Reported SKIPPED at the end, loudly, like Tier F.
-#   Tier B  streaming independence: policy × streaming crossed as 9 rules in
+#   Tier B  streaming independence: policy × streaming crossed as 12 rules in
 #           one process; the verdict must depend only on the policy.
 #   Tier C  credential semantics: adversarial classes against one required VIP.
 #   Tier D  QoS coupling: each limit kind enforces under `required` with its
@@ -358,10 +358,11 @@ mgmt_login none   # Tiers B-E run without a management mode
 
 ################################################################################
 echo ""
-echo "===== TIER B: streaming independence (9 rules, one process) ====="
+echo "===== TIER B: streaming independence (12 rules, one process) ====="
 ################################################################################
 # The regression grid for the original defect: enforcement used to be derived
-# from the streaming flags. Nine rules cross policy with streaming; the
+# from the streaming flags. Twelve rules cross policy with plain, SSE, P/D,
+# and SSE+P/D shapes; the
 # verdict must depend only on the policy column. The P/D rows are probed for
 # their GATE verdict — a P/D rule pointed at this mock cannot serve a real
 # 200 end-to-end, so the admit legs on those rows record what the relay did
@@ -370,11 +371,12 @@ restart_gw $AIKEY_ARGS || exit 1
 PORTB=2030
 declare -A BPORT
 for POL in required disabled -; do
-  for D in plain sse pd; do
+  for D in plain sse pd both; do
     case "$D" in
       plain) SSE=false; PD=false;;
       sse)   SSE=true;  PD=false;;
       pd)    SSE=false; PD=true;;
+      both)  SSE=true;  PD=true;;
     esac
     mk_rule $PORTB $SSE $PD $POL
     BPORT[$POL,$D]=$PORTB
@@ -387,11 +389,11 @@ for POL in required disabled -; do
     required) WA="401 invalid_api_key";;
     *)        WA="200 -";;
   esac
-  for D in plain sse pd; do
+  for D in plain sse pd both; do
     P=${BPORT[$POL,$D]}
     GA=$(probe $P -d "$BODY_OK")
     [ "${WA% *}" = "200" ] && GA="${GA% *} -"
-    if [ "$D" = "pd" ] && [ "${WA% *}" = "200" ]; then
+    if { [ "$D" = "pd" ] || [ "$D" = "both" ]; } && [ "${WA% *}" = "200" ]; then
       # Deny verdicts on a P/D rule are the gate's and assertable; the admit
       # path needs a real P/D backend. Record, don't assert.
       echo "  [INFO] B :$P($POL/$D) absent → $GA (admit path not assertable on the mock; deny rows are)"
@@ -399,14 +401,14 @@ for POL in required disabled -; do
       chk "B :$P($POL/$D) absent" "$WA" "$GA"
     fi
     GV=$(probe $P -H "X-Api-Key: $K_VAL" -d "$BODY_OK")
-    if [ "$D" = "pd" ]; then
+    if [ "$D" = "pd" ] || [ "$D" = "both" ]; then
       echo "  [INFO] B :$P($POL/$D) valid → $GV (recorded; P/D admit mechanics are the engine matrix's)"
     else
       chk "B :$P($POL/$D) valid" "200 -" "${GV% *} -"
     fi
   done
 done
-for POL in required disabled -; do for D in plain sse pd; do rm_rule ${BPORT[$POL,$D]}; done; done
+for POL in required disabled -; do for D in plain sse pd both; do rm_rule ${BPORT[$POL,$D]}; done; done
 
 ################################################################################
 echo ""

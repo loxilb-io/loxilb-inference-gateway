@@ -1409,44 +1409,54 @@
           "evidence": [
             "pkg/loxinet/apikey_policy_test.go",
             "pkg/loxinet/rules_apikey_replace_test.go",
-            "runtime-evidence:s03r2-regression-unit-01"
+            "runtime-evidence:s03r2-regression-unit-01",
+            "api/contract-audit/stages/S04-APIKEY-OWNERSHIP-AND-SEMANTIC-ROUTING.md",
+            "runtime-evidence:s04-apikey-ownership-20260909/unit-tests.log"
           ],
-          "note": "Closed enum, omission, explicit disabled/required, replace preservation and unknown-wire fail-closed behavior are covered by remote Go and C unit gates."
+          "note": "Closed enum, omission, explicit disabled/required, replace preservation, unknown-wire fail-closed behavior, and the 12 policy-by-plain/SSE/P-D/both shapes are covered by remote Go and C unit gates."
         },
         "defaults": {
           "status": "VERIFIED",
           "evidence": [
             "pkg/loxinet/apikey_policy_test.go",
             "pkg/loxinet/rules_apikey_replace_test.go",
-            "runtime-evidence:s03-authsep-validation-01.log"
+            "runtime-evidence:s03-authsep-validation-01.log",
+            "api/contract-audit/stages/S04-APIKEY-OWNERSHIP-AND-SEMANTIC-ROUTING.md"
           ],
-          "note": "Create omission, declared disabled, required policy and replace omission semantics are pinned; live disabled/required behavior is distinguished."
+          "note": "Create omission preserves a backend-owned credential independently of SSE/P-D; declared disabled, required policy and replace omission semantics remain pinned."
         },
         "propagation": {
           "status": "VERIFIED",
           "evidence": [
             "cicd/ai-multitier-security/check_security_order.py",
             "runtime-evidence:s03r2-h2-runtime-green-02.log",
-            "runtime-evidence:s03r2-regression-unit-01"
+            "runtime-evidence:s03r2-regression-unit-01",
+            "runtime-evidence:s04-apikey-ownership-20260909/h1-validation.log",
+            "runtime-evidence:s04-apikey-ownership-20260909/h2-runtime.log"
           ],
-          "note": "Policy reaches both HTTP/1 and per-stream HTTP/2 admission; the mandatory gate precedes all HTTP/2 route selectors and X-Api-Key is stripped before backend submission."
+          "note": "Policy reaches both HTTP/1 and per-stream HTTP/2 admission; both protocols now use only the declared wire policy for X-Api-Key ownership, before backend submission."
         },
         "behavior": {
           "status": "PARTIAL",
           "evidence": [
             "runtime-evidence:s03-authsep-validation-01.log",
-            "runtime-evidence:s03r2-h2-runtime-green-02.log"
+            "runtime-evidence:s03r2-h2-runtime-green-02.log",
+            "runtime-evidence:s04-apikey-ownership-20260909/h1-validation.log",
+            "runtime-evidence:s04-apikey-ownership-20260909/h1-tiers.log",
+            "runtime-evidence:s04-apikey-ownership-20260909/h2-runtime.log"
           ],
-          "note": "HTTP/1 configured/storeless behavior and HTTP/2 disabled/storeless behavior are live-proven. HTTP/2 configured-store valid, invalid, model-denied and rate-limited runtime cells remain open."
+          "note": "H1 covers the 12 policy/feature shapes and H2 proves omitted/disabled/required header ownership on SSE. Configured-store H2 verdict classes and all live H2 P-D combinations remain open."
         },
         "failure": {
           "status": "PARTIAL",
           "evidence": [
             "runtime-evidence:s03-authsep-validation-01.log",
             "runtime-evidence:s03r2-h2-runtime-green-02.log",
-            "loxilb-ebpf/common/test_ai_security.c"
+            "loxilb-ebpf/common/test_ai_security.c",
+            "runtime-evidence:s04-apikey-ownership-20260909/h1-validation.log",
+            "runtime-evidence:s04-apikey-ownership-20260909/h2-runtime.log"
           ],
-          "note": "401/403/429/503 mapping and backend non-delivery are covered across unit and live rails, but HTTP/2 configured-store denial bodies, Retry-After and every tier-hit combination are not live-qualified."
+          "note": "401/403/429/503 mapping, backend non-delivery, policy-owned stripping and omitted-policy preservation are covered. HTTP/2 configured-store bodies, Retry-After, token reservation and full live H2 tier-hit combinations remain open."
         },
         "restore": {
           "status": "GAP",

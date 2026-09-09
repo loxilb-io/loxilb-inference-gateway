@@ -135,6 +135,17 @@ this fork), `status_get`, `logs_tail`, `log_archives_list`, `log_archive_get`,
 `config_params_set`. Admin+confirm: `lb_delete`, `fw_delete`,
 `net_route_delete`, `config_import`.
 
+`lb_create` exposes typed AI routing arguments instead of requiring callers to
+guess Gateway JSON casing: `host`, `path_prefix`, `model_name`, `sse_mode`,
+`pd_disagg_mode`, `pd_cache_aware_mode`, `api_key_auth`, `kv_exact_mode`,
+`kv_engine_type`, `kv_zmq_port`, `kv_block_size`, plus endpoint `ep_role` and
+`nixl_port`. The bridge maps those names to the REST contract. Omit
+`api_key_auth` to preserve a backend-owned `X-Api-Key`; `disabled` and
+`required` both reserve and strip that header, while only `required` enforces
+Gateway authentication. `lb_list` projects the same routing fields and endpoint
+roles so an agent can observe the created contract. `service_extra` remains for
+untyped advanced fields and rejects collisions with supplied typed arguments.
+
 **AI-gateway ops** — read: `ai_apikey_list`, `ai_apikey_get`,
 `ai_ratelimit_get`, `ai_kv_inventory_get`, `gpu_status`,
 `gpu_worker_metrics_get`, `llamafw_status`, `llamafw_stats`, `pii_status`,
@@ -202,8 +213,9 @@ appear as `confirm: ...` errors.
 
 `cicd/mcp/` is the self-contained scenario: it builds the
 bridge, drives it with curl JSON-RPC over streamable HTTP against a docker
-testbed — observe checks, an MCP-only LB create→traffic→confirm-delete
-round-trip with audit verification, viewer-role guardrails, the API-key
+testbed — observe checks, an MCP-only L4 create→traffic→confirm-delete
+round-trip, a typed-AI create→observe→full-key-delete round-trip with audit
+verification, viewer-role guardrails, the API-key
 lifecycle with secrets-to-file, and the diagnose/report tools. Run:
 
 ```sh

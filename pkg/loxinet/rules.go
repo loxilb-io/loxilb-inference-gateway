@@ -3530,11 +3530,18 @@ func apiKeyAuthWireValue(declared string) uint8 {
 	switch {
 	case cmn.ResolveApiKeyAuth(declared) == cmn.ApiKeyAuthRequired:
 		return 1
-	case declared != "":
+	case apiKeyAuthClaimsNamespace(declared):
 		return 2
 	default:
 		return 0
 	}
+}
+
+// apiKeyAuthClaimsNamespace reports whether the operator explicitly assigned
+// X-Api-Key ownership to the gateway. Streaming and P/D state are deliberately
+// absent from this function: those axes arm accounting, not header ownership.
+func apiKeyAuthClaimsNamespace(declared string) bool {
+	return declared != ""
 }
 
 // apiKeyAuthOnReplace resolves the api_key_auth declaration a replace-POST
