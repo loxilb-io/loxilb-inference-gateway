@@ -147,3 +147,48 @@ func (o *GetDiagnosticsForbidden) WriteResponse(rw http.ResponseWriter, producer
 		}
 	}
 }
+
+// GetDiagnosticsServiceUnavailableCode is the HTTP code returned for type GetDiagnosticsServiceUnavailable
+const GetDiagnosticsServiceUnavailableCode int = 503
+
+/*
+GetDiagnosticsServiceUnavailable Management credential store unavailable
+
+swagger:response getDiagnosticsServiceUnavailable
+*/
+type GetDiagnosticsServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetDiagnosticsServiceUnavailable creates GetDiagnosticsServiceUnavailable with default headers values
+func NewGetDiagnosticsServiceUnavailable() *GetDiagnosticsServiceUnavailable {
+
+	return &GetDiagnosticsServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the get diagnostics service unavailable response
+func (o *GetDiagnosticsServiceUnavailable) WithPayload(payload *models.Error) *GetDiagnosticsServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get diagnostics service unavailable response
+func (o *GetDiagnosticsServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetDiagnosticsServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}

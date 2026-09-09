@@ -257,6 +257,10 @@ def lint_dashboards(mon_dir, exporter, rep):
                     continue
                 all_exprs.append((name, expr))
                 check_legend(p.get("title"), t, exporter, rep, name)
+                for fam in PARTITIONED_FAMILIES:
+                    msg = outcome_partition_violation(expr, fam)
+                    if msg:
+                        rep.err(name, f"panel '{p.get('title')}' {msg}")
                 for m in METRIC_TOKEN.finditer(expr):
                     ref = m.group(1)
                     if boundary_violation(ref):
@@ -284,6 +288,48 @@ def lint_dashboards(mon_dir, exporter, rep):
         title_to_panels[title] = panel_titles
 
     return title_to_panels, all_exprs
+
+
+# ---------------------------------------------------------------------------
+# Outcome-partitioned families
+# ---------------------------------------------------------------------------
+# loxilb_ai_requests_total is partitioned by an `outcome` label: "completed" is
+# a request a backend answered, "denied" is one the AI-gateway policy gate
+# refused before dialling a backend. Both live in one family so it can serve as
+# a denominator for offered load.
+#
+# That makes ONE mistake very easy and completely silent: filtering the
+# numerator of a ratio to completed traffic while leaving its denominator
+# unfiltered (or the reverse). The expression still parses, the panel still
+# renders, and the number is wrong in the direction that looks reassuring --
+# during a rate-limit storm a mixed error ratio drops, because denials inflate
+# the denominator only. The critical LoxilbAIErrorRatio alert was exactly this
+# shape before the label existed.
+#
+# The rule enforced here is deliberately not "always filter": a panel showing
+# true offered load must NOT filter, and one describing backend behaviour must.
+# What is never right is doing both in a single expression. So: within one rule
+# expr or one dashboard target, either every selector on a partitioned family
+# carries an outcome matcher, or none does.
+PARTITIONED_FAMILIES = ("loxilb_ai_requests_total",)
+
+
+def outcome_partition_violation(expr, family):
+    """Return a message when one expression mixes outcome-filtered and
+    unfiltered selectors of `family`, else None."""
+    filtered = unfiltered = 0
+    for m in re.finditer(re.escape(family) + r"(\{[^}]*\})?", expr):
+        selector = m.group(1) or ""
+        if "outcome" in selector:
+            filtered += 1
+        else:
+            unfiltered += 1
+    if filtered and unfiltered:
+        return (f"mixes {filtered} outcome-filtered and {unfiltered} "
+                f"unfiltered selector(s) of {family} in one expression -- a "
+                f"ratio built this way silently changes meaning when denials "
+                f"spike; filter every selector or none")
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -330,6 +376,51 @@ def extract_rule_exprs_and_annotations(rules_path):
     return "\n".join(expr_text), pairs
 
 
+def iter_rule_exprs(rules_path):
+    """Yield (rule name, expr text) per rule. extract_rule_exprs_and_annotations
+    concatenates every expr in a file into one blob, which is right for name
+    resolution and wrong for any check that must not see two rules as one
+    expression -- a numerator in rule A and a denominator in rule B would look
+    like a mixed selector."""
+    out = []
+    name = None
+    expr_lines = None
+    expr_indent = 0
+    with open(rules_path, encoding="utf-8") as fh:
+        lines = fh.readlines()
+
+    def flush():
+        if expr_lines is not None:
+            out.append((name or "?", " ".join(expr_lines)))
+
+    for line in lines:
+        stripped = line.rstrip("\n")
+        nm = re.match(r"^\s*-?\s*(?:alert|record):\s*\"?([\w:.]+)\"?\s*$", stripped)
+        if nm:
+            flush()
+            expr_lines = None
+            name = nm.group(1)
+            continue
+        m = re.match(r"^(\s*)expr:\s*(.*)$", stripped)
+        if m:
+            flush()
+            expr_indent = len(m.group(1))
+            rest = m.group(2).strip()
+            expr_lines = [] if rest in (">-", ">", "|", "|-", ">+") else [rest]
+            continue
+        if expr_lines is not None:
+            if stripped.strip() == "" or stripped.strip().startswith("#"):
+                continue
+            indent = len(stripped) - len(stripped.lstrip())
+            if indent > expr_indent:
+                expr_lines.append(stripped.strip())
+            else:
+                flush()
+                expr_lines = None
+    flush()
+    return out
+
+
 def lint_rules(mon_dir, exporter, title_to_panels, rep):
     rule_paths = sorted(glob.glob(os.path.join(mon_dir,
                                                "prometheus/rules/*.yml")))
@@ -349,6 +440,12 @@ def lint_rules(mon_dir, exporter, title_to_panels, rep):
             elif not is_known_metric(ref, exporter):
                 rep.err(fname,
                         f"rule expr references unknown metric '{ref}'")
+
+        for rule_name, rule_expr in iter_rule_exprs(rules_path):
+            for fam in PARTITIONED_FAMILIES:
+                msg = outcome_partition_violation(rule_expr, fam)
+                if msg:
+                    rep.err(fname, f"rule '{rule_name}' {msg}")
 
         for dash, panel in pairs:
             if dash not in title_to_panels:

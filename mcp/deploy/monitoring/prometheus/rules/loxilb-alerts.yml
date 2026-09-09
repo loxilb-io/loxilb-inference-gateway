@@ -115,18 +115,27 @@ groups:
           panel: "TTFB p50/p95/p99"
 
       - alert: LoxilbAIErrorRatio
+        # outcome="completed" on EVERY selector, and that is load-bearing.
+        # loxilb_ai_requests_total now also counts the requests the policy gate
+        # refuses, which are non-2xx by construction (401/403/429/503). Left
+        # unfiltered, this critical alert would silently change meaning: a
+        # rate-limit storm — today a warning via LoxilbAIRateLimitSpike — would
+        # push denials into both numerator and denominator and start firing a
+        # critical page, against a 5% threshold calibrated on a denominator that
+        # never contained them. Filtering to completed restores exactly the
+        # pre-change population, so the threshold keeps its meaning.
         expr: >-
           (
-            sum(rate(loxilb_ai_requests_total{status!~"2.."}[5m]))
+            sum(rate(loxilb_ai_requests_total{outcome="completed",status!~"2.."}[5m]))
             /
-            sum(rate(loxilb_ai_requests_total[5m]))
+            sum(rate(loxilb_ai_requests_total{outcome="completed"}[5m]))
           ) > 0.05
-          and sum(rate(loxilb_ai_requests_total[5m])) > 0.1
+          and sum(rate(loxilb_ai_requests_total{outcome="completed"}[5m])) > 0.1
         for: 5m
         labels: { severity: critical }
         annotations:
-          summary: "AI request non-2xx ratio above 5%"
-          description: "status label carries the real backend HTTP status (post-audit)."
+          summary: "AI request backend non-2xx ratio above 5%"
+          description: "Backend-answered requests only (outcome=completed); status carries the real backend HTTP status. Gate denials are excluded on purpose — they are tracked by LoxilbAIRateLimitSpike and by outcome=denied."
           dashboard: "LoxiLB / AI Gateway"
           panel: "AI requests/s by status"
 
@@ -136,7 +145,7 @@ groups:
         labels: { severity: warning }
         annotations:
           summary: "AI rate-limit denials above 10/s for 5m"
-          description: "Denials are NOT included in loxilb_ai_requests_total — this counter is the only signal."
+          description: "Denials are counted in loxilb_ai_requests_total{outcome=\"denied\"}; this counter carries the reason they were denied, which the request total does not."
           dashboard: "LoxiLB / AI Gateway"
           panel: "Rate-limit hits/s"
 

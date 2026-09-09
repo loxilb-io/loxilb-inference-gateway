@@ -104,6 +104,54 @@ docker compose up -d
   git-ignored except `gen-certs.sh`). Generate on a trusted host; distribute only leaf
   certs + `rootCA.crt`.
 
+## AI request accounting: what counts as a request
+
+`loxilb_ai_requests_total` is the AI Gateway's request denominator. Read it by
+its `outcome` label, because the three readings answer different questions:
+
+| Selector | Population | Use it for |
+|---|---|---|
+| `loxilb_ai_requests_total` | offered load | total request rate; capacity |
+| `{outcome="completed"}` | answered by a backend | anything describing backend behaviour — error ratios, latency correlation |
+| `{outcome="denied"}` | refused by the policy gate | denial rate, without consulting a second family |
+
+The two outcomes are mutually exclusive per request, so `sum by (outcome)`
+reproduces the unfiltered total.
+
+**Any ratio meant to describe backend behaviour must select
+`outcome="completed"` on every selector, numerator and denominator alike.** A
+gate denial is non-2xx by construction, so an unfiltered error ratio starts
+counting rate-limiting as a backend fault, and one that filters only its
+numerator falls as denials rise — the reading moves the wrong way at exactly
+the wrong moment. `LoxilbAIErrorRatio` and `instance:loxilb_ai_5xx_ratio:rate5m`
+both filter; `deploy/monitoring/ci/lint-monitoring.py` fails any expression
+that filters some selectors of this family and not others.
+
+Completed responses are recorded at SSE stream completion when streamed and at
+the response headers when not, sharing one per-request dedup guard. Denials are
+recorded where the gate decides them, labelled with the status the client
+received — note this is not derivable from the reason: the rate-limit stage
+answers **503**, not 429, when it finds a keyed identity with no policy store
+behind it.
+
+`tenant=""` on a denied series means the request was refused before a
+credential resolved (missing or unknown key, or a store that could not answer),
+not that a tenant is literally unnamed.
+
+The point-of-denial counters — `loxilb_ai_rate_limit_hits_total`,
+`loxilb_ai_model_not_allowed_total`, `loxilb_ai_token_quota_denied_total`,
+`loxilb_ai_policy_store_unavailable_total` — are not a second copy of the denied
+series. They carry the *reason*, which neither `status` nor `outcome` does. One
+request trips one gate but several reason counters exist, so the relation is
+`rate_limit_hits_total <= requests_total{outcome="denied",status="429"}`, not
+equality.
+
+**Not counted here.** Two gateway-generated refusals are answered entirely in
+the data plane and reach neither recording site: a LlamaFirewall block (403)
+and a P/D pool failure (502/503). The P/D failures are visible in the P/D
+lifecycle metrics; the LlamaFirewall blocks are visible only in
+`loxilb_llamafw_*`. Offered load therefore still excludes those two classes.
+
 ## Metric parity with upstream OSS loxilb
 
 `deploy/monitoring/manifest/oss-parity.json` states, per family, whether
@@ -161,6 +209,7 @@ against this gateway, which emits only the canonical names.
 
 At the pinned revision: **35 identical, 0 divergent, 197 absent** of 232 gateway
 families, against 60 upstream families.
+
 
 ## Operational notes
 

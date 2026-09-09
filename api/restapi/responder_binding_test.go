@@ -279,21 +279,29 @@ func TestResultResponseOperationsDeclareOnly200(t *testing.T) {
 // outside the closed {admin, viewer} set, regardless of method — and a viewer
 // is additionally denied the PUT.
 //
-// 503 is not uniform. SnapshotFreezeMiddleware (api/restapi/handler/snapshot.go)
-// returns early for GET/HEAD/OPTIONS, so neither the boot-settle nor the
-// restore-active freeze can reach a GET. PUT /maintenance is exempt from the
-// maintenance gate by path suffix but not from those two, so it alone can
-// answer 503 here. GET /status/ready carries its own 503 from the readiness
-// verdict rather than from the freeze.
+// 503 is reachable on all four, but for two different reasons, and both have
+// to be accounted for. The generated security chain answers 503 when the
+// credential store cannot be reached (authFailure, api/restapi/handler/auth.go)
+// -- that arm runs before any handler and does not care about the method, so
+// it reaches the GETs too. Separately, SnapshotFreezeMiddleware
+// (api/restapi/handler/snapshot.go) returns early for GET/HEAD/OPTIONS, so
+// neither the boot-settle nor the restore-active freeze can reach a GET; PUT
+// /maintenance is exempt from the maintenance gate by path suffix but not from
+// those two, so it picks up a 503 from there as well. GET /status/ready
+// carries a third 503, its own readiness verdict.
+//
+// Reasoning only about the freeze is what left the two GETs under-declared
+// when the other codes on these routes were corrected: a store outage answers
+// them with a status the specification did not list.
 //
 // 500 is reachable on none of them: ConfigGetMaintenance, ConfigPutMaintenance
 // and ConfigGetDiagnostics return only OK and — for the PUT — BadRequest. No
 // 500 responder exists on any of the three.
 var operatorDeclaredCodes = map[string][]string{
 	"GET /status/ready": {"200", "401", "403", "503"},
-	"GET /maintenance":  {"200", "401", "403"},
+	"GET /maintenance":  {"200", "401", "403", "503"},
 	"PUT /maintenance":  {"200", "400", "401", "403", "503"},
-	"GET /diagnostics":  {"200", "401", "403"},
+	"GET /diagnostics":  {"200", "401", "403", "503"},
 }
 
 // TestOperatorRoutesDeclareReachableCodes asserts the operator routes declare

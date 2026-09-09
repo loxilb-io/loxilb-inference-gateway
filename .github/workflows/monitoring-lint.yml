@@ -71,6 +71,16 @@ jobs:
           python3 deploy/monitoring/ci/gen-metric-manifest.py --self-test
           python3 deploy/monitoring/ci/gen-metric-manifest.py --check --locked-rev-check
 
+      - name: Exporter-side metric contract
+        # api/prometheus is where the label sets the rules and dashboards
+        # select on are declared, so it belongs to this gate rather than to a
+        # datapath one -- and it is reachable here, with no eBPF checkout,
+        # because these tests need none. TestEveryGateDenialArmIsCounted lives
+        # in this package for exactly that reason: it parses the datapath's
+        # gate exports as source, so it can hold them to the metric contract
+        # without the privileged environment their own package tests require.
+        run: go test -count=1 ./api/prometheus
+
       - name: Metric extractor resolution behaviour
         # The extractor is pointed at an upstream checkout to compute parity, so
         # its ability to resolve indirect registrations is a correctness

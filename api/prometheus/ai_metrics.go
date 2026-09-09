@@ -96,17 +96,65 @@ func boundModelLabel(modelName string) string {
 	return model
 }
 
+// Values of the outcome label on loxilb_ai_requests_total. Exported because a
+// consumer of this package should select on the same constant the recorder
+// writes, not on a string literal that can drift from it.
+const (
+	// AIOutcomeCompleted marks a request a backend answered.
+	AIOutcomeCompleted = "completed"
+	// AIOutcomeDenied marks a request the gateway policy gate refused, so no
+	// backend was ever asked.
+	AIOutcomeDenied = "denied"
+)
+
 var (
-	// aiRequestsTotal counts completed AI Gateway requests per model, tenant, and
-	// HTTP status. The data plane records a request when its SSE stream completes
-	// (data:[DONE]); non-streaming responses are not counted here — denials are
-	// covered by the point-of-denial counters (rate limit hits, model-not-allowed).
+	// aiRequestsTotal counts AI Gateway requests that reached a response, per
+	// model, tenant and HTTP status.
+	//
+	// The data plane has TWO recording sites, not one, and the difference is
+	// load-bearing for anyone computing a rate from this family:
+	//
+	//   - a streaming response is recorded when its SSE stream terminates
+	//     (data:[DONE]);
+	//   - a non-streaming response is recorded once its header block arrives
+	//     with no stream active. That covers plain-JSON 200s AND the common
+	//     error shape, since OpenAI-compatible backends answer errors as plain
+	//     JSON even for streaming requests.
+	//
+	// Both sites share one per-request dedup guard, so a request is counted
+	// exactly once whichever way it completed.
+	//
+	// A third site records the requests the policy gate refuses itself. Those
+	// never reach a backend, so neither response-completion site can see them,
+	// and without them this family counted served traffic rather than offered
+	// load — no combination of the exported families yielded a total request
+	// denominator.
+	//
+	// The outcome label is what makes that safe to add rather than a silent
+	// re-definition. status alone cannot carry it: a backend may answer 429 or
+	// 503 itself, so a status-only reading cannot tell a gate denial from an
+	// overloaded upstream, and folding denials into an unlabelled family would
+	// have changed what every existing ratio over it means. With outcome:
+	//
+	//	sum(rate(loxilb_ai_requests_total[5m]))                     offered load
+	//	...{outcome="completed"}                                    served traffic
+	//	...{outcome="denied"}                                       gate refusals
+	//
+	// The two values are mutually exclusive per request, so summing by outcome
+	// reproduces the unfiltered total. Existing error-ratio semantics are
+	// preserved exactly by selecting outcome="completed".
+	//
+	// The point-of-denial counters stay: they partition denials by REASON,
+	// which neither status nor outcome carries. They are not a second copy of
+	// the same number — one request trips one gate but several reason counters
+	// exist, so the relation is
+	// rate_limit_hits_total <= requests_total{outcome="denied",status="429"}.
 	aiRequestsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "loxilb_ai_requests_total",
-			Help: "Total AI Gateway requests by model, tenant, and HTTP status code (recorded at SSE stream completion).",
+			Help: "Total AI Gateway requests by model, tenant, HTTP status code, and outcome (completed = answered by a backend, recorded at SSE stream completion or at response headers; denied = refused by the gateway policy gate).",
 		},
-		[]string{"model", "tenant", "status"},
+		[]string{"model", "tenant", "status", "outcome"},
 	)
 
 	// aiRequestDurationSeconds tracks per-model, per-tenant request latency as
@@ -563,13 +611,14 @@ func RecordPolicyStoreUnavailable() {
 
 // RecordAIRequest is the Go entry point called by the CGO export llb_ai_record_request.
 //
-// C sockproxy calls this once on response completion. The function sanitises
-// label values and updates the request counter and latency histogram.
+// C sockproxy calls this once on response completion, so every request it
+// records was answered by a backend and carries outcome="completed".
+// Gate denials arrive through RecordAIRequestDenied instead.
 //
-// Rate-limit (429) and model-not-allowed (403) denials are NOT derived here:
-// the point-of-denial helpers RecordRateLimitHit and RecordModelNotAllowed are
-// authoritative. SSE stream lifecycle is tracked via AdjustActiveStreams from
-// llb_ai_stream_start/llb_ai_stream_end.
+// The point-of-denial helpers RecordRateLimitHit and RecordModelNotAllowed
+// remain authoritative for the REASON a request was denied; this family
+// carries the request itself. SSE stream lifecycle is tracked via
+// AdjustActiveStreams from llb_ai_stream_start/llb_ai_stream_end.
 //
 // Parameters:
 //
@@ -583,10 +632,40 @@ func RecordAIRequest(tenantID, modelName string, statusCode int, latencyMs int64
 	status := strconv.Itoa(statusCode)
 
 	// Increment request counter for every completed request.
-	aiRequestsTotal.WithLabelValues(model, tenant, status).Inc()
+	aiRequestsTotal.WithLabelValues(model, tenant, status, AIOutcomeCompleted).Inc()
 
 	// Record latency when available.
 	if latencyMs > 0 {
 		aiRequestDurationSeconds.WithLabelValues(model, tenant).Observe(float64(latencyMs) / 1000.0)
 	}
+}
+
+// RecordAIRequestDenied counts a request the AI Gateway policy gate refused
+// before any backend was asked, under outcome="denied".
+//
+// The gate answers the client from inside the data plane's request-complete
+// callback and tears the connection down, so no backend response ever reaches
+// RecordAIRequest. Recording here is what makes loxilb_ai_requests_total a
+// denominator for offered load rather than for served traffic.
+//
+// statusCode must be the status the client actually received, which is not
+// derivable from the denial reason alone: the rate-limit stage answers 503, not
+// 429, when it finds a keyed identity with no policy store behind it. Callers
+// map the gate's decision code, not its error string.
+//
+// Deliberately does NOT observe the duration histogram. That histogram measures
+// SSE activation to stream completion; a denial has no such interval, and
+// feeding it a gate-decision latency would pull the served-latency quantiles
+// toward zero exactly when denials spike.
+//
+// tenantID is empty on the arms that deny before a credential resolves (a
+// missing or unknown key, and a policy store that cannot answer). That is
+// reported as the empty label value rather than a placeholder, so
+// tenant="" reads as "denied before the tenant was known".
+func RecordAIRequestDenied(tenantID, modelName string, statusCode int) {
+	model := boundModelLabel(modelName)
+	tenant := sanitizeLabel(tenantID)
+	status := strconv.Itoa(statusCode)
+
+	aiRequestsTotal.WithLabelValues(model, tenant, status, AIOutcomeDenied).Inc()
 }

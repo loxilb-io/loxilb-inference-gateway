@@ -192,11 +192,12 @@ appear as `confirm: ...` errors.
 - Known caveats: with `--userservice` on a target, configure bridge target
   credentials (`token_env` or `username`/`password_env`) — otherwise metrics
   scraping returns 401. And `ai_traffic_report` restates an accounting caveat
-  in every result: `loxilb_ai_requests_total` excludes rate-limit denials
-  (those live only in `loxilb_ai_rate_limit_hits_total`), and on loxilb
-  builds that predate non-SSE response accounting it counts only
-  SSE-terminated streams — cross-check totals against
-  `loxilb_proxy_http_responses_total`.
+  in every result: `loxilb_ai_requests_total` splits on an `outcome` label
+  (`completed` = answered by a backend, `denied` = refused by the policy gate),
+  `loxilb_ai_rate_limit_hits_total` carries the *reason* a request was denied
+  rather than a second count of it, and a gateway old enough to emit no
+  `outcome` label excludes denials from the total entirely — cross-check those
+  against `loxilb_proxy_http_responses_total`.
 
 ## CI / E2E
 

@@ -69,7 +69,11 @@ func newAIMock(t *testing.T) *mockLoxilb {
 		switch {
 		case r.URL.Path == "/netlox/v1/metrics":
 			w.Header().Set("Content-Type", "text/plain")
-			w.Write([]byte(aiMetricsText))
+			body := m.metricsText
+			if body == "" {
+				body = aiMetricsText
+			}
+			w.Write([]byte(body))
 		case r.URL.Path == "/netlox/v1/config/ai/apikey" && r.Method == http.MethodPost:
 			w.WriteHeader(http.StatusCreated)
 			w.Write([]byte(`{"raw_key":"` + testRawKey + `","key_id":"key-123"}`))
@@ -295,7 +299,8 @@ func TestPhase3AITrafficReport(t *testing.T) {
 		t.Errorf("rate_limit_drops_total = %v, want 7", got)
 	}
 	caveats, _ := json.Marshal(out["caveats"])
-	if !strings.Contains(string(caveats), "SSE-terminated") {
+	if !strings.Contains(string(caveats), "SSE-terminated") ||
+		!strings.Contains(string(caveats), "outcome") {
 		t.Error("accounting caveat missing from ai_traffic_report")
 	}
 	dur, _ := out["request_duration"].(map[string]any)
@@ -305,6 +310,68 @@ func TestPhase3AITrafficReport(t *testing.T) {
 	// p50 at target 50 with bucket{le=0.5}=50 → exactly 0.5.
 	if got := dur["p50_seconds"].(float64); got != 0.5 {
 		t.Errorf("p50 = %v, want 0.5", got)
+	}
+}
+
+// TestPhase3AITrafficReportOutcome pins how the report reads a gateway that
+// partitions loxilb_ai_requests_total by outcome.
+//
+// The defect this guards is silent and points the wrong way: with denials in
+// the family and no outcome filter, error_ratio counts throttling as backend
+// failure. An operator would page the model servers during a rate-limit storm,
+// and an agent reading this report would do the same with more conviction.
+func TestPhase3AITrafficReportOutcome(t *testing.T) {
+	mock := newAIMock(t)
+	mock.metricsText = `# TYPE loxilb_ai_requests_total counter
+loxilb_ai_requests_total{model="llama3",tenant="t1",status="200",outcome="completed"} 90
+loxilb_ai_requests_total{model="llama3",tenant="t1",status="500",outcome="completed"} 10
+loxilb_ai_requests_total{model="llama3",tenant="t1",status="429",outcome="denied"} 400
+loxilb_ai_requests_total{model="llama3",tenant="",status="401",outcome="denied"} 5
+`
+	b := aiTestBridge(t, mock)
+	cs := session(t, b, guard.RoleViewer)
+
+	out := callOut(t, callTool(t, cs, "ai_traffic_report", nil))
+
+	// Offered load includes what the gate refused; that is the point of it.
+	if got := out["requests_total"].(float64); got != 505 {
+		t.Errorf("requests_total = %v, want 505 (offered load)", got)
+	}
+	if got := out["requests_completed"].(float64); got != 100 {
+		t.Errorf("requests_completed = %v, want 100", got)
+	}
+	if got := out["requests_denied"].(float64); got != 405 {
+		t.Errorf("requests_denied = %v, want 405", got)
+	}
+	// 405 denials, all non-2xx, swamp 10 real backend errors. Unfiltered the
+	// ratio would be 415/505 = 0.82 and the gateway would look broken.
+	if got := out["requests_non_2xx"].(float64); got != 10 {
+		t.Errorf("requests_non_2xx = %v, want 10 (backend errors only)", got)
+	}
+	if got := out["error_ratio"].(float64); got != 0.1 {
+		t.Errorf("error_ratio = %v, want 0.1 over completed traffic", got)
+	}
+}
+
+// TestPhase3AITrafficReportPreOutcomeGateway pins the compatibility direction.
+// The bridge reaches gateways of any age; on one that emits no outcome label
+// the family holds backend-answered traffic only, so treating those samples as
+// completed is what keeps the ratio true. Defaulting them to denied instead
+// would report a healthy 0 for a gateway that is failing.
+func TestPhase3AITrafficReportPreOutcomeGateway(t *testing.T) {
+	mock := newAIMock(t) // default fixture: no outcome label
+	b := aiTestBridge(t, mock)
+	cs := session(t, b, guard.RoleViewer)
+
+	out := callOut(t, callTool(t, cs, "ai_traffic_report", nil))
+	if got := out["requests_completed"].(float64); got != 100 {
+		t.Errorf("requests_completed = %v, want 100 (unlabelled = completed)", got)
+	}
+	if got := out["requests_denied"].(float64); got != 0 {
+		t.Errorf("requests_denied = %v, want 0", got)
+	}
+	if got := out["error_ratio"].(float64); got != 0.1 {
+		t.Errorf("error_ratio = %v, want 0.1", got)
 	}
 }
 

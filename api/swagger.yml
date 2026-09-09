@@ -4664,6 +4664,10 @@ paths:
           description: Authenticated principal's role carries no authority for this operation
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          description: Management credential store unavailable
+          schema:
+            $ref: '#/definitions/Error'
     put:
       summary: Enter or leave operator maintenance
       description: Idempotent - entering while already in maintenance changes nothing (same operation_id, same entered_at, and the original drain window is kept; changing the window requires leave then enter), and leaving while active is a no-op. While maintenance holds, mutating configuration calls are refused with 503 except the configuration-lifecycle operations maintenance exists to make safe (snapshot, persist, restore) and this endpoint itself. The response to a leave carries the operation_id of the episode it ended.
@@ -4712,6 +4716,10 @@ paths:
             $ref: '#/definitions/Error'
         '403':
           description: Authenticated principal's role carries no authority for this operation
+          schema:
+            $ref: '#/definitions/Error'
+        '503':
+          description: Management credential store unavailable
           schema:
             $ref: '#/definitions/Error'
 #----------------------------------------------

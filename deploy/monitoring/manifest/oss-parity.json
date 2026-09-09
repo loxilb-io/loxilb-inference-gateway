@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-09T02:24:04+00:00",
-  "source_revision": "11ec58f876e903056273d6b6662defd478a07faf",
+  "generated_at": "2026-09-09T03:46:03+00:00",
+  "source_revision": "ccece0c4c0781936963a0adfbe3cecab8fbd944b",
   "upstream_repository": "https://github.com/loxilb-io/loxilb",
   "upstream_revision": "71982cd61b23d82c8f2ff1dd38d395bbb4c9360d"
  },
@@ -872,6 +872,7 @@
     "type": "counter",
     "labels": [
      "model",
+     "outcome",
      "status",
      "tenant"
     ]

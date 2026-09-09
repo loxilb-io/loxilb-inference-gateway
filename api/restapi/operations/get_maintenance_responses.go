@@ -147,3 +147,48 @@ func (o *GetMaintenanceForbidden) WriteResponse(rw http.ResponseWriter, producer
 		}
 	}
 }
+
+// GetMaintenanceServiceUnavailableCode is the HTTP code returned for type GetMaintenanceServiceUnavailable
+const GetMaintenanceServiceUnavailableCode int = 503
+
+/*
+GetMaintenanceServiceUnavailable Management credential store unavailable
+
+swagger:response getMaintenanceServiceUnavailable
+*/
+type GetMaintenanceServiceUnavailable struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetMaintenanceServiceUnavailable creates GetMaintenanceServiceUnavailable with default headers values
+func NewGetMaintenanceServiceUnavailable() *GetMaintenanceServiceUnavailable {
+
+	return &GetMaintenanceServiceUnavailable{}
+}
+
+// WithPayload adds the payload to the get maintenance service unavailable response
+func (o *GetMaintenanceServiceUnavailable) WithPayload(payload *models.Error) *GetMaintenanceServiceUnavailable {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get maintenance service unavailable response
+func (o *GetMaintenanceServiceUnavailable) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetMaintenanceServiceUnavailable) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(503)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
