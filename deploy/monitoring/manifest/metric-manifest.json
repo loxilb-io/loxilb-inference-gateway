@@ -424,7 +424,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:134"
+   "source": "api/prometheus/ai_metrics.go:149"
   },
   {
    "name": "loxilb_ai_engine_info",
@@ -607,7 +607,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:143"
+   "source": "api/prometheus/ai_metrics.go:158"
   },
   {
    "name": "loxilb_ai_normal_session_hits_total",
@@ -625,7 +625,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:279"
+   "source": "api/prometheus/ai_metrics.go:294"
   },
   {
    "name": "loxilb_ai_pd_decode_ttft_seconds",
@@ -643,7 +643,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:233"
+   "source": "api/prometheus/ai_metrics.go:248"
   },
   {
    "name": "loxilb_ai_pd_kv_params_found_total",
@@ -661,7 +661,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:252"
+   "source": "api/prometheus/ai_metrics.go:267"
   },
   {
    "name": "loxilb_ai_pd_kv_params_missing_total",
@@ -679,7 +679,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:261"
+   "source": "api/prometheus/ai_metrics.go:276"
   },
   {
    "name": "loxilb_ai_pd_prefill_duration_seconds",
@@ -697,7 +697,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:223"
+   "source": "api/prometheus/ai_metrics.go:238"
   },
   {
    "name": "loxilb_ai_pd_requests_total",
@@ -717,7 +717,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:243"
+   "source": "api/prometheus/ai_metrics.go:258"
   },
   {
    "name": "loxilb_ai_pd_session_hits_total",
@@ -735,7 +735,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:270"
+   "source": "api/prometheus/ai_metrics.go:285"
   },
   {
    "name": "loxilb_ai_policy_store_unavailable_total",
@@ -752,7 +752,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:313"
+   "source": "api/prometheus/ai_metrics.go:328"
   },
   {
    "name": "loxilb_ai_rate_limit_hits_total",
@@ -772,7 +772,7 @@
     "loxilb-alerts.yml"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:125"
+   "source": "api/prometheus/ai_metrics.go:140"
   },
   {
    "name": "loxilb_ai_request_duration_seconds",
@@ -791,7 +791,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:115"
+   "source": "api/prometheus/ai_metrics.go:130"
   },
   {
    "name": "loxilb_ai_requests_total",
@@ -813,7 +813,7 @@
     "loxilb-recording.yml"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:104"
+   "source": "api/prometheus/ai_metrics.go:119"
   },
   {
    "name": "loxilb_ai_token_quota_cold_open_total",
@@ -829,7 +829,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:211"
+   "source": "api/prometheus/ai_metrics.go:226"
   },
   {
    "name": "loxilb_ai_token_quota_denied_total",
@@ -847,7 +847,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:198"
+   "source": "api/prometheus/ai_metrics.go:213"
   },
   {
    "name": "loxilb_ai_token_quota_limit_tokens",
@@ -865,7 +865,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:405"
+   "source": "api/prometheus/ai_metrics.go:420"
   },
   {
    "name": "loxilb_ai_token_quota_model_limit_tokens",
@@ -882,7 +882,7 @@
    "privacy": "label-review",
    "consumers": [],
    "waiver": "Join denominator behind the dashboarded quota-utilization ratios; displaying raw configured limits duplicates config, utilization panels answer headroom.",
-   "source": "api/prometheus/ai_metrics.go:415"
+   "source": "api/prometheus/ai_metrics.go:430"
   },
   {
    "name": "loxilb_ai_token_quota_model_utilization",
@@ -901,7 +901,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:410"
+   "source": "api/prometheus/ai_metrics.go:425"
   },
   {
    "name": "loxilb_ai_token_quota_utilization",
@@ -919,7 +919,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:400"
+   "source": "api/prometheus/ai_metrics.go:415"
   },
   {
    "name": "loxilb_ai_tokens_consumed_total",
@@ -939,7 +939,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:159"
+   "source": "api/prometheus/ai_metrics.go:174"
   },
   {
    "name": "loxilb_ai_tokens_estimated_total",
@@ -958,7 +958,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:172"
+   "source": "api/prometheus/ai_metrics.go:187"
   },
   {
    "name": "loxilb_ai_tokens_missing_total",
@@ -977,7 +977,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:184"
+   "source": "api/prometheus/ai_metrics.go:199"
   },
   {
    "name": "loxilb_ai_unmetered_requests_total",
@@ -996,7 +996,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:296"
+   "source": "api/prometheus/ai_metrics.go:311"
   },
   {
    "name": "loxilb_autopersist_consecutive_failures",

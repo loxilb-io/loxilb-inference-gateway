@@ -97,14 +97,29 @@ func boundModelLabel(modelName string) string {
 }
 
 var (
-	// aiRequestsTotal counts completed AI Gateway requests per model, tenant, and
-	// HTTP status. The data plane records a request when its SSE stream completes
-	// (data:[DONE]); non-streaming responses are not counted here — denials are
-	// covered by the point-of-denial counters (rate limit hits, model-not-allowed).
+	// aiRequestsTotal counts AI Gateway requests that reached a response, per
+	// model, tenant and HTTP status.
+	//
+	// The data plane has TWO recording sites, not one, and the difference is
+	// load-bearing for anyone computing a rate from this family:
+	//
+	//   - a streaming response is recorded when its SSE stream terminates
+	//     (data:[DONE]);
+	//   - a non-streaming response is recorded once its header block arrives
+	//     with no stream active. That covers plain-JSON 200s AND the common
+	//     error shape, since OpenAI-compatible backends answer errors as plain
+	//     JSON even for streaming requests.
+	//
+	// Both sites share one per-request dedup guard, so a request is counted
+	// exactly once whichever way it completed. Denials the gate answers itself
+	// never reach either site and are covered by the point-of-denial counters
+	// (rate-limit hits, model-not-allowed, token-quota denied, policy-store
+	// unavailable); this family is therefore a denominator for backend-answered
+	// traffic, not for offered load.
 	aiRequestsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "loxilb_ai_requests_total",
-			Help: "Total AI Gateway requests by model, tenant, and HTTP status code (recorded at SSE stream completion).",
+			Help: "Total AI Gateway requests answered by a backend, by model, tenant, and HTTP status code (recorded at SSE stream completion for streamed responses, at response headers for non-streamed ones).",
 		},
 		[]string{"model", "tenant", "status"},
 	)
