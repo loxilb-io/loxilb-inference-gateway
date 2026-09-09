@@ -20,7 +20,8 @@ import (
 type APIKeyCreateResponse struct {
 
 	// Unique identifier of the created API key
-	KeyID string `json:"key_id,omitempty"`
+	// Required: true
+	KeyID *string `json:"key_id"`
 
 	// The plaintext API key — returned ONLY at creation time
 	// Required: true
@@ -31,6 +32,10 @@ type APIKeyCreateResponse struct {
 func (m *APIKeyCreateResponse) Validate(formats strfmt.Registry) error {
 	var res []error
 
+	if err := m.validateKeyID(formats); err != nil {
+		res = append(res, err)
+	}
+
 	if err := m.validateRawKey(formats); err != nil {
 		res = append(res, err)
 	}
@@ -38,6 +43,15 @@ func (m *APIKeyCreateResponse) Validate(formats strfmt.Registry) error {
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
+	return nil
+}
+
+func (m *APIKeyCreateResponse) validateKeyID(formats strfmt.Registry) error {
+
+	if err := validate.Required("key_id", "body", m.KeyID); err != nil {
+		return err
+	}
+
 	return nil
 }
 

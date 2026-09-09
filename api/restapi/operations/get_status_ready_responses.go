@@ -103,6 +103,51 @@ func (o *GetStatusReadyUnauthorized) WriteResponse(rw http.ResponseWriter, produ
 	}
 }
 
+// GetStatusReadyForbiddenCode is the HTTP code returned for type GetStatusReadyForbidden
+const GetStatusReadyForbiddenCode int = 403
+
+/*
+GetStatusReadyForbidden Authenticated principal's role carries no authority for this operation
+
+swagger:response getStatusReadyForbidden
+*/
+type GetStatusReadyForbidden struct {
+
+	/*
+	  In: Body
+	*/
+	Payload *models.Error `json:"body,omitempty"`
+}
+
+// NewGetStatusReadyForbidden creates GetStatusReadyForbidden with default headers values
+func NewGetStatusReadyForbidden() *GetStatusReadyForbidden {
+
+	return &GetStatusReadyForbidden{}
+}
+
+// WithPayload adds the payload to the get status ready forbidden response
+func (o *GetStatusReadyForbidden) WithPayload(payload *models.Error) *GetStatusReadyForbidden {
+	o.Payload = payload
+	return o
+}
+
+// SetPayload sets the payload to the get status ready forbidden response
+func (o *GetStatusReadyForbidden) SetPayload(payload *models.Error) {
+	o.Payload = payload
+}
+
+// WriteResponse to the client
+func (o *GetStatusReadyForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+
+	rw.WriteHeader(403)
+	if o.Payload != nil {
+		payload := o.Payload
+		if err := producer.Produce(rw, payload); err != nil {
+			panic(err) // let the recovery middleware deal with this
+		}
+	}
+}
+
 // GetStatusReadyServiceUnavailableCode is the HTTP code returned for type GetStatusReadyServiceUnavailable
 const GetStatusReadyServiceUnavailableCode int = 503
 
