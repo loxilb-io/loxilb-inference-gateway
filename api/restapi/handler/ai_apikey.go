@@ -107,7 +107,7 @@ func ConfigPostAIApikey(params aiops.PostConfigAiApikeyParams, principal interfa
 		if resp := keyStoreFailure(err); resp != nil {
 			return resp
 		}
-		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
+		return &ErrorResponse{Payload: ResultErrorResponseError(err)}
 	}
 
 	// raw key must never be logged. It is also empty when the caller supplied
@@ -115,7 +115,7 @@ func ConfigPostAIApikey(params aiops.PostConfigAiApikeyParams, principal interfa
 	// into response logs and API traces for no benefit.
 	return aiops.NewPostConfigAiApikeyCreated().WithPayload(&models.APIKeyCreateResponse{
 		RawKey: &rawKey,
-		KeyID:  keyID,
+		KeyID:  &keyID,
 	})
 }
 
@@ -136,7 +136,7 @@ func ConfigGetAIApikeys(params aiops.GetConfigAiApikeyParams, principal interfac
 		if resp := keyStoreFailure(err); resp != nil {
 			return resp
 		}
-		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
+		return &ErrorResponse{Payload: ResultErrorResponseError(err)}
 	}
 
 	result := make([]*models.APIKeySummary, 0, len(keys))
@@ -160,7 +160,7 @@ func ConfigGetAIApikeyByID(params aiops.GetConfigAiApikeyKeyIDParams, principal 
 		if resp := keyStoreFailure(err); resp != nil {
 			return resp
 		}
-		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
+		return &ErrorResponse{Payload: ResultErrorResponseError(err)}
 	}
 
 	return aiops.NewGetConfigAiApikeyKeyIDOK().WithPayload(apiKeySummaryToModel(*key))
@@ -179,7 +179,7 @@ func ConfigDeleteAIApikey(params aiops.DeleteConfigAiApikeyKeyIDParams, principa
 		if resp := keyStoreFailure(err); resp != nil {
 			return resp
 		}
-		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
+		return &ErrorResponse{Payload: ResultErrorResponseError(err)}
 	}
 
 	return aiops.NewDeleteConfigAiApikeyKeyIDNoContent()
@@ -255,7 +255,7 @@ func ConfigPostAITenantRateLimit(params aiops.PostConfigAiTenantRatelimitParams,
 		if resp := keyStoreFailure(err); resp != nil {
 			return resp
 		}
-		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
+		return &ErrorResponse{Payload: ResultErrorResponseError(err)}
 	}
 
 	return aiops.NewPostConfigAiTenantRatelimitNoContent()
@@ -273,7 +273,7 @@ func ConfigGetAITenantRateLimit(params aiops.GetConfigAiTenantRatelimitTenantIDP
 		if resp := keyStoreFailure(err); resp != nil {
 			return resp
 		}
-		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
+		return &ErrorResponse{Payload: ResultErrorResponseError(err)}
 	}
 
 	tenantID := entry.TenantID
