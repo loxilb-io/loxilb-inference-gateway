@@ -152,6 +152,65 @@ and a P/D pool failure (502/503). The P/D failures are visible in the P/D
 lifecycle metrics; the LlamaFirewall blocks are visible only in
 `loxilb_llamafw_*`. Offered load therefore still excludes those two classes.
 
+## Metric parity with upstream OSS loxilb
+
+`deploy/monitoring/manifest/oss-parity.json` states, per family, whether
+upstream `loxilb-io/loxilb` exports it too. It exists because the metric
+manifest cannot answer that: `owner: "loxilb"` there means "emitted by the
+loxilb binary in *this* repo", and the fork carries metric changes, so the 209
+families holding that owner are not a parity claim.
+
+Regenerate it against a checkout of upstream:
+
+```bash
+git clone https://github.com/loxilb-io/loxilb.git /tmp/upstream-loxilb
+python3 deploy/monitoring/ci/gen-oss-parity.py --upstream /tmp/upstream-loxilb
+```
+
+Both sides are read by the same AST extractor (`tools/metric-manifest`), so
+neither tree has to build.
+
+### The three verdicts
+
+| `parity` | Meaning | What a consumer should do |
+|---|---|---|
+| `present-identical` | upstream exports it with the same type and labels | safe to render against either |
+| `present-divergent` | upstream exports the **name**, with a different type or label set | **treat exactly like `absent`** |
+| `absent` | upstream does not export it | gateway-only; do not render against upstream |
+
+`present-divergent` is the verdict this artifact exists for. An absent family
+leaves a panel empty, which is visibly wrong and gets fixed. A divergent one
+*renders* — with the wrong unit, or with a `sum by (label)` over a label
+upstream does not have, silently collapsing every series into one. Deny it by
+default; a confidently wrong panel is worse than a blank one.
+
+### Reading it the other way round
+
+`upstream_only` lists families upstream exports that this gateway does not, so
+the artifact cannot be misread as "the gateway is a superset". At the pinned
+revision all 25 of them are upstream's **legacy, un-prefixed** names
+(`processed_bytes`, `active_conntrack_count`, `total_fw_drops`, …), which
+upstream still dual-registers alongside its canonical `loxilb_*` ones. A
+dashboard written for OSS loxilb against those legacy names renders **nothing**
+against this gateway, which emits only the canonical names.
+
+### How it is kept honest
+
+- The generator **refuses to emit** while any definition in either tree is
+  unresolved. An unresolved definition is a family that exists and that the
+  artifact would report `absent` — the verdict a consumer acts on by hiding a
+  panel. It is a build failure naming the file, not a silent hole.
+- `Monitoring-Lint` re-checks the artifact against the **pinned** upstream
+  revision, so a pull request fails only for what it changed.
+- `OSS-Parity-Drift` runs weekly against upstream **main**. Upstream renaming or
+  dropping a family touches nothing in this repository, so that is the only leg
+  that can catch the vendored statement going stale. A failure there means
+  regenerate and read the new divergences — not that something here broke.
+
+At the pinned revision: **35 identical, 0 divergent, 197 absent** of 232 gateway
+families, against 60 upstream families.
+
+
 ## Operational notes
 
 - Scrape interval is 10 s to match loxilb's internal stats sweep — don't lower it.
