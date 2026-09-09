@@ -209,6 +209,12 @@ func (d *DpDocaBf2) resolveFlowMACs(ip net.IP) (uint16, [6]byte, [6]byte, bool) 
 		ok   bool
 	}
 	v, _, _ := d.resolveSF.Do(ip.String(), func() (interface{}, error) {
+		// The collapse invariant is only observable from inside the flight,
+		// because Do seals its inner function. This seam lets a test count
+		// invocations and hold the flight open; it is nil everywhere else.
+		if resolveSFInnerHook != nil {
+			resolveSFInnerHook()
+		}
 		// !doca has no DPDK ports — slow path is "always missing".
 		// Tests that need a positive slow-path result should override
 		// resolveFlowMACsFn (the seam).
@@ -222,6 +228,14 @@ func (d *DpDocaBf2) resolveFlowMACs(ip net.IP) (uint16, [6]byte, [6]byte, bool) 
 // SelfIPCache hits. Tests populate it before exercising the fast path.
 // Default is the zero MAC so test pollution is detectable.
 var stubProxyPortMAC [6]byte
+
+// resolveSFInnerHook is called at the top of the resolveFlowMACs singleflight
+// inner function. Nil except while a test has installed it, which is the only
+// way to observe how many times a flight's inner function ran -- the property
+// the whole wrap exists to provide. Unlike resolveFlowMACsFn, which replaces
+// resolveFlowMACs outright and so bypasses the flight, this observes from
+// within it.
+var resolveSFInnerHook func()
 
 // === paired-offload test seams (!doca only) ===
 //
