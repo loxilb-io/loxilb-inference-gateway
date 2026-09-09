@@ -41,7 +41,7 @@ func NewGetConfigEndpointAll(ctx *middleware.Context, handler GetConfigEndpointA
 
 # Get End-Points State in loxilb
 
-Get End-Points State in loxilb
+Return endpoint monitor configuration and observed health. Structured HTTP monitor fields are not returned, so this is not a complete configuration round-trip. currState uses ok, nok, or red, not the host-state input enumeration.
 */
 type GetConfigEndpointAll struct {
 	Context *middleware.Context

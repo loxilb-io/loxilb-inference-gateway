@@ -34,7 +34,7 @@ func NewPostConfigIpv4address(ctx *middleware.Context, handler PostConfigIpv4add
 
 # Assign IPv4 addresses in the device
 
-Assign IPv4 addresses in the device
+Assign an address with prefix length to the named interface. Supply IPv4 CIDR notation; the shared mutation helper does not enforce this endpoint's address family. A missing Linux interface can fall back to an internal address object. Backend failure can return HTTP 200 with result set to fail; HTTP status alone does not establish success.
 */
 type PostConfigIpv4address struct {
 	Context *middleware.Context

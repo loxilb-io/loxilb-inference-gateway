@@ -41,7 +41,7 @@ func NewGetConfigCistateAll(ctx *middleware.Context, handler GetConfigCistateAll
 
 # Get Cluster Instance State in the device
 
-Get Cluster Instance State in the device
+Return cluster instance names, states, and VIPs. The current handler does not populate the schema-required sync field; do not interpret it as confirmed synchronization.
 */
 type GetConfigCistateAll struct {
 	Context *middleware.Context

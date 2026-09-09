@@ -40,11 +40,11 @@ type PostConfigRestoreParams struct {
 	// HTTP Request Object
 	HTTPRequest *http.Request `json:"-"`
 
-	/*Comma-separated snapshot domains to restore. Defaults to every domain the document covers (its included_domains). Requesting a domain the document does not cover is refused.
+	/*Comma-separated snapshot domains to replace, not merge. Omitted or empty selection uses included_domains. Uncovered domains are refused. Required dependencies are checked across the document manifest before component selection.
 	  In: query
 	*/
 	Components *string
-	/*dry-run (default) validates and returns the plan without mutating anything; commit applies the snapshot with automatic rollback on failure.
+	/*dry-run (default) performs pre-apply checks and planning without applying configuration. commit replaces selected domains and attempts rollback if apply or verification fails; rollback itself can fail. A successful commit can return persisted=false when write-through fails without undoing the applied state.
 	  In: query
 	  Default: "dry-run"
 	*/

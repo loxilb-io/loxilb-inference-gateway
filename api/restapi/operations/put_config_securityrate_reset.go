@@ -34,7 +34,7 @@ func NewPutConfigSecurityrateReset(ctx *middleware.Context, handler PutConfigSec
 
 # Reset security rate limiting statistics
 
-Reset all accumulated statistics counters for security rate limiting (SYN/Conn/UDP) to zero.
+Attempt to reset accumulated SYN, connection-SYN, and UDP statistics counters. Tracking maps and their uniqueIps occupancy are not cleared. Individual counter-write failures are logged but can still result in HTTP 204; success does not prove every counter was reset.
 */
 type PutConfigSecurityrateReset struct {
 	Context *middleware.Context

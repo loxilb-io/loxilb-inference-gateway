@@ -34,7 +34,7 @@ func NewPostConfigSessionulcl(ctx *middleware.Context, handler PostConfigSession
 
 # Create a new session config
 
-Create a new session config for 5G.
+Add an uplink classifier to an existing session. Identity is the session identifier plus classifier IP; duplicate identity does not update QFI. Supply ulclArgument because the handler dereferences this schema-optional object. QFI narrows to uint8 without a bounds check.
 */
 type PostConfigSessionulcl struct {
 	Context *middleware.Context

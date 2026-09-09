@@ -34,7 +34,7 @@ func NewGetMetricsRequestcount(ctx *middleware.Context, handler GetMetricsReques
 
 # Get request count metrics
 
-Get metrics related to request counts.
+Returns accumulated observed conntrack-flow counts, globally and by service, not HTTP request counts. Short-lived flows between collection passes can be missed. Cached values can be stale; optional zero values can be omitted.
 */
 type GetMetricsRequestcount struct {
 	Context *middleware.Context

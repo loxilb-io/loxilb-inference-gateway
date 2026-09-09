@@ -34,7 +34,7 @@ func NewDeleteConfigSecurityrate(ctx *middleware.Context, handler DeleteConfigSe
 
 # Disable unified security rate limiting
 
-Disable all security rate limiting (SYN flood + connection rate) and clear tracking state.
+Disable all three security-rate protections and replace the security-rate whitelist with an empty list. This does not clear tracking maps or guarantee counter reset. Whitelist maps are shared with IP-filter rules, so overlapping entries can be removed.
 */
 type DeleteConfigSecurityrate struct {
 	Context *middleware.Context

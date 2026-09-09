@@ -32,7 +32,9 @@ func NewGetConfigL7PolicyID(ctx *middleware.Context, handler GetConfigL7PolicyID
 /*
 	GetConfigL7PolicyID swagger:route GET /config/l7policy/id/{id} getConfigL7PolicyId
 
-Get a single L7 content-routing policy by id
+# Get a single L7 content-routing policy by id
+
+Returns the stored policy with this ID, or 404 when absent. Readback does not verify that the listener still carries the policy or that its effective values match the stored document.
 */
 type GetConfigL7PolicyID struct {
 	Context *middleware.Context

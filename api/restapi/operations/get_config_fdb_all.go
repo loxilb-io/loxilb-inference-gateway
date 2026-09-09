@@ -41,7 +41,7 @@ func NewGetConfigFdbAll(ctx *middleware.Context, handler GetConfigFdbAllHandler)
 
 Get FDB in the device(interface)
 
-Get FDB in the device(interface).
+Return bridge-family forwarding entries from interfaces that have a bridge master. The response exposes interface and MAC only, not the complete kernel FDB key or every kernel FDB entry.
 */
 type GetConfigFdbAll struct {
 	Context *middleware.Context

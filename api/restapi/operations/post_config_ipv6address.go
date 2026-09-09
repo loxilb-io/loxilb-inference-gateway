@@ -34,7 +34,7 @@ func NewPostConfigIpv6address(ctx *middleware.Context, handler PostConfigIpv6add
 
 # Assign IPv6 addresses in the device
 
-Assign IPv6 addresses in the device
+Assign an address with prefix length to the named interface. Supply IPv6 CIDR notation; the shared mutation helper does not enforce this endpoint's address family. A missing Linux interface can fall back to an internal address object. Backend failure can return HTTP 200 with result set to fail; HTTP status alone does not establish success.
 */
 type PostConfigIpv6address struct {
 	Context *middleware.Context

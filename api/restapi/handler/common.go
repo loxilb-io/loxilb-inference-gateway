@@ -80,10 +80,14 @@ func containsAny(haystack string, needles ...string) bool {
 }
 
 // ResultErrorResponseError classifies an error value, preferring structure
-// over message text: typed rule/KV admission refusals are operator answers and
-// are always a 400, regardless of whether their wording matches a phrase in
-// the message classifier below. Everything else falls back to message-based
-// classification.
+// over message text: typed rule/KV admission refusals and input-validation
+// rejections are the caller's answer and are always a 400, regardless of
+// whether their wording matches any phrase in the message classifier below.
+// Everything else falls back to the message-based classification.
+//
+// Prefer this over ResultErrorResponseError...Message at any call site that
+// holds an error value. Flattening the error to a string first discards the
+// only reliable signal and leaves the status to a substring search.
 func ResultErrorResponseError(err error) *models.Error {
 	var ruleArg *cmn.RuleArgumentError
 	if errors.As(err, &ruleArg) {
@@ -93,7 +97,25 @@ func ResultErrorResponseError(err error) *models.Error {
 	if errors.As(err, &adm) {
 		return &models.Error{Code: 400, Message: "Malformed arguments for API call", Result: err.Error()}
 	}
+	var invalid *cmn.ValidationError
+	if errors.As(err, &invalid) {
+		return &models.Error{
+			Code:    400,
+			Message: "Malformed arguments for API call",
+			Result:  err.Error(),
+			Fields:  validationFields(invalid),
+		}
+	}
 	return ResultErrorResponseErrorMessage(err.Error())
+}
+
+// validationFields names the refused input when the rejection attributes
+// itself to one, so a client can point at the field rather than parse prose.
+func validationFields(err *cmn.ValidationError) []string {
+	if err.Field == "" {
+		return []string{}
+	}
+	return []string{err.Field}
 }
 
 func ResultErrorResponseErrorMessage(msg string) *models.Error {
@@ -172,8 +194,8 @@ func ResultErrorResponseErrorMessage(msg string) *models.Error {
 		"invalid vlanid", "fdb attr error", "fdb v6 dst unsupported",
 		"host-args error", "hostarm-args error",
 		"password must ", "password must not ", "password must be at least",
-		"Cors URL cannot be empty", "wildcard '*' is not allowed",
-		"Failed to add Cors", "Failed to delete Cors", "filename is required", "file is empty",
+		"cors url cannot be empty", "wildcard '*' is not allowed",
+		"failed to add cors", "failed to delete cors", "filename is required", "file is empty",
 		"no configuration file provided", "invalid json format",
 		"is required",
 		// Create-time rule-validation rejections. These are addressed to the

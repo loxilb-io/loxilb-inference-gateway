@@ -34,7 +34,7 @@ func NewGetConfigWorkerMetrics(ctx *middleware.Context, handler GetConfigWorkerM
 
 # Get all worker metrics
 
-Returns current GPU metrics for all tracked workers
+Returns cached worker telemetry, potentially stale and still present when monitoring is disabled. The declared monitoring_enabled field is not populated by this handler; absence is not an authoritative disabled verdict.
 */
 type GetConfigWorkerMetrics struct {
 	Context *middleware.Context

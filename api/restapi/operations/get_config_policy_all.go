@@ -41,7 +41,7 @@ func NewGetConfigPolicyAll(ctx *middleware.Context, handler GetConfigPolicyAllHa
 
 # Get
 
-Get
+Return configured policers and their target references. Rates are reported in Mbps and burst sizes in bytes. This response does not expose attachment synchronization and is not proof that a pending target is active.
 */
 type GetConfigPolicyAll struct {
 	Context *middleware.Context

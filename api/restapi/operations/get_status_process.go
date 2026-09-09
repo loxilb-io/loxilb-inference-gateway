@@ -34,7 +34,7 @@ func NewGetStatusProcess(ctx *middleware.Context, handler GetStatusProcessHandle
 
 # Get a process based on CPU usage info in the device
 
-Get a process based on high usage CPU(linux command "top") in the device or system.
+Returns Linux process observations assembled from top, with CPU and memory percentages from ps. Values depend on command availability and output format; the current parser incompletely handles failed or short command output.
 */
 type GetStatusProcess struct {
 	Context *middleware.Context

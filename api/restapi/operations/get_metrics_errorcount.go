@@ -34,7 +34,7 @@ func NewGetMetricsErrorcount(ctx *middleware.Context, handler GetMetricsErrorcou
 
 # Get error count metrics
 
-Get metrics related to error counts.
+Returns cached counts of observed conntrack error states, globally and by service, not HTTP error responses. Collection may be stale or uninitialized; optional zero values can be omitted.
 */
 type GetMetricsErrorcount struct {
 	Context *middleware.Context

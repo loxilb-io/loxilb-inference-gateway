@@ -213,7 +213,8 @@ func init() {
         }
       },
       "required": [
-        "raw_key"
+        "raw_key",
+        "key_id"
       ],
       "type": "object"
     },
@@ -7107,10 +7108,10 @@ func init() {
           "application/json"
         ],
         "responses": {
-          "201": {
-            "description": "Created",
+          "200": {
+            "description": "OK",
             "schema": {
-              "$ref": "#/definitions/User"
+              "$ref": "#/definitions/OperationResult"
             }
           },
           "400": {
@@ -16766,8 +16767,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
-          "500": {
-            "description": "Internal service error",
+          "403": {
+            "description": "Authenticated principal's role carries no authority for this operation",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -16949,8 +16950,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
-          "500": {
-            "description": "Internal service error",
+          "403": {
+            "description": "Authenticated principal's role carries no authority for this operation",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -16990,8 +16991,14 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
-          "500": {
-            "description": "Internal service error",
+          "403": {
+            "description": "Authenticated principal's role carries no authority for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Refused while the boot config replay has not settled, or while a snapshot restore is in progress",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -17891,6 +17898,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal's role carries no authority for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "503": {
             "description": "Not ready (body carries the reasons)",
             "schema": {
@@ -18586,10 +18599,10 @@ func init() {
           }
         ],
         "responses": {
-          "201": {
-            "description": "Created",
+          "200": {
+            "description": "OK",
             "schema": {
-              "$ref": "#/definitions/User"
+              "$ref": "#/definitions/OperationResult"
             }
           },
           "400": {
@@ -28760,8 +28773,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
-          "500": {
-            "description": "Internal service error",
+          "403": {
+            "description": "Authenticated principal's role carries no authority for this operation",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -28965,8 +28978,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
-          "500": {
-            "description": "Internal service error",
+          "403": {
+            "description": "Authenticated principal's role carries no authority for this operation",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -29006,8 +29019,14 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
-          "500": {
-            "description": "Internal service error",
+          "403": {
+            "description": "Authenticated principal's role carries no authority for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Refused while the boot config replay has not settled, or while a snapshot restore is in progress",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -30043,6 +30062,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
+          "403": {
+            "description": "Authenticated principal's role carries no authority for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
           "503": {
             "description": "Not ready (body carries the reasons)",
             "schema": {
@@ -30268,7 +30293,8 @@ func init() {
       "description": "HTTP 201 creation result. key_id is the management handle. raw_key contains a secret only for generated credentials and is currently empty for imports. Protect generated secrets from logs; subsequent reads expose metadata only.",
       "type": "object",
       "required": [
-        "raw_key"
+        "raw_key",
+        "key_id"
       ],
       "properties": {
         "key_id": {

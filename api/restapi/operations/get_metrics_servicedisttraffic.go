@@ -34,7 +34,7 @@ func NewGetMetricsServicedisttraffic(ctx *middleware.Context, handler GetMetrics
 
 # Get service distribution traffic metrics
 
-Get metrics related to service distribution traffic. The additionalProp is service name.
+Returns cached service traffic distribution keyed by service name, with value and share of the observed total. Ratio is zero when the denominator is zero. Collection can be stale or incomplete; this is not an instantaneous rate.
 */
 type GetMetricsServicedisttraffic struct {
 	Context *middleware.Context

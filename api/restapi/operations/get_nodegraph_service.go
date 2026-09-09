@@ -34,7 +34,7 @@ func NewGetNodegraphService(ctx *middleware.Context, handler GetNodegraphService
 
 # List current topology for a specific service
 
-Retrieve a list of all nodes and edges in the current topology for a specific service.
+Not implemented by the current router configuration; the generated default handler returns 501. The declared service-filtered topology response is not an available runtime contract, and dormant producer code still requires validation.
 */
 type GetNodegraphService struct {
 	Context *middleware.Context

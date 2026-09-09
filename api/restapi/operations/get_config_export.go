@@ -34,7 +34,7 @@ func NewGetConfigExport(ctx *middleware.Context, handler GetConfigExportHandler)
 
 # Export all configurations
 
-Export cluster, endpoint, firewall, loadbalancer, mirror, and policy configurations as a JSON file.
+Deprecated compatibility wrapper for GET /config/snapshot. Downloads a versioned, checksummed snapshot of supported domains, not all runtime state or external secrets. The response carries deprecation and snapshot identity headers.
 */
 type GetConfigExport struct {
 	Context *middleware.Context

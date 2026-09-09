@@ -34,7 +34,7 @@ func NewPostConfigRoute(ctx *middleware.Context, handler PostConfigRouteHandler)
 
 # Create a new route config
 
-Create a new route config .
+Add a route using a destination CIDR and literal next-hop IP. This uses add, not replace. Only the exact protocol string static explicitly selects the static protocol; other returned protocol values are not supported create-time selectors. Gateway validity and address-family consistency are not fully checked locally.
 */
 type PostConfigRoute struct {
 	Context *middleware.Context

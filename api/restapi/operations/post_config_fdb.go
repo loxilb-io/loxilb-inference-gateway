@@ -34,7 +34,7 @@ func NewPostConfigFdb(ctx *middleware.Context, handler PostConfigFdbHandler) *Po
 
 # Assign FDB in the device
 
-Assign FDB in the device
+Add a permanent bridge-family forwarding entry for the supplied interface and MAC address. This is a netlink append operation, not a general replacement API.
 */
 type PostConfigFdb struct {
 	Context *middleware.Context

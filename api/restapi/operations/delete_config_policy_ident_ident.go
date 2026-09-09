@@ -34,7 +34,7 @@ func NewDeleteConfigPolicyIdentIdent(ctx *middleware.Context, handler DeleteConf
 
 # Delete a Policy QoS service
 
-Delete a new Create a Policy QoS service.
+Delete the policer identified by ident and detach its target association.
 */
 type DeleteConfigPolicyIdentIdent struct {
 	Context *middleware.Context

@@ -34,7 +34,7 @@ func NewGetMetricsFwdrops(ctx *middleware.Context, handler GetMetricsFwdropsHand
 
 # Get firewall drops metrics
 
-Get metrics related to firewall drops.
+Returns cached current cumulative firewall-rule drop counters and their total, in packets. Values can decrease when rules disappear or counters reset; they are not HTTP errors or rates and can be stale.
 */
 type GetMetricsFwdrops struct {
 	Context *middleware.Context

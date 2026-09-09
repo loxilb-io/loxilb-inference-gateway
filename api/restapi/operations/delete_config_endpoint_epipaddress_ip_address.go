@@ -34,7 +34,7 @@ func NewDeleteConfigEndpointEpipaddressIPAddress(ctx *middleware.Context, handle
 
 # Delete an LB end-point from monitoring
 
-Delete an LB end-point from monitoring
+Delete an endpoint monitor. A supplied name takes precedence over the path host and probe tuple; otherwise supply the original host, probe_type, and probe_port. Referenced monitors cannot be removed. probe_port is currently converted to uint16 without complete range or fractional validation; use an integer port in range.
 */
 type DeleteConfigEndpointEpipaddressIPAddress struct {
 	Context *middleware.Context

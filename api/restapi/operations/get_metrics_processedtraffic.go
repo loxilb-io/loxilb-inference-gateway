@@ -34,7 +34,7 @@ func NewGetMetricsProcessedtraffic(ctx *middleware.Context, handler GetMetricsPr
 
 # Get processed traffic metrics
 
-Get metrics related to processed traffic.
+Returns accumulated datapath load-balancer endpoint-counter deltas in bytes and packets, including protocol byte breakdowns. These are counters, not instantaneous throughput. Collection establishes baselines and can be stale; optional zero values can be omitted.
 */
 type GetMetricsProcessedtraffic struct {
 	Context *middleware.Context

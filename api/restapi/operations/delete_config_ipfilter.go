@@ -34,7 +34,7 @@ func NewDeleteConfigIpfilter(ctx *middleware.Context, handler DeleteConfigIpfilt
 
 # Delete an IP filter rule
 
-Delete an IP whitelist or blacklist rule.
+Delete the entry identified by filterType and normalized CIDR. This is a zone-less XDP map: the current handler narrows zone without validating it and deletion does not use zone in the key. Omit zone or use zero; do not rely on it for isolation.
 */
 type DeleteConfigIpfilter struct {
 	Context *middleware.Context

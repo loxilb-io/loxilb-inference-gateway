@@ -34,7 +34,7 @@ func NewPostConfigBgpPolicyDefinitions(ctx *middleware.Context, handler PostConf
 
 # Adds a BGP Policy
 
-Adds a BGP Policy
+Add a BGP policy definition. Supply non-null conditions and actions for every statement: the handler dereferences these schema-optional objects. Numeric narrowing, enum fallback, and string parsing can change meaning before GoBGP admission; validate statement relationships before submission. This is not an atomic general-purpose replacement API.
 */
 type PostConfigBgpPolicyDefinitions struct {
 	Context *middleware.Context

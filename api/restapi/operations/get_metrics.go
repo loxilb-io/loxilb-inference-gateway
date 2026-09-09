@@ -32,7 +32,9 @@ func NewGetMetrics(ctx *middleware.Context, handler GetMetricsHandler) *GetMetri
 /*
 	GetMetrics swagger:route GET /metrics getMetrics
 
-Scrape metrics from the cache
+# Scrape metrics from the cache
+
+Public management-authentication-exempt Prometheus scrape, using exposition rather than JSON. Disabled collection/export returns plain-text 503. Series depend on initialization and activity; absence is not measured zero.
 */
 type GetMetrics struct {
 	Context *middleware.Context

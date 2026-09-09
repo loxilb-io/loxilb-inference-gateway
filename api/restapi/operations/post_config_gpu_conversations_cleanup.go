@@ -34,7 +34,7 @@ func NewPostConfigGpuConversationsCleanup(ctx *middleware.Context, handler PostC
 
 # Manual conversation cleanup
 
-Removes stale conversation mappings older than specified age
+Conversation cleanup is currently a placeholder. The backend returns zero deletion and age counts without deleting mappings; success does not prove cleanup or an empty conversation table.
 */
 type PostConfigGpuConversationsCleanup struct {
 	Context *middleware.Context

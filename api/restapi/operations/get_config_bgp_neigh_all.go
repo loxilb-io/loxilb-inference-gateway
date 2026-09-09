@@ -41,7 +41,7 @@ func NewGetConfigBgpNeighAll(ctx *middleware.Context, handler GetConfigBgpNeighA
 
 # Get the all of BGP Neighbor
 
-Get the all of BGP Neighbor
+Return BGP neighbors and session state in a 200 response, including an empty array when there are none. Configured port 179 is normalized to zero or absent on readback. BGP must be enabled; a successful list does not establish peering readiness.
 */
 type GetConfigBgpNeighAll struct {
 	Context *middleware.Context

@@ -41,7 +41,7 @@ func NewGetConfigConntrackAll(ctx *middleware.Context, handler GetConfigConntrac
 
 Get all of the conntrack entries.
 
-Get all of the conntrack infomation for all of the service.
+Return gateway datapath connection records, not the host's complete operating-system conntrack table. Counters include reported hardware fast-path totals when available. A backend table-read failure can currently appear as an empty successful result; ageMs is not populated.
 */
 type GetConfigConntrackAll struct {
 	Context *middleware.Context

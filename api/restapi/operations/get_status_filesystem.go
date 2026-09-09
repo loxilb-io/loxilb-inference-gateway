@@ -34,7 +34,7 @@ func NewGetStatusFilesystem(ctx *middleware.Context, handler GetStatusFilesystem
 
 # Get a File System info in the device
 
-Get a File system infomation (linux command "df") in the device or system.
+Returns filesystem observations parsed from Linux df -hT. Capacity and usage fields are human-readable strings, not byte counts; rows depend on the supported output format.
 */
 type GetStatusFilesystem struct {
 	Context *middleware.Context

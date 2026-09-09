@@ -34,7 +34,7 @@ func NewGetLogArchivesFilename(ctx *middleware.Context, handler GetLogArchivesFi
 
 # Download a specific log archive
 
-Download a log archive file by its name.
+Downloads an eligible log file by basename; gzip archives are transferred as stored rather than decompressed. The current handler can return 500 for a missing file despite the declared 404 response.
 */
 type GetLogArchivesFilename struct {
 	Context *middleware.Context

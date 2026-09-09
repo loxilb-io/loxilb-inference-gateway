@@ -34,7 +34,7 @@ func NewDeleteConfigBgpPolicyDefinedsetsDefinesetTypeTypeName(ctx *middleware.Co
 
 # Delete a BGP definedsets
 
-Delete a BGP definedsets
+Delete the named defined set and all its entries. Select a supported type explicitly; unknown types are not rejected consistently and can fall back to prefix on this path. GoBGP dependency and deletion errors are not consistently mapped by HTTP status.
 */
 type DeleteConfigBgpPolicyDefinedsetsDefinesetTypeTypeName struct {
 	Context *middleware.Context

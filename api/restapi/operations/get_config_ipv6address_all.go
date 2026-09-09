@@ -41,7 +41,7 @@ func NewGetConfigIpv6addressAll(ctx *middleware.Context, handler GetConfigIpv6ad
 
 Get IPv6 addresses in the device(interface)
 
-Get IPv6 addresses in the device(interface)
+Return the gateway's IPv6 address inventory, filtered by family, with interface names and synchronization state. This is not a complete independently verified kernel inventory.
 */
 type GetConfigIpv6addressAll struct {
 	Context *middleware.Context

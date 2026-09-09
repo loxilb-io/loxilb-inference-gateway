@@ -34,7 +34,7 @@ func NewGetStatusReady(ctx *middleware.Context, handler GetStatusReadyHandler) *
 
 # Configuration readiness of this gateway
 
-READY means the boot config replay settled without degradation (or an operator's commit restore has since recovered it) and every REQUIRED external recovery dependency answers right now. A not-ready gateway returns 503 with the same body shape, carrying the reasons - a failed boot restore is never silently READY.
+Reports configuration-recovery readiness using boot replay, recovery outcomes, auto-persist failures and dependency checks. Checks vary by type and do not all perform external I/O. Informational attachment state and maintenance do not directly gate this verdict. It is not proof of successful inference, GPU operation or complete datapath health. A not-ready verdict returns 503 with ReadyStatus; authentication or credential-store errors can use a different error body.
 */
 type GetStatusReady struct {
 	Context *middleware.Context

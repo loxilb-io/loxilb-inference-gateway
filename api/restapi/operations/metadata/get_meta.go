@@ -34,7 +34,7 @@ func NewGetMeta(ctx *middleware.Context, handler GetMetaHandler) *GetMeta {
 
 # Get metadata for all POST APIs
 
-Returns metadata about required fields for each POST API.
+Returns simplified input metadata from embedded main and supplemental Swagger. One operation is selected per path, preferring POST, then PUT, then PATCH; main-document entries win overlaps. Ranges, defaults, patterns, authentication, cross-field rules and vendor extensions, including root relationship metadata, are not passed through. This is advisory field metadata, not a complete UI validator. Extraction errors are currently logged without changing the handler's 200 response.
 */
 type GetMeta struct {
 	Context *middleware.Context

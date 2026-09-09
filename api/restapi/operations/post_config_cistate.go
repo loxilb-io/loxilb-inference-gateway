@@ -34,7 +34,7 @@ func NewPostConfigCistate(ctx *middleware.Context, handler PostConfigCistateHand
 
 # Informs Current Cluster Instance state in the device
 
-Informs Current Cluster Instance state in the device
+Set cluster instance state and initiate asynchronous dependent updates. Recognized states are MASTER, BACKUP, FAULT, STOP, and NOT_DEFINED. Current limitations include creating an instance before state validation, ignoring VIP changes when state is unchanged, and unchecked VIP parsing. Instance text is used in a shell hook when configured and is not safely isolated as an argument; do not treat unrestricted instance names as safe. HTTP success is not completion of HA or hook processing.
 */
 type PostConfigCistate struct {
 	Context *middleware.Context

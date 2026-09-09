@@ -34,7 +34,7 @@ func NewGetMetricsReqcountperclient(ctx *middleware.Context, handler GetMetricsR
 
 # Get request count per client metrics
 
-Get metrics related to request counts per client. The additionalProp is client IP address.
+Returns cached conntrack-interaction packet totals keyed by client IP. Despite the operation name, these are packets, not HTTP requests. The sampled flow view can miss short-lived traffic and remain stale when collection is disabled.
 */
 type GetMetricsReqcountperclient struct {
 	Context *middleware.Context

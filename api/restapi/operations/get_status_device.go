@@ -34,7 +34,7 @@ func NewGetStatusDevice(ctx *middleware.Context, handler GetStatusDeviceHandler)
 
 # Get a basic info in the device
 
-Get a basic info (linux command "uptime, hostnamectl") in the device or system.
+Returns identity read from Linux system files and uname. Raw values can include trailing newlines; uptime contains both /proc/uptime values rather than a formatted duration. Availability depends on distribution-specific files.
 */
 type GetStatusDevice struct {
 	Context *middleware.Context
