@@ -29,6 +29,20 @@ pass() { echo "  [OK] $1"; }
 fail() { echo "  [FAILED] $1"; code=1; }
 skip() { echo "  [SKIPPED] $1"; }
 
+# A pairing whose two images write the SAME schema cannot exercise a migration
+# step or the newer-schema gate. That is a property of the pairing, not a result,
+# so it is reported as a loud skip rather than a pass -- and, like
+# UP_REQUIRE_SNAPSHOT_OLD, it can be promoted to a failure once the matrix is
+# expected to span a schema step.
+require_schema_step() { # require_schema_step <what> <shared schema>
+    local what="$1" schema="$2"
+    if [[ "${UP_REQUIRE_SCHEMA_STEP:-0}" == "1" ]]; then
+        fail "$what: both images write schema $schema and UP_REQUIRE_SCHEMA_STEP=1"
+    else
+        skip "$what (both images write schema $schema; pair with an older-schema image to exercise it)"
+    fi
+}
+
 VIP=20.20.20.1
 CFG=llb1_config
 CFGDIR="$(cd "$(dirname "$0")" && pwd)"
@@ -241,15 +255,40 @@ deep_diff "$PLIB_ARTIFACTS/up01-old" "$PLIB_ARTIFACTS/up01-new" up01 \
     && pass "UP-01: the configuration is deep-equal across the version step" \
     || fail "UP-01: configuration changed across the version step (see the diff artifacts)"
 assert_traffic "UP-01"
-MIGRATED_SCHEMA=$(sudo jq -r '.schema_version' "$CFG/snapshot.json")
-[[ "$OLD_DISK_SCHEMA" != "$MIGRATED_SCHEMA" ]] \
-    && pass "UP-01: the document was migrated forward ($OLD_DISK_SCHEMA -> $MIGRATED_SCHEMA)" \
-    || pass "UP-01: both sides share schema $MIGRATED_SCHEMA (no migration was due)"
+# Boot replay of a VALID document is deliberately non-mutating: only the legacy
+# *.txt path writes through at boot (UP-04). So the document on the volume is
+# still at the old schema here, and the question "was it migrated by the boot"
+# has no yes answer to look for.
+BOOTED_SCHEMA=$(sudo jq -r '.schema_version' "$CFG/snapshot.json")
+[[ "$BOOTED_SCHEMA" == "$OLD_DISK_SCHEMA" ]] \
+    && pass "UP-01: the boot replayed without rewriting the volume (still schema $BOOTED_SCHEMA)" \
+    || fail "UP-01: the boot rewrote the document ($OLD_DISK_SCHEMA -> $BOOTED_SCHEMA); only the legacy path writes through"
+
+# The first explicit persist is what carries the document forward, so that is
+# where the forward-migration claim can actually be tested. Comparing the file
+# against itself before and after a boot -- which is what this leg used to do --
+# could never fail, and reported "no migration was due" while a 1.0 document sat
+# unmigrated under a 1.5 gateway.
+persist_and_verify llb1 || fail "UP-01: persist on the new image"
+RUNNING_SCHEMA=$(sudo jq -r '.schema_version' "$CFG/snapshot.json")
+if [[ "$OLD_DISK_SCHEMA" != "$RUNNING_SCHEMA" ]]; then
+    pass "UP-01: the first persist migrated the document forward ($OLD_DISK_SCHEMA -> $RUNNING_SCHEMA)"
+else
+    require_schema_step "UP-01 migration step" "$RUNNING_SCHEMA"
+fi
 
 #################################################################################
 echo "=== UP-03: the migration is idempotent ==="
 #################################################################################
+# UP-01's persist left the document at the running schema, which is what makes
+# this leg about migration at all: booting a MIGRATED document must not migrate
+# it again. Run against an unmigrated document -- as it was before -- this
+# diffed two boots of a file the gateway never rewrites either way, and would
+# have passed whatever the migration did.
 sudo cp "$CFG/snapshot.json" "$PLIB_ARTIFACTS/up03-first.json"
+up03_schema=$(sudo jq -r '.schema_version' "$PLIB_ARTIFACTS/up03-first.json")
+[[ "$up03_schema" == "$RUNNING_SCHEMA" ]] \
+    || fail "UP-03: the document under test is at schema $up03_schema, not the running $RUNNING_SCHEMA; the leg would prove nothing about migration"
 restart_inplace_keep llb1 || fail "UP-03: gateway did not come back"
 sudo cp "$CFG/snapshot.json" "$PLIB_ARTIFACTS/up03-second.json"
 if diff -q \
@@ -267,12 +306,26 @@ echo "=== UP-02: a NEW-schema document handed back to the old image ==="
 # The old gateway must fail CLOSED on a document it cannot understand:
 # quarantine and an empty boot, never a partial apply that leaves the
 # node half-configured while looking healthy.
+#
+# That expectation only holds when the new side actually writes a NEWER schema.
+# When both images write the same one there is no gate to fire and the old image
+# is right to consume the document -- so demanding a refusal there fails a
+# correct gateway, which is exactly what this leg used to do.
 persist_and_verify llb1 || fail "UP-02: persist on the new image"
+NEW_DISK_SCHEMA=$(sudo jq -r '.schema_version' "$CFG/snapshot.json")
 q_before=$(quarantine_count)
 swap_image "$UP_OLD_IMAGE" || fail "old image did not come up on the new document"
 lb_old=$(lb_count)
 q_after=$(quarantine_count)
-if [[ "$q_after" -gt "$q_before" ]]; then
+if [[ "$NEW_DISK_SCHEMA" == "$OLD_DISK_SCHEMA" ]]; then
+    [[ "$q_after" == "$q_before" ]] \
+        && pass "UP-02: nothing was quarantined, correctly — both sides write schema $NEW_DISK_SCHEMA" \
+        || fail "UP-02: the old image quarantined a document of its own schema $NEW_DISK_SCHEMA"
+    [[ "$lb_old" == "1" ]] \
+        && pass "UP-02: the old image consumed the document it can validate" \
+        || fail "UP-02: lb=$lb_old from a same-schema document (want 1)"
+    require_schema_step "UP-02 newer-schema gate" "$NEW_DISK_SCHEMA"
+elif [[ "$q_after" -gt "$q_before" ]]; then
     pass "UP-02: the old image quarantined the newer-schema document ($q_before -> $q_after)"
     [[ "$lb_old" == "0" ]] \
         && pass "UP-02: the old image booted empty rather than partially applying" \

@@ -303,20 +303,12 @@ for u in restore update rollback factory-reset; do
 done
 
 #################################################################################
-echo "=== known-red legs: the published contract vs today's behaviour ==="
+echo "=== regression cover: contract clauses that were red and are now fixed ==="
 #################################################################################
 # These assert contracts/host-backend-contract.md and contracts/exit-codes.md.
-# They are expected to FAIL until the dispatcher implements them. Setting
-# APPL_TOLERATE_KNOWN_DEFECTS=1 downgrades them to warnings so the suite can be
-# wired into CI before the fixes land -- that is a scheduling decision, not a
-# coverage one, and the legs still print what they found.
-known() { # known <message>
-    if [[ "$APPL_TOLERATE_KNOWN_DEFECTS" == "1" ]]; then
-        echo "  [KNOWN-DEFECT] $1"
-    else
-        fail "$1"
-    fi
-}
+# All three were red when this suite was written and are fixed in the CLI; they
+# stay as plain assertions so the behaviour cannot silently regress. There is no
+# tolerate switch: a red leg here is a regression, and a regression is a failure.
 
 # exit-codes.md rule 5 names "timeout mid-mutation" as the PARTIAL case;
 # host-backend-contract.md requires exit 8 with the backend's operation id in
@@ -330,9 +322,9 @@ if [[ $RC -eq 8 ]]; then
     pass "AD-25: a mutation killed mid-flight is PARTIAL (8)"
     jq -e '.data.operationId != null' < "$ART/ad25.out" >/dev/null 2>&1 \
         && pass "AD-25: the envelope carries data.operationId for recovery" \
-        || known "AD-25: exit 8 but no data.operationId to drive recovery with"
+        || fail "AD-25: exit 8 but no data.operationId to drive recovery with"
 else
-    known "AD-25: a mutation killed mid-flight exited $RC, want 8 (PARTIAL). Exit 7 tells automation the operation is safe to retry; exit-codes.md rule 4 forbids auto-retrying 8"
+    fail "AD-25: a mutation killed mid-flight exited $RC, want 8 (PARTIAL). Exit 7 tells automation the operation is safe to retry; exit-codes.md rule 4 forbids auto-retrying 8"
 fi
 set_mode ok
 
@@ -360,7 +352,7 @@ else
     if [[ $elapsed -le 10 ]]; then
         pass "AD-27: --timeout bounded a forking backend (${elapsed}s, exit $RC)"
     else
-        known "AD-27: --timeout 2 did NOT bound a forking backend — the call ran ${elapsed}s (exit $RC). exec.CommandContext kills only the direct child; the grandchild keeps stdout open and cmd.Run() blocks. A wedged backend CAN hang automation forever, which is what appliance.go's requestContext comment says it cannot"
+        fail "AD-27: --timeout 2 did NOT bound a forking backend — the call ran ${elapsed}s (exit $RC). exec.CommandContext kills only the direct child; the grandchild keeps stdout open and cmd.Run() blocks. A wedged backend CAN hang automation forever, which is what appliance.go's requestContext comment says it cannot"
     fi
 fi
 set_mode ok
@@ -371,7 +363,7 @@ run ad26 appliance status
 if grep -qi "permission denied" "$ART/ad26.err"; then
     [[ $RC -eq 3 ]] \
         && pass "AD-26: a privilege failure is AUTH (3)" \
-        || known "AD-26: a privilege failure exited $RC, want 3 (AUTH). Exit 5 tells automation to retry with backoff, which can never succeed for an under-privileged caller"
+        || fail "AD-26: a privilege failure exited $RC, want 3 (AUTH). Exit 5 tells automation to retry with backoff, which can never succeed for an under-privileged caller"
 else
     skip "AD-26 (could not produce a permission-denied exec here; the leg would prove nothing)"
 fi
