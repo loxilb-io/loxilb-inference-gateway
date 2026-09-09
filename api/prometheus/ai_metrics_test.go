@@ -68,18 +68,23 @@ func getCounterValue(cv *prometheus.CounterVec, lvs ...string) float64 {
 func TestRecordAIRequest(t *testing.T) {
 	tenant := "test-tenant-record"
 
-	beforeOK := getCounterValue(aiRequestsTotal, "m1", tenant, "200")
-	before429 := getCounterValue(aiRequestsTotal, "m1", tenant, "429")
+	beforeOK := getCounterValue(aiRequestsTotal, "m1", tenant, "200", AIOutcomeCompleted)
+	before429 := getCounterValue(aiRequestsTotal, "m1", tenant, "429", AIOutcomeCompleted)
 	beforeRL := getCounterValue(aiRateLimitHitsTotal, tenant, "rate_limit_exceeded")
 
 	RecordAIRequest(tenant, "m1", 200, 42)
 	RecordAIRequest(tenant, "m1", 429, 0)
 
-	if d := getCounterValue(aiRequestsTotal, "m1", tenant, "200") - beforeOK; d != 1.0 {
+	if d := getCounterValue(aiRequestsTotal, "m1", tenant, "200", AIOutcomeCompleted) - beforeOK; d != 1.0 {
 		t.Fatalf("expected requests_total{status=200} +1, got delta %f", d)
 	}
-	if d := getCounterValue(aiRequestsTotal, "m1", tenant, "429") - before429; d != 1.0 {
+	// A backend can answer 429 itself. This one is completed, not denied --
+	// which is precisely why status alone cannot carry the distinction.
+	if d := getCounterValue(aiRequestsTotal, "m1", tenant, "429", AIOutcomeCompleted) - before429; d != 1.0 {
 		t.Fatalf("expected requests_total{status=429} +1, got delta %f", d)
+	}
+	if d := getCounterValue(aiRequestsTotal, "m1", tenant, "429", AIOutcomeDenied); d != 0.0 {
+		t.Fatalf("RecordAIRequest must never write outcome=denied, got %f", d)
 	}
 	if d := getCounterValue(aiRateLimitHitsTotal, tenant, "rate_limit_exceeded") - beforeRL; d != 0.0 {
 		t.Fatalf("RecordAIRequest must not touch rate_limit_hits_total, got delta %f", d)

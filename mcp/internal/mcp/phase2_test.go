@@ -28,6 +28,10 @@ type mockLoxilb struct {
 	mu       sync.Mutex
 	requests []string // "METHOD path"
 	srv      *httptest.Server
+	// metricsText overrides the exposition the AI mock serves. Empty means
+	// aiMetricsText -- the default fixture, which carries no outcome label and
+	// therefore stands in for a gateway older than it.
+	metricsText string
 }
 
 func newMockLoxilb(t *testing.T) *mockLoxilb {

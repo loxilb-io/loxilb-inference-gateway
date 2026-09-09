@@ -129,7 +129,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "(sum(rate(loxilb_ai_requests_total{status!~\"2..\",instance=~\"$instance\"}[5m])) or vector(0)) / sum(rate(loxilb_ai_requests_total{instance=~\"$instance\"}[5m]))"
+          "expr": "(sum(rate(loxilb_ai_requests_total{outcome=\"completed\",status!~\"2..\",instance=~\"$instance\"}[5m])) or vector(0)) / sum(rate(loxilb_ai_requests_total{outcome=\"completed\",instance=~\"$instance\"}[5m]))"
         }
       ],
       "fieldConfig": {
@@ -156,7 +156,7 @@
         },
         "overrides": []
       },
-      "description": "Shows 0 when traffic is healthy; No data only when there is no AI traffic at all."
+      "description": "Backend-answered requests only (outcome=completed), matching the LoxilbAIErrorRatio alert. Gate denials are excluded so a rate-limit storm does not read as a backend fault. Shows 0 when traffic is healthy; No data only when there is no AI traffic at all."
     },
     {
       "id": 2,
@@ -254,7 +254,7 @@
       "id": 4,
       "type": "timeseries",
       "title": "AI requests/s by model",
-      "description": "Counter increments at SSE stream COMPLETION \u2014 long streams appear only when they finish.",
+      "description": "Offered load: backend-answered requests plus gate denials. Streamed responses are counted at stream completion, so a long stream appears only when it finishes; non-streamed ones are counted at their response headers, and denials when the gate refuses them.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -293,7 +293,7 @@
       "id": 5,
       "type": "timeseries",
       "title": "AI requests/s by status",
-      "description": "Real backend status codes (post-audit).",
+      "description": "Split by outcome because status alone is ambiguous: a backend can answer 429 or 503 itself. completed = the backend's own status; denied = the status the policy gate wrote.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -307,8 +307,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (status) (rate(loxilb_ai_requests_total{model=~\"$model\",tenant=~\"$tenant\",instance=~\"$instance\"}[$__rate_interval]))",
-          "legendFormat": "{{status}}"
+          "expr": "sum by (status, outcome) (rate(loxilb_ai_requests_total{model=~\"$model\",tenant=~\"$tenant\",instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{status}} ({{outcome}})"
         }
       ],
       "options": {
@@ -740,7 +740,7 @@
           "id": 8,
           "type": "timeseries",
           "title": "Rate-limit hits/s",
-          "description": "Denied requests are NOT counted in loxilb_ai_requests_total \u2014 this is the only place throttling is visible. Requires an AI API key carrying rate_limit_rps (POST /config/ai/apikey); 'No data' without keyed quota configured.",
+          "description": "Denials are counted in loxilb_ai_requests_total{outcome=\"denied\"}; this panel carries WHY they were denied, which the request total does not. Requires an AI API key carrying rate_limit_rps (POST /config/ai/apikey); 'No data' without keyed quota configured.",
           "gridPos": {
             "h": 8,
             "w": 12,

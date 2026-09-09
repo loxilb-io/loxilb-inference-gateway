@@ -263,6 +263,27 @@ func validateAPIKeyInternal(svc apiKeyValidator, rawKey, modelName string) (deci
 	return 0, entry.TenantID, entry.KeyID, modelName, ""
 }
 
+// recordGateDenial counts a request the AI Gateway policy gate refused. It is
+// called from the deferred tail of every gate export, after that export's
+// recover() has settled the final return value.
+//
+// It reads the export's own outputs rather than being told what happened: ret
+// is what the C gate branches on and result.decision is the arm it takes, so
+// this records exactly what the client is about to receive. A non-zero ret
+// means the gate writes the response itself and tears the connection down —
+// no backend is dialled, so no response-completion recorder can ever see the
+// request, and this is its only chance to enter loxilb_ai_requests_total.
+//
+// result is nil only when the export could not fill a decision in at all. C
+// dereferences that same pointer for the status it sends, so there is no
+// client-visible outcome to attribute and nothing to count.
+func recordGateDenial(ret C.int, result *C.ai_gw_decision_t, tenantID, modelName string) {
+	if ret == 0 || result == nil {
+		return
+	}
+	prom.RecordAIRequestDenied(tenantID, modelName, gateDenialStatus(int(result.decision)))
+}
+
 // cgoRecover logs and absorbs a panic at a CGO export boundary. A Go panic
 // unwinding into the C sockproxy thread aborts the whole process, so every
 // //export below defers either this or a fail-closed variant of it.
@@ -303,6 +324,10 @@ func cCopyStr(dst *C.char, src string, maxLen int) {
 //
 //export llb_ai_validate_key
 func llb_ai_validate_key(rawKey *C.char, modelName *C.char, result *C.ai_gw_decision_t) (ret C.int) {
+	// Label values for the denial recorder below, kept out here so the deferred
+	// function can read whatever was resolved before an early return or a panic.
+	var metricTenant, metricModel string
+
 	// Fail closed on panic: deny with 401 rather than crashing the datapath.
 	defer func() {
 		if r := recover(); r != nil {
@@ -313,11 +338,20 @@ func llb_ai_validate_key(rawKey *C.char, modelName *C.char, result *C.ai_gw_deci
 			}
 			ret = -1
 		}
+		// Count the denial here rather than at each deny arm. A non-zero return
+		// means the C gate writes the response itself and drops the connection,
+		// so no backend response will ever reach llb_ai_record_request; this is
+		// the only place the request can enter the total. Doing it in the
+		// deferred function makes that structural: every arm, including the
+		// panic arm above, passes through exactly once, so a new deny arm cannot
+		// be added without being counted and no arm can be counted twice.
+		recordGateDenial(ret, result, metricTenant, metricModel)
 	}()
 	if result == nil {
 		tk.LogIt(tk.LogError, "[AIGateway] llb_ai_validate_key: nil result pointer\n")
 		return -1
 	}
+	metricModel = C.GoString(modelName)
 
 	// Zero out the result struct before writing.
 	*result = C.ai_gw_decision_t{}
@@ -338,10 +372,13 @@ func llb_ai_validate_key(rawKey *C.char, modelName *C.char, result *C.ai_gw_deci
 	}
 
 	rawKeyStr := C.GoString(rawKey)
-	modelNameStr := C.GoString(modelName)
+	modelNameStr := metricModel
 
 	decision, tenantID, keyID, modelOut, errorCode := validateAPIKeyInternal(us, rawKeyStr, modelNameStr)
 
+	// Known only on the 403 arm; empty elsewhere, which is the documented
+	// "denied before the tenant resolved" label value.
+	metricTenant = tenantID
 	result.decision = C.int(decision)
 
 	if decision == 0 {
@@ -467,6 +504,10 @@ func getGlobalRL() *rl.RateLimiterStore {
 //
 //export llb_ai_ratelimit_check
 func llb_ai_ratelimit_check(keyID *C.char, tenantID *C.char, model *C.char, result *C.ai_gw_decision_t) (ret C.int) {
+	// See llb_ai_validate_key for why the denial is recorded in the deferred
+	// function rather than at each deny arm.
+	var metricTenant, metricModel string
+
 	// Fail closed on panic: deny with a short retry rather than crashing the
 	// datapath or silently disabling the limiter.
 	defer func() {
@@ -479,6 +520,7 @@ func llb_ai_ratelimit_check(keyID *C.char, tenantID *C.char, model *C.char, resu
 			}
 			ret = -1
 		}
+		recordGateDenial(ret, result, metricTenant, metricModel)
 	}()
 	if result == nil {
 		tk.LogIt(tk.LogError, "[AIGateway] llb_ai_ratelimit_check: nil result pointer\n")
@@ -488,6 +530,7 @@ func llb_ai_ratelimit_check(keyID *C.char, tenantID *C.char, model *C.char, resu
 	keyIDStr := C.GoString(keyID)
 	tenantIDStr := C.GoString(tenantID)
 	modelStr := C.GoString(model)
+	metricTenant, metricModel = tenantIDStr, modelStr
 
 	var svc rateLimitService
 	if us := mh.AIKeyService; us != nil {
@@ -500,11 +543,25 @@ func llb_ai_ratelimit_check(keyID *C.char, tenantID *C.char, model *C.char, resu
 		result.decision = C.int(decision)
 		result.retry_after = C.int(retrySecs)
 		cCopyStr((*C.char)(unsafe.Pointer(&result.error_code[0])), errorCode, 64)
-		// record the 429 metric directly at the point of denial.
-		// RecordAIRequest is NOT called here — it is for response-complete events.
-		prom.RecordRateLimitHit(tenantIDStr, errorCode)
-		if errorCode == "token_quota_exceeded" {
-			prom.RecordTokenQuotaDenied(tenantIDStr)
+		// Record the REASON at the point of denial; the request itself is
+		// counted once, in the deferred recorder above.
+		//
+		// Not every denial from this stage is a rate decision. The stage also
+		// returns deny_503 when it finds a keyed identity with no policy store
+		// behind it, and that arm used to increment rate_limit_hits_total with
+		// reason="policy_store_unavailable": a store outage was reported as a
+		// throttling spike (it raises LoxilbAIRateLimitSpike, whose whole
+		// premise is that a tenant is sending too fast), while
+		// policy_store_unavailable_total — the family that exists to make
+		// exactly this visible — stayed blind to an entire arm. The two other
+		// sites that produce deny_503 have always reported it correctly.
+		if decision == aiDecisionDeny503 {
+			prom.RecordPolicyStoreUnavailable()
+		} else {
+			prom.RecordRateLimitHit(tenantIDStr, errorCode)
+			if errorCode == "token_quota_exceeded" {
+				prom.RecordTokenQuotaDenied(tenantIDStr)
+			}
 		}
 		tk.LogIt(tk.LogWarning, "[AIGateway] llb_ai_ratelimit_check: denied key=%s tenant=%s error=%s\n", keyIDStr, tenantIDStr, errorCode)
 		return -1
@@ -647,6 +704,10 @@ func tokenQuotaConsumeInternal(svc rateLimitService, store *rl.RateLimiterStore,
 //
 //export llb_ai_token_quota_reserve
 func llb_ai_token_quota_reserve(tenantID *C.char, modelName *C.char, promptEst C.int, maxTokens C.int, resEpoch *C.longlong, result *C.ai_gw_decision_t) (ret C.int) {
+	// See llb_ai_validate_key for why the denial is recorded in the deferred
+	// function rather than at each deny arm.
+	var metricTenant, metricModel string
+
 	// Fail closed on panic, matching the other gate decisions: deny with a
 	// short retry rather than crashing the datapath or silently admitting.
 	defer func() {
@@ -659,6 +720,7 @@ func llb_ai_token_quota_reserve(tenantID *C.char, modelName *C.char, promptEst C
 			}
 			ret = -1
 		}
+		recordGateDenial(ret, result, metricTenant, metricModel)
 	}()
 
 	if resEpoch != nil {
@@ -666,6 +728,7 @@ func llb_ai_token_quota_reserve(tenantID *C.char, modelName *C.char, promptEst C
 	}
 
 	tenant := C.GoString(tenantID)
+	metricTenant, metricModel = tenant, C.GoString(modelName)
 	want := 0
 	if promptEst > 0 {
 		want += int(promptEst)
@@ -906,8 +969,10 @@ func llb_ai_stream_end(tenantID *C.char, modelName *C.char) C.int {
 // for C ABI compatibility but are unused: token series are fed from
 // llb_ai_token_quota_consume (whose counts always match the charge — the
 // counts passed here can lag on split non-streaming bodies), stream lifecycle
-// is tracked by llb_ai_stream_start/_end, and 429/403 denials are recorded at
-// the point of denial.
+// is tracked by llb_ai_stream_start/_end, and denials never reach this export
+// at all — the gate answers them itself, so they are counted under
+// outcome="denied" by recordGateDenial and their reason by the
+// point-of-denial counters.
 //
 // Parameters:
 //

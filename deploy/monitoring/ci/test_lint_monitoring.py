@@ -193,6 +193,73 @@ class LegendValidation(unittest.TestCase):
         self.assertFalse(rep.errors, rep.errors)
 
 
+class OutcomePartition(unittest.TestCase):
+    """The R-1 defect class: a ratio whose numerator filters outcome and whose
+    denominator does not. Both halves parse, the panel renders, and the number
+    quietly stops meaning what its title says once denials appear."""
+
+    FAMILY = "loxilb_ai_requests_total"
+
+    def test_mixed_selectors_flagged(self):
+        expr = ('sum(rate(loxilb_ai_requests_total{outcome="completed",'
+                'status!~"2.."}[5m])) / sum(rate(loxilb_ai_requests_total[5m]))')
+        self.assertIsNotNone(
+            lint.outcome_partition_violation(expr, self.FAMILY))
+
+    def test_mixed_selectors_flagged_in_reverse(self):
+        # Filtering only the denominator is the same defect with the error in
+        # the other direction, and is not caught by "numerator must filter".
+        expr = ('sum(rate(loxilb_ai_requests_total{status!~"2.."}[5m])) / '
+                'sum(rate(loxilb_ai_requests_total{outcome="completed"}[5m]))')
+        self.assertIsNotNone(
+            lint.outcome_partition_violation(expr, self.FAMILY))
+
+    def test_all_filtered_passes(self):
+        expr = ('sum(rate(loxilb_ai_requests_total{outcome="completed",'
+                'status!~"2.."}[5m])) / '
+                'sum(rate(loxilb_ai_requests_total{outcome="completed"}[5m]))')
+        self.assertIsNone(lint.outcome_partition_violation(expr, self.FAMILY))
+
+    def test_none_filtered_passes(self):
+        # Offered load. An unfiltered total is the correct expression here, so
+        # the gate must not degenerate into "always filter".
+        expr = "sum(rate(loxilb_ai_requests_total[5m]))"
+        self.assertIsNone(lint.outcome_partition_violation(expr, self.FAMILY))
+
+    def test_grouping_by_outcome_is_not_filtering(self):
+        # sum by (outcome) partitions the output; it does not restrict the
+        # input, so there is nothing to mix.
+        expr = ("sum by (status, outcome) "
+                "(rate(loxilb_ai_requests_total[5m]))")
+        self.assertIsNone(lint.outcome_partition_violation(expr, self.FAMILY))
+
+    def test_dashboard_target_goes_red(self):
+        expr = ('sum(rate(loxilb_ai_requests_total{outcome="completed"}[5m])) '
+                '/ sum(rate(loxilb_ai_requests_total{instance=~"$instance"}[5m]))')
+        rep = lint_dashboard_fixture(expr, {"loxilb_ai_requests_total"})
+        self.assertTrue(any("mixes" in e for e in rep.errors), rep.errors)
+
+    def test_rule_exprs_are_split_per_rule(self):
+        """Two rules, one filtered and one not, are not a mixed expression.
+        Checking a whole file's concatenated exprs would report them as one."""
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, "fixture.yml")
+            with open(path, "w") as fh:
+                fh.write(
+                    "groups:\n"
+                    "  - name: g\n"
+                    "    rules:\n"
+                    "      - alert: A\n"
+                    '        expr: sum(rate(loxilb_ai_requests_total{outcome="completed"}[5m]))\n'
+                    "      - alert: B\n"
+                    "        expr: sum(rate(loxilb_ai_requests_total[5m]))\n")
+            rules = lint.iter_rule_exprs(path)
+        self.assertEqual([n for n, _ in rules], ["A", "B"])
+        for _, expr in rules:
+            self.assertIsNone(
+                lint.outcome_partition_violation(expr, self.FAMILY))
+
+
 class PromtoolRequired(unittest.TestCase):
     def test_missing_promtool_fails_when_required(self):
         r = subprocess.run(

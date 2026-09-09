@@ -728,6 +728,97 @@ else
 fi
 
 echo ""
+echo "--- DP-29: the requests the gate refuses are in the request total ---"
+# The denominator claim, checked on the wire rather than in the recorder.
+#
+# loxilb_ai_requests_total is documented as offered load: served traffic under
+# outcome="completed" and gate refusals under outcome="denied". Nothing about
+# that is observable from a unit test of the recorder -- the denial is decided
+# in a cgo export the C gate calls, and the failure it guards against is the
+# whole path being wired up but never reached, which reads as a healthy zero.
+#
+# DP-4 and DP-6 above have just produced real denials of both kinds, so this
+# leg re-drives them against a baseline and reads the exposition directly.
+# The metrics endpoint answers 503 until collection is switched on. Prove it
+# actually served something first -- every assertion below reads a delta, and
+# an endpoint returning nothing makes them all pass on empty strings.
+lcurl -X POST "http://127.0.0.1:11111/netlox/v1/config/metrics" >/dev/null 2>&1
+sleep 1
+if ! lcurl "http://127.0.0.1:11111/netlox/v1/metrics" 2>/dev/null | grep -q '^loxilb_'; then
+  echo "  [FAIL] DP-29 the metrics endpoint served nothing; the legs below cannot mean anything"
+  FAIL=$((FAIL + 1))
+fi
+
+# ai_sum <outcome> [status] -- total the family over a label subset, straight
+# from the exposition. Prometheus is not in this scenario, so the arithmetic is
+# here; awk over the sample lines is exact for counters.
+ai_sum() {
+  local outcome="$1" status="${2:-}"
+  lcurl "http://127.0.0.1:11111/netlox/v1/metrics" 2>/dev/null \
+    | awk -v o="outcome=\"$outcome\"" -v st="$status" '
+        /^loxilb_ai_requests_total\{/ {
+          if (index($0, o) == 0) next
+          if (st != "" && index($0, "status=\"" st "\"") == 0) next
+          t += $NF
+        }
+        END { printf "%d", t + 0 }'
+}
+
+B_DENIED=$(ai_sum denied)
+B_DENIED_401=$(ai_sum denied 401)
+B_COMPLETED=$(ai_sum completed)
+
+# One keyless request: a 401 the gate answers itself, no backend involved.
+chk "DP-29 keyless is refused (the event being counted)" "401" \
+  "$(vip_code -X POST http://$VIP:2020/v1/chat/completions -H 'Content-Type: application/json' -d "$BODY5")"
+# And a burst that must trip the per-key limiter, for the 429 arm.
+for i in 1 2 3 4 5 6; do
+  vip_code -X POST http://$VIP:2020/v1/chat/completions -H 'Content-Type: application/json' \
+    -H "X-Api-Key: $K_SLOW" -d "$BODY5" >/dev/null
+done
+sleep 2
+
+A_DENIED=$(ai_sum denied)
+A_DENIED_401=$(ai_sum denied 401)
+A_COMPLETED=$(ai_sum completed)
+echo "    denied: $B_DENIED -> $A_DENIED (401 arm: $B_DENIED_401 -> $A_DENIED_401), completed: $B_COMPLETED -> $A_COMPLETED"
+
+if [ "$A_DENIED" -gt "$B_DENIED" ]; then
+  echo "  [PASS] DP-29 gate denials reach loxilb_ai_requests_total"; PASS=$((PASS + 1))
+else
+  echo "  [FAIL] DP-29 the gate refused requests but requests_total{outcome=denied} did not move ($B_DENIED -> $A_DENIED)"; FAIL=$((FAIL + 1))
+fi
+# The 401 arm specifically: it denies before a credential resolves, so it is
+# the one most likely to be dropped for want of a tenant to attribute it to.
+if [ "$A_DENIED_401" -gt "$B_DENIED_401" ]; then
+  echo "  [PASS] DP-29 the pre-credential 401 arm is counted too"; PASS=$((PASS + 1))
+else
+  echo "  [FAIL] DP-29 the 401 denial was not counted ($B_DENIED_401 -> $A_DENIED_401)"; FAIL=$((FAIL + 1))
+fi
+# The partition has to hold in both directions. A denial landing under
+# completed would put it in the error-ratio numerator, which is the silent
+# failure the outcome label exists to prevent.
+# Labels are emitted in alphabetical order, so match each one independently
+# rather than pinning an order this test does not control.
+DENIED_AS_COMPLETED=$(lcurl "http://127.0.0.1:11111/netlox/v1/metrics" 2>/dev/null \
+  | grep '^loxilb_ai_requests_total{' | grep 'status="401"' \
+  | grep -c 'outcome="completed"' || true)
+if [ "${DENIED_AS_COMPLETED:-0}" -eq 0 ]; then
+  echo "  [PASS] DP-29 no denial leaked into outcome=completed"; PASS=$((PASS + 1))
+else
+  echo "  [FAIL] DP-29 a 401 appears under outcome=completed — the error ratio now counts denials"; FAIL=$((FAIL + 1))
+fi
+# tenant="" is the documented value for "refused before we knew who it was",
+# and it is a contract the UI groups on, not an accident of an unset variable.
+if lcurl "http://127.0.0.1:11111/netlox/v1/metrics" 2>/dev/null \
+     | grep '^loxilb_ai_requests_total{' | grep 'outcome="denied"' \
+     | grep 'status="401"' | grep -q 'tenant=""'; then
+  echo "  [PASS] DP-29 the pre-credential denial carries tenant=\"\""; PASS=$((PASS + 1))
+else
+  echo "  [FAIL] DP-29 the 401 denial series does not carry the documented empty tenant"; FAIL=$((FAIL + 1))
+fi
+
+echo ""
 echo "--- DP-22: enforcement on a service that does not stream ---"
 # The crossed cell mk_rules cannot provide: sse_mode=false AND
 # api_key_auth=required. Enforcement used to be a rider on the streaming

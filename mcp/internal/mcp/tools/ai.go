@@ -35,10 +35,20 @@ import (
 
 // trafficReportCaveat is surfaced in every ai_traffic_report result so the
 // numbers are read with the right accounting model in mind.
-const trafficReportCaveat = "accounting caveat: rate-limit denials are counted only in " +
-	"loxilb_ai_rate_limit_hits_total, not in loxilb_ai_requests_total; on gateway builds " +
-	"predating the non-SSE accounting fix, loxilb_ai_requests_total counts only " +
-	"SSE-terminated streams. Cross-check with loxilb_proxy_http_responses_total."
+// Values of the outcome label on loxilb_ai_requests_total, as emitted by
+// api/prometheus. Absent on gateways older than the label.
+const (
+	outcomeCompleted = "completed"
+	outcomeDenied    = "denied"
+)
+
+const trafficReportCaveat = "accounting caveat: read loxilb_ai_requests_total by its outcome " +
+	"label - outcome=\"completed\" is backend-answered traffic, outcome=\"denied\" is requests the " +
+	"policy gate refused, and unfiltered is offered load. loxilb_ai_rate_limit_hits_total is not a " +
+	"second copy of the denials: it carries WHY they were denied. The bridge reaches gateways of " +
+	"any age, so absence of the outcome label means an older build in which the total excludes " +
+	"denials altogether, and one older still counts only SSE-terminated streams; when the label " +
+	"is absent, cross-check with loxilb_proxy_http_responses_total."
 
 // RegisterAI adds the AI-gateway operation tools. Read tools are
 // viewer+, non-destructive
@@ -1031,9 +1041,18 @@ type latencySummary struct {
 type trafficReportOut struct {
 	Target string `json:"target"`
 	// Requests: cumulative loxilb_ai_requests_total broken down by
-	// model/tenant/status, plus the derived non-2xx ratio.
+	// model/tenant/status/outcome, plus the derived non-2xx ratio.
+	//
+	// RequestsTotal is offered load, so it includes the requests the policy
+	// gate refused. ErrorRatio deliberately does NOT: it is non-2xx over
+	// backend-answered traffic, because a denial is non-2xx by construction and
+	// folding denials in would make a rate-limit storm read as a backend fault
+	// -- to an operator, and to an agent acting on this report. RequestsDenied
+	// carries that half separately.
 	RequestsByModelTenantStatus []map[string]any `json:"requests_by_model_tenant_status,omitempty"`
 	RequestsTotal               float64          `json:"requests_total"`
+	RequestsCompleted           float64          `json:"requests_completed"`
+	RequestsDenied              float64          `json:"requests_denied"`
 	RequestsNon2xx              float64          `json:"requests_non_2xx"`
 	ErrorRatio                  float64          `json:"error_ratio"`
 	RateLimitDrops              []map[string]any `json:"rate_limit_drops,omitempty"`
@@ -1083,16 +1102,31 @@ func (d *Deps) aiTrafficReport() sdk.ToolHandlerFor[trafficReportIn, trafficRepo
 			for _, s := range f.Samples {
 				out.RequestsTotal += s.Value
 				status := s.Labels["status"]
-				if !strings.HasPrefix(status, "2") {
-					out.RequestsNon2xx += s.Value
+				// A gateway old enough to predate the outcome label emitted
+				// this family for backend-answered traffic only, so an absent
+				// label means completed. Defaulting the other way would move
+				// every old build's whole series out of the error ratio and
+				// report 0 for a gateway that is failing.
+				outcome := s.Labels["outcome"]
+				if outcome == "" {
+					outcome = outcomeCompleted
+				}
+				if outcome == outcomeDenied {
+					out.RequestsDenied += s.Value
+				} else {
+					out.RequestsCompleted += s.Value
+					if !strings.HasPrefix(status, "2") {
+						out.RequestsNon2xx += s.Value
+					}
 				}
 				out.RequestsByModelTenantStatus = append(out.RequestsByModelTenantStatus, map[string]any{
 					"model": clean(s.Labels["model"]), "tenant": clean(s.Labels["tenant"]),
-					"status": clean(status), "count": s.Value,
+					"status": clean(status), "outcome": clean(outcome), "count": s.Value,
 				})
 			}
-			if out.RequestsTotal > 0 {
-				out.ErrorRatio = out.RequestsNon2xx / out.RequestsTotal
+			// Over completed traffic only -- see the field comments above.
+			if out.RequestsCompleted > 0 {
+				out.ErrorRatio = out.RequestsNon2xx / out.RequestsCompleted
 			}
 		}
 		if f, ok := byName["loxilb_ai_rate_limit_hits_total"]; ok {

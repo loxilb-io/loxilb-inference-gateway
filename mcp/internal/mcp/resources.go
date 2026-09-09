@@ -52,10 +52,17 @@ Prometheus server is configured.
 - When loxilb runs --userservice, the metrics endpoint requires a bearer
   token; unauthenticated Prometheus scrapes receive 401. The bridge
   authenticates automatically, but external scrapers must be configured.
-- Rate-limit denials are counted only in loxilb_ai_rate_limit_hits_total,
-  not in loxilb_ai_requests_total. On gateway builds predating the non-SSE
-  accounting fix, loxilb_ai_requests_total counts only SSE-terminated
-  streams — cross-check with the L7 response counters.
+- loxilb_ai_requests_total carries an outcome label: "completed" is traffic a
+  backend answered, "denied" is requests the policy gate refused before any
+  backend was dialled, and the unfiltered total is offered load. Any ratio
+  meant to describe backend behaviour must select outcome="completed", or a
+  rate-limit storm reads as a backend fault.
+- loxilb_ai_rate_limit_hits_total is not a duplicate of the denied series: it
+  carries the reason. One request trips one gate but several reason counters
+  exist, so expect hits <= requests_total{outcome="denied",status="429"}.
+- The bridge reaches gateways of any age. No outcome label means an older
+  build whose total excludes denials, and one older still counts only
+  SSE-terminated streams — cross-check with the L7 response counters.
 `
 
 // registerResources adds the MCP resources.
