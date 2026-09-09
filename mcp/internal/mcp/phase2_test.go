@@ -29,6 +29,10 @@ type mockLoxilb struct {
 	requests []string // "METHOD path"
 	bodies   []map[string]any
 	srv      *httptest.Server
+	// metricsText overrides the exposition the AI mock serves. Empty means
+	// aiMetricsText -- the default fixture, which carries no outcome label and
+	// therefore stands in for a gateway older than it.
+	metricsText string
 }
 
 func newMockLoxilb(t *testing.T) *mockLoxilb {

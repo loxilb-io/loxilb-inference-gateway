@@ -12,6 +12,7 @@ import (
 	"github.com/go-openapi/errors"
 	"github.com/go-openapi/strfmt"
 	"github.com/go-openapi/swag"
+	"github.com/go-openapi/validate"
 )
 
 // WorkerMetricsResponse worker metrics response
@@ -19,16 +20,22 @@ import (
 // swagger:model WorkerMetricsResponse
 type WorkerMetricsResponse struct {
 
-	// Intended monitoring-state readback, currently not assigned by the GET handler and therefore omitted. Do not interpret absence as an authoritative disabled verdict.
-	MonitoringEnabled bool `json:"monitoring_enabled,omitempty"`
+	// Whether GPU worker-metrics monitoring is enabled. When false the gateway accepts no ingestion and workers is always empty; when true an empty workers list means no worker has reported yet.
+	// Required: true
+	MonitoringEnabled *bool `json:"monitoring_enabled"`
 
 	// workers
+	// Required: true
 	Workers []*WorkerMetricsEntry `json:"workers"`
 }
 
 // Validate validates this worker metrics response
 func (m *WorkerMetricsResponse) Validate(formats strfmt.Registry) error {
 	var res []error
+
+	if err := m.validateMonitoringEnabled(formats); err != nil {
+		res = append(res, err)
+	}
 
 	if err := m.validateWorkers(formats); err != nil {
 		res = append(res, err)
@@ -40,9 +47,19 @@ func (m *WorkerMetricsResponse) Validate(formats strfmt.Registry) error {
 	return nil
 }
 
+func (m *WorkerMetricsResponse) validateMonitoringEnabled(formats strfmt.Registry) error {
+
+	if err := validate.Required("monitoring_enabled", "body", m.MonitoringEnabled); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (m *WorkerMetricsResponse) validateWorkers(formats strfmt.Registry) error {
-	if swag.IsZero(m.Workers) { // not required
-		return nil
+
+	if err := validate.Required("workers", "body", m.Workers); err != nil {
+		return err
 	}
 
 	for i := 0; i < len(m.Workers); i++ {

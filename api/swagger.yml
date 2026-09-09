@@ -4822,6 +4822,10 @@ paths:
           description: Authenticated principal's role carries no authority for this operation
           schema:
             $ref: '#/definitions/Error'
+        '503':
+          description: Management credential store unavailable
+          schema:
+            $ref: '#/definitions/Error'
     put:
       summary: Enter or leave operator maintenance
       description: Idempotently enters or leaves maintenance. Repeat enter preserves operation_id, entered_at and the original timeout; changing timeout requires leave then enter. Omitted or zero timeout declares no deadline, and expiry never exits maintenance automatically. The operator gate exempts restore, persist and this endpoint; GETs bypass mutation freezes. Legacy import is not exempt. Independent boot or restore freezes can still reject maintenance changes with 503. Leave reports the ended episode's operation_id.
@@ -4870,6 +4874,10 @@ paths:
             $ref: '#/definitions/Error'
         '403':
           description: Authenticated principal's role carries no authority for this operation
+          schema:
+            $ref: '#/definitions/Error'
+        '503':
+          description: Management credential store unavailable
           schema:
             $ref: '#/definitions/Error'
 #----------------------------------------------
@@ -6405,7 +6413,24 @@ paths:
             $ref: '#/definitions/Error'
     get:
       summary: Get all worker metrics
-      description: Returns cached worker telemetry, potentially stale and still present when monitoring is disabled. The declared monitoring_enabled field is not populated by this handler; absence is not an authoritative disabled verdict.
+      description: >-
+        Returns the GPU metrics currently held for every tracked worker, and
+        whether monitoring is enabled at all.
+
+
+        Requires the global bearer credential; a viewer role is sufficient.
+        Unlike the POST on this path, the read is not refused while monitoring
+        is disabled -- it reports that state instead, through
+        monitoring_enabled. An empty workers list therefore means "no worker
+        has reported yet" only when monitoring_enabled is true.
+
+
+        Each entry's timestamp is the ingestion time the worker reported, not
+        the time this response was built, so a consumer computes staleness as
+        now - timestamp. Ingestion rejects any sample whose timestamp is more
+        than 10 seconds old and substitutes the receive time when a sample
+        carries none, so a timestamp here is never further than that behind the
+        moment the gateway accepted it.
       responses:
         '200':
           description: Worker metrics retrieved successfully
@@ -6417,12 +6442,8 @@ paths:
             $ref: '#/definitions/Error'
         '403':
           $ref: '#/responses/ManagementForbidden'
-        '500':
-          description: Internal service error
-          schema:
-            $ref: '#/definitions/Error'
         '503':
-          description: Maintenance mode
+          description: Management credential store unavailable
           schema:
             $ref: '#/definitions/Error'
 #----------------------------------------------
@@ -12530,6 +12551,15 @@ definitions:
 
   WorkerMetricsResponse:
     type: object
+    required:
+      # Both must serialize unconditionally. monitoring_enabled is the field
+      # that distinguishes a disabled subsystem from an enabled one with no
+      # workers reporting yet; without 'required' go-swagger emits omitempty
+      # and false is dropped, making the two states byte-identical on the
+      # wire. workers is listed for the same reason: an empty list must be
+      # visible as an empty list.
+      - workers
+      - monitoring_enabled
     properties:
       workers:
         type: array
@@ -12537,7 +12567,10 @@ definitions:
           $ref: '#/definitions/WorkerMetricsEntry'
       monitoring_enabled:
         type: boolean
-        description: Intended monitoring-state readback, currently not assigned by the GET handler and therefore omitted. Do not interpret absence as an authoritative disabled verdict.
+        description: >-
+          Whether GPU worker-metrics monitoring is enabled. When false the
+          gateway accepts no ingestion and workers is always empty; when true
+          an empty workers list means no worker has reported yet.
 
   GPUEnableResponse:
     type: object

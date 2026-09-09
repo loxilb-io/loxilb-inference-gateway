@@ -43,19 +43,23 @@ groups:
           )
 
       # AI gateway 5xx ratio per instance (status label carries HTTP codes).
+      # outcome="completed" on all three selectors: this ratio is about backends
+      # answering badly. The gate's own policy-store-unavailable arm answers 503
+      # and would otherwise land in this numerator, reporting a credential-store
+      # outage as backend 5xx and pointing an operator at the wrong subsystem.
       - record: instance:loxilb_ai_5xx_ratio:rate5m
         expr: >-
           (
             sum by (cluster, instance)
-              (rate(loxilb_ai_requests_total{status=~"5.."}[5m]))
+              (rate(loxilb_ai_requests_total{outcome="completed",status=~"5.."}[5m]))
             or
             sum by (cluster, instance)
-              (rate(loxilb_ai_requests_total[5m])) * 0
+              (rate(loxilb_ai_requests_total{outcome="completed"}[5m])) * 0
           )
           /
           (
             sum by (cluster, instance)
-              (rate(loxilb_ai_requests_total[5m])) > 0
+              (rate(loxilb_ai_requests_total{outcome="completed"}[5m])) > 0
           )
 
       # KV subscriber health floor: 1 = every subscriber connected,

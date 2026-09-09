@@ -34,7 +34,11 @@ func NewGetConfigWorkerMetrics(ctx *middleware.Context, handler GetConfigWorkerM
 
 # Get all worker metrics
 
-Returns cached worker telemetry, potentially stale and still present when monitoring is disabled. The declared monitoring_enabled field is not populated by this handler; absence is not an authoritative disabled verdict.
+Returns the GPU metrics currently held for every tracked worker, and whether monitoring is enabled at all.
+
+Requires the global bearer credential; a viewer role is sufficient. Unlike the POST on this path, the read is not refused while monitoring is disabled -- it reports that state instead, through monitoring_enabled. An empty workers list therefore means "no worker has reported yet" only when monitoring_enabled is true.
+
+Each entry's timestamp is the ingestion time the worker reported, not the time this response was built, so a consumer computes staleness as now - timestamp. Ingestion rejects any sample whose timestamp is more than 10 seconds old and substitutes the receive time when a sample carries none, so a timestamp here is never further than that behind the moment the gateway accepted it.
 */
 type GetConfigWorkerMetrics struct {
 	Context *middleware.Context
