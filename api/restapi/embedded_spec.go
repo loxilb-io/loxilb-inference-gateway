@@ -18014,7 +18014,7 @@ func init() {
   },
   "swagger": "2.0",
   "x-loxilb-contract-relations": {
-    "description": "Project-specific UI advisory metadata, not Swagger 2.0 validation keywords. Rules refer to JSON Pointers in an effective LoadbalanceEntry body, after a PATCH has been merged with the live declaration. No UI interpreter is shipped by this metadata. Static enforcement evidence is not runtime qualification; unknown rules must be displayed as unresolved, not silently treated as passed. See api/contract-audit/relationships.md for the versioned rule semantics.",
+    "description": "Project-specific UI advisory metadata, not Swagger 2.0 validation keywords. Rules refer to JSON Pointers in an effective LoadbalanceEntry body, after a PATCH has been merged with the live declaration. No UI interpreter is shipped by this metadata. Static enforcement evidence is not runtime qualification; unknown rules must be displayed as unresolved, not silently treated as passed. See api/contract-relations.md for the versioned rule semantics.",
     "rules": [
       {
         "enforcement": "server-static",
