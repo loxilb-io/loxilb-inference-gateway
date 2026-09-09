@@ -17045,13 +17045,28 @@ func init() {
     },
     "/metrics": {
       "get": {
-        "description": "Public management-authentication-exempt Prometheus scrape, using exposition rather than JSON. Disabled collection/export returns plain-text 503. Series depend on initialization and activity; absence is not measured zero.",
+        "description": "Prometheus exposition rather than JSON. Whether this route requires a bearer token is a deployment property, not a property of the route, which is why it is declared without a security requirement while still declaring 401, 403 and 503. The --metrics-auth option decides - auto (the default) requires a token only under mgmt-profile remote-tls, require always requires one, and disable never does and is refused under remote-tls. A scraper that gets 401 here is reaching a gateway that expects a credential; configure the scrape job with a bearer token rather than removing the requirement. Collection or export being disabled answers a plain-text 503, decided before the credential is examined. Which series appear depends on initialization and activity; an absent series is not a measured zero.",
         "responses": {
           "200": {
             "description": "Metrics in prometheus text format",
             "schema": {
               "type": "string"
             }
+          },
+          "401": {
+            "description": "Authentication is required for this route on this deployment and the credential was missing or invalid",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal's role carries no authority for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Metrics collection is disabled (a plain-text body, not JSON), or the credential store could not answer"
           }
         },
         "security": [],
@@ -18356,7 +18371,7 @@ func init() {
   ],
   "swagger": "2.0",
   "info": {
-    "description": "Loxilb REST API for Baremetal Scenarios",
+    "description": "LoxiLB Inference Gateway management API. Read each field together with its operation, engine, topology, and lifecycle conditions; a schema default does not by itself establish omission or replace-update behavior. Descriptions explicitly identify known implementation limitations. The companion swagger-extras.yml documents manually registered routes. Management-plane authorization and data-plane X-Api-Key enforcement are separate policies.",
     "title": "Loxilb Rest API",
     "version": "0.0.1"
   },
@@ -19003,7 +19018,7 @@ func init() {
     },
     "/config/ai/model-profiles": {
       "get": {
-        "description": "Returns every profile of the currently PUBLISHED registry generation. Publication is all-or-nothing: a profile that appears here has already passed artifact digest verification, tokenizer load, and (when chat is declared) chat-template compilation - there is no partial or invalid availability state to represent, and disabled/unpublished profiles simply do not appear. Discovery is a CACHE, never an admission authority: a registry reload can change the available set at any time (rule POST admission re-validates against the generation current at POST time); clients detect staleness by comparing registryGeneration and setDigest against the kvexactstatus read-back after create. profiles is deterministically ordered by profileId ascending with no pagination (the registry is a bounded operator-curated set). Artifact locator paths and host filesystem information are deliberately excluded from the response.",
+        "description": "Returns every profile of the currently PUBLISHED registry generation. Publication is all-or-nothing: a profile that appears here has already passed artifact digest verification, tokenizer load, and (when chat is declared) chat-template compilation - there is no partial or invalid availability state to represent, and disabled/unpublished profiles simply do not appear. Discovery is a CACHE, never an admission authority: a registry reload can change the available set at any time (rule POST admission re-validates against the generation current at POST time). Compare registryGeneration/setDigest with later discovery reads; after create, compare profile identity/generation with the rule's modelProfileId/modelProfileGen and inspect enforcedState. setDigest and bindingDigest identify different objects and must not be compared. profiles is deterministically ordered by profileId ascending with no pagination (the registry is a bounded operator-curated set). Artifact locator paths and host filesystem information are deliberately excluded from the response.",
         "tags": [
           "ai"
         ],
@@ -19214,7 +19229,7 @@ func init() {
     },
     "/config/bfd": {
       "post": {
-        "description": "Create vlan interface in the device",
+        "description": "Create or update a BFD session for an existing cluster instance. New sessions require a valid remote address, interval at least 100000 microseconds, and retryCount greater than zero; first setup also validates source IP. Existing-session zero interval/retryCount preserves that value, while unchanged submissions conflict and source-IP changes are not applied. Interval narrows from uint64 to uint32. First creation is asynchronous and can fail after HTTP success.",
         "summary": "Create vlan interface in the device",
         "parameters": [
           {
@@ -19281,7 +19296,7 @@ func init() {
     },
     "/config/bfd/all": {
       "get": {
-        "description": "Get BFD session inforrmation",
+        "description": "Return BFD sessions when the cluster BFD running flag is set. Current IPv6 host/port parsing can corrupt readback. A session accepted for asynchronous creation may not yet appear; the global running flag can also become inconsistent after deletion.",
         "summary": "Get BFD session inforrmation in the device",
         "responses": {
           "200": {
@@ -19327,7 +19342,7 @@ func init() {
     },
     "/config/bfd/remoteIP/{remote_ip}": {
       "delete": {
-        "description": "Delete a BFD session",
+        "description": "Request deletion of a BFD session by remote IP. Supply an existing instance explicitly; omission does not default to the default instance. Safety limitation: instance existence is checked but session ownership is not, and successful deletion clears a global running flag even if other sessions remain. Do not assume instance-scoped isolation or complete BFD shutdown.",
         "summary": "Delete a BFD session",
         "parameters": [
           {
@@ -19398,7 +19413,7 @@ func init() {
     },
     "/config/bgp/global": {
       "post": {
-        "description": "Adds a BGP global config",
+        "description": "Start BGP with the supplied router ID, local ASN, and listen port, and create additional policy objects. Omitted or zero listenPort selects 179; numeric inputs narrow without complete local bounds checks. SetNextHopSelf is case-sensitive. This is not an atomic configuration replacement, and errors can follow partial setup.",
         "summary": "Adds a BGP global config",
         "parameters": [
           {
@@ -19465,7 +19480,7 @@ func init() {
     },
     "/config/bgp/neigh": {
       "post": {
-        "description": "Adds a BGP Neighbor",
+        "description": "Add a BGP neighbor, not a general replacement. Supply a literal IP and remote ASN. ASN and port narrow without local bounds checks; omitted or zero remotePort selects 179 and setMultiHop enables an eight-hop TTL. GoBGP performs additional admission not represented fully by this schema.",
         "summary": "Adds a BGP Neighbor",
         "parameters": [
           {
@@ -19532,7 +19547,7 @@ func init() {
     },
     "/config/bgp/neigh/all": {
       "get": {
-        "description": "Get the all of BGP Neighbor",
+        "description": "Return BGP neighbors and session state in a 200 response, including an empty array when there are none. Configured port 179 is normalized to zero or absent on readback. BGP must be enabled; a successful list does not establish peering readiness.",
         "summary": "Get the all of BGP Neighbor",
         "responses": {
           "200": {
@@ -19599,7 +19614,7 @@ func init() {
     },
     "/config/bgp/neigh/{ip_address}": {
       "delete": {
-        "description": "Delete a BGP Neighbor",
+        "description": "Delete the BGP neighbor identified by IP. Implementation limitation: the handler dereferences the optional remoteAs parameter even though the backend deletion ignores ASN; omission is unsafe in this version. This is not a supported ASN-based ownership check.",
         "summary": "Delete a BGP neighbor",
         "parameters": [
           {
@@ -19671,7 +19686,7 @@ func init() {
     },
     "/config/bgp/policy/apply": {
       "post": {
-        "description": "Apply BGP Policy in neighbor",
+        "description": "Add policy assignments for a neighbor or the global assignment target in the selected import/export direction. routeAction is the default assignment action and uses accept or reject, unlike statement routeDisposition. POST adds assignments; it does not perform a general replacement.",
         "summary": "Apply BGP Policy in neighbor",
         "parameters": [
           {
@@ -19736,7 +19751,7 @@ func init() {
         }
       },
       "delete": {
-        "description": "Delete BGP Policy in neighbor. It don't need \"routeAction\" in the attr body",
+        "description": "Delete policy assignments for the selected target and direction. Omitted or empty policies removes all assignments for that target/direction. The schema still requires routeAction, but the handler ignores it during deletion. Make this destructive omission explicit in clients.",
         "summary": "Delete BGP Policy in neighbor",
         "parameters": [
           {
@@ -19803,7 +19818,7 @@ func init() {
     },
     "/config/bgp/policy/definedsets/{defineset_type}": {
       "post": {
-        "description": "Adds a BGP definedsets for making Policy",
+        "description": "Add a BGP defined set. Use prefixList for prefix and capitalized List for other types. Use lowercase supported type names; unknown types can silently fall back to prefix. Prefix mask ranges use minimum..maximum, but parse errors and relational bounds are not fully validated locally.",
         "summary": "Adds a BGP  definedsets for making Policy",
         "parameters": [
           {
@@ -19877,7 +19892,7 @@ func init() {
     },
     "/config/bgp/policy/definedsets/{defineset_type}/{type_name}": {
       "get": {
-        "description": "Get the all of BGP, prefix/neighbor/community/extcommunity/aspath/largecommunity",
+        "description": "Return defined sets of the requested type; type_name all selects all names of that type. Use lowercase prefix, neighbor, community, extcommunity, aspath, or largecommunity. The handler only emits prefixList for lowercase prefix despite broader internal aliases. Empty results use HTTP 200, not 204.",
         "summary": "Get the all of BGP definedsets",
         "parameters": [
           {
@@ -19958,7 +19973,7 @@ func init() {
         }
       },
       "delete": {
-        "description": "Delete a BGP definedsets",
+        "description": "Delete the named defined set and all its entries. Select a supported type explicitly; unknown types are not rejected consistently and can fall back to prefix on this path. GoBGP dependency and deletion errors are not consistently mapped by HTTP status.",
         "summary": "Delete a BGP definedsets",
         "parameters": [
           {
@@ -20030,7 +20045,7 @@ func init() {
     },
     "/config/bgp/policy/definitions": {
       "post": {
-        "description": "Adds a BGP Policy",
+        "description": "Add a BGP policy definition. Supply non-null conditions and actions for every statement: the handler dereferences these schema-optional objects. Numeric narrowing, enum fallback, and string parsing can change meaning before GoBGP admission; validate statement relationships before submission. This is not an atomic general-purpose replacement API.",
         "summary": "Adds a BGP Policy",
         "parameters": [
           {
@@ -20097,7 +20112,7 @@ func init() {
     },
     "/config/bgp/policy/definitions/all": {
       "get": {
-        "description": "Get BGP Policy definitions",
+        "description": "Return BGP policy definitions and translated statements. The response is not a lossless representation of every GoBGP action or explicit zero; zero local preference cannot be reapplied through this write model.",
         "summary": "Get BGP Policy definitions",
         "responses": {
           "200": {
@@ -20143,7 +20158,7 @@ func init() {
     },
     "/config/bgp/policy/definitions/{policy_name}": {
       "delete": {
-        "description": "Delete a BGP Policy",
+        "description": "Delete the BGP policy identified by policy_name. Remote GoBGP validation and dependency failures are propagated through the current generic error classifier.",
         "summary": "Delete a BGP policy",
         "parameters": [
           {
@@ -20434,7 +20449,7 @@ func init() {
     },
     "/config/cistate": {
       "post": {
-        "description": "Informs Current Cluster Instance state in the device",
+        "description": "Set cluster instance state and initiate asynchronous dependent updates. Recognized states are MASTER, BACKUP, FAULT, STOP, and NOT_DEFINED. Current limitations include creating an instance before state validation, ignoring VIP changes when state is unchanged, and unchecked VIP parsing. Instance text is used in a shell hook when configured and is not safely isolated as an argument; do not treat unrestricted instance names as safe. HTTP success is not completion of HA or hook processing.",
         "summary": "Informs Current Cluster Instance state in the device",
         "parameters": [
           {
@@ -20501,7 +20516,7 @@ func init() {
     },
     "/config/cistate/all": {
       "get": {
-        "description": "Get Cluster Instance State in the device",
+        "description": "Return cluster instance names, states, and VIPs. The current handler does not populate the schema-required sync field; do not interpret it as confirmed synchronization.",
         "summary": "Get Cluster Instance State in the device",
         "responses": {
           "200": {
@@ -20547,7 +20562,7 @@ func init() {
     },
     "/config/conntrack/all": {
       "get": {
-        "description": "Get all of the conntrack infomation for all of the service.",
+        "description": "Return gateway datapath connection records, not the host's complete operating-system conntrack table. Counters include reported hardware fast-path totals when available. A backend table-read failure can currently appear as an empty successful result; ageMs is not populated.",
         "summary": "Get all of the conntrack entries.",
         "responses": {
           "200": {
@@ -20766,7 +20781,7 @@ func init() {
     },
     "/config/endpoint": {
       "post": {
-        "description": "Adds a LB endpoint for monitoring",
+        "description": "Configure a monitor for a literal endpoint IP, not a hostname or CIDR. Supply probeType; TCP, UDP, and SCTP require a nonzero probe port. Name selects a custom monitor identity, otherwise identity is host/type/port. Existing POST replaces options rather than patching them; reusing a name with a different host currently retains the old host. Port and duration narrowing and structured HTTP validation are incomplete.",
         "summary": "Adds a LB endpoint for monitoring",
         "parameters": [
           {
@@ -20833,7 +20848,7 @@ func init() {
     },
     "/config/endpoint/all": {
       "get": {
-        "description": "Get End-Points State in loxilb",
+        "description": "Return endpoint monitor configuration and observed health. Structured HTTP monitor fields are not returned, so this is not a complete configuration round-trip. currState uses ok, nok, or red, not the host-state input enumeration.",
         "summary": "Get End-Points State in loxilb",
         "responses": {
           "200": {
@@ -20879,7 +20894,7 @@ func init() {
     },
     "/config/endpoint/epipaddress/{ip_address}": {
       "delete": {
-        "description": "Delete an LB end-point from monitoring",
+        "description": "Delete an endpoint monitor. A supplied name takes precedence over the path host and probe tuple; otherwise supply the original host, probe_type, and probe_port. Referenced monitors cannot be removed. probe_port is currently converted to uint16 without complete range or fractional validation; use an integer port in range.",
         "summary": "Delete an LB end-point from monitoring",
         "parameters": [
           {
@@ -20962,7 +20977,7 @@ func init() {
     },
     "/config/endpointhoststate": {
       "post": {
-        "description": "Sets the state of a host which can have multiple endpoints",
+        "description": "Set green, yellow, or red host state. Specify both nonzero epPort and epProto for generated-key targeting, or omit both for host-wide targeting. Specific targeting does not resolve custom monitor names; host-wide requests can succeed without matches. Immediate dependent-rule updates are limited to the implemented fullproxy path and are not a universal completion guarantee.",
         "summary": "Sets the state of a host",
         "parameters": [
           {
@@ -21029,7 +21044,7 @@ func init() {
     },
     "/config/export": {
       "get": {
-        "description": "Export cluster, endpoint, firewall, loadbalancer, mirror, and policy configurations as a JSON file.",
+        "description": "Deprecated compatibility wrapper for GET /config/snapshot. Downloads a versioned, checksummed snapshot of supported domains, not all runtime state or external secrets. The response carries deprecation and snapshot identity headers.",
         "produces": [
           "application/json"
         ],
@@ -21037,7 +21052,7 @@ func init() {
         "parameters": [
           {
             "type": "string",
-            "description": "Comma-separated list of components to export (cluster, endpoint, firewall, loadbalancer, mirror, policy). If not specified, all components are exported.",
+            "description": "Comma-separated snapshot domains. Omitted or empty selection captures all supported domains. The legacy cluster token is ignored; cluster-only selection consequently widens to all snapshot domains and should not be used.",
             "name": "components",
             "in": "query"
           }
@@ -21084,7 +21099,7 @@ func init() {
     },
     "/config/fdb": {
       "post": {
-        "description": "Assign FDB in the device",
+        "description": "Add a permanent bridge-family forwarding entry for the supplied interface and MAC address. This is a netlink append operation, not a general replacement API.",
         "summary": "Assign FDB in the device",
         "parameters": [
           {
@@ -21151,7 +21166,7 @@ func init() {
     },
     "/config/fdb/all": {
       "get": {
-        "description": "Get FDB in the device(interface).",
+        "description": "Return bridge-family forwarding entries from interfaces that have a bridge master. The response exposes interface and MAC only, not the complete kernel FDB key or every kernel FDB entry.",
         "summary": "Get FDB in the device(interface)",
         "responses": {
           "200": {
@@ -21197,7 +21212,7 @@ func init() {
     },
     "/config/fdb/{mac_address}/dev/{if_name}": {
       "delete": {
-        "description": "Delete FDB in the device",
+        "description": "Delete a bridge-family forwarding entry identified by interface and MAC address. The API does not expose additional kernel FDB selectors such as VLAN or tunnel destination.",
         "summary": "Delete FDB in the device",
         "parameters": [
           {
@@ -21269,7 +21284,7 @@ func init() {
     },
     "/config/firewall": {
       "post": {
-        "description": "Create a new firewall config for security.",
+        "description": "Add a firewall rule. Ports and preference are 0..65535; protocol is 0..255. Zero port pairs and protocol zero mean wildcard. Nonzero port pairs require minimum \u003c= maximum; CIDR families must agree. Avoid conflicting terminal actions: precedence and independent doSnat side effects are not a safe one-action contract. Duplicate POST can change fwMark before returning conflict. Hardware expressibility admission does not establish hardware installation.",
         "summary": "Create a new firewall config",
         "parameters": [
           {
@@ -21334,7 +21349,7 @@ func init() {
         }
       },
       "delete": {
-        "description": "Delete of the firewall service.",
+        "description": "Delete the exact firewall match tuple, including preference; query parameters are not a search filter. Reuse the original normalized tuple. Safety limitation: reversed port ranges currently become wildcard tuples instead of being rejected, so validate range ordering before submission.",
         "summary": "Delete of the firewall service",
         "parameters": [
           {
@@ -21446,7 +21461,7 @@ func init() {
     },
     "/config/firewall/all": {
       "get": {
-        "description": "Get all of the firewall configuration.",
+        "description": "Return firewall match tuples, options, and packet/byte counters. Internally marked source-check rules are filtered out. hwOffload is not populated on readback; returned configuration does not prove hardware installation.",
         "summary": "Get all of the firewall config",
         "responses": {
           "200": {
@@ -21492,13 +21507,13 @@ func init() {
     },
     "/config/gpu/conversations/cleanup": {
       "post": {
-        "description": "Removes stale conversation mappings older than specified age",
+        "description": "Conversation cleanup is currently a placeholder. The backend returns zero deletion and age counts without deleting mappings; success does not prove cleanup or an empty conversation table.",
         "summary": "Manual conversation cleanup",
         "parameters": [
           {
             "type": "integer",
             "default": 1,
-            "description": "Maximum age in hours for conversations to keep (older ones deleted)",
+            "description": "Requested age threshold in hours, defaulting to one when omitted. Negative values are rejected by the handler. The current backend does not apply the threshold or delete mappings; zero is not a functioning delete-all action.",
             "name": "max_age_hours",
             "in": "query"
           }
@@ -21545,7 +21560,7 @@ func init() {
     },
     "/config/gpu/disable": {
       "post": {
-        "description": "Deactivates GPU-aware routing and reverts to standard CHWBL",
+        "description": "Disables runtime GPU monitoring and stops its cleanup thread; already-disabled requests are rejected. This does not establish that existing services switch to CHWBL, since service selection configuration is separate. Map-update failure can leave partial state and is not a completed transition.",
         "summary": "Disable GPU-aware load balancing",
         "responses": {
           "200": {
@@ -21589,7 +21604,7 @@ func init() {
     },
     "/config/gpu/enable": {
       "post": {
-        "description": "Activates GPU-aware routing mode and starts conversation cleanup thread",
+        "description": "Enables runtime GPU monitoring and associated map configuration and starts a cleanup thread. Requires compiled support and available maps; already-enabled requests are rejected. No source linkage was established from this global toggle to an effective per-service routing switch. Cleanup is currently a placeholder; success does not verify GPU-aware traffic selection.",
         "summary": "Enable GPU-aware load balancing",
         "responses": {
           "200": {
@@ -21633,7 +21648,7 @@ func init() {
     },
     "/config/gpu/status": {
       "get": {
-        "description": "Returns current GPU monitoring state and statistics",
+        "description": "Returns the monitoring flag and cached worker observations, not verified GPU health or effective service routing. Uncompiled support can report routing_mode disabled. Worker count includes cached entries; ebpf_map_loaded checks one worker-statistics map descriptor rather than all required maps.",
         "summary": "Get GPU monitoring status",
         "responses": {
           "200": {
@@ -21678,7 +21693,7 @@ func init() {
         "parameters": [
           {
             "type": "file",
-            "description": "The configuration file to upload.",
+            "description": "Required by the handler. Deprecated import immediately attempts a committed replacement; there is no dry-run. Legacy JSON shape validation is incomplete, so empty or unrecognized documents can become empty domains and risk deleting configuration. Prefer POST /config/restore with dry-run first.",
             "name": "configuration",
             "in": "formData"
           }
@@ -21713,7 +21728,7 @@ func init() {
     },
     "/config/ipfilter": {
       "post": {
-        "description": "Create a new IP whitelist or blacklist rule for DDoS protection.",
+        "description": "Add or replace a source-prefix XDP filter. Zone must be zero or omitted; whitelist requires allow and blacklist requires drop. Priority is 0..65535, defaults to 100 when omitted, and preserves explicit zero. Each list uses longest-prefix matching; higher priority wins between lists and whitelist wins ties. Replacing an existing list/prefix resets its counters.",
         "summary": "Create a new IP filter rule",
         "parameters": [
           {
@@ -21766,7 +21781,7 @@ func init() {
         }
       },
       "delete": {
-        "description": "Delete an IP whitelist or blacklist rule.",
+        "description": "Delete the entry identified by filterType and normalized CIDR. This is a zone-less XDP map: the current handler narrows zone without validating it and deletion does not use zone in the key. Omit zone or use zero; do not rely on it for isolation.",
         "summary": "Delete an IP filter rule",
         "parameters": [
           {
@@ -21838,7 +21853,7 @@ func init() {
     },
     "/config/ipfilter/all": {
       "get": {
-        "description": "Get all IP whitelist and blacklist rules with statistics.",
+        "description": "Return source-prefix whitelist and blacklist map entries with packet and byte counters. These maps are shared with security-rate whitelist configuration; GET is not an independent ownership inventory.",
         "summary": "Get all IP filter rules",
         "responses": {
           "200": {
@@ -22973,7 +22988,7 @@ func init() {
     },
     "/config/ipv4address": {
       "post": {
-        "description": "Assign IPv4 addresses in the device",
+        "description": "Assign an address with prefix length to the named interface. Supply IPv4 CIDR notation; the shared mutation helper does not enforce this endpoint's address family. A missing Linux interface can fall back to an internal address object. Backend failure can return HTTP 200 with result set to fail; HTTP status alone does not establish success.",
         "summary": "Assign IPv4 addresses in the device",
         "parameters": [
           {
@@ -23040,7 +23055,7 @@ func init() {
     },
     "/config/ipv4address/all": {
       "get": {
-        "description": "Get IPv4 addresses in the device(interface)",
+        "description": "Return the gateway's IPv4 address inventory, filtered by family, with interface names and synchronization state. This is not a complete independently verified kernel inventory.",
         "summary": "Get IPv4 addresses in the device(interface)",
         "responses": {
           "200": {
@@ -23086,7 +23101,7 @@ func init() {
     },
     "/config/ipv4address/{ip_address}/{mask}/dev/{if_name}": {
       "delete": {
-        "description": "Delete IPv4 addresses in the device",
+        "description": "Delete the address identified by interface, IPv4 address, and prefix length. Shared helpers do not enforce endpoint address family and can use internal address objects when Linux interface lookup fails. Backend failure can return HTTP 200 with result set to fail.",
         "summary": "Delete IPv4 addresses in the device",
         "parameters": [
           {
@@ -23165,7 +23180,7 @@ func init() {
     },
     "/config/ipv6address": {
       "post": {
-        "description": "Assign IPv6 addresses in the device",
+        "description": "Assign an address with prefix length to the named interface. Supply IPv6 CIDR notation; the shared mutation helper does not enforce this endpoint's address family. A missing Linux interface can fall back to an internal address object. Backend failure can return HTTP 200 with result set to fail; HTTP status alone does not establish success.",
         "summary": "Assign IPv6 addresses in the device",
         "parameters": [
           {
@@ -23232,7 +23247,7 @@ func init() {
     },
     "/config/ipv6address/all": {
       "get": {
-        "description": "Get IPv6 addresses in the device(interface)",
+        "description": "Return the gateway's IPv6 address inventory, filtered by family, with interface names and synchronization state. This is not a complete independently verified kernel inventory.",
         "summary": "Get IPv6 addresses in the device(interface)",
         "responses": {
           "200": {
@@ -23278,7 +23293,7 @@ func init() {
     },
     "/config/ipv6address/{ip_address}/{mask}/dev/{if_name}": {
       "delete": {
-        "description": "Delete IPv6 addresses in the device",
+        "description": "Delete the address identified by interface, IPv6 address, and prefix length. Shared helpers do not enforce endpoint address family and can use internal address objects when Linux interface lookup fails. Backend failure can return HTTP 200 with result set to fail.",
         "summary": "Delete IPv6 addresses in the device",
         "parameters": [
           {
@@ -23357,7 +23372,7 @@ func init() {
     },
     "/config/l4trace/disable": {
       "post": {
-        "description": "Disables L4 connection tracing and stops emitting events to ring buffers.\nIn-flight connections will complete their spans before export stops.\n",
+        "description": "Disables L4 connection tracing and stops emitting events to ring buffers.\nThis also resets sampling to 100. The operation does not guarantee completion or export of all in-flight spans and does not itself shut down the existing consumer.\n",
         "tags": [
           "L4Tracing"
         ],
@@ -23405,7 +23420,7 @@ func init() {
     },
     "/config/l4trace/enable": {
       "post": {
-        "description": "Enables distributed tracing for all TCP/SCTP connections passing through loxilb.\nEvents are emitted to eBPF ring buffers for export to OpenTelemetry collectors.\n\n**Features:**\n- Per-connection spans with full lifecycle tracking\n- Connection state machine visualization\n- RTT, retransmission, and throughput metrics\n- Configurable sampling rate (0-100%)\n",
+        "description": "Enables runtime L4 trace emission when supported by the build and loaded maps. Omitted body or sampling_rate defaults to 100; explicit zero is retained. Enablement alone does not prove capture or export of every connection.\nEvents are emitted to eBPF ring buffers for export to OpenTelemetry collectors.\n\n**Features:**\n- Per-connection spans with full lifecycle tracking\n- Connection state machine visualization\n- RTT, retransmission, and throughput metrics\n- Configurable sampling rate (0-100%)\n",
         "tags": [
           "L4Tracing"
         ],
@@ -23479,7 +23494,7 @@ func init() {
     },
     "/config/l4trace/sampling": {
       "put": {
-        "description": "Changes the L4 tracing sampling rate without disabling tracing.\nNew connections will use the updated rate immediately.\n\n**Sampling behavior:**\n- 0%: Effectively disables tracing (use /disable endpoint instead)\n- 1-99%: Hash-based deterministic sampling (same connection always gets same decision)\n- 100%: Trace all connections (production debugging)\n",
+        "description": "Changes the L4 tracing sampling rate without disabling tracing.\nNew connections will use the updated rate immediately.\n\n**Sampling behavior:**\n- 0%: Effectively disables tracing (use /disable endpoint instead)\n- 1-99%: Hash-based sampling with cached decisions and special handling for uncached close, reset and error events; this is not an unconditional same-decision guarantee for every event\n- 100%: Trace all connections (production debugging)\n",
         "tags": [
           "L4Tracing"
         ],
@@ -23556,7 +23571,7 @@ func init() {
     },
     "/config/l4trace/stats/reset": {
       "post": {
-        "description": "Resets all L4 tracing statistics counters to zero.\nDoes not affect current tracing configuration (enabled/disabled state).\nUseful for baseline measurements and performance testing.\n",
+        "description": "Resets the C-side L4 statistics currently exposed by this API, not the separate Go consumer counters. Statistics wiring is incomplete, so success does not establish a fresh measurement baseline across the tracing pipeline.\nDoes not affect current tracing configuration (enabled/disabled state).\nUseful for baseline measurements and performance testing.\n",
         "tags": [
           "L4Tracing"
         ],
@@ -23604,7 +23619,7 @@ func init() {
     },
     "/config/l4trace/status": {
       "get": {
-        "description": "Returns current L4 tracing configuration, connection statistics, and event counters.\n\n**Statistics include:**\n- Total events emitted (TCP + SCTP state changes)\n- Connection lifecycle counters (new, established, closed, timeout, reset, error)\n- Protocol breakdown (TCP vs SCTP events)\n- Ring buffer health (dropped events)\n",
+        "description": "Returns L4 configuration with currently incomplete statistics wiring. REST reads C counters that are separate from the Go consumer's event counters; default or zero values do not establish measured traffic or loss, or compiled feature availability.\n\n**Statistics include:**\n- Total events emitted (TCP + SCTP state changes)\n- Connection lifecycle counters (new, established, closed, timeout, reset, error)\n- Protocol breakdown (TCP vs SCTP events)\n- Ring buffer health (dropped events)\n",
         "tags": [
           "L4Tracing"
         ],
@@ -23646,6 +23661,7 @@ func init() {
     },
     "/config/l7policy": {
       "get": {
+        "description": "Returns stored policies sorted by policy ID under l7policyAttr. This is registry readback, not an effective dataplane policy or attachment-status query; submitted values can differ from bounded C values.",
         "summary": "Get all L7 content-routing policies",
         "operationId": "getConfigL7PolicyAll",
         "responses": {
@@ -23682,7 +23698,7 @@ func init() {
         }
       },
       "post": {
-        "description": "Creates a dedicated L7_POLICY resource (policy + ordered child rules) and attaches it to an existing L4 load-balancer referenced by its stable opaque id. The body is validated server-side with Octavia per-type rules (FILE_TYPE only EQUAL_TO/REGEX; key required for HEADER/COOKIE/QUERY; redirect statusCode allow-list default 302; REJECT default 403; REGEX patterns try-compiled at config time) and translated to the internal route IR, then carried to the running sockproxy by a SEPARATE attach call (proxy_attach_l7_policy) — NEVER inline on the 4096-byte proxy_arg.",
+        "description": "Validates a policy, resolves its load-balancer ID, attaches its routes to an existing sockproxy listener, then stores the policy. The current attachment bridge supports IPv4; an existing LB resource alone does not establish an eligible listener. Success returns 204 without a policy body or generated ID. Duplicate policy IDs, including identical replay, and a second policy for the same LB ID return 409. No update or Gateway API export operation is performed. Implementation warnings on L7Policy, L7Rule and L7Action describe attachment identity, truncation and response-path gaps. A successful attach is source-level configuration evidence, not proof of effective matching, TLS responses or lifecycle safety. Policy ownership across LB resources sharing a listener remains unresolved.",
         "summary": "Create an L7 content-routing policy",
         "operationId": "postConfigL7Policy",
         "parameters": [
@@ -23701,7 +23717,7 @@ func init() {
             "description": "OK"
           },
           "400": {
-            "description": "Malformed arguments (failed Octavia validation or unrepresentable export)",
+            "description": "Policy validation or dataplane attachment failed. Generated request-model validation runs before the handler; this operation does not perform Gateway API export.",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -23747,6 +23763,7 @@ func init() {
     },
     "/config/l7policy/id/{id}": {
       "get": {
+        "description": "Returns the stored policy with this ID, or 404 when absent. Readback does not verify that the listener still carries the policy or that its effective values match the stored document.",
         "summary": "Get a single L7 content-routing policy by id",
         "operationId": "getConfigL7PolicyID",
         "parameters": [
@@ -23798,7 +23815,7 @@ func init() {
         }
       },
       "delete": {
-        "description": "Detaches the policy from its load-balancer (proxy_detach_l7_policy regfrees every compiled REGEX) and removes the resource.",
+        "description": "Detaches the policy when its referenced LB still exists, then removes the stored resource. A missing policy returns 404; a detach failure retains the registry entry. Implementation warning: when the LB has disappeared the handler skips detach, although C can retain the listener and attached routes. Successful deletion in that case does not establish dataplane cleanup.",
         "summary": "Delete an L7 content-routing policy by id",
         "operationId": "deleteConfigL7PolicyID",
         "parameters": [
@@ -24577,7 +24594,7 @@ func init() {
         }
       },
       "patch": {
-        "description": "Apply an RFC 7386 JSON merge-patch to an existing load balancer rule identified by its VIP/port/protocol composite key (Octavia). Fields present in the body are overwritten, absent fields are left untouched, and an explicit null clears a clearable field. Immutable fields (security, egress, mode, protocol, VIP composite key) are rejected with 400. Returns 200 if the target rule exists, 404 if it is absent. The rule is mutated in place; established connections are not dropped.",
+        "description": "Updates an existing L4 rule selected by VIP/port/protocol; does not create a missing rule. FullProxy rules are rejected. The handler overlays name, sel, inactiveTimeOut, monitor, probetype, probeport, probereq, proberesp and adminStateUp when present, and replaces endpoints or allowedSources when their collection key is present. Changes to security, egress, mode or the identifying tuple are guarded as immutable. Empty or null endpoints are rejected; serviceArguments:null does not clear the service configuration. Implementation warning: this is a restricted overlay, not general recursive RFC 7386 support for every LoadbalanceEntry field. Other schema fields are not applied by this handler. Canonical probeTimeout/probeRetries updates miss the handler's incorrectly lowercased presence checks; this is a wiring defect, not an alternate spelling of the API. Existing-member metadata updates also have the limitations documented on endpoints. The L4 path uses in-place reconciliation, but source inspection does not establish runtime connection preservation. Returns 200 on successful apply and 404 when absent; errors, including no-change detection, can prevent a successful apply.",
         "consumes": [
           "application/json",
           "application/merge-patch+json"
@@ -25243,6 +25260,7 @@ func init() {
     },
     "/config/metrics": {
       "get": {
+        "description": "Returns the runtime Prometheus enablement flag, not proof of freshness or availability of every series.",
         "summary": "Get prometheus config value",
         "responses": {
           "200": {
@@ -25284,6 +25302,7 @@ func init() {
         }
       },
       "post": {
+        "description": "Idempotently enables runtime collection and scraping, not metric-resource creation. Collection is asynchronous; enablement does not prove a first sample exists. This setting is not recovered through snapshots.",
         "summary": "turn on prometheus option",
         "responses": {
           "200": {
@@ -25325,6 +25344,7 @@ func init() {
         }
       },
       "delete": {
+        "description": "Idempotently disables runtime collection and scraping without stopping data forwarding or clearing every cached value. JSON metric readback can therefore remain stale.",
         "summary": "turn off prometheus option",
         "responses": {
           "200": {
@@ -25368,7 +25388,7 @@ func init() {
     },
     "/config/mirror": {
       "post": {
-        "description": "Create a new Mirror config.",
+        "description": "Configure a mirror object. The inspected implementation provides a port-attached SPAN programming path; rule attachment and ERSPAN are not implemented end-to-end. RSPAN currently rejects nonzero VLAN IDs. Datapath failures can be ignored during creation, and changed information may delete and recreate an existing object while target-only changes conflict.",
         "summary": "Create a new Mirror config",
         "parameters": [
           {
@@ -25435,7 +25455,7 @@ func init() {
     },
     "/config/mirror/all": {
       "get": {
-        "description": "Get",
+        "description": "Return mirror configuration and mirror-object synchronization state. The reported state does not establish successful attachment or active traffic mirroring.",
         "summary": "Get",
         "responses": {
           "200": {
@@ -25481,7 +25501,7 @@ func init() {
     },
     "/config/mirror/ident/{ident}": {
       "delete": {
-        "description": "Delete a new Create a Mirror service.",
+        "description": "Delete the mirror object identified by ident. Successful control-plane deletion does not independently verify datapath cleanup.",
         "summary": "Delete a Mirror service",
         "parameters": [
           {
@@ -25546,7 +25566,7 @@ func init() {
     },
     "/config/neighbor": {
       "post": {
-        "description": "Assign IPv4 neighbor in the device",
+        "description": "Add a permanent neighbor entry using a literal IP address, interface name, and MAC address. IP parsing is not followed by complete local validation; downstream failures are not consistently classified.",
         "summary": "Assign IPv4 neighbor in the device",
         "parameters": [
           {
@@ -25613,7 +25633,7 @@ func init() {
     },
     "/config/neighbor/all": {
       "get": {
-        "description": "Get IPv4 neighbor in the device(interface)",
+        "description": "Return the gateway's neighbor inventory and resolved interface names. This operation is not restricted to IPv4 by its handler, and a successful response does not independently verify complete kernel neighbor state.",
         "summary": "Get IPv4 neighbor in the device(interface)",
         "responses": {
           "200": {
@@ -25659,7 +25679,7 @@ func init() {
     },
     "/config/neighbor/{ip_address}/dev/{if_name}": {
       "delete": {
-        "description": "Delete IPv4 neighbor in the device",
+        "description": "Request deletion of a neighbor on the named interface. Safety limitation: if interface lookup fails, the current helper searches all interfaces and deletes matching IP entries, ignoring individual deletion failures. Do not assume interface-scoped deletion is enforced; verify the interface before submission. This fallback is an implementation gap, not a supported cross-interface deletion contract.",
         "summary": "Delete IPv4 neighbor in the device",
         "parameters": [
           {
@@ -25829,7 +25849,7 @@ func init() {
         "x-raw-middleware": true
       },
       "delete": {
-        "description": "Stops the running OPA watcher and removes its configuration.",
+        "description": "Cancels polling and removes the in-memory singleton configuration. Previously applied firewall rules and the persisted watcher cache are retained. Repeated deletion succeeds. Cancellation does not join an in-flight polling goroutine. This marked stub is intercepted by raw middleware; swagger-extras.yml describes the actual response envelope.",
         "tags": [
           "opa"
         ],
@@ -25872,7 +25892,7 @@ func init() {
     },
     "/config/params": {
       "get": {
-        "description": "Get Operational params of LoxiLB",
+        "description": "Returns the current runtime logLevel. The implemented handler returns a body on success and has no empty-success 204 branch.",
         "summary": "Get Operational params of LoxiLB",
         "responses": {
           "200": {
@@ -25929,7 +25949,7 @@ func init() {
         }
       },
       "post": {
-        "description": "Set Operational parameters of LoxiLB",
+        "description": "Sets runtime logLevel, updating a singleton operational setting rather than creating a resource. The setting is not recovered through configuration snapshots. Unsupported operating modes can reject the change.",
         "summary": "Set Operational parameters of LoxiLB",
         "parameters": [
           {
@@ -25996,7 +26016,7 @@ func init() {
     },
     "/config/persist": {
       "post": {
-        "description": "Dumps the gateway's live configuration to {config-path}/snapshot.json (atomic temp-file + rename, 0600) so it survives a daemon restart. This is \"save\" as an API (single-writer rule) - the same write the gateway performs automatically after a committed restore and, when auto-persist is enabled, after every successful mutating config call. loxicmd save --api calls this instead of writing legacy *.txt files client-side.",
+        "description": "Atomically writes supported snapshot configuration to {config-path}/snapshot.json with mode 0600. Inspect included_domains, excluded_domains, external_dependencies, checksum and generation for coverage and identity. Runtime-only settings and external secrets are not made durable by this operation. Committed restore attempts write-through separately; eligible successful mutations schedule debounced persistence when auto-persist is enabled rather than synchronously saving every mutation.",
         "produces": [
           "application/json"
         ],
@@ -26293,7 +26313,7 @@ func init() {
     },
     "/config/policy": {
       "post": {
-        "description": "Create a new Policy QoS config.",
+        "description": "Configure a policer. Rule targets require an exact VIP:PORT:PROTO or [VIP]:PORT:PROTO key; egress port targets require enabled egress hooks. Targets may remain pending. Information changes can delete and recreate an existing policer; target-only changes conflict. Mode propagation, numeric narrowing, and effective burst/rate semantics have known implementation limitations; this is not an atomic general-purpose update.",
         "summary": "Create a new Policy QoS config",
         "parameters": [
           {
@@ -26360,7 +26380,7 @@ func init() {
     },
     "/config/policy/all": {
       "get": {
-        "description": "Get",
+        "description": "Return configured policers and their target references. Rates are reported in Mbps and burst sizes in bytes. This response does not expose attachment synchronization and is not proof that a pending target is active.",
         "summary": "Get",
         "responses": {
           "200": {
@@ -26406,7 +26426,7 @@ func init() {
     },
     "/config/policy/ident/{ident}": {
       "delete": {
-        "description": "Delete a new Create a Policy QoS service.",
+        "description": "Delete the policer identified by ident and detach its target association.",
         "summary": "Delete a Policy QoS service",
         "parameters": [
           {
@@ -26471,7 +26491,7 @@ func init() {
     },
     "/config/port/all": {
       "get": {
-        "description": "Get all of the port interfaces.",
+        "description": "Return the gateway's port inventory and observed status. Link state and administrative state are distinct. Address arrays contain display strings for the first address of each family, not complete address inventories; portProp is not populated by the current domain getter.",
         "summary": "Get all of the port interfaces",
         "responses": {
           "200": {
@@ -26517,7 +26537,7 @@ func init() {
     },
     "/config/restore": {
       "post": {
-        "description": "Runs the staged restore pipeline (parse, validate, plan, preserve, apply, verify, commit-or-rollback) on the posted snapshot document. Default mode is dry-run, which validates and plans without mutating anything; commit must be explicit. Replaces the deprecated /config/import.",
+        "description": "Defaults to dry-run, which checks structure, checksum, schema compatibility, coverage and required dependencies and reports a replacement plan without applying it. Dry-run does not execute every domain's apply-time validation or guarantee commit success. Explicit commit replaces selected domains, verifies the result and attempts rollback on failure. Application and write-through persistence are separate outcomes; inspect result, errors and persisted, not HTTP status alone. Replaces deprecated /config/import.",
         "produces": [
           "application/json"
         ],
@@ -26530,13 +26550,13 @@ func init() {
             ],
             "type": "string",
             "default": "dry-run",
-            "description": "dry-run (default) validates and returns the plan without mutating anything; commit applies the snapshot with automatic rollback on failure.",
+            "description": "dry-run (default) performs pre-apply checks and planning without applying configuration. commit replaces selected domains and attempts rollback if apply or verification fails; rollback itself can fail. A successful commit can return persisted=false when write-through fails without undoing the applied state.",
             "name": "mode",
             "in": "query"
           },
           {
             "type": "string",
-            "description": "Comma-separated snapshot domains to restore. Defaults to every domain the document covers (its included_domains). Requesting a domain the document does not cover is refused.",
+            "description": "Comma-separated snapshot domains to replace, not merge. Omitted or empty selection uses included_domains. Uncovered domains are refused. Required dependencies are checked across the document manifest before component selection.",
             "name": "components",
             "in": "query"
           },
@@ -26598,7 +26618,7 @@ func init() {
     },
     "/config/route": {
       "post": {
-        "description": "Create a new route config .",
+        "description": "Add a route using a destination CIDR and literal next-hop IP. This uses add, not replace. Only the exact protocol string static explicitly selects the static protocol; other returned protocol values are not supported create-time selectors. Gateway validity and address-family consistency are not fully checked locally.",
         "summary": "Create a new route config",
         "parameters": [
           {
@@ -26665,7 +26685,7 @@ func init() {
     },
     "/config/route/all": {
       "get": {
-        "description": "Get all route table",
+        "description": "Return the gateway's route inventory, including protocol, synchronization state, and byte and packet counters. Gateway strings may contain comma-separated next hops. A successful response is not proof of complete kernel inventory or datapath synchronization.",
         "summary": "Get all route table",
         "responses": {
           "200": {
@@ -26729,7 +26749,7 @@ func init() {
     },
     "/config/route/destinationIPNet/{ip_address}/{mask}": {
       "delete": {
-        "description": "Create a new load balancer service with .",
+        "description": "Delete a route identified by destination IP address and prefix length. This operation does not create a load-balancing service.",
         "summary": "Create a new Load balancer service",
         "parameters": [
           {
@@ -26801,7 +26821,7 @@ func init() {
     },
     "/config/securityrate": {
       "post": {
-        "description": "Configure unified SYN flood protection (P0-5) and connection rate limiting (P0-6).",
+        "description": "Replace SYN, connection-SYN, and UDP rate configuration and the security-rate whitelist. Supply all required flags and thresholds; at least one protection must be enabled. Omitted whitelist clears the previous list. Numeric and relational limits are described on the configuration model. Programming is not atomic: errors can follow partial datapath changes. Explicit cookieThreshold zero becomes 50 in the datapath, and cookie telemetry does not implement a SYN-cookie exchange.",
         "summary": "Configure unified security rate limiting",
         "parameters": [
           {
@@ -26854,7 +26874,7 @@ func init() {
         }
       },
       "delete": {
-        "description": "Disable all security rate limiting (SYN flood + connection rate) and clear tracking state.",
+        "description": "Disable all three security-rate protections and replace the security-rate whitelist with an empty list. This does not clear tracking maps or guarantee counter reset. Whitelist maps are shared with IP-filter rules, so overlapping entries can be removed.",
         "summary": "Disable unified security rate limiting",
         "responses": {
           "200": {
@@ -26904,7 +26924,7 @@ func init() {
     },
     "/config/securityrate/all": {
       "get": {
-        "description": "Get current unified security rate limiting (P0-5 + P0-6 + P0-7) configuration and statistics.",
+        "description": "Return a single configuration/statistics entry in an array. Configuration reflects the stored control-plane values, which can differ from effective datapath defaults or partially applied updates. Statistics read failures can appear as zeros. uniqueIps is tracking-map occupancy, not a resettable cumulative counter.",
         "summary": "Get unified security rate limiting configuration and statistics",
         "responses": {
           "200": {
@@ -26950,7 +26970,7 @@ func init() {
     },
     "/config/securityrate/reset": {
       "put": {
-        "description": "Reset all accumulated statistics counters for security rate limiting (SYN/Conn/UDP) to zero.",
+        "description": "Attempt to reset accumulated SYN, connection-SYN, and UDP statistics counters. Tracking maps and their uniqueIps occupancy are not cleared. Individual counter-write failures are logged but can still result in HTTP 204; success does not prove every counter was reset.",
         "summary": "Reset security rate limiting statistics",
         "responses": {
           "204": {
@@ -26985,7 +27005,7 @@ func init() {
     },
     "/config/session": {
       "post": {
-        "description": "Create a new session config for 5G.",
+        "description": "Configure a user session identified by ident. Supply both tunnel objects: the current handler dereferences them even though the schema makes them optional. TEIDs narrow to uint32 without bounds checks. Existing-session comparison is defective and can delete and recreate an identical session, removing its ULCL classifiers; do not treat POST as an idempotent update.",
         "summary": "Create a new session config",
         "parameters": [
           {
@@ -27052,7 +27072,7 @@ func init() {
     },
     "/config/session/all": {
       "get": {
-        "description": "Get all of the port interfaces.",
+        "description": "Return configured user sessions and their access-network and core-network tunnels.",
         "summary": "Get all of the port interfaces",
         "responses": {
           "200": {
@@ -27098,7 +27118,7 @@ func init() {
     },
     "/config/session/ident/{ident}": {
       "delete": {
-        "description": "Create a new load balancer service with .",
+        "description": "Delete the session identified by ident and all of its ULCL classifiers.",
         "summary": "Create a new Load balancer service",
         "parameters": [
           {
@@ -27163,7 +27183,7 @@ func init() {
     },
     "/config/sessionulcl": {
       "post": {
-        "description": "Create a new session config for 5G.",
+        "description": "Add an uplink classifier to an existing session. Identity is the session identifier plus classifier IP; duplicate identity does not update QFI. Supply ulclArgument because the handler dereferences this schema-optional object. QFI narrows to uint8 without a bounds check.",
         "summary": "Create a new session config",
         "parameters": [
           {
@@ -27230,7 +27250,7 @@ func init() {
     },
     "/config/sessionulcl/all": {
       "get": {
-        "description": "Get",
+        "description": "Return uplink classifiers associated with configured user sessions.",
         "summary": "Get",
         "responses": {
           "200": {
@@ -27276,7 +27296,7 @@ func init() {
     },
     "/config/sessionulcl/ident/{ident}/ulclAddress/{ip_address}": {
       "delete": {
-        "description": "Create a new load balancer service with .",
+        "description": "Delete the classifier identified by session identifier and classifier IP. QFI is not part of the deletion key. Missing-classifier errors are not consistently mapped to HTTP 404.",
         "summary": "Create a new Load balancer service",
         "parameters": [
           {
@@ -27348,7 +27368,7 @@ func init() {
     },
     "/config/snapshot": {
       "get": {
-        "description": "Returns the versioned, checksummed snapshot document (schema 1.0) covering all v1 configuration domains. Replaces the deprecated /config/export. Response carries Content-Disposition and X-Snapshot-Checksum headers.",
+        "description": "Returns a versioned, checksummed snapshot document using schema 1.5. Supported snapshot domains exclude some runtime-only state and externally stored secrets. Replaces deprecated /config/export. Response carries Content-Disposition and X-Snapshot-Checksum headers.",
         "produces": [
           "application/json"
         ],
@@ -27356,7 +27376,7 @@ func init() {
         "parameters": [
           {
             "type": "string",
-            "description": "Comma-separated list of v1 domains to capture (endpoint, loadbalancer, firewall, policy, mirror, session, sessionulcl, ipfilter, securityrate, bfd, bgp, ipsec). If not specified, all domains are captured.",
+            "description": "Comma-separated domains (endpoint, loadbalancer, kvexactbinding, l7policy, firewall, policy, mirror, session, sessionulcl, ipfilter, securityrate, bfd, bgp, ipsec, cors, tracing, cert). Omitted or empty selection captures all supported domains. Inspect included_domains and excluded_domains for actual coverage; certificate material and OTLP header values remain external.",
             "name": "components",
             "in": "query"
           }
@@ -27422,7 +27442,7 @@ func init() {
             "BearerAuth": []
           }
         ],
-        "description": "Returns the parser currently assigned to a specific trace catalog.\nShows catalog name, parser name, and parser_type from YAML configuration.\n",
+        "description": "Returns the parser currently assigned to a specific trace catalog.\nparser_name is the runtime assignment key; parser_type is the YAML declaration and can differ after an override. Catalog metadata can be absent. Mapping lookup errors, including an unavailable registry, currently produce 404. Numeric catalog IDs are not durable identities across catalog-set changes.\n",
         "tags": [
           "Tracing"
         ],
@@ -27484,7 +27504,7 @@ func init() {
             "BearerAuth": []
           }
         ],
-        "description": "Dynamically changes which parser is used for a specific catalog at runtime.\nThis allows switching parsers without restarting loxilb or reloading YAML files.\n\n**Use Cases:**\n- Switch from mock to production parser after testing\n- Change parser when service protocol changes\n- A/B testing different parser implementations\n\n**Parser Selection Priority:**\n1. Catalog ID → parser mapping (set by this endpoint or YAML)\n2. URL path prefix matching (e.g., /v1/chat/completions → openai)\n3. Default mock parser\n",
+        "description": "Dynamically changes which parser is used for a specific catalog at runtime.\nThe override is runtime-only, does not edit YAML, and can be replaced by catalog synchronization. The handler validates the parser key but not catalog existence; current success has an empty body despite the declared response schema.\n\n**Use Cases:**\n- Switch from mock to production parser after testing\n- Change parser when service protocol changes\n- A/B testing different parser implementations\n\n**Parser Selection Priority:**\n1. Catalog ID → parser mapping (set by this endpoint or YAML)\n2. URL path prefix matching (e.g., /v1/chat/completions → openai)\n3. Default mock parser\n",
         "tags": [
           "Tracing"
         ],
@@ -27561,7 +27581,7 @@ func init() {
             "BearerAuth": []
           }
         ],
-        "description": "Removes the catalog → parser mapping, causing the system to fall back to:\n1. URL path-based routing (e.g., /v1/chat/completions → openai)\n2. Default mock parser\n\nUse this to revert to path-based parser selection or remove custom assignments.\n",
+        "description": "Removes the catalog → parser mapping, causing the system to fall back to:\n1. URL path-based routing (e.g., /v1/chat/completions → openai)\n2. Default mock parser\n\nRemoval is runtime-only and succeeds with 204 even when no mapping exists. Registry unavailability can produce 500. This does not edit YAML or guarantee that later catalog synchronization will preserve the removal.\n",
         "tags": [
           "Tracing"
         ],
@@ -27622,7 +27642,7 @@ func init() {
             "BearerAuth": []
           }
         ],
-        "description": "Returns a list of all tracing catalog templates loaded from YAML files.\nCatalogs define parser assignments, sampling rates, and tracing behavior for different services.\n\n**Catalog Sources:**\n- Builtin catalogs: /opt/loxilb/trace-catalogs/\n- User overrides: /etc/loxilb/trace-catalogs/\n\n**Response includes:**\n- Catalog name (from YAML filename)\n- Parser assignment (parser_type from YAML)\n- Sample rate (percentage of requests traced)\n- Enabled status\n- Version and description\n",
+        "description": "Not implemented by the current router configuration; the generated default handler returns 501. The following catalog shape describes intended data, not an available response.\nCatalogs define parser assignments, sampling rates, and tracing behavior for different services.\n\n**Catalog Sources:**\n- Builtin catalogs: /opt/loxilb/trace-catalogs/\n- User overrides: /etc/loxilb/trace-catalogs/\n\n**Response includes:**\n- Catalog name (from the YAML catalog_name field, not the filename)\n- Parser assignment (parser_type from YAML)\n- Sample rate (percentage of requests traced)\n- Enabled status\n- Version and description\n",
         "tags": [
           "Tracing"
         ],
@@ -27668,7 +27688,7 @@ func init() {
     },
     "/config/trace/disable": {
       "post": {
-        "description": "Disables distributed tracing and stops emitting events to ring buffers.",
+        "description": "Disables runtime HTTP/HTTPS trace emission without itself shutting down the existing consumer or proving buffered events were exported. Some failure branches currently return an error message with HTTP 200.",
         "tags": [
           "Tracing"
         ],
@@ -27716,7 +27736,7 @@ func init() {
     },
     "/config/trace/enable": {
       "post": {
-        "description": "Enables distributed tracing for all HTTP/HTTPS traffic passing through loxilb proxy. Events are emitted to ring buffers for export to Jaeger/OpenTelemetry.",
+        "description": "Enables runtime HTTP/HTTPS tracing and attempts to initialize its consumer. Actual capture depends on the proxy path and tracing configuration; enablement does not prove capture or export of all traffic. Some initialization failures currently return an error message with HTTP 200.",
         "tags": [
           "Tracing"
         ],
@@ -27764,7 +27784,7 @@ func init() {
     },
     "/config/trace/otlp": {
       "get": {
-        "description": "Returns current OTLP endpoint address, protocol, TLS settings, and connection status.",
+        "description": "Returns configured OTLP endpoint, protocol and TLS settings. Header values are redacted or marked for reprovisioning and must not be submitted back as credentials. Connection state reflects recorded export outcomes rather than a fresh connectivity check.",
         "tags": [
           "Tracing"
         ],
@@ -27841,7 +27861,7 @@ func init() {
         }
       },
       "post": {
-        "description": "Sets the OpenTelemetry Protocol (OTLP) endpoint address and protocol for exporting distributed traces to Jaeger/Tempo/etc.\n\n**Security Features:**\n- TLS encryption enabled by default (use_tls: true)\n- TLS certificate verification (tls_skip_verify: false)\n- Optional authentication headers (API keys, bearer tokens)\n- Endpoint validation (host:port format, DNS resolution)\n\n**Production Recommendations:**\n- Always use TLS (use_tls: true) to encrypt trace data\n- Never skip TLS verification (tls_skip_verify: false) in production\n- Use authentication headers for secured endpoints\n- Validate endpoint connectivity before deploying\n",
+        "description": "Replaces the OTLP exporter configuration rather than patching individual fields. Endpoint and protocol are required. Omitted TLS fields use their defaults; omitted headers clear the header map. Redacted GET values must not be submitted as credentials. Configuration changes can precede secret persistence or reconnection, leaving partial state on failure; some failures currently return HTTP 200 with an error message.\n\n**Security Features:**\n- TLS encryption enabled by default (use_tls: true)\n- TLS certificate verification (tls_skip_verify: false)\n- Optional authentication headers (API keys, bearer tokens)\n- Endpoint syntax checks (host:port); no DNS lookup or complete numeric port-range validation is performed by this handler\n\n**Production Recommendations:**\n- Always use TLS (use_tls: true) to encrypt trace data\n- Never skip TLS verification (tls_skip_verify: false) in production\n- Use authentication headers for secured endpoints\n- Validate endpoint connectivity before deploying\n",
         "tags": [
           "Tracing"
         ],
@@ -27952,7 +27972,7 @@ func init() {
             "BearerAuth": []
           }
         ],
-        "description": "Returns a list of all protocol parsers registered in the tracing system.\nParsers analyze HTTP/HTTPS request/response bodies to extract protocol-specific attributes.\n\n**Available Parsers:**\n- **openai**: OpenAI API (GPT models, tokens, streaming)\n- **mcp**: Model Context Protocol (JSON-RPC tools, prompts, resources)\n- **mock**: Simple JSON parser for testing\n\nUse this endpoint to discover which parsers are available before assigning them to catalogs.\n",
+        "description": "Returns a list of all protocol parsers registered in the tracing system.\nParsers analyze HTTP/HTTPS request/response bodies to extract protocol-specific attributes.\n\n**Available Parsers:**\n- **openai**: OpenAI API (GPT models, tokens, streaming)\n- **mcp**: Model Context Protocol (JSON-RPC tools, prompts, resources)\n- **mock**: Simple JSON parser for testing\n\nDiscovery currently returns metadata names such as openai_v1, mcp_v1 and mock_parser, while assignment accepts registry keys openai, mcp and mock. Do not use discovery names directly as assignment values. Description and capabilities are not populated, and an unavailable tracing registry can cause 500.\n",
         "tags": [
           "Tracing"
         ],
@@ -28002,7 +28022,7 @@ func init() {
     },
     "/config/trace/status": {
       "get": {
-        "description": "Returns current tracing status, ring buffer statistics, and OTLP endpoint configuration.",
+        "description": "Returns tracing enablement and OTLP configuration. Event totals and ring-utilization reporting currently use placeholder statistics, not measured zero traffic or loss. Connection state reflects recorded export outcomes rather than a fresh reachability probe.",
         "tags": [
           "Tracing"
         ],
@@ -28082,7 +28102,7 @@ func init() {
     },
     "/config/tunnel/vxlan": {
       "post": {
-        "description": "Return a list of existing tunnels of a type. If there're no tunnels to return, empty list will be returned.",
+        "description": "Create interface vxlan\u003cID\u003e using the first IPv4 address of epIntf, UDP port 8472, MTU 9000, and learning enabled. The endpoint interface must exist and have an IPv4 address. Numeric and peer-family validation are incomplete. Backend failure can return HTTP 200 with result set to fail.",
         "summary": "Add a one of vxlan configuration",
         "parameters": [
           {
@@ -28137,7 +28157,7 @@ func init() {
     },
     "/config/tunnel/vxlan/all": {
       "get": {
-        "description": "Return a list of existing tunnels of a type. If there're no tunnels to return, empty list will be returned.",
+        "description": "Return gateway VXLAN interfaces joined with kernel peer information. An empty interface inventory returns an empty list; missing or failed peer lookup can leave peerIP null. This does not prove complete peer inventory.",
         "summary": "Get a list of vxlan configurations",
         "responses": {
           "200": {
@@ -28183,7 +28203,7 @@ func init() {
     },
     "/config/tunnel/vxlan/{vxlanID}": {
       "delete": {
-        "description": "Return a list of existing tunnels of a type. If there're no tunnels to return, empty list will be returned.",
+        "description": "Delete interface vxlan\u003cID\u003e. The current helper continues after failed interface lookup; verify existence before submission. Backend failure can return HTTP 200 with result set to fail, so HTTP status alone is not success evidence.",
         "summary": "Delete a one of vxlan configuration",
         "parameters": [
           {
@@ -28231,7 +28251,7 @@ func init() {
     },
     "/config/tunnel/vxlan/{vxlanID}/peer": {
       "post": {
-        "description": "Return a list of existing tunnels of a type. If there're no tunnels to return, empty list will be returned.",
+        "description": "Add a VXLAN flood-list peer using a literal peer IP. The handler returns an operation-result object, not the resource shape currently declared for success. Backend failure can return HTTP 200 with result set to fail; peer parsing is not fully validated.",
         "summary": "Add a one of vxlan remote(peer) ip address configuration",
         "parameters": [
           {
@@ -28288,7 +28308,7 @@ func init() {
     },
     "/config/tunnel/vxlan/{vxlanID}/peer/{PeerIP}": {
       "delete": {
-        "description": "Return a list of existing tunnels of a type. If there're no tunnels to return, empty list will be returned.",
+        "description": "Delete the VXLAN flood-list peer identified by tunnel ID and peer IP. The handler returns an operation-result object, not the resource shape currently declared for success. Backend failure can return HTTP 200 with result set to fail.",
         "summary": "Remove a one of vxlan remote(peer) ip address configuration",
         "parameters": [
           {
@@ -28343,7 +28363,7 @@ func init() {
     },
     "/config/vlan": {
       "post": {
-        "description": "Create vlan interface in the device",
+        "description": "Create Linux bridge vlan\u003cID\u003e with MTU 9000. The REST helper does not consistently enforce the VLAN range documented elsewhere, and successful creation does not prove completion of subsequent link setup.",
         "summary": "Create vlan interface in the device",
         "parameters": [
           {
@@ -28410,7 +28430,7 @@ func init() {
     },
     "/config/vlan/all": {
       "get": {
-        "description": "Get vlan in the device",
+        "description": "Return gateway-managed VLAN bridges, members, and ingress/egress byte and packet counters.",
         "summary": "Get vlan in the device",
         "responses": {
           "200": {
@@ -28456,7 +28476,7 @@ func init() {
     },
     "/config/vlan/{vlan_id}": {
       "delete": {
-        "description": "Delete vlan in the device",
+        "description": "Delete Linux bridge vlan\u003cID\u003e. The REST helper does not enforce a no-members precondition; do not assume a populated bridge will be rejected. Downstream failures are not guaranteed to use the documented conflict or not-found status.",
         "summary": "Delete vlan in the device",
         "parameters": [
           {
@@ -28521,7 +28541,7 @@ func init() {
     },
     "/config/vlan/{vlan_id}/member": {
       "post": {
-        "description": "Add a member to interface Vlan{vlan_id}. If the vlan interface does not exist on LoxiLB it returns a '404' error. If such a member is already present on this Vlan interface the API returns '409' sub-code 0. If the vlan_id passed is less than 2 or greater than 4094 the API will respond with error '400'. If attr with tagging mode is provided it will be honored in config, if not, the default tagging mode will be set to 'untagged'. Vlan members may be tagged or untagged, but, the Vlan member port may be untagged in only one Vlan interface, deviations from this will cause the API to return '409' sub-code 0.",
+        "description": "Attach a member to bridge vlan\u003cID\u003e. Omitted tagged means false and attaches the named interface; tagged true creates and attaches \u003cinterface\u003e.\u003cID\u003e. The helper does not enforce existing-master ownership or the documented VLAN range, and failures can leave partial state. Verify existing membership before submission; automatic reparenting must not be treated as a safe update contract.",
         "summary": "Add a physical port to a vlan interface",
         "parameters": [
           {
@@ -28596,7 +28616,7 @@ func init() {
     },
     "/config/vlan/{vlan_id}/member/{if_name}/tagged/{tagged}": {
       "delete": {
-        "description": "Remove a vlan member from a vlan interface which is defined by vlan_id. If the Vlan interface does not exist on LoxiLB OR a vlan member 'if_name' is not present on the interface the API will return '404'. If the vlan_id passed is less than 2 or greater than 4094 the API will respond with error '400'.",
+        "description": "Request removal of a member from bridge vlan\u003cID\u003e; tagged deletion also deletes \u003cinterface\u003e.\u003cID\u003e. Safety limitation: the helper checks that the requested bridge exists but does not verify that it owns the member before unmastering it. Verify membership before submission; wrong-bridge deletion is an implementation gap.",
         "summary": "Remove a vlan member from a vlan interface",
         "parameters": [
           {
@@ -28700,7 +28720,7 @@ func init() {
         }
       },
       "post": {
-        "description": "Receives GPU metrics from metrics agent and updates routing decisions",
+        "description": "Submits a complete worker sample, not a partial update. Endpoint, queued_requests and kv_cache_usage_perc are required; omitted optional counters become zero. Active GPU monitoring is required. Cache and map updates can fail partially; successful ingestion does not establish endpoint registration or a verified routing decision.",
         "summary": "Update worker GPU metrics",
         "parameters": [
           {
@@ -28754,7 +28774,7 @@ func init() {
     },
     "/diagnostics": {
       "get": {
-        "description": "A bounded, allowlist-only diagnostic assembly - build identity, served API contract, process uptime, readiness verdict with reasons, operator maintenance state, per-interface eBPF attachment, per-map utilization against capacity, external-dependency reachability with a latency class (identity only, never credentials or connection strings), and the last configuration lifecycle outcomes with their checksums and identities. Request/response bodies, prompts, rule contents, key material, and environment are never collected here. Failed internal errors elsewhere in the API carry a short correlation ref in their 500 body that ties them to the gateway log; this endpoint carries no raw log content.",
+        "description": "Returns build/API identity, API-layer uptime, configuration-readiness observations, maintenance state, attachments, cached map utilization and lifecycle outcomes. Dependency checks vary by type; latency classes do not establish end-to-end health. The handler normally returns 200 even when ready is false. Nested reasons can contain propagated error text, so universal secret-redaction guarantees are not established. This is not a raw-log export; correlation references are not supplied by every API error path.",
         "produces": [
           "application/json"
         ],
@@ -28789,7 +28809,7 @@ func init() {
     },
     "/log-archives": {
       "get": {
-        "description": "Retrieve a list of all rotated log archive files available for download.",
+        "description": "Lists eligible active .log files and rotated .log.gz archives from the supported log directories. Duplicate basenames use the first matching directory; listing order is not a global modification-time order.",
         "summary": "List available log archives",
         "responses": {
           "200": {
@@ -28827,7 +28847,7 @@ func init() {
     },
     "/log-archives/{filename}": {
       "get": {
-        "description": "Download a log archive file by its name.",
+        "description": "Downloads an eligible log file by basename; gzip archives are transferred as stored rather than decompressed. The current handler can return 500 for a missing file despite the declared 404 response.",
         "produces": [
           "application/octet-stream"
         ],
@@ -28889,36 +28909,36 @@ func init() {
     },
     "/logs": {
       "get": {
-        "description": "Fetch log lines newest-first, paging backwards towards the start of the file. When level or keyword is set the server keeps reading backwards until the requested number of *matching* lines has been collected, the start of the file is reached, or the per-request scan cap (32 MiB) is hit — so has_more means \"more matches may exist\", not merely \"more bytes exist\". Offsets in next_cursor are byte offsets into the file the page was read from; for a .log.gz archive they address the uncompressed stream.\n",
+        "description": "Fetch log lines newest-first, paging backwards towards the start of the file. When level or keyword is set the server keeps reading backwards until the requested number of *matching* lines has been collected, the start of the file is reached, or the per-request scan budget (32 MiB) is reached. This budget is checked between batches, so a long line can exceed it; it is not a strict memory or response-size limit. Thus has_more means \"more matches may exist\", not merely \"more bytes exist\". Offsets in next_cursor are byte offsets into the file the page was read from; for a .log.gz archive they address the uncompressed stream.\n",
         "summary": "Fetch logs with optional filtering",
         "parameters": [
           {
             "type": "string",
-            "description": "Number of log lines to fetch (default is 100). With level or keyword set this is the number of matching lines.",
+            "description": "Requested matching-line count, defaulting to 100 when omitted. The handler currently lacks a strict positive bound and maximum; malformed or nonpositive values can produce an empty successful page. The scan budget is checked between batches, so a long line can exceed the advertised 32 MiB budget.",
             "name": "lines",
             "in": "query"
           },
           {
             "type": "string",
-            "description": "Filter logs by level (e.g., INFO, ERROR, DEBUG). Matched as a substring, searched backwards across the whole file rather than within one page.",
+            "description": "Case-sensitive substring filter, not structured severity parsing. Combined with keyword using AND while scanning backwards; keep unchanged across cursor requests.",
             "name": "level",
             "in": "query"
           },
           {
             "type": "string",
-            "description": "Filter logs containing a specific keyword or phrase. Matched as a substring, searched backwards across the whole file rather than within one page.",
+            "description": "Case-sensitive substring filter combined with level using AND. Keep unchanged across cursor requests; blank lines are excluded and returned lines are trimmed.",
             "name": "keyword",
             "in": "query"
           },
           {
             "type": "string",
-            "description": "Opaque pagination cursor from a previous response's next_cursor; fetches the next page.",
+            "description": "Opaque backwards-pagination cursor. Send the same explicit file and filters on subsequent requests; the cursor does not select the file or bind the filters. File mismatch or truncation can silently restart at the tail. Gzip offsets refer to decompressed bytes.",
             "name": "cursor",
             "in": "query"
           },
           {
             "type": "string",
-            "description": "Specific log file to read (default is the current log file). Rotated .log.gz archives are accepted and decompressed transparently.",
+            "description": "Eligible log basename; when omitted the handler selects a current log file. For stable pagination repeat the response's log_file explicitly. Gzip archives are decompressed again per request with a 64 MiB decompressed-size limit; use the download endpoint for larger archives.",
             "name": "file",
             "in": "query"
           }
@@ -28965,7 +28985,7 @@ func init() {
     },
     "/maintenance": {
       "get": {
-        "description": "Reports whether an operator holds the gateway in maintenance, what is being refused while it does, and how far the drain has progressed - the in-flight streaming-session count, elapsed time against the declared drain window, and whether that window has been exceeded. Every field is the observed truth - in particular refusing_new_inference reports what the data path actually refuses, not what an operator might wish it refused.",
+        "description": "Reports an ephemeral operator maintenance episode, its management-write gate and drain observations. The episode does not itself refuse new inference traffic. The in-flight count covers SSE streams, not all requests; elapsed time and deadline overrun do not prove a completed traffic drain.",
         "produces": [
           "application/json"
         ],
@@ -28998,7 +29018,7 @@ func init() {
         }
       },
       "put": {
-        "description": "Idempotent - entering while already in maintenance changes nothing (same operation_id, same entered_at, and the original drain window is kept; changing the window requires leave then enter), and leaving while active is a no-op. While maintenance holds, mutating configuration calls are refused with 503 except the configuration-lifecycle operations maintenance exists to make safe (snapshot, persist, restore) and this endpoint itself. The response to a leave carries the operation_id of the episode it ended.",
+        "description": "Idempotently enters or leaves maintenance. Repeat enter preserves operation_id, entered_at and the original timeout; changing timeout requires leave then enter. Omitted or zero timeout declares no deadline, and expiry never exits maintenance automatically. The operator gate exempts restore, persist and this endpoint; GETs bypass mutation freezes. Legacy import is not exempt. Independent boot or restore freezes can still reject maintenance changes with 503. Leave reports the ended episode's operation_id.",
         "summary": "Enter or leave operator maintenance",
         "parameters": [
           {
@@ -29048,7 +29068,7 @@ func init() {
     "/meta": {
       "get": {
         "security": [],
-        "description": "Returns metadata about required fields for each POST API.",
+        "description": "Returns simplified input metadata from embedded main and supplemental Swagger. One operation is selected per path, preferring POST, then PUT, then PATCH; main-document entries win overlaps. Ranges, defaults, patterns, authentication, cross-field rules and vendor extensions, including root relationship metadata, are not passed through. This is advisory field metadata, not a complete UI validator. Extraction errors are currently logged without changing the handler's 200 response.",
         "produces": [
           "application/json"
         ],
@@ -29074,6 +29094,7 @@ func init() {
     "/metrics": {
       "get": {
         "security": [],
+        "description": "Prometheus exposition rather than JSON. Whether this route requires a bearer token is a deployment property, not a property of the route, which is why it is declared without a security requirement while still declaring 401, 403 and 503. The --metrics-auth option decides - auto (the default) requires a token only under mgmt-profile remote-tls, require always requires one, and disable never does and is refused under remote-tls. A scraper that gets 401 here is reaching a gateway that expects a credential; configure the scrape job with a bearer token rather than removing the requirement. Collection or export being disabled answers a plain-text 503, decided before the credential is examined. Which series appear depends on initialization and activity; an absent series is not a measured zero.",
         "summary": "Scrape metrics from the cache",
         "responses": {
           "200": {
@@ -29081,13 +29102,28 @@ func init() {
             "schema": {
               "type": "string"
             }
+          },
+          "401": {
+            "description": "Authentication is required for this route on this deployment and the credential was missing or invalid",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal's role carries no authority for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Metrics collection is disabled (a plain-text body, not JSON), or the credential store could not answer"
           }
         }
       }
     },
     "/metrics/epdisttraffic": {
       "get": {
-        "description": "Get metrics related to endpoint distribution traffic per service. The additionalProp is service name.",
+        "description": "Returns cached conntrack-derived endpoint traffic distribution keyed by service name. Each entry identifies a destination, its value and share within that service; ratio is zero when the denominator is zero. This is not a fresh or complete datapath traffic measurement.",
         "summary": "Get endpoint distribution traffic metrics",
         "responses": {
           "200": {
@@ -29120,13 +29156,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        },
-        "x-not-implemented": true
+        }
       }
     },
     "/metrics/errorcount": {
       "get": {
-        "description": "Get metrics related to error counts.",
+        "description": "Returns cached counts of observed conntrack error states, globally and by service, not HTTP error responses. Collection may be stale or uninitialized; optional zero values can be omitted.",
         "summary": "Get error count metrics",
         "responses": {
           "200": {
@@ -29159,13 +29194,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        },
-        "x-not-implemented": true
+        }
       }
     },
     "/metrics/flowcount": {
       "get": {
-        "description": "Get metrics related to flow counts.",
+        "description": "Returns cached conntrack observations and active-flow counts by protocol. Inactive count is a collector observation, not a complete inactive inventory. Collection can be stale or uninitialized; optional zero-valued fields can be omitted.",
         "summary": "Get flow count metrics",
         "responses": {
           "200": {
@@ -29198,13 +29232,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        },
-        "x-not-implemented": true
+        }
       }
     },
     "/metrics/fwdrops": {
       "get": {
-        "description": "Get metrics related to firewall drops.",
+        "description": "Returns cached current cumulative firewall-rule drop counters and their total, in packets. Values can decrease when rules disappear or counters reset; they are not HTTP errors or rates and can be stale.",
         "summary": "Get firewall drops metrics",
         "responses": {
           "200": {
@@ -29237,13 +29270,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        },
-        "x-not-implemented": true
+        }
       }
     },
     "/metrics/hostcount": {
       "get": {
-        "description": "Get metrics related to host counts.",
+        "description": "Returns cached healthy and unhealthy endpoint-host counts from collection. This is not a fresh health probe; values can be stale or unavailable and optional zero-valued fields can be omitted.",
         "summary": "Get host count metrics",
         "responses": {
           "200": {
@@ -29276,13 +29308,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        },
-        "x-not-implemented": true
+        }
       }
     },
     "/metrics/lbprocessedtraffic": {
       "get": {
-        "description": "Get metrics related to load balancer processed traffic.",
+        "description": "Returns cached accumulated conntrack-derived interaction bytes and packets by service, source and destination. This sampled persistent-flow view can miss short-lived flows and is not the same source as aggregate datapath processed-traffic counters.",
         "summary": "Get load balancer processed traffic metrics",
         "responses": {
           "200": {
@@ -29315,13 +29346,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        },
-        "x-not-implemented": true
+        }
       }
     },
     "/metrics/lbrulecount": {
       "get": {
-        "description": "Get metrics related to load balancer rule counts.",
+        "description": "Returns the cached load-balancer rule count, not a fresh configuration query. Collection can be stale or uninitialized; a zero-valued field can be omitted.",
         "summary": "Get load balancer rule count metrics",
         "responses": {
           "200": {
@@ -29354,13 +29384,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        },
-        "x-not-implemented": true
+        }
       }
     },
     "/metrics/newflowcount": {
       "get": {
-        "description": "Get metrics related to new flow counts.",
+        "description": "Returns the latest collection-cycle count of newly observed conntrack flows, not a rate or HTTP request count. Short-lived flows between collection passes can be missed; cached values can be stale and zero can be omitted.",
         "summary": "Get new flow count metrics",
         "responses": {
           "200": {
@@ -29393,13 +29422,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        },
-        "x-not-implemented": true
+        }
       }
     },
     "/metrics/processedtraffic": {
       "get": {
-        "description": "Get metrics related to processed traffic.",
+        "description": "Returns accumulated datapath load-balancer endpoint-counter deltas in bytes and packets, including protocol byte breakdowns. These are counters, not instantaneous throughput. Collection establishes baselines and can be stale; optional zero values can be omitted.",
         "summary": "Get processed traffic metrics",
         "responses": {
           "200": {
@@ -29432,13 +29460,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        },
-        "x-not-implemented": true
+        }
       }
     },
     "/metrics/reqcountperclient": {
       "get": {
-        "description": "Get metrics related to request counts per client. The additionalProp is client IP address.",
+        "description": "Returns cached conntrack-interaction packet totals keyed by client IP. Despite the operation name, these are packets, not HTTP requests. The sampled flow view can miss short-lived traffic and remain stale when collection is disabled.",
         "summary": "Get request count per client metrics",
         "responses": {
           "200": {
@@ -29471,13 +29498,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        },
-        "x-not-implemented": true
+        }
       }
     },
     "/metrics/requestcount": {
       "get": {
-        "description": "Get metrics related to request counts.",
+        "description": "Returns accumulated observed conntrack-flow counts, globally and by service, not HTTP request counts. Short-lived flows between collection passes can be missed. Cached values can be stale; optional zero values can be omitted.",
         "summary": "Get request count metrics",
         "responses": {
           "200": {
@@ -29510,13 +29536,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        },
-        "x-not-implemented": true
+        }
       }
     },
     "/metrics/servicedisttraffic": {
       "get": {
-        "description": "Get metrics related to service distribution traffic. The additionalProp is service name.",
+        "description": "Returns cached service traffic distribution keyed by service name, with value and share of the observed total. Ratio is zero when the denominator is zero. Collection can be stale or incomplete; this is not an instantaneous rate.",
         "summary": "Get service distribution traffic metrics",
         "responses": {
           "200": {
@@ -29549,13 +29574,12 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           }
-        },
-        "x-not-implemented": true
+        }
       }
     },
     "/nodegraph/all": {
       "get": {
-        "description": "Retrieve a list of all nodes and edges in the current topology.",
+        "description": "Not implemented by the current router configuration; the generated default handler returns 501. The declared topology response is not an available runtime contract, and dormant producer code still has metadata and edge-identity gaps.",
         "summary": "List current topology",
         "responses": {
           "200": {
@@ -29594,7 +29618,7 @@ func init() {
     },
     "/nodegraph/{service}": {
       "get": {
-        "description": "Retrieve a list of all nodes and edges in the current topology for a specific service.",
+        "description": "Not implemented by the current router configuration; the generated default handler returns 501. The declared service-filtered topology response is not an available runtime contract, and dormant producer code still requires validation.",
         "summary": "List current topology for a specific service",
         "parameters": [
           {
@@ -29952,7 +29976,7 @@ func init() {
     },
     "/status/device": {
       "get": {
-        "description": "Get a basic info (linux command \"uptime, hostnamectl\") in the device or system.",
+        "description": "Returns identity read from Linux system files and uname. Raw values can include trailing newlines; uptime contains both /proc/uptime values rather than a formatted duration. Availability depends on distribution-specific files.",
         "summary": "Get a basic info in the device",
         "responses": {
           "200": {
@@ -29990,7 +30014,7 @@ func init() {
     },
     "/status/filesystem": {
       "get": {
-        "description": "Get a File system infomation (linux command \"df\") in the device or system.",
+        "description": "Returns filesystem observations parsed from Linux df -hT. Capacity and usage fields are human-readable strings, not byte counts; rows depend on the supported output format.",
         "summary": "Get a File System info in the device",
         "responses": {
           "200": {
@@ -30028,7 +30052,7 @@ func init() {
     },
     "/status/process": {
       "get": {
-        "description": "Get a process based on high usage CPU(linux command \"top\") in the device or system.",
+        "description": "Returns Linux process observations assembled from top, with CPU and memory percentages from ps. Values depend on command availability and output format; the current parser incompletely handles failed or short command output.",
         "summary": "Get a process based on CPU usage info in the device",
         "responses": {
           "200": {
@@ -30066,7 +30090,7 @@ func init() {
     },
     "/status/ready": {
       "get": {
-        "description": "READY means the boot config replay settled without degradation (or an operator's commit restore has since recovered it) and every REQUIRED external recovery dependency answers right now. A not-ready gateway returns 503 with the same body shape, carrying the reasons - a failed boot restore is never silently READY.",
+        "description": "Reports configuration-recovery readiness using boot replay, recovery outcomes, auto-persist failures and dependency checks. Checks vary by type and do not all perform external I/O. Informational attachment state and maintenance do not directly gate this verdict. It is not proof of successful inference, GPU operation or complete datapath health. A not-ready verdict returns 503 with ReadyStatus; authentication or credential-store errors can use a different error body.",
         "produces": [
           "application/json"
         ],
@@ -30102,7 +30126,7 @@ func init() {
     "/version": {
       "get": {
         "security": [],
-        "description": "Get version information",
+        "description": "Returns public gateway build identity (version, buildInfo and product), without management authentication. This is not a runtime-readiness verdict.",
         "summary": "Get version information in the device",
         "responses": {
           "200": {
@@ -30253,12 +30277,13 @@ func init() {
           "format": "uint64"
         },
         "setDigest": {
-          "description": "Digest over the published generation's profile documents and verified artifact bytes. Compare against later reads (and the kvexactstatus read-back) to detect a reload between discovery and rule creation.",
+          "description": "Digest over the published registry generation's profile documents and verified artifact bytes. Compare with later discovery reads to detect a registry reload. Do not compare setDigest with kvexactstatus.bindingDigest: the latter identifies a rule's composed model-profile/engine-contract binding, not the registry set. After creation, compare the selected profile identity/generation with modelProfileId/modelProfileGen and inspect the rule's enforcedState; POST admission remains authoritative.",
           "type": "string"
         }
       }
     },
     "ApiKeyCreateRequest": {
+      "description": "Management creation of a data-plane credential; management authorization and data-plane enforcement are separate. Protection requires a service requiring API-key authentication. Quotas lack complete nonnegative/range validation. Whitespace-only tenant IDs are rejected but surrounding spaces are retained. Empty allowed_models permits all models; otherwise matching is exact. Embedded commas do not round-trip as one model identifier.",
       "type": "object",
       "required": [
         "tenant_id"
@@ -30272,11 +30297,11 @@ func init() {
           }
         },
         "api_key": {
-          "description": "Optional caller-supplied key material to register instead of generating one, for importing keys minted elsewhere. Write-only: it is never returned by GET or by the list, and the create response omits raw_key when it is set, because the caller already holds the value.",
+          "description": "Optional imported credential; absent or empty generates a new key. Imports require 16-512 printable non-space ASCII bytes. GET/list never returns the credential. Create currently emits an empty raw_key string for imports, not omission. Length rejection maps to 400; invalid character errors currently fall through to generic 500.",
           "type": "string"
         },
         "burst_size": {
-          "description": "Burst capacity above the steady-state RPS limit",
+          "description": "Total request-bucket capacity, not additional capacity above RPS. Zero uses per-key RPS. Nonpositive RPS skips this limiter; negative-value validation remains incomplete.",
           "type": "integer",
           "format": "int64"
         },
@@ -30286,7 +30311,7 @@ func init() {
           "x-nullable": true
         },
         "expires_at": {
-          "description": "Optional expiry timestamp (RFC3339)",
+          "description": "Optional RFC3339 expiry. Omitted, zero-time, or Unix-epoch values mean no expiry in this handler. Other past timestamps are accepted, so successful creation does not establish a currently usable key.",
           "type": "string",
           "format": "date-time"
         },
@@ -30304,13 +30329,14 @@ func init() {
           "type": "string"
         },
         "tokens_per_min": {
-          "description": "Maximum LLM tokens per minute for this key",
+          "description": "Stored per-key token-quota metadata; enforcement is not connected in the reviewed token-accounting consumer. Tenant and tenant/model quotas are separate.",
           "type": "integer",
           "format": "int64"
         }
       }
     },
     "ApiKeyCreateResponse": {
+      "description": "HTTP 201 creation result. key_id is the management handle. raw_key contains a secret only for generated credentials and is currently empty for imports. Protect generated secrets from logs; subsequent reads expose metadata only.",
       "type": "object",
       "required": [
         "raw_key",
@@ -30322,12 +30348,13 @@ func init() {
           "type": "string"
         },
         "raw_key": {
-          "description": "The plaintext API key — returned ONLY at creation time",
+          "description": "Generated plaintext credential returned only at creation; currently an empty string, not omission, when the caller imported api_key.",
           "type": "string"
         }
       }
     },
     "ApiKeySummary": {
+      "description": "Metadata, not effective service-enforcement status. enabled=false is explicitly serialized; optional zero metadata can be absent. A list without nonempty tenant_id returns all keys; viewer authorization is not tenant scoped. DELETE permanently removes the key and returns 204, not reversible disabling. Per-key token-quota enforcement is not connected.",
       "type": "object",
       "required": [
         "enabled"
@@ -30341,7 +30368,7 @@ func init() {
           }
         },
         "burst_size": {
-          "description": "Burst capacity above the steady-state RPS limit",
+          "description": "Total request-bucket capacity, not additional capacity above RPS. Nonpositive burst uses per-key RPS; nonpositive RPS skips that limiter.",
           "type": "integer",
           "format": "int64"
         },
@@ -30377,7 +30404,7 @@ func init() {
           "type": "string"
         },
         "tokens_per_min": {
-          "description": "Maximum LLM tokens per minute for this key",
+          "description": "Stored metadata, not an enforced per-key token quota in the reviewed consumer. Tenant and tenant/model token limits are separate.",
           "type": "integer",
           "format": "int64"
         }
@@ -30400,6 +30427,7 @@ func init() {
       }
     },
     "BGPApplyPolicyToNeighborMod": {
+      "description": "Policy-assignment input. policyType selects import/export; routeAction uses accept/reject as the default assignment action. POST adds assignments. On DELETE, omitted or empty policies removes all assignments for the selected target/direction, and the schema-required routeAction is ignored.",
       "type": "object",
       "required": [
         "ipAddress",
@@ -30412,6 +30440,7 @@ func init() {
           "type": "string"
         },
         "policies": {
+          "description": "Policy names to add or delete. On DELETE, omission or an empty list removes all assignments for the selected target and direction.",
           "type": "array",
           "items": {
             "type": "string"
@@ -30425,6 +30454,7 @@ func init() {
           ]
         },
         "routeAction": {
+          "description": "Default assignment action, accept or reject. Still schema-required on DELETE, but ignored by that handler.",
           "type": "string",
           "enum": [
             "accept",
@@ -30434,6 +30464,7 @@ func init() {
       }
     },
     "BGPGlobalConfig": {
+      "description": "BGP startup input, not an atomic general replacement. Local ASN narrows to uint32 and listenPort to uint16; omitted or zero listenPort selects 179. SetNextHopSelf is a case-sensitive wire field and triggers additional policy setup. Failure can occur after partial startup or policy creation.",
       "type": "object",
       "required": [
         "routerId",
@@ -30445,11 +30476,11 @@ func init() {
           "type": "boolean"
         },
         "listenPort": {
-          "description": "Listen port (default 179)",
+          "description": "Listening port, narrowed to uint16 before zero selects 179. Original-input bounds are not fully checked.",
           "type": "integer"
         },
         "localAs": {
-          "description": "Local AS number",
+          "description": "Local ASN, narrowed to uint32 without a bounds check.",
           "type": "integer"
         },
         "routerId": {
@@ -30459,6 +30490,7 @@ func init() {
       }
     },
     "BGPNeigh": {
+      "description": "BGP neighbor creation input. ASN narrows to uint32 and remotePort to uint16 without local bounds checks. Omitted or zero port selects 179; enabled multihop uses TTL 8. IP parsing is not fully validated locally. POST uses GoBGP AddPeer, not a general replacement.",
       "type": "object",
       "required": [
         "ipAddress",
@@ -30470,20 +30502,21 @@ func init() {
           "type": "string"
         },
         "remoteAs": {
-          "description": "Remote AS number",
+          "description": "Remote ASN, narrowed to uint32 without a bounds check.",
           "type": "integer"
         },
         "remotePort": {
-          "description": "Remote Connect Port (default 179)",
+          "description": "Remote peering port, narrowed to uint16 without bounds checking; omitted or zero selects 179.",
           "type": "integer"
         },
         "setMultiHop": {
-          "description": "Enable multi-hop peering (if needed)",
+          "description": "Enable eBGP multihop using TTL 8.",
           "type": "boolean"
         }
       }
     },
     "BGPNeighGetEntry": {
+      "description": "BGP neighbor state readback. Configured remote port 179 is normalized to zero or omitted. multiHop reports whether multihop is enabled; it does not preserve an arbitrary configured TTL. A returned neighbor is not necessarily established.",
       "type": "object",
       "properties": {
         "ipAddress": {
@@ -30507,12 +30540,13 @@ func init() {
           "type": "string"
         },
         "updowntime": {
-          "description": "Current uptime",
+          "description": "Formatted duration associated with current up/down state, or never; not always uptime.",
           "type": "string"
         }
       }
     },
     "BGPPolicyDefinedSetGetEntry": {
+      "description": "Named defined-set readback. Prefix sets use prefixList and other types use lowercase list. Use lowercase prefix in requests: a broader internal alias is not faithfully emitted by the handler. The name all selects all names only on the GET path.",
       "type": "object",
       "required": [
         "name"
@@ -30537,22 +30571,25 @@ func init() {
       }
     },
     "BGPPolicyDefinedSetsMod": {
+      "description": "Named defined-set input. Use prefixList for prefix sets and capitalized List for other types. Unsupported type names are not rejected consistently and can select prefix by default. This request shape differs from GET's lowercase list field.",
       "type": "object",
       "required": [
         "name"
       ],
       "properties": {
         "List": {
+          "description": "Entries for non-prefix defined sets. This write-time key is capitalized; GET uses lowercase list.",
           "type": "array",
           "items": {
             "type": "string"
           }
         },
         "name": {
-          "description": "BGP Neighbor IP address",
+          "description": "Defined-set name, not a neighbor IP address.",
           "type": "string"
         },
         "prefixList": {
+          "description": "Entries for prefix defined sets; use instead of List when defineset_type is prefix.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/BGPPolicyPrefix"
@@ -30561,10 +30598,11 @@ func init() {
       }
     },
     "BGPPolicyDefinitionsMod": {
+      "description": "Named BGP policy and its statements. Supply non-null conditions and actions for every statement because the handler dereferences these schema-optional objects. This endpoint does not provide a general atomic update contract.",
       "type": "object",
       "properties": {
         "name": {
-          "description": "BGP Neighbor IP address",
+          "description": "Policy definition name, not a neighbor IP address.",
           "type": "string"
         },
         "statements": {
@@ -30576,9 +30614,11 @@ func init() {
       }
     },
     "BGPPolicyDefinitionsStatement": {
+      "description": "BGP statement conditions and actions. Supply conditions and actions objects. Match options use any/all/invert, community actions add/remove/replace, and path-length operators eq/ge/le; unknown strings can silently fall back. routeDisposition uses accept-route/reject-route, unlike assignment accept/reject. asPathLength.value, prepend ASN/count, and setLocalPerf narrow to uint32 without full validation. setLocalPerf zero omits the action, setMed parses signed 32-bit decimal text, and setNextHop does not specially translate self. Validate AFI/SAFI, set references, prefixes, and numeric relationships before submission.",
       "type": "object",
       "properties": {
         "actions": {
+          "description": "Supply an object; the current POST handler dereferences it despite its optional schema declaration.",
           "type": "object",
           "properties": {
             "bgpActions": {
@@ -30588,9 +30628,11 @@ func init() {
                   "type": "object",
                   "properties": {
                     "as": {
+                      "description": "Decimal ASN text, parsed with ignored conversion errors and narrowed to uint32. Validate before submission.",
                       "type": "string"
                     },
                     "repeatN": {
+                      "description": "Prepend repeat count, narrowed to uint32 without bounds checking; omission becomes zero.",
                       "type": "integer"
                     }
                   }
@@ -30638,22 +30680,27 @@ func init() {
                   }
                 },
                 "setLocalPerf": {
+                  "description": "Local preference under the existing setLocalPerf wire name. Zero omits this action; other values narrow to uint32 without bounds checks.",
                   "type": "integer"
                 },
                 "setMed": {
+                  "description": "MED replacement parsed from signed 32-bit decimal text. This is not an unchecked arbitrary-size or relative-action string.",
                   "type": "string"
                 },
                 "setNextHop": {
+                  "description": "Next-hop address text passed to GoBGP. The string self is not specially translated to the GoBGP self flag.",
                   "type": "string"
                 }
               }
             },
             "routeDisposition": {
+              "description": "Statement disposition uses accept-route or reject-route; other values map to no disposition, unlike assignment accept/reject.",
               "type": "string"
             }
           }
         },
         "conditions": {
+          "description": "Supply an object; the current POST handler dereferences it despite its optional schema declaration.",
           "type": "object",
           "properties": {
             "bgpConditions": {
@@ -30764,6 +30811,7 @@ func init() {
       }
     },
     "BGPPolicyDefinitionsStatementActions": {
+      "description": "Supply an object; the current POST handler dereferences it despite its optional schema declaration.",
       "type": "object",
       "properties": {
         "bgpActions": {
@@ -30773,9 +30821,11 @@ func init() {
               "type": "object",
               "properties": {
                 "as": {
+                  "description": "Decimal ASN text, parsed with ignored conversion errors and narrowed to uint32. Validate before submission.",
                   "type": "string"
                 },
                 "repeatN": {
+                  "description": "Prepend repeat count, narrowed to uint32 without bounds checking; omission becomes zero.",
                   "type": "integer"
                 }
               }
@@ -30823,17 +30873,21 @@ func init() {
               }
             },
             "setLocalPerf": {
+              "description": "Local preference under the existing setLocalPerf wire name. Zero omits this action; other values narrow to uint32 without bounds checks.",
               "type": "integer"
             },
             "setMed": {
+              "description": "MED replacement parsed from signed 32-bit decimal text. This is not an unchecked arbitrary-size or relative-action string.",
               "type": "string"
             },
             "setNextHop": {
+              "description": "Next-hop address text passed to GoBGP. The string self is not specially translated to the GoBGP self flag.",
               "type": "string"
             }
           }
         },
         "routeDisposition": {
+          "description": "Statement disposition uses accept-route or reject-route; other values map to no disposition, unlike assignment accept/reject.",
           "type": "string"
         }
       }
@@ -30845,9 +30899,11 @@ func init() {
           "type": "object",
           "properties": {
             "as": {
+              "description": "Decimal ASN text, parsed with ignored conversion errors and narrowed to uint32. Validate before submission.",
               "type": "string"
             },
             "repeatN": {
+              "description": "Prepend repeat count, narrowed to uint32 without bounds checking; omission becomes zero.",
               "type": "integer"
             }
           }
@@ -30895,12 +30951,15 @@ func init() {
           }
         },
         "setLocalPerf": {
+          "description": "Local preference under the existing setLocalPerf wire name. Zero omits this action; other values narrow to uint32 without bounds checks.",
           "type": "integer"
         },
         "setMed": {
+          "description": "MED replacement parsed from signed 32-bit decimal text. This is not an unchecked arbitrary-size or relative-action string.",
           "type": "string"
         },
         "setNextHop": {
+          "description": "Next-hop address text passed to GoBGP. The string self is not specially translated to the GoBGP self flag.",
           "type": "string"
         }
       }
@@ -30909,9 +30968,11 @@ func init() {
       "type": "object",
       "properties": {
         "as": {
+          "description": "Decimal ASN text, parsed with ignored conversion errors and narrowed to uint32. Validate before submission.",
           "type": "string"
         },
         "repeatN": {
+          "description": "Prepend repeat count, narrowed to uint32 without bounds checking; omission becomes zero.",
           "type": "integer"
         }
       }
@@ -30959,6 +31020,7 @@ func init() {
       }
     },
     "BGPPolicyDefinitionsStatementConditions": {
+      "description": "Supply an object; the current POST handler dereferences it despite its optional schema declaration.",
       "type": "object",
       "properties": {
         "bgpConditions": {
@@ -31219,27 +31281,29 @@ func init() {
       }
     },
     "BGPPolicyPrefix": {
+      "description": "Prefix-set entry with CIDR ipPrefix and inclusive minimum..maximum masklengthRange. Local parsing checks the separator but ignores numeric conversion errors and narrows to uint32; prefix-family limits and range ordering require explicit validation rather than reliance on this schema.",
       "type": "object",
       "properties": {
         "ipPrefix": {
-          "description": "BGP Neighbor IP address",
+          "description": "Network prefix in CIDR notation.",
           "type": "string"
         },
         "masklengthRange": {
-          "description": "Remote AS number",
+          "description": "Inclusive prefix-length range minimum..maximum. Numeric parse errors, uint32 narrowing, family bounds, and ordering are not fully validated locally.",
           "type": "string"
         }
       }
     },
     "BfdEntry": {
+      "description": "BFD session input for an existing cluster instance. New sessions require interval \u003e= 100000 microseconds and retryCount \u003e 0. Interval narrows from uint64 to uint32 without an upper-bound check. On an existing session, zero interval/retryCount preserves the current value, source-IP changes are not applied, and an unchanged request conflicts. Initial setup can return success before asynchronous creation fails.",
       "type": "object",
       "properties": {
         "instance": {
-          "description": "Instance name running BFD session",
+          "description": "Existing cluster instance name; omission does not select an implicit default instance.",
           "type": "string"
         },
         "interval": {
-          "description": "Tx interval between BFD packets(in microseconds)",
+          "description": "Transmit interval in microseconds. New sessions require at least 100000; existing-session zero preserves the current interval. Conversion to uint32 lacks an upper-bound check.",
           "type": "integer",
           "format": "uint64"
         },
@@ -31248,17 +31312,18 @@ func init() {
           "type": "string"
         },
         "retryCount": {
-          "description": "Retry Count to detect failure",
+          "description": "Detection multiplier. New sessions require a positive value; existing-session zero preserves the current multiplier.",
           "type": "integer",
           "format": "uint8"
         },
         "sourceIp": {
-          "description": "Remote IP",
+          "description": "Literal local source IP, validated during first setup. Existing-session updates do not apply a changed source IP.",
           "type": "string"
         }
       }
     },
     "BfdGetEntry": {
+      "description": "BFD session readback with interval in microseconds and observed state. sourceIP differs in capitalization from write-time sourceIp. Current IPv6 host/port splitting can corrupt remoteIp and port; a successful response is not IPv6 qualification.",
       "type": "object",
       "properties": {
         "instance": {
@@ -31340,23 +31405,25 @@ func init() {
       }
     },
     "CIStatusEntry": {
+      "description": "Cluster state transition input. State must be MASTER, BACKUP, FAULT, STOP, or NOT_DEFINED. VIP must be treated as a literal IP, but parsing is not fully checked. Current code creates instances before validating state and ignores VIP changes when state is unchanged. Instance text is passed through shell-hook construction without safe argument isolation. Dependent updates are asynchronous.",
       "type": "object",
       "properties": {
         "instance": {
-          "description": "Instance name",
+          "description": "Cluster instance name. Current shell-hook construction does not safely isolate this input as an argument; unrestricted names are not a safe supported contract.",
           "type": "string"
         },
         "state": {
-          "description": "Current Cluster Instance State",
+          "description": "Requested cluster state: MASTER, BACKUP, FAULT, STOP, or NOT_DEFINED. Repeating the current state skips VIP changes.",
           "type": "string"
         },
         "vip": {
-          "description": "Instance Virtual IP address",
+          "description": "Literal instance VIP. Parsing is not fully validated, and a same-state request does not update this value.",
           "type": "string"
         }
       }
     },
     "CIStatusGetEntry": {
+      "description": "Cluster instance state and VIP readback. The current handler does not populate the schema-required sync field; neither its presence nor the response status proves completion of dependent HA actions.",
       "type": "object",
       "required": [
         "sync"
@@ -31371,7 +31438,7 @@ func init() {
           "type": "string"
         },
         "sync": {
-          "description": "Sync - sync state",
+          "description": "Not populated by the current handler despite its required declaration; not evidence of completed synchronization.",
           "type": "integer"
         },
         "vip": {
@@ -31387,7 +31454,7 @@ func init() {
       ],
       "properties": {
         "catalog_id": {
-          "description": "Catalog ID",
+          "description": "Runtime catalog identifier assigned from the loaded catalog set, not a durable identity across changes to that set.",
           "type": "integer",
           "maximum": 255,
           "minimum": 1,
@@ -31411,6 +31478,7 @@ func init() {
       }
     },
     "Cert": {
+      "description": "Managed PEM input and partial read model. POST currently returns empty 201, including when it mints an ID; callers cannot obtain that minted handle from the response. PUT uses the path ID and ignores body ID and hostnames. Known lifecycle gaps: duplicate POST persists before rejecting registration and can remove existing material; failed rotation does not roll back files; hostname ownership conflicts and multi-host swaps are not transactional; rotation retains the old hostname set. Do not claim atomic certificate transactions, automatic SAN migration, or verified zero downtime. GET returns no private-key material, although the shared schema still requires keyPem and the generated response can serialize it as null.",
       "type": "object",
       "required": [
         "certPem",
@@ -31418,12 +31486,12 @@ func init() {
       ],
       "properties": {
         "certId": {
-          "description": "Opaque certificate management handle. Client-supplied verbatim or server-minted when absent. Stable across rotation (PUT). Max 63 chars; no path separators.",
+          "description": "Opaque handle, client-supplied or minted when absent/empty on POST. PUT uses the path handle. Current validation permits at most 63 bytes and rejects path separators and any '..' substring; NUL validation is incomplete. Minted handles are currently not returned by POST.",
           "type": "string",
           "x-nullable": true
         },
         "certPem": {
-          "description": "Leaf (server) certificate in PEM. Required on POST/PUT. Try-parsed as X.509 — malformed PEM is rejected with 400.",
+          "description": "Leaf certificate PEM required on POST/PUT. The Go handler checks PEM armor; authoritative X.509/key parsing occurs in the OpenSSL loader after persistence. A 400 load failure does not imply transactional rollback of persisted material.",
           "type": "string",
           "x-nullable": true
         },
@@ -31484,10 +31552,11 @@ func init() {
       }
     },
     "ConntrackEntry": {
+      "description": "Gateway datapath connection record. packets and bytes include reported eBPF and hardware totals when reconciliation is available. Hardware fields may be omitted and ageMs is not populated by the current handler. Signed counter serialization does not preserve the entire unsigned counter range.",
       "type": "object",
       "properties": {
         "ageMs": {
-          "description": "DOCA detail: age of this conntrack/offload flow in milliseconds (age-query estimate; 0 when unavailable). Declared so a ` + "`" + `swagger generate server` + "`" + ` reproduces the hand-maintained DOCA age field instead of clobbering it. Additive/optional.",
+          "description": "Currently unavailable from this handler: ageMs is not populated and its zero value is omitted. This declaration does not establish DOCA age-query support.",
           "type": "integer",
           "format": "uint64",
           "x-nullable": false
@@ -31564,7 +31633,7 @@ func init() {
       ],
       "properties": {
         "deleted_count": {
-          "description": "Number of conversations deleted",
+          "description": "Currently always zero from a placeholder backend that performs no deletion; this does not prove the table is empty.",
           "type": "integer"
         },
         "message": {
@@ -31572,17 +31641,18 @@ func init() {
           "type": "string"
         },
         "oldest_remaining_hours": {
-          "description": "Age in hours of oldest remaining conversation",
+          "description": "Currently a placeholder zero, not a measured age of remaining conversations.",
           "type": "number",
           "format": "float"
         }
       }
     },
     "CorsEntry": {
+      "description": "Management CORS origin additions, applied sequentially rather than atomically; a later failure does not undo earlier entries. Omitted or empty cors is a no-op. CRUD rejects wildcard origin entries. Removing the last explicit origin leaves an empty allowlist, not the factory wildcard state. GET uses corsAttr. Current preflight grants omit PATCH and X-Api-Key; CORS is not management authentication or data-plane API-key enforcement.",
       "type": "object",
       "properties": {
         "cors": {
-          "description": "Interface device name",
+          "description": "Origin strings to add. Values are trimmed; empty values and '*' are rejected, and duplicates conflict. Deletion identifies the exact origin encoded as one path parameter.",
           "type": "array",
           "items": {
             "description": "cors list",
@@ -31592,7 +31662,7 @@ func init() {
       }
     },
     "DependencyDiagnostic": {
-      "description": "One external dependency's live reachability with a latency class. Identity by type only - IDs, digests, credentials and connection strings are deliberately absent from this surface.",
+      "description": "One dependency-specific check with a latency class. Identity is reported by type rather than store contents. Not every check performs external I/O; the latency class is not an end-to-end service-health guarantee.",
       "type": "object",
       "required": [
         "type",
@@ -31615,7 +31685,7 @@ func init() {
           "type": "boolean"
         },
         "status": {
-          "description": "The probe's verdict, taken live for this response.",
+          "description": "Verdict of the check performed for this response; its depth depends on the dependency type.",
           "type": "string",
           "enum": [
             "ready",
@@ -31623,7 +31693,7 @@ func init() {
           ]
         },
         "type": {
-          "description": "Dependency type (e.g. keystore, certstore).",
+          "description": "Recovery dependency type, such as api-key-db, auth-db, engine-contracts, kv-model-profiles or cert-store.",
           "type": "string"
         }
       }
@@ -31662,7 +31732,7 @@ func init() {
       }
     },
     "DiagnosticsStatus": {
-      "description": "The allowlist-only diagnostic assembly served by /diagnostics.",
+      "description": "Structured diagnostic assembly served by /diagnostics. Nested lifecycle and dependency reasons can contain propagated error text; universal redaction of every such string is not established.",
       "type": "object",
       "required": [
         "version",
@@ -31799,45 +31869,46 @@ func init() {
       }
     },
     "EndPoint": {
+      "description": "Monitor configuration for a literal host IP, not a hostname or CIDR. Supply probeType; TCP/UDP/SCTP require nonzero probePort. Port narrows to uint16 and duration to uint32 before full validation; retries have only an upper-bound check of 100 and duration an upper bound of 86400 after conversion. Omitted numeric values become zero, not a generic server default. Existing POST replaces options; reusing a name with another host currently retains the old host. HTTP status syntax and IPv6 probe address construction have known limitations.",
       "type": "object",
       "required": [
         "hostName"
       ],
       "properties": {
         "domainName": {
-          "description": "doubles as TLS SNI for HTTPS monitors AND the Host header. Optional/additive.",
+          "description": "TLS SNI for structured HTTPS and TLS-hello probes, and explicit Host for structured HTTPS. For HTTP, explicit Host override is applied only when httpVersion is 1.1.",
           "type": "string"
         },
         "expectedCodes": {
-          "description": "Octavia expected_codes — single \"200\", list \"200,202\", or range \"200-204\". Optional/additive — empty defaults to \"200\".",
+          "description": "Expected HTTP status: a single value, comma-separated values, or inclusive ranges such as 200-204. Empty uses 200 on the structured status path. Parsing errors, range ordering, and numeric narrowing are not safely validated.",
           "type": "string"
         },
         "hostName": {
-          "description": "Host name in CIDR",
+          "description": "Literal endpoint IP address, not a DNS hostname or CIDR.",
           "type": "string"
         },
         "httpMethod": {
-          "description": "HTTP(S) health-monitor method (e.g. GET, HEAD). Optional/additive — empty defaults to GET. Control-plane only (probeReq/probeResp retained as the escape hatch).",
+          "description": "HTTP(S) probe request method, actively consumed by the prober; empty uses GET. Method syntax is not validated at admission.",
           "type": "string"
         },
         "httpVersion": {
-          "description": "HM HTTP version \"1.0\" or \"1.1\". When \"1.1\" a Host header is sent (domainName, else the member address). Optional/additive.",
+          "description": "Current implementation uses 1.1 to control explicit Host-header behavior and HTTPS prober selection; this field does not select an HTTP/1.0 versus HTTP/1.1 wire protocol.",
           "type": "string"
         },
         "inactiveReTries": {
-          "description": "Number of inactive retries",
+          "description": "Configured inactive retry threshold. Values above 100 are rejected, but negative values are not rejected locally; omission becomes zero.",
           "type": "integer"
         },
         "name": {
-          "description": "Endpoint Identifier",
+          "description": "Custom monitor identifier. If empty, identity is derived from host/type/port. Changing host under an existing custom name does not currently replace the stored host.",
           "type": "string"
         },
         "probeDuration": {
-          "description": "How frequently to probe in seconds",
+          "description": "Probe interval in seconds. Omission becomes zero. The handler narrows to uint32 before the domain maximum of 86400 is checked; original-input bounds are incomplete.",
           "type": "integer"
         },
         "probePort": {
-          "description": "The l4port to probe on",
+          "description": "Probe port, narrowed to uint16 without bounds checking. TCP/UDP/SCTP require nonzero; HTTP/HTTPS/TLS-hello do not automatically select standard ports.",
           "type": "integer"
         },
         "probeReq": {
@@ -31845,11 +31916,11 @@ func init() {
           "type": "string"
         },
         "probeResp": {
-          "description": "Response for http/https probes",
+          "description": "Legacy HTTPS response-substring expectation. HTTP and structured HTTPS use status-code matching instead; this is not a universal response-body check.",
           "type": "string"
         },
         "probeType": {
-          "description": "Type of probe used (tls-hello = handshake-only TLS liveness probe)",
+          "description": "Supply a supported probe type; omission is rejected by domain validation. tls-hello checks handshake completion without validating certificate trust.",
           "type": "string",
           "enum": [
             "tcp",
@@ -31863,12 +31934,13 @@ func init() {
           ]
         },
         "urlPath": {
-          "description": "HM request path (e.g. /healthz). Optional/additive — empty falls back to probeReq or \"/\".",
+          "description": "HTTP(S) request path. Empty falls back to probeReq, then /. A structured HTTPS setting selects status-code matching rather than legacy probeResp substring matching.",
           "type": "string"
         }
       }
     },
     "EndPointGetEntry": {
+      "description": "Endpoint monitor readback with observed health. The structured HTTP monitor fields are omitted, so this is not a full configuration round-trip. currState is ok, nok, or red. Delay strings are formatted durations from recorded probe measurements, not guarantees for every probe type.",
       "type": "object",
       "properties": {
         "avgDelay": {
@@ -31876,7 +31948,7 @@ func init() {
           "type": "string"
         },
         "currState": {
-          "description": "Current state of this endpoint",
+          "description": "Observed state, ok, nok, or red. This is not a direct round-trip of green/yellow/red host-state input.",
           "type": "string"
         },
         "hostName": {
@@ -31922,18 +31994,19 @@ func init() {
       }
     },
     "EndPointHostState": {
+      "description": "Explicit host-state input. Supply both nonzero epPort and epProto for generated-key targeting, or omit both for host-wide targeting. Custom monitor names cannot be selected by the specific tuple path. Host-wide requests can succeed without matches. epPort narrows to uint16 without full validation; immediate dependent updates are implemented for fullproxy rules, not universally.",
       "type": "object",
       "properties": {
         "epPort": {
-          "description": "The end-point port (0 if not applicable)",
+          "description": "Nonzero port requires epProto; zero or omission requires epProto empty for host-wide targeting. Conversion to uint16 is not fully validated.",
           "type": "integer"
         },
         "epProto": {
-          "description": "The end-point prototype (tcp,udp,sctp,icmp,http(s), empty if not applicable)",
+          "description": "Generated monitor-key probe type; supply together with nonzero epPort or omit both. This selector cannot resolve a custom monitor name and is not a universal transport-protocol selector.",
           "type": "string"
         },
         "hostName": {
-          "description": "Host name in CIDR",
+          "description": "Literal endpoint host IP used for monitor matching, not a hostname or CIDR.",
           "type": "string"
         },
         "state": {
@@ -32065,6 +32138,7 @@ func init() {
       }
     },
     "FDBEntry": {
+      "description": "Bridge-family forwarding entry identified here by interface and MAC address. This model omits additional kernel FDB selectors, including VLAN and tunnel destination; GET only enumerates interfaces with a bridge master.",
       "type": "object",
       "required": [
         "dev",
@@ -32097,7 +32171,7 @@ func init() {
           "type": "string"
         },
         "size": {
-          "description": "Boot ID in the linux",
+          "description": "Filesystem size as a formatted string from the system filesystem report, not a numeric byte count.",
           "type": "string"
         },
         "type": {
@@ -32127,6 +32201,7 @@ func init() {
       }
     },
     "FirewallEntry": {
+      "description": "Firewall match tuple plus action options. POST is not a general replacement: a duplicate can update fwMark and still return conflict. DELETE identifies the exact normalized tuple, including preference. Validate action exclusivity and range ordering in clients while the implementation gaps remain open.",
       "type": "object",
       "required": [
         "ruleArguments",
@@ -32142,6 +32217,7 @@ func init() {
       }
     },
     "FirewallOptionEntry": {
+      "description": "Firewall action options. Avoid combining terminal actions: the current precedence is allow, drop, redirect, trap, then SNAT, with default drop, while doSnat also has independent side effects. record is independent. SNAT requires a literal toIP and zero explicit fwMark; toPort zero preserves the port. Mark narrowing and reserved-bit handling are not fully validated. These limitations are not a supported multi-action policy.",
       "type": "object",
       "properties": {
         "allow": {
@@ -32149,7 +32225,7 @@ func init() {
           "type": "boolean"
         },
         "counter": {
-          "description": "traffic counters",
+          "description": "Readback traffic counters formatted as packets:bytes; not a configurable traffic limit.",
           "type": "string"
         },
         "doSnat": {
@@ -32161,7 +32237,7 @@ func init() {
           "type": "boolean"
         },
         "fwMark": {
-          "description": "Set a fwmark for any matching rule",
+          "description": "Packet mark, narrowed to uint32 without complete bounds or reserved-bit validation. Explicit mark must be zero for SNAT; duplicate POST can change this value before returning conflict.",
           "type": "integer"
         },
         "onDefault": {
@@ -32177,11 +32253,11 @@ func init() {
           "type": "boolean"
         },
         "redirectPortName": {
-          "description": "Redirect any matching rule",
+          "description": "Target interface name for the redirect action.",
           "type": "string"
         },
         "toIP": {
-          "description": "Modify to given IP in CIDR notation",
+          "description": "Literal translated source IP, not CIDR. Required for the SNAT action.",
           "type": "string"
         },
         "toPort": {
@@ -32195,6 +32271,7 @@ func init() {
       }
     },
     "FirewallRuleEntry": {
+      "description": "Exact firewall match tuple. Ports and preference are 0..65535; protocol is 0..255, with zero meaning wildcard. Both endpoints of a zero port range mean wildcard; otherwise minimum must not exceed maximum. Missing CIDRs become family-appropriate wildcards and explicit source/destination families must agree on creation. DELETE does not safely reject reversed ranges. hwOffload admission is not evidence of hardware installation and is not returned faithfully by GET.",
       "type": "object",
       "properties": {
         "destinationIP": {
@@ -32202,7 +32279,7 @@ func init() {
           "type": "string"
         },
         "hwOffload": {
-          "description": "opt-IN per-rule HW offload flag. When true, the rule is mirrored into the DOCA ingress ACL pipeline (DENY_PIPE / ALLOW_PIPE) in addition to the eBPF firewall fallback. The rule MUST be expressible in HW (IPv4, single-port, no proto-specific match) — non-expressible rules are hard-rejected at AddFwRule. Default false preserves existing eBPF-only behaviour for all deployments.\n",
+          "description": "Request hardware offload, not proof of installation. Current admission rejects IPv6, non-/32 IPv4 prefixes, non-singleton port ranges, and TCP- or UDP-specific protocol matches. Other acceptance does not establish runtime support, and GET does not populate this flag.",
           "type": "boolean",
           "default": false,
           "x-nullable": false
@@ -32228,11 +32305,11 @@ func init() {
           "type": "string"
         },
         "preference": {
-          "description": "User preference for ordering",
+          "description": "Preference 0..65535. This participates in rule identity and must match on deletion.",
           "type": "integer"
         },
         "protocol": {
-          "description": "the protocol",
+          "description": "IP protocol number 0..255; zero means wildcard.",
           "type": "integer"
         },
         "sourceIP": {
@@ -32312,24 +32389,24 @@ func init() {
       "type": "object",
       "properties": {
         "ebpf_map_loaded": {
-          "description": "Whether eBPF maps are loaded",
+          "description": "Whether the worker-statistics map descriptor is positive; this does not verify all required maps or their consumers. False can be omitted.",
           "type": "boolean"
         },
         "enabled": {
-          "description": "Whether GPU monitoring is currently active",
+          "description": "Runtime monitoring flag, not proof of GPU health or effective routing. The generated response can omit false.",
           "type": "boolean"
         },
         "last_metrics_update": {
-          "description": "Timestamp of last metrics update",
+          "description": "Latest timestamp among cached samples, not a fresh health probe; may be absent when no sample exists.",
           "type": "string",
           "format": "date-time"
         },
         "routing_mode": {
-          "description": "Current routing mode (standard_chwbl or gpu_aware)",
+          "description": "Reported monitoring mode (standard_chwbl, gpu_aware or disabled when support is not compiled), not verified per-service datapath selection.",
           "type": "string"
         },
         "worker_count": {
-          "description": "Number of workers being tracked",
+          "description": "Number of cached worker entries, including potentially stale samples; zero can be omitted.",
           "type": "integer"
         }
       }
@@ -32354,6 +32431,7 @@ func init() {
       }
     },
     "IPFilterEntry": {
+      "description": "Zone-less source-prefix XDP filter. whitelist requires allow and blacklist requires drop. Each list uses longest-prefix matching; higher priority wins between lists and whitelist wins ties. Reposting the same normalized list/prefix replaces the entry and resets counters. Maps are shared with the security-rate whitelist, not isolated by API ownership.",
       "type": "object",
       "required": [
         "filterType",
@@ -32362,7 +32440,7 @@ func init() {
       ],
       "properties": {
         "action": {
-          "description": "Action to take (allow or drop)",
+          "description": "Use allow with whitelist and drop with blacklist; other combinations are rejected.",
           "type": "string",
           "enum": [
             "allow",
@@ -32392,13 +32470,13 @@ func init() {
           "format": "int64"
         },
         "priority": {
-          "description": "Rule priority (higher = more important)",
+          "description": "Priority 0..65535. Omission uses 100; explicit zero is preserved. Higher priority wins between matching lists; whitelist wins ties.",
           "type": "integer",
           "format": "int64",
           "default": 100
         },
         "zone": {
-          "description": "Security zone (0 = all zones)",
+          "description": "Zone must be zero or omitted on POST because XDP filtering precedes zone classification. DELETE does not use zone in the key.",
           "type": "integer",
           "format": "int64",
           "default": 0
@@ -32406,6 +32484,7 @@ func init() {
       }
     },
     "IPsecCACertificate": {
+      "description": "Partial CA metadata; validity and installation timestamps are not populated in responses. Deletion does not check tunnel dependencies or guarantee that all filesystem cleanup succeeded. Do not infer safe removal from success.",
       "type": "object",
       "properties": {
         "description": {
@@ -32438,6 +32517,7 @@ func init() {
       }
     },
     "IPsecCACertificateMod": {
+      "description": "Installs a PEM certificate after parsing and an IsCA check. The reviewed upload does not apply the leaf validator's date policy or complete trust validation. Name reaches node filesystem paths without complete path-safety validation. Installation is not proof that a tunnel uses this CA.",
       "type": "object",
       "required": [
         "name",
@@ -32459,6 +32539,7 @@ func init() {
       }
     },
     "IPsecCertValidation": {
+      "description": "Result of implemented PEM, date, and limited private-key checks, not a chain-trust or handshake attestation. Current key matching does not reject all mismatched key types, and passphrase decryption is absent. Validity timestamps are not mapped. The serializer can omit valid when false; require an explicit true and inspect errors, while retaining these limitations.",
       "type": "object",
       "properties": {
         "errors": {
@@ -32499,6 +32580,7 @@ func init() {
       }
     },
     "IPsecCertificate": {
+      "description": "Partial installed-certificate metadata. Serial, SAN, and key-usage extraction is unfinished, and validity/installation timestamps are not populated in responses. Deletion does not enforce an in-use dependency conflict; absence of a conflict response does not establish safe removal.",
       "type": "object",
       "properties": {
         "description": {
@@ -32545,6 +32627,7 @@ func init() {
       }
     },
     "IPsecCertificateMod": {
+      "description": "Leaf certificate and private-key input. Upload performs implemented local parsing and validity checks, not complete chain-trust or tunnel-readiness validation. Name reaches node filesystem paths without complete path-safety validation. The validation-only endpoint shares this schema but ignores name and description. See IPsecCertValidation for key-matching limitations.",
       "type": "object",
       "required": [
         "name",
@@ -32565,7 +32648,7 @@ func init() {
           "type": "string"
         },
         "passphrase": {
-          "description": "Optional passphrase for encrypted private key",
+          "description": "Accepted input that is currently unused. Encrypted private-key decryption is not implemented; supplying a passphrase does not enable encrypted-key support.",
           "type": "string"
         },
         "privateKey": {
@@ -32575,6 +32658,7 @@ func init() {
       }
     },
     "IPsecConfig": {
+      "description": "Stored IPsec settings, not proof of active kernel or hardware enforcement. The reviewed implementation does not connect these global controls to enforcement; supportedAlgorithms is a static list and hwCapabilities is not populated. Tunnel state and telemetry have separate limitations.",
       "type": "object",
       "properties": {
         "antiReplayEnabled": {
@@ -32656,6 +32740,7 @@ func init() {
       }
     },
     "IPsecConfigMod": {
+      "description": "Updates the stored global settings. The handler forwards every field, so omitted values become false, zero, or empty rather than preserving the previous setting. Successful storage does not establish active fast-path, offload, anti-replay, MTU, or SA lifecycle enforcement.",
       "type": "object",
       "properties": {
         "antiReplayEnabled": {
@@ -32702,6 +32787,7 @@ func init() {
       }
     },
     "IPsecDPD": {
+      "description": "Dead Peer Detection settings. The domain supplies restart, 30 seconds, and 120 seconds when action, delay, or timeout is empty or zero. The declared timeout default of 150 differs from this implementation behavior.",
       "type": "object",
       "properties": {
         "action": {
@@ -32729,6 +32815,7 @@ func init() {
       }
     },
     "IPsecPeerConfig": {
+      "description": "Secret-bearing peer configuration draft. PSK mode includes the plaintext shared secret; current management authorization permits viewer GET access. Certificate mode contains installation placeholders. Review peer-specific routing, credentials, and policy before use; this is not a ready-to-run or runtime-qualified peer configuration.",
       "type": "object",
       "properties": {
         "ipsecConf": {
@@ -32750,6 +32837,7 @@ func init() {
       }
     },
     "IPsecSA": {
+      "description": "Intended SA read model. The reviewed SA enumeration implementation is a stub returning no entries; empty output does not prove that no kernel SAs exist. Creation and expiry timestamps are not mapped by the handler.",
       "type": "object",
       "properties": {
         "bytesIn": {
@@ -32828,6 +32916,7 @@ func init() {
       }
     },
     "IPsecSelector": {
+      "description": "Tunnel selector metadata. Only srcCidr and dstCidr reach the generated strongSwan configuration in the reviewed implementation; protocol, srcPort, and dstPort do not currently restrict traffic. CIDR syntax is not validated by the domain validator. Do not interpret successful storage as enforcement.",
       "type": "object",
       "properties": {
         "dstCidr": {
@@ -32856,6 +32945,7 @@ func init() {
       }
     },
     "IPsecStats": {
+      "description": "Incomplete telemetry. The implementation reports stored tunnel count, zero tunnelsUp, all stored tunnels as tunnelsDown, and placeholder zero SA, traffic, and error counters. lastUpdated is not mapped. DELETE resets stub state, not kernel statistics; these values are not operational evidence.",
       "type": "object",
       "properties": {
         "authErrors": {
@@ -32913,6 +33003,7 @@ func init() {
       }
     },
     "IPsecTunnel": {
+      "description": "Stored declaration with best-effort daemon state, not traffic-readiness evidence. State refresh is throttled and failures retain the previous state; counters and timestamps are incomplete. Known deletion implementation gap: deleting a marked tunnel issues unfiltered XFRM state and policy flushes, which can affect other tunnels in the same network namespace. Isolated per-tunnel deletion is not currently guaranteed.",
       "type": "object",
       "properties": {
         "authMode": {
@@ -33060,6 +33151,7 @@ func init() {
       }
     },
     "IPsecTunnelActionMod": {
+      "description": "Requests ipsec up, down, or down followed by up for an existing tunnel. Command completion and best-effort state refresh are not proof of peer connectivity, installed traffic selectors, or successful encrypted traffic.",
       "type": "object",
       "required": [
         "action"
@@ -33077,6 +33169,7 @@ func init() {
       }
     },
     "IPsecTunnelMod": {
+      "description": "Creates or replaces a tunnel declaration and schedules a daemon reload; success does not establish an installed or usable tunnel. PUT uses the path name, although the shared request schema still requires body name. Omitted optional settings generally reset or default rather than merge; an omitted or empty PSK is preserved when updating an existing PSK tunnel without changing authentication mode. Names, IDs, proposals, and selectors lack complete configuration-syntax validation. Use explicit reviewed values.",
       "type": "object",
       "required": [
         "name",
@@ -33104,7 +33197,7 @@ func init() {
           ]
         },
         "caCertName": {
-          "description": "CA certificate name (required for cert mode)",
+          "description": "Stored CA certificate reference. Currently neither required nor validated for cert mode and not consumed by the generated tunnel configuration; it does not establish peer trust policy.",
           "type": "string"
         },
         "certName": {
@@ -33184,11 +33277,11 @@ func init() {
           "type": "string"
         },
         "localIp": {
-          "description": "Local gateway IP address",
+          "description": "Local gateway IPv4/IPv6 address or strongSwan special value %any, %defaultroute, or %config. Acceptance validates syntax, not topology or peer reachability.",
           "type": "string"
         },
         "mark": {
-          "description": "Netfilter mark for VTI routing (0 = no mark)",
+          "description": "Netfilter mark for VTI routing. Omitted or zero currently selects 100; zero does not disable marking. Known deletion limitation is documented on IPsecTunnel.",
           "type": "integer",
           "format": "uint32",
           "default": 100
@@ -33203,7 +33296,7 @@ func init() {
           "type": "string"
         },
         "psk": {
-          "description": "Pre-shared key (required for PSK mode)",
+          "description": "Secret required when creating a PSK tunnel or switching to PSK authentication. Omitted or empty preserves the existing secret when updating a tunnel that remains in PSK mode. Peer configuration export exposes this secret.",
           "type": "string"
         },
         "reauth": {
@@ -33221,7 +33314,7 @@ func init() {
           "type": "string"
         },
         "remoteIp": {
-          "description": "Remote gateway IP address",
+          "description": "Remote gateway IPv4/IPv6 address or strongSwan special value %any, %defaultroute, or %config. Acceptance does not establish a viable peer configuration.",
           "type": "string"
         },
         "selector": {
@@ -33239,6 +33332,7 @@ func init() {
       }
     },
     "IPv4AddressEntry": {
+      "description": "IPv4 address configuration: supply an interface name and CIDR, not a bare address. The shared mutation helper does not enforce IPv4 family. Missing Linux interfaces may fall back to internal address objects; backend failures can return HTTP 200 with result set to fail.",
       "type": "object",
       "required": [
         "dev",
@@ -33250,12 +33344,13 @@ func init() {
           "type": "string"
         },
         "ipAddress": {
-          "description": "IP address to modify.",
+          "description": "IPv4 address with prefix length in CIDR notation. The shared helper does not enforce this endpoint's family.",
           "type": "string"
         }
       }
     },
     "IPv4AddressGetEntry": {
+      "description": "Gateway IPv4 addresses grouped by interface with reported synchronization status. Address strings include prefix lengths; inventory and sync are not independent proof of kernel or datapath convergence.",
       "type": "object",
       "required": [
         "sync"
@@ -33278,6 +33373,7 @@ func init() {
       }
     },
     "IPv6AddressEntry": {
+      "description": "IPv6 address configuration: supply an interface name and CIDR, not a bare address. The shared mutation helper does not enforce IPv6 family and may use internal address objects for missing Linux interfaces. Internal self-route construction has an IPv6 prefix-length limitation. Backend failures can return HTTP 200 with result set to fail.",
       "type": "object",
       "required": [
         "dev",
@@ -33289,12 +33385,13 @@ func init() {
           "type": "string"
         },
         "ipAddress": {
-          "description": "IP address to modify.",
+          "description": "IPv6 address with prefix length in CIDR notation. The shared helper does not enforce this endpoint's family.",
           "type": "string"
         }
       }
     },
     "IPv6AddressGetEntry": {
+      "description": "Gateway IPv6 addresses grouped by interface with reported synchronization status. Address strings include prefix lengths; inventory and sync are not independent proof of kernel or datapath convergence.",
       "type": "object",
       "required": [
         "sync"
@@ -33317,6 +33414,7 @@ func init() {
       }
     },
     "K8sConntrackEntry": {
+      "description": "Legacy Kubernetes-enriched connection shape. The assigned /config/conntrack/all operation does not reference this definition and does not provide these enrichment fields.",
       "type": "object",
       "properties": {
         "bytes": {
@@ -33394,7 +33492,7 @@ func init() {
       }
     },
     "KvExactEnforcement": {
-      "description": "Data-plane enforcement position of a strict KV-exact rule (absent on legacy rules) - what the control plane wants vs what the data plane provably enforces, per the fence-first contract-word transaction. desired and enforced are always present; lastAckAt is absent before the first full ACK after registration or restart; fault is absent when none.",
+      "description": "Enforcement position of a strict KV-exact rule or a restored legacy rule fenced for migration. Ordinary active legacy rules omit this object. desired and enforced distinguish requested and acknowledged enforcement; lastAckAt is absent before the first full ACK after registration/restart, and fault is absent when none. Inspect goFenced independently as the tokenize-bridge backstop; declaration/readback alone is not enforcement.",
       "type": "object",
       "required": [
         "desired",
@@ -33425,7 +33523,7 @@ func init() {
       }
     },
     "KvExactStatusEntry": {
-      "description": "Resolved KV-exact composition status of one rule. Every identity field is a scalar by schema - one rule composes exactly one model profile with exactly one engine contract at exactly one generation each; arrays and repeated identity fields are rejected representations. Field presence groups: the required fields are present on EVERY entry (legacy and strict); modelProfileId, modelProfileGen, engineContractId, engineContractGen, bindingGen, bindingDigest, hashContractId, requiredEvidenceLevel and enforcement are present iff the rule is strict (profile-bound); wireSchemaId and pdDialectId are present iff an engine-contract registry serves them. State and reason vocabularies are published in the x-kv-status-states / x-kv-status-reason-codes blocks below as an OPEN vocabulary versioned by x-kv-status-vocabulary-version (new values bump the version; existing values are never renamed or re-used). Forward-compatibility rule, binding on clients: an unrecognized desiredState/enforcedState MUST be treated as \"not ready / in transition\" and rendered raw; an unrecognized reasonCode MUST be rendered raw and MUST NOT be treated as fatal.",
+      "description": "Resolved KV-exact status of one rule, not a configuration request body. Identity fields are scalar: an allocated strict binding composes one model profile and one engine contract at their respective generations. Required fields are emitted for legacy and strict entries. hashContractId is also computed for legacy entries. modelProfileId identifies a bound declaration, but generation, bindingDigest and requiredEvidenceLevel may be absent on a strict rule whose binding is unresolved or missing; do not interpret their absence as a profile-less rule. enforcement is included for strict rules and restored legacy rules fenced for migration. wireSchemaId and pdDialectId are optional informational identities; clients must not infer readiness from their presence or absence alone. State and reason vocabularies are published in the x-kv-status-states / x-kv-status-reason-codes blocks below as an OPEN vocabulary versioned by x-kv-status-vocabulary-version (new values bump the version; existing values are never renamed or re-used). Forward-compatibility rule, binding on clients: an unrecognized desiredState/enforcedState MUST be treated as \"not ready / in transition\" and rendered raw; an unrecognized reasonCode MUST be rendered raw and MUST NOT be treated as fatal.",
       "type": "object",
       "required": [
         "ruleIdentity",
@@ -33483,7 +33581,7 @@ func init() {
           "type": "string"
         },
         "modelProfileGen": {
-          "description": "Registry generation the profile was bound at.",
+          "description": "Registry generation the allocated binding used. May be absent when a declared profile is unresolved or the binding is missing; inspect enforcedState and reasonCodes.",
           "type": "integer",
           "format": "uint64"
         },
@@ -33553,7 +33651,7 @@ func init() {
         "LEGACY_ACTIVE_UNATTESTED": "Profile-less rule running the legacy behavior - active, unattested, and says so.",
         "PENDING_DATAPLANE_CONTRACT": "Waiting for the data-plane contract word to install and the attestation controller to enforce the binding.",
         "PROFILE_VALIDATED": "Strict admission passed (profile published, alias admits the model, tokenizer artifacts digest-matched, binding composed); the attestation ladder has not yet earned the parity/hash rungs.",
-        "READY": "Fully attested and enforced - the only state in which exact routing serves.",
+        "READY": "Strict binding attested and enforced under its normal identity trust contract. Legacy unattested and explicit functional-only operation have distinct states and must not be conflated with this qualification.",
         "READY_FUNCTIONAL_ONLY": "Manifest-less READY through the privileged/audited/expiring opt-in - functionally attested, identity trust root absent, exposed distinctly so the risk acceptance is visible.",
         "REQUIRES_MIGRATION": "Restored profile-less rule - exact routing fenced until a profile is attached by rule replace.",
         "TOKEN_PARITY_NOT_AVAILABLE_WITH_APPROVED_ORACLE": "Alternate second rung for engines without a tokenize endpoint - parity vouched through an approved oracle.",
@@ -33648,12 +33746,12 @@ func init() {
           "example": 5
         },
         "enabled": {
-          "description": "Whether L4 tracing is enabled",
+          "description": "Reported enablement; false can be omitted. Default-looking status does not establish compiled support or usable maps.",
           "type": "boolean",
           "example": true
         },
         "sampling_rate": {
-          "description": "Current sampling rate (0-100)",
+          "description": "Reported sampling percentage. Explicit zero can be omitted by response serialization; absence is not proof of the enable operation's default of 100.",
           "type": "integer",
           "format": "int64",
           "example": 100
@@ -33664,30 +33762,32 @@ func init() {
       }
     },
     "L7Action": {
-      "description": "The single tagged-union action for a route.",
+      "description": "Action selected by kind. FORWARD requires forward; REDIRECT requires redirect; REJECT permits an omitted reject object. Implementation warning: validation does not reject extra objects for other kinds. H1 synthetic REJECT/REDIRECT responses use raw socket writes without an SSL write branch; encrypted H1 response correctness is not established. H2 uses a separate framed responder.",
       "type": "object",
       "required": [
         "kind"
       ],
       "properties": {
         "forward": {
-          "description": "FORWARD target (re-enters the existing intra-pool EP-select, never the AI engine).",
+          "description": "Target within the listener's base endpoint pool. With no references the resolver returns the base pool; with references it constructs a subset using RR or WRR selection. Implementation warnings: poolId is not used to resolve an independent pool, and allocation failure can return the whole base pool instead of the subset. The fallback is a safety defect, not a promised routing policy.",
           "type": "object",
           "properties": {
             "backendRefs": {
+              "description": "Endpoint-slot references within the base pool. Empty means the whole base pool. Invalid indices are skipped at resolution; admission does not check pool membership or enforce the 32-reference C limit.",
               "type": "array",
               "items": {
                 "$ref": "#/definitions/L7ActionForwardBackendRefsItems0"
               }
             },
             "poolId": {
+              "description": "Stored and copied identifier. Implementation gap - the current C resolver does not use it to select a pool.",
               "type": "integer",
               "format": "uint32"
             }
           }
         },
         "kind": {
-          "description": "FORWARD to a (weighted) pool; REDIRECT (synthetic 3xx); REJECT (synthetic 4xx, terminal). REJECT is NOT representable on Gateway API — a HARD ERROR on export.",
+          "description": "FORWARD selects a backend target; REDIRECT emits a terminal synthetic 3xx; REJECT emits a terminal synthetic 4xx. No Gateway API export is performed by these operations.",
           "type": "string",
           "enum": [
             "FORWARD",
@@ -33700,9 +33800,11 @@ func init() {
           "type": "object",
           "properties": {
             "host": {
+              "description": "Explicit host or the request Host/authority when empty, with its port stripped. Use port for an override. The C field carries at most 255 bytes; admission does not reject oversized input.",
               "type": "string"
             },
             "pathOp": {
+              "description": "NONE retains the request path; REPLACE_FULL uses value. Implementation gap: REPLACE_PREFIX currently joins value with the entire request path instead of removing the matched prefix. It does not implement correct matched-prefix replacement and must not be presented as such.",
               "type": "string",
               "enum": [
                 "NONE",
@@ -33711,9 +33813,11 @@ func init() {
               ]
             },
             "port": {
+              "description": "Optional destination port; zero omits the port and an explicit scheme-default port is also omitted. The value narrows to uint16 without an admission range check.",
               "type": "integer"
             },
             "scheme": {
+              "description": "Explicit scheme or, when empty, http/https derived from the client TLS state. No scheme allow-list is enforced; the C field carries at most 7 bytes.",
               "type": "string"
             },
             "statusCode": {
@@ -33721,6 +33825,7 @@ func init() {
               "type": "integer"
             },
             "value": {
+              "description": "Replacement path value. The C field carries at most 255 bytes without an admission bound. Redirect assembly rejects CR/LF or an unusable target at request time; configuration admission does not fully validate the URL.",
               "type": "string"
             }
           }
@@ -33738,16 +33843,18 @@ func init() {
       }
     },
     "L7ActionForward": {
-      "description": "FORWARD target (re-enters the existing intra-pool EP-select, never the AI engine).",
+      "description": "Target within the listener's base endpoint pool. With no references the resolver returns the base pool; with references it constructs a subset using RR or WRR selection. Implementation warnings: poolId is not used to resolve an independent pool, and allocation failure can return the whole base pool instead of the subset. The fallback is a safety defect, not a promised routing policy.",
       "type": "object",
       "properties": {
         "backendRefs": {
+          "description": "Endpoint-slot references within the base pool. Empty means the whole base pool. Invalid indices are skipped at resolution; admission does not check pool membership or enforce the 32-reference C limit.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/L7ActionForwardBackendRefsItems0"
           }
         },
         "poolId": {
+          "description": "Stored and copied identifier. Implementation gap - the current C resolver does not use it to select a pool.",
           "type": "integer",
           "format": "uint32"
         }
@@ -33757,10 +33864,12 @@ func init() {
       "type": "object",
       "properties": {
         "ep": {
+          "description": "Internal base-pool endpoint slot. This is not a stable endpoint ID or necessarily the original POST-array position; creation sorts endpoints and updates reconcile existing slots.",
           "type": "integer",
           "format": "uint32"
         },
         "weight": {
+          "description": "Nonzero weight overrides the member weight; zero inherits it. Implementation gap - the value narrows to uint8 without an admission range check, so negative or oversized values can change meaning.",
           "type": "integer"
         }
       }
@@ -33770,9 +33879,11 @@ func init() {
       "type": "object",
       "properties": {
         "host": {
+          "description": "Explicit host or the request Host/authority when empty, with its port stripped. Use port for an override. The C field carries at most 255 bytes; admission does not reject oversized input.",
           "type": "string"
         },
         "pathOp": {
+          "description": "NONE retains the request path; REPLACE_FULL uses value. Implementation gap: REPLACE_PREFIX currently joins value with the entire request path instead of removing the matched prefix. It does not implement correct matched-prefix replacement and must not be presented as such.",
           "type": "string",
           "enum": [
             "NONE",
@@ -33781,9 +33892,11 @@ func init() {
           ]
         },
         "port": {
+          "description": "Optional destination port; zero omits the port and an explicit scheme-default port is also omitted. The value narrows to uint16 without an admission range check.",
           "type": "integer"
         },
         "scheme": {
+          "description": "Explicit scheme or, when empty, http/https derived from the client TLS state. No scheme allow-list is enforced; the C field carries at most 7 bytes.",
           "type": "string"
         },
         "statusCode": {
@@ -33791,6 +33904,7 @@ func init() {
           "type": "integer"
         },
         "value": {
+          "description": "Replacement path value. The C field carries at most 255 bytes without an admission bound. Redirect assembly rejects CR/LF or an unusable target at request time; configuration admission does not fully validate the URL.",
           "type": "string"
         }
       }
@@ -33814,7 +33928,7 @@ func init() {
       ],
       "properties": {
         "field": {
-          "description": "Request field to match. HOST/PATH/HEADER/COOKIE/FILE_TYPE are the Octavia l7rule types; METHOD/QUERY are Gateway API additions. The SSL_* field range is reserved for is NOT accepted here.",
+          "description": "Request field to match. HOST strips the authority port; PATH reads the parsed request path; HEADER, COOKIE and QUERY use the named field; FILE_TYPE extracts the final path segment's extension without the dot. METHOD reads the captured method only in builds with HAVE_HTTP_TRACE; other builds have no METHOD operand, an implementation limitation. SSL_* fields are rejected.",
           "type": "string",
           "enum": [
             "HOST",
@@ -33827,15 +33941,15 @@ func init() {
           ]
         },
         "invert": {
-          "description": "Negate this condition's result (Octavia invert semantics). NOT representable on Gateway API — a policy carrying invert is a HARD ERROR on Gateway export, never silently dropped.",
+          "description": "Negates the comparison result. An absent request field is a non-match before inversion and therefore matches an inverted condition. The REST operation does not export to Gateway API; the standalone export guard is not connected to an export operation.",
           "type": "boolean"
         },
         "key": {
-          "description": "Header/cookie/query NAME. REQUIRED for HEADER, COOKIE, and QUERY (400 if absent).",
+          "description": "Name required for HEADER, COOKIE and QUERY. Implementation warning - conversion limits this string to 63 bytes without rejecting oversized input; embedded NULs also cannot preserve the submitted string in C.",
           "type": "string"
         },
         "op": {
-          "description": "Compare op. FILE_TYPE accepts ONLY EQUAL_TO or REGEX (Octavia constraint — server-side validated, 400 otherwise).",
+          "description": "Comparison operator. FILE_TYPE accepts only EQUAL_TO or REGEX. String comparisons are case-sensitive; HEADER name lookup is separately case-insensitive. SEGMENT_PREFIX checks a segment boundary. Implementation warning: the current root-slash prefix handling does not match all paths; do not rely on it as a catch-all without a runtime fix.",
           "type": "string",
           "enum": [
             "EQUAL_TO",
@@ -33847,13 +33961,13 @@ func init() {
           ]
         },
         "value": {
-          "description": "Operand the request field is compared against. A REGEX value is try-compiled at config time (400 on a malformed pattern) and recompiled once at attach.",
+          "description": "Comparison operand. REGEX requires a nonempty pattern, validated with Go regular-expression syntax and compiled again as POSIX extended syntax on attachment; those syntaxes are not equivalent. Implementation warning: conversion limits the configured value to 255 bytes without admission rejection, and runtime REGEX operands are limited to 1023 bytes. Embedded NULs or truncation can change meaning. Passing admission does not establish full-length or cross-engine matching equivalence.",
           "type": "string"
         }
       }
     },
     "L7Policy": {
-      "description": "A dedicated L7_POLICY resource: a named ordered set of L7 routing rules attached to an existing L4 load-balancer, referenced by the LB's stable opaque ` + "`" + `id` + "`" + `. CRUD'd independently of the LB and carried to the running sockproxy by a SEPARATE attach call (never inline on the 4096-byte proxy_arg).: L7_POLICY is a dedicated resource (asymmetric with the inline AI_POLICY).",
+      "description": "Independently stored policy and ordered routes, attached through an existing load-balancer ID. Create, list, get and delete are available; update is not. Implementation warnings: the registry enforces one policy per LB ID, while C attaches by VIP/port/protocol. Different LB resources sharing that tuple can overwrite the same attached policy; resource-versus-listener ownership is an unresolved policy decision. Attachment uses the external VIP even where LB programming uses privateIP. LB deletion can retain a C listener and routes; FullProxy replacement can clear listener arguments without rebuilding TLS contexts or restoring those arguments on reuse. Registry readback is not evidence of effective policy, TLS, HSTS or timeout state. See child schemas for capacity and response-path defects requiring implementation fixes.",
       "type": "object",
       "required": [
         "lbId",
@@ -33861,11 +33975,11 @@ func init() {
       ],
       "properties": {
         "id": {
-          "description": "Stable opaque identifier for this L7 policy. Client-supplied is stored verbatim; when absent one is minted control-plane side.",
+          "description": "Opaque policy identifier. A supplied value is stored; an empty value is replaced with a UUID. Reusing an existing ID, even with identical content, returns 409 through REST. POST does not return the minted ID in its 204 response.",
           "type": "string"
         },
         "lbId": {
-          "description": "The stable opaque id of the L4 load-balancer this policy attaches to (GET /config/loadbalancer/id/{id}). 404 if no such LB exists.",
+          "description": "Nonblank identifier of an existing LB resource, discoverable through GET /config/loadbalancer/id/{id}. Missing resources return 404. The resource must also have an eligible IPv4 sockproxy listener; resource existence alone does not guarantee attachment.",
           "type": "string"
         },
         "name": {
@@ -33873,7 +33987,7 @@ func init() {
           "type": "string"
         },
         "rules": {
-          "description": "Ordered L7 routes (FIRST-MATCH-WINS by ascending position).",
+          "description": "At least one route is required by shared validation. Evaluation is first-match-wins by ascending position; stored GET order is not an effective-order or capacity-validation report.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/L7Rule"
@@ -33882,7 +33996,7 @@ func init() {
       }
     },
     "L7PolicyGetEntry": {
-      "description": "GET wrapper for the L7_POLICY collection.",
+      "description": "Registry collection wrapper, sorted by policy ID. Values are stored configuration, not effective dataplane or runtime validation results.",
       "type": "object",
       "properties": {
         "l7policyAttr": {
@@ -33894,32 +34008,32 @@ func init() {
       }
     },
     "L7Rule": {
-      "description": "One L7 routing rule: an ordered route with OR-of-AND match sets and a single tagged-union action (FORWARD / REDIRECT / REJECT). The translation-neutral superset of an OpenStack Octavia l7policy+l7rules group AND a Kubernetes Gateway API HTTPRoute rule. Routes are evaluated FIRST-MATCH-WINS in ascending ` + "`" + `position` + "`" + `.",
+      "description": "One ordered route with OR-combined match sets, AND-combined conditions and a FORWARD, REDIRECT or REJECT action. The first matching route in ascending position order wins. No match produces a synthetic 404. Implementation warning: admission does not reject every input exceeding C capacity. Conversion silently limits each route to 8 match sets, each set to 8 conditions and each forward target to 32 references. This can change policy meaning while GET retains the original document; these are defects requiring admission/runtime fixes, not supported truncation semantics. This schema does not establish complete Octavia or Gateway API translation compatibility.",
       "type": "object",
       "properties": {
         "action": {
           "$ref": "#/definitions/L7Action"
         },
         "insertHeaders": {
-          "description": "bounded request-header insertion filter — a tagged op {SET|ADD|REMOVE} + name(+value). A faithful superset of BOTH Octavia insert_headers (SET/ADD) AND Gateway API RequestHeaderModifier (set/add/remove). Optional/additive — omit for no header insertion. Bounded server-side (DoS guard).",
+          "description": "Ordered SET, ADD or REMOVE request-header operations. The shared validator permits at most 8 entries, 63-byte names and 255-byte values, and rejects CR/LF and other prohibited control characters. Omitting this list disables configured operations, but the L7 path still synthesizes X-Forwarded-For, X-Forwarded-Port and X-Forwarded-Proto before applying these operations. Configured operations can overwrite that synthesized metadata; trust-boundary policy remains to be decided. Implementation warning: Go validation admits interior tabs in names that C later skips. This is not supported header syntax.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/L7RuleInsertHeadersItems0"
           }
         },
         "matchSets": {
-          "description": "OR across sets; AND within a set. Each element is a list of conditions.",
+          "description": "OR across sets; AND within each conditions array. An empty array or a set with no conditions does not match. See the L7Rule warning about unvalidated capacity limits.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/L7RuleMatchSetsItems0"
           }
         },
         "position": {
-          "description": "Explicit precedence; routes are evaluated in ascending position order.",
+          "description": "Evaluation precedence, ascending. Equal-position ordering is unspecified. The value narrows to a C int without a matching admission range check; unique positions within that range avoid this implementation gap.",
           "type": "integer"
         },
         "sessionPersistence": {
-          "description": "session-persistence mode for this route. HTTP_COOKIE enables LB-generated Set-Cookie + read-back affinity; omit for off. Mutually exclusive with APP_COOKIE/SOURCE_IP per pool (Octavia semantics). Optional/additive.",
+          "description": "HTTP_COOKIE enables generated-cookie affinity on matching routes; omit to disable this marker. The REST enum does not expose APP_COOKIE or SOURCE_IP. Implementation warning: shared validation checks a policy-wide mixture of affinity labels, but does not inspect the LB's selector or session-header settings to enforce per-pool mutual exclusion. Cross-mode policy and runtime qualification remain outstanding.",
           "type": "string",
           "enum": [
             "HTTP_COOKIE"
@@ -33931,9 +34045,11 @@ func init() {
       "type": "object",
       "properties": {
         "name": {
+          "description": "Header name, required by shared validation and limited to 63 bytes. Use an HTTP token name; see the containing schema's validation-gap warning.",
           "type": "string"
         },
         "op": {
+          "description": "SET replaces a header, ADD appends a value, and REMOVE removes the named header. Use the canonical uppercase enum spelling.",
           "type": "string",
           "enum": [
             "SET",
@@ -33942,7 +34058,7 @@ func init() {
           ]
         },
         "value": {
-          "description": "Header value; ignored for REMOVE.",
+          "description": "Header value, limited to 255 bytes. Empty values are accepted. REMOVE ignores the value when applying the operation but still validates its length and control characters.",
           "type": "string"
         }
       }
@@ -34018,10 +34134,11 @@ func init() {
       }
     },
     "LlamaFirewallConfigEntry": {
+      "description": "Stored settings, not verified active policy. Omitted nullable fields preserve values; explicit booleans are stored. Timeout, cache, connection pool, fail-policy, threshold, and scanner-selection settings are not connected end-to-end to the reviewed consumer. The RPC client uses a fixed 15-second timeout and insecure transport. The HTTP error path continues processing after scan failures, and oversized scan content also follows an allow/error path. Fail-closed protection is not currently guaranteed; implementation correction is required, not client reinterpretation.",
       "type": "object",
       "properties": {
         "block_threshold": {
-          "description": "Minimum confidence score to block (0.0-1.0)",
+          "description": "Intended blocking threshold. Zero is accepted but ignored by the manager, and the stored value is not connected to the C policy configuration; effective threshold enforcement is not established.",
           "type": "number",
           "format": "float",
           "maximum": 1,
@@ -34036,7 +34153,7 @@ func init() {
           "example": true
         },
         "cache_ttl_sec": {
-          "description": "Cache TTL in seconds",
+          "description": "Stored cache TTL in seconds. Explicit zero is ignored, and this setting is not connected to caching in the reviewed RPC consumer.",
           "type": "integer",
           "format": "int64",
           "minimum": 0,
@@ -34053,13 +34170,13 @@ func init() {
           "example": 10
         },
         "fail_closed": {
-          "description": "Fail-closed (true=block on error) vs fail-open (false=allow on error)",
+          "description": "Intended error policy, stored but not reliably enforced by the HTTP consumer. true does not currently guarantee blocking on scanner errors; do not claim fail-closed protection from this setting.",
           "type": "boolean",
           "x-nullable": true,
           "example": false
         },
         "scan_patterns": {
-          "description": "URL patterns to scan (empty = scan all)",
+          "description": "Intended inclusion patterns, currently discarded by the manager. Supplied patterns do not restrict scanning through this setting.",
           "type": "array",
           "items": {
             "type": "string"
@@ -34075,7 +34192,7 @@ func init() {
           "example": "localhost:50052"
         },
         "skip_patterns": {
-          "description": "URL patterns to skip scanning",
+          "description": "Intended exclusions, currently discarded by the manager. Supplying a path does not guarantee exclusion from scanning.",
           "type": "array",
           "items": {
             "type": "string"
@@ -34097,6 +34214,7 @@ func init() {
       }
     },
     "LlamaFirewallDecisionStats": {
+      "description": "Unpopulated decision counters. hitl does not establish an implemented human-review workflow or enforcement action.",
       "type": "object",
       "properties": {
         "allow": {
@@ -34120,6 +34238,7 @@ func init() {
       }
     },
     "LlamaFirewallHealthResponse": {
+      "description": "Intended health response. Current behavior reads tracked state rather than probing the scanner, and no updater from the active client was located. Unhealthy results use the generic error envelope instead of this schema; latency_ms is not measured probe latency. This is not readiness attestation.",
       "type": "object",
       "properties": {
         "connected": {
@@ -34156,6 +34275,7 @@ func init() {
       }
     },
     "LlamaFirewallIndividualScannerStats": {
+      "description": "Placeholder values, not measured scan, detection, latency, or error evidence in this management path.",
       "type": "object",
       "properties": {
         "avg_latency_ms": {
@@ -34185,6 +34305,7 @@ func init() {
       }
     },
     "LlamaFirewallScannerStats": {
+      "description": "Per-scanner telemetry placeholders; a member's presence does not establish that its scanner ran.",
       "type": "object",
       "properties": {
         "agent_alignment": {
@@ -34208,6 +34329,7 @@ func init() {
       }
     },
     "LlamaFirewallScannersEntry": {
+      "description": "Stored flags; omission preserves values and false is stored. Current request scanning nevertheless selects prompt_guard and regex directly, rather than consuming these flags. A response-scanning function exists but no production caller was located. These switches do not establish implemented end-to-end scanner selection.",
       "type": "object",
       "properties": {
         "agent_alignment": {
@@ -34249,6 +34371,7 @@ func init() {
       }
     },
     "LlamaFirewallScannersStatus": {
+      "description": "Stored flag readback only; current request scanning hard-codes prompt_guard and regex. These values do not establish which scanners run.",
       "type": "object",
       "properties": {
         "agent_alignment": {
@@ -34284,6 +34407,7 @@ func init() {
       }
     },
     "LlamaFirewallStatsResponse": {
+      "description": "Management telemetry is not connected to scanner counters. Values come from an unpopulated object, including in the disabled build. Zero or omitted values do not prove no scans, threats, blocks, errors, or cache use.",
       "type": "object",
       "properties": {
         "avg_latency_ms": {
@@ -34343,6 +34467,7 @@ func init() {
       }
     },
     "LlamaFirewallStatusResponse": {
+      "description": "Stored configuration plus incomplete tracked status, not a readiness probe. connected and last_health_check are not connected to the active client; pattern arrays are discarded and timeout/pool-size readback is absent. The disabled build can return inert status successfully. Optional false or zero fields may be omitted; configured values do not prove enforcement.",
       "type": "object",
       "properties": {
         "block_threshold": {
@@ -34407,17 +34532,18 @@ func init() {
       }
     },
     "LoadbalanceEntry": {
+      "description": "Shared request/readback representation. POST can create or replace an existing rule; PATCH supports only the restricted L4 overlay described on its operation. Create callers must supply serviceArguments and usable endpoints. Implementation warning: the POST handler dereferences serviceArguments without a nil guard, although the shared schema permits its omission for PATCH. Configuration acceptance and GET readback do not establish runtime enforcement. See serviceArguments and endpoints for intake, update and readback gaps.",
       "type": "object",
       "properties": {
         "allowedSources": {
-          "description": "values of allowed source IP",
+          "description": "Source-address prefixes associated with the LB source-check path. A nonempty domain list enables source checking; GET returns the stored prefixes. This is an address filter, not projectId-based tenant authorization.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/LoadbalanceEntryAllowedSourcesItems0"
           }
         },
         "endpoints": {
-          "description": "values of End point servers",
+          "description": "Backend members; the domain accepts 1 through 32 input members. Creation sorts members by IP and updates reconcile existing slots, so input-array order is not a stable L7 backend-reference identity. Implementation warnings: POST/PATCH do not copy httpMethod, urlPath, expectedCodes, httpVersion or domainName into LB members, and GET does not return them. Their presence in this schema does not configure an HTTP monitor. Existing-member reconciliation updates weight but does not copy backup, subnetId or monitorAddress, so their create-time storage does not establish update support. Weight and port narrowing lack original-value range validation. state and counter are derived output and are ignored as configuration input.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/LoadbalanceEntryEndpointsItems0"
@@ -34441,35 +34567,36 @@ func init() {
           "x-nullable": false
         },
         "secondaryIPs": {
-          "description": "values of Secondary IPs",
+          "description": "Flat SCTP secondary service addresses. The POST handler copies this list only for SCTP; the domain permits at most three, validates addresses and rejects IPv6 secondary addresses on an IPv4 service. Existing-rule changes to the flat list are rejected. Unlike secondaryVIPs, this list reaches the SCTP dataplane and the BGP advertisement hook when enabled.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/LoadbalanceEntrySecondaryIPsItems0"
           }
         },
         "secondaryVIPs": {
-          "description": "Structured secondary VIPs (Octavia additional_vips). Additive ALONGSIDE the flat secondaryIPs (kept unchanged). Stored and round-tripped for all protocols; only SCTP consumes them at the dataplane. All fields opaque.",
+          "description": "Opaque additional-VIP metadata stored and returned for all protocols, separately from secondaryIPs. Implementation gap: this collection does not feed additional addresses to SCTP or another dataplane, nor to the BGP advertisement hook. It must not be presented as active additional VIPs. Storage is uncapped here; metadata-only update handling has the shared serviceArguments limitation. Whether these addresses should become active remains a policy/implementation decision.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/LoadbalanceEntrySecondaryVIPsItems0"
           }
         },
         "serviceArguments": {
+          "description": "Service configuration. Implementation warnings for this REST representation: POST does not copy adminStateUp, connectionLimit or snat into the domain. GET omits privateIP, connectionLimit, timeoutMemberConnect, timeoutMemberData, timeoutTcpInspect, vip_qos_policy_id, alpn_protocols, tls_ciphers, tls_versions, hsts_max_age, hsts_include_subdomains, hsts_preload, backend_ca_cert_id, backend_client_cert_id and mtls_frontend.client_crl_path. GET/edit/POST is therefore not a lossless configuration round trip. PATCH has a limited overlay and does not update arbitrary properties. Metadata-only POSTs can return an unchanged-rule error before applying metadata; managed is not assigned on the existing-rule update path. FullProxy replacement removes its pool but C retains the listener; reuse does not reliably restore listener arguments or rebuild TLS contexts, so updated TLS/HSTS/timeout settings are not established by stored state. Requested-security fail-closed behavior and LB-resource/listener policy ownership remain unresolved; these defects are not supported fallback or update semantics.",
           "type": "object",
           "properties": {
             "adminStateUp": {
-              "description": "Octavia admin_state_up lifecycle flag. Absent/true = enabled; false = paused.",
+              "description": "Service lifecycle flag. In the domain, absent/true enables new selection and false pauses new selection while retaining members. Implementation gap: POST drops this property, so false does not create a paused rule. The restricted L4 PATCH path handles explicit changes and GET reports effective state. Source behavior does not prove established-connection preservation.",
               "type": "boolean"
             },
             "alpn_protocols": {
-              "description": "Octavia alpn_protocols list (e.g. [\"h2\",\"http/1.1\"]). Mapped to the existing backend_protocol_cap enum ([h2,http/1.1]=2, [h2]=1, [http/1.1]=0). Advertised on listener + pool. Optional/additive — empty preserves the backendProtocol-driven value.",
+              "description": "HTTP ALPN capability list, typically [h2, http/1.1], [h2] or [http/1.1]. Recognized values override backend_protocol through a shared capability used by listener and backend TLS setup; list order is not preserved as preference order. Empty leaves backend_protocol in use. Implementation limitations: unknown tokens are ignored, an entirely unrecognized list falls back to backend_protocol, and the H1/both listener callback can select H1 without a common advertised protocol. This is not strict ALPN allow-list enforcement. See shared readback/update warnings.",
               "type": "array",
               "items": {
                 "type": "string"
               }
             },
             "annotations": {
-              "description": "Opaque key/value map round-tripping octaviaProtocol and any future Octavia field verbatim. Store-as-given, return-as-stored; never interpreted.",
+              "description": "Opaque metadata, not interpreted as configuration. Implementation limitation: storage retains only the first 32 keys in sorted order and truncates values to at most 256 bytes without splitting UTF-8. Oversized input is therefore not stored verbatim. See the shared metadata-update warning; these lossy bounds are not admission guarantees.",
               "type": "object",
               "additionalProperties": {
                 "type": "string"
@@ -34484,11 +34611,11 @@ func init() {
               ]
             },
             "backend_ca_cert_id": {
-              "description": "(16) certId of the backend re-encryption CA bundle (resolved by the certId registry to the managed-dir ca.crt at backend SSL_CTX build). Optional/additive — empty = system default.",
+              "description": "Reference used by the backend TLS material resolver for a managed CA bundle. It does not enable verification by itself; mtls_backend has missing verification-flag wiring. The C copy limits IDs to 63 bytes without admission rejection. Missing material can resolve to an empty path and select system CA paths if verification is otherwise enabled. Requested-security fail-closed semantics and material precedence are unresolved; this fallback is not an authenticated-backend guarantee.",
               "type": "string"
             },
             "backend_client_cert_id": {
-              "description": "(16) certId of loxilb's backend client cert+key. Optional/additive — empty = no backend client cert (today's behaviour).",
+              "description": "Reference for backend client certificate/key material. The resolver consults this ID when it did not obtain client material from the CA-ID directory. Missing material can leave no client certificate; the ID alone does not establish mTLS or server verification. IDs are copied into 63-byte payload capacity without admission rejection. Strict missing-material handling and precedence remain unresolved.",
               "type": "string"
             },
             "backend_keepalive_interval_sec": {
@@ -34500,7 +34627,7 @@ func init() {
               "x-nullable": false
             },
             "backend_protocol": {
-              "description": "Backend protocol capability for ALPN negotiation - http1 (HTTP/1.1 only, safest default), http2 (HTTP/2 only), both (supports both HTTP/1.1 and HTTP/2)",
+              "description": "FullProxy HTTP capability - http1 selects HTTP/1.1, http2 selects HTTP/2, and both prefers HTTP/2 with HTTP/1.1 fallback. The capability is shared by listener/backend ALPN configuration; recognized alpn_protocols values override it. GET reports this field only for FullProxy.",
               "type": "string",
               "default": "http1",
               "enum": [
@@ -34510,41 +34637,41 @@ func init() {
               ]
             },
             "bgp": {
-              "description": "value for BGP enable or not",
+              "description": "Requests BGP advertisement of the service and flat secondary IPs after a successful add when the BGP component is available. This flag alone does not establish a BGP session or route advertisement; structured secondaryVIPs are not advertised by this hook.",
               "type": "boolean"
             },
             "block": {
-              "description": "block-number if any of this LB entry",
+              "description": "Rule block identifier included in the LB key. VIP/port/protocol alone may therefore identify more than one logical rule; it is not sufficient to establish L7 policy ownership.",
               "type": "integer",
               "format": "uint32"
             },
             "cb_enable": {
-              "description": "Enable the per-endpoint circuit breaker for full-proxy rules. After 5 consecutive backend connect failures an endpoint is skipped by all selection paths until a 30s open-timeout expires and a half-open probe succeeds. Complements the liveness probe (probetype) - the breaker reacts within one failed request, the probe within one probe interval.",
+              "description": "Enable the per-endpoint circuit breaker for full-proxy rules. Five consecutive backend connect failures open the breaker; an open endpoint is excluded from selection. Recovery uses a 30-second open interval followed by half-open probing. This is independent of the configured health monitor (probetype); one failed request does not by itself meet the opening threshold.",
               "type": "boolean",
               "default": false,
               "x-nullable": false
             },
             "chwbl_enable_cache_salt": {
-              "description": "Require cache_salt field in requests for CHWBL/WRR_HASH (sel=8 or sel=10) - enforces strict multi-tenant isolation. If false, cache_salt is optional. Only used when sel=8 or sel=10",
+              "description": "Intended request cache_salt requirement for sel=8/10. Known implementation gap: this declaration is not wired to active C configuration, which initializes the option disabled. It does not currently enforce salt presence or tenant isolation. Retained for implementation. A client-supplied hash salt is not itself an authenticated tenant-isolation boundary; identity binding and missing-salt behavior need an explicit security contract.",
               "type": "boolean",
               "default": false
             },
             "chwbl_mean_load_factor": {
-              "description": "Maximum load factor percentage for CHWBL/WRR_HASH (sel=8 or sel=10) - max_load = avg_load × factor / 100. Range 100-300, default 125 (allows 25% overload). Only used when sel=8 or sel=10",
+              "description": "Intended bounded-load factor in percent for sel=8/10, with a nominal bound of average load multiplied by factor/100. The schema declares 125, but current C initialization uses 175 and does not consume this API override. Do not interpret a returned value as the effective bound. The option is retained; the final default and complete configuration propagation require reconciliation.",
               "type": "integer",
               "default": 125,
               "maximum": 300,
               "minimum": 100
             },
             "chwbl_prefix_hash_flags": {
-              "description": "Optional field inclusion flags for CHWBL/WRR_HASH (sel=8 or sel=10) - Bit 0=LoRA, Bit 1=image, Bit 2=audio, Bit 3=cache_salt, Bit 4=tools, Bit 5=session, Bit 6=RAG template, Bit 7=RAG docs. 0=auto-detect. Only used when sel=8 or sel=10",
+              "description": "Intended optional hash-input flags for sel=8/10: bits 0..7 name LoRA, image, audio, cache_salt, tools, session, RAG template, and RAG documents respectively; 0 declares automatic selection. Known implementation gap: API declarations are stored but are not propagated into the active C configuration, which initializes this field to 0. Per-bit behavior is not an implemented API guarantee. Retained for implementation and behavior verification.",
               "type": "integer",
               "default": 0,
               "maximum": 255,
               "minimum": 0
             },
             "chwbl_prefix_hash_level": {
-              "description": "Prefix hash level for CHWBL/WRR_HASH modes (sel=8 or sel=10) - 1=Level1 only (system prompt+model), 2=Level1+Level2 (session context), 3=Level1+Level2+Level3 (RAG). Only used when sel=8 or sel=10. Optional - defaults to 1 for backward compatibility",
+              "description": "Intended prefix level for sel=8 (CHWBL) or sel=10 (WRR_HASH), both requiring mode=4: 1=system prompt/model, 2=also session context, 3=also RAG context. Known wiring limitation: the declaration is forwarded to the C configuration for sel=8, but not for sel=10. The WRR_HASH path therefore uses its internal level-1 default. Readback of an explicit value does not prove it affects routing. The option is retained; complete propagation and parser behavior verification are required before claiming all levels are qualified.",
               "type": "integer",
               "default": 1,
               "enum": [
@@ -34554,62 +34681,64 @@ func init() {
               ]
             },
             "chwbl_replication": {
-              "description": "Virtual nodes per physical endpoint for CHWBL/WRR_HASH (sel=8 or sel=10) - higher values improve distribution but use more memory. Range 1-1024, default 100. For WRR_HASH, this is the total vnode count distributed proportionally by weight. Only used when sel=8 or sel=10",
+              "description": "Intended hash-ring replication setting for sel=8/10. CHWBL uses virtual nodes per endpoint; WRR_HASH distributes a ring budget by endpoint weight. The schema declares 100, but current C setup uses 256 and does not consume this API override. Retained for implementation; default, weight interaction, allocation limits, and live ring-rebuild behavior must be reconciled before the UI treats this as an effective tuning control.",
               "type": "integer",
               "default": 100,
               "maximum": 1024,
               "minimum": 1
             },
             "connectionLimit": {
-              "description": "Octavia per-service concurrent-connection ceiling. Per-rule max simultaneous connections across all endpoints. 0/absent = unlimited (legacy). eBPF-CT enforced (SYN refused at sel=-1 -\u003e pm.nf=0 when live count \u003e= limit). DISTINCT from the SecurityRateConfig per-SOURCE-IP concurrentLimit (P0-6); not per-EP.",
+              "description": "Requested concurrent-connection ceiling across the service's endpoints; zero represents unlimited. Distinct from a per-source-IP security limit. The domain and eBPF conntrack selector contain a per-rule limit gate, but this REST POST does not copy the value, PATCH does not overlay it, and normal GET omits it. This field cannot currently establish an enforced connection limit through these REST operations.",
               "type": "integer",
               "format": "uint32"
             },
             "egress": {
-              "description": "flag to indicate an egress rule",
+              "description": "Marks an egress rule. The ordinary LB2DP programming path returns early for this marker; do not infer ordinary ingress FullProxy behavior. The existing-rule path rejects changes to this flag.",
               "type": "boolean"
             },
             "externalIP": {
-              "description": "IP address for external access",
+              "description": "External service IP used in the LB rule key. The domain validates the address. Create callers must provide it; shared PATCH-compatible schema optionality does not make an omitted create address usable.",
               "type": "string",
               "x-nullable": true
             },
             "host": {
-              "description": "Ingress specific host URL path",
-              "type": "string"
+              "description": "Host routing key for the proxy pool, distinct from path_prefix. It participates in the LB rule key, but L7 policy attachment is currently keyed only by listener VIP/port/protocol. The server accepts at most 255 UTF-8 bytes and rejects embedded NUL or invalid UTF-8 before changing rule state. This byte limit reserves the terminator in the 256-byte data-plane field; UI validation must count encoded bytes rather than characters. Together with path_prefix and model_name, the conditional host, host|path, host||model or host|path|model key must not exceed 511 UTF-8 bytes including separators.",
+              "type": "string",
+              "x-loxilb-max-utf8-bytes": 255
             },
             "hsts_include_subdomains": {
-              "description": "append \"; includeSubDomains\" to the HSTS header. Only meaningful when hsts_max_age \u003e 0.",
+              "description": "Appends includeSubDomains to the generated HSTS value when hsts_max_age is nonzero and the HTTPS/L7 injection path is active.",
               "type": "boolean"
             },
             "hsts_max_age": {
-              "description": "Strict-Transport-Security max-age (seconds). The data plane synthesizes the header and injects it on HTTPS listeners only (L7-gated). Optional/additive — 0/absent = no HSTS injection.",
+              "description": "HSTS max-age in seconds, injected on qualifying HTTPS responses when an L7 policy is attached and this value is nonzero. Zero disables injection; it does not emit max-age=0 to clear a browser policy. See shared listener lifecycle and readback gaps.",
               "type": "integer",
               "format": "uint32"
             },
             "hsts_preload": {
-              "description": "append \"; preload\" to the HSTS header. Only meaningful when hsts_max_age \u003e 0.",
+              "description": "Appends preload to the generated HSTS value when hsts_max_age is nonzero and the HTTPS/L7 injection path is active. It does not register the domain in a browser preload list.",
               "type": "boolean"
             },
             "id": {
-              "description": "Stable opaque identifier for the LB rule (Octavia). Client-supplied verbatim or minted (UUIDv4) when absent.",
+              "description": "Opaque LB identifier, supplied by the client or minted as UUIDv4 when absent. Collisions with another rule are rejected. The update path can replace an ID when another change is applied; do not assume immutable identity or automatic L7 reference migration.",
               "type": "string"
             },
             "inactiveTimeOut": {
-              "description": "value for inactivity timeout (in seconds)",
+              "description": "Inactivity timeout in seconds. The domain rejects values above 86400; zero resolves to 240 for TCP/SCTP and 20 for other protocols. On an attached L7 policy, a nonzero timeoutMemberData overrides the relay idle deadline.",
               "type": "integer",
               "format": "int32"
             },
             "kvBlockSize": {
-              "description": "Token block size for KV hash computation. Must match the engine's block granularity - vLLM --block-size, SGLang --page-size, TRT-LLM tokens_per_block (whose engine default is 32, NOT this field's 16). A mismatch makes every hash miss.",
+              "description": "Token block size for KV hashing. Omission or 0 resolves to 16 in the current implementation; choose the value from the deployed engine tuple, not from the schema default. Must match vLLM block-size, SGLang page-size, or TRT-LLM tokens_per_block. A mismatch can cause hash misses; TRT-LLM server-info validation can instead refuse the endpoint's KV event poller while plain load balancing remains available. Implementation limitation: the schema's uint32 ceiling is not a safe operational range; downstream hashing converts the size to signed int. Use only a qualified engine block size until the numeric contract and C arithmetic are hardened. API acceptance is not geometry validation.",
               "type": "integer",
               "format": "int64",
               "default": 16,
+              "maximum": 4294967295,
               "minimum": 1,
               "x-nullable": false
             },
             "kvDpRankCount": {
-              "description": "SGLang data-parallel rank count. Rank N publishes KV events at kvZmqPort+N; all ranks union into one per-EP inventory.",
+              "description": "SGLang event-publisher rank count, not the number of LB endpoints. Omission or 0 resolves to 1; accepted positive values are 1..8. Values above 1 require kvEngineType=sglang. Rank N uses kvZmqPort+N for N=0..count-1; after resolving defaults the highest port must be at most 65535. Inventories are unioned per endpoint. Fan-out support does not by itself qualify every engine/model/DP deployment.",
               "type": "integer",
               "format": "int32",
               "default": 1,
@@ -34618,7 +34747,7 @@ func init() {
               "x-nullable": false
             },
             "kvEngineType": {
-              "description": "KV-event engine behind this rule. One framework per load-balancer Rule — different rules (ports) on one VIP IP MAY run different engines (accepted multi-framework coexistence, warned at create); immutable after create (delete+recreate to change). Drives hash-algo default: sglang =\u003e sha256_sglang, trtllm =\u003e blockhash_trtllm. trtllm supports plain LB, kvExactMode=3 (single-role Tier 1.5 over HTTP-polled KV events on each endpoint's own serving port — the gateway must be the SOLE consumer of /kv_cache_events per endpoint) and pd_disagg_mode with kvExactMode=1 (sequential P/D dialect); kvZmqPort/kvDpRankCount are meaningless for it (rejected when set — no ZMQ, no client-visible DP ranks). llamacpp supports plain LB with CHWBL/session affinity ONLY — the engine has no KV event plane and no P/D disaggregation, so kvExactMode, pd_disagg_mode, kvHashAlgo and non-default kvZmqPort/kvDpRankCount/kvBlockSize are all rejected. NOTE: LOXILB_KV_* env knobs (unified mode, eps/lambda, cap-sum, max-blocks) are process-global and shared across all KV VIPs (accepted limitation).",
+              "description": "Serving-engine family for this rule; omission resolves to vllm. One family per rule, immutable after creation (delete/recreate to change); omitted and explicit vllm are equivalent for this guard. Different ports on one VIP may use different families. The family derives kvHashAlgo but does not discover backend serve arguments. vllm and sglang use ZMQ KV events; only sglang permits rank fan-out above one. trtllm supports plain LB, exact mode 3, and P/D with exact mode 1 using HTTP-polled events on endpoint targetPort. The Gateway must be the sole consumer of each endpoint's drain-on-read /kv_cache_events resource. For trtllm, kvZmqPort accepts only omitted/0/5557 and kvDpRankCount accepts only omitted/0/1; these default declarations have no transport effect. llamacpp has no Gateway KV-event or P/D path: nonzero kvExactMode, enabled pd_disagg_mode, explicit kvHashAlgo, and non-default ZMQ/rank/block settings are rejected. Plain-LB selector constraints still apply. Process-level LOXILB_KV_* tuning is shared across KV rules, not isolated by this field. Engine-family acceptance is not model, tokenizer, template, or engine-version qualification.",
               "type": "string",
               "default": "vllm",
               "enum": [
@@ -34640,7 +34769,7 @@ func init() {
               "x-nullable": false
             },
             "kvExactMode": {
-              "description": "KV-cache exact (Tier 1.5) routing mode. Selects the ENDPOINT TOPOLOGY only — the serving framework is chosen independently by kvEngineType, and engine support for each mode is bounded by the per-engine capability matrix in the kvEngineType description (NOT every mode works with every engine). 0 = off. 1 = zmq over a P/D role-partitioned pool: requires pd_disagg_mode=true (rejected otherwise) and endpoints tagged ep_role 1/2; only ep_role=1 (prefill) endpoints are subscribed and scored, and Tier 1.5 sits between Tier 1 (trie) and Tier 2 (min-load) in the P/D ladder. 2 = nats (reserved, not implemented). 3 = zmq single-role over a role-less pool: requires mode=4 (fullproxy) and pd_disagg_mode=false (both rejected otherwise); ALL endpoints are subscribed and scored. Mode 3 does NOT reproduce the P/D ladder — there is no Tier-0 session stickiness, no Tier-1 trie and no admission gate on this path; a Tier-1.5 miss falls back to the rule's own sel selector (CHWBL/RR/persist).",
+              "description": "KV-cache exact (Tier 1.5) routing mode. Selects the ENDPOINT TOPOLOGY only — the serving framework is chosen independently by kvEngineType, and engine support for each mode is bounded by the per-engine capability matrix in the kvEngineType description (NOT every mode works with every engine). 0 = off. 1 = exact routing over a P/D role-partitioned pool: requires pd_disagg_mode=true (rejected otherwise) and endpoints tagged ep_role 1/2; only ep_role=1 (prefill) endpoints are subscribed and scored, and Tier 1.5 sits between Tier 1 (trie) and Tier 2 (min-load) in the P/D ladder. 2 = reserved and rejected; no NATS implementation is available. 3 = single-pool exact routing: requires mode=4 (fullproxy) and pd_disagg_mode=false (both rejected otherwise); ALL endpoints are subscribed and scored. Mode 3 does NOT reproduce the P/D ladder — there is no Tier-0 P/D session-affinity stage, no Tier-1 P/D trie and no P/D backpressure admission stage on this path; management admission and strict binding enforcement still apply. A Tier-1.5 miss falls back to the rule's own sel selector. vllm/sglang consume ZMQ events; trtllm consumes HTTP-polled events. All enabled exact modes require model_name and a loadable tokenizer. Profile/API-surface constraints apply independently; see kvModelProfile and kvExactApiMode.",
               "type": "integer",
               "format": "int64",
               "default": 0,
@@ -34649,7 +34778,7 @@ func init() {
               "x-nullable": false
             },
             "kvHashAlgo": {
-              "description": "Block-hash contract used to match the prompt against the engine-published KV inventory. PREFER OMITTING THIS FIELD — when absent, the contract is derived from kvEngineType (vllm =\u003e sha256_cbor, sglang =\u003e sha256_sglang, trtllm =\u003e blockhash_trtllm), which is always the coherent choice. An explicit value overrides that default and MUST match the engine, or every computed hash misses and Tier 1.5 is silently dead; incoherent pairs are therefore rejected at config time. vLLM engines: \"sha256_cbor\" (must equal --prefix-caching-hash-algo) or \"xxhash_cbor\". SGLang engines: \"sha256_sglang\" only — SGLang hashes parent||tokens raw (no CBOR, no NONE seed) and truncates to the FIRST 8 digest bytes, where vLLM CBOR-encodes and truncates to the LAST 8. TRT-LLM engines: \"blockhash_trtllm\" only — the same raw chained-SHA256 contract applied on both sides by the gateway itself (requests and the token lists carried in stored KV events); the engine's own unversioned uint64 mixing hash is never used as a routing key.",
+              "description": "Block-hash contract used to match the prompt against the engine-published KV inventory. PREFER OMITTING THIS FIELD — when absent, the contract is derived from kvEngineType (vllm =\u003e sha256_cbor, sglang =\u003e sha256_sglang, trtllm =\u003e blockhash_trtllm). These are Gateway defaults, not discovery of the backend's actual hash settings. An explicit value overrides that default and MUST match the engine, or every computed hash misses and Tier 1.5 is silently dead; incoherent pairs are therefore rejected at config time. vLLM engines: \"sha256_cbor\" (must equal --prefix-caching-hash-algo) or \"xxhash_cbor\". SGLang engines: \"sha256_sglang\" only — SGLang hashes parent||tokens raw (no CBOR, no NONE seed) and truncates to the FIRST 8 digest bytes, where vLLM CBOR-encodes and truncates to the LAST 8. TRT-LLM engines: \"blockhash_trtllm\" only — the same raw chained-SHA256 contract applied on both sides by the gateway itself (requests and the token lists carried in stored KV events); the engine's own unversioned uint64 mixing hash is never used as a routing key. For vLLM Exact routing, Gateway admission also requires a non-empty LLB_KV_NONE_HASH_SEED of at most 23 bytes; deployment must ensure it matches the engine PYTHONHASHSEED. Tokenizer, template, and block geometry must agree independently of this enum.",
               "type": "string",
               "enum": [
                 "sha256_cbor",
@@ -34660,20 +34789,21 @@ func init() {
               "x-nullable": false
             },
             "kvModelProfile": {
-              "description": "ID of the ModelPromptProfile this rule binds to. Naming a profile makes the rule STRICT: the profile must be published in the gateway's profile registry, its alias policy must admit the rule's model_name, its pinned tokenizer artifacts must load and digest-match, and a composed KV-exact binding (model-profile@generation + engine-contract@generation) is allocated at create time — admission fails closed while no engine-contract registry is available. Absent = legacy profile-less rule (no binding; documented migration behavior). Immutable after create (delete+recreate to change), with ONE sanctioned exception: the migration attach. A replace-POST that names a profile on a live profile-less rule is admitted and re-runs the full strict bring-up (admission checks run BEFORE any mutation, so a refused attach leaves the rule, binding, and data plane untouched; enforcement reports pending until the data-plane contract installs and is acknowledged). The reverse transitions — dropping the profile or changing it to another — stay refused, as does any kvExactApiMode change during the attach (raw-string equality; an undeclared apiMode must stay undeclared in the attach POST). CAVEAT operators must be shown: attaching changes the rule's EFFECTIVE surface from the legacy both-surfaces default to the profile's declared supportedApis — attaching a completions-only profile to a rule that was serving chat traffic narrows the served surface. Scalar by schema — exactly one profile per rule; arrays are rejected representations.",
+              "description": "ID of the ModelPromptProfile this rule binds to. Naming a profile makes the rule STRICT: the profile must be published in the gateway's profile registry, its alias policy must admit the rule's model_name, its pinned tokenizer artifacts must load and digest-match, and a composed KV-exact binding (model-profile@generation + engine-contract@generation) is allocated at create time — admission fails closed while no engine-contract registry is available. Absent = legacy profile-less rule (no binding; documented migration behavior). Immutable after create (delete+recreate to change), with ONE sanctioned exception: the migration attach. A replace-POST that names a profile on a live profile-less rule is admitted and re-runs the full strict bring-up (admission checks run BEFORE any mutation, so a refused attach leaves the rule, binding, and data plane untouched; enforcement reports pending until the data-plane contract installs and is acknowledged). The reverse transitions — dropping the profile or changing it to another — stay refused, as does any kvExactApiMode change during the attach (raw-string equality; an undeclared apiMode must stay undeclared in the attach POST). CAVEAT operators must be shown: attaching changes the rule's EFFECTIVE surface from the legacy both-surfaces default to the profile's declared supportedApis — attaching a completions-only profile to a rule that was serving chat traffic narrows the served surface. Scalar by schema — exactly one profile per rule; arrays are rejected representations. Requires kvExactMode=1 or 3; a profile declaration with Exact disabled is rejected. Snapshot restore has a separate recovery contract: it may preserve an unresolved profile declaration while fencing Exact routing; consult kvexactstatus rather than treating restored storage as a successful fresh admission.",
               "type": "string",
               "x-nullable": false
             },
             "kvWarmupSec": {
-              "description": "Seconds to wait after ZMQ subscriber connects before activating Tier 1.5 routing. Allows inventory to populate.",
+              "description": "Intended Tier-1.5 inventory warm-up duration in seconds. Known implementation gap: the runtime guard needs kv_warmup_start, but the production connection lifecycle does not set that start timestamp. A positive declaration currently does not provide a working warm-up barrier, and the schema default 30 must not be interpreted as an effective startup delay. The feature is retained for implementation; connect/reconnect, per-rank, and HTTP-poller start conditions require an explicit lifecycle contract. Do not rely on this option as a readiness or admission guarantee.",
               "type": "integer",
               "format": "int64",
               "default": 30,
+              "maximum": 4294967295,
               "minimum": 0,
               "x-nullable": false
             },
             "kvZmqPort": {
-              "description": "Base ZMQ PUB socket port on the endpoints publishing KV-cache events. Which endpoints are subscribed depends on kvExactMode - mode 1 subscribes ep_role=1 (prefill) endpoints only, mode 3 subscribes every endpoint. With kvDpRankCount \u003e 1, data-parallel rank N is subscribed at kvZmqPort+N.",
+              "description": "Base ZMQ event port for vllm/sglang exact routing. Omission or 0 resolves to 5557 in the current implementation. Mode 1 subscribes prefill endpoints only; mode 3 subscribes all endpoints. SGLang rank N uses base+N for N=0..kvDpRankCount-1; the effective base plus effective rank count minus one must not exceed 65535. trtllm uses HTTP on targetPort instead: only omitted/0/default 5557 declarations are accepted there, and no ZMQ connection is made.",
               "type": "integer",
               "format": "int64",
               "default": 5557,
@@ -34682,11 +34812,11 @@ func init() {
               "x-nullable": false
             },
             "managed": {
-              "description": "externally managed rule or not",
+              "description": "Externally managed rule marker stored at creation. Implementation gap - the existing-rule path does not assign a new value, so create support does not establish update support.",
               "type": "boolean"
             },
             "max_stream_duration_sec": {
-              "description": "Absolute wall-clock cap for SSE streams in seconds. 0 = use system hard cap (86400s / 24h). Set to a lower value (e.g. 300) to bound runaway streams.",
+              "description": "Duration limit for an active detected SSE response, in seconds. Omission or 0 uses the system cap of 86400 seconds; a positive value uses min(value, 86400). The periodic timeout walk terminates a stream when tracked elapsed time reaches the effective cap. QoS parking currently advances the stream start anchor to exclude parked time, so this is not a strict end-to-end wall-clock SLA. This limit is distinct from backend keepalive, connection idle timeout, and P/D session-affinity TTL.",
               "type": "integer",
               "format": "int32",
               "default": 0,
@@ -34694,7 +34824,7 @@ func init() {
               "x-nullable": false
             },
             "mode": {
-              "description": "value for NAT mode (0-DNAT,1-onearm, 2-fullnat, 3-dsr, 4-fullproxy, 5-hostonearm, 0-default)",
+              "description": "NAT/proxy mode (0=DNAT, 1=one-arm, 2=FullNAT, 3=DSR, 4=FullProxy, 5=host one-arm). Zero selects DNAT. DSR requires hash selection and endpoint ports equal to the service port. Host one-arm requires an unspecified VIP. FullProxy is the userspace proxy path; PATCH rejects it, and POST replacement has the listener-state limitations documented on serviceArguments.",
               "type": "integer",
               "format": "int32",
               "enum": [
@@ -34707,58 +34837,59 @@ func init() {
               ]
             },
             "model_name": {
-              "description": "LB endpoint pool selection key for AI model routing (e.g. \"llama-70b\"); empty = wildcard pool (backward compatible)",
-              "type": "string"
+              "description": "Model routing key for the endpoint pool. Empty selects the legacy wildcard pool only when KV Exact is disabled. kvExactMode=1 or 3 requires a non-empty name with a loadable matching tokenizer; a bound kvModelProfile must also admit this name through its alias policy. A family-name match alone does not establish tokenizer, template, or engine compatibility. The server accepts at most 127 UTF-8 bytes and rejects embedded NUL or invalid UTF-8 before changing rule state. This byte limit reserves the terminator in the 128-byte data-plane field; UI validation must count encoded bytes rather than characters. The encoded host/path_prefix/model_name relationship is separately limited to 511 UTF-8 bytes including conditional separators.",
+              "type": "string",
+              "x-loxilb-max-utf8-bytes": 127
             },
             "monitor": {
-              "description": "value for monitoring enabled or not",
+              "description": "Requests active endpoint monitoring. An explicit probetype other than none forces this flag true in the domain; some NAT modes also activate probes. False alone is not a universal disable switch.",
               "type": "boolean"
             },
             "mtls_backend": {
-              "description": "Backend mTLS configuration for server certificate verification and client certificate presentation. Only valid with security=2 (E2E HTTPS) and mode=4 (FullProxy)",
+              "description": "Requested backend verification and client-certificate settings for FullProxy re-encryption (mode=4, security=2) with mTLS support. Implementation warning: REST stores and returns this object, but the active create encoder does not wire its verification flag or legacy path/inline material into the backend TLS configuration. The separate configuration bridge has no caller in the reviewed path. These fields therefore do not establish backend authentication, even after a successful POST. Backend cert-ID fields have separate C consumers; their existence does not repair this missing verification wiring. Requested-security fail-closed behavior and material precedence remain pending policy decisions, not supported fallback guarantees.",
               "type": "object",
               "properties": {
                 "backend_ca_path": {
-                  "description": "Path to backend CA bundle (PEM format). Empty uses system CA store (/etc/ssl/certs/). Example /opt/loxilb/cert/backend_ca.crt",
+                  "description": "Requested gateway-local backend PEM CA bundle path. Stored/read back, but not wired into the active backend TLS material path; see mtls_backend. Omitting it does not by itself establish system-CA verification.",
                   "type": "string"
                 },
                 "client_cert_data": {
-                  "description": "Inline client certificate (base64-encoded PEM). Alternative to client_cert_path",
+                  "description": "Requested inline client certificate declared as base64-encoded PEM. Stored/read back but not an effective substitute for a backend client certificate through the current active path.",
                   "type": "string"
                 },
                 "client_cert_path": {
-                  "description": "Path to loxilb's client certificate for backend mTLS. Example /opt/loxilb/cert/loxilb_client.crt",
+                  "description": "Requested gateway-local client certificate path for backend mTLS, paired with client_key_path. Stored/read back but not wired into the active backend TLS material path.",
                   "type": "string"
                 },
                 "client_key_data": {
-                  "description": "Inline client key (base64-encoded PEM). Alternative to client_key_path",
+                  "description": "Requested inline client private key declared as base64-encoded PEM. Stored/read back with the object; active backend material wiring is missing. Treat the input and readback as sensitive key material.",
                   "type": "string"
                 },
                 "client_key_path": {
-                  "description": "Path to loxilb's private key for backend mTLS. Example /opt/loxilb/cert/loxilb_client.key",
+                  "description": "Requested gateway-local client private-key path paired with client_cert_path. Stored/read back but not wired into the active backend TLS material path.",
                   "type": "string"
                 },
                 "verify_server_cert": {
-                  "description": "Enable backend server certificate verification (SSL_VERIFY_PEER). False skips verification (SSL_VERIFY_NONE, default for backward compatibility)",
+                  "description": "Requests backend server-certificate verification. False leaves verification unrequested. Implementation gap - true is stored but does not reach the active backend_verify_cert flag through this intake; it must not be displayed as effective verification.",
                   "type": "boolean",
                   "default": false
                 }
               }
             },
             "mtls_frontend": {
-              "description": "Frontend mTLS configuration for client certificate verification. Only valid with security=1 (HTTPS) or security=2 (E2E HTTPS) and mode=4 (FullProxy)",
+              "description": "Frontend client-certificate verification settings for FullProxy with security 1 or 2 and an mTLS-enabled build. The active encoder carries path-based CA, CN and CRL settings. Implementation gaps: admission does not comprehensively enforce these prerequisites, inline CA data is stored but not carried by the active encoder, and TLS-context updates have the serviceArguments lifecycle limitation. A stored required mode does not establish effective verification on an ineligible service.",
               "type": "object",
               "properties": {
                 "client_ca_cert_data": {
-                  "description": "Inline CA certificate data (base64-encoded PEM). Alternative to client_ca_path for Kubernetes secrets",
+                  "description": "Inline CA material declared as base64-encoded PEM. Implementation gap - stored and returned by REST but not passed by the active frontend encoder; it is not currently a working substitute for client_ca_path through this path.",
                   "type": "string"
                 },
                 "client_ca_path": {
-                  "description": "Path to client CA certificate bundle (PEM format). Example /opt/loxilb/cert/client_ca_bundle.crt",
+                  "description": "Gateway-local PEM CA bundle path used by the active frontend verification path. The encoder carries at most 255 bytes without a corresponding admission bound. An enabled verification mode with no CA path only logs a warning during C configuration; this is not a validated trust configuration.",
                   "type": "string"
                 },
                 "client_cert_mode": {
-                  "description": "Client certificate requirement - disabled (no verification, default), optional (accept with/without cert), required (reject without valid cert)",
+                  "description": "Requested verification mode - disabled performs no client verification, optional permits omission but verifies a supplied certificate, and required requires a valid certificate on the active mTLS TLS path. See the containing object's prerequisite and wiring warnings.",
                   "type": "string",
                   "default": "disabled",
                   "enum": [
@@ -34768,26 +34899,26 @@ func init() {
                   ]
                 },
                 "client_cn_pattern": {
-                  "description": "Required CN pattern (e.g., *.corp.example.com). Supports wildcard matching. Only used if require_client_cn is true",
+                  "description": "Certificate-name pattern, for example *.corp.example.com, used when require_client_cn is true. The C path contains wildcard matching; the encoder carries at most 255 bytes. This field alone does not enable client certificate verification.",
                   "type": "string"
                 },
                 "client_crl_path": {
-                  "description": "(08) operator-supplied static CRL file (PEM) loaded into the verify X509_STORE with leaf-only X509_V_FLAG_CRL_CHECK. A revoked client LEAF cert is rejected; a valid one passes. Optional/additive — empty preserves today's behaviour (the 77-04 sibling crl.pem convention).",
+                  "description": "Optional gateway-local static PEM CRL path for leaf-certificate revocation checking on the configured frontend CA path. When empty, the implementation may use a sibling crl.pem beside the CA bundle. It is not automatic CRL retrieval or chain-wide revocation validation. The encoder carries at most 255 bytes; normal GET omits this field.",
                   "type": "string"
                 },
                 "require_client_cn": {
-                  "description": "Require specific CN pattern in client certificate for additional security",
+                  "description": "Requests certificate-name pattern checking on the active frontend mTLS path. Supply a nonempty client_cn_pattern; an empty pattern does not establish an additional identity restriction.",
                   "type": "boolean",
                   "default": false
                 }
               }
             },
             "name": {
-              "description": "service name",
+              "description": "Service name stored and returned with the rule. A colon-separated name also participates in the domain's instance-name selection; it is not the opaque rule ID.",
               "type": "string"
             },
             "oper": {
-              "description": "end-point specific op (0-create, 1-attachEP, 2-detachEP)",
+              "description": "Endpoint operation label (0=create/replace, 1=attachEP, 2=detachEP). Implementation gap: on an existing rule, operation 1 takes the same omission/removal branch as replacement, so it is not a safe append-only operation. Detaching the last endpoint can delete the rule. PATCH separately rejects clearing all endpoints.",
               "type": "integer",
               "format": "int32",
               "enum": [
@@ -34797,7 +34928,7 @@ func init() {
               ]
             },
             "path_match_mode": {
-              "description": "Path matching mode - disabled (hostname-only, backward compat), prefix (longest prefix match), exact (exact path match)",
+              "description": "Proxy pool path mode - disabled uses host-only matching, prefix uses longest-prefix selection, and exact uses an exact path. The mode participates in the logical LB key and is distinct from L7Condition comparison operators.",
               "type": "string",
               "default": "disabled",
               "enum": [
@@ -34807,11 +34938,12 @@ func init() {
               ]
             },
             "path_prefix": {
-              "description": "URL path prefix for L7 routing (e.g., /v1/users). Optional - empty means hostname-only matching (backward compatible)",
-              "type": "string"
+              "description": "Path component of the proxy pool's routing key, interpreted with path_match_mode. Empty preserves host-only routing unless model_name adds a host||model identity. This field is separate from conditions in an independently attached L7Policy. The server accepts at most 255 UTF-8 bytes and rejects embedded NUL or invalid UTF-8 before changing rule state. This byte limit reserves the terminator in the 256-byte data-plane field; UI validation must count encoded bytes rather than characters. The encoded host/path_prefix/model_name relationship is separately limited to 511 UTF-8 bytes including separators.",
+              "type": "string",
+              "x-loxilb-max-utf8-bytes": 255
             },
             "pdBootstrapPort": {
-              "description": "SGLang disaggregation bootstrap port on every prefill endpoint (the port passed to --disaggregation-bootstrap-port). 0 = SGLang's default 8998. Only meaningful with pd_disagg_mode=true and kvEngineType=sglang; rejected on any other rule shape so dead config fails loudly at create time.",
+              "description": "SGLang bootstrap port on every prefill endpoint; must match the engine disaggregation-bootstrap-port. Omitted/0 resolves to 8998 on the SGLang P/D path. A nonzero declaration requires both pd_disagg_mode=true and kvEngineType=sglang; it is rejected on other shapes. Zero is accepted on other shapes but has no effect.",
               "type": "integer",
               "format": "int32",
               "default": 0,
@@ -34820,21 +34952,22 @@ func init() {
               "x-nullable": false
             },
             "pd_balance_abs_threshold": {
-              "description": "Load imbalance threshold for P/D cache-aware routing. If max-min active connections exceeds this, bypass cache affinity.",
+              "description": "Absolute active-connection imbalance threshold for P/D cache affinity. Tier-1 trie selection requires max-min to be at most this value; Tier-1.5 uses the check only when the process-level LLB_KV_LOADGUARD is enabled. A Tier-0 session hit returns before these checks. On creation, omission or 0 resolves to 3. Current replace behavior retains the previous value for incoming 0. The approved future contract is omission=retain and explicit 0=reset to 3; this update distinction is not implemented yet.",
               "type": "integer",
               "format": "int32",
               "default": 3,
+              "maximum": 255,
               "minimum": 0,
               "x-nullable": false
             },
             "pd_cache_aware_mode": {
-              "description": "Enable P/D cache-aware routing. When true, uses session stickiness, radix trie prefix matching, and min-load balancing for endpoint selection. Requires pd_disagg_mode=true.",
+              "description": "Enable Tier-1 radix-trie prefix affinity for P/D routing. Requires pd_disagg_mode=true. Tier-0 session stickiness is active independently of this flag when a client session key is present; Tier-2 load-based selection remains the fallback.",
               "type": "boolean",
               "default": false,
               "x-nullable": false
             },
             "pd_cache_threshold": {
-              "description": "Cache match threshold (0-100) for P/D cache-aware routing. Lower values make cache routing more aggressive.",
+              "description": "Minimum prefix-match percentage for Tier-1 trie affinity when pd_cache_aware_mode=true. Lower positive values allow shorter prefix matches. On creation, omission or 0 resolves to 20, not a literal zero-percent threshold. Current replace behavior retains the previous value when the incoming value is 0. The approved future update contract separates omission (retain) from explicit 0 (reset to 20); that presence-aware change is not implemented yet. UI clients must not assume a zero-valued update resets the current deployment. This field does not set the Tier-0 session TTL.",
               "type": "integer",
               "format": "int32",
               "default": 20,
@@ -34843,13 +34976,13 @@ func init() {
               "x-nullable": false
             },
             "pd_disagg_mode": {
-              "description": "Enable vLLM prefill/decode disaggregation mode. When true, the proxy orchestrates a two-phase flow - prefill request to a prefill endpoint, then decode request to a decode endpoint using KV transfer parameters from the prefill response.",
+              "description": "Enable Gateway prefill/decode orchestration. Requires mode=4 and at least one endpoint with ep_role=1 (prefill) and one with ep_role=2 (decode). kvEngineType selects the dialect: vllm and trtllm use sequential prefill-then-decode flows; sglang uses a concurrent bootstrap-based pair. llamacpp is not supported on this path. If KV Exact is also enabled, use kvExactMode=1, not 3. Engine transport, tokenizer, and deployment prerequisites remain necessary; this flag alone does not qualify an engine/model tuple.",
               "type": "boolean",
               "default": false,
               "x-nullable": false
             },
             "pd_session_ttl_sec": {
-              "description": "Session stickiness TTL in seconds for P/D cache-aware routing. 0 = no automatic expiry. Only used when pd_cache_aware_mode is true.",
+              "description": "Tier-0 P/D session-stickiness idle TTL in seconds. Omitted or 0 uses the Gateway default of 300 seconds; a positive value overrides the default for this service. Successful session lookup or store refreshes the last-access time. A mapping expires when elapsed idle time exceeds the effective TTL; periodic cleanup may reclaim it later. Applies to P/D routing when a client session key is present, independently of pd_cache_aware_mode. This is a Gateway endpoint-affinity policy, not an engine KV-cache retention, KV-transfer timeout, or active-request timeout. Zero does not disable expiry or stickiness. Capacity eviction and endpoint-health checks still apply. No no-expiry mode is exposed.",
               "type": "integer",
               "format": "int32",
               "default": 0,
@@ -34857,43 +34990,43 @@ func init() {
               "x-nullable": false
             },
             "port": {
-              "description": "(Min) port number for the access",
+              "description": "Service port, or inclusive range start when portMax is nonzero. ICMP requires zero. Implementation gap - the handler narrows to uint16 without validating the original integer range; clients should supply 0 through 65535 and not rely on narrowing.",
               "type": "integer",
               "x-nullable": true
             },
             "portMax": {
-              "description": "Max port number(range) for the access",
+              "description": "Inclusive range end. Zero uses a single service port; a nonzero end below port is rejected after uint16 conversion. Original input range validation is missing, and a port range does not establish FullProxy/L7 attachment support.",
               "type": "integer"
             },
             "privateIP": {
-              "description": "private IP (NAT'd) address for external access",
+              "description": "Optional translated/private service IP used for dataplane programming and validated as an IP address. Normal GET does not reconstruct it. L7 attachment still uses externalIP, so private-address listener attachment is not established.",
               "type": "string"
             },
             "probeRetries": {
-              "description": "value for probe retries",
+              "description": "Probe failure threshold passed to endpoint monitoring; zero uses the probe builder's default. Canonical PATCH updates currently miss the handler's presence check. Negative input has no matching schema range restriction and is not a qualified setting.",
               "type": "integer",
               "format": "int32"
             },
             "probeTimeout": {
-              "description": "value for probe timer (in seconds)",
+              "description": "Probe scheduling interval in seconds; zero selects the probe builder's default. It is distinct from the backend connect timeout. Canonical PATCH updates currently miss the handler's presence check; see the operation warning.",
               "type": "integer",
               "format": "uint32"
             },
             "probeport": {
-              "description": "probe port if probetype is tcp/udp/sctp",
+              "description": "Service-wide probe destination port, also used with monitorAddress. Required nonzero for explicit TCP/UDP/SCTP/HTTP/HTTPS probes; zero for ping, none or an omitted probe type. There is no per-member monitor-port property here.",
               "type": "integer",
               "format": "uint16"
             },
             "probereq": {
-              "description": "probe request string",
+              "description": "Probe request payload or request-path input interpreted by the selected probe implementation. This service-level field is wired; the separate endpoint HTTP monitor properties have the wiring gaps documented on endpoints.",
               "type": "string"
             },
             "proberesp": {
-              "description": "probe response string",
+              "description": "Expected probe response content interpreted by the selected probe implementation. This is not the endpoint expectedCodes HTTP status-code property.",
               "type": "string"
             },
             "probetype": {
-              "description": "probe type for any end-point of this entry",
+              "description": "Service-wide probe type. TCP, UDP, SCTP, HTTP and HTTPS require a nonzero probeport; ping and none require zero. An omitted type requires zero probeport and allows the probe builder to derive transport and port from each member.",
               "type": "string",
               "enum": [
                 "tcp",
@@ -34906,11 +35039,11 @@ func init() {
               ]
             },
             "projectId": {
-              "description": "Octavia tenant/project identifier. Opaque store-verbatim string, filtered on GET /all. NOT a tenant-isolation boundary.",
+              "description": "Opaque project identifier stored on creation and available as an exact GET /all filter. The filter is not tenant authorization or isolation. Empty values do not clear an existing project ID; see the shared update limitations.",
               "type": "string"
             },
             "protocol": {
-              "description": "value for access protocol",
+              "description": "Transport protocol of the service. ICMP requires zero service and endpoint ports. PROXY protocol v2 requires TCP; N3 selection requires UDP.",
               "type": "string",
               "enum": [
                 "tcp",
@@ -34920,11 +35053,11 @@ func init() {
               ]
             },
             "proxyprotocolv2": {
-              "description": "flag to enable proxy protocol v2",
+              "description": "Enables PROXY protocol v2 on the supported backend path. The domain rejects non-TCP services when this flag is true; configure a backend that accepts the protocol header.",
               "type": "boolean"
             },
             "security": {
-              "description": "0 - plain HTTP, 1 - TLS terminated at the gateway (https), 2 - end-to-end HTTPS (re-encrypt to backend). Matches common.LBSec; the datapath has no mode beyond 2, so any other value must be rejected here rather than silently serving plaintext.",
+              "description": "Proxy TLS mode (0=no proxy TLS, 1=frontend TLS termination, 2=frontend TLS plus backend re-encryption). Zero does not imply that an arbitrary L4 service speaks HTTP. Values outside this enum are rejected by generated validation. These are FullProxy TLS settings; admission does not comprehensively reject ineffective cross-mode configurations. Mode 2 does not establish backend certificate verification; see mtls_backend and the requested-security warning.",
               "type": "integer",
               "format": "int32",
               "enum": [
@@ -34934,7 +35067,7 @@ func init() {
               ]
             },
             "sel": {
-              "description": "value for load balance algorithim(0-rr, 1-hash, 2-priority/wrr, 3-persist, 4-lc, 5-n2, 6-n3, 7-reserved, 8-chwbl, 9-gpuaware, 10-wrr-hash, 0-default)",
+              "description": "Endpoint selection algorithm (0=RR, 1=hash, 2=priority/WRR, 3=persistence, 4=least connections, 5=N2, 6=N3, 7=reserved, 8=CHWBL, 9=GPU-aware, 10=WRR-hash). Zero selects RR. DSR requires hash; N3 requires UDP; N2 requires FullProxy in the current domain guard. Reserved value 7 has no supported selector contract. Consult the corresponding AI field descriptions for AI selector prerequisites.",
               "type": "integer",
               "enum": [
                 0,
@@ -34951,51 +35084,52 @@ func init() {
               ]
             },
             "session_header_name": {
-              "description": "Session affinity configuration for persist mode (sel=3). Supports multiple methods:\n\n**Regular Header** (full value extraction):\n- \"X-Session-ID\" - Extracts full header value\n- \"mcp-session-id\" - Custom application header\n- \"authorization\" - Full Authorization header\n\n**Cookie-based** (specific cookie extraction):\n- \"cookie:JSESSIONID\" - Java/Tomcat session cookie\n- \"cookie:PHPSESSID\" - PHP session cookie\n- \"cookie:ASP.NET_SessionId\" - ASP.NET session\n- \"cookie:connect.sid\" - Node.js/Express session\n- \"cookie:SESSION_TOKEN\" - Custom cookie name\n\n**Query Parameter** (URL parameter extraction):\n- \"query:sessionid\" - Extract from ?sessionid=value\n- \"query:token\" - Extract from ?token=value\n- \"query:jsessionid\" - Common Java fallback\n\n**Basic Authentication** (username extraction):\n- \"basic-auth\" - Extract username from Authorization: Basic header\n\nIf empty and sel=3, falls back to IP-based persistence.\nCookie/query methods ignore other cookies/parameters, ensuring consistent routing.\n",
-              "type": "string"
+              "description": "Session-key extraction setting for proxy affinity. Use a header name such as X-Session-ID, cookie:NAME for one cookie, query:NAME for one query parameter, or basic-auth for the Basic Authorization username. RR (sel=0) and persistence (sel=3) paths contain handling; a missing usable key follows their RR or IP-based fallback respectively. This setting is not authentication. GET includes it only for those selectors. The server accepts at most 127 UTF-8 bytes and rejects embedded NUL or invalid UTF-8 before changing rule state. This byte limit reserves the terminator in the 128-byte data-plane field; UI validation must count encoded bytes rather than characters. Cross-mode interaction with L7 HTTP_COOKIE remains unresolved.",
+              "type": "string",
+              "x-loxilb-max-utf8-bytes": 127
             },
             "snat": {
-              "description": "snat rule",
+              "description": "SNAT rule indicator on domain readback. Implementation gap - this REST POST does not copy the property and PATCH does not overlay it, so setting it here does not create a SNAT rule.",
               "type": "boolean"
             },
             "sse_mode": {
-              "description": "Enable SSE (Server-Sent Events) streaming mode. When true, idle-timeout is suppressed while a streaming LLM response is active (Content-Type text/event-stream detected). Required for OpenAI-compatible streaming endpoints.",
+              "description": "Enable detection of text/event-stream responses and the associated streaming idle-timeout protection. This flag controls Gateway SSE handling, not whether the backend implements an OpenAI API. Active detected streams remain subject to max_stream_duration_sec and the system stream cap; enabling SSE does not make them unbounded.",
               "type": "boolean",
               "default": false,
               "x-nullable": false
             },
             "timeoutMemberConnect": {
-              "description": "backend connect timeout in MILLISECONDS (Octavia native unit). Optional/additive — 0/absent preserves today's 500ms default (NOT Octavia's 5000ms). Enforced only on the L7_Proxy peer (has_l7_policy==1).",
+              "description": "Backend connect timeout in milliseconds, used when an L7 policy is attached. Zero uses 500 ms. Implementation gap: the value narrows to signed C int for poll without an admission bound; values above 2147483647 can become negative and must not be treated as supported deadlines. See serviceArguments for update/readback limitations.",
               "type": "integer",
               "format": "uint32"
             },
             "timeoutMemberData": {
-              "description": "member-side relay idle timeout in MILLISECONDS. Optional/additive — 0/absent preserves the existing client-idle value.",
+              "description": "Relay idle timeout in milliseconds on a listener with an attached L7 policy. A nonzero value overrides the existing deadline and is rounded up to whole seconds; zero leaves the existing idle deadline in use. Implementation gap: uint32 addition during rounding can overflow near its maximum. Millisecond input does not imply subsecond enforcement.",
               "type": "integer",
               "format": "uint32"
             },
             "timeoutTcpInspect": {
-              "description": "header-accumulation deadline in MILLISECONDS (slowloris protection). Optional/additive — 0/absent uses a sane bounded default. NO Gateway-API equivalent — Octavia-only; a future Gateway controller MUST hard-error, never silent-drop.",
+              "description": "Header-accumulation deadline in milliseconds on the attached L7 policy path. Zero uses 10000 ms. This is not a general transport-level TCP inspection timeout or a claim of controller export support.",
               "type": "integer",
               "format": "uint32"
             },
             "tls_ciphers": {
-              "description": "OpenSSL cipher string, applied to BOTH SSL_CTX_set_cipher_list (TLS1.2) and SSL_CTX_set_ciphersuites (TLS1.3) on listener + pool. Optional/additive — empty preserves today's hardcoded ciphers.",
+              "description": "Cipher string passed to both the TLS 1.3 ciphersuite and TLS 1.2 cipher configuration calls for listener/backend contexts, regardless of the selected version range. Empty uses the built-in lists. Implementation warnings: the C copy limits the string to 255 bytes without admission rejection; either OpenSSL call can fail, and listener creation then reaches an SSL-context assertion. Invalid input is not guaranteed to produce a clean REST rejection. See shared readback/update warnings.",
               "type": "string"
             },
             "tls_versions": {
-              "description": "Octavia tls_versions list (e.g. [\"TLSv1.2\",\"TLSv1.3\"]). Collapsed to a minmax protocol-version range. Optional/additive — empty preserves today's TLS1.21.3.",
+              "description": "TLS version selection for listener/backend context setup. The encoder recognizes TLSv1.0 through TLSv1.3 and collapses recognized entries to an inclusive minimum/maximum range; empty uses TLS 1.2 through 1.3. Implementation limitations: noncontiguous selections include intermediate versions, unknown tokens are ignored, and an entirely unrecognized list uses default bounds. This is not exact allow-list enforcement; version policy and strict rejection require separate decisions and fixes.",
               "type": "array",
               "items": {
                 "type": "string"
               }
             },
             "trace_type": {
-              "description": "Tracing catalog name for deep inspection and protocol analysis (e.g., v1, anthropic, default). Enables body capture and parser invocation for observability.",
+              "description": "Tracing catalog name, for example v1, anthropic or default. The domain resolves and maps it for the FullProxy tracing path when the catalog component is available. A configured name alone does not prove capture or parser execution.",
               "type": "string"
             },
             "vip_qos_policy_id": {
-              "description": "references an EXISTING loxilb /config/policy ident (pre-created by the external Octavia driver). On create, when non-empty, loxilb ASSOCIATES that policy to the VIP rule (policer association). Optional/additive — empty/absent leaves the rule unchanged. An unresolvable ident is an error (no silent-drop).",
+              "description": "Identifier of a pre-existing /config/policy to associate after LB creation, when the policy component is available. Empty skips the association. Implementation gaps: association occurs after LB creation, so an association error can leave the LB created; the existing-rule update path does not reach this block, and GET omits the identifier. A failed request is not evidence of an atomic rollback.",
               "type": "string"
             }
           }
@@ -35005,7 +35139,7 @@ func init() {
     "LoadbalanceEntryAllowedSourcesItems0": {
       "properties": {
         "prefix": {
-          "description": "IP address for allowed source access",
+          "description": "Source IP prefix in CIDR notation, validated when the domain creates the source-prefix association.",
           "type": "string"
         }
       }
@@ -35018,68 +35152,76 @@ func init() {
       ],
       "properties": {
         "backup": {
-          "description": "Octavia standby member flag. A backup endpoint carries traffic only when all primaries are unavailable. Absent/false = primary (today's behavior).",
+          "description": "Standby member marker. The selection builder enables an available backup only when no primary is available; zero-weight or unhealthy primaries are unavailable. False means primary. This is create-time selection wiring, subject to the existing-member update gap documented on endpoints.",
           "type": "boolean",
           "default": false
         },
         "counter": {
-          "description": "traffic counters of the endpoint",
+          "description": "Derived endpoint packet and byte counters formatted as packets:bytes. Not applied from POST/PATCH input.",
           "type": "string"
         },
         "domainName": {
-          "description": "doubles as TLS SNI for HTTPS monitors AND the Host header. Optional/additive.",
+          "description": "Requested monitor TLS SNI/HTTP Host name. This LoadbalanceEntry field is not wired; setting it here does not configure either value.",
           "type": "string"
         },
         "endpointIP": {
-          "description": "IP address for external access",
+          "description": "Backend traffic IP address, validated by the domain. An IPv6 member is rejected for an IPv4 service. monitorAddress changes the probe destination only.",
           "type": "string"
         },
         "ep_role": {
           "description": "Endpoint role for P/D disaggregation - 0=normal (no role), 1=prefill, 2=decode. Only used when pd_disagg_mode is true.",
           "type": "integer",
           "format": "int32",
-          "default": 0
+          "default": 0,
+          "enum": [
+            0,
+            1,
+            2
+          ]
         },
         "expectedCodes": {
-          "description": "Octavia expected_codes — single \"200\", list \"200,202\", or range \"200-204\". Optional/additive — empty defaults to \"200\".",
+          "description": "Requested HTTP status-code selection, expressed as a single code, comma-separated list or range. This LoadbalanceEntry field is not wired into monitoring; these forms describe intent, not effective LB monitor configuration.",
           "type": "string"
         },
         "httpMethod": {
-          "description": "HTTP(S) health-monitor method (e.g. GET, HEAD). Optional/additive — empty defaults to GET. Control-plane only (probeReq/probeResp retained as the escape hatch).",
+          "description": "Requested HTTP monitor method, for example GET or HEAD. This LoadbalanceEntry field is not wired; see the endpoints implementation warning.",
           "type": "string"
         },
         "httpVersion": {
-          "description": "HM HTTP version \"1.0\" or \"1.1\". When \"1.1\" a Host header is sent (domainName, else the member address). Optional/additive.",
+          "description": "Requested HTTP monitor version, such as 1.0 or 1.1. This LoadbalanceEntry field is not wired and does not establish a monitor HTTP version or Host-header behavior.",
           "type": "string"
         },
         "monitorAddress": {
-          "description": "Octavia per-member health-probe address. When set, the health probe targets this address instead of the traffic IP; absent = probe the traffic IP.",
+          "description": "Probe destination address override, using the service-wide probe port. Empty probes the member traffic IP; backend traffic still uses endpointIP. Existing-member updates have the reconciliation gap documented on endpoints.",
           "type": "string"
         },
         "nixl_port": {
           "description": "NIXL side-channel port for KV cache transfer. 0=use targetPort (backward compatible). Only meaningful when pd_disagg_mode is true.",
           "type": "integer",
           "format": "int32",
-          "default": 0
+          "default": 0,
+          "maximum": 65535,
+          "minimum": 0,
+          "x-nullable": false
         },
         "state": {
-          "description": "state of the endpoint",
+          "description": "Derived member status on GET, such as active or inactive. Not applied from POST/PATCH input and not an independent proof of backend readiness.",
           "type": "string"
         },
         "subnetId": {
-          "description": "Octavia member subnet identifier. Opaque store-verbatim round-trip field; not interpreted (no routing effect this phase).",
+          "description": "Opaque subnet metadata stored for a new member and returned on GET; it has no routing effect. Existing-member updates have the reconciliation gap documented on endpoints.",
           "type": "string"
         },
         "targetPort": {
-          "description": "port number for access service",
+          "description": "Backend traffic port. ICMP requires zero; DSR requires the service port. The handler narrows to uint16 without checking the original range, so clients must avoid values outside 0 through 65535.",
           "type": "integer"
         },
         "urlPath": {
-          "description": "HM request path (e.g. /healthz). Optional/additive — empty falls back to probeReq or \"/\".",
+          "description": "Requested HTTP monitor path, for example /healthz. This LoadbalanceEntry field is not wired; its presence does not override the service-level probereq path.",
           "type": "string"
         },
         "weight": {
-          "description": "Weight for the load balancing",
+          "description": "Member selection weight; zero marks the member unavailable for new selection while retaining membership. Interpretation depends on the selector. Implementation gap - the handler narrows to uint8 without rejecting negative or oversized input; use values within 0 through 255 without relying on wrapping.",
           "type": "integer"
         }
       }
@@ -35095,7 +35237,7 @@ func init() {
     "LoadbalanceEntrySecondaryVIPsItems0": {
       "properties": {
         "address": {
-          "description": "secondary VIP address",
+          "description": "Opaque address metadata; does not create or advertise an active VIP through this collection.",
           "type": "string"
         },
         "portId": {
@@ -35113,21 +35255,22 @@ func init() {
       }
     },
     "LoadbalanceEntryServiceArguments": {
+      "description": "Service configuration. Implementation warnings for this REST representation: POST does not copy adminStateUp, connectionLimit or snat into the domain. GET omits privateIP, connectionLimit, timeoutMemberConnect, timeoutMemberData, timeoutTcpInspect, vip_qos_policy_id, alpn_protocols, tls_ciphers, tls_versions, hsts_max_age, hsts_include_subdomains, hsts_preload, backend_ca_cert_id, backend_client_cert_id and mtls_frontend.client_crl_path. GET/edit/POST is therefore not a lossless configuration round trip. PATCH has a limited overlay and does not update arbitrary properties. Metadata-only POSTs can return an unchanged-rule error before applying metadata; managed is not assigned on the existing-rule update path. FullProxy replacement removes its pool but C retains the listener; reuse does not reliably restore listener arguments or rebuild TLS contexts, so updated TLS/HSTS/timeout settings are not established by stored state. Requested-security fail-closed behavior and LB-resource/listener policy ownership remain unresolved; these defects are not supported fallback or update semantics.",
       "type": "object",
       "properties": {
         "adminStateUp": {
-          "description": "Octavia admin_state_up lifecycle flag. Absent/true = enabled; false = paused.",
+          "description": "Service lifecycle flag. In the domain, absent/true enables new selection and false pauses new selection while retaining members. Implementation gap: POST drops this property, so false does not create a paused rule. The restricted L4 PATCH path handles explicit changes and GET reports effective state. Source behavior does not prove established-connection preservation.",
           "type": "boolean"
         },
         "alpn_protocols": {
-          "description": "Octavia alpn_protocols list (e.g. [\"h2\",\"http/1.1\"]). Mapped to the existing backend_protocol_cap enum ([h2,http/1.1]=2, [h2]=1, [http/1.1]=0). Advertised on listener + pool. Optional/additive — empty preserves the backendProtocol-driven value.",
+          "description": "HTTP ALPN capability list, typically [h2, http/1.1], [h2] or [http/1.1]. Recognized values override backend_protocol through a shared capability used by listener and backend TLS setup; list order is not preserved as preference order. Empty leaves backend_protocol in use. Implementation limitations: unknown tokens are ignored, an entirely unrecognized list falls back to backend_protocol, and the H1/both listener callback can select H1 without a common advertised protocol. This is not strict ALPN allow-list enforcement. See shared readback/update warnings.",
           "type": "array",
           "items": {
             "type": "string"
           }
         },
         "annotations": {
-          "description": "Opaque key/value map round-tripping octaviaProtocol and any future Octavia field verbatim. Store-as-given, return-as-stored; never interpreted.",
+          "description": "Opaque metadata, not interpreted as configuration. Implementation limitation: storage retains only the first 32 keys in sorted order and truncates values to at most 256 bytes without splitting UTF-8. Oversized input is therefore not stored verbatim. See the shared metadata-update warning; these lossy bounds are not admission guarantees.",
           "type": "object",
           "additionalProperties": {
             "type": "string"
@@ -35142,11 +35285,11 @@ func init() {
           ]
         },
         "backend_ca_cert_id": {
-          "description": "(16) certId of the backend re-encryption CA bundle (resolved by the certId registry to the managed-dir ca.crt at backend SSL_CTX build). Optional/additive — empty = system default.",
+          "description": "Reference used by the backend TLS material resolver for a managed CA bundle. It does not enable verification by itself; mtls_backend has missing verification-flag wiring. The C copy limits IDs to 63 bytes without admission rejection. Missing material can resolve to an empty path and select system CA paths if verification is otherwise enabled. Requested-security fail-closed semantics and material precedence are unresolved; this fallback is not an authenticated-backend guarantee.",
           "type": "string"
         },
         "backend_client_cert_id": {
-          "description": "(16) certId of loxilb's backend client cert+key. Optional/additive — empty = no backend client cert (today's behaviour).",
+          "description": "Reference for backend client certificate/key material. The resolver consults this ID when it did not obtain client material from the CA-ID directory. Missing material can leave no client certificate; the ID alone does not establish mTLS or server verification. IDs are copied into 63-byte payload capacity without admission rejection. Strict missing-material handling and precedence remain unresolved.",
           "type": "string"
         },
         "backend_keepalive_interval_sec": {
@@ -35158,7 +35301,7 @@ func init() {
           "x-nullable": false
         },
         "backend_protocol": {
-          "description": "Backend protocol capability for ALPN negotiation - http1 (HTTP/1.1 only, safest default), http2 (HTTP/2 only), both (supports both HTTP/1.1 and HTTP/2)",
+          "description": "FullProxy HTTP capability - http1 selects HTTP/1.1, http2 selects HTTP/2, and both prefers HTTP/2 with HTTP/1.1 fallback. The capability is shared by listener/backend ALPN configuration; recognized alpn_protocols values override it. GET reports this field only for FullProxy.",
           "type": "string",
           "default": "http1",
           "enum": [
@@ -35168,41 +35311,41 @@ func init() {
           ]
         },
         "bgp": {
-          "description": "value for BGP enable or not",
+          "description": "Requests BGP advertisement of the service and flat secondary IPs after a successful add when the BGP component is available. This flag alone does not establish a BGP session or route advertisement; structured secondaryVIPs are not advertised by this hook.",
           "type": "boolean"
         },
         "block": {
-          "description": "block-number if any of this LB entry",
+          "description": "Rule block identifier included in the LB key. VIP/port/protocol alone may therefore identify more than one logical rule; it is not sufficient to establish L7 policy ownership.",
           "type": "integer",
           "format": "uint32"
         },
         "cb_enable": {
-          "description": "Enable the per-endpoint circuit breaker for full-proxy rules. After 5 consecutive backend connect failures an endpoint is skipped by all selection paths until a 30s open-timeout expires and a half-open probe succeeds. Complements the liveness probe (probetype) - the breaker reacts within one failed request, the probe within one probe interval.",
+          "description": "Enable the per-endpoint circuit breaker for full-proxy rules. Five consecutive backend connect failures open the breaker; an open endpoint is excluded from selection. Recovery uses a 30-second open interval followed by half-open probing. This is independent of the configured health monitor (probetype); one failed request does not by itself meet the opening threshold.",
           "type": "boolean",
           "default": false,
           "x-nullable": false
         },
         "chwbl_enable_cache_salt": {
-          "description": "Require cache_salt field in requests for CHWBL/WRR_HASH (sel=8 or sel=10) - enforces strict multi-tenant isolation. If false, cache_salt is optional. Only used when sel=8 or sel=10",
+          "description": "Intended request cache_salt requirement for sel=8/10. Known implementation gap: this declaration is not wired to active C configuration, which initializes the option disabled. It does not currently enforce salt presence or tenant isolation. Retained for implementation. A client-supplied hash salt is not itself an authenticated tenant-isolation boundary; identity binding and missing-salt behavior need an explicit security contract.",
           "type": "boolean",
           "default": false
         },
         "chwbl_mean_load_factor": {
-          "description": "Maximum load factor percentage for CHWBL/WRR_HASH (sel=8 or sel=10) - max_load = avg_load × factor / 100. Range 100-300, default 125 (allows 25% overload). Only used when sel=8 or sel=10",
+          "description": "Intended bounded-load factor in percent for sel=8/10, with a nominal bound of average load multiplied by factor/100. The schema declares 125, but current C initialization uses 175 and does not consume this API override. Do not interpret a returned value as the effective bound. The option is retained; the final default and complete configuration propagation require reconciliation.",
           "type": "integer",
           "default": 125,
           "maximum": 300,
           "minimum": 100
         },
         "chwbl_prefix_hash_flags": {
-          "description": "Optional field inclusion flags for CHWBL/WRR_HASH (sel=8 or sel=10) - Bit 0=LoRA, Bit 1=image, Bit 2=audio, Bit 3=cache_salt, Bit 4=tools, Bit 5=session, Bit 6=RAG template, Bit 7=RAG docs. 0=auto-detect. Only used when sel=8 or sel=10",
+          "description": "Intended optional hash-input flags for sel=8/10: bits 0..7 name LoRA, image, audio, cache_salt, tools, session, RAG template, and RAG documents respectively; 0 declares automatic selection. Known implementation gap: API declarations are stored but are not propagated into the active C configuration, which initializes this field to 0. Per-bit behavior is not an implemented API guarantee. Retained for implementation and behavior verification.",
           "type": "integer",
           "default": 0,
           "maximum": 255,
           "minimum": 0
         },
         "chwbl_prefix_hash_level": {
-          "description": "Prefix hash level for CHWBL/WRR_HASH modes (sel=8 or sel=10) - 1=Level1 only (system prompt+model), 2=Level1+Level2 (session context), 3=Level1+Level2+Level3 (RAG). Only used when sel=8 or sel=10. Optional - defaults to 1 for backward compatibility",
+          "description": "Intended prefix level for sel=8 (CHWBL) or sel=10 (WRR_HASH), both requiring mode=4: 1=system prompt/model, 2=also session context, 3=also RAG context. Known wiring limitation: the declaration is forwarded to the C configuration for sel=8, but not for sel=10. The WRR_HASH path therefore uses its internal level-1 default. Readback of an explicit value does not prove it affects routing. The option is retained; complete propagation and parser behavior verification are required before claiming all levels are qualified.",
           "type": "integer",
           "default": 1,
           "enum": [
@@ -35212,62 +35355,64 @@ func init() {
           ]
         },
         "chwbl_replication": {
-          "description": "Virtual nodes per physical endpoint for CHWBL/WRR_HASH (sel=8 or sel=10) - higher values improve distribution but use more memory. Range 1-1024, default 100. For WRR_HASH, this is the total vnode count distributed proportionally by weight. Only used when sel=8 or sel=10",
+          "description": "Intended hash-ring replication setting for sel=8/10. CHWBL uses virtual nodes per endpoint; WRR_HASH distributes a ring budget by endpoint weight. The schema declares 100, but current C setup uses 256 and does not consume this API override. Retained for implementation; default, weight interaction, allocation limits, and live ring-rebuild behavior must be reconciled before the UI treats this as an effective tuning control.",
           "type": "integer",
           "default": 100,
           "maximum": 1024,
           "minimum": 1
         },
         "connectionLimit": {
-          "description": "Octavia per-service concurrent-connection ceiling. Per-rule max simultaneous connections across all endpoints. 0/absent = unlimited (legacy). eBPF-CT enforced (SYN refused at sel=-1 -\u003e pm.nf=0 when live count \u003e= limit). DISTINCT from the SecurityRateConfig per-SOURCE-IP concurrentLimit (P0-6); not per-EP.",
+          "description": "Requested concurrent-connection ceiling across the service's endpoints; zero represents unlimited. Distinct from a per-source-IP security limit. The domain and eBPF conntrack selector contain a per-rule limit gate, but this REST POST does not copy the value, PATCH does not overlay it, and normal GET omits it. This field cannot currently establish an enforced connection limit through these REST operations.",
           "type": "integer",
           "format": "uint32"
         },
         "egress": {
-          "description": "flag to indicate an egress rule",
+          "description": "Marks an egress rule. The ordinary LB2DP programming path returns early for this marker; do not infer ordinary ingress FullProxy behavior. The existing-rule path rejects changes to this flag.",
           "type": "boolean"
         },
         "externalIP": {
-          "description": "IP address for external access",
+          "description": "External service IP used in the LB rule key. The domain validates the address. Create callers must provide it; shared PATCH-compatible schema optionality does not make an omitted create address usable.",
           "type": "string",
           "x-nullable": true
         },
         "host": {
-          "description": "Ingress specific host URL path",
-          "type": "string"
+          "description": "Host routing key for the proxy pool, distinct from path_prefix. It participates in the LB rule key, but L7 policy attachment is currently keyed only by listener VIP/port/protocol. The server accepts at most 255 UTF-8 bytes and rejects embedded NUL or invalid UTF-8 before changing rule state. This byte limit reserves the terminator in the 256-byte data-plane field; UI validation must count encoded bytes rather than characters. Together with path_prefix and model_name, the conditional host, host|path, host||model or host|path|model key must not exceed 511 UTF-8 bytes including separators.",
+          "type": "string",
+          "x-loxilb-max-utf8-bytes": 255
         },
         "hsts_include_subdomains": {
-          "description": "append \"; includeSubDomains\" to the HSTS header. Only meaningful when hsts_max_age \u003e 0.",
+          "description": "Appends includeSubDomains to the generated HSTS value when hsts_max_age is nonzero and the HTTPS/L7 injection path is active.",
           "type": "boolean"
         },
         "hsts_max_age": {
-          "description": "Strict-Transport-Security max-age (seconds). The data plane synthesizes the header and injects it on HTTPS listeners only (L7-gated). Optional/additive — 0/absent = no HSTS injection.",
+          "description": "HSTS max-age in seconds, injected on qualifying HTTPS responses when an L7 policy is attached and this value is nonzero. Zero disables injection; it does not emit max-age=0 to clear a browser policy. See shared listener lifecycle and readback gaps.",
           "type": "integer",
           "format": "uint32"
         },
         "hsts_preload": {
-          "description": "append \"; preload\" to the HSTS header. Only meaningful when hsts_max_age \u003e 0.",
+          "description": "Appends preload to the generated HSTS value when hsts_max_age is nonzero and the HTTPS/L7 injection path is active. It does not register the domain in a browser preload list.",
           "type": "boolean"
         },
         "id": {
-          "description": "Stable opaque identifier for the LB rule (Octavia). Client-supplied verbatim or minted (UUIDv4) when absent.",
+          "description": "Opaque LB identifier, supplied by the client or minted as UUIDv4 when absent. Collisions with another rule are rejected. The update path can replace an ID when another change is applied; do not assume immutable identity or automatic L7 reference migration.",
           "type": "string"
         },
         "inactiveTimeOut": {
-          "description": "value for inactivity timeout (in seconds)",
+          "description": "Inactivity timeout in seconds. The domain rejects values above 86400; zero resolves to 240 for TCP/SCTP and 20 for other protocols. On an attached L7 policy, a nonzero timeoutMemberData overrides the relay idle deadline.",
           "type": "integer",
           "format": "int32"
         },
         "kvBlockSize": {
-          "description": "Token block size for KV hash computation. Must match the engine's block granularity - vLLM --block-size, SGLang --page-size, TRT-LLM tokens_per_block (whose engine default is 32, NOT this field's 16). A mismatch makes every hash miss.",
+          "description": "Token block size for KV hashing. Omission or 0 resolves to 16 in the current implementation; choose the value from the deployed engine tuple, not from the schema default. Must match vLLM block-size, SGLang page-size, or TRT-LLM tokens_per_block. A mismatch can cause hash misses; TRT-LLM server-info validation can instead refuse the endpoint's KV event poller while plain load balancing remains available. Implementation limitation: the schema's uint32 ceiling is not a safe operational range; downstream hashing converts the size to signed int. Use only a qualified engine block size until the numeric contract and C arithmetic are hardened. API acceptance is not geometry validation.",
           "type": "integer",
           "format": "int64",
           "default": 16,
+          "maximum": 4294967295,
           "minimum": 1,
           "x-nullable": false
         },
         "kvDpRankCount": {
-          "description": "SGLang data-parallel rank count. Rank N publishes KV events at kvZmqPort+N; all ranks union into one per-EP inventory.",
+          "description": "SGLang event-publisher rank count, not the number of LB endpoints. Omission or 0 resolves to 1; accepted positive values are 1..8. Values above 1 require kvEngineType=sglang. Rank N uses kvZmqPort+N for N=0..count-1; after resolving defaults the highest port must be at most 65535. Inventories are unioned per endpoint. Fan-out support does not by itself qualify every engine/model/DP deployment.",
           "type": "integer",
           "format": "int32",
           "default": 1,
@@ -35276,7 +35421,7 @@ func init() {
           "x-nullable": false
         },
         "kvEngineType": {
-          "description": "KV-event engine behind this rule. One framework per load-balancer Rule — different rules (ports) on one VIP IP MAY run different engines (accepted multi-framework coexistence, warned at create); immutable after create (delete+recreate to change). Drives hash-algo default: sglang =\u003e sha256_sglang, trtllm =\u003e blockhash_trtllm. trtllm supports plain LB, kvExactMode=3 (single-role Tier 1.5 over HTTP-polled KV events on each endpoint's own serving port — the gateway must be the SOLE consumer of /kv_cache_events per endpoint) and pd_disagg_mode with kvExactMode=1 (sequential P/D dialect); kvZmqPort/kvDpRankCount are meaningless for it (rejected when set — no ZMQ, no client-visible DP ranks). llamacpp supports plain LB with CHWBL/session affinity ONLY — the engine has no KV event plane and no P/D disaggregation, so kvExactMode, pd_disagg_mode, kvHashAlgo and non-default kvZmqPort/kvDpRankCount/kvBlockSize are all rejected. NOTE: LOXILB_KV_* env knobs (unified mode, eps/lambda, cap-sum, max-blocks) are process-global and shared across all KV VIPs (accepted limitation).",
+          "description": "Serving-engine family for this rule; omission resolves to vllm. One family per rule, immutable after creation (delete/recreate to change); omitted and explicit vllm are equivalent for this guard. Different ports on one VIP may use different families. The family derives kvHashAlgo but does not discover backend serve arguments. vllm and sglang use ZMQ KV events; only sglang permits rank fan-out above one. trtllm supports plain LB, exact mode 3, and P/D with exact mode 1 using HTTP-polled events on endpoint targetPort. The Gateway must be the sole consumer of each endpoint's drain-on-read /kv_cache_events resource. For trtllm, kvZmqPort accepts only omitted/0/5557 and kvDpRankCount accepts only omitted/0/1; these default declarations have no transport effect. llamacpp has no Gateway KV-event or P/D path: nonzero kvExactMode, enabled pd_disagg_mode, explicit kvHashAlgo, and non-default ZMQ/rank/block settings are rejected. Plain-LB selector constraints still apply. Process-level LOXILB_KV_* tuning is shared across KV rules, not isolated by this field. Engine-family acceptance is not model, tokenizer, template, or engine-version qualification.",
           "type": "string",
           "default": "vllm",
           "enum": [
@@ -35298,7 +35443,7 @@ func init() {
           "x-nullable": false
         },
         "kvExactMode": {
-          "description": "KV-cache exact (Tier 1.5) routing mode. Selects the ENDPOINT TOPOLOGY only — the serving framework is chosen independently by kvEngineType, and engine support for each mode is bounded by the per-engine capability matrix in the kvEngineType description (NOT every mode works with every engine). 0 = off. 1 = zmq over a P/D role-partitioned pool: requires pd_disagg_mode=true (rejected otherwise) and endpoints tagged ep_role 1/2; only ep_role=1 (prefill) endpoints are subscribed and scored, and Tier 1.5 sits between Tier 1 (trie) and Tier 2 (min-load) in the P/D ladder. 2 = nats (reserved, not implemented). 3 = zmq single-role over a role-less pool: requires mode=4 (fullproxy) and pd_disagg_mode=false (both rejected otherwise); ALL endpoints are subscribed and scored. Mode 3 does NOT reproduce the P/D ladder — there is no Tier-0 session stickiness, no Tier-1 trie and no admission gate on this path; a Tier-1.5 miss falls back to the rule's own sel selector (CHWBL/RR/persist).",
+          "description": "KV-cache exact (Tier 1.5) routing mode. Selects the ENDPOINT TOPOLOGY only — the serving framework is chosen independently by kvEngineType, and engine support for each mode is bounded by the per-engine capability matrix in the kvEngineType description (NOT every mode works with every engine). 0 = off. 1 = exact routing over a P/D role-partitioned pool: requires pd_disagg_mode=true (rejected otherwise) and endpoints tagged ep_role 1/2; only ep_role=1 (prefill) endpoints are subscribed and scored, and Tier 1.5 sits between Tier 1 (trie) and Tier 2 (min-load) in the P/D ladder. 2 = reserved and rejected; no NATS implementation is available. 3 = single-pool exact routing: requires mode=4 (fullproxy) and pd_disagg_mode=false (both rejected otherwise); ALL endpoints are subscribed and scored. Mode 3 does NOT reproduce the P/D ladder — there is no Tier-0 P/D session-affinity stage, no Tier-1 P/D trie and no P/D backpressure admission stage on this path; management admission and strict binding enforcement still apply. A Tier-1.5 miss falls back to the rule's own sel selector. vllm/sglang consume ZMQ events; trtllm consumes HTTP-polled events. All enabled exact modes require model_name and a loadable tokenizer. Profile/API-surface constraints apply independently; see kvModelProfile and kvExactApiMode.",
           "type": "integer",
           "format": "int64",
           "default": 0,
@@ -35307,7 +35452,7 @@ func init() {
           "x-nullable": false
         },
         "kvHashAlgo": {
-          "description": "Block-hash contract used to match the prompt against the engine-published KV inventory. PREFER OMITTING THIS FIELD — when absent, the contract is derived from kvEngineType (vllm =\u003e sha256_cbor, sglang =\u003e sha256_sglang, trtllm =\u003e blockhash_trtllm), which is always the coherent choice. An explicit value overrides that default and MUST match the engine, or every computed hash misses and Tier 1.5 is silently dead; incoherent pairs are therefore rejected at config time. vLLM engines: \"sha256_cbor\" (must equal --prefix-caching-hash-algo) or \"xxhash_cbor\". SGLang engines: \"sha256_sglang\" only — SGLang hashes parent||tokens raw (no CBOR, no NONE seed) and truncates to the FIRST 8 digest bytes, where vLLM CBOR-encodes and truncates to the LAST 8. TRT-LLM engines: \"blockhash_trtllm\" only — the same raw chained-SHA256 contract applied on both sides by the gateway itself (requests and the token lists carried in stored KV events); the engine's own unversioned uint64 mixing hash is never used as a routing key.",
+          "description": "Block-hash contract used to match the prompt against the engine-published KV inventory. PREFER OMITTING THIS FIELD — when absent, the contract is derived from kvEngineType (vllm =\u003e sha256_cbor, sglang =\u003e sha256_sglang, trtllm =\u003e blockhash_trtllm). These are Gateway defaults, not discovery of the backend's actual hash settings. An explicit value overrides that default and MUST match the engine, or every computed hash misses and Tier 1.5 is silently dead; incoherent pairs are therefore rejected at config time. vLLM engines: \"sha256_cbor\" (must equal --prefix-caching-hash-algo) or \"xxhash_cbor\". SGLang engines: \"sha256_sglang\" only — SGLang hashes parent||tokens raw (no CBOR, no NONE seed) and truncates to the FIRST 8 digest bytes, where vLLM CBOR-encodes and truncates to the LAST 8. TRT-LLM engines: \"blockhash_trtllm\" only — the same raw chained-SHA256 contract applied on both sides by the gateway itself (requests and the token lists carried in stored KV events); the engine's own unversioned uint64 mixing hash is never used as a routing key. For vLLM Exact routing, Gateway admission also requires a non-empty LLB_KV_NONE_HASH_SEED of at most 23 bytes; deployment must ensure it matches the engine PYTHONHASHSEED. Tokenizer, template, and block geometry must agree independently of this enum.",
           "type": "string",
           "enum": [
             "sha256_cbor",
@@ -35318,20 +35463,21 @@ func init() {
           "x-nullable": false
         },
         "kvModelProfile": {
-          "description": "ID of the ModelPromptProfile this rule binds to. Naming a profile makes the rule STRICT: the profile must be published in the gateway's profile registry, its alias policy must admit the rule's model_name, its pinned tokenizer artifacts must load and digest-match, and a composed KV-exact binding (model-profile@generation + engine-contract@generation) is allocated at create time — admission fails closed while no engine-contract registry is available. Absent = legacy profile-less rule (no binding; documented migration behavior). Immutable after create (delete+recreate to change), with ONE sanctioned exception: the migration attach. A replace-POST that names a profile on a live profile-less rule is admitted and re-runs the full strict bring-up (admission checks run BEFORE any mutation, so a refused attach leaves the rule, binding, and data plane untouched; enforcement reports pending until the data-plane contract installs and is acknowledged). The reverse transitions — dropping the profile or changing it to another — stay refused, as does any kvExactApiMode change during the attach (raw-string equality; an undeclared apiMode must stay undeclared in the attach POST). CAVEAT operators must be shown: attaching changes the rule's EFFECTIVE surface from the legacy both-surfaces default to the profile's declared supportedApis — attaching a completions-only profile to a rule that was serving chat traffic narrows the served surface. Scalar by schema — exactly one profile per rule; arrays are rejected representations.",
+          "description": "ID of the ModelPromptProfile this rule binds to. Naming a profile makes the rule STRICT: the profile must be published in the gateway's profile registry, its alias policy must admit the rule's model_name, its pinned tokenizer artifacts must load and digest-match, and a composed KV-exact binding (model-profile@generation + engine-contract@generation) is allocated at create time — admission fails closed while no engine-contract registry is available. Absent = legacy profile-less rule (no binding; documented migration behavior). Immutable after create (delete+recreate to change), with ONE sanctioned exception: the migration attach. A replace-POST that names a profile on a live profile-less rule is admitted and re-runs the full strict bring-up (admission checks run BEFORE any mutation, so a refused attach leaves the rule, binding, and data plane untouched; enforcement reports pending until the data-plane contract installs and is acknowledged). The reverse transitions — dropping the profile or changing it to another — stay refused, as does any kvExactApiMode change during the attach (raw-string equality; an undeclared apiMode must stay undeclared in the attach POST). CAVEAT operators must be shown: attaching changes the rule's EFFECTIVE surface from the legacy both-surfaces default to the profile's declared supportedApis — attaching a completions-only profile to a rule that was serving chat traffic narrows the served surface. Scalar by schema — exactly one profile per rule; arrays are rejected representations. Requires kvExactMode=1 or 3; a profile declaration with Exact disabled is rejected. Snapshot restore has a separate recovery contract: it may preserve an unresolved profile declaration while fencing Exact routing; consult kvexactstatus rather than treating restored storage as a successful fresh admission.",
           "type": "string",
           "x-nullable": false
         },
         "kvWarmupSec": {
-          "description": "Seconds to wait after ZMQ subscriber connects before activating Tier 1.5 routing. Allows inventory to populate.",
+          "description": "Intended Tier-1.5 inventory warm-up duration in seconds. Known implementation gap: the runtime guard needs kv_warmup_start, but the production connection lifecycle does not set that start timestamp. A positive declaration currently does not provide a working warm-up barrier, and the schema default 30 must not be interpreted as an effective startup delay. The feature is retained for implementation; connect/reconnect, per-rank, and HTTP-poller start conditions require an explicit lifecycle contract. Do not rely on this option as a readiness or admission guarantee.",
           "type": "integer",
           "format": "int64",
           "default": 30,
+          "maximum": 4294967295,
           "minimum": 0,
           "x-nullable": false
         },
         "kvZmqPort": {
-          "description": "Base ZMQ PUB socket port on the endpoints publishing KV-cache events. Which endpoints are subscribed depends on kvExactMode - mode 1 subscribes ep_role=1 (prefill) endpoints only, mode 3 subscribes every endpoint. With kvDpRankCount \u003e 1, data-parallel rank N is subscribed at kvZmqPort+N.",
+          "description": "Base ZMQ event port for vllm/sglang exact routing. Omission or 0 resolves to 5557 in the current implementation. Mode 1 subscribes prefill endpoints only; mode 3 subscribes all endpoints. SGLang rank N uses base+N for N=0..kvDpRankCount-1; the effective base plus effective rank count minus one must not exceed 65535. trtllm uses HTTP on targetPort instead: only omitted/0/default 5557 declarations are accepted there, and no ZMQ connection is made.",
           "type": "integer",
           "format": "int64",
           "default": 5557,
@@ -35340,11 +35486,11 @@ func init() {
           "x-nullable": false
         },
         "managed": {
-          "description": "externally managed rule or not",
+          "description": "Externally managed rule marker stored at creation. Implementation gap - the existing-rule path does not assign a new value, so create support does not establish update support.",
           "type": "boolean"
         },
         "max_stream_duration_sec": {
-          "description": "Absolute wall-clock cap for SSE streams in seconds. 0 = use system hard cap (86400s / 24h). Set to a lower value (e.g. 300) to bound runaway streams.",
+          "description": "Duration limit for an active detected SSE response, in seconds. Omission or 0 uses the system cap of 86400 seconds; a positive value uses min(value, 86400). The periodic timeout walk terminates a stream when tracked elapsed time reaches the effective cap. QoS parking currently advances the stream start anchor to exclude parked time, so this is not a strict end-to-end wall-clock SLA. This limit is distinct from backend keepalive, connection idle timeout, and P/D session-affinity TTL.",
           "type": "integer",
           "format": "int32",
           "default": 0,
@@ -35352,7 +35498,7 @@ func init() {
           "x-nullable": false
         },
         "mode": {
-          "description": "value for NAT mode (0-DNAT,1-onearm, 2-fullnat, 3-dsr, 4-fullproxy, 5-hostonearm, 0-default)",
+          "description": "NAT/proxy mode (0=DNAT, 1=one-arm, 2=FullNAT, 3=DSR, 4=FullProxy, 5=host one-arm). Zero selects DNAT. DSR requires hash selection and endpoint ports equal to the service port. Host one-arm requires an unspecified VIP. FullProxy is the userspace proxy path; PATCH rejects it, and POST replacement has the listener-state limitations documented on serviceArguments.",
           "type": "integer",
           "format": "int32",
           "enum": [
@@ -35365,58 +35511,59 @@ func init() {
           ]
         },
         "model_name": {
-          "description": "LB endpoint pool selection key for AI model routing (e.g. \"llama-70b\"); empty = wildcard pool (backward compatible)",
-          "type": "string"
+          "description": "Model routing key for the endpoint pool. Empty selects the legacy wildcard pool only when KV Exact is disabled. kvExactMode=1 or 3 requires a non-empty name with a loadable matching tokenizer; a bound kvModelProfile must also admit this name through its alias policy. A family-name match alone does not establish tokenizer, template, or engine compatibility. The server accepts at most 127 UTF-8 bytes and rejects embedded NUL or invalid UTF-8 before changing rule state. This byte limit reserves the terminator in the 128-byte data-plane field; UI validation must count encoded bytes rather than characters. The encoded host/path_prefix/model_name relationship is separately limited to 511 UTF-8 bytes including conditional separators.",
+          "type": "string",
+          "x-loxilb-max-utf8-bytes": 127
         },
         "monitor": {
-          "description": "value for monitoring enabled or not",
+          "description": "Requests active endpoint monitoring. An explicit probetype other than none forces this flag true in the domain; some NAT modes also activate probes. False alone is not a universal disable switch.",
           "type": "boolean"
         },
         "mtls_backend": {
-          "description": "Backend mTLS configuration for server certificate verification and client certificate presentation. Only valid with security=2 (E2E HTTPS) and mode=4 (FullProxy)",
+          "description": "Requested backend verification and client-certificate settings for FullProxy re-encryption (mode=4, security=2) with mTLS support. Implementation warning: REST stores and returns this object, but the active create encoder does not wire its verification flag or legacy path/inline material into the backend TLS configuration. The separate configuration bridge has no caller in the reviewed path. These fields therefore do not establish backend authentication, even after a successful POST. Backend cert-ID fields have separate C consumers; their existence does not repair this missing verification wiring. Requested-security fail-closed behavior and material precedence remain pending policy decisions, not supported fallback guarantees.",
           "type": "object",
           "properties": {
             "backend_ca_path": {
-              "description": "Path to backend CA bundle (PEM format). Empty uses system CA store (/etc/ssl/certs/). Example /opt/loxilb/cert/backend_ca.crt",
+              "description": "Requested gateway-local backend PEM CA bundle path. Stored/read back, but not wired into the active backend TLS material path; see mtls_backend. Omitting it does not by itself establish system-CA verification.",
               "type": "string"
             },
             "client_cert_data": {
-              "description": "Inline client certificate (base64-encoded PEM). Alternative to client_cert_path",
+              "description": "Requested inline client certificate declared as base64-encoded PEM. Stored/read back but not an effective substitute for a backend client certificate through the current active path.",
               "type": "string"
             },
             "client_cert_path": {
-              "description": "Path to loxilb's client certificate for backend mTLS. Example /opt/loxilb/cert/loxilb_client.crt",
+              "description": "Requested gateway-local client certificate path for backend mTLS, paired with client_key_path. Stored/read back but not wired into the active backend TLS material path.",
               "type": "string"
             },
             "client_key_data": {
-              "description": "Inline client key (base64-encoded PEM). Alternative to client_key_path",
+              "description": "Requested inline client private key declared as base64-encoded PEM. Stored/read back with the object; active backend material wiring is missing. Treat the input and readback as sensitive key material.",
               "type": "string"
             },
             "client_key_path": {
-              "description": "Path to loxilb's private key for backend mTLS. Example /opt/loxilb/cert/loxilb_client.key",
+              "description": "Requested gateway-local client private-key path paired with client_cert_path. Stored/read back but not wired into the active backend TLS material path.",
               "type": "string"
             },
             "verify_server_cert": {
-              "description": "Enable backend server certificate verification (SSL_VERIFY_PEER). False skips verification (SSL_VERIFY_NONE, default for backward compatibility)",
+              "description": "Requests backend server-certificate verification. False leaves verification unrequested. Implementation gap - true is stored but does not reach the active backend_verify_cert flag through this intake; it must not be displayed as effective verification.",
               "type": "boolean",
               "default": false
             }
           }
         },
         "mtls_frontend": {
-          "description": "Frontend mTLS configuration for client certificate verification. Only valid with security=1 (HTTPS) or security=2 (E2E HTTPS) and mode=4 (FullProxy)",
+          "description": "Frontend client-certificate verification settings for FullProxy with security 1 or 2 and an mTLS-enabled build. The active encoder carries path-based CA, CN and CRL settings. Implementation gaps: admission does not comprehensively enforce these prerequisites, inline CA data is stored but not carried by the active encoder, and TLS-context updates have the serviceArguments lifecycle limitation. A stored required mode does not establish effective verification on an ineligible service.",
           "type": "object",
           "properties": {
             "client_ca_cert_data": {
-              "description": "Inline CA certificate data (base64-encoded PEM). Alternative to client_ca_path for Kubernetes secrets",
+              "description": "Inline CA material declared as base64-encoded PEM. Implementation gap - stored and returned by REST but not passed by the active frontend encoder; it is not currently a working substitute for client_ca_path through this path.",
               "type": "string"
             },
             "client_ca_path": {
-              "description": "Path to client CA certificate bundle (PEM format). Example /opt/loxilb/cert/client_ca_bundle.crt",
+              "description": "Gateway-local PEM CA bundle path used by the active frontend verification path. The encoder carries at most 255 bytes without a corresponding admission bound. An enabled verification mode with no CA path only logs a warning during C configuration; this is not a validated trust configuration.",
               "type": "string"
             },
             "client_cert_mode": {
-              "description": "Client certificate requirement - disabled (no verification, default), optional (accept with/without cert), required (reject without valid cert)",
+              "description": "Requested verification mode - disabled performs no client verification, optional permits omission but verifies a supplied certificate, and required requires a valid certificate on the active mTLS TLS path. See the containing object's prerequisite and wiring warnings.",
               "type": "string",
               "default": "disabled",
               "enum": [
@@ -35426,26 +35573,26 @@ func init() {
               ]
             },
             "client_cn_pattern": {
-              "description": "Required CN pattern (e.g., *.corp.example.com). Supports wildcard matching. Only used if require_client_cn is true",
+              "description": "Certificate-name pattern, for example *.corp.example.com, used when require_client_cn is true. The C path contains wildcard matching; the encoder carries at most 255 bytes. This field alone does not enable client certificate verification.",
               "type": "string"
             },
             "client_crl_path": {
-              "description": "(08) operator-supplied static CRL file (PEM) loaded into the verify X509_STORE with leaf-only X509_V_FLAG_CRL_CHECK. A revoked client LEAF cert is rejected; a valid one passes. Optional/additive — empty preserves today's behaviour (the 77-04 sibling crl.pem convention).",
+              "description": "Optional gateway-local static PEM CRL path for leaf-certificate revocation checking on the configured frontend CA path. When empty, the implementation may use a sibling crl.pem beside the CA bundle. It is not automatic CRL retrieval or chain-wide revocation validation. The encoder carries at most 255 bytes; normal GET omits this field.",
               "type": "string"
             },
             "require_client_cn": {
-              "description": "Require specific CN pattern in client certificate for additional security",
+              "description": "Requests certificate-name pattern checking on the active frontend mTLS path. Supply a nonempty client_cn_pattern; an empty pattern does not establish an additional identity restriction.",
               "type": "boolean",
               "default": false
             }
           }
         },
         "name": {
-          "description": "service name",
+          "description": "Service name stored and returned with the rule. A colon-separated name also participates in the domain's instance-name selection; it is not the opaque rule ID.",
           "type": "string"
         },
         "oper": {
-          "description": "end-point specific op (0-create, 1-attachEP, 2-detachEP)",
+          "description": "Endpoint operation label (0=create/replace, 1=attachEP, 2=detachEP). Implementation gap: on an existing rule, operation 1 takes the same omission/removal branch as replacement, so it is not a safe append-only operation. Detaching the last endpoint can delete the rule. PATCH separately rejects clearing all endpoints.",
           "type": "integer",
           "format": "int32",
           "enum": [
@@ -35455,7 +35602,7 @@ func init() {
           ]
         },
         "path_match_mode": {
-          "description": "Path matching mode - disabled (hostname-only, backward compat), prefix (longest prefix match), exact (exact path match)",
+          "description": "Proxy pool path mode - disabled uses host-only matching, prefix uses longest-prefix selection, and exact uses an exact path. The mode participates in the logical LB key and is distinct from L7Condition comparison operators.",
           "type": "string",
           "default": "disabled",
           "enum": [
@@ -35465,11 +35612,12 @@ func init() {
           ]
         },
         "path_prefix": {
-          "description": "URL path prefix for L7 routing (e.g., /v1/users). Optional - empty means hostname-only matching (backward compatible)",
-          "type": "string"
+          "description": "Path component of the proxy pool's routing key, interpreted with path_match_mode. Empty preserves host-only routing unless model_name adds a host||model identity. This field is separate from conditions in an independently attached L7Policy. The server accepts at most 255 UTF-8 bytes and rejects embedded NUL or invalid UTF-8 before changing rule state. This byte limit reserves the terminator in the 256-byte data-plane field; UI validation must count encoded bytes rather than characters. The encoded host/path_prefix/model_name relationship is separately limited to 511 UTF-8 bytes including separators.",
+          "type": "string",
+          "x-loxilb-max-utf8-bytes": 255
         },
         "pdBootstrapPort": {
-          "description": "SGLang disaggregation bootstrap port on every prefill endpoint (the port passed to --disaggregation-bootstrap-port). 0 = SGLang's default 8998. Only meaningful with pd_disagg_mode=true and kvEngineType=sglang; rejected on any other rule shape so dead config fails loudly at create time.",
+          "description": "SGLang bootstrap port on every prefill endpoint; must match the engine disaggregation-bootstrap-port. Omitted/0 resolves to 8998 on the SGLang P/D path. A nonzero declaration requires both pd_disagg_mode=true and kvEngineType=sglang; it is rejected on other shapes. Zero is accepted on other shapes but has no effect.",
           "type": "integer",
           "format": "int32",
           "default": 0,
@@ -35478,21 +35626,22 @@ func init() {
           "x-nullable": false
         },
         "pd_balance_abs_threshold": {
-          "description": "Load imbalance threshold for P/D cache-aware routing. If max-min active connections exceeds this, bypass cache affinity.",
+          "description": "Absolute active-connection imbalance threshold for P/D cache affinity. Tier-1 trie selection requires max-min to be at most this value; Tier-1.5 uses the check only when the process-level LLB_KV_LOADGUARD is enabled. A Tier-0 session hit returns before these checks. On creation, omission or 0 resolves to 3. Current replace behavior retains the previous value for incoming 0. The approved future contract is omission=retain and explicit 0=reset to 3; this update distinction is not implemented yet.",
           "type": "integer",
           "format": "int32",
           "default": 3,
+          "maximum": 255,
           "minimum": 0,
           "x-nullable": false
         },
         "pd_cache_aware_mode": {
-          "description": "Enable P/D cache-aware routing. When true, uses session stickiness, radix trie prefix matching, and min-load balancing for endpoint selection. Requires pd_disagg_mode=true.",
+          "description": "Enable Tier-1 radix-trie prefix affinity for P/D routing. Requires pd_disagg_mode=true. Tier-0 session stickiness is active independently of this flag when a client session key is present; Tier-2 load-based selection remains the fallback.",
           "type": "boolean",
           "default": false,
           "x-nullable": false
         },
         "pd_cache_threshold": {
-          "description": "Cache match threshold (0-100) for P/D cache-aware routing. Lower values make cache routing more aggressive.",
+          "description": "Minimum prefix-match percentage for Tier-1 trie affinity when pd_cache_aware_mode=true. Lower positive values allow shorter prefix matches. On creation, omission or 0 resolves to 20, not a literal zero-percent threshold. Current replace behavior retains the previous value when the incoming value is 0. The approved future update contract separates omission (retain) from explicit 0 (reset to 20); that presence-aware change is not implemented yet. UI clients must not assume a zero-valued update resets the current deployment. This field does not set the Tier-0 session TTL.",
           "type": "integer",
           "format": "int32",
           "default": 20,
@@ -35501,13 +35650,13 @@ func init() {
           "x-nullable": false
         },
         "pd_disagg_mode": {
-          "description": "Enable vLLM prefill/decode disaggregation mode. When true, the proxy orchestrates a two-phase flow - prefill request to a prefill endpoint, then decode request to a decode endpoint using KV transfer parameters from the prefill response.",
+          "description": "Enable Gateway prefill/decode orchestration. Requires mode=4 and at least one endpoint with ep_role=1 (prefill) and one with ep_role=2 (decode). kvEngineType selects the dialect: vllm and trtllm use sequential prefill-then-decode flows; sglang uses a concurrent bootstrap-based pair. llamacpp is not supported on this path. If KV Exact is also enabled, use kvExactMode=1, not 3. Engine transport, tokenizer, and deployment prerequisites remain necessary; this flag alone does not qualify an engine/model tuple.",
           "type": "boolean",
           "default": false,
           "x-nullable": false
         },
         "pd_session_ttl_sec": {
-          "description": "Session stickiness TTL in seconds for P/D cache-aware routing. 0 = no automatic expiry. Only used when pd_cache_aware_mode is true.",
+          "description": "Tier-0 P/D session-stickiness idle TTL in seconds. Omitted or 0 uses the Gateway default of 300 seconds; a positive value overrides the default for this service. Successful session lookup or store refreshes the last-access time. A mapping expires when elapsed idle time exceeds the effective TTL; periodic cleanup may reclaim it later. Applies to P/D routing when a client session key is present, independently of pd_cache_aware_mode. This is a Gateway endpoint-affinity policy, not an engine KV-cache retention, KV-transfer timeout, or active-request timeout. Zero does not disable expiry or stickiness. Capacity eviction and endpoint-health checks still apply. No no-expiry mode is exposed.",
           "type": "integer",
           "format": "int32",
           "default": 0,
@@ -35515,43 +35664,43 @@ func init() {
           "x-nullable": false
         },
         "port": {
-          "description": "(Min) port number for the access",
+          "description": "Service port, or inclusive range start when portMax is nonzero. ICMP requires zero. Implementation gap - the handler narrows to uint16 without validating the original integer range; clients should supply 0 through 65535 and not rely on narrowing.",
           "type": "integer",
           "x-nullable": true
         },
         "portMax": {
-          "description": "Max port number(range) for the access",
+          "description": "Inclusive range end. Zero uses a single service port; a nonzero end below port is rejected after uint16 conversion. Original input range validation is missing, and a port range does not establish FullProxy/L7 attachment support.",
           "type": "integer"
         },
         "privateIP": {
-          "description": "private IP (NAT'd) address for external access",
+          "description": "Optional translated/private service IP used for dataplane programming and validated as an IP address. Normal GET does not reconstruct it. L7 attachment still uses externalIP, so private-address listener attachment is not established.",
           "type": "string"
         },
         "probeRetries": {
-          "description": "value for probe retries",
+          "description": "Probe failure threshold passed to endpoint monitoring; zero uses the probe builder's default. Canonical PATCH updates currently miss the handler's presence check. Negative input has no matching schema range restriction and is not a qualified setting.",
           "type": "integer",
           "format": "int32"
         },
         "probeTimeout": {
-          "description": "value for probe timer (in seconds)",
+          "description": "Probe scheduling interval in seconds; zero selects the probe builder's default. It is distinct from the backend connect timeout. Canonical PATCH updates currently miss the handler's presence check; see the operation warning.",
           "type": "integer",
           "format": "uint32"
         },
         "probeport": {
-          "description": "probe port if probetype is tcp/udp/sctp",
+          "description": "Service-wide probe destination port, also used with monitorAddress. Required nonzero for explicit TCP/UDP/SCTP/HTTP/HTTPS probes; zero for ping, none or an omitted probe type. There is no per-member monitor-port property here.",
           "type": "integer",
           "format": "uint16"
         },
         "probereq": {
-          "description": "probe request string",
+          "description": "Probe request payload or request-path input interpreted by the selected probe implementation. This service-level field is wired; the separate endpoint HTTP monitor properties have the wiring gaps documented on endpoints.",
           "type": "string"
         },
         "proberesp": {
-          "description": "probe response string",
+          "description": "Expected probe response content interpreted by the selected probe implementation. This is not the endpoint expectedCodes HTTP status-code property.",
           "type": "string"
         },
         "probetype": {
-          "description": "probe type for any end-point of this entry",
+          "description": "Service-wide probe type. TCP, UDP, SCTP, HTTP and HTTPS require a nonzero probeport; ping and none require zero. An omitted type requires zero probeport and allows the probe builder to derive transport and port from each member.",
           "type": "string",
           "enum": [
             "tcp",
@@ -35564,11 +35713,11 @@ func init() {
           ]
         },
         "projectId": {
-          "description": "Octavia tenant/project identifier. Opaque store-verbatim string, filtered on GET /all. NOT a tenant-isolation boundary.",
+          "description": "Opaque project identifier stored on creation and available as an exact GET /all filter. The filter is not tenant authorization or isolation. Empty values do not clear an existing project ID; see the shared update limitations.",
           "type": "string"
         },
         "protocol": {
-          "description": "value for access protocol",
+          "description": "Transport protocol of the service. ICMP requires zero service and endpoint ports. PROXY protocol v2 requires TCP; N3 selection requires UDP.",
           "type": "string",
           "enum": [
             "tcp",
@@ -35578,11 +35727,11 @@ func init() {
           ]
         },
         "proxyprotocolv2": {
-          "description": "flag to enable proxy protocol v2",
+          "description": "Enables PROXY protocol v2 on the supported backend path. The domain rejects non-TCP services when this flag is true; configure a backend that accepts the protocol header.",
           "type": "boolean"
         },
         "security": {
-          "description": "0 - plain HTTP, 1 - TLS terminated at the gateway (https), 2 - end-to-end HTTPS (re-encrypt to backend). Matches common.LBSec; the datapath has no mode beyond 2, so any other value must be rejected here rather than silently serving plaintext.",
+          "description": "Proxy TLS mode (0=no proxy TLS, 1=frontend TLS termination, 2=frontend TLS plus backend re-encryption). Zero does not imply that an arbitrary L4 service speaks HTTP. Values outside this enum are rejected by generated validation. These are FullProxy TLS settings; admission does not comprehensively reject ineffective cross-mode configurations. Mode 2 does not establish backend certificate verification; see mtls_backend and the requested-security warning.",
           "type": "integer",
           "format": "int32",
           "enum": [
@@ -35592,7 +35741,7 @@ func init() {
           ]
         },
         "sel": {
-          "description": "value for load balance algorithim(0-rr, 1-hash, 2-priority/wrr, 3-persist, 4-lc, 5-n2, 6-n3, 7-reserved, 8-chwbl, 9-gpuaware, 10-wrr-hash, 0-default)",
+          "description": "Endpoint selection algorithm (0=RR, 1=hash, 2=priority/WRR, 3=persistence, 4=least connections, 5=N2, 6=N3, 7=reserved, 8=CHWBL, 9=GPU-aware, 10=WRR-hash). Zero selects RR. DSR requires hash; N3 requires UDP; N2 requires FullProxy in the current domain guard. Reserved value 7 has no supported selector contract. Consult the corresponding AI field descriptions for AI selector prerequisites.",
           "type": "integer",
           "enum": [
             0,
@@ -35609,100 +35758,101 @@ func init() {
           ]
         },
         "session_header_name": {
-          "description": "Session affinity configuration for persist mode (sel=3). Supports multiple methods:\n\n**Regular Header** (full value extraction):\n- \"X-Session-ID\" - Extracts full header value\n- \"mcp-session-id\" - Custom application header\n- \"authorization\" - Full Authorization header\n\n**Cookie-based** (specific cookie extraction):\n- \"cookie:JSESSIONID\" - Java/Tomcat session cookie\n- \"cookie:PHPSESSID\" - PHP session cookie\n- \"cookie:ASP.NET_SessionId\" - ASP.NET session\n- \"cookie:connect.sid\" - Node.js/Express session\n- \"cookie:SESSION_TOKEN\" - Custom cookie name\n\n**Query Parameter** (URL parameter extraction):\n- \"query:sessionid\" - Extract from ?sessionid=value\n- \"query:token\" - Extract from ?token=value\n- \"query:jsessionid\" - Common Java fallback\n\n**Basic Authentication** (username extraction):\n- \"basic-auth\" - Extract username from Authorization: Basic header\n\nIf empty and sel=3, falls back to IP-based persistence.\nCookie/query methods ignore other cookies/parameters, ensuring consistent routing.\n",
-          "type": "string"
+          "description": "Session-key extraction setting for proxy affinity. Use a header name such as X-Session-ID, cookie:NAME for one cookie, query:NAME for one query parameter, or basic-auth for the Basic Authorization username. RR (sel=0) and persistence (sel=3) paths contain handling; a missing usable key follows their RR or IP-based fallback respectively. This setting is not authentication. GET includes it only for those selectors. The server accepts at most 127 UTF-8 bytes and rejects embedded NUL or invalid UTF-8 before changing rule state. This byte limit reserves the terminator in the 128-byte data-plane field; UI validation must count encoded bytes rather than characters. Cross-mode interaction with L7 HTTP_COOKIE remains unresolved.",
+          "type": "string",
+          "x-loxilb-max-utf8-bytes": 127
         },
         "snat": {
-          "description": "snat rule",
+          "description": "SNAT rule indicator on domain readback. Implementation gap - this REST POST does not copy the property and PATCH does not overlay it, so setting it here does not create a SNAT rule.",
           "type": "boolean"
         },
         "sse_mode": {
-          "description": "Enable SSE (Server-Sent Events) streaming mode. When true, idle-timeout is suppressed while a streaming LLM response is active (Content-Type text/event-stream detected). Required for OpenAI-compatible streaming endpoints.",
+          "description": "Enable detection of text/event-stream responses and the associated streaming idle-timeout protection. This flag controls Gateway SSE handling, not whether the backend implements an OpenAI API. Active detected streams remain subject to max_stream_duration_sec and the system stream cap; enabling SSE does not make them unbounded.",
           "type": "boolean",
           "default": false,
           "x-nullable": false
         },
         "timeoutMemberConnect": {
-          "description": "backend connect timeout in MILLISECONDS (Octavia native unit). Optional/additive — 0/absent preserves today's 500ms default (NOT Octavia's 5000ms). Enforced only on the L7_Proxy peer (has_l7_policy==1).",
+          "description": "Backend connect timeout in milliseconds, used when an L7 policy is attached. Zero uses 500 ms. Implementation gap: the value narrows to signed C int for poll without an admission bound; values above 2147483647 can become negative and must not be treated as supported deadlines. See serviceArguments for update/readback limitations.",
           "type": "integer",
           "format": "uint32"
         },
         "timeoutMemberData": {
-          "description": "member-side relay idle timeout in MILLISECONDS. Optional/additive — 0/absent preserves the existing client-idle value.",
+          "description": "Relay idle timeout in milliseconds on a listener with an attached L7 policy. A nonzero value overrides the existing deadline and is rounded up to whole seconds; zero leaves the existing idle deadline in use. Implementation gap: uint32 addition during rounding can overflow near its maximum. Millisecond input does not imply subsecond enforcement.",
           "type": "integer",
           "format": "uint32"
         },
         "timeoutTcpInspect": {
-          "description": "header-accumulation deadline in MILLISECONDS (slowloris protection). Optional/additive — 0/absent uses a sane bounded default. NO Gateway-API equivalent — Octavia-only; a future Gateway controller MUST hard-error, never silent-drop.",
+          "description": "Header-accumulation deadline in milliseconds on the attached L7 policy path. Zero uses 10000 ms. This is not a general transport-level TCP inspection timeout or a claim of controller export support.",
           "type": "integer",
           "format": "uint32"
         },
         "tls_ciphers": {
-          "description": "OpenSSL cipher string, applied to BOTH SSL_CTX_set_cipher_list (TLS1.2) and SSL_CTX_set_ciphersuites (TLS1.3) on listener + pool. Optional/additive — empty preserves today's hardcoded ciphers.",
+          "description": "Cipher string passed to both the TLS 1.3 ciphersuite and TLS 1.2 cipher configuration calls for listener/backend contexts, regardless of the selected version range. Empty uses the built-in lists. Implementation warnings: the C copy limits the string to 255 bytes without admission rejection; either OpenSSL call can fail, and listener creation then reaches an SSL-context assertion. Invalid input is not guaranteed to produce a clean REST rejection. See shared readback/update warnings.",
           "type": "string"
         },
         "tls_versions": {
-          "description": "Octavia tls_versions list (e.g. [\"TLSv1.2\",\"TLSv1.3\"]). Collapsed to a minmax protocol-version range. Optional/additive — empty preserves today's TLS1.21.3.",
+          "description": "TLS version selection for listener/backend context setup. The encoder recognizes TLSv1.0 through TLSv1.3 and collapses recognized entries to an inclusive minimum/maximum range; empty uses TLS 1.2 through 1.3. Implementation limitations: noncontiguous selections include intermediate versions, unknown tokens are ignored, and an entirely unrecognized list uses default bounds. This is not exact allow-list enforcement; version policy and strict rejection require separate decisions and fixes.",
           "type": "array",
           "items": {
             "type": "string"
           }
         },
         "trace_type": {
-          "description": "Tracing catalog name for deep inspection and protocol analysis (e.g., v1, anthropic, default). Enables body capture and parser invocation for observability.",
+          "description": "Tracing catalog name, for example v1, anthropic or default. The domain resolves and maps it for the FullProxy tracing path when the catalog component is available. A configured name alone does not prove capture or parser execution.",
           "type": "string"
         },
         "vip_qos_policy_id": {
-          "description": "references an EXISTING loxilb /config/policy ident (pre-created by the external Octavia driver). On create, when non-empty, loxilb ASSOCIATES that policy to the VIP rule (policer association). Optional/additive — empty/absent leaves the rule unchanged. An unresolvable ident is an error (no silent-drop).",
+          "description": "Identifier of a pre-existing /config/policy to associate after LB creation, when the policy component is available. Empty skips the association. Implementation gaps: association occurs after LB creation, so an association error can leave the LB created; the existing-rule update path does not reach this block, and GET omits the identifier. A failed request is not evidence of an atomic rollback.",
           "type": "string"
         }
       }
     },
     "LoadbalanceEntryServiceArgumentsMtlsBackend": {
-      "description": "Backend mTLS configuration for server certificate verification and client certificate presentation. Only valid with security=2 (E2E HTTPS) and mode=4 (FullProxy)",
+      "description": "Requested backend verification and client-certificate settings for FullProxy re-encryption (mode=4, security=2) with mTLS support. Implementation warning: REST stores and returns this object, but the active create encoder does not wire its verification flag or legacy path/inline material into the backend TLS configuration. The separate configuration bridge has no caller in the reviewed path. These fields therefore do not establish backend authentication, even after a successful POST. Backend cert-ID fields have separate C consumers; their existence does not repair this missing verification wiring. Requested-security fail-closed behavior and material precedence remain pending policy decisions, not supported fallback guarantees.",
       "type": "object",
       "properties": {
         "backend_ca_path": {
-          "description": "Path to backend CA bundle (PEM format). Empty uses system CA store (/etc/ssl/certs/). Example /opt/loxilb/cert/backend_ca.crt",
+          "description": "Requested gateway-local backend PEM CA bundle path. Stored/read back, but not wired into the active backend TLS material path; see mtls_backend. Omitting it does not by itself establish system-CA verification.",
           "type": "string"
         },
         "client_cert_data": {
-          "description": "Inline client certificate (base64-encoded PEM). Alternative to client_cert_path",
+          "description": "Requested inline client certificate declared as base64-encoded PEM. Stored/read back but not an effective substitute for a backend client certificate through the current active path.",
           "type": "string"
         },
         "client_cert_path": {
-          "description": "Path to loxilb's client certificate for backend mTLS. Example /opt/loxilb/cert/loxilb_client.crt",
+          "description": "Requested gateway-local client certificate path for backend mTLS, paired with client_key_path. Stored/read back but not wired into the active backend TLS material path.",
           "type": "string"
         },
         "client_key_data": {
-          "description": "Inline client key (base64-encoded PEM). Alternative to client_key_path",
+          "description": "Requested inline client private key declared as base64-encoded PEM. Stored/read back with the object; active backend material wiring is missing. Treat the input and readback as sensitive key material.",
           "type": "string"
         },
         "client_key_path": {
-          "description": "Path to loxilb's private key for backend mTLS. Example /opt/loxilb/cert/loxilb_client.key",
+          "description": "Requested gateway-local client private-key path paired with client_cert_path. Stored/read back but not wired into the active backend TLS material path.",
           "type": "string"
         },
         "verify_server_cert": {
-          "description": "Enable backend server certificate verification (SSL_VERIFY_PEER). False skips verification (SSL_VERIFY_NONE, default for backward compatibility)",
+          "description": "Requests backend server-certificate verification. False leaves verification unrequested. Implementation gap - true is stored but does not reach the active backend_verify_cert flag through this intake; it must not be displayed as effective verification.",
           "type": "boolean",
           "default": false
         }
       }
     },
     "LoadbalanceEntryServiceArgumentsMtlsFrontend": {
-      "description": "Frontend mTLS configuration for client certificate verification. Only valid with security=1 (HTTPS) or security=2 (E2E HTTPS) and mode=4 (FullProxy)",
+      "description": "Frontend client-certificate verification settings for FullProxy with security 1 or 2 and an mTLS-enabled build. The active encoder carries path-based CA, CN and CRL settings. Implementation gaps: admission does not comprehensively enforce these prerequisites, inline CA data is stored but not carried by the active encoder, and TLS-context updates have the serviceArguments lifecycle limitation. A stored required mode does not establish effective verification on an ineligible service.",
       "type": "object",
       "properties": {
         "client_ca_cert_data": {
-          "description": "Inline CA certificate data (base64-encoded PEM). Alternative to client_ca_path for Kubernetes secrets",
+          "description": "Inline CA material declared as base64-encoded PEM. Implementation gap - stored and returned by REST but not passed by the active frontend encoder; it is not currently a working substitute for client_ca_path through this path.",
           "type": "string"
         },
         "client_ca_path": {
-          "description": "Path to client CA certificate bundle (PEM format). Example /opt/loxilb/cert/client_ca_bundle.crt",
+          "description": "Gateway-local PEM CA bundle path used by the active frontend verification path. The encoder carries at most 255 bytes without a corresponding admission bound. An enabled verification mode with no CA path only logs a warning during C configuration; this is not a validated trust configuration.",
           "type": "string"
         },
         "client_cert_mode": {
-          "description": "Client certificate requirement - disabled (no verification, default), optional (accept with/without cert), required (reject without valid cert)",
+          "description": "Requested verification mode - disabled performs no client verification, optional permits omission but verifies a supplied certificate, and required requires a valid certificate on the active mTLS TLS path. See the containing object's prerequisite and wiring warnings.",
           "type": "string",
           "default": "disabled",
           "enum": [
@@ -35712,15 +35862,15 @@ func init() {
           ]
         },
         "client_cn_pattern": {
-          "description": "Required CN pattern (e.g., *.corp.example.com). Supports wildcard matching. Only used if require_client_cn is true",
+          "description": "Certificate-name pattern, for example *.corp.example.com, used when require_client_cn is true. The C path contains wildcard matching; the encoder carries at most 255 bytes. This field alone does not enable client certificate verification.",
           "type": "string"
         },
         "client_crl_path": {
-          "description": "(08) operator-supplied static CRL file (PEM) loaded into the verify X509_STORE with leaf-only X509_V_FLAG_CRL_CHECK. A revoked client LEAF cert is rejected; a valid one passes. Optional/additive — empty preserves today's behaviour (the 77-04 sibling crl.pem convention).",
+          "description": "Optional gateway-local static PEM CRL path for leaf-certificate revocation checking on the configured frontend CA path. When empty, the implementation may use a sibling crl.pem beside the CA bundle. It is not automatic CRL retrieval or chain-wide revocation validation. The encoder carries at most 255 bytes; normal GET omits this field.",
           "type": "string"
         },
         "require_client_cn": {
-          "description": "Require specific CN pattern in client certificate for additional security",
+          "description": "Requests certificate-name pattern checking on the active frontend mTLS path. Supply a nonempty client_cn_pattern; an empty pattern does not establish an additional identity restriction.",
           "type": "boolean",
           "default": false
         }
@@ -35817,6 +35967,7 @@ func init() {
       }
     },
     "LoginResponse": {
+      "description": "Successful local-account login returns an opaque random management session token, not a JWT containing client-readable identity or role claims. Local account routes require UserServiceEnable. Known logout limitation: its handler forwards the full Authorization header to a raw-token hash lookup, so a successful Bearer logout response is not verified session revocation.",
       "type": "object",
       "properties": {
         "token": {
@@ -35900,7 +36051,7 @@ func init() {
       ],
       "properties": {
         "cancellable": {
-          "description": "Leaving maintenance is possible right now (always true - PUT with enabled=false is never refused by the maintenance gate).",
+          "description": "The maintenance gate itself permits leaving and reports true. Independent boot or restore freezes, authentication and authorization can still reject the request; this is not an unconditional ability to leave right now.",
           "type": "boolean"
         },
         "drain_deadline_exceeded": {
@@ -36006,12 +36157,13 @@ func init() {
       ],
       "properties": {
         "prometheus": {
-          "description": "value for prometheus enable or not",
+          "description": "Runtime Prometheus enablement flag, not a sample-freshness or per-series availability verdict. This setting is not recovered through snapshots.",
           "type": "boolean"
         }
       }
     },
     "MirrorEntry": {
+      "description": "Mirror configuration, not proof of active mirroring. Port-attached SPAN has an implementation path; rule attachment and ERSPAN are not implemented end-to-end. The attachment enum is not translated correctly for rule attachment, nonzero RSPAN VLAN is rejected, and tunnel IDs narrow without bounds checks. Information changes can delete and recreate an object; target-only changes conflict.",
       "type": "object",
       "required": [
         "mirrorIdent",
@@ -36030,19 +36182,19 @@ func init() {
               "type": "string"
             },
             "remoteIP": {
-              "description": "For ERSPAN we may need to send tunnelled mirror traffic",
+              "description": "Requested literal ERSPAN remote IP. ERSPAN datapath programming is not implemented and IP validation is incomplete.",
               "type": "string"
             },
             "sourceIP": {
-              "description": "For ERSPAN we may need to send tunnelled mirror traffic",
+              "description": "Requested literal ERSPAN source IP. ERSPAN datapath programming is not implemented and IP validation is incomplete.",
               "type": "string"
             },
             "tunnelID": {
-              "description": "mirror tunnel-id. For ERSPAN we may need to send tunnelled mirror traffic",
+              "description": "Requested ERSPAN tunnel identifier, narrowed to uint32 without bounds checking. ERSPAN is not implemented end-to-end.",
               "type": "integer"
             },
             "type": {
-              "description": "One of MirrTypeSpan, MirrTypeRspan or MirrTypeErspan(0-MirrTypeSpan, 1-MirrTypeRspan, 2-MirrTypeErspan)",
+              "description": "Requested mirror type, 0 SPAN, 1 RSPAN, 2 ERSPAN. ERSPAN is not implemented end-to-end; RSPAN has inconsistent VLAN validation.",
               "type": "integer",
               "enum": [
                 0,
@@ -36051,7 +36203,7 @@ func init() {
               ]
             },
             "vlan": {
-              "description": "For RSPAN we may need to send tagged mirror traffic",
+              "description": "Requested mirror VLAN. Nonzero VLAN is currently rejected for RSPAN; do not interpret this defect as a supported tagging contract.",
               "type": "integer"
             }
           }
@@ -36064,7 +36216,7 @@ func init() {
           ],
           "properties": {
             "attachment": {
-              "description": "Target Attachment(0-RuleName, 1-PortName)",
+              "description": "Requested selector, 0 rule or 1 port. The handler does not translate rule 0 to the internal constant; only port attachment has an implemented consumer.",
               "type": "integer",
               "enum": [
                 0,
@@ -36087,19 +36239,19 @@ func init() {
           "type": "string"
         },
         "remoteIP": {
-          "description": "For ERSPAN we may need to send tunnelled mirror traffic",
+          "description": "Requested literal ERSPAN remote IP. ERSPAN datapath programming is not implemented and IP validation is incomplete.",
           "type": "string"
         },
         "sourceIP": {
-          "description": "For ERSPAN we may need to send tunnelled mirror traffic",
+          "description": "Requested literal ERSPAN source IP. ERSPAN datapath programming is not implemented and IP validation is incomplete.",
           "type": "string"
         },
         "tunnelID": {
-          "description": "mirror tunnel-id. For ERSPAN we may need to send tunnelled mirror traffic",
+          "description": "Requested ERSPAN tunnel identifier, narrowed to uint32 without bounds checking. ERSPAN is not implemented end-to-end.",
           "type": "integer"
         },
         "type": {
-          "description": "One of MirrTypeSpan, MirrTypeRspan or MirrTypeErspan(0-MirrTypeSpan, 1-MirrTypeRspan, 2-MirrTypeErspan)",
+          "description": "Requested mirror type, 0 SPAN, 1 RSPAN, 2 ERSPAN. ERSPAN is not implemented end-to-end; RSPAN has inconsistent VLAN validation.",
           "type": "integer",
           "enum": [
             0,
@@ -36108,7 +36260,7 @@ func init() {
           ]
         },
         "vlan": {
-          "description": "For RSPAN we may need to send tagged mirror traffic",
+          "description": "Requested mirror VLAN. Nonzero VLAN is currently rejected for RSPAN; do not interpret this defect as a supported tagging contract.",
           "type": "integer"
         }
       }
@@ -36121,7 +36273,7 @@ func init() {
       ],
       "properties": {
         "attachment": {
-          "description": "Target Attachment(0-RuleName, 1-PortName)",
+          "description": "Requested selector, 0 rule or 1 port. The handler does not translate rule 0 to the internal constant; only port attachment has an implemented consumer.",
           "type": "integer",
           "enum": [
             0,
@@ -36135,6 +36287,7 @@ func init() {
       }
     },
     "MirrorGetEntry": {
+      "description": "Stored mirror configuration and mirror-object sync status. This does not report attachment synchronization independently and can describe unsupported or incompletely programmed configurations; do not infer active mirroring from this object.",
       "type": "object",
       "required": [
         "sync"
@@ -36174,7 +36327,7 @@ func init() {
           }
         },
         "sync": {
-          "description": "Sync - sync state",
+          "description": "Mirror-object synchronization status only; attachment synchronization and actual traffic mirroring are not established by this field.",
           "type": "integer"
         },
         "targetObject": {
@@ -36235,6 +36388,7 @@ func init() {
       }
     },
     "NeighborEntry": {
+      "description": "Permanent neighbor input consisting of a literal IP, interface name, and parsed MAC address. The handler is not IPv4-only and local IP validation is incomplete. Interface-scoped deletion is not safely enforced when interface lookup fails.",
       "type": "object",
       "required": [
         "dev",
@@ -36330,27 +36484,28 @@ func init() {
       }
     },
     "OPAWatcherConfig": {
+      "description": "Full replacement of the singleton OPA watcher configuration, not a patch. Acceptance starts background polling; it does not prove a successful fetch or firewall application. The current internal applier uses localhost HTTP without a management credential, so authenticated management deployments require implementation reconciliation before enforcement can be claimed.",
       "type": "object",
       "required": [
         "opa_url"
       ],
       "properties": {
         "fail_open": {
-          "description": "Allow traffic when OPA is unreachable",
+          "description": "Intended OPA failure-policy declaration. The current watcher stores and reports this flag but does not implement distinct fail-open behavior; fetch failures retain the previously applied state for either value. False does not implement a deny-all fallback. Policy semantics and enforcement require implementation reconciliation.",
           "type": "boolean",
           "default": false
         },
         "opa_url": {
-          "description": "OPA server URL (e.g. http://opa:8181)",
+          "description": "OPA server URL with a hostname. Current admission checks a limited IPv4 blocklist only; it does not provide comprehensive IPv6, redirect, or DNS-rebinding protection. This is an unresolved outbound security limitation, not a qualified SSRF prevention guarantee.",
           "type": "string"
         },
         "policy_path": {
-          "description": "OPA policy path to query",
+          "description": "OPA data path; omitted or empty uses loxilb/l4. Leading slashes are removed before appending the path after /v1/data/.",
           "type": "string",
           "default": "loxilb/l4"
         },
         "poll_interval_sec": {
-          "description": "Polling interval in seconds",
+          "description": "Polling interval in seconds; omitted or nonpositive uses 30. The initial poll starts after the current 10-second initial delay. Positive values need an overflow-safe product bound before conversion to time.Duration; that upper-bound validation is not implemented.",
           "type": "integer",
           "default": 30
         }
@@ -36360,11 +36515,11 @@ func init() {
       "type": "object",
       "properties": {
         "circuit_breaker_state": {
-          "description": "Circuit breaker state (0=closed, 1=half-open, 2=open)",
+          "description": "Policy-fetch circuit breaker state (0=closed, 1=open, 2=half-open). This is distinct from the fullproxy endpoint circuit breaker.",
           "type": "integer"
         },
         "fail_open": {
-          "description": "Fail-open setting",
+          "description": "Stored fail_open declaration; the current failure path does not consume it and retains existing applied rules for either value.",
           "type": "boolean"
         },
         "last_error": {
@@ -36372,7 +36527,7 @@ func init() {
           "type": "string"
         },
         "last_sync_at": {
-          "description": "Timestamp of last successful sync",
+          "description": "Timestamp of the latest cycle reaching the end of apply, including partial apply failures. Consult last_error; this timestamp does not prove complete or durable synchronization.",
           "type": "string",
           "format": "date-time"
         },
@@ -36389,16 +36544,17 @@ func init() {
           "type": "integer"
         },
         "rules_count": {
-          "description": "Number of active firewall rules",
+          "description": "Number of rules in the watcher cache, including loaded cached state. This is not a live firewall or dataplane readback.",
           "type": "integer"
         },
         "status": {
-          "description": "Current watcher status (running, stopped, not_configured)",
+          "description": "Watcher lifecycle state (running, stopped, not_configured). Running means polling was started, not that policy synchronization succeeded.",
           "type": "string"
         }
       }
     },
     "OauthErrorResponse": {
+      "description": "OAuth-specific message envelope. Invalid provider or callback state returns 400 on initiation/callback; exchange and refresh failures generally return 500. Refresh credential rejection is not consistently represented as 401.",
       "type": "object",
       "properties": {
         "message": {
@@ -36407,6 +36563,7 @@ func init() {
       }
     },
     "OauthLoginResponse": {
+      "description": "Provider token response, not a local JWT. Current OAuth admission assigns administrator authority unconditionally; identity admission and role mapping require explicit policy and implementation. GitHub configuration currently uses the Google OAuth endpoint, and provider user-info parsing is incomplete; this schema is not evidence of qualified provider support.",
       "type": "object",
       "properties": {
         "expiresin": {
@@ -36418,7 +36575,7 @@ func init() {
           "type": "string"
         },
         "refreshtoken": {
-          "description": "The refresh token used to obtain new access tokens once the current one expires.",
+          "description": "Provider refresh token. The current refresh endpoint also requires the original access-token entry to remain cached, so refresh after access-token expiry is not supported by that path.",
           "type": "string"
         },
         "token": {
@@ -36428,6 +36585,7 @@ func init() {
       }
     },
     "OauthMessageResponse": {
+      "description": "Legacy message schema. OAuth authorization initiation currently returns HTTP 307 with Location, not a JSON success message or HTTP 302. OAuth routes require Oauth2Enable. State is single-use, process-local, and expires after ten minutes; browser/session and provider binding are not established.",
       "type": "object",
       "properties": {
         "message": {
@@ -36436,6 +36594,7 @@ func init() {
       }
     },
     "OauthTokenResponse": {
+      "description": "Refresh result for a still-cached access-token/refresh-token pair. A rotated refresh token is not returned by this schema, and replacement of stored credentials is not atomic. Do not describe this as a complete post-expiry refresh or refresh-token-rotation workflow.",
       "type": "object",
       "properties": {
         "expiresin": {
@@ -36482,6 +36641,7 @@ func init() {
       }
     },
     "PIICircuitBreaker": {
+      "description": "Stored C-scanner settings. Omission preserves values; explicit zero is accepted but ignored, not a disable command. Defaults are 5 failures, 60 seconds, and 3 successes. Values are narrowed to uint32 without upper bounds.",
       "type": "object",
       "properties": {
         "success_threshold": {
@@ -36508,20 +36668,21 @@ func init() {
       }
     },
     "PIIConfigEntry": {
+      "description": "Stored settings, not scanner-readiness evidence. Requires piidetection and an initialized manager. Omission generally preserves values; empty strings do not clear them. Known gaps are documented on the affected fields below. Numeric int64 settings are narrowed to uint32 without upper bounds, and min_body_size \u003c= max_body_size is not validated. Configuration success does not establish encryption, complete-body inspection, or protection.",
       "type": "object",
       "properties": {
         "analyzer_url": {
-          "description": "Presidio analyzer gRPC endpoint",
+          "description": "Stored gRPC endpoint. The reviewed client uses insecure transport credentials; storage does not establish connectivity, TLS protection, or successful live reconfiguration.",
           "type": "string",
           "example": "localhost:50051"
         },
         "anonymizer_url": {
-          "description": "Presidio anonymizer gRPC endpoint (optional)",
+          "description": "Optional stored endpoint; the reviewed Go bridge uses the analyzer client rather than configuring a separate anonymizer connection.",
           "type": "string",
           "example": "localhost:50051"
         },
         "batch_size": {
-          "description": "Batch size for v2 streaming API",
+          "description": "Intended v2 batch size, currently dropped by the handler. The declared range does not establish batch-processing support through this endpoint.",
           "type": "integer",
           "format": "int64",
           "maximum": 100,
@@ -36532,7 +36693,7 @@ func init() {
           "$ref": "#/definitions/PIICircuitBreaker"
         },
         "default_operator": {
-          "description": "Default anonymization operator for v2",
+          "description": "Intended v2 operator, currently dropped by the handler. Selecting encrypt does not configure encryption or imply use of encryption_key.",
           "type": "string",
           "enum": [
             "replace",
@@ -36554,12 +36715,12 @@ func init() {
           "example": "both"
         },
         "enable_v2": {
-          "description": "Enable Presidio v2 API (combined analyze+anonymize, 40% faster)",
+          "description": "Intended v2 selector, currently dropped by the handler. Supplying it does not enable v2 processing; no performance improvement is established by this API.",
           "type": "boolean",
           "example": true
         },
         "encryption_key": {
-          "description": "Base64-encoded encryption key for v2 (AES-256, 32 bytes)",
+          "description": "Intended v2 encryption input, currently dropped by the handler. Base64 decoding, AES-256 key-length validation, and encryption using this value are not implemented on this path.",
           "type": "string",
           "example": "YourBase64EncodedKey32BytesLong="
         },
@@ -36573,14 +36734,14 @@ func init() {
           "example": "open"
         },
         "max_body_size": {
-          "description": "Maximum HTTP body size to scan (bytes)",
+          "description": "Stored byte bound, including explicit zero. Eligibility also checks HTTP-buffer length and content type; this does not guarantee inspection of every complete body or validate the relation to min_body_size.",
           "type": "integer",
           "format": "int64",
           "minimum": 0,
           "example": 65536
         },
         "min_body_size": {
-          "description": "Minimum HTTP body size to scan (bytes)",
+          "description": "Stored minimum byte bound, including explicit zero. The consumer checks HTTP-buffer length; the relation to max_body_size is not validated.",
           "type": "integer",
           "format": "int64",
           "minimum": 0,
@@ -36601,7 +36762,7 @@ func init() {
           "$ref": "#/definitions/PIIRetry"
         },
         "scan_mode": {
-          "description": "Large body handling (full=skip if too large, truncate=scan first 64KB)",
+          "description": "Intended large-message mode, currently dropped by this handler. The consumer skips oversized input in full mode or truncates to configured max_body_size in truncate mode, not invariably 64KB.",
           "type": "string",
           "enum": [
             "full",
@@ -36610,7 +36771,7 @@ func init() {
           "example": "truncate"
         },
         "score_threshold": {
-          "description": "Minimum confidence score for PII detection (0.0-1.0)",
+          "description": "Stored threshold, including explicit zero. AnonymizeJSON reads this value, but legacy Analyze sends 0.5; uniform threshold enforcement is not established.",
           "type": "number",
           "format": "float",
           "maximum": 1,
@@ -36618,7 +36779,7 @@ func init() {
           "example": 0.7
         },
         "timeout_ms": {
-          "description": "Presidio request timeout in milliseconds",
+          "description": "Stored milliseconds, including explicit zero. The current reconfiguration bridge does not apply this value to the client's five-second RPC timeout; zero is not a proven disable or unlimited setting.",
           "type": "integer",
           "format": "int64",
           "minimum": 0,
@@ -36627,6 +36788,7 @@ func init() {
       }
     },
     "PIIRetry": {
+      "description": "Stored C-scanner settings. Explicit zero is ignored by the manager, so max_retries=0 cannot currently disable retries. Defaults are one retry and 100 ms backoff; the consumer waits backoff_ms times the attempt number. Values are narrowed to uint32 without upper bounds.",
       "type": "object",
       "properties": {
         "backoff_ms": {
@@ -36646,6 +36808,7 @@ func init() {
       }
     },
     "PIIStatsResponse": {
+      "description": "Unimplemented management telemetry. All four values are hard-coded zero and currently serialize as an empty object, including without a manager. This is not evidence of zero scans, detections, blocks, or errors.",
       "type": "object",
       "properties": {
         "errors": {
@@ -36675,6 +36838,7 @@ func init() {
       }
     },
     "PIIStatusResponse": {
+      "description": "Stored configuration, not scanner readiness. scan_mode is not mapped by the handler; optional zero/false fields can be omitted. V2/encryption settings are neither returned nor applied by the configuration handler. Without the compiled feature or initialized manager, status fails.",
       "type": "object",
       "properties": {
         "analyzer_url": {
@@ -36758,6 +36922,7 @@ func init() {
       }
     },
     "PIIURLPattern": {
+      "description": "Ordered include/exclude matcher, not an independent exclusion override. The first matching entry decides. Text beyond 127 bytes can be truncated in fixed-size storage; length and pattern syntax are not fully validated.",
       "type": "object",
       "required": [
         "pattern"
@@ -36776,6 +36941,7 @@ func init() {
       }
     },
     "PIIURLPatternsEntry": {
+      "description": "Ordered update with required mode. clear ignores patterns; replace with omitted/empty patterns clears the list; add appends. Empty configuration scans all eligible URLs. A nonempty list is an include list with first match winning, so an exclude-only list scans nothing. The resulting limit is 64 entries; excess count currently maps to generic 500. Null entries can pass generated validation and be dereferenced by the handler.",
       "type": "object",
       "required": [
         "mode"
@@ -36856,6 +37022,7 @@ func init() {
       }
     },
     "PolicyEntry": {
+      "description": "Policer configuration. CIR and PIR use Mbps; burst sizes use bytes. CIR must be at least 8 and PIR may be zero or at least 8, but PIR/CIR ordering is not enforced. CBS zero becomes 30000000 and supplied EBS is overwritten with twice CBS. Signed inputs, scaling, and datapath narrowing are incompletely checked. Stored type does not currently select srTCM in the inspected eBPF path. Fullproxy rule targets use a separate byte-shaper path.",
       "type": "object",
       "required": [
         "policyIdent",
@@ -36874,23 +37041,23 @@ func init() {
               "type": "boolean"
             },
             "committedBlkSize": {
-              "description": "policy type",
+              "description": "Committed burst size in bytes. Zero becomes 30000000; datapath conversion narrows to uint32 without a bounds check.",
               "type": "integer"
             },
             "committedInfoRate": {
-              "description": "policy type",
+              "description": "Committed rate in Mbps; the domain requires at least 8 after unchecked unsigned conversion. eBPF token-rate conversion truncates to 8-Mbps increments.",
               "type": "integer"
             },
             "excessBlkSize": {
-              "description": "policy type",
+              "description": "Supplied value is currently ignored: the domain sets excess burst size to twice the effective committed burst size. This is an implementation limitation.",
               "type": "integer"
             },
             "peakInfoRate": {
-              "description": "policy type",
+              "description": "Peak rate in Mbps; zero or at least 8 passes current domain validation. PIR \u003e= CIR is not enforced and zero is not limited to the single-rate type.",
               "type": "integer"
             },
             "type": {
-              "description": "policy type(0-TrTCM, 1-SrTCM)",
+              "description": "Stored policy type, 0 for trTCM and 1 for srTCM. The current eBPF work item does not propagate this selection, so type 1 does not establish single-rate behavior.",
               "type": "integer",
               "enum": [
                 0,
@@ -36907,7 +37074,7 @@ func init() {
           ],
           "properties": {
             "attachment": {
-              "description": "Target Attachment(0-RuleName, 1-PortName, 2-PortNameEgress)",
+              "description": "Target selector, 0 for exact LB rule, 1 for ingress port, 2 for egress port. Egress requires enabled egress hooks.",
               "type": "integer",
               "enum": [
                 0,
@@ -36916,7 +37083,7 @@ func init() {
               ]
             },
             "polObjName": {
-              "description": "Target name. Rule attachments use VIP:PORT:PROTO for IPv4 and [VIP]:PORT:PROTO for IPv6.",
+              "description": "Port name or exact rule key VIP:PORT:PROTO for IPv4 and [VIP]:PORT:PROTO for IPv6. Rule port must be 1..65535 and protocol tcp, udp, or sctp; a missing target can remain pending.",
               "type": "string"
             }
           }
@@ -36931,23 +37098,23 @@ func init() {
           "type": "boolean"
         },
         "committedBlkSize": {
-          "description": "policy type",
+          "description": "Committed burst size in bytes. Zero becomes 30000000; datapath conversion narrows to uint32 without a bounds check.",
           "type": "integer"
         },
         "committedInfoRate": {
-          "description": "policy type",
+          "description": "Committed rate in Mbps; the domain requires at least 8 after unchecked unsigned conversion. eBPF token-rate conversion truncates to 8-Mbps increments.",
           "type": "integer"
         },
         "excessBlkSize": {
-          "description": "policy type",
+          "description": "Supplied value is currently ignored: the domain sets excess burst size to twice the effective committed burst size. This is an implementation limitation.",
           "type": "integer"
         },
         "peakInfoRate": {
-          "description": "policy type",
+          "description": "Peak rate in Mbps; zero or at least 8 passes current domain validation. PIR \u003e= CIR is not enforced and zero is not limited to the single-rate type.",
           "type": "integer"
         },
         "type": {
-          "description": "policy type(0-TrTCM, 1-SrTCM)",
+          "description": "Stored policy type, 0 for trTCM and 1 for srTCM. The current eBPF work item does not propagate this selection, so type 1 does not establish single-rate behavior.",
           "type": "integer",
           "enum": [
             0,
@@ -36964,7 +37131,7 @@ func init() {
       ],
       "properties": {
         "attachment": {
-          "description": "Target Attachment(0-RuleName, 1-PortName, 2-PortNameEgress)",
+          "description": "Target selector, 0 for exact LB rule, 1 for ingress port, 2 for egress port. Egress requires enabled egress hooks.",
           "type": "integer",
           "enum": [
             0,
@@ -36973,12 +37140,13 @@ func init() {
           ]
         },
         "polObjName": {
-          "description": "Target name. Rule attachments use VIP:PORT:PROTO for IPv4 and [VIP]:PORT:PROTO for IPv6.",
+          "description": "Port name or exact rule key VIP:PORT:PROTO for IPv4 and [VIP]:PORT:PROTO for IPv6. Rule port must be 1..65535 and protocol tcp, udp, or sctp; a missing target can remain pending.",
           "type": "string"
         }
       }
     },
     "PortEntry": {
+      "description": "Observed gateway port record. portType and portProp describe type/property flags, not scheduling priority; the current getter does not populate portProp. link is link status and state is administrative state. Address arrays contain a formatted first address with a primary/secondary marker or an empty string, not complete raw address lists.",
       "type": "object",
       "properties": {
         "DataplaneSync": {
@@ -36997,7 +37165,7 @@ func init() {
               "type": "string"
             },
             "master": {
-              "description": "Port's mater",
+              "description": "Master interface name.",
               "type": "string"
             },
             "mtu": {
@@ -37012,11 +37180,11 @@ func init() {
               }
             },
             "real": {
-              "description": "real port..",
+              "description": "Underlying interface name.",
               "type": "string"
             },
             "state": {
-              "description": "state...",
+              "description": "Administrative interface state; distinct from link status.",
               "type": "boolean"
             },
             "tunnelId": {
@@ -37042,14 +37210,14 @@ func init() {
           "type": "object",
           "properties": {
             "IPv4Address": {
-              "description": "List of IP address v4",
+              "description": "Display string for the first IPv4 address with primary/secondary marker, or an empty string; not a complete address list.",
               "type": "array",
               "items": {
                 "type": "string"
               }
             },
             "IPv6Address": {
-              "description": "List of the IP address v6",
+              "description": "Display string for the first IPv6 address with primary/secondary marker, or an empty string; not a complete address list.",
               "type": "array",
               "items": {
                 "type": "string"
@@ -37085,7 +37253,7 @@ func init() {
               "type": "boolean"
             },
             "portProp": {
-              "description": "Priority of the port",
+              "description": "Port property flags, not priority. The current domain getter leaves this field unpopulated.",
               "type": "integer"
             },
             "portType": {
@@ -37141,7 +37309,7 @@ func init() {
           "type": "string"
         },
         "master": {
-          "description": "Port's mater",
+          "description": "Master interface name.",
           "type": "string"
         },
         "mtu": {
@@ -37156,11 +37324,11 @@ func init() {
           }
         },
         "real": {
-          "description": "real port..",
+          "description": "Underlying interface name.",
           "type": "string"
         },
         "state": {
-          "description": "state...",
+          "description": "Administrative interface state; distinct from link status.",
           "type": "boolean"
         },
         "tunnelId": {
@@ -37186,14 +37354,14 @@ func init() {
       "type": "object",
       "properties": {
         "IPv4Address": {
-          "description": "List of IP address v4",
+          "description": "Display string for the first IPv4 address with primary/secondary marker, or an empty string; not a complete address list.",
           "type": "array",
           "items": {
             "type": "string"
           }
         },
         "IPv6Address": {
-          "description": "List of the IP address v6",
+          "description": "Display string for the first IPv6 address with primary/secondary marker, or an empty string; not a complete address list.",
           "type": "array",
           "items": {
             "type": "string"
@@ -37221,7 +37389,7 @@ func init() {
           "type": "boolean"
         },
         "portProp": {
-          "description": "Priority of the port",
+          "description": "Port property flags, not priority. The current domain getter leaves this field unpopulated.",
           "type": "integer"
         },
         "portType": {
@@ -37376,7 +37544,7 @@ func init() {
           }
         },
         "external_dependencies": {
-          "description": "Live availability of the stores this gateway is wired to (status ready or failed - a probe, unlike the restore engine's configured-only checks).",
+          "description": "Dependency-specific availability checks with ready or failed status. Some checks use configured or builtin state rather than external I/O; this is not uniform live reachability verification of every store or certificate file.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/ExternalDependencyStatus"
@@ -37432,7 +37600,7 @@ func init() {
       }
     },
     "RestorePlanItem": {
-      "description": "Per-domain apply/delete counts computed by the restore PLAN stage.",
+      "description": "Per-domain replacement counts computed by PLAN, not a minimal difference. to_delete counts current entries and to_apply counts document entries; dry-run does not exercise all apply-time validation.",
       "type": "object",
       "properties": {
         "domain": {
@@ -37451,6 +37619,7 @@ func init() {
       "type": "object",
       "properties": {
         "compatible": {
+          "description": "Schema-compatibility verdict only, not proof that all validation, apply, verification or persistence stages will succeed.",
           "type": "boolean"
         },
         "current_gateway_version": {
@@ -37521,6 +37690,7 @@ func init() {
       }
     },
     "RouteEntry": {
+      "description": "Create-time route input. destinationIPNet is a CIDR and gateway is a literal IP. Only protocol static explicitly selects a protocol on this path; returned protocol strings are not a write-time enumeration. Gateway parsing and family agreement are not fully validated.",
       "type": "object",
       "required": [
         "destinationIPNet",
@@ -37528,20 +37698,21 @@ func init() {
       ],
       "properties": {
         "destinationIPNet": {
-          "description": "IP address and netmask",
+          "description": "Destination network in CIDR notation.",
           "type": "string"
         },
         "gateway": {
-          "description": "IP address for nexthop",
+          "description": "Literal next-hop IP address, not CIDR. Local gateway validity and family checks are incomplete.",
           "type": "string"
         },
         "protocol": {
-          "description": "Protocol type of the route like \"static\"",
+          "description": "Only static explicitly sets the create-time protocol; GET may report additional symbolic or numeric protocol values.",
           "type": "string"
         }
       }
     },
     "RouteGetEntry": {
+      "description": "Gateway route readback. gateway may contain comma-separated next hops; protocol is a symbolic name for known values or a decimal string. statistic.bytes and statistic.packets are route byte and packet counters, not ingress/egress byte counters. sync is reported datapath status, not an independent runtime verification.",
       "type": "object",
       "properties": {
         "destinationIPNet": {
@@ -37572,11 +37743,11 @@ func init() {
           ],
           "properties": {
             "bytes": {
-              "description": "Statistic of the ingress port bytes.",
+              "description": "Route byte counter.",
               "type": "integer"
             },
             "packets": {
-              "description": "Statistic of the egress port bytes.",
+              "description": "Route packet counter.",
               "type": "integer"
             }
           }
@@ -37594,23 +37765,24 @@ func init() {
       ],
       "properties": {
         "bytes": {
-          "description": "Statistic of the ingress port bytes.",
+          "description": "Route byte counter.",
           "type": "integer"
         },
         "packets": {
-          "description": "Statistic of the egress port bytes.",
+          "description": "Route packet counter.",
           "type": "integer"
         }
       }
     },
     "SNICertificateEntry": {
+      "description": "Registration in the node's shared hostname-keyed certificate store, not a PEM upload. DELETE uses hostname and ignores certPath; it unregisters without deleting files. Mutations currently return HTTP 200 result strings for both success and failure. GET returns sniAttr entries, not certificates/count or reference-count fields. Hostname and path validation is incomplete. Loading a root CA file alone does not enable mTLS on this registration path.",
       "type": "object",
       "required": [
         "hostname"
       ],
       "properties": {
         "certPath": {
-          "description": "Optional certificate directory path (defaults to /opt/loxilb/cert/{hostname}). Directory must contain server.crt, server.key, and optionally rootCA.crt for mTLS.",
+          "description": "Optional directory on the gateway node containing server.crt and server.key; omitted uses the hostname-relative location under /opt/loxilb/cert. This is not a client-side path or upload. The registration loader is invoked with mTLS disabled, so rootCA.crt alone does not enable client-certificate enforcement.",
           "type": "string"
         },
         "hostname": {
@@ -37620,6 +37792,7 @@ func init() {
       }
     },
     "SecurityRateConfigMod": {
+      "description": "Full replacement of rate-limit configuration and security-rate whitelist. All required flags and thresholds must be supplied; schema defaults do not establish omission support. Thresholds are 0..16777216 and UDP bandwidth is 0..4095 MiB/s. Enabled protections require positive applicable thresholds, and enabled SYN protection requires cookieThreshold \u003c synThreshold. At least one protection must be enabled. At most 1024 valid whitelist CIDRs are accepted; omission clears the prior list. Explicit cookieThreshold zero becomes 50 in the datapath. Programming is non-atomic and shares whitelist maps with IP filtering.",
       "type": "object",
       "required": [
         "synEnabled",
@@ -37637,13 +37810,13 @@ func init() {
           "type": "boolean"
         },
         "cookieThreshold": {
-          "description": "Enable SYN cookies above this rate (must be \u003c synThreshold)",
+          "description": "SYN threshold telemetry, not a SYN-cookie exchange. With SYN enabled it must be below synThreshold; explicit zero is accepted but becomes 50 in the datapath, which can violate the intended relationship.",
           "type": "integer",
           "format": "int64",
           "default": 50
         },
         "ratePerSec": {
-          "description": "Maximum new connections per second per IP",
+          "description": "Per-source-IP SYN packet rate threshold, not completed connections per second. Must be positive when connection-rate protection is enabled.",
           "type": "integer",
           "format": "int64",
           "default": 50
@@ -37659,7 +37832,7 @@ func init() {
           "default": 100
         },
         "udpBandwidthMB": {
-          "description": "Maximum UDP bandwidth in MB per second per IP",
+          "description": "UDP bandwidth threshold in MiB per second per source IP, converted using 1024*1024 bytes; valid range 0..4095 and positive when UDP protection is enabled.",
           "type": "integer",
           "format": "int64",
           "default": 100
@@ -37675,7 +37848,7 @@ func init() {
           "default": 1000
         },
         "whitelistIps": {
-          "description": "IP addresses to bypass all rate limiting",
+          "description": "Up to 1024 valid IPv4/IPv6 CIDRs. Omission clears the previous security-rate whitelist. These entries share maps with IP-filter whitelist rules.",
           "type": "array",
           "items": {
             "type": "string"
@@ -37684,15 +37857,16 @@ func init() {
       }
     },
     "SecurityRateEntry": {
+      "description": "Stored configuration with observed security-rate statistics. GET does not establish effective configuration after defaults or partial programming failures, and statistics failures can appear as zeros. Connection counters concern SYN packets, not completed connections. synCookies is threshold telemetry, not proof of a SYN-cookie exchange. uniqueIps is current tracking-map occupancy and is not cleared by counter reset.",
       "type": "object",
       "properties": {
         "connBlocked": {
-          "description": "Connections blocked by rate limit (read-only)",
+          "description": "SYN packets blocked by connection-rate checking, not distinct completed connections.",
           "type": "integer",
           "format": "int64"
         },
         "connPassed": {
-          "description": "Connections passed (read-only)",
+          "description": "SYN packets counted as passed by connection-rate checking, not distinct established connections.",
           "type": "integer",
           "format": "int64"
         },
@@ -37701,12 +37875,12 @@ func init() {
           "type": "boolean"
         },
         "cookieThreshold": {
-          "description": "SYN cookie activation threshold",
+          "description": "Stored telemetry threshold; zero can differ from effective datapath value 50. This field does not establish SYN-cookie generation.",
           "type": "integer",
           "format": "int64"
         },
         "ratePerSec": {
-          "description": "Maximum new connections per second per IP",
+          "description": "Stored per-source-IP SYN packet rate threshold, not completed connection rate.",
           "type": "integer",
           "format": "int64"
         },
@@ -37716,7 +37890,7 @@ func init() {
           "format": "int64"
         },
         "synCookies": {
-          "description": "SYN cookie activations (read-only)",
+          "description": "SYN packets observed in the cookie-threshold telemetry branch, not completed or generated SYN-cookie exchanges.",
           "type": "integer",
           "format": "int64"
         },
@@ -37735,7 +37909,7 @@ func init() {
           "format": "int64"
         },
         "udpBandwidthMB": {
-          "description": "Maximum UDP bandwidth in MB per second per IP",
+          "description": "Stored UDP bandwidth threshold in MiB per second per source IP.",
           "type": "integer",
           "format": "int64"
         },
@@ -37769,7 +37943,7 @@ func init() {
           "format": "int64"
         },
         "uniqueIps": {
-          "description": "Number of unique source IPs tracked (read-only)",
+          "description": "Current IPv4 plus IPv6 tracking-map occupancy. Counter reset and protection disable do not clear these maps.",
           "type": "integer",
           "format": "int64"
         },
@@ -37800,16 +37974,18 @@ func init() {
       }
     },
     "SessionEntry": {
+      "description": "User session identified by ident. Supply sessionIP and both tunnel objects as literal-IP configuration; schema-optional tunnel objects are dereferenced by the handler. Access TeID and core teID are case-sensitive wire names and narrow to uint32 without range checks. Existing-session replacement has a comparison defect and can remove associated ULCL classifiers.",
       "type": "object",
       "required": [
         "ident"
       ],
       "properties": {
         "accessNetworkTunnel": {
+          "description": "Supply this object; the current handler dereferences it despite its optional schema declaration.",
           "type": "object",
           "properties": {
             "TeID": {
-              "description": "ID of the tunnel",
+              "description": "Access-network TEID, converted to uint32 without a bounds check. Omission becomes zero.",
               "type": "integer"
             },
             "tunnelIP": {
@@ -37819,10 +37995,11 @@ func init() {
           }
         },
         "coreNetworkTunnel": {
+          "description": "Supply this object; the current handler dereferences it despite its optional schema declaration.",
           "type": "object",
           "properties": {
             "teID": {
-              "description": "ID of the tunnel",
+              "description": "Core-network TEID, converted to uint32 without a bounds check. Note the case-sensitive teID wire name.",
               "type": "integer"
             },
             "tunnelIP": {
@@ -37832,20 +38009,21 @@ func init() {
           }
         },
         "ident": {
-          "description": "IP address and netmask",
+          "description": "User-session identifier, not an IP/netmask.",
           "type": "string"
         },
         "sessionIP": {
-          "description": "IP address for nexthop",
+          "description": "Literal user-session IP address. Local parsing is not followed by complete admission validation.",
           "type": "string"
         }
       }
     },
     "SessionEntryAccessNetworkTunnel": {
+      "description": "Supply this object; the current handler dereferences it despite its optional schema declaration.",
       "type": "object",
       "properties": {
         "TeID": {
-          "description": "ID of the tunnel",
+          "description": "Access-network TEID, converted to uint32 without a bounds check. Omission becomes zero.",
           "type": "integer"
         },
         "tunnelIP": {
@@ -37855,10 +38033,11 @@ func init() {
       }
     },
     "SessionEntryCoreNetworkTunnel": {
+      "description": "Supply this object; the current handler dereferences it despite its optional schema declaration.",
       "type": "object",
       "properties": {
         "teID": {
-          "description": "ID of the tunnel",
+          "description": "Core-network TEID, converted to uint32 without a bounds check. Note the case-sensitive teID wire name.",
           "type": "integer"
         },
         "tunnelIP": {
@@ -37868,16 +38047,18 @@ func init() {
       }
     },
     "SessionUlClEntry": {
+      "description": "Classifier for an existing user session. ulclIdent selects the session; classifier IP, not QFI, completes the identity. The schema-optional ulclArgument is dereferenced by the handler. QFI narrows to uint8 without bounds checking; the protocol-valid range still requires an explicit admission policy.",
       "type": "object",
       "required": [
         "ulclIdent"
       ],
       "properties": {
         "ulclArgument": {
+          "description": "Supply this object; the current handler dereferences it despite its optional schema declaration.",
           "type": "object",
           "properties": {
             "qfi": {
-              "description": "QFI number",
+              "description": "Classifier QFI, converted to uint8 without bounds checking. It is not part of the classifier identity.",
               "type": "integer"
             },
             "ulclIP": {
@@ -37887,16 +38068,17 @@ func init() {
           }
         },
         "ulclIdent": {
-          "description": "IP address and netmask",
+          "description": "Identifier of the existing user session.",
           "type": "string"
         }
       }
     },
     "SessionUlClEntryUlclArgument": {
+      "description": "Supply this object; the current handler dereferences it despite its optional schema declaration.",
       "type": "object",
       "properties": {
         "qfi": {
-          "description": "QFI number",
+          "description": "Classifier QFI, converted to uint8 without bounds checking. It is not part of the classifier identity.",
           "type": "integer"
         },
         "ulclIP": {
@@ -37914,6 +38096,7 @@ func init() {
       }
     },
     "TenantModelRateLimit": {
+      "description": "A nonempty model is required by the handler despite the schema's optional property. Storage rejects '|' in tenant/model names. Zero, including an omitted tokens_per_min, removes the model quota. Negative values currently also remove it; that is not an approved negative-quota policy. Repeated model entries are applied in order, with the last successful write winning.",
       "type": "object",
       "properties": {
         "model": {
@@ -37928,6 +38111,7 @@ func init() {
       }
     },
     "TenantRateLimitEntry": {
+      "description": "Stored quotas, not enforcement status. Missing aggregate and model records produce 404; model-only state may lack an aggregate update timestamp. Zero aggregate rates disable their limiter while model quotas remain separate. burst_pct controls token capacity, not request-rate burst; zero uses the server default and positive values are clamped to 1-1000.",
       "type": "object",
       "required": [
         "tenant_id"
@@ -37967,6 +38151,7 @@ func init() {
       }
     },
     "TenantRateLimitMod": {
+      "description": "POST replaces aggregate rps, tokens_per_min, and burst_pct; omission becomes zero, not preservation. Supplied model_limits are individual upserts or removals; omitted/empty model_limits preserves existing model rows. Aggregate and model writes are sequential, not one transaction, so failure can leave partial changes. Blank identifiers and malformed model entries are not consistently rejected as 400. Configuration alone does not enable enforcement on a service.",
       "type": "object",
       "required": [
         "tenant_id"
@@ -38020,14 +38205,14 @@ func init() {
           "example": true
         },
         "max_body_size": {
-          "description": "Maximum request/response body size to capture (bytes, 0=unlimited)",
+          "description": "YAML capture limit in bytes. The loader replaces zero with 16384 and rejects values above 10 MiB; zero is not unlimited. The catalog-list operation is currently unwired.",
           "type": "integer",
           "format": "int32",
           "minimum": 0,
           "example": 65536
         },
         "name": {
-          "description": "Catalog name (from YAML filename without .yaml extension)",
+          "description": "Name from the YAML catalog_name field, not the filename. The catalog-list operation is currently unwired, so this is not an available response field.",
           "type": "string",
           "example": "openai"
         },
@@ -38060,7 +38245,7 @@ func init() {
       ],
       "properties": {
         "capabilities": {
-          "description": "Supported features",
+          "description": "Intended capability metadata; currently not populated by the parser-list handler and not evidence of verified parser behavior.",
           "type": "array",
           "items": {
             "type": "string"
@@ -38072,12 +38257,12 @@ func init() {
           ]
         },
         "description": {
-          "description": "Human-readable description",
+          "description": "Intended descriptive metadata; currently not populated by the parser-list handler.",
           "type": "string",
           "example": "Parses OpenAI API requests including GPT models, token usage, and streaming responses"
         },
         "name": {
-          "description": "Parser identifier (e.g., \"openai\", \"mcp\", \"mock\")",
+          "description": "Metadata name returned by discovery, such as openai_v1, mcp_v1 or mock_parser. These differ from assignment keys openai, mcp and mock and must not be used interchangeably.",
           "type": "string",
           "example": "openai"
         },
@@ -38112,7 +38297,7 @@ func init() {
       ],
       "properties": {
         "parser_name": {
-          "description": "Parser to assign to catalog (must match registered parser name)",
+          "description": "Runtime assignment key (openai, mcp or mock), not the distinct metadata name returned by discovery. The mapping is runtime-only; parser existence is checked, but catalog existence is not established by this update.",
           "type": "string",
           "enum": [
             "openai",
@@ -38124,6 +38309,7 @@ func init() {
       }
     },
     "UpdateLicenseRequest": {
+      "description": "Replaces the configured manual management-token file with license_key and echoes the request on success. This is not license validation and does not change the active authentication mode. Empty/whitespace validation and a secret-response policy are not established. Authentication precedence is local user service, OAuth, then manual token; with none configured the management API operates without credential enforcement.",
       "type": "object",
       "required": [
         "license_key"
@@ -38135,6 +38321,7 @@ func init() {
       }
     },
     "User": {
+      "description": "Shared local-account request model. Login uses username and password only. Creation also requires an explicit admin or viewer role in domain validation; body id and created_at are ignored. Creation requires an administrator, or no credential from a loopback transport peer while the account table is empty. PUT uses the path id, requires username and password, and currently drops role rather than applying it. Account mutations return an HTTP 200 result envelope, not a User resource. Security limitation: usernames are not checked for the delimiter used to encode principals, so role isolation is not established by the role enum alone. Intended role mapping requires an implementation correction, not client interpretation of the username.",
       "type": "object",
       "required": [
         "username",
@@ -38148,6 +38335,7 @@ func init() {
           "type": "integer"
         },
         "password": {
+          "description": "Required request secret. Create/update policy requires at least 9 bytes, upper/lowercase, a number, punctuation or symbol, inequality with username, and no three consecutive identical characters. Update checks password reuse by submitted username, so rename handling does not reliably compare the original account's password. Never a response field.",
           "type": "string"
         },
         "role": {
@@ -38158,11 +38346,13 @@ func init() {
           ]
         },
         "username": {
+          "description": "Account name. Complete normalization and delimiter validation are absent; see the User security limitation. The submitted value also selects the previous-password comparison on update.",
           "type": "string"
         }
       }
     },
     "UserSummary": {
+      "description": "Read-only account identity without password material. created_at is emitted as RFC3339. Viewer authorization currently permits listing all accounts; this is not a per-user or per-tenant visibility boundary.",
       "type": "object",
       "properties": {
         "created_at": {
@@ -38195,12 +38385,13 @@ func init() {
           "type": "string"
         },
         "version": {
-          "description": "Instance name",
+          "description": "Gateway version string reported by this build; not an instance name or proof of feature qualification.",
           "type": "string"
         }
       }
     },
     "VlanBridgeEntry": {
+      "description": "Linux bridge identifier used to form vlan\u003cID\u003e. The REST creation helper does not enforce all documented VLAN bounds; successful bridge creation does not establish completion of link setup.",
       "type": "object",
       "required": [
         "vid"
@@ -38213,6 +38404,7 @@ func init() {
       }
     },
     "VlanGetEntry": {
+      "description": "Gateway-managed VLAN bridge with members and ingress/egress byte and packet counters. This is observed control-plane inventory, not independent verification of Linux bridge ownership.",
       "type": "object",
       "properties": {
         "dev": {
@@ -38266,19 +38458,21 @@ func init() {
       }
     },
     "VlanMemberEntry": {
+      "description": "Member interface and tagging choice. Omitted tagged means false. Tagged membership creates \u003cdev\u003e.\u003cID\u003e; untagged membership attaches dev directly. The current helpers do not consistently enforce current-master ownership, and partial failures can leave intermediate state.",
       "type": "object",
       "properties": {
         "dev": {
-          "description": "Interface device name",
+          "description": "Existing member interface name. The current helper does not verify existing-master ownership before mutation.",
           "type": "string"
         },
         "tagged": {
-          "description": "Tagged status added",
+          "description": "True creates a tagged child \u003cinterface\u003e.\u003cID\u003e; false or omission attaches the named interface directly.",
           "type": "boolean"
         }
       }
     },
     "VxlanBridgeEntry": {
+      "description": "VXLAN creation input. epIntf must exist and have an IPv4 address; its first IPv4 address is selected as source. Creation uses vxlan\u003cID\u003e, UDP port 8472, MTU 9000, and learning enabled. Numeric validation is incomplete.",
       "type": "object",
       "required": [
         "epIntf",
@@ -38294,6 +38488,7 @@ func init() {
       }
     },
     "VxlanEntry": {
+      "description": "VXLAN interface readback joined with kernel peer data. peerIP can be null when no peer information is available, despite its required array declaration. Peer mutation handlers return operation-result objects, not this resource shape.",
       "type": "object",
       "required": [
         "vxlanName",
@@ -38320,6 +38515,7 @@ func init() {
       }
     },
     "VxlanPeerEntry": {
+      "description": "Literal VXLAN flood-list peer IP. Parsing and address-family validation are incomplete. The POST peer handler returns an operation-result object rather than this request shape.",
       "type": "object",
       "required": [
         "peerIP"
@@ -38339,7 +38535,7 @@ func init() {
       ],
       "properties": {
         "endpoint_ip": {
-          "description": "Worker endpoint IP:port (e.g., \"192.168.1.10:8000\")",
+          "description": "Worker endpoint label, conventionally IP:port. The handler does not establish endpoint registration or fully validate address syntax; GPU indexing uses an IP-like key, so different supplied ports can alias map state.",
           "type": "string"
         },
         "kv_cache_usage_perc": {
@@ -38349,22 +38545,22 @@ func init() {
           "minimum": 0
         },
         "num_gpu_blocks": {
-          "description": "Static config from vllm:cache_config_info{num_gpu_blocks}",
+          "description": "Advertised GPU-block capacity observation. Omitted values replace the previous sample with zero. The handler does not verify engine capacity and converts to uint32 without a matching schema maximum.",
           "type": "integer",
           "minimum": 0
         },
         "queued_requests": {
-          "description": "vllm:num_requests_running + vllm:num_requests_waiting (total queue depth)",
+          "description": "Caller-supplied queue observation. The builtin scraper stores waiting requests, not running plus waiting. Values are converted to uint32 without a matching schema maximum; safe bounds and a uniform producer contract remain unresolved.",
           "type": "integer",
           "minimum": 0
         },
         "swapped_requests": {
-          "description": "Delta of vllm:num_preemptions_total since last update",
+          "description": "Caller-supplied swap/preemption observation; the handler does not compute or verify a delta. Omitted values replace the previous sample with zero. Conversion to uint32 lacks a matching schema maximum.",
           "type": "integer",
           "minimum": 0
         },
         "timestamp": {
-          "description": "Timestamp of metrics collection",
+          "description": "Sample collection time. Omitted or zero time becomes the server's current time. Samples older than ten seconds are rejected; future timestamps currently lack an upper bound. Readback reports the cached sample time.",
           "type": "string",
           "format": "date-time"
         }
@@ -38443,6 +38639,350 @@ func init() {
     {
       "BearerAuth": []
     }
-  ]
+  ],
+  "x-loxilb-contract-relations": {
+    "description": "Project-specific UI advisory metadata, not Swagger 2.0 validation keywords. Rules refer to JSON Pointers in an effective LoadbalanceEntry body, after a PATCH has been merged with the live declaration. No UI interpreter is shipped by this metadata. Static enforcement evidence is not runtime qualification; unknown rules must be displayed as unresolved, not silently treated as passed. See api/contract-audit/relationships.md for the versioned rule semantics.",
+    "rules": [
+      {
+        "enforcement": "server-static",
+        "evidence": "pkg/loxinet/rules.go:AddLbRule",
+        "id": "LB-PD-FULLPROXY",
+        "kind": "requires",
+        "message": "P/D orchestration requires fullproxy mode.",
+        "require": [
+          {
+            "field": "/serviceArguments/mode",
+            "missing": 0,
+            "operator": "in",
+            "values": [
+              4
+            ]
+          }
+        ],
+        "when": {
+          "field": "/serviceArguments/pd_disagg_mode",
+          "operator": "in",
+          "values": [
+            true
+          ]
+        }
+      },
+      {
+        "array": "/endpoints",
+        "counts": [
+          {
+            "equals": 1,
+            "field": "/ep_role",
+            "minimum": 1
+          },
+          {
+            "equals": 2,
+            "field": "/ep_role",
+            "minimum": 1
+          }
+        ],
+        "enforcement": "server-static",
+        "evidence": "pkg/loxinet/rules.go:AddLbRule",
+        "id": "LB-PD-ROLES",
+        "kind": "filtered-count",
+        "message": "P/D requires at least one prefill and one decode endpoint.",
+        "when": {
+          "field": "/serviceArguments/pd_disagg_mode",
+          "operator": "in",
+          "values": [
+            true
+          ]
+        }
+      },
+      {
+        "enforcement": "server-static",
+        "evidence": "pkg/loxinet/rules.go:AddLbRule",
+        "id": "LB-CACHE-REQUIRES-PD",
+        "kind": "requires",
+        "message": "Tier-1 P/D trie affinity requires P/D orchestration.",
+        "require": [
+          {
+            "field": "/serviceArguments/pd_disagg_mode",
+            "missing": false,
+            "operator": "in",
+            "values": [
+              true
+            ]
+          }
+        ],
+        "when": {
+          "field": "/serviceArguments/pd_cache_aware_mode",
+          "operator": "in",
+          "values": [
+            true
+          ]
+        }
+      },
+      {
+        "enforcement": "server-static",
+        "evidence": "pkg/loxinet/rules.go:AddLbRule",
+        "id": "LB-EXACT-PD-MODE",
+        "kind": "requires",
+        "message": "Exact mode 1 requires a P/D pool.",
+        "require": [
+          {
+            "field": "/serviceArguments/pd_disagg_mode",
+            "missing": false,
+            "operator": "in",
+            "values": [
+              true
+            ]
+          }
+        ],
+        "when": {
+          "field": "/serviceArguments/kvExactMode",
+          "operator": "in",
+          "values": [
+            1
+          ]
+        }
+      },
+      {
+        "enforcement": "server-static",
+        "evidence": "pkg/loxinet/rules.go:AddLbRule",
+        "id": "LB-EXACT-SINGLE-POOL",
+        "kind": "requires",
+        "message": "Exact mode 3 requires fullproxy and prohibits P/D orchestration.",
+        "require": [
+          {
+            "field": "/serviceArguments/mode",
+            "missing": 0,
+            "operator": "in",
+            "values": [
+              4
+            ]
+          },
+          {
+            "field": "/serviceArguments/pd_disagg_mode",
+            "missing": false,
+            "operator": "in",
+            "values": [
+              false
+            ]
+          }
+        ],
+        "when": {
+          "field": "/serviceArguments/kvExactMode",
+          "operator": "in",
+          "values": [
+            3
+          ]
+        }
+      },
+      {
+        "enforcement": "server-static",
+        "evidence": "pkg/loxinet/rules.go:AddLbRule",
+        "id": "LB-CONTENT-SELECTOR-FULLPROXY",
+        "kind": "requires",
+        "message": "These request-content selectors require the fullproxy data path.",
+        "require": [
+          {
+            "field": "/serviceArguments/mode",
+            "missing": 0,
+            "operator": "in",
+            "values": [
+              4
+            ]
+          }
+        ],
+        "when": {
+          "field": "/serviceArguments/sel",
+          "operator": "in",
+          "values": [
+            5,
+            8,
+            9,
+            10
+          ]
+        }
+      },
+      {
+        "enforcement": "server-static",
+        "evidence": "pkg/loxinet/rules.go:kvEngineConfigValidate",
+        "id": "LB-SGLANG-RANKS",
+        "kind": "requires",
+        "message": "Event rank fan-out above one is SGLang-only.",
+        "require": [
+          {
+            "field": "/serviceArguments/kvEngineType",
+            "missing": "vllm",
+            "operator": "in",
+            "values": [
+              "sglang"
+            ]
+          }
+        ],
+        "when": {
+          "field": "/serviceArguments/kvDpRankCount",
+          "operator": "greater-than",
+          "value": 1
+        }
+      },
+      {
+        "enforcement": "server-static",
+        "evidence": "pkg/loxinet/rules.go:pdBootstrapPortValidate",
+        "id": "LB-SGLANG-BOOTSTRAP",
+        "kind": "requires",
+        "message": "A nonzero bootstrap port requires SGLang P/D.",
+        "require": [
+          {
+            "field": "/serviceArguments/kvEngineType",
+            "missing": "vllm",
+            "operator": "in",
+            "values": [
+              "sglang"
+            ]
+          },
+          {
+            "field": "/serviceArguments/pd_disagg_mode",
+            "missing": false,
+            "operator": "in",
+            "values": [
+              true
+            ]
+          }
+        ],
+        "when": {
+          "field": "/serviceArguments/pdBootstrapPort",
+          "operator": "greater-than",
+          "value": 0
+        }
+      },
+      {
+        "enforcement": "server-static",
+        "evidence": "pkg/loxinet/rules.go:kvExactRuntimeValidate",
+        "id": "LB-EXACT-MODEL-NAME",
+        "kind": "requires",
+        "message": "Exact routing requires a model name and separately validated tokenizer readiness.",
+        "require": [
+          {
+            "field": "/serviceArguments/model_name",
+            "operator": "nonempty-string"
+          }
+        ],
+        "when": {
+          "field": "/serviceArguments/kvExactMode",
+          "operator": "in",
+          "values": [
+            1,
+            3
+          ]
+        }
+      },
+      {
+        "enforcement": "server-static",
+        "evidence": "pkg/loxinet/rules.go:kvExactRuntimeValidate",
+        "id": "LB-PROFILE-REQUIRES-EXACT",
+        "kind": "requires",
+        "message": "A model profile cannot be bound when exact routing is disabled.",
+        "require": [
+          {
+            "field": "/serviceArguments/kvExactMode",
+            "missing": 0,
+            "operator": "in",
+            "values": [
+              1,
+              3
+            ]
+          }
+        ],
+        "when": {
+          "field": "/serviceArguments/kvModelProfile",
+          "operator": "nonempty-string"
+        }
+      },
+      {
+        "enforcement": "server-static",
+        "evidence": "pkg/loxinet/rules.go:kvExactRuntimeValidate",
+        "id": "LB-API-SURFACE-REQUIRES-EXACT",
+        "kind": "requires",
+        "message": "An exact API-surface declaration requires exact routing.",
+        "require": [
+          {
+            "field": "/serviceArguments/kvExactMode",
+            "missing": 0,
+            "operator": "in",
+            "values": [
+              1,
+              3
+            ]
+          }
+        ],
+        "when": {
+          "field": "/serviceArguments/kvExactApiMode",
+          "operator": "nonempty-string"
+        }
+      },
+      {
+        "enforcement": "server-static",
+        "evidence": "pkg/loxinet/rules.go:kvSubscriberRankPorts",
+        "id": "LB-RANK-PORT-RANGE",
+        "kind": "sum-bound",
+        "maximum": 65535,
+        "message": "The highest effective rank port must fit in 1..65535.",
+        "offset": -1,
+        "terms": [
+          {
+            "field": "/serviceArguments/kvZmqPort",
+            "missing": 5557,
+            "zero": 5557
+          },
+          {
+            "field": "/serviceArguments/kvDpRankCount",
+            "missing": 1,
+            "zero": 1
+          }
+        ],
+        "when": {
+          "field": "/serviceArguments/kvExactMode",
+          "operator": "in",
+          "values": [
+            1,
+            3
+          ]
+        }
+      },
+      {
+        "encodings": [
+          {
+            "format": "host|path|model",
+            "when": "path-and-model"
+          },
+          {
+            "format": "host|path",
+            "when": "path-only"
+          },
+          {
+            "format": "host||model",
+            "when": "model-only"
+          },
+          {
+            "format": "host",
+            "when": "neither"
+          }
+        ],
+        "enforcement": "server-static",
+        "evidence": "pkg/loxinet/rules.go:validateLBFixedCStringFields",
+        "fields": {
+          "host": "/serviceArguments/host",
+          "model": "/serviceArguments/model_name",
+          "path": "/serviceArguments/path_prefix"
+        },
+        "id": "LB-ENDPOINT-HASH-KEY-BYTES",
+        "kind": "conditional-join-byte-bound",
+        "maximum": 511,
+        "message": "The encoded endpoint routing key, including separators, must fit in 511 UTF-8 bytes.",
+        "unit": "utf8-bytes"
+      }
+    ],
+    "scope": "#/definitions/LoadbalanceEntry",
+    "status": "partial-static-audit",
+    "version": 1
+  }
 }`))
 }

@@ -32,14 +32,17 @@ func setOpts(t *testing.T, mutate func()) {
 	profile, host, tlsHost := Opts.MgmtProfile, Opts.Host, Opts.TLSHost
 	tls, cert, key := Opts.TLS, Opts.TLSCertificate, Opts.TLSCertificateKey
 	user, oauth, manual := Opts.UserServiceEnable, Opts.Oauth2Enable, Opts.ManualTokenEnable
+	metricsAuth := Opts.MetricsAuth
 	t.Cleanup(func() {
 		Opts.MgmtProfile, Opts.Host, Opts.TLSHost = profile, host, tlsHost
 		Opts.TLS, Opts.TLSCertificate, Opts.TLSCertificateKey = tls, cert, key
 		Opts.UserServiceEnable, Opts.Oauth2Enable, Opts.ManualTokenEnable = user, oauth, manual
+		Opts.MetricsAuth = metricsAuth
 	})
 	Opts.MgmtProfile, Opts.Host, Opts.TLSHost = "legacy", "0.0.0.0", "0.0.0.0"
 	Opts.TLS, Opts.TLSCertificate, Opts.TLSCertificateKey = false, "", ""
 	Opts.UserServiceEnable, Opts.Oauth2Enable, Opts.ManualTokenEnable = false, false, false
+	Opts.MetricsAuth = MetricsAuthAuto
 	mutate()
 }
 
@@ -195,5 +198,127 @@ func TestRemoteTLSDisablesPlaintext(t *testing.T) {
 	}
 	if plan.TLSHost != "0.0.0.0" {
 		t.Errorf("remote-tls may serve non-loopback; TLSHost rewritten to %q", plan.TLSHost)
+	}
+}
+
+// --- /metrics authentication ------------------------------------------------
+//
+// The property under test is a security default, so each case states what an
+// operator would have been served, not just which branch ran.
+
+// The default must not change what any existing deployment does. A scraper on
+// a legacy or appliance-local gateway sends no bearer and must keep working.
+func TestMetricsAuthAutoLeavesNonRemoteProfilesOpen(t *testing.T) {
+	for _, profile := range []string{"legacy", "appliance-local"} {
+		t.Run(profile, func(t *testing.T) {
+			setOpts(t, func() { Opts.MgmtProfile = profile })
+			required, err := MetricsAuthPlan()
+			if err != nil {
+				t.Fatalf("%s must not fail: %v", profile, err)
+			}
+			if required {
+				t.Errorf("%s now demands a bearer on /metrics; every existing "+
+					"scrape job on this profile would start returning 401", profile)
+			}
+		})
+	}
+}
+
+// The defect #142 reports: remote-tls refuses to start without TLS and without
+// an authentication service, then served the full tenant roster, per-tenant
+// quota limits and per-tenant consumption to any unauthenticated caller.
+func TestMetricsAuthAutoClosesRemoteTLS(t *testing.T) {
+	setOpts(t, func() { Opts.MgmtProfile = "remote-tls" })
+	required, err := MetricsAuthPlan()
+	if err != nil {
+		t.Fatalf("remote-tls with the default must not fail: %v", err)
+	}
+	if !required {
+		t.Error("remote-tls still serves /metrics anonymously: the profile " +
+			"will not start without an auth service, yet every tenant label " +
+			"is readable by anyone who can reach the port")
+	}
+}
+
+// require is honoured everywhere, including the profiles where auto would not
+// have asked for it -- an operator on a shared network must be able to close
+// the route without adopting a whole profile.
+func TestMetricsAuthRequireAppliesToEveryProfile(t *testing.T) {
+	for _, profile := range []string{"legacy", "appliance-local", "remote-tls"} {
+		t.Run(profile, func(t *testing.T) {
+			setOpts(t, func() {
+				Opts.MgmtProfile = profile
+				Opts.MetricsAuth = MetricsAuthRequire
+			})
+			required, err := MetricsAuthPlan()
+			if err != nil || !required {
+				t.Errorf("require not honoured on %s: required=%v err=%v",
+					profile, required, err)
+			}
+		})
+	}
+}
+
+// disable is a legitimate answer on the profiles that never promised
+// otherwise. It exists so an operator with an external boundary (a scrape-only
+// network, a sidecar) can keep the route open deliberately.
+func TestMetricsAuthDisableIsAllowedOffRemoteTLS(t *testing.T) {
+	for _, profile := range []string{"legacy", "appliance-local"} {
+		t.Run(profile, func(t *testing.T) {
+			setOpts(t, func() {
+				Opts.MgmtProfile = profile
+				Opts.MetricsAuth = MetricsAuthDisable
+			})
+			required, err := MetricsAuthPlan()
+			if err != nil {
+				t.Fatalf("disable must be allowed on %s: %v", profile, err)
+			}
+			if required {
+				t.Errorf("disable ignored on %s", profile)
+			}
+		})
+	}
+}
+
+// The combination the profile forbids. Refused loudly at startup rather than
+// silently overridden: an operator who asked for anonymous metrics and got
+// authenticated metrics would discover it from a broken scrape job, and one
+// who asked and got what they asked for would ship the exposure the profile
+// exists to prevent. Neither is acceptable, so the process does not start.
+func TestMetricsAuthDisableIsRefusedUnderRemoteTLS(t *testing.T) {
+	setOpts(t, func() {
+		Opts.MgmtProfile = "remote-tls"
+		Opts.MetricsAuth = MetricsAuthDisable
+	})
+	required, err := MetricsAuthPlan()
+	if err == nil {
+		t.Fatal("remote-tls accepted --metrics-auth=disable; the profile's own " +
+			"guarantee that nothing on this listener is anonymous is broken")
+	}
+	if required {
+		t.Error("a refused configuration must not also report the route as closed")
+	}
+	// The message has to say what is at stake, or an operator just re-runs
+	// with the flag removed and never learns why it was refused.
+	for _, want := range []string{"remote-tls", "metrics-auth=disable", "tenant"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal does not mention %q: %v", want, err)
+		}
+	}
+}
+
+// An unparsed or hand-constructed value must fail closed. go-flags' choice
+// list refuses unknown values, so this can only be reached by a caller that
+// bypassed flag parsing -- exactly the caller that should not get an open
+// route by default.
+func TestMetricsAuthUnknownValueFailsClosed(t *testing.T) {
+	setOpts(t, func() { Opts.MetricsAuth = "yes-please" })
+	required, err := MetricsAuthPlan()
+	if err == nil {
+		t.Fatal("an unknown metrics-auth value was accepted")
+	}
+	if !required {
+		t.Error("an unknown metrics-auth value left /metrics open; the " +
+			"fail-closed answer is to require a credential")
 	}
 }

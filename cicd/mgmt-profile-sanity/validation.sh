@@ -14,6 +14,11 @@
 #   A2  appliance-local --tls: the TLS listener is coerced to loopback too.
 #   A3  appliance-local --host <NIC address>: the gateway refuses to start —
 #       an explicitly typed reachable address is never silently overridden.
+#   M1  legacy with -p: an anonymous /metrics scrape is served. The
+#       regression guard for the default — every scrape job in the field is
+#       this case.
+#   M2  legacy --metrics-auth=require: anonymous draws 401, the token draws
+#       200. The option is honoured where the profile would not have asked.
 #   R1  remote-tls without --tls: refuses to start.
 #   R2  remote-tls --tls without an authentication service: refuses to start.
 #       The mounted certificates exist, so the refusal must name the missing
@@ -22,6 +27,12 @@
 #   R3  remote-tls --tls --manualtoken: TLS answers on every NIC, an
 #       unauthenticated read of a secured route draws 401, the token draws
 #       200, and no plaintext listener exists anywhere — loopback included.
+#       Also the /metrics verdict: the profile refuses to start without an
+#       authentication service, so it must not then hand the exposition — which
+#       carries per-tenant labels — to an unauthenticated caller.
+#   R4  remote-tls --metrics-auth=disable: refuses to start. The one
+#       combination the profile forbids, refused rather than silently
+#       overridden.
 #
 # Verdicts are fail-fast: the legs share the restart machinery, so a leg that
 # cannot complete leaves every later verdict meaningless.
@@ -213,6 +224,32 @@ expect_fatal "mgmt-profile appliance-local requires a loopback --host" \
   -p --mgmt-profile appliance-local --host 10.10.10.254
 echo "  [OK] an explicitly typed reachable address is fatal, not overridden"
 
+echo "M1: legacy with metrics — an anonymous scrape is served"
+# Every existing Prometheus job in the field is this case: no bearer, on the
+# default profile. It must keep working, so this leg is the regression guard
+# for the default rather than a check of the new behaviour.
+stop_gw
+start_gw -p
+wait_api llb1 "http://127.0.0.1:11111/netlox/v1/version"
+got=$(probe_code llb1 "http://127.0.0.1:11111/netlox/v1/metrics")
+[ "$got" = "200" ] || die "legacy anonymous /metrics: HTTP $got, wanted 200 — the default must never require a credential"
+echo "  [OK] legacy keeps /metrics anonymous"
+
+echo "M2: legacy with --metrics-auth=require — closed without adopting a profile"
+# An operator on a shared network must be able to close the route on its own,
+# without taking the whole remote-tls profile. Proves the option is honoured
+# where the profile would not have asked for it.
+docker exec llb1 bash -c "mkdir -p /etc/loxilb && printf 'mgmt-profile-suite-token\n' > /etc/loxilb/manual_token" \
+  || die "could not place the manual token file"
+stop_gw
+start_gw -p --manualtoken --metrics-auth require
+wait_api llb1 "http://127.0.0.1:11111/netlox/v1/version"
+got=$(probe_code llb1 "http://127.0.0.1:11111/netlox/v1/metrics")
+[ "$got" = "401" ] || die "legacy --metrics-auth=require served an anonymous scrape: HTTP $got, wanted 401"
+got=$(probe_code llb1 "http://127.0.0.1:11111/netlox/v1/metrics" -H "Authorization: Bearer mgmt-profile-suite-token")
+[ "$got" = "200" ] || die "legacy --metrics-auth=require refused a token-bearing scrape: HTTP $got, wanted 200"
+echo "  [OK] --metrics-auth=require closes the route on any profile"
+
 echo "R1: remote-tls without --tls — refused start"
 expect_fatal "mgmt-profile remote-tls requires --tls" \
   -p --mgmt-profile remote-tls
@@ -240,7 +277,33 @@ got=$(probe_code c1 "https://10.10.10.254:8091/netlox/v1/config/loadbalancer/all
 assert_nic_http 000
 got=$(probe_code llb1 "http://127.0.0.1:11111/netlox/v1/version")
 [ "$got" = "000" ] || die "remote-tls left a plaintext listener on loopback (HTTP $got)"
-echo "  [OK] remote-tls serves TLS everywhere, enforces auth, and has no plaintext listener"
+
+# /metrics under remote-tls. The route is declared without a security
+# requirement, so nothing in the generated chain closes it; only the handler's
+# own check does, from the startup decision. Anonymous must be refused and a
+# token must be served — the second half matters as much as the first, because
+# a route that refused everyone would satisfy the first alone.
+got=$(probe_code c1 "https://10.10.10.254:8091/netlox/v1/metrics" -k)
+[ "$got" = "401" ] || die "remote-tls served /metrics to an unauthenticated caller: HTTP $got, wanted 401 — the exposition carries the tenant roster, per-tenant quota limits and per-tenant consumption"
+got=$(probe_code c1 "https://10.10.10.254:8091/netlox/v1/metrics" -k -H "Authorization: Bearer mgmt-profile-suite-token")
+[ "$got" = "200" ] || die "remote-tls refused a token-bearing scrape of /metrics: HTTP $got, wanted 200"
+# And prove the refusal is a refusal, not an empty body with a 401 status: an
+# unauthenticated caller must receive no exposition at all.
+body=$($hexec c1 curl -s --connect-timeout 3 -m 5 -k "https://10.10.10.254:8091/netlox/v1/metrics" 2>/dev/null || true)
+case "$body" in
+  *loxilb_*|*"# HELP"*|*"# TYPE"*)
+    die "the 401 body leaked exposition content: $body" ;;
+esac
+echo "  [OK] remote-tls serves TLS everywhere, enforces auth on both the API and /metrics, and has no plaintext listener"
+
+echo "R4: remote-tls with --metrics-auth=disable — refused start"
+# The combination the profile forbids. Silently overriding it would break a
+# scrape job the operator then has to debug; honouring it would ship the
+# exposure the profile exists to prevent. Neither is acceptable, so the
+# process does not start.
+expect_fatal "refuses --metrics-auth=disable" \
+  -p --mgmt-profile remote-tls --tls --manualtoken --metrics-auth disable
+echo "  [OK] remote-tls will not be talked out of authenticating /metrics"
 
 echo SCENARIO-mgmt-profile-sanity-validation [OK]
 exit 0

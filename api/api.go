@@ -142,6 +142,19 @@ func RunAPIServer() {
 	tk.LogIt(tk.LogInfo, "api: mgmt-profile %s: http=%v https=%v\n",
 		options.Opts.MgmtProfile, plan.HTTP, plan.HTTPS)
 
+	// Whether /metrics demands a bearer is decided here, once, for the same
+	// reason and at the same moment as the listener plan: an operator asking
+	// for a combination the profile forbids must be told before a socket
+	// binds, not after a scraper has already read the tenant roster.
+	metricsAuth, err := options.MetricsAuthPlan()
+	if err != nil {
+		tk.LogIt(tk.LogCritical, "api: %s\n", err.Error())
+		log.Fatalln(err)
+	}
+	handler.SetMetricsAuthRequired(metricsAuth)
+	tk.LogIt(tk.LogInfo, "api: /metrics requires authentication: %v (--metrics-auth=%s)\n",
+		metricsAuth, options.Opts.MetricsAuth)
+
 	// API server host list
 	server.Host = plan.Host
 	server.Port = options.Opts.Port
