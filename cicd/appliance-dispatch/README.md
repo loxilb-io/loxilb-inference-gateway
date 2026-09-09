@@ -52,48 +52,51 @@ family to keep working.
 | AD-18 | the child environment is fixed by the CLI, not inherited |
 | AD-19…23, AD-28…29 | secret-file mode/symlink rules, stdin-only secrets, console-only bootstrap, key files never overwritten |
 | AD-24 | capability stubs refused with `6`, never a successful stub |
-| AD-25…26 | the two known-red legs below |
-| AD-27 | `--timeout` bounds a forking backend (regression cover for a fixed defect) |
+| AD-25…27 | the three regression legs below |
 
 Out of scope, and deliberately so: installing the real package on a clean host,
 finding the correlation id in the host journal, and injecting failures into the
 surrounding components all need the real backend on a real appliance image. This
 suite does not simulate those and does not claim them.
 
-## Known-red legs
+## Regression cover for fixed defects
 
-Two legs assert the published contract against behaviour that does not yet
-implement it. They fail on purpose; that is the finding, not a harness bug.
+These three legs assert clauses of `contracts/exit-codes.md` and
+`host-backend-contract.md` that the dispatcher did not implement when this suite
+was written. All three are fixed; the legs stay because the behaviours are ones
+a refactor can quietly undo, and each is the kind of bug that is invisible until
+automation acts on the wrong code.
 
-- **AD-25** — `contracts/exit-codes.md` rule 5 names "timeout mid-mutation" as
-  the `PARTIAL` case, and `host-backend-contract.md` requires exit `8` with the
-  backend's operation id in `data.operationId`. Today every non-zero backend
-  exit collapses to `7`, and `applianceData` has no `operationId` field. Exit
-  `7` tells automation the operation is safe to retry; rule 4 forbids
-  auto-retrying `8`. A half-written backup or a half-applied public address is
-  exactly what must not be retried blindly.
-- **AD-26** — `contracts/exit-codes.md` defines `3` (`AUTH`) as covering "OS
-  privilege insufficient". `pkg/backend.run()` maps absent binary, permission
-  denial and context death all to `5`. Exit `5` tells automation to retry with
-  bounded backoff, which can never succeed for an under-privileged caller.
+- **AD-25** — a *mutating* backend killed mid-flight exits `8` (`PARTIAL`) and
+  carries the backend's operation id in `data.operationId`. It previously
+  collapsed to `7`, which tells automation the operation is safe to retry, while
+  rule 4 forbids auto-retrying `8`. A half-written backup or a half-applied
+  public address is exactly what must not be retried blindly. Fixed in the CLI's
+  `cmd/appliance/appliance.go` (`backendOutcome`), which also splits the
+  read-only case out to `5` — nothing can have changed, so a bounded retry is
+  legitimate there.
+- **AD-26** — a backend present but **not executable** by the caller exits `3`
+  (`AUTH`, the taxonomy's row for insufficient OS privilege) with
+  `componentCode: BACKEND_FORBIDDEN`. It previously exited `5`, inviting a
+  bounded retry that can never succeed for an under-privileged caller. An
+  *absent* backend still exits `5` (AD-05) — that one resolves itself once a
+  package finishes installing. Fixed in the CLI's `pkg/backend/backend.go`.
+- **AD-27** — `--timeout` bounds an invocation whose backend forks a child.
+  `exec.CommandContext` kills only the direct child; the grandchild inherits
+  stdout/stderr, so `cmd.Run()` blocked until *that* exited — measured at 45s
+  against `-t 2`. Every real backend forks the moment it shells out to `tar`,
+  `pg_dump`, `systemctl` or `journalctl`, so this was the default shape, not an
+  edge case. It also masked AD-25, because the CLI frequently never reached the
+  classification at all. Fixed in the CLI's `pkg/backend/backend.go` (process
+  group + group kill + `WaitDelay`).
 
-- **AD-27 — FIXED, now green; kept as regression cover.** `--timeout` did not
-  bound an invocation whose backend forks a child. `exec.CommandContext` kills only the direct child; the grandchild
-  inherits stdout/stderr, so `cmd.Run()` blocks until *that* exits. Measured at
-  45s against `-t 2` (the leg's own backstop, not the CLI's). Every real backend
-  forks the moment it shells out to `tar`, `pg_dump`, `systemctl` or
-  `journalctl`, so this is the default shape, not an edge case. It also masks
-  AD-25: the CLI frequently never reaches the classification at all.
-  `cmd/appliance/appliance.go`'s `requestContext` comment claims the opposite —
-  "so a wedged backend cannot hang automation forever". Minimal fix:
-  `cmd.WaitDelay`, or `Setpgid` plus a process-group kill. Fixed in
-  `pkg/backend/backend.go` (process group + group kill + `WaitDelay`); this leg
-  stays so the bound cannot silently regress.
+A red leg here is a regression, not a pending finding, so there is no switch to
+downgrade one. (An earlier `APPL_TOLERATE_KNOWN_DEFECTS=1` existed only to let
+the suite be wired into CI before the fixes landed; it was removed with them.)
 
-`APPL_TOLERATE_KNOWN_DEFECTS=1` downgrades the known-red legs to `[KNOWN-DEFECT]` warnings so
-the suite can be wired into CI before the fixes land. Setting it is a scheduling
-decision, not a coverage one — say so if you do it, and the legs still print
-what they found.
+These legs assert against the CLI **binary under test**, so running them against
+a `loxicmd` predating the fixes will correctly report three failures — use
+`LOXICMD_BIN` (below) to say which binary you mean.
 
 ## Running it
 
