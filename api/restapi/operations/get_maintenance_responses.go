@@ -103,15 +103,15 @@ func (o *GetMaintenanceUnauthorized) WriteResponse(rw http.ResponseWriter, produ
 	}
 }
 
-// GetMaintenanceInternalServerErrorCode is the HTTP code returned for type GetMaintenanceInternalServerError
-const GetMaintenanceInternalServerErrorCode int = 500
+// GetMaintenanceForbiddenCode is the HTTP code returned for type GetMaintenanceForbidden
+const GetMaintenanceForbiddenCode int = 403
 
 /*
-GetMaintenanceInternalServerError Internal service error
+GetMaintenanceForbidden Authenticated principal's role carries no authority for this operation
 
-swagger:response getMaintenanceInternalServerError
+swagger:response getMaintenanceForbidden
 */
-type GetMaintenanceInternalServerError struct {
+type GetMaintenanceForbidden struct {
 
 	/*
 	  In: Body
@@ -119,27 +119,27 @@ type GetMaintenanceInternalServerError struct {
 	Payload *models.Error `json:"body,omitempty"`
 }
 
-// NewGetMaintenanceInternalServerError creates GetMaintenanceInternalServerError with default headers values
-func NewGetMaintenanceInternalServerError() *GetMaintenanceInternalServerError {
+// NewGetMaintenanceForbidden creates GetMaintenanceForbidden with default headers values
+func NewGetMaintenanceForbidden() *GetMaintenanceForbidden {
 
-	return &GetMaintenanceInternalServerError{}
+	return &GetMaintenanceForbidden{}
 }
 
-// WithPayload adds the payload to the get maintenance internal server error response
-func (o *GetMaintenanceInternalServerError) WithPayload(payload *models.Error) *GetMaintenanceInternalServerError {
+// WithPayload adds the payload to the get maintenance forbidden response
+func (o *GetMaintenanceForbidden) WithPayload(payload *models.Error) *GetMaintenanceForbidden {
 	o.Payload = payload
 	return o
 }
 
-// SetPayload sets the payload to the get maintenance internal server error response
-func (o *GetMaintenanceInternalServerError) SetPayload(payload *models.Error) {
+// SetPayload sets the payload to the get maintenance forbidden response
+func (o *GetMaintenanceForbidden) SetPayload(payload *models.Error) {
 	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *GetMaintenanceInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *GetMaintenanceForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.WriteHeader(500)
+	rw.WriteHeader(403)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {

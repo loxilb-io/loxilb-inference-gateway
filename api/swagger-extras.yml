@@ -33,6 +33,18 @@ produces:
   - application/json
 consumes:
   - application/json
+securityDefinitions:
+  BearerAuth:
+    type: apiKey
+    name: Authorization
+    in: header
+# Every route described here is bearer-authenticated by the API server's
+# management middleware before the raw handler runs, exactly as in
+# swagger.yml. Declaring it makes that fact visible to generated clients and
+# to the spec-lint gate; without it the 401/403 responses below contradict a
+# document that never says authentication exists.
+security:
+  - BearerAuth: []
 paths:
 
   # ===============================
@@ -448,7 +460,9 @@ paths:
         '503':
           description: Management credential store or API-key store unavailable
           schema:
-            $ref: '#/definitions/RawError'
+            # The raw arm writes {"error": ...} via writeKeyStoreFailure
+            # (api/restapi/handler/ai_apikey.go), which is SimpleError.
+            $ref: '#/definitions/SimpleError'
 
 definitions:
   RawError:

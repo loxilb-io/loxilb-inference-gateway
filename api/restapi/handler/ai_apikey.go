@@ -115,7 +115,7 @@ func ConfigPostAIApikey(params aiops.PostConfigAiApikeyParams, principal interfa
 	// into response logs and API traces for no benefit.
 	return aiops.NewPostConfigAiApikeyCreated().WithPayload(&models.APIKeyCreateResponse{
 		RawKey: &rawKey,
-		KeyID:  keyID,
+		KeyID:  &keyID,
 	})
 }
 

@@ -103,15 +103,15 @@ func (o *GetDiagnosticsUnauthorized) WriteResponse(rw http.ResponseWriter, produ
 	}
 }
 
-// GetDiagnosticsInternalServerErrorCode is the HTTP code returned for type GetDiagnosticsInternalServerError
-const GetDiagnosticsInternalServerErrorCode int = 500
+// GetDiagnosticsForbiddenCode is the HTTP code returned for type GetDiagnosticsForbidden
+const GetDiagnosticsForbiddenCode int = 403
 
 /*
-GetDiagnosticsInternalServerError Internal service error
+GetDiagnosticsForbidden Authenticated principal's role carries no authority for this operation
 
-swagger:response getDiagnosticsInternalServerError
+swagger:response getDiagnosticsForbidden
 */
-type GetDiagnosticsInternalServerError struct {
+type GetDiagnosticsForbidden struct {
 
 	/*
 	  In: Body
@@ -119,27 +119,27 @@ type GetDiagnosticsInternalServerError struct {
 	Payload *models.Error `json:"body,omitempty"`
 }
 
-// NewGetDiagnosticsInternalServerError creates GetDiagnosticsInternalServerError with default headers values
-func NewGetDiagnosticsInternalServerError() *GetDiagnosticsInternalServerError {
+// NewGetDiagnosticsForbidden creates GetDiagnosticsForbidden with default headers values
+func NewGetDiagnosticsForbidden() *GetDiagnosticsForbidden {
 
-	return &GetDiagnosticsInternalServerError{}
+	return &GetDiagnosticsForbidden{}
 }
 
-// WithPayload adds the payload to the get diagnostics internal server error response
-func (o *GetDiagnosticsInternalServerError) WithPayload(payload *models.Error) *GetDiagnosticsInternalServerError {
+// WithPayload adds the payload to the get diagnostics forbidden response
+func (o *GetDiagnosticsForbidden) WithPayload(payload *models.Error) *GetDiagnosticsForbidden {
 	o.Payload = payload
 	return o
 }
 
-// SetPayload sets the payload to the get diagnostics internal server error response
-func (o *GetDiagnosticsInternalServerError) SetPayload(payload *models.Error) {
+// SetPayload sets the payload to the get diagnostics forbidden response
+func (o *GetDiagnosticsForbidden) SetPayload(payload *models.Error) {
 	o.Payload = payload
 }
 
 // WriteResponse to the client
-func (o *GetDiagnosticsInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
+func (o *GetDiagnosticsForbidden) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
 
-	rw.WriteHeader(500)
+	rw.WriteHeader(403)
 	if o.Payload != nil {
 		payload := o.Payload
 		if err := producer.Produce(rw, payload); err != nil {
