@@ -161,6 +161,74 @@ func TestResolveFlowMACs_SingleflightCollapse(t *testing.T) {
 	}
 }
 
+// TestResolveFlowMACs_ProductionWrapCollapses asserts the invariant against
+// resolveFlowMACs itself, not against a locally constructed Group.
+//
+// The sibling test above covers singleflight's own semantics; this one covers
+// the thing the hot path actually calls, which is what the wrap exists for.
+// Do seals its inner function, so the flight is opened through the production
+// path and held there by the counter hook, and the further callers arrive via
+// DoChan on the same group and key: DoChan returns once the caller has joined,
+// so joining is observed rather than assumed. A caller that failed to collapse
+// would run its own inner function and be counted.
+func TestResolveFlowMACs_ProductionWrapCollapses(t *testing.T) {
+	const (
+		N    = 10
+		addr = "203.0.113.7"
+		cidr = "203.0.113.7"
+	)
+
+	withCleanSelfIPCache(t, []string{cidr}, func() {
+		// The fast path returns before reaching the flight, so the address
+		// must not be a self-IP. withCleanSelfIPCache has just removed it.
+		if key, ok := parseIPv4BEFromCIDR(cidr); ok && SelfIPCache.Has(key) {
+			t.Fatalf("%s is in SelfIPCache; the fast path would skip the singleflight entirely", cidr)
+		}
+
+		var calls atomic.Int64
+		entered := make(chan struct{})
+		release := make(chan struct{})
+		var enteredOnce sync.Once
+
+		resolveSFInnerHook = func() {
+			calls.Add(1)
+			enteredOnce.Do(func() { close(entered) })
+			<-release
+		}
+		defer func() { resolveSFInnerHook = nil }()
+
+		d := &DpDocaBf2{}
+		ip := net.ParseIP(addr)
+
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			d.resolveFlowMACs(ip)
+		}()
+		<-entered // the production flight is open and held
+
+		joined := make([]<-chan singleflight.Result, 0, N-1)
+		for i := 1; i < N; i++ {
+			joined = append(joined, d.resolveSF.DoChan(ip.String(), func() (interface{}, error) {
+				// Reached only if this caller did not join the open flight.
+				calls.Add(1)
+				return nil, nil
+			}))
+		}
+
+		close(release)
+		<-done
+		for _, ch := range joined {
+			<-ch
+		}
+
+		if got := calls.Load(); got != 1 {
+			t.Fatalf("resolveFlowMACs did not collapse: %d inner-fn invocations for %d concurrent callers on key %q; want exactly 1",
+				got, N, addr)
+		}
+	})
+}
+
 // TestResolveFlowMACs_SymmetricKeyEncoding — meta-test guarding against
 // regressions where production (tk.IPtonl) and test stub (also tk.IPtonl
 // via dpu_doca_bf2_stub.go) drift apart. If this fails, the cache will
