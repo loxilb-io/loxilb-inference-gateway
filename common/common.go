@@ -989,10 +989,11 @@ type LbServiceArg struct {
 	// PDDisaggMode - Enable prefill/decode disaggregation for vLLM P/D serving
 	// Requires mode=FullProxy(4) and backend_protocol=http1. Endpoints must have ep_role set.
 	PDDisaggMode bool `json:"pd_disagg_mode,omitempty"`
-	// PDCacheAwareMode - Enable P/D cache-aware routing (session + trie + min-load)
-	// Requires PDDisaggMode=true. When false (default), P/D uses basic first-healthy selection.
+	// PDCacheAwareMode - Enable Tier-1 P/D radix-trie prefix affinity.
+	// Requires PDDisaggMode=true. Tier-0 session stickiness is independent of this flag.
 	PDCacheAwareMode bool `json:"pd_cache_aware_mode,omitempty"`
-	// PDSessionTTLSec - Session stickiness TTL in seconds for P/D cache-aware routing. 0 = no expiry.
+	// PDSessionTTLSec - Tier-0 P/D sliding idle TTL in seconds; omitted/0 uses 300s.
+	// Positive values override the default. Independent of PDCacheAwareMode and engine KV lifetime.
 	PDSessionTTLSec uint32 `json:"pd_session_ttl_sec,omitempty"`
 	// PDCacheThreshold - Cache match threshold (0-100, default 20)
 	PDCacheThreshold uint8 `json:"pd_cache_threshold,omitempty"`

@@ -42,7 +42,7 @@ func (o *PostConfigL7PolicyNoContent) WriteResponse(rw http.ResponseWriter, prod
 const PostConfigL7PolicyBadRequestCode int = 400
 
 /*
-PostConfigL7PolicyBadRequest Malformed arguments (failed Octavia validation or unrepresentable export)
+PostConfigL7PolicyBadRequest Policy validation or dataplane attachment failed. Generated request-model validation runs before the handler; this operation does not perform Gateway API export.
 
 swagger:response postConfigL7PolicyBadRequest
 */

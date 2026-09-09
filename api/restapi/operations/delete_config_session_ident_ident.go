@@ -34,7 +34,7 @@ func NewDeleteConfigSessionIdentIdent(ctx *middleware.Context, handler DeleteCon
 
 # Create a new Load balancer service
 
-Create a new load balancer service with .
+Delete the session identified by ident and all of its ULCL classifiers.
 */
 type DeleteConfigSessionIdentIdent struct {
 	Context *middleware.Context

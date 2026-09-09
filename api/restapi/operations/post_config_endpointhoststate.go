@@ -34,7 +34,7 @@ func NewPostConfigEndpointhoststate(ctx *middleware.Context, handler PostConfigE
 
 # Sets the state of a host
 
-Sets the state of a host which can have multiple endpoints
+Set green, yellow, or red host state. Specify both nonzero epPort and epProto for generated-key targeting, or omit both for host-wide targeting. Specific targeting does not resolve custom monitor names; host-wide requests can succeed without matches. Immediate dependent-rule updates are limited to the implemented fullproxy path and are not a universal completion guarantee.
 */
 type PostConfigEndpointhoststate struct {
 	Context *middleware.Context

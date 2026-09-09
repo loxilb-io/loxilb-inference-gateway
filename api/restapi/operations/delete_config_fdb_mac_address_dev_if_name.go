@@ -34,7 +34,7 @@ func NewDeleteConfigFdbMacAddressDevIfName(ctx *middleware.Context, handler Dele
 
 # Delete FDB in the device
 
-Delete FDB in the device
+Delete a bridge-family forwarding entry identified by interface and MAC address. The API does not expose additional kernel FDB selectors such as VLAN or tunnel destination.
 */
 type DeleteConfigFdbMacAddressDevIfName struct {
 	Context *middleware.Context

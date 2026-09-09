@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// IPsecCertificateMod i psec certificate mod
+// IPsecCertificateMod Leaf certificate and private-key input. Upload performs implemented local parsing and validity checks, not complete chain-trust or tunnel-readiness validation. Name reaches node filesystem paths without complete path-safety validation. The validation-only endpoint shares this schema but ignores name and description. See IPsecCertValidation for key-matching limitations.
 //
 // swagger:model IPsecCertificateMod
 type IPsecCertificateMod struct {
@@ -30,7 +30,7 @@ type IPsecCertificateMod struct {
 	// Required: true
 	Name *string `json:"name"`
 
-	// Optional passphrase for encrypted private key
+	// Accepted input that is currently unused. Encrypted private-key decryption is not implemented; supplying a passphrase does not enable encrypted-key support.
 	Passphrase string `json:"passphrase,omitempty"`
 
 	// PEM-encoded private key

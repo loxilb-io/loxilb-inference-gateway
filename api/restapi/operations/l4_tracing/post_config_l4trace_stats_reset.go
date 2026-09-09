@@ -37,7 +37,7 @@ func NewPostConfigL4traceStatsReset(ctx *middleware.Context, handler PostConfigL
 
 # Reset L4 tracing statistics
 
-Resets all L4 tracing statistics counters to zero.
+Resets the C-side L4 statistics currently exposed by this API, not the separate Go consumer counters. Statistics wiring is incomplete, so success does not establish a fresh measurement baseline across the tracing pipeline.
 Does not affect current tracing configuration (enabled/disabled state).
 Useful for baseline measurements and performance testing.
 */

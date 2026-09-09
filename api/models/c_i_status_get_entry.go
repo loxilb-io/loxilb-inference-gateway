@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// CIStatusGetEntry c i status get entry
+// CIStatusGetEntry Cluster instance state and VIP readback. The current handler does not populate the schema-required sync field; neither its presence nor the response status proves completion of dependent HA actions.
 //
 // swagger:model CIStatusGetEntry
 type CIStatusGetEntry struct {
@@ -25,7 +25,7 @@ type CIStatusGetEntry struct {
 	// Current Cluster Instance State
 	State string `json:"state,omitempty"`
 
-	// Sync - sync state
+	// Not populated by the current handler despite its required declaration; not evidence of completed synchronization.
 	// Required: true
 	Sync *int64 `json:"sync"`
 

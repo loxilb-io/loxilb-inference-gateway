@@ -34,7 +34,7 @@ func NewGetMetrics(ctx *middleware.Context, handler GetMetricsHandler) *GetMetri
 
 # Scrape metrics from the cache
 
-Prometheus exposition. Whether this route requires a bearer token is a deployment property, not a property of the route, which is why it is declared without a security requirement while still declaring 401, 403 and 503. The --metrics-auth option decides - auto (the default) requires a token only under mgmt-profile remote-tls, require always requires one, and disable never does and is refused under remote-tls. A scraper that gets 401 here is reaching a gateway that expects a credential; configure the scrape job with a bearer token rather than removing the requirement.
+Public management-authentication-exempt Prometheus scrape, using exposition rather than JSON. Disabled collection/export returns plain-text 503. Series depend on initialization and activity; absence is not measured zero.
 */
 type GetMetrics struct {
 	Context *middleware.Context

@@ -35,7 +35,7 @@ func NewGetCatalogParser(ctx *middleware.Context, handler GetCatalogParserHandle
 # Get parser assignment for a catalog
 
 Returns the parser currently assigned to a specific trace catalog.
-Shows catalog name, parser name, and parser_type from YAML configuration.
+parser_name is the runtime assignment key; parser_type is the YAML declaration and can differ after an override. Catalog metadata can be absent. Mapping lookup errors, including an unavailable registry, currently produce 404. Numeric catalog IDs are not durable identities across catalog-set changes.
 */
 type GetCatalogParser struct {
 	Context *middleware.Context

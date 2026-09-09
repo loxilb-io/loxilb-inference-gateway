@@ -1,6 +1,29 @@
 #!/bin/bash
 source ../common.sh
 
+# loxicmd predates the snapshot auto-persist write gate and currently exposes
+# its transient HTTP 503 as exit 5 without the response body. Keep this legacy
+# scenario compatible by retrying only that exact status, with a small bound;
+# all other failures are returned immediately.
+run_loxicmd_mutation() { # <container> <loxicmd arguments...>
+  local container=$1 out rc
+  shift
+  for _ in 1 2 3 4 5 6; do
+    if out=$($dexec "$container" loxicmd "$@" 2>&1); then
+      printf '%s\n' "$out"
+      return 0
+    else
+      rc=$?
+    fi
+    case "$out" in
+      *"gateway answered HTTP 503"*) sleep 2 ;;
+      *) printf '%s\n' "$out"; return "$rc" ;;
+    esac
+  done
+  printf '%s\n' "$out"
+  return "$rc"
+}
+
 echo "#########################################"
 echo "Spawning all hosts"
 echo "#########################################"
@@ -76,8 +99,8 @@ $hexec llb2 curl -X 'POST' \
   "vip": "0.0.0.0"
 }'
 
-$dexec llb1 loxicmd create lb 0.0.0.0 --tcp=9999:9999 --endpoints=172.17.0.3:1,172.17.0.4:1 --egress
-$dexec llb1 loxicmd create firewall --firewallRule="sourceIP:32.32.32.1/32" --snat=172.17.0.41 --egress
+run_loxicmd_mutation llb1 create lb 0.0.0.0 --tcp=9999:9999 --endpoints=172.17.0.3:1,172.17.0.4:1 --egress
+run_loxicmd_mutation llb1 create firewall --firewallRule="sourceIP:32.32.32.1/32" --snat=172.17.0.41 --egress
 
-$dexec llb2 loxicmd create lb 0.0.0.0 --tcp=9999:9999 --endpoints=172.17.0.3:1,172.17.0.4:1 --egress
-$dexec llb2 loxicmd create firewall --firewallRule="sourceIP:32.32.32.1/32" --snat=172.17.0.41 --egress
+run_loxicmd_mutation llb2 create lb 0.0.0.0 --tcp=9999:9999 --endpoints=172.17.0.3:1,172.17.0.4:1 --egress
+run_loxicmd_mutation llb2 create firewall --firewallRule="sourceIP:32.32.32.1/32" --snat=172.17.0.41 --egress

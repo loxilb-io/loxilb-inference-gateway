@@ -14,22 +14,22 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// OPAWatcherConfig o p a watcher config
+// OPAWatcherConfig Full replacement of the singleton OPA watcher configuration, not a patch. Acceptance starts background polling; it does not prove a successful fetch or firewall application. The current internal applier uses localhost HTTP without a management credential, so authenticated management deployments require implementation reconciliation before enforcement can be claimed.
 //
 // swagger:model OPAWatcherConfig
 type OPAWatcherConfig struct {
 
-	// Allow traffic when OPA is unreachable
+	// Intended OPA failure-policy declaration. The current watcher stores and reports this flag but does not implement distinct fail-open behavior; fetch failures retain the previously applied state for either value. False does not implement a deny-all fallback. Policy semantics and enforcement require implementation reconciliation.
 	FailOpen *bool `json:"fail_open,omitempty"`
 
-	// OPA server URL (e.g. http://opa:8181)
+	// OPA server URL with a hostname. Current admission checks a limited IPv4 blocklist only; it does not provide comprehensive IPv6, redirect, or DNS-rebinding protection. This is an unresolved outbound security limitation, not a qualified SSRF prevention guarantee.
 	// Required: true
 	OpaURL *string `json:"opa_url"`
 
-	// OPA policy path to query
+	// OPA data path; omitted or empty uses loxilb/l4. Leading slashes are removed before appending the path after /v1/data/.
 	PolicyPath *string `json:"policy_path,omitempty"`
 
-	// Polling interval in seconds
+	// Polling interval in seconds; omitted or nonpositive uses 30. The initial poll starts after the current 10-second initial delay. Positive values need an overflow-safe product bound before conversion to time.Duration; that upper-bound validation is not implemented.
 	PollIntervalSec *int64 `json:"poll_interval_sec,omitempty"`
 }
 

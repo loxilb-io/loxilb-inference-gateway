@@ -12,7 +12,7 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// BGPNeighGetEntry b g p neigh get entry
+// BGPNeighGetEntry BGP neighbor state readback. Configured remote port 179 is normalized to zero or omitted. multiHop reports whether multihop is enabled; it does not preserve an arbitrary configured TTL. A returned neighbor is not necessarily established.
 //
 // swagger:model BGPNeighGetEntry
 type BGPNeighGetEntry struct {
@@ -32,7 +32,7 @@ type BGPNeighGetEntry struct {
 	// Current state
 	State string `json:"state,omitempty"`
 
-	// Current uptime
+	// Formatted duration associated with current up/down state, or never; not always uptime.
 	Updowntime string `json:"updowntime,omitempty"`
 }
 

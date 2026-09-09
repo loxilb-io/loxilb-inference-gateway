@@ -34,7 +34,7 @@ func NewGetConfigL4traceStatus(ctx *middleware.Context, handler GetConfigL4trace
 
 # Get L4 tracing status and statistics
 
-Returns current L4 tracing configuration, connection statistics, and event counters.
+Returns L4 configuration with currently incomplete statistics wiring. REST reads C counters that are separate from the Go consumer's event counters; default or zero values do not establish measured traffic or loss, or compiled feature availability.
 
 **Statistics include:**
 - Total events emitted (TCP + SCTP state changes)

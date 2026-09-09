@@ -15,20 +15,20 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// PIIConfigEntry p i i config entry
+// PIIConfigEntry Stored settings, not scanner-readiness evidence. Requires piidetection and an initialized manager. Omission generally preserves values; empty strings do not clear them. Known gaps are documented on the affected fields below. Numeric int64 settings are narrowed to uint32 without upper bounds, and min_body_size <= max_body_size is not validated. Configuration success does not establish encryption, complete-body inspection, or protection.
 //
 // swagger:model PIIConfigEntry
 type PIIConfigEntry struct {
 
-	// Presidio analyzer gRPC endpoint
+	// Stored gRPC endpoint. The reviewed client uses insecure transport credentials; storage does not establish connectivity, TLS protection, or successful live reconfiguration.
 	// Example: localhost:50051
 	AnalyzerURL string `json:"analyzer_url,omitempty"`
 
-	// Presidio anonymizer gRPC endpoint (optional)
+	// Optional stored endpoint; the reviewed Go bridge uses the analyzer client rather than configuring a separate anonymizer connection.
 	// Example: localhost:50051
 	AnonymizerURL string `json:"anonymizer_url,omitempty"`
 
-	// Batch size for v2 streaming API
+	// Intended v2 batch size, currently dropped by the handler. The declared range does not establish batch-processing support through this endpoint.
 	// Example: 10
 	// Maximum: 100
 	// Minimum: 1
@@ -37,7 +37,7 @@ type PIIConfigEntry struct {
 	// circuit breaker
 	CircuitBreaker *PIICircuitBreaker `json:"circuit_breaker,omitempty"`
 
-	// Default anonymization operator for v2
+	// Intended v2 operator, currently dropped by the handler. Selecting encrypt does not configure encryption or imply use of encryption_key.
 	// Example: encrypt
 	// Enum: [replace redact hash mask encrypt]
 	DefaultOperator string `json:"default_operator,omitempty"`
@@ -47,11 +47,11 @@ type PIIConfigEntry struct {
 	// Enum: [both request response]
 	Direction string `json:"direction,omitempty"`
 
-	// Enable Presidio v2 API (combined analyze+anonymize, 40% faster)
+	// Intended v2 selector, currently dropped by the handler. Supplying it does not enable v2 processing; no performance improvement is established by this API.
 	// Example: true
 	EnableV2 bool `json:"enable_v2,omitempty"`
 
-	// Base64-encoded encryption key for v2 (AES-256, 32 bytes)
+	// Intended v2 encryption input, currently dropped by the handler. Base64 decoding, AES-256 key-length validation, and encryption using this value are not implemented on this path.
 	// Example: YourBase64EncodedKey32BytesLong=
 	EncryptionKey string `json:"encryption_key,omitempty"`
 
@@ -60,12 +60,12 @@ type PIIConfigEntry struct {
 	// Enum: [open closed]
 	FailMode string `json:"fail_mode,omitempty"`
 
-	// Maximum HTTP body size to scan (bytes)
+	// Stored byte bound, including explicit zero. Eligibility also checks HTTP-buffer length and content type; this does not guarantee inspection of every complete body or validate the relation to min_body_size.
 	// Example: 65536
 	// Minimum: 0
 	MaxBodySize *int64 `json:"max_body_size,omitempty"`
 
-	// Minimum HTTP body size to scan (bytes)
+	// Stored minimum byte bound, including explicit zero. The consumer checks HTTP-buffer length; the relation to max_body_size is not validated.
 	// Example: 100
 	// Minimum: 0
 	MinBodySize *int64 `json:"min_body_size,omitempty"`
@@ -78,18 +78,18 @@ type PIIConfigEntry struct {
 	// retry
 	Retry *PIIRetry `json:"retry,omitempty"`
 
-	// Large body handling (full=skip if too large, truncate=scan first 64KB)
+	// Intended large-message mode, currently dropped by this handler. The consumer skips oversized input in full mode or truncates to configured max_body_size in truncate mode, not invariably 64KB.
 	// Example: truncate
 	// Enum: [full truncate]
 	ScanMode string `json:"scan_mode,omitempty"`
 
-	// Minimum confidence score for PII detection (0.0-1.0)
+	// Stored threshold, including explicit zero. AnonymizeJSON reads this value, but legacy Analyze sends 0.5; uniform threshold enforcement is not established.
 	// Example: 0.7
 	// Maximum: 1
 	// Minimum: 0
 	ScoreThreshold *float32 `json:"score_threshold,omitempty"`
 
-	// Presidio request timeout in milliseconds
+	// Stored milliseconds, including explicit zero. The current reconfiguration bridge does not apply this value to the client's five-second RPC timeout; zero is not a proven disable or unlimited setting.
 	// Example: 100
 	// Minimum: 0
 	TimeoutMs *int64 `json:"timeout_ms,omitempty"`

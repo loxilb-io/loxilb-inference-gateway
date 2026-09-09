@@ -15,12 +15,12 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// IPFilterEntry IP filter entry
+// IPFilterEntry Zone-less source-prefix XDP filter. whitelist requires allow and blacklist requires drop. Each list uses longest-prefix matching; higher priority wins between lists and whitelist wins ties. Reposting the same normalized list/prefix replaces the entry and resets counters. Maps are shared with the security-rate whitelist, not isolated by API ownership.
 //
 // swagger:model IPFilterEntry
 type IPFilterEntry struct {
 
-	// Action to take (allow or drop)
+	// Use allow with whitelist and drop with blacklist; other combinations are rejected.
 	// Required: true
 	// Enum: [allow drop]
 	Action *string `json:"action"`
@@ -40,10 +40,10 @@ type IPFilterEntry struct {
 	// Packet counter (read-only)
 	Packets int64 `json:"packets,omitempty"`
 
-	// Rule priority (higher = more important)
+	// Priority 0..65535. Omission uses 100; explicit zero is preserved. Higher priority wins between matching lists; whitelist wins ties.
 	Priority *int64 `json:"priority,omitempty"`
 
-	// Security zone (0 = all zones)
+	// Zone must be zero or omitted on POST because XDP filtering precedes zone classification. DELETE does not use zone in the key.
 	Zone int64 `json:"zone,omitempty"`
 }
 

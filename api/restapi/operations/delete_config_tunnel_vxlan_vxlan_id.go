@@ -34,7 +34,7 @@ func NewDeleteConfigTunnelVxlanVxlanID(ctx *middleware.Context, handler DeleteCo
 
 # Delete a one of vxlan configuration
 
-Return a list of existing tunnels of a type. If there're no tunnels to return, empty list will be returned.
+Delete interface vxlan<ID>. The current helper continues after failed interface lookup; verify existence before submission. Backend failure can return HTTP 200 with result set to fail, so HTTP status alone is not success evidence.
 */
 type DeleteConfigTunnelVxlanVxlanID struct {
 	Context *middleware.Context

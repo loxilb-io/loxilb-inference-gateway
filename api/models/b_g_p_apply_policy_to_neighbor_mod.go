@@ -15,7 +15,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// BGPApplyPolicyToNeighborMod b g p apply policy to neighbor mod
+// BGPApplyPolicyToNeighborMod Policy-assignment input. policyType selects import/export; routeAction uses accept/reject as the default assignment action. POST adds assignments. On DELETE, omitted or empty policies removes all assignments for the selected target/direction, and the schema-required routeAction is ignored.
 //
 // swagger:model BGPApplyPolicyToNeighborMod
 type BGPApplyPolicyToNeighborMod struct {
@@ -24,7 +24,7 @@ type BGPApplyPolicyToNeighborMod struct {
 	// Required: true
 	IPAddress *string `json:"ipAddress"`
 
-	// policies
+	// Policy names to add or delete. On DELETE, omission or an empty list removes all assignments for the selected target and direction.
 	Policies []string `json:"policies"`
 
 	// policy type
@@ -32,7 +32,7 @@ type BGPApplyPolicyToNeighborMod struct {
 	// Enum: [import export]
 	PolicyType *string `json:"policyType"`
 
-	// route action
+	// Default assignment action, accept or reject. Still schema-required on DELETE, but ignored by that handler.
 	// Required: true
 	// Enum: [accept reject]
 	RouteAction *string `json:"routeAction"`

@@ -12,7 +12,7 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// LlamaFirewallIndividualScannerStats llama firewall individual scanner stats
+// LlamaFirewallIndividualScannerStats Placeholder values, not measured scan, detection, latency, or error evidence in this management path.
 //
 // swagger:model LlamaFirewallIndividualScannerStats
 type LlamaFirewallIndividualScannerStats struct {

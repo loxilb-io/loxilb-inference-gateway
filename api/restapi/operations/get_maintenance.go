@@ -34,7 +34,7 @@ func NewGetMaintenance(ctx *middleware.Context, handler GetMaintenanceHandler) *
 
 # Operator maintenance state with drain read-back
 
-Reports whether an operator holds the gateway in maintenance, what is being refused while it does, and how far the drain has progressed - the in-flight streaming-session count, elapsed time against the declared drain window, and whether that window has been exceeded. Every field is the observed truth - in particular refusing_new_inference reports what the data path actually refuses, not what an operator might wish it refused.
+Reports an ephemeral operator maintenance episode, its management-write gate and drain observations. The episode does not itself refuse new inference traffic. The in-flight count covers SSE streams, not all requests; elapsed time and deadline overrun do not prove a completed traffic drain.
 */
 type GetMaintenance struct {
 	Context *middleware.Context

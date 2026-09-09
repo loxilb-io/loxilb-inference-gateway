@@ -80,15 +80,19 @@ func containsAny(haystack string, needles ...string) bool {
 }
 
 // ResultErrorResponseError classifies an error value, preferring structure
-// over message text: a typed KV admission refusal or input-validation
-// rejection is the caller's answer and is always a 400, regardless of whether
-// its wording matches any phrase in the message classifier below. Everything
-// else falls back to the message-based classification.
+// over message text: typed rule/KV admission refusals and input-validation
+// rejections are the caller's answer and are always a 400, regardless of
+// whether their wording matches any phrase in the message classifier below.
+// Everything else falls back to the message-based classification.
 //
 // Prefer this over ResultErrorResponseError...Message at any call site that
 // holds an error value. Flattening the error to a string first discards the
 // only reliable signal and leaves the status to a substring search.
 func ResultErrorResponseError(err error) *models.Error {
+	var ruleArg *cmn.RuleArgumentError
+	if errors.As(err, &ruleArg) {
+		return &models.Error{Code: 400, Message: "Malformed arguments for API call", Result: err.Error()}
+	}
 	var adm *cmn.KvAdmissionError
 	if errors.As(err, &adm) {
 		return &models.Error{Code: 400, Message: "Malformed arguments for API call", Result: err.Error()}

@@ -34,7 +34,7 @@ func NewGetMetricsEpdisttraffic(ctx *middleware.Context, handler GetMetricsEpdis
 
 # Get endpoint distribution traffic metrics
 
-Get metrics related to endpoint distribution traffic per service. The additionalProp is service name.
+Returns cached conntrack-derived endpoint traffic distribution keyed by service name. Each entry identifies a destination, its value and share within that service; ratio is zero when the denominator is zero. This is not a fresh or complete datapath traffic measurement.
 */
 type GetMetricsEpdisttraffic struct {
 	Context *middleware.Context

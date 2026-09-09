@@ -39,7 +39,7 @@ func NewPostConfigL4traceEnable(ctx *middleware.Context, handler PostConfigL4tra
 
 # Enable L4 connection tracing
 
-Enables distributed tracing for all TCP/SCTP connections passing through loxilb.
+Enables runtime L4 trace emission when supported by the build and loaded maps. Omitted body or sampling_rate defaults to 100; explicit zero is retained. Enablement alone does not prove capture or export of every connection.
 Events are emitted to eBPF ring buffers for export to OpenTelemetry collectors.
 
 **Features:**

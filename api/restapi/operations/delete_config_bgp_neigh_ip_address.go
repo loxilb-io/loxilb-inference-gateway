@@ -34,7 +34,7 @@ func NewDeleteConfigBgpNeighIPAddress(ctx *middleware.Context, handler DeleteCon
 
 # Delete a BGP neighbor
 
-Delete a BGP Neighbor
+Delete the BGP neighbor identified by IP. Implementation limitation: the handler dereferences the optional remoteAs parameter even though the backend deletion ignores ASN; omission is unsafe in this version. This is not a supported ASN-based ownership check.
 */
 type DeleteConfigBgpNeighIPAddress struct {
 	Context *middleware.Context

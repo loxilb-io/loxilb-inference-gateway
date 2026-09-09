@@ -38,7 +38,7 @@ Removes the catalog → parser mapping, causing the system to fall back to:
 1. URL path-based routing (e.g., /v1/chat/completions → openai)
 2. Default mock parser
 
-Use this to revert to path-based parser selection or remove custom assignments.
+Removal is runtime-only and succeeds with 204 even when no mapping exists. Registry unavailability can produce 500. This does not edit YAML or guarantee that later catalog synchronization will preserve the removal.
 */
 type DeleteCatalogParser struct {
 	Context *middleware.Context

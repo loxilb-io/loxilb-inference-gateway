@@ -20,7 +20,7 @@ import (
 // swagger:model TraceParserUpdate
 type TraceParserUpdate struct {
 
-	// Parser to assign to catalog (must match registered parser name)
+	// Runtime assignment key (openai, mcp or mock), not the distinct metadata name returned by discovery. The mapping is runtime-only; parser existence is checked, but catalog existence is not established by this update.
 	// Example: openai
 	// Required: true
 	// Enum: [openai mcp mock]

@@ -12,7 +12,7 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// IPsecPeerConfig i psec peer config
+// IPsecPeerConfig Secret-bearing peer configuration draft. PSK mode includes the plaintext shared secret; current management authorization permits viewer GET access. Certificate mode contains installation placeholders. Review peer-specific routing, credentials, and policy before use; this is not a ready-to-run or runtime-qualified peer configuration.
 //
 // swagger:model IPsecPeerConfig
 type IPsecPeerConfig struct {

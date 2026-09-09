@@ -12,7 +12,7 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// IPsecSelector i psec selector
+// IPsecSelector Tunnel selector metadata. Only srcCidr and dstCidr reach the generated strongSwan configuration in the reviewed implementation; protocol, srcPort, and dstPort do not currently restrict traffic. CIDR syntax is not validated by the domain validator. Do not interpret successful storage as enforcement.
 //
 // swagger:model IPsecSelector
 type IPsecSelector struct {

@@ -34,7 +34,7 @@ func NewDeleteConfigSessionulclIdentIdentUlclAddressIPAddress(ctx *middleware.Co
 
 # Create a new Load balancer service
 
-Create a new load balancer service with .
+Delete the classifier identified by session identifier and classifier IP. QFI is not part of the deletion key. Missing-classifier errors are not consistently mapped to HTTP 404.
 */
 type DeleteConfigSessionulclIdentIdentUlclAddressIPAddress struct {
 	Context *middleware.Context

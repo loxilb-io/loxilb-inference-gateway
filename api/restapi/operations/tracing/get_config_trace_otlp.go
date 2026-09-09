@@ -37,7 +37,7 @@ func NewGetConfigTraceOtlp(ctx *middleware.Context, handler GetConfigTraceOtlpHa
 
 Get OTLP endpoint configuration (with security settings)
 
-Returns current OTLP endpoint address, protocol, TLS settings, and connection status.
+Returns configured OTLP endpoint, protocol and TLS settings. Header values are redacted or marked for reprovisioning and must not be submitted back as credentials. Connection state reflects recorded export outcomes rather than a fresh connectivity check.
 */
 type GetConfigTraceOtlp struct {
 	Context *middleware.Context

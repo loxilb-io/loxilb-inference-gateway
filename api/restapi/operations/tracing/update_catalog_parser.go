@@ -35,7 +35,7 @@ func NewUpdateCatalogParser(ctx *middleware.Context, handler UpdateCatalogParser
 # Update parser assignment for a catalog
 
 Dynamically changes which parser is used for a specific catalog at runtime.
-This allows switching parsers without restarting loxilb or reloading YAML files.
+The override is runtime-only, does not edit YAML, and can be replaced by catalog synchronization. The handler validates the parser key but not catalog existence; current success has an empty body despite the declared response schema.
 
 **Use Cases:**
 - Switch from mock to production parser after testing

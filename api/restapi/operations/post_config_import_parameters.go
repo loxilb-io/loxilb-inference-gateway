@@ -39,7 +39,7 @@ type PostConfigImportParams struct {
 	// HTTP Request Object
 	HTTPRequest *http.Request `json:"-"`
 
-	/*The configuration file to upload.
+	/*Required by the handler. Deprecated import immediately attempts a committed replacement; there is no dry-run. Legacy JSON shape validation is incomplete, so empty or unrecognized documents can become empty domains and risk deleting configuration. Prefer POST /config/restore with dry-run first.
 	  In: formData
 	*/
 	Configuration io.ReadCloser

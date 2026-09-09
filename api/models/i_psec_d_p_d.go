@@ -15,7 +15,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// IPsecDPD i psec d p d
+// IPsecDPD Dead Peer Detection settings. The domain supplies restart, 30 seconds, and 120 seconds when action, delay, or timeout is empty or zero. The declared timeout default of 150 differs from this implementation behavior.
 //
 // swagger:model IPsecDPD
 type IPsecDPD struct {

@@ -12,7 +12,7 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// LlamaFirewallDecisionStats llama firewall decision stats
+// LlamaFirewallDecisionStats Unpopulated decision counters. hitl does not establish an implemented human-review workflow or enforcement action.
 //
 // swagger:model LlamaFirewallDecisionStats
 type LlamaFirewallDecisionStats struct {

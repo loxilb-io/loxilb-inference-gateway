@@ -34,7 +34,7 @@ func NewPostConfigBgpPolicyDefinedsetsDefinesetType(ctx *middleware.Context, han
 
 # Adds a BGP  definedsets for making Policy
 
-Adds a BGP definedsets for making Policy
+Add a BGP defined set. Use prefixList for prefix and capitalized List for other types. Use lowercase supported type names; unknown types can silently fall back to prefix. Prefix mask ranges use minimum..maximum, but parse errors and relational bounds are not fully validated locally.
 */
 type PostConfigBgpPolicyDefinedsetsDefinesetType struct {
 	Context *middleware.Context

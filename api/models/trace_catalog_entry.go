@@ -28,12 +28,12 @@ type TraceCatalogEntry struct {
 	// Required: true
 	Enabled *bool `json:"enabled"`
 
-	// Maximum request/response body size to capture (bytes, 0=unlimited)
+	// YAML capture limit in bytes. The loader replaces zero with 16384 and rejects values above 10 MiB; zero is not unlimited. The catalog-list operation is currently unwired.
 	// Example: 65536
 	// Minimum: 0
 	MaxBodySize *int32 `json:"max_body_size,omitempty"`
 
-	// Catalog name (from YAML filename without .yaml extension)
+	// Name from the YAML catalog_name field, not the filename. The catalog-list operation is currently unwired, so this is not an available response field.
 	// Example: openai
 	// Required: true
 	Name *string `json:"name"`

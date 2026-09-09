@@ -19,20 +19,20 @@ import (
 // swagger:model GPUMonitoringStatus
 type GPUMonitoringStatus struct {
 
-	// Whether eBPF maps are loaded
+	// Whether the worker-statistics map descriptor is positive; this does not verify all required maps or their consumers. False can be omitted.
 	EbpfMapLoaded bool `json:"ebpf_map_loaded,omitempty"`
 
-	// Whether GPU monitoring is currently active
+	// Runtime monitoring flag, not proof of GPU health or effective routing. The generated response can omit false.
 	Enabled bool `json:"enabled,omitempty"`
 
-	// Timestamp of last metrics update
+	// Latest timestamp among cached samples, not a fresh health probe; may be absent when no sample exists.
 	// Format: date-time
 	LastMetricsUpdate strfmt.DateTime `json:"last_metrics_update,omitempty"`
 
-	// Current routing mode (standard_chwbl or gpu_aware)
+	// Reported monitoring mode (standard_chwbl, gpu_aware or disabled when support is not compiled), not verified per-service datapath selection.
 	RoutingMode string `json:"routing_mode,omitempty"`
 
-	// Number of workers being tracked
+	// Number of cached worker entries, including potentially stale samples; zero can be omitted.
 	WorkerCount int64 `json:"worker_count,omitempty"`
 }
 

@@ -41,7 +41,7 @@ func NewGetConfigTunnelVxlanAll(ctx *middleware.Context, handler GetConfigTunnel
 
 # Get a list of vxlan configurations
 
-Return a list of existing tunnels of a type. If there're no tunnels to return, empty list will be returned.
+Return gateway VXLAN interfaces joined with kernel peer information. An empty interface inventory returns an empty list; missing or failed peer lookup can leave peerIP null. This does not prove complete peer inventory.
 */
 type GetConfigTunnelVxlanAll struct {
 	Context *middleware.Context

@@ -15,7 +15,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// PolicyEntry policy entry
+// PolicyEntry Policer configuration. CIR and PIR use Mbps; burst sizes use bytes. CIR must be at least 8 and PIR may be zero or at least 8, but PIR/CIR ordering is not enforced. CBS zero becomes 30000000 and supplied EBS is overwritten with twice CBS. Signed inputs, scaling, and datapath narrowing are incompletely checked. Stored type does not currently select srTCM in the inspected eBPF path. Fullproxy rule targets use a separate byte-shaper path.
 //
 // swagger:model PolicyEntry
 type PolicyEntry struct {
@@ -178,19 +178,19 @@ type PolicyEntryPolicyInfo struct {
 	// Policy color for QoS
 	ColorAware bool `json:"colorAware,omitempty"`
 
-	// policy type
+	// Committed burst size in bytes. Zero becomes 30000000; datapath conversion narrows to uint32 without a bounds check.
 	CommittedBlkSize int64 `json:"committedBlkSize,omitempty"`
 
-	// policy type
+	// Committed rate in Mbps; the domain requires at least 8 after unchecked unsigned conversion. eBPF token-rate conversion truncates to 8-Mbps increments.
 	CommittedInfoRate int64 `json:"committedInfoRate,omitempty"`
 
-	// policy type
+	// Supplied value is currently ignored: the domain sets excess burst size to twice the effective committed burst size. This is an implementation limitation.
 	ExcessBlkSize int64 `json:"excessBlkSize,omitempty"`
 
-	// policy type
+	// Peak rate in Mbps; zero or at least 8 passes current domain validation. PIR >= CIR is not enforced and zero is not limited to the single-rate type.
 	PeakInfoRate int64 `json:"peakInfoRate,omitempty"`
 
-	// policy type(0-TrTCM, 1-SrTCM)
+	// Stored policy type, 0 for trTCM and 1 for srTCM. The current eBPF work item does not propagate this selection, so type 1 does not establish single-rate behavior.
 	// Enum: [0 1]
 	Type int64 `json:"type,omitempty"`
 }
@@ -270,12 +270,12 @@ func (m *PolicyEntryPolicyInfo) UnmarshalBinary(b []byte) error {
 // swagger:model PolicyEntryTargetObject
 type PolicyEntryTargetObject struct {
 
-	// Target Attachment(0-RuleName, 1-PortName, 2-PortNameEgress)
+	// Target selector, 0 for exact LB rule, 1 for ingress port, 2 for egress port. Egress requires enabled egress hooks.
 	// Required: true
 	// Enum: [0 1 2]
 	Attachment *int64 `json:"attachment"`
 
-	// Target name. Rule attachments use VIP:PORT:PROTO for IPv4 and [VIP]:PORT:PROTO for IPv6.
+	// Port name or exact rule key VIP:PORT:PROTO for IPv4 and [VIP]:PORT:PROTO for IPv6. Rule port must be 1..65535 and protocol tcp, udp, or sctp; a missing target can remain pending.
 	// Required: true
 	PolObjName *string `json:"polObjName"`
 }

@@ -34,7 +34,7 @@ func NewDeleteConfigVlanVlanID(ctx *middleware.Context, handler DeleteConfigVlan
 
 # Delete vlan in the device
 
-Delete vlan in the device
+Delete Linux bridge vlan<ID>. The REST helper does not enforce a no-members precondition; do not assume a populated bridge will be rejected. Downstream failures are not guaranteed to use the documented conflict or not-found status.
 */
 type DeleteConfigVlanVlanID struct {
 	Context *middleware.Context

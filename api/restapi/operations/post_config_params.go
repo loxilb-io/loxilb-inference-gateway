@@ -34,7 +34,7 @@ func NewPostConfigParams(ctx *middleware.Context, handler PostConfigParamsHandle
 
 # Set Operational parameters of LoxiLB
 
-Set Operational parameters of LoxiLB
+Sets runtime logLevel, updating a singleton operational setting rather than creating a resource. The setting is not recovered through configuration snapshots. Unsupported operating modes can reject the change.
 */
 type PostConfigParams struct {
 	Context *middleware.Context

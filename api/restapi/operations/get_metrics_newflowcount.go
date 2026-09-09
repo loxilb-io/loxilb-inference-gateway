@@ -34,7 +34,7 @@ func NewGetMetricsNewflowcount(ctx *middleware.Context, handler GetMetricsNewflo
 
 # Get new flow count metrics
 
-Get metrics related to new flow counts.
+Returns the latest collection-cycle count of newly observed conntrack flows, not a rate or HTTP request count. Short-lived flows between collection passes can be missed; cached values can be stale and zero can be omitted.
 */
 type GetMetricsNewflowcount struct {
 	Context *middleware.Context

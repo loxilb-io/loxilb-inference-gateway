@@ -34,7 +34,7 @@ func NewPostConfigPolicy(ctx *middleware.Context, handler PostConfigPolicyHandle
 
 # Create a new Policy QoS config
 
-Create a new Policy QoS config.
+Configure a policer. Rule targets require an exact VIP:PORT:PROTO or [VIP]:PORT:PROTO key; egress port targets require enabled egress hooks. Targets may remain pending. Information changes can delete and recreate an existing policer; target-only changes conflict. Mode propagation, numeric narrowing, and effective burst/rate semantics have known implementation limitations; this is not an atomic general-purpose update.
 */
 type PostConfigPolicy struct {
 	Context *middleware.Context

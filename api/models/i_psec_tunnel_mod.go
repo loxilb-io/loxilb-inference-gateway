@@ -15,7 +15,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// IPsecTunnelMod i psec tunnel mod
+// IPsecTunnelMod Creates or replaces a tunnel declaration and schedules a daemon reload; success does not establish an installed or usable tunnel. PUT uses the path name, although the shared request schema still requires body name. Omitted optional settings generally reset or default rather than merge; an omitted or empty PSK is preserved when updating an existing PSK tunnel without changing authentication mode. Names, IDs, proposals, and selectors lack complete configuration-syntax validation. Use explicit reviewed values.
 //
 // swagger:model IPsecTunnelMod
 type IPsecTunnelMod struct {
@@ -29,7 +29,7 @@ type IPsecTunnelMod struct {
 	// Enum: [start add route]
 	Auto *string `json:"auto,omitempty"`
 
-	// CA certificate name (required for cert mode)
+	// Stored CA certificate reference. Currently neither required nor validated for cert mode and not consumed by the generated tunnel configuration; it does not establish peer trust policy.
 	CaCertName string `json:"caCertName,omitempty"`
 
 	// Certificate name (required for cert mode)
@@ -78,11 +78,11 @@ type IPsecTunnelMod struct {
 	// IKE local identifier
 	LocalID string `json:"localId,omitempty"`
 
-	// Local gateway IP address
+	// Local gateway IPv4/IPv6 address or strongSwan special value %any, %defaultroute, or %config. Acceptance validates syntax, not topology or peer reachability.
 	// Required: true
 	LocalIP *string `json:"localIp"`
 
-	// Netfilter mark for VTI routing (0 = no mark)
+	// Netfilter mark for VTI routing. Omitted or zero currently selects 100; zero does not disable marking. Known deletion limitation is documented on IPsecTunnel.
 	Mark *uint32 `json:"mark,omitempty"`
 
 	// Enable MOBIKE (IKEv2 mobility)
@@ -92,7 +92,7 @@ type IPsecTunnelMod struct {
 	// Required: true
 	Name *string `json:"name"`
 
-	// Pre-shared key (required for PSK mode)
+	// Secret required when creating a PSK tunnel or switching to PSK authentication. Omitted or empty preserves the existing secret when updating a tunnel that remains in PSK mode. Peer configuration export exposes this secret.
 	Psk string `json:"psk,omitempty"`
 
 	// Re-authenticate on rekey (vs just rekey)
@@ -104,7 +104,7 @@ type IPsecTunnelMod struct {
 	// IKE remote identifier
 	RemoteID string `json:"remoteId,omitempty"`
 
-	// Remote gateway IP address
+	// Remote gateway IPv4/IPv6 address or strongSwan special value %any, %defaultroute, or %config. Acceptance does not establish a viable peer configuration.
 	// Required: true
 	RemoteIP *string `json:"remoteIp"`
 

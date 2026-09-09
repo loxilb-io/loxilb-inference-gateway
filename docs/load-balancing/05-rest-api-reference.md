@@ -91,7 +91,7 @@ snake_case (`pd_disagg_mode`, `sse_mode`, `model_name`, …) vs camelCase (`kvEx
 | `pd_disagg_mode` | bool | split requests into prefill + decode legs (roles via `endpoints[].ep_role`). The orchestration flavor derives from `kvEngineType`: empty/`"vllm"` = sequential vLLM machine (prefill → extract `kv_transfer_params` → decode); `"sglang"` = concurrent dual-dispatch (bootstrap triple injected, same body to both legs, decode streamed to the client, prefill drained); `"trtllm"` = sequential TensorRT-LLM machine (`context_only` prefill → extract `disaggregated_params` → `generation_only` decode, with context early-exit — [doc 20](20-tensorrt-llm-kv-cache-aware-routing.md)) |
 | `pdBootstrapPort` | int | SGLang P/D only: the `--disaggregation-bootstrap-port` on every prefill EP; `0` = SGLang's default `8998`. Rejected unless `pd_disagg_mode` + `kvEngineType:"sglang"` |
 | `pd_cache_aware_mode` | bool | trie-based cache-affinity prefill selection |
-| `pd_session_ttl_sec` | int | session-stickiness TTL (seconds) for P/D cache-aware routing; `0` = no automatic expiry |
+| `pd_session_ttl_sec` | int32 | Tier-0 P/D sliding idle TTL in seconds; omitted/`0` uses 300s, positive values override it. Independent of `pd_cache_aware_mode`; not an engine KV or request timeout. No no-expiry mode. |
 | `pd_cache_threshold` | int | cache-match threshold `0`–`100`; lower = more aggressive cache routing (default `20`) |
 | `pd_balance_abs_threshold` | int | if max−min active connections exceeds this, bypass cache affinity (default `3`) |
 

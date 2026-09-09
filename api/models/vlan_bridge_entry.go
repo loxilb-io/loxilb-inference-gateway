@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// VlanBridgeEntry vlan bridge entry
+// VlanBridgeEntry Linux bridge identifier used to form vlan<ID>. The REST creation helper does not enforce all documented VLAN bounds; successful bridge creation does not establish completion of link setup.
 //
 // swagger:model VlanBridgeEntry
 type VlanBridgeEntry struct {

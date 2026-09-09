@@ -34,7 +34,7 @@ func NewGetTraceCatalogs(ctx *middleware.Context, handler GetTraceCatalogsHandle
 
 # List all loaded trace catalogs
 
-Returns a list of all tracing catalog templates loaded from YAML files.
+Not implemented by the current router configuration; the generated default handler returns 501. The following catalog shape describes intended data, not an available response.
 Catalogs define parser assignments, sampling rates, and tracing behavior for different services.
 
 **Catalog Sources:**
@@ -42,7 +42,7 @@ Catalogs define parser assignments, sampling rates, and tracing behavior for dif
 - User overrides: /etc/loxilb/trace-catalogs/
 
 **Response includes:**
-- Catalog name (from YAML filename)
+- Catalog name (from the YAML catalog_name field, not the filename)
 - Parser assignment (parser_type from YAML)
 - Sample rate (percentage of requests traced)
 - Enabled status

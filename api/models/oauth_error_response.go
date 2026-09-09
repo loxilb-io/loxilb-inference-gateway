@@ -12,7 +12,7 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// OauthErrorResponse oauth error response
+// OauthErrorResponse OAuth-specific message envelope. Invalid provider or callback state returns 400 on initiation/callback; exchange and refresh failures generally return 500. Refresh credential rejection is not consistently represented as 401.
 //
 // swagger:model OauthErrorResponse
 type OauthErrorResponse struct {

@@ -41,7 +41,7 @@ func NewGetConfigSessionulclAll(ctx *middleware.Context, handler GetConfigSessio
 
 # Get
 
-Get
+Return uplink classifiers associated with configured user sessions.
 */
 type GetConfigSessionulclAll struct {
 	Context *middleware.Context

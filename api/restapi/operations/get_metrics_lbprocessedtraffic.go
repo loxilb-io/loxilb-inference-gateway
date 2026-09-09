@@ -34,7 +34,7 @@ func NewGetMetricsLbprocessedtraffic(ctx *middleware.Context, handler GetMetrics
 
 # Get load balancer processed traffic metrics
 
-Get metrics related to load balancer processed traffic.
+Returns cached accumulated conntrack-derived interaction bytes and packets by service, source and destination. This sampled persistent-flow view can miss short-lived flows and is not the same source as aggregate datapath processed-traffic counters.
 */
 type GetMetricsLbprocessedtraffic struct {
 	Context *middleware.Context

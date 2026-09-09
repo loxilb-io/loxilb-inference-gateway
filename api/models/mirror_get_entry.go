@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// MirrorGetEntry mirror get entry
+// MirrorGetEntry Stored mirror configuration and mirror-object sync status. This does not report attachment synchronization independently and can describe unsupported or incompletely programmed configurations; do not infer active mirroring from this object.
 //
 // swagger:model MirrorGetEntry
 type MirrorGetEntry struct {
@@ -25,7 +25,7 @@ type MirrorGetEntry struct {
 	// mirror info
 	MirrorInfo *MirrorGetEntryMirrorInfo `json:"mirrorInfo,omitempty"`
 
-	// Sync - sync state
+	// Mirror-object synchronization status only; attachment synchronization and actual traffic mirroring are not established by this field.
 	// Required: true
 	Sync *int64 `json:"sync"`
 

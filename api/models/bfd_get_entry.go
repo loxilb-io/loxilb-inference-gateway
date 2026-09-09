@@ -12,7 +12,7 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// BfdGetEntry bfd get entry
+// BfdGetEntry BFD session readback with interval in microseconds and observed state. sourceIP differs in capitalization from write-time sourceIp. Current IPv6 host/port splitting can corrupt remoteIp and port; a successful response is not IPv6 qualification.
 //
 // swagger:model BfdGetEntry
 type BfdGetEntry struct {

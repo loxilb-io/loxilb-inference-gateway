@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// BGPGlobalConfig b g p global config
+// BGPGlobalConfig BGP startup input, not an atomic general replacement. Local ASN narrows to uint32 and listenPort to uint16; omitted or zero listenPort selects 179. SetNextHopSelf is a case-sensitive wire field and triggers additional policy setup. Failure can occur after partial startup or policy creation.
 //
 // swagger:model BGPGlobalConfig
 type BGPGlobalConfig struct {
@@ -22,10 +22,10 @@ type BGPGlobalConfig struct {
 	// Adds policy to set next hop as self, if enabled
 	SetNextHopSelf bool `json:"SetNextHopSelf,omitempty"`
 
-	// Listen port (default 179)
+	// Listening port, narrowed to uint16 before zero selects 179. Original-input bounds are not fully checked.
 	ListenPort int64 `json:"listenPort,omitempty"`
 
-	// Local AS number
+	// Local ASN, narrowed to uint32 without a bounds check.
 	// Required: true
 	LocalAs *int64 `json:"localAs"`
 

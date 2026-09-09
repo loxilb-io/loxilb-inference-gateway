@@ -13,7 +13,7 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// BGPPolicyDefinitionsStatement b g p policy definitions statement
+// BGPPolicyDefinitionsStatement BGP statement conditions and actions. Supply conditions and actions objects. Match options use any/all/invert, community actions add/remove/replace, and path-length operators eq/ge/le; unknown strings can silently fall back. routeDisposition uses accept-route/reject-route, unlike assignment accept/reject. asPathLength.value, prepend ASN/count, and setLocalPerf narrow to uint32 without full validation. setLocalPerf zero omits the action, setMed parses signed 32-bit decimal text, and setNextHop does not specially translate self. Validate AFI/SAFI, set references, prefixes, and numeric relationships before submission.
 //
 // swagger:model BGPPolicyDefinitionsStatement
 type BGPPolicyDefinitionsStatement struct {
@@ -152,7 +152,7 @@ func (m *BGPPolicyDefinitionsStatement) UnmarshalBinary(b []byte) error {
 	return nil
 }
 
-// BGPPolicyDefinitionsStatementActions b g p policy definitions statement actions
+// BGPPolicyDefinitionsStatementActions Supply an object; the current POST handler dereferences it despite its optional schema declaration.
 //
 // swagger:model BGPPolicyDefinitionsStatementActions
 type BGPPolicyDefinitionsStatementActions struct {
@@ -160,7 +160,7 @@ type BGPPolicyDefinitionsStatementActions struct {
 	// bgp actions
 	BgpActions *BGPPolicyDefinitionsStatementActionsBgpActions `json:"bgpActions,omitempty"`
 
-	// route disposition
+	// Statement disposition uses accept-route or reject-route; other values map to no disposition, unlike assignment accept/reject.
 	RouteDisposition string `json:"routeDisposition,omitempty"`
 }
 
@@ -262,13 +262,13 @@ type BGPPolicyDefinitionsStatementActionsBgpActions struct {
 	// set large community
 	SetLargeCommunity *BGPPolicyDefinitionsStatementActionsBgpActionsSetLargeCommunity `json:"setLargeCommunity,omitempty"`
 
-	// set local perf
+	// Local preference under the existing setLocalPerf wire name. Zero omits this action; other values narrow to uint32 without bounds checks.
 	SetLocalPerf int64 `json:"setLocalPerf,omitempty"`
 
-	// set med
+	// MED replacement parsed from signed 32-bit decimal text. This is not an unchecked arbitrary-size or relative-action string.
 	SetMed string `json:"setMed,omitempty"`
 
-	// set next hop
+	// Next-hop address text passed to GoBGP. The string self is not specially translated to the GoBGP self flag.
 	SetNextHop string `json:"setNextHop,omitempty"`
 }
 
@@ -487,10 +487,10 @@ func (m *BGPPolicyDefinitionsStatementActionsBgpActions) UnmarshalBinary(b []byt
 // swagger:model BGPPolicyDefinitionsStatementActionsBgpActionsSetAsPathPrepend
 type BGPPolicyDefinitionsStatementActionsBgpActionsSetAsPathPrepend struct {
 
-	// as
+	// Decimal ASN text, parsed with ignored conversion errors and narrowed to uint32. Validate before submission.
 	As string `json:"as,omitempty"`
 
-	// repeat n
+	// Prepend repeat count, narrowed to uint32 without bounds checking; omission becomes zero.
 	RepeatN int64 `json:"repeatN,omitempty"`
 }
 
@@ -642,7 +642,7 @@ func (m *BGPPolicyDefinitionsStatementActionsBgpActionsSetLargeCommunity) Unmars
 	return nil
 }
 
-// BGPPolicyDefinitionsStatementConditions b g p policy definitions statement conditions
+// BGPPolicyDefinitionsStatementConditions Supply an object; the current POST handler dereferences it despite its optional schema declaration.
 //
 // swagger:model BGPPolicyDefinitionsStatementConditions
 type BGPPolicyDefinitionsStatementConditions struct {

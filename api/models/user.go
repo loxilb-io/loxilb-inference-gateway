@@ -15,7 +15,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// User user
+// User Shared local-account request model. Login uses username and password only. Creation also requires an explicit admin or viewer role in domain validation; body id and created_at are ignored. Creation requires an administrator, or no credential from a loopback transport peer while the account table is empty. PUT uses the path id, requires username and password, and currently drops role rather than applying it. Account mutations return an HTTP 200 result envelope, not a User resource. Security limitation: usernames are not checked for the delimiter used to encode principals, so role isolation is not established by the role enum alone. Intended role mapping requires an implementation correction, not client interpretation of the username.
 //
 // swagger:model User
 type User struct {
@@ -26,7 +26,7 @@ type User struct {
 	// id
 	ID int64 `json:"id,omitempty"`
 
-	// password
+	// Required request secret. Create/update policy requires at least 9 bytes, upper/lowercase, a number, punctuation or symbol, inequality with username, and no three consecutive identical characters. Update checks password reuse by submitted username, so rename handling does not reliably compare the original account's password. Never a response field.
 	// Required: true
 	Password *string `json:"password"`
 
@@ -34,7 +34,7 @@ type User struct {
 	// Enum: [admin viewer]
 	Role string `json:"role,omitempty"`
 
-	// username
+	// Account name. Complete normalization and delimiter validation are absent; see the User security limitation. The submitted value also selects the previous-password comparison on update.
 	// Required: true
 	Username *string `json:"username"`
 }

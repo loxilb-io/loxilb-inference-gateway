@@ -34,7 +34,7 @@ func NewPostConfigEndpoint(ctx *middleware.Context, handler PostConfigEndpointHa
 
 # Adds a LB endpoint for monitoring
 
-Adds a LB endpoint for monitoring
+Configure a monitor for a literal endpoint IP, not a hostname or CIDR. Supply probeType; TCP, UDP, and SCTP require a nonzero probe port. Name selects a custom monitor identity, otherwise identity is host/type/port. Existing POST replaces options rather than patching them; reusing a name with a different host currently retains the old host. Port and duration narrowing and structured HTTP validation are incomplete.
 */
 type PostConfigEndpoint struct {
 	Context *middleware.Context

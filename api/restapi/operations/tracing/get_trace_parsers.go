@@ -49,7 +49,7 @@ Parsers analyze HTTP/HTTPS request/response bodies to extract protocol-specific 
 - **mcp**: Model Context Protocol (JSON-RPC tools, prompts, resources)
 - **mock**: Simple JSON parser for testing
 
-Use this endpoint to discover which parsers are available before assigning them to catalogs.
+Discovery currently returns metadata names such as openai_v1, mcp_v1 and mock_parser, while assignment accepts registry keys openai, mcp and mock. Do not use discovery names directly as assignment values. Description and capabilities are not populated, and an unavailable tracing registry can cause 500.
 */
 type GetTraceParsers struct {
 	Context *middleware.Context

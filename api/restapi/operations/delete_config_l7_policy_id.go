@@ -34,7 +34,7 @@ func NewDeleteConfigL7PolicyID(ctx *middleware.Context, handler DeleteConfigL7Po
 
 # Delete an L7 content-routing policy by id
 
-Detaches the policy from its load-balancer (proxy_detach_l7_policy regfrees every compiled REGEX) and removes the resource.
+Detaches the policy when its referenced LB still exists, then removes the stored resource. A missing policy returns 404; a detach failure retains the registry entry. Implementation warning: when the LB has disappeared the handler skips detach, although C can retain the listener and attached routes. Successful deletion in that case does not establish dataplane cleanup.
 */
 type DeleteConfigL7PolicyID struct {
 	Context *middleware.Context

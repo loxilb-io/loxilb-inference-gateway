@@ -41,7 +41,7 @@ func NewGetConfigBgpPolicyDefinedsetsDefinesetTypeTypeName(ctx *middleware.Conte
 
 # Get the all of BGP definedsets
 
-Get the all of BGP, prefix/neighbor/community/extcommunity/aspath/largecommunity
+Return defined sets of the requested type; type_name all selects all names of that type. Use lowercase prefix, neighbor, community, extcommunity, aspath, or largecommunity. The handler only emits prefixList for lowercase prefix despite broader internal aliases. Empty results use HTTP 200, not 204.
 */
 type GetConfigBgpPolicyDefinedsetsDefinesetTypeTypeName struct {
 	Context *middleware.Context

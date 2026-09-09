@@ -1495,8 +1495,33 @@ func tlsVersionsToRange(versions []string) (uint8, uint8) {
 	return minV, maxV
 }
 
+// copyLBFixedCString copies a Go string into a fixed uint8_t C array without
+// allocating a temporary C string. It refuses truncation and embedded NUL so
+// an admission bypass or future ABI-size drift still cannot overrun the field.
+func copyLBFixedCString(dst []C.uchar, src string) bool {
+	if len(dst) == 0 || len(src) >= len(dst) || strings.IndexByte(src, 0) >= 0 {
+		return false
+	}
+	for i := 0; i < len(src); i++ {
+		dst[i] = C.uchar(src[i])
+	}
+	dst[len(src)] = 0
+	return true
+}
+
 // DpLBRuleMod - routine to work on a ebpf lb change request
 func DpLBRuleMod(w *LBDpWorkQ) int {
+	// AddLbRule performs the primary pre-mutation admission check. Repeat it at
+	// the Go-to-C boundary because DpLBRuleMod is also callable independently.
+	if err := validateLBFixedCStringFields(cmn.LbServiceArg{
+		HostUrl:           w.HostURL,
+		PathPrefix:        w.PathPrefix,
+		SessionHeaderName: w.SessionHeaderName,
+		ModelName:         w.ModelName,
+	}); err != nil {
+		tk.LogIt(tk.LogError, "[DP] refusing unrepresentable LB string: %v\n", err)
+		return EbpfErrNat4Add
+	}
 
 	key := new(natKey)
 
@@ -1641,14 +1666,16 @@ func DpLBRuleMod(w *LBDpWorkQ) int {
 		dat.sec_mode = C.SEC_MODE_HTTPS_E2E
 	}
 
-	hostURLStr := C.CString(w.HostURL)
-	defer C.free(unsafe.Pointer(hostURLStr))
-	C.memcpy(unsafe.Pointer(&dat.host_url[0]), unsafe.Pointer(hostURLStr), C.ulong(len(w.HostURL))+1)
+	if !copyLBFixedCString(dat.host_url[:], w.HostURL) {
+		tk.LogIt(tk.LogError, "[DP] host C field is smaller than its admission contract\n")
+		return EbpfErrNat4Add
+	}
 
 	// P6: Path prefix routing support
-	pathPrefixStr := C.CString(w.PathPrefix)
-	defer C.free(unsafe.Pointer(pathPrefixStr))
-	C.memcpy(unsafe.Pointer(&dat.path_prefix[0]), unsafe.Pointer(pathPrefixStr), C.ulong(len(w.PathPrefix))+1)
+	if !copyLBFixedCString(dat.path_prefix[:], w.PathPrefix) {
+		tk.LogIt(tk.LogError, "[DP] path_prefix C field is smaller than its admission contract\n")
+		return EbpfErrNat4Add
+	}
 
 	// P6: Path match mode (0=disabled, 1=prefix, 2=exact)
 	switch w.PathMatchMode {
@@ -1673,9 +1700,10 @@ func DpLBRuleMod(w *LBDpWorkQ) int {
 
 	// Custom session header - supports both RR and Persist modes
 	if w.SessionHeaderName != "" {
-		sessionHeaderStr := C.CString(w.SessionHeaderName)
-		defer C.free(unsafe.Pointer(sessionHeaderStr))
-		C.memcpy(unsafe.Pointer(&dat.session_header_name[0]), unsafe.Pointer(sessionHeaderStr), C.ulong(len(w.SessionHeaderName))+1)
+		if !copyLBFixedCString(dat.session_header_name[:], w.SessionHeaderName) {
+			tk.LogIt(tk.LogError, "[DP] session_header_name C field is smaller than its admission contract\n")
+			return EbpfErrNat4Add
+		}
 		dat.session_header_enabled = 1
 		tk.LogIt(tk.LogDebug, "[DP] LB rule %s:%v session_header_name='%s' enabled=1\n", w.ServiceIP.String(), key.mark, w.SessionHeaderName)
 	} else {
@@ -1683,9 +1711,10 @@ func DpLBRuleMod(w *LBDpWorkQ) int {
 	}
 
 	// AI model name for pool selection (empty = wildcard, backward compatible)
-	modelNameStr := C.CString(w.ModelName)
-	defer C.free(unsafe.Pointer(modelNameStr))
-	C.memcpy(unsafe.Pointer(&dat.model_name[0]), unsafe.Pointer(modelNameStr), C.ulong(len(w.ModelName))+1)
+	if !copyLBFixedCString(dat.model_name[:], w.ModelName) {
+		tk.LogIt(tk.LogError, "[DP] model_name C field is smaller than its admission contract\n")
+		return EbpfErrNat4Add
+	}
 
 	// SSE (Server-Sent Events) streaming configuration
 	if w.SSEMode {

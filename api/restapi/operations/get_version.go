@@ -34,7 +34,7 @@ func NewGetVersion(ctx *middleware.Context, handler GetVersionHandler) *GetVersi
 
 # Get version information in the device
 
-Get version information
+Returns public gateway build identity (version, buildInfo and product), without management authentication. This is not a runtime-readiness verdict.
 */
 type GetVersion struct {
 	Context *middleware.Context

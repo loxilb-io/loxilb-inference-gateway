@@ -34,7 +34,7 @@ func NewPostConfigL7Policy(ctx *middleware.Context, handler PostConfigL7PolicyHa
 
 # Create an L7 content-routing policy
 
-Creates a dedicated L7_POLICY resource (policy + ordered child rules) and attaches it to an existing L4 load-balancer referenced by its stable opaque id. The body is validated server-side with Octavia per-type rules (FILE_TYPE only EQUAL_TO/REGEX; key required for HEADER/COOKIE/QUERY; redirect statusCode allow-list default 302; REJECT default 403; REGEX patterns try-compiled at config time) and translated to the internal route IR, then carried to the running sockproxy by a SEPARATE attach call (proxy_attach_l7_policy) — NEVER inline on the 4096-byte proxy_arg.
+Validates a policy, resolves its load-balancer ID, attaches its routes to an existing sockproxy listener, then stores the policy. The current attachment bridge supports IPv4; an existing LB resource alone does not establish an eligible listener. Success returns 204 without a policy body or generated ID. Duplicate policy IDs, including identical replay, and a second policy for the same LB ID return 409. No update or Gateway API export operation is performed. Implementation warnings on L7Policy, L7Rule and L7Action describe attachment identity, truncation and response-path gaps. A successful attach is source-level configuration evidence, not proof of effective matching, TLS responses or lifecycle safety. Policy ownership across LB resources sharing a listener remains unresolved.
 */
 type PostConfigL7Policy struct {
 	Context *middleware.Context

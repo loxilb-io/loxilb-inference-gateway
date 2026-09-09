@@ -34,7 +34,7 @@ func NewPostConfigGpuEnable(ctx *middleware.Context, handler PostConfigGpuEnable
 
 # Enable GPU-aware load balancing
 
-Activates GPU-aware routing mode and starts conversation cleanup thread
+Enables runtime GPU monitoring and associated map configuration and starts a cleanup thread. Requires compiled support and available maps; already-enabled requests are rejected. No source linkage was established from this global toggle to an effective per-service routing switch. Cleanup is currently a placeholder; success does not verify GPU-aware traffic selection.
 */
 type PostConfigGpuEnable struct {
 	Context *middleware.Context

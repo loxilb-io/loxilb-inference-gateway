@@ -34,7 +34,7 @@ func NewDeleteConfigBfdRemoteIPRemoteIP(ctx *middleware.Context, handler DeleteC
 
 # Delete a BFD session
 
-Delete a BFD session
+Request deletion of a BFD session by remote IP. Supply an existing instance explicitly; omission does not default to the default instance. Safety limitation: instance existence is checked but session ownership is not, and successful deletion clears a global running flag even if other sessions remain. Do not assume instance-scoped isolation or complete BFD shutdown.
 */
 type DeleteConfigBfdRemoteIPRemoteIP struct {
 	Context *middleware.Context

@@ -39,7 +39,7 @@ type PostConfigGpuConversationsCleanupParams struct {
 	// HTTP Request Object
 	HTTPRequest *http.Request `json:"-"`
 
-	/*Maximum age in hours for conversations to keep (older ones deleted)
+	/*Requested age threshold in hours, defaulting to one when omitted. Negative values are rejected by the handler. The current backend does not apply the threshold or delete mappings; zero is not a functioning delete-all action.
 	  In: query
 	  Default: 1
 	*/

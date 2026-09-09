@@ -15,7 +15,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// IPsecSA i psec s a
+// IPsecSA Intended SA read model. The reviewed SA enumeration implementation is a stub returning no entries; empty output does not prove that no kernel SAs exist. Creation and expiry timestamps are not mapped by the handler.
 //
 // swagger:model IPsecSA
 type IPsecSA struct {

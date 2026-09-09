@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// FirewallEntry firewall entry
+// FirewallEntry Firewall match tuple plus action options. POST is not a general replacement: a duplicate can update fwMark and still return conflict. DELETE identifies the exact normalized tuple, including preference. Validate action exclusivity and range ordering in clients while the implementation gaps remain open.
 //
 // swagger:model FirewallEntry
 type FirewallEntry struct {

@@ -34,7 +34,7 @@ func NewDeleteConfigTunnelVxlanVxlanIDPeerPeerIP(ctx *middleware.Context, handle
 
 # Remove a one of vxlan remote(peer) ip address configuration
 
-Return a list of existing tunnels of a type. If there're no tunnels to return, empty list will be returned.
+Delete the VXLAN flood-list peer identified by tunnel ID and peer IP. The handler returns an operation-result object, not the resource shape currently declared for success. Backend failure can return HTTP 200 with result set to fail.
 */
 type DeleteConfigTunnelVxlanVxlanIDPeerPeerIP struct {
 	Context *middleware.Context

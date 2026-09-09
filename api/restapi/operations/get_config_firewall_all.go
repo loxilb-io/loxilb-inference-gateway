@@ -41,7 +41,7 @@ func NewGetConfigFirewallAll(ctx *middleware.Context, handler GetConfigFirewallA
 
 # Get all of the firewall config
 
-Get all of the firewall configuration.
+Return firewall match tuples, options, and packet/byte counters. Internally marked source-check rules are filtered out. hwOffload is not populated on readback; returned configuration does not prove hardware installation.
 */
 type GetConfigFirewallAll struct {
 	Context *middleware.Context

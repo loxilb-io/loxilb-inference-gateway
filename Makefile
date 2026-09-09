@@ -5,6 +5,8 @@ dock?=loxilb
 IMAGE?=ghcr.io/loxilb-io/loxilb-inference-gateway
 TAG?=latest
 ARM64_TAG?=$(TAG)-arm64
+# Optional local build flags (for example --network host or --target test-build).
+DOCKER_BUILD_FLAGS ?=
 BRANCH_NAME:=$(shell git rev-parse --is-inside-work-tree >/dev/null 2>&1 && git branch --show-current || echo nogit)
 
 # ── Version ──────────────────────────────────────────────────────────────────
@@ -220,17 +222,17 @@ docker:
 		. /etc/os-release; \
 		if [ "$$ID" = "ubuntu" ] && [ "$$VERSION_ID" = "20.04" ]; then \
 			echo "Detected Ubuntu 20.04 - using Dockerfile.u20"; \
-			docker build -f Dockerfile.u20 -t $(IMAGE):$(TAG)-u20 .; \
+			docker build $(DOCKER_BUILD_FLAGS) --build-arg VERSION="$(VERSION)" -f Dockerfile.u20 -t $(IMAGE):$(TAG)-u20 .; \
 		elif [ "$$ID" = "ubuntu" ] && [ "$$VERSION_ID" = "24.04" ]; then \
 			echo "Detected Ubuntu 24.04 - using Dockerfile.u24"; \
-			docker build -f Dockerfile.u24 -t $(IMAGE):$(TAG)-u24 .; \
+			docker build $(DOCKER_BUILD_FLAGS) --build-arg VERSION="$(VERSION)" -f Dockerfile.u24 -t $(IMAGE):$(TAG)-u24 .; \
 		else \
 			echo "Detected $$ID $$VERSION_ID - using default Dockerfile"; \
-			docker build -t $(IMAGE):$(TAG) .; \
+			docker build $(DOCKER_BUILD_FLAGS) --build-arg VERSION="$(VERSION)" -t $(IMAGE):$(TAG) .; \
 		fi \
 	else \
 		echo "Could not detect OS - using default Dockerfile"; \
-		docker build -t $(IMAGE):$(TAG) .; \
+		docker build $(DOCKER_BUILD_FLAGS) --build-arg VERSION="$(VERSION)" -t $(IMAGE):$(TAG) .; \
 	fi
 
 docker-arm64:

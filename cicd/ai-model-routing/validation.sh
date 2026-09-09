@@ -18,10 +18,9 @@ check() {
 }
 
 # ── Start mock backends ───────────────────────────────────────────────────────
-$hexec l3ep1 node ../common/tcp_server.js server-llama   &
-$hexec l3ep2 node ../common/tcp_server.js server-mistral &
-$hexec l3ep3 node ../common/tcp_server.js server-wild    &
-sleep 4
+# config.sh starts and positively probes the mock listeners before installing
+# the LB rules. Validation intentionally sends no warm-up traffic through the
+# VIPs: T1 remains the first routed request.
 
 # ── T1: X-Model header → llama-70b pool ─────────────────────────────────────
 echo ""

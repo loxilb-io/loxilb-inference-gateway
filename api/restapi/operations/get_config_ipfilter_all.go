@@ -41,7 +41,7 @@ func NewGetConfigIpfilterAll(ctx *middleware.Context, handler GetConfigIpfilterA
 
 # Get all IP filter rules
 
-Get all IP whitelist and blacklist rules with statistics.
+Return source-prefix whitelist and blacklist map entries with packet and byte counters. These maps are shared with security-rate whitelist configuration; GET is not an independent ownership inventory.
 */
 type GetConfigIpfilterAll struct {
 	Context *middleware.Context

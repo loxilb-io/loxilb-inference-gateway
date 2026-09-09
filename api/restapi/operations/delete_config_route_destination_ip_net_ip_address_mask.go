@@ -34,7 +34,7 @@ func NewDeleteConfigRouteDestinationIPNetIPAddressMask(ctx *middleware.Context, 
 
 # Create a new Load balancer service
 
-Create a new load balancer service with .
+Delete a route identified by destination IP address and prefix length. This operation does not create a load-balancing service.
 */
 type DeleteConfigRouteDestinationIPNetIPAddressMask struct {
 	Context *middleware.Context

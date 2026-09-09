@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// IPsecCertificate i psec certificate
+// IPsecCertificate Partial installed-certificate metadata. Serial, SAN, and key-usage extraction is unfinished, and validity/installation timestamps are not populated in responses. Deletion does not enforce an in-use dependency conflict; absence of a conflict response does not establish safe removal.
 //
 // swagger:model IPsecCertificate
 type IPsecCertificate struct {

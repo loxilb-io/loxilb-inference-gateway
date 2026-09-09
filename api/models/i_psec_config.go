@@ -15,7 +15,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// IPsecConfig i psec config
+// IPsecConfig Stored IPsec settings, not proof of active kernel or hardware enforcement. The reviewed implementation does not connect these global controls to enforcement; supportedAlgorithms is a static list and hwCapabilities is not populated. Tunnel state and telemetry have separate limitations.
 //
 // swagger:model IPsecConfig
 type IPsecConfig struct {

@@ -34,7 +34,7 @@ func NewPostConfigSession(ctx *middleware.Context, handler PostConfigSessionHand
 
 # Create a new session config
 
-Create a new session config for 5G.
+Configure a user session identified by ident. Supply both tunnel objects: the current handler dereferences them even though the schema makes them optional. TEIDs narrow to uint32 without bounds checks. Existing-session comparison is defective and can delete and recreate an identical session, removing its ULCL classifiers; do not treat POST as an idempotent update.
 */
 type PostConfigSession struct {
 	Context *middleware.Context

@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// SecurityRateConfigMod security rate config mod
+// SecurityRateConfigMod Full replacement of rate-limit configuration and security-rate whitelist. All required flags and thresholds must be supplied; schema defaults do not establish omission support. Thresholds are 0..16777216 and UDP bandwidth is 0..4095 MiB/s. Enabled protections require positive applicable thresholds, and enabled SYN protection requires cookieThreshold < synThreshold. At least one protection must be enabled. At most 1024 valid whitelist CIDRs are accepted; omission clears the prior list. Explicit cookieThreshold zero becomes 50 in the datapath. Programming is non-atomic and shares whitelist maps with IP filtering.
 //
 // swagger:model SecurityRateConfigMod
 type SecurityRateConfigMod struct {
@@ -23,11 +23,11 @@ type SecurityRateConfigMod struct {
 	// Required: true
 	ConnRateEnabled *bool `json:"connRateEnabled"`
 
-	// Enable SYN cookies above this rate (must be < synThreshold)
+	// SYN threshold telemetry, not a SYN-cookie exchange. With SYN enabled it must be below synThreshold; explicit zero is accepted but becomes 50 in the datapath, which can violate the intended relationship.
 	// Required: true
 	CookieThreshold *int64 `json:"cookieThreshold"`
 
-	// Maximum new connections per second per IP
+	// Per-source-IP SYN packet rate threshold, not completed connections per second. Must be positive when connection-rate protection is enabled.
 	// Required: true
 	RatePerSec *int64 `json:"ratePerSec"`
 
@@ -39,7 +39,7 @@ type SecurityRateConfigMod struct {
 	// Required: true
 	SynThreshold *int64 `json:"synThreshold"`
 
-	// Maximum UDP bandwidth in MB per second per IP
+	// UDP bandwidth threshold in MiB per second per source IP, converted using 1024*1024 bytes; valid range 0..4095 and positive when UDP protection is enabled.
 	// Required: true
 	UDPBandwidthMB *int64 `json:"udpBandwidthMB"`
 
@@ -51,7 +51,7 @@ type SecurityRateConfigMod struct {
 	// Required: true
 	UDPPktThreshold *int64 `json:"udpPktThreshold"`
 
-	// IP addresses to bypass all rate limiting
+	// Up to 1024 valid IPv4/IPv6 CIDRs. Omission clears the previous security-rate whitelist. These entries share maps with IP-filter whitelist rules.
 	WhitelistIps []string `json:"whitelistIps"`
 }
 

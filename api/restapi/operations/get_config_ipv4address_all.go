@@ -41,7 +41,7 @@ func NewGetConfigIpv4addressAll(ctx *middleware.Context, handler GetConfigIpv4ad
 
 Get IPv4 addresses in the device(interface)
 
-Get IPv4 addresses in the device(interface)
+Return the gateway's IPv4 address inventory, filtered by family, with interface names and synchronization state. This is not a complete independently verified kernel inventory.
 */
 type GetConfigIpv4addressAll struct {
 	Context *middleware.Context

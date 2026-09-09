@@ -34,7 +34,7 @@ func NewGetMetricsLbrulecount(ctx *middleware.Context, handler GetMetricsLbrulec
 
 # Get load balancer rule count metrics
 
-Get metrics related to load balancer rule counts.
+Returns the cached load-balancer rule count, not a fresh configuration query. Collection can be stale or uninitialized; a zero-valued field can be omitted.
 */
 type GetMetricsLbrulecount struct {
 	Context *middleware.Context

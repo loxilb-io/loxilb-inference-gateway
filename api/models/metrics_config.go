@@ -19,7 +19,7 @@ import (
 // swagger:model MetricsConfig
 type MetricsConfig struct {
 
-	// value for prometheus enable or not
+	// Runtime Prometheus enablement flag, not a sample-freshness or per-series availability verdict. This setting is not recovered through snapshots.
 	// Required: true
 	Prometheus *bool `json:"prometheus"`
 }

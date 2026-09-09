@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// KvExactStatusEntry Resolved KV-exact composition status of one rule. Every identity field is a scalar by schema - one rule composes exactly one model profile with exactly one engine contract at exactly one generation each; arrays and repeated identity fields are rejected representations. Field presence groups: the required fields are present on EVERY entry (legacy and strict); modelProfileId, modelProfileGen, engineContractId, engineContractGen, bindingGen, bindingDigest, hashContractId, requiredEvidenceLevel and enforcement are present iff the rule is strict (profile-bound); wireSchemaId and pdDialectId are present iff an engine-contract registry serves them. State and reason vocabularies are published in the x-kv-status-states / x-kv-status-reason-codes blocks below as an OPEN vocabulary versioned by x-kv-status-vocabulary-version (new values bump the version; existing values are never renamed or re-used). Forward-compatibility rule, binding on clients: an unrecognized desiredState/enforcedState MUST be treated as "not ready / in transition" and rendered raw; an unrecognized reasonCode MUST be rendered raw and MUST NOT be treated as fatal.
+// KvExactStatusEntry Resolved KV-exact status of one rule, not a configuration request body. Identity fields are scalar: an allocated strict binding composes one model profile and one engine contract at their respective generations. Required fields are emitted for legacy and strict entries. hashContractId is also computed for legacy entries. modelProfileId identifies a bound declaration, but generation, bindingDigest and requiredEvidenceLevel may be absent on a strict rule whose binding is unresolved or missing; do not interpret their absence as a profile-less rule. enforcement is included for strict rules and restored legacy rules fenced for migration. wireSchemaId and pdDialectId are optional informational identities; clients must not infer readiness from their presence or absence alone. State and reason vocabularies are published in the x-kv-status-states / x-kv-status-reason-codes blocks below as an OPEN vocabulary versioned by x-kv-status-vocabulary-version (new values bump the version; existing values are never renamed or re-used). Forward-compatibility rule, binding on clients: an unrecognized desiredState/enforcedState MUST be treated as "not ready / in transition" and rendered raw; an unrecognized reasonCode MUST be rendered raw and MUST NOT be treated as fatal.
 //
 // swagger:model KvExactStatusEntry
 type KvExactStatusEntry struct {
@@ -57,7 +57,7 @@ type KvExactStatusEntry struct {
 	// Required: true
 	ModelName *string `json:"modelName"`
 
-	// Registry generation the profile was bound at.
+	// Registry generation the allocated binding used. May be absent when a declared profile is unresolved or the binding is missing; inspect enforcedState and reasonCodes.
 	ModelProfileGen uint64 `json:"modelProfileGen,omitempty"`
 
 	// Bound ModelPromptProfile ID (absent on a legacy profile-less rule).

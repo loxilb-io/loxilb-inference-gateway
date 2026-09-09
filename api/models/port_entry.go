@@ -13,7 +13,7 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// PortEntry port entry
+// PortEntry Observed gateway port record. portType and portProp describe type/property flags, not scheduling priority; the current getter does not populate portProp. link is link status and state is administrative state. Address arrays contain a formatted first address with a primary/secondary marker or an empty string, not complete raw address lists.
 //
 // swagger:model PortEntry
 type PortEntry struct {
@@ -310,7 +310,7 @@ type PortEntryPortHardwareInformation struct {
 	// MAC address of the port
 	MacAddress string `json:"macAddress,omitempty"`
 
-	// Port's mater
+	// Master interface name.
 	Master string `json:"master,omitempty"`
 
 	// MTU of the port
@@ -319,10 +319,10 @@ type PortEntryPortHardwareInformation struct {
 	// MAC address written by byte array
 	RawMacAddress []int64 `json:"rawMacAddress"`
 
-	// real port..
+	// Underlying interface name.
 	Real string `json:"real,omitempty"`
 
-	// state...
+	// Administrative interface state; distinct from link status.
 	State bool `json:"state,omitempty"`
 
 	// Tunnel Id such as VxLAN.
@@ -402,10 +402,10 @@ func (m *PortEntryPortL2Information) UnmarshalBinary(b []byte) error {
 // swagger:model PortEntryPortL3Information
 type PortEntryPortL3Information struct {
 
-	// List of IP address v4
+	// Display string for the first IPv4 address with primary/secondary marker, or an empty string; not a complete address list.
 	IPV4Address []string `json:"IPv4Address"`
 
-	// List of the IP address v6
+	// Display string for the first IPv6 address with primary/secondary marker, or an empty string; not a complete address list.
 	IPV6Address []string `json:"IPv6Address"`
 
 	// Is routed or not
@@ -454,7 +454,7 @@ type PortEntryPortSoftwareInformation struct {
 	// Activation status of the port
 	PortActive bool `json:"portActive,omitempty"`
 
-	// Priority of the port
+	// Port property flags, not priority. The current domain getter leaves this field unpopulated.
 	PortProp int64 `json:"portProp,omitempty"`
 
 	// port type

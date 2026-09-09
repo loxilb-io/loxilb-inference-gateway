@@ -41,7 +41,7 @@ func NewGetConfigPortAll(ctx *middleware.Context, handler GetConfigPortAllHandle
 
 # Get all of the port interfaces
 
-Get all of the port interfaces.
+Return the gateway's port inventory and observed status. Link state and administrative state are distinct. Address arrays contain display strings for the first address of each family, not complete address inventories; portProp is not populated by the current domain getter.
 */
 type GetConfigPortAll struct {
 	Context *middleware.Context

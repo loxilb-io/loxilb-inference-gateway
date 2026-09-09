@@ -34,7 +34,7 @@ func NewPostConfigIpfilter(ctx *middleware.Context, handler PostConfigIpfilterHa
 
 # Create a new IP filter rule
 
-Create a new IP whitelist or blacklist rule for DDoS protection.
+Add or replace a source-prefix XDP filter. Zone must be zero or omitted; whitelist requires allow and blacklist requires drop. Priority is 0..65535, defaults to 100 when omitted, and preserves explicit zero. Each list uses longest-prefix matching; higher priority wins between lists and whitelist wins ties. Replacing an existing list/prefix resets its counters.
 */
 type PostConfigIpfilter struct {
 	Context *middleware.Context

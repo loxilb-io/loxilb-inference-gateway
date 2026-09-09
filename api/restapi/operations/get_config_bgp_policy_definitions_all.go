@@ -41,7 +41,7 @@ func NewGetConfigBgpPolicyDefinitionsAll(ctx *middleware.Context, handler GetCon
 
 # Get BGP Policy definitions
 
-Get BGP Policy definitions
+Return BGP policy definitions and translated statements. The response is not a lossless representation of every GoBGP action or explicit zero; zero local preference cannot be reapplied through this write model.
 */
 type GetConfigBgpPolicyDefinitionsAll struct {
 	Context *middleware.Context

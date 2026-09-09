@@ -34,7 +34,7 @@ func NewPostConfigPersist(ctx *middleware.Context, handler PostConfigPersistHand
 
 # Persist the running configuration to disk
 
-Dumps the gateway's live configuration to {config-path}/snapshot.json (atomic temp-file + rename, 0600) so it survives a daemon restart. This is "save" as an API (single-writer rule) - the same write the gateway performs automatically after a committed restore and, when auto-persist is enabled, after every successful mutating config call. loxicmd save --api calls this instead of writing legacy *.txt files client-side.
+Atomically writes supported snapshot configuration to {config-path}/snapshot.json with mode 0600. Inspect included_domains, excluded_domains, external_dependencies, checksum and generation for coverage and identity. Runtime-only settings and external secrets are not made durable by this operation. Committed restore attempts write-through separately; eligible successful mutations schedule debounced persistence when auto-persist is enabled rather than synchronously saving every mutation.
 */
 type PostConfigPersist struct {
 	Context *middleware.Context

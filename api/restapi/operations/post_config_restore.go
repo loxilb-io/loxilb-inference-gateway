@@ -34,7 +34,7 @@ func NewPostConfigRestore(ctx *middleware.Context, handler PostConfigRestoreHand
 
 # Restore an instance snapshot
 
-Runs the staged restore pipeline (parse, validate, plan, preserve, apply, verify, commit-or-rollback) on the posted snapshot document. Default mode is dry-run, which validates and plans without mutating anything; commit must be explicit. Replaces the deprecated /config/import.
+Defaults to dry-run, which checks structure, checksum, schema compatibility, coverage and required dependencies and reports a replacement plan without applying it. Dry-run does not execute every domain's apply-time validation or guarantee commit success. Explicit commit replaces selected domains, verifies the result and attempts rollback on failure. Application and write-through persistence are separate outcomes; inspect result, errors and persisted, not HTTP status alone. Replaces deprecated /config/import.
 */
 type PostConfigRestore struct {
 	Context *middleware.Context

@@ -34,7 +34,7 @@ func NewPostConfigNeighbor(ctx *middleware.Context, handler PostConfigNeighborHa
 
 # Assign IPv4 neighbor in the device
 
-Assign IPv4 neighbor in the device
+Add a permanent neighbor entry using a literal IP address, interface name, and MAC address. IP parsing is not followed by complete local validation; downstream failures are not consistently classified.
 */
 type PostConfigNeighbor struct {
 	Context *middleware.Context

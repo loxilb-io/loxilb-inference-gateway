@@ -38,7 +38,7 @@ func NewPostConfigL4traceDisable(ctx *middleware.Context, handler PostConfigL4tr
 # Disable L4 connection tracing
 
 Disables L4 connection tracing and stops emitting events to ring buffers.
-In-flight connections will complete their spans before export stops.
+This also resets sampling to 100. The operation does not guarantee completion or export of all in-flight spans and does not itself shut down the existing consumer.
 */
 type PostConfigL4traceDisable struct {
 	Context *middleware.Context
