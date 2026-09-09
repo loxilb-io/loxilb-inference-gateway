@@ -105,6 +105,16 @@ func main() {
 		for _, af := range parsed {
 			collectSliceBindings(af, consts, slices)
 		}
+		// A prometheus.NewDesc call cannot state the runtime type -- the type
+		// is chosen later, where the Desc is turned into a metric. Both halves
+		// are statically resolvable, so resolve them: which variable holds each
+		// Desc, and which value kind that variable is emitted with.
+		descVar := map[token.Pos]string{}
+		descRuntime := map[string]string{}
+		for _, af := range parsed {
+			collectDescBindings(af, descVar)
+			collectDescRuntimeTypes(af, descRuntime)
+		}
 		_ = dir
 		for f, af := range parsed {
 			rel, _ := filepath.Rel(*root, f)
@@ -139,6 +149,16 @@ func main() {
 					if d != nil {
 						d.File = filepath.ToSlash(rel)
 						d.Line = fset.Position(call.Pos()).Line
+						// Mechanism stays "desc"; Type becomes the type the
+						// collector actually emits. A Desc that is never
+						// emitted, emitted inconsistently, or not bound to a
+						// variable keeps Type "desc", which the manifest
+						// generation gate rejects rather than shipping.
+						if v, ok := descVar[call.Pos()]; ok {
+							if rt, ok := descRuntime[v]; ok && rt != "" {
+								d.Type = rt
+							}
+						}
 						defs = append(defs, *d)
 					}
 				}
@@ -409,4 +429,113 @@ func joinFQ(ns, sub, name string) string {
 		}
 	}
 	return strings.Join(parts, "_")
+}
+
+// constMetricType maps the constructor that consumes a Desc to the runtime
+// metric type it produces. MustNewConstMetric carries the kind in its second
+// argument instead, and is handled separately.
+var constMetricType = map[string]string{
+	"MustNewConstHistogram":         "histogram",
+	"NewConstHistogram":             "histogram",
+	"MustNewConstSummary":           "summary",
+	"NewConstSummary":               "summary",
+	"MustNewConstMetricWithCreated": "",
+	"NewConstMetricWithCreated":     "",
+}
+
+// valueType maps a prometheus value-kind selector to the manifest type name.
+var valueType = map[string]string{
+	"CounterValue": "counter",
+	"GaugeValue":   "gauge",
+	"UntypedValue": "untyped",
+}
+
+// descConflict marks a Desc emitted with more than one runtime type. It is
+// stored in place of a type so the manifest gate rejects it: a family whose
+// type depends on which branch ran is not a family the manifest can describe.
+const descConflict = "conflict"
+
+// collectDescBindings records, for each prometheus.NewDesc call, the variable
+// it is assigned to. Both `var x = prometheus.NewDesc(...)` and `x :=
+// prometheus.NewDesc(...)` bind; an unassigned call is left out, so its type
+// cannot be resolved and stays "desc".
+func collectDescBindings(af *ast.File, out map[token.Pos]string) {
+	bind := func(lhs []ast.Expr, rhs []ast.Expr) {
+		if len(lhs) != len(rhs) {
+			return
+		}
+		for i, r := range rhs {
+			call, ok := r.(*ast.CallExpr)
+			if !ok {
+				continue
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || sel.Sel.Name != "NewDesc" || !callerIsPrometheus(sel.X) {
+				continue
+			}
+			if id, ok := lhs[i].(*ast.Ident); ok {
+				out[call.Pos()] = id.Name
+			}
+		}
+	}
+	ast.Inspect(af, func(n ast.Node) bool {
+		switch v := n.(type) {
+		case *ast.ValueSpec:
+			names := make([]ast.Expr, 0, len(v.Names))
+			for _, id := range v.Names {
+				names = append(names, id)
+			}
+			bind(names, v.Values)
+		case *ast.AssignStmt:
+			bind(v.Lhs, v.Rhs)
+		}
+		return true
+	})
+}
+
+// collectDescRuntimeTypes records the runtime type each Desc variable is
+// emitted with. A variable emitted with two different types is recorded as a
+// conflict rather than resolved arbitrarily.
+func collectDescRuntimeTypes(af *ast.File, out map[string]string) {
+	record := func(name, typ string) {
+		if name == "" || typ == "" {
+			return
+		}
+		if prev, seen := out[name]; seen && prev != typ {
+			out[name] = descConflict
+			return
+		}
+		out[name] = typ
+	}
+	ast.Inspect(af, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || !callerIsPrometheus(sel.X) || len(call.Args) == 0 {
+			return true
+		}
+		desc, ok := call.Args[0].(*ast.Ident)
+		if !ok {
+			return true
+		}
+		switch sel.Sel.Name {
+		case "MustNewConstMetric", "NewConstMetric":
+			// The value kind is the second argument.
+			if len(call.Args) < 2 {
+				return true
+			}
+			kind, ok := call.Args[1].(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			record(desc.Name, valueType[kind.Sel.Name])
+		default:
+			if t, known := constMetricType[sel.Sel.Name]; known {
+				record(desc.Name, t)
+			}
+		}
+		return true
+	})
 }

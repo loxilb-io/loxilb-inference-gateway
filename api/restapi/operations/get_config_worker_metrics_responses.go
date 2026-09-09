@@ -148,56 +148,11 @@ func (o *GetConfigWorkerMetricsForbidden) WriteResponse(rw http.ResponseWriter, 
 	}
 }
 
-// GetConfigWorkerMetricsInternalServerErrorCode is the HTTP code returned for type GetConfigWorkerMetricsInternalServerError
-const GetConfigWorkerMetricsInternalServerErrorCode int = 500
-
-/*
-GetConfigWorkerMetricsInternalServerError Internal service error
-
-swagger:response getConfigWorkerMetricsInternalServerError
-*/
-type GetConfigWorkerMetricsInternalServerError struct {
-
-	/*
-	  In: Body
-	*/
-	Payload *models.Error `json:"body,omitempty"`
-}
-
-// NewGetConfigWorkerMetricsInternalServerError creates GetConfigWorkerMetricsInternalServerError with default headers values
-func NewGetConfigWorkerMetricsInternalServerError() *GetConfigWorkerMetricsInternalServerError {
-
-	return &GetConfigWorkerMetricsInternalServerError{}
-}
-
-// WithPayload adds the payload to the get config worker metrics internal server error response
-func (o *GetConfigWorkerMetricsInternalServerError) WithPayload(payload *models.Error) *GetConfigWorkerMetricsInternalServerError {
-	o.Payload = payload
-	return o
-}
-
-// SetPayload sets the payload to the get config worker metrics internal server error response
-func (o *GetConfigWorkerMetricsInternalServerError) SetPayload(payload *models.Error) {
-	o.Payload = payload
-}
-
-// WriteResponse to the client
-func (o *GetConfigWorkerMetricsInternalServerError) WriteResponse(rw http.ResponseWriter, producer runtime.Producer) {
-
-	rw.WriteHeader(500)
-	if o.Payload != nil {
-		payload := o.Payload
-		if err := producer.Produce(rw, payload); err != nil {
-			panic(err) // let the recovery middleware deal with this
-		}
-	}
-}
-
 // GetConfigWorkerMetricsServiceUnavailableCode is the HTTP code returned for type GetConfigWorkerMetricsServiceUnavailable
 const GetConfigWorkerMetricsServiceUnavailableCode int = 503
 
 /*
-GetConfigWorkerMetricsServiceUnavailable Maintenance mode
+GetConfigWorkerMetricsServiceUnavailable Management credential store unavailable
 
 swagger:response getConfigWorkerMetricsServiceUnavailable
 */
