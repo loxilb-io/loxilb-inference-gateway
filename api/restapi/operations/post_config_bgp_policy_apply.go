@@ -34,7 +34,7 @@ func NewPostConfigBgpPolicyApply(ctx *middleware.Context, handler PostConfigBgpP
 
 # Apply BGP Policy in neighbor
 
-Apply BGP Policy in neighbor
+Add policy assignments for a neighbor or the global assignment target in the selected import/export direction. routeAction is the default assignment action and uses accept or reject, unlike statement routeDisposition. POST adds assignments; it does not perform a general replacement.
 */
 type PostConfigBgpPolicyApply struct {
 	Context *middleware.Context

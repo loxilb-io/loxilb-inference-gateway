@@ -32,7 +32,9 @@ func NewGetConfigMetrics(ctx *middleware.Context, handler GetConfigMetricsHandle
 /*
 	GetConfigMetrics swagger:route GET /config/metrics getConfigMetrics
 
-Get prometheus config value
+# Get prometheus config value
+
+Returns the runtime Prometheus enablement flag, not proof of freshness or availability of every series.
 */
 type GetConfigMetrics struct {
 	Context *middleware.Context

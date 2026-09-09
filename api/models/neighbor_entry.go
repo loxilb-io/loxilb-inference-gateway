@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// NeighborEntry neighbor entry
+// NeighborEntry Permanent neighbor input consisting of a literal IP, interface name, and parsed MAC address. The handler is not IPv4-only and local IP validation is incomplete. Interface-scoped deletion is not safely enforced when interface lookup fails.
 //
 // swagger:model NeighborEntry
 type NeighborEntry struct {

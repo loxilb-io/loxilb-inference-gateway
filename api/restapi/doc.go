@@ -2,7 +2,7 @@
 
 // Package restapi Loxilb Rest API
 //
-//	Loxilb REST API for Baremetal Scenarios
+//	LoxiLB Inference Gateway management API. Read each field together with its operation, engine, topology, and lifecycle conditions; a schema default does not by itself establish omission or replace-update behavior. Descriptions explicitly identify known implementation limitations. The companion swagger-extras.yml documents manually registered routes. Management-plane authorization and data-plane X-Api-Key enforcement are separate policies.
 //	Schemes:
 //	  http
 //	  https

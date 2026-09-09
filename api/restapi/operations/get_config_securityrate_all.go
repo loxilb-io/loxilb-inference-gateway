@@ -41,7 +41,7 @@ func NewGetConfigSecurityrateAll(ctx *middleware.Context, handler GetConfigSecur
 
 # Get unified security rate limiting configuration and statistics
 
-Get current unified security rate limiting (P0-5 + P0-6 + P0-7) configuration and statistics.
+Return a single configuration/statistics entry in an array. Configuration reflects the stored control-plane values, which can differ from effective datapath defaults or partially applied updates. Statistics read failures can appear as zeros. uniqueIps is tracking-map occupancy, not a resettable cumulative counter.
 */
 type GetConfigSecurityrateAll struct {
 	Context *middleware.Context

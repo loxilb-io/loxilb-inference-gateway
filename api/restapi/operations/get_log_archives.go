@@ -34,7 +34,7 @@ func NewGetLogArchives(ctx *middleware.Context, handler GetLogArchivesHandler) *
 
 # List available log archives
 
-Retrieve a list of all rotated log archive files available for download.
+Lists eligible active .log files and rotated .log.gz archives from the supported log directories. Duplicate basenames use the first matching directory; listing order is not a global modification-time order.
 */
 type GetLogArchives struct {
 	Context *middleware.Context

@@ -15,7 +15,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// IPsecTunnelActionMod i psec tunnel action mod
+// IPsecTunnelActionMod Requests ipsec up, down, or down followed by up for an existing tunnel. Command completion and best-effort state refresh are not proof of peer connectivity, installed traffic selectors, or successful encrypted traffic.
 //
 // swagger:model IPsecTunnelActionMod
 type IPsecTunnelActionMod struct {

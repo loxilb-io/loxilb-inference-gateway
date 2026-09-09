@@ -34,7 +34,7 @@ func NewDeleteConfigBgpPolicyApply(ctx *middleware.Context, handler DeleteConfig
 
 # Delete BGP Policy in neighbor
 
-Delete BGP Policy in neighbor. It don't need "routeAction" in the attr body
+Delete policy assignments for the selected target and direction. Omitted or empty policies removes all assignments for that target/direction. The schema still requires routeAction, but the handler ignores it during deletion. Make this destructive omission explicit in clients.
 */
 type DeleteConfigBgpPolicyApply struct {
 	Context *middleware.Context

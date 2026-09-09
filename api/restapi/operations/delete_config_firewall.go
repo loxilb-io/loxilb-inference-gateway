@@ -34,7 +34,7 @@ func NewDeleteConfigFirewall(ctx *middleware.Context, handler DeleteConfigFirewa
 
 # Delete of the firewall service
 
-Delete of the firewall service.
+Delete the exact firewall match tuple, including preference; query parameters are not a search filter. Reuse the original normalized tuple. Safety limitation: reversed port ranges currently become wildcard tuples instead of being rejected, so validate range ordering before submission.
 */
 type DeleteConfigFirewall struct {
 	Context *middleware.Context

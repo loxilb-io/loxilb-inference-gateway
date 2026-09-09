@@ -34,7 +34,7 @@ func NewPostConfigTunnelVxlan(ctx *middleware.Context, handler PostConfigTunnelV
 
 # Add a one of vxlan configuration
 
-Return a list of existing tunnels of a type. If there're no tunnels to return, empty list will be returned.
+Create interface vxlan<ID> using the first IPv4 address of epIntf, UDP port 8472, MTU 9000, and learning enabled. The endpoint interface must exist and have an IPv4 address. Numeric and peer-family validation are incomplete. Backend failure can return HTTP 200 with result set to fail.
 */
 type PostConfigTunnelVxlan struct {
 	Context *middleware.Context

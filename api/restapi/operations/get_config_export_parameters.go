@@ -31,7 +31,7 @@ type GetConfigExportParams struct {
 	// HTTP Request Object
 	HTTPRequest *http.Request `json:"-"`
 
-	/*Comma-separated list of components to export (cluster, endpoint, firewall, loadbalancer, mirror, policy). If not specified, all components are exported.
+	/*Comma-separated snapshot domains. Omitted or empty selection captures all supported domains. The legacy cluster token is ignored; cluster-only selection consequently widens to all snapshot domains and should not be used.
 	  In: query
 	*/
 	Components *string

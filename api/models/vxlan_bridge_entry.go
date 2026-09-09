@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// VxlanBridgeEntry vxlan bridge entry
+// VxlanBridgeEntry VXLAN creation input. epIntf must exist and have an IPv4 address; its first IPv4 address is selected as source. Creation uses vxlan<ID>, UDP port 8472, MTU 9000, and learning enabled. Numeric validation is incomplete.
 //
 // swagger:model VxlanBridgeEntry
 type VxlanBridgeEntry struct {

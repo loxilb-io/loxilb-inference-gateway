@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// PIIURLPattern p i i URL pattern
+// PIIURLPattern Ordered include/exclude matcher, not an independent exclusion override. The first matching entry decides. Text beyond 127 bytes can be truncated in fixed-size storage; length and pattern syntax are not fully validated.
 //
 // swagger:model PIIURLPattern
 type PIIURLPattern struct {

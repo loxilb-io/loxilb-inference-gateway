@@ -12,15 +12,15 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// BGPPolicyPrefix b g p policy prefix
+// BGPPolicyPrefix Prefix-set entry with CIDR ipPrefix and inclusive minimum..maximum masklengthRange. Local parsing checks the separator but ignores numeric conversion errors and narrows to uint32; prefix-family limits and range ordering require explicit validation rather than reliance on this schema.
 //
 // swagger:model BGPPolicyPrefix
 type BGPPolicyPrefix struct {
 
-	// BGP Neighbor IP address
+	// Network prefix in CIDR notation.
 	IPPrefix string `json:"ipPrefix,omitempty"`
 
-	// Remote AS number
+	// Inclusive prefix-length range minimum..maximum. Numeric parse errors, uint32 narrowing, family bounds, and ordering are not fully validated locally.
 	MasklengthRange string `json:"masklengthRange,omitempty"`
 }
 

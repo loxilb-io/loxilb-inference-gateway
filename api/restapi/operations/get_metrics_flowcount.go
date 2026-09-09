@@ -34,7 +34,7 @@ func NewGetMetricsFlowcount(ctx *middleware.Context, handler GetMetricsFlowcount
 
 # Get flow count metrics
 
-Get metrics related to flow counts.
+Returns cached conntrack observations and active-flow counts by protocol. Inactive count is a collector observation, not a complete inactive inventory. Collection can be stale or uninitialized; optional zero-valued fields can be omitted.
 */
 type GetMetricsFlowcount struct {
 	Context *middleware.Context

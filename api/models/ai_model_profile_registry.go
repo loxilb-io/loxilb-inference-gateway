@@ -28,7 +28,7 @@ type AiModelProfileRegistry struct {
 	// Required: true
 	RegistryGeneration *uint64 `json:"registryGeneration"`
 
-	// Digest over the published generation's profile documents and verified artifact bytes. Compare against later reads (and the kvexactstatus read-back) to detect a reload between discovery and rule creation.
+	// Digest over the published registry generation's profile documents and verified artifact bytes. Compare with later discovery reads to detect a registry reload. Do not compare setDigest with kvexactstatus.bindingDigest: the latter identifies a rule's composed model-profile/engine-contract binding, not the registry set. After creation, compare the selected profile identity/generation with modelProfileId/modelProfileGen and inspect the rule's enforcedState; POST admission remains authoritative.
 	SetDigest string `json:"setDigest,omitempty"`
 }
 

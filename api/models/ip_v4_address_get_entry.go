@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// IPV4AddressGetEntry IPv4 address get entry
+// IPV4AddressGetEntry Gateway IPv4 addresses grouped by interface with reported synchronization status. Address strings include prefix lengths; inventory and sync are not independent proof of kernel or datapath convergence.
 //
 // swagger:model IPv4AddressGetEntry
 type IPV4AddressGetEntry struct {

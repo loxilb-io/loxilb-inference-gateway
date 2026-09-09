@@ -34,7 +34,7 @@ func NewDeleteConfigMirrorIdentIdent(ctx *middleware.Context, handler DeleteConf
 
 # Delete a Mirror service
 
-Delete a new Create a Mirror service.
+Delete the mirror object identified by ident. Successful control-plane deletion does not independently verify datapath cleanup.
 */
 type DeleteConfigMirrorIdentIdent struct {
 	Context *middleware.Context

@@ -34,7 +34,7 @@ func NewPostConfigBgpGlobal(ctx *middleware.Context, handler PostConfigBgpGlobal
 
 # Adds a BGP global config
 
-Adds a BGP global config
+Start BGP with the supplied router ID, local ASN, and listen port, and create additional policy objects. Omitted or zero listenPort selects 179; numeric inputs narrow without complete local bounds checks. SetNextHopSelf is case-sensitive. This is not an atomic configuration replacement, and errors can follow partial setup.
 */
 type PostConfigBgpGlobal struct {
 	Context *middleware.Context

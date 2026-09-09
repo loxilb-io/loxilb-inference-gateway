@@ -12,7 +12,7 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// FirewallRuleEntry firewall rule entry
+// FirewallRuleEntry Exact firewall match tuple. Ports and preference are 0..65535; protocol is 0..255, with zero meaning wildcard. Both endpoints of a zero port range mean wildcard; otherwise minimum must not exceed maximum. Missing CIDRs become family-appropriate wildcards and explicit source/destination families must agree on creation. DELETE does not safely reject reversed ranges. hwOffload admission is not evidence of hardware installation and is not returned faithfully by GET.
 //
 // swagger:model FirewallRuleEntry
 type FirewallRuleEntry struct {
@@ -20,8 +20,7 @@ type FirewallRuleEntry struct {
 	// Destination IP in CIDR notation
 	DestinationIP string `json:"destinationIP,omitempty"`
 
-	// opt-IN per-rule HW offload flag. When true, the rule is mirrored into the DOCA ingress ACL pipeline (DENY_PIPE / ALLOW_PIPE) in addition to the eBPF firewall fallback. The rule MUST be expressible in HW (IPv4, single-port, no proto-specific match) — non-expressible rules are hard-rejected at AddFwRule. Default false preserves existing eBPF-only behaviour for all deployments.
-	//
+	// Request hardware offload, not proof of installation. Current admission rejects IPv6, non-/32 IPv4 prefixes, non-singleton port ranges, and TCP- or UDP-specific protocol matches. Other acceptance does not establish runtime support, and GET does not populate this flag.
 	HwOffload bool `json:"hwOffload,omitempty"`
 
 	// Maximum  destination port range
@@ -39,10 +38,10 @@ type FirewallRuleEntry struct {
 	// the incoming port
 	PortName string `json:"portName,omitempty"`
 
-	// User preference for ordering
+	// Preference 0..65535. This participates in rule identity and must match on deletion.
 	Preference int64 `json:"preference,omitempty"`
 
-	// the protocol
+	// IP protocol number 0..255; zero means wildcard.
 	Protocol int64 `json:"protocol,omitempty"`
 
 	// Source IP in CIDR notation

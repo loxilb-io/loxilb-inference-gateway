@@ -37,7 +37,7 @@ func NewGetConfigTraceStatus(ctx *middleware.Context, handler GetConfigTraceStat
 
 Get HTTP/HTTPS tracing status
 
-Returns current tracing status, ring buffer statistics, and OTLP endpoint configuration.
+Returns tracing enablement and OTLP configuration. Event totals and ring-utilization reporting currently use placeholder statistics, not measured zero traffic or loss. Connection state reflects recorded export outcomes rather than a fresh reachability probe.
 */
 type GetConfigTraceStatus struct {
 	Context *middleware.Context

@@ -12,30 +12,30 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// SecurityRateEntry security rate entry
+// SecurityRateEntry Stored configuration with observed security-rate statistics. GET does not establish effective configuration after defaults or partial programming failures, and statistics failures can appear as zeros. Connection counters concern SYN packets, not completed connections. synCookies is threshold telemetry, not proof of a SYN-cookie exchange. uniqueIps is current tracking-map occupancy and is not cleared by counter reset.
 //
 // swagger:model SecurityRateEntry
 type SecurityRateEntry struct {
 
-	// Connections blocked by rate limit (read-only)
+	// SYN packets blocked by connection-rate checking, not distinct completed connections.
 	ConnBlocked int64 `json:"connBlocked,omitempty"`
 
-	// Connections passed (read-only)
+	// SYN packets counted as passed by connection-rate checking, not distinct established connections.
 	ConnPassed int64 `json:"connPassed,omitempty"`
 
 	// Whether connection rate limiting is enabled
 	ConnRateEnabled bool `json:"connRateEnabled,omitempty"`
 
-	// SYN cookie activation threshold
+	// Stored telemetry threshold; zero can differ from effective datapath value 50. This field does not establish SYN-cookie generation.
 	CookieThreshold int64 `json:"cookieThreshold,omitempty"`
 
-	// Maximum new connections per second per IP
+	// Stored per-source-IP SYN packet rate threshold, not completed connection rate.
 	RatePerSec int64 `json:"ratePerSec,omitempty"`
 
 	// SYN packets blocked (read-only)
 	SynBlocked int64 `json:"synBlocked,omitempty"`
 
-	// SYN cookie activations (read-only)
+	// SYN packets observed in the cookie-threshold telemetry branch, not completed or generated SYN-cookie exchanges.
 	SynCookies int64 `json:"synCookies,omitempty"`
 
 	// Whether SYN flood protection is enabled
@@ -47,7 +47,7 @@ type SecurityRateEntry struct {
 	// Maximum SYNs per second per IP
 	SynThreshold int64 `json:"synThreshold,omitempty"`
 
-	// Maximum UDP bandwidth in MB per second per IP
+	// Stored UDP bandwidth threshold in MiB per second per source IP.
 	UDPBandwidthMB int64 `json:"udpBandwidthMB,omitempty"`
 
 	// UDP packets blocked (read-only)
@@ -68,7 +68,7 @@ type SecurityRateEntry struct {
 	// Maximum UDP packets per second per IP
 	UDPPktThreshold int64 `json:"udpPktThreshold,omitempty"`
 
-	// Number of unique source IPs tracked (read-only)
+	// Current IPv4 plus IPv6 tracking-map occupancy. Counter reset and protection disable do not clear these maps.
 	UniqueIps int64 `json:"uniqueIps,omitempty"`
 
 	// Whitelisted IPs

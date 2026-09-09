@@ -34,7 +34,7 @@ func NewGetConfigGpuStatus(ctx *middleware.Context, handler GetConfigGpuStatusHa
 
 # Get GPU monitoring status
 
-Returns current GPU monitoring state and statistics
+Returns the monitoring flag and cached worker observations, not verified GPU health or effective service routing. Uncompiled support can report routing_mode disabled. Worker count includes cached entries; ebpf_map_loaded checks one worker-statistics map descriptor rather than all required maps.
 */
 type GetConfigGpuStatus struct {
 	Context *middleware.Context

@@ -15,7 +15,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// UserSummary user summary
+// UserSummary Read-only account identity without password material. created_at is emitted as RFC3339. Viewer authorization currently permits listing all accounts; this is not a per-user or per-tenant visibility boundary.
 //
 // swagger:model UserSummary
 type UserSummary struct {

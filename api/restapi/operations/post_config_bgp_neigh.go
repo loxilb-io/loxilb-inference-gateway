@@ -34,7 +34,7 @@ func NewPostConfigBgpNeigh(ctx *middleware.Context, handler PostConfigBgpNeighHa
 
 # Adds a BGP Neighbor
 
-Adds a BGP Neighbor
+Add a BGP neighbor, not a general replacement. Supply a literal IP and remote ASN. ASN and port narrow without local bounds checks; omitted or zero remotePort selects 179 and setMultiHop enables an eight-hop TTL. GoBGP performs additional admission not represented fully by this schema.
 */
 type PostConfigBgpNeigh struct {
 	Context *middleware.Context

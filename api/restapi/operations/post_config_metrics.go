@@ -33,6 +33,8 @@ func NewPostConfigMetrics(ctx *middleware.Context, handler PostConfigMetricsHand
 	PostConfigMetrics swagger:route POST /config/metrics postConfigMetrics
 
 turn on prometheus option
+
+Idempotently enables runtime collection and scraping, not metric-resource creation. Collection is asynchronous; enablement does not prove a first sample exists. This setting is not recovered through snapshots.
 */
 type PostConfigMetrics struct {
 	Context *middleware.Context

@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// IPsecCACertificateMod i psec c a certificate mod
+// IPsecCACertificateMod Installs a PEM certificate after parsing and an IsCA check. The reviewed upload does not apply the leaf validator's date policy or complete trust validation. Name reaches node filesystem paths without complete path-safety validation. Installation is not proof that a tunnel uses this CA.
 //
 // swagger:model IPsecCACertificateMod
 type IPsecCACertificateMod struct {

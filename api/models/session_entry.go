@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// SessionEntry session entry
+// SessionEntry User session identified by ident. Supply sessionIP and both tunnel objects as literal-IP configuration; schema-optional tunnel objects are dereferenced by the handler. Access TeID and core teID are case-sensitive wire names and narrow to uint32 without range checks. Existing-session replacement has a comparison defect and can remove associated ULCL classifiers.
 //
 // swagger:model SessionEntry
 type SessionEntry struct {
@@ -25,11 +25,11 @@ type SessionEntry struct {
 	// core network tunnel
 	CoreNetworkTunnel *SessionEntryCoreNetworkTunnel `json:"coreNetworkTunnel,omitempty"`
 
-	// IP address and netmask
+	// User-session identifier, not an IP/netmask.
 	// Required: true
 	Ident *string `json:"ident"`
 
-	// IP address for nexthop
+	// Literal user-session IP address. Local parsing is not followed by complete admission validation.
 	SessionIP string `json:"sessionIP,omitempty"`
 }
 
@@ -170,12 +170,12 @@ func (m *SessionEntry) UnmarshalBinary(b []byte) error {
 	return nil
 }
 
-// SessionEntryAccessNetworkTunnel session entry access network tunnel
+// SessionEntryAccessNetworkTunnel Supply this object; the current handler dereferences it despite its optional schema declaration.
 //
 // swagger:model SessionEntryAccessNetworkTunnel
 type SessionEntryAccessNetworkTunnel struct {
 
-	// ID of the tunnel
+	// Access-network TEID, converted to uint32 without a bounds check. Omission becomes zero.
 	TeID int64 `json:"TeID,omitempty"`
 
 	// Access network IP address
@@ -210,12 +210,12 @@ func (m *SessionEntryAccessNetworkTunnel) UnmarshalBinary(b []byte) error {
 	return nil
 }
 
-// SessionEntryCoreNetworkTunnel session entry core network tunnel
+// SessionEntryCoreNetworkTunnel Supply this object; the current handler dereferences it despite its optional schema declaration.
 //
 // swagger:model SessionEntryCoreNetworkTunnel
 type SessionEntryCoreNetworkTunnel struct {
 
-	// ID of the tunnel
+	// Core-network TEID, converted to uint32 without a bounds check. Note the case-sensitive teID wire name.
 	TeID int64 `json:"teID,omitempty"`
 
 	// Connection network IP address

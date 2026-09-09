@@ -34,7 +34,7 @@ func NewGetDiagnostics(ctx *middleware.Context, handler GetDiagnosticsHandler) *
 
 # Secret-safe gateway diagnostics
 
-A bounded, allowlist-only diagnostic assembly - build identity, served API contract, process uptime, readiness verdict with reasons, operator maintenance state, per-interface eBPF attachment, per-map utilization against capacity, external-dependency reachability with a latency class (identity only, never credentials or connection strings), and the last configuration lifecycle outcomes with their checksums and identities. Request/response bodies, prompts, rule contents, key material, and environment are never collected here. Failed internal errors elsewhere in the API carry a short correlation ref in their 500 body that ties them to the gateway log; this endpoint carries no raw log content.
+Returns build/API identity, API-layer uptime, configuration-readiness observations, maintenance state, attachments, cached map utilization and lifecycle outcomes. Dependency checks vary by type; latency classes do not establish end-to-end health. The handler normally returns 200 even when ready is false. Nested reasons can contain propagated error text, so universal secret-redaction guarantees are not established. This is not a raw-log export; correlation references are not supplied by every API error path.
 */
 type GetDiagnostics struct {
 	Context *middleware.Context

@@ -12,7 +12,7 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// PIIStatsResponse p i i stats response
+// PIIStatsResponse Unimplemented management telemetry. All four values are hard-coded zero and currently serialize as an empty object, including without a manager. This is not evidence of zero scans, detections, blocks, or errors.
 //
 // swagger:model PIIStatsResponse
 type PIIStatsResponse struct {

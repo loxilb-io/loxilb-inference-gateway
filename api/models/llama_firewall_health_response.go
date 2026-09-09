@@ -12,7 +12,7 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// LlamaFirewallHealthResponse llama firewall health response
+// LlamaFirewallHealthResponse Intended health response. Current behavior reads tracked state rather than probing the scanner, and no updater from the active client was located. Unhealthy results use the generic error envelope instead of this schema; latency_ms is not measured probe latency. This is not readiness attestation.
 //
 // swagger:model LlamaFirewallHealthResponse
 type LlamaFirewallHealthResponse struct {

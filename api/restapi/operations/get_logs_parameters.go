@@ -31,23 +31,23 @@ type GetLogsParams struct {
 	// HTTP Request Object
 	HTTPRequest *http.Request `json:"-"`
 
-	/*Opaque pagination cursor from a previous response's next_cursor; fetches the next page.
+	/*Opaque backwards-pagination cursor. Send the same explicit file and filters on subsequent requests; the cursor does not select the file or bind the filters. File mismatch or truncation can silently restart at the tail. Gzip offsets refer to decompressed bytes.
 	  In: query
 	*/
 	Cursor *string
-	/*Specific log file to read (default is the current log file). Rotated .log.gz archives are accepted and decompressed transparently.
+	/*Eligible log basename; when omitted the handler selects a current log file. For stable pagination repeat the response's log_file explicitly. Gzip archives are decompressed again per request with a 64 MiB decompressed-size limit; use the download endpoint for larger archives.
 	  In: query
 	*/
 	File *string
-	/*Filter logs containing a specific keyword or phrase. Matched as a substring, searched backwards across the whole file rather than within one page.
+	/*Case-sensitive substring filter combined with level using AND. Keep unchanged across cursor requests; blank lines are excluded and returned lines are trimmed.
 	  In: query
 	*/
 	Keyword *string
-	/*Filter logs by level (e.g., INFO, ERROR, DEBUG). Matched as a substring, searched backwards across the whole file rather than within one page.
+	/*Case-sensitive substring filter, not structured severity parsing. Combined with keyword using AND while scanning backwards; keep unchanged across cursor requests.
 	  In: query
 	*/
 	Level *string
-	/*Number of log lines to fetch (default is 100). With level or keyword set this is the number of matching lines.
+	/*Requested matching-line count, defaulting to 100 when omitted. The handler currently lacks a strict positive bound and maximum; malformed or nonpositive values can produce an empty successful page. The scan budget is checked between batches, so a long line can exceed the advertised 32 MiB budget.
 	  In: query
 	*/
 	Lines *string

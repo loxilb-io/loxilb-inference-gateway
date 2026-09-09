@@ -34,7 +34,7 @@ func NewPostConfigMirror(ctx *middleware.Context, handler PostConfigMirrorHandle
 
 # Create a new Mirror config
 
-Create a new Mirror config.
+Configure a mirror object. The inspected implementation provides a port-attached SPAN programming path; rule attachment and ERSPAN are not implemented end-to-end. RSPAN currently rejects nonzero VLAN IDs. Datapath failures can be ignored during creation, and changed information may delete and recreate an existing object while target-only changes conflict.
 */
 type PostConfigMirror struct {
 	Context *middleware.Context

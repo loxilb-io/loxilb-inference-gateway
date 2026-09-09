@@ -34,7 +34,7 @@ func NewPostConfigFirewall(ctx *middleware.Context, handler PostConfigFirewallHa
 
 # Create a new firewall config
 
-Create a new firewall config for security.
+Add a firewall rule. Ports and preference are 0..65535; protocol is 0..255. Zero port pairs and protocol zero mean wildcard. Nonzero port pairs require minimum <= maximum; CIDR families must agree. Avoid conflicting terminal actions: precedence and independent doSnat side effects are not a safe one-action contract. Duplicate POST can change fwMark before returning conflict. Hardware expressibility admission does not establish hardware installation.
 */
 type PostConfigFirewall struct {
 	Context *middleware.Context

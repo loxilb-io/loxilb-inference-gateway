@@ -37,7 +37,7 @@ func NewPostConfigTraceDisable(ctx *middleware.Context, handler PostConfigTraceD
 
 Disable HTTP/HTTPS protocol tracing
 
-Disables distributed tracing and stops emitting events to ring buffers.
+Disables runtime HTTP/HTTPS trace emission without itself shutting down the existing consumer or proving buffered events were exported. Some failure branches currently return an error message with HTTP 200.
 */
 type PostConfigTraceDisable struct {
 	Context *middleware.Context

@@ -124,6 +124,34 @@ func clean(s string) string {
 	return b.String()
 }
 
+func stringValue(v any) string {
+	s, _ := v.(string)
+	return s
+}
+
+func boolValue(v any) bool {
+	b, _ := v.(bool)
+	return b
+}
+
+func intValue(v any) int {
+	switch n := v.(type) {
+	case int:
+		return n
+	case int32:
+		return int(n)
+	case int64:
+		return int(n)
+	case float64:
+		return int(n)
+	case json.Number:
+		i, _ := n.Int64()
+		return int(i)
+	default:
+		return 0
+	}
+}
+
 func targetDesc(targets []string) string {
 	return "Target loxilb instance name (omit for default). Configured: " +
 		strings.Join(targets, ", ")
@@ -232,13 +260,22 @@ type lbListIn struct {
 }
 
 type lbRule struct {
-	Name          string `json:"name,omitempty"`
-	ExternalIP    string `json:"external_ip"`
-	Port          any    `json:"port" jsonschema:"service port (number, or string for a port range)"`
-	Protocol      string `json:"protocol"`
-	Mode          any    `json:"mode,omitempty" jsonschema:"load-balancer mode as returned by loxilb (number or string)"`
-	EndpointCount int    `json:"endpoint_count"`
-	Endpoints     []any  `json:"endpoints,omitempty"`
+	Name             string `json:"name,omitempty"`
+	ExternalIP       string `json:"external_ip"`
+	Port             any    `json:"port" jsonschema:"service port (number, or string for a port range)"`
+	Protocol         string `json:"protocol"`
+	Mode             any    `json:"mode,omitempty" jsonschema:"load-balancer mode as returned by loxilb (number or string)"`
+	Host             string `json:"host,omitempty"`
+	PathPrefix       string `json:"path_prefix,omitempty"`
+	ModelName        string `json:"model_name,omitempty"`
+	SSEMode          bool   `json:"sse_mode,omitempty"`
+	PDDisaggMode     bool   `json:"pd_disagg_mode,omitempty"`
+	PDCacheAwareMode bool   `json:"pd_cache_aware_mode,omitempty"`
+	APIKeyAuth       string `json:"api_key_auth,omitempty"`
+	KVExactMode      int    `json:"kv_exact_mode,omitempty"`
+	KVEngineType     string `json:"kv_engine_type,omitempty"`
+	EndpointCount    int    `json:"endpoint_count"`
+	Endpoints        []any  `json:"endpoints,omitempty"`
 }
 
 type lbListOut struct {
@@ -284,12 +321,21 @@ func (d *Deps) lbList(string) sdk.ToolHandlerFor[lbListIn, lbListOut] {
 			}
 			eps, _ := entry["endpoints"].([]any)
 			rule := lbRule{
-				Name:          clean(name),
-				ExternalIP:    clean(extIP),
-				Port:          svc["port"],
-				Protocol:      clean(proto),
-				Mode:          svc["mode"],
-				EndpointCount: len(eps),
+				Name:             clean(name),
+				ExternalIP:       clean(extIP),
+				Port:             svc["port"],
+				Protocol:         clean(proto),
+				Mode:             svc["mode"],
+				Host:             clean(stringValue(svc["host"])),
+				PathPrefix:       clean(stringValue(svc["path_prefix"])),
+				ModelName:        clean(stringValue(svc["model_name"])),
+				SSEMode:          boolValue(svc["sse_mode"]),
+				PDDisaggMode:     boolValue(svc["pd_disagg_mode"]),
+				PDCacheAwareMode: boolValue(svc["pd_cache_aware_mode"]),
+				APIKeyAuth:       clean(stringValue(svc["api_key_auth"])),
+				KVExactMode:      intValue(svc["kvExactMode"]),
+				KVEngineType:     clean(stringValue(svc["kvEngineType"])),
+				EndpointCount:    len(eps),
 			}
 			for _, epRaw := range eps {
 				ep, _ := epRaw.(map[string]any)
@@ -299,9 +345,12 @@ func (d *Deps) lbList(string) sdk.ToolHandlerFor[lbListIn, lbListOut] {
 				ip, _ := ep["endpointIP"].(string)
 				state, _ := ep["state"].(string)
 				rule.Endpoints = append(rule.Endpoints, map[string]any{
-					"ip":     clean(ip),
-					"state":  clean(state),
-					"weight": ep["weight"],
+					"ip":          clean(ip),
+					"target_port": ep["targetPort"],
+					"state":       clean(state),
+					"weight":      ep["weight"],
+					"ep_role":     ep["ep_role"],
+					"nixl_port":   ep["nixl_port"],
 				})
 			}
 			matched = append(matched, rule)

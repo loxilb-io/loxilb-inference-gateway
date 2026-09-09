@@ -15,7 +15,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// IPsecConfigMod i psec config mod
+// IPsecConfigMod Updates the stored global settings. The handler forwards every field, so omitted values become false, zero, or empty rather than preserving the previous setting. Successful storage does not establish active fast-path, offload, anti-replay, MTU, or SA lifecycle enforcement.
 //
 // swagger:model IPsecConfigMod
 type IPsecConfigMod struct {

@@ -54,7 +54,7 @@ Endpoint: `POST http://<loxilb>:11111/netlox/v1/config/loadbalancer`. Schema:
 | `host` | string | — | — | Host key for L7/HTTPS rules; **HTTPS rules are keyed by it — deletion must repeat `--host`** |
 | `sse_mode` | bool | false | — | Marks an SSE/streaming AI service (suppresses idle timeouts mid-stream). Set explicitly — `pd_disagg_mode` does **not** turn it on. (Both `pd_disagg_mode` and `sse_mode` independently enable the internal `ai_gw_mode` datapath — the `ai_gw_mode` plumbing in `dpebpf_linux.go` — but the `sse_mode` idle-timeout behavior is gated on this field only.) |
 | `pd_disagg_mode` | bool | false | — | Enables P/D disaggregation and the full tier ladder |
-| `pd_session_ttl_sec` | int32 | 0 | ≥0 | Tier-0 pin TTL. 0 ⇒ data-plane default 300 s |
+| `pd_session_ttl_sec` | int32 | 0 | ≥0 | Tier-0 sliding idle TTL. Omitted/0 ⇒ default 300 s; positive values override it. Independent of `pd_cache_aware_mode`; no no-expiry mode. |
 | `pd_cache_aware_mode` | bool | false | — | Enables Tier 1 (radix-trie affinity) |
 | `pd_cache_threshold` | int32 | 20 | 0–100 | Tier-1 minimum prefix match-rate (%); lower = more aggressive affinity |
 | `pd_balance_abs_threshold` | int32 | 3 | ≥0 | Tier-1 load-imbalance bypass: skip affinity when max−min active conns exceeds this |
@@ -242,6 +242,12 @@ tune for your *peak*; if you can, run `adaptive` and let the law move.
   GPUs the production value is **180**; the 30 s default will 504 the bulk of saturated traffic.
 - `pd_session_ttl_sec`: match your conversational think-time. Too long pins conversations to
   workers whose cache has moved on; too short forfeits the multi-turn affinity win.
+  Omitted/0 selects the existing 300s Gateway default, not unlimited retention.
+  Set an explicit positive value for a service override. Lookup/store refresh the idle
+  clock; continuous activity can keep affinity longer than the configured duration.
+  Expiry removes the Tier-0 preference, not the active request or the engine's KV blocks.
+  The next routing decision may legitimately choose the same endpoint through a lower tier.
+  Engine transfer/retention timeouts are separate; 300s is not a universal engine-optimal value.
 
 ### 6.4 Admission (opt-in — protection, not throughput)
 

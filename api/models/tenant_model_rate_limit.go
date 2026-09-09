@@ -12,7 +12,7 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// TenantModelRateLimit tenant model rate limit
+// TenantModelRateLimit A nonempty model is required by the handler despite the schema's optional property. Storage rejects '|' in tenant/model names. Zero, including an omitted tokens_per_min, removes the model quota. Negative values currently also remove it; that is not an approved negative-quota policy. Repeated model entries are applied in order, with the last successful write winning.
 //
 // swagger:model TenantModelRateLimit
 type TenantModelRateLimit struct {

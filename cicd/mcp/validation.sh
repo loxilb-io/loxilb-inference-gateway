@@ -35,8 +35,15 @@ if [[ -z "$llbIP" ]]; then
 fi
 
 echo "building loxilb-mcp"
-if ! (cd ../../mcp && go build -o ../cicd/mcp/loxilb-mcp ./cmd/loxilb-mcp); then
-    echo "SCENARIO-mcp [FAILED] (build)"
+if command -v go >/dev/null 2>&1; then
+    if ! (cd ../../mcp && go build -o ../cicd/mcp/loxilb-mcp ./cmd/loxilb-mcp); then
+        echo "SCENARIO-mcp [FAILED] (build)"
+        exit 1
+    fi
+elif [[ -x ./loxilb-mcp ]]; then
+    echo "  host Go toolchain unavailable; using prebuilt ./loxilb-mcp"
+else
+    echo "SCENARIO-mcp [FAILED] (no Go toolchain and no prebuilt ./loxilb-mcp)"
     exit 1
 fi
 
@@ -156,6 +163,22 @@ mcp_call "$ATOKEN" lb_list | grep -q '20.20.20.2' && fail "rule still present af
 
 grep -q '"tool":"lb_create"' .mcp-audit/audit.jsonl && grep -q '"tool":"lb_delete"' .mcp-audit/audit.jsonl \
     && pass "audit.jsonl records create+delete" || fail "audit entries missing"
+
+echo "### typed AI create/observe contract"
+res=$(mcp_call "$ATOKEN" lb_create '{"external_ip":"20.20.20.3","port":2020,"protocol":"tcp","mode":4,"host":"20.20.20.3","sse_mode":false,"api_key_auth":"disabled","endpoints":[{"ip":"31.31.31.1","port":8080,"ep_role":0}]}')
+echo "$res" | grep -q '"action":"executed"' && pass "typed AI lb_create executed" || fail "typed AI lb_create: $res"
+sleep 3
+res=$(mcp_call "$ATOKEN" lb_list '{"filter":"20.20.20.3"}')
+echo "$res" | grep -q '"api_key_auth":"disabled"' && echo "$res" | grep -q '"host":"20.20.20.3"' \
+    && pass "lb_list observes typed AI host and credential policy" \
+    || fail "lb_list missing typed AI contract: $res"
+
+res=$(mcp_call "$ATOKEN" lb_delete '{"external_ip":"20.20.20.3","port":2020,"protocol":"tcp","host_url":"20.20.20.3"}')
+echo "$res" | grep -q '"action":"preview"' && pass "typed AI lb_delete previews the full rule key" || fail "typed AI lb_delete preview: $res"
+tok=$(echo "$res" | sed -n 's/.*"confirm_token":"\([^"]*\)".*/\1/p')
+res=$(mcp_call "$ATOKEN" lb_delete "{\"external_ip\":\"20.20.20.3\",\"port\":2020,\"protocol\":\"tcp\",\"host_url\":\"20.20.20.3\",\"confirm_token\":\"$tok\"}")
+echo "$res" | grep -q '"action":"executed"' && pass "typed AI lb_delete executed with its full rule key" || fail "typed AI lb_delete execute: $res"
+mcp_call "$ATOKEN" lb_list | grep -q '20.20.20.3' && fail "typed AI rule still present after delete" || pass "typed AI rule gone after delete"
 
 # ---------- 3. guardrails ----------
 

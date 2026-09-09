@@ -34,7 +34,7 @@ func NewPostConfigVlan(ctx *middleware.Context, handler PostConfigVlanHandler) *
 
 # Create vlan interface in the device
 
-Create vlan interface in the device
+Create Linux bridge vlan<ID> with MTU 9000. The REST helper does not consistently enforce the VLAN range documented elsewhere, and successful creation does not prove completion of subsequent link setup.
 */
 type PostConfigVlan struct {
 	Context *middleware.Context

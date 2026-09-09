@@ -34,7 +34,7 @@ func NewDeleteConfigNeighborIPAddressDevIfName(ctx *middleware.Context, handler 
 
 # Delete IPv4 neighbor in the device
 
-Delete IPv4 neighbor in the device
+Request deletion of a neighbor on the named interface. Safety limitation: if interface lookup fails, the current helper searches all interfaces and deletes matching IP entries, ignoring individual deletion failures. Do not assume interface-scoped deletion is enforced; verify the interface before submission. This fallback is an implementation gap, not a supported cross-interface deletion contract.
 */
 type DeleteConfigNeighborIPAddressDevIfName struct {
 	Context *middleware.Context

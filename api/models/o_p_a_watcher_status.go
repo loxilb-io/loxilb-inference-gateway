@@ -19,16 +19,16 @@ import (
 // swagger:model OPAWatcherStatus
 type OPAWatcherStatus struct {
 
-	// Circuit breaker state (0=closed, 1=half-open, 2=open)
+	// Policy-fetch circuit breaker state (0=closed, 1=open, 2=half-open). This is distinct from the fullproxy endpoint circuit breaker.
 	CircuitBreakerState int64 `json:"circuit_breaker_state,omitempty"`
 
-	// Fail-open setting
+	// Stored fail_open declaration; the current failure path does not consume it and retains existing applied rules for either value.
 	FailOpen bool `json:"fail_open,omitempty"`
 
 	// Last error message if any
 	LastError string `json:"last_error,omitempty"`
 
-	// Timestamp of last successful sync
+	// Timestamp of the latest cycle reaching the end of apply, including partial apply failures. Consult last_error; this timestamp does not prove complete or durable synchronization.
 	// Format: date-time
 	LastSyncAt strfmt.DateTime `json:"last_sync_at,omitempty"`
 
@@ -41,10 +41,10 @@ type OPAWatcherStatus struct {
 	// Configured polling interval in seconds
 	PollIntervalSec int64 `json:"poll_interval_sec,omitempty"`
 
-	// Number of active firewall rules
+	// Number of rules in the watcher cache, including loaded cached state. This is not a live firewall or dataplane readback.
 	RulesCount int64 `json:"rules_count,omitempty"`
 
-	// Current watcher status (running, stopped, not_configured)
+	// Watcher lifecycle state (running, stopped, not_configured). Running means polling was started, not that policy synchronization succeeded.
 	Status string `json:"status,omitempty"`
 }
 

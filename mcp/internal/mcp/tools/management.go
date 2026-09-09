@@ -167,8 +167,10 @@ func RegisterManagement(s *sdk.Server, role guard.Role, pol *guard.Policy, deps 
 		sdk.AddTool(s, &sdk.Tool{
 			Name: "lb_create",
 			Description: "Create a load-balancer rule (POST /config/loadbalancer): external_ip, port, protocol, endpoints, " +
-				"optional name/sel/mode and service_extra for advanced serviceArguments fields " +
-				"(e.g. AI mode 4: host, path_prefix, path_match_mode, model_name, sse_mode).",
+				"optional name/sel/mode and typed AI routing fields. api_key_auth is independent of sse_mode and " +
+				"pd_disagg_mode; omit it to preserve a backend-owned X-Api-Key, use disabled to reserve and strip " +
+				"that namespace without enforcement, or required to enforce and strip. service_extra remains available " +
+				"for advanced serviceArguments fields not yet typed.",
 			Annotations: mutAnnotations("Create LB rule", true),
 		}, deps.lbCreate())
 	})
@@ -452,9 +454,11 @@ func (d *Deps) configExport() sdk.ToolHandlerFor[configExportIn, map[string]any]
 // ---- lb_create ----
 
 type lbEndpointIn struct {
-	IP     string `json:"ip" jsonschema:"endpoint IP address"`
-	Port   int    `json:"port" jsonschema:"endpoint target port"`
-	Weight int    `json:"weight,omitempty" jsonschema:"endpoint weight (default 1)"`
+	IP       string `json:"ip" jsonschema:"endpoint IP address"`
+	Port     int    `json:"port" jsonschema:"endpoint target port"`
+	Weight   int    `json:"weight,omitempty" jsonschema:"endpoint weight (default 1)"`
+	Role     int    `json:"ep_role,omitempty" jsonschema:"P/D role: 0 normal, 1 prefill, 2 decode"`
+	NIXLPort int    `json:"nixl_port,omitempty" jsonschema:"optional KV-transfer side-channel port"`
 }
 
 type lbCreateIn struct {
@@ -468,8 +472,19 @@ type lbCreateIn struct {
 	BGP          bool           `json:"bgp,omitempty" jsonschema:"advertise service via BGP"`
 	Monitor      bool           `json:"monitor,omitempty" jsonschema:"enable endpoint liveness monitoring"`
 	Timeout      int            `json:"timeout,omitempty" jsonschema:"session inactivity timeout seconds"`
+	Host         string         `json:"host,omitempty" jsonschema:"HTTP host match for a full-proxy AI service"`
+	PathPrefix   string         `json:"path_prefix,omitempty" jsonschema:"optional request path prefix"`
+	ModelName    string         `json:"model_name,omitempty" jsonschema:"model routing key"`
+	SSEMode      *bool          `json:"sse_mode,omitempty" jsonschema:"enable SSE handling; independent of api_key_auth"`
+	PDDisaggMode *bool          `json:"pd_disagg_mode,omitempty" jsonschema:"enable the multi-tier prefill/decode routing ladder"`
+	PDCacheAware *bool          `json:"pd_cache_aware_mode,omitempty" jsonschema:"enable Tier-1 prefix affinity on a P/D service"`
+	APIKeyAuth   string         `json:"api_key_auth,omitempty" jsonschema:"data-plane X-Api-Key policy: omitted, disabled, or required"`
+	KVExactMode  int            `json:"kv_exact_mode,omitempty" jsonschema:"KV topology: 0 off, 1 role-partitioned P/D, 3 single-pool"`
+	KVEngineType string         `json:"kv_engine_type,omitempty" jsonschema:"KV engine contract: vllm, sglang, trtllm, or llamacpp"`
+	KVZMQPort    int            `json:"kv_zmq_port,omitempty" jsonschema:"base KV-event publisher port"`
+	KVBlockSize  int            `json:"kv_block_size,omitempty" jsonschema:"engine KV block size in tokens"`
 	Endpoints    []lbEndpointIn `json:"endpoints" jsonschema:"backend endpoints (at least one)"`
-	ServiceExtra map[string]any `json:"service_extra,omitempty" jsonschema:"additional serviceArguments fields passed through verbatim (e.g. host, path_prefix, path_match_mode, model_name, sse_mode for AI mode 4)"`
+	ServiceExtra map[string]any `json:"service_extra,omitempty" jsonschema:"additional serviceArguments fields passed through verbatim"`
 	ConfirmToken string         `json:"confirm_token,omitempty" jsonschema:"unused for lb_create; present for schema symmetry"`
 }
 
@@ -491,6 +506,12 @@ func (d *Deps) lbCreate() sdk.ToolHandlerFor[lbCreateIn, mutOut] {
 		if len(in.Endpoints) == 0 {
 			return nil, mutOut{}, fmt.Errorf("endpoints: at least one endpoint is required")
 		}
+		if in.APIKeyAuth != "" && in.APIKeyAuth != "disabled" && in.APIKeyAuth != "required" {
+			return nil, mutOut{}, fmt.Errorf("api_key_auth: must be omitted, disabled, or required")
+		}
+		if in.KVExactMode != 0 && in.KVExactMode != 1 && in.KVExactMode != 3 {
+			return nil, mutOut{}, fmt.Errorf("kv_exact_mode: must be 0, 1, or 3")
+		}
 		svc := map[string]any{
 			"externalIP": in.ExternalIP,
 			"port":       in.Port,
@@ -510,6 +531,39 @@ func (d *Deps) lbCreate() sdk.ToolHandlerFor[lbCreateIn, mutOut] {
 		if in.Timeout > 0 {
 			svc["inactiveTimeOut"] = in.Timeout
 		}
+		if in.Host != "" {
+			svc["host"] = in.Host
+		}
+		if in.PathPrefix != "" {
+			svc["path_prefix"] = in.PathPrefix
+		}
+		if in.ModelName != "" {
+			svc["model_name"] = in.ModelName
+		}
+		if in.SSEMode != nil {
+			svc["sse_mode"] = *in.SSEMode
+		}
+		if in.PDDisaggMode != nil {
+			svc["pd_disagg_mode"] = *in.PDDisaggMode
+		}
+		if in.PDCacheAware != nil {
+			svc["pd_cache_aware_mode"] = *in.PDCacheAware
+		}
+		if in.APIKeyAuth != "" {
+			svc["api_key_auth"] = in.APIKeyAuth
+		}
+		if in.KVExactMode != 0 {
+			svc["kvExactMode"] = in.KVExactMode
+		}
+		if in.KVEngineType != "" {
+			svc["kvEngineType"] = in.KVEngineType
+		}
+		if in.KVZMQPort > 0 {
+			svc["kvZmqPort"] = in.KVZMQPort
+		}
+		if in.KVBlockSize > 0 {
+			svc["kvBlockSize"] = in.KVBlockSize
+		}
 		for k, v := range in.ServiceExtra {
 			if _, taken := svc[k]; taken {
 				return nil, mutOut{}, fmt.Errorf("service_extra: %q conflicts with a typed argument", k)
@@ -524,11 +578,26 @@ func (d *Deps) lbCreate() sdk.ToolHandlerFor[lbCreateIn, mutOut] {
 			if err := validPort(ep.Port, fmt.Sprintf("endpoints[%d].port", i)); err != nil {
 				return nil, mutOut{}, err
 			}
+			if ep.Role < 0 || ep.Role > 2 {
+				return nil, mutOut{}, fmt.Errorf("endpoints[%d].ep_role: must be 0, 1, or 2", i)
+			}
+			if ep.NIXLPort != 0 {
+				if err := validPort(ep.NIXLPort, fmt.Sprintf("endpoints[%d].nixl_port", i)); err != nil {
+					return nil, mutOut{}, err
+				}
+			}
 			w := ep.Weight
 			if w <= 0 {
 				w = 1
 			}
-			eps = append(eps, map[string]any{"endpointIP": ep.IP, "targetPort": ep.Port, "weight": w})
+			item := map[string]any{"endpointIP": ep.IP, "targetPort": ep.Port, "weight": w}
+			if ep.Role != 0 {
+				item["ep_role"] = ep.Role
+			}
+			if ep.NIXLPort != 0 {
+				item["nixl_port"] = ep.NIXLPort
+			}
+			eps = append(eps, item)
 		}
 		body := map[string]any{"serviceArguments": svc, "endpoints": eps}
 		var res any

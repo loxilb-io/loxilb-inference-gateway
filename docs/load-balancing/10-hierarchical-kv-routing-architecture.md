@@ -151,14 +151,18 @@ Session key = the request's `user_id` JSON field if present, **overridden** by a
 `X-Conversation-Id` header — unless that header value begins with `auto-` (LoxiLB's own
 auto-generated conversation IDs are deliberately *not* used as stickiness keys)
 (`sockproxy_pd.c`). A hit pins the full `(prefill_ep, decode_ep)` pair for
-`pd_session_ttl_sec` (REST default 0 → data-plane default `PD_SESSION_DEFAULT_TTL` = 300 s,
-`sockproxy_pd.c`). The table is TTL-evicted and LRU-capped; a pinned EP that is unhealthy,
+`pd_session_ttl_sec` (omitted/0 → data-plane default `PD_SESSION_DEFAULT_TTL` = 300 s;
+positive values override the default). This is a sliding idle TTL refreshed by lookup/store,
+not an absolute session lifetime, engine KV retention, or active-request timeout. Elapsed
+idle time must exceed the TTL to expire a mapping; no no-expiry mode is exposed. Tier 0
+is independent of `pd_cache_aware_mode`. The table is TTL-evicted and LRU-capped; a pinned EP that is unhealthy,
 masked, or CB-open causes the key to be evicted and the ladder to continue — stickiness never
 overrides health.
 
-**Why Tier 0 outranks the cache tiers:** a multi-turn conversation's KV state (its growing
-prefix) lives on the workers that served the previous turns. Keeping the pair stable *is* the
-strongest cache-affinity signal available, and it costs nothing to evaluate.
+**Why Tier 0 outranks the cache tiers:** a multi-turn conversation's growing prefix may
+remain cached on the workers that served previous turns. The stable pair is a
+historical affinity hint. A session hit does not prove those workers still hold the KV
+blocks; engine eviction is independent of this Gateway mapping.
 
 ### 3.3 Tier 1 — radix-trie prefix affinity (heuristic)
 

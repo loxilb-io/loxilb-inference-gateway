@@ -41,7 +41,7 @@ func NewGetConfigNeighborAll(ctx *middleware.Context, handler GetConfigNeighborA
 
 Get IPv4 neighbor in the device(interface)
 
-Get IPv4 neighbor in the device(interface)
+Return the gateway's neighbor inventory and resolved interface names. This operation is not restricted to IPv4 by its handler, and a successful response does not independently verify complete kernel neighbor state.
 */
 type GetConfigNeighborAll struct {
 	Context *middleware.Context

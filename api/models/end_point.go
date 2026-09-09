@@ -15,50 +15,50 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// EndPoint end point
+// EndPoint Monitor configuration for a literal host IP, not a hostname or CIDR. Supply probeType; TCP/UDP/SCTP require nonzero probePort. Port narrows to uint16 and duration to uint32 before full validation; retries have only an upper-bound check of 100 and duration an upper bound of 86400 after conversion. Omitted numeric values become zero, not a generic server default. Existing POST replaces options; reusing a name with another host currently retains the old host. HTTP status syntax and IPv6 probe address construction have known limitations.
 //
 // swagger:model EndPoint
 type EndPoint struct {
 
-	// doubles as TLS SNI for HTTPS monitors AND the Host header. Optional/additive.
+	// TLS SNI for structured HTTPS and TLS-hello probes, and explicit Host for structured HTTPS. For HTTP, explicit Host override is applied only when httpVersion is 1.1.
 	DomainName string `json:"domainName,omitempty"`
 
-	// Octavia expected_codes — single "200", list "200,202", or range "200-204". Optional/additive — empty defaults to "200".
+	// Expected HTTP status: a single value, comma-separated values, or inclusive ranges such as 200-204. Empty uses 200 on the structured status path. Parsing errors, range ordering, and numeric narrowing are not safely validated.
 	ExpectedCodes string `json:"expectedCodes,omitempty"`
 
-	// Host name in CIDR
+	// Literal endpoint IP address, not a DNS hostname or CIDR.
 	// Required: true
 	HostName *string `json:"hostName"`
 
-	// HTTP(S) health-monitor method (e.g. GET, HEAD). Optional/additive — empty defaults to GET. Control-plane only (probeReq/probeResp retained as the escape hatch).
+	// HTTP(S) probe request method, actively consumed by the prober; empty uses GET. Method syntax is not validated at admission.
 	HTTPMethod string `json:"httpMethod,omitempty"`
 
-	// HM HTTP version "1.0" or "1.1". When "1.1" a Host header is sent (domainName, else the member address). Optional/additive.
+	// Current implementation uses 1.1 to control explicit Host-header behavior and HTTPS prober selection; this field does not select an HTTP/1.0 versus HTTP/1.1 wire protocol.
 	HTTPVersion string `json:"httpVersion,omitempty"`
 
-	// Number of inactive retries
+	// Configured inactive retry threshold. Values above 100 are rejected, but negative values are not rejected locally; omission becomes zero.
 	InactiveReTries int64 `json:"inactiveReTries,omitempty"`
 
-	// Endpoint Identifier
+	// Custom monitor identifier. If empty, identity is derived from host/type/port. Changing host under an existing custom name does not currently replace the stored host.
 	Name string `json:"name,omitempty"`
 
-	// How frequently to probe in seconds
+	// Probe interval in seconds. Omission becomes zero. The handler narrows to uint32 before the domain maximum of 86400 is checked; original-input bounds are incomplete.
 	ProbeDuration int64 `json:"probeDuration,omitempty"`
 
-	// The l4port to probe on
+	// Probe port, narrowed to uint16 without bounds checking. TCP/UDP/SCTP require nonzero; HTTP/HTTPS/TLS-hello do not automatically select standard ports.
 	ProbePort int64 `json:"probePort,omitempty"`
 
 	// URI for http/https probes
 	ProbeReq string `json:"probeReq,omitempty"`
 
-	// Response for http/https probes
+	// Legacy HTTPS response-substring expectation. HTTP and structured HTTPS use status-code matching instead; this is not a universal response-body check.
 	ProbeResp string `json:"probeResp,omitempty"`
 
-	// Type of probe used (tls-hello = handshake-only TLS liveness probe)
+	// Supply a supported probe type; omission is rejected by domain validation. tls-hello checks handshake completion without validating certificate trust.
 	// Enum: [tcp udp sctp ping http https none tls-hello]
 	ProbeType string `json:"probeType,omitempty"`
 
-	// HM request path (e.g. /healthz). Optional/additive — empty falls back to probeReq or "/".
+	// HTTP(S) request path. Empty falls back to probeReq, then /. A structured HTTPS setting selects status-code matching rather than legacy probeResp substring matching.
 	URLPath string `json:"urlPath,omitempty"`
 }
 

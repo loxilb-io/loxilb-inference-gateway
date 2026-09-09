@@ -34,7 +34,7 @@ func NewGetConfigParams(ctx *middleware.Context, handler GetConfigParamsHandler)
 
 # Get Operational params of LoxiLB
 
-Get Operational params of LoxiLB
+Returns the current runtime logLevel. The implemented handler returns a body on success and has no empty-success 204 branch.
 */
 type GetConfigParams struct {
 	Context *middleware.Context

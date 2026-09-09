@@ -37,7 +37,7 @@ func NewPostConfigTraceEnable(ctx *middleware.Context, handler PostConfigTraceEn
 
 Enable HTTP/HTTPS protocol tracing
 
-Enables distributed tracing for all HTTP/HTTPS traffic passing through loxilb proxy. Events are emitted to ring buffers for export to Jaeger/OpenTelemetry.
+Enables runtime HTTP/HTTPS tracing and attempts to initialize its consumer. Actual capture depends on the proxy path and tracing configuration; enablement does not prove capture or export of all traffic. Some initialization failures currently return an error message with HTTP 200.
 */
 type PostConfigTraceEnable struct {
 	Context *middleware.Context

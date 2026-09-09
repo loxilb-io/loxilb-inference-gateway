@@ -41,7 +41,7 @@ func NewGetConfigMirrorAll(ctx *middleware.Context, handler GetConfigMirrorAllHa
 
 # Get
 
-Get
+Return mirror configuration and mirror-object synchronization state. The reported state does not establish successful attachment or active traffic mirroring.
 */
 type GetConfigMirrorAll struct {
 	Context *middleware.Context

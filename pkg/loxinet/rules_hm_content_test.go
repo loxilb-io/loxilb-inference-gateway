@@ -73,6 +73,8 @@ func TestExpectedCodesMatch(t *testing.T) {
 		{"malformed-no-panic", "abc", 200, false},
 		{"malformed-partial", "200,xyz", 200, true},
 		{"malformed-partial-miss", "200,xyz", 250, false},
+		{"overflow-does-not-wrap", "65736", 200, false},
+		{"negative-does-not-wrap", "-65336", 200, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

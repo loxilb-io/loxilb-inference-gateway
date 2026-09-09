@@ -12,18 +12,18 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// EndPointHostState end point host state
+// EndPointHostState Explicit host-state input. Supply both nonzero epPort and epProto for generated-key targeting, or omit both for host-wide targeting. Custom monitor names cannot be selected by the specific tuple path. Host-wide requests can succeed without matches. epPort narrows to uint16 without full validation; immediate dependent updates are implemented for fullproxy rules, not universally.
 //
 // swagger:model EndPointHostState
 type EndPointHostState struct {
 
-	// The end-point port (0 if not applicable)
+	// Nonzero port requires epProto; zero or omission requires epProto empty for host-wide targeting. Conversion to uint16 is not fully validated.
 	EpPort int64 `json:"epPort,omitempty"`
 
-	// The end-point prototype (tcp,udp,sctp,icmp,http(s), empty if not applicable)
+	// Generated monitor-key probe type; supply together with nonzero epPort or omit both. This selector cannot resolve a custom monitor name and is not a universal transport-protocol selector.
 	EpProto string `json:"epProto,omitempty"`
 
-	// Host name in CIDR
+	// Literal endpoint host IP used for monitor matching, not a hostname or CIDR.
 	HostName string `json:"hostName,omitempty"`
 
 	// Host state string ("green", "yellow", "red" )

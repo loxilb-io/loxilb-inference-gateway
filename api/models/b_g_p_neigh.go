@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// BGPNeigh b g p neigh
+// BGPNeigh BGP neighbor creation input. ASN narrows to uint32 and remotePort to uint16 without local bounds checks. Omitted or zero port selects 179; enabled multihop uses TTL 8. IP parsing is not fully validated locally. POST uses GoBGP AddPeer, not a general replacement.
 //
 // swagger:model BGPNeigh
 type BGPNeigh struct {
@@ -23,14 +23,14 @@ type BGPNeigh struct {
 	// Required: true
 	IPAddress *string `json:"ipAddress"`
 
-	// Remote AS number
+	// Remote ASN, narrowed to uint32 without a bounds check.
 	// Required: true
 	RemoteAs *int64 `json:"remoteAs"`
 
-	// Remote Connect Port (default 179)
+	// Remote peering port, narrowed to uint16 without bounds checking; omitted or zero selects 179.
 	RemotePort int64 `json:"remotePort,omitempty"`
 
-	// Enable multi-hop peering (if needed)
+	// Enable eBGP multihop using TTL 8.
 	SetMultiHop bool `json:"setMultiHop,omitempty"`
 }
 

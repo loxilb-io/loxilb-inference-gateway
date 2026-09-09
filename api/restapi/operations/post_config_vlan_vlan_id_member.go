@@ -34,7 +34,7 @@ func NewPostConfigVlanVlanIDMember(ctx *middleware.Context, handler PostConfigVl
 
 # Add a physical port to a vlan interface
 
-Add a member to interface Vlan{vlan_id}. If the vlan interface does not exist on LoxiLB it returns a '404' error. If such a member is already present on this Vlan interface the API returns '409' sub-code 0. If the vlan_id passed is less than 2 or greater than 4094 the API will respond with error '400'. If attr with tagging mode is provided it will be honored in config, if not, the default tagging mode will be set to 'untagged'. Vlan members may be tagged or untagged, but, the Vlan member port may be untagged in only one Vlan interface, deviations from this will cause the API to return '409' sub-code 0.
+Attach a member to bridge vlan<ID>. Omitted tagged means false and attaches the named interface; tagged true creates and attaches <interface>.<ID>. The helper does not enforce existing-master ownership or the documented VLAN range, and failures can leave partial state. Verify existing membership before submission; automatic reparenting must not be treated as a safe update contract.
 */
 type PostConfigVlanVlanIDMember struct {
 	Context *middleware.Context

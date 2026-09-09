@@ -15,19 +15,19 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// BGPPolicyDefinedSetsMod b g p policy defined sets mod
+// BGPPolicyDefinedSetsMod Named defined-set input. Use prefixList for prefix sets and capitalized List for other types. Unsupported type names are not rejected consistently and can select prefix by default. This request shape differs from GET's lowercase list field.
 //
 // swagger:model BGPPolicyDefinedSetsMod
 type BGPPolicyDefinedSetsMod struct {
 
-	// list
+	// Entries for non-prefix defined sets. This write-time key is capitalized; GET uses lowercase list.
 	List []string `json:"List"`
 
-	// BGP Neighbor IP address
+	// Defined-set name, not a neighbor IP address.
 	// Required: true
 	Name *string `json:"name"`
 
-	// prefix list
+	// Entries for prefix defined sets; use instead of List when defineset_type is prefix.
 	PrefixList []*BGPPolicyPrefix `json:"prefixList"`
 }
 

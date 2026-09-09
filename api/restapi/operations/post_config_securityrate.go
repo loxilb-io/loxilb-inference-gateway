@@ -34,7 +34,7 @@ func NewPostConfigSecurityrate(ctx *middleware.Context, handler PostConfigSecuri
 
 # Configure unified security rate limiting
 
-Configure unified SYN flood protection (P0-5) and connection rate limiting (P0-6).
+Replace SYN, connection-SYN, and UDP rate configuration and the security-rate whitelist. Supply all required flags and thresholds; at least one protection must be enabled. Omitted whitelist clears the previous list. Numeric and relational limits are described on the configuration model. Programming is not atomic: errors can follow partial datapath changes. Explicit cookieThreshold zero becomes 50 in the datapath, and cookie telemetry does not implement a SYN-cookie exchange.
 */
 type PostConfigSecurityrate struct {
 	Context *middleware.Context

@@ -34,7 +34,7 @@ func NewDeleteConfigOpaWatcher(ctx *middleware.Context, handler DeleteConfigOpaW
 
 # Stop and remove OPA L4 policy watcher
 
-Stops the running OPA watcher and removes its configuration.
+Cancels polling and removes the in-memory singleton configuration. Previously applied firewall rules and the persisted watcher cache are retained. Repeated deletion succeeds. Cancellation does not join an in-flight polling goroutine. This marked stub is intercepted by raw middleware; swagger-extras.yml describes the actual response envelope.
 */
 type DeleteConfigOpaWatcher struct {
 	Context *middleware.Context

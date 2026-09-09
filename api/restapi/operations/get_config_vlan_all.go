@@ -41,7 +41,7 @@ func NewGetConfigVlanAll(ctx *middleware.Context, handler GetConfigVlanAllHandle
 
 # Get vlan in the device
 
-Get vlan in the device
+Return gateway-managed VLAN bridges, members, and ingress/egress byte and packet counters.
 */
 type GetConfigVlanAll struct {
 	Context *middleware.Context

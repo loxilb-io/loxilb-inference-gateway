@@ -44,7 +44,7 @@ New connections will use the updated rate immediately.
 
 **Sampling behavior:**
 - 0%: Effectively disables tracing (use /disable endpoint instead)
-- 1-99%: Hash-based deterministic sampling (same connection always gets same decision)
+- 1-99%: Hash-based sampling with cached decisions and special handling for uncached close, reset and error events; this is not an unconditional same-decision guarantee for every event
 - 100%: Trace all connections (production debugging)
 */
 type PutConfigL4traceSampling struct {

@@ -15,7 +15,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// MirrorEntry mirror entry
+// MirrorEntry Mirror configuration, not proof of active mirroring. Port-attached SPAN has an implementation path; rule attachment and ERSPAN are not implemented end-to-end. The attachment enum is not translated correctly for rule attachment, nonzero RSPAN VLAN is rejected, and tunnel IDs narrow without bounds checks. Information changes can delete and recreate an object; target-only changes conflict.
 //
 // swagger:model MirrorEntry
 type MirrorEntry struct {
@@ -178,20 +178,20 @@ type MirrorEntryMirrorInfo struct {
 	// Port where mirrored traffic needs to be sent
 	Port string `json:"port,omitempty"`
 
-	// For ERSPAN we may need to send tunnelled mirror traffic
+	// Requested literal ERSPAN remote IP. ERSPAN datapath programming is not implemented and IP validation is incomplete.
 	RemoteIP string `json:"remoteIP,omitempty"`
 
-	// For ERSPAN we may need to send tunnelled mirror traffic
+	// Requested literal ERSPAN source IP. ERSPAN datapath programming is not implemented and IP validation is incomplete.
 	SourceIP string `json:"sourceIP,omitempty"`
 
-	// mirror tunnel-id. For ERSPAN we may need to send tunnelled mirror traffic
+	// Requested ERSPAN tunnel identifier, narrowed to uint32 without bounds checking. ERSPAN is not implemented end-to-end.
 	TunnelID int64 `json:"tunnelID,omitempty"`
 
-	// One of MirrTypeSpan, MirrTypeRspan or MirrTypeErspan(0-MirrTypeSpan, 1-MirrTypeRspan, 2-MirrTypeErspan)
+	// Requested mirror type, 0 SPAN, 1 RSPAN, 2 ERSPAN. ERSPAN is not implemented end-to-end; RSPAN has inconsistent VLAN validation.
 	// Enum: [0 1 2]
 	Type int64 `json:"type,omitempty"`
 
-	// For RSPAN we may need to send tagged mirror traffic
+	// Requested mirror VLAN. Nonzero VLAN is currently rejected for RSPAN; do not interpret this defect as a supported tagging contract.
 	Vlan int64 `json:"vlan,omitempty"`
 }
 
@@ -270,7 +270,7 @@ func (m *MirrorEntryMirrorInfo) UnmarshalBinary(b []byte) error {
 // swagger:model MirrorEntryTargetObject
 type MirrorEntryTargetObject struct {
 
-	// Target Attachment(0-RuleName, 1-PortName)
+	// Requested selector, 0 rule or 1 port. The handler does not translate rule 0 to the internal constant; only port attachment has an implemented consumer.
 	// Required: true
 	// Enum: [0 1]
 	Attachment *int64 `json:"attachment"`

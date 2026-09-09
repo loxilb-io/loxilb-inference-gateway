@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// SessionUlClEntry session ul cl entry
+// SessionUlClEntry Classifier for an existing user session. ulclIdent selects the session; classifier IP, not QFI, completes the identity. The schema-optional ulclArgument is dereferenced by the handler. QFI narrows to uint8 without bounds checking; the protocol-valid range still requires an explicit admission policy.
 //
 // swagger:model SessionUlClEntry
 type SessionUlClEntry struct {
@@ -22,7 +22,7 @@ type SessionUlClEntry struct {
 	// ulcl argument
 	UlclArgument *SessionUlClEntryUlclArgument `json:"ulclArgument,omitempty"`
 
-	// IP address and netmask
+	// Identifier of the existing user session.
 	// Required: true
 	UlclIdent *string `json:"ulclIdent"`
 }
@@ -121,12 +121,12 @@ func (m *SessionUlClEntry) UnmarshalBinary(b []byte) error {
 	return nil
 }
 
-// SessionUlClEntryUlclArgument session ul cl entry ulcl argument
+// SessionUlClEntryUlclArgument Supply this object; the current handler dereferences it despite its optional schema declaration.
 //
 // swagger:model SessionUlClEntryUlclArgument
 type SessionUlClEntryUlclArgument struct {
 
-	// QFI number
+	// Classifier QFI, converted to uint8 without bounds checking. It is not part of the classifier identity.
 	Qfi int64 `json:"qfi,omitempty"`
 
 	// Access network IP address

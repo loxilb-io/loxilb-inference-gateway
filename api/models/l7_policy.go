@@ -15,22 +15,22 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// L7Policy A dedicated L7_POLICY resource: a named ordered set of L7 routing rules attached to an existing L4 load-balancer, referenced by the LB's stable opaque `id`. CRUD'd independently of the LB and carried to the running sockproxy by a SEPARATE attach call (never inline on the 4096-byte proxy_arg).: L7_POLICY is a dedicated resource (asymmetric with the inline AI_POLICY).
+// L7Policy Independently stored policy and ordered routes, attached through an existing load-balancer ID. Create, list, get and delete are available; update is not. Implementation warnings: the registry enforces one policy per LB ID, while C attaches by VIP/port/protocol. Different LB resources sharing that tuple can overwrite the same attached policy; resource-versus-listener ownership is an unresolved policy decision. Attachment uses the external VIP even where LB programming uses privateIP. LB deletion can retain a C listener and routes; FullProxy replacement can clear listener arguments without rebuilding TLS contexts or restoring those arguments on reuse. Registry readback is not evidence of effective policy, TLS, HSTS or timeout state. See child schemas for capacity and response-path defects requiring implementation fixes.
 //
 // swagger:model L7Policy
 type L7Policy struct {
 
-	// Stable opaque identifier for this L7 policy. Client-supplied is stored verbatim; when absent one is minted control-plane side.
+	// Opaque policy identifier. A supplied value is stored; an empty value is replaced with a UUID. Reusing an existing ID, even with identical content, returns 409 through REST. POST does not return the minted ID in its 204 response.
 	ID string `json:"id,omitempty"`
 
-	// The stable opaque id of the L4 load-balancer this policy attaches to (GET /config/loadbalancer/id/{id}). 404 if no such LB exists.
+	// Nonblank identifier of an existing LB resource, discoverable through GET /config/loadbalancer/id/{id}. Missing resources return 404. The resource must also have an eligible IPv4 sockproxy listener; resource existence alone does not guarantee attachment.
 	// Required: true
 	LbID *string `json:"lbId"`
 
 	// Human-readable policy name.
 	Name string `json:"name,omitempty"`
 
-	// Ordered L7 routes (FIRST-MATCH-WINS by ascending position).
+	// At least one route is required by shared validation. Evaluation is first-match-wins by ascending position; stored GET order is not an effective-order or capacity-validation report.
 	// Required: true
 	Rules []*L7Rule `json:"rules"`
 }

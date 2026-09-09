@@ -27,6 +27,7 @@ import (
 type mockLoxilb struct {
 	mu       sync.Mutex
 	requests []string // "METHOD path"
+	bodies   []map[string]any
 	srv      *httptest.Server
 	// metricsText overrides the exposition the AI mock serves. Empty means
 	// aiMetricsText -- the default fixture, which carries no outcome label and
@@ -41,11 +42,17 @@ func newMockLoxilb(t *testing.T) *mockLoxilb {
 	mux.HandleFunc("/netlox/v1/", func(w http.ResponseWriter, r *http.Request) {
 		m.mu.Lock()
 		m.requests = append(m.requests, r.Method+" "+r.URL.Path)
+		if r.Method == http.MethodPost {
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
+				m.bodies = append(m.bodies, body)
+			}
+		}
 		m.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/netlox/v1/config/loadbalancer/all":
-			w.Write([]byte(`{"lbAttr":[{"serviceArguments":{"externalIP":"1.2.3.4","port":80,"protocol":"tcp","name":"web"},"endpoints":[{"endpointIP":"10.0.0.1","weight":1,"state":"active"}]}]}`))
+			w.Write([]byte(`{"lbAttr":[{"serviceArguments":{"externalIP":"1.2.3.4","port":80,"protocol":"tcp","name":"web","mode":4,"host":"models.example","path_prefix":"/v1","model_name":"llama3","sse_mode":true,"pd_disagg_mode":true,"pd_cache_aware_mode":true,"api_key_auth":"required","kvExactMode":1,"kvEngineType":"vllm"},"endpoints":[{"endpointIP":"10.0.0.1","targetPort":8000,"weight":1,"state":"active","ep_role":1,"nixl_port":9001}]}]}`))
 		case "/netlox/v1/config/export":
 			w.Write([]byte(`{"loadbalancers":[{"name":"web"}],"auth":{"password":"hunter2","apiKey":"sk-secret-123"}}`))
 		default:
@@ -55,6 +62,15 @@ func newMockLoxilb(t *testing.T) *mockLoxilb {
 	m.srv = httptest.NewServer(mux)
 	t.Cleanup(m.srv.Close)
 	return m
+}
+
+func (m *mockLoxilb) lastBody() map[string]any {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.bodies) == 0 {
+		return nil
+	}
+	return m.bodies[len(m.bodies)-1]
 }
 
 func (m *mockLoxilb) sawMutation(prefix string) bool {
@@ -356,5 +372,65 @@ func TestPhase2LBCreateValidation(t *testing.T) {
 	}
 	if !mock.sawMutation("POST /netlox/v1/config/loadbalancer") {
 		t.Fatal("valid lb_create never reached loxilb")
+	}
+
+	advanced := map[string]any{
+		"external_ip": "9.9.9.10", "port": 9003, "protocol": "tcp", "mode": 4,
+		"host": "models.example", "path_prefix": "/v1", "model_name": "llama3",
+		"sse_mode": true, "pd_disagg_mode": true, "pd_cache_aware_mode": true,
+		"api_key_auth": "disabled", "kv_exact_mode": 1, "kv_engine_type": "vllm",
+		"kv_zmq_port": 5557, "kv_block_size": 16,
+		"endpoints": []map[string]any{
+			{"ip": "10.0.0.1", "port": 8000, "ep_role": 1, "nixl_port": 9001},
+			{"ip": "10.0.0.2", "port": 8000, "ep_role": 2, "nixl_port": 9002},
+		},
+	}
+	res, err = cs.CallTool(ctx, &sdk.CallToolParams{Name: "lb_create", Arguments: advanced})
+	if err != nil || res.IsError {
+		t.Fatalf("advanced lb_create failed: %v %+v", err, res)
+	}
+	body := mock.lastBody()
+	svc, _ := body["serviceArguments"].(map[string]any)
+	eps, _ := body["endpoints"].([]any)
+	if svc["api_key_auth"] != "disabled" || svc["pd_disagg_mode"] != true || svc["kvExactMode"] != float64(1) {
+		t.Fatalf("typed AI service contract not forwarded: %#v", svc)
+	}
+	if len(eps) != 2 {
+		t.Fatalf("advanced endpoints=%d, want 2", len(eps))
+	}
+	first, _ := eps[0].(map[string]any)
+	if first["ep_role"] != float64(1) || first["nixl_port"] != float64(9001) {
+		t.Fatalf("typed P/D endpoint contract not forwarded: %#v", first)
+	}
+
+	badPolicy := advanced
+	badPolicy["api_key_auth"] = "optional"
+	res, err = cs.CallTool(ctx, &sdk.CallToolParams{Name: "lb_create", Arguments: badPolicy})
+	if err == nil && (res == nil || !res.IsError) {
+		t.Fatal("invalid api_key_auth accepted by lb_create")
+	}
+}
+
+func TestPhase2LBListObservesAIRoutingContract(t *testing.T) {
+	mock := newMockLoxilb(t)
+	b := newTestBridge(t, testConfig(mock.srv.URL))
+	cs := session(t, b, guard.RoleViewer)
+
+	res, err := cs.CallTool(context.Background(), &sdk.CallToolParams{Name: "lb_list", Arguments: map[string]any{}})
+	if err != nil || res.IsError {
+		t.Fatalf("lb_list failed: %v %+v", err, res)
+	}
+	raw, err := json.Marshal(res.StructuredContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	for _, want := range []string{
+		`"api_key_auth":"required"`, `"pd_disagg_mode":true`, `"pd_cache_aware_mode":true`,
+		`"kv_exact_mode":1`, `"kv_engine_type":"vllm"`, `"ep_role":1`, `"nixl_port":9001`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("lb_list omitted %s: %s", want, text)
+		}
 	}
 }

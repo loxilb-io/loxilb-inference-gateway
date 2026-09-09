@@ -41,7 +41,7 @@ func NewGetConfigSessionAll(ctx *middleware.Context, handler GetConfigSessionAll
 
 # Get all of the port interfaces
 
-Get all of the port interfaces.
+Return configured user sessions and their access-network and core-network tunnels.
 */
 type GetConfigSessionAll struct {
 	Context *middleware.Context

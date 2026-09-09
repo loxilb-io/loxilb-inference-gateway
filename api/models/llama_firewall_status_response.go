@@ -13,7 +13,7 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// LlamaFirewallStatusResponse llama firewall status response
+// LlamaFirewallStatusResponse Stored configuration plus incomplete tracked status, not a readiness probe. connected and last_health_check are not connected to the active client; pattern arrays are discarded and timeout/pool-size readback is absent. The disabled build can return inert status successfully. Optional false or zero fields may be omitted; configured values do not prove enforcement.
 //
 // swagger:model LlamaFirewallStatusResponse
 type LlamaFirewallStatusResponse struct {

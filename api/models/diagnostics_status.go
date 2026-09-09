@@ -16,7 +16,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// DiagnosticsStatus The allowlist-only diagnostic assembly served by /diagnostics.
+// DiagnosticsStatus Structured diagnostic assembly served by /diagnostics. Nested lifecycle and dependency reasons can contain propagated error text; universal redaction of every such string is not established.
 //
 // swagger:model DiagnosticsStatus
 type DiagnosticsStatus struct {

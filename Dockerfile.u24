@@ -1,16 +1,11 @@
 # Download base image ubuntu 24.04 for build
-FROM ubuntu:24.04 as build
+FROM ubuntu:24.04 as test-build
 
 # Disable Prompt During Packages Installation
 ARG DEBIAN_FRONTEND=noninteractive
 
 ARG TAG=main
 ARG LOXICMD_TAG=91031e090eef92a621e71df0699e929dd5985779
-
-# Release identifier stamped into the binary. .dockerignore strips .git, so the
-# Makefile's `git describe` cannot work in here and would silently fall back to
-# "dev" -- release.yml and packaging/build-pkgs.sh pass the tag explicitly.
-ARG VERSION=dev
 
 # Optional apt mirror override (e.g. --build-arg APT_MIRROR=mirror.kakao.com)
 # for build hosts far from / flaky to archive.ubuntu.com. Empty = default
@@ -26,7 +21,6 @@ ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/lib64/"
 
 RUN mkdir -p /root/loxilb-io/loxilb
 RUN mkdir -p /opt/loxilb/trace-catalogs
-COPY . /root/loxilb-io/loxilb/
 COPY examples/trace-catalogs /opt/loxilb/trace-catalogs/
 
 # Create directories
@@ -162,8 +156,16 @@ RUN arch=$(arch | sed s/aarch64/arm64/ | sed s/x86_64/amd64/) && \
     tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && \
     rm /tmp/libtokenizers.tar.gz
 
+# Keep compiler/OpenSSL/tool installation cacheable across source revisions.
+# No earlier build step consumes Gateway source.
+COPY . /root/loxilb-io/loxilb/
+
 # Build loxilb - Step 1: Download dependencies
 RUN cd /root/loxilb-io/loxilb/ && go get .
+
+# Stamp the binary, without invalidating toolchain layers on each CI revision.
+# .dockerignore strips .git; callers must pass the release/dirty-source identity.
+ARG VERSION=dev
 
 # Build loxilb - Step 2: Build binary
 RUN cd /root/loxilb-io/loxilb/ && \
@@ -185,6 +187,11 @@ RUN cd /root/loxilb-io/loxilb/ && \
     cp loxilb-ebpf/utils/mkllb_cgroup.sh /usr/local/sbin/mkllb_cgroup && \
     cp loxilb-ebpf/kernel/loxilb_dp_debug /usr/local/sbin/loxilb_dp_debug && \
     cp loxilb /usr/local/sbin/loxilb
+
+# Retain the source, libraries and matching compiler flags for unit tests via
+# `make docker DOCKER_BUILD_FLAGS="--target test-build"`. Runtime packaging
+# continues from exactly this stage and preserves its existing cleanup.
+FROM test-build as build
 
 # Build loxilb - Step 4: Cleanup and preserve binary
 RUN cd /root/loxilb-io/loxilb/ && \

@@ -34,7 +34,7 @@ func NewDeleteConfigBgpPolicyDefinitionsPolicyName(ctx *middleware.Context, hand
 
 # Delete a BGP policy
 
-Delete a BGP Policy
+Delete the BGP policy identified by policy_name. Remote GoBGP validation and dependency failures are propagated through the current generic error classifier.
 */
 type DeleteConfigBgpPolicyDefinitionsPolicyName struct {
 	Context *middleware.Context

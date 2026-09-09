@@ -40,13 +40,13 @@ func NewPostConfigTraceOtlp(ctx *middleware.Context, handler PostConfigTraceOtlp
 
 Configure OTLP endpoint for trace export (with TLS security)
 
-Sets the OpenTelemetry Protocol (OTLP) endpoint address and protocol for exporting distributed traces to Jaeger/Tempo/etc.
+Replaces the OTLP exporter configuration rather than patching individual fields. Endpoint and protocol are required. Omitted TLS fields use their defaults; omitted headers clear the header map. Redacted GET values must not be submitted as credentials. Configuration changes can precede secret persistence or reconnection, leaving partial state on failure; some failures currently return HTTP 200 with an error message.
 
 **Security Features:**
 - TLS encryption enabled by default (use_tls: true)
 - TLS certificate verification (tls_skip_verify: false)
 - Optional authentication headers (API keys, bearer tokens)
-- Endpoint validation (host:port format, DNS resolution)
+- Endpoint syntax checks (host:port); no DNS lookup or complete numeric port-range validation is performed by this handler
 
 **Production Recommendations:**
 - Always use TLS (use_tls: true) to encrypt trace data

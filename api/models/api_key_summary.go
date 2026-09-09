@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// APIKeySummary Api key summary
+// APIKeySummary Metadata, not effective service-enforcement status. enabled=false is explicitly serialized; optional zero metadata can be absent. A list without nonempty tenant_id returns all keys; viewer authorization is not tenant scoped. DELETE permanently removes the key and returns 204, not reversible disabling. Per-key token-quota enforcement is not connected.
 //
 // swagger:model ApiKeySummary
 type APIKeySummary struct {
@@ -22,7 +22,7 @@ type APIKeySummary struct {
 	// List of model identifiers this key may access
 	AllowedModels []string `json:"allowed_models"`
 
-	// Burst capacity above the steady-state RPS limit
+	// Total request-bucket capacity, not additional capacity above RPS. Nonpositive burst uses per-key RPS; nonpositive RPS skips that limiter.
 	BurstSize int64 `json:"burst_size,omitempty"`
 
 	// Timestamp when the key was created
@@ -49,7 +49,7 @@ type APIKeySummary struct {
 	// Tenant that owns this key
 	TenantID string `json:"tenant_id,omitempty"`
 
-	// Maximum LLM tokens per minute for this key
+	// Stored metadata, not an enforced per-key token quota in the reviewed consumer. Tenant and tenant/model token limits are separate.
 	TokensPerMin int64 `json:"tokens_per_min,omitempty"`
 }
 

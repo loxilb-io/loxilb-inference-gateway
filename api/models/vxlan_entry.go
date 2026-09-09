@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// VxlanEntry vxlan entry
+// VxlanEntry VXLAN interface readback joined with kernel peer data. peerIP can be null when no peer information is available, despite its required array declaration. Peer mutation handlers return operation-result objects, not this resource shape.
 //
 // swagger:model VxlanEntry
 type VxlanEntry struct {

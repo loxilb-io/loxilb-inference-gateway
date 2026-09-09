@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// IPV6AddressGetEntry IPv6 address get entry
+// IPV6AddressGetEntry Gateway IPv6 addresses grouped by interface with reported synchronization status. Address strings include prefix lengths; inventory and sync are not independent proof of kernel or datapath convergence.
 //
 // swagger:model IPv6AddressGetEntry
 type IPV6AddressGetEntry struct {

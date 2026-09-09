@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// VlanGetEntry vlan get entry
+// VlanGetEntry Gateway-managed VLAN bridge with members and ingress/egress byte and packet counters. This is observed control-plane inventory, not independent verification of Linux bridge ownership.
 //
 // swagger:model VlanGetEntry
 type VlanGetEntry struct {

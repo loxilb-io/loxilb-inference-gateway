@@ -583,13 +583,15 @@ kill_publisher_ep "${EP_A2_IP}"   # unplant: stop the sglang feeder aimed at A
 #     sanctioned path), and the rule must keep routing afterwards.
 #################################################################################
 echo "=== (L5) engine immutability: kvEngineType change on live VIP-B rule is rejected ==="
+# Keep the proposed vLLM shape otherwise valid so the request reaches the
+# live-rule engine-immutability check instead of rank-fan validation.
 read -r -d '' RULE_B_ENGINE_FLIP <<JSON
 {
   "serviceArguments": {
     "externalIP": "${VIP}", "port": ${VPORT_B}, "protocol": "tcp", "sel": 0, "mode": 4,
     "host": "${VIP}", "probeRetries": 1,
     "model_name": "Qwen/Qwen3-0.6B",
-    "kvExactMode": 3, "kvEngineType": "vllm", "kvDpRankCount": ${KV_DP_RANKS},
+    "kvExactMode": 3, "kvEngineType": "vllm", "kvDpRankCount": 1,
     "kvZmqPort": ${KV_ZMQ_PORT_B}, "kvWarmupSec": ${KV_WARMUP_SEC}, "kvBlockSize": ${KV_BLOCK_SIZE}
   },
   "endpoints": [

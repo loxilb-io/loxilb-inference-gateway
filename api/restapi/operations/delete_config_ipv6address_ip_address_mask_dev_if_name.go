@@ -34,7 +34,7 @@ func NewDeleteConfigIpv6addressIPAddressMaskDevIfName(ctx *middleware.Context, h
 
 # Delete IPv6 addresses in the device
 
-Delete IPv6 addresses in the device
+Delete the address identified by interface, IPv6 address, and prefix length. Shared helpers do not enforce endpoint address family and can use internal address objects when Linux interface lookup fails. Backend failure can return HTTP 200 with result set to fail.
 */
 type DeleteConfigIpv6addressIPAddressMaskDevIfName struct {
 	Context *middleware.Context

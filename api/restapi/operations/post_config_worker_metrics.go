@@ -34,7 +34,7 @@ func NewPostConfigWorkerMetrics(ctx *middleware.Context, handler PostConfigWorke
 
 # Update worker GPU metrics
 
-Receives GPU metrics from metrics agent and updates routing decisions
+Submits a complete worker sample, not a partial update. Endpoint, queued_requests and kv_cache_usage_perc are required; omitted optional counters become zero. Active GPU monitoring is required. Cache and map updates can fail partially; successful ingestion does not establish endpoint registration or a verified routing decision.
 */
 type PostConfigWorkerMetrics struct {
 	Context *middleware.Context

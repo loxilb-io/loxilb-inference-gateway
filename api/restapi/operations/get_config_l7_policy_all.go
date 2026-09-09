@@ -32,7 +32,9 @@ func NewGetConfigL7PolicyAll(ctx *middleware.Context, handler GetConfigL7PolicyA
 /*
 	GetConfigL7PolicyAll swagger:route GET /config/l7policy getConfigL7PolicyAll
 
-Get all L7 content-routing policies
+# Get all L7 content-routing policies
+
+Returns stored policies sorted by policy ID under l7policyAttr. This is registry readback, not an effective dataplane policy or attachment-status query; submitted values can differ from bounded C values.
 */
 type GetConfigL7PolicyAll struct {
 	Context *middleware.Context

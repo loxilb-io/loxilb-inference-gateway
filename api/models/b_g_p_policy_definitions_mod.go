@@ -14,12 +14,12 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// BGPPolicyDefinitionsMod b g p policy definitions mod
+// BGPPolicyDefinitionsMod Named BGP policy and its statements. Supply non-null conditions and actions for every statement because the handler dereferences these schema-optional objects. This endpoint does not provide a general atomic update contract.
 //
 // swagger:model BGPPolicyDefinitionsMod
 type BGPPolicyDefinitionsMod struct {
 
-	// BGP Neighbor IP address
+	// Policy definition name, not a neighbor IP address.
 	Name string `json:"name,omitempty"`
 
 	// statements

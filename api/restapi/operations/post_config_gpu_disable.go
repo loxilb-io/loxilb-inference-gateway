@@ -34,7 +34,7 @@ func NewPostConfigGpuDisable(ctx *middleware.Context, handler PostConfigGpuDisab
 
 # Disable GPU-aware load balancing
 
-Deactivates GPU-aware routing and reverts to standard CHWBL
+Disables runtime GPU monitoring and stops its cleanup thread; already-disabled requests are rejected. This does not establish that existing services switch to CHWBL, since service selection configuration is separate. Map-update failure can leave partial state and is not a completed transition.
 */
 type PostConfigGpuDisable struct {
 	Context *middleware.Context

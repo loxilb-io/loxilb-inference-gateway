@@ -33,6 +33,8 @@ func NewDeleteConfigMetrics(ctx *middleware.Context, handler DeleteConfigMetrics
 	DeleteConfigMetrics swagger:route DELETE /config/metrics deleteConfigMetrics
 
 turn off prometheus option
+
+Idempotently disables runtime collection and scraping without stopping data forwarding or clearing every cached value. JSON metric readback can therefore remain stale.
 */
 type DeleteConfigMetrics struct {
 	Context *middleware.Context

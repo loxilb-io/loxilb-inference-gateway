@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// RouteGetEntry route get entry
+// RouteGetEntry Gateway route readback. gateway may contain comma-separated next hops; protocol is a symbolic name for known values or a decimal string. statistic.bytes and statistic.packets are route byte and packet counters, not ingress/egress byte counters. sync is reported datapath status, not an independent runtime verification.
 //
 // swagger:model RouteGetEntry
 type RouteGetEntry struct {
@@ -127,11 +127,11 @@ func (m *RouteGetEntry) UnmarshalBinary(b []byte) error {
 // swagger:model RouteGetEntryStatistic
 type RouteGetEntryStatistic struct {
 
-	// Statistic of the ingress port bytes.
+	// Route byte counter.
 	// Required: true
 	Bytes *int64 `json:"bytes"`
 
-	// Statistic of the egress port bytes.
+	// Route packet counter.
 	// Required: true
 	Packets *int64 `json:"packets"`
 }

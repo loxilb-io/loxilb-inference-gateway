@@ -13,7 +13,7 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// LlamaFirewallScannerStats llama firewall scanner stats
+// LlamaFirewallScannerStats Per-scanner telemetry placeholders; a member's presence does not establish that its scanner ran.
 //
 // swagger:model LlamaFirewallScannerStats
 type LlamaFirewallScannerStats struct {

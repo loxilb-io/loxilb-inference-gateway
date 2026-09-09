@@ -33,6 +33,7 @@ on:
       - 'common/**'
       - 'options/**'
       - 'cicd/ai-authsep/**'
+      - 'cicd/ai-multitier-security/**'
       - 'scripts/check-source-invariants.sh'
       - 'scripts/aigw-db-bootstrap.sql'
       - 'loxilb-ebpf'
@@ -49,6 +50,7 @@ on:
       - 'common/**'
       - 'options/**'
       - 'cicd/ai-authsep/**'
+      - 'cicd/ai-multitier-security/**'
       - 'scripts/check-source-invariants.sh'
       - 'scripts/aigw-db-bootstrap.sql'
       - 'loxilb-ebpf'
@@ -86,6 +88,14 @@ jobs:
 
       - name: Source invariants
         run: bash scripts/check-source-invariants.sh
+
+      - name: Mandatory security precedes AI routing
+        run: |
+          sudo -E env "PATH=$PATH" go test -count=1 \
+            -run 'Test(AiGwModeForTruthTable|ApiKeyAuth|AbsentApiKeyAuth|KeyStoreVerdict|RateLimitCheck)' \
+            ./pkg/loxinet
+          python3 -B cicd/ai-multitier-security/check_security_order.py
+          make -C loxilb-ebpf/common test_aisec
 
       - name: Disposable PostgreSQL for the store-backed suites
         # The store legs run with *_TEST_PG=required below: with the server

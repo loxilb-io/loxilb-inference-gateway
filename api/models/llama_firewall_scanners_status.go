@@ -12,7 +12,7 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// LlamaFirewallScannersStatus llama firewall scanners status
+// LlamaFirewallScannersStatus Stored flag readback only; current request scanning hard-codes prompt_guard and regex. These values do not establish which scanners run.
 //
 // swagger:model LlamaFirewallScannersStatus
 type LlamaFirewallScannersStatus struct {

@@ -41,7 +41,7 @@ func NewGetConfigRouteAll(ctx *middleware.Context, handler GetConfigRouteAllHand
 
 # Get all route table
 
-Get all route table
+Return the gateway's route inventory, including protocol, synchronization state, and byte and packet counters. Gateway strings may contain comma-separated next hops. A successful response is not proof of complete kernel inventory or datapath synchronization.
 */
 type GetConfigRouteAll struct {
 	Context *middleware.Context

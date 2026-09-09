@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// IPV6AddressEntry IPv6 address entry
+// IPV6AddressEntry IPv6 address configuration: supply an interface name and CIDR, not a bare address. The shared mutation helper does not enforce IPv6 family and may use internal address objects for missing Linux interfaces. Internal self-route construction has an IPv6 prefix-length limitation. Backend failures can return HTTP 200 with result set to fail.
 //
 // swagger:model IPv6AddressEntry
 type IPV6AddressEntry struct {
@@ -23,7 +23,7 @@ type IPV6AddressEntry struct {
 	// Required: true
 	Dev *string `json:"dev"`
 
-	// IP address to modify.
+	// IPv6 address with prefix length in CIDR notation. The shared helper does not enforce this endpoint's family.
 	// Required: true
 	IPAddress *string `json:"ipAddress"`
 }

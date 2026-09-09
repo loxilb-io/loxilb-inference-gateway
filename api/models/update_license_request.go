@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// UpdateLicenseRequest update license request
+// UpdateLicenseRequest Replaces the configured manual management-token file with license_key and echoes the request on success. This is not license validation and does not change the active authentication mode. Empty/whitespace validation and a secret-response policy are not established. Authentication precedence is local user service, OAuth, then manual token; with none configured the management API operates without credential enforcement.
 //
 // swagger:model UpdateLicenseRequest
 type UpdateLicenseRequest struct {

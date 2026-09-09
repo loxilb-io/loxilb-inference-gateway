@@ -34,7 +34,7 @@ func NewPutMaintenance(ctx *middleware.Context, handler PutMaintenanceHandler) *
 
 # Enter or leave operator maintenance
 
-Idempotent - entering while already in maintenance changes nothing (same operation_id, same entered_at, and the original drain window is kept; changing the window requires leave then enter), and leaving while active is a no-op. While maintenance holds, mutating configuration calls are refused with 503 except the configuration-lifecycle operations maintenance exists to make safe (snapshot, persist, restore) and this endpoint itself. The response to a leave carries the operation_id of the episode it ended.
+Idempotently enters or leaves maintenance. Repeat enter preserves operation_id, entered_at and the original timeout; changing timeout requires leave then enter. Omitted or zero timeout declares no deadline, and expiry never exits maintenance automatically. The operator gate exempts restore, persist and this endpoint; GETs bypass mutation freezes. Legacy import is not exempt. Independent boot or restore freezes can still reject maintenance changes with 503. Leave reports the ended episode's operation_id.
 */
 type PutMaintenance struct {
 	Context *middleware.Context

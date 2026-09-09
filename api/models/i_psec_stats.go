@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// IPsecStats i psec stats
+// IPsecStats Incomplete telemetry. The implementation reports stored tunnel count, zero tunnelsUp, all stored tunnels as tunnelsDown, and placeholder zero SA, traffic, and error counters. lastUpdated is not mapped. DELETE resets stub state, not kernel statistics; these values are not operational evidence.
 //
 // swagger:model IPsecStats
 type IPsecStats struct {

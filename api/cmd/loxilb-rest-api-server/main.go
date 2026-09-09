@@ -29,7 +29,7 @@ func main() {
 
 	parser := flags.NewParser(server, flags.Default)
 	parser.ShortDescription = "Loxilb Rest API"
-	parser.LongDescription = "Loxilb REST API for Baremetal Scenarios"
+	parser.LongDescription = "LoxiLB Inference Gateway management API. Read each field together with its operation, engine, topology, and lifecycle conditions; a schema default does not by itself establish omission or replace-update behavior. Descriptions explicitly identify known implementation limitations. The companion swagger-extras.yml documents manually registered routes. Management-plane authorization and data-plane X-Api-Key enforcement are separate policies."
 	server.ConfigureFlags()
 	for _, optsGroup := range api.CommandLineOptionsGroups {
 		_, err := parser.AddGroup(optsGroup.ShortDescription, optsGroup.LongDescription, optsGroup.Options)

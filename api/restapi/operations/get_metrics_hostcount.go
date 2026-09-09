@@ -34,7 +34,7 @@ func NewGetMetricsHostcount(ctx *middleware.Context, handler GetMetricsHostcount
 
 # Get host count metrics
 
-Get metrics related to host counts.
+Returns cached healthy and unhealthy endpoint-host counts from collection. This is not a fresh health probe; values can be stale or unavailable and optional zero-valued fields can be omitted.
 */
 type GetMetricsHostcount struct {
 	Context *middleware.Context

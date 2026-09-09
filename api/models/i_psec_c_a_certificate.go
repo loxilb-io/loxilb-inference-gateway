@@ -14,7 +14,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// IPsecCACertificate i psec c a certificate
+// IPsecCACertificate Partial CA metadata; validity and installation timestamps are not populated in responses. Deletion does not check tunnel dependencies or guarantee that all filesystem cleanup succeeded. Do not infer safe removal from success.
 //
 // swagger:model IPsecCACertificate
 type IPsecCACertificate struct {

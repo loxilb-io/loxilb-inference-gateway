@@ -46,6 +46,28 @@ add_route l3ep1 10.10.10.0/24 31.31.31.254
 add_route l3ep2 10.10.10.0/24 32.32.32.254
 add_route l3ep3 10.10.10.0/24 33.33.33.254
 
+# Start the mock listeners before installing the full-proxy rules. Creating a
+# rule against a closed backend makes sockproxy take its 10-second reconnect
+# path; validation used to start the listeners only afterwards and could
+# therefore mistake that deterministic cold-start window for a routing defect.
+start_mock_backend() { # <namespace> <response label>
+  local ns=$1 label=$2
+  $hexec "$ns" sh -c "nohup node ../common/tcp_server.js '$label' >/tmp/ai-model-routing-$label.log 2>&1 &"
+  for i in $(seq 1 20); do
+    if $hexec "$ns" curl -sf --max-time 1 http://127.0.0.1:8080/ | grep -q "$label"; then
+      echo "  $label backend ready (${i})"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "  FATAL: $label backend did not become ready"
+  return 1
+}
+
+start_mock_backend l3ep1 server-llama || exit 1
+start_mock_backend l3ep2 server-mistral || exit 1
+start_mock_backend l3ep3 server-wild || exit 1
+
 ## ── Wait for loxilb REST API ────────────────────────────────────────────────
 echo "Waiting for loxilb REST API..."
 for i in $(seq 1 30); do
