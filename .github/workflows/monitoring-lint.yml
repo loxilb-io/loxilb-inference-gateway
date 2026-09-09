@@ -70,3 +70,24 @@ jobs:
         run: |
           python3 deploy/monitoring/ci/gen-metric-manifest.py --self-test
           python3 deploy/monitoring/ci/gen-metric-manifest.py --check --locked-rev-check
+
+      - name: Metric extractor resolution behaviour
+        # The extractor is pointed at an upstream checkout to compute parity, so
+        # its ability to resolve indirect registrations is a correctness
+        # property now, not a convenience: a pattern it cannot resolve becomes a
+        # family reported absent upstream, and a consumer hides a working panel.
+        run: go test -count=1 ./tools/metric-manifest
+
+      - name: Verify OSS parity artifact (against the PINNED upstream revision)
+        # Pinned, not main: this leg must be reproducible, so a PR fails only
+        # for what the PR changed. Upstream moving under us is a separate
+        # question, asked on a schedule by oss-parity-drift.yml.
+        run: |
+          python3 deploy/monitoring/ci/gen-oss-parity.py --self-test
+          rev=$(python3 -c "import json;print(json.load(open('deploy/monitoring/manifest/oss-parity.json'))['provenance']['upstream_revision'])")
+          echo "pinned upstream revision: $rev"
+          git clone --filter=blob:none --no-checkout \
+            https://github.com/loxilb-io/loxilb.git /tmp/upstream-loxilb
+          git -C /tmp/upstream-loxilb checkout --quiet "$rev"
+          python3 deploy/monitoring/ci/gen-oss-parity.py \
+            --upstream /tmp/upstream-loxilb --check

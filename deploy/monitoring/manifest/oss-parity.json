@@ -1,0 +1,3064 @@
+{
+ "schema_version": 1,
+ "provenance": {
+  "generated_at": "2026-09-09T02:24:04+00:00",
+  "source_revision": "11ec58f876e903056273d6b6662defd478a07faf",
+  "upstream_repository": "https://github.com/loxilb-io/loxilb",
+  "upstream_revision": "71982cd61b23d82c8f2ff1dd38d395bbb4c9360d"
+ },
+ "contract": {
+  "gateway_families": 232,
+  "upstream_families": 60,
+  "present_identical": 35,
+  "present_divergent": 0,
+  "absent": 197,
+  "upstream_only": 25
+ },
+ "upstream_only": [
+  "active_conntrack_count",
+  "active_flow_count_sctp",
+  "active_flow_count_tcp",
+  "active_flow_count_udp",
+  "consumed_lcus",
+  "endpoint_load_dists_per_service",
+  "healthy_host_count",
+  "inactive_flow_count",
+  "lb_rule_count",
+  "lb_rule_interaction_bytes",
+  "lb_rule_interaction_packets",
+  "new_flow_count",
+  "processed_bytes",
+  "processed_packets",
+  "processed_sctp_bytes",
+  "processed_tcp_bytes",
+  "processed_udp_bytes",
+  "total_errors",
+  "total_errors_per_service",
+  "total_fw_drops",
+  "total_fw_drops_per_rule",
+  "total_load_dists_per_service",
+  "total_requests",
+  "total_requests_per_service",
+  "unhealthy_host_count"
+ ],
+ "families": [
+  {
+   "name": "aictrl_acks_applied_total",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "gateway"
+    ]
+   }
+  },
+  {
+   "name": "aictrl_acks_rejected_total",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "gateway"
+    ]
+   }
+  },
+  {
+   "name": "aictrl_current_epoch",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "aictrl_ep_weight",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "ep_idx",
+     "service"
+    ]
+   }
+  },
+  {
+   "name": "aictrl_fingerprint_mismatch_total",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "source"
+    ]
+   }
+  },
+  {
+   "name": "aictrl_fleet_stale",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "aictrl_lmc_cost_active",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "aictrl_negative_control_active",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "aictrl_registry_mismatch_total",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "source"
+    ]
+   }
+  },
+  {
+   "name": "aictrl_snapshots_emitted_total",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "aictrl_source_stale",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "source"
+    ]
+   }
+  },
+  {
+   "name": "aictrl_source_staleness_seconds",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "source"
+    ]
+   }
+  },
+  {
+   "name": "aictrl_ttft_active",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "model_version"
+    ]
+   }
+  },
+  {
+   "name": "aictrl_ttft_alpha",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "aictrl_ttft_model_version",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "aictrl_ttft_pred_err_ratio_p50",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "aictrl_ttft_pred_err_ratio_p90",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "aictrl_watcher_dropped_snapshots_total",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "gateway"
+    ]
+   }
+  },
+  {
+   "name": "aictrl_watchers_connected",
+   "owner": "loxilb-ai-controller",
+   "class": "standalone-controller",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "doca_acl_entries_active",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "doca_aging_cycle_duration_seconds",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "histogram",
+    "labels": []
+   }
+  },
+  {
+   "name": "doca_circuit_breaker_state",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "doca_ct_pipe_utilization",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "pipe"
+    ]
+   }
+  },
+  {
+   "name": "doca_fdb_entries_active",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "port"
+    ]
+   }
+  },
+  {
+   "name": "doca_meter_bytes_total",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "meter_id",
+     "name"
+    ]
+   }
+  },
+  {
+   "name": "doca_meter_offload_active",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "meter_id",
+     "name"
+    ]
+   }
+  },
+  {
+   "name": "doca_meter_packets_total",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "meter_id",
+     "name"
+    ]
+   }
+  },
+  {
+   "name": "doca_meter_pool_exhausted_total",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "doca_offload_active_flows",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "doca_offload_attempts_total",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "doca_offload_deferred_retry_total",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "result"
+    ]
+   }
+  },
+  {
+   "name": "doca_offload_failures_total",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "doca_offload_install_errors_total",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "pipe",
+     "reason"
+    ]
+   }
+  },
+  {
+   "name": "doca_pipe_hw_bytes_total",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "direction",
+     "pipe"
+    ]
+   }
+  },
+  {
+   "name": "doca_pipe_hw_pkts_total",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "direction",
+     "pipe"
+    ]
+   }
+  },
+  {
+   "name": "doca_route_entries_active",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "doca_stale_entries_evicted_total",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_acl_hw_allow_entries",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_acl_hw_deny_entries",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_acl_hw_offload_rules_total",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "action"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_active_conntrack_entries",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   },
+   "upstream": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_active_flow_count_sctp",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   },
+   "upstream": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_active_flow_count_tcp",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   },
+   "upstream": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_active_flow_count_udp",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   },
+   "upstream": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_ai_active_streams",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "model"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_engine_info",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "engine",
+     "service"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_keyed_services",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_ai_kv_attest_echo_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "result"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_kv_attest_probe_fail_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "reason"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_kv_attest_state",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "rule",
+     "state"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_kv_enforcement_fault",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "rule"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_kv_trtllm_drain_ownership_fault_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "reason"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_kv_trtllm_drain_ownership_heal_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_ai_llamacpp_probe_warnings_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "kind",
+     "service"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_model_not_allowed_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "model",
+     "tenant"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_normal_session_hits_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "model"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_pd_decode_ttft_seconds",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "histogram",
+    "labels": [
+     "model"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_pd_kv_params_found_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "model"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_pd_kv_params_missing_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "model"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_pd_prefill_duration_seconds",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "histogram",
+    "labels": [
+     "model"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_pd_requests_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "model",
+     "phase",
+     "status"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_pd_session_hits_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "model"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_policy_store_unavailable_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_ai_rate_limit_hits_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "reason",
+     "tenant"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_request_duration_seconds",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "histogram",
+    "labels": [
+     "model",
+     "tenant"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_requests_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "model",
+     "status",
+     "tenant"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_token_quota_cold_open_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_ai_token_quota_denied_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "tenant"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_token_quota_limit_tokens",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "tenant"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_token_quota_model_limit_tokens",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "model",
+     "tenant"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_token_quota_model_utilization",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "model",
+     "tenant"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_token_quota_utilization",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "tenant"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_tokens_consumed_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "kind",
+     "model",
+     "tenant"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_tokens_estimated_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "model",
+     "tenant"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_tokens_missing_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "model",
+     "tenant"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_unmetered_requests_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "vip"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_autopersist_consecutive_failures",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_backend_traffic_bytes_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "endpoint",
+     "service"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_backend_traffic_connections_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "endpoint",
+     "service"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_backend_traffic_packets_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "endpoint",
+     "service"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_boot_config_conflict_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_boot_legacy_fallback_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_client_traffic_packets_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "service",
+     "sip"
+    ]
+   },
+   "upstream": {
+    "type": "counter",
+    "labels": [
+     "service",
+     "sip"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_closed_connections_processed_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   },
+   "upstream": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_config_dirty",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_conntrack_max_entries",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   },
+   "upstream": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_conntrack_stat_resets_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   },
+   "upstream": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_doca_collector_query_errors_total",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "api",
+     "reason"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_doca_egress_counters_available",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_endpoint_traffic_bytes_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "dip",
+     "service"
+    ]
+   },
+   "upstream": {
+    "type": "counter",
+    "labels": [
+     "dip",
+     "service"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_errors_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   },
+   "upstream": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_firewall_rules",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   },
+   "upstream": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_fw_drop_packets_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   },
+   "upstream": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_fw_rule_drop_packets_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "fw_rule"
+    ]
+   },
+   "upstream": {
+    "type": "counter",
+    "labels": [
+     "fw_rule"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_healthy_endpoints",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   },
+   "upstream": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_host_cpu_utilization_percent",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_ipfilter_blacklist_bytes_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "cidr",
+     "priority",
+     "zone"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ipfilter_blacklist_packets_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "cidr",
+     "priority",
+     "zone"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ipfilter_rules",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "type"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ipfilter_whitelist_bytes_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "cidr",
+     "priority",
+     "zone"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ipfilter_whitelist_packets_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "cidr",
+     "priority",
+     "zone"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_kernel_bridge_bytes",
+   "owner": "loxilb",
+   "class": "dpu-doca",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "bridge"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_kv_agent_up",
+   "owner": "loxilb",
+   "class": "kv-agent-health",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_kv_bytes_transferred_total",
+   "owner": "loxilb-kv-agent",
+   "class": "standalone-kv-agent",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_kv_evictions_total",
+   "owner": "loxilb-kv-agent",
+   "class": "standalone-kv-agent",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_kv_fetch_errors_total",
+   "owner": "loxilb-kv-agent",
+   "class": "standalone-kv-agent",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_kv_fetch_total",
+   "owner": "loxilb-kv-agent",
+   "class": "standalone-kv-agent",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_kv_inv_cap_evictions_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "ep",
+     "service"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_kv_inventory_fresh",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "ep",
+     "service"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_kv_subscriber_connected",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "ep",
+     "service"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_kv_subscriber_last_event_timestamp_seconds",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "ep",
+     "service"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_kv_subscriber_reconnect_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "ep",
+     "service"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_kv_subscriber_recv_error_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "ep",
+     "service"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_kv_subscriber_wire_reject_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "ep",
+     "reason",
+     "service"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_l4_error_events_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "proto",
+     "reason"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_last_restore_timestamp_seconds",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_lb_rule_interaction_bytes_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "dip",
+     "service",
+     "sip"
+    ]
+   },
+   "upstream": {
+    "type": "counter",
+    "labels": [
+     "dip",
+     "service",
+     "sip"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_lb_rule_interaction_packets_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "dip",
+     "service",
+     "sip"
+    ]
+   },
+   "upstream": {
+    "type": "counter",
+    "labels": [
+     "dip",
+     "service",
+     "sip"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_lb_rules",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   },
+   "upstream": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_lb_select_failure_shutdown_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_new_flows",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   },
+   "upstream": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_opa_circuit_breaker_state",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_opa_firewall_rules",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_opa_sync_duration_seconds",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "histogram",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_opa_watcher_syncs_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "status"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_parser_attributes_extracted_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "protocol"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_parser_body_size_bytes",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "histogram",
+    "labels": [
+     "protocol"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_parser_calls_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "protocol",
+     "status"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_parser_duration_seconds",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "histogram",
+    "labels": [
+     "protocol"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_pd_admission_queued_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_pd_admission_shed_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_pd_cb_flips_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_pd_cb_proactive_heal_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_pd_connect_failover_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_pd_connect_retry_same_ep_ok_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_pd_connect_retry_same_ep_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_pd_ctrl_alpha",
+   "owner": "loxilb",
+   "class": "aictrl-bridge",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_pd_ctrl_applied_epoch",
+   "owner": "loxilb",
+   "class": "aictrl-bridge",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "service"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_pd_ctrl_effective_weight",
+   "owner": "loxilb",
+   "class": "aictrl-bridge",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "ep_idx",
+     "service"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_pd_ctrl_mode",
+   "owner": "loxilb",
+   "class": "aictrl-bridge",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_pd_ctrl_nacks_total",
+   "owner": "loxilb",
+   "class": "aictrl-bridge",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_pd_ctrl_override_events_total",
+   "owner": "loxilb",
+   "class": "aictrl-bridge",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_pd_ctrl_snapshots_applied_total",
+   "owner": "loxilb",
+   "class": "aictrl-bridge",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_pd_ctrl_state",
+   "owner": "loxilb",
+   "class": "aictrl-bridge",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "ep_idx",
+     "service"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_pd_decode_ep_died_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_pd_decode_zero_byte_eof_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_pd_ep_info",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "ep",
+     "ep_idx",
+     "service"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_pd_fallback_to_normal_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_pd_kv_blocks",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "ep_idx",
+     "service"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_pd_kv_tier15_cold_seeds_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "ep_idx"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_pd_kv_tier15_fallthrough_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_pd_kv_tier15_hits_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "ep_idx"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_pd_kv_tier15_miss_reason_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "reason"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_pd_kv_tier15_spills_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "ep_idx"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_pd_kv_zero_hit_watchdog_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "service_id"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_pd_prefill_ep_died_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_pd_sessions_active",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_pd_sg_decode_close_drain_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_pd_sg_oversize_reject_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_pd_sg_prefill_abort_decode_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_pd_sg_prefill_reject_relay_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_pd_sg_room_retry_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_pd_trie_nodes",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_pd_trt_ctx_early_exit_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_persist_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "result"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_processed_bytes_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   },
+   "upstream": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_processed_packets_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   },
+   "upstream": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_processed_sctp_bytes_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   },
+   "upstream": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_processed_sctp_packets_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   },
+   "upstream": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_processed_tcp_bytes_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   },
+   "upstream": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_processed_tcp_packets_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   },
+   "upstream": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_processed_udp_bytes_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   },
+   "upstream": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_processed_udp_packets_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   },
+   "upstream": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_proxy_active_connections",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_proxy_active_ssl_connections",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_proxy_cache_backpressure_ratio",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_proxy_cache_bytes",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_proxy_cache_bytes_max_conn",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_proxy_cache_conns_queued",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_proxy_cache_drain_partial_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_proxy_cache_high_water_events_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_proxy_chunked_responses_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_proxy_conversation_hits_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_proxy_conversation_misses_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_proxy_conversation_sessions",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_proxy_conversation_ttl_expired_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_proxy_graceful_close_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_proxy_http2_sessions_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_proxy_http_responses_by_status_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "status_class"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_proxy_http_responses_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_proxy_http_ttfb_seconds",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "histogram",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_proxy_pd_kv_params_overflow_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_proxy_qos_bytes_delayed_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "direction",
+     "port",
+     "proto",
+     "vip"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_proxy_qos_bytes_passed_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "direction",
+     "port",
+     "proto",
+     "vip"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_proxy_qos_cbs_bytes",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "direction",
+     "port",
+     "proto",
+     "vip"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_proxy_qos_cir_bytes_per_second",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "direction",
+     "port",
+     "proto",
+     "vip"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_proxy_qos_park_seconds_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "direction",
+     "port",
+     "proto",
+     "vip"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_proxy_qos_parked_connections",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "direction",
+     "port",
+     "proto",
+     "vip"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_proxy_qos_parks_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "direction",
+     "port",
+     "proto",
+     "vip"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_proxy_qos_tokens_bytes",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "direction",
+     "port",
+     "proto",
+     "vip"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_requests_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   },
+   "upstream": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_restore_duration_seconds",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "histogram",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_restore_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "mode",
+     "result"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_security_conn_blocked_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_security_conn_passed_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_security_syn_blocked_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_security_syn_cookies_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_security_syn_passed_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_security_udp_blocked_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_security_udp_bytes_blocked_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_security_udp_bytes_passed_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_security_udp_passed_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_security_unique_ips",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_service_errors_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "service"
+    ]
+   },
+   "upstream": {
+    "type": "counter",
+    "labels": [
+     "service"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_service_requests_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "service"
+    ]
+   },
+   "upstream": {
+    "type": "counter",
+    "labels": [
+     "service"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_service_traffic_bytes_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "service"
+    ]
+   },
+   "upstream": {
+    "type": "counter",
+    "labels": [
+     "service"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_service_traffic_packets_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "service"
+    ]
+   },
+   "upstream": {
+    "type": "counter",
+    "labels": [
+     "service"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_snapshot_quarantine_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_snapshot_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "trigger"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_sockproxy_sync_apply_errors_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_sockproxy_sync_conflict_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "outcome"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_sockproxy_sync_drop_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "reason"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_sockproxy_sync_health_reject_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "reason"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_sockproxy_sync_inflight_rpc",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "peer"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_sockproxy_sync_overflow_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "kind"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_sockproxy_sync_peer_lag_seconds",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "peer"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_sockproxy_sync_peer_up",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "peer"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_sockproxy_sync_push_latency_seconds",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "histogram",
+    "labels": [
+     "peer",
+     "rpc"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_system_cpu_utilization_percent",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   },
+   "upstream": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_system_disk_utilization_percent",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   },
+   "upstream": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_system_memory_utilization_percent",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   },
+   "upstream": {
+    "type": "gauge",
+    "labels": []
+   }
+  },
+  {
+   "name": "loxilb_unhealthy_endpoints",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "present-identical",
+   "present_upstream": true,
+   "gateway": {
+    "type": "gauge",
+    "labels": []
+   },
+   "upstream": {
+    "type": "gauge",
+    "labels": []
+   }
+  }
+ ]
+}
