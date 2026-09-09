@@ -37,12 +37,6 @@ type WorkerMetricsRequest struct {
 	Timestamp        time.Time `json:"timestamp"`
 }
 
-// WorkerMetricsResponse for GET requests
-type WorkerMetricsResponse struct {
-	Workers           []WorkerMetricsRequest `json:"workers"`
-	MonitoringEnabled bool                   `json:"monitoring_enabled"`
-}
-
 // ConfigPostGPUEnable handles POST /config/gpu/enable
 func ConfigPostGPUEnable(params operations.PostConfigGpuEnableParams, principal interface{}) middleware.Responder {
 	tk.LogIt(tk.LogDebug, "[API] POST /config/gpu/enable\n")
@@ -391,9 +385,14 @@ func ConfigGetConfigWorkerMetrics(params operations.GetConfigWorkerMetricsParams
 			endpointIP, queuedRequests, kvCacheUsagePerc)
 	}
 
-	// Convert to response format
+	// monitoring_enabled is what separates a disabled subsystem from an
+	// enabled one that no worker has reported to yet: both otherwise answer
+	// 200 with an empty list. Unlike the POST and the cleanup, the read is
+	// deliberately not gated on it -- reporting the state is the point.
+	monitoringEnabled := ApiHooks.NetDpEbpfIsGPUMonitoringEnabled()
 	response := &models.WorkerMetricsResponse{
-		Workers: entries,
+		Workers:           entries,
+		MonitoringEnabled: &monitoringEnabled,
 	}
 
 	return operations.NewGetConfigWorkerMetricsOK().WithPayload(response)

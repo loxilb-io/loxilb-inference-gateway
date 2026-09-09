@@ -96,48 +96,137 @@ func TestResolveFlowMACs_NonSelfIPMissesFastPath(t *testing.T) {
 	}
 }
 
-// TestResolveFlowMACs_SingleflightCollapse — A3: 10 concurrent
-// callers with the same key must invoke the singleflight inner function
-// AT MOST one extra time per unique inflight window. We can't directly
-// instrument the !doca stub's inner-fn (its Do call is sealed inside
-// resolveFlowMACs), so we exercise the Group object on a parallel
-// resolveSF.Do call to validate semantics that match what the production
-// hot-path relies on.
+// TestResolveFlowMACs_SingleflightCollapse asserts that N callers arriving on
+// one key while a flight is open share that flight: the inner function runs
+// exactly once.
 //
-// (The integration check on bf2-arm uses strace per §5.)
+// The overlap is established rather than raced for. DoChan registers the
+// caller and returns immediately, so "the flight is open" and "this caller has
+// joined it" are both observable facts, and the flight is held open until
+// every caller has joined. The previous version started N goroutines and
+// relied on a busy-spin to keep them overlapping, which made collapse a race
+// the test hoped to win: with parallelism unavailable -- a loaded CI machine,
+// or simply GOMAXPROCS=1, where it fails every single time -- the callers ran
+// serially, each flight retired before the next caller arrived, and the inner
+// function ran once per caller. That is a correct singleflight doing exactly
+// what it promises, reported as a failure.
+//
+// The assertion tightens with the mechanism: the old bound (1 <= calls < N)
+// accepted nine redundant resolutions out of ten, so it could only have caught
+// a total failure to collapse. Exactly-one is the property the production hot
+// path actually depends on.
 func TestResolveFlowMACs_SingleflightCollapse(t *testing.T) {
 	var sf singleflight.Group
 	var calls atomic.Int64
 
-	const N = 10
-	var wg sync.WaitGroup
-	wg.Add(N)
-	start := make(chan struct{})
-	for i := 0; i < N; i++ {
-		go func() {
-			defer wg.Done()
-			<-start
-			_, _, _ = sf.Do("99.99.99.99", func() (interface{}, error) {
-				calls.Add(1)
-				// Small busy-spin so callers actually overlap.
-				for k := 0; k < 1_000_000; k++ {
-					_ = k
-				}
-				return 0, nil
-			})
-		}()
-	}
-	close(start)
-	wg.Wait()
+	const (
+		N   = 10
+		key = "99.99.99.99"
+	)
 
-	got := calls.Load()
-	if got < 1 {
-		t.Fatalf("singleflight inner-fn ran %d times; want >= 1", got)
+	release := make(chan struct{})
+	entered := make(chan struct{})
+	// A regression makes the inner function run more than once; closing
+	// `entered` under a Once keeps that a clean assertion failure below
+	// instead of a panic on a closed channel.
+	var enteredOnce sync.Once
+
+	fn := func() (interface{}, error) {
+		calls.Add(1)
+		enteredOnce.Do(func() { close(entered) })
+		<-release
+		return 0, nil
 	}
-	if got >= N {
-		t.Fatalf("singleflight failed to collapse: inner-fn ran %d times for %d callers; want < %d (collapse achieved)",
-			got, N, N)
+
+	results := make([]<-chan singleflight.Result, 0, N)
+	results = append(results, sf.DoChan(key, fn))
+	<-entered // the flight is in progress -- not "probably in progress"
+
+	for i := 1; i < N; i++ {
+		// DoChan returns once this caller has joined, so the next one cannot
+		// be issued into a window that has already closed.
+		results = append(results, sf.DoChan(key, fn))
 	}
+
+	close(release)
+	for i, ch := range results {
+		if r := <-ch; r.Err != nil {
+			t.Errorf("caller %d: %v", i, r.Err)
+		}
+	}
+
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("singleflight did not collapse: inner-fn ran %d times for %d concurrent callers on one key; want exactly 1",
+			got, N)
+	}
+}
+
+// TestResolveFlowMACs_ProductionWrapCollapses asserts the invariant against
+// resolveFlowMACs itself, not against a locally constructed Group.
+//
+// The sibling test above covers singleflight's own semantics; this one covers
+// the thing the hot path actually calls, which is what the wrap exists for.
+// Do seals its inner function, so the flight is opened through the production
+// path and held there by the counter hook, and the further callers arrive via
+// DoChan on the same group and key: DoChan returns once the caller has joined,
+// so joining is observed rather than assumed. A caller that failed to collapse
+// would run its own inner function and be counted.
+func TestResolveFlowMACs_ProductionWrapCollapses(t *testing.T) {
+	const (
+		N    = 10
+		addr = "203.0.113.7"
+		cidr = "203.0.113.7"
+	)
+
+	withCleanSelfIPCache(t, []string{cidr}, func() {
+		// The fast path returns before reaching the flight, so the address
+		// must not be a self-IP. withCleanSelfIPCache has just removed it.
+		if key, ok := parseIPv4BEFromCIDR(cidr); ok && SelfIPCache.Has(key) {
+			t.Fatalf("%s is in SelfIPCache; the fast path would skip the singleflight entirely", cidr)
+		}
+
+		var calls atomic.Int64
+		entered := make(chan struct{})
+		release := make(chan struct{})
+		var enteredOnce sync.Once
+
+		resolveSFInnerHook = func() {
+			calls.Add(1)
+			enteredOnce.Do(func() { close(entered) })
+			<-release
+		}
+		defer func() { resolveSFInnerHook = nil }()
+
+		d := &DpDocaBf2{}
+		ip := net.ParseIP(addr)
+
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			d.resolveFlowMACs(ip)
+		}()
+		<-entered // the production flight is open and held
+
+		joined := make([]<-chan singleflight.Result, 0, N-1)
+		for i := 1; i < N; i++ {
+			joined = append(joined, d.resolveSF.DoChan(ip.String(), func() (interface{}, error) {
+				// Reached only if this caller did not join the open flight.
+				calls.Add(1)
+				return nil, nil
+			}))
+		}
+
+		close(release)
+		<-done
+		for _, ch := range joined {
+			<-ch
+		}
+
+		if got := calls.Load(); got != 1 {
+			t.Fatalf("resolveFlowMACs did not collapse: %d inner-fn invocations for %d concurrent callers on key %q; want exactly 1",
+				got, N, addr)
+		}
+	})
 }
 
 // TestResolveFlowMACs_SymmetricKeyEncoding — meta-test guarding against

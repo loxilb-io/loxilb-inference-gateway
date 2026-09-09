@@ -18,16 +18,26 @@ than running a matrix against itself.
   come up through the snapshot path deep-equal.
 - **UP-01 — forward migration**: a document persisted by the old image
   must restore deep-equal on the new one, with the boot surface reporting
-  a successful replay.
-- **UP-03 — idempotent migration**: booting the migrated volume a second
+  a successful replay. The boot itself must **not** rewrite the volume —
+  only the legacy path writes through (UP-04) — so the forward-migration
+  claim is tested where it actually happens: the first explicit persist on
+  the new image, which must carry the document to the running schema.
+- **UP-03 — idempotent migration**: booting the *migrated* volume a second
   time must change nothing byte-wise (modulo timestamp/generation/
-  checksum).
+  checksum). The leg guards that the document under test really is at the
+  running schema first; run against an unmigrated one it would be diffing
+  a file the gateway never rewrites either way, and would pass regardless
+  of what the migration did.
 - **UP-02 — downgrade fails closed**: a document persisted by the NEW
   image, handed back to the old one, must be quarantined and the node
   must boot empty — never a partial apply that leaves the gateway
   half-configured while looking healthy. An old image predating the
   schema gate must at least apply nothing and leave the document intact.
   Upgrading back must recover the node from its own document.
+  When both images write the **same** schema there is no gate to fire and
+  the old image is right to consume the document; the leg asserts that
+  instead, and reports the gate as unexercised rather than demanding a
+  refusal a correct gateway would never make.
 
 ## Traps
 
@@ -51,6 +61,13 @@ than running a matrix against itself.
   suite probes for it and SKIPS them **loudly**; set
   `UP_REQUIRE_SNAPSHOT_OLD=1` to turn that skip into a failure once a
   persistence-capable release exists. UP-04 always runs.
+- **A pairing is not automatically a matrix.** Two images can differ in
+  build and still write the same document schema, and such a pairing
+  cannot exercise the migration step (UP-01) or the newer-schema gate
+  (UP-02). Both report a loud `[SKIPPED]` rather than a pass; set
+  `UP_REQUIRE_SCHEMA_STEP=1` to turn those into failures when the matrix
+  is expected to span a schema step. Check what the two sides actually
+  write before reading a green as coverage.
 - Swapping images deletes and respawns the container: the veths die with
   it, so both pairs are rebuilt and re-addressed on every swap, and the
   config volume is the only thing that carries state across.

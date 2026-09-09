@@ -36,6 +36,7 @@ Exit 0 = clean, 1 = contract violation, 2 = environment/usage error.
 """
 
 import argparse
+import datetime
 import glob
 import json
 import os
@@ -352,7 +353,122 @@ def check_locked_rev(fams, overlay, repo_root, go, errors):
 # ---------------------------------------------------------------------------
 # manifest assembly
 # ---------------------------------------------------------------------------
-def build_manifest(fams, overlay, coverage):
+# SCHEMA_VERSION is the consumer-facing contract version of the manifest
+# document. Bump it when a consumer that reads the previous version could
+# misread this one: a field removed or renamed, or an existing field's meaning
+# changed. Purely additive fields do not need a bump, but recording one costs
+# nothing and tells a vendoring consumer what it is looking at.
+#
+#   1 -- first versioned document. Adds schema_version and provenance at the
+#        root, and definition_mechanism per family; "type" now always carries
+#        the runtime metric type, where it previously carried the literal
+#        "desc" for families defined through prometheus.NewDesc.
+SCHEMA_VERSION = 1
+
+
+def load_committed(manifest_path):
+    """Return the committed manifest as a dict, or None if it is absent."""
+    try:
+        with open(manifest_path, encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
+def strip_provenance(manifest):
+    """The manifest with its provenance block removed, for content comparison."""
+    return {k: v for k, v in manifest.items() if k != "provenance"}
+
+
+def git_head(repo_root):
+    """The revision being described, or "" when git cannot answer."""
+    try:
+        out = subprocess.run(["git", "-C", repo_root, "rev-parse", "HEAD"],
+                             capture_output=True, text=True, check=True)
+        return out.stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return ""
+
+
+def provenance_for(committed, fams, overlay, coverage, repo_root, now):
+    """Provenance for the manifest about to be written.
+
+    Rewritten only when the content changes. Keeping it otherwise means the
+    file does not churn on every regeneration -- which would make the --check
+    gate unusable and fill history with no-op diffs -- and gives the two fields
+    a meaning worth reading: the revision and time at which this manifest last
+    said something different.
+    """
+    candidate = build_manifest(fams, overlay, coverage, {})
+    if committed is not None and \
+            strip_provenance(committed) == strip_provenance(candidate):
+        prev = committed.get("provenance")
+        if isinstance(prev, dict) and prev:
+            return prev
+    return {
+        "generated_at": now or datetime.datetime.now(
+            datetime.timezone.utc).replace(microsecond=0).isoformat(),
+        "source_revision": git_head(repo_root),
+    }
+
+
+def check_types(fams, overlay, errors):
+    """Every family must carry a real runtime metric type.
+
+    prometheus.NewDesc cannot state the type -- it is chosen later, at the
+    MustNewConstMetric/MustNewConstHistogram site that consumes the Desc -- so
+    the extractor resolves it from there. A family still carrying "desc" means
+    that resolution failed: the Desc is bound to no variable, is never emitted,
+    or is emitted from a construct the extractor does not model. "conflict"
+    means it is emitted with two different types, so no single type describes
+    it. Both must fail generation rather than ship, because a consumer cannot
+    render a family whose type is unknown or ambiguous, and a manifest that
+    says "desc" silently pushes that guess onto every consumer.
+    """
+    valid = {"counter", "gauge", "histogram", "summary", "untyped"}
+    for e in fams:
+        t = e.get("type", "")
+        if t == "desc":
+            errors.append(
+                f"{e['file']}:{e['line']}: family '{e['name']}' has no resolved "
+                f"runtime type. It is defined with prometheus.NewDesc; bind the "
+                f"Desc to a variable and emit it with MustNewConstMetric/"
+                f"MustNewConstHistogram so the type can be read from there")
+        elif t == "conflict":
+            errors.append(
+                f"{e['file']}:{e['line']}: family '{e['name']}' is emitted with "
+                f"more than one metric type; a family must have exactly one")
+        elif t not in valid:
+            errors.append(
+                f"{e['file']}:{e['line']}: family '{e['name']}' has unknown type "
+                f"'{t}'")
+
+    # The resolution is derived, so pin what it must resolve to: a counter
+    # silently becoming a gauge would otherwise pass every check above.
+    pinned = overlay.get("desc_runtime_types", {})
+    by_name = {e["name"]: e for e in fams}
+    for name, want in sorted(pinned.items()):
+        e = by_name.get(name)
+        if e is None:
+            errors.append(f"desc_runtime_types pins unknown family '{name}' "
+                          f"(remove the pin if the family is gone)")
+            continue
+        if e.get("mechanism") != "desc":
+            errors.append(f"desc_runtime_types pins '{name}', which is no longer "
+                          f"defined via prometheus.NewDesc "
+                          f"(mechanism={e.get('mechanism')!r}); remove the pin")
+            continue
+        if e.get("type") != want:
+            errors.append(f"family '{name}' resolved to type '{e.get('type')}', "
+                          f"pinned as '{want}' ({e['file']}:{e['line']})")
+    for e in fams:
+        if e.get("mechanism") == "desc" and e["name"] not in pinned:
+            errors.append(f"family '{e['name']}' is defined via prometheus.NewDesc "
+                          f"but is not pinned in desc_runtime_types; add it with "
+                          f"its runtime type ({e['file']}:{e['line']})")
+
+
+def build_manifest(fams, overlay, coverage, provenance):
     act = overlay["activation"]
     pri = overlay["priority"]
     review = set(overlay.get("privacy_review_labels", ()))
@@ -363,7 +479,12 @@ def build_manifest(fams, overlay, coverage):
             "owner": e["owner"],
             "class": e["class"],
             "packaged": e["packaged"],
+            # The runtime metric type, always: counter|gauge|histogram|summary.
             "type": e["type"],
+            # How the family is declared in source. Orthogonal to "type":
+            # a "desc" family still has a real runtime type, resolved from the
+            # site that turns its Desc into a metric.
+            "definition_mechanism": e.get("mechanism", ""),
             "labels": e["labels"],
             "activation": act.get(e["name"], ""),
             "priority": pri["overrides"].get(e["name"], pri["default"]),
@@ -373,7 +494,8 @@ def build_manifest(fams, overlay, coverage):
             "waiver": e.get("waiver", ""),
             "source": f"{e['file']}:{e['line']}",
         })
-    return {"contract": overlay["expected"], "coverage": coverage,
+    return {"schema_version": SCHEMA_VERSION, "provenance": provenance,
+            "contract": overlay["expected"], "coverage": coverage,
             "families": entries}
 
 
@@ -471,6 +593,10 @@ def main():
                     help="also diff the family set against the locked "
                          "product revision")
     ap.add_argument("--self-test", action="store_true")
+    ap.add_argument("--now", default=None,
+                    help="ISO-8601 timestamp to record as generated_at "
+                         "(default: now, UTC). Only used when the content "
+                         "actually changes.")
     args = ap.parse_args()
 
     here = os.path.dirname(os.path.abspath(__file__))
@@ -490,6 +616,7 @@ def main():
     errors = []
     fams = classify(defs, overlay, errors)
     check_counts(fams, overlay, errors)
+    check_types(fams, overlay, errors)
     check_activation(fams, overlay, errors)
     check_literals(fams, overlay, repo_root, errors)
     attach_consumers(fams, mon_dir)
@@ -500,7 +627,10 @@ def main():
     if errors:
         return fail(errors)
 
-    manifest = build_manifest(fams, overlay, coverage)
+    committed = load_committed(manifest_path)
+    manifest = build_manifest(fams, overlay, coverage,
+                              provenance_for(committed, fams, overlay, coverage,
+                                             repo_root, args.now))
     print(f"metric-manifest: {len(fams)} families | default "
           f"{coverage['default_families']} "
           f"({coverage['default_referenced']} referenced / "
@@ -509,12 +639,15 @@ def main():
 
     rendered = json.dumps(manifest, indent=1, sort_keys=False) + "\n"
     if args.check:
-        try:
-            committed = open(manifest_path, encoding="utf-8").read()
-        except OSError:
+        if committed is None:
             return fail([f"{manifest_path} missing — run the generator and "
                          f"commit the manifest"])
-        if committed != rendered:
+        # Provenance is compared out. It records which revision last changed
+        # the content, so on any later commit it differs by construction, and
+        # comparing it would make the gate fail on every unrelated PR. The
+        # content is what the gate is about; provenance is carried forward
+        # untouched when the content has not moved, so it cannot drift either.
+        if strip_provenance(committed) != strip_provenance(manifest):
             return fail(["committed manifest is stale: regenerate with "
                          "gen-metric-manifest.py and commit the diff"])
         print("metric-manifest: committed manifest is current")
