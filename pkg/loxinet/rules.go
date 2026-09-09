@@ -451,26 +451,34 @@ type epHostOpts struct {
 
 // parseExpectedCodes parses Octavia health-monitor expected_codes syntax:
 // single ("200"), comma-list ("200,202"), and range ("200-204"); the empty string
-// defaults to "200". Each part becomes an inclusive [lo,hi] pair. Malformed parts
-// degrade safely (parse or uint16-range error ⇒ 0, a value no real HTTP status
-// hits) so the health goroutine never panics or wraps oversized input.
+// defaults to "200". Each valid part becomes an inclusive [lo,hi] pair.
+// Malformed, reversed, negative, and uint16-overflow parts are skipped so the
+// health goroutine never panics or turns invalid input into a broad match.
 func parseExpectedCodes(s string) [][2]uint16 {
 	if s == "" {
 		return [][2]uint16{{200, 200}}
 	}
 	var out [][2]uint16
-	parseCode := func(raw string) uint16 {
+	parseCode := func(raw string) (uint16, bool) {
 		code, err := strconv.ParseUint(strings.TrimSpace(raw), 10, 16)
 		if err != nil {
-			return 0
+			return 0, false
 		}
-		return uint16(code)
+		return uint16(code), true
 	}
 	for _, part := range strings.Split(s, ",") {
 		if lo, hi, ok := strings.Cut(part, "-"); ok {
-			out = append(out, [2]uint16{parseCode(lo), parseCode(hi)})
+			loCode, loOK := parseCode(lo)
+			hiCode, hiOK := parseCode(hi)
+			if !loOK || !hiOK || loCode > hiCode {
+				continue
+			}
+			out = append(out, [2]uint16{loCode, hiCode})
 		} else {
-			code := parseCode(part)
+			code, ok := parseCode(part)
+			if !ok {
+				continue
+			}
 			out = append(out, [2]uint16{code, code})
 		}
 	}

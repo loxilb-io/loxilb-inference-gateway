@@ -193,11 +193,10 @@ chk "A2 an undeclared policy stays undeclared in the export view" "" "$(resolved
 chk "A3 the old sse-riding shape serves keyless (the documented delta)" "200" \
   "$(vip_code -X POST http://$VIP:2030/v1/chat/completions -H 'Content-Type: application/json' -d "$BODY")"
 
-# The streaming shape was AI-declared before the change too — it stripped
-# the credential then and must keep stripping now. The service that never
-# said anything AI at all is the one promised byte-identical proxying:
-# the client's X-Api-Key belongs to the backend's own credential
-# namespace and must arrive. The backend's log is the judge for both.
+# Neither legacy body declares an authentication policy. After enforcement
+# became explicit, the client's X-Api-Key belongs to the backend's credential
+# namespace for both the streaming and plain shapes and must arrive unchanged.
+# The backend's log is the judge for both.
 lcurl -o /dev/null -X POST $API/config/loadbalancer \
   -H 'Content-Type: application/json' -d "$(PLAIN_RULE_BODY 2032)"
 sleep 3
@@ -207,7 +206,7 @@ vip_code -X POST "http://$VIP:2030/v1/chat/completions?probe=bc-a4-sse" \
 vip_code -X POST "http://$VIP:2032/v1/chat/completions?probe=bc-a4-plain" \
   -H 'Content-Type: application/json' -H 'X-Api-Key: not-ours-passthrough' -d "$BODY" >/dev/null
 sleep 1
-chk_has "A4 the old streaming shape still strips the key (unchanged behaviour)" "x_api_key=False" "$(backend_line probe=bc-a4-sse)"
+chk_has "A4 the old streaming shape preserves the backend-owned key after policy decoupling" "x_api_key=True" "$(backend_line probe=bc-a4-sse)"
 chk_has "A4 a service that declared nothing forwards the key untouched" "x_api_key=True" "$(backend_line probe=bc-a4-plain)"
 
 # Pre-upgrade management bodies: the minimal field set that era's clients sent.
