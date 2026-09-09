@@ -342,6 +342,22 @@
   "tenant"
  ],
  "allowed_extra_literals": {},
+ "_comment_desc_runtime_types": "Families defined via prometheus.NewDesc. The constructor cannot state the metric type, so the extractor resolves it from the MustNewConstMetric/MustNewConstHistogram site that consumes the Desc. Pinned here so a wrong resolution -- a counter silently becoming a gauge -- fails generation instead of shipping.",
+ "desc_runtime_types": {
+   "loxilb_ai_token_quota_limit_tokens": "gauge",
+   "loxilb_ai_token_quota_model_limit_tokens": "gauge",
+   "loxilb_ai_token_quota_model_utilization": "gauge",
+   "loxilb_ai_token_quota_utilization": "gauge",
+   "loxilb_proxy_http_ttfb_seconds": "histogram",
+   "loxilb_proxy_qos_bytes_delayed_total": "counter",
+   "loxilb_proxy_qos_bytes_passed_total": "counter",
+   "loxilb_proxy_qos_cbs_bytes": "gauge",
+   "loxilb_proxy_qos_cir_bytes_per_second": "gauge",
+   "loxilb_proxy_qos_park_seconds_total": "counter",
+   "loxilb_proxy_qos_parked_connections": "gauge",
+   "loxilb_proxy_qos_parks_total": "counter",
+   "loxilb_proxy_qos_tokens_bytes": "gauge"
+ },
  "locked_revision": {
   "rev": "f08b18beda587217265c9ba6419159119914795c",
   "expect_missing_at_locked": [

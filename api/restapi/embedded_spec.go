@@ -9793,7 +9793,7 @@ func init() {
     },
     "/config/worker/metrics": {
       "get": {
-        "description": "Returns current GPU metrics for all tracked workers",
+        "description": "Returns the GPU metrics currently held for every tracked worker, and whether monitoring is enabled at all.\n\nRequires the global bearer credential; a viewer role is sufficient. Unlike the POST on this path, the read is not refused while monitoring is disabled -- it reports that state instead, through monitoring_enabled. An empty workers list therefore means \"no worker has reported yet\" only when monitoring_enabled is true.\n\nEach entry's timestamp is the ingestion time the worker reported, not the time this response was built, so a consumer computes staleness as now - timestamp. Ingestion rejects any sample whose timestamp is more than 10 seconds old and substitutes the receive time when a sample carries none, so a timestamp here is never further than that behind the moment the gateway accepted it.",
         "summary": "Get all worker metrics",
         "responses": {
           "200": {
@@ -9811,14 +9811,8 @@ func init() {
           "403": {
             "$ref": "#/responses/ManagementForbidden"
           },
-          "500": {
-            "description": "Internal service error",
-            "schema": {
-              "$ref": "#/definitions/Error"
-            }
-          },
           "503": {
-            "description": "Maintenance mode",
+            "description": "Management credential store unavailable",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -17745,9 +17739,13 @@ func init() {
     },
     "WorkerMetricsResponse": {
       "type": "object",
+      "required": [
+        "workers",
+        "monitoring_enabled"
+      ],
       "properties": {
         "monitoring_enabled": {
-          "description": "Whether GPU monitoring is enabled",
+          "description": "Whether GPU worker-metrics monitoring is enabled. When false the gateway accepts no ingestion and workers is always empty; when true an empty workers list means no worker has reported yet.",
           "type": "boolean"
         },
         "workers": {
@@ -28141,7 +28139,7 @@ func init() {
     },
     "/config/worker/metrics": {
       "get": {
-        "description": "Returns current GPU metrics for all tracked workers",
+        "description": "Returns the GPU metrics currently held for every tracked worker, and whether monitoring is enabled at all.\n\nRequires the global bearer credential; a viewer role is sufficient. Unlike the POST on this path, the read is not refused while monitoring is disabled -- it reports that state instead, through monitoring_enabled. An empty workers list therefore means \"no worker has reported yet\" only when monitoring_enabled is true.\n\nEach entry's timestamp is the ingestion time the worker reported, not the time this response was built, so a consumer computes staleness as now - timestamp. Ingestion rejects any sample whose timestamp is more than 10 seconds old and substitutes the receive time when a sample carries none, so a timestamp here is never further than that behind the moment the gateway accepted it.",
         "summary": "Get all worker metrics",
         "responses": {
           "200": {
@@ -28162,14 +28160,8 @@ func init() {
               "$ref": "#/definitions/Error"
             }
           },
-          "500": {
-            "description": "Internal service error",
-            "schema": {
-              "$ref": "#/definitions/Error"
-            }
-          },
           "503": {
-            "description": "Maintenance mode",
+            "description": "Management credential store unavailable",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -37849,9 +37841,13 @@ func init() {
     },
     "WorkerMetricsResponse": {
       "type": "object",
+      "required": [
+        "workers",
+        "monitoring_enabled"
+      ],
       "properties": {
         "monitoring_enabled": {
-          "description": "Whether GPU monitoring is enabled",
+          "description": "Whether GPU worker-metrics monitoring is enabled. When false the gateway accepts no ingestion and workers is always empty; when true an empty workers list means no worker has reported yet.",
           "type": "boolean"
         },
         "workers": {
