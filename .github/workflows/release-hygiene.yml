@@ -23,3 +23,6 @@ jobs:
 
       - name: Run hygiene checks
         run: bash scripts/release-hygiene.sh --base "origin/${{ github.base_ref }}" --skip-gitleaks
+
+      - name: Validate public Swagger contract metadata
+        run: ruby scripts/validate-swagger-contract.rb

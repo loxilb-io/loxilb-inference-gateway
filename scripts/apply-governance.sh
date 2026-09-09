@@ -32,8 +32,7 @@ GATEWAY_REPO="loxilb-io/loxilb-inference-gateway"
 EBPF_REPO="loxilb-io/loxilb-ebpf-inference-gateway"
 
 # Required status checks per repo — must match check-run context names EXACTLY
-# as they appear on a real PR head (verified against PR #26, 2026-08-04). These
-# five mirror upstream loxilb-io/loxilb's required set one-for-one and all run on
+# as they appear on a real PR head. These checks run on
 # EVERY pull_request to main with no path filters, so they can never hang a
 # docs-/monitoring-only PR.
 #
@@ -42,9 +41,9 @@ EBPF_REPO="loxilb-io/loxilb-ebpf-inference-gateway"
 #     is skipped on non-code PRs. Requiring it would block those PRs forever.
 #     Promote it to a required check only behind a path-filter-safe shim job that
 #     always reports (GitHub "skipped == success" pattern).
-#   - hygiene gate / full-history secret scan / CodeQL / govulncheck : useful
-#     signal but either flaky, advisory, or (CodeQL) gated on GHAS while private.
-GATEWAY_CHECKS='["basic-sanity", "build-check-ci", "sctp-lb-sanity", "tcp-lb-sanity", "udp-lb-sanity"]'
+#   - full-history secret scan / CodeQL / govulncheck : useful signal but either
+#     advisory or (CodeQL) gated on GHAS while private.
+GATEWAY_CHECKS='["basic-sanity", "build-check-ci", "sctp-lb-sanity", "tcp-lb-sanity", "udp-lb-sanity", "hygiene gate"]'
 EBPF_CHECKS='[]'   # eBPF fork is consumed via submodule pin; gateway CI is the gate
 
 APPLY=0

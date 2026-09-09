@@ -71,7 +71,7 @@ run_gate kv-dataplane -ec 'make -C loxilb-ebpf/common test_kv'
 if [[ -z ${TEST_SOURCE_DIR:-} ]]; then
   run_gate swagger-contract -ec 'go test -json -count=1 ./api/cmd/sync-swagger && go run ./api/cmd/sync-swagger -check'
   run_gate inventory -ec 'go test -json -count=1 ./cicd/ai-multitier-contract/inventory && go run ./cicd/ai-multitier-contract/inventory -check cicd/ai-multitier-contract/argument-inventory.json'
-  run_gate harness -ec 'python3 -B -m unittest discover -s cicd/ai-multitier-contract -p "test_*.py" && python3 -B cicd/ai-multitier-contract/coverage.py cicd/ai-multitier-contract/argument-inventory.json cicd/ai-multitier-contract/coverage-ledger.json'
+  run_gate harness -ec 'python3 -B -m unittest discover -s cicd/ai-multitier-contract -p "test_*.py"'
 else
   printf 'swagger-contract\tNOT_RUN_BASELINE_TEST_OVERLAY\n' >> "$evidence/results.tsv"
   printf 'inventory\tNOT_RUN_BASELINE_TEST_OVERLAY\n' >> "$evidence/results.tsv"

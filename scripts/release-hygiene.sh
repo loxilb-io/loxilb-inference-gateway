@@ -55,6 +55,17 @@ else
   pass "no AI tooling artifacts tracked"
 fi
 
+# 2b. Private/internal paths tracked ------------------------------------------
+# These paths are local quarantine or operator-only evidence areas. Checking
+# the committed index catches `git add -f` attempts that bypass .gitignore.
+FORBIDDEN_PATHS_RE='^(docs/internal/|api/contract-audit/|private/|\.private/|deploy/marketing-analytics/|\.github/workflows/marketing-analytics-|cicd/private-|cicd/vllm-loxilb-kvcache-aws-small/|cicd/ai-multitier-contract/coverage-ledger\.json$)'
+if git ls-files | grep -qE "$FORBIDDEN_PATHS_RE"; then
+  fail "private/internal paths are tracked:"
+  git ls-files | grep -E "$FORBIDDEN_PATHS_RE" | head -20
+else
+  pass "no private/internal paths tracked"
+fi
+
 # 3. Internal hosts / infrastructure identifiers ------------------------------
 # (.gitignore and this script are allowlisted: they name the patterns
 # themselves. The instance-id regex requires a non-word char before "i-" so
@@ -100,6 +111,19 @@ if git grep -Iqn -E "$PRIVTREE_RE" HEAD -- \
      ':(exclude).gitignore' ':(exclude)scripts/release-hygiene.sh' | head -20
 else
   pass "no references into never-published trees"
+fi
+
+# 5c. Internal audit/control-plane markers in public content ------------------
+# This narrow vocabulary catches misplaced approval records and private
+# evidence runbooks without rejecting ordinary public testbed documentation.
+INTERNAL_MARKERS_RE='private operational location|[Aa]pproval-gated implementation campaign|AWAITING APPROVAL|NOT AUTHORIZED; split|campaign worktree|/root/loxilb-ai-multitier-evidence'
+if git grep -Iqn -E "$INTERNAL_MARKERS_RE" HEAD -- \
+     ':(exclude).gitignore' ':(exclude)scripts/release-hygiene.sh' 2>/dev/null; then
+  fail "internal audit/approval markers in tracked files:"
+  git grep -In -E "$INTERNAL_MARKERS_RE" HEAD -- \
+     ':(exclude).gitignore' ':(exclude)scripts/release-hygiene.sh' | head -20
+else
+  pass "no internal audit/approval markers"
 fi
 
 # 6. Private key material (belt-and-braces on top of gitleaks) ----------------

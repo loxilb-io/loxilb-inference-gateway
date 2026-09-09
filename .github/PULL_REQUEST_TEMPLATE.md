@@ -26,6 +26,7 @@
 ## Checklist
 - [ ] My commits are [DCO signed-off](https://github.com/apps/dco) (`git commit -s`)
 - [ ] I have not committed secrets, real infrastructure inventories, or credentials
+- [ ] Non-public review records, approval notes, and evidence ledgers remain in access-controlled storage
 - [ ] No internal/planning references in comments or docs
 - [ ] Docs updated where relevant (`docs/load-balancing/`)
 

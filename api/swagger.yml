@@ -41,7 +41,7 @@ x-loxilb-contract-relations:
     PATCH has been merged with the live declaration. No UI interpreter is shipped
     by this metadata. Static enforcement evidence is not runtime qualification;
     unknown rules must be displayed as unresolved, not silently treated as passed.
-    See api/contract-audit/relationships.md for the versioned rule semantics.
+    See api/contract-relations.md for the versioned rule semantics.
   rules:
     - id: LB-PD-FULLPROXY
       kind: requires

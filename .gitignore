@@ -76,6 +76,11 @@ claude-agents/
 # durable work to a separately access-controlled private repository or wiki.
 docs/internal/
 
+# Contract-audit working papers and evidence ledgers are internal governance
+# records. Public contract semantics belong in api/contract-relations.md.
+/api/contract-audit/
+/cicd/ai-multitier-contract/coverage-ledger.json
+
 # Defense-in-depth for private marketing systems accidentally created outside
 # docs/internal/. These paths must remain absent from the public Git index.
 /private/
