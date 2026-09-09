@@ -114,6 +114,26 @@ jobs:
           sudo -E env "PATH=$PATH" go test -count=1 ./pkg/authz ./pkg/pgstore
           sudo -E env "PATH=$PATH" go test -count=1 -race ./pkg/aikey ./pkg/user
 
+      - name: Management-plane API and listener-policy gates
+        # Neither of these packages was executed by any workflow.
+        #
+        # ./api/restapi carries the spec-truthfulness tests -- the
+        # responder-to-spec binding, the declared-status matrix, the extras-spec
+        # pins. ./options carries the management-profile policy tests, which
+        # decide where the API may listen and, now, whether /metrics demands a
+        # credential. `make test` is `go test .`, the root package only, so both
+        # sets compiled and passed solely when somebody ran them by hand. A gate
+        # nothing executes is a comment.
+        #
+        # They belong in this job because api/restapi links the eBPF userland
+        # through the cert handler, which this job has already built.
+        env:
+          AIKEY_TEST_PG: required
+          AIKEY_TEST_DSN: postgres://aigwuser:ci-aigw-pw@127.0.0.1:5432/loxilb
+        run: |
+          sudo -E env "PATH=$PATH" go vet ./api/restapi/... ./options
+          sudo -E env "PATH=$PATH" go test -count=1 ./api/restapi/... ./options
+
       - name: Datapath policy gates
         # Two exclusions, both pre-existing and unrelated to this plane: the
         # in-process bring-up needs a privileged eBPF environment the runner

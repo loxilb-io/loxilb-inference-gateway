@@ -120,3 +120,55 @@ func MgmtListenPlan() (MgmtListen, error) {
 	// fail-closed answer for a caller that bypassed flag parsing.
 	return MgmtListen{}, fmt.Errorf("unknown mgmt-profile %q", Opts.MgmtProfile)
 }
+
+// Values accepted by --metrics-auth.
+const (
+	MetricsAuthAuto    = "auto"
+	MetricsAuthRequire = "require"
+	MetricsAuthDisable = "disable"
+)
+
+// MetricsAuthPlan decides whether GET /metrics demands a bearer token, from
+// the metrics-auth setting and the management profile together.
+//
+// The route is declared `security: []` in the API spec because a Prometheus
+// scraper does not send a bearer, and for most deployments that is the right
+// default. It is the wrong default for exactly one profile. `remote-tls`
+// refuses to start without TLS and without an authentication service, so an
+// operator selects it to say "this management API is reachable from elsewhere
+// and nothing on it is anonymous" -- and /metrics then served the full tenant
+// roster, per-tenant quota limits and per-tenant consumption to anyone who
+// could reach the port. The profile's own promise is what makes that a defect
+// rather than a default.
+//
+// Three values rather than a boolean, because a boolean cannot distinguish
+// "left at the default" from "deliberately turned off", and those must not be
+// treated the same under remote-tls. Defaulting to on there would silently
+// break a scraper on upgrade if it were the only signal; refusing to start
+// only for an EXPLICIT disable means the operator who wants that combination
+// has to say so, and is then told why they cannot have it.
+func MetricsAuthPlan() (required bool, err error) {
+	remote := Opts.MgmtProfile == "remote-tls"
+
+	switch Opts.MetricsAuth {
+	case MetricsAuthRequire:
+		return true, nil
+
+	case MetricsAuthDisable:
+		if remote {
+			return false, fmt.Errorf("mgmt-profile remote-tls refuses --metrics-auth=disable: " +
+				"/metrics carries per-tenant labels (tenant rosters, quota limits and consumption), " +
+				"and a profile that will not start without an authentication service must not serve " +
+				"them anonymously. Use --metrics-auth=auto, and scrape with a bearer token")
+		}
+		return false, nil
+
+	case MetricsAuthAuto, "":
+		// Required exactly where the profile has already promised that
+		// nothing on this listener is anonymous.
+		return remote, nil
+	}
+	// go-flags' choice list already refuses unknown values; this is the
+	// fail-closed answer for a caller that bypassed flag parsing.
+	return true, fmt.Errorf("unknown metrics-auth %q", Opts.MetricsAuth)
+}
