@@ -66,7 +66,17 @@ def extract(tree, go="go", repo_root=REPO):
         cwd=repo_root, capture_output=True, text=True)
     if out.returncode != 0:
         raise RuntimeError(f"extractor failed on {tree}:\n{out.stderr}")
-    defs = json.loads(out.stdout)
+    # A tree with no Go files marshals as JSON null, not [].
+    defs = json.loads(out.stdout) or []
+    # Zero families is never a real answer about loxilb, and it is the most
+    # dangerous possible one: every gateway family would be classified absent,
+    # and a consumer denying by default on absent would hide its whole
+    # dashboard. The overwhelmingly likely cause is --upstream pointing
+    # somewhere that is not a loxilb checkout.
+    if not defs:
+        raise RuntimeError(
+            f"no metric definitions found under {tree} -- is that a loxilb "
+            f"checkout? Refusing to report every family absent.")
     bad = [d for d in defs if d.get("unresolved") or not d.get("name")]
     if bad:
         where = ", ".join(f"{d.get('file')}:{d.get('line')}" for d in bad[:5])
@@ -174,11 +184,26 @@ def build(manifest, upstream_defs, upstream_revision, source_revision,
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-def git_rev(tree):
+def git_rev(tree, required):
+    """Read a tree's HEAD.
+
+    `required` separates the two revisions this artifact carries, which are not
+    equally important. The UPSTREAM revision is load-bearing: it is what the
+    parity set was computed against and what CI checks out to re-verify, so not
+    knowing it is fatal. The gateway's own revision is provenance only -- it is
+    excluded from the --check comparison because it moves on every commit -- so
+    a tree that is not a git checkout (an export, a tarball, an rsync'd build
+    directory) must still be able to verify the artifact. Failing there would
+    have made --check unusable off a git checkout while passing in CI, where
+    actions/checkout always provides one.
+    """
     out = subprocess.run(["git", "-C", tree, "rev-parse", "HEAD"],
                          capture_output=True, text=True)
     if out.returncode != 0:
-        raise RuntimeError(f"cannot read a revision from {tree}: {out.stderr.strip()}")
+        if required:
+            raise RuntimeError(
+                f"cannot read a revision from {tree}: {out.stderr.strip()}")
+        return ""
     return out.stdout.strip()
 
 
@@ -273,8 +298,12 @@ def main():
         print(f"oss-parity: {e}", file=sys.stderr)
         return 1
 
-    upstream_revision = git_rev(args.upstream)
-    source_revision = git_rev(REPO)
+    try:
+        upstream_revision = git_rev(args.upstream, required=True)
+    except RuntimeError as e:
+        print(f"oss-parity: {e}", file=sys.stderr)
+        return 1
+    source_revision = git_rev(REPO, required=False)
 
     committed = None
     if os.path.exists(ARTIFACT):
