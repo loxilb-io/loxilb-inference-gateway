@@ -452,21 +452,26 @@ type epHostOpts struct {
 // parseExpectedCodes parses Octavia health-monitor expected_codes syntax:
 // single ("200"), comma-list ("200,202"), and range ("200-204"); the empty string
 // defaults to "200". Each part becomes an inclusive [lo,hi] pair. Malformed parts
-// degrade safely (strconv.Atoi error ⇒ 0, a value no real HTTP status hits) so the
-// health goroutine never panics.
+// degrade safely (parse or uint16-range error ⇒ 0, a value no real HTTP status
+// hits) so the health goroutine never panics or wraps oversized input.
 func parseExpectedCodes(s string) [][2]uint16 {
 	if s == "" {
 		return [][2]uint16{{200, 200}}
 	}
 	var out [][2]uint16
+	parseCode := func(raw string) uint16 {
+		code, err := strconv.ParseUint(strings.TrimSpace(raw), 10, 16)
+		if err != nil {
+			return 0
+		}
+		return uint16(code)
+	}
 	for _, part := range strings.Split(s, ",") {
 		if lo, hi, ok := strings.Cut(part, "-"); ok {
-			l, _ := strconv.Atoi(strings.TrimSpace(lo))
-			h, _ := strconv.Atoi(strings.TrimSpace(hi))
-			out = append(out, [2]uint16{uint16(l), uint16(h)})
+			out = append(out, [2]uint16{parseCode(lo), parseCode(hi)})
 		} else {
-			c, _ := strconv.Atoi(strings.TrimSpace(part))
-			out = append(out, [2]uint16{uint16(c), uint16(c)})
+			code := parseCode(part)
+			out = append(out, [2]uint16{code, code})
 		}
 	}
 	return out
@@ -5958,13 +5963,13 @@ func (R *RuleH) epCheckNow(ep *epHost) {
 	}
 }
 
-// tlsHelloProbe runs handshake-only TLS liveness probe against
-// addr:port. It returns true iff the TLS handshake completes. The cert chain is
-// INTENTIONALLY NOT validated (InsecureSkipVerify) — tls-hello is a liveness probe,
-// not a trust probe (any cert, including self-signed, marks the port UP). SNI is set
-// to sni (the health-monitor's domain_name consistency); an empty sni falls back
-// to the member address so a bare-IP TLS listener still completes. A non-TLS port never
-// sends a ServerHello, so the handshake fails ⇒ the port is DOWN.
+// tlsHelloProbe runs handshake-only TLS liveness against addr:port. It returns
+// true when the peer completes TLS negotiation or reaches certificate
+// verification. This is a liveness probe, not a trust probe: an otherwise
+// valid self-signed or name-mismatched certificate still proves that the
+// endpoint speaks TLS. Default verification remains enabled so this probe
+// never creates an application-data channel with an untrusted peer. Protocol,
+// I/O, and connection errors still mark the endpoint DOWN.
 func tlsHelloProbe(addr net.IP, port uint16, sni string) bool {
 	serverName := sni
 	if serverName == "" {
@@ -5974,11 +5979,15 @@ func tlsHelloProbe(addr net.IP, port uint16, sni string) bool {
 	conn, err := tls.DialWithDialer(dialer, "tcp",
 		fmt.Sprintf("%s:%d", addr.String(), port),
 		&tls.Config{
-			InsecureSkipVerify: true, // handshake-only liveness — chain NOT validated
-			ServerName:         serverName,
+			ServerName: serverName,
 		})
 	if err != nil {
-		return false
+		// CertificateVerificationError is reached only after the peer has
+		// spoken TLS and presented a parseable certificate. Trust or hostname
+		// failure is therefore UP for this handshake-only health signal; no
+		// application data is sent on the rejected connection.
+		var verifyErr *tls.CertificateVerificationError
+		return errors.As(err, &verifyErr)
 	}
 	conn.Close()
 	return true

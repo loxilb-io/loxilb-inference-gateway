@@ -237,7 +237,12 @@ run_seven() { # run_seven <mode: non501|unconfigured503|unauth401>
       esac
     done
     local body code
-    body=$(lcurl -w '\n%{http_code}' "${args[@]}")
+    # POST and DELETE are routed through the snapshot freeze middleware. A
+    # debounced auto-persist can therefore overlap this matrix briefly; use
+    # the mutation-aware client so that only the two documented transient
+    # freeze responses are retried. GET remains harmless through the same
+    # helper because it never receives those bodies.
+    body=$(lcurl_mut -w '\n%{http_code}' "${args[@]}")
     code=$(echo "$body" | tail -n1)
     case "$mode" in
       non501)          chk_not "POL-1 $label is registered" "501" "$code" ;;

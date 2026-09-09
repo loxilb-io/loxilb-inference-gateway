@@ -29,9 +29,9 @@ import (
 )
 
 // selfSignedTLSCert mints an ephemeral self-signed RSA cert for "localhost"/127.0.0.1
-// so the tls-hello probe can be exercised against a real TLS handshake without
-// any on-disk fixture. The chain is intentionally untrusted — tls-hello is handshake-only
-// liveness, it must NOT validate the chain.
+// so the tls-hello probe can be exercised against a real TLS exchange without
+// any on-disk fixture. The chain is intentionally untrusted: reaching the
+// verifier still proves TLS liveness without opening an application channel.
 func selfSignedTLSCert(t *testing.T) tls.Certificate {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -53,8 +53,8 @@ func selfSignedTLSCert(t *testing.T) tls.Certificate {
 	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
 }
 
-// startTLSListener spins up a real TLS listener on 127.0.0.1:0 that completes the
-// handshake (any client) and immediately closes. Returns the bound port.
+// startTLSListener spins up a real TLS listener on 127.0.0.1:0 that negotiates
+// through certificate presentation and then closes. Returns the bound port.
 func startTLSListener(t *testing.T) uint16 {
 	t.Helper()
 	cert := selfSignedTLSCert(t)
@@ -107,12 +107,23 @@ func startPlainTCPListener(t *testing.T) uint16 {
 	return port
 }
 
-// TestTLSHelloProbeUpOnTLSPort: a tls-hello probe against a real TLS listener with a
-// self-signed (untrusted) cert completes the handshake ⇒ UP. Chain is NOT validated.
+// TestTLSHelloProbeUpOnTLSPort: a tls-hello probe against a real TLS listener
+// with a self-signed cert reaches certificate verification ⇒ UP.
 func TestTLSHelloProbeUpOnTLSPort(t *testing.T) {
 	port := startTLSListener(t)
 	if !tlsHelloProbe(net.ParseIP("127.0.0.1"), port, "localhost") {
 		t.Fatalf("tls-hello against a real TLS listener should be UP (handshake completes, self-signed accepted)")
+	}
+}
+
+// TestTLSHelloProbeUpOnNameMismatch pins the liveness/trust separation. The
+// certificate is valid for localhost, but a different SNI still counts as UP
+// because the peer reached certificate verification without establishing an
+// application-data channel.
+func TestTLSHelloProbeUpOnNameMismatch(t *testing.T) {
+	port := startTLSListener(t)
+	if !tlsHelloProbe(net.ParseIP("127.0.0.1"), port, "other.example") {
+		t.Fatalf("tls-hello should treat a certificate name mismatch as TLS liveness")
 	}
 }
 

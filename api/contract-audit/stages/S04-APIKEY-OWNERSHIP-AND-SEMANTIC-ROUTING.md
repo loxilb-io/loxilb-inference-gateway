@@ -39,9 +39,9 @@ routing behavior, but they do not claim ownership of `X-Api-Key`.
 
 ## Authoritative environment and artifact identity
 
-All verdict-bearing builds and runtime tests ran on `ssh kv-loxilb-ctl`, an
-Ubuntu 24.04 controller with Linux 6.8. The repository `make docker` workflow
-built the runtime image. A Dockerfile `test-build` image provided the unit rail.
+All verdict-bearing builds and runtime tests ran on an isolated Ubuntu 24.04
+Linux 6.8 controller. The repository `make docker` workflow built the runtime
+image. A Dockerfile `test-build` image provided the unit rail.
 
 - Executable-source base: Gateway `bddade8387267129f64e2168d1f874586112644e`
   plus the S04 patch; eBPF PR head
