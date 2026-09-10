@@ -17,6 +17,7 @@
 package loxinet
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -119,6 +120,15 @@ func TestJWTAuthProfileDeleteRefusedWhileReferenced(t *testing.T) {
 		t.Fatalf("referenced profile deleted")
 	} else if !strings.Contains(err.Error(), "10.0.0.1:8080/tcp") {
 		t.Fatalf("refusal does not name the referencing rule: %v", err)
+	} else {
+		// The type is what carries the status: the spec answers this route's
+		// reference refusal with 409, and the wording matches no phrase the
+		// message classifier reads as a conflict. Untyped, it degrades to a
+		// 400 and the caller is told to fix a request that was never wrong.
+		var conflict *cmn.ConflictError
+		if !errors.As(err, &conflict) {
+			t.Fatalf("refusal is %T, want *cmn.ConflictError so the API answers 409", err)
+		}
 	}
 	if got, _ := h.ProfileGet(); len(got) != 1 {
 		t.Fatalf("refused delete still removed the profile: %+v", got)

@@ -110,10 +110,12 @@ func (h *JWTAuthProfileH) ProfileDel(name string) (int, error) {
 		return JwtAuthProfileNoExistErr, fmt.Errorf("no such jwt auth profile %s", name)
 	}
 	if refs := h.ruleRefs(name); len(refs) > 0 {
-		// The caller asked for something the current configuration forbids,
-		// and naming the rules is the answer they need: a 400, not a 500
-		// that hides the reference list behind a log reference.
-		return JwtAuthProfileRefErr, &cmn.ValidationError{
+		// Nothing about the request is malformed: it collides with the
+		// configuration as it stands, and the caller clears it by detaching
+		// the rules, not by rewriting the call. That is the 409 the spec
+		// declares for this route. Naming the rules is the answer they
+		// need — not a 500 that hides the list behind a log reference.
+		return JwtAuthProfileRefErr, &cmn.ConflictError{
 			Err: fmt.Errorf("jwt auth profile %s is referenced by rule(s): %s",
 				name, strings.Join(refs, ", ")),
 		}
