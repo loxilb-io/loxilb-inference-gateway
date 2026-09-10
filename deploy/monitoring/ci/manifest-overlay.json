@@ -10,14 +10,14 @@
   "Combined codes (D+P etc.) apply both behaviors."
  ],
  "expected": {
-  "total": 232,
+  "total": 233,
   "owners": {
-   "loxilb": 209,
+   "loxilb": 210,
    "loxilb-ai-controller": 19,
    "loxilb-kv-agent": 4
   },
   "classes": {
-   "default": 176,
+   "default": 177,
    "dpu-doca": 24,
    "aictrl-bridge": 8,
    "kv-agent-health": 1,
@@ -234,6 +234,7 @@
   "loxilb_pd_trie_nodes": "E",
   "loxilb_pd_trt_ctx_early_exit_total": "E",
   "loxilb_persist_total": "P",
+  "loxilb_policer_attached": "C",
   "loxilb_processed_bytes_total": "E",
   "loxilb_processed_packets_total": "E",
   "loxilb_processed_sctp_bytes_total": "E",
@@ -348,6 +349,7 @@
    "loxilb_ai_token_quota_model_limit_tokens": "gauge",
    "loxilb_ai_token_quota_model_utilization": "gauge",
    "loxilb_ai_token_quota_utilization": "gauge",
+   "loxilb_policer_attached": "gauge",
    "loxilb_proxy_http_ttfb_seconds": "histogram",
    "loxilb_proxy_qos_bytes_delayed_total": "counter",
    "loxilb_proxy_qos_bytes_passed_total": "counter",
@@ -504,7 +506,7 @@
   "burndown": {
    "unverified_max": 83,
    "unclassified_max": 0,
-   "_note": "176 packaged families, all classified on 2026-09-10: 9 verified-runtime (the QoS shaper group measured in the plan's B.5b, plus ai_pd_session_hits verified 2026-09-11), 11 verified-static, 73 conditional-with-proven-writer, 83 writer-mapped. unclassified_max is done at 0; unverified_max is the remaining work and comes down as scenarios M00-M17 produce evidence. Never raise either."
+   "_note": "177 packaged families, all classified: 9 verified-runtime (the QoS shaper group measured in the plan's B.5b, plus ai_pd_session_hits verified 2026-09-11), 12 verified-static (loxilb_policer_attached added 2026-09-11), 73 conditional-with-proven-writer, 83 writer-mapped. unclassified_max is done at 0; unverified_max is the remaining work and comes down as scenarios M00-M17 produce evidence. Never raise either."
   },
   "unverifiable_roots": [
    "loxilb-ebpf/"
@@ -723,6 +725,23 @@
      "loxilb-ebpf/common/sockproxy_http.c:6242"
     ],
     "evidence": "metric coverage RCA and plan, section A.3; WP-2 asserts this equals the number of no-usage responses exactly"
+   },
+   "loxilb_policer_attached": {
+    "status": "verified-static",
+    "writer_sources": [
+     { "symbol": "Collect", "kind": "method", "receiver": "policerAttachmentCollector", "file": "api/prometheus/policer_metrics.go", "def_line": 60, "writes": "policerAttachedDesc" },
+     { "symbol": "init", "kind": "func", "file": "api/prometheus/policer_metrics.go", "def_line": 74, "call_line": 75, "calls": "policerAttachmentCollector", "entry_point": "registry-collector", "note": "registry-mediated dispatch: the link is the receiver type handed to prometheus.MustRegister, not a direct call to Collect" }
+    ],
+    "data_sources": [
+     { "symbol": "PublishPolicerAttachment", "kind": "func", "file": "api/prometheus/policer_metrics.go", "def_line": 81, "writes": "policerAttachmentStore" },
+     { "symbol": "publishAttachment", "kind": "method", "receiver": "PolH", "file": "pkg/loxinet/qospol.go", "def_line": 170, "call_line": 178, "calls": "PublishPolicerAttachment" },
+     { "symbol": "PolTicker", "kind": "method", "receiver": "PolH", "file": "pkg/loxinet/qospol.go", "def_line": 391, "call_line": 428, "calls": "publishAttachment", "note": "also republished synchronously from PolAdd (qospol.go:272), PolAssociateLbRule (:333) and PolDelete (:362), so a config change is visible without waiting for the tick" },
+     { "symbol": "ZoneTicker", "kind": "method", "receiver": "ZoneH", "file": "pkg/loxinet/zones.go", "def_line": 227, "call_line": 239, "calls": "PolTicker" },
+     { "symbol": "loxiNetTicker", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 220, "call_line": 332, "calls": "ZoneTicker" },
+     { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 358, "call_line": 861, "calls": "loxiNetTicker", "note": "go statement; the ticker goroutine runs for the life of the process" },
+     { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1323, "call_line": 1324, "calls": "loxiNetInit", "entry_point": "main" }
+    ],
+    "evidence": "api/prometheus/policer_metrics_test.go asserts the published store is emitted verbatim on gather (0 for pending, 1 for attached, series vanish after republish without the policer); pkg/loxinet attachment tests pin the attached() truth table. Not yet observed on a bed; the ghost-policer red twin owns the runtime proof."
    },
    "loxilb_proxy_qos_bytes_passed_total": {
     "status": "verified-runtime",

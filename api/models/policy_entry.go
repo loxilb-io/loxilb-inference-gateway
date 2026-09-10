@@ -20,6 +20,10 @@ import (
 // swagger:model PolicyEntry
 type PolicyEntry struct {
 
+	// Read-only on GET: true only when the policer and every one of its attachment points are programmed in the datapath. False means an attachment is still pending re-drive (for example its rule does not exist yet) and the policer currently shapes nothing.
+	// Read Only: true
+	Attached *bool `json:"attached,omitempty"`
+
 	// Policy name
 	// Required: true
 	PolicyIdent *string `json:"policyIdent"`
@@ -106,6 +110,10 @@ func (m *PolicyEntry) validateTargetObject(formats strfmt.Registry) error {
 func (m *PolicyEntry) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
 	var res []error
 
+	if err := m.contextValidateAttached(ctx, formats); err != nil {
+		res = append(res, err)
+	}
+
 	if err := m.contextValidatePolicyInfo(ctx, formats); err != nil {
 		res = append(res, err)
 	}
@@ -117,6 +125,15 @@ func (m *PolicyEntry) ContextValidate(ctx context.Context, formats strfmt.Regist
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
+	return nil
+}
+
+func (m *PolicyEntry) contextValidateAttached(ctx context.Context, formats strfmt.Registry) error {
+
+	if err := validate.ReadOnly(ctx, "attached", "body", m.Attached); err != nil {
+		return err
+	}
+
 	return nil
 }
 
