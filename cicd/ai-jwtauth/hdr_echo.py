@@ -26,17 +26,42 @@ class Handler(BaseHTTPRequestHandler):
         v = self.headers.get(name)
         return v if v else "-"
 
+    def _drain_identity(self, n):
+        while n > 0:
+            chunk = self.rfile.read(min(n, 65536))
+            if not chunk:
+                return
+            n -= len(chunk)
+
+    def _drain_chunked(self):
+        while True:
+            line = self.rfile.readline(65536)
+            if not line:
+                return
+            size = int(line.split(b";")[0].strip() or b"0", 16)
+            if size == 0:
+                while True:  # trailers, up to the blank line
+                    trailer = self.rfile.readline(65536)
+                    if not trailer or trailer in (b"\r\n", b"\n"):
+                        return
+            self._drain_identity(size)
+            self.rfile.read(2)  # the CRLF after each chunk
+
     def _respond(self):
         # Drain the body so keep-alive framing stays intact for the next
-        # request on this connection.
-        n = int(self.headers.get("Content-Length") or 0)
-        if n > 0:
-            remaining = n
-            while remaining > 0:
-                chunk = self.rfile.read(min(remaining, 65536))
-                if not chunk:
-                    break
-                remaining -= len(chunk)
+        # request on this connection. A chunked body has no Content-Length,
+        # so reading only that length would leave the body in the socket and
+        # the next request on this connection would parse body bytes as its
+        # request line. On a malformed body, stop reusing the connection
+        # rather than answer from a stream we have lost our place in.
+        encoding = (self.headers.get("Transfer-Encoding") or "").lower()
+        try:
+            if "chunked" in encoding:
+                self._drain_chunked()
+            else:
+                self._drain_identity(int(self.headers.get("Content-Length") or 0))
+        except (ValueError, OSError):
+            self.close_connection = True
 
         body = "%s|authz=%s|apikey=%s|xauth_tenant=%s|xauth_user=%s" % (
             LABEL,

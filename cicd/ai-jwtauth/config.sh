@@ -392,16 +392,16 @@ print('.'.join([h, p, s]))
 ")
 [ -n "$TOK_BADSIG" ] || { echo "FATAL: could not build the bad-signature token"; exit 1; }
 
+# Quoted: validation.sh sources this file, so an unquoted credential would be
+# word-split and glob-expanded by the shell before it ever reached a request.
 cat > .state <<EOF
-RAW_KEY=$RAW_KEY
-TOK_ALICE=$TOK_ALICE
-TOK_BOB=$TOK_BOB
-TOK_CAROL=$TOK_CAROL
-TOK_BADSIG=$TOK_BADSIG
-KC_NAME=$KC_NAME
-KC_ISSUER=$KC_ISSUER
-KC_CLIENT_SHORT=aigw-short
-SDIR=$SDIR
+RAW_KEY='$RAW_KEY'
+TOK_ALICE='$TOK_ALICE'
+TOK_BOB='$TOK_BOB'
+TOK_CAROL='$TOK_CAROL'
+TOK_BADSIG='$TOK_BADSIG'
+KC_ISSUER='$KC_ISSUER'
+KC_CLIENT_SHORT='aigw-short'
 EOF
 
 echo "tokens minted (alice/bob/carol/dave/bad-signature)"

@@ -29,15 +29,27 @@ fi
 # shellcheck disable=SC1091
 source .state
 
+# Both helpers refuse an empty haystack. A request that never completed
+# proves nothing either way, and for chk_not_has "absent from nothing" would
+# otherwise be trivially true — a timeout would quietly turn every negative
+# assertion green. The needle is matched literally: quoted inside [[ ]] it is
+# a string, not a glob, so a needle containing * ? or [ cannot silently match
+# something it does not equal.
 chk_has() { # chk_has <name> <needle> <haystack>
-  if [ "${3#*$2}" != "$3" ]; then
+  if [ -z "$3" ]; then
+    echo "  [FAIL] $1 — empty response; the request never completed"; FAIL=$((FAIL + 1)); return
+  fi
+  if [[ "$3" == *"$2"* ]]; then
     echo "  [PASS] $1"; PASS=$((PASS + 1))
   else
     echo "  [FAIL] $1 — did not find '$2' in: $(echo "$3" | tr '\n' ' ' | head -c 300)"; FAIL=$((FAIL + 1))
   fi
 }
 chk_not_has() { # chk_not_has <name> <forbidden> <haystack>
-  if [ "${3#*$2}" = "$3" ]; then
+  if [ -z "$3" ]; then
+    echo "  [FAIL] $1 — empty response; the request never completed"; FAIL=$((FAIL + 1)); return
+  fi
+  if [[ "$3" != *"$2"* ]]; then
     echo "  [PASS] $1"; PASS=$((PASS + 1))
   else
     echo "  [FAIL] $1 — found forbidden '$2' in: $(echo "$3" | tr '\n' ' ' | head -c 300)"; FAIL=$((FAIL + 1))
@@ -322,6 +334,88 @@ r=$(bearer_req 2044 "$body_llama" "$TOK_ALICE")
 chk_has     "G1 503 status"                  "503"                       "$(status_of "$r")"
 chk_has     "G1 policy_store_unavailable"    "policy_store_unavailable"  "$r"
 chk_not_has "G1 backend NOT reached"         "server-llama"              "$r"
+
+echo ""
+echo "== H: the profile reference is validated, both directions =="
+echo "   (kept last: H1 deliberately tries to create a rule, so a build that"
+echo "    wrongly accepts it cannot disturb the legs above)"
+
+# The assertions below read CONFIGURED STATE back rather than guessing which
+# 2xx a create or delete returns: what matters is whether the profile is
+# still there, not which success code carried the answer.
+profile_names() {
+  $hexec l3h1 curl -s --max-time 8 \
+    "http://$VIP:11111/netlox/v1/config/ai/jwtauthprofile" |
+  python3 -c '
+import sys, json
+try:
+    doc = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+names = [str(p.get("name", "")) for p in doc.get("jwtAuthProfileAttr") or []]
+# Space-padded so an assertion can match a whole name: "kc" must not be
+# satisfied by "kc-wrongaud".
+print(" " + " ".join(names) + " ")
+'
+}
+
+echo ""
+echo "H0: control — the listing is readable and names the profiles config.sh made"
+names=$(profile_names)
+chk_has "H0 kc listed"          " kc "          "$names"
+chk_has "H0 kc-fwd listed"      " kc-fwd "      "$names"
+chk_has "H0 kc-blackhole listed" " kc-blackhole " "$names"
+
+echo ""
+echo "H1: a jwt-mode rule naming a profile that is not configured → rejected"
+echo "    (accepting it would leave a service that can only ever fail closed)"
+r=$($hexec l3h1 curl -s --max-time 8 -w ' http_code=%{http_code}' -X POST \
+  "http://$VIP:11111/netlox/v1/config/loadbalancer" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "serviceArguments": {
+      "externalIP": "10.10.10.254", "port": 2049, "protocol": "tcp",
+      "sel": 0, "mode": 4, "host": "10.10.10.254",
+      "path_prefix": "/", "path_match_mode": "prefix",
+      "model_name": "llama-70b",
+      "api_key_auth": "jwt", "jwt_auth_profile": "no-such-profile",
+      "inactiveTimeOut": 30
+    },
+    "endpoints": [{"endpointIP": "31.31.31.1", "targetPort": 8080, "weight": 1}]
+  }')
+chk_not_has "H1 rule not accepted"  "Success"       "$r"
+chk_not_has "H1 status is not 200"  "http_code=200" "$r"
+
+echo ""
+echo "H2: deleting a profile that live rules reference → refused"
+echo "    (ports 2040 and 2041 both point at kc)"
+r=$($hexec l3h1 curl -s --max-time 8 -w ' http_code=%{http_code}' -X DELETE \
+  "http://$VIP:11111/netlox/v1/config/ai/jwtauthprofile/kc")
+chk_not_has "H2 delete did not report success" "http_code=200" "$r"
+chk_not_has "H2 delete did not report success" "http_code=204" "$r"
+names=$(profile_names)
+chk_has "H2 kc is still configured" " kc " "$names"
+
+echo ""
+echo "H3: control — an UNREFERENCED profile deletes cleanly, so H2 is the"
+echo "    reference guard and not a delete path that never works"
+r=$($hexec l3h1 curl -s --max-time 8 -w ' http_code=%{http_code}' -X POST \
+  "http://$VIP:11111/netlox/v1/config/ai/jwtauthprofile" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "kc-scratch", "issuer": "http://127.0.0.1:9/realms/scratch",
+       "jwks_url": "http://127.0.0.1:9/certs", "audiences": []}')
+names=$(profile_names)
+chk_has "H3 scratch profile created" " kc-scratch " "$names"
+r=$($hexec l3h1 curl -s --max-time 8 -w ' http_code=%{http_code}' -X DELETE \
+  "http://$VIP:11111/netlox/v1/config/ai/jwtauthprofile/kc-scratch")
+names=$(profile_names)
+chk_not_has "H3 scratch profile deleted" " kc-scratch " "$names"
+
+echo ""
+echo "H4: control — kc survived H2 and the service it backs still admits"
+r=$(bearer_req 2040 "$body_llama" "$TOK_ALICE")
+chk_has "H4 200 status"         "200"          "$(status_of "$r")"
+chk_has "H4 llama pool answers" "server-llama" "$r"
 
 echo ""
 if [ $FAIL -ne 0 ]; then

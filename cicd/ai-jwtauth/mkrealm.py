@@ -18,6 +18,13 @@ Realm shape:
 import json
 import sys
 
+# Every name below derives from REALM. The realm name appears in the default
+# roles composite as well as in the realm block, and a rename that updated
+# only one of them would refuse every password grant with "Account is not
+# fully set up" — an error that reads like a bad credential and is not one.
+REALM = "aigw"
+DEFAULT_ROLES = "default-roles-" + REALM
+
 PAD_ROLES = ["model:padding-role-%02d" % i for i in range(50)]
 
 
@@ -40,12 +47,12 @@ def mapper_tenant():
 
 def mapper_audience():
     return {
-        "name": "aigw-audience",
+        "name": REALM + "-audience",
         "protocol": "openid-connect",
         "protocolMapper": "oidc-audience-mapper",
         "consentRequired": False,
         "config": {
-            "included.custom.audience": "aigw-api",
+            "included.custom.audience": REALM + "-api",
             "id.token.claim": "false",
             "access.token.claim": "true",
         },
@@ -74,7 +81,7 @@ def user(username, password, roles, tenant=None):
         # declarative user profile wants these three. A user missing them is
         # refused every password grant as "Account is not fully set up",
         # which reads like a bad credential and is not one.
-        "email": "%s@aigw.test" % username,
+        "email": "%s@%s.test" % (username, REALM),
         "firstName": username.capitalize(),
         "lastName": "Tester",
         "credentials": [{"type": "password", "value": password, "temporary": False}],
@@ -82,7 +89,7 @@ def user(username, password, roles, tenant=None):
         # default-roles composite has to be one of them: without it every
         # password grant is refused "Account is not fully set up", which
         # looks like a credential problem and is not one.
-        "realmRoles": ["default-roles-aigw"] + list(roles),
+        "realmRoles": [DEFAULT_ROLES] + list(roles),
         # Nothing may stand between the grant and a token.
         "requiredActions": [],
     }
@@ -92,7 +99,7 @@ def user(username, password, roles, tenant=None):
 
 
 realm = {
-    "realm": "aigw",
+    "realm": REALM,
     "enabled": True,
     "sslRequired": "none",
     "accessTokenLifespan": 300,
@@ -103,8 +110,8 @@ realm = {
         ]
     },
     "clients": [
-        client("aigw-client"),
-        client("aigw-short", {"access.token.lifespan": "1"}),
+        client(REALM + "-client"),
+        client(REALM + "-short", {"access.token.lifespan": "1"}),
     ],
     "users": [
         user("alice", "alicepw", ["model:llama-70b"], "tenant-a"),
