@@ -620,7 +620,7 @@
      { "symbol": "handleReqEnd", "kind": "method", "receiver": "SpanAssembler", "file": "pkg/loxinet/lxb_span_assembler.go", "def_line": 264, "call_line": 326, "calls": "EnrichSpanWithPayload" },
      { "symbol": "ProcessEvent", "kind": "method", "receiver": "SpanAssembler", "file": "pkg/loxinet/lxb_span_assembler.go", "def_line": 120, "call_line": 125, "calls": "handleReqEnd", "entry_point": "event-loop" }
     ],
-    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section 0.3.1 -- source re-verification 2026-09-10 that withdrew the DEFINED-WRITER-UNWIRED finding"
+    "evidence": "metric coverage RCA and plan, section 0.3.1 -- source re-verification 2026-09-10 that withdrew the DEFINED-WRITER-UNWIRED finding"
    },
    "loxilb_parser_duration_seconds": {
     "status": "conditional-with-proven-writer",
@@ -631,7 +631,7 @@
      { "symbol": "handleReqEnd", "kind": "method", "receiver": "SpanAssembler", "file": "pkg/loxinet/lxb_span_assembler.go", "def_line": 264, "call_line": 326, "calls": "EnrichSpanWithPayload" },
      { "symbol": "ProcessEvent", "kind": "method", "receiver": "SpanAssembler", "file": "pkg/loxinet/lxb_span_assembler.go", "def_line": 120, "call_line": 125, "calls": "handleReqEnd", "entry_point": "event-loop" }
     ],
-    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section 0.3.1 -- source re-verification 2026-09-10"
+    "evidence": "metric coverage RCA and plan, section 0.3.1 -- source re-verification 2026-09-10"
    },
    "loxilb_parser_body_size_bytes": {
     "status": "conditional-with-proven-writer",
@@ -642,7 +642,7 @@
      { "symbol": "handleReqEnd", "kind": "method", "receiver": "SpanAssembler", "file": "pkg/loxinet/lxb_span_assembler.go", "def_line": 264, "call_line": 326, "calls": "EnrichSpanWithPayload" },
      { "symbol": "ProcessEvent", "kind": "method", "receiver": "SpanAssembler", "file": "pkg/loxinet/lxb_span_assembler.go", "def_line": 120, "call_line": 125, "calls": "handleReqEnd", "entry_point": "event-loop" }
     ],
-    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section 0.3.1 -- source re-verification 2026-09-10"
+    "evidence": "metric coverage RCA and plan, section 0.3.1 -- source re-verification 2026-09-10"
    },
    "loxilb_parser_attributes_extracted_total": {
     "status": "conditional-with-proven-writer",
@@ -653,7 +653,7 @@
      { "symbol": "handleReqEnd", "kind": "method", "receiver": "SpanAssembler", "file": "pkg/loxinet/lxb_span_assembler.go", "def_line": 264, "call_line": 326, "calls": "EnrichSpanWithPayload" },
      { "symbol": "ProcessEvent", "kind": "method", "receiver": "SpanAssembler", "file": "pkg/loxinet/lxb_span_assembler.go", "def_line": 120, "call_line": 125, "calls": "handleReqEnd", "entry_point": "event-loop" }
     ],
-    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section 0.3.1 -- source re-verification 2026-09-10"
+    "evidence": "metric coverage RCA and plan, section 0.3.1 -- source re-verification 2026-09-10"
    },
    "loxilb_ai_rate_limit_hits_total": {
     "status": "conditional-with-proven-writer",
@@ -665,7 +665,7 @@
     "native_callers": [
      "loxilb-ebpf/common/sockproxy_http.c:6412"
     ],
-    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section A.3 -- weak-stub tripwire never logged on the running gateway, so the strong Go CGO exports are the bound symbols"
+    "evidence": "metric coverage RCA and plan, section A.3 -- weak-stub tripwire never logged on the running gateway, so the strong Go CGO exports are the bound symbols"
    },
    "loxilb_ai_model_not_allowed_total": {
     "status": "conditional-with-proven-writer",
@@ -677,7 +677,7 @@
     "native_callers": [
      "loxilb-ebpf/common/sockproxy_http.c:6343"
     ],
-    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section A.3 -- CGO call-site table, verified against ai_gateway_dp.go at 4d1f8a24"
+    "evidence": "metric coverage RCA and plan, section A.3 -- CGO call-site table, verified against ai_gateway_dp.go at 4d1f8a24"
    },
    "loxilb_ai_tokens_consumed_total": {
     "status": "conditional-with-proven-writer",
@@ -692,7 +692,7 @@
      "loxilb-ebpf/common/sockproxy_http.c:4660",
      "loxilb-ebpf/common/sockproxy_http.c:6242"
     ],
-    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section A.3 -- CGO call-site table; exact-delta assertions specified in WP-2"
+    "evidence": "metric coverage RCA and plan, section A.3 -- CGO call-site table; exact-delta assertions specified in WP-2"
    },
    "loxilb_ai_tokens_estimated_total": {
     "status": "conditional-with-proven-writer",
@@ -707,7 +707,7 @@
      "loxilb-ebpf/common/sockproxy_http.c:4660",
      "loxilb-ebpf/common/sockproxy_http.c:6242"
     ],
-    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section A.3; WP-2's red twin is the no-usage backend that drives exactly this branch"
+    "evidence": "metric coverage RCA and plan, section A.3; WP-2's red twin is the no-usage backend that drives exactly this branch"
    },
    "loxilb_ai_tokens_missing_total": {
     "status": "conditional-with-proven-writer",
@@ -722,7 +722,7 @@
      "loxilb-ebpf/common/sockproxy_http.c:4660",
      "loxilb-ebpf/common/sockproxy_http.c:6242"
     ],
-    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section A.3; WP-2 asserts this equals the number of no-usage responses exactly"
+    "evidence": "metric coverage RCA and plan, section A.3; WP-2 asserts this equals the number of no-usage responses exactly"
    },
    "loxilb_proxy_qos_bytes_passed_total": {
     "status": "verified-runtime",
@@ -735,7 +735,7 @@
      { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "call_line": 1153, "calls": "refreshQosShaperStore" },
      { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
     ],
-    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section B.5b, run 'WP-3 QoS' 2026-09-09 on llbigw-2: bytes_passed 46758599 against curl's 46758393 (+206 HTTP headers). The writer path is proven; WP-3 sign-off is separately blocked by defect D-3."
+    "evidence": "metric coverage RCA and plan, section B.5b, run 'WP-3 QoS' 2026-09-09 on llbigw-2: bytes_passed 46758599 against curl's 46758393 (+206 HTTP headers). The writer path is proven; WP-3 sign-off is separately blocked by defect D-3."
    },
    "loxilb_proxy_qos_bytes_delayed_total": {
     "status": "verified-runtime",
@@ -748,7 +748,7 @@
      { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "call_line": 1153, "calls": "refreshQosShaperStore" },
      { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
     ],
-    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section B.5b: passed minus delayed = 30054432, matching the 30 MB CBS; red twin A held delayed at 0 below CIR. Sign-off blocked by D-3."
+    "evidence": "metric coverage RCA and plan, section B.5b: passed minus delayed = 30054432, matching the 30 MB CBS; red twin A held delayed at 0 below CIR. Sign-off blocked by D-3."
    },
    "loxilb_proxy_qos_parks_total": {
     "status": "verified-runtime",
@@ -761,7 +761,7 @@
      { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "call_line": 1153, "calls": "refreshQosShaperStore" },
      { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
     ],
-    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section B.5b: 1697 parks under shaping, and exactly 0 in red twin A below CIR -- the arm that separates counting bytes from actually shaping. Sign-off blocked by D-3."
+    "evidence": "metric coverage RCA and plan, section B.5b: 1697 parks under shaping, and exactly 0 in red twin A below CIR -- the arm that separates counting bytes from actually shaping. Sign-off blocked by D-3."
    },
    "loxilb_proxy_qos_park_seconds_total": {
     "status": "verified-runtime",
@@ -774,7 +774,7 @@
      { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "call_line": 1153, "calls": "refreshQosShaperStore" },
      { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
     ],
-    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section B.5b: 15.80 s of park against 16.77 s wall time; mean park 9.3 ms. Sign-off blocked by D-3."
+    "evidence": "metric coverage RCA and plan, section B.5b: 15.80 s of park against 16.77 s wall time; mean park 9.3 ms. Sign-off blocked by D-3."
    },
    "loxilb_proxy_qos_parked_connections": {
     "status": "verified-runtime",
@@ -787,7 +787,7 @@
      { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "call_line": 1153, "calls": "refreshQosShaperStore" },
      { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
     ],
-    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section B.5b: parked_connections above zero throughout the shaped drive. Sign-off blocked by D-3."
+    "evidence": "metric coverage RCA and plan, section B.5b: parked_connections above zero throughout the shaped drive. Sign-off blocked by D-3."
    },
    "loxilb_proxy_qos_tokens_bytes": {
     "status": "verified-runtime",
@@ -800,7 +800,7 @@
      { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "call_line": 1153, "calls": "refreshQosShaperStore" },
      { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
     ],
-    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section B.5b: bucket level tracked the shaped drive and sat near zero while rate-bound. Sign-off blocked by D-3."
+    "evidence": "metric coverage RCA and plan, section B.5b: bucket level tracked the shaped drive and sat near zero while rate-bound. Sign-off blocked by D-3."
    },
    "loxilb_proxy_qos_cir_bytes_per_second": {
     "status": "verified-runtime",
@@ -813,7 +813,7 @@
      { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "call_line": 1153, "calls": "refreshQosShaperStore" },
      { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
     ],
-    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section B.5b: exactly 1e6 for --rate=8:8 and 1.25e7 for --rate=100:100. Sign-off blocked by D-3."
+    "evidence": "metric coverage RCA and plan, section B.5b: exactly 1e6 for --rate=8:8 and 1.25e7 for --rate=100:100. Sign-off blocked by D-3."
    },
    "loxilb_proxy_qos_cbs_bytes": {
     "status": "verified-runtime",
@@ -826,7 +826,7 @@
      { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "call_line": 1153, "calls": "refreshQosShaperStore" },
      { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
     ],
-    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section B.5b: 3e7 exactly, matching the policy COMMITTEDBLKSIZE. Sign-off blocked by D-3."
+    "evidence": "metric coverage RCA and plan, section B.5b: 3e7 exactly, matching the policy COMMITTEDBLKSIZE. Sign-off blocked by D-3."
    },
    "loxilb_opa_watcher_syncs_total": {
     "status": "conditional-with-proven-writer",

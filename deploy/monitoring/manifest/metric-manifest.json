@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-10T04:53:24+00:00",
-  "source_revision": "33b2b79c8e7e42954d34e6e545dde253c178c796"
+  "generated_at": "2026-09-10T05:00:47+00:00",
+  "source_revision": "9f8025c5a772ff73c0b2fc5d0632dd408f854ef0"
  },
  "contract": {
   "total": 232,
@@ -1793,7 +1793,7 @@
      "entry_point": "cgo-export"
     }
    ],
-   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section A.3 -- CGO call-site table, verified against ai_gateway_dp.go at 4d1f8a24"
+   "verification_evidence": "metric coverage RCA and plan, section A.3 -- CGO call-site table, verified against ai_gateway_dp.go at 4d1f8a24"
   },
   {
    "name": "loxilb_ai_normal_session_hits_total",
@@ -2182,7 +2182,7 @@
      "note": "llb_ai_token_quota_reserve records the same family at ai_gateway_dp.go:756 with reason token_quota_would_exceed"
     }
    ],
-   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section A.3 -- weak-stub tripwire never logged on the running gateway, so the strong Go CGO exports are the bound symbols"
+   "verification_evidence": "metric coverage RCA and plan, section A.3 -- weak-stub tripwire never logged on the running gateway, so the strong Go CGO exports are the bound symbols"
   },
   {
    "name": "loxilb_ai_request_duration_seconds",
@@ -2654,7 +2654,7 @@
      "entry_point": "cgo-export"
     }
    ],
-   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section A.3 -- CGO call-site table; exact-delta assertions specified in WP-2"
+   "verification_evidence": "metric coverage RCA and plan, section A.3 -- CGO call-site table; exact-delta assertions specified in WP-2"
   },
   {
    "name": "loxilb_ai_tokens_estimated_total",
@@ -2697,7 +2697,7 @@
      "entry_point": "cgo-export"
     }
    ],
-   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section A.3; WP-2's red twin is the no-usage backend that drives exactly this branch"
+   "verification_evidence": "metric coverage RCA and plan, section A.3; WP-2's red twin is the no-usage backend that drives exactly this branch"
   },
   {
    "name": "loxilb_ai_tokens_missing_total",
@@ -2740,7 +2740,7 @@
      "entry_point": "cgo-export"
     }
    ],
-   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section A.3; WP-2 asserts this equals the number of no-usage responses exactly"
+   "verification_evidence": "metric coverage RCA and plan, section A.3; WP-2 asserts this equals the number of no-usage responses exactly"
   },
   {
    "name": "loxilb_ai_unmetered_requests_total",
@@ -5958,7 +5958,7 @@
      "entry_point": "event-loop"
     }
    ],
-   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section 0.3.1 -- source re-verification 2026-09-10"
+   "verification_evidence": "metric coverage RCA and plan, section 0.3.1 -- source re-verification 2026-09-10"
   },
   {
    "name": "loxilb_parser_body_size_bytes",
@@ -6018,7 +6018,7 @@
      "entry_point": "event-loop"
     }
    ],
-   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section 0.3.1 -- source re-verification 2026-09-10"
+   "verification_evidence": "metric coverage RCA and plan, section 0.3.1 -- source re-verification 2026-09-10"
   },
   {
    "name": "loxilb_parser_calls_total",
@@ -6080,7 +6080,7 @@
      "entry_point": "event-loop"
     }
    ],
-   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section 0.3.1 -- source re-verification 2026-09-10 that withdrew the DEFINED-WRITER-UNWIRED finding"
+   "verification_evidence": "metric coverage RCA and plan, section 0.3.1 -- source re-verification 2026-09-10 that withdrew the DEFINED-WRITER-UNWIRED finding"
   },
   {
    "name": "loxilb_parser_duration_seconds",
@@ -6140,7 +6140,7 @@
      "entry_point": "event-loop"
     }
    ],
-   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section 0.3.1 -- source re-verification 2026-09-10"
+   "verification_evidence": "metric coverage RCA and plan, section 0.3.1 -- source re-verification 2026-09-10"
   },
   {
    "name": "loxilb_pd_admission_queued_total",
@@ -10007,7 +10007,7 @@
      "entry_point": "registry-collector"
     }
    ],
-   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section B.5b: passed minus delayed = 30054432, matching the 30 MB CBS; red twin A held delayed at 0 below CIR. Sign-off blocked by D-3."
+   "verification_evidence": "metric coverage RCA and plan, section B.5b: passed minus delayed = 30054432, matching the 30 MB CBS; red twin A held delayed at 0 below CIR. Sign-off blocked by D-3."
   },
   {
    "name": "loxilb_proxy_qos_bytes_passed_total",
@@ -10054,7 +10054,7 @@
      "note": "registry-mediated dispatch: the link is the receiver type handed to prometheus.MustRegister, not a direct call to Collect"
     }
    ],
-   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section B.5b, run 'WP-3 QoS' 2026-09-09 on llbigw-2: bytes_passed 46758599 against curl's 46758393 (+206 HTTP headers). The writer path is proven; WP-3 sign-off is separately blocked by defect D-3."
+   "verification_evidence": "metric coverage RCA and plan, section B.5b, run 'WP-3 QoS' 2026-09-09 on llbigw-2: bytes_passed 46758599 against curl's 46758393 (+206 HTTP headers). The writer path is proven; WP-3 sign-off is separately blocked by defect D-3."
   },
   {
    "name": "loxilb_proxy_qos_cbs_bytes",
@@ -10100,7 +10100,7 @@
      "entry_point": "registry-collector"
     }
    ],
-   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section B.5b: 3e7 exactly, matching the policy COMMITTEDBLKSIZE. Sign-off blocked by D-3."
+   "verification_evidence": "metric coverage RCA and plan, section B.5b: 3e7 exactly, matching the policy COMMITTEDBLKSIZE. Sign-off blocked by D-3."
   },
   {
    "name": "loxilb_proxy_qos_cir_bytes_per_second",
@@ -10146,7 +10146,7 @@
      "entry_point": "registry-collector"
     }
    ],
-   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section B.5b: exactly 1e6 for --rate=8:8 and 1.25e7 for --rate=100:100. Sign-off blocked by D-3."
+   "verification_evidence": "metric coverage RCA and plan, section B.5b: exactly 1e6 for --rate=8:8 and 1.25e7 for --rate=100:100. Sign-off blocked by D-3."
   },
   {
    "name": "loxilb_proxy_qos_park_seconds_total",
@@ -10192,7 +10192,7 @@
      "entry_point": "registry-collector"
     }
    ],
-   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section B.5b: 15.80 s of park against 16.77 s wall time; mean park 9.3 ms. Sign-off blocked by D-3."
+   "verification_evidence": "metric coverage RCA and plan, section B.5b: 15.80 s of park against 16.77 s wall time; mean park 9.3 ms. Sign-off blocked by D-3."
   },
   {
    "name": "loxilb_proxy_qos_parked_connections",
@@ -10238,7 +10238,7 @@
      "entry_point": "registry-collector"
     }
    ],
-   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section B.5b: parked_connections above zero throughout the shaped drive. Sign-off blocked by D-3."
+   "verification_evidence": "metric coverage RCA and plan, section B.5b: parked_connections above zero throughout the shaped drive. Sign-off blocked by D-3."
   },
   {
    "name": "loxilb_proxy_qos_parks_total",
@@ -10284,7 +10284,7 @@
      "entry_point": "registry-collector"
     }
    ],
-   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section B.5b: 1697 parks under shaping, and exactly 0 in red twin A below CIR -- the arm that separates counting bytes from actually shaping. Sign-off blocked by D-3."
+   "verification_evidence": "metric coverage RCA and plan, section B.5b: 1697 parks under shaping, and exactly 0 in red twin A below CIR -- the arm that separates counting bytes from actually shaping. Sign-off blocked by D-3."
   },
   {
    "name": "loxilb_proxy_qos_tokens_bytes",
@@ -10330,7 +10330,7 @@
      "entry_point": "registry-collector"
     }
    ],
-   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section B.5b: bucket level tracked the shaped drive and sat near zero while rate-bound. Sign-off blocked by D-3."
+   "verification_evidence": "metric coverage RCA and plan, section B.5b: bucket level tracked the shaped drive and sat near zero while rate-bound. Sign-off blocked by D-3."
   },
   {
    "name": "loxilb_requests_total",
