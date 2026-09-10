@@ -298,6 +298,10 @@ add_profile kc-wrongiss  "$KC_BASE/realms/not-this-realm" "$KC_JWKS" '["aigw-api
 add_profile kc-blackhole "http://127.0.0.1:9/realms/void" "http://127.0.0.1:9/certs" '[]' ''
 add_profile kc-fwd       "$KC_ISSUER" "$KC_JWKS" '["aigw-api"]' ', "forward_identity": true'
 add_profile kc-pass      "$KC_ISSUER" "$KC_JWKS" '["aigw-api"]' ', "authorization_passthrough": true'
+# Short refresh so an IdP outage of a few tens of seconds spans a refresh
+# that must fail. kc keeps the 300s default, so the outage group cannot
+# perturb the profile every other leg runs against.
+add_profile kc-outage    "$KC_ISSUER" "$KC_JWKS" '["aigw-api"]' ', "refresh_sec": 10'
 
 echo "#########################################"
 echo "Creating LB rules"
@@ -347,6 +351,7 @@ add_lb_rule 2043 "llama-70b"  "31.31.31.1" jwt           kc-wrongiss
 add_lb_rule 2044 "llama-70b"  "31.31.31.1" jwt           kc-blackhole
 add_lb_rule 2045 "llama-70b"  "31.31.31.1" jwt           kc-fwd
 add_lb_rule 2046 "llama-70b"  "31.31.31.1" jwt           kc-pass
+add_lb_rule 2047 "llama-70b"  "31.31.31.1" jwt           kc-outage
 
 echo "#########################################"
 echo "Creating the llama-only API key"
@@ -423,6 +428,7 @@ TOK_CAROL='$TOK_CAROL'
 TOK_BADSIG='$TOK_BADSIG'
 KC_ISSUER='$KC_ISSUER'
 KC_CLIENT_SHORT='aigw-short'
+KC_NAME='$KC_NAME'
 EOF
 
 echo "tokens minted (alice/bob/carol/dave/bad-signature)"

@@ -61,6 +61,7 @@ refusal and its control.
 | 2044 | `jwt` | `kc-blackhole` | JWKS endpoint that never answers |
 | 2045 | `jwt` | `kc-fwd` | `forward_identity=true` |
 | 2046 | `jwt` | `kc-pass` | `authorization_passthrough=true` |
+| 2047 | `jwt` | `kc-outage` | an IdP that goes away after its keys were fetched (`refresh_sec` 10) |
 
 Realm users: `alice` (tenant-a, llama-70b), `bob` (tenant-b, mistral-7b),
 `carol` (no tenant attribute), `dave` (tenant-d, llama-70b plus padding
@@ -84,6 +85,32 @@ request behind a single 401. C5 is the control: the same token alone *is*
 admitted on that port.
 
 Do not soften either assertion to make a run pass.
+
+## The IdP outage pair
+
+Groups G and I differ in exactly one variable — whether a keyset was ever
+fetched — and must not be collapsed into one.
+
+**G (port 2044)** is an IdP that never answered: the verifier holds no keys,
+so it cannot check anything and refuses **503**.
+
+**I (port 2047)** is the operational case: keys were fetched, then Keycloak
+went away. Admission must keep working on the last-known-good keyset, so
+**200** — and specifically *not* the 503 that G returns. A gateway that
+answered 503 whenever its IdP restarted would turn a survivable blip into a
+total outage of the inference plane. That both verdicts appear in one run,
+from the same assertion helpers, is what makes each of them mean something.
+
+The realm is **paused**, not stopped: `kc-aigw` runs with `--rm`, so
+stopping it destroys the container and there is nothing to bring back. A
+pause keeps the same container and IP, so the profile's `jwks_url` stays
+valid and the outage is exactly "the endpoint stopped answering". An `EXIT`
+trap unpauses it, so a failure mid-group cannot leave the realm frozen for
+whatever runs next on the host.
+
+`I1` is the group's vacuity guard: it proves no new token can be minted
+while the realm is paused. Without it, `I2` passing would say nothing — a
+Keycloak that never went down also admits traffic.
 
 ## Running
 

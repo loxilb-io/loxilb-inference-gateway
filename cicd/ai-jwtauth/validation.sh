@@ -336,6 +336,94 @@ chk_has     "G1 policy_store_unavailable"    "policy_store_unavailable"  "$r"
 chk_not_has "G1 backend NOT reached"         "server-llama"              "$r"
 
 echo ""
+echo "== I: the IdP goes down and comes back (port 2047, profile kc-outage) =="
+echo "   G is an IdP that was never reachable. This is the operational case:"
+echo "   keys were fetched, then Keycloak went away. Admission must keep"
+echo "   working on the last-known-good keyset — a gateway that answered 503"
+echo "   for every request whenever its IdP restarted would turn a survivable"
+echo "   IdP blip into a total outage of the inference plane."
+echo "   kc-outage refreshes every 10s and the fetch timeout is 10s, so the"
+echo "   pause below outlives a refresh that must fail."
+
+# Freeze rather than stop: kc-aigw runs with --rm, so stopping it destroys
+# the container and there is nothing to bring back. A pause keeps the same
+# container and the same IP, so the profile's jwks_url stays valid and the
+# outage is exactly "the endpoint stopped answering".
+KC_PAUSED=""
+unpause_kc() {
+    if [ -n "$KC_PAUSED" ]; then
+        docker unpause "$KC_NAME" >/dev/null 2>&1
+        KC_PAUSED=""
+    fi
+}
+# An early exit between the pause and the unpause would leave the realm
+# frozen for whatever runs next on this host.
+trap unpause_kc EXIT
+
+# I0 first: if the port were broken for an unrelated reason, every assertion
+# below would "pass" for the wrong reason.
+r=$(bearer_req 2047 "$body_llama" "$TOK_ALICE")
+chk_has "I0 control: admitted while the IdP is up" "200"          "$(status_of "$r")"
+chk_has "I0 llama pool answers"                    "server-llama" "$r"
+
+if docker pause "$KC_NAME" >/dev/null 2>&1; then
+    KC_PAUSED=1
+    echo "  kc-aigw paused; waiting 25s so a refresh falls inside the outage"
+    sleep 25
+
+    # I1 is what stops the rest of this group being vacuous: it proves the
+    # IdP really is unreachable. Without it, I2 passing would say nothing —
+    # a Keycloak that never went down also admits traffic.
+    OUTAGE_TOK=$(curl -s --max-time 5 -X POST \
+      -d "client_id=aigw-client" -d "username=alice" -d "password=alicepw" \
+      -d "grant_type=password" "$KC_ISSUER/protocol/openid-connect/token" |
+      python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null)
+    if [ -z "$OUTAGE_TOK" ]; then
+        echo "  [PASS] I1 the IdP is genuinely unreachable (no new token can be minted)"
+        PASS=$((PASS + 1))
+    else
+        echo "  [FAIL] I1 minted a token while Keycloak was paused — the outage is not"
+        echo "         real, so I2 below would prove nothing"
+        FAIL=$((FAIL + 1))
+    fi
+
+    # I2: the already-issued token still works. The verifier holds keys, not
+    # a session with the IdP, so admission does not depend on it per request.
+    r=$(bearer_req 2047 "$body_llama" "$TOK_ALICE")
+    chk_has     "I2 admitted during the IdP outage"     "200"          "$(status_of "$r")"
+    chk_has     "I2 llama pool answers"                 "server-llama" "$r"
+    # Named separately because 503 is the specific wrong answer here: it is
+    # what G returns, and returning it here would mean the fail-closed reflex
+    # fired on an outage the gateway was equipped to survive.
+    chk_not_has "I2 NOT policy_store_unavailable"       "policy_store_unavailable" "$r"
+
+    unpause_kc
+    echo "  kc-aigw unpaused"
+
+    # I3: the IdP is back, and the gateway did not wedge while it was away.
+    # A freshly minted token exercises the whole chain again, end to end.
+    for i in $(seq 1 30); do
+        BACK_TOK=$(curl -s --max-time 5 -X POST \
+          -d "client_id=aigw-client" -d "username=alice" -d "password=alicepw" \
+          -d "grant_type=password" "$KC_ISSUER/protocol/openid-connect/token" |
+          python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null)
+        [ -n "$BACK_TOK" ] && break
+        sleep 1
+    done
+    if [ -z "$BACK_TOK" ]; then
+        echo "  [FAIL] I3 Keycloak never answered again after unpause"; FAIL=$((FAIL + 1))
+    else
+        r=$(bearer_req 2047 "$body_llama" "$BACK_TOK")
+        chk_has "I3 token minted after recovery is admitted" "200"          "$(status_of "$r")"
+        chk_has "I3 llama pool answers"                      "server-llama" "$r"
+    fi
+else
+    echo "  [FAIL] I could not pause $KC_NAME — the outage group did not run"
+    FAIL=$((FAIL + 1))
+fi
+trap - EXIT
+
+echo ""
 echo "== H: the profile reference is validated, both directions =="
 echo "   (kept last: H1 deliberately tries to create a rule, so a build that"
 echo "    wrongly accepts it cannot disturb the legs above)"

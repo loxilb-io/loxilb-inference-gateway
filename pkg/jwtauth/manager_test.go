@@ -163,6 +163,55 @@ func TestLifecycleLastKnownGood(t *testing.T) {
 	}
 }
 
+// TestLifecycleRecoversAfterOutage: the other half of last-known-good. An
+// IdP that comes back must be picked up again — a manager that survived the
+// outage by serving cached keys and then never refetched would look healthy
+// while silently refusing every rotated key until the staleness cutoff
+// turned the profile off entirely.
+func TestLifecycleRecoversAfterOutage(t *testing.T) {
+	oldKey := testRSAKey(t, "kid-old")
+	newKey := testRSAKey(t, "kid-new")
+	js := newJWKSServer(t, jwksDoc(t, jwkRSA("kid-old", &oldKey.PublicKey)))
+	m, _ := newTestManager(t, js, nil)
+
+	oldTok := signToken(t, "RS256", "kid-old", oldKey, baseClaims(nil))
+	waitVerified(t, m, oldTok, "test")
+
+	// The IdP goes down, and stays down across a kid miss whose refetch
+	// fails. Waiting for the fetch to be ATTEMPTED is what makes the rest of
+	// this test mean anything: without it the server can be restored before
+	// the lifecycle goroutine ever tried, and a manager that wedges on a
+	// failed refresh would still pass on the fetch that never failed.
+	js.set(nil, http.StatusInternalServerError)
+	base := js.hitCount()
+	newTok := signToken(t, "RS256", "kid-new", newKey, baseClaims(nil))
+	_, err := m.Verify(newTok, "test")
+	verdict(t, err, DecisionDeny401, CodeInvalidToken, ReasonUnknownKid)
+	deadline := time.Now().Add(2 * time.Second)
+	for js.hitCount() == base && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if js.hitCount() == base {
+		t.Fatal("no refetch was attempted during the outage — the recovery this " +
+			"test claims to prove would be proven against a fetch that never failed")
+	}
+	time.Sleep(20 * time.Millisecond) // let the failed fetch settle
+	if _, err := m.Verify(oldTok, "test"); err != nil {
+		t.Fatalf("good token denied during the outage: %v", err)
+	}
+
+	// The IdP comes back, having rotated while it was away. The recovery
+	// that matters is that the new key is picked up at all: a token no
+	// cached keyset could ever verify is admitted only by a fetch that
+	// happened after the outage ended.
+	js.set(jwksDoc(t, jwkRSA("kid-new", &newKey.PublicKey)), http.StatusOK)
+	waitVerified(t, m, newTok, "test")
+
+	if st, _ := m.Status("test"); !st.Usable {
+		t.Fatalf("profile still unusable after the IdP recovered: %+v", st)
+	}
+}
+
 // TestLifecycleStalenessCutoff: once the last successful fetch ages past
 // the cutoff, the profile degrades to 503-class — stale keys are not
 // trusted forever just because refreshes keep failing.
