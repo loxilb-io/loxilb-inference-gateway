@@ -92,5 +92,10 @@ cd cicd/ai-jwtauth
 LOXILB_DOCKER_IMAGE=<tag> ./config.sh && ./validation.sh && ./rmconfig.sh
 ```
 
+The image pin is required, not optional: the JWT bearer arm is not in a
+released image, so the auto-detected default answers 404 to every profile
+create. `config.sh` probes the profile route before configuring anything
+and refuses by name if the image cannot serve it.
+
 One gateway at a time on a shared host. Teardown stops `kc-aigw` and
 `pg-jwtauth`, both of which run with `--rm`.

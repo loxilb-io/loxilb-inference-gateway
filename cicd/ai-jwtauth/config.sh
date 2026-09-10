@@ -228,6 +228,27 @@ for i in $(seq 1 40); do
 done
 
 echo "#########################################"
+echo "Confirming the image serves the JWT profile API"
+echo "#########################################"
+
+# The JWT bearer arm is not in a released image, so the auto-detected
+# default (a published :latest-u24) answers 404 to every profile create.
+# Without this check that surfaces as a bare "HTTP 404" from the first
+# add_profile, after Keycloak, PostgreSQL and four containers are already
+# up -- a missing image pin reading like a rejected profile. Ask the route
+# whether it exists at all, and name the image in the refusal.
+prof_rc=$($hexec l3h1 curl -s -o /dev/null -w '%{http_code}' -m 5 \
+  http://10.10.10.254:11111/netlox/v1/config/ai/jwtauthprofile)
+if [[ "$prof_rc" == "404" ]]; then
+  echo "FATAL: $lxdocker does not serve /config/ai/jwtauthprofile (HTTP 404)."
+  echo "       This suite needs a build carrying the JWT bearer data plane;"
+  echo "       pin one explicitly, e.g."
+  echo "         LOXILB_DOCKER_IMAGE=<jwt-capable-tag> ./config.sh"
+  exit 1
+fi
+echo "  $lxdocker serves the profile API (HTTP $prof_rc)"
+
+echo "#########################################"
 echo "Reaching Keycloak from the gateway"
 echo "#########################################"
 
