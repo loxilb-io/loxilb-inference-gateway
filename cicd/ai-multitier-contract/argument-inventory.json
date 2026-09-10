@@ -3,7 +3,7 @@
   "scope": "LoadbalanceEntry fields and AI KV inventory query parameters; not a test-coverage claim",
   "sourceSha256": {
     "swagger-extras.yml": "4e602fc9652f481e48ede784e51d462300940b1995cb2cd19473fe840e6e0efb",
-    "swagger.yml": "30b00d62055e8ef024c361272dc82046290c79f521fa90d84a40a2d6fc06393a"
+    "swagger.yml": "0de8991136745ebdbe63b5e0538a8668c5503ec0d078ae608cd255519fe1e511"
   },
   "fields": [
     {
@@ -425,7 +425,7 @@
       "required": false,
       "contract": {
         "default": false,
-        "description": "Intended request cache_salt requirement for sel=8/10. Known implementation gap: this declaration is not wired to active C configuration, which initializes the option disabled. It does not currently enforce salt presence or tenant isolation. Retained for implementation. A client-supplied hash salt is not itself an authenticated tenant-isolation boundary; identity binding and missing-salt behavior need an explicit security contract.",
+        "description": "Require a non-empty JSON string cache_salt of at most 63 bytes on H1 and H2 requests and include it in the configured hash identity. Missing or malformed salt is rejected locally with HTTP 400 before upstream dispatch. This is cache-key namespacing, not authentication and not an authenticated tenant-isolation boundary.",
         "type": "boolean"
       }
     },
@@ -433,8 +433,8 @@
       "id": "swagger.yml#/definitions/LoadbalanceEntry/serviceArguments/chwbl_mean_load_factor",
       "required": false,
       "contract": {
-        "default": 125,
-        "description": "Intended bounded-load factor in percent for sel=8/10, with a nominal bound of average load multiplied by factor/100. The schema declares 125, but current C initialization uses 175 and does not consume this API override. Do not interpret a returned value as the effective bound. The option is retained; the final default and complete configuration propagation require reconciliation.",
+        "default": 175,
+        "description": "Bounded-load factor in percent for sel=8/10. Selection compares the request's future endpoint load with the configured factor of mean load. Omission on create resolves to 175; omission on replace preserves the current effective value.",
         "maximum": 300,
         "minimum": 100,
         "type": "integer"
@@ -445,7 +445,7 @@
       "required": false,
       "contract": {
         "default": 0,
-        "description": "Intended optional hash-input flags for sel=8/10: bits 0..7 name LoRA, image, audio, cache_salt, tools, session, RAG template, and RAG documents respectively; 0 declares automatic selection. Known implementation gap: API declarations are stored but are not propagated into the active C configuration, which initializes this field to 0. Per-bit behavior is not an implemented API guarantee. Retained for implementation and behavior verification.",
+        "description": "Optional hash-input flags for sel=8/10: bits 0..7 name LoRA, image, audio, cache_salt, tools, session, RAG template, and RAG documents respectively. 0 selects all present inputs allowed by chwbl_prefix_hash_level. Explicit flags above that level are rejected. Omission on replace preserves the effective value.",
         "maximum": 255,
         "minimum": 0,
         "type": "integer"
@@ -456,7 +456,7 @@
       "required": false,
       "contract": {
         "default": 1,
-        "description": "Intended prefix level for sel=8 (CHWBL) or sel=10 (WRR_HASH), both requiring mode=4: 1=system prompt/model, 2=also session context, 3=also RAG context. Known wiring limitation: the declaration is forwarded to the C configuration for sel=8, but not for sel=10. The WRR_HASH path therefore uses its internal level-1 default. Readback of an explicit value does not prove it affects routing. The option is retained; complete propagation and parser behavior verification are required before claiming all levels are qualified.",
+        "description": "Maximum hash-input level for mode=4 with sel=8 (CHWBL) or sel=10 (WRR_HASH): 1=system prompt/model and present L1 fields, 2=also session context, 3=also RAG context. Omission on create resolves to 1; omission on replace preserves the current effective value.",
         "enum": [
           1,
           2,
@@ -469,8 +469,8 @@
       "id": "swagger.yml#/definitions/LoadbalanceEntry/serviceArguments/chwbl_replication",
       "required": false,
       "contract": {
-        "default": 100,
-        "description": "Intended hash-ring replication setting for sel=8/10. CHWBL uses virtual nodes per endpoint; WRR_HASH distributes a ring budget by endpoint weight. The schema declares 100, but current C setup uses 256 and does not consume this API override. Retained for implementation; default, weight interaction, allocation limits, and live ring-rebuild behavior must be reconciled before the UI treats this as an effective tuning control.",
+        "default": 256,
+        "description": "Hash-ring geometry for sel=8/10. CHWBL creates exactly this many virtual nodes per endpoint. WRR_HASH treats it as the exact total vnode budget, assigns only positive-weight active endpoints, and rejects a budget smaller than that endpoint count. Create default is 256; replace omission preserves the effective value.",
         "maximum": 1024,
         "minimum": 1,
         "type": "integer"
