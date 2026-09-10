@@ -22,6 +22,7 @@ import (
 
 	tk "github.com/loxilb-io/loxilib"
 
+	prom "github.com/loxilb-io/loxilb/api/prometheus"
 	cmn "github.com/loxilb-io/loxilb/common"
 )
 
@@ -140,6 +141,37 @@ func validatePolObj(pObj *cmn.PolObj) error {
 	return nil
 }
 
+// attached reports whether the policer is actually programmed: the policer
+// object itself and every one of its attachment points must be in sync with
+// the datapath. A policer with no attachment object shapes nothing and is
+// therefore not attached.
+func (p *PolEntry) attached() bool {
+	if p.Sync != 0 || len(p.PObjs) == 0 {
+		return false
+	}
+	for idx := range p.PObjs {
+		if p.PObjs[idx].Sync != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// publishAttachment republishes every policer's attachment state to the
+// metrics store (loxilb_policer_attached). Wholesale replacement, so a
+// deleted policer's series vanishes. Callers hold the routine lock that
+// guards PolMap.
+func (P *PolH) publishAttachment() {
+	samples := make([]prom.PolicerAttachmentSample, 0, len(P.PolMap))
+	for _, p := range P.PolMap {
+		samples = append(samples, prom.PolicerAttachmentSample{
+			Ident:    p.Key.PolName,
+			Attached: p.attached(),
+		})
+	}
+	prom.PublishPolicerAttachment(samples)
+}
+
 // PolGetAll - Get all of the policer in loxinet
 func (P *PolH) PolGetAll() ([]cmn.PolMod, error) {
 	var getPols []cmn.PolMod
@@ -160,6 +192,9 @@ func (P *PolH) PolGetAll() ([]cmn.PolMod, error) {
 		for _, target := range pe.PObjs {
 			pol.Target = target.Args
 		}
+
+		// Attachment state — the datapath truth, not the create-time answer
+		pol.Attached = pe.attached()
 
 		// Append Policy
 		getPols = append(getPols, pol)
@@ -228,6 +263,8 @@ func (P *PolH) PolAdd(pName string, pInfo cmn.PolInfo, pObjArgs cmn.PolObj) (int
 
 	tk.LogIt(tk.LogInfo, "policer added - %s\n", pName)
 
+	P.publishAttachment()
+
 	return 0, nil
 }
 
@@ -287,6 +324,8 @@ func (P *PolH) PolAssociateLbRule(ident string, lbKey string) (int, error) {
 
 	tk.LogIt(tk.LogInfo, "policer %s associated to lb-rule %s (vip_qos_policy_id)\n", ident, lbKey)
 
+	P.publishAttachment()
+
 	return 0, nil
 }
 
@@ -313,6 +352,8 @@ func (P *PolH) PolDelete(pName string) (int, error) {
 	defer P.Mark.PutCounter(p.HwNum)
 
 	tk.LogIt(tk.LogInfo, "policer deleted - %s\n", pName)
+
+	P.publishAttachment()
 
 	return 0, nil
 }
@@ -374,6 +415,11 @@ func (P *PolH) PolTicker() {
 			}
 		}
 	}
+
+	// Republish attachment state every tick so a re-drive that succeeded
+	// above (Sync 1 -> 0) or a target that disappeared (0 -> 1) reaches the
+	// loxilb_policer_attached gauge without waiting for a config change.
+	P.publishAttachment()
 
 	// collect DOCA meter stats when MeterOffload is active
 	P.polTickerDocaMeterStats()

@@ -10241,6 +10241,10 @@ definitions:
       policyIdent:
         type: string
         description: Policy name
+      attached:
+        type: boolean
+        readOnly: true
+        description: "Read-only on GET: true only when the policer and every one of its attachment points are programmed in the datapath. False means an attachment is still pending re-drive (for example its rule does not exist yet) and the policer currently shapes nothing."
       policyInfo:
         type: object
         properties:
