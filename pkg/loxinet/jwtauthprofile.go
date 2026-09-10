@@ -87,7 +87,12 @@ func (h *JWTAuthProfileH) ProfileAdd(pm *cmn.JWTAuthProfileMod) (int, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if err := h.mgr.SetProfile(jwtProfileFromMod(pm)); err != nil {
-		return JwtAuthProfileArgErr, err
+		// A refused profile is refused on its contents, so the caller needs
+		// the reason and a 400. Left as a bare error it reaches the API's
+		// fallback classifier, which matches the wording against a phrase
+		// list and answers 500 with a correlation reference when nothing
+		// matches — telling the caller nothing about what to fix.
+		return JwtAuthProfileArgErr, &cmn.ValidationError{Err: err}
 	}
 	h.profiles[pm.Name] = *pm
 	tk.LogIt(tk.LogInfo, "[JWTAuth] profile %s stored (issuer %s)\n", pm.Name, pm.Issuer)
@@ -99,11 +104,19 @@ func (h *JWTAuthProfileH) ProfileDel(name string) (int, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if _, ok := h.profiles[name]; !ok {
-		return JwtAuthProfileNoExistErr, fmt.Errorf("jwt auth profile %s does not exist", name)
+		// "no such" is the phrase the API classifier reads as 404; the
+		// wording is load-bearing here, unlike the refusals below which
+		// carry their status in the type.
+		return JwtAuthProfileNoExistErr, fmt.Errorf("no such jwt auth profile %s", name)
 	}
 	if refs := h.ruleRefs(name); len(refs) > 0 {
-		return JwtAuthProfileRefErr, fmt.Errorf("jwt auth profile %s is referenced by rule(s): %s",
-			name, strings.Join(refs, ", "))
+		// The caller asked for something the current configuration forbids,
+		// and naming the rules is the answer they need: a 400, not a 500
+		// that hides the reference list behind a log reference.
+		return JwtAuthProfileRefErr, &cmn.ValidationError{
+			Err: fmt.Errorf("jwt auth profile %s is referenced by rule(s): %s",
+				name, strings.Join(refs, ", ")),
+		}
 	}
 	h.mgr.RemoveProfile(name)
 	delete(h.profiles, name)

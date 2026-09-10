@@ -86,7 +86,7 @@ func ConfigPostJWTAuthProfile(params ai.PostConfigAiJwtauthprofileParams, princi
 	pm := jwtAuthProfileModFromEntry(params.Attr)
 	if _, err := ApiHooks.NetJWTAuthProfileAdd(&pm); err != nil {
 		tk.LogIt(tk.LogDebug, "api: Error occur : %v\n", err)
-		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
+		return &ErrorResponse{Payload: ResultErrorResponseError(err)}
 	}
 	return &ResultResponse{Result: "Success"}
 }
@@ -99,7 +99,7 @@ func ConfigGetJWTAuthProfileAll(params ai.GetConfigAiJwtauthprofileAllParams, pr
 	res, err := ApiHooks.NetJWTAuthProfileGet()
 	if err != nil {
 		tk.LogIt(tk.LogDebug, "api: Error occur : %v\n", err)
-		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
+		return &ErrorResponse{Payload: ResultErrorResponseError(err)}
 	}
 	result := make([]*models.JWTAuthProfileEntry, 0, len(res))
 	for i := range res {
@@ -116,7 +116,7 @@ func ConfigDeleteJWTAuthProfile(params ai.DeleteConfigAiJwtauthprofileNameParams
 
 	if _, err := ApiHooks.NetJWTAuthProfileDel(params.Name); err != nil {
 		tk.LogIt(tk.LogDebug, "api: Error occur : %v\n", err)
-		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
+		return &ErrorResponse{Payload: ResultErrorResponseError(err)}
 	}
 	return &ResultResponse{Result: "Success"}
 }
