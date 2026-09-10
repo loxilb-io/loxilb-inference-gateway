@@ -321,10 +321,23 @@ WRITER_STATUSES = {
     # Writer path proven in source and driven by a test, but not yet observed
     # on a bed.
     "verified-static",
+    # Writer path recorded and re-verified against source, with nothing driving
+    # it yet: no test, no bed observation, and no configuration gate that would
+    # explain absence. This is the burn-down's intermediate state, not a
+    # finished one -- the campaign's exit criteria (plan section B.7) accept
+    # only verified-runtime, verified-static, conditional-with-proven-writer, or
+    # a deliberate removal. It exists because the alternative was to record one
+    # of those for a family nothing has exercised, which is the kind of
+    # overclaim this whole gate was built to stop.
+    "writer-mapped",
     # Reviewed and accepted as having no production writer. Requires a
     # rejection rationale naming the exact symbols queried and their receivers.
     "definition-only",
 }
+
+# Statuses that still owe verification work. Counted by their own ratchet so
+# finishing the map cannot be mistaken for finishing the qualification.
+UNVERIFIED_STATUSES = {"writer-mapped"}
 
 ENTRY_POINT_KINDS = {
     "main",              # reached from process start-up
@@ -339,10 +352,68 @@ ENTRY_POINT_KINDS = {
 HOP_KEYS_FIRST = {"symbol", "kind", "receiver", "file", "def_line", "writes",
                   "entry_point", "note"}
 HOP_KEYS_REST = {"symbol", "kind", "receiver", "file", "def_line", "call_line",
-                 "calls", "entry_point", "note"}
+                 "calls", "entry_point", "note", "via"}
+# A hop that dispatches through a function-valued variable ("metric seam"):
+#   var echoFn = prom.IncKvAttestEcho   <- the binding
+#   echoFn("ok")                        <- the call site
+# The call site never names the writer, so a name search finds no caller at
+# all -- the same blind spot as the receiver mismatch that made four live
+# parser families look dead. Recording the binding site makes the hop
+# checkable: the gate confirms the variable really is bound to the previous
+# hop's symbol, so re-pointing the seam at something else fails here.
+VIA_KEYS = {"var", "file", "line"}
 ENTRY_KEYS = {"status", "activation_precondition", "writer_sources",
               "data_sources", "native_callers", "rejection",
               "queried_symbols", "evidence"}
+
+# Most collectors reach production through the same start-up spine, so the last
+# hops of their chains are identical. Repeating them per family would make the
+# map larger than anyone will read, and a chain nobody reads is a comment. A
+# chain may therefore end with {"tail": "<id>"}, expanded from
+# writer_status.tails before any check runs -- so the anchors in a shared tail
+# are re-verified once per referencing family, exactly as if they were inline.
+# The published manifest carries the expanded chain: consumers see the whole
+# path, not the reference.
+TAIL_KEY = "tail"
+
+
+def resolve_chain(chain, tails, at, errors):
+    """Expand a trailing {"tail": id} reference into its hops."""
+    if not isinstance(chain, list):
+        return chain
+    out = []
+    for i, hop in enumerate(chain):
+        if not isinstance(hop, dict) or TAIL_KEY not in hop:
+            out.append(hop)
+            continue
+        if set(hop) != {TAIL_KEY}:
+            errors.append(f"{at}[{i}] mixes a tail reference with hop fields; "
+                          f"a tail element carries only '{TAIL_KEY}'")
+            continue
+        if i != len(chain) - 1:
+            errors.append(f"{at}[{i}] references tail {hop[TAIL_KEY]!r} but is "
+                          f"not the last element; a tail ends the chain")
+            continue
+        tail = tails.get(hop[TAIL_KEY])
+        if not isinstance(tail, list) or not tail:
+            errors.append(f"{at}[{i}] references unknown tail "
+                          f"{hop[TAIL_KEY]!r}; declared tails are "
+                          f"{sorted(tails)}")
+            continue
+        out.extend(tail)
+    return out
+
+
+def resolve_entry(ent, tails, family, errors):
+    """Entry with both chains expanded; the original is left untouched."""
+    if not isinstance(ent, dict):
+        return ent
+    out = dict(ent)
+    for field in ("writer_sources", "data_sources"):
+        if field in out:
+            out[field] = resolve_chain(
+                out[field], tails, f"writer_status['{family}'].{field}", errors)
+    return out
 
 # func Name(            -> name=Name, recv=""
 # func (sa *T) Name(    -> name=Name, recv=T
@@ -502,10 +573,47 @@ def check_writer_chain(family, chain, field, repo_root, unverifiable, cache,
                           f"{lines[call_line - 1].strip()[:60]!r}")
         prev = chain[i - 1]
         links = {prev.get("symbol"), prev.get("receiver")} - {None, ""}
-        if hop["calls"] not in links:
+        via = hop.get("via")
+        if via is not None:
+            check_via(hop, via, prev, hop_at, repo_root, unverifiable, cache,
+                      errors)
+        elif hop["calls"] not in links:
             errors.append(f"{hop_at} calls '{hop['calls']}', which is neither "
                           f"the previous hop's symbol nor its receiver type "
                           f"({sorted(links)}) — the chain is not connected")
+
+
+def check_via(hop, via, prev, hop_at, repo_root, unverifiable, cache, errors):
+    """The call goes through a function-valued variable; verify the binding."""
+    if not isinstance(via, dict) or set(via) != VIA_KEYS:
+        errors.append(f"{hop_at}.via must record exactly {sorted(VIA_KEYS)}: "
+                      f"the seam variable and where it is bound")
+        return
+    if hop["calls"] != via["var"]:
+        errors.append(f"{hop_at} dispatches through '{via['var']}' but records "
+                      f"calls '{hop['calls']}'; for a via hop they are the "
+                      f"same name")
+        return
+    rel = via["file"]
+    if rel.startswith(unverifiable):
+        return
+    lines = _source_lines(repo_root, rel, cache)
+    if lines is None:
+        errors.append(f"{hop_at}.via names {rel}, which does not exist or "
+                      f"cannot be read")
+        return
+    if not 1 <= via["line"] <= len(lines):
+        errors.append(f"{hop_at}.via line {rel}:{via['line']} is past EOF")
+        return
+    binding = lines[via["line"] - 1]
+    want = prev.get("symbol")
+    if not re.search(rf"(?<![A-Za-z0-9_]){re.escape(via['var'])}\s*=\s*"
+                     rf"(?:[A-Za-z_]\w*\.)?{re.escape(want)}(?![A-Za-z0-9_])",
+                     binding):
+        errors.append(
+            f"{hop_at}.via claims {rel}:{via['line']} binds '{via['var']}' to "
+            f"'{want}', but the line reads {binding.strip()[:70]!r} — a seam "
+            f"pointed somewhere else emits nothing this map would notice")
 
 
 def check_writers(fams, overlay, repo_root, errors):
@@ -524,12 +632,21 @@ def check_writers(fams, overlay, repo_root, errors):
         return {}
     entries = block.get("families", {})
     unverifiable = tuple(block.get("unverifiable_roots", ()))
+    tails = block.get("tails", {})
     by_name = {e["name"]: e for e in fams}
     packaged = {e["name"] for e in fams if e["class"] == "default"}
     cache = {}
+    used_tails = set()
+    unverified = []
 
     for name in sorted(entries):
         ent = entries[name]
+        if isinstance(ent, dict):
+            for field in ("writer_sources", "data_sources"):
+                for hop in ent.get(field, ()) or ():
+                    if isinstance(hop, dict) and TAIL_KEY in hop:
+                        used_tails.add(hop[TAIL_KEY])
+            ent = resolve_entry(ent, tails, name, errors)
         at = f"writer_status['{name}']"
         if not isinstance(ent, dict):
             errors.append(f"{at} must be an object")
@@ -580,6 +697,8 @@ def check_writers(fams, overlay, repo_root, errors):
                                       f"and must record its receiver type")
             continue
 
+        if status in UNVERIFIED_STATUSES:
+            unverified.append(name)
         if status == "conditional-with-proven-writer" and \
                 len(ent.get("activation_precondition", "")) < 20:
             errors.append(f"{at} is conditional and must name the "
@@ -595,7 +714,27 @@ def check_writers(fams, overlay, repo_root, errors):
                 errors.append(f"{at}.native_callers[{j}] must be 'path:line', "
                               f"got {nc!r}")
 
+    for tail_id in sorted(set(tails) - used_tails):
+        errors.append(f"writer_status.tails['{tail_id}'] is referenced by no "
+                      f"family; an unread chain is a comment, not a gate")
+
     unclassified = sorted(packaged - set(entries))
+    burndown = block.get("burndown", {})
+    ucap = burndown.get("unverified_max")
+    if not isinstance(ucap, int) or ucap < 0:
+        errors.append("writer_status.burndown.unverified_max must be a "
+                      "non-negative integer; it is the ratchet on families "
+                      f"whose status is one of {sorted(UNVERIFIED_STATUSES)}")
+    elif len(unverified) > ucap:
+        errors.append(
+            f"{len(unverified)} families carry an unverified writer status, "
+            f"above the ratchet of {ucap}: {unverified[:8]}"
+            f"{' ...' if len(unverified) > 8 else ''}")
+    elif ucap > len(unverified):
+        errors.append(f"writer_status.burndown.unverified_max is {ucap} but "
+                      f"only {len(unverified)} families are unverified; lower "
+                      f"the ratchet to {len(unverified)} so it cannot drift "
+                      f"back up")
     cap = block.get("burndown", {}).get("unclassified_max")
     if not isinstance(cap, int) or cap < 0:
         errors.append("writer_status.burndown.unclassified_max must be a "
@@ -611,7 +750,8 @@ def check_writers(fams, overlay, repo_root, errors):
                       f"lower the ratchet to {len(unclassified)} so it cannot "
                       f"drift back up")
     return {"writer_classified": len(packaged) - len(unclassified),
-            "writer_unclassified": len(unclassified)}
+            "writer_unclassified": len(unclassified),
+            "writer_unverified": len(unverified)}
 
 
 # ---------------------------------------------------------------------------
@@ -868,7 +1008,12 @@ def build_manifest(fams, overlay, coverage, provenance):
     act = overlay["activation"]
     pri = overlay["priority"]
     review = set(overlay.get("privacy_review_labels", ()))
-    writers = overlay.get("writer_status", {}).get("families", {})
+    writer_block = overlay.get("writer_status", {})
+    tails = writer_block.get("tails", {})
+    # Publish the expanded chain: a consumer of the manifest reads the whole
+    # path to the entry point, never a reference it would have to resolve.
+    writers = {name: resolve_entry(ent, tails, name, [])
+               for name, ent in writer_block.get("families", {}).items()}
     scopes = overlay.get("runtime_scope_by_class", {})
     entries = []
     for e in sorted(fams, key=lambda x: (x["owner"], x["name"])):
@@ -1031,6 +1176,12 @@ def self_test(overlay):
 #  19 func (l *Loop) Run() {
 #  20     middle()
 #  21 }
+#  22
+#  23 var seamFn = recordFam
+#  24
+#  25 func viaSeam() {
+#  26     seamFn()
+#  27 }
 FIXTURE_GO = """package fixture
 
 var famTotal = 1
@@ -1051,6 +1202,12 @@ type Loop struct{}
 
 func (l *Loop) Run() {
 \tmiddle()
+}
+
+var seamFn = recordFam
+
+func viaSeam() {
+\tseamFn()
 }
 """
 
@@ -1079,9 +1236,13 @@ def writer_self_test(root, expect_red, expect_green):
     with open(os.path.join(src, "fam.go"), "w", encoding="utf-8") as fh:
         fh.write(FIXTURE_GO)
 
-    def overlay_with(entry, cap=0, name="loxilb_fixture_total"):
-        return {"writer_status": {"burndown": {"unclassified_max": cap},
-                                  "families": {name: entry} if entry else {}}}
+    def overlay_with(entry, cap=0, name="loxilb_fixture_total", ucap=0,
+                     tails=None):
+        block = {"burndown": {"unclassified_max": cap, "unverified_max": ucap},
+                 "families": {name: entry} if entry else {}}
+        if tails is not None:
+            block["tails"] = tails
+        return {"writer_status": block}
 
     def chain(**mutate):
         c = json.loads(json.dumps(FIXTURE_CHAIN))
@@ -1146,6 +1307,65 @@ def writer_self_test(root, expect_red, expect_green):
     expect_red("ratchet left above the real unclassified count",
                run(overlay_with(entry(), cap=5)))
     expect_red("writer_status block missing entirely", run({}))
+
+    # Shared tails: the hops behind a reference are checked exactly as if they
+    # had been written inline, and a tail that no family reads is dead weight.
+    tail_head = json.loads(json.dumps(FIXTURE_CHAIN[:1]))
+    tail_rest = json.loads(json.dumps(FIXTURE_CHAIN[1:]))
+    expect_green("tail reference expands and is accepted",
+                 run(overlay_with(entry(writer_sources=tail_head +
+                                        [{"tail": "loop"}]),
+                                  tails={"loop": tail_rest})))
+    bad_tail = json.loads(json.dumps(tail_rest))
+    bad_tail[1]["receiver"] = "PluginRegistry"
+    expect_red("hops inside a tail are checked, not trusted",
+               run(overlay_with(entry(writer_sources=tail_head +
+                                      [{"tail": "loop"}]),
+                                tails={"loop": bad_tail})))
+    expect_red("reference to an undeclared tail",
+               run(overlay_with(entry(writer_sources=tail_head +
+                                      [{"tail": "nope"}]),
+                                tails={"loop": tail_rest})))
+    expect_red("tail reference that does not end the chain",
+               run(overlay_with(entry(writer_sources=[{"tail": "loop"}] +
+                                      tail_head),
+                                tails={"loop": tail_rest})))
+    expect_red("declared tail no family references",
+               run(overlay_with(entry(), tails={"loop": tail_rest})))
+
+    # Dispatch through a function-valued seam: the call site names the
+    # variable, never the writer, so the binding has to be checked or the hop
+    # is just a claim.
+    seam_chain = [json.loads(json.dumps(FIXTURE_CHAIN[0])),
+                  {"symbol": "viaSeam", "kind": "func",
+                   "file": "pkg/fixture/fam.go", "def_line": 25,
+                   "call_line": 26, "calls": "seamFn",
+                   "via": {"var": "seamFn", "file": "pkg/fixture/fam.go",
+                           "line": 23},
+                   "entry_point": "goroutine"}]
+
+    def seam(**patch):
+        c = json.loads(json.dumps(seam_chain))
+        c[1].update(patch)
+        return c
+
+    expect_green("seam dispatch accepted when the binding checks out",
+                 run(overlay_with(entry(writer_sources=seam()))))
+    expect_red("seam bound to something other than the recorded writer",
+               run(overlay_with(entry(writer_sources=seam(
+                   via={"var": "seamFn", "file": "pkg/fixture/fam.go",
+                        "line": 3})))))
+    expect_red("seam hop whose calls is not the seam variable",
+               run(overlay_with(entry(writer_sources=seam(calls="recordFam")))))
+
+    # The unverified ratchet is one-way in both directions, like the
+    # unclassified one: a writer-mapped family is mid-burn-down, not done.
+    expect_red("unverified families above their ratchet",
+               run(overlay_with(entry(status="writer-mapped"), ucap=0)))
+    expect_red("unverified ratchet left above the real count",
+               run(overlay_with(entry(), ucap=3)))
+    expect_green("writer-mapped accepted under its ratchet",
+                 run(overlay_with(entry(status="writer-mapped"), ucap=1)))
 
 
 def excluded_consumer_self_test(root, expect_red):
@@ -1249,7 +1469,8 @@ def main():
           f"{coverage['default_unreferenced']} unreferenced)")
     print(f"metric-manifest: writer map "
           f"{coverage.get('writer_classified', 0)} classified / "
-          f"{coverage.get('writer_unclassified', 0)} still unclassified")
+          f"{coverage.get('writer_unclassified', 0)} still unclassified / "
+          f"{coverage.get('writer_unverified', 0)} mapped but unverified")
 
     rendered = json.dumps(manifest, indent=1, sort_keys=False) + "\n"
     if args.check:
