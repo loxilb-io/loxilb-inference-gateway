@@ -592,6 +592,9 @@ func NewLoxilbRestAPIAPI(spec *loads.Document) *LoxilbRestAPIAPI {
 		AiDeleteConfigAiApikeyKeyIDHandler: ai.DeleteConfigAiApikeyKeyIDHandlerFunc(func(params ai.DeleteConfigAiApikeyKeyIDParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation ai.DeleteConfigAiApikeyKeyID has not yet been implemented")
 		}),
+		AiDeleteConfigAiJwtauthprofileNameHandler: ai.DeleteConfigAiJwtauthprofileNameHandlerFunc(func(params ai.DeleteConfigAiJwtauthprofileNameParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation ai.DeleteConfigAiJwtauthprofileName has not yet been implemented")
+		}),
 		DeleteConfigCertCertIDHandler: DeleteConfigCertCertIDHandlerFunc(func(params DeleteConfigCertCertIDParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation DeleteConfigCertCertID has not yet been implemented")
 		}),
@@ -609,6 +612,9 @@ func NewLoxilbRestAPIAPI(spec *loads.Document) *LoxilbRestAPIAPI {
 		}),
 		AiGetConfigAiApikeyKeyIDHandler: ai.GetConfigAiApikeyKeyIDHandlerFunc(func(params ai.GetConfigAiApikeyKeyIDParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation ai.GetConfigAiApikeyKeyID has not yet been implemented")
+		}),
+		AiGetConfigAiJwtauthprofileAllHandler: ai.GetConfigAiJwtauthprofileAllHandlerFunc(func(params ai.GetConfigAiJwtauthprofileAllParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation ai.GetConfigAiJwtauthprofileAll has not yet been implemented")
 		}),
 		AiGetConfigAiModelProfilesHandler: ai.GetConfigAiModelProfilesHandlerFunc(func(params ai.GetConfigAiModelProfilesParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation ai.GetConfigAiModelProfiles has not yet been implemented")
@@ -660,6 +666,9 @@ func NewLoxilbRestAPIAPI(spec *loads.Document) *LoxilbRestAPIAPI {
 		}),
 		AiPostConfigAiApikeyHandler: ai.PostConfigAiApikeyHandlerFunc(func(params ai.PostConfigAiApikeyParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation ai.PostConfigAiApikey has not yet been implemented")
+		}),
+		AiPostConfigAiJwtauthprofileHandler: ai.PostConfigAiJwtauthprofileHandlerFunc(func(params ai.PostConfigAiJwtauthprofileParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation ai.PostConfigAiJwtauthprofile has not yet been implemented")
 		}),
 		AiPostConfigAiTenantRatelimitHandler: ai.PostConfigAiTenantRatelimitHandlerFunc(func(params ai.PostConfigAiTenantRatelimitParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation ai.PostConfigAiTenantRatelimit has not yet been implemented")
@@ -1096,6 +1105,8 @@ type LoxilbRestAPIAPI struct {
 	TracingDeleteCatalogParserHandler tracing.DeleteCatalogParserHandler
 	// AiDeleteConfigAiApikeyKeyIDHandler sets the operation handler for the delete config ai apikey key ID operation
 	AiDeleteConfigAiApikeyKeyIDHandler ai.DeleteConfigAiApikeyKeyIDHandler
+	// AiDeleteConfigAiJwtauthprofileNameHandler sets the operation handler for the delete config ai jwtauthprofile name operation
+	AiDeleteConfigAiJwtauthprofileNameHandler ai.DeleteConfigAiJwtauthprofileNameHandler
 	// DeleteConfigCertCertIDHandler sets the operation handler for the delete config cert cert Id operation
 	DeleteConfigCertCertIDHandler DeleteConfigCertCertIDHandler
 	// DeleteConfigL7PolicyIDHandler sets the operation handler for the delete config l7 policy ID operation
@@ -1108,6 +1119,8 @@ type LoxilbRestAPIAPI struct {
 	AiGetConfigAiApikeyHandler ai.GetConfigAiApikeyHandler
 	// AiGetConfigAiApikeyKeyIDHandler sets the operation handler for the get config ai apikey key ID operation
 	AiGetConfigAiApikeyKeyIDHandler ai.GetConfigAiApikeyKeyIDHandler
+	// AiGetConfigAiJwtauthprofileAllHandler sets the operation handler for the get config ai jwtauthprofile all operation
+	AiGetConfigAiJwtauthprofileAllHandler ai.GetConfigAiJwtauthprofileAllHandler
 	// AiGetConfigAiModelProfilesHandler sets the operation handler for the get config ai model profiles operation
 	AiGetConfigAiModelProfilesHandler ai.GetConfigAiModelProfilesHandler
 	// AiGetConfigAiModelProfilesProfileIDHandler sets the operation handler for the get config ai model profiles profile ID operation
@@ -1142,6 +1155,8 @@ type LoxilbRestAPIAPI struct {
 	PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoHandler PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoHandler
 	// AiPostConfigAiApikeyHandler sets the operation handler for the post config ai apikey operation
 	AiPostConfigAiApikeyHandler ai.PostConfigAiApikeyHandler
+	// AiPostConfigAiJwtauthprofileHandler sets the operation handler for the post config ai jwtauthprofile operation
+	AiPostConfigAiJwtauthprofileHandler ai.PostConfigAiJwtauthprofileHandler
 	// AiPostConfigAiTenantRatelimitHandler sets the operation handler for the post config ai tenant ratelimit operation
 	AiPostConfigAiTenantRatelimitHandler ai.PostConfigAiTenantRatelimitHandler
 	// PostConfigCertHandler sets the operation handler for the post config cert operation
@@ -1781,6 +1796,9 @@ func (o *LoxilbRestAPIAPI) Validate() error {
 	if o.AiDeleteConfigAiApikeyKeyIDHandler == nil {
 		unregistered = append(unregistered, "ai.DeleteConfigAiApikeyKeyIDHandler")
 	}
+	if o.AiDeleteConfigAiJwtauthprofileNameHandler == nil {
+		unregistered = append(unregistered, "ai.DeleteConfigAiJwtauthprofileNameHandler")
+	}
 	if o.DeleteConfigCertCertIDHandler == nil {
 		unregistered = append(unregistered, "DeleteConfigCertCertIDHandler")
 	}
@@ -1798,6 +1816,9 @@ func (o *LoxilbRestAPIAPI) Validate() error {
 	}
 	if o.AiGetConfigAiApikeyKeyIDHandler == nil {
 		unregistered = append(unregistered, "ai.GetConfigAiApikeyKeyIDHandler")
+	}
+	if o.AiGetConfigAiJwtauthprofileAllHandler == nil {
+		unregistered = append(unregistered, "ai.GetConfigAiJwtauthprofileAllHandler")
 	}
 	if o.AiGetConfigAiModelProfilesHandler == nil {
 		unregistered = append(unregistered, "ai.GetConfigAiModelProfilesHandler")
@@ -1849,6 +1870,9 @@ func (o *LoxilbRestAPIAPI) Validate() error {
 	}
 	if o.AiPostConfigAiApikeyHandler == nil {
 		unregistered = append(unregistered, "ai.PostConfigAiApikeyHandler")
+	}
+	if o.AiPostConfigAiJwtauthprofileHandler == nil {
+		unregistered = append(unregistered, "ai.PostConfigAiJwtauthprofileHandler")
 	}
 	if o.AiPostConfigAiTenantRatelimitHandler == nil {
 		unregistered = append(unregistered, "ai.PostConfigAiTenantRatelimitHandler")
@@ -2694,6 +2718,10 @@ func (o *LoxilbRestAPIAPI) initHandlerCache() {
 	if o.handlers["DELETE"] == nil {
 		o.handlers["DELETE"] = make(map[string]http.Handler)
 	}
+	o.handlers["DELETE"]["/config/ai/jwtauthprofile/{name}"] = ai.NewDeleteConfigAiJwtauthprofileName(o.context, o.AiDeleteConfigAiJwtauthprofileNameHandler)
+	if o.handlers["DELETE"] == nil {
+		o.handlers["DELETE"] = make(map[string]http.Handler)
+	}
 	o.handlers["DELETE"]["/config/cert/{certId}"] = NewDeleteConfigCertCertID(o.context, o.DeleteConfigCertCertIDHandler)
 	if o.handlers["DELETE"] == nil {
 		o.handlers["DELETE"] = make(map[string]http.Handler)
@@ -2715,6 +2743,10 @@ func (o *LoxilbRestAPIAPI) initHandlerCache() {
 		o.handlers["GET"] = make(map[string]http.Handler)
 	}
 	o.handlers["GET"]["/config/ai/apikey/{key_id}"] = ai.NewGetConfigAiApikeyKeyID(o.context, o.AiGetConfigAiApikeyKeyIDHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/ai/jwtauthprofile"] = ai.NewGetConfigAiJwtauthprofileAll(o.context, o.AiGetConfigAiJwtauthprofileAllHandler)
 	if o.handlers["GET"] == nil {
 		o.handlers["GET"] = make(map[string]http.Handler)
 	}
@@ -2783,6 +2815,10 @@ func (o *LoxilbRestAPIAPI) initHandlerCache() {
 		o.handlers["POST"] = make(map[string]http.Handler)
 	}
 	o.handlers["POST"]["/config/ai/apikey"] = ai.NewPostConfigAiApikey(o.context, o.AiPostConfigAiApikeyHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/config/ai/jwtauthprofile"] = ai.NewPostConfigAiJwtauthprofile(o.context, o.AiPostConfigAiJwtauthprofileHandler)
 	if o.handlers["POST"] == nil {
 		o.handlers["POST"] = make(map[string]http.Handler)
 	}

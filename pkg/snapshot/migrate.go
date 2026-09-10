@@ -115,6 +115,23 @@ var Migrations = []Migration{
 		ToVersion:   "1.5",
 		Apply:       func(doc *Document) error { return nil },
 	},
+	// 1.5 -> 1.6: the jwtauthprofile domain was added. Purely additive
+	// like 1.2->1.3 -- normalize the absent list to its empty value and
+	// re-stamp. Deliberately NOT stamped into included_domains: a pre-1.6
+	// document never captured this domain, so restoring it must leave
+	// live profiles untouched. Legacy pre-1.2 full-coverage documents get
+	// the domain through the 1.1->1.2 DomainNames() stamp, preserving
+	// their historical "restore replaces everything" semantics.
+	{
+		FromVersion: "1.5",
+		ToVersion:   "1.6",
+		Apply: func(doc *Document) error {
+			if doc.Domains.JWTAuthProfile == nil {
+				doc.Domains.JWTAuthProfile = []cmn.JWTAuthProfileMod{}
+			}
+			return nil
+		},
+	},
 }
 
 // ApplyMigrations runs every registered Migration whose FromVersion matches

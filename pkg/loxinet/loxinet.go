@@ -115,6 +115,11 @@ type loxiNetH struct {
 	// no enable switch. Nil means no key store is configured.
 	AIKeyService *aikey.Service
 
+	// JWTAuthProfiles holds the data-plane JWT auth profiles and their
+	// verifier runtime. Always initialized: profile configuration needs no
+	// external store, and a nil holder would turn config calls into panics.
+	JWTAuthProfiles *JWTAuthProfileH
+
 	// HTTP/HTTPS Protocol Analyzer (Distributed Tracing)
 	tracingEnabled bool           // Whether tracing is enabled
 	ringConsumer   *RingConsumer  // Ring buffer consumer
@@ -789,6 +794,10 @@ func loxiNetInit() {
 	// user service rather than nested inside it: availability of the key store
 	// follows from its own connection options, and enforcement follows from
 	// per-service policy. Neither is a function of --userservice.
+	// JWT auth profiles live in memory (public key material only); the
+	// holder exists regardless of any store configuration.
+	mh.JWTAuthProfiles = JWTAuthProfileInit()
+
 	if opts.Opts.AIKeyDBHost != "" {
 		// Publish the service before dialling, not after. Connect retries with
 		// a doubling backoff and takes tens of seconds against a store that is

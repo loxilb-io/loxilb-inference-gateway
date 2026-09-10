@@ -1308,6 +1308,50 @@ type L7PolicyArg struct {
 	Rules []L7RuleArg `json:"rules,omitempty"`
 }
 
+// JWTAuthProfileMod - named issuer configuration for data-plane bearer
+// (JWT) admission. LB rules reference a profile by Name; several rules may
+// share one profile and several profiles (realms/issuers) can be active at
+// once. Claim extraction is configured dot-paths because the identity
+// provider owns the claim schema; defaults are Keycloak-shaped. Zero-valued
+// numeric fields select the documented defaults. Holds public key sources
+// only -- no secret material.
+type JWTAuthProfileMod struct {
+	// Name - profile identity referenced by LB rules
+	Name string `json:"name"`
+	// Issuer - exact iss match; http(s) URL, also the OIDC discovery base
+	Issuer string `json:"issuer"`
+	// JWKSURL - overrides OIDC discovery when set
+	JWKSURL string `json:"jwks_url,omitempty"`
+	// Audiences - accept-list against aud/azp; empty skips the check
+	Audiences []string `json:"audiences,omitempty"`
+	// Algs - signature-algorithm accept-list (default RS256+ES256)
+	Algs []string `json:"algs,omitempty"`
+	// LeewaySec - clock-skew allowance for exp/nbf/iat (default 30)
+	LeewaySec int `json:"leeway_sec,omitempty"`
+	// RefreshSec - periodic JWKS refresh interval (default 3600)
+	RefreshSec int `json:"refresh_sec,omitempty"`
+	// TenantClaim - dot-path to the tenant claim (default tenant_id)
+	TenantClaim string `json:"tenant_claim,omitempty"`
+	// UserClaim - dot-path to the user claim (default sub)
+	UserClaim string `json:"user_claim,omitempty"`
+	// ModelsClaim - dot-path to an allowed-models array (unset: use roles)
+	ModelsClaim string `json:"models_claim,omitempty"`
+	// RolesClaim - dot-path to the roles array (default realm_access.roles)
+	RolesClaim string `json:"roles_claim,omitempty"`
+	// ModelRolePrefix - prefix turning roles into models (default "model:")
+	ModelRolePrefix string `json:"model_role_prefix,omitempty"`
+	// UsernameClaim - display-only username dot-path
+	UsernameClaim string `json:"username_claim,omitempty"`
+	// ModelAuthz - claims-required (default) or allow-all
+	ModelAuthz string `json:"model_authz,omitempty"`
+	// DefaultTenant - tenant for tokens without a tenant claim (empty: deny)
+	DefaultTenant string `json:"default_tenant,omitempty"`
+	// ForwardIdentity - inject verified X-Auth-* headers upstream
+	ForwardIdentity bool `json:"forward_identity,omitempty"`
+	// AuthorizationPassthrough - keep the Authorization header upstream
+	AuthorizationPassthrough bool `json:"authorization_passthrough,omitempty"`
+}
+
 // LbSecIPArg - Secondary IP
 type LbSecIPArg struct {
 	// SecIP - Secondary IP address
@@ -2041,6 +2085,15 @@ type NetHookInterface interface {
 	NetPolicerGet() ([]PolMod, error)
 	NetPolicerAdd(*PolMod) (int, error)
 	NetPolicerDel(*PolMod) (int, error)
+	// NetJWTAuthProfileGet returns every configured JWT auth profile
+	// (desired configuration, not keyset health).
+	NetJWTAuthProfileGet() ([]JWTAuthProfileMod, error)
+	// NetJWTAuthProfileAdd creates or replaces a profile by name; replacing
+	// restarts its key lifecycle fail-closed.
+	NetJWTAuthProfileAdd(*JWTAuthProfileMod) (int, error)
+	// NetJWTAuthProfileDel removes a profile; refused while any LB rule
+	// references it.
+	NetJWTAuthProfileDel(name string) (int, error)
 	NetCIStateMod(*HASMod) (int, error)
 	NetCIStateGet() ([]HASMod, error)
 	NetFwRuleAdd(*FwRuleMod) (int, error)

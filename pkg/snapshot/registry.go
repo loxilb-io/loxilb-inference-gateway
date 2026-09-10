@@ -38,6 +38,14 @@ type Hooks interface {
 	NetEpHostAdd(*cmn.EndPointMod) (int, error)
 	NetEpHostDel(*cmn.EndPointMod) (int, error)
 
+	// jwtauthprofile (schema 1.6): data-plane JWT auth profiles. Applied
+	// before loadbalancer -- rules reference a profile by name, and the
+	// profile-side delete refuses while references exist, so the reverse
+	// DeleteOrder (rules first) tears down cleanly. Add is an upsert.
+	NetJWTAuthProfileGet() ([]cmn.JWTAuthProfileMod, error)
+	NetJWTAuthProfileAdd(*cmn.JWTAuthProfileMod) (int, error)
+	NetJWTAuthProfileDel(name string) (int, error)
+
 	// loadbalancer (§4.1 #2)
 	NetLbRuleGet() ([]cmn.LbRuleMod, error)
 	NetLbRuleAdd(*cmn.LbRuleMod) (int, error)
@@ -204,6 +212,7 @@ type DomainEntry struct {
 // loadbalancer, session before sessionulcl, etc.). See ApplyOrder/DeleteOrder.
 var Registry = []DomainEntry{
 	{Name: DomainEndpoint, Get: getEndpoint, Apply: applyEndpoint, Delete: deleteEndpoint},
+	{Name: DomainJWTAuthProfile, Get: getJWTAuthProfile, Apply: applyJWTAuthProfile, Delete: deleteJWTAuthProfile},
 	{Name: DomainLoadBalancer, Get: getLoadBalancer, Apply: applyLoadBalancer, Delete: deleteLoadBalancer},
 	{Name: DomainKvExactBinding, Get: getKvExactBinding, Apply: applyKvExactBinding, Delete: deleteKvExactBinding},
 	{Name: DomainL7Policy, Get: getL7Policy, Apply: applyL7Policy, Delete: deleteL7Policy},
@@ -476,6 +485,60 @@ func deleteEndpoint(hooks Hooks) (int, error) {
 // ---------------------------------------------------------------------
 // 2. loadbalancer
 // ---------------------------------------------------------------------
+
+// ---------------------------------------------------------------------
+// jwtauthprofile (schema 1.6)
+//
+// Profiles apply before loadbalancer (rules reference them by name) and,
+// via the reversed DeleteOrder, are deleted after the rules referencing
+// them -- the profile-side delete refuses while references exist.
+// ---------------------------------------------------------------------
+
+func getJWTAuthProfile(hooks Hooks, doc *Document) error {
+	profiles, err := hooks.NetJWTAuthProfileGet()
+	if err != nil {
+		return fmt.Errorf("get jwtauthprofile: %w", err)
+	}
+	doc.Domains.JWTAuthProfile = profiles
+	return nil
+}
+
+func applyJWTAuthProfile(hooks Hooks, doc *Document, tolerateExists bool) (int, int, error) {
+	n, skipped := 0, 0
+	for i := range doc.Domains.JWTAuthProfile {
+		p := &doc.Domains.JWTAuthProfile[i]
+		if _, err := hooks.NetJWTAuthProfileAdd(p); err != nil {
+			// Add is an upsert, so an exists-shaped error should not
+			// occur; the guard keeps the domain uniform with the others
+			// under tolerateExists replays anyway.
+			if tolerateExists && isIdempotentExists(err) {
+				skipped++
+				continue
+			}
+			return n, skipped, fmt.Errorf("apply jwtauthprofile %q: %w", p.Name, err)
+		}
+		n++
+	}
+	return n, skipped, nil
+}
+
+func deleteJWTAuthProfile(hooks Hooks) (int, error) {
+	profiles, err := hooks.NetJWTAuthProfileGet()
+	if err != nil {
+		return 0, fmt.Errorf("delete jwtauthprofile: get: %w", err)
+	}
+	n := 0
+	var errs []error
+	for i := range profiles {
+		p := &profiles[i]
+		if _, err := hooks.NetJWTAuthProfileDel(p.Name); err != nil {
+			errs = append(errs, fmt.Errorf("delete jwtauthprofile %q: %w", p.Name, err))
+			continue
+		}
+		n++
+	}
+	return n, errors.Join(errs...)
+}
 
 func getLoadBalancer(hooks Hooks, doc *Document) error {
 	rules, err := hooks.NetLbRuleGet()

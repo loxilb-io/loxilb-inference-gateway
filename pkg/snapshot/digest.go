@@ -237,6 +237,8 @@ func domainItemJSONs(name string, d *Domains) ([]string, error) {
 	switch name {
 	case DomainEndpoint:
 		return itemJSONs(d.Endpoint)
+	case DomainJWTAuthProfile:
+		return itemJSONs(d.JWTAuthProfile)
 	case DomainLoadBalancer:
 		return itemJSONs(d.LoadBalancer)
 	case DomainKvExactBinding:
