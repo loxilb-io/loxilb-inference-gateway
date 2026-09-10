@@ -173,7 +173,7 @@ func TestClassifierNeedlesAreLowercase(t *testing.T) {
 // string, the only signal left is its wording, so the status is decided by a
 // substring search over an open-ended phrase table — which is why two
 // branches of one validator classified 400 and 500.
-const flatteningCeiling = 127
+const flatteningCeiling = 124
 
 // TestErrorFlatteningDoesNotGrow pins that ratchet, and pins to zero the
 // handler this change converted.
