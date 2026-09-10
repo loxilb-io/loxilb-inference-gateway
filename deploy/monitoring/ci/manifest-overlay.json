@@ -407,5 +407,310 @@
   "loxilb_security_udp_bytes_passed_total": "Byte twin of the dashboarded UDP passed/blocked packet counters and blocked-bytes panel; passed-byte volume adds no verdict signal.",
   "loxilb_service_traffic_packets_total": "Per-service packet twin of the dashboarded bytes counter; the exact per-backend packets/s panel covers the packet-rate question with finer attribution.",
   "loxilb_snapshot_quarantine_total": "Did a boot quarantine an unreplayable snapshot.json? Interim: quarantine events land in the gateway log and loxilb_boot_legacy_fallback_total or restore alerts fire on the same boot path. Panel arrives with the persistence-panel extension in the config generation follow-up."
+ },
+ "_comment_runtime_scope": "Where a family can appear at runtime at all -- a different question from whether this release qualifies it. Published per family as runtime_scope so a consumer can tell 'absent because the profile is not deployed' from 'absent because nothing has driven it yet'.",
+ "runtime_scope_by_class": {
+  "default": "gateway-default",
+  "dpu-doca": "gateway-dpu-build-gated",
+  "aictrl-bridge": "gateway-optional-bridge",
+  "kv-agent-health": "gateway-optional-bridge",
+  "standalone-controller": "standalone-binary",
+  "standalone-kv-agent": "standalone-binary"
+ },
+ "excluded_consumer_scan": {
+  "_comment": [
+   "This release develops and qualifies only the 176 gateway-default families.",
+   "The other 56 are RELEASE-EXCLUDED-EXPERIMENTAL: they may stay in source, but",
+   "no default dashboard, alert rule, scrape job, or release test may depend on",
+   "them. That property holds today; this block locks it so reintroducing a",
+   "dependency fails in CI instead of at release acceptance.",
+   "Each surface must match at least one file -- a scan that reads nothing would",
+   "pass forever and prove nothing -- and the inventory files that legitimately",
+   "list every family by name are exempted explicitly, not by pattern."
+  ],
+  "surfaces": [
+   { "glob": "deploy/monitoring/grafana/dashboards/*.json", "kind": "dashboard" },
+   { "glob": "deploy/monitoring/prometheus/rules/*.yml", "kind": "alert-rule" },
+   { "glob": "deploy/monitoring/prometheus/prometheus.yml", "kind": "scrape-job" },
+   { "glob": "deploy/monitoring/alertmanager/*.yml", "kind": "alert-routing" },
+   { "glob": "deploy/monitoring/ci/*.py", "kind": "monitoring-ci" },
+   { "glob": "cicd/**/*.sh", "kind": "release-test" },
+   { "glob": "cicd/**/*.py", "kind": "release-test" }
+  ],
+  "_note_surfaces": "e2e/ holds no test sources in this repo (only CLAUDE.md), so it is not listed -- a surface that matches nothing is rejected rather than carried as decoration. Per-owner Go unit tests of the excluded features (api/prometheus/aictrl_metrics_test.go, pkg/loxinet/dpu_metrics_test.go) are deliberately out of scope: exercising an excluded family in its own package is not a release dependency on it.",
+  "inventory_exempt": [
+   "deploy/monitoring/ci/manifest-overlay.json",
+   "deploy/monitoring/ci/gen-metric-manifest.py",
+   "deploy/monitoring/ci/test_lint_monitoring.py",
+   "deploy/monitoring/ci/lint-monitoring.py",
+   "deploy/monitoring/manifest/metric-manifest.json",
+   "deploy/monitoring/manifest/oss-parity.json"
+  ]
+ },
+ "writer_status": {
+  "_comment": [
+   "WP-0 of the metric coverage campaign. Per packaged family: the reviewed,",
+   "ordered chain of Go symbols from the metric constructor to a production",
+   "entry point. gen-metric-manifest.py re-verifies every recorded anchor",
+   "against the source tree on each run, so this is a claim that decays loudly",
+   "rather than a comment that rots quietly.",
+   "",
+   "Why it is stored rather than derived: on 2026-09-10 a 'zero callers' query",
+   "classified four live loxilb_parser_* families as dead. The query was right",
+   "about the symbol it was handed (ParseWithTimeoutOrDefault) and wrong about",
+   "the families, because that symbol is a method on PluginRegistry while the",
+   "production path runs through TraceParserRegistry. The two facts that would",
+   "have caught it -- the receiver type of each method hop, and the transitive",
+   "chain up to an entry point -- do not survive in a query result, so they are",
+   "recorded here and reviewed by a human.",
+   "",
+   "Chain shape. writer_sources[0] is the function that touches the family's",
+   "constructor; it records def_line (its own 'func' line) and writes (the",
+   "constructor variable it must mention). Every later hop records def_line for",
+   "itself plus call_line/calls for the call it makes into the previous hop,",
+   "and the last hop declares entry_point. kind='method' always requires",
+   "receiver. data_sources is the same shape, for collector-backed families",
+   "whose values are refreshed on a separate path from the one that emits them.",
+   "",
+   "status: verified-runtime (observed emitting real values on a bed, value",
+   "checked) | conditional-with-proven-writer (writer proven in source, family",
+   "stays absent until a named precondition is met) | verified-static (writer",
+   "proven in source and driven by a test, not yet seen on a bed) |",
+   "definition-only (reviewed and accepted as having no production writer;",
+   "must list the exact symbols queried, with receivers).",
+   "",
+   "burndown.unclassified_max is a one-way ratchet. The gate fails when more",
+   "families are unclassified than the ceiling AND when the ceiling sits above",
+   "the real count, so classifying families forces it down and it cannot drift",
+   "back up. At 0 this is exactly the gate WP-0 specifies. The number is the",
+   "honest measure of how much of the metric contract is actually reviewed."
+  ],
+  "burndown": {
+   "unclassified_max": 159,
+   "_note": "176 packaged families, 17 classified on 2026-09-10 (the parser group corrected in the plan's 0.3.1, the AI CGO denial/token writers from A.3, and the QoS shaper group measured in B.5b). Lower this as families are reviewed; never raise it."
+  },
+  "unverifiable_roots": [
+   "loxilb-ebpf/"
+  ],
+  "_note_unverifiable_roots": "Paths whose anchors are recorded but not checked, because CI checks out the main tree only (monitoring-lint.yml sets submodules: false). Shape is still validated; the line is a reviewed reference, not a verified anchor.",
+  "families": {
+   "loxilb_parser_calls_total": {
+    "status": "conditional-with-proven-writer",
+    "activation_precondition": "a tracing catalog with deep_inspection.enabled=true and a non-empty parser_type (pkg/loxinet/catalog.go), synced to the datapath by catalog_sync.go. Absent on a bed with no such catalog, which proves nothing about the writer.",
+    "writer_sources": [
+     { "symbol": "RecordParseCall", "kind": "func", "file": "pkg/loxinet/payload_metrics.go", "def_line": 65, "writes": "parseCallsTotal" },
+     { "symbol": "EnrichSpanWithPayload", "kind": "func", "file": "pkg/loxinet/lxb_span_enricher.go", "def_line": 33, "call_line": 156, "calls": "RecordParseCall", "note": "success branch; the error/timeout/panic branch calls the same helper at :145" },
+     { "symbol": "handleReqEnd", "kind": "method", "receiver": "SpanAssembler", "file": "pkg/loxinet/lxb_span_assembler.go", "def_line": 264, "call_line": 326, "calls": "EnrichSpanWithPayload" },
+     { "symbol": "ProcessEvent", "kind": "method", "receiver": "SpanAssembler", "file": "pkg/loxinet/lxb_span_assembler.go", "def_line": 120, "call_line": 125, "calls": "handleReqEnd", "entry_point": "event-loop" }
+    ],
+    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section 0.3.1 -- source re-verification 2026-09-10 that withdrew the DEFINED-WRITER-UNWIRED finding"
+   },
+   "loxilb_parser_duration_seconds": {
+    "status": "conditional-with-proven-writer",
+    "activation_precondition": "a tracing catalog with deep_inspection.enabled=true and a non-empty parser_type (pkg/loxinet/catalog.go); observed on the same call as loxilb_parser_calls_total.",
+    "writer_sources": [
+     { "symbol": "RecordParseCall", "kind": "func", "file": "pkg/loxinet/payload_metrics.go", "def_line": 65, "writes": "parseLatency" },
+     { "symbol": "EnrichSpanWithPayload", "kind": "func", "file": "pkg/loxinet/lxb_span_enricher.go", "def_line": 33, "call_line": 156, "calls": "RecordParseCall" },
+     { "symbol": "handleReqEnd", "kind": "method", "receiver": "SpanAssembler", "file": "pkg/loxinet/lxb_span_assembler.go", "def_line": 264, "call_line": 326, "calls": "EnrichSpanWithPayload" },
+     { "symbol": "ProcessEvent", "kind": "method", "receiver": "SpanAssembler", "file": "pkg/loxinet/lxb_span_assembler.go", "def_line": 120, "call_line": 125, "calls": "handleReqEnd", "entry_point": "event-loop" }
+    ],
+    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section 0.3.1 -- source re-verification 2026-09-10"
+   },
+   "loxilb_parser_body_size_bytes": {
+    "status": "conditional-with-proven-writer",
+    "activation_precondition": "a tracing catalog with deep_inspection.enabled=true and a non-empty parser_type; the body must also be under the catalog's max_body_size for a sample to be recorded.",
+    "writer_sources": [
+     { "symbol": "RecordParsedBodySize", "kind": "func", "file": "pkg/loxinet/payload_metrics.go", "def_line": 71, "writes": "parsedBodySize" },
+     { "symbol": "EnrichSpanWithPayload", "kind": "func", "file": "pkg/loxinet/lxb_span_enricher.go", "def_line": 33, "call_line": 61, "calls": "RecordParsedBodySize" },
+     { "symbol": "handleReqEnd", "kind": "method", "receiver": "SpanAssembler", "file": "pkg/loxinet/lxb_span_assembler.go", "def_line": 264, "call_line": 326, "calls": "EnrichSpanWithPayload" },
+     { "symbol": "ProcessEvent", "kind": "method", "receiver": "SpanAssembler", "file": "pkg/loxinet/lxb_span_assembler.go", "def_line": 120, "call_line": 125, "calls": "handleReqEnd", "entry_point": "event-loop" }
+    ],
+    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section 0.3.1 -- source re-verification 2026-09-10"
+   },
+   "loxilb_parser_attributes_extracted_total": {
+    "status": "conditional-with-proven-writer",
+    "activation_precondition": "a tracing catalog with deep_inspection.enabled=true and a non-empty parser_type; the writer additionally returns early when the parser extracted zero attributes, so a successful parse of an attribute-free payload leaves this family absent.",
+    "writer_sources": [
+     { "symbol": "RecordAttributesExtracted", "kind": "func", "file": "pkg/loxinet/payload_metrics.go", "def_line": 76, "writes": "attributesExtracted" },
+     { "symbol": "EnrichSpanWithPayload", "kind": "func", "file": "pkg/loxinet/lxb_span_enricher.go", "def_line": 33, "call_line": 175, "calls": "RecordAttributesExtracted" },
+     { "symbol": "handleReqEnd", "kind": "method", "receiver": "SpanAssembler", "file": "pkg/loxinet/lxb_span_assembler.go", "def_line": 264, "call_line": 326, "calls": "EnrichSpanWithPayload" },
+     { "symbol": "ProcessEvent", "kind": "method", "receiver": "SpanAssembler", "file": "pkg/loxinet/lxb_span_assembler.go", "def_line": 120, "call_line": 125, "calls": "handleReqEnd", "entry_point": "event-loop" }
+    ],
+    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section 0.3.1 -- source re-verification 2026-09-10"
+   },
+   "loxilb_ai_rate_limit_hits_total": {
+    "status": "conditional-with-proven-writer",
+    "activation_precondition": "an API-key store (--aikey-db-* flags) plus --api-key-auth=required on the LB rule, and a key whose rps/burst is actually exceeded. With no key store no request carries a tenant, so the denial can never fire.",
+    "writer_sources": [
+     { "symbol": "RecordRateLimitHit", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 381, "writes": "aiRateLimitHitsTotal" },
+     { "symbol": "llb_ai_ratelimit_check", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 506, "call_line": 561, "calls": "RecordRateLimitHit", "entry_point": "cgo-export", "note": "llb_ai_token_quota_reserve records the same family at ai_gateway_dp.go:756 with reason token_quota_would_exceed" }
+    ],
+    "native_callers": [
+     "loxilb-ebpf/common/sockproxy_http.c:6412"
+    ],
+    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section A.3 -- weak-stub tripwire never logged on the running gateway, so the strong Go CGO exports are the bound symbols"
+   },
+   "loxilb_ai_model_not_allowed_total": {
+    "status": "conditional-with-proven-writer",
+    "activation_precondition": "an API-key store plus --api-key-auth=required on the LB rule, and a request naming a model outside the key's --allowed-models list (decision == 2, HTTP 403).",
+    "writer_sources": [
+     { "symbol": "RecordModelNotAllowed", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 391, "writes": "aiModelNotAllowedTotal" },
+     { "symbol": "llb_ai_validate_key", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 326, "call_line": 394, "calls": "RecordModelNotAllowed", "entry_point": "cgo-export" }
+    ],
+    "native_callers": [
+     "loxilb-ebpf/common/sockproxy_http.c:6343"
+    ],
+    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section A.3 -- CGO call-site table, verified against ai_gateway_dp.go at 4d1f8a24"
+   },
+   "loxilb_ai_tokens_consumed_total": {
+    "status": "conditional-with-proven-writer",
+    "activation_precondition": "a tenant with --tokens-per-min set on an API-key-enabled rule, and a completed response the quota path charges. The writer returns early when prompt+completion is zero, so a charge of nothing leaves the family absent.",
+    "writer_sources": [
+     { "symbol": "RecordTokenUsage", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 401, "writes": "aiTokensConsumedTotal" },
+     { "symbol": "llb_ai_token_quota_consume", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 795, "call_line": 815, "calls": "RecordTokenUsage", "entry_point": "cgo-export" }
+    ],
+    "native_callers": [
+     "loxilb-ebpf/common/sockproxy_http.c:1514",
+     "loxilb-ebpf/common/sockproxy_http.c:1693",
+     "loxilb-ebpf/common/sockproxy_http.c:4660",
+     "loxilb-ebpf/common/sockproxy_http.c:6242"
+    ],
+    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section A.3 -- CGO call-site table; exact-delta assertions specified in WP-2"
+   },
+   "loxilb_ai_tokens_estimated_total": {
+    "status": "conditional-with-proven-writer",
+    "activation_precondition": "the same quota path as loxilb_ai_tokens_consumed_total, additionally on the estimated branch -- the response carried no usage object, so the data plane priced the charge from its own estimate.",
+    "writer_sources": [
+     { "symbol": "RecordTokenUsage", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 401, "writes": "aiTokensEstimatedTotal" },
+     { "symbol": "llb_ai_token_quota_consume", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 795, "call_line": 815, "calls": "RecordTokenUsage", "entry_point": "cgo-export" }
+    ],
+    "native_callers": [
+     "loxilb-ebpf/common/sockproxy_http.c:1514",
+     "loxilb-ebpf/common/sockproxy_http.c:1693",
+     "loxilb-ebpf/common/sockproxy_http.c:4660",
+     "loxilb-ebpf/common/sockproxy_http.c:6242"
+    ],
+    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section A.3; WP-2's red twin is the no-usage backend that drives exactly this branch"
+   },
+   "loxilb_ai_tokens_missing_total": {
+    "status": "conditional-with-proven-writer",
+    "activation_precondition": "the same estimated branch as loxilb_ai_tokens_estimated_total -- one increment per response that carried no usage object.",
+    "writer_sources": [
+     { "symbol": "RecordTokenUsage", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 401, "writes": "aiTokensMissingTotal" },
+     { "symbol": "llb_ai_token_quota_consume", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 795, "call_line": 815, "calls": "RecordTokenUsage", "entry_point": "cgo-export" }
+    ],
+    "native_callers": [
+     "loxilb-ebpf/common/sockproxy_http.c:1514",
+     "loxilb-ebpf/common/sockproxy_http.c:1693",
+     "loxilb-ebpf/common/sockproxy_http.c:4660",
+     "loxilb-ebpf/common/sockproxy_http.c:6242"
+    ],
+    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section A.3; WP-2 asserts this equals the number of no-usage responses exactly"
+   },
+   "loxilb_proxy_qos_bytes_passed_total": {
+    "status": "verified-runtime",
+    "writer_sources": [
+     { "symbol": "Collect", "kind": "method", "receiver": "qosShaperCollector", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 165, "writes": "qosBytesPassedDesc" },
+     { "symbol": "init", "kind": "func", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 185, "call_line": 186, "calls": "qosShaperCollector", "entry_point": "registry-collector", "note": "registry-mediated dispatch: the link is the receiver type handed to prometheus.MustRegister, not a direct call to Collect" }
+    ],
+    "data_sources": [
+     { "symbol": "refreshQosShaperStore", "kind": "func", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 232, "writes": "qosShaperStore" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "call_line": 1153, "calls": "refreshQosShaperStore" },
+     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
+    ],
+    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section B.5b, run 'WP-3 QoS' 2026-09-09 on llbigw-2: bytes_passed 46758599 against curl's 46758393 (+206 HTTP headers). The writer path is proven; WP-3 sign-off is separately blocked by defect D-3."
+   },
+   "loxilb_proxy_qos_bytes_delayed_total": {
+    "status": "verified-runtime",
+    "writer_sources": [
+     { "symbol": "Collect", "kind": "method", "receiver": "qosShaperCollector", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 165, "writes": "qosBytesDelayedDesc" },
+     { "symbol": "init", "kind": "func", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 185, "call_line": 186, "calls": "qosShaperCollector", "entry_point": "registry-collector" }
+    ],
+    "data_sources": [
+     { "symbol": "refreshQosShaperStore", "kind": "func", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 232, "writes": "qosShaperStore" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "call_line": 1153, "calls": "refreshQosShaperStore" },
+     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
+    ],
+    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section B.5b: passed minus delayed = 30054432, matching the 30 MB CBS; red twin A held delayed at 0 below CIR. Sign-off blocked by D-3."
+   },
+   "loxilb_proxy_qos_parks_total": {
+    "status": "verified-runtime",
+    "writer_sources": [
+     { "symbol": "Collect", "kind": "method", "receiver": "qosShaperCollector", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 165, "writes": "qosParksDesc" },
+     { "symbol": "init", "kind": "func", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 185, "call_line": 186, "calls": "qosShaperCollector", "entry_point": "registry-collector" }
+    ],
+    "data_sources": [
+     { "symbol": "refreshQosShaperStore", "kind": "func", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 232, "writes": "qosShaperStore" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "call_line": 1153, "calls": "refreshQosShaperStore" },
+     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
+    ],
+    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section B.5b: 1697 parks under shaping, and exactly 0 in red twin A below CIR -- the arm that separates counting bytes from actually shaping. Sign-off blocked by D-3."
+   },
+   "loxilb_proxy_qos_park_seconds_total": {
+    "status": "verified-runtime",
+    "writer_sources": [
+     { "symbol": "Collect", "kind": "method", "receiver": "qosShaperCollector", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 165, "writes": "qosParkSecondsDesc" },
+     { "symbol": "init", "kind": "func", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 185, "call_line": 186, "calls": "qosShaperCollector", "entry_point": "registry-collector" }
+    ],
+    "data_sources": [
+     { "symbol": "refreshQosShaperStore", "kind": "func", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 232, "writes": "qosShaperStore" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "call_line": 1153, "calls": "refreshQosShaperStore" },
+     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
+    ],
+    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section B.5b: 15.80 s of park against 16.77 s wall time; mean park 9.3 ms. Sign-off blocked by D-3."
+   },
+   "loxilb_proxy_qos_parked_connections": {
+    "status": "verified-runtime",
+    "writer_sources": [
+     { "symbol": "Collect", "kind": "method", "receiver": "qosShaperCollector", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 165, "writes": "qosParkedConnsDesc" },
+     { "symbol": "init", "kind": "func", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 185, "call_line": 186, "calls": "qosShaperCollector", "entry_point": "registry-collector" }
+    ],
+    "data_sources": [
+     { "symbol": "refreshQosShaperStore", "kind": "func", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 232, "writes": "qosShaperStore" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "call_line": 1153, "calls": "refreshQosShaperStore" },
+     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
+    ],
+    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section B.5b: parked_connections above zero throughout the shaped drive. Sign-off blocked by D-3."
+   },
+   "loxilb_proxy_qos_tokens_bytes": {
+    "status": "verified-runtime",
+    "writer_sources": [
+     { "symbol": "Collect", "kind": "method", "receiver": "qosShaperCollector", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 165, "writes": "qosTokensDesc" },
+     { "symbol": "init", "kind": "func", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 185, "call_line": 186, "calls": "qosShaperCollector", "entry_point": "registry-collector" }
+    ],
+    "data_sources": [
+     { "symbol": "refreshQosShaperStore", "kind": "func", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 232, "writes": "qosShaperStore" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "call_line": 1153, "calls": "refreshQosShaperStore" },
+     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
+    ],
+    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section B.5b: bucket level tracked the shaped drive and sat near zero while rate-bound. Sign-off blocked by D-3."
+   },
+   "loxilb_proxy_qos_cir_bytes_per_second": {
+    "status": "verified-runtime",
+    "writer_sources": [
+     { "symbol": "Collect", "kind": "method", "receiver": "qosShaperCollector", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 165, "writes": "qosCirDesc" },
+     { "symbol": "init", "kind": "func", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 185, "call_line": 186, "calls": "qosShaperCollector", "entry_point": "registry-collector" }
+    ],
+    "data_sources": [
+     { "symbol": "refreshQosShaperStore", "kind": "func", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 232, "writes": "qosShaperStore" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "call_line": 1153, "calls": "refreshQosShaperStore" },
+     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
+    ],
+    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section B.5b: exactly 1e6 for --rate=8:8 and 1.25e7 for --rate=100:100. Sign-off blocked by D-3."
+   },
+   "loxilb_proxy_qos_cbs_bytes": {
+    "status": "verified-runtime",
+    "writer_sources": [
+     { "symbol": "Collect", "kind": "method", "receiver": "qosShaperCollector", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 165, "writes": "qosCbsDesc" },
+     { "symbol": "init", "kind": "func", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 185, "call_line": 186, "calls": "qosShaperCollector", "entry_point": "registry-collector" }
+    ],
+    "data_sources": [
+     { "symbol": "refreshQosShaperStore", "kind": "func", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 232, "writes": "qosShaperStore" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "call_line": 1153, "calls": "refreshQosShaperStore" },
+     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
+    ],
+    "evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section B.5b: 3e7 exactly, matching the policy COMMITTEDBLKSIZE. Sign-off blocked by D-3."
+   }
+  }
  }
 }

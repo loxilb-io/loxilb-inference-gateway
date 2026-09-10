@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-09T00:29:12+00:00",
-  "source_revision": "bb84d8949e5e082f97690d96013c681b4ae9869c"
+  "generated_at": "2026-09-10T02:55:53+00:00",
+  "source_revision": "4d1f8a24f10f16ec284eb19cc6129e124daee24c"
  },
  "contract": {
   "total": 232,
@@ -24,7 +24,9 @@
   "default_families": 176,
   "default_referenced": 155,
   "default_waived": 21,
-  "default_unreferenced": 0
+  "default_unreferenced": 0,
+  "writer_classified": 17,
+  "writer_unclassified": 159
  },
  "families": [
   {
@@ -40,7 +42,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "pkg/loxinet/dpu_metrics.go:134"
+   "source": "pkg/loxinet/dpu_metrics.go:134",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-dpu-build-gated",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "doca_aging_cycle_duration_seconds",
@@ -55,7 +63,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "pkg/loxinet/dpu_metrics.go:60"
+   "source": "pkg/loxinet/dpu_metrics.go:60",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-dpu-build-gated",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "doca_circuit_breaker_state",
@@ -70,7 +84,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "pkg/loxinet/dpu_metrics.go:38"
+   "source": "pkg/loxinet/dpu_metrics.go:38",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-dpu-build-gated",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "doca_ct_pipe_utilization",
@@ -87,7 +107,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "pkg/loxinet/dpu_metrics.go:56"
+   "source": "pkg/loxinet/dpu_metrics.go:56",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-dpu-build-gated",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "doca_fdb_entries_active",
@@ -104,7 +130,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "pkg/loxinet/dpu_metrics.go:122"
+   "source": "pkg/loxinet/dpu_metrics.go:122",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-dpu-build-gated",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "doca_meter_bytes_total",
@@ -122,7 +154,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "pkg/loxinet/dpu_metrics.go:71"
+   "source": "pkg/loxinet/dpu_metrics.go:71",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-dpu-build-gated",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "doca_meter_offload_active",
@@ -140,7 +178,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "pkg/loxinet/dpu_metrics.go:75"
+   "source": "pkg/loxinet/dpu_metrics.go:75",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-dpu-build-gated",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "doca_meter_packets_total",
@@ -158,7 +202,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "pkg/loxinet/dpu_metrics.go:67"
+   "source": "pkg/loxinet/dpu_metrics.go:67",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-dpu-build-gated",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "doca_meter_pool_exhausted_total",
@@ -173,7 +223,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "pkg/loxinet/dpu_metrics.go:79"
+   "source": "pkg/loxinet/dpu_metrics.go:79",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-dpu-build-gated",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "doca_offload_active_flows",
@@ -188,7 +244,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "pkg/loxinet/dpu_metrics.go:34"
+   "source": "pkg/loxinet/dpu_metrics.go:34",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-dpu-build-gated",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "doca_offload_attempts_total",
@@ -203,7 +265,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "pkg/loxinet/dpu_metrics.go:42"
+   "source": "pkg/loxinet/dpu_metrics.go:42",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-dpu-build-gated",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "doca_offload_deferred_retry_total",
@@ -220,7 +288,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "pkg/loxinet/dpu_metrics.go:180"
+   "source": "pkg/loxinet/dpu_metrics.go:180",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-dpu-build-gated",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "doca_offload_failures_total",
@@ -235,7 +309,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "pkg/loxinet/dpu_metrics.go:46"
+   "source": "pkg/loxinet/dpu_metrics.go:46",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-dpu-build-gated",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "doca_offload_install_errors_total",
@@ -253,7 +333,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "pkg/loxinet/dpu_metrics.go:210"
+   "source": "pkg/loxinet/dpu_metrics.go:210",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-dpu-build-gated",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "doca_pipe_hw_bytes_total",
@@ -271,7 +357,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "pkg/loxinet/dpu_metrics.go:115"
+   "source": "pkg/loxinet/dpu_metrics.go:115",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-dpu-build-gated",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "doca_pipe_hw_pkts_total",
@@ -289,7 +381,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "pkg/loxinet/dpu_metrics.go:110"
+   "source": "pkg/loxinet/dpu_metrics.go:110",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-dpu-build-gated",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "doca_route_entries_active",
@@ -304,7 +402,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "pkg/loxinet/dpu_metrics.go:128"
+   "source": "pkg/loxinet/dpu_metrics.go:128",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-dpu-build-gated",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "doca_stale_entries_evicted_total",
@@ -319,7 +423,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "pkg/loxinet/dpu_metrics.go:52"
+   "source": "pkg/loxinet/dpu_metrics.go:52",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-dpu-build-gated",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_acl_hw_allow_entries",
@@ -334,7 +444,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "pkg/loxinet/dpu_metrics.go:154"
+   "source": "pkg/loxinet/dpu_metrics.go:154",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-dpu-build-gated",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_acl_hw_deny_entries",
@@ -349,7 +465,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "pkg/loxinet/dpu_metrics.go:148"
+   "source": "pkg/loxinet/dpu_metrics.go:148",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-dpu-build-gated",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_acl_hw_offload_rules_total",
@@ -366,7 +488,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "pkg/loxinet/dpu_metrics.go:163"
+   "source": "pkg/loxinet/dpu_metrics.go:163",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-dpu-build-gated",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_active_conntrack_entries",
@@ -385,7 +513,13 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:219"
+   "source": "api/prometheus/prometheus.go:219",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_active_flow_count_sctp",
@@ -402,7 +536,13 @@
     "loxilb-l4.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:237"
+   "source": "api/prometheus/prometheus.go:237",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_active_flow_count_tcp",
@@ -419,7 +559,13 @@
     "loxilb-l4.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:225"
+   "source": "api/prometheus/prometheus.go:225",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_active_flow_count_udp",
@@ -436,7 +582,13 @@
     "loxilb-l4.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:231"
+   "source": "api/prometheus/prometheus.go:231",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_ai_active_streams",
@@ -455,7 +607,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:182"
+   "source": "api/prometheus/ai_metrics.go:182",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_ai_engine_info",
@@ -473,7 +631,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "Info metric (constant 1) for PromQL joins and legend enrichment of engine identity; standalone display would duplicate configuration.",
-   "source": "api/prometheus/sockproxy_metrics.go:397"
+   "source": "api/prometheus/sockproxy_metrics.go:397",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_ai_keyed_services",
@@ -490,7 +654,13 @@
     "loxilb-ai-kv-alerts.yml"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:261"
+   "source": "api/prometheus/prometheus.go:261",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_ai_kv_attest_echo_total",
@@ -510,7 +680,13 @@
     "loxilb-alerts.yml"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:1528"
+   "source": "api/prometheus/sockproxy_metrics.go:1528",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_ai_kv_attest_probe_fail_total",
@@ -530,7 +706,13 @@
     "loxilb-alerts.yml"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:1520"
+   "source": "api/prometheus/sockproxy_metrics.go:1520",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_ai_kv_attest_state",
@@ -551,7 +733,13 @@
     "loxilb-alerts.yml"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:1501"
+   "source": "api/prometheus/sockproxy_metrics.go:1501",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_ai_kv_enforcement_fault",
@@ -571,7 +759,13 @@
     "loxilb-alerts.yml"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:1512"
+   "source": "api/prometheus/sockproxy_metrics.go:1512",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_ai_kv_trtllm_drain_ownership_fault_total",
@@ -591,7 +785,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:1540"
+   "source": "api/prometheus/sockproxy_metrics.go:1540",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_ai_kv_trtllm_drain_ownership_heal_total",
@@ -608,7 +808,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:1548"
+   "source": "api/prometheus/sockproxy_metrics.go:1548",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_ai_llamacpp_probe_warnings_total",
@@ -628,7 +834,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:409"
+   "source": "api/prometheus/sockproxy_metrics.go:409",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_ai_model_not_allowed_total",
@@ -648,7 +860,30 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:191"
+   "source": "api/prometheus/ai_metrics.go:191",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "conditional-with-proven-writer",
+   "activation_precondition": "an API-key store plus --api-key-auth=required on the LB rule, and a request naming a model outside the key's --allowed-models list (decision == 2, HTTP 403).",
+   "writer_sources": [
+    {
+     "symbol": "RecordModelNotAllowed",
+     "kind": "func",
+     "file": "api/prometheus/ai_metrics.go",
+     "def_line": 391,
+     "writes": "aiModelNotAllowedTotal"
+    },
+    {
+     "symbol": "llb_ai_validate_key",
+     "kind": "func",
+     "file": "pkg/loxinet/ai_gateway_dp.go",
+     "def_line": 326,
+     "call_line": 394,
+     "calls": "RecordModelNotAllowed",
+     "entry_point": "cgo-export"
+    }
+   ],
+   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section A.3 -- CGO call-site table, verified against ai_gateway_dp.go at 4d1f8a24"
   },
   {
    "name": "loxilb_ai_normal_session_hits_total",
@@ -667,7 +902,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:327"
+   "source": "api/prometheus/ai_metrics.go:327",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_ai_pd_decode_ttft_seconds",
@@ -686,7 +927,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:281"
+   "source": "api/prometheus/ai_metrics.go:281",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_ai_pd_kv_params_found_total",
@@ -705,7 +952,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:300"
+   "source": "api/prometheus/ai_metrics.go:300",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_ai_pd_kv_params_missing_total",
@@ -724,7 +977,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:309"
+   "source": "api/prometheus/ai_metrics.go:309",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_ai_pd_prefill_duration_seconds",
@@ -743,7 +1002,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:271"
+   "source": "api/prometheus/ai_metrics.go:271",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_ai_pd_requests_total",
@@ -764,7 +1029,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:291"
+   "source": "api/prometheus/ai_metrics.go:291",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_ai_pd_session_hits_total",
@@ -783,7 +1054,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:318"
+   "source": "api/prometheus/ai_metrics.go:318",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_ai_policy_store_unavailable_total",
@@ -801,7 +1078,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:361"
+   "source": "api/prometheus/ai_metrics.go:361",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_ai_rate_limit_hits_total",
@@ -822,7 +1105,31 @@
     "loxilb-alerts.yml"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:173"
+   "source": "api/prometheus/ai_metrics.go:173",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "conditional-with-proven-writer",
+   "activation_precondition": "an API-key store (--aikey-db-* flags) plus --api-key-auth=required on the LB rule, and a key whose rps/burst is actually exceeded. With no key store no request carries a tenant, so the denial can never fire.",
+   "writer_sources": [
+    {
+     "symbol": "RecordRateLimitHit",
+     "kind": "func",
+     "file": "api/prometheus/ai_metrics.go",
+     "def_line": 381,
+     "writes": "aiRateLimitHitsTotal"
+    },
+    {
+     "symbol": "llb_ai_ratelimit_check",
+     "kind": "func",
+     "file": "pkg/loxinet/ai_gateway_dp.go",
+     "def_line": 506,
+     "call_line": 561,
+     "calls": "RecordRateLimitHit",
+     "entry_point": "cgo-export",
+     "note": "llb_ai_token_quota_reserve records the same family at ai_gateway_dp.go:756 with reason token_quota_would_exceed"
+    }
+   ],
+   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section A.3 -- weak-stub tripwire never logged on the running gateway, so the strong Go CGO exports are the bound symbols"
   },
   {
    "name": "loxilb_ai_request_duration_seconds",
@@ -842,7 +1149,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:163"
+   "source": "api/prometheus/ai_metrics.go:163",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_ai_requests_total",
@@ -866,7 +1179,13 @@
     "loxilb-recording.yml"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:152"
+   "source": "api/prometheus/ai_metrics.go:152",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_ai_token_quota_cold_open_total",
@@ -883,7 +1202,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:259"
+   "source": "api/prometheus/ai_metrics.go:259",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_ai_token_quota_denied_total",
@@ -902,7 +1227,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:246"
+   "source": "api/prometheus/ai_metrics.go:246",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_ai_token_quota_limit_tokens",
@@ -921,7 +1252,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:453"
+   "source": "api/prometheus/ai_metrics.go:453",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_ai_token_quota_model_limit_tokens",
@@ -939,7 +1276,13 @@
    "privacy": "label-review",
    "consumers": [],
    "waiver": "Join denominator behind the dashboarded quota-utilization ratios; displaying raw configured limits duplicates config, utilization panels answer headroom.",
-   "source": "api/prometheus/ai_metrics.go:463"
+   "source": "api/prometheus/ai_metrics.go:463",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_ai_token_quota_model_utilization",
@@ -959,7 +1302,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:458"
+   "source": "api/prometheus/ai_metrics.go:458",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_ai_token_quota_utilization",
@@ -978,7 +1327,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:448"
+   "source": "api/prometheus/ai_metrics.go:448",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_ai_tokens_consumed_total",
@@ -999,7 +1354,30 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:207"
+   "source": "api/prometheus/ai_metrics.go:207",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "conditional-with-proven-writer",
+   "activation_precondition": "a tenant with --tokens-per-min set on an API-key-enabled rule, and a completed response the quota path charges. The writer returns early when prompt+completion is zero, so a charge of nothing leaves the family absent.",
+   "writer_sources": [
+    {
+     "symbol": "RecordTokenUsage",
+     "kind": "func",
+     "file": "api/prometheus/ai_metrics.go",
+     "def_line": 401,
+     "writes": "aiTokensConsumedTotal"
+    },
+    {
+     "symbol": "llb_ai_token_quota_consume",
+     "kind": "func",
+     "file": "pkg/loxinet/ai_gateway_dp.go",
+     "def_line": 795,
+     "call_line": 815,
+     "calls": "RecordTokenUsage",
+     "entry_point": "cgo-export"
+    }
+   ],
+   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section A.3 -- CGO call-site table; exact-delta assertions specified in WP-2"
   },
   {
    "name": "loxilb_ai_tokens_estimated_total",
@@ -1019,7 +1397,30 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:220"
+   "source": "api/prometheus/ai_metrics.go:220",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "conditional-with-proven-writer",
+   "activation_precondition": "the same quota path as loxilb_ai_tokens_consumed_total, additionally on the estimated branch -- the response carried no usage object, so the data plane priced the charge from its own estimate.",
+   "writer_sources": [
+    {
+     "symbol": "RecordTokenUsage",
+     "kind": "func",
+     "file": "api/prometheus/ai_metrics.go",
+     "def_line": 401,
+     "writes": "aiTokensEstimatedTotal"
+    },
+    {
+     "symbol": "llb_ai_token_quota_consume",
+     "kind": "func",
+     "file": "pkg/loxinet/ai_gateway_dp.go",
+     "def_line": 795,
+     "call_line": 815,
+     "calls": "RecordTokenUsage",
+     "entry_point": "cgo-export"
+    }
+   ],
+   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section A.3; WP-2's red twin is the no-usage backend that drives exactly this branch"
   },
   {
    "name": "loxilb_ai_tokens_missing_total",
@@ -1039,7 +1440,30 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:232"
+   "source": "api/prometheus/ai_metrics.go:232",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "conditional-with-proven-writer",
+   "activation_precondition": "the same estimated branch as loxilb_ai_tokens_estimated_total -- one increment per response that carried no usage object.",
+   "writer_sources": [
+    {
+     "symbol": "RecordTokenUsage",
+     "kind": "func",
+     "file": "api/prometheus/ai_metrics.go",
+     "def_line": 401,
+     "writes": "aiTokensMissingTotal"
+    },
+    {
+     "symbol": "llb_ai_token_quota_consume",
+     "kind": "func",
+     "file": "pkg/loxinet/ai_gateway_dp.go",
+     "def_line": 795,
+     "call_line": 815,
+     "calls": "RecordTokenUsage",
+     "entry_point": "cgo-export"
+    }
+   ],
+   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section A.3; WP-2 asserts this equals the number of no-usage responses exactly"
   },
   {
    "name": "loxilb_ai_unmetered_requests_total",
@@ -1059,7 +1483,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:344"
+   "source": "api/prometheus/ai_metrics.go:344",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_autopersist_consecutive_failures",
@@ -1074,7 +1504,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "Is auto-persist silently failing so config changes would not survive a restart? Interim: loxilb_config_dirty held at 1 across the debounce window surfaces the same exposure. Panel + alert arrive with the persistence-panel extension in the config generation follow-up.",
-   "source": "pkg/snapshot/metrics.go:61"
+   "source": "pkg/snapshot/metrics.go:61",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_backend_traffic_bytes_total",
@@ -1094,7 +1530,13 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:380"
+   "source": "api/prometheus/prometheus.go:380",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_backend_traffic_connections_total",
@@ -1114,7 +1556,13 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:394"
+   "source": "api/prometheus/prometheus.go:394",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_backend_traffic_packets_total",
@@ -1134,7 +1582,13 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:387"
+   "source": "api/prometheus/prometheus.go:387",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_boot_config_conflict_total",
@@ -1151,7 +1605,13 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "pkg/snapshot/metrics.go:51"
+   "source": "pkg/snapshot/metrics.go:51",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_boot_legacy_fallback_total",
@@ -1166,7 +1626,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "Did a boot degrade to legacy txt config replay? Interim: LoxilbRestore alerts cover the failed snapshot path that precedes the fallback, and boot logs record the arbitration. Panel arrives with the persistence-panel extension in the config generation follow-up.",
-   "source": "pkg/snapshot/metrics.go:71"
+   "source": "pkg/snapshot/metrics.go:71",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_client_traffic_packets_total",
@@ -1186,7 +1652,13 @@
     "loxilb-l4.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:360"
+   "source": "api/prometheus/prometheus.go:360",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_closed_connections_processed_total",
@@ -1201,7 +1673,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "Internal conntrack-sweep finalization bookkeeping; a stall surfaces as missing closed-flow traffic in the dashboarded counters \u2014 diagnostic query only.",
-   "source": "api/prometheus/prometheus.go:514"
+   "source": "api/prometheus/prometheus.go:514",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_config_dirty",
@@ -1218,7 +1696,13 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "pkg/snapshot/metrics.go:76"
+   "source": "pkg/snapshot/metrics.go:76",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_conntrack_max_entries",
@@ -1236,7 +1720,13 @@
     "loxilb-l4.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:2274"
+   "source": "api/prometheus/prometheus.go:2274",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_conntrack_stat_resets_total",
@@ -1254,7 +1744,13 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:508"
+   "source": "api/prometheus/prometheus.go:508",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_doca_collector_query_errors_total",
@@ -1272,7 +1768,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "pkg/loxinet/dpu_doca_bf2_metrics.go:100"
+   "source": "pkg/loxinet/dpu_doca_bf2_metrics.go:100",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-dpu-build-gated",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_doca_egress_counters_available",
@@ -1289,7 +1791,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "pkg/loxinet/dpu_doca_bf2_metrics.go:109"
+   "source": "pkg/loxinet/dpu_doca_bf2_metrics.go:109",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-dpu-build-gated",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_endpoint_traffic_bytes_total",
@@ -1307,7 +1815,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "Superseded on dashboards by loxilb_backend_traffic_bytes_total (exact DP counters, ip:port attribution); kept exported for persistent-flow comparison and external consumers.",
-   "source": "api/prometheus/prometheus.go:353"
+   "source": "api/prometheus/prometheus.go:353",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_errors_total",
@@ -1322,7 +1836,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "Instance-level aggregate of loxilb_service_errors_total, which is dashboarded; sum() of the per-service sibling answers it exactly.",
-   "source": "api/prometheus/prometheus.go:419"
+   "source": "api/prometheus/prometheus.go:419",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_firewall_rules",
@@ -1339,7 +1859,13 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:451"
+   "source": "api/prometheus/prometheus.go:451",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_fw_drop_packets_total",
@@ -1358,7 +1884,13 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:436"
+   "source": "api/prometheus/prometheus.go:436",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_fw_rule_drop_packets_total",
@@ -1378,7 +1910,13 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:443"
+   "source": "api/prometheus/prometheus.go:443",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_healthy_endpoints",
@@ -1396,7 +1934,13 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:243"
+   "source": "api/prometheus/prometheus.go:243",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_host_cpu_utilization_percent",
@@ -1411,7 +1955,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "Legacy duplicate of loxilb_system_cpu_utilization_percent, which the overview CPU/Memory/Disk panel shows; kept exported for older external dashboards.",
-   "source": "api/prometheus/prometheus.go:536"
+   "source": "api/prometheus/prometheus.go:536",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_ipfilter_blacklist_bytes_total",
@@ -1430,7 +1980,13 @@
    "privacy": "label-review",
    "consumers": [],
    "waiver": "Byte-volume twin of the dashboarded ipfilter packet counters; filter verdicts are judged by packet counts, byte volume stays an ad-hoc query.",
-   "source": "api/prometheus/prometheus.go:636"
+   "source": "api/prometheus/prometheus.go:636",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_ipfilter_blacklist_packets_total",
@@ -1451,7 +2007,13 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:628"
+   "source": "api/prometheus/prometheus.go:628",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_ipfilter_rules",
@@ -1470,7 +2032,13 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:660"
+   "source": "api/prometheus/prometheus.go:660",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_ipfilter_whitelist_bytes_total",
@@ -1489,7 +2057,13 @@
    "privacy": "label-review",
    "consumers": [],
    "waiver": "Byte-volume twin of the dashboarded ipfilter packet counters; filter verdicts are judged by packet counts, byte volume stays an ad-hoc query.",
-   "source": "api/prometheus/prometheus.go:652"
+   "source": "api/prometheus/prometheus.go:652",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_ipfilter_whitelist_packets_total",
@@ -1510,7 +2084,13 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:644"
+   "source": "api/prometheus/prometheus.go:644",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_kernel_bridge_bytes",
@@ -1527,7 +2107,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "pkg/loxinet/dpu_metrics.go:221"
+   "source": "pkg/loxinet/dpu_metrics.go:221",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-dpu-build-gated",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_kv_agent_up",
@@ -1542,7 +2128,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "pkg/loxinet/kv_agent_client.go:49"
+   "source": "pkg/loxinet/kv_agent_client.go:49",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-optional-bridge",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_kv_inv_cap_evictions_total",
@@ -1562,7 +2154,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:536"
+   "source": "api/prometheus/sockproxy_metrics.go:536",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_kv_inventory_fresh",
@@ -1582,7 +2180,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:494"
+   "source": "api/prometheus/sockproxy_metrics.go:494",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_kv_subscriber_connected",
@@ -1604,7 +2208,13 @@
     "loxilb-recording.yml"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:453"
+   "source": "api/prometheus/sockproxy_metrics.go:453",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_kv_subscriber_last_event_timestamp_seconds",
@@ -1624,7 +2234,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:479"
+   "source": "api/prometheus/sockproxy_metrics.go:479",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_kv_subscriber_reconnect_total",
@@ -1645,7 +2261,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:464"
+   "source": "api/prometheus/sockproxy_metrics.go:464",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_kv_subscriber_recv_error_total",
@@ -1665,7 +2287,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:505"
+   "source": "api/prometheus/sockproxy_metrics.go:505",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_kv_subscriber_wire_reject_total",
@@ -1687,7 +2315,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:521"
+   "source": "api/prometheus/sockproxy_metrics.go:521",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_l4_error_events_total",
@@ -1709,7 +2343,13 @@
     "loxilb-recording.yml"
    ],
    "waiver": "",
-   "source": "api/prometheus/l4_error_metrics.go:43"
+   "source": "api/prometheus/l4_error_metrics.go:43",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_last_restore_timestamp_seconds",
@@ -1726,7 +2366,13 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "pkg/snapshot/metrics.go:46"
+   "source": "pkg/snapshot/metrics.go:46",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_lb_rule_interaction_bytes_total",
@@ -1745,7 +2391,13 @@
    "privacy": "label-review",
    "consumers": [],
    "waiver": "Flow-identity (service x sip x dip) forensic counter with unbounded client cardinality; deliberately not dashboarded \u2014 client-traffic and per-backend panels answer the operational question, ad-hoc query for forensics.",
-   "source": "api/prometheus/prometheus.go:323"
+   "source": "api/prometheus/prometheus.go:323",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_lb_rule_interaction_packets_total",
@@ -1764,7 +2416,13 @@
    "privacy": "label-review",
    "consumers": [],
    "waiver": "Flow-identity (service x sip x dip) forensic counter with unbounded client cardinality; deliberately not dashboarded \u2014 client-traffic and per-backend panels answer the operational question, ad-hoc query for forensics.",
-   "source": "api/prometheus/prometheus.go:330"
+   "source": "api/prometheus/prometheus.go:330",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_lb_rules",
@@ -1783,7 +2441,13 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:255"
+   "source": "api/prometheus/prometheus.go:255",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_lb_select_failure_shutdown_total",
@@ -1800,7 +2464,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:675"
+   "source": "api/prometheus/sockproxy_metrics.go:675",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_new_flows",
@@ -1817,7 +2487,13 @@
     "loxilb-l4.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:267"
+   "source": "api/prometheus/prometheus.go:267",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_opa_circuit_breaker_state",
@@ -1834,7 +2510,13 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/opa_metrics.go:60"
+   "source": "api/prometheus/opa_metrics.go:60",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_opa_firewall_rules",
@@ -1851,7 +2533,13 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/opa_metrics.go:52"
+   "source": "api/prometheus/opa_metrics.go:52",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_opa_sync_duration_seconds",
@@ -1868,7 +2556,13 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/opa_metrics.go:43"
+   "source": "api/prometheus/opa_metrics.go:43",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_opa_watcher_syncs_total",
@@ -1887,7 +2581,13 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/opa_metrics.go:34"
+   "source": "api/prometheus/opa_metrics.go:34",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_parser_attributes_extracted_total",
@@ -1906,7 +2606,48 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "pkg/loxinet/payload_metrics.go:55"
+   "source": "pkg/loxinet/payload_metrics.go:55",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "conditional-with-proven-writer",
+   "activation_precondition": "a tracing catalog with deep_inspection.enabled=true and a non-empty parser_type; the writer additionally returns early when the parser extracted zero attributes, so a successful parse of an attribute-free payload leaves this family absent.",
+   "writer_sources": [
+    {
+     "symbol": "RecordAttributesExtracted",
+     "kind": "func",
+     "file": "pkg/loxinet/payload_metrics.go",
+     "def_line": 76,
+     "writes": "attributesExtracted"
+    },
+    {
+     "symbol": "EnrichSpanWithPayload",
+     "kind": "func",
+     "file": "pkg/loxinet/lxb_span_enricher.go",
+     "def_line": 33,
+     "call_line": 175,
+     "calls": "RecordAttributesExtracted"
+    },
+    {
+     "symbol": "handleReqEnd",
+     "kind": "method",
+     "receiver": "SpanAssembler",
+     "file": "pkg/loxinet/lxb_span_assembler.go",
+     "def_line": 264,
+     "call_line": 326,
+     "calls": "EnrichSpanWithPayload"
+    },
+    {
+     "symbol": "ProcessEvent",
+     "kind": "method",
+     "receiver": "SpanAssembler",
+     "file": "pkg/loxinet/lxb_span_assembler.go",
+     "def_line": 120,
+     "call_line": 125,
+     "calls": "handleReqEnd",
+     "entry_point": "event-loop"
+    }
+   ],
+   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section 0.3.1 -- source re-verification 2026-09-10"
   },
   {
    "name": "loxilb_parser_body_size_bytes",
@@ -1925,7 +2666,48 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "pkg/loxinet/payload_metrics.go:45"
+   "source": "pkg/loxinet/payload_metrics.go:45",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "conditional-with-proven-writer",
+   "activation_precondition": "a tracing catalog with deep_inspection.enabled=true and a non-empty parser_type; the body must also be under the catalog's max_body_size for a sample to be recorded.",
+   "writer_sources": [
+    {
+     "symbol": "RecordParsedBodySize",
+     "kind": "func",
+     "file": "pkg/loxinet/payload_metrics.go",
+     "def_line": 71,
+     "writes": "parsedBodySize"
+    },
+    {
+     "symbol": "EnrichSpanWithPayload",
+     "kind": "func",
+     "file": "pkg/loxinet/lxb_span_enricher.go",
+     "def_line": 33,
+     "call_line": 61,
+     "calls": "RecordParsedBodySize"
+    },
+    {
+     "symbol": "handleReqEnd",
+     "kind": "method",
+     "receiver": "SpanAssembler",
+     "file": "pkg/loxinet/lxb_span_assembler.go",
+     "def_line": 264,
+     "call_line": 326,
+     "calls": "EnrichSpanWithPayload"
+    },
+    {
+     "symbol": "ProcessEvent",
+     "kind": "method",
+     "receiver": "SpanAssembler",
+     "file": "pkg/loxinet/lxb_span_assembler.go",
+     "def_line": 120,
+     "call_line": 125,
+     "calls": "handleReqEnd",
+     "entry_point": "event-loop"
+    }
+   ],
+   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section 0.3.1 -- source re-verification 2026-09-10"
   },
   {
    "name": "loxilb_parser_calls_total",
@@ -1945,7 +2727,49 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "pkg/loxinet/payload_metrics.go:26"
+   "source": "pkg/loxinet/payload_metrics.go:26",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "conditional-with-proven-writer",
+   "activation_precondition": "a tracing catalog with deep_inspection.enabled=true and a non-empty parser_type (pkg/loxinet/catalog.go), synced to the datapath by catalog_sync.go. Absent on a bed with no such catalog, which proves nothing about the writer.",
+   "writer_sources": [
+    {
+     "symbol": "RecordParseCall",
+     "kind": "func",
+     "file": "pkg/loxinet/payload_metrics.go",
+     "def_line": 65,
+     "writes": "parseCallsTotal"
+    },
+    {
+     "symbol": "EnrichSpanWithPayload",
+     "kind": "func",
+     "file": "pkg/loxinet/lxb_span_enricher.go",
+     "def_line": 33,
+     "call_line": 156,
+     "calls": "RecordParseCall",
+     "note": "success branch; the error/timeout/panic branch calls the same helper at :145"
+    },
+    {
+     "symbol": "handleReqEnd",
+     "kind": "method",
+     "receiver": "SpanAssembler",
+     "file": "pkg/loxinet/lxb_span_assembler.go",
+     "def_line": 264,
+     "call_line": 326,
+     "calls": "EnrichSpanWithPayload"
+    },
+    {
+     "symbol": "ProcessEvent",
+     "kind": "method",
+     "receiver": "SpanAssembler",
+     "file": "pkg/loxinet/lxb_span_assembler.go",
+     "def_line": 120,
+     "call_line": 125,
+     "calls": "handleReqEnd",
+     "entry_point": "event-loop"
+    }
+   ],
+   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section 0.3.1 -- source re-verification 2026-09-10 that withdrew the DEFINED-WRITER-UNWIRED finding"
   },
   {
    "name": "loxilb_parser_duration_seconds",
@@ -1964,7 +2788,48 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "pkg/loxinet/payload_metrics.go:35"
+   "source": "pkg/loxinet/payload_metrics.go:35",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "conditional-with-proven-writer",
+   "activation_precondition": "a tracing catalog with deep_inspection.enabled=true and a non-empty parser_type (pkg/loxinet/catalog.go); observed on the same call as loxilb_parser_calls_total.",
+   "writer_sources": [
+    {
+     "symbol": "RecordParseCall",
+     "kind": "func",
+     "file": "pkg/loxinet/payload_metrics.go",
+     "def_line": 65,
+     "writes": "parseLatency"
+    },
+    {
+     "symbol": "EnrichSpanWithPayload",
+     "kind": "func",
+     "file": "pkg/loxinet/lxb_span_enricher.go",
+     "def_line": 33,
+     "call_line": 156,
+     "calls": "RecordParseCall"
+    },
+    {
+     "symbol": "handleReqEnd",
+     "kind": "method",
+     "receiver": "SpanAssembler",
+     "file": "pkg/loxinet/lxb_span_assembler.go",
+     "def_line": 264,
+     "call_line": 326,
+     "calls": "EnrichSpanWithPayload"
+    },
+    {
+     "symbol": "ProcessEvent",
+     "kind": "method",
+     "receiver": "SpanAssembler",
+     "file": "pkg/loxinet/lxb_span_assembler.go",
+     "def_line": 120,
+     "call_line": 125,
+     "calls": "handleReqEnd",
+     "entry_point": "event-loop"
+    }
+   ],
+   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section 0.3.1 -- source re-verification 2026-09-10"
   },
   {
    "name": "loxilb_pd_admission_queued_total",
@@ -1981,7 +2846,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:611"
+   "source": "api/prometheus/sockproxy_metrics.go:611",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_admission_shed_total",
@@ -1998,7 +2869,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:603"
+   "source": "api/prometheus/sockproxy_metrics.go:603",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_cb_flips_total",
@@ -2015,7 +2892,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:339"
+   "source": "api/prometheus/sockproxy_metrics.go:339",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_cb_proactive_heal_total",
@@ -2032,7 +2915,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:619"
+   "source": "api/prometheus/sockproxy_metrics.go:619",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_connect_failover_total",
@@ -2049,7 +2938,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:651"
+   "source": "api/prometheus/sockproxy_metrics.go:651",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_connect_retry_same_ep_ok_total",
@@ -2067,7 +2962,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:667"
+   "source": "api/prometheus/sockproxy_metrics.go:667",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_connect_retry_same_ep_total",
@@ -2085,7 +2986,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:661"
+   "source": "api/prometheus/sockproxy_metrics.go:661",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_ctrl_alpha",
@@ -2100,7 +3007,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "api/prometheus/aictrl_metrics.go:82"
+   "source": "api/prometheus/aictrl_metrics.go:82",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-optional-bridge",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_ctrl_applied_epoch",
@@ -2117,7 +3030,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "api/prometheus/aictrl_metrics.go:65"
+   "source": "api/prometheus/aictrl_metrics.go:65",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-optional-bridge",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_ctrl_effective_weight",
@@ -2135,7 +3054,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "api/prometheus/aictrl_metrics.go:47"
+   "source": "api/prometheus/aictrl_metrics.go:47",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-optional-bridge",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_ctrl_mode",
@@ -2150,7 +3075,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "api/prometheus/aictrl_metrics.go:74"
+   "source": "api/prometheus/aictrl_metrics.go:74",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-optional-bridge",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_ctrl_nacks_total",
@@ -2165,7 +3096,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "api/prometheus/aictrl_metrics.go:98"
+   "source": "api/prometheus/aictrl_metrics.go:98",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-optional-bridge",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_ctrl_override_events_total",
@@ -2180,7 +3117,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "api/prometheus/aictrl_metrics.go:90"
+   "source": "api/prometheus/aictrl_metrics.go:90",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-optional-bridge",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_ctrl_snapshots_applied_total",
@@ -2195,7 +3138,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "api/prometheus/aictrl_metrics.go:106"
+   "source": "api/prometheus/aictrl_metrics.go:106",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-optional-bridge",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_ctrl_state",
@@ -2213,7 +3162,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "api/prometheus/aictrl_metrics.go:56"
+   "source": "api/prometheus/aictrl_metrics.go:56",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "gateway-optional-bridge",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_decode_ep_died_total",
@@ -2231,7 +3186,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:635"
+   "source": "api/prometheus/sockproxy_metrics.go:635",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_decode_zero_byte_eof_total",
@@ -2248,7 +3209,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:643"
+   "source": "api/prometheus/sockproxy_metrics.go:643",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_ep_info",
@@ -2267,7 +3234,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "Info metric (constant 1) mapping ep_idx to endpoint IP for PromQL joins; standalone display would duplicate configuration.",
-   "source": "api/prometheus/sockproxy_metrics.go:385"
+   "source": "api/prometheus/sockproxy_metrics.go:385",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_fallback_to_normal_total",
@@ -2284,7 +3257,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:347"
+   "source": "api/prometheus/sockproxy_metrics.go:347",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_kv_blocks",
@@ -2304,7 +3283,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:357"
+   "source": "api/prometheus/sockproxy_metrics.go:357",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_kv_tier15_cold_seeds_total",
@@ -2323,7 +3308,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:567"
+   "source": "api/prometheus/sockproxy_metrics.go:567",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_kv_tier15_fallthrough_total",
@@ -2340,7 +3331,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:437"
+   "source": "api/prometheus/sockproxy_metrics.go:437",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_kv_tier15_hits_total",
@@ -2359,7 +3356,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:369"
+   "source": "api/prometheus/sockproxy_metrics.go:369",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_kv_tier15_miss_reason_total",
@@ -2378,7 +3381,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:426"
+   "source": "api/prometheus/sockproxy_metrics.go:426",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_kv_tier15_spills_total",
@@ -2397,7 +3406,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:552"
+   "source": "api/prometheus/sockproxy_metrics.go:552",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_kv_zero_hit_watchdog_total",
@@ -2417,7 +3432,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:584"
+   "source": "api/prometheus/sockproxy_metrics.go:584",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_prefill_ep_died_total",
@@ -2435,7 +3456,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:627"
+   "source": "api/prometheus/sockproxy_metrics.go:627",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_sessions_active",
@@ -2452,7 +3479,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:323"
+   "source": "api/prometheus/sockproxy_metrics.go:323",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_sg_decode_close_drain_total",
@@ -2469,7 +3502,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:691"
+   "source": "api/prometheus/sockproxy_metrics.go:691",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_sg_oversize_reject_total",
@@ -2486,7 +3525,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:715"
+   "source": "api/prometheus/sockproxy_metrics.go:715",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_sg_prefill_abort_decode_total",
@@ -2503,7 +3548,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:683"
+   "source": "api/prometheus/sockproxy_metrics.go:683",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_sg_prefill_reject_relay_total",
@@ -2520,7 +3571,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:707"
+   "source": "api/prometheus/sockproxy_metrics.go:707",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_sg_room_retry_total",
@@ -2537,7 +3594,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:699"
+   "source": "api/prometheus/sockproxy_metrics.go:699",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_trie_nodes",
@@ -2554,7 +3617,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:331"
+   "source": "api/prometheus/sockproxy_metrics.go:331",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_pd_trt_ctx_early_exit_total",
@@ -2571,7 +3640,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:723"
+   "source": "api/prometheus/sockproxy_metrics.go:723",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_persist_total",
@@ -2588,7 +3663,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "Did the last persist attempts succeed? Interim: the config persistence API (GET /config/persist/status) reports last-persist outcome, and loxilb_config_dirty staying 1 exposes a persist that never lands. Panel arrives with the persistence-panel extension shipped alongside the config generation gauge follow-up.",
-   "source": "pkg/snapshot/metrics.go:56"
+   "source": "pkg/snapshot/metrics.go:56",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_processed_bytes_total",
@@ -2605,7 +3686,13 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:273"
+   "source": "api/prometheus/prometheus.go:273",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_processed_packets_total",
@@ -2620,7 +3707,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "Aggregate of the per-protocol packet counters already dashboarded on Packets/s by protocol; sum() over those series answers it exactly.",
-   "source": "api/prometheus/prometheus.go:315"
+   "source": "api/prometheus/prometheus.go:315",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_processed_sctp_bytes_total",
@@ -2635,7 +3728,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "Per-protocol byte split of total throughput; the Throughput (DP bytes) and Packets/s-by-protocol panels answer the question \u2014 per-proto bytes stay an ad-hoc query.",
-   "source": "api/prometheus/prometheus.go:291"
+   "source": "api/prometheus/prometheus.go:291",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_processed_sctp_packets_total",
@@ -2652,7 +3751,13 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:309"
+   "source": "api/prometheus/prometheus.go:309",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_processed_tcp_bytes_total",
@@ -2667,7 +3772,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "Per-protocol byte split of total throughput; the Throughput (DP bytes) and Packets/s-by-protocol panels answer the question \u2014 per-proto bytes stay an ad-hoc query.",
-   "source": "api/prometheus/prometheus.go:279"
+   "source": "api/prometheus/prometheus.go:279",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_processed_tcp_packets_total",
@@ -2684,7 +3795,13 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:297"
+   "source": "api/prometheus/prometheus.go:297",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_processed_udp_bytes_total",
@@ -2699,7 +3816,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "Per-protocol byte split of total throughput; the Throughput (DP bytes) and Packets/s-by-protocol panels answer the question \u2014 per-proto bytes stay an ad-hoc query.",
-   "source": "api/prometheus/prometheus.go:285"
+   "source": "api/prometheus/prometheus.go:285",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_processed_udp_packets_total",
@@ -2716,7 +3839,13 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:303"
+   "source": "api/prometheus/prometheus.go:303",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_proxy_active_connections",
@@ -2734,7 +3863,13 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:207"
+   "source": "api/prometheus/sockproxy_metrics.go:207",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_proxy_active_ssl_connections",
@@ -2751,7 +3886,13 @@
     "loxilb-l7.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:215"
+   "source": "api/prometheus/sockproxy_metrics.go:215",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_proxy_cache_backpressure_ratio",
@@ -2768,7 +3909,13 @@
     "loxilb-l7.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:145"
+   "source": "api/prometheus/sockproxy_metrics.go:145",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_proxy_cache_bytes",
@@ -2785,7 +3932,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:183"
+   "source": "api/prometheus/sockproxy_metrics.go:183",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_proxy_cache_bytes_max_conn",
@@ -2802,7 +3955,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:189"
+   "source": "api/prometheus/sockproxy_metrics.go:189",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_proxy_cache_conns_queued",
@@ -2819,7 +3978,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:195"
+   "source": "api/prometheus/sockproxy_metrics.go:195",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_proxy_cache_drain_partial_total",
@@ -2836,7 +4001,13 @@
     "loxilb-l7.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:255"
+   "source": "api/prometheus/sockproxy_metrics.go:255",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_proxy_cache_high_water_events_total",
@@ -2853,7 +4024,13 @@
     "loxilb-l7.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:171"
+   "source": "api/prometheus/sockproxy_metrics.go:171",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_proxy_chunked_responses_total",
@@ -2870,7 +4047,13 @@
     "loxilb-l7.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:231"
+   "source": "api/prometheus/sockproxy_metrics.go:231",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_proxy_conversation_hits_total",
@@ -2887,7 +4070,13 @@
     "loxilb-l7.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:157"
+   "source": "api/prometheus/sockproxy_metrics.go:157",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_proxy_conversation_misses_total",
@@ -2904,7 +4093,13 @@
     "loxilb-l7.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:163"
+   "source": "api/prometheus/sockproxy_metrics.go:163",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_proxy_conversation_sessions",
@@ -2921,7 +4116,13 @@
     "loxilb-l7.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:223"
+   "source": "api/prometheus/sockproxy_metrics.go:223",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_proxy_conversation_ttl_expired_total",
@@ -2938,7 +4139,13 @@
     "loxilb-l7.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:271"
+   "source": "api/prometheus/sockproxy_metrics.go:271",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_proxy_graceful_close_total",
@@ -2955,7 +4162,13 @@
     "loxilb-l7.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:263"
+   "source": "api/prometheus/sockproxy_metrics.go:263",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_proxy_http2_sessions_total",
@@ -2972,7 +4185,13 @@
     "loxilb-l7.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:243"
+   "source": "api/prometheus/sockproxy_metrics.go:243",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_proxy_http_responses_by_status_total",
@@ -2994,7 +4213,13 @@
     "loxilb-recording.yml"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:291"
+   "source": "api/prometheus/sockproxy_metrics.go:291",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_proxy_http_responses_total",
@@ -3012,7 +4237,13 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:283"
+   "source": "api/prometheus/sockproxy_metrics.go:283",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_proxy_http_ttfb_seconds",
@@ -3030,7 +4261,13 @@
     "loxilb-l7.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:856"
+   "source": "api/prometheus/sockproxy_metrics.go:856",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_proxy_pd_kv_params_overflow_total",
@@ -3047,7 +4284,13 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_metrics.go:311"
+   "source": "api/prometheus/sockproxy_metrics.go:311",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_proxy_qos_bytes_delayed_total",
@@ -3069,7 +4312,31 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/qos_shaper_metrics.go:108"
+   "source": "api/prometheus/qos_shaper_metrics.go:108",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "verified-runtime",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "Collect",
+     "kind": "method",
+     "receiver": "qosShaperCollector",
+     "file": "api/prometheus/qos_shaper_metrics.go",
+     "def_line": 165,
+     "writes": "qosBytesDelayedDesc"
+    },
+    {
+     "symbol": "init",
+     "kind": "func",
+     "file": "api/prometheus/qos_shaper_metrics.go",
+     "def_line": 185,
+     "call_line": 186,
+     "calls": "qosShaperCollector",
+     "entry_point": "registry-collector"
+    }
+   ],
+   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section B.5b: passed minus delayed = 30054432, matching the 30 MB CBS; red twin A held delayed at 0 below CIR. Sign-off blocked by D-3."
   },
   {
    "name": "loxilb_proxy_qos_bytes_passed_total",
@@ -3091,7 +4358,32 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/qos_shaper_metrics.go:103"
+   "source": "api/prometheus/qos_shaper_metrics.go:103",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "verified-runtime",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "Collect",
+     "kind": "method",
+     "receiver": "qosShaperCollector",
+     "file": "api/prometheus/qos_shaper_metrics.go",
+     "def_line": 165,
+     "writes": "qosBytesPassedDesc"
+    },
+    {
+     "symbol": "init",
+     "kind": "func",
+     "file": "api/prometheus/qos_shaper_metrics.go",
+     "def_line": 185,
+     "call_line": 186,
+     "calls": "qosShaperCollector",
+     "entry_point": "registry-collector",
+     "note": "registry-mediated dispatch: the link is the receiver type handed to prometheus.MustRegister, not a direct call to Collect"
+    }
+   ],
+   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section B.5b, run 'WP-3 QoS' 2026-09-09 on llbigw-2: bytes_passed 46758599 against curl's 46758393 (+206 HTTP headers). The writer path is proven; WP-3 sign-off is separately blocked by defect D-3."
   },
   {
    "name": "loxilb_proxy_qos_cbs_bytes",
@@ -3113,7 +4405,31 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/qos_shaper_metrics.go:138"
+   "source": "api/prometheus/qos_shaper_metrics.go:138",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "verified-runtime",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "Collect",
+     "kind": "method",
+     "receiver": "qosShaperCollector",
+     "file": "api/prometheus/qos_shaper_metrics.go",
+     "def_line": 165,
+     "writes": "qosCbsDesc"
+    },
+    {
+     "symbol": "init",
+     "kind": "func",
+     "file": "api/prometheus/qos_shaper_metrics.go",
+     "def_line": 185,
+     "call_line": 186,
+     "calls": "qosShaperCollector",
+     "entry_point": "registry-collector"
+    }
+   ],
+   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section B.5b: 3e7 exactly, matching the policy COMMITTEDBLKSIZE. Sign-off blocked by D-3."
   },
   {
    "name": "loxilb_proxy_qos_cir_bytes_per_second",
@@ -3135,7 +4451,31 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/qos_shaper_metrics.go:133"
+   "source": "api/prometheus/qos_shaper_metrics.go:133",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "verified-runtime",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "Collect",
+     "kind": "method",
+     "receiver": "qosShaperCollector",
+     "file": "api/prometheus/qos_shaper_metrics.go",
+     "def_line": 165,
+     "writes": "qosCirDesc"
+    },
+    {
+     "symbol": "init",
+     "kind": "func",
+     "file": "api/prometheus/qos_shaper_metrics.go",
+     "def_line": 185,
+     "call_line": 186,
+     "calls": "qosShaperCollector",
+     "entry_point": "registry-collector"
+    }
+   ],
+   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section B.5b: exactly 1e6 for --rate=8:8 and 1.25e7 for --rate=100:100. Sign-off blocked by D-3."
   },
   {
    "name": "loxilb_proxy_qos_park_seconds_total",
@@ -3157,7 +4497,31 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/qos_shaper_metrics.go:118"
+   "source": "api/prometheus/qos_shaper_metrics.go:118",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "verified-runtime",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "Collect",
+     "kind": "method",
+     "receiver": "qosShaperCollector",
+     "file": "api/prometheus/qos_shaper_metrics.go",
+     "def_line": 165,
+     "writes": "qosParkSecondsDesc"
+    },
+    {
+     "symbol": "init",
+     "kind": "func",
+     "file": "api/prometheus/qos_shaper_metrics.go",
+     "def_line": 185,
+     "call_line": 186,
+     "calls": "qosShaperCollector",
+     "entry_point": "registry-collector"
+    }
+   ],
+   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section B.5b: 15.80 s of park against 16.77 s wall time; mean park 9.3 ms. Sign-off blocked by D-3."
   },
   {
    "name": "loxilb_proxy_qos_parked_connections",
@@ -3179,7 +4543,31 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/qos_shaper_metrics.go:123"
+   "source": "api/prometheus/qos_shaper_metrics.go:123",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "verified-runtime",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "Collect",
+     "kind": "method",
+     "receiver": "qosShaperCollector",
+     "file": "api/prometheus/qos_shaper_metrics.go",
+     "def_line": 165,
+     "writes": "qosParkedConnsDesc"
+    },
+    {
+     "symbol": "init",
+     "kind": "func",
+     "file": "api/prometheus/qos_shaper_metrics.go",
+     "def_line": 185,
+     "call_line": 186,
+     "calls": "qosShaperCollector",
+     "entry_point": "registry-collector"
+    }
+   ],
+   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section B.5b: parked_connections above zero throughout the shaped drive. Sign-off blocked by D-3."
   },
   {
    "name": "loxilb_proxy_qos_parks_total",
@@ -3201,7 +4589,31 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/qos_shaper_metrics.go:113"
+   "source": "api/prometheus/qos_shaper_metrics.go:113",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "verified-runtime",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "Collect",
+     "kind": "method",
+     "receiver": "qosShaperCollector",
+     "file": "api/prometheus/qos_shaper_metrics.go",
+     "def_line": 165,
+     "writes": "qosParksDesc"
+    },
+    {
+     "symbol": "init",
+     "kind": "func",
+     "file": "api/prometheus/qos_shaper_metrics.go",
+     "def_line": 185,
+     "call_line": 186,
+     "calls": "qosShaperCollector",
+     "entry_point": "registry-collector"
+    }
+   ],
+   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section B.5b: 1697 parks under shaping, and exactly 0 in red twin A below CIR -- the arm that separates counting bytes from actually shaping. Sign-off blocked by D-3."
   },
   {
    "name": "loxilb_proxy_qos_tokens_bytes",
@@ -3223,7 +4635,31 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/qos_shaper_metrics.go:128"
+   "source": "api/prometheus/qos_shaper_metrics.go:128",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "verified-runtime",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "Collect",
+     "kind": "method",
+     "receiver": "qosShaperCollector",
+     "file": "api/prometheus/qos_shaper_metrics.go",
+     "def_line": 165,
+     "writes": "qosTokensDesc"
+    },
+    {
+     "symbol": "init",
+     "kind": "func",
+     "file": "api/prometheus/qos_shaper_metrics.go",
+     "def_line": 185,
+     "call_line": 186,
+     "calls": "qosShaperCollector",
+     "entry_point": "registry-collector"
+    }
+   ],
+   "verification_evidence": "docs/internal/METRICS-COVERAGE-GAP-RCA-AND-PLAN.md section B.5b: bucket level tracked the shaped drive and sat near zero while rate-bound. Sign-off blocked by D-3."
   },
   {
    "name": "loxilb_requests_total",
@@ -3240,7 +4676,13 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:404"
+   "source": "api/prometheus/prometheus.go:404",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_restore_duration_seconds",
@@ -3257,7 +4699,13 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "pkg/snapshot/metrics.go:40"
+   "source": "pkg/snapshot/metrics.go:40",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_restore_total",
@@ -3278,7 +4726,13 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "pkg/snapshot/metrics.go:35"
+   "source": "pkg/snapshot/metrics.go:35",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_security_conn_blocked_total",
@@ -3295,7 +4749,13 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:578"
+   "source": "api/prometheus/prometheus.go:578",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_security_conn_passed_total",
@@ -3312,7 +4772,13 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:585"
+   "source": "api/prometheus/prometheus.go:585",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_security_syn_blocked_total",
@@ -3330,7 +4796,13 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:557"
+   "source": "api/prometheus/prometheus.go:557",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_security_syn_cookies_total",
@@ -3347,7 +4819,13 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:571"
+   "source": "api/prometheus/prometheus.go:571",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_security_syn_passed_total",
@@ -3364,7 +4842,13 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:564"
+   "source": "api/prometheus/prometheus.go:564",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_security_udp_blocked_total",
@@ -3382,7 +4866,13 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:599"
+   "source": "api/prometheus/prometheus.go:599",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_security_udp_bytes_blocked_total",
@@ -3399,7 +4889,13 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:613"
+   "source": "api/prometheus/prometheus.go:613",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_security_udp_bytes_passed_total",
@@ -3414,7 +4910,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "Byte twin of the dashboarded UDP passed/blocked packet counters and blocked-bytes panel; passed-byte volume adds no verdict signal.",
-   "source": "api/prometheus/prometheus.go:620"
+   "source": "api/prometheus/prometheus.go:620",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_security_udp_passed_total",
@@ -3431,7 +4933,13 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:606"
+   "source": "api/prometheus/prometheus.go:606",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_security_unique_ips",
@@ -3448,7 +4956,13 @@
     "loxilb-security.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:592"
+   "source": "api/prometheus/prometheus.go:592",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_service_errors_total",
@@ -3467,7 +4981,13 @@
     "loxilb-l4.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:426"
+   "source": "api/prometheus/prometheus.go:426",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_service_requests_total",
@@ -3486,7 +5006,13 @@
     "loxilb-l4.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:411"
+   "source": "api/prometheus/prometheus.go:411",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_service_traffic_bytes_total",
@@ -3505,7 +5031,13 @@
     "loxilb-l4.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:339"
+   "source": "api/prometheus/prometheus.go:339",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_service_traffic_packets_total",
@@ -3522,7 +5054,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "Per-service packet twin of the dashboarded bytes counter; the exact per-backend packets/s panel covers the packet-rate question with finer attribution.",
-   "source": "api/prometheus/prometheus.go:346"
+   "source": "api/prometheus/prometheus.go:346",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_snapshot_quarantine_total",
@@ -3537,7 +5075,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "Did a boot quarantine an unreplayable snapshot.json? Interim: quarantine events land in the gateway log and loxilb_boot_legacy_fallback_total or restore alerts fire on the same boot path. Panel arrives with the persistence-panel extension in the config generation follow-up.",
-   "source": "pkg/snapshot/metrics.go:66"
+   "source": "pkg/snapshot/metrics.go:66",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_snapshot_total",
@@ -3556,7 +5100,13 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "pkg/snapshot/metrics.go:30"
+   "source": "pkg/snapshot/metrics.go:30",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_sockproxy_sync_apply_errors_total",
@@ -3574,7 +5124,13 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_sync_metrics.go:61"
+   "source": "api/prometheus/sockproxy_sync_metrics.go:61",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_sockproxy_sync_conflict_total",
@@ -3593,7 +5149,13 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_sync_metrics.go:71"
+   "source": "api/prometheus/sockproxy_sync_metrics.go:71",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_sockproxy_sync_drop_total",
@@ -3612,7 +5174,13 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_sync_metrics.go:115"
+   "source": "api/prometheus/sockproxy_sync_metrics.go:115",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_sockproxy_sync_health_reject_total",
@@ -3631,7 +5199,13 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_sync_metrics.go:48"
+   "source": "api/prometheus/sockproxy_sync_metrics.go:48",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_sockproxy_sync_inflight_rpc",
@@ -3650,7 +5224,13 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_sync_metrics.go:96"
+   "source": "api/prometheus/sockproxy_sync_metrics.go:96",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_sockproxy_sync_overflow_total",
@@ -3669,7 +5249,13 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_sync_metrics.go:34"
+   "source": "api/prometheus/sockproxy_sync_metrics.go:34",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_sockproxy_sync_peer_lag_seconds",
@@ -3688,7 +5274,13 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_sync_metrics.go:144"
+   "source": "api/prometheus/sockproxy_sync_metrics.go:144",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_sockproxy_sync_peer_up",
@@ -3707,7 +5299,13 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_sync_metrics.go:129"
+   "source": "api/prometheus/sockproxy_sync_metrics.go:129",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_sockproxy_sync_push_latency_seconds",
@@ -3727,7 +5325,13 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/sockproxy_sync_metrics.go:84"
+   "source": "api/prometheus/sockproxy_sync_metrics.go:84",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_system_cpu_utilization_percent",
@@ -3745,7 +5349,13 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:528"
+   "source": "api/prometheus/prometheus.go:528",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_system_disk_utilization_percent",
@@ -3763,7 +5373,13 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:549"
+   "source": "api/prometheus/prometheus.go:549",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_system_memory_utilization_percent",
@@ -3781,7 +5397,13 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:543"
+   "source": "api/prometheus/prometheus.go:543",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_unhealthy_endpoints",
@@ -3799,7 +5421,13 @@
     "loxilb-overview.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/prometheus.go:249"
+   "source": "api/prometheus/prometheus.go:249",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "aictrl_acks_applied_total",
@@ -3816,7 +5444,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "cmd/loxilb-ai-controller/metrics.go:84"
+   "source": "cmd/loxilb-ai-controller/metrics.go:84",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "standalone-binary",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "aictrl_acks_rejected_total",
@@ -3833,7 +5467,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "cmd/loxilb-ai-controller/metrics.go:88"
+   "source": "cmd/loxilb-ai-controller/metrics.go:88",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "standalone-binary",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "aictrl_current_epoch",
@@ -3848,7 +5488,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "cmd/loxilb-ai-controller/metrics.go:40"
+   "source": "cmd/loxilb-ai-controller/metrics.go:40",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "standalone-binary",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "aictrl_ep_weight",
@@ -3866,7 +5512,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "cmd/loxilb-ai-controller/metrics.go:65"
+   "source": "cmd/loxilb-ai-controller/metrics.go:65",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "standalone-binary",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "aictrl_fingerprint_mismatch_total",
@@ -3883,7 +5535,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "cmd/loxilb-ai-controller/metrics.go:165"
+   "source": "cmd/loxilb-ai-controller/metrics.go:165",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "standalone-binary",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "aictrl_fleet_stale",
@@ -3898,7 +5556,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "cmd/loxilb-ai-controller/metrics.go:58"
+   "source": "cmd/loxilb-ai-controller/metrics.go:58",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "standalone-binary",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "aictrl_lmc_cost_active",
@@ -3913,7 +5577,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "cmd/loxilb-ai-controller/main.go:67"
+   "source": "cmd/loxilb-ai-controller/main.go:67",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "standalone-binary",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "aictrl_negative_control_active",
@@ -3928,7 +5598,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "cmd/loxilb-ai-controller/metrics.go:95"
+   "source": "cmd/loxilb-ai-controller/metrics.go:95",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "standalone-binary",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "aictrl_registry_mismatch_total",
@@ -3945,7 +5621,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "cmd/loxilb-ai-controller/metrics.go:72"
+   "source": "cmd/loxilb-ai-controller/metrics.go:72",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "standalone-binary",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "aictrl_snapshots_emitted_total",
@@ -3960,7 +5642,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "cmd/loxilb-ai-controller/metrics.go:34"
+   "source": "cmd/loxilb-ai-controller/metrics.go:34",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "standalone-binary",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "aictrl_source_stale",
@@ -3977,7 +5665,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "cmd/loxilb-ai-controller/metrics.go:52"
+   "source": "cmd/loxilb-ai-controller/metrics.go:52",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "standalone-binary",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "aictrl_source_staleness_seconds",
@@ -3994,7 +5688,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "cmd/loxilb-ai-controller/metrics.go:46"
+   "source": "cmd/loxilb-ai-controller/metrics.go:46",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "standalone-binary",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "aictrl_ttft_active",
@@ -4011,7 +5711,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "cmd/loxilb-ai-controller/metrics.go:113"
+   "source": "cmd/loxilb-ai-controller/metrics.go:113",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "standalone-binary",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "aictrl_ttft_alpha",
@@ -4026,7 +5732,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "cmd/loxilb-ai-controller/metrics.go:131"
+   "source": "cmd/loxilb-ai-controller/metrics.go:131",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "standalone-binary",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "aictrl_ttft_model_version",
@@ -4041,7 +5753,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "cmd/loxilb-ai-controller/metrics.go:122"
+   "source": "cmd/loxilb-ai-controller/metrics.go:122",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "standalone-binary",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "aictrl_ttft_pred_err_ratio_p50",
@@ -4056,7 +5774,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "cmd/loxilb-ai-controller/metrics.go:151"
+   "source": "cmd/loxilb-ai-controller/metrics.go:151",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "standalone-binary",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "aictrl_ttft_pred_err_ratio_p90",
@@ -4071,7 +5795,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "cmd/loxilb-ai-controller/metrics.go:155"
+   "source": "cmd/loxilb-ai-controller/metrics.go:155",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "standalone-binary",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "aictrl_watcher_dropped_snapshots_total",
@@ -4088,7 +5818,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "cmd/loxilb-ai-controller/metrics.go:102"
+   "source": "cmd/loxilb-ai-controller/metrics.go:102",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "standalone-binary",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "aictrl_watchers_connected",
@@ -4103,7 +5839,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "cmd/loxilb-ai-controller/metrics.go:78"
+   "source": "cmd/loxilb-ai-controller/metrics.go:78",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "standalone-binary",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_kv_bytes_transferred_total",
@@ -4118,7 +5860,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "cmd/loxilb-kv-agent/kv_metrics.go:65"
+   "source": "cmd/loxilb-kv-agent/kv_metrics.go:65",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "standalone-binary",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_kv_evictions_total",
@@ -4133,7 +5881,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "cmd/loxilb-kv-agent/kv_metrics.go:71"
+   "source": "cmd/loxilb-kv-agent/kv_metrics.go:71",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "standalone-binary",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_kv_fetch_errors_total",
@@ -4148,7 +5902,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "cmd/loxilb-kv-agent/kv_metrics.go:58"
+   "source": "cmd/loxilb-kv-agent/kv_metrics.go:58",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "standalone-binary",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   },
   {
    "name": "loxilb_kv_fetch_total",
@@ -4163,7 +5923,13 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "cmd/loxilb-kv-agent/kv_metrics.go:50"
+   "source": "cmd/loxilb-kv-agent/kv_metrics.go:50",
+   "release_scope": "excluded-experimental",
+   "runtime_scope": "standalone-binary",
+   "implementation_status": "",
+   "activation_precondition": "",
+   "writer_sources": [],
+   "verification_evidence": ""
   }
  ]
 }

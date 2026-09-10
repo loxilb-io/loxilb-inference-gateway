@@ -20,7 +20,14 @@ place, the monitoring ownership contract:
   5. Dashboard and alert-rule expressions are cross-referenced into per-family
      consumer lists; coverage counts are recorded in the manifest so coverage
      changes show up as reviewable diffs.
-  6. Optionally (--locked-rev-check), the extractor runs against the locked
+  6. Every packaged family carries a reviewed writer map: the ordered chain of
+     Go symbols from the constructor to a production entry point, with each
+     hop's receiver type recorded and re-verified against source on every run.
+     A future "this family has no callers" claim is checked against that stored
+     map instead of a re-run query.
+  7. No default dashboard, alert rule, scrape job, or release test consumes a
+     release-excluded experimental family.
+  8. Optionally (--locked-rev-check), the extractor runs against the locked
      product revision and the family-set delta must match the overlay's
      expectations, additively: families may be new at HEAD, but a family that
      existed at the locked revision must still exist.
@@ -137,6 +144,13 @@ def check_counts(fams, overlay, errors):
     for k in classes:
         if k not in exp["classes"]:
             errors.append(f"unexpected class '{k}' ({classes[k]} families)")
+    scopes = overlay.get("runtime_scope_by_class", {})
+    for k in sorted(classes):
+        if not scopes.get(k):
+            errors.append(f"class '{k}' has no runtime_scope_by_class entry; "
+                          f"the manifest would publish a blank runtime scope")
+    for k in sorted(set(scopes) - set(classes)):
+        errors.append(f"runtime_scope_by_class entry '{k}' matches no class")
 
 
 def check_activation(fams, overlay, errors):
@@ -284,6 +298,381 @@ def check_waivers(fams, overlay, errors):
                           f"question and the alternative diagnostic")
 
 
+# ---------------------------------------------------------------------------
+# writer map: constructor -> production entry point, recorded and re-verified
+# ---------------------------------------------------------------------------
+# Why a *stored* map rather than a query run at gate time: on 2026-09-10 a
+# "zero callers" query classified four live parser families as dead. The query
+# was right about the symbol it was given (ParseWithTimeoutOrDefault) and wrong
+# about the family, because that symbol is a method on PluginRegistry while the
+# production path goes through TraceParserRegistry. Two facts would have caught
+# it -- the receiver type of every method hop, and the transitive chain up to an
+# entry point -- and neither survives in a query result. So they are recorded
+# here per family, reviewed, and re-checked against source on every run: the
+# gate's job is to notice when the recorded chain stops matching the tree, not
+# to re-derive reachability.
+WRITER_STATUSES = {
+    # Observed emitting real values on a live bed, with the value checked.
+    "verified-runtime",
+    # Writer path proven in source; the family stays absent until a named
+    # configuration/traffic precondition is met. Requires
+    # activation_precondition.
+    "conditional-with-proven-writer",
+    # Writer path proven in source and driven by a test, but not yet observed
+    # on a bed.
+    "verified-static",
+    # Reviewed and accepted as having no production writer. Requires a
+    # rejection rationale naming the exact symbols queried and their receivers.
+    "definition-only",
+}
+
+ENTRY_POINT_KINDS = {
+    "main",              # reached from process start-up
+    "goroutine",         # launched by a long-running goroutine
+    "event-loop",        # driven by a datapath/trace event dispatcher
+    "cgo-export",        # //export, called from the C data plane
+    "http-handler",      # REST/API request path
+    "registry-collector",  # prometheus.Collector pulled by the registry
+    "timer",             # ticker / periodic refresh
+}
+
+HOP_KEYS_FIRST = {"symbol", "kind", "receiver", "file", "def_line", "writes",
+                  "entry_point", "note"}
+HOP_KEYS_REST = {"symbol", "kind", "receiver", "file", "def_line", "call_line",
+                 "calls", "entry_point", "note"}
+ENTRY_KEYS = {"status", "activation_precondition", "writer_sources",
+              "data_sources", "native_callers", "rejection",
+              "queried_symbols", "evidence"}
+
+# func Name(            -> name=Name, recv=""
+# func (sa *T) Name(    -> name=Name, recv=T
+# func (T) Name(        -> name=Name, recv=T   (unnamed receiver)
+FUNC_DEF = re.compile(
+    r"^func\s+"
+    r"(?:\(\s*(?:[A-Za-z_]\w*\s+)?\*?(?P<recv>[A-Za-z_][\w.]*)\s*\)\s*)?"
+    r"(?P<name>[A-Za-z_]\w*)\s*[\(\[]")
+
+
+def _source_lines(repo_root, rel, cache):
+    """File contents as a line list, or None when it cannot be read."""
+    if rel not in cache:
+        try:
+            with open(os.path.join(repo_root, rel), encoding="utf-8",
+                      errors="ignore") as fh:
+                cache[rel] = fh.read().splitlines()
+        except OSError:
+            cache[rel] = None
+    return cache[rel]
+
+
+def _func_at(lines, lineno):
+    """(name, receiver) of the func defined at 1-based lineno, else None."""
+    if not lines or not 1 <= lineno <= len(lines):
+        return None
+    m = FUNC_DEF.match(lines[lineno - 1])
+    if not m:
+        return None
+    return m.group("name"), (m.group("recv") or "")
+
+
+def _func_end(lines, def_line):
+    """1-based last line of the func body opened at def_line.
+
+    gofmt puts a top-level func's closing brace in column 0, so the first such
+    line after the signature ends the body. A file that is not gofmt-clean
+    degrades to "the rest of the file", which can only make the body-range
+    check more permissive, never wrongly red.
+    """
+    for i in range(def_line, len(lines)):
+        if lines[i].startswith("}"):
+            return i + 1
+    return len(lines)
+
+
+def _token_in(line, token):
+    return re.search(rf"(?<![A-Za-z0-9_]){re.escape(token)}(?![A-Za-z0-9_])",
+                     line) is not None
+
+
+def check_writer_chain(family, chain, field, repo_root, unverifiable, cache,
+                       errors):
+    """Verify one ordered writer chain against the source tree.
+
+    chain[0] is the function that touches the family's constructor; every later
+    hop must call the previous hop's symbol (or, for registry-mediated
+    dispatch, name its receiver type), and the last hop must declare which kind
+    of production entry point it is.
+    """
+    at = f"writer_status['{family}'].{field}"
+    if not isinstance(chain, list) or not chain:
+        errors.append(f"{at} must be a non-empty ordered chain from the "
+                      f"constructor's writer to a production entry point")
+        return
+    for i, hop in enumerate(chain):
+        first, last = i == 0, i == len(chain) - 1
+        hop_at = f"{at}[{i}]"
+        if not isinstance(hop, dict):
+            errors.append(f"{hop_at} must be an object")
+            continue
+        allowed = HOP_KEYS_FIRST if first else HOP_KEYS_REST
+        for k in sorted(set(hop) - allowed):
+            errors.append(f"{hop_at} has unknown key '{k}' "
+                          f"(allowed: {sorted(allowed)})")
+        required = ({"symbol", "kind", "file", "def_line", "writes"} if first
+                    else {"symbol", "kind", "file", "def_line", "call_line",
+                          "calls"})
+        missing = sorted(required - set(hop))
+        if missing:
+            errors.append(f"{hop_at} is missing {missing}")
+            continue
+
+        kind, recv = hop["kind"], hop.get("receiver", "")
+        if kind not in ("func", "method"):
+            errors.append(f"{hop_at} kind must be 'func' or 'method', "
+                          f"got {kind!r}")
+        if kind == "method" and not recv:
+            errors.append(
+                f"{hop_at} is a method and must record its receiver type. "
+                f"This field exists because a method on the wrong receiver is "
+                f"exactly how four live families were once called dead")
+        if kind == "func" and recv:
+            errors.append(f"{hop_at} is a plain func but records receiver "
+                          f"{recv!r}")
+
+        ep = hop.get("entry_point")
+        if last and not ep:
+            errors.append(f"{hop_at} is the end of the chain and must declare "
+                          f"entry_point (one of {sorted(ENTRY_POINT_KINDS)})")
+        if ep and not last:
+            errors.append(f"{hop_at} declares entry_point but is not the last "
+                          f"hop; the chain must end at the entry point")
+        if ep and ep not in ENTRY_POINT_KINDS:
+            errors.append(f"{hop_at} entry_point {ep!r} is not one of "
+                          f"{sorted(ENTRY_POINT_KINDS)}")
+
+        rel = hop["file"]
+        if rel.startswith(unverifiable):
+            # Declared out of reach (e.g. a submodule CI does not check out).
+            # The shape is still validated; the anchor is not claimed.
+            continue
+        lines = _source_lines(repo_root, rel, cache)
+        if lines is None:
+            errors.append(f"{hop_at} names {rel}, which does not exist or "
+                          f"cannot be read")
+            continue
+
+        got = _func_at(lines, hop["def_line"])
+        if got is None:
+            actual = (lines[hop["def_line"] - 1].strip()[:60]
+                      if 1 <= hop["def_line"] <= len(lines) else "<past EOF>")
+            errors.append(f"{hop_at} def_line {rel}:{hop['def_line']} is not a "
+                          f"Go func definition (line reads: {actual!r}) — the "
+                          f"code moved, so re-verify the chain")
+            continue
+        got_name, got_recv = got
+        if got_name != hop["symbol"]:
+            errors.append(f"{hop_at} records symbol '{hop['symbol']}' but "
+                          f"{rel}:{hop['def_line']} defines '{got_name}'")
+            continue
+        if got_recv != recv:
+            errors.append(
+                f"{hop_at} records receiver {recv or '<none>'!r} for "
+                f"'{hop['symbol']}' but {rel}:{hop['def_line']} declares "
+                f"{got_recv or '<none>'!r}")
+            continue
+
+        end = _func_end(lines, hop["def_line"])
+        if first:
+            body = "\n".join(lines[hop["def_line"] - 1:end])
+            if not _token_in(body, hop["writes"]):
+                errors.append(f"{hop_at} claims '{hop['symbol']}' writes "
+                              f"'{hop['writes']}', which does not appear in "
+                              f"its body ({rel}:{hop['def_line']}-{end})")
+            continue
+
+        call_line = hop["call_line"]
+        if not hop["def_line"] < call_line <= end:
+            errors.append(f"{hop_at} call_line {call_line} is outside the body "
+                          f"of '{hop['symbol']}' ({rel}:{hop['def_line']}-"
+                          f"{end})")
+            continue
+        if not _token_in(lines[call_line - 1], hop["calls"]):
+            errors.append(f"{hop_at} claims a call to '{hop['calls']}' at "
+                          f"{rel}:{call_line}, which reads "
+                          f"{lines[call_line - 1].strip()[:60]!r}")
+        prev = chain[i - 1]
+        links = {prev.get("symbol"), prev.get("receiver")} - {None, ""}
+        if hop["calls"] not in links:
+            errors.append(f"{hop_at} calls '{hop['calls']}', which is neither "
+                          f"the previous hop's symbol nor its receiver type "
+                          f"({sorted(links)}) — the chain is not connected")
+
+
+def check_writers(fams, overlay, repo_root, errors):
+    """Every packaged family has a reviewed, source-checked writer path.
+
+    The end state is that no packaged family is unclassified. Until the
+    burn-down finishes, `burndown.unclassified_max` is a one-way ratchet: the
+    gate fails when unclassified families exceed it AND when it sits above the
+    real count, so classifying families forces the ceiling down and it can
+    never drift back up. At 0 this is exactly the gate WP-0 specifies.
+    """
+    block = overlay.get("writer_status")
+    if not isinstance(block, dict):
+        errors.append("overlay has no writer_status block; the writer-map gate "
+                      "cannot run and would silently pass")
+        return {}
+    entries = block.get("families", {})
+    unverifiable = tuple(block.get("unverifiable_roots", ()))
+    by_name = {e["name"]: e for e in fams}
+    packaged = {e["name"] for e in fams if e["class"] == "default"}
+    cache = {}
+
+    for name in sorted(entries):
+        ent = entries[name]
+        at = f"writer_status['{name}']"
+        if not isinstance(ent, dict):
+            errors.append(f"{at} must be an object")
+            continue
+        for k in sorted(set(ent) - ENTRY_KEYS):
+            errors.append(f"{at} has unknown key '{k}' "
+                          f"(allowed: {sorted(ENTRY_KEYS)})")
+        if name not in by_name:
+            errors.append(f"{at} names unknown family '{name}' — typo, or the "
+                          f"family was removed and the entry is stale")
+            continue
+        if name not in packaged:
+            errors.append(f"{at} is meaningless: class "
+                          f"'{by_name[name]['class']}' is release-excluded, so "
+                          f"it carries no writer-path obligation")
+            continue
+
+        status = ent.get("status")
+        if status not in WRITER_STATUSES:
+            errors.append(f"{at} status {status!r} is not one of "
+                          f"{sorted(WRITER_STATUSES)}")
+            continue
+        if len(ent.get("evidence", "")) < 20:
+            errors.append(f"{at} needs an evidence pointer someone else can "
+                          f"open (doc section, run ID, or test name)")
+
+        if status == "definition-only":
+            if ent.get("writer_sources"):
+                errors.append(f"{at} is definition-only but records "
+                              f"writer_sources; pick one")
+            if len(ent.get("rejection", "")) < 40:
+                errors.append(f"{at} is definition-only and must state why no "
+                              f"production writer reaches the constructor")
+            queried = ent.get("queried_symbols")
+            if not isinstance(queried, list) or not queried:
+                errors.append(
+                    f"{at} is definition-only and must list queried_symbols "
+                    f"— the exact symbols checked, each with its receiver "
+                    f"where it is a method. Without that the claim is the "
+                    f"same shape as the withdrawn parser finding")
+            else:
+                for j, q in enumerate(queried):
+                    if not isinstance(q, dict) or "symbol" not in q:
+                        errors.append(f"{at}.queried_symbols[{j}] must be an "
+                                      f"object with at least 'symbol'")
+                    elif q.get("kind") == "method" and not q.get("receiver"):
+                        errors.append(f"{at}.queried_symbols[{j}] is a method "
+                                      f"and must record its receiver type")
+            continue
+
+        if status == "conditional-with-proven-writer" and \
+                len(ent.get("activation_precondition", "")) < 20:
+            errors.append(f"{at} is conditional and must name the "
+                          f"configuration or traffic precondition that makes "
+                          f"the family appear")
+        check_writer_chain(name, ent.get("writer_sources"), "writer_sources",
+                           repo_root, unverifiable, cache, errors)
+        if "data_sources" in ent:
+            check_writer_chain(name, ent["data_sources"], "data_sources",
+                               repo_root, unverifiable, cache, errors)
+        for j, nc in enumerate(ent.get("native_callers", ())):
+            if not re.match(r"^[\w./-]+:\d+$", str(nc)):
+                errors.append(f"{at}.native_callers[{j}] must be 'path:line', "
+                              f"got {nc!r}")
+
+    unclassified = sorted(packaged - set(entries))
+    cap = block.get("burndown", {}).get("unclassified_max")
+    if not isinstance(cap, int) or cap < 0:
+        errors.append("writer_status.burndown.unclassified_max must be a "
+                      "non-negative integer; it is the burn-down ratchet")
+    elif len(unclassified) > cap:
+        errors.append(
+            f"{len(unclassified)} packaged families have no writer_status "
+            f"entry, above the ratchet of {cap}: "
+            f"{unclassified[:8]}{' ...' if len(unclassified) > 8 else ''}")
+    elif cap > len(unclassified):
+        errors.append(f"writer_status.burndown.unclassified_max is {cap} but "
+                      f"only {len(unclassified)} families are unclassified; "
+                      f"lower the ratchet to {len(unclassified)} so it cannot "
+                      f"drift back up")
+    return {"writer_classified": len(packaged) - len(unclassified),
+            "writer_unclassified": len(unclassified)}
+
+
+# ---------------------------------------------------------------------------
+# release-excluded families must have no default consumer
+# ---------------------------------------------------------------------------
+def check_excluded_consumers(fams, overlay, repo_root, errors):
+    """No release asset may depend on a RELEASE-EXCLUDED-EXPERIMENTAL family.
+
+    This currently passes, which is the point: it locks a property the tree
+    already holds, so reintroducing a dependency fails here rather than at
+    release-acceptance time. The surfaces are declared in the overlay and each
+    one must match at least one file -- a scan that reads nothing would pass
+    forever and prove nothing.
+    """
+    cfg = overlay.get("excluded_consumer_scan")
+    if not isinstance(cfg, dict):
+        errors.append("overlay has no excluded_consumer_scan block; the "
+                      "exclusion gate cannot run and would silently pass")
+        return
+    excluded = {e["name"] for e in fams if e["class"] != "default"}
+    packaged = {e["name"] for e in fams if e["class"] == "default"}
+    exempt = set(cfg.get("inventory_exempt", ()))
+    for rel in sorted(exempt):
+        if not os.path.exists(os.path.join(repo_root, rel)):
+            errors.append(f"excluded_consumer_scan.inventory_exempt names "
+                          f"{rel}, which does not exist — stale exemption")
+
+    def strip_hist(ref):
+        for suf in HIST_SUFFIXES:
+            if ref.endswith(suf) and ref[:-len(suf)] in excluded | packaged:
+                return ref[:-len(suf)]
+        return ref
+
+    for surface in cfg.get("surfaces", ()):
+        pattern, kind = surface["glob"], surface["kind"]
+        matched = sorted(glob.glob(os.path.join(repo_root, pattern),
+                                   recursive=True))
+        files = [f for f in matched if os.path.isfile(f)]
+        if not files:
+            errors.append(f"excluded_consumer_scan surface '{pattern}' "
+                          f"({kind}) matches no file; a scan over nothing "
+                          f"passes forever")
+            continue
+        for path in files:
+            rel = os.path.relpath(path, repo_root)
+            if rel in exempt:
+                continue
+            try:
+                with open(path, encoding="utf-8", errors="ignore") as fh:
+                    text = fh.read()
+            except OSError:
+                continue
+            hits = sorted({strip_hist(m.group(1))
+                           for m in METRIC_TOKEN.finditer(text)} & excluded)
+            if hits:
+                errors.append(
+                    f"{rel} ({kind}) consumes release-excluded experimental "
+                    f"famil{'y' if len(hits) == 1 else 'ies'} {hits[:4]} — "
+                    f"this release ships no dependency on them")
+
+
 def coverage_counts(fams):
     packaged = [e for e in fams if e["class"] == "default"]
     referenced = [e for e in packaged if e["consumers"]]
@@ -363,6 +752,13 @@ def check_locked_rev(fams, overlay, repo_root, go, errors):
 #        root, and definition_mechanism per family; "type" now always carries
 #        the runtime metric type, where it previously carried the literal
 #        "desc" for families defined through prometheus.NewDesc.
+#
+# The WP-0 writer-map fields (release_scope, runtime_scope,
+# implementation_status, activation_precondition, writer_sources,
+# verification_evidence) are deliberately NOT a bump: they are purely
+# additive, no existing field changed meaning, and a consumer written against
+# version 1 reads this document correctly. Vendoring consumers still need to
+# re-vendor to pick the fields up.
 SCHEMA_VERSION = 1
 
 
@@ -472,8 +868,11 @@ def build_manifest(fams, overlay, coverage, provenance):
     act = overlay["activation"]
     pri = overlay["priority"]
     review = set(overlay.get("privacy_review_labels", ()))
+    writers = overlay.get("writer_status", {}).get("families", {})
+    scopes = overlay.get("runtime_scope_by_class", {})
     entries = []
     for e in sorted(fams, key=lambda x: (x["owner"], x["name"])):
+        w = writers.get(e["name"], {})
         entries.append({
             "name": e["name"],
             "owner": e["owner"],
@@ -493,6 +892,22 @@ def build_manifest(fams, overlay, coverage, provenance):
             "consumers": e["consumers"],
             "waiver": e.get("waiver", ""),
             "source": f"{e['file']}:{e['line']}",
+            # Release scope. Only "default" families are developed and
+            # qualified by this release; everything else is
+            # RELEASE-EXCLUDED-EXPERIMENTAL and must not appear in any default
+            # dashboard, rule, scrape job, or release test.
+            "release_scope": ("release" if e["class"] == "default"
+                              else "excluded-experimental"),
+            # Where the family can appear at runtime at all -- a different
+            # question from whether this release qualifies it. Mapped from the
+            # class in the overlay so the answer is reviewed, not inferred.
+            "runtime_scope": scopes.get(e["class"], ""),
+            # The reviewed writer map. "" means no reviewed decision exists
+            # yet -- an honest gap, not an assertion that the family is dead.
+            "implementation_status": w.get("status", ""),
+            "activation_precondition": w.get("activation_precondition", ""),
+            "writer_sources": w.get("writer_sources", []),
+            "verification_evidence": w.get("evidence", ""),
         })
     return {"schema_version": SCHEMA_VERSION, "provenance": provenance,
             "contract": overlay["expected"], "coverage": coverage,
@@ -572,11 +987,204 @@ def self_test(overlay):
     check_counts(fams, ovl, errs)
     expect_red("classification fallthrough to wrong class", errs)
 
+    def expect_green(what, errs):
+        if errs:
+            failures.append(what)
+            print(f"  FALSE-RED {what}: {errs[0][:90]}")
+        else:
+            print(f"  ok    {what}: accepted")
+
+    with tempfile.TemporaryDirectory() as root:
+        writer_self_test(root, expect_red, expect_green)
+        excluded_consumer_self_test(root, expect_red)
+
     if failures:
         print(f"\nself-test: {len(failures)} gate(s) cannot fire: {failures}")
         return 1
     print("\nself-test: every gate can go red")
     return 0
+
+
+# The fixture the writer-map gate is tested against. Line numbers are load
+# bearing -- the gate's whole job is to notice when a recorded line stops
+# meaning what it claimed -- so keep this literal in sync with FIXTURE_CHAIN
+# below if you touch it.
+#
+#   1 package fixture
+#   2
+#   3 var famTotal = 1
+#   4
+#   5 func recordFam() {
+#   6     famTotal++
+#   7 }
+#   8
+#   9 func decoy() {
+#  10 }
+#  11
+#  12 func middle() {
+#  13     recordFam()
+#  14     decoy()
+#  15 }
+#  16
+#  17 type Loop struct{}
+#  18
+#  19 func (l *Loop) Run() {
+#  20     middle()
+#  21 }
+FIXTURE_GO = """package fixture
+
+var famTotal = 1
+
+func recordFam() {
+\tfamTotal++
+}
+
+func decoy() {
+}
+
+func middle() {
+\trecordFam()
+\tdecoy()
+}
+
+type Loop struct{}
+
+func (l *Loop) Run() {
+\tmiddle()
+}
+"""
+
+# recordFam is called only from middle, which is called only from one
+# production entry point. That is the transitive shape the withdrawn parser
+# finding missed, so the gate must accept it -- a writer map that only
+# recognises direct calls would re-create the same false negative.
+FIXTURE_CHAIN = [
+    {"symbol": "recordFam", "kind": "func", "file": "pkg/fixture/fam.go",
+     "def_line": 5, "writes": "famTotal"},
+    {"symbol": "middle", "kind": "func", "file": "pkg/fixture/fam.go",
+     "def_line": 12, "call_line": 13, "calls": "recordFam"},
+    {"symbol": "Run", "kind": "method", "receiver": "Loop",
+     "file": "pkg/fixture/fam.go", "def_line": 19, "call_line": 20,
+     "calls": "middle", "entry_point": "event-loop"},
+]
+
+FIXTURE_FAMS = [{"name": "loxilb_fixture_total", "class": "default"},
+                {"name": "doca_fixture_gauge", "class": "dpu-doca"}]
+
+
+def writer_self_test(root, expect_red, expect_green):
+    """Negative controls for check_writers, plus the transitive positive."""
+    src = os.path.join(root, "pkg", "fixture")
+    os.makedirs(src, exist_ok=True)
+    with open(os.path.join(src, "fam.go"), "w", encoding="utf-8") as fh:
+        fh.write(FIXTURE_GO)
+
+    def overlay_with(entry, cap=0, name="loxilb_fixture_total"):
+        return {"writer_status": {"burndown": {"unclassified_max": cap},
+                                  "families": {name: entry} if entry else {}}}
+
+    def chain(**mutate):
+        c = json.loads(json.dumps(FIXTURE_CHAIN))
+        for idx, patch in mutate.items():
+            c[int(idx)].update(patch)
+        return c
+
+    def entry(**over):
+        e = {"status": "verified-static",
+             "evidence": "self-test fixture, gen-metric-manifest.py",
+             "writer_sources": chain()}
+        e.update(over)
+        return e
+
+    def run(ovl):
+        errs = []
+        check_writers(FIXTURE_FAMS, ovl, root, errs)
+        return errs
+
+    # The positive control comes first: if the gate cannot accept a valid
+    # transitive chain, every red below is meaningless.
+    expect_green("transitive chain accepted", run(overlay_with(entry())))
+
+    expect_red("writer anchor drift (def_line is not a func)",
+               run(overlay_with(entry(writer_sources=chain(**{"0": {"def_line": 6}})))))
+    expect_red("writer receiver mismatch",
+               run(overlay_with(entry(writer_sources=chain(**{"2": {"receiver": "PluginRegistry"}})))))
+    expect_red("writer does not touch the recorded variable",
+               run(overlay_with(entry(writer_sources=chain(**{"0": {"writes": "otherVar"}})))))
+    expect_red("call site outside the recorded function body",
+               run(overlay_with(entry(writer_sources=chain(**{"1": {"call_line": 20}})))))
+    expect_red("chain not connected (calls a sibling, not the previous hop)",
+               run(overlay_with(entry(writer_sources=chain(**{"1": {"call_line": 14, "calls": "decoy"}})))))
+    expect_red("chain does not end at a declared entry point",
+               run(overlay_with(entry(writer_sources=chain(**{"2": {"entry_point": None}})))))
+    expect_red("method hop with no receiver recorded",
+               run(overlay_with(entry(writer_sources=chain(**{"2": {"receiver": ""}})))))
+    expect_red("data_sources chain is checked like writer_sources",
+               run(overlay_with(entry(data_sources=chain(**{"0": {"def_line": 6}})))))
+    expect_red("bad writer status token",
+               run(overlay_with(entry(status="probably-fine"))))
+    expect_red("conditional status with no activation precondition",
+               run(overlay_with(entry(status="conditional-with-proven-writer"))))
+    expect_red("throwaway writer evidence",
+               run(overlay_with(entry(evidence="looks ok"))))
+    expect_red("definition-only without the symbols actually queried",
+               run(overlay_with({"status": "definition-only",
+                                 "evidence": "self-test fixture, gen-metric-manifest.py",
+                                 "rejection": "x" * 50})))
+    expect_red("definition-only method claim with no receiver",
+               run(overlay_with({"status": "definition-only",
+                                 "evidence": "self-test fixture, gen-metric-manifest.py",
+                                 "rejection": "x" * 50,
+                                 "queried_symbols": [{"symbol": "Parse",
+                                                      "kind": "method"}]})))
+    expect_red("writer entry on a release-excluded family",
+               run(overlay_with(entry(), cap=1, name="doca_fixture_gauge")))
+    expect_red("writer entry for an unknown family",
+               run(overlay_with(entry(), cap=1, name="loxilb_no_such_total")))
+    expect_red("unclassified families above the ratchet",
+               run(overlay_with(None, cap=0)))
+    expect_red("ratchet left above the real unclassified count",
+               run(overlay_with(entry(), cap=5)))
+    expect_red("writer_status block missing entirely", run({}))
+
+
+def excluded_consumer_self_test(root, expect_red):
+    """Negative controls for check_excluded_consumers."""
+    dash = os.path.join(root, "fixture-dashboards")
+    os.makedirs(dash, exist_ok=True)
+    with open(os.path.join(dash, "bad.json"), "w", encoding="utf-8") as fh:
+        fh.write('{"panels":[{"targets":[{"expr":"rate(doca_fixture_gauge[5m])"}]}]}')
+
+    errs = []
+    check_excluded_consumers(
+        FIXTURE_FAMS,
+        {"excluded_consumer_scan": {
+            "surfaces": [{"glob": "fixture-dashboards/*.json",
+                          "kind": "dashboard"}]}},
+        root, errs)
+    expect_red("default asset consuming an excluded family", errs)
+
+    errs = []
+    check_excluded_consumers(
+        FIXTURE_FAMS,
+        {"excluded_consumer_scan": {
+            "surfaces": [{"glob": "no-such-dir/*.json", "kind": "dashboard"}]}},
+        root, errs)
+    expect_red("scan surface that matches no file (vacuous gate)", errs)
+
+    errs = []
+    check_excluded_consumers(
+        FIXTURE_FAMS,
+        {"excluded_consumer_scan": {
+            "surfaces": [{"glob": "fixture-dashboards/*.json",
+                          "kind": "dashboard"}],
+            "inventory_exempt": ["gone/inventory.json"]}},
+        root, errs)
+    expect_red("stale inventory exemption", errs)
+
+    errs = []
+    check_excluded_consumers(FIXTURE_FAMS, {}, root, errs)
+    expect_red("excluded_consumer_scan block missing entirely", errs)
 
 
 # ---------------------------------------------------------------------------
@@ -621,7 +1229,10 @@ def main():
     check_literals(fams, overlay, repo_root, errors)
     attach_consumers(fams, mon_dir)
     check_waivers(fams, overlay, errors)
+    writer_counts = check_writers(fams, overlay, repo_root, errors)
+    check_excluded_consumers(fams, overlay, repo_root, errors)
     coverage = coverage_counts(fams)
+    coverage.update(writer_counts)
     if args.locked_rev_check:
         check_locked_rev(fams, overlay, repo_root, args.go, errors)
     if errors:
@@ -636,6 +1247,9 @@ def main():
           f"({coverage['default_referenced']} referenced / "
           f"{coverage['default_waived']} waived / "
           f"{coverage['default_unreferenced']} unreferenced)")
+    print(f"metric-manifest: writer map "
+          f"{coverage.get('writer_classified', 0)} classified / "
+          f"{coverage.get('writer_unclassified', 0)} still unclassified")
 
     rendered = json.dumps(manifest, indent=1, sort_keys=False) + "\n"
     if args.check:
