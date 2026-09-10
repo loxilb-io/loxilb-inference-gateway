@@ -68,9 +68,9 @@ Endpoint: `POST http://<loxilb>:11111/netlox/v1/config/loadbalancer`. Schema:
 | `kvWarmupSec` | int | 30 | ≥0 | Guard-B window after subscriber start before Tier 1.5 activates |
 | `probeRetries` | int | 0 | — | Health-probe retry count (probe state does **not** feed data-plane exclusion — see [10 §5](10-hierarchical-kv-routing-architecture.md)) |
 | `chwbl_prefix_hash_level` | int | 1 | 1–3 | Single-pool prefix-hash depth: 1 = prefix+model (+present L1 fields), 2/3 fold in more context |
-| `chwbl_mean_load_factor` | int | **175** (effective) | 100–300 | Single-pool bounded-load cap = factor/100 × mean load (175 ⇒ 1.75×). ⚠ swagger annotates `default:125` but that value is **not applied** — the LB POST handler's non-zero-field override (`loadbalancer.go`) means an omitted field falls to the C-side init of 175 (`sockproxy_http.c`, `dpbroker.go`). Set it explicitly if you want 125 |
+| `chwbl_mean_load_factor` | int | 175 | 100–300 | Single-pool bounded-load cap = factor/100 × mean future load (175 ⇒ 1.75×) |
 | `chwbl_prefix_hash_flags` | int | 0 (auto-detect) | 0–255 | Optional-field inclusion bitmask for the CHWBL prefix hash (bit 0 LoRA, 1 image, 2 audio, 3 cache_salt, 4 tools, 5 session, 6 RAG template, 7 RAG docs) |
-| `chwbl_replication` | int | 100 | — | Hash-ring vnodes per EP |
+| `chwbl_replication` | int | 256 | 1–1024 | CHWBL vnodes per EP; WRR_HASH exact total vnode budget |
 | `chwbl_enable_cache_salt` | bool | false | — | Fold the request `cache_salt` into the prefix hash |
 | `model_name` | string | "" | — | Pool-selection key for model-routed multi-pool setups (empty = wildcard) |
 

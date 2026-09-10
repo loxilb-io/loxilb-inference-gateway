@@ -880,7 +880,7 @@ prefix affinity도 필요하면 `sel:10`을 사용한다.
   "chwbl_prefix_hash_level": 1,
   "chwbl_prefix_hash_flags": 0,
   "chwbl_mean_load_factor": 175,
-  "chwbl_replication": 100
+  "chwbl_replication": 256
 }
 ```
 
@@ -1692,9 +1692,9 @@ rule의 `serviceArguments`다.
 | `sel:8` | cache-aware weighted bounded-load selector | 필수 | RR selector를 쓰면 같은 prefix가 endpoint마다 분산되어 engine 내부 cache 이득이 감소한다. |
 | `chwbl_prefix_hash_level` | affinity hash 계층: 1=system prompt+model, 2=1+session context, 3=1+2+RAG | `1`에서 시작 | session/RAG 차이를 더 분리해야 하면 2~3으로 올리고 key cardinality와 분산 증가를 확인한다. |
 | `chwbl_prefix_hash_flags` | LoRA, image/audio, cache salt, tools, session, RAG 문서 등을 hash에 선택적으로 포함하는 bit mask | `0`(auto)에서 시작 | 같은 text라도 adapter/media/docs가 다르면 잘못 붙지 않도록 필요한 bit만 명시한다. |
-| `chwbl_mean_load_factor` | endpoint load가 평균의 몇 %까지 affinity를 유지할지 정하는 spill cap | **`175`를 명시** | 낮은 125는 더 빨리 분산해 queue를 줄이지만 cache affinity를 희생한다. 높은 200은 더 sticky하지만 hot endpoint가 생길 수 있다. Swagger 표기 기본값과 현재 생략 시 유효값이 다르므로 생략하지 않는다. |
-| `chwbl_replication` | consistent-hash ring의 endpoint당 virtual node 수 | `100` | endpoint가 많고 hash 분포가 거친 경우 canary로만 높인다. 값 증가가 실제 workload에서 단조롭게 개선된다고 가정하지 않는다. |
-| `chwbl_enable_cache_salt` | request에 `cache_salt`를 요구하고 affinity key에 포함 | tenant/cache isolation이 필요할 때 `true` | `true`이면 client가 안정적인 salt를 반드시 보내야 한다. 매 요청 salt가 바뀌면 affinity가 깨진다. |
+| `chwbl_mean_load_factor` | endpoint의 미래 load가 평균의 몇 %까지 affinity를 유지할지 정하는 spill cap | `175` | 낮은 125는 더 빨리 분산해 queue를 줄이지만 cache affinity를 희생한다. 높은 200은 더 sticky하지만 hot endpoint가 생길 수 있다. |
+| `chwbl_replication` | CHWBL의 endpoint당 vnode 수, WRR_HASH의 정확한 전체 vnode budget | `256` | endpoint가 많고 hash 분포가 거친 경우 canary로만 높인다. WRR_HASH에서는 positive-weight endpoint 수보다 작게 설정할 수 없다. |
+| `chwbl_enable_cache_salt` | request에 1~63 byte JSON string `cache_salt`를 요구하고 affinity key에 포함 | cache-key namespace가 필요할 때 `true` | cache salt는 인증이나 tenant isolation 경계가 아니다. 매 요청 salt가 바뀌면 affinity가 깨진다. |
 | `LLB_LLM_USER_PREFIX_FALLBACK_LEN` | 구조화된 chat prefix를 얻지 못할 때 사용할 user text prefix 길이 | 기본 동작에서 시작 | system prompt가 없거나 raw completion 위주일 때만 조정하고 cardinality/load skew를 확인한다. Gateway process 환경 변수이며 rule field가 아니다. |
 
 예를 들어 cache locality보다 tail latency를 우선하는 동시성 높은 환경은
@@ -1723,7 +1723,7 @@ active request skew, P95/P99 TTFT를 함께 비교한다.
     "chwbl_prefix_hash_level":1,
     "chwbl_prefix_hash_flags":0,
     "chwbl_mean_load_factor":175,
-    "chwbl_replication":100,
+    "chwbl_replication":256,
     "chwbl_enable_cache_salt":false,
     "sse_mode":true, "monitor":true, "cb_enable":true,
     "probetype":"http", "probeport":8085, "probereq":"/health"

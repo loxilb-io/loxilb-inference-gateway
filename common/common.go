@@ -705,6 +705,15 @@ const (
 	LbSelWRRHash
 )
 
+// CHWBL/WRR_HASH public defaults. Keep these in the control-plane package so
+// REST admission, rule storage, tests, and the data-plane encoder resolve an
+// omitted declaration identically.
+const (
+	CHWBLPrefixHashLevelDefault = 1
+	CHWBLMeanLoadFactorDefault  = 175
+	CHWBLReplicationDefault     = 256
+)
+
 // LBMode - Variable to define LB mode
 type LBMode int32
 
@@ -1068,17 +1077,25 @@ type LbServiceArg struct {
 	// mark that prevents generation reuse). In-memory only (json:"-").
 	RestoreReplay bool `json:"-"`
 
-	// CHWBL-specific configuration (only used when Sel=LbSelCHWBL)
-	// CHWBLPrefixHashLevel - Prefix hash level for CHWBL: 1=Level1, 2=Level1+2, 3=Level1+2+3
-	CHWBLPrefixHashLevel int `json:"chwbl_prefix_hash_level,omitempty"`
+	// CHWBL/WRR_HASH configuration. Presence bits are wire-only metadata used to
+	// distinguish replace omission from an explicit reset to the public default.
+	CHWBLPresenceTracked bool `json:"-"`
+	// CHWBLPrefixHashLevel - maximum hash-input level: 1=L1, 2=L1+L2, 3=L1+L2+L3
+	CHWBLPrefixHashLevel        int  `json:"chwbl_prefix_hash_level,omitempty"`
+	CHWBLPrefixHashLevelPresent bool `json:"-"`
 	// CHWBLPrefixHashFlags - Optional field inclusion bitfield (0=auto-detect)
-	CHWBLPrefixHashFlags int `json:"chwbl_prefix_hash_flags,omitempty"`
-	// CHWBLMeanLoadFactor - Max load factor percentage (100-300, default 125)
-	CHWBLMeanLoadFactor int `json:"chwbl_mean_load_factor,omitempty"`
-	// CHWBLReplication - Virtual nodes per endpoint (1-1024, default 100)
-	CHWBLReplication int `json:"chwbl_replication,omitempty"`
-	// CHWBLEnableCacheSalt - Require cache_salt field for multi-tenant isolation
-	CHWBLEnableCacheSalt bool `json:"chwbl_enable_cache_salt,omitempty"`
+	CHWBLPrefixHashFlags        int  `json:"chwbl_prefix_hash_flags,omitempty"`
+	CHWBLPrefixHashFlagsPresent bool `json:"-"`
+	// CHWBLMeanLoadFactor - Max load factor percentage (100-300, default 175)
+	CHWBLMeanLoadFactor        int  `json:"chwbl_mean_load_factor,omitempty"`
+	CHWBLMeanLoadFactorPresent bool `json:"-"`
+	// CHWBLReplication - CHWBL vnodes/endpoint or WRR_HASH total vnode budget (default 256)
+	CHWBLReplication        int  `json:"chwbl_replication,omitempty"`
+	CHWBLReplicationPresent bool `json:"-"`
+	// CHWBLEnableCacheSalt - Require a non-empty request cache_salt hash input.
+	// This is not authentication and does not establish tenant isolation.
+	CHWBLEnableCacheSalt        bool `json:"chwbl_enable_cache_salt,omitempty"`
+	CHWBLEnableCacheSaltPresent bool `json:"-"`
 
 	// MTLSFrontend - Frontend mTLS configuration (optional)
 	// Enables client certificate verification

@@ -80,9 +80,9 @@ snake_case (`pd_disagg_mode`, `sse_mode`, `model_name`, …) vs camelCase (`kvEx
 |---|---|---|
 | `chwbl_prefix_hash_level` | int | prompt-prefix hash depth (`1`–`3`); used with `sel: 8`/`10` |
 | `chwbl_prefix_hash_flags` | int | bitmask of optional fields folded into the prefix hash (LoRA / image / audio / cache_salt / tools / session / RAG); `0` = auto-detect |
-| `chwbl_enable_cache_salt` | bool | require a `cache_salt` field in requests (strict multi-tenant isolation) |
-| `chwbl_mean_load_factor` | int | bounded-load spill threshold, % of mean (`125` = spill at 1.25×) |
-| `chwbl_replication` | int | virtual nodes per endpoint on the hash ring |
+| `chwbl_enable_cache_salt` | bool | require a non-empty `cache_salt` (max 63 bytes) as a cache-key namespace input; this is not authentication or tenant isolation |
+| `chwbl_mean_load_factor` | int | bounded-load spill threshold, % of mean (default `175` = 1.75×) |
+| `chwbl_replication` | int | CHWBL virtual nodes per endpoint, or WRR_HASH exact total vnode budget (default `256`) |
 
 **Prefill/Decode disaggregation**
 

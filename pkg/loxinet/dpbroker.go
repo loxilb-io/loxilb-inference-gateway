@@ -408,6 +408,7 @@ type LBDpWorkQ struct {
 	CHWBLMeanLoadFactor   int      // CHWBL bounded load factor % (100-300, default 175)
 	CHWBLReplication      int      // CHWBL virtual nodes per endpoint (1-1024, default 256)
 	CHWBLPrefixHashFlags  int      // CHWBL optional field flags bitfield
+	CHWBLEnableCacheSalt  bool     // require non-empty cache_salt and include it in request identity
 	Proto                 uint8
 	Mark                  int
 	NatType               NatT

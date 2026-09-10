@@ -160,7 +160,7 @@ endpoint count — measured spread across a 5-endpoint fleet is near-uniform
 once families comfortably outnumber endpoints. Two knobs exist but rarely
 need tuning:
 
-- `chwbl_replication` (virtual nodes per endpoint, default 100) smooths ring
+- `chwbl_replication` (virtual nodes per endpoint, default 256) smooths ring
   placement; raising it has only a marginal, non-monotonic effect on real
   fleets, so the default is a fine starting point.
 - `chwbl_mean_load_factor` bounds per-endpoint load and spills to the next
