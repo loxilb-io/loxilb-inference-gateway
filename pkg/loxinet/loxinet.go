@@ -797,6 +797,16 @@ func loxiNetInit() {
 	// JWT auth profiles live in memory (public key material only); the
 	// holder exists regardless of any store configuration.
 	mh.JWTAuthProfiles = JWTAuthProfileInit()
+	// Ground the delete guard in the real rule table: a profile still named
+	// by an installed LB rule cannot be removed. Bound here rather than in
+	// the holder so pkg/jwtauth stays free of loxinet types; every path into
+	// the holder takes mh.mtx first, which is the lock the rule walk needs.
+	mh.JWTAuthProfiles.ruleRefs = func(name string) []string {
+		if mh.zr == nil || mh.zr.Rules == nil {
+			return nil
+		}
+		return mh.zr.Rules.JwtProfileRuleRefs(name)
+	}
 
 	if opts.Opts.AIKeyDBHost != "" {
 		// Publish the service before dialling, not after. Connect retries with

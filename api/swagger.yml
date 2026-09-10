@@ -9372,10 +9372,10 @@ definitions:
               the system stream cap; enabling SSE does not make them unbounded.
           api_key_auth:
             type: string
-            enum: [disabled, required]
+            enum: [disabled, required, jwt, apikey-or-jwt]
             description: >-
-              Data-plane X-Api-Key enforcement declaration for this service.
-              Three states, and omission is one of them. OMITTED declares
+              Data-plane credential enforcement declaration for this service.
+              Omission is a state of its own. OMITTED declares
               nothing: the service is not marked AI-facing, proxying stays
               byte-identical, and a backend-owned X-Api-Key header passes
               through untouched. An explicit "disabled" declares the service
@@ -9384,7 +9384,14 @@ definitions:
               is stripped before dispatch. "required" makes the data plane
               validate the X-Api-Key header against the API-key store before
               the request reaches a backend, fails closed when the policy
-              cannot be evaluated, and likewise strips the header. Reading a
+              cannot be evaluated, and likewise strips the header. "jwt"
+              validates an Authorization Bearer JWT against the service's
+              jwt_auth_profile instead; X-Api-Key is not consulted.
+              "apikey-or-jwt" accepts either credential with a fixed
+              precedence: a present X-Api-Key decides alone (its rejection is
+              final, with no JWT fallback), otherwise a Bearer token decides,
+              and a request carrying neither is refused. Both JWT modes
+              require jwt_auth_profile to name a configured profile. Reading a
               service back preserves the declaration exactly: an omitted
               policy reads back with this field absent, never resolved to a
               value. On a replace of an existing service, omitting this field
@@ -9392,6 +9399,18 @@ definitions:
               enforcement off; to clear a declared policy, send "disabled"
               explicitly. Independent of sse_mode and pd_disagg_mode, and
               independent of the management-plane authentication mode.
+          jwt_auth_profile:
+            type: string
+            maxLength: 63
+            description: >-
+              Name of the JWT auth profile (config/ai/jwtauthprofile) that
+              decides this service's Bearer arm. Required by, and only valid
+              with, api_key_auth "jwt" and "apikey-or-jwt"; a create or
+              replace naming a profile that is not configured is rejected.
+              On a replace, omitting this field preserves the existing
+              reference, in lockstep with api_key_auth's replace semantics.
+              While a service references a profile, deleting that profile is
+              refused.
           max_stream_duration_sec:
             type: integer
             format: int32

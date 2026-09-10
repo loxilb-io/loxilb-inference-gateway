@@ -4074,10 +4074,12 @@ func init() {
               "type": "object"
             },
             "api_key_auth": {
-              "description": "Data-plane X-Api-Key enforcement declaration for this service. Three states, and omission is one of them. OMITTED declares nothing: the service is not marked AI-facing, proxying stays byte-identical, and a backend-owned X-Api-Key header passes through untouched. An explicit \"disabled\" declares the service AI-facing without enforcement: no key is validated, but X-Api-Key is the gateway's credential namespace and the header is stripped before dispatch. \"required\" makes the data plane validate the X-Api-Key header against the API-key store before the request reaches a backend, fails closed when the policy cannot be evaluated, and likewise strips the header. Reading a service back preserves the declaration exactly: an omitted policy reads back with this field absent, never resolved to a value. On a replace of an existing service, omitting this field leaves the declared policy unchanged — it never silently turns enforcement off; to clear a declared policy, send \"disabled\" explicitly. Independent of sse_mode and pd_disagg_mode, and independent of the management-plane authentication mode.",
+              "description": "Data-plane credential enforcement declaration for this service. Omission is a state of its own. OMITTED declares nothing: the service is not marked AI-facing, proxying stays byte-identical, and a backend-owned X-Api-Key header passes through untouched. An explicit \"disabled\" declares the service AI-facing without enforcement: no key is validated, but X-Api-Key is the gateway's credential namespace and the header is stripped before dispatch. \"required\" makes the data plane validate the X-Api-Key header against the API-key store before the request reaches a backend, fails closed when the policy cannot be evaluated, and likewise strips the header. \"jwt\" validates an Authorization Bearer JWT against the service's jwt_auth_profile instead; X-Api-Key is not consulted. \"apikey-or-jwt\" accepts either credential with a fixed precedence: a present X-Api-Key decides alone (its rejection is final, with no JWT fallback), otherwise a Bearer token decides, and a request carrying neither is refused. Both JWT modes require jwt_auth_profile to name a configured profile. Reading a service back preserves the declaration exactly: an omitted policy reads back with this field absent, never resolved to a value. On a replace of an existing service, omitting this field leaves the declared policy unchanged — it never silently turns enforcement off; to clear a declared policy, send \"disabled\" explicitly. Independent of sse_mode and pd_disagg_mode, and independent of the management-plane authentication mode.",
               "enum": [
                 "disabled",
-                "required"
+                "required",
+                "jwt",
+                "apikey-or-jwt"
               ],
               "type": "string"
             },
@@ -4198,6 +4200,11 @@ func init() {
               "description": "Inactivity timeout in seconds. The domain rejects values above 86400; zero resolves to 240 for TCP/SCTP and 20 for other protocols. On an attached L7 policy, a nonzero timeoutMemberData overrides the relay idle deadline.",
               "format": "int32",
               "type": "integer"
+            },
+            "jwt_auth_profile": {
+              "description": "Name of the JWT auth profile (config/ai/jwtauthprofile) that decides this service's Bearer arm. Required by, and only valid with, api_key_auth \"jwt\" and \"apikey-or-jwt\"; a create or replace naming a profile that is not configured is rejected. On a replace, omitting this field preserves the existing reference, in lockstep with api_key_auth's replace semantics. While a service references a profile, deleting that profile is refused.",
+              "maxLength": 63,
+              "type": "string"
             },
             "kvBlockSize": {
               "default": 16,
@@ -35114,11 +35121,13 @@ func init() {
               }
             },
             "api_key_auth": {
-              "description": "Data-plane X-Api-Key enforcement declaration for this service. Three states, and omission is one of them. OMITTED declares nothing: the service is not marked AI-facing, proxying stays byte-identical, and a backend-owned X-Api-Key header passes through untouched. An explicit \"disabled\" declares the service AI-facing without enforcement: no key is validated, but X-Api-Key is the gateway's credential namespace and the header is stripped before dispatch. \"required\" makes the data plane validate the X-Api-Key header against the API-key store before the request reaches a backend, fails closed when the policy cannot be evaluated, and likewise strips the header. Reading a service back preserves the declaration exactly: an omitted policy reads back with this field absent, never resolved to a value. On a replace of an existing service, omitting this field leaves the declared policy unchanged — it never silently turns enforcement off; to clear a declared policy, send \"disabled\" explicitly. Independent of sse_mode and pd_disagg_mode, and independent of the management-plane authentication mode.",
+              "description": "Data-plane credential enforcement declaration for this service. Omission is a state of its own. OMITTED declares nothing: the service is not marked AI-facing, proxying stays byte-identical, and a backend-owned X-Api-Key header passes through untouched. An explicit \"disabled\" declares the service AI-facing without enforcement: no key is validated, but X-Api-Key is the gateway's credential namespace and the header is stripped before dispatch. \"required\" makes the data plane validate the X-Api-Key header against the API-key store before the request reaches a backend, fails closed when the policy cannot be evaluated, and likewise strips the header. \"jwt\" validates an Authorization Bearer JWT against the service's jwt_auth_profile instead; X-Api-Key is not consulted. \"apikey-or-jwt\" accepts either credential with a fixed precedence: a present X-Api-Key decides alone (its rejection is final, with no JWT fallback), otherwise a Bearer token decides, and a request carrying neither is refused. Both JWT modes require jwt_auth_profile to name a configured profile. Reading a service back preserves the declaration exactly: an omitted policy reads back with this field absent, never resolved to a value. On a replace of an existing service, omitting this field leaves the declared policy unchanged — it never silently turns enforcement off; to clear a declared policy, send \"disabled\" explicitly. Independent of sse_mode and pd_disagg_mode, and independent of the management-plane authentication mode.",
               "type": "string",
               "enum": [
                 "disabled",
-                "required"
+                "required",
+                "jwt",
+                "apikey-or-jwt"
               ]
             },
             "backend_ca_cert_id": {
@@ -35238,6 +35247,11 @@ func init() {
               "description": "Inactivity timeout in seconds. The domain rejects values above 86400; zero resolves to 240 for TCP/SCTP and 20 for other protocols. On an attached L7 policy, a nonzero timeoutMemberData overrides the relay idle deadline.",
               "type": "integer",
               "format": "int32"
+            },
+            "jwt_auth_profile": {
+              "description": "Name of the JWT auth profile (config/ai/jwtauthprofile) that decides this service's Bearer arm. Required by, and only valid with, api_key_auth \"jwt\" and \"apikey-or-jwt\"; a create or replace naming a profile that is not configured is rejected. On a replace, omitting this field preserves the existing reference, in lockstep with api_key_auth's replace semantics. While a service references a profile, deleting that profile is refused.",
+              "type": "string",
+              "maxLength": 63
             },
             "kvBlockSize": {
               "description": "Token block size for KV hashing. On create and replace POST, omission or explicit 0 stores the default declaration and resolves effectively to 16; explicit JSON null is rejected. PATCH does not support this field. Positive values are limited to 1..4096, the fixed request-token and CBOR workspace bound used by the hashing data path. Choose the value from the deployed engine tuple, not from the schema default. It must match vLLM block-size, SGLang page-size, or TRT-LLM tokens_per_block. A mismatch can cause hash misses; TRT-LLM server-info validation can instead refuse the endpoint's KV event poller while plain load balancing remains available. API acceptance proves safe representation, not engine-geometry compatibility.",
@@ -35788,11 +35802,13 @@ func init() {
           }
         },
         "api_key_auth": {
-          "description": "Data-plane X-Api-Key enforcement declaration for this service. Three states, and omission is one of them. OMITTED declares nothing: the service is not marked AI-facing, proxying stays byte-identical, and a backend-owned X-Api-Key header passes through untouched. An explicit \"disabled\" declares the service AI-facing without enforcement: no key is validated, but X-Api-Key is the gateway's credential namespace and the header is stripped before dispatch. \"required\" makes the data plane validate the X-Api-Key header against the API-key store before the request reaches a backend, fails closed when the policy cannot be evaluated, and likewise strips the header. Reading a service back preserves the declaration exactly: an omitted policy reads back with this field absent, never resolved to a value. On a replace of an existing service, omitting this field leaves the declared policy unchanged — it never silently turns enforcement off; to clear a declared policy, send \"disabled\" explicitly. Independent of sse_mode and pd_disagg_mode, and independent of the management-plane authentication mode.",
+          "description": "Data-plane credential enforcement declaration for this service. Omission is a state of its own. OMITTED declares nothing: the service is not marked AI-facing, proxying stays byte-identical, and a backend-owned X-Api-Key header passes through untouched. An explicit \"disabled\" declares the service AI-facing without enforcement: no key is validated, but X-Api-Key is the gateway's credential namespace and the header is stripped before dispatch. \"required\" makes the data plane validate the X-Api-Key header against the API-key store before the request reaches a backend, fails closed when the policy cannot be evaluated, and likewise strips the header. \"jwt\" validates an Authorization Bearer JWT against the service's jwt_auth_profile instead; X-Api-Key is not consulted. \"apikey-or-jwt\" accepts either credential with a fixed precedence: a present X-Api-Key decides alone (its rejection is final, with no JWT fallback), otherwise a Bearer token decides, and a request carrying neither is refused. Both JWT modes require jwt_auth_profile to name a configured profile. Reading a service back preserves the declaration exactly: an omitted policy reads back with this field absent, never resolved to a value. On a replace of an existing service, omitting this field leaves the declared policy unchanged — it never silently turns enforcement off; to clear a declared policy, send \"disabled\" explicitly. Independent of sse_mode and pd_disagg_mode, and independent of the management-plane authentication mode.",
           "type": "string",
           "enum": [
             "disabled",
-            "required"
+            "required",
+            "jwt",
+            "apikey-or-jwt"
           ]
         },
         "backend_ca_cert_id": {
@@ -35912,6 +35928,11 @@ func init() {
           "description": "Inactivity timeout in seconds. The domain rejects values above 86400; zero resolves to 240 for TCP/SCTP and 20 for other protocols. On an attached L7 policy, a nonzero timeoutMemberData overrides the relay idle deadline.",
           "type": "integer",
           "format": "int32"
+        },
+        "jwt_auth_profile": {
+          "description": "Name of the JWT auth profile (config/ai/jwtauthprofile) that decides this service's Bearer arm. Required by, and only valid with, api_key_auth \"jwt\" and \"apikey-or-jwt\"; a create or replace naming a profile that is not configured is rejected. On a replace, omitting this field preserves the existing reference, in lockstep with api_key_auth's replace semantics. While a service references a profile, deleting that profile is refused.",
+          "type": "string",
+          "maxLength": 63
         },
         "kvBlockSize": {
           "description": "Token block size for KV hashing. On create and replace POST, omission or explicit 0 stores the default declaration and resolves effectively to 16; explicit JSON null is rejected. PATCH does not support this field. Positive values are limited to 1..4096, the fixed request-token and CBOR workspace bound used by the hashing data path. Choose the value from the deployed engine tuple, not from the schema default. It must match vLLM block-size, SGLang page-size, or TRT-LLM tokens_per_block. A mismatch can cause hash misses; TRT-LLM server-info validation can instead refuse the endpoint's KV event poller while plain load balancing remains available. API acceptance proves safe representation, not engine-geometry compatibility.",

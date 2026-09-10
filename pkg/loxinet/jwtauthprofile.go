@@ -128,6 +128,32 @@ func (h *JWTAuthProfileH) Manager() *jwtauth.Manager {
 	return h.mgr
 }
 
+// ProfileExists reports whether a profile name is configured. Rule
+// create/update uses it to refuse a reference to a profile that is not
+// there (the mirror image of the ruleRefs delete guard).
+func (h *JWTAuthProfileH) ProfileExists(name string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	_, ok := h.profiles[name]
+	return ok
+}
+
+// ProfileUpstreamPolicy returns the two upstream-hygiene switches of a
+// profile: whether verified X-Auth-* identity headers are injected, and
+// whether the client's Authorization header rides through to the backend
+// instead of being stripped. ok is false for an unknown profile — callers
+// on the admission path treat that as strip-everything/forward-nothing,
+// the fail-safe posture.
+func (h *JWTAuthProfileH) ProfileUpstreamPolicy(name string) (forwardIdentity, authzPassthrough, ok bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	pm, found := h.profiles[name]
+	if !found {
+		return false, false, false
+	}
+	return pm.ForwardIdentity, pm.AuthorizationPassthrough, true
+}
+
 // error codes
 const (
 	JwtAuthProfileErrBase = iota - 118000
