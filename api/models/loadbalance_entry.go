@@ -821,7 +821,7 @@ type LoadbalanceEntryServiceArguments struct {
 	// Minimum: 0
 	PdBootstrapPort int32 `json:"pdBootstrapPort,omitempty"`
 
-	// Absolute active-connection imbalance threshold for P/D cache affinity. Tier-1 trie selection requires max-min to be at most this value; Tier-1.5 uses the check only when the process-level LLB_KV_LOADGUARD is enabled. A Tier-0 session hit returns before these checks. On creation, omission or 0 resolves to 3. Current replace behavior retains the previous value for incoming 0. The approved future contract is omission=retain and explicit 0=reset to 3; this update distinction is not implemented yet.
+	// Absolute active-connection imbalance threshold for P/D cache affinity. Tier-1 trie selection requires max-min to be at most this value; Tier-1.5 uses the check only when the process-level LLB_KV_LOADGUARD is enabled. A Tier-0 session hit returns before these checks. On creation, omission or 0 stores the zero declaration and resolves effectively to 3. On replace POST and supported PATCH, omission retains the stored declaration, explicit 0 resets it to the system default of 3, and a valid positive value replaces it. Explicit JSON null is rejected before rule or data-plane mutation.
 	// Maximum: 255
 	// Minimum: 0
 	PdBalanceAbsThreshold int32 `json:"pd_balance_abs_threshold,omitempty"`
@@ -829,7 +829,7 @@ type LoadbalanceEntryServiceArguments struct {
 	// Enable Tier-1 radix-trie prefix affinity for P/D routing. Requires pd_disagg_mode=true. Tier-0 session stickiness is active independently of this flag when a client session key is present; Tier-2 load-based selection remains the fallback.
 	PdCacheAwareMode bool `json:"pd_cache_aware_mode,omitempty"`
 
-	// Minimum prefix-match percentage for Tier-1 trie affinity when pd_cache_aware_mode=true. Lower positive values allow shorter prefix matches. On creation, omission or 0 resolves to 20, not a literal zero-percent threshold. Current replace behavior retains the previous value when the incoming value is 0. The approved future update contract separates omission (retain) from explicit 0 (reset to 20); that presence-aware change is not implemented yet. UI clients must not assume a zero-valued update resets the current deployment. This field does not set the Tier-0 session TTL.
+	// Minimum prefix-match percentage for Tier-1 trie affinity when pd_cache_aware_mode=true. Lower positive values allow shorter prefix matches. On creation, omission or 0 stores the zero declaration and resolves effectively to 20, not a literal zero-percent threshold. On replace POST and supported PATCH, omission retains the stored declaration, explicit 0 resets it to the system default of 20, and a valid positive value replaces it. Explicit JSON null is rejected before rule or data-plane mutation. This field does not set the Tier-0 session TTL.
 	// Maximum: 100
 	// Minimum: 0
 	PdCacheThreshold int32 `json:"pd_cache_threshold,omitempty"`

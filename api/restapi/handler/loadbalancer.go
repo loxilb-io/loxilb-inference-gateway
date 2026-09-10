@@ -53,6 +53,14 @@ func stripV6Brackets(ip string) string {
 func ConfigPostLoadbalancer(params operations.PostConfigLoadbalancerParams, principal interface{}) middleware.Responder {
 	tk.LogIt(tk.LogTrace, "api: Load balancer %s API called. url : %s\n", params.HTTPRequest.Method, params.HTTPRequest.URL)
 
+	pres, err := parseLoadbalancerRequestPresence(rawLoadbalancerBodyFromContext(params.HTTPRequest.Context()))
+	if err != nil {
+		return errorResponseWithCode(http.StatusBadRequest, "malformed load-balancer body")
+	}
+	if err := pres.validatePDThresholds(); err != nil {
+		return errorResponseWithCode(http.StatusBadRequest, err.Error())
+	}
+
 	var lbRules cmn.LbRuleMod
 
 	if params.Attr.ServiceArguments.ExternalIP != nil {
@@ -130,8 +138,7 @@ func ConfigPostLoadbalancer(params operations.PostConfigLoadbalancerParams, prin
 	// P/D cache-aware routing (US-PD801)
 	lbRules.Serv.PDCacheAwareMode = params.Attr.ServiceArguments.PdCacheAwareMode
 	lbRules.Serv.PDSessionTTLSec = uint32(params.Attr.ServiceArguments.PdSessionTTLSec)
-	lbRules.Serv.PDCacheThreshold = uint8(params.Attr.ServiceArguments.PdCacheThreshold)
-	lbRules.Serv.PDBalanceAbsThreshold = uint8(params.Attr.ServiceArguments.PdBalanceAbsThreshold)
+	pres.applyPDThresholds(&lbRules.Serv, params.Attr.ServiceArguments)
 
 	// Per-endpoint circuit breaker
 	lbRules.Serv.CbEnable = params.Attr.ServiceArguments.CbEnable
@@ -315,7 +322,7 @@ func ConfigPostLoadbalancer(params operations.PostConfigLoadbalancerParams, prin
 	}
 
 	tk.LogIt(tk.LogDebug, "api: lbRules : %v\n", lbRules)
-	_, err := ApiHooks.NetLbRuleAdd(&lbRules)
+	_, err = ApiHooks.NetLbRuleAdd(&lbRules)
 	if err != nil {
 		tk.LogIt(tk.LogDebug, "api: Error occur : %v\n", err)
 		return &ErrorResponse{Payload: ResultErrorResponseError(err)}

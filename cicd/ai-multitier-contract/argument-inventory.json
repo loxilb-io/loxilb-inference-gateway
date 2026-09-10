@@ -3,7 +3,7 @@
   "scope": "LoadbalanceEntry fields and AI KV inventory query parameters; not a test-coverage claim",
   "sourceSha256": {
     "swagger-extras.yml": "4e602fc9652f481e48ede784e51d462300940b1995cb2cd19473fe840e6e0efb",
-    "swagger.yml": "451a124da67db14aea24afad0f5ec5fccea8195e0c56bcec314d89f551944f82"
+    "swagger.yml": "c2c105b2da8b8d0680fff4064e0a891d9c50d9e11a47a3675874e244781873f8"
   },
   "fields": [
     {
@@ -909,7 +909,7 @@
       "required": false,
       "contract": {
         "default": 3,
-        "description": "Absolute active-connection imbalance threshold for P/D cache affinity. Tier-1 trie selection requires max-min to be at most this value; Tier-1.5 uses the check only when the process-level LLB_KV_LOADGUARD is enabled. A Tier-0 session hit returns before these checks. On creation, omission or 0 resolves to 3. Current replace behavior retains the previous value for incoming 0. The approved future contract is omission=retain and explicit 0=reset to 3; this update distinction is not implemented yet.",
+        "description": "Absolute active-connection imbalance threshold for P/D cache affinity. Tier-1 trie selection requires max-min to be at most this value; Tier-1.5 uses the check only when the process-level LLB_KV_LOADGUARD is enabled. A Tier-0 session hit returns before these checks. On creation, omission or 0 stores the zero declaration and resolves effectively to 3. On replace POST and supported PATCH, omission retains the stored declaration, explicit 0 resets it to the system default of 3, and a valid positive value replaces it. Explicit JSON null is rejected before rule or data-plane mutation.",
         "format": "int32",
         "maximum": 255,
         "minimum": 0,
@@ -932,7 +932,7 @@
       "required": false,
       "contract": {
         "default": 20,
-        "description": "Minimum prefix-match percentage for Tier-1 trie affinity when pd_cache_aware_mode=true. Lower positive values allow shorter prefix matches. On creation, omission or 0 resolves to 20, not a literal zero-percent threshold. Current replace behavior retains the previous value when the incoming value is 0. The approved future update contract separates omission (retain) from explicit 0 (reset to 20); that presence-aware change is not implemented yet. UI clients must not assume a zero-valued update resets the current deployment. This field does not set the Tier-0 session TTL.",
+        "description": "Minimum prefix-match percentage for Tier-1 trie affinity when pd_cache_aware_mode=true. Lower positive values allow shorter prefix matches. On creation, omission or 0 stores the zero declaration and resolves effectively to 20, not a literal zero-percent threshold. On replace POST and supported PATCH, omission retains the stored declaration, explicit 0 resets it to the system default of 20, and a valid positive value replaces it. Explicit JSON null is rejected before rule or data-plane mutation. This field does not set the Tier-0 session TTL.",
         "format": "int32",
         "maximum": 100,
         "minimum": 0,

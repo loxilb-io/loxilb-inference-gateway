@@ -461,11 +461,17 @@ read -r -d '' RULE_B_JSON <<JSON
   ]
 }
 JSON
-add_b_rc=$(llb_curl -o /dev/null -w "%{http_code}" -X POST "${LBBASE}" \
-    -H 'Content-Type: application/json' -d "${RULE_B_JSON}" 2>/dev/null)
+add_b_body="${CFGDIR}/.l3-b-readd-response.json"
+add_b_err="${CFGDIR}/.l3-b-readd-curl.err"
+add_b_exit=0
+add_b_rc=$(llb_curl -o "${add_b_body}" -w "%{http_code}" -X POST "${LBBASE}" \
+    -H 'Content-Type: application/json' -d "${RULE_B_JSON}" 2>"${add_b_err}") || add_b_exit=$?
+if [[ "${add_b_exit}" -ne 0 || "${add_b_rc}" != 2* ]]; then
+    echo "  VIP-B re-POST diagnostic: curl_exit=${add_b_exit} HTTP=${add_b_rc:-<empty>} stderr=$(head -c 240 "${add_b_err}" 2>/dev/null) response=$(head -c 240 "${add_b_body}" 2>/dev/null)"
+fi
 sleep 3
 resolve_sids   # re-add mints a NEW ruleNum for B — re-resolve both (A must be unchanged)
-echo "  churn self-confirm: B served ${b_served}/3 ; DELETE rc=${del_b_rc} ; re-POST rc=${add_b_rc} ; re-resolved A=${SID_A} B=${SID_B}"
+echo "  churn self-confirm: B served ${b_served}/3 ; DELETE rc=${del_b_rc} ; re-POST rc=${add_b_rc} curl_exit=${add_b_exit} ; re-resolved A=${SID_A} B=${SID_B}"
 # re-warm B idx 1 and prove B functional post-churn (part of the churn evidence).
 kill_publisher_ep "${EP_B1_IP}"; sleep 1
 launch_publisher "${EP_B1_IP}" "${KV_ZMQ_PORT_B}" "sha256_sglang" "${KV_DP_RANKS}" \
@@ -474,7 +480,7 @@ l3_b_rewarm=$(wait_inv "${SID_B}" 1 -gt 0 30)
 sleep 3
 l3_b_banner=$(req_banner "${VPORT_B}" "${PB_HIT}")
 [[ -n "${l3_b_banner}" ]] && b_served=$((b_served + 1))
-l3_churn_fired=$([[ "${b_served}" -ge 3 && "${del_b_rc}" == 2* && "${add_b_rc}" == 2* ]] && echo 1 || echo 0)
+l3_churn_fired=$([[ "${b_served}" -ge 3 && "${del_b_rc}" == 2* && "${add_b_exit}" -eq 0 && "${add_b_rc}" == 2* ]] && echo 1 || echo 0)
 assert "(L3.1) churn FIRED: VIP-B served >=3, rule deleted (2xx) and re-added (2xx), re-warmed=${l3_b_rewarm}" "${l3_churn_fired}"
 a_iso_h0_after=$(tier15_hits 0); a_iso_h2_after=$(tier15_hits 2)
 a_iso_i0_after=$(inv_total "${SID_A}" 0); a_iso_i2_after=$(inv_total "${SID_A}" 2)
@@ -602,14 +608,14 @@ read -r -d '' RULE_B_ENGINE_FLIP <<JSON
 }
 JSON
 l5_body="${CFGDIR}/.l5-engine-flip-response.json"
-l5_rc=$(llb_curl -o /dev/null -w "%{http_code}" -X POST "${LBBASE}" \
-    -H 'Content-Type: application/json' -d "${RULE_B_ENGINE_FLIP}" 2>/dev/null)
-llb_curl -X POST "${LBBASE}" -H 'Content-Type: application/json' \
-    -d "${RULE_B_ENGINE_FLIP}" 2>/dev/null >"${l5_body}" || true
+l5_err="${CFGDIR}/.l5-engine-flip-curl.err"
+l5_exit=0
+l5_rc=$(llb_curl -o "${l5_body}" -w "%{http_code}" -X POST "${LBBASE}" \
+    -H 'Content-Type: application/json' -d "${RULE_B_ENGINE_FLIP}" 2>"${l5_err}") || l5_exit=$?
 l5_msg=$(grep -c "cant modify rule kv engine type" "${l5_body}" 2>/dev/null)
 l5_msg="${l5_msg:-0}"
-l5_rejected=$([[ "${l5_rc}" != 2* && "${l5_msg}" -ge 1 ]] && echo 1 || echo 0)
-echo "  engine-flip update: HTTP ${l5_rc} (want non-2xx) ; exact engine-mix message present=${l5_msg} (response: $(head -c 160 "${l5_body}" 2>/dev/null))"
+l5_rejected=$([[ "${l5_exit}" -eq 0 && "${l5_rc}" != 2* && "${l5_msg}" -ge 1 ]] && echo 1 || echo 0)
+echo "  engine-flip update: curl_exit=${l5_exit} HTTP ${l5_rc:-<empty>} (want non-2xx) ; exact engine-mix message present=${l5_msg} (stderr: $(head -c 160 "${l5_err}" 2>/dev/null) ; response: $(head -c 160 "${l5_body}" 2>/dev/null))"
 assert "(L5) engine change REJECTED: non-2xx + exact 'cant modify rule kv engine type' message" "${l5_rejected}"
 # The rule must still route (and still Tier-1.5-hit) after the rejected update.
 l5_h1_before=$(tier15_hits 1)

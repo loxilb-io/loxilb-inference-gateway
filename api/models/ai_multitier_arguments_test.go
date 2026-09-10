@@ -43,6 +43,22 @@ func TestAIMultitierSessionTTLDeclaration(t *testing.T) {
 	}
 }
 
+// The generated value fields intentionally expose why the REST handler needs
+// raw request presence: encoding/json accepts null for a non-pointer number and
+// leaves it at zero, after which generated validation also accepts the value.
+func TestAIMultitierThresholdNullCollapsesToZeroAtGeneratedModel(t *testing.T) {
+	var arg LoadbalanceEntryServiceArguments
+	if err := json.Unmarshal([]byte(`{"pd_cache_threshold":null,"pd_balance_abs_threshold":null}`), &arg); err != nil {
+		t.Fatalf("generated model unexpectedly rejected JSON null: %v", err)
+	}
+	if arg.PdCacheThreshold != 0 || arg.PdBalanceAbsThreshold != 0 {
+		t.Fatalf("null did not collapse to zero: cache=%d balance=%d", arg.PdCacheThreshold, arg.PdBalanceAbsThreshold)
+	}
+	if err := arg.Validate(strfmt.Default); err != nil {
+		t.Fatalf("generated zero-value validation unexpectedly rejected null-decoded fields: %v", err)
+	}
+}
+
 // These are transport-boundary tests: accepted JSON values must fit the
 // downstream uint8/uint16/uint32 fields without changing their meaning.
 func TestAIMultitierNumericBounds(t *testing.T) {

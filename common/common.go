@@ -997,8 +997,15 @@ type LbServiceArg struct {
 	PDSessionTTLSec uint32 `json:"pd_session_ttl_sec,omitempty"`
 	// PDCacheThreshold - Cache match threshold (0-100, default 20)
 	PDCacheThreshold uint8 `json:"pd_cache_threshold,omitempty"`
+	// PDCacheThresholdPresent records request presence without changing the
+	// stored/public JSON shape. It lets an explicit zero reset a live rule to
+	// the system default while an omitted field preserves the declaration.
+	PDCacheThresholdPresent bool `json:"-"`
 	// PDBalanceAbsThreshold - Load imbalance threshold (default 3)
 	PDBalanceAbsThreshold uint8 `json:"pd_balance_abs_threshold,omitempty"`
+	// PDBalanceAbsThresholdPresent is the presence bit for replace semantics.
+	// It is transaction metadata, not persisted configuration.
+	PDBalanceAbsThresholdPresent bool `json:"-"`
 	// CbEnable - Enable the per-endpoint circuit breaker for full-proxy rules.
 	// After 5 consecutive backend connect failures an endpoint is skipped by all
 	// selection paths until a 30s open-timeout expires and a half-open probe

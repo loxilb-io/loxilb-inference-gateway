@@ -1791,14 +1791,8 @@ func DpLBRuleMod(w *LBDpWorkQ) int {
 		dat.pd_cache_aware_mode = 1
 	}
 	dat.pd_session_ttl_sec = C.uint32_t(w.PDSessionTTLSec)
-	cacheThreshold := w.PDCacheThreshold
-	if cacheThreshold == 0 {
-		cacheThreshold = 20
-	}
-	balanceThreshold := w.PDBalanceAbsThreshold
-	if balanceThreshold == 0 {
-		balanceThreshold = 3
-	}
+	cacheThreshold := pdCacheThresholdEffective(w.PDCacheThreshold)
+	balanceThreshold := pdBalanceAbsThresholdEffective(w.PDBalanceAbsThreshold)
 	dat.pd_cache_threshold = C.uint8_t(cacheThreshold)
 	dat.pd_balance_abs_threshold = C.uint8_t(balanceThreshold)
 
