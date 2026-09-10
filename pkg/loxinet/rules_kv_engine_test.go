@@ -34,7 +34,23 @@ package loxinet
 import (
 	"strings"
 	"testing"
+
+	cmn "github.com/loxilb-io/loxilb/common"
 )
+
+func TestKvBlockSizeValidate(t *testing.T) {
+	for _, blockSize := range []uint32{0, 1, 16, cmn.KVBlockSizeMax} {
+		if err := kvBlockSizeValidate(blockSize); err != nil {
+			t.Errorf("block size %d: unexpected rejection: %v", blockSize, err)
+		}
+	}
+	for _, blockSize := range []uint32{cmn.KVBlockSizeMax + 1, ^uint32(0)} {
+		err := kvBlockSizeValidate(blockSize)
+		if err == nil || !strings.Contains(err.Error(), "kvBlockSize") {
+			t.Errorf("block size %d: error=%v, want field-specific rejection", blockSize, err)
+		}
+	}
+}
 
 // TestKvEngineConfigValidateAllowlist — behavior case 1: a rule add with a
 // non-allowlisted kvEngineType (e.g. "tensorrt") is rejected with an error

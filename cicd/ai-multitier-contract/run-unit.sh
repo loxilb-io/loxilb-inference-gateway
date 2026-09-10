@@ -55,8 +55,14 @@ run_gate() {
   printf '%s: exit=%d\n' "$name" "$rc"
 }
 run_gate api-models -ec 'go test -json -count=1 ./api/models'
-run_gate api-handler -ec 'go test -json -count=1 ./api/restapi/handler -run "TestResultErrorResponseTyped(RuleArgument|KvAdmission)RefusalIsBadRequest"'
-run_gate kv-admission -ec 'go test -json -tags=mtls,l4trace -count=1 ./pkg/loxinet -run "Test(AIMultitier|KvEngine|KvExactAdmission|KvTrtllmFeatureGuard|KvLlamacppFeatureGuard|KvSubscriberRankPortsBounds)"'
+run_gate api-handler -ec '
+  go test -json -count=1 ./api/restapi/handler \
+    -run "Test(ResultErrorResponseTyped(RuleArgument|KvAdmission)RefusalIsBadRequest|KVNumeric|PDThreshold)"
+'
+run_gate kv-admission -ec '
+  go test -json -tags=mtls,l4trace -count=1 ./pkg/loxinet \
+    -run "Test(AIMultitier|KvBlockSize|KvEngine|KvExactAdmission|KvTrtllmFeatureGuard|KvLlamacppFeatureGuard|KvSubscriberRankPortsBounds|KvChallengeHasherRejectsUnsafeBlockSize)"
+'
 run_gate security-precedence -ec '
   go test -json -tags=mtls,l4trace -count=1 ./pkg/loxinet \
     -run "Test(AiGwModeForTruthTable|ApiKeyAuth|AbsentApiKeyAuth|KeyStoreVerdict|RateLimitCheck)" &&

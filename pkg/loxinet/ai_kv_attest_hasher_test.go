@@ -25,7 +25,16 @@ package loxinet
 import (
 	"strings"
 	"testing"
+
+	cmn "github.com/loxilb-io/loxilb/common"
 )
+
+func TestKvChallengeHasherRejectsUnsafeBlockSize(t *testing.T) {
+	if got, ok := DpKvComputeChallengeHashes(
+		"sha256_cbor", cmn.KVBlockSizeMax+1, []uint32{1}); ok || got != nil {
+		t.Fatalf("unsafe block size returned ok=%v hashes=%v, want defensive rejection", ok, got)
+	}
+}
 
 // TestKvChallengeHasherMatchesFixtureVectors: every sha256_cbor fixture with
 // a ZERO parent (a chain's first block) must reproduce through the CGO

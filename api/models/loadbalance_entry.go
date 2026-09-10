@@ -690,24 +690,24 @@ type LoadbalanceEntryServiceArguments struct {
 	// Enable the per-endpoint circuit breaker for full-proxy rules. Five consecutive backend connect failures open the breaker; an open endpoint is excluded from selection. Recovery uses a 30-second open interval followed by half-open probing. This is independent of the configured health monitor (probetype); one failed request does not by itself meet the opening threshold.
 	CbEnable bool `json:"cb_enable,omitempty"`
 
-	// Intended request cache_salt requirement for sel=8/10. Known implementation gap: this declaration is not wired to active C configuration, which initializes the option disabled. It does not currently enforce salt presence or tenant isolation. Retained for implementation. A client-supplied hash salt is not itself an authenticated tenant-isolation boundary; identity binding and missing-salt behavior need an explicit security contract.
+	// Require a non-empty JSON string cache_salt of at most 63 bytes on H1 and H2 requests and include it in the configured hash identity. Missing or malformed salt is rejected locally with HTTP 400 before upstream dispatch. This is cache-key namespacing, not authentication and not an authenticated tenant-isolation boundary.
 	ChwblEnableCacheSalt *bool `json:"chwbl_enable_cache_salt,omitempty"`
 
-	// Intended bounded-load factor in percent for sel=8/10, with a nominal bound of average load multiplied by factor/100. The schema declares 125, but current C initialization uses 175 and does not consume this API override. Do not interpret a returned value as the effective bound. The option is retained; the final default and complete configuration propagation require reconciliation.
+	// Bounded-load factor in percent for sel=8/10. Selection compares the request's future endpoint load with the configured factor of mean load. Omission on create resolves to 175; omission on replace preserves the current effective value.
 	// Maximum: 300
 	// Minimum: 100
 	ChwblMeanLoadFactor int64 `json:"chwbl_mean_load_factor,omitempty"`
 
-	// Intended optional hash-input flags for sel=8/10: bits 0..7 name LoRA, image, audio, cache_salt, tools, session, RAG template, and RAG documents respectively; 0 declares automatic selection. Known implementation gap: API declarations are stored but are not propagated into the active C configuration, which initializes this field to 0. Per-bit behavior is not an implemented API guarantee. Retained for implementation and behavior verification.
+	// Optional hash-input flags for sel=8/10: bits 0..7 name LoRA, image, audio, cache_salt, tools, session, RAG template, and RAG documents respectively. 0 selects all present inputs allowed by chwbl_prefix_hash_level. Explicit flags above that level are rejected. Omission on replace preserves the effective value.
 	// Maximum: 255
 	// Minimum: 0
 	ChwblPrefixHashFlags *int64 `json:"chwbl_prefix_hash_flags,omitempty"`
 
-	// Intended prefix level for sel=8 (CHWBL) or sel=10 (WRR_HASH), both requiring mode=4: 1=system prompt/model, 2=also session context, 3=also RAG context. Known wiring limitation: the declaration is forwarded to the C configuration for sel=8, but not for sel=10. The WRR_HASH path therefore uses its internal level-1 default. Readback of an explicit value does not prove it affects routing. The option is retained; complete propagation and parser behavior verification are required before claiming all levels are qualified.
+	// Maximum hash-input level for mode=4 with sel=8 (CHWBL) or sel=10 (WRR_HASH): 1=system prompt/model and present L1 fields, 2=also session context, 3=also RAG context. Omission on create resolves to 1; omission on replace preserves the current effective value.
 	// Enum: [1 2 3]
 	ChwblPrefixHashLevel *int64 `json:"chwbl_prefix_hash_level,omitempty"`
 
-	// Intended hash-ring replication setting for sel=8/10. CHWBL uses virtual nodes per endpoint; WRR_HASH distributes a ring budget by endpoint weight. The schema declares 100, but current C setup uses 256 and does not consume this API override. Retained for implementation; default, weight interaction, allocation limits, and live ring-rebuild behavior must be reconciled before the UI treats this as an effective tuning control.
+	// Hash-ring geometry for sel=8/10. CHWBL creates exactly this many virtual nodes per endpoint. WRR_HASH treats it as the exact total vnode budget, assigns only positive-weight active endpoints, and rejects a budget smaller than that endpoint count. Create default is 256; replace omission preserves the effective value.
 	// Maximum: 1024
 	// Minimum: 1
 	ChwblReplication int64 `json:"chwbl_replication,omitempty"`
@@ -739,12 +739,12 @@ type LoadbalanceEntryServiceArguments struct {
 	// Inactivity timeout in seconds. The domain rejects values above 86400; zero resolves to 240 for TCP/SCTP and 20 for other protocols. On an attached L7 policy, a nonzero timeoutMemberData overrides the relay idle deadline.
 	InactiveTimeOut int32 `json:"inactiveTimeOut,omitempty"`
 
-	// Token block size for KV hashing. Omission or 0 resolves to 16 in the current implementation; choose the value from the deployed engine tuple, not from the schema default. Must match vLLM block-size, SGLang page-size, or TRT-LLM tokens_per_block. A mismatch can cause hash misses; TRT-LLM server-info validation can instead refuse the endpoint's KV event poller while plain load balancing remains available. Implementation limitation: the schema's uint32 ceiling is not a safe operational range; downstream hashing converts the size to signed int. Use only a qualified engine block size until the numeric contract and C arithmetic are hardened. API acceptance is not geometry validation.
-	// Maximum: 4.294967295e+09
+	// Token block size for KV hashing. On create and replace POST, omission or explicit 0 stores the default declaration and resolves effectively to 16; explicit JSON null is rejected. PATCH does not support this field. Positive values are limited to 1..4096, the fixed request-token and CBOR workspace bound used by the hashing data path. Choose the value from the deployed engine tuple, not from the schema default. It must match vLLM block-size, SGLang page-size, or TRT-LLM tokens_per_block. A mismatch can cause hash misses; TRT-LLM server-info validation can instead refuse the endpoint's KV event poller while plain load balancing remains available. API acceptance proves safe representation, not engine-geometry compatibility.
+	// Maximum: 4096
 	// Minimum: 1
 	KvBlockSize int64 `json:"kvBlockSize,omitempty"`
 
-	// SGLang event-publisher rank count, not the number of LB endpoints. Omission or 0 resolves to 1; accepted positive values are 1..8. Values above 1 require kvEngineType=sglang. Rank N uses kvZmqPort+N for N=0..count-1; after resolving defaults the highest port must be at most 65535. Inventories are unioned per endpoint. Fan-out support does not by itself qualify every engine/model/DP deployment.
+	// SGLang event-publisher rank count, not the number of LB endpoints. On create and replace POST, omission or explicit 0 stores the default declaration and resolves effectively to 1; explicit JSON null is rejected. PATCH does not support this field. Accepted positive values are 1..8. Values above 1 require kvEngineType=sglang. Rank N uses kvZmqPort+N for N=0..count-1; after resolving defaults the highest port must be at most 65535. Inventories are unioned per endpoint. Fan-out support does not by itself qualify every engine/model/DP deployment.
 	// Maximum: 8
 	// Minimum: 1
 	KvDpRankCount int32 `json:"kvDpRankCount,omitempty"`
@@ -774,7 +774,7 @@ type LoadbalanceEntryServiceArguments struct {
 	// Minimum: 0
 	KvWarmupSec int64 `json:"kvWarmupSec,omitempty"`
 
-	// Base ZMQ event port for vllm/sglang exact routing. Omission or 0 resolves to 5557 in the current implementation. Mode 1 subscribes prefill endpoints only; mode 3 subscribes all endpoints. SGLang rank N uses base+N for N=0..kvDpRankCount-1; the effective base plus effective rank count minus one must not exceed 65535. trtllm uses HTTP on targetPort instead: only omitted/0/default 5557 declarations are accepted there, and no ZMQ connection is made.
+	// Base ZMQ event port for vllm/sglang exact routing. On create and replace POST, omission or explicit 0 stores the default declaration and resolves effectively to 5557; explicit JSON null is rejected. PATCH does not support this field. Mode 1 subscribes prefill endpoints only; mode 3 subscribes all endpoints. SGLang rank N uses base+N for N=0..kvDpRankCount-1; the effective base plus effective rank count minus one must not exceed 65535. trtllm uses HTTP on targetPort instead: only omitted/0/default 5557 declarations are accepted there, and no ZMQ connection is made.
 	// Maximum: 65535
 	// Minimum: 1
 	KvZmqPort int64 `json:"kvZmqPort,omitempty"`
@@ -816,7 +816,7 @@ type LoadbalanceEntryServiceArguments struct {
 	// Path component of the proxy pool's routing key, interpreted with path_match_mode. Empty preserves host-only routing unless model_name adds a host||model identity. This field is separate from conditions in an independently attached L7Policy. The server accepts at most 255 UTF-8 bytes and rejects embedded NUL or invalid UTF-8 before changing rule state. This byte limit reserves the terminator in the 256-byte data-plane field; UI validation must count encoded bytes rather than characters. The encoded host/path_prefix/model_name relationship is separately limited to 511 UTF-8 bytes including separators.
 	PathPrefix string `json:"path_prefix,omitempty"`
 
-	// SGLang bootstrap port on every prefill endpoint; must match the engine disaggregation-bootstrap-port. Omitted/0 resolves to 8998 on the SGLang P/D path. A nonzero declaration requires both pd_disagg_mode=true and kvEngineType=sglang; it is rejected on other shapes. Zero is accepted on other shapes but has no effect.
+	// SGLang bootstrap port on every prefill endpoint; must match the engine disaggregation-bootstrap-port. On create and replace POST, omitted or explicit 0 resolves to 8998 on the SGLang P/D path; explicit JSON null is rejected. PATCH does not support this field. A nonzero declaration requires both pd_disagg_mode=true and kvEngineType=sglang; it is rejected on other shapes. Zero is accepted on other shapes but has no effect.
 	// Maximum: 65535
 	// Minimum: 0
 	PdBootstrapPort int32 `json:"pdBootstrapPort,omitempty"`
@@ -1233,7 +1233,7 @@ func (m *LoadbalanceEntryServiceArguments) validateKvBlockSize(formats strfmt.Re
 		return err
 	}
 
-	if err := validate.MaximumInt("serviceArguments"+"."+"kvBlockSize", "body", m.KvBlockSize, 4.294967295e+09, false); err != nil {
+	if err := validate.MaximumInt("serviceArguments"+"."+"kvBlockSize", "body", m.KvBlockSize, 4096, false); err != nil {
 		return err
 	}
 

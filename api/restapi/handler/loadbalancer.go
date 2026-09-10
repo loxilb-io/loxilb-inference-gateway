@@ -60,6 +60,12 @@ func ConfigPostLoadbalancer(params operations.PostConfigLoadbalancerParams, prin
 	if err := pres.validatePDThresholds(); err != nil {
 		return errorResponseWithCode(http.StatusBadRequest, err.Error())
 	}
+	if err := pres.validateKVNumericArguments(params.Attr.ServiceArguments); err != nil {
+		return errorResponseWithCode(http.StatusBadRequest, err.Error())
+	}
+	if err := pres.validateCHWBLArguments(params.Attr.ServiceArguments); err != nil {
+		return errorResponseWithCode(http.StatusBadRequest, err.Error())
+	}
 
 	var lbRules cmn.LbRuleMod
 
@@ -170,24 +176,9 @@ func ConfigPostLoadbalancer(params operations.PostConfigLoadbalancerParams, prin
 			lbRules.Serv.ServIP, lbRules.Serv.ServPort)
 	}
 
-	// CHWBL configuration (only used when sel=8)
-	if params.Attr.ServiceArguments.ChwblPrefixHashLevel != nil {
-		lbRules.Serv.CHWBLPrefixHashLevel = int(*params.Attr.ServiceArguments.ChwblPrefixHashLevel)
-	}
-	if params.Attr.ServiceArguments.ChwblPrefixHashFlags != nil {
-		lbRules.Serv.CHWBLPrefixHashFlags = int(*params.Attr.ServiceArguments.ChwblPrefixHashFlags)
-	}
-	// ChwblMeanLoadFactor is int64, not pointer (has default value)
-	if params.Attr.ServiceArguments.ChwblMeanLoadFactor != 0 {
-		lbRules.Serv.CHWBLMeanLoadFactor = int(params.Attr.ServiceArguments.ChwblMeanLoadFactor)
-	}
-	// ChwblReplication is int64, not pointer (has default value)
-	if params.Attr.ServiceArguments.ChwblReplication != 0 {
-		lbRules.Serv.CHWBLReplication = int(params.Attr.ServiceArguments.ChwblReplication)
-	}
-	if params.Attr.ServiceArguments.ChwblEnableCacheSalt != nil {
-		lbRules.Serv.CHWBLEnableCacheSalt = *params.Attr.ServiceArguments.ChwblEnableCacheSalt
-	}
+	// CHWBL/WRR_HASH declarations retain their exact wire presence so a replace
+	// can distinguish omission (preserve) from an explicit default/reset.
+	pres.applyCHWBLArguments(&lbRules.Serv, params.Attr.ServiceArguments)
 
 	// Log CHWBL configuration if sel=8 (CHWBL) or sel=10 (WRR_HASH)
 	if lbRules.Serv.Sel == cmn.LbSelCHWBL || lbRules.Serv.Sel == cmn.LbSelWRRHash {
@@ -672,24 +663,14 @@ func serializeLBRule(lb cmn.LbRuleMod) *models.LoadbalanceEntry {
 
 	// CHWBL configuration (present when sel=8 CHWBL or sel=10 WRR_HASH)
 	if lb.Serv.Sel == cmn.LbSelCHWBL || lb.Serv.Sel == cmn.LbSelWRRHash {
-		if lb.Serv.CHWBLPrefixHashLevel != 0 {
-			level := int64(lb.Serv.CHWBLPrefixHashLevel)
-			tmpSvc.ChwblPrefixHashLevel = &level
-		}
-		if lb.Serv.CHWBLPrefixHashFlags != 0 {
-			flags := int64(lb.Serv.CHWBLPrefixHashFlags)
-			tmpSvc.ChwblPrefixHashFlags = &flags
-		}
-		if lb.Serv.CHWBLMeanLoadFactor != 0 {
-			tmpSvc.ChwblMeanLoadFactor = int64(lb.Serv.CHWBLMeanLoadFactor)
-		}
-		if lb.Serv.CHWBLReplication != 0 {
-			tmpSvc.ChwblReplication = int64(lb.Serv.CHWBLReplication)
-		}
-		if lb.Serv.CHWBLEnableCacheSalt {
-			cacheSalt := true
-			tmpSvc.ChwblEnableCacheSalt = &cacheSalt
-		}
+		level := int64(lb.Serv.CHWBLPrefixHashLevel)
+		flags := int64(lb.Serv.CHWBLPrefixHashFlags)
+		cacheSalt := lb.Serv.CHWBLEnableCacheSalt
+		tmpSvc.ChwblPrefixHashLevel = &level
+		tmpSvc.ChwblPrefixHashFlags = &flags
+		tmpSvc.ChwblMeanLoadFactor = int64(lb.Serv.CHWBLMeanLoadFactor)
+		tmpSvc.ChwblReplication = int64(lb.Serv.CHWBLReplication)
+		tmpSvc.ChwblEnableCacheSalt = &cacheSalt
 	}
 
 	// mTLS Frontend Configuration

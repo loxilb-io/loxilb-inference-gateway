@@ -59,6 +59,20 @@ func TestAIMultitierThresholdNullCollapsesToZeroAtGeneratedModel(t *testing.T) {
 	}
 }
 
+func TestAIMultitierKVNumericNullCollapsesToZeroAtGeneratedModel(t *testing.T) {
+	var arg LoadbalanceEntryServiceArguments
+	if err := json.Unmarshal([]byte(`{"kvBlockSize":null,"kvZmqPort":null,"kvDpRankCount":null,"pdBootstrapPort":null}`), &arg); err != nil {
+		t.Fatalf("generated model unexpectedly rejected JSON null: %v", err)
+	}
+	if arg.KvBlockSize != 0 || arg.KvZmqPort != 0 || arg.KvDpRankCount != 0 || arg.PdBootstrapPort != 0 {
+		t.Fatalf("null did not collapse to zero: block=%d zmq=%d ranks=%d bootstrap=%d",
+			arg.KvBlockSize, arg.KvZmqPort, arg.KvDpRankCount, arg.PdBootstrapPort)
+	}
+	if err := arg.Validate(strfmt.Default); err != nil {
+		t.Fatalf("generated zero-value validation unexpectedly rejected null-decoded fields: %v", err)
+	}
+}
+
 // These are transport-boundary tests: accepted JSON values must fit the
 // downstream uint8/uint16/uint32 fields without changing their meaning.
 func TestAIMultitierNumericBounds(t *testing.T) {
@@ -68,7 +82,8 @@ func TestAIMultitierNumericBounds(t *testing.T) {
 		arg   LoadbalanceEntryServiceArguments
 	}{
 		{"balance threshold wraps to zero", "pd_balance_abs_threshold", LoadbalanceEntryServiceArguments{PdBalanceAbsThreshold: 256}},
-		{"block size wraps to zero", "kvBlockSize", LoadbalanceEntryServiceArguments{KvBlockSize: 1 << 32}},
+		{"block size exceeds data path", "kvBlockSize", LoadbalanceEntryServiceArguments{KvBlockSize: 4097}},
+		{"block size exceeds uint32", "kvBlockSize", LoadbalanceEntryServiceArguments{KvBlockSize: 1 << 32}},
 		{"warmup wraps to zero", "kvWarmupSec", LoadbalanceEntryServiceArguments{KvWarmupSec: 1 << 32}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -99,7 +114,7 @@ func TestAIMultitierNumericBounds(t *testing.T) {
 func TestAIMultitierNumericBoundaryControls(t *testing.T) {
 	for _, arg := range []LoadbalanceEntryServiceArguments{
 		{},
-		{PdBalanceAbsThreshold: 255, KvBlockSize: (1 << 32) - 1, KvWarmupSec: (1 << 32) - 1},
+		{PdBalanceAbsThreshold: 255, KvBlockSize: 4096, KvWarmupSec: (1 << 32) - 1},
 	} {
 		if err := arg.Validate(strfmt.Default); err != nil {
 			t.Fatalf("representable control rejected: %v", err)

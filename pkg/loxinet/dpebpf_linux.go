@@ -1586,10 +1586,12 @@ func DpLBRuleMod(w *LBDpWorkQ) int {
 		dat.sel_type = C.NAT_LB_SEL_N3
 	case w.EpSel == EpCHWBL:
 		dat.sel_type = C.NAT_LB_SEL_CHWBL
-		// Propagate CHWBL prefix hash level through dp_proxy_tacts
-		// This replaces the old pad3[1] field (same size, no ABI change)
-		if w.CHWBLPrefixHashLevel > 0 {
-			dat.chwbl_prefix_hash_level = C.uint8_t(w.CHWBLPrefixHashLevel)
+		dat.chwbl_prefix_hash_level = C.uint8_t(w.CHWBLPrefixHashLevel)
+		dat.chwbl_prefix_hash_flags = C.uint8_t(w.CHWBLPrefixHashFlags)
+		dat.chwbl_mean_load_factor = C.uint16_t(w.CHWBLMeanLoadFactor)
+		dat.chwbl_replication = C.uint16_t(w.CHWBLReplication)
+		if w.CHWBLEnableCacheSalt {
+			dat.chwbl_enable_cache_salt = 1
 		}
 	case w.EpSel == EpGPUAware:
 		dat.sel_type = C.NAT_LB_SEL_GPU_AWARE
@@ -1597,6 +1599,13 @@ func DpLBRuleMod(w *LBDpWorkQ) int {
 		dat.sel_type = C.NAT_LB_SEL_PRIO
 	case w.EpSel == EpWRRHash: // P3.5: WRR_HASH (Weighted Consistent Hash + Bounded Loads)
 		dat.sel_type = C.NAT_LB_SEL_WRR_HASH
+		dat.chwbl_prefix_hash_level = C.uint8_t(w.CHWBLPrefixHashLevel)
+		dat.chwbl_prefix_hash_flags = C.uint8_t(w.CHWBLPrefixHashFlags)
+		dat.chwbl_mean_load_factor = C.uint16_t(w.CHWBLMeanLoadFactor)
+		dat.chwbl_replication = C.uint16_t(w.CHWBLReplication)
+		if w.CHWBLEnableCacheSalt {
+			dat.chwbl_enable_cache_salt = 1
+		}
 	default:
 		dat.sel_type = C.NAT_LB_SEL_RR
 	}
@@ -2083,7 +2092,7 @@ func (e *DpEbpfH) DpKvExactContractUpdate(svcIP net.IP, svcPort uint16, proto ui
 // the uint64 inventory forms (big-endian first 8 digest bytes, matching
 // cBlockHashesToUint64) of every FULL block's hash.
 func DpKvComputeChallengeHashes(hashAlgo string, blockSize uint32, tokens []uint32) ([]uint64, bool) {
-	if len(tokens) == 0 || blockSize == 0 {
+	if len(tokens) == 0 || blockSize == 0 || blockSize > cmn.KVBlockSizeMax {
 		return nil, false
 	}
 	var algo C.uint8_t

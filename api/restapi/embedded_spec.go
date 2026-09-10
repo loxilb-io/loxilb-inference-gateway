@@ -4034,26 +4034,26 @@ func init() {
             },
             "chwbl_enable_cache_salt": {
               "default": false,
-              "description": "Intended request cache_salt requirement for sel=8/10. Known implementation gap: this declaration is not wired to active C configuration, which initializes the option disabled. It does not currently enforce salt presence or tenant isolation. Retained for implementation. A client-supplied hash salt is not itself an authenticated tenant-isolation boundary; identity binding and missing-salt behavior need an explicit security contract.",
+              "description": "Require a non-empty JSON string cache_salt of at most 63 bytes on H1 and H2 requests and include it in the configured hash identity. Missing or malformed salt is rejected locally with HTTP 400 before upstream dispatch. This is cache-key namespacing, not authentication and not an authenticated tenant-isolation boundary.",
               "type": "boolean"
             },
             "chwbl_mean_load_factor": {
-              "default": 125,
-              "description": "Intended bounded-load factor in percent for sel=8/10, with a nominal bound of average load multiplied by factor/100. The schema declares 125, but current C initialization uses 175 and does not consume this API override. Do not interpret a returned value as the effective bound. The option is retained; the final default and complete configuration propagation require reconciliation.",
+              "default": 175,
+              "description": "Bounded-load factor in percent for sel=8/10. Selection compares the request's future endpoint load with the configured factor of mean load. Omission on create resolves to 175; omission on replace preserves the current effective value.",
               "maximum": 300,
               "minimum": 100,
               "type": "integer"
             },
             "chwbl_prefix_hash_flags": {
               "default": 0,
-              "description": "Intended optional hash-input flags for sel=8/10: bits 0..7 name LoRA, image, audio, cache_salt, tools, session, RAG template, and RAG documents respectively; 0 declares automatic selection. Known implementation gap: API declarations are stored but are not propagated into the active C configuration, which initializes this field to 0. Per-bit behavior is not an implemented API guarantee. Retained for implementation and behavior verification.",
+              "description": "Optional hash-input flags for sel=8/10: bits 0..7 name LoRA, image, audio, cache_salt, tools, session, RAG template, and RAG documents respectively. 0 selects all present inputs allowed by chwbl_prefix_hash_level. Explicit flags above that level are rejected. Omission on replace preserves the effective value.",
               "maximum": 255,
               "minimum": 0,
               "type": "integer"
             },
             "chwbl_prefix_hash_level": {
               "default": 1,
-              "description": "Intended prefix level for sel=8 (CHWBL) or sel=10 (WRR_HASH), both requiring mode=4: 1=system prompt/model, 2=also session context, 3=also RAG context. Known wiring limitation: the declaration is forwarded to the C configuration for sel=8, but not for sel=10. The WRR_HASH path therefore uses its internal level-1 default. Readback of an explicit value does not prove it affects routing. The option is retained; complete propagation and parser behavior verification are required before claiming all levels are qualified.",
+              "description": "Maximum hash-input level for mode=4 with sel=8 (CHWBL) or sel=10 (WRR_HASH): 1=system prompt/model and present L1 fields, 2=also session context, 3=also RAG context. Omission on create resolves to 1; omission on replace preserves the current effective value.",
               "enum": [
                 1,
                 2,
@@ -4062,8 +4062,8 @@ func init() {
               "type": "integer"
             },
             "chwbl_replication": {
-              "default": 100,
-              "description": "Intended hash-ring replication setting for sel=8/10. CHWBL uses virtual nodes per endpoint; WRR_HASH distributes a ring budget by endpoint weight. The schema declares 100, but current C setup uses 256 and does not consume this API override. Retained for implementation; default, weight interaction, allocation limits, and live ring-rebuild behavior must be reconciled before the UI treats this as an effective tuning control.",
+              "default": 256,
+              "description": "Hash-ring geometry for sel=8/10. CHWBL creates exactly this many virtual nodes per endpoint. WRR_HASH treats it as the exact total vnode budget, assigns only positive-weight active endpoints, and rejects a budget smaller than that endpoint count. Create default is 256; replace omission preserves the effective value.",
               "maximum": 1024,
               "minimum": 1,
               "type": "integer"
@@ -4111,16 +4111,16 @@ func init() {
             },
             "kvBlockSize": {
               "default": 16,
-              "description": "Token block size for KV hashing. Omission or 0 resolves to 16 in the current implementation; choose the value from the deployed engine tuple, not from the schema default. Must match vLLM block-size, SGLang page-size, or TRT-LLM tokens_per_block. A mismatch can cause hash misses; TRT-LLM server-info validation can instead refuse the endpoint's KV event poller while plain load balancing remains available. Implementation limitation: the schema's uint32 ceiling is not a safe operational range; downstream hashing converts the size to signed int. Use only a qualified engine block size until the numeric contract and C arithmetic are hardened. API acceptance is not geometry validation.",
+              "description": "Token block size for KV hashing. On create and replace POST, omission or explicit 0 stores the default declaration and resolves effectively to 16; explicit JSON null is rejected. PATCH does not support this field. Positive values are limited to 1..4096, the fixed request-token and CBOR workspace bound used by the hashing data path. Choose the value from the deployed engine tuple, not from the schema default. It must match vLLM block-size, SGLang page-size, or TRT-LLM tokens_per_block. A mismatch can cause hash misses; TRT-LLM server-info validation can instead refuse the endpoint's KV event poller while plain load balancing remains available. API acceptance proves safe representation, not engine-geometry compatibility.",
               "format": "int64",
-              "maximum": 4294967295,
+              "maximum": 4096,
               "minimum": 1,
               "type": "integer",
               "x-nullable": false
             },
             "kvDpRankCount": {
               "default": 1,
-              "description": "SGLang event-publisher rank count, not the number of LB endpoints. Omission or 0 resolves to 1; accepted positive values are 1..8. Values above 1 require kvEngineType=sglang. Rank N uses kvZmqPort+N for N=0..count-1; after resolving defaults the highest port must be at most 65535. Inventories are unioned per endpoint. Fan-out support does not by itself qualify every engine/model/DP deployment.",
+              "description": "SGLang event-publisher rank count, not the number of LB endpoints. On create and replace POST, omission or explicit 0 stores the default declaration and resolves effectively to 1; explicit JSON null is rejected. PATCH does not support this field. Accepted positive values are 1..8. Values above 1 require kvEngineType=sglang. Rank N uses kvZmqPort+N for N=0..count-1; after resolving defaults the highest port must be at most 65535. Inventories are unioned per endpoint. Fan-out support does not by itself qualify every engine/model/DP deployment.",
               "format": "int32",
               "maximum": 8,
               "minimum": 1,
@@ -4185,7 +4185,7 @@ func init() {
             },
             "kvZmqPort": {
               "default": 5557,
-              "description": "Base ZMQ event port for vllm/sglang exact routing. Omission or 0 resolves to 5557 in the current implementation. Mode 1 subscribes prefill endpoints only; mode 3 subscribes all endpoints. SGLang rank N uses base+N for N=0..kvDpRankCount-1; the effective base plus effective rank count minus one must not exceed 65535. trtllm uses HTTP on targetPort instead: only omitted/0/default 5557 declarations are accepted there, and no ZMQ connection is made.",
+              "description": "Base ZMQ event port for vllm/sglang exact routing. On create and replace POST, omission or explicit 0 stores the default declaration and resolves effectively to 5557; explicit JSON null is rejected. PATCH does not support this field. Mode 1 subscribes prefill endpoints only; mode 3 subscribes all endpoints. SGLang rank N uses base+N for N=0..kvDpRankCount-1; the effective base plus effective rank count minus one must not exceed 65535. trtllm uses HTTP on targetPort instead: only omitted/0/default 5557 declarations are accepted there, and no ZMQ connection is made.",
               "format": "int64",
               "maximum": 65535,
               "minimum": 1,
@@ -4325,7 +4325,7 @@ func init() {
             },
             "pdBootstrapPort": {
               "default": 0,
-              "description": "SGLang bootstrap port on every prefill endpoint; must match the engine disaggregation-bootstrap-port. Omitted/0 resolves to 8998 on the SGLang P/D path. A nonzero declaration requires both pd_disagg_mode=true and kvEngineType=sglang; it is rejected on other shapes. Zero is accepted on other shapes but has no effect.",
+              "description": "SGLang bootstrap port on every prefill endpoint; must match the engine disaggregation-bootstrap-port. On create and replace POST, omitted or explicit 0 resolves to 8998 on the SGLang P/D path; explicit JSON null is rejected. PATCH does not support this field. A nonzero declaration requires both pd_disagg_mode=true and kvEngineType=sglang; it is rejected on other shapes. Zero is accepted on other shapes but has no effect.",
               "format": "int32",
               "maximum": 65535,
               "minimum": 0,

@@ -80,16 +80,16 @@ snake_case (`pd_disagg_mode`, `sse_mode`, `model_name`, …) vs camelCase (`kvEx
 |---|---|---|
 | `chwbl_prefix_hash_level` | int | prompt-prefix hash depth (`1`–`3`); used with `sel: 8`/`10` |
 | `chwbl_prefix_hash_flags` | int | bitmask of optional fields folded into the prefix hash (LoRA / image / audio / cache_salt / tools / session / RAG); `0` = auto-detect |
-| `chwbl_enable_cache_salt` | bool | require a `cache_salt` field in requests (strict multi-tenant isolation) |
-| `chwbl_mean_load_factor` | int | bounded-load spill threshold, % of mean (`125` = spill at 1.25×) |
-| `chwbl_replication` | int | virtual nodes per endpoint on the hash ring |
+| `chwbl_enable_cache_salt` | bool | require a non-empty `cache_salt` (max 63 bytes) as a cache-key namespace input; this is not authentication or tenant isolation |
+| `chwbl_mean_load_factor` | int | bounded-load spill threshold, % of mean (default `175` = 1.75×) |
+| `chwbl_replication` | int | CHWBL virtual nodes per endpoint, or WRR_HASH exact total vnode budget (default `256`) |
 
 **Prefill/Decode disaggregation**
 
 | Field | Type | Notes |
 |---|---|---|
 | `pd_disagg_mode` | bool | split requests into prefill + decode legs (roles via `endpoints[].ep_role`). The orchestration flavor derives from `kvEngineType`: empty/`"vllm"` = sequential vLLM machine (prefill → extract `kv_transfer_params` → decode); `"sglang"` = concurrent dual-dispatch (bootstrap triple injected, same body to both legs, decode streamed to the client, prefill drained); `"trtllm"` = sequential TensorRT-LLM machine (`context_only` prefill → extract `disaggregated_params` → `generation_only` decode, with context early-exit — [doc 20](20-tensorrt-llm-kv-cache-aware-routing.md)) |
-| `pdBootstrapPort` | int | SGLang P/D only: the `--disaggregation-bootstrap-port` on every prefill EP; `0` = SGLang's default `8998`. Rejected unless `pd_disagg_mode` + `kvEngineType:"sglang"` |
+| `pdBootstrapPort` | int | SGLang P/D only: the `--disaggregation-bootstrap-port` on every prefill EP; omitted/`0` resolves to `8998`, positive values are bounded to 1..65535. JSON null is rejected; PATCH does not support this field. Rejected unless `pd_disagg_mode` + `kvEngineType:"sglang"`. |
 | `pd_cache_aware_mode` | bool | trie-based cache-affinity prefill selection |
 | `pd_session_ttl_sec` | int32 | Tier-0 P/D sliding idle TTL in seconds; omitted/`0` uses 300s, positive values override it. Independent of `pd_cache_aware_mode`; not an engine KV or request timeout. No no-expiry mode. |
 | `pd_cache_threshold` | int | cache-match threshold `0`–`100`; lower = more aggressive cache routing. Create omission/`0` uses effective `20`; on replace/PATCH omission retains, explicit `0` resets to `20`, and explicit `null` is rejected. |
@@ -119,11 +119,11 @@ snake_case (`pd_disagg_mode`, `sse_mode`, `model_name`, …) vs camelCase (`kvEx
 | Field | Type | Notes |
 |---|---|---|
 | `kvExactMode` | int | `1` = P/D topology (vLLM, or SGLang/TensorRT-LLM P/D with the matching `kvEngineType`) · `3` = single pool (SGLang or TensorRT-LLM converged) |
-| `kvZmqPort` | int | base port of the engine's `--kv-events-config` publisher (vLLM/SGLang only; rejected for `"trtllm"`, whose events drain over HTTP on the serving port) |
-| `kvBlockSize` | int | must equal vLLM `--block-size` / SGLang `--page-size` / TensorRT-LLM `tokens_per_block` (default 32; enforced per endpoint via `/server_info` admission) |
+| `kvZmqPort` | int | base port of the engine's `--kv-events-config` publisher (vLLM/SGLang only). Omitted/`0` resolves to 5557; positive values are bounded to 1..65535. JSON null is rejected; PATCH does not support this field. TensorRT-LLM admits only the default declaration because its events drain over HTTP on the serving port. |
+| `kvBlockSize` | int | `0`/omitted resolves to 16; positive values are bounded to 1..4096 and must equal vLLM `--block-size` / SGLang `--page-size` / TensorRT-LLM `tokens_per_block` (TRT default 32; enforced per endpoint via `/server_info` admission). JSON null is rejected; PATCH does not support this field. |
 | `kvHashAlgo` | string | `"sha256_cbor"` for vLLM; omit for SGLang and TensorRT-LLM (engine defaults — `"blockhash_trtllm"` is implied by `kvEngineType:"trtllm"`) |
 | `kvEngineType` | string | `"sglang"`, `"trtllm"` or `"llamacpp"` selects that engine's contract; empty = vLLM. Immutable after create. `"llamacpp"` is **plain-LB-only**: it admits no KV/P/D field at all (the engine has no KV event plane and no P/D disaggregation — every `kvExactMode`/`pd_disagg_mode`/`kvZmqPort`/`kvDpRankCount`/`kvBlockSize`/`kvHashAlgo` combination is rejected loudly); typing the rule buys the config-time guards plus the `/props` admission warn-probe — [doc 21](21-llamacpp-load-balancing.md) |
-| `kvDpRankCount` | int | SGLang DP ranks (= `--dp-size`); rank *N* subscribes at `kvZmqPort`+*N*. Must be 1 for `"trtllm"` |
+| `kvDpRankCount` | int | SGLang DP ranks (= `--dp-size`); omitted/`0` resolves to 1 and positive values are bounded to 1..8. Rank *N* subscribes at `kvZmqPort`+*N*, and the inclusive last port must not exceed 65535. JSON null is rejected; PATCH does not support this field. Must be 1 for `"trtllm"`. |
 | `kvWarmupSec` | int | grace period before KV-exact selection engages |
 
 **Streaming, sessions & model routing**

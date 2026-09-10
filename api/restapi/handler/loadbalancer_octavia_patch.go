@@ -74,6 +74,12 @@ func ConfigPatchLoadbalancer(params operations.PatchConfigLoadbalancerExternalip
 	if err := pres.validatePDThresholds(); err != nil {
 		return patchErr(err.Error())
 	}
+	if err := pres.validateUnsupportedKVNumericPatch(); err != nil {
+		return patchErr(err.Error())
+	}
+	if err := pres.validateUnsupportedCHWBLPatch(); err != nil {
+		return patchErr(err.Error())
+	}
 
 	pb := params.Attr // the parsed patch body (may be nil for an empty body)
 

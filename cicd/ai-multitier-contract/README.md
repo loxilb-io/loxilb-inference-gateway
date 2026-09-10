@@ -8,6 +8,14 @@ contracts across create and replace/PATCH: omission retains an existing
 declaration, explicit zero resets to the effective default, a positive value
 replaces it, and numeric null is rejected without rule mutation.
 
+The KV numeric geometry checks cover `kvBlockSize`, `kvZmqPort`,
+`kvDpRankCount`, and `pdBootstrapPort`. Create and replace POST accept omission
+or explicit zero as the documented default declaration, reject JSON null, and
+validate signed inputs before narrowing. PATCH rejects these fields instead of
+silently ignoring them. Positive block sizes are limited to 1..4096, and exact
+subscriber rank ports must satisfy `kvZmqPort + kvDpRankCount - 1 <= 65535`
+after defaults are resolved.
+
 ## Local checks
 
 Run the harness unit tests without deploying a Gateway:
