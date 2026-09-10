@@ -10,14 +10,14 @@
   "Combined codes (D+P etc.) apply both behaviors."
  ],
  "expected": {
-  "total": 233,
+  "total": 234,
   "owners": {
-   "loxilb": 210,
+   "loxilb": 211,
    "loxilb-ai-controller": 19,
    "loxilb-kv-agent": 4
   },
   "classes": {
-   "default": 177,
+   "default": 178,
    "dpu-doca": 24,
    "aictrl-bridge": 8,
    "kv-agent-health": 1,
@@ -131,6 +131,7 @@
   "loxilb_ai_pd_prefill_duration_seconds": "V",
   "loxilb_ai_pd_requests_total": "V",
   "loxilb_ai_pd_session_hits_total": "V",
+  "loxilb_ai_pd_tier_selected_total": "V",
   "loxilb_ai_policy_store_unavailable_total": "E",
   "loxilb_ai_rate_limit_hits_total": "V",
   "loxilb_ai_request_duration_seconds": "V",
@@ -507,7 +508,7 @@
   "burndown": {
    "unverified_max": 83,
    "unclassified_max": 0,
-   "_note": "177 packaged families, all classified: 9 verified-runtime (the QoS shaper group measured in the plan's B.5b, plus ai_pd_session_hits verified 2026-09-11), 12 verified-static (loxilb_policer_attached added 2026-09-11), 73 conditional-with-proven-writer, 83 writer-mapped. unclassified_max is done at 0; unverified_max is the remaining work and comes down as scenarios M00-M17 produce evidence. Never raise either."
+   "_note": "178 packaged families, all classified: 9 verified-runtime (the QoS shaper group measured in the plan's B.5b, plus ai_pd_session_hits verified 2026-09-11), 12 verified-static (loxilb_policer_attached added 2026-09-11), 74 conditional-with-proven-writer (ai_pd_tier_selected added 2026-09-11 by WP-8), 83 writer-mapped. unclassified_max is done at 0; unverified_max is the remaining work and comes down as scenarios M00-M17 produce evidence. Never raise either."
   },
   "unverifiable_roots": [
    "loxilb-ebpf/"
@@ -543,7 +544,7 @@
     { "symbol": "llb_ai_pd_record", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1101, "call_line": 1104, "calls": "RecordPDRequest", "entry_point": "cgo-export", "note": "called by the C fullproxy datapath once per P/D lifecycle event" }
    ],
    "ai-token-quota-collector": [
-    { "symbol": "RegisterTokenQuotaSource", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 526, "call_line": 528, "calls": "tokenQuotaCollector", "note": "sync.Once; the collector reads the live rate-limiter store at scrape time rather than being set on the charge path -- a gauge set on charge would freeze while a tenant is denied" },
+    { "symbol": "RegisterTokenQuotaSource", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 541, "call_line": 543, "calls": "tokenQuotaCollector", "note": "sync.Once; the collector reads the live rate-limiter store at scrape time rather than being set on the charge path -- a gauge set on charge would freeze while a tenant is denied" },
     { "symbol": "getGlobalRL", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 513, "call_line": 554, "calls": "RegisterTokenQuotaSource", "note": "registration happens on first use of the rate-limiter store, not at package init, so the collector can never observe a nil store" },
     { "symbol": "llb_ai_ratelimit_check", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 600, "call_line": 634, "calls": "getGlobalRL", "entry_point": "cgo-export" }
    ],
@@ -662,7 +663,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "an API-key store (--aikey-db-* flags) plus --api-key-auth=required on the LB rule, and a key whose rps/burst is actually exceeded. With no key store no request carries a tenant, so the denial can never fire.",
     "writer_sources": [
-     { "symbol": "RecordRateLimitHit", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 381, "writes": "aiRateLimitHitsTotal" },
+     { "symbol": "RecordRateLimitHit", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 396, "writes": "aiRateLimitHitsTotal" },
      { "symbol": "llb_ai_ratelimit_check", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 600, "call_line": 655, "calls": "RecordRateLimitHit", "entry_point": "cgo-export", "note": "llb_ai_token_quota_reserve records the same family at ai_gateway_dp.go:756 with reason token_quota_would_exceed" }
     ],
     "native_callers": [
@@ -674,7 +675,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "an API-key store plus --api-key-auth=required on the LB rule, and a request naming a model outside the key's --allowed-models list (decision == 2, HTTP 403).",
     "writer_sources": [
-     { "symbol": "RecordModelNotAllowed", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 391, "writes": "aiModelNotAllowedTotal" },
+     { "symbol": "RecordModelNotAllowed", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 406, "writes": "aiModelNotAllowedTotal" },
      { "symbol": "llb_ai_validate_key", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 328, "call_line": 396, "calls": "RecordModelNotAllowed", "entry_point": "cgo-export" }
     ],
     "native_callers": [
@@ -686,7 +687,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "a tenant with --tokens-per-min set on an API-key-enabled rule, and a completed response the quota path charges. The writer returns early when prompt+completion is zero, so a charge of nothing leaves the family absent.",
     "writer_sources": [
-     { "symbol": "RecordTokenUsage", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 401, "writes": "aiTokensConsumedTotal" },
+     { "symbol": "RecordTokenUsage", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 416, "writes": "aiTokensConsumedTotal" },
      { "symbol": "llb_ai_token_quota_consume", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 889, "call_line": 909, "calls": "RecordTokenUsage", "entry_point": "cgo-export" }
     ],
     "native_callers": [
@@ -701,7 +702,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "the same quota path as loxilb_ai_tokens_consumed_total, additionally on the estimated branch -- the response carried no usage object, so the data plane priced the charge from its own estimate.",
     "writer_sources": [
-     { "symbol": "RecordTokenUsage", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 401, "writes": "aiTokensEstimatedTotal" },
+     { "symbol": "RecordTokenUsage", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 416, "writes": "aiTokensEstimatedTotal" },
      { "symbol": "llb_ai_token_quota_consume", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 889, "call_line": 909, "calls": "RecordTokenUsage", "entry_point": "cgo-export" }
     ],
     "native_callers": [
@@ -716,7 +717,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "the same estimated branch as loxilb_ai_tokens_estimated_total -- one increment per response that carried no usage object.",
     "writer_sources": [
-     { "symbol": "RecordTokenUsage", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 401, "writes": "aiTokensMissingTotal" },
+     { "symbol": "RecordTokenUsage", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 416, "writes": "aiTokensMissingTotal" },
      { "symbol": "llb_ai_token_quota_consume", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 889, "call_line": 909, "calls": "RecordTokenUsage", "entry_point": "cgo-export" }
     ],
     "native_callers": [
@@ -1099,7 +1100,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "an AI service rule in P/D disaggregation mode carrying real inference traffic; the C datapath calls llb_ai_pd_record once per lifecycle event, so no child exists until a P/D request completes.",
     "writer_sources": [
-     { "symbol": "RecordPDRequest", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 541, "writes": "aiPDRequestsTotal", "note": "labelled model/phase/status; the phase and status are derived from errorPhase, so one call produces exactly one child increment" },
+     { "symbol": "RecordPDRequest", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 556, "writes": "aiPDRequestsTotal", "note": "labelled model/phase/status; the phase and status are derived from errorPhase, so one call produces exactly one child increment" },
      { "tail": "ai-pd-record-cgo" }
     ],
     "evidence": "api/prometheus/ai_metrics_test.go TestRecordPDRequest_Success / _PrefillTimeout / _DecodeError assert exact per-label deltas, but drive RecordPDRequest directly -- section B.7 tier V1 does not accept a record-helper-only test as acceptance evidence, so the runtime proof stays with scenario M08."
@@ -1108,7 +1109,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "an AI service rule in P/D mode with real traffic AND a non-zero prefill latency: RecordPDRequest deliberately skips the observation when prefillLatencyMs is 0, so an engine that never reports the phase leaves the histogram absent.",
     "writer_sources": [
-     { "symbol": "RecordPDRequest", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 541, "writes": "aiPDPrefillDuration" },
+     { "symbol": "RecordPDRequest", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 556, "writes": "aiPDPrefillDuration" },
      { "tail": "ai-pd-record-cgo" }
     ],
     "evidence": "api/prometheus/ai_metrics_test.go TestRecordPDRequest_ZeroLatencySkipsHistograms pins the skip, TestRecordPDRequest_Success pins the observation; both drive the helper directly, so scenario M08 owns the runtime proof."
@@ -1117,7 +1118,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "an AI service rule in P/D mode with real traffic AND a non-zero decode latency; as with the prefill histogram, a zero value is skipped rather than recorded as 0.",
     "writer_sources": [
-     { "symbol": "RecordPDRequest", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 541, "writes": "aiPDDecodeTTFT" },
+     { "symbol": "RecordPDRequest", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 556, "writes": "aiPDDecodeTTFT" },
      { "tail": "ai-pd-record-cgo" }
     ],
     "evidence": "api/prometheus/ai_metrics_test.go TestRecordPDRequest_Success and TestRecordPDRequest_ZeroLatencySkipsHistograms; helper-level only, so scenario M08 owns the runtime proof."
@@ -1126,7 +1127,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "P/D traffic whose prefill response actually carried kv_transfer_params; the counter is the found half of a pair, so it stays absent on any engine that does not publish KV parameters.",
     "writer_sources": [
-     { "symbol": "RecordPDRequest", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 541, "writes": "aiPDKvParamsFound" },
+     { "symbol": "RecordPDRequest", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 556, "writes": "aiPDKvParamsFound" },
      { "tail": "ai-pd-record-cgo" }
     ],
     "evidence": "api/prometheus/ai_metrics_test.go TestRecordPDRequest_Success asserts the found child; helper-level only. Scenario M08 owns the runtime proof, where the found/missing pair must also sum to the request count."
@@ -1135,7 +1136,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "P/D traffic whose prefill response did NOT carry kv_transfer_params -- the red twin of the found counter; both stay absent without P/D traffic.",
     "writer_sources": [
-     { "symbol": "RecordPDRequest", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 541, "writes": "aiPDKvParamsMissing" },
+     { "symbol": "RecordPDRequest", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 556, "writes": "aiPDKvParamsMissing" },
      { "tail": "ai-pd-record-cgo" }
     ],
     "evidence": "api/prometheus/ai_metrics_test.go TestRecordPDRequest_KvMissingOnCompletedRequest asserts the missing child on a request that otherwise completed; helper-level only, so scenario M08 owns the runtime proof."
@@ -1144,17 +1145,26 @@
     "status": "verified-runtime",
     "activation_precondition": "Tier-0 session stickiness: a request must reuse a session key (client X-Conversation-Id header, else JSON user field) already bound to a P/D endpoint pair. Every request opening a new session leaves this counter at zero.",
     "writer_sources": [
-     { "symbol": "RecordPDSessionHit", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 582, "writes": "aiPDSessionHitsTotal" },
+     { "symbol": "RecordPDSessionHit", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 597, "writes": "aiPDSessionHitsTotal" },
      { "symbol": "llb_ai_pd_session_hit", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1113, "call_line": 1116, "calls": "RecordPDSessionHit", "entry_point": "cgo-export" }
     ],
     "evidence": "runtime verification 2026-09-11 (plan Part E, E.5 row 'WP-4 session stickiness'): live P/D KV-exact rule, 30 requests over 5 reused X-Conversation-Id keys -> delta exactly 25 (N-K); 5 establishes all fell through Tier-1.5 (pd_kv_tier15_fallthrough_total +5, miss_reason=tokenize). Red twin: 10 all-unique keys -> delta exactly 0, fallthrough +10. Conservation: 40 accepted requests = 25 Tier-0 hits + 15 Tier-1.5 fallthroughs."
+   },
+   "loxilb_ai_pd_tier_selected_total": {
+    "status": "conditional-with-proven-writer",
+    "activation_precondition": "a P/D disaggregation rule accepting AI traffic: every successful prefill selection increments exactly one of the four tier children (tier0 session, tier1 trie, tier15 KV-exact, tier2 min-load). Admission outcomes (parked, no-capacity) and pre-routing failures increment nothing, so per window accepted selections == sum over tiers (WP-8 conservation identity).",
+    "writer_sources": [
+     { "symbol": "RecordPDTierSelected", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 607, "writes": "aiPDTierSelectedTotal" },
+     { "symbol": "llb_ai_pd_tier_selected", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1126, "call_line": 1129, "calls": "RecordPDTierSelected", "entry_point": "cgo-export" }
+    ],
+    "evidence": "WP-8 (plan section B, routing-decision denominator): C caller instruments the four terminal selection returns of pd_select_prefill (loxilb-ebpf/common/sockproxy_pd.c, submodule not checked by this gate). The pre-existing Tier-0 and Tier-1.5 counters remain for one release and must reconcile with this family."
    },
    "loxilb_ai_normal_session_hits_total": {
     "status": "conditional-with-proven-writer",
     "activation_precondition": "UNREACHABLE ON CURRENT MAIN for L7 rules: the only C call site (sockproxy_ep.c PROXY_MODE_ALL branch) serves non-L7 protocols and never sees a parsed session header, so no configuration makes this family appear on a fullproxy rule. Fix in loxilb-ebpf-inference-gateway PR #24 records the hit on the PROXY_MODE_DFL learned-binding path; promote to verified-runtime when the submodule pointer includes it.",
     "writer_sources": [
-     { "symbol": "RecordNormalSessionHit", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 589, "writes": "aiNormalSessionHitsTotal" },
-     { "symbol": "llb_ai_normal_session_hit", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1125, "call_line": 1128, "calls": "RecordNormalSessionHit", "entry_point": "cgo-export" }
+     { "symbol": "RecordNormalSessionHit", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 627, "writes": "aiNormalSessionHitsTotal" },
+     { "symbol": "llb_ai_normal_session_hit", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1138, "call_line": 1141, "calls": "RecordNormalSessionHit", "entry_point": "cgo-export" }
     ],
     "evidence": "defect + fix evidence 2026-09-11 (plan Part E, E.3 row D-6, E.5 row 'WP-4 normal stickiness'): pre-fix live run, fullproxy rule with session_header_name, 15 requests over 3 reused keys -> 12 NS_STICKY_HIT (DFL) log lines, counter absent. Fixed binary (isolated instance, same drive): counter appears at exactly 12 = N-K, matching logs one-for-one; red twin 8 all-unique keys -> unchanged."
    },
@@ -1162,7 +1172,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "an in-flight streaming (SSE) AI response: the datapath increments on stream start and decrements on stream end, so the gauge only has children while streaming traffic exists or has existed for that model.",
     "writer_sources": [
-     { "symbol": "AdjustActiveStreams", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 373, "writes": "aiActiveStreams", "note": "one Add(delta) for both directions; the decrement site is llb_ai_stream_end (pkg/loxinet/ai_gateway_dp.go:958)" },
+     { "symbol": "AdjustActiveStreams", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 388, "writes": "aiActiveStreams", "note": "one Add(delta) for both directions; the decrement site is llb_ai_stream_end (pkg/loxinet/ai_gateway_dp.go:958)" },
      { "symbol": "llb_ai_stream_start", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1007, "call_line": 1015, "calls": "AdjustActiveStreams", "entry_point": "cgo-export" }
     ],
     "evidence": "api/prometheus/ai_metrics_test.go TestAdjustActiveStreams asserts the paired add/subtract, but drives the helper directly; scenario M02 owns the runtime proof, where the gauge must return to 0 after the last stream closes."
@@ -1171,7 +1181,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "AI traffic through an AI-mode service rule. The family partitions on outcome: completed requests are counted by RecordAIRequest, denials by RecordAIRequestDenied, so a Gateway with no AI rule exposes no children at all.",
     "writer_sources": [
-     { "symbol": "RecordAIRequest", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 629, "writes": "aiRequestsTotal", "note": "outcome=completed here; the denial half is RecordAIRequestDenied (:670), reached from recordGateDenial (pkg/loxinet/ai_gateway_dp.go:284). Summing the family without selecting an outcome double-counts denials as served requests" },
+     { "symbol": "RecordAIRequest", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 667, "writes": "aiRequestsTotal", "note": "outcome=completed here; the denial half is RecordAIRequestDenied (:670), reached from recordGateDenial (pkg/loxinet/ai_gateway_dp.go:284). Summing the family without selecting an outcome double-counts denials as served requests" },
      { "symbol": "llb_ai_record_request", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1079, "call_line": 1084, "calls": "RecordAIRequest", "entry_point": "cgo-export" }
     ],
     "evidence": "api/prometheus/ai_denominator_test.go TestRecordAIRequestDeniedIsADenominator and TestEveryGateDenialArmIsCounted pin the outcome partition; both drive the helpers directly. Observed live with the outcome label on the testbed exposition captured 2026-09-10 (UI repo src/observability/__live-metrics.txt), which proves the partition exists but checks no value -- scenario M02 owns the exact ledger."
@@ -1180,7 +1190,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "a completed AI request through an AI-mode rule; denials deliberately do NOT observe this histogram, so a Gateway serving only rejected requests exposes no samples.",
     "writer_sources": [
-     { "symbol": "RecordAIRequest", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 629, "writes": "aiRequestDurationSeconds" },
+     { "symbol": "RecordAIRequest", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 667, "writes": "aiRequestDurationSeconds" },
      { "symbol": "llb_ai_record_request", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1079, "call_line": 1084, "calls": "RecordAIRequest", "entry_point": "cgo-export" }
     ],
     "evidence": "api/prometheus/ai_denominator_test.go TestRecordAIRequestDeniedLeavesLatencyAlone is the red twin -- a denial must leave the histogram count unchanged. Helper-level only; scenario M02 owns the runtime proof."
@@ -1189,8 +1199,8 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "an AI request that reached a VIP with no tenant attribution (no API key, or a key store that could not answer), so it could not be metered; with API-key auth required on every AI rule this counter stays at zero by design.",
     "writer_sources": [
-     { "symbol": "RecordUnmeteredRequest", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 597, "writes": "aiUnmeteredRequestsTotal", "note": "labelled by vip, not tenant -- an unmetered request is precisely one with no tenant" },
-     { "symbol": "llb_ai_record_unmetered", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1142, "call_line": 1144, "calls": "RecordUnmeteredRequest", "entry_point": "cgo-export" }
+     { "symbol": "RecordUnmeteredRequest", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 635, "writes": "aiUnmeteredRequestsTotal", "note": "labelled by vip, not tenant -- an unmetered request is precisely one with no tenant" },
+     { "symbol": "llb_ai_record_unmetered", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1155, "call_line": 1157, "calls": "RecordUnmeteredRequest", "entry_point": "cgo-export" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/ai_gateway_dp.go:1050 is the only call site. Scenario M03 owns the runtime proof."
    },
@@ -1198,7 +1208,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "an API-key policy store that is configured but not answering: the counter is incremented on the fail path of key validation, so it needs both --aikey-db-* configuration and a store outage. Without a key store the validation path is never entered.",
     "writer_sources": [
-     { "symbol": "RecordPolicyStoreUnavailable", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 608, "writes": "aiPolicyStoreUnavailableTotal" },
+     { "symbol": "RecordPolicyStoreUnavailable", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 646, "writes": "aiPolicyStoreUnavailableTotal" },
      { "symbol": "llb_ai_validate_key", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 328, "call_line": 370, "calls": "RecordPolicyStoreUnavailable", "entry_point": "cgo-export", "note": "two more sites share the family: validateAPIKeyInternal (:235) and llb_ai_ratelimit_check (:559)" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): three increment sites, all on store-unavailable branches. Scenario M03 owns the runtime proof."
@@ -1207,7 +1217,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "the token-quota rate-limiter store initialising with no warm peer state -- either no sync peers at all, or peers that did not answer within the warmup deadline. It fires once per process start at most, on the first request that touches the store.",
     "writer_sources": [
-     { "symbol": "RecordTokenQuotaColdOpen", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 424, "writes": "aiTokenQuotaColdOpenTotal" },
+     { "symbol": "RecordTokenQuotaColdOpen", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 439, "writes": "aiTokenQuotaColdOpenTotal" },
      { "symbol": "getGlobalRL", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 513, "call_line": 538, "calls": "RecordTokenQuotaColdOpen", "note": "the no-peer branch; the warmup-deadline branch increments from the StartQuotaWarmup callback at :437" },
      { "symbol": "llb_ai_ratelimit_check", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 600, "call_line": 634, "calls": "getGlobalRL", "entry_point": "cgo-export" }
     ],
@@ -1217,7 +1227,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "a tenant with --tokens-per-min configured whose charged tokens exceed the limit inside the window; without a token limit the branch is never reached.",
     "writer_sources": [
-     { "symbol": "RecordTokenQuotaDenied", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 431, "writes": "aiTokenQuotaDeniedTotal" },
+     { "symbol": "RecordTokenQuotaDenied", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 446, "writes": "aiTokenQuotaDeniedTotal" },
      { "symbol": "llb_ai_ratelimit_check", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 600, "call_line": 657, "calls": "RecordTokenQuotaDenied", "entry_point": "cgo-export", "note": "the reservation path denies from llb_ai_token_quota_reserve (:757) as well" }
     ],
     "evidence": "api/prometheus/ai_metrics_test.go TestRecordTokenQuotaDenied asserts the labelled delta but drives the helper directly. WP-2 owns the exact assertion: HTTP 429 count == counter delta."
@@ -1226,7 +1236,7 @@
     "status": "verified-static",
     "activation_precondition": "a tenant-scoped token limit greater than zero in the live rate-limiter store; the collector deliberately skips zero-limit tenants, so an unconfigured Gateway exports nothing.",
     "writer_sources": [
-     { "symbol": "Collect", "kind": "method", "receiver": "tokenQuotaCollector", "file": "api/prometheus/ai_metrics.go", "def_line": 488, "writes": "tokenQuotaUtilizationDesc", "note": "computed at scrape time as consumed/limit; two tenant IDs that sanitize to the same label emit once, first wins, because a duplicate series fails the whole scrape" },
+     { "symbol": "Collect", "kind": "method", "receiver": "tokenQuotaCollector", "file": "api/prometheus/ai_metrics.go", "def_line": 503, "writes": "tokenQuotaUtilizationDesc", "note": "computed at scrape time as consumed/limit; two tenant IDs that sanitize to the same label emit once, first wins, because a duplicate series fails the whole scrape" },
      { "tail": "ai-token-quota-collector" }
     ],
     "evidence": "api/prometheus/ai_metrics_test.go TestTokenQuotaCollector gathers through a pedantic registry -- the collector's real entry point -- and asserts 0.25, the 1.5 overshoot, the zero-limit skip and the first-wins duplicate. Scenario M04 owns the runtime proof."
@@ -1235,7 +1245,7 @@
     "status": "verified-static",
     "activation_precondition": "a tenant-scoped token limit greater than zero in the live rate-limiter store; zero-limit tenants are skipped rather than exported as 0.",
     "writer_sources": [
-     { "symbol": "Collect", "kind": "method", "receiver": "tokenQuotaCollector", "file": "api/prometheus/ai_metrics.go", "def_line": 488, "writes": "tokenQuotaLimitDesc" },
+     { "symbol": "Collect", "kind": "method", "receiver": "tokenQuotaCollector", "file": "api/prometheus/ai_metrics.go", "def_line": 503, "writes": "tokenQuotaLimitDesc" },
      { "tail": "ai-token-quota-collector" }
     ],
     "evidence": "api/prometheus/ai_metrics_test.go TestTokenQuotaCollector asserts limit == 200 for the configured tenant through a pedantic registry Gather. Scenario M04 owns the runtime proof."
@@ -1244,7 +1254,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "a per-MODEL token limit (a quota state carrying a non-empty model) in the live store; tenant-only quotas take the other branch of Collect and never emit this family.",
     "writer_sources": [
-     { "symbol": "Collect", "kind": "method", "receiver": "tokenQuotaCollector", "file": "api/prometheus/ai_metrics.go", "def_line": 488, "writes": "tokenQuotaModelUtilizationDesc" },
+     { "symbol": "Collect", "kind": "method", "receiver": "tokenQuotaCollector", "file": "api/prometheus/ai_metrics.go", "def_line": 503, "writes": "tokenQuotaModelUtilizationDesc" },
      { "tail": "ai-token-quota-collector" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/ai_metrics.go:504, the model branch of Collect. TestTokenQuotaCollector exercises only tenant-scoped states, so the model families are unasserted; scenario M04 owns their proof."
@@ -1253,7 +1263,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "a per-MODEL token limit in the live store; with tenant-only quotas Collect returns before this line.",
     "writer_sources": [
-     { "symbol": "Collect", "kind": "method", "receiver": "tokenQuotaCollector", "file": "api/prometheus/ai_metrics.go", "def_line": 488, "writes": "tokenQuotaModelLimitDesc" },
+     { "symbol": "Collect", "kind": "method", "receiver": "tokenQuotaCollector", "file": "api/prometheus/ai_metrics.go", "def_line": 503, "writes": "tokenQuotaModelLimitDesc" },
      { "tail": "ai-token-quota-collector" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/ai_metrics.go:506. Unasserted by TestTokenQuotaCollector, which uses tenant-scoped states only; scenario M04 owns its proof."

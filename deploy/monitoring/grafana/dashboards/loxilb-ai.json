@@ -2233,6 +2233,51 @@
         },
         "overrides": []
       }
+    },
+    {
+      "id": 51,
+      "type": "timeseries",
+      "title": "P/D routing tier mix",
+      "description": "Terminal prefill-selection decisions by routing tier: tier0 session stickiness, tier1 prefix trie, tier15 KV-exact, tier2 min-load fallback. Every accepted P/D request lands in exactly one tier, so the stacked rates sum to the accepted selection rate; admission parks/sheds and pre-routing rejections are excluded by design. A tier2-dominated mix on a cache-aware rule means the cache tiers are not engaging.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 83
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (tier) (rate(loxilb_ai_pd_tier_selected_total{instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{tier}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (tier, model) (rate(loxilb_ai_pd_tier_selected_total{instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{tier}} {{model}}",
+          "hide": true
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No P/D traffic"
+        },
+        "overrides": []
+      }
     }
   ]
 }

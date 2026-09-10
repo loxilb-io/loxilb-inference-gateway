@@ -323,6 +323,21 @@ var (
 		[]string{"model"},
 	)
 
+	// aiPDTierSelectedTotal counts terminal P/D routing-tier decisions per model.
+	// One increment per successful prefill selection, at the terminal return of
+	// the tier that produced the endpoint. Admission outcomes (parked,
+	// no-capacity) and pre-routing failures increment nothing, so per window:
+	// accepted P/D selections == sum over the four tier label values. The
+	// existing Tier-0 (pd_session_hits) and Tier-1.5 counters remain for one
+	// release and must reconcile with this family.
+	aiPDTierSelectedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "loxilb_ai_pd_tier_selected_total",
+			Help: "Total P/D prefill selections by terminal routing tier (tier0 session, tier1 prefix trie, tier15 KV-exact, tier2 min-load).",
+		},
+		[]string{"tier", "model"},
+	)
+
 	// aiNormalSessionHitsTotal counts normal-mode session-stickiness cache hits per model.
 	aiNormalSessionHitsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
@@ -581,6 +596,29 @@ func RecordPDRequest(modelName string, prefillLatencyMs, decodeLatencyMs int64, 
 // routes a P/D request to a previously pinned EP pair.
 func RecordPDSessionHit(modelName string) {
 	aiPDSessionHitsTotal.WithLabelValues(boundModelLabel(modelName)).Inc()
+}
+
+// RecordPDTierSelected increments loxilb_ai_pd_tier_selected_total for the
+// tier that terminally selected the prefill endpoint. Called by
+// llb_ai_pd_tier_selected from the four terminal selection returns in
+// pd_select_prefill. The tier integer encoding matches the C caller:
+// 0=Tier-0 session, 1=Tier-1 trie, 15=Tier-1.5 KV-exact, 2=Tier-2 min-load.
+// Any other value is dropped so the tier label stays a closed enum.
+func RecordPDTierSelected(modelName string, tier int) {
+	var tierLabel string
+	switch tier {
+	case 0:
+		tierLabel = "tier0"
+	case 1:
+		tierLabel = "tier1"
+	case 15:
+		tierLabel = "tier15"
+	case 2:
+		tierLabel = "tier2"
+	default:
+		return
+	}
+	aiPDTierSelectedTotal.WithLabelValues(tierLabel, boundModelLabel(modelName)).Inc()
 }
 
 // RecordNormalSessionHit increments the loxilb_ai_normal_session_hits_total counter
