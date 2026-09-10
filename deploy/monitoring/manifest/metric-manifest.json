@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-10T09:11:15+00:00",
-  "source_revision": "ab75a03db365f15f4b9f198145bafb6852002809"
+  "generated_at": "2026-09-10T22:13:10+00:00",
+  "source_revision": "9b06aa998c066fb63f943e684661aa3516ef5dc8"
  },
  "contract": {
   "total": 232,
@@ -1816,7 +1816,7 @@
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "conditional-with-proven-writer",
-   "activation_precondition": "Tier-0 session stickiness on a non-P/D AI rule: the request must reuse an existing session key. Unique sessions per request leave it at zero.",
+   "activation_precondition": "UNREACHABLE ON CURRENT MAIN for L7 rules: the only C call site (sockproxy_ep.c PROXY_MODE_ALL branch) serves non-L7 protocols and never sees a parsed session header, so no configuration makes this family appear on a fullproxy rule. Fix in loxilb-ebpf-inference-gateway PR #24 records the hit on the PROXY_MODE_DFL learned-binding path; promote to verified-runtime when the submodule pointer includes it.",
    "writer_sources": [
     {
      "symbol": "RecordNormalSessionHit",
@@ -1835,7 +1835,7 @@
      "entry_point": "cgo-export"
     }
    ],
-   "verification_evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/ai_gateway_dp.go:1034 is the only call site. WP-4 owns the exact assertion."
+   "verification_evidence": "defect + fix evidence 2026-09-11 (plan Part E, E.3 row D-6, E.5 row 'WP-4 normal stickiness'): pre-fix live run, fullproxy rule with session_header_name, 15 requests over 3 reused keys -> 12 NS_STICKY_HIT (DFL) log lines, counter absent. Fixed binary (isolated instance, same drive): counter appears at exactly 12 = N-K, matching logs one-for-one; red twin 8 all-unique keys -> unchanged."
   },
   {
    "name": "loxilb_ai_pd_decode_ttft_seconds",
@@ -2075,8 +2075,8 @@
    "source": "api/prometheus/ai_metrics.go:318",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
-   "implementation_status": "conditional-with-proven-writer",
-   "activation_precondition": "Tier-0 session stickiness: a request must reuse a session key already bound to a P/D endpoint. Every request opening a new session leaves this counter at zero, which is why WP-4 needs a session-reusing generator.",
+   "implementation_status": "verified-runtime",
+   "activation_precondition": "Tier-0 session stickiness: a request must reuse a session key (client X-Conversation-Id header, else JSON user field) already bound to a P/D endpoint pair. Every request opening a new session leaves this counter at zero.",
    "writer_sources": [
     {
      "symbol": "RecordPDSessionHit",
@@ -2095,7 +2095,7 @@
      "entry_point": "cgo-export"
     }
    ],
-   "verification_evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/ai_gateway_dp.go:1022 is the only call site. WP-4 owns the exact assertion (delta == N-K)."
+   "verification_evidence": "runtime verification 2026-09-11 (plan Part E, E.5 row 'WP-4 session stickiness'): live P/D KV-exact rule, 30 requests over 5 reused X-Conversation-Id keys -> delta exactly 25 (N-K); 5 establishes all fell through Tier-1.5 (pd_kv_tier15_fallthrough_total +5, miss_reason=tokenize). Red twin: 10 all-unique keys -> delta exactly 0, fallthrough +10. Conservation: 40 accepted requests = 25 Tier-0 hits + 15 Tier-1.5 fallthroughs."
   },
   {
    "name": "loxilb_ai_policy_store_unavailable_total",
