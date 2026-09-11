@@ -382,6 +382,7 @@
    "loxilb_pd_connect_retry_same_ep_ok_total",
    "loxilb_pd_connect_retry_same_ep_total",
    "loxilb_persist_total",
+   "loxilb_policer_attached",
    "loxilb_snapshot_quarantine_total",
    "loxilb_sockproxy_sync_peer_lag_seconds",
    "loxilb_sockproxy_sync_peer_up"
