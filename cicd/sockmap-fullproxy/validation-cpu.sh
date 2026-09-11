@@ -365,7 +365,7 @@ for bytes in $SIZES; do
       printf "    %-8s %-5s lox_cpu/req x%.2f, host_cpu/req x%.2f (ON vs OFF), rps x%.2f\n",
              ps, "delta", lox_x, host_x, rps_x;
       printf "    %8s       [si_cores ON=%-6s OFF=%-6s -> the softirq increase is splice kernel work]\n",
-             "", si_on, hc_off-hc_on>0? sprintf("%.3f",hc_off-hc_on) : "~0";
+             "", si_on, ((hc_off-hc_on)>0 ? sprintf("%.3f",hc_off-hc_on) : "~0");
     }'
   echo
 done
