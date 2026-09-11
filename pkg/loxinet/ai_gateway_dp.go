@@ -452,6 +452,7 @@ func llb_ai_validate_bearer(bearer *C.char, modelName *C.char, profileName *C.ch
 		// Init order violation: the holder exists before the API surface
 		// comes up. Seeing nil here means a data-plane call raced process
 		// bootstrap — refuse as an outage, never admit.
+		prom.RecordPolicyStoreUnavailable()
 		result.decision = 4
 		cCopyStr((*C.char)(unsafe.Pointer(&result.error_code[0])), "policy_store_unavailable", 64)
 		return -1
@@ -475,8 +476,16 @@ func llb_ai_validate_bearer(bearer *C.char, modelName *C.char, profileName *C.ch
 	}
 
 	cCopyStr((*C.char)(unsafe.Pointer(&result.error_code[0])), errorCode, 64)
-	if decision == 2 {
+	switch decision {
+	case 2:
 		prom.RecordModelNotAllowed(tenantID, metricModel)
+	case 4:
+		// Same condition the API-key arm records: the credential policy
+		// store cannot answer, so the request is refused as an outage. It
+		// is the one denial an operator is expected to act on, and leaving
+		// it off this counter here made a JWKS outage invisible on the
+		// metric that exists to show it while the other arm reported it.
+		prom.RecordPolicyStoreUnavailable()
 	}
 	return -1
 }
