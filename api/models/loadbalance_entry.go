@@ -893,6 +893,10 @@ type LoadbalanceEntryServiceArguments struct {
 	// SNAT rule indicator on domain readback. Implementation gap - this REST POST does not copy the property and PATCH does not overlay it, so setting it here does not create a SNAT rule.
 	Snat bool `json:"snat,omitempty"`
 
+	// directional sockmap acceleration for this FullProxy service - off (default), both, request (client->backend only), response (backend->client only). Requires a plaintext tcp fullproxy ipv4 service with ipv4 endpoints, and the daemon started with --sockmapsupport.
+	// Enum: [off both request response]
+	SockMapMode *string `json:"sockMapMode,omitempty"`
+
 	// Enable detection of text/event-stream responses and the associated streaming idle-timeout protection. This flag controls Gateway SSE handling, not whether the backend implements an OpenAI API. Active detected streams remain subject to max_stream_duration_sec and the system stream cap; enabling SSE does not make them unbounded.
 	SseMode bool `json:"sse_mode,omitempty"`
 
@@ -1035,6 +1039,10 @@ func (m *LoadbalanceEntryServiceArguments) Validate(formats strfmt.Registry) err
 	}
 
 	if err := m.validateSel(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateSockMapMode(formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -1831,6 +1839,54 @@ func (m *LoadbalanceEntryServiceArguments) validateSel(formats strfmt.Registry) 
 
 	// value enum
 	if err := m.validateSelEnum("serviceArguments"+"."+"sel", "body", m.Sel); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+var loadbalanceEntryServiceArgumentsTypeSockMapModePropEnum []interface{}
+
+func init() {
+	var res []string
+	if err := json.Unmarshal([]byte(`["off","both","request","response"]`), &res); err != nil {
+		panic(err)
+	}
+	for _, v := range res {
+		loadbalanceEntryServiceArgumentsTypeSockMapModePropEnum = append(loadbalanceEntryServiceArgumentsTypeSockMapModePropEnum, v)
+	}
+}
+
+const (
+
+	// LoadbalanceEntryServiceArgumentsSockMapModeOff captures enum value "off"
+	LoadbalanceEntryServiceArgumentsSockMapModeOff string = "off"
+
+	// LoadbalanceEntryServiceArgumentsSockMapModeBoth captures enum value "both"
+	LoadbalanceEntryServiceArgumentsSockMapModeBoth string = "both"
+
+	// LoadbalanceEntryServiceArgumentsSockMapModeRequest captures enum value "request"
+	LoadbalanceEntryServiceArgumentsSockMapModeRequest string = "request"
+
+	// LoadbalanceEntryServiceArgumentsSockMapModeResponse captures enum value "response"
+	LoadbalanceEntryServiceArgumentsSockMapModeResponse string = "response"
+)
+
+// prop value enum
+func (m *LoadbalanceEntryServiceArguments) validateSockMapModeEnum(path, location string, value string) error {
+	if err := validate.EnumCase(path, location, value, loadbalanceEntryServiceArgumentsTypeSockMapModePropEnum, true); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (m *LoadbalanceEntryServiceArguments) validateSockMapMode(formats strfmt.Registry) error {
+	if swag.IsZero(m.SockMapMode) { // not required
+		return nil
+	}
+
+	// value enum
+	if err := m.validateSockMapModeEnum("serviceArguments"+"."+"sockMapMode", "body", *m.SockMapMode); err != nil {
 		return err
 	}
 

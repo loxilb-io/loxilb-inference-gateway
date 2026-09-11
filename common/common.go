@@ -744,6 +744,50 @@ const (
 	LBOPDetach
 )
 
+// Directional sockmap acceleration modes (wire/API values).
+const (
+	// SockMapModeOff - sockmap acceleration disabled (default)
+	SockMapModeOff = "off"
+	// SockMapModeBoth - offload both request and response directions
+	SockMapModeBoth = "both"
+	// SockMapModeRequest - offload only the request direction (client->backend)
+	SockMapModeRequest = "request"
+	// SockMapModeResponse - offload only the response direction (backend->client)
+	SockMapModeResponse = "response"
+)
+
+// SockMapModeToCode maps a sockMapMode string to the dataplane code
+// (0=off, 1=both, 2=request, 3=response). The second return is false for an
+// unrecognized value.
+func SockMapModeToCode(mode string) (uint8, bool) {
+	switch mode {
+	case "", SockMapModeOff:
+		return 0, true
+	case SockMapModeBoth:
+		return 1, true
+	case SockMapModeRequest:
+		return 2, true
+	case SockMapModeResponse:
+		return 3, true
+	default:
+		return 0, false
+	}
+}
+
+// SockMapCodeToMode maps a dataplane sockmap code back to its wire string.
+func SockMapCodeToMode(code uint8) string {
+	switch code {
+	case 1:
+		return SockMapModeBoth
+	case 2:
+		return SockMapModeRequest
+	case 3:
+		return SockMapModeResponse
+	default:
+		return SockMapModeOff
+	}
+}
+
 // LBSec - Variable to define LB front-end security
 type LBSec int32
 
@@ -902,6 +946,10 @@ type LbServiceArg struct {
 	PathMatchMode string `json:"path_match_mode,omitempty"`
 	// ProxyProtocolV2 - Enable proxy protocol v2
 	ProxyProtocolV2 bool `json:"proxyprotocolv2"`
+	// SockMapMode - Directional sockmap acceleration for this FullProxy service.
+	// One of "off" (default), "both", "request", "response".
+	// "request" offloads only client->backend, "response" only backend->client.
+	SockMapMode string `json:"sockMapMode,omitempty"`
 	// Egress - Egress Rule
 	Egress bool `json:"egress"`
 	// Id - Stable opaque identifier for the LB rule (Octavia).

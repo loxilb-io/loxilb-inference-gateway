@@ -4473,6 +4473,17 @@ func init() {
               "description": "SNAT rule indicator on domain readback. Implementation gap - this REST POST does not copy the property and PATCH does not overlay it, so setting it here does not create a SNAT rule.",
               "type": "boolean"
             },
+            "sockMapMode": {
+              "default": "off",
+              "description": "directional sockmap acceleration for this FullProxy service - off (default), both, request (client-\u003ebackend only), response (backend-\u003eclient only). Requires a plaintext tcp fullproxy ipv4 service with ipv4 endpoints, and the daemon started with --sockmapsupport.",
+              "enum": [
+                "off",
+                "both",
+                "request",
+                "response"
+              ],
+              "type": "string"
+            },
             "sse_mode": {
               "default": false,
               "description": "Enable detection of text/event-stream responses and the associated streaming idle-timeout protection. This flag controls Gateway SSE handling, not whether the backend implements an OpenAI API. Active detected streams remain subject to max_stream_duration_sec and the system stream cap; enabling SSE does not make them unbounded.",
@@ -34652,26 +34663,26 @@ func init() {
               "x-nullable": false
             },
             "chwbl_enable_cache_salt": {
-              "description": "Intended request cache_salt requirement for sel=8/10. Known implementation gap: this declaration is not wired to active C configuration, which initializes the option disabled. It does not currently enforce salt presence or tenant isolation. Retained for implementation. A client-supplied hash salt is not itself an authenticated tenant-isolation boundary; identity binding and missing-salt behavior need an explicit security contract.",
+              "description": "Require a non-empty JSON string cache_salt of at most 63 bytes on H1 and H2 requests and include it in the configured hash identity. Missing or malformed salt is rejected locally with HTTP 400 before upstream dispatch. This is cache-key namespacing, not authentication and not an authenticated tenant-isolation boundary.",
               "type": "boolean",
               "default": false
             },
             "chwbl_mean_load_factor": {
-              "description": "Intended bounded-load factor in percent for sel=8/10, with a nominal bound of average load multiplied by factor/100. The schema declares 125, but current C initialization uses 175 and does not consume this API override. Do not interpret a returned value as the effective bound. The option is retained; the final default and complete configuration propagation require reconciliation.",
+              "description": "Bounded-load factor in percent for sel=8/10. Selection compares the request's future endpoint load with the configured factor of mean load. Omission on create resolves to 175; omission on replace preserves the current effective value.",
               "type": "integer",
-              "default": 125,
+              "default": 175,
               "maximum": 300,
               "minimum": 100
             },
             "chwbl_prefix_hash_flags": {
-              "description": "Intended optional hash-input flags for sel=8/10: bits 0..7 name LoRA, image, audio, cache_salt, tools, session, RAG template, and RAG documents respectively; 0 declares automatic selection. Known implementation gap: API declarations are stored but are not propagated into the active C configuration, which initializes this field to 0. Per-bit behavior is not an implemented API guarantee. Retained for implementation and behavior verification.",
+              "description": "Optional hash-input flags for sel=8/10: bits 0..7 name LoRA, image, audio, cache_salt, tools, session, RAG template, and RAG documents respectively. 0 selects all present inputs allowed by chwbl_prefix_hash_level. Explicit flags above that level are rejected. Omission on replace preserves the effective value.",
               "type": "integer",
               "default": 0,
               "maximum": 255,
               "minimum": 0
             },
             "chwbl_prefix_hash_level": {
-              "description": "Intended prefix level for sel=8 (CHWBL) or sel=10 (WRR_HASH), both requiring mode=4: 1=system prompt/model, 2=also session context, 3=also RAG context. Known wiring limitation: the declaration is forwarded to the C configuration for sel=8, but not for sel=10. The WRR_HASH path therefore uses its internal level-1 default. Readback of an explicit value does not prove it affects routing. The option is retained; complete propagation and parser behavior verification are required before claiming all levels are qualified.",
+              "description": "Maximum hash-input level for mode=4 with sel=8 (CHWBL) or sel=10 (WRR_HASH): 1=system prompt/model and present L1 fields, 2=also session context, 3=also RAG context. Omission on create resolves to 1; omission on replace preserves the current effective value.",
               "type": "integer",
               "default": 1,
               "enum": [
@@ -34681,9 +34692,9 @@ func init() {
               ]
             },
             "chwbl_replication": {
-              "description": "Intended hash-ring replication setting for sel=8/10. CHWBL uses virtual nodes per endpoint; WRR_HASH distributes a ring budget by endpoint weight. The schema declares 100, but current C setup uses 256 and does not consume this API override. Retained for implementation; default, weight interaction, allocation limits, and live ring-rebuild behavior must be reconciled before the UI treats this as an effective tuning control.",
+              "description": "Hash-ring geometry for sel=8/10. CHWBL creates exactly this many virtual nodes per endpoint. WRR_HASH treats it as the exact total vnode budget, assigns only positive-weight active endpoints, and rejects a budget smaller than that endpoint count. Create default is 256; replace omission preserves the effective value.",
               "type": "integer",
-              "default": 100,
+              "default": 256,
               "maximum": 1024,
               "minimum": 1
             },
@@ -34729,16 +34740,16 @@ func init() {
               "format": "int32"
             },
             "kvBlockSize": {
-              "description": "Token block size for KV hashing. Omission or 0 resolves to 16 in the current implementation; choose the value from the deployed engine tuple, not from the schema default. Must match vLLM block-size, SGLang page-size, or TRT-LLM tokens_per_block. A mismatch can cause hash misses; TRT-LLM server-info validation can instead refuse the endpoint's KV event poller while plain load balancing remains available. Implementation limitation: the schema's uint32 ceiling is not a safe operational range; downstream hashing converts the size to signed int. Use only a qualified engine block size until the numeric contract and C arithmetic are hardened. API acceptance is not geometry validation.",
+              "description": "Token block size for KV hashing. On create and replace POST, omission or explicit 0 stores the default declaration and resolves effectively to 16; explicit JSON null is rejected. PATCH does not support this field. Positive values are limited to 1..4096, the fixed request-token and CBOR workspace bound used by the hashing data path. Choose the value from the deployed engine tuple, not from the schema default. It must match vLLM block-size, SGLang page-size, or TRT-LLM tokens_per_block. A mismatch can cause hash misses; TRT-LLM server-info validation can instead refuse the endpoint's KV event poller while plain load balancing remains available. API acceptance proves safe representation, not engine-geometry compatibility.",
               "type": "integer",
               "format": "int64",
               "default": 16,
-              "maximum": 4294967295,
+              "maximum": 4096,
               "minimum": 1,
               "x-nullable": false
             },
             "kvDpRankCount": {
-              "description": "SGLang event-publisher rank count, not the number of LB endpoints. Omission or 0 resolves to 1; accepted positive values are 1..8. Values above 1 require kvEngineType=sglang. Rank N uses kvZmqPort+N for N=0..count-1; after resolving defaults the highest port must be at most 65535. Inventories are unioned per endpoint. Fan-out support does not by itself qualify every engine/model/DP deployment.",
+              "description": "SGLang event-publisher rank count, not the number of LB endpoints. On create and replace POST, omission or explicit 0 stores the default declaration and resolves effectively to 1; explicit JSON null is rejected. PATCH does not support this field. Accepted positive values are 1..8. Values above 1 require kvEngineType=sglang. Rank N uses kvZmqPort+N for N=0..count-1; after resolving defaults the highest port must be at most 65535. Inventories are unioned per endpoint. Fan-out support does not by itself qualify every engine/model/DP deployment.",
               "type": "integer",
               "format": "int32",
               "default": 1,
@@ -34803,7 +34814,7 @@ func init() {
               "x-nullable": false
             },
             "kvZmqPort": {
-              "description": "Base ZMQ event port for vllm/sglang exact routing. Omission or 0 resolves to 5557 in the current implementation. Mode 1 subscribes prefill endpoints only; mode 3 subscribes all endpoints. SGLang rank N uses base+N for N=0..kvDpRankCount-1; the effective base plus effective rank count minus one must not exceed 65535. trtllm uses HTTP on targetPort instead: only omitted/0/default 5557 declarations are accepted there, and no ZMQ connection is made.",
+              "description": "Base ZMQ event port for vllm/sglang exact routing. On create and replace POST, omission or explicit 0 stores the default declaration and resolves effectively to 5557; explicit JSON null is rejected. PATCH does not support this field. Mode 1 subscribes prefill endpoints only; mode 3 subscribes all endpoints. SGLang rank N uses base+N for N=0..kvDpRankCount-1; the effective base plus effective rank count minus one must not exceed 65535. trtllm uses HTTP on targetPort instead: only omitted/0/default 5557 declarations are accepted there, and no ZMQ connection is made.",
               "type": "integer",
               "format": "int64",
               "default": 5557,
@@ -34943,7 +34954,7 @@ func init() {
               "x-loxilb-max-utf8-bytes": 255
             },
             "pdBootstrapPort": {
-              "description": "SGLang bootstrap port on every prefill endpoint; must match the engine disaggregation-bootstrap-port. Omitted/0 resolves to 8998 on the SGLang P/D path. A nonzero declaration requires both pd_disagg_mode=true and kvEngineType=sglang; it is rejected on other shapes. Zero is accepted on other shapes but has no effect.",
+              "description": "SGLang bootstrap port on every prefill endpoint; must match the engine disaggregation-bootstrap-port. On create and replace POST, omitted or explicit 0 resolves to 8998 on the SGLang P/D path; explicit JSON null is rejected. PATCH does not support this field. A nonzero declaration requires both pd_disagg_mode=true and kvEngineType=sglang; it is rejected on other shapes. Zero is accepted on other shapes but has no effect.",
               "type": "integer",
               "format": "int32",
               "default": 0,
@@ -35091,6 +35102,17 @@ func init() {
             "snat": {
               "description": "SNAT rule indicator on domain readback. Implementation gap - this REST POST does not copy the property and PATCH does not overlay it, so setting it here does not create a SNAT rule.",
               "type": "boolean"
+            },
+            "sockMapMode": {
+              "description": "directional sockmap acceleration for this FullProxy service - off (default), both, request (client-\u003ebackend only), response (backend-\u003eclient only). Requires a plaintext tcp fullproxy ipv4 service with ipv4 endpoints, and the daemon started with --sockmapsupport.",
+              "type": "string",
+              "default": "off",
+              "enum": [
+                "off",
+                "both",
+                "request",
+                "response"
+              ]
             },
             "sse_mode": {
               "description": "Enable detection of text/event-stream responses and the associated streaming idle-timeout protection. This flag controls Gateway SSE handling, not whether the backend implements an OpenAI API. Active detected streams remain subject to max_stream_duration_sec and the system stream cap; enabling SSE does not make them unbounded.",
@@ -35326,26 +35348,26 @@ func init() {
           "x-nullable": false
         },
         "chwbl_enable_cache_salt": {
-          "description": "Intended request cache_salt requirement for sel=8/10. Known implementation gap: this declaration is not wired to active C configuration, which initializes the option disabled. It does not currently enforce salt presence or tenant isolation. Retained for implementation. A client-supplied hash salt is not itself an authenticated tenant-isolation boundary; identity binding and missing-salt behavior need an explicit security contract.",
+          "description": "Require a non-empty JSON string cache_salt of at most 63 bytes on H1 and H2 requests and include it in the configured hash identity. Missing or malformed salt is rejected locally with HTTP 400 before upstream dispatch. This is cache-key namespacing, not authentication and not an authenticated tenant-isolation boundary.",
           "type": "boolean",
           "default": false
         },
         "chwbl_mean_load_factor": {
-          "description": "Intended bounded-load factor in percent for sel=8/10, with a nominal bound of average load multiplied by factor/100. The schema declares 125, but current C initialization uses 175 and does not consume this API override. Do not interpret a returned value as the effective bound. The option is retained; the final default and complete configuration propagation require reconciliation.",
+          "description": "Bounded-load factor in percent for sel=8/10. Selection compares the request's future endpoint load with the configured factor of mean load. Omission on create resolves to 175; omission on replace preserves the current effective value.",
           "type": "integer",
-          "default": 125,
+          "default": 175,
           "maximum": 300,
           "minimum": 100
         },
         "chwbl_prefix_hash_flags": {
-          "description": "Intended optional hash-input flags for sel=8/10: bits 0..7 name LoRA, image, audio, cache_salt, tools, session, RAG template, and RAG documents respectively; 0 declares automatic selection. Known implementation gap: API declarations are stored but are not propagated into the active C configuration, which initializes this field to 0. Per-bit behavior is not an implemented API guarantee. Retained for implementation and behavior verification.",
+          "description": "Optional hash-input flags for sel=8/10: bits 0..7 name LoRA, image, audio, cache_salt, tools, session, RAG template, and RAG documents respectively. 0 selects all present inputs allowed by chwbl_prefix_hash_level. Explicit flags above that level are rejected. Omission on replace preserves the effective value.",
           "type": "integer",
           "default": 0,
           "maximum": 255,
           "minimum": 0
         },
         "chwbl_prefix_hash_level": {
-          "description": "Intended prefix level for sel=8 (CHWBL) or sel=10 (WRR_HASH), both requiring mode=4: 1=system prompt/model, 2=also session context, 3=also RAG context. Known wiring limitation: the declaration is forwarded to the C configuration for sel=8, but not for sel=10. The WRR_HASH path therefore uses its internal level-1 default. Readback of an explicit value does not prove it affects routing. The option is retained; complete propagation and parser behavior verification are required before claiming all levels are qualified.",
+          "description": "Maximum hash-input level for mode=4 with sel=8 (CHWBL) or sel=10 (WRR_HASH): 1=system prompt/model and present L1 fields, 2=also session context, 3=also RAG context. Omission on create resolves to 1; omission on replace preserves the current effective value.",
           "type": "integer",
           "default": 1,
           "enum": [
@@ -35355,9 +35377,9 @@ func init() {
           ]
         },
         "chwbl_replication": {
-          "description": "Intended hash-ring replication setting for sel=8/10. CHWBL uses virtual nodes per endpoint; WRR_HASH distributes a ring budget by endpoint weight. The schema declares 100, but current C setup uses 256 and does not consume this API override. Retained for implementation; default, weight interaction, allocation limits, and live ring-rebuild behavior must be reconciled before the UI treats this as an effective tuning control.",
+          "description": "Hash-ring geometry for sel=8/10. CHWBL creates exactly this many virtual nodes per endpoint. WRR_HASH treats it as the exact total vnode budget, assigns only positive-weight active endpoints, and rejects a budget smaller than that endpoint count. Create default is 256; replace omission preserves the effective value.",
           "type": "integer",
-          "default": 100,
+          "default": 256,
           "maximum": 1024,
           "minimum": 1
         },
@@ -35403,16 +35425,16 @@ func init() {
           "format": "int32"
         },
         "kvBlockSize": {
-          "description": "Token block size for KV hashing. Omission or 0 resolves to 16 in the current implementation; choose the value from the deployed engine tuple, not from the schema default. Must match vLLM block-size, SGLang page-size, or TRT-LLM tokens_per_block. A mismatch can cause hash misses; TRT-LLM server-info validation can instead refuse the endpoint's KV event poller while plain load balancing remains available. Implementation limitation: the schema's uint32 ceiling is not a safe operational range; downstream hashing converts the size to signed int. Use only a qualified engine block size until the numeric contract and C arithmetic are hardened. API acceptance is not geometry validation.",
+          "description": "Token block size for KV hashing. On create and replace POST, omission or explicit 0 stores the default declaration and resolves effectively to 16; explicit JSON null is rejected. PATCH does not support this field. Positive values are limited to 1..4096, the fixed request-token and CBOR workspace bound used by the hashing data path. Choose the value from the deployed engine tuple, not from the schema default. It must match vLLM block-size, SGLang page-size, or TRT-LLM tokens_per_block. A mismatch can cause hash misses; TRT-LLM server-info validation can instead refuse the endpoint's KV event poller while plain load balancing remains available. API acceptance proves safe representation, not engine-geometry compatibility.",
           "type": "integer",
           "format": "int64",
           "default": 16,
-          "maximum": 4294967295,
+          "maximum": 4096,
           "minimum": 1,
           "x-nullable": false
         },
         "kvDpRankCount": {
-          "description": "SGLang event-publisher rank count, not the number of LB endpoints. Omission or 0 resolves to 1; accepted positive values are 1..8. Values above 1 require kvEngineType=sglang. Rank N uses kvZmqPort+N for N=0..count-1; after resolving defaults the highest port must be at most 65535. Inventories are unioned per endpoint. Fan-out support does not by itself qualify every engine/model/DP deployment.",
+          "description": "SGLang event-publisher rank count, not the number of LB endpoints. On create and replace POST, omission or explicit 0 stores the default declaration and resolves effectively to 1; explicit JSON null is rejected. PATCH does not support this field. Accepted positive values are 1..8. Values above 1 require kvEngineType=sglang. Rank N uses kvZmqPort+N for N=0..count-1; after resolving defaults the highest port must be at most 65535. Inventories are unioned per endpoint. Fan-out support does not by itself qualify every engine/model/DP deployment.",
           "type": "integer",
           "format": "int32",
           "default": 1,
@@ -35477,7 +35499,7 @@ func init() {
           "x-nullable": false
         },
         "kvZmqPort": {
-          "description": "Base ZMQ event port for vllm/sglang exact routing. Omission or 0 resolves to 5557 in the current implementation. Mode 1 subscribes prefill endpoints only; mode 3 subscribes all endpoints. SGLang rank N uses base+N for N=0..kvDpRankCount-1; the effective base plus effective rank count minus one must not exceed 65535. trtllm uses HTTP on targetPort instead: only omitted/0/default 5557 declarations are accepted there, and no ZMQ connection is made.",
+          "description": "Base ZMQ event port for vllm/sglang exact routing. On create and replace POST, omission or explicit 0 stores the default declaration and resolves effectively to 5557; explicit JSON null is rejected. PATCH does not support this field. Mode 1 subscribes prefill endpoints only; mode 3 subscribes all endpoints. SGLang rank N uses base+N for N=0..kvDpRankCount-1; the effective base plus effective rank count minus one must not exceed 65535. trtllm uses HTTP on targetPort instead: only omitted/0/default 5557 declarations are accepted there, and no ZMQ connection is made.",
           "type": "integer",
           "format": "int64",
           "default": 5557,
@@ -35617,7 +35639,7 @@ func init() {
           "x-loxilb-max-utf8-bytes": 255
         },
         "pdBootstrapPort": {
-          "description": "SGLang bootstrap port on every prefill endpoint; must match the engine disaggregation-bootstrap-port. Omitted/0 resolves to 8998 on the SGLang P/D path. A nonzero declaration requires both pd_disagg_mode=true and kvEngineType=sglang; it is rejected on other shapes. Zero is accepted on other shapes but has no effect.",
+          "description": "SGLang bootstrap port on every prefill endpoint; must match the engine disaggregation-bootstrap-port. On create and replace POST, omitted or explicit 0 resolves to 8998 on the SGLang P/D path; explicit JSON null is rejected. PATCH does not support this field. A nonzero declaration requires both pd_disagg_mode=true and kvEngineType=sglang; it is rejected on other shapes. Zero is accepted on other shapes but has no effect.",
           "type": "integer",
           "format": "int32",
           "default": 0,
@@ -35765,6 +35787,17 @@ func init() {
         "snat": {
           "description": "SNAT rule indicator on domain readback. Implementation gap - this REST POST does not copy the property and PATCH does not overlay it, so setting it here does not create a SNAT rule.",
           "type": "boolean"
+        },
+        "sockMapMode": {
+          "description": "directional sockmap acceleration for this FullProxy service - off (default), both, request (client-\u003ebackend only), response (backend-\u003eclient only). Requires a plaintext tcp fullproxy ipv4 service with ipv4 endpoints, and the daemon started with --sockmapsupport.",
+          "type": "string",
+          "default": "off",
+          "enum": [
+            "off",
+            "both",
+            "request",
+            "response"
+          ]
         },
         "sse_mode": {
           "description": "Enable detection of text/event-stream responses and the associated streaming idle-timeout protection. This flag controls Gateway SSE handling, not whether the backend implements an OpenAI API. Active detected streams remain subject to max_stream_duration_sec and the system stream cap; enabling SSE does not make them unbounded.",

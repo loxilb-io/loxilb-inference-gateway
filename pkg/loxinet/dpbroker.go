@@ -363,6 +363,7 @@ type LBDpWorkQ struct {
 	CsumDis                     bool
 	SrcCheck                    bool
 	Ppv2En                      bool
+	SockMapMode                 uint8 // Directional sockmap accel: 0=off,1=both,2=request,3=response
 	SecMode                     SecT
 	HostURL                     string
 	PathPrefix                  string                  // P6: URL path prefix for L7 routing

@@ -21,6 +21,9 @@ RUN if [ -n "$APT_MIRROR" ]; then \
 # Makefile's `git describe` cannot work in here and would silently fall back to
 # "dev" -- release.yml and packaging/build-pkgs.sh pass the tag explicitly.
 ARG VERSION=dev
+# eBPF/proxy compile flags. -DHAVE_SOCKOPS is required for --sockmapsupport;
+# add -DHAVE_PROXY_NO_EXTRA_DEBUG for performance/CPU-measurement images.
+ARG EXTRA_CFLAGS="-DHAVE_SOCKOPS"
 
 # Env variables
 ENV PATH="${PATH}:/usr/local/go/bin"
@@ -73,8 +76,8 @@ RUN mkdir -p /opt/loxilb && \
     tar -xzf /tmp/libtokenizers.tar.gz -C /usr/local/lib/ && rm /tmp/libtokenizers.tar.gz && \
     # Install loxilb
     cd /root/loxilb-io/loxilb/ && \
-    go get . && make clean && if [ "$arch" = "arm64" ] && [ "$USE_DOCKER_BUILDX_ARM64" = "true" ] ; then DOCKER_BUILDX_ARM64=true make VERSION="$VERSION"; \
-    else make VERSION="$VERSION" ;fi && \
+    go get . && make clean && if [ "$arch" = "arm64" ] && [ "$USE_DOCKER_BUILDX_ARM64" = "true" ] ; then DOCKER_BUILDX_ARM64=true make VERSION="$VERSION" EXTRA_CFLAGS="$EXTRA_CFLAGS"; \
+    else make VERSION="$VERSION" EXTRA_CFLAGS="$EXTRA_CFLAGS" ;fi && \
     # Stage the libbpf runtime artifacts the final stage COPYs: the eBPF make
     # installs libbpf only into the submodule's build/ tree (DESTDIR=build),
     # so /usr/lib64 stays empty in this stage and the later
