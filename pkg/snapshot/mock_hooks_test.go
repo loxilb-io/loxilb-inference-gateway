@@ -47,6 +47,7 @@ type mockHooks struct {
 	l7Pols    []cmn.L7PolicyArg
 	fwRules   []cmn.FwRuleMod
 	policies  []cmn.PolMod
+	jwtProfs  []cmn.JWTAuthProfileMod
 	mirrors   []cmn.MirrGetMod
 	sessions  []cmn.SessionMod
 	ulcl      []cmn.SessionUlClMod
@@ -533,6 +534,42 @@ func (m *mockHooks) NetFwRuleDel(f *cmn.FwRuleMod) (int, error) {
 }
 
 // --- policy ---
+
+func (m *mockHooks) NetJWTAuthProfileGet() ([]cmn.JWTAuthProfileMod, error) {
+	m.log("NetJWTAuthProfileGet")
+	return resizeOverride(m, "NetJWTAuthProfileGet", func() []cmn.JWTAuthProfileMod {
+		return append([]cmn.JWTAuthProfileMod(nil), m.jwtProfs...)
+	}), nil
+}
+func (m *mockHooks) NetJWTAuthProfileAdd(p *cmn.JWTAuthProfileMod) (int, error) {
+	m.log("NetJWTAuthProfileAdd:%s", p.Name)
+	if err := m.failIfConfigured("NetJWTAuthProfileAdd"); err != nil {
+		return -1, err
+	}
+	// Upsert semantics, mirroring the real hook.
+	for i := range m.jwtProfs {
+		if m.jwtProfs[i].Name == p.Name {
+			m.jwtProfs[i] = *p
+			return 0, nil
+		}
+	}
+	m.jwtProfs = append(m.jwtProfs, *p)
+	return 0, nil
+}
+func (m *mockHooks) NetJWTAuthProfileDel(name string) (int, error) {
+	m.log("NetJWTAuthProfileDel:%s", name)
+	if err := m.failIfConfigured("NetJWTAuthProfileDel"); err != nil {
+		return -1, err
+	}
+	out := m.jwtProfs[:0]
+	for _, x := range m.jwtProfs {
+		if x.Name != name {
+			out = append(out, x)
+		}
+	}
+	m.jwtProfs = out
+	return 0, nil
+}
 
 func (m *mockHooks) NetPolicerGet() ([]cmn.PolMod, error) {
 	m.log("NetPolicerGet")

@@ -423,6 +423,11 @@ func configureAPI(api *operations.LoxilbRestAPIAPI) http.Handler {
 	api.AiGetConfigAiApikeyKeyIDHandler = ai.GetConfigAiApikeyKeyIDHandlerFunc(handler.ConfigGetAIApikeyByID)
 	api.AiDeleteConfigAiApikeyKeyIDHandler = ai.DeleteConfigAiApikeyKeyIDHandlerFunc(handler.ConfigDeleteAIApikey)
 	apiKeyPatchHandler = handler.ConfigPatchAIApikey
+	// AI Gateway JWT auth profiles (data-plane bearer admission config)
+	api.AiPostConfigAiJwtauthprofileHandler = ai.PostConfigAiJwtauthprofileHandlerFunc(handler.ConfigPostJWTAuthProfile)
+	api.AiGetConfigAiJwtauthprofileAllHandler = ai.GetConfigAiJwtauthprofileAllHandlerFunc(handler.ConfigGetJWTAuthProfileAll)
+	api.AiDeleteConfigAiJwtauthprofileNameHandler = ai.DeleteConfigAiJwtauthprofileNameHandlerFunc(handler.ConfigDeleteJWTAuthProfile)
+
 	api.AiGetConfigAiModelProfilesHandler = ai.GetConfigAiModelProfilesHandlerFunc(handler.ConfigGetAIModelProfiles)
 	api.AiGetConfigAiModelProfilesProfileIDHandler = ai.GetConfigAiModelProfilesProfileIDHandlerFunc(handler.ConfigGetAIModelProfileByID)
 	api.AiPostConfigAiTenantRatelimitHandler = ai.PostConfigAiTenantRatelimitHandlerFunc(handler.ConfigPostAITenantRateLimit)

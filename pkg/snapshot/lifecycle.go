@@ -129,6 +129,11 @@ var RouteLifecycles = []RouteLifecycle{
 	{Method: "delete", Path: "/auth/users/{id}", Class: ClassExternalStore, Area: AreaAuthUsers, DesiredState: true},
 
 	// --- AI key/quota plane: key-store database.
+	// --- AI JWT auth profiles: snapshot domain since schema 1.6 (named
+	// issuer configs for data-plane bearer admission; in-memory desired
+	// state, public key sources only).
+	{Method: "post", Path: "/config/ai/jwtauthprofile", Class: ClassSnapshot, Area: DomainJWTAuthProfile, DesiredState: true},
+	{Method: "delete", Path: "/config/ai/jwtauthprofile/{name}", Class: ClassSnapshot, Area: DomainJWTAuthProfile, DesiredState: true},
 	{Method: "post", Path: "/config/ai/apikey", Class: ClassExternalStore, Area: AreaAIKeys, DesiredState: true},
 	{Method: "delete", Path: "/config/ai/apikey/{key_id}", Class: ClassExternalStore, Area: AreaAIKeys, DesiredState: true},
 	{Method: "post", Path: "/config/ai/tenant/ratelimit", Class: ClassExternalStore, Area: AreaAIRateLimit, DesiredState: true},
@@ -315,6 +320,7 @@ func RouteLifecycleIndex() map[string]RouteLifecycle {
 // snapshotDomainSet is the set of Domains struct field names (doc.go).
 var snapshotDomainSet = map[string]bool{
 	DomainEndpoint:       true,
+	DomainJWTAuthProfile: true,
 	DomainLoadBalancer:   true,
 	DomainKvExactBinding: true,
 	DomainL7Policy:       true,

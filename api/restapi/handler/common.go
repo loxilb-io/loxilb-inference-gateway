@@ -97,6 +97,14 @@ func ResultErrorResponseError(err error) *models.Error {
 	if errors.As(err, &adm) {
 		return &models.Error{Code: 400, Message: "Malformed arguments for API call", Result: err.Error()}
 	}
+	var conflict *cmn.ConflictError
+	if errors.As(err, &conflict) {
+		return &models.Error{
+			Code:    409,
+			Message: "Resource conflict: Resource already exists OR dependency not found",
+			Result:  err.Error(),
+		}
+	}
 	var invalid *cmn.ValidationError
 	if errors.As(err, &invalid) {
 		return &models.Error{

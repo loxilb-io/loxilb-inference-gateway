@@ -664,6 +664,8 @@ func countDomain(name string, d *Domains) int {
 	switch name {
 	case DomainEndpoint:
 		return len(d.Endpoint)
+	case DomainJWTAuthProfile:
+		return len(d.JWTAuthProfile)
 	case DomainLoadBalancer:
 		return len(d.LoadBalancer)
 	case DomainFirewall:

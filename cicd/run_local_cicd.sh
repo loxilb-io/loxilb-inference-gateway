@@ -276,6 +276,27 @@ cd ai-sse-quota/
 ./rmconfig.sh
 cd -
 
+# ai-model-conflict: the effective-model contract on enforcing services —
+# one body-first model resolution shared by authorization and routing, and a
+# hard 400 when a request's body and X-Model header disagree.
+cd ai-model-conflict/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
+# ai-jwtauth: the bearer (JWT) admission arm against a real Keycloak realm —
+# the token verdict ladder, apikey-or-jwt precedence, upstream header
+# hygiene, and the fail-closed postures (HTTP/2, unreachable JWKS). Builds
+# loxilb-aigw-keycloak:26.0-aigw on first use and reuses it afterwards
+# (cicd/ai-jwtauth/keycloak/build.sh); config.sh also pulls postgres:18.6 for
+# the key store the precedence legs need.
+cd ai-jwtauth/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
 # ai-authsep: the authentication-plane regression, container-only (no GPU) —
 # the same four suites the auth-plane-sanity workflow runs. validation.sh is
 # the four-cell {userservice x key store} matrix with role isolation, verified

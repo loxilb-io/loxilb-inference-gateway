@@ -94,7 +94,7 @@ func domainNames(entries []DomainEntry) []string {
 // DeleteOrder is the exact reverse.
 func TestRegistryOrder(t *testing.T) {
 	want := []string{
-		DomainEndpoint, DomainLoadBalancer, DomainKvExactBinding,
+		DomainEndpoint, DomainJWTAuthProfile, DomainLoadBalancer, DomainKvExactBinding,
 		DomainL7Policy, DomainFirewall, DomainPolicy,
 		DomainMirror, DomainSession, DomainSessionUlCl, DomainIPFilter,
 		DomainSecurityRate, DomainBFD, DomainBGP, DomainIPsec, DomainCORS,
@@ -115,6 +115,15 @@ func TestRegistryOrder(t *testing.T) {
 	epIdx, lbIdx := indexOf(got, DomainEndpoint), indexOf(got, DomainLoadBalancer)
 	if epIdx < 0 || lbIdx < 0 || epIdx > lbIdx {
 		t.Fatalf("expected endpoint (idx %d) before loadbalancer (idx %d)", epIdx, lbIdx)
+	}
+
+	// jwtauthprofile before loadbalancer -- rules reference a profile by
+	// name, so a restore must land profiles before the rules that need
+	// them (and DeleteOrder tears rules down before their profiles, which
+	// is what lets the reference-guarded profile delete succeed).
+	jpIdx := indexOf(got, DomainJWTAuthProfile)
+	if jpIdx < 0 || jpIdx > lbIdx {
+		t.Fatalf("expected jwtauthprofile (idx %d) before loadbalancer (idx %d)", jpIdx, lbIdx)
 	}
 	sessIdx, ulclIdx := indexOf(got, DomainSession), indexOf(got, DomainSessionUlCl)
 	if sessIdx < 0 || ulclIdx < 0 || sessIdx > ulclIdx {

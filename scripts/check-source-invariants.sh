@@ -222,6 +222,92 @@ else
   fi
 fi
 
+# ---------------------------------------------------------------------------
+# 6. The ai_gw_decision_t layout is twin-lockstep between C and Go.
+#
+# The struct crosses the CGO boundary by layout, not by name: the C gate
+# hands a pointer into the Go export, and Go writes through it at the
+# offsets ITS copy of the typedef declares. The two copies live in
+# sockproxy_ai_gw.h and the cgo preamble of ai_gateway_dp.go, and nothing
+# fails to compile when one grows a field the other lacks — the writes just
+# land inside (or past) the wrong bytes. That is how a widening lands in one
+# repo and silently corrupts the other.
+#
+# Compare the field lists literally, comments stripped.
+# ---------------------------------------------------------------------------
+C_DECL="loxilb-ebpf/common/sockproxy_ai_gw.h"
+GO_DECL="pkg/loxinet/ai_gateway_dp.go"
+struct_fields() { # struct_fields <file> — field lines of ai_gw_decision_t, normalized
+  sed -n '/^typedef struct {/,/} ai_gw_decision_t;/p' "$1" \
+    | sed -e 's|/\*.*\*/||' -e 's|//.*||' \
+    | grep -E '^\s*(int|char|uint|int64_t|uint32_t)' \
+    | tr -s ' \t' ' ' | sed 's/^ //; s/ $//'
+}
+if [ ! -f "$C_DECL" ] || [ ! -f "$GO_DECL" ]; then
+  fail "decision-struct twin missing ($C_DECL / $GO_DECL)"
+else
+  c_fields="$(struct_fields "$C_DECL")"
+  go_fields="$(struct_fields "$GO_DECL")"
+  if [ -z "$c_fields" ] || [ -z "$go_fields" ]; then
+    fail "could not extract ai_gw_decision_t fields — did the typedef move or change shape?"
+  elif [ "$c_fields" != "$go_fields" ]; then
+    fail "ai_gw_decision_t field lists disagree between C header and Go cgo preamble:"
+    diff <(printf '%s\n' "$c_fields") <(printf '%s\n' "$go_fields") | sed 's/^/          /'
+  else
+    pass "ai_gw_decision_t layout is identical in C header and Go preamble"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# 7. Every AI-gate credential export exists at all four lockstep sites.
+#
+# A gate export is real only when the C header declares it, the Go side
+# //exports it, the weak stub covers the TEST_* unit builds, and some C
+# call site actually invokes it. The linker enforces none of this across
+# the two repos: a missing //export resolves to the weak stub, which
+# ALLOWS every request — an auth arm that silently admits everything is
+# the exact failure mode this file exists to make loud.
+# ---------------------------------------------------------------------------
+STUB="loxilb-ebpf/common/sockproxy_ai_gw_stub.c"
+for exp in llb_ai_validate_key llb_ai_validate_bearer; do
+  bad=""
+  grep -q "extern int $exp(" "$C_DECL" || bad="$bad header"
+  grep -q "^//export $exp\$" "$GO_DECL" || bad="$bad go-export"
+  grep -q "^$exp(" "$STUB" || bad="$bad stub"
+  grep -rq "$exp(" loxilb-ebpf/common/sockproxy_ai_admit.c \
+                   loxilb-ebpf/common/sockproxy_ai_security.c 2>/dev/null || bad="$bad c-caller"
+  if [ -n "$bad" ]; then
+    fail "$exp missing at lockstep site(s):$bad"
+  else
+    pass "$exp present at header, Go export, stub and C call site"
+  fi
+done
+
+# ---------------------------------------------------------------------------
+# 8. The upstream-hygiene auth_flags bit values are lockstep between C and Go.
+#
+# The bits ride an int through the decision struct; C tests them with its
+# AI_GW_AUTHF_* defines while Go builds them from its aiAuthFlag*
+# constants. Nothing type-checks across that boundary, so a renumbering on
+# one side flips strip/forward behaviour on the other without an error.
+# ---------------------------------------------------------------------------
+JWT_GO="pkg/loxinet/ai_gateway_jwt.go"
+flags_pairs="STRIP_AUTHZ:StripAuthz FWD_IDENTITY:FwdIdentity OVERSIZE:Oversize"
+flag_bad=""
+for pair in $flags_pairs; do
+  cname="${pair%%:*}"; goname="${pair##*:}"
+  cval="$(grep -ohE "AI_GW_(AUTHF|BEARERF)_$cname +0x[0-9a-f]+" "$C_DECL" | grep -oE '0x[0-9a-f]+' | head -1)"
+  gval="$(grep -ohE "ai(AuthFlag|BearerFlag)$goname += +0x[0-9a-f]+" "$JWT_GO" | grep -oE '0x[0-9a-f]+' | head -1)"
+  if [ -z "$cval" ] || [ -z "$gval" ] || [ "$cval" != "$gval" ]; then
+    flag_bad="$flag_bad $cname(C=$cval,Go=$gval)"
+  fi
+done
+if [ -n "$flag_bad" ]; then
+  fail "auth/bearer flag bits disagree between C defines and Go constants:$flag_bad"
+else
+  pass "auth/bearer flag bits are lockstep between C and Go"
+fi
+
 echo "==========================="
 if [ "$FAILED" = "0" ]; then echo "ALL INVARIANTS HOLD"; else echo "INVARIANTS VIOLATED"; fi
 exit "$FAILED"
