@@ -602,6 +602,7 @@ type ruleEnt struct {
 	inst                        string
 	secMode                     cmn.LBSec
 	ppv2En                      bool
+	sockMapMode                 uint8 // Directional sockmap accel: 0=off,1=both,2=request,3=response
 	egress                      bool
 	traceType                   string                  // Tracing catalog name for deep inspection
 	tracingCatalogID            uint16                  // Resolved catalog_id for tracing (0 = no tracing)
@@ -1194,6 +1195,7 @@ func (R *RuleH) GetLBRule() ([]cmn.LbRuleMod, error) {
 		ret.Serv.PathMatchMode = data.tuples.pathMatchMode // P6: Return path match mode in GET
 		ret.Serv.ModelName = data.tuples.modelName         // Return model name in GET
 		ret.Serv.ProxyProtocolV2 = data.ppv2En
+		ret.Serv.SockMapMode = cmn.SockMapCodeToMode(data.sockMapMode)
 		ret.Serv.Egress = data.egress
 		ret.Serv.TraceType = data.traceType                 // Tracing catalog
 		ret.Serv.BackendProtocol = data.backendProtocol     // Backend protocol capability
@@ -3791,6 +3793,17 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		return RuleUnknownServiceErr, errors.New("proxy-proto-v2 not tcp service error")
 	}
 
+	sockMapCode, sockMapOk := cmn.SockMapModeToCode(serv.SockMapMode)
+	if !sockMapOk {
+		return RuleArgsErr, errors.New("invalid sockMapMode (off|both|request|response)")
+	}
+	if sockMapCode != 0 {
+		if serv.Mode != cmn.LBModeFullProxy || serv.Proto != "tcp" ||
+			serv.Security != cmn.LBServPlain || !tk.IsNetIPv4(serv.ServIP) {
+			return RuleArgsErr, errors.New("sockmap-accel requires plaintext tcp fullproxy ipv4 service")
+		}
+	}
+
 	if serv.Proto == "tcp" {
 		ipProto = 6
 	} else if serv.Proto == "udp" {
@@ -3866,6 +3879,9 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		xNetAddr := net.IPv4(0, 0, 0, 0)
 		if pNetAddr == nil {
 			return RuleUnknownEpErr, errors.New("malformed-lbep error")
+		}
+		if sockMapCode != 0 && !tk.IsNetIPv4(k.EpIP) {
+			return RuleArgsErr, errors.New("sockmap-accel requires ipv4 endpoints")
 		}
 		if tk.IsNetIPv4(serv.ServIP) && tk.IsNetIPv6(k.EpIP) {
 			return RuleUnknownServiceErr, errors.New("malformed-service nat46 error")
@@ -4133,6 +4149,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 			eRule.hChk.prbReq != serv.ProbeReq || eRule.hChk.prbResp != serv.ProbeResp ||
 			eRule.pTO != serv.PersistTimeout || eRule.act.action.(*ruleLBActs).sel != lBActs.sel ||
 			eRule.act.action.(*ruleLBActs).mode != lBActs.mode ||
+			eRule.sockMapMode != sockMapCode ||
 			eRule.ppv2En != serv.ProxyProtocolV2 ||
 			eRule.hChk.actChk != serv.Monitor ||
 			len(allowedSources) != len(eRule.srcList) {
@@ -4300,6 +4317,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		eRule.hChk.actChk = serv.Monitor
 		eRule.pTO = serv.PersistTimeout
 		eRule.ppv2En = serv.ProxyProtocolV2
+		eRule.sockMapMode = sockMapCode
 		eRule.act.action.(*ruleLBActs).sel = lBActs.sel
 
 		// Update all extended mutable fields
@@ -4601,6 +4619,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	r.secIP = nSecIP
 	r.secMode = serv.Security
 	r.ppv2En = serv.ProxyProtocolV2
+	r.sockMapMode = sockMapCode
 	r.egress = serv.Egress
 	r.traceType = serv.TraceType // Tracing catalog
 
@@ -6505,6 +6524,7 @@ func (r *ruleEnt) LB2DP(work DpWorkT) int {
 	nWork.MTLSFrontend = r.mtlsFrontend  // mTLS frontend configuration
 	nWork.MTLSBackend = r.mtlsBackend    // mTLS backend configuration
 	nWork.Ppv2En = r.ppv2En
+	nWork.SockMapMode = r.sockMapMode
 	if r.secMode == cmn.LBServHTTPS {
 		nWork.SecMode = DpTermHTTPS
 	} else if r.secMode == cmn.LBServE2EHTTPS {

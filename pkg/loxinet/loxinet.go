@@ -536,7 +536,7 @@ func loxiNetInit() {
 	}
 
 	if !opts.Opts.BgpPeerMode {
-		if mh.lSockPolicy {
+		if mh.lSockPolicy || mh.sockMapEn {
 			RunCommand(MkMountCG2, false)
 		}
 

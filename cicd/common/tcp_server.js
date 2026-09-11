@@ -1,7 +1,14 @@
 var http = require('http');
 var port = 8080
+// Backend port selection (argv[3]):
+//   (none)                -> 8080  (default; used by nearly all cicd scenarios)
+//   non-numeric (e.g. "p") -> 2020  (legacy 2nd-port flag, kept for back-compat)
+//   numeric (e.g. "9090")  -> that explicit port (lets a scenario use a dedicated
+//                             backend port without colliding with another
+//                             scenario's 8080 in the same testbed)
 if (process.argv[3]) {
-  port = 2020
+  var explicitPort = parseInt(process.argv[3], 10)
+  port = Number.isInteger(explicitPort) ? explicitPort : 2020
 }
 http.createServer(function (req, res) {
   res.writeHead(200, {'Content-Type': 'text/html'});

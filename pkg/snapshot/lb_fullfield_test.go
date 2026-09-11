@@ -75,6 +75,7 @@ func fullFieldLbRule() cmn.LbRuleMod {
 			PathPrefix:        "/v1",
 			PathMatchMode:     "prefix",
 			ProxyProtocolV2:   true,
+			SockMapMode:       cmn.SockMapModeBoth,
 			Egress:            true,
 			Id:                "3c1f9df2-2f2e-4c3e-9d9b-2b6f6d1a0001",
 			AdminStateUp:      &adminUp,

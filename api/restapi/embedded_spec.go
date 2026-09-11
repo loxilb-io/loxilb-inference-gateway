@@ -4570,6 +4570,17 @@ func init() {
               "description": "SNAT rule indicator on domain readback. Implementation gap - this REST POST does not copy the property and PATCH does not overlay it, so setting it here does not create a SNAT rule.",
               "type": "boolean"
             },
+            "sockMapMode": {
+              "default": "off",
+              "description": "directional sockmap acceleration for this FullProxy service - off (default), both, request (client-\u003ebackend only), response (backend-\u003eclient only). Requires a plaintext tcp fullproxy ipv4 service with ipv4 endpoints, and the daemon started with --sockmapsupport.",
+              "enum": [
+                "off",
+                "both",
+                "request",
+                "response"
+              ],
+              "type": "string"
+            },
             "sse_mode": {
               "default": false,
               "description": "Enable detection of text/event-stream responses and the associated streaming idle-timeout protection. This flag controls Gateway SSE handling, not whether the backend implements an OpenAI API. Active detected streams remain subject to max_stream_duration_sec and the system stream cap; enabling SSE does not make them unbounded.",
@@ -35622,6 +35633,17 @@ func init() {
               "description": "SNAT rule indicator on domain readback. Implementation gap - this REST POST does not copy the property and PATCH does not overlay it, so setting it here does not create a SNAT rule.",
               "type": "boolean"
             },
+            "sockMapMode": {
+              "description": "directional sockmap acceleration for this FullProxy service - off (default), both, request (client-\u003ebackend only), response (backend-\u003eclient only). Requires a plaintext tcp fullproxy ipv4 service with ipv4 endpoints, and the daemon started with --sockmapsupport.",
+              "type": "string",
+              "default": "off",
+              "enum": [
+                "off",
+                "both",
+                "request",
+                "response"
+              ]
+            },
             "sse_mode": {
               "description": "Enable detection of text/event-stream responses and the associated streaming idle-timeout protection. This flag controls Gateway SSE handling, not whether the backend implements an OpenAI API. Active detected streams remain subject to max_stream_duration_sec and the system stream cap; enabling SSE does not make them unbounded.",
               "type": "boolean",
@@ -36302,6 +36324,17 @@ func init() {
         "snat": {
           "description": "SNAT rule indicator on domain readback. Implementation gap - this REST POST does not copy the property and PATCH does not overlay it, so setting it here does not create a SNAT rule.",
           "type": "boolean"
+        },
+        "sockMapMode": {
+          "description": "directional sockmap acceleration for this FullProxy service - off (default), both, request (client-\u003ebackend only), response (backend-\u003eclient only). Requires a plaintext tcp fullproxy ipv4 service with ipv4 endpoints, and the daemon started with --sockmapsupport.",
+          "type": "string",
+          "default": "off",
+          "enum": [
+            "off",
+            "both",
+            "request",
+            "response"
+          ]
         },
         "sse_mode": {
           "description": "Enable detection of text/event-stream responses and the associated streaming idle-timeout protection. This flag controls Gateway SSE handling, not whether the backend implements an OpenAI API. Active detected streams remain subject to max_stream_duration_sec and the system stream cap; enabling SSE does not make them unbounded.",
