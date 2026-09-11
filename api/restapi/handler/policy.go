@@ -102,6 +102,10 @@ func ConfigGetPolicy(params operations.GetConfigPolicyAllParams, principal inter
 		var tmpTarget models.PolicyEntryTargetObject
 		// ID match
 		tmpPol.PolicyIdent = &policy.Ident
+		// Attachment state (read-only): whether the policer is actually
+		// programmed in the datapath or still pending re-drive
+		attached := policy.Attached
+		tmpPol.Attached = &attached
 		// Info match
 		tmpInfo.ColorAware = policy.Info.ColorAware
 		tmpInfo.CommittedBlkSize = int64(policy.Info.CommittedBlkSize)
