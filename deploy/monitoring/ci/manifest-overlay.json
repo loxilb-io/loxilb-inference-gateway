@@ -509,7 +509,7 @@
   "burndown": {
    "unverified_max": 83,
    "unclassified_max": 0,
-   "_note": "178 packaged families, all classified: 10 verified-runtime (the QoS shaper group measured in the plan's B.5b, plus ai_pd_session_hits and ai_pd_tier_selected both verified 2026-09-11), 12 verified-static (loxilb_policer_attached added 2026-09-11), 73 conditional-with-proven-writer, 83 writer-mapped. unclassified_max is done at 0; unverified_max is the remaining work and comes down as scenarios M00-M17 produce evidence. Never raise either."
+   "_note": "178 packaged families, all classified: 12 verified-runtime (the QoS shaper group measured in the plan's B.5b, plus ai_pd_session_hits, ai_pd_tier_selected and the two API-key denial counters all verified 2026-09-11), 12 verified-static (loxilb_policer_attached added 2026-09-11), 71 conditional-with-proven-writer, 83 writer-mapped. unclassified_max is done at 0; unverified_max is the remaining work and comes down as scenarios M00-M17 produce evidence. Never raise either."
   },
   "unverifiable_roots": [
    "loxilb-ebpf/"
@@ -661,7 +661,7 @@
     "evidence": "metric coverage RCA and plan, section 0.3.1 -- source re-verification 2026-09-10"
    },
    "loxilb_ai_rate_limit_hits_total": {
-    "status": "conditional-with-proven-writer",
+    "status": "verified-runtime",
     "activation_precondition": "an API-key store (--aikey-db-* flags) plus --api-key-auth=required on the LB rule, and a key whose rps/burst is actually exceeded. With no key store no request carries a tenant, so the denial can never fire.",
     "writer_sources": [
      { "symbol": "RecordRateLimitHit", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 396, "writes": "aiRateLimitHitsTotal" },
@@ -670,10 +670,10 @@
     "native_callers": [
      "loxilb-ebpf/common/sockproxy_http.c:6412"
     ],
-    "evidence": "metric coverage RCA and plan, section A.3 -- weak-stub tripwire never logged on the running gateway, so the strong Go CGO exports are the bound symbols"
+    "evidence": "metric coverage RCA and plan, E.5 row wp1-aikey-20260911 (M03 topology, key rps=2 burst=2): 20 requests in 0.40 s from inside the client netns -> 18x429 + 2x200 (accepted == burst exactly, zero refill at that speed), counter delta 18 == denial count EXACT, series reason=rate_limit_exceeded; independent replication on a second tenant 15x429 == delta 15 (accepted 5 == burst 2 + 2/s refill over 1.83 s); red twin 20 requests under 2 rps -> 0 denials, delta 0. Client-ledger caveat: parallel docker-exec clients abort before reading denial responses -- the burst generator must run inside the client netns in one exec"
    },
    "loxilb_ai_model_not_allowed_total": {
-    "status": "conditional-with-proven-writer",
+    "status": "verified-runtime",
     "activation_precondition": "an API-key store plus --api-key-auth=required on the LB rule, and a request naming a model outside the key's --allowed-models list (decision == 2, HTTP 403).",
     "writer_sources": [
      { "symbol": "RecordModelNotAllowed", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 406, "writes": "aiModelNotAllowedTotal" },
@@ -682,7 +682,7 @@
     "native_callers": [
      "loxilb-ebpf/common/sockproxy_http.c:6343"
     ],
-    "evidence": "metric coverage RCA and plan, section A.3 -- CGO call-site table, verified against ai_gateway_dp.go at 4d1f8a24"
+    "evidence": "metric coverage RCA and plan, E.5 row wp1-aikey-20260911 (M03 topology, key allowed_models=[other-model]): 10 requests naming the pinned served model -> 10x403 == counter delta 10 EXACT, label model=Qwen_Qwen3-0.6B (slash sanitized per the bounded model-label contract) tenant=t-model; red twin 10 requests naming the allowed model -> delta 0 (requests proceeded past key validation). Denial answered before any backend connect"
    },
    "loxilb_ai_tokens_consumed_total": {
     "status": "conditional-with-proven-writer",
