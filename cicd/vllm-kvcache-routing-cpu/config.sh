@@ -85,6 +85,18 @@ export KV_MODEL
 KV_MAX_BLOCKS="${KV_MAX_BLOCKS:-1000}"
 export KV_MAX_BLOCKS
 
+# ── API-key store opt-in (MON_AIKEY=1) ───────────────────────────────────────────────────────────────
+# MON_AIKEY=1 additionally stands up the PostgreSQL-backed key/mgmt stores (the exact recipe
+# proven in cicd/ai-apikey/config.sh) and re-spawns llb1 with --userservice plus the two
+# --*-db-* flag sets, then seeds the P/D rule with api_key_auth=required. This is the
+# configuration in which the API-key denial and quota accounting paths can be driven at all —
+# without a store the control plane answers 503 ai_key_store_unconfigured. Off by default:
+# MON_AIKEY unset leaves this scenario byte-for-byte identical to before.
+# NOTE: with --userservice on, config REST requires a JWT — this script obtains one below and
+# drives the seed POST with it, but validation.sh (unauthenticated REST + keyless VIP probes)
+# is NOT expected to pass in this mode; MON_AIKEY exists for controlled monitoring drives.
+MON_AIKEY="${MON_AIKEY:-0}"
+
 echo "#########################################"
 echo "Building the reflect-echo backend image (ghcr.io/loxilb-io/reflect-echo:latest)"
 echo "#########################################"
@@ -93,6 +105,63 @@ echo "#########################################"
 # Without this the 6 reflect-echo EP containers fail silently and the VIP has no backends (every
 # routing probe then returns an empty banner). Idempotent: docker build re-uses layers.
 "$(dirname "$0")/../common/reflect-echo/docker-build.sh"
+
+# ── MON_AIKEY: PostgreSQL + store flags, prepared BEFORE llb1 spawns ────────────────────────────────
+# The store flags are start-up arguments, so everything the gateway needs (a ready PostgreSQL,
+# the bootstrapped roles/schemas, and the password files mounted at /etc/loxilb/) must exist
+# before spawn_docker_host runs. Secrets arrive as mounted files via pick_config=yes — the
+# deployment shape — never as command-line arguments.
+AIKEY_EXTRA_ARGS=""
+if [[ "$MON_AIKEY" == "1" ]]; then
+    PG_NAME=pg-ai
+    PG_OWNER=oamuser
+    PG_OWNER_PW=oampass
+    PG_DB=loxilb
+    DP_PW=dp-secret-1
+    MGMT_PW=mgmt-secret-1
+
+    echo "#########################################"
+    echo "MON_AIKEY=1: spawning PostgreSQL for the key/mgmt stores"
+    echo "#########################################"
+    docker rm -f "$PG_NAME" >/dev/null 2>&1
+    docker run --rm -d --name "$PG_NAME" \
+      -e POSTGRES_USER="$PG_OWNER" \
+      -e POSTGRES_PASSWORD="$PG_OWNER_PW" \
+      -e POSTGRES_DB="$PG_DB" \
+      postgres:18.6 >/dev/null
+
+    # Over TCP, not the unix socket: pg_isready answers on the socket before the
+    # server is listening on a port the gateway can reach.
+    for i in $(seq 1 60); do
+      if docker exec "$PG_NAME" pg_isready -h 127.0.0.1 -U "$PG_OWNER" -d "$PG_DB" >/dev/null 2>&1; then
+        echo "PostgreSQL ready (${i}s)"
+        break
+      fi
+      sleep 1
+    done
+    docker exec "$PG_NAME" pg_isready -h 127.0.0.1 -U "$PG_OWNER" -d "$PG_DB" >/dev/null || {
+      echo "PostgreSQL did not come up"; exit 1; }
+
+    docker cp ../../scripts/aigw-db-bootstrap.sql "$PG_NAME:/tmp/aigw-db-bootstrap.sql"
+    docker exec -e AIGW_DB_PASSWORD="$DP_PW" -e AIGW_MGMT_DB_PASSWORD="$MGMT_PW" \
+      "$PG_NAME" psql -h 127.0.0.1 -U "$PG_OWNER" -d "$PG_DB" -q -f /tmp/aigw-db-bootstrap.sql || {
+      echo "bootstrap script failed"; exit 1; }
+
+    PG_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$PG_NAME")
+    echo "PostgreSQL IP: $PG_IP"
+
+    # pick_config=yes mounts $(pwd)/llb1_config as /etc/loxilb/ inside the container.
+    pick_config=yes
+    mkdir -p llb1_config
+    echo "$MGMT_PW" > llb1_config/mgmt_db_password
+    echo "$DP_PW"   > llb1_config/aikey_password
+
+    AIKEY_EXTRA_ARGS="--userservice \
+      --mgmt-db-host $PG_IP --mgmt-db-port 5432 --mgmt-db-user aigw_mgmt_user \
+      --mgmt-db-name $PG_DB --mgmt-db-password-file /etc/loxilb/mgmt_db_password \
+      --aikey-db-host $PG_IP --aikey-db-port 5432 --aikey-db-user aigwuser \
+      --aikey-db-name $PG_DB --aikey-db-password-file /etc/loxilb/aikey_password"
+fi
 
 echo "#########################################"
 echo "Spawning all hosts (6 EPs = 3 prefill + 3 decode, non-adjacent prefill indices)"
@@ -115,7 +184,9 @@ echo "#########################################"
 # these lines for the per-stage tokenize/hash/CGO breakdown on BOTH the hit and miss paths.
 # The always-on per-stage histogram (record_kv_stage atomic add) runs regardless; this flag
 # only turns ON the optional log surface so the CPU-rig A/B can attribute per stage.
-spawn_docker_host --dock-type loxilb --dock-name llb1 --docker-args "-e LLB_KV_NONE_HASH_SEED=0 -e LOXILB_KV_MAX_BLOCKS=${KV_MAX_BLOCKS} -e LLB_KV_HASH_DEBUG=1"
+# MON_AIKEY=1 adds the store/userservice start-up flags via --extra-args (empty otherwise —
+# spawn_docker_host treats an empty --extra-args as no extra loxilb arguments).
+spawn_docker_host --dock-type loxilb --dock-name llb1 --docker-args "-e LLB_KV_NONE_HASH_SEED=0 -e LOXILB_KV_MAX_BLOCKS=${KV_MAX_BLOCKS} -e LLB_KV_HASH_DEBUG=1" --extra-args "${AIKEY_EXTRA_ARGS}"
 spawn_docker_host --dock-type host   --dock-name l3h1
 # reflect-echo backends — HTTP echo whose body's leading line is "X-Echo-Backend: <ECHO_NAME>"
 # (curl-probed via client_get; the validation grep reads serverP*/serverD* from that body).
@@ -126,6 +197,10 @@ spawn_docker_host --dock-type reflect-echo --dock-name l3ep3 --docker-args "-e E
 spawn_docker_host --dock-type reflect-echo --dock-name l3ep4 --docker-args "-e ECHO_NAME=serverD1"
 spawn_docker_host --dock-type reflect-echo --dock-name l3ep5 --docker-args "-e ECHO_NAME=serverP2"
 spawn_docker_host --dock-type reflect-echo --dock-name l3ep6 --docker-args "-e ECHO_NAME=serverD2"
+
+# Reset pick_config so config_docker_host does NOT skip llb1's IP assignment below
+# (the /etc/loxilb/ volume mount already happened during spawn_docker_host).
+pick_config=""
 
 echo "#########################################"
 echo "Connecting and configuring hosts"
@@ -183,10 +258,47 @@ echo "Waiting for loxilb REST API (localhost:11111) to be ready..."
 api_ready=0
 for _ in $(seq 1 40); do
     rc=$($hexec llb1 curl -s -m 3 -o /dev/null -w "%{http_code}" "${LBBASE}/all" 2>/dev/null)
-    if [[ "$rc" == "200" ]]; then api_ready=1; echo "  loxilb REST API ready"; break; fi
+    # Under MON_AIKEY (--userservice) an unauthenticated GET answers 401 — that IS the
+    # listener up with auth enforced, which is this poll's readiness signal in that mode.
+    if [[ "$rc" == "200" ]] || { [[ "$MON_AIKEY" == "1" ]] && [[ "$rc" == "401" ]]; }; then
+        api_ready=1; echo "  loxilb REST API ready (HTTP ${rc})"; break
+    fi
     sleep 1
 done
 [[ "$api_ready" == 1 ]] || echo "  WARN: loxilb REST API not ready after 40s — seeding anyway"
+
+# ── MON_AIKEY: settle the boot-config freeze window, then obtain the admin JWT ──────────────────────
+# The REST listener answers before the boot config replay settles; until it does, the freeze
+# middleware (which runs BEFORE auth) 503s every mutation — a fast runner's first write below
+# would land inside that window and read as a phantom product failure. Probe the freeze with a
+# write that can never apply (empty body fails validation, so nothing is created).
+AUTH_ARGS=()
+if [[ "$MON_AIKEY" == "1" ]]; then
+    for i in $(seq 1 40); do
+      if ! $hexec llb1 curl -s -m 3 -X POST "${LBBASE}" -H 'Content-Type: application/json' -d '{}' | grep -qE 'boot config replay settles|frozen while a snapshot restore is in progress'; then
+        echo "  boot config settled (${i})"; break
+      fi
+      if [ "$i" -eq 40 ]; then
+        echo "  FATAL: boot config replay never settled"; exit 1
+      fi
+      sleep 2
+    done
+
+    echo "Creating admin user and authenticating (MON_AIKEY userservice plane)..."
+    # POST /auth/users has security: [] — no auth required for the first admin.
+    $hexec llb1 curl -s -X POST http://localhost:11111/netlox/v1/auth/users \
+      -H "Content-Type: application/json" \
+      -d '{"username":"admin","password":"Admin123!","role":"admin"}' >/dev/null
+    LOGIN_RESP=$($hexec llb1 curl -s -X POST http://localhost:11111/netlox/v1/auth/login \
+      -H "Content-Type: application/json" \
+      -d '{"username":"admin","password":"Admin123!"}')
+    TOKEN=$(echo "$LOGIN_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))" 2>/dev/null)
+    if [[ -z "$TOKEN" ]]; then
+        echo "  FATAL: could not obtain admin JWT (login answered: ${LOGIN_RESP})"; exit 1
+    fi
+    echo "  admin JWT obtained: ${TOKEN:0:16}..."
+    AUTH_ARGS=(-H "Authorization: Bearer ${TOKEN}")
+fi
 
 # ── Feature-enable POST — the EXACT kv_* field set from deploy-kvcache.sh:119-143 ────────────────────
 # One P/D fullproxy service (mode=4, pd_disagg_mode) over the 6 EPs. Prefill EPs (31/33/35) carry
@@ -195,6 +307,12 @@ done
 # template with the IPs/ports interpolated as quoted shell vars only (no unsanitized input).
 VIP="10.10.10.254"
 VPORT=8080
+# MON_AIKEY seeds the rule with per-service key enforcement declared — enforcement is a
+# per-rule policy, and the WP the store exists for asserts key DENIALS, so the rule says so.
+AIKEY_RULE_FIELD=""
+if [[ "$MON_AIKEY" == "1" ]]; then
+    AIKEY_RULE_FIELD='"api_key_auth": "required",'
+fi
 read -r -d '' SEED_KVRULE <<JSON
 {
   "serviceArguments": {
@@ -205,6 +323,7 @@ read -r -d '' SEED_KVRULE <<JSON
     "mode": 4,
     "host": "${VIP}",
     "model_name": "${KV_MODEL}",
+    ${AIKEY_RULE_FIELD}
     "pd_disagg_mode": true,
     "probeRetries": 1,
     "kvExactMode": 1,
@@ -226,13 +345,20 @@ JSON
 
 # config path: drive the inference-gateway loxicmd as the load-bearing config
 # path when present (subject-under-test); fall back to raw REST for old/absent CLI.
-cli_preflight llb1 && USE_CLI=1 || USE_CLI=0
+# Under MON_AIKEY the CLI path is skipped: it carries no bearer token, and with
+# --userservice on the config plane the write would answer 401 — REST with the
+# admin JWT is the load-bearing path in that mode.
+if [[ "$MON_AIKEY" == "1" ]]; then
+  USE_CLI=0
+else
+  cli_preflight llb1 && USE_CLI=1 || USE_CLI=0
+fi
 echo "Seeding KV-exact P/D service ${VIP}:${VPORT} (kvExactMode=1, 3 prefill + 3 decode)..."
 if [[ "$USE_CLI" == "1" ]]; then
   create_lb_rule llb1 "${VIP}" --tcp=${VPORT}:80 --mode=fullproxy --host="${VIP}" --model-name="${KV_MODEL}" --pd-disagg --proberetries=1 --kv-exact-mode=1 --kv-zmq-port=${KV_ZMQ_PORT} --kv-hash-algo=${KV_HASH_ALGO} --kv-warmup=${KV_WARMUP_SEC} --kv-block-size=${KV_BLOCK_SIZE} --endpoints=31.31.31.1:1,32.32.32.1:1,33.33.33.1:1,34.34.34.1:1,35.35.35.1:1,36.36.36.1:1 --ep-role=prefill,decode,prefill,decode,prefill,decode
 else
 $hexec llb1 curl -s -o /dev/null -w "  POST /config/loadbalancer (KV-exact rule) -> HTTP %{http_code}\n" \
-    -X POST "${LBBASE}" -H 'Content-Type: application/json' -d "${SEED_KVRULE}"
+    -X POST "${LBBASE}" -H 'Content-Type: application/json' ${AUTH_ARGS[@]+"${AUTH_ARGS[@]}"} -d "${SEED_KVRULE}"
 fi
 
 sleep 3
@@ -337,4 +463,8 @@ echo "Topology up: KV-exact P/D VIP ${VIP}:${VPORT} -> 3 prefill {serverP0,serve
 echo "             + 3 decode {serverD0,serverD1,serverD2} (idx 1/3/5)"
 echo "             tokenizer ${TOKENIZER_SLUG} staged on llb1; publisher tag=${PUB_TAG} on :${KV_ZMQ_PORT}"
 echo "             feature: kvExactMode=1 kvHashAlgo=${KV_HASH_ALGO} kvWarmupSec=${KV_WARMUP_SEC} kvBlockSize=${KV_BLOCK_SIZE}"
+if [[ "$MON_AIKEY" == "1" ]]; then
+echo "             MON_AIKEY=1: PostgreSQL key/mgmt stores up (pg-ai), --userservice on,"
+echo "             rule seeded api_key_auth=required — config REST needs the admin JWT"
+fi
 echo "#########################################"

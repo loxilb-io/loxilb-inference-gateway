@@ -43,6 +43,12 @@ delete_docker_host l3ep6
 rm -f "$(dirname "$0")"/.kvpub-*.json "$(dirname "$0")"/.kvpub-baseline.log \
       "$(dirname "$0")"/.corpus-longctx.json "$(dirname "$0")"/.longctx-* >/dev/null 2>&1 || true
 
+# MON_AIKEY leftovers (no-ops when the opt-in never ran): the PostgreSQL container
+# (--rm, so removal also deletes it) and the mounted config dir holding the two
+# store password files + any tokenizer fixtures docker-cp'd through the bind mount.
+docker rm -f pg-ai >/dev/null 2>&1 || true
+rm -rf "$(dirname "$0")/llb1_config" >/dev/null 2>&1 || true
+
 echo "#########################################"
 echo "Deleted vllm-kvcache-routing-cpu testbed (6 EPs + client + llb1; publisher tag=${PUB_TAG} killed)"
 echo "#########################################"
