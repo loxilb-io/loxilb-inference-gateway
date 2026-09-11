@@ -371,6 +371,7 @@
    "loxilb_ai_kv_enforcement_fault",
    "loxilb_ai_kv_trtllm_drain_ownership_fault_total",
    "loxilb_ai_kv_trtllm_drain_ownership_heal_total",
+   "loxilb_ai_pd_tier_selected_total",
    "loxilb_autopersist_consecutive_failures",
    "loxilb_backend_traffic_bytes_total",
    "loxilb_backend_traffic_connections_total",
