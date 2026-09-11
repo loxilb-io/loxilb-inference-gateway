@@ -250,3 +250,108 @@ func TestLookupPath(t *testing.T) {
 		}
 	}
 }
+
+// TestMapClaimsRejectsUnsafeIdentity covers the header-injection path. The
+// gateway splices the mapped tenant and user into upstream request headers
+// (X-Auth-Tenant / X-Auth-User) with a plain "name: value\r\n" write and no
+// escaping, so a claim carrying CR or LF does not travel as a value — it
+// ends the header and starts another one, inside a request the backend
+// trusts precisely because the gateway built it.
+//
+// A signature does not make a claim safe. It proves the IdP minted it, and
+// IdPs mint what their user directories hold: tenant attributes filled by
+// self-service registration or directory sync, and user claims often mapped
+// to an address the account owner chooses. The identity must therefore be
+// rejected here, before it can reach a header, a log line, or a metric
+// label.
+func TestMapClaimsRejectsUnsafeIdentity(t *testing.T) {
+	cases := []struct {
+		name   string
+		mutate func(*Profile)
+		claims map[string]any
+	}{
+		{
+			name:   "CRLF in tenant splices a second header",
+			claims: map[string]any{"tenant_id": "acme\r\nX-Auth-User: admin", "sub": "u1"},
+		},
+		{
+			name:   "bare LF in tenant",
+			claims: map[string]any{"tenant_id": "acme\nX-Api-Key: stolen", "sub": "u1"},
+		},
+		{
+			name:   "bare CR in tenant",
+			claims: map[string]any{"tenant_id": "acme\rX-Api-Key: stolen", "sub": "u1"},
+		},
+		{
+			name:   "NUL truncates the value in the C copy",
+			claims: map[string]any{"tenant_id": "acme\x00evil", "sub": "u1"},
+		},
+		{
+			name:   "CRLF in the user claim",
+			claims: map[string]any{"tenant_id": "acme", "sub": "u1\r\nX-Auth-Tenant: other"},
+		},
+		{
+			name:   "CRLF in the display username reaches log lines",
+			claims: map[string]any{"tenant_id": "acme", "sub": "u1", "preferred_username": "bob\r\nfake log entry"},
+		},
+		{
+			name:   "DEL and other C0 controls",
+			claims: map[string]any{"tenant_id": "acme\x7f\x01", "sub": "u1"},
+		},
+		{
+			// The tenant arrives from the profile rather than the token,
+			// but it lands in the same header, so it cannot be exempt.
+			name:   "unsafe default tenant",
+			mutate: func(p *Profile) { p.DefaultTenant = "acme\r\nX-Auth-User: admin" },
+			claims: map[string]any{"sub": "u1"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := mapClaims(mapperProfile(tc.mutate), tc.claims)
+			if err == nil {
+				t.Fatal("unsafe identity accepted — it would be spliced into an upstream header verbatim")
+			}
+			verdict(t, err, DecisionDeny401, CodeInvalidToken, ReasonUnsafeIdentity)
+		})
+	}
+}
+
+// TestMapClaimsRejectsOversizeIdentity covers silent truncation. The data
+// plane copies identity into fixed 128-byte buffers with strncpy, keeping
+// 127 bytes and dropping the rest without a word. Two tenants sharing a
+// long prefix therefore become ONE identity downstream: the same quota
+// bucket, the same X-Auth-Tenant at the backend, the same metric label.
+// An identity that cannot be carried whole must be refused, not shortened
+// into somebody else's.
+func TestMapClaimsRejectsOversizeIdentity(t *testing.T) {
+	long := make([]byte, identityMaxBytes+1)
+	for i := range long {
+		long[i] = 'a'
+	}
+	atLimit := string(long[:identityMaxBytes])
+	overLimit := string(long)
+
+	if _, err := mapClaims(mapperProfile(nil), map[string]any{
+		"tenant_id": atLimit, "sub": "u1",
+	}); err != nil {
+		t.Fatalf("identity at the limit rejected: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name   string
+		claims map[string]any
+	}{
+		{"tenant over the limit", map[string]any{"tenant_id": overLimit, "sub": "u1"}},
+		{"user over the limit", map[string]any{"tenant_id": "acme", "sub": overLimit}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := mapClaims(mapperProfile(nil), tc.claims)
+			if err == nil {
+				t.Fatal("oversize identity accepted — the data plane would truncate it to 127 bytes " +
+					"and alias it onto every identity sharing that prefix")
+			}
+			verdict(t, err, DecisionDeny401, CodeInvalidToken, ReasonUnsafeIdentity)
+		})
+	}
+}

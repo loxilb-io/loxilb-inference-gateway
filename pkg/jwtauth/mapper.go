@@ -45,6 +45,45 @@ type Claims struct {
 	AllowAllModels bool
 }
 
+// identityMaxBytes is the longest identity the data plane can carry whole.
+// It mirrors the 128-byte tenant_id/user_id buffers in the admission ABI
+// (loxilb-ebpf common/sockproxy_ai_admit.h), which are filled with strncpy
+// and so keep 127 bytes plus a terminator. Anything longer is not shortened
+// downstream, it is SILENTLY shortened: two identities sharing a 127-byte
+// prefix arrive as one, sharing a quota bucket, an X-Auth-* value and a
+// metric label. Refusing here keeps that from being expressible.
+const identityMaxBytes = 127
+
+// safeIdentity reports whether a mapped identity can be carried without
+// changing the meaning of anything that carries it.
+//
+// The gateway splices tenant and user into upstream request headers with a
+// plain "name: value\r\n" write and no escaping, so a CR or LF in the value
+// does not travel as data — it terminates the header and begins another one
+// inside a request the backend trusts precisely because the gateway built
+// it. The same string is also written to log lines and carried as a metric
+// label. A signature does not make a claim safe: it proves the IdP minted
+// the token, and IdPs mint what their directories hold, including tenant
+// attributes filled by self-service registration and user claims mapped to
+// an address the account owner picks.
+//
+// C0 controls and DEL are refused outright rather than escaped: no
+// legitimate tenant or user identity contains one, and an identity that
+// cannot be represented safely is better refused than rewritten into an
+// identity nobody chose. Bytes above 0x7E are left alone so non-ASCII
+// identities keep working.
+func safeIdentity(s string) bool {
+	if len(s) > identityMaxBytes {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 || s[i] == 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
 // Authorize checks a model name against the token-derived accept-list,
 // with the same exact-string matching the API-key arm applies to its
 // AllowedModels (pkg/loxinet/ai_gateway_dp.go). A non-nil error is a
@@ -96,6 +135,23 @@ func mapClaims(p *Profile, claims map[string]any) (*Claims, error) {
 	}
 	if v, ok := lookupPath(claims, p.RolesClaim); ok {
 		out.Roles = stringSlice(v)
+	}
+
+	// Every identity that leaves this function reaches a header, a log line
+	// or a metric label, so it is checked before any of them can be built.
+	// The default tenant is checked with the rest: it lands in the same
+	// header, and being operator-supplied makes it a configuration mistake
+	// rather than an attack, not a safe value.
+	for _, id := range []struct{ what, value string }{
+		{"tenant", out.Tenant},
+		{"user", out.User},
+		{"username", out.Username},
+	} {
+		if !safeIdentity(id.value) {
+			return nil, deny401(ReasonUnsafeIdentity,
+				fmt.Sprintf("%s identity is not safe to carry (%d bytes, control characters not allowed)",
+					id.what, len(id.value)))
+		}
 	}
 
 	// Model authorization, in order of authority:

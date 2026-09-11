@@ -45,18 +45,19 @@ const (
 // Metric-grade reasons for JWT validation outcomes. A closed set: metric
 // label values must stay bounded.
 const (
-	ReasonOK           = "ok"
-	ReasonMissing      = "missing"
-	ReasonMalformed    = "malformed"
-	ReasonOversize     = "oversize"
-	ReasonBadSignature = "bad_signature"
-	ReasonUnknownKid   = "unknown_kid"
-	ReasonExpired      = "expired"
-	ReasonBadIssuer    = "bad_issuer"
-	ReasonBadAudience  = "bad_audience"
-	ReasonNoTenant     = "no_tenant"
-	ReasonModelDenied  = "model_denied"
-	ReasonNoKeyset     = "no_keyset"
+	ReasonOK             = "ok"
+	ReasonMissing        = "missing"
+	ReasonMalformed      = "malformed"
+	ReasonOversize       = "oversize"
+	ReasonBadSignature   = "bad_signature"
+	ReasonUnknownKid     = "unknown_kid"
+	ReasonExpired        = "expired"
+	ReasonBadIssuer      = "bad_issuer"
+	ReasonBadAudience    = "bad_audience"
+	ReasonNoTenant       = "no_tenant"
+	ReasonUnsafeIdentity = "unsafe_identity"
+	ReasonModelDenied    = "model_denied"
+	ReasonNoKeyset       = "no_keyset"
 )
 
 // VerdictError is a verification failure carrying its decision-ladder arm.

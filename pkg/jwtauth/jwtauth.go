@@ -208,6 +208,15 @@ func (p Profile) validate() error {
 	default:
 		return fmt.Errorf("jwtauth: profile %s: unknown model_authz %q", p.Name, p.ModelAuthz)
 	}
+	// The default tenant is forwarded upstream in a header exactly like a
+	// token-derived one, so it is held to the same rule (safeIdentity). The
+	// mapper refuses it too, but only once a request arrives: catching it
+	// here turns a profile that would refuse every untenanted token into a
+	// configuration error the operator sees while typing it.
+	if !safeIdentity(p.DefaultTenant) {
+		return fmt.Errorf("jwtauth: profile %s: default_tenant is not safe to carry "+
+			"(max %d bytes, control characters not allowed)", p.Name, identityMaxBytes)
+	}
 	return nil
 }
 
