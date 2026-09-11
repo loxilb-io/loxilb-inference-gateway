@@ -1178,7 +1178,7 @@
           "id": 31,
           "type": "timeseries",
           "title": "Shaped throughput by service and direction",
-          "description": "Payload bytes the Tier-1 shaper granted, per shaped service and direction, with the configured CIR as a dashed reference. These are PLAINTEXT payload bytes measured inside the relay \u2014 never comparable with the eBPF policer's L3 wire-byte counters.",
+          "description": "Payload bytes the Tier-1 shaper granted, per shaped service and direction, with the configured CIR as a dashed reference. These are PLAINTEXT payload bytes measured inside the relay \u2014 never comparable with the eBPF policer's L3 wire-byte counters. Series for a shaped service exist only while its QoS policy is attached: deleting the policy removes them (this panel then shows 'No QoS policy active', which is normal, not a shaper fault), and re-creating it restarts the counters from zero.",
           "gridPos": {
             "h": 8,
             "w": 12,
@@ -1213,7 +1213,7 @@
           "fieldConfig": {
             "defaults": {
               "unit": "Bps",
-              "noValue": "No data"
+              "noValue": "No QoS policy active"
             },
             "overrides": [
               {
@@ -1245,7 +1245,7 @@
           "id": 32,
           "type": "timeseries",
           "title": "Bucket saturation (delayed / passed)",
-          "description": "Share of granted bytes that had to wait through at least one park. This is a SATURATION signal, not a throttled fraction: once the bucket is empty essentially every read follows a park, so a service pinned at its CIR sits near 100%. Use parks/s and mean park below to size the delay.",
+          "description": "Share of granted bytes that had to wait through at least one park. This is a SATURATION signal, not a throttled fraction: once the bucket is empty essentially every read follows a park, so a service pinned at its CIR sits near 100%. Use parks/s and mean park below to size the delay. Series for a shaped service exist only while its QoS policy is attached: deleting the policy removes them (this panel then shows 'No QoS policy active', which is normal, not a shaper fault), and re-creating it restarts the counters from zero.",
           "gridPos": {
             "h": 8,
             "w": 12,
@@ -1275,7 +1275,7 @@
           "fieldConfig": {
             "defaults": {
               "unit": "percentunit",
-              "noValue": "No data"
+              "noValue": "No QoS policy active"
             },
             "overrides": []
           }
@@ -1284,7 +1284,7 @@
           "id": 33,
           "type": "timeseries",
           "title": "Parks/s",
-          "description": "Rate at which the shaper parked a reader because its bucket was empty. Rises with offered load above the CIR; zero while a shaped service stays under its rate.",
+          "description": "Rate at which the shaper parked a reader because its bucket was empty. Rises with offered load above the CIR; zero while a shaped service stays under its rate. Series for a shaped service exist only while its QoS policy is attached: deleting the policy removes them (this panel then shows 'No QoS policy active', which is normal, not a shaper fault), and re-creating it restarts the counters from zero.",
           "gridPos": {
             "h": 8,
             "w": 12,
@@ -1314,7 +1314,7 @@
           "fieldConfig": {
             "defaults": {
               "unit": "short",
-              "noValue": "No data",
+              "noValue": "No QoS policy active",
               "custom": {
                 "axisLabel": "parks/s"
               }
@@ -1326,7 +1326,7 @@
           "id": 34,
           "type": "timeseries",
           "title": "Mean park duration",
-          "description": "park_seconds / parks over the interval \u2014 how long a throttled reader waits per park. Parks that never resumed (connection torn down while throttled) are not counted, so this measures served delay.",
+          "description": "park_seconds / parks over the interval \u2014 how long a throttled reader waits per park. Parks that never resumed (connection torn down while throttled) are not counted, so this measures served delay. Series for a shaped service exist only while its QoS policy is attached: deleting the policy removes them (this panel then shows 'No QoS policy active', which is normal, not a shaper fault), and re-creating it restarts the counters from zero.",
           "gridPos": {
             "h": 8,
             "w": 12,
@@ -1356,7 +1356,7 @@
           "fieldConfig": {
             "defaults": {
               "unit": "s",
-              "noValue": "No data"
+              "noValue": "No QoS policy active"
             },
             "overrides": []
           }
@@ -1365,7 +1365,7 @@
           "id": 35,
           "type": "timeseries",
           "title": "Readers parked now",
-          "description": "Connections the shaper is holding at this instant (bucket park-ring depth). A ring that stays near its 256-entry cap means throttled connections are queueing faster than refills release them.",
+          "description": "Connections the shaper is holding at this instant (bucket park-ring depth). A ring that stays near its 256-entry cap means throttled connections are queueing faster than refills release them. Series for a shaped service exist only while its QoS policy is attached: deleting the policy removes them (this panel then shows 'No QoS policy active', which is normal, not a shaper fault), and re-creating it restarts the counters from zero.",
           "gridPos": {
             "h": 8,
             "w": 12,
@@ -1395,7 +1395,7 @@
           "fieldConfig": {
             "defaults": {
               "unit": "short",
-              "noValue": "No data",
+              "noValue": "No QoS policy active",
               "custom": {
                 "axisLabel": "connections"
               }
@@ -1407,7 +1407,7 @@
           "id": 36,
           "type": "timeseries",
           "title": "Bucket level vs burst depth",
-          "description": "Tokens available in the bucket against its burst depth. A level sitting at zero means the service is rate-bound; a level pinned at the burst depth means the shaper is configured but idle.",
+          "description": "Tokens available in the bucket against its burst depth. A level sitting at zero means the service is rate-bound; a level pinned at the burst depth means the shaper is configured but idle. Series for a shaped service exist only while its QoS policy is attached: deleting the policy removes them (this panel then shows 'No QoS policy active', which is normal, not a shaper fault), and re-creating it restarts the counters from zero.",
           "gridPos": {
             "h": 8,
             "w": 12,
@@ -1442,7 +1442,7 @@
           "fieldConfig": {
             "defaults": {
               "unit": "bytes",
-              "noValue": "No data"
+              "noValue": "No QoS policy active"
             },
             "overrides": []
           }
