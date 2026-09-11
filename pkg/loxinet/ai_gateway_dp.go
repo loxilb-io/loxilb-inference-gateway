@@ -1116,6 +1116,19 @@ func llb_ai_pd_session_hit(modelName *C.char) {
 	prom.RecordPDSessionHit(modelNameStr)
 }
 
+// llb_ai_pd_tier_selected records the terminal P/D routing-tier decision.
+//
+// C sockproxy calls this exactly once per successful prefill selection, at
+// the terminal return of the tier that produced the endpoint (0=Tier-0
+// session, 1=Tier-1 trie, 15=Tier-1.5 KV-exact, 2=Tier-2 min-load).
+//
+//export llb_ai_pd_tier_selected
+func llb_ai_pd_tier_selected(modelName *C.char, tier C.int) {
+	defer cgoRecover("llb_ai_pd_tier_selected")
+	modelNameStr := C.GoString(modelName)
+	prom.RecordPDTierSelected(modelNameStr, int(tier))
+}
+
 // llb_ai_normal_session_hit records a normal-mode session-stickiness cache hit.
 //
 // C sockproxy calls this when PRIORITY 0 (learned conv_map lookup) succeeds in
