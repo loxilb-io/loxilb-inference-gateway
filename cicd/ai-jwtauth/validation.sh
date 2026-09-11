@@ -35,7 +35,25 @@ source .state
 # assertion green. The needle is matched literally: quoted inside [[ ]] it is
 # a string, not a glob, so a needle containing * ? or [ cannot silently match
 # something it does not equal.
+# Every assertion name begins with its case ID. Recording them as they run
+# is what lets the summary compare what executed against what was declared:
+# a block that is deleted, renamed, or skipped by an early `continue` would
+# otherwise just quietly stop being tested, and the suite would still say OK.
+SEEN_CASES=""
+note_case() {
+  local id="${1%% *}"
+  case "$id" in
+    [A-Z][0-9]|[A-Z][0-9][0-9]) ;;
+    *) return ;;
+  esac
+  case " $SEEN_CASES " in
+    *" $id "*) ;;
+    *) SEEN_CASES="$SEEN_CASES $id" ;;
+  esac
+}
+
 chk_has() { # chk_has <name> <needle> <haystack>
+  note_case "$1"
   if [ -z "$3" ]; then
     echo "  [FAIL] $1 — empty response; the request never completed"; FAIL=$((FAIL + 1)); return
   fi
@@ -46,6 +64,7 @@ chk_has() { # chk_has <name> <needle> <haystack>
   fi
 }
 chk_not_has() { # chk_not_has <name> <forbidden> <haystack>
+  note_case "$1"
   if [ -z "$3" ]; then
     echo "  [FAIL] $1 — empty response; the request never completed"; FAIL=$((FAIL + 1)); return
   fi
@@ -57,14 +76,127 @@ chk_not_has() { # chk_not_has <name> <forbidden> <haystack>
 }
 status_of() { echo "$1" | head -1; }
 
+# http_code_of pulls the code curl reported, so a status can be compared for
+# equality instead of by searching the whole response for a three-digit
+# string that could as easily come from a body or a header.
+http_code_of() { # http_code_of <response-with--w-http_code>
+  local c="${1##*http_code=}"
+  c="${c%%[!0-9]*}"
+  echo "$c"
+}
+chk_code() { # chk_code <name> <expected> <response-with--w-http_code>
+  note_case "$1"
+  local got; got=$(http_code_of "$3")
+  # 000 is curl's "no response at all". Asserting equality already excludes
+  # it, but it earns its own message: it means the request never completed,
+  # which is a different failure from the wrong status.
+  if [ -z "$got" ] || [ "$got" = "000" ]; then
+    echo "  [FAIL] $1 — no HTTP status (curl reported '${got:-none}'); the request never completed"
+    FAIL=$((FAIL + 1)); return
+  fi
+  if [ "$got" = "$2" ]; then
+    echo "  [PASS] $1 (HTTP $got)"; PASS=$((PASS + 1))
+  else
+    echo "  [FAIL] $1 — HTTP $got, want $2"; FAIL=$((FAIL + 1))
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Independent backend receipt oracle.
+#
+# "The backend was not reached" is the core claim of every denial here, and a
+# denial's client response cannot support it: the backend's label is absent
+# whether the gateway refused the request or forwarded it and threw the answer
+# away. Each request carries a unique nonce; the backends count it and are
+# asked for the total from INSIDE their own namespaces, never through the
+# gateway, so the number cannot be manufactured by the path under test.
+# ---------------------------------------------------------------------------
+# The nonce is passed through a FILE, not a variable. Every request here is
+# made inside a command substitution, which is a subshell: a variable set by
+# req() dies with it and the parent would read back an empty nonce. An empty
+# nonce is not harmless — the backend has no receipts for it, so it reads 0,
+# and every "the backend saw nothing" assertion would pass on any build,
+# including one that forwarded the request. This was a real bug in this
+# harness, caught only because the admitted cases assert a delta of 1.
+NONCE_FILE=.nonce
+new_nonce() {
+  local n
+  n=$(( $(cat "$NONCE_FILE" 2>/dev/null || echo 0) + 1 ))
+  echo "$n" > "$NONCE_FILE"
+  LAST_NONCE="n$$-$n"
+  echo "$LAST_NONCE" > "$NONCE_FILE.last"
+}
+# Reading CONSUMES the nonce. A receipt assertion that is not preceded by a
+# fresh request would otherwise score the PREVIOUS request's count, which is
+# how a direct curl call that bypasses req() silently inherits an unrelated
+# oracle — it reported an admitted request's receipt against a denial and
+# looked exactly like a backend leak.
+last_nonce() {
+  local n
+  n=$(cat "$NONCE_FILE.last" 2>/dev/null)
+  rm -f "$NONCE_FILE.last"
+  echo "$n"
+}
+rm -f "$NONCE_FILE" "$NONCE_FILE.last"
+
+# receipts <nonce> -> total across BOTH pools, or "unreadable"
+receipts() {
+  local n=$1 a b
+  a=$($hexec l3ep1 curl -s --max-time 5 "http://127.0.0.1:8080/__receipts/$n" 2>/dev/null)
+  b=$($hexec l3ep2 curl -s --max-time 5 "http://127.0.0.1:8080/__receipts/$n" 2>/dev/null)
+  case "$a" in ''|*[!0-9]*) echo "unreadable"; return ;; esac
+  case "$b" in ''|*[!0-9]*) echo "unreadable"; return ;; esac
+  echo $((a + b))
+}
+chk_receipt() { # chk_receipt <name> <expected-count> [nonce]
+  note_case "$1"
+  local n="${3:-$(last_nonce)}" got
+  # Without this the assertion silently degrades: an unknown nonce has no
+  # receipts, so it reads 0 and every denial "passes" whatever the gateway
+  # did with the request.
+  if [ -z "$n" ]; then
+    echo "  [FAIL] $1 — no nonce recorded for the last request; the receipt oracle is not wired"
+    FAIL=$((FAIL + 1)); return
+  fi
+  got=$(receipts "$n")
+  # A counter that cannot be read is not a counter that read zero. Reporting
+  # "no receipts" here would turn a broken oracle into a passing denial.
+  if [ "$got" = "unreadable" ]; then
+    echo "  [FAIL] $1 — backend receipt counter unreadable; that is not proof of $2"
+    FAIL=$((FAIL + 1)); return
+  fi
+  if [ "$got" = "$2" ]; then
+    echo "  [PASS] $1 (backend receipts=$got)"; PASS=$((PASS + 1))
+  else
+    echo "  [FAIL] $1 — backend receipts=$got, want $2"; FAIL=$((FAIL + 1))
+  fi
+}
+
+# metric_value <family> -> the summed value of every series in the family,
+# or "unreadable". Summed rather than pinned to one label set so a family
+# that gains a label does not silently start reading zero.
+metric_value() {
+  local out
+  out=$($hexec l3h1 curl -s --max-time 8 "http://$VIP:11111/netlox/v1/metrics" 2>/dev/null |
+    awk -v fam="$1" '$0 ~ "^" fam "([{ ]|$)" { v=$NF; if (v+0==v) { s+=v; n++ } } END { if (n>0) printf "%d", s; else print "unreadable" }')
+  case "$out" in
+    ''|*[!0-9]*) echo "unreadable" ;;
+    *) echo "$out" ;;
+  esac
+}
+
 body_llama='{"model":"llama-70b","messages":[{"role":"user","content":"hi"}]}'
 body_mistral='{"model":"mistral-7b","messages":[{"role":"user","content":"hi"}]}'
 
 # req <port> <body> <extra curl args...>
+# Mints the nonce for this request, so every call site gets an independent
+# receipt oracle without having to remember to ask for one.
 req() {
   local port=$1 body=$2; shift 2
+  new_nonce
   $hexec l3h1 curl -s -i --max-time 10 -X POST \
     -H "Content-Type: application/json" \
+    -H "X-Test-Nonce: $LAST_NONCE" \
     "$@" \
     -d "$body" \
     "http://$VIP:$port/v1/chat/completions"
@@ -83,13 +215,14 @@ echo "A1: valid token, model the token's roles allow → admitted"
 r=$(bearer_req 2040 "$body_llama" "$TOK_ALICE")
 chk_has     "A1 200 status"        "200"          "$(status_of "$r")"
 chk_has     "A1 llama pool answers" "server-llama" "$r"
+chk_receipt "A1 backend received exactly one" 1
 
 echo ""
 echo "A2: no Authorization header at all → 401 missing_token"
 r=$(req 2040 "$body_llama")
 chk_has     "A2 401 status"          "401"           "$(status_of "$r")"
 chk_has     "A2 missing_token code"  "missing_token" "$r"
-chk_not_has "A2 backend not reached" "server-llama"  "$r"
+chk_receipt "A2 backend received nothing" 0
 
 echo ""
 echo "A3: same token with a corrupted signature → 401 invalid_token"
@@ -97,7 +230,7 @@ echo "    (header and payload are byte-identical to A1's token)"
 r=$(bearer_req 2040 "$body_llama" "$TOK_BADSIG")
 chk_has     "A3 401 status"          "401"           "$(status_of "$r")"
 chk_has     "A3 invalid_token code"  "invalid_token" "$r"
-chk_not_has "A3 backend not reached" "server-llama"  "$r"
+chk_receipt "A3 backend received nothing" 0
 
 echo ""
 echo "A4: expired token → 401 token_expired"
@@ -138,7 +271,7 @@ print(int(claims['exp'] - time.time()) + 4)
     r=$(bearer_req 2040 "$body_llama" "$TOK_SHORT")
     chk_has     "A4 401 status"          "401"           "$(status_of "$r")"
     chk_has     "A4 token_expired code"  "token_expired" "$r"
-    chk_not_has "A4 backend not reached" "server-llama"  "$r"
+    chk_receipt "A4 backend received nothing" 0
   fi
 fi
 
@@ -148,14 +281,14 @@ echo "    (same profile and port as A1; only the user differs)"
 r=$(bearer_req 2040 "$body_llama" "$TOK_CAROL")
 chk_has     "A5 401 status"          "401"           "$(status_of "$r")"
 chk_has     "A5 invalid_token code"  "invalid_token" "$r"
-chk_not_has "A5 backend not reached" "server-llama"  "$r"
+chk_receipt "A5 backend received nothing" 0
 
 echo ""
 echo "A6: valid token, model its roles do NOT cover → 403, not 401, not a steer"
 r=$(bearer_req 2040 "$body_mistral" "$TOK_ALICE")
 chk_has     "A6 403 status"            "403"                "$(status_of "$r")"
 chk_has     "A6 model_not_allowed"     "model_not_allowed"  "$r"
-chk_not_has "A6 mistral pool NOT reached" "server-mistral"  "$r"
+chk_receipt "A6 backend received nothing" 0
 
 echo ""
 echo "A7: a different user's token DOES reach its own model → A6 is authorization,"
@@ -163,13 +296,14 @@ echo "    not an unreachable pool"
 r=$(bearer_req 2040 "$body_mistral" "$TOK_BOB")
 chk_has "A7 200 status"           "200"            "$(status_of "$r")"
 chk_has "A7 mistral pool answers" "server-mistral" "$r"
+chk_receipt "A7 backend received exactly one" 1
 
 echo ""
 echo "A8: non-Bearer Authorization scheme → reads as no bearer credential"
 r=$(req 2040 "$body_llama" -H "Authorization: Basic YWxpY2U6cHc=")
 chk_has     "A8 401 status"          "401"          "$(status_of "$r")"
 chk_has     "A8 missing_token code"  "missing_token" "$r"
-chk_not_has "A8 backend not reached" "server-llama" "$r"
+chk_receipt "A8 backend received nothing" 0
 
 echo ""
 echo "== B: the profile decides — issuer and audience (2042/2043 vs 2040) =="
@@ -179,14 +313,14 @@ echo "B1: profile demanding an audience the token does not carry → 401"
 r=$(bearer_req 2042 "$body_llama" "$TOK_ALICE")
 chk_has     "B1 401 status"          "401"           "$(status_of "$r")"
 chk_has     "B1 invalid_token code"  "invalid_token" "$r"
-chk_not_has "B1 backend not reached" "server-llama"  "$r"
+chk_receipt "B1 backend received nothing" 0
 
 echo ""
 echo "B2: profile naming a different issuer, same keys → 401"
 r=$(bearer_req 2043 "$body_llama" "$TOK_ALICE")
 chk_has     "B2 401 status"          "401"           "$(status_of "$r")"
 chk_has     "B2 invalid_token code"  "invalid_token" "$r"
-chk_not_has "B2 backend not reached" "server-llama"  "$r"
+chk_receipt "B2 backend received nothing" 0
 
 echo ""
 echo "B3: control — THAT SAME token is admitted on the correctly configured"
@@ -194,6 +328,7 @@ echo "    profile, so B1/B2 are the profile's doing and not a stale token"
 r=$(bearer_req 2040 "$body_llama" "$TOK_ALICE")
 chk_has "B3 200 status"         "200"          "$(status_of "$r")"
 chk_has "B3 llama pool answers" "server-llama" "$r"
+chk_receipt "B3 backend received exactly one" 1
 
 echo ""
 echo "== C: apikey-or-jwt precedence (port 2041) =="
@@ -204,12 +339,14 @@ echo "C1: API key alone, model it allows → admitted"
 r=$(req 2041 "$body_llama" -H "X-Api-Key: $RAW_KEY")
 chk_has "C1 200 status"         "200"          "$(status_of "$r")"
 chk_has "C1 llama pool answers" "server-llama" "$r"
+chk_receipt "C1 backend received exactly one" 1
 
 echo ""
 echo "C2: bearer alone, model it allows → admitted"
 r=$(bearer_req 2041 "$body_mistral" "$TOK_BOB")
 chk_has "C2 200 status"           "200"            "$(status_of "$r")"
 chk_has "C2 mistral pool answers" "server-mistral" "$r"
+chk_receipt "C2 backend received exactly one" 1
 
 echo ""
 echo "C3: BOTH present, model only the token allows → the key decides, alone"
@@ -217,7 +354,7 @@ echo "    → 403 from the key's allow-list; an identity merge would admit this"
 r=$(req 2041 "$body_mistral" -H "X-Api-Key: $RAW_KEY" -H "Authorization: Bearer $TOK_BOB")
 chk_has     "C3 403 status"                "403"               "$(status_of "$r")"
 chk_has     "C3 model_not_allowed"         "model_not_allowed" "$r"
-chk_not_has "C3 mistral pool NOT reached"  "server-mistral"    "$r"
+chk_receipt "C3 backend received nothing" 0
 
 echo ""
 echo "C4: REJECTED key + valid token for the same model → 401, NO fallback"
@@ -226,7 +363,7 @@ echo "     behind a single 401 — this leg is red on any build that does it)"
 r=$(req 2041 "$body_llama" -H "X-Api-Key: not-a-real-key" -H "Authorization: Bearer $TOK_ALICE")
 chk_has     "C4 401 status"                 "401"            "$(status_of "$r")"
 chk_has     "C4 API-key arm named the deny" "invalid_api_key" "$r"
-chk_not_has "C4 backend NOT reached"        "server-llama"   "$r"
+chk_receipt "C4 backend received nothing" 0
 
 echo ""
 echo "C5: control — that same token alone IS admitted here, so C4's refusal"
@@ -234,12 +371,13 @@ echo "    is the failed key being final, not a bad token"
 r=$(bearer_req 2041 "$body_llama" "$TOK_ALICE")
 chk_has "C5 200 status"         "200"          "$(status_of "$r")"
 chk_has "C5 llama pool answers" "server-llama" "$r"
+chk_receipt "C5 backend received exactly one" 1
 
 echo ""
 echo "C6: neither credential → 401"
 r=$(req 2041 "$body_llama")
 chk_has     "C6 401 status"          "401"          "$(status_of "$r")"
-chk_not_has "C6 backend not reached" "server-llama" "$r"
+chk_receipt "C6 backend received nothing" 0
 
 echo ""
 echo "== D: upstream hygiene — the backend reports what reached it =="
@@ -311,19 +449,16 @@ echo "     a capture that keeps one fragment answers 401 invalid_token here)"
 r=$($hexec l3h1 python3 ./segmented_send.py "$VIP" 2040 "$(pwd)/.tok_dave" 200 15 2>/dev/null)
 chk_has     "E2 200 status"          "200"           "$(status_of "$r")"
 chk_has     "E2 llama pool answers"  "server-llama"  "$r"
+chk_receipt "E2 backend received exactly one" 1
 chk_not_has "E2 not a signature 401" "invalid_token" "$r"
 
 echo ""
 echo "== F: HTTP/2 on a JWT-enforcing service is refused, not admitted =="
 echo "   (the shared gate is not wired into the H2 path yet; the posture that"
 echo "    matters is that it fails CLOSED — nothing reaches a backend)"
-r=$($hexec l3h1 curl -s -i --max-time 10 --http2-prior-knowledge -X POST \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOK_ALICE" \
-  -d "$body_llama" \
-  "http://$VIP:2040/v1/chat/completions")
+r=$(bearer_req 2040 "$body_llama" "$TOK_ALICE" --http2-prior-knowledge)
 chk_has     "F1 401 status"                "401"          "$(status_of "$r")"
-chk_not_has "F1 backend NOT reached"       "server-llama" "$r"
+chk_receipt "F1 backend received nothing" 0
 
 echo ""
 echo "== G: fail-closed when the keyset was never fetched (port 2044) =="
@@ -333,7 +468,31 @@ echo "   never a 200"
 r=$(bearer_req 2044 "$body_llama" "$TOK_ALICE")
 chk_has     "G1 503 status"                  "503"                       "$(status_of "$r")"
 chk_has     "G1 policy_store_unavailable"    "policy_store_unavailable"  "$r"
-chk_not_has "G1 backend NOT reached"         "server-llama"              "$r"
+chk_receipt "G1 backend received nothing" 0
+
+echo ""
+echo "G2: that refusal is visible on the metric an operator watches"
+echo "    (a keyset that was never fetched is the one denial worth paging on;"
+echo "     the API-key arm has always counted it, so the bearer arm counting"
+echo "     nothing would make a JWKS outage invisible where it is looked for)"
+before=$(metric_value loxilb_ai_policy_store_unavailable_total)
+r=$(bearer_req 2044 "$body_llama" "$TOK_ALICE")
+chk_has "G2 still 503" "503" "$(status_of "$r")"
+after=$(metric_value loxilb_ai_policy_store_unavailable_total)
+note_case "G2"
+if [ "$before" = "unreadable" ] || [ "$after" = "unreadable" ]; then
+  # Metrics that cannot be read are not metrics that read zero: treating an
+  # unreachable endpoint as "no change" would make this assertion pass on a
+  # gateway that exports nothing at all.
+  echo "  [FAIL] G2 metric unreadable (before=$before after=$after); that is not a delta of 1"
+  FAIL=$((FAIL + 1))
+elif [ "$((after - before))" = "1" ]; then
+  echo "  [PASS] G2 policy_store_unavailable incremented by exactly 1 ($before -> $after)"
+  PASS=$((PASS + 1))
+else
+  echo "  [FAIL] G2 policy_store_unavailable went $before -> $after, want exactly +1"
+  FAIL=$((FAIL + 1))
+fi
 
 echo ""
 echo "== I: the IdP goes down and comes back (port 2047, profile kc-outage) =="
@@ -365,6 +524,7 @@ trap unpause_kc EXIT
 r=$(bearer_req 2047 "$body_llama" "$TOK_ALICE")
 chk_has "I0 control: admitted while the IdP is up" "200"          "$(status_of "$r")"
 chk_has "I0 llama pool answers"                    "server-llama" "$r"
+chk_receipt "I0 backend received exactly one" 1
 
 if docker pause "$KC_NAME" >/dev/null 2>&1; then
     KC_PAUSED=1
@@ -378,6 +538,7 @@ if docker pause "$KC_NAME" >/dev/null 2>&1; then
       -d "client_id=aigw-client" -d "username=alice" -d "password=alicepw" \
       -d "grant_type=password" "$KC_ISSUER/protocol/openid-connect/token" |
       python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null)
+    note_case "I1"
     if [ -z "$OUTAGE_TOK" ]; then
         echo "  [PASS] I1 the IdP is genuinely unreachable (no new token can be minted)"
         PASS=$((PASS + 1))
@@ -472,15 +633,23 @@ r=$($hexec l3h1 curl -s --max-time 8 -w ' http_code=%{http_code}' -X POST \
     "endpoints": [{"endpointIP": "31.31.31.1", "targetPort": 8080, "weight": 1}]
   }')
 chk_not_has "H1 rule not accepted"  "Success"       "$r"
-chk_not_has "H1 status is not 200"  "http_code=200" "$r"
+# Exactly 400: the reference check returns a rule-argument rejection, which
+# the API classifies as a validation error. Accepting "any status but 200"
+# would let a 500, a 404, or curl's 000 stand in for the contract — three
+# different defects that all mean the guard is not working as declared.
+chk_code    "H1 rejected with the validation status" 400 "$r"
 
 echo ""
 echo "H2: deleting a profile that live rules reference → refused"
 echo "    (ports 2040 and 2041 both point at kc)"
 r=$($hexec l3h1 curl -s --max-time 8 -w ' http_code=%{http_code}' -X DELETE \
   "http://$VIP:11111/netlox/v1/config/ai/jwtauthprofile/kc")
-chk_not_has "H2 delete did not report success" "http_code=200" "$r"
-chk_not_has "H2 delete did not report success" "http_code=204" "$r"
+# Exactly 409: a delete refused because live rules still reference the
+# profile is a state collision, not a malformed request, and that is the
+# status the spec declares for this route. Asserting only "not a success"
+# passed while the handler answered 400, and would pass again on a 500.
+chk_code "H2 refused with the declared conflict status" 409 "$r"
+chk_has  "H2 refusal names the referencing rules" "referenced by rule" "$r"
 names=$(profile_names)
 chk_has "H2 kc is still configured" " kc " "$names"
 
@@ -492,10 +661,12 @@ r=$($hexec l3h1 curl -s --max-time 8 -w ' http_code=%{http_code}' -X POST \
   -H "Content-Type: application/json" \
   -d '{"name": "kc-scratch", "issuer": "http://127.0.0.1:9/realms/scratch",
        "jwks_url": "http://127.0.0.1:9/certs", "audiences": []}')
+chk_code "H3 create reported success" 200 "$r"
 names=$(profile_names)
 chk_has "H3 scratch profile created" " kc-scratch " "$names"
 r=$($hexec l3h1 curl -s --max-time 8 -w ' http_code=%{http_code}' -X DELETE \
   "http://$VIP:11111/netlox/v1/config/ai/jwtauthprofile/kc-scratch")
+chk_code "H3 delete reported success" 200 "$r"
 names=$(profile_names)
 chk_not_has "H3 scratch profile deleted" " kc-scratch " "$names"
 
@@ -504,6 +675,65 @@ echo "H4: control — kc survived H2 and the service it backs still admits"
 r=$(bearer_req 2040 "$body_llama" "$TOK_ALICE")
 chk_has "H4 200 status"         "200"          "$(status_of "$r")"
 chk_has "H4 llama pool answers" "server-llama" "$r"
+chk_receipt "H4 backend received exactly one" 1
+
+echo ""
+echo "== J: an identity that is not safe to carry is refused, not spliced =="
+echo "   The gateway writes the verified identity upstream as a plain"
+echo "   name/value header line with no escaping, so a CR or LF in"
+echo "   the value stops being data and becomes a second header inside a"
+echo "   request the backend trusts because the gateway built it. A signature"
+echo "   proves who minted a claim, not that its CONTENT is safe to splice"
+echo "   into a protocol — and default_tenant reaches the same header from"
+echo "   configuration. Both are refused."
+# The value carries JSON \r\n escapes: the gateway's own JSON decode turns
+# them into a real CR and LF, which is exactly how a hostile claim would
+# arrive. Single-quoted so the shell leaves the backslashes alone.
+r=$($hexec l3h1 curl -s --max-time 8 -w ' http_code=%{http_code}' -X POST \
+  "http://$VIP:11111/netlox/v1/config/ai/jwtauthprofile" \
+  -H "Content-Type: application/json" \
+  --data-binary '{"name":"kc-inject","issuer":"http://127.0.0.1:9/realms/x","jwks_url":"http://127.0.0.1:9/certs","audiences":[],"default_tenant":"acme\r\nX-Auth-User: admin"}')
+chk_code "J1 profile with an injectable default_tenant is rejected" 400 "$r"
+names=$(profile_names)
+chk_not_has "J1 the profile was not created" " kc-inject " "$names"
+
+echo ""
+echo "== Z: the suite ran what it claims to run =="
+echo "   A deleted, renamed, or skipped block stops being tested silently:"
+echo "   the pass count simply gets smaller and the run still says OK. This"
+echo "   compares the case IDs that actually asserted against the declared"
+echo "   set, so coverage cannot shrink without turning the run RED."
+EXPECTED_CASES="A1 A2 A3 A4 A5 A6 A7 A8 B1 B2 B3 C1 C2 C3 C4 C5 C6 D1 D2 D3 D4 D5 D6 E1 E2 F1 G1 G2 H0 H1 H2 H3 H4 I0 I1 I2 I3 J1"
+missing=""
+for want in $EXPECTED_CASES; do
+  case " $SEEN_CASES " in
+    *" $want "*) ;;
+    *) missing="$missing $want" ;;
+  esac
+done
+extra=""
+for got in $SEEN_CASES; do
+  case " $EXPECTED_CASES " in
+    *" $got "*) ;;
+    *) extra="$extra $got" ;;
+  esac
+done
+if [ -n "$missing" ]; then
+  echo "  [FAIL] Z1 declared cases did not run:$missing"
+  FAIL=$((FAIL + 1))
+else
+  echo "  [PASS] Z1 every declared case ran"
+  PASS=$((PASS + 1))
+fi
+if [ -n "$extra" ]; then
+  # Not a failure: a new case is good news. It has to be declared, though,
+  # or the inventory stops being the thing that notices a deletion.
+  echo "  [FAIL] Z2 cases ran that are not declared:$extra — add them to EXPECTED_CASES"
+  FAIL=$((FAIL + 1))
+else
+  echo "  [PASS] Z2 no undeclared cases ran"
+  PASS=$((PASS + 1))
+fi
 
 echo ""
 if [ $FAIL -ne 0 ]; then

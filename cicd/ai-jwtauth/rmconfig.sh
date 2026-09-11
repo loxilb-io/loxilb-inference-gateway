@@ -23,7 +23,7 @@ delete_docker_host llb1
 docker rm -f kc-aigw    >/dev/null 2>&1 || true
 docker rm -f pg-jwtauth >/dev/null 2>&1 || true
 
-rm -f .state .tok_dave
+rm -f .state .tok_dave .nonce .nonce.last
 rm -rf llb1_config
 
 echo SCENARIO-ai-jwtauth-cleanup [OK]
