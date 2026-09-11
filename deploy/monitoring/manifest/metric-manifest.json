@@ -1,18 +1,18 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-10T09:11:15+00:00",
-  "source_revision": "ab75a03db365f15f4b9f198145bafb6852002809"
+  "generated_at": "2026-09-10T21:38:28+00:00",
+  "source_revision": "9b06aa998c066fb63f943e684661aa3516ef5dc8"
  },
  "contract": {
-  "total": 232,
+  "total": 233,
   "owners": {
-   "loxilb": 209,
+   "loxilb": 210,
    "loxilb-ai-controller": 19,
    "loxilb-kv-agent": 4
   },
   "classes": {
-   "default": 176,
+   "default": 177,
    "dpu-doca": 24,
    "aictrl-bridge": 8,
    "kv-agent-health": 1,
@@ -21,11 +21,11 @@
   }
  },
  "coverage": {
-  "default_families": 176,
-  "default_referenced": 155,
+  "default_families": 177,
+  "default_referenced": 156,
   "default_waived": 21,
   "default_unreferenced": 0,
-  "writer_classified": 176,
+  "writer_classified": 177,
   "writer_unclassified": 0,
   "writer_unverified": 83
  },
@@ -8126,6 +8126,50 @@
     }
    ],
    "verification_evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/snapshot/opstate.go:62-89. The snapshot tests drive Persist but assert opstate records rather than this counter, so it is mapped, not verified; scenario M15 owns its proof."
+  },
+  {
+   "name": "loxilb_policer_attached",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "definition_mechanism": "desc",
+   "labels": [
+    "ident"
+   ],
+   "activation": "C",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [
+    "loxilb-ai.json"
+   ],
+   "waiver": "",
+   "source": "api/prometheus/policer_metrics.go:43",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "verified-static",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "Collect",
+     "kind": "method",
+     "receiver": "policerAttachmentCollector",
+     "file": "api/prometheus/policer_metrics.go",
+     "def_line": 60,
+     "writes": "policerAttachedDesc"
+    },
+    {
+     "symbol": "init",
+     "kind": "func",
+     "file": "api/prometheus/policer_metrics.go",
+     "def_line": 74,
+     "call_line": 75,
+     "calls": "policerAttachmentCollector",
+     "entry_point": "registry-collector",
+     "note": "registry-mediated dispatch: the link is the receiver type handed to prometheus.MustRegister, not a direct call to Collect"
+    }
+   ],
+   "verification_evidence": "api/prometheus/policer_metrics_test.go asserts the published store is emitted verbatim on gather (0 for pending, 1 for attached, series vanish after republish without the policer); pkg/loxinet attachment tests pin the attached() truth table. Not yet observed on a bed; the ghost-policer red twin owns the runtime proof."
   },
   {
    "name": "loxilb_processed_bytes_total",
