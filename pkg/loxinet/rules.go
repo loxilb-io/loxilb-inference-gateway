@@ -609,7 +609,8 @@ type ruleEnt struct {
 	backendProtocol             string                  // Backend protocol capability: "http1", "http2", or "both"
 	sessionHeaderName           string                  // Custom session header for persist mode (e.g., "mcp-session-id")
 	sseMode                     bool                    // SSE mode: suppress idle-timeout during streaming
-	apiKeyAuth                  string                  // data-plane X-Api-Key policy AS DECLARED: "", "disabled" or "required"
+	apiKeyAuth                  string                  // data-plane credential policy AS DECLARED: "", "disabled", "required", "jwt" or "apikey-or-jwt"
+	jwtAuthProfile              string                  // JWT auth profile name; non-empty iff apiKeyAuth is a JWT-capable mode
 	maxStreamDurationSec        uint32                  // Absolute wall-clock cap for SSE streams in seconds
 	backendKeepaliveIntervalSec uint32                  // Backend SO_KEEPALIVE+TCP_KEEPIDLE interval in seconds
 	timeoutMemberConnectMs      uint32                  // backend connect-poll deadline in ms (0=500ms default)
@@ -1204,6 +1205,7 @@ func (R *RuleH) GetLBRule() ([]cmn.LbRuleMod, error) {
 		// operator reading this back has to see what the data plane will
 		// actually enforce, and "" would leave them to re-derive the default.
 		ret.Serv.ApiKeyAuth = data.apiKeyAuth
+		ret.Serv.JwtAuthProfile = data.jwtAuthProfile
 		ret.Serv.MaxStreamDurationSec = data.maxStreamDurationSec
 		ret.Serv.BackendKeepaliveIntervalSec = data.backendKeepaliveIntervalSec
 		ret.Serv.TimeoutMemberConnect = data.timeoutMemberConnectMs // Octavia
@@ -1543,6 +1545,7 @@ const (
 	lbPathPrefixMaxBytes        = 255
 	lbSessionHeaderNameMaxBytes = 127
 	lbModelNameMaxBytes         = 127
+	lbJwtAuthProfileMaxBytes    = 63
 	lbEndpointHashKeyMaxBytes   = 511
 )
 
@@ -1569,6 +1572,7 @@ func validateLBFixedCStringFields(serv cmn.LbServiceArg) error {
 		{name: "path_prefix", value: serv.PathPrefix, maxBytes: lbPathPrefixMaxBytes},
 		{name: "session_header_name", value: serv.SessionHeaderName, maxBytes: lbSessionHeaderNameMaxBytes},
 		{name: "model_name", value: serv.ModelName, maxBytes: lbModelNameMaxBytes},
+		{name: "jwt_auth_profile", value: serv.JwtAuthProfile, maxBytes: lbJwtAuthProfileMaxBytes},
 	} {
 		if err := validateLBFixedCString(field.name, field.value, field.maxBytes); err != nil {
 			return err
@@ -3549,20 +3553,28 @@ func kvEngineMixDetect(newEngine string, otherEngines []string) (string, bool) {
 // the standard testbed.
 func aiGwModeFor(sseMode, pdDisagg bool, apiKeyAuth string) bool {
 	return sseMode || pdDisagg ||
-		cmn.ResolveApiKeyAuth(apiKeyAuth) == cmn.ApiKeyAuthRequired
+		cmn.ResolveApiKeyAuth(apiKeyAuth) != cmn.ApiKeyAuthDisabled
 }
 
-// apiKeyAuthWireValue maps the declared X-Api-Key policy to the value the
-// data plane is pushed (llb_dpapi.h apikey_auth). Three wire values, not two,
-// because "disabled" arrives in two shapes that must not be conflated: an
-// UNSET policy (0) declares nothing and keeps byte-identical proxying, while
-// an EXPLICIT "disabled" (2) declares the service AI-facing — no key is
+// apiKeyAuthWireValue maps the declared credential policy to the value the
+// data plane is pushed (llb_dpapi.h apikey_auth). Five wire values, because
+// "disabled" arrives in two shapes that must not be conflated: an UNSET
+// policy (0) declares nothing and keeps byte-identical proxying, while an
+// EXPLICIT "disabled" (2) declares the service AI-facing — no credential is
 // checked, but the X-Api-Key header is stripped before dispatch. "required"
-// (1) enforces and strips.
+// (1) enforces the API-key arm; "jwt" (3) enforces the Bearer arm; and
+// "apikey-or-jwt" (4) dispatches on which credential is present, API key
+// winning. Old data planes seeing 3/4 keep the fail-closed "anything else
+// enforces" posture on the API-key arm — a JWT-only client is denied there,
+// never admitted unchecked.
 func apiKeyAuthWireValue(declared string) uint8 {
 	switch {
 	case cmn.ResolveApiKeyAuth(declared) == cmn.ApiKeyAuthRequired:
 		return 1
+	case cmn.ResolveApiKeyAuth(declared) == cmn.ApiKeyAuthJWT:
+		return 3
+	case cmn.ResolveApiKeyAuth(declared) == cmn.ApiKeyAuthApiKeyOrJWT:
+		return 4
 	case apiKeyAuthClaimsNamespace(declared):
 		return 2
 	default:
@@ -3592,26 +3604,81 @@ func apiKeyAuthOnReplace(existing, incoming string) string {
 	return existing
 }
 
+// resolveJwtAuthProfile decides the jwt_auth_profile a rule will carry, and
+// whether the (create or replace-resolved) api_key_auth mode allows it.
+// JWT-capable modes REQUIRE a configured profile — a rule pointing at a
+// missing profile would 503 every request, safe but silent, so the
+// misconfiguration is refused at the console instead. Other modes must not
+// carry one: a dangling reference blocks that profile's deletion for a rule
+// that can never consult it. On replace an omitted profile preserves the
+// existing reference, mirroring apiKeyAuthOnReplace — the two fields travel
+// together, and a client that cannot express one cannot express the other.
+func resolveJwtAuthProfile(authMode, existingProf, incomingProf string) (string, error) {
+	exists := func(string) bool { return false }
+	if mh.JWTAuthProfiles != nil {
+		exists = mh.JWTAuthProfiles.ProfileExists
+	}
+	return resolveJwtAuthProfileWith(authMode, existingProf, incomingProf, exists)
+}
+
+// resolveJwtAuthProfileWith is the injectable core of resolveJwtAuthProfile;
+// separated so the pairing rules are unit-testable without the global holder.
+func resolveJwtAuthProfileWith(authMode, existingProf, incomingProf string,
+	profileExists func(string) bool) (string, error) {
+	if cmn.ApiKeyAuthUsesJWT(authMode) {
+		prof := incomingProf
+		if prof == "" {
+			prof = existingProf
+		}
+		if prof == "" || !profileExists(prof) {
+			return "", cmn.ErrJwtProfileRequired
+		}
+		return prof, nil
+	}
+	if incomingProf != "" {
+		return "", cmn.ErrJwtProfileNotApplicable
+	}
+	return "", nil
+}
+
 // aiGwMode reports whether this rule's connections do AI-gateway accounting.
 func (r *ruleEnt) aiGwMode() bool {
 	return aiGwModeFor(r.sseMode, r.pdDisaggMode, r.apiKeyAuth)
 }
 
-// HasApiKeyEnforcingRule reports whether any installed LB rule carries
-// api_key_auth=required. Tenant quotas are attributed through a validated
-// key, so with no enforcing rule a configured quota is enforced against
-// nothing at all — the caller uses this to say so out loud instead of
-// letting the configuration sit there looking like protection.
+// HasApiKeyEnforcingRule reports whether any installed LB rule enforces a
+// credential at admission (any mode but the declared non-enforcing pair).
+// Tenant quotas are attributed through a validated credential, so with no
+// enforcing rule a configured quota is enforced against nothing at all —
+// the caller uses this to say so out loud instead of letting the
+// configuration sit there looking like protection.
 //
 // Caller must hold the RuleH-wide lock (mh.mtx) that guards
 // R.tables[RtLB].eMap, same as every other walk over it.
 func (R *RuleH) HasApiKeyEnforcingRule() bool {
 	for _, r := range R.tables[RtLB].eMap {
-		if cmn.ResolveApiKeyAuth(r.apiKeyAuth) == cmn.ApiKeyAuthRequired {
+		if cmn.ApiKeyAuthEnforcing(r.apiKeyAuth) {
 			return true
 		}
 	}
 	return false
+}
+
+// JwtProfileRuleRefs returns the idents of installed LB rules referencing a
+// JWT auth profile by name. It backs JWTAuthProfileH.ruleRefs, whose delete
+// guard refuses to remove a profile still in use.
+//
+// Caller must hold mh.mtx (every entry into the profile holder takes it
+// before h.mu, so the walk here is always under it).
+func (R *RuleH) JwtProfileRuleRefs(name string) []string {
+	var refs []string
+	for _, r := range R.tables[RtLB].eMap {
+		if r.jwtAuthProfile == name {
+			refs = append(refs, fmt.Sprintf("%s:%d", r.tuples.l3Dst.addr.IP.String(), r.tuples.l4Dst.valMin))
+		}
+	}
+	sort.Strings(refs)
+	return refs
 }
 
 func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, servSecVIPs []cmn.LbSecVIPArg, allowedSources []cmn.LbAllowedSrcIPArg, servEndPoints []cmn.LbEndPointArg) (int, error) {
@@ -4021,6 +4088,22 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	tk.LogIt(tk.LogDebug, "lb-rule key (add): %q\n", rt.ruleKey())
 
 	eRule := R.tables[RtLB].eMap[rt.ruleKey()]
+
+	// Resolve the credential-policy pair the rule will end up with BEFORE
+	// any state is touched, on create and replace alike. The profile rides
+	// the same preserve-on-omit replace semantics as api_key_auth (they are
+	// resolved together on purpose — the mode decides whether a profile is
+	// required, forbidden, or preserved).
+	nextApiKeyAuth := serv.ApiKeyAuth
+	existingJwtProfile := ""
+	if eRule != nil {
+		nextApiKeyAuth = apiKeyAuthOnReplace(eRule.apiKeyAuth, serv.ApiKeyAuth)
+		existingJwtProfile = eRule.jwtAuthProfile
+	}
+	nextJwtAuthProfile, jwtProfErr := resolveJwtAuthProfile(nextApiKeyAuth, existingJwtProfile, serv.JwtAuthProfile)
+	if jwtProfErr != nil {
+		return RuleArgsErr, &cmn.RuleArgumentError{Err: jwtProfErr}
+	}
 	if err := resolveCHWBLContract(&serv, eRule, lBActs.endPoints); err != nil {
 		return RuleUnknownServiceErr, err
 	}
@@ -4079,6 +4162,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 			eRule.sessionHeaderName != serv.SessionHeaderName ||
 			eRule.sseMode != serv.SSEMode ||
 			(serv.ApiKeyAuth != "" && eRule.apiKeyAuth != serv.ApiKeyAuth) ||
+			eRule.jwtAuthProfile != nextJwtAuthProfile ||
 			eRule.maxStreamDurationSec != serv.MaxStreamDurationSec ||
 			eRule.backendKeepaliveIntervalSec != serv.BackendKeepaliveIntervalSec ||
 			eRule.timeoutMemberConnectMs != serv.TimeoutMemberConnect ||
@@ -4247,6 +4331,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		// apiKeyAuthOnReplace. backend_protocol immediately above is guarded
 		// the same way and for the same reason.
 		eRule.apiKeyAuth = apiKeyAuthOnReplace(eRule.apiKeyAuth, serv.ApiKeyAuth)
+		eRule.jwtAuthProfile = nextJwtAuthProfile
 		eRule.maxStreamDurationSec = serv.MaxStreamDurationSec
 		eRule.backendKeepaliveIntervalSec = serv.BackendKeepaliveIntervalSec
 		// update per-listener member timeouts (ms). Assigned
@@ -4560,6 +4645,7 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	// armed the strip fleet-wide. Readers that need the default apply
 	// cmn.ResolveApiKeyAuth at the point of decision.
 	r.apiKeyAuth = serv.ApiKeyAuth
+	r.jwtAuthProfile = nextJwtAuthProfile
 	r.maxStreamDurationSec = serv.MaxStreamDurationSec
 	r.backendKeepaliveIntervalSec = serv.BackendKeepaliveIntervalSec
 
@@ -6404,7 +6490,8 @@ func (r *ruleEnt) LB2DP(work DpWorkT) int {
 	nWork.BackendProtocol = r.backendProtocol                         // Backend protocol capability
 	nWork.SessionHeaderName = r.sessionHeaderName                     // Custom session header name for persist mode
 	nWork.SSEMode = r.sseMode                                         // SSE streaming mode
-	nWork.ApiKeyAuth = r.apiKeyAuth                                   // data-plane X-Api-Key policy, as declared (encoder resolves)
+	nWork.ApiKeyAuth = r.apiKeyAuth                                   // data-plane credential policy, as declared (encoder resolves)
+	nWork.JwtAuthProfile = r.jwtAuthProfile                           // JWT auth profile name for the Bearer arm
 	nWork.MaxStreamDurationSec = r.maxStreamDurationSec               // SSE max stream duration cap
 	nWork.BackendKeepaliveIntervalSec = r.backendKeepaliveIntervalSec // SSE backend keepalive
 	nWork.TimeoutMemberConnect = r.timeoutMemberConnectMs             // connect ms

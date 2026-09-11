@@ -84,7 +84,7 @@ import (
 // carry no lineage position, and the 1.4->1.5 migration is restamp-only
 // -- a generation states a fact about the persisted lineage that a
 // migration cannot know, so it must never invent one.
-const SchemaVersion = "1.5"
+const SchemaVersion = "1.6"
 
 // DocKind identifies the document type, matching §4's "kind" field.
 const DocKind = "loxilb-snapshot"
@@ -108,6 +108,7 @@ const (
 // G-3) and for Select (registry.go).
 const (
 	DomainEndpoint       = "endpoint"
+	DomainJWTAuthProfile = "jwtauthprofile"
 	DomainLoadBalancer   = "loadbalancer"
 	DomainKvExactBinding = "kvexactbinding"
 	DomainL7Policy       = "l7policy"
@@ -178,8 +179,15 @@ type IPsecDomain struct {
 // exactly the §4.1 table order (apply order; DeleteOrder in registry.go is
 // the reverse).
 type Domains struct {
-	Endpoint     []cmn.EndPointMod `json:"endpoint"`
-	LoadBalancer []cmn.LbRuleMod   `json:"loadbalancer"`
+	Endpoint []cmn.EndPointMod `json:"endpoint"`
+	// JWTAuthProfile carries the data-plane JWT auth profiles (named
+	// issuer configs for bearer-token admission; public key sources only,
+	// no secret material). Applied BEFORE loadbalancer: a rule references
+	// its profile by name, and restoring the rule first would bring the
+	// service up refusing every request (fail-closed 503) until the
+	// profile followed. Added in schema 1.6; absent in older documents.
+	JWTAuthProfile []cmn.JWTAuthProfileMod `json:"jwtauthprofile,omitempty"`
+	LoadBalancer   []cmn.LbRuleMod         `json:"loadbalancer"`
 	// KvExactBinding carries each rule's KV-exact composed-binding identity
 	// (model-profile ref, engine-contract ref, binding generation + digest,
 	// allocation high-water mark). Applied after loadbalancer (bindings

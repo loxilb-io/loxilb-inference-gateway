@@ -82,6 +82,44 @@ func TestValidationErrorClassifiesAs400(t *testing.T) {
 	}
 }
 
+// TestConflictErrorClassifiesAs409 asserts a state collision keeps the status
+// the spec declares for it, whatever its wording. A delete refused because
+// live rules still reference the object is not a malformed request: the
+// caller changes the state, not the call. Classified from the message alone
+// this wording matches no 409 phrase and lands on 400 — the request looks
+// invalid, so a client is told to fix a call that was never wrong.
+func TestConflictErrorClassifiesAs409(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+	}{
+		{
+			name: "wording the phrase table does not match",
+			err:  cmn.NewConflictError("jwt auth profile kc is referenced by rule(s): 10.0.0.1:2040"),
+		},
+		{
+			name: "wrapped collision",
+			err:  fmt.Errorf("delete profile: %w", cmn.NewConflictError("zzz unmatchable wording zzz")),
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ResultErrorResponseError(tc.err)
+			if got.Code != 409 {
+				t.Errorf("Code = %d, want 409", got.Code)
+			}
+			if !strings.Contains(got.Result, tc.err.Error()) {
+				t.Errorf("Result = %q, does not carry the refusal %q — a caller cannot "+
+					"tell what it collides with", got.Result, tc.err.Error())
+			}
+			if strings.Contains(got.Result, "Internal service error") {
+				t.Errorf("Result = %q — a state collision was answered as an internal error",
+					got.Result)
+			}
+		})
+	}
+}
+
 // TestValidationErrorNamesTheField asserts an attributed rejection reports the
 // input it refused, so a client can point at the field rather than parse prose.
 func TestValidationErrorNamesTheField(t *testing.T) {
@@ -173,7 +211,7 @@ func TestClassifierNeedlesAreLowercase(t *testing.T) {
 // string, the only signal left is its wording, so the status is decided by a
 // substring search over an open-ended phrase table — which is why two
 // branches of one validator classified 400 and 500.
-const flatteningCeiling = 127
+const flatteningCeiling = 124
 
 // TestErrorFlatteningDoesNotGrow pins that ratchet, and pins to zero the
 // handler this change converted.

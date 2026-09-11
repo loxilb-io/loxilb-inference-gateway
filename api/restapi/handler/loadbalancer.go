@@ -139,6 +139,7 @@ func ConfigPostLoadbalancer(params operations.PostConfigLoadbalancerParams, prin
 	// materialized); the create-time "disabled" resolution lives in the rule
 	// layer, in exactly one place.
 	lbRules.Serv.ApiKeyAuth = params.Attr.ServiceArguments.APIKeyAuth
+	lbRules.Serv.JwtAuthProfile = params.Attr.ServiceArguments.JwtAuthProfile
 	lbRules.Serv.MaxStreamDurationSec = uint32(params.Attr.ServiceArguments.MaxStreamDurationSec)
 	lbRules.Serv.BackendKeepaliveIntervalSec = uint32(params.Attr.ServiceArguments.BackendKeepaliveIntervalSec)
 
@@ -606,6 +607,7 @@ func serializeLBRule(lb cmn.LbRuleMod) *models.LoadbalanceEntry {
 	// The empty string serializes as ABSENT (omitempty), preserving the
 	// omitted declaration on the wire.
 	tmpSvc.APIKeyAuth = lb.Serv.ApiKeyAuth
+	tmpSvc.JwtAuthProfile = lb.Serv.JwtAuthProfile
 	if lb.Serv.MaxStreamDurationSec != 0 {
 		tmpSvc.MaxStreamDurationSec = int32(lb.Serv.MaxStreamDurationSec)
 	}

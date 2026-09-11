@@ -66,7 +66,7 @@ func ConfigPostPolicy(params operations.PostConfigPolicyParams, principal interf
 	_, err := ApiHooks.NetPolicerAdd(&polMod)
 	if err != nil {
 		tk.LogIt(tk.LogDebug, "api: Error occur : %v\n", err)
-		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
+		return &ErrorResponse{Payload: ResultErrorResponseError(err)}
 	}
 	return &ResultResponse{Result: "Success"}
 }
@@ -81,7 +81,7 @@ func ConfigDeletePolicy(params operations.DeleteConfigPolicyIdentIdentParams, pr
 	_, err := ApiHooks.NetPolicerDel(&polMod)
 	if err != nil {
 		tk.LogIt(tk.LogDebug, "api: Error occur : %v\n", err)
-		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
+		return &ErrorResponse{Payload: ResultErrorResponseError(err)}
 	}
 	return &ResultResponse{Result: "Success"}
 }
@@ -91,7 +91,7 @@ func ConfigGetPolicy(params operations.GetConfigPolicyAllParams, principal inter
 	res, err := ApiHooks.NetPolicerGet()
 	if err != nil {
 		tk.LogIt(tk.LogDebug, "api: Error occur : %v\n", err)
-		return &ErrorResponse{Payload: ResultErrorResponseErrorMessage(err.Error())}
+		return &ErrorResponse{Payload: ResultErrorResponseError(err)}
 	}
 
 	var result []*models.PolicyEntry
@@ -102,6 +102,10 @@ func ConfigGetPolicy(params operations.GetConfigPolicyAllParams, principal inter
 		var tmpTarget models.PolicyEntryTargetObject
 		// ID match
 		tmpPol.PolicyIdent = &policy.Ident
+		// Attachment state (read-only): whether the policer is actually
+		// programmed in the datapath or still pending re-drive
+		attached := policy.Attached
+		tmpPol.Attached = &attached
 		// Info match
 		tmpInfo.ColorAware = policy.Info.ColorAware
 		tmpInfo.CommittedBlkSize = int64(policy.Info.CommittedBlkSize)

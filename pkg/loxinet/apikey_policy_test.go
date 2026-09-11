@@ -43,6 +43,8 @@ var policyCases = []struct {
 	{policy: "", resolved: cmn.ApiKeyAuthDisabled, enforces: false},
 	{policy: cmn.ApiKeyAuthDisabled, resolved: cmn.ApiKeyAuthDisabled, enforces: false},
 	{policy: cmn.ApiKeyAuthRequired, resolved: cmn.ApiKeyAuthRequired, enforces: true},
+	{policy: cmn.ApiKeyAuthJWT, resolved: cmn.ApiKeyAuthJWT, enforces: true},
+	{policy: cmn.ApiKeyAuthApiKeyOrJWT, resolved: cmn.ApiKeyAuthApiKeyOrJWT, enforces: true},
 }
 
 // ssePdCases enumerates the streaming axes. Both are booleans, so this is the
@@ -71,27 +73,38 @@ func TestAiGwModeForTruthTable(t *testing.T) {
 		want   bool
 	}{
 		// Neither streaming mode: accounting follows the policy alone. The
-		// third row is the case that could not be expressed at all before
-		// api_key_auth existed — authenticate a service that does not stream.
+		// enforcing rows are the case that could not be expressed at all
+		// before api_key_auth existed — authenticate a service that does not
+		// stream. Every enforcing mode (key, jwt, either) arms accounting:
+		// admission establishes an identity, and an identity that is not
+		// metered is half a gate.
 		{sse: false, pd: false, policy: "", want: false},
 		{sse: false, pd: false, policy: cmn.ApiKeyAuthDisabled, want: false},
 		{sse: false, pd: false, policy: cmn.ApiKeyAuthRequired, want: true},
+		{sse: false, pd: false, policy: cmn.ApiKeyAuthJWT, want: true},
+		{sse: false, pd: false, policy: cmn.ApiKeyAuthApiKeyOrJWT, want: true},
 
 		// SSE on: accounting is armed regardless of the policy, and in
 		// particular a disabled policy does not switch it off.
 		{sse: true, pd: false, policy: "", want: true},
 		{sse: true, pd: false, policy: cmn.ApiKeyAuthDisabled, want: true},
 		{sse: true, pd: false, policy: cmn.ApiKeyAuthRequired, want: true},
+		{sse: true, pd: false, policy: cmn.ApiKeyAuthJWT, want: true},
+		{sse: true, pd: false, policy: cmn.ApiKeyAuthApiKeyOrJWT, want: true},
 
 		// P/D disaggregation on: same.
 		{sse: false, pd: true, policy: "", want: true},
 		{sse: false, pd: true, policy: cmn.ApiKeyAuthDisabled, want: true},
 		{sse: false, pd: true, policy: cmn.ApiKeyAuthRequired, want: true},
+		{sse: false, pd: true, policy: cmn.ApiKeyAuthJWT, want: true},
+		{sse: false, pd: true, policy: cmn.ApiKeyAuthApiKeyOrJWT, want: true},
 
 		// Both streaming modes on.
 		{sse: true, pd: true, policy: "", want: true},
 		{sse: true, pd: true, policy: cmn.ApiKeyAuthDisabled, want: true},
 		{sse: true, pd: true, policy: cmn.ApiKeyAuthRequired, want: true},
+		{sse: true, pd: true, policy: cmn.ApiKeyAuthJWT, want: true},
+		{sse: true, pd: true, policy: cmn.ApiKeyAuthApiKeyOrJWT, want: true},
 	}
 
 	if len(tests) != len(ssePdCases)*len(policyCases) {
@@ -130,7 +143,7 @@ func TestApiKeyAuthIsIndependentOfStreamingModes(t *testing.T) {
 						sp.sse, sp.pd, pc.policy, got, pc.resolved)
 				}
 				// The enforcement bit the installer writes onto the wire.
-				if enforces := got == cmn.ApiKeyAuthRequired; enforces != pc.enforces {
+				if enforces := cmn.ApiKeyAuthEnforcing(pc.policy); enforces != pc.enforces {
 					t.Errorf("sse=%v pd=%v: policy %q enforces = %v, want %v",
 						sp.sse, sp.pd, pc.policy, enforces, pc.enforces)
 				}
@@ -178,7 +191,8 @@ func TestAbsentApiKeyAuthResolvesDisabled(t *testing.T) {
 // would have to guess at, and guessing here is guessing between admitting
 // everything and rejecting everything.
 func TestApiKeyAuthClosedSet(t *testing.T) {
-	for _, valid := range []string{"", cmn.ApiKeyAuthDisabled, cmn.ApiKeyAuthRequired} {
+	for _, valid := range []string{"", cmn.ApiKeyAuthDisabled, cmn.ApiKeyAuthRequired,
+		cmn.ApiKeyAuthJWT, cmn.ApiKeyAuthApiKeyOrJWT} {
 		if !cmn.IsValidApiKeyAuth(valid) {
 			t.Errorf("IsValidApiKeyAuth(%q) = false, want true", valid)
 		}
@@ -189,6 +203,7 @@ func TestApiKeyAuthClosedSet(t *testing.T) {
 	for _, invalid := range []string{
 		"Required", "REQUIRED", "required ", " required", "requires",
 		"Disabled", "off", "on", "true", "none", "optional",
+		"JWT", "jwt ", "apikey_or_jwt", "jwt-or-apikey", "bearer",
 	} {
 		if cmn.IsValidApiKeyAuth(invalid) {
 			t.Errorf("IsValidApiKeyAuth(%q) = true, want false", invalid)

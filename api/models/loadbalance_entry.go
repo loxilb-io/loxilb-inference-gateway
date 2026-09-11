@@ -663,8 +663,8 @@ type LoadbalanceEntryServiceArguments struct {
 	// Opaque metadata, not interpreted as configuration. Implementation limitation: storage retains only the first 32 keys in sorted order and truncates values to at most 256 bytes without splitting UTF-8. Oversized input is therefore not stored verbatim. See the shared metadata-update warning; these lossy bounds are not admission guarantees.
 	Annotations map[string]string `json:"annotations,omitempty"`
 
-	// Data-plane X-Api-Key enforcement declaration for this service. Three states, and omission is one of them. OMITTED declares nothing: the service is not marked AI-facing, proxying stays byte-identical, and a backend-owned X-Api-Key header passes through untouched. An explicit "disabled" declares the service AI-facing without enforcement: no key is validated, but X-Api-Key is the gateway's credential namespace and the header is stripped before dispatch. "required" makes the data plane validate the X-Api-Key header against the API-key store before the request reaches a backend, fails closed when the policy cannot be evaluated, and likewise strips the header. Reading a service back preserves the declaration exactly: an omitted policy reads back with this field absent, never resolved to a value. On a replace of an existing service, omitting this field leaves the declared policy unchanged — it never silently turns enforcement off; to clear a declared policy, send "disabled" explicitly. Independent of sse_mode and pd_disagg_mode, and independent of the management-plane authentication mode.
-	// Enum: [disabled required]
+	// Data-plane credential enforcement declaration for this service. Omission is a state of its own. OMITTED declares nothing: the service is not marked AI-facing, proxying stays byte-identical, and a backend-owned X-Api-Key header passes through untouched. An explicit "disabled" declares the service AI-facing without enforcement: no key is validated, but X-Api-Key is the gateway's credential namespace and the header is stripped before dispatch. "required" makes the data plane validate the X-Api-Key header against the API-key store before the request reaches a backend, fails closed when the policy cannot be evaluated, and likewise strips the header. "jwt" validates an Authorization Bearer JWT against the service's jwt_auth_profile instead; X-Api-Key is not consulted. "apikey-or-jwt" accepts either credential with a fixed precedence: a present X-Api-Key decides alone (its rejection is final, with no JWT fallback), otherwise a Bearer token decides, and a request carrying neither is refused. Both JWT modes require jwt_auth_profile to name a configured profile. Reading a service back preserves the declaration exactly: an omitted policy reads back with this field absent, never resolved to a value. On a replace of an existing service, omitting this field leaves the declared policy unchanged — it never silently turns enforcement off; to clear a declared policy, send "disabled" explicitly. Independent of sse_mode and pd_disagg_mode, and independent of the management-plane authentication mode.
+	// Enum: [disabled required jwt apikey-or-jwt]
 	APIKeyAuth string `json:"api_key_auth,omitempty"`
 
 	// Reference used by the backend TLS material resolver for a managed CA bundle. It does not enable verification by itself; mtls_backend has missing verification-flag wiring. The C copy limits IDs to 63 bytes without admission rejection. Missing material can resolve to an empty path and select system CA paths if verification is otherwise enabled. Requested-security fail-closed semantics and material precedence are unresolved; this fallback is not an authenticated-backend guarantee.
@@ -738,6 +738,10 @@ type LoadbalanceEntryServiceArguments struct {
 
 	// Inactivity timeout in seconds. The domain rejects values above 86400; zero resolves to 240 for TCP/SCTP and 20 for other protocols. On an attached L7 policy, a nonzero timeoutMemberData overrides the relay idle deadline.
 	InactiveTimeOut int32 `json:"inactiveTimeOut,omitempty"`
+
+	// Name of the JWT auth profile (config/ai/jwtauthprofile) that decides this service's Bearer arm. Required by, and only valid with, api_key_auth "jwt" and "apikey-or-jwt"; a create or replace naming a profile that is not configured is rejected. On a replace, omitting this field preserves the existing reference, in lockstep with api_key_auth's replace semantics. While a service references a profile, deleting that profile is refused.
+	// Max Length: 63
+	JwtAuthProfile string `json:"jwt_auth_profile,omitempty"`
 
 	// Token block size for KV hashing. On create and replace POST, omission or explicit 0 stores the default declaration and resolves effectively to 16; explicit JSON null is rejected. PATCH does not support this field. Positive values are limited to 1..4096, the fixed request-token and CBOR workspace bound used by the hashing data path. Choose the value from the deployed engine tuple, not from the schema default. It must match vLLM block-size, SGLang page-size, or TRT-LLM tokens_per_block. A mismatch can cause hash misses; TRT-LLM server-info validation can instead refuse the endpoint's KV event poller while plain load balancing remains available. API acceptance proves safe representation, not engine-geometry compatibility.
 	// Maximum: 4096
@@ -954,6 +958,10 @@ func (m *LoadbalanceEntryServiceArguments) Validate(formats strfmt.Registry) err
 		res = append(res, err)
 	}
 
+	if err := m.validateJwtAuthProfile(formats); err != nil {
+		res = append(res, err)
+	}
+
 	if err := m.validateKvBlockSize(formats); err != nil {
 		res = append(res, err)
 	}
@@ -1056,7 +1064,7 @@ var loadbalanceEntryServiceArgumentsTypeAPIKeyAuthPropEnum []interface{}
 
 func init() {
 	var res []string
-	if err := json.Unmarshal([]byte(`["disabled","required"]`), &res); err != nil {
+	if err := json.Unmarshal([]byte(`["disabled","required","jwt","apikey-or-jwt"]`), &res); err != nil {
 		panic(err)
 	}
 	for _, v := range res {
@@ -1071,6 +1079,12 @@ const (
 
 	// LoadbalanceEntryServiceArgumentsAPIKeyAuthRequired captures enum value "required"
 	LoadbalanceEntryServiceArgumentsAPIKeyAuthRequired string = "required"
+
+	// LoadbalanceEntryServiceArgumentsAPIKeyAuthJwt captures enum value "jwt"
+	LoadbalanceEntryServiceArgumentsAPIKeyAuthJwt string = "jwt"
+
+	// LoadbalanceEntryServiceArgumentsAPIKeyAuthApikeyDashOrDashJwt captures enum value "apikey-or-jwt"
+	LoadbalanceEntryServiceArgumentsAPIKeyAuthApikeyDashOrDashJwt string = "apikey-or-jwt"
 )
 
 // prop value enum
@@ -1226,6 +1240,18 @@ func (m *LoadbalanceEntryServiceArguments) validateChwblReplication(formats strf
 	}
 
 	if err := validate.MaximumInt("serviceArguments"+"."+"chwbl_replication", "body", m.ChwblReplication, 1024, false); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *LoadbalanceEntryServiceArguments) validateJwtAuthProfile(formats strfmt.Registry) error {
+	if swag.IsZero(m.JwtAuthProfile) { // not required
+		return nil
+	}
+
+	if err := validate.MaxLength("serviceArguments"+"."+"jwt_auth_profile", "body", m.JwtAuthProfile, 63); err != nil {
 		return err
 	}
 

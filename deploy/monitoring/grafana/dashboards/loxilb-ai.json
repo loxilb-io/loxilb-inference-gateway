@@ -1175,15 +1175,89 @@
       },
       "panels": [
         {
+          "id": 51,
+          "type": "stat",
+          "title": "Policer attachment (datapath truth)",
+          "description": "loxilb_policer_attached per policer: ATTACHED (1) means the policer and every attachment point are programmed in the datapath; PENDING (0) means an attachment is waiting for its target (for example the rule does not exist yet) and the policer shapes nothing. A policer that stays PENDING is the mis-typed-VIP failure mode. This panel is the row's presence anchor: it has data whenever a policer is configured, even with zero traffic; the shaper panels below only have data for shaped fullproxy services.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "loxilb-prom"
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 24,
+            "x": 0,
+            "y": 65
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "loxilb-prom"
+              },
+              "expr": "loxilb_policer_attached{instance=~\"$instance\"}",
+              "legendFormat": "{{ident}}",
+              "refId": "A",
+              "instant": true
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "orientation": "auto",
+            "textMode": "value_and_name",
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "No policer configured",
+              "mappings": [
+                {
+                  "type": "value",
+                  "options": {
+                    "0": {
+                      "text": "PENDING",
+                      "color": "red",
+                      "index": 1
+                    },
+                    "1": {
+                      "text": "ATTACHED",
+                      "color": "green",
+                      "index": 0
+                    }
+                  }
+                }
+              ],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
           "id": 31,
           "type": "timeseries",
           "title": "Shaped throughput by service and direction",
-          "description": "Payload bytes the Tier-1 shaper granted, per shaped service and direction, with the configured CIR as a dashed reference. These are PLAINTEXT payload bytes measured inside the relay \u2014 never comparable with the eBPF policer's L3 wire-byte counters.",
+          "description": "Payload bytes the Tier-1 shaper granted, per shaped service and direction, with the configured CIR as a dashed reference. These are PLAINTEXT payload bytes measured inside the relay \u2014 never comparable with the eBPF policer's L3 wire-byte counters. Series for a shaped service exist only while its QoS policy is attached: deleting the policy removes them (this panel then shows 'No QoS policy active', which is normal, not a shaper fault), and re-creating it restarts the counters from zero.",
           "gridPos": {
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 65
+            "y": 69
           },
           "datasource": {
             "type": "prometheus",
@@ -1213,7 +1287,7 @@
           "fieldConfig": {
             "defaults": {
               "unit": "Bps",
-              "noValue": "No data"
+              "noValue": "No QoS policy active"
             },
             "overrides": [
               {
@@ -1245,12 +1319,12 @@
           "id": 32,
           "type": "timeseries",
           "title": "Bucket saturation (delayed / passed)",
-          "description": "Share of granted bytes that had to wait through at least one park. This is a SATURATION signal, not a throttled fraction: once the bucket is empty essentially every read follows a park, so a service pinned at its CIR sits near 100%. Use parks/s and mean park below to size the delay.",
+          "description": "Share of granted bytes that had to wait through at least one park. This is a SATURATION signal, not a throttled fraction: once the bucket is empty essentially every read follows a park, so a service pinned at its CIR sits near 100%. Use parks/s and mean park below to size the delay. Series for a shaped service exist only while its QoS policy is attached: deleting the policy removes them (this panel then shows 'No QoS policy active', which is normal, not a shaper fault), and re-creating it restarts the counters from zero.",
           "gridPos": {
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 65
+            "y": 69
           },
           "datasource": {
             "type": "prometheus",
@@ -1275,7 +1349,7 @@
           "fieldConfig": {
             "defaults": {
               "unit": "percentunit",
-              "noValue": "No data"
+              "noValue": "No QoS policy active"
             },
             "overrides": []
           }
@@ -1284,12 +1358,12 @@
           "id": 33,
           "type": "timeseries",
           "title": "Parks/s",
-          "description": "Rate at which the shaper parked a reader because its bucket was empty. Rises with offered load above the CIR; zero while a shaped service stays under its rate.",
+          "description": "Rate at which the shaper parked a reader because its bucket was empty. Rises with offered load above the CIR; zero while a shaped service stays under its rate. Series for a shaped service exist only while its QoS policy is attached: deleting the policy removes them (this panel then shows 'No QoS policy active', which is normal, not a shaper fault), and re-creating it restarts the counters from zero.",
           "gridPos": {
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 73
+            "y": 77
           },
           "datasource": {
             "type": "prometheus",
@@ -1314,7 +1388,7 @@
           "fieldConfig": {
             "defaults": {
               "unit": "short",
-              "noValue": "No data",
+              "noValue": "No QoS policy active",
               "custom": {
                 "axisLabel": "parks/s"
               }
@@ -1326,12 +1400,12 @@
           "id": 34,
           "type": "timeseries",
           "title": "Mean park duration",
-          "description": "park_seconds / parks over the interval \u2014 how long a throttled reader waits per park. Parks that never resumed (connection torn down while throttled) are not counted, so this measures served delay.",
+          "description": "park_seconds / parks over the interval \u2014 how long a throttled reader waits per park. Parks that never resumed (connection torn down while throttled) are not counted, so this measures served delay. Series for a shaped service exist only while its QoS policy is attached: deleting the policy removes them (this panel then shows 'No QoS policy active', which is normal, not a shaper fault), and re-creating it restarts the counters from zero.",
           "gridPos": {
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 73
+            "y": 77
           },
           "datasource": {
             "type": "prometheus",
@@ -1356,7 +1430,7 @@
           "fieldConfig": {
             "defaults": {
               "unit": "s",
-              "noValue": "No data"
+              "noValue": "No QoS policy active"
             },
             "overrides": []
           }
@@ -1365,12 +1439,12 @@
           "id": 35,
           "type": "timeseries",
           "title": "Readers parked now",
-          "description": "Connections the shaper is holding at this instant (bucket park-ring depth). A ring that stays near its 256-entry cap means throttled connections are queueing faster than refills release them.",
+          "description": "Connections the shaper is holding at this instant (bucket park-ring depth). A ring that stays near its 256-entry cap means throttled connections are queueing faster than refills release them. Series for a shaped service exist only while its QoS policy is attached: deleting the policy removes them (this panel then shows 'No QoS policy active', which is normal, not a shaper fault), and re-creating it restarts the counters from zero.",
           "gridPos": {
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 81
+            "y": 85
           },
           "datasource": {
             "type": "prometheus",
@@ -1395,7 +1469,7 @@
           "fieldConfig": {
             "defaults": {
               "unit": "short",
-              "noValue": "No data",
+              "noValue": "No QoS policy active",
               "custom": {
                 "axisLabel": "connections"
               }
@@ -1407,12 +1481,12 @@
           "id": 36,
           "type": "timeseries",
           "title": "Bucket level vs burst depth",
-          "description": "Tokens available in the bucket against its burst depth. A level sitting at zero means the service is rate-bound; a level pinned at the burst depth means the shaper is configured but idle.",
+          "description": "Tokens available in the bucket against its burst depth. A level sitting at zero means the service is rate-bound; a level pinned at the burst depth means the shaper is configured but idle. Series for a shaped service exist only while its QoS policy is attached: deleting the policy removes them (this panel then shows 'No QoS policy active', which is normal, not a shaper fault), and re-creating it restarts the counters from zero.",
           "gridPos": {
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 81
+            "y": 85
           },
           "datasource": {
             "type": "prometheus",
@@ -1442,7 +1516,7 @@
           "fieldConfig": {
             "defaults": {
               "unit": "bytes",
-              "noValue": "No data"
+              "noValue": "No QoS policy active"
             },
             "overrides": []
           }
@@ -2156,6 +2230,51 @@
         "defaults": {
           "unit": "short",
           "noValue": "No parsed payloads"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 52,
+      "type": "timeseries",
+      "title": "P/D routing tier mix",
+      "description": "Terminal prefill-selection decisions by routing tier: tier0 session stickiness, tier1 prefix trie, tier15 KV-exact, tier2 min-load fallback. Every accepted P/D request lands in exactly one tier, so the stacked rates sum to the accepted selection rate; admission parks/sheds and pre-routing rejections are excluded by design. A tier2-dominated mix on a cache-aware rule means the cache tiers are not engaging.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 83
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "loxilb-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (tier) (rate(loxilb_ai_pd_tier_selected_total{instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{tier}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (tier, model) (rate(loxilb_ai_pd_tier_selected_total{instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{tier}} {{model}}",
+          "hide": true
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No P/D traffic"
         },
         "overrides": []
       }

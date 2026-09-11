@@ -33,6 +33,19 @@ func sampleDocument() *Document {
 	doc := NewDocument("0.9.8.6-beta", "gw-test-host", TriggerManual)
 	doc.Domains = Domains{
 		Endpoint: []cmn.EndPointMod{{HostName: "10.0.0.1", Name: "ep1", ProbeType: "tcp"}},
+		JWTAuthProfile: []cmn.JWTAuthProfileMod{{
+			Name:            "kc-main",
+			Issuer:          "https://idp.example.com/realms/ai",
+			JWKSURL:         "https://idp.example.com/realms/ai/protocol/openid-connect/certs",
+			Audiences:       []string{"ai-gateway"},
+			Algs:            []string{"RS256", "ES256"},
+			LeewaySec:       30,
+			RefreshSec:      3600,
+			TenantClaim:     "tenant_id",
+			ModelRolePrefix: "model:",
+			ModelAuthz:      "claims-required",
+			ForwardIdentity: true,
+		}},
 		LoadBalancer: []cmn.LbRuleMod{{
 			Serv: cmn.LbServiceArg{ServIP: "1.1.1.1", ServPort: 80, Proto: "tcp"},
 			Eps:  []cmn.LbEndPointArg{{EpIP: "10.0.0.1", EpPort: 8080}},

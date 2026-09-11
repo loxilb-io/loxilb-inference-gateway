@@ -8002,6 +8002,128 @@ paths:
       tags:
         - opa
 #----------------------------------------------
+# AI Gateway — JWT auth profiles (data-plane bearer admission)
+#----------------------------------------------
+  '/config/ai/jwtauthprofile':
+    post:
+      summary: Create or replace a JWT auth profile
+      description: >-
+        Configures a named issuer profile for data-plane bearer-token
+        admission on LB rules. Posting an existing name replaces the profile
+        and restarts its key lifecycle: the profile answers 503-class on the
+        data plane until the first JWKS fetch against the new configuration
+        succeeds (fail-closed). Only public key material is ever fetched or
+        held; no secrets are stored. Activation does not wait for the first
+        JWKS fetch, so a successful create is not proof the issuer is
+        reachable.
+      operationId: postConfigAiJwtauthprofile
+      parameters:
+        - name: attr
+          in: body
+          required: true
+          description: Attributes of the JWT auth profile
+          schema:
+            $ref: '#/definitions/JWTAuthProfileEntry'
+      responses:
+        '200':
+          description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
+        '400':
+          description: Malformed arguments for API call
+          schema:
+            $ref: '#/definitions/Error'
+        '401':
+          description: Invalid authentication credentials
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
+        '500':
+          description: Internal service error
+          schema:
+            $ref: '#/definitions/Error'
+        '503':
+          description: Maintenance mode
+          schema:
+            $ref: '#/definitions/Error'
+      tags:
+        - ai
+    get:
+      summary: List JWT auth profiles
+      description: >-
+        Returns every configured JWT auth profile. This reports desired
+        configuration only, not issuer reachability or keyset health.
+      operationId: getConfigAiJwtauthprofileAll
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: object
+            properties:
+              jwtAuthProfileAttr:
+                type: array
+                items:
+                  $ref: '#/definitions/JWTAuthProfileEntry'
+        '401':
+          description: Invalid authentication credentials
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
+        '500':
+          description: Internal service error
+          schema:
+            $ref: '#/definitions/Error'
+        '503':
+          description: Maintenance mode
+          schema:
+            $ref: '#/definitions/Error'
+      tags:
+        - ai
+  '/config/ai/jwtauthprofile/{name}':
+    delete:
+      summary: Delete a JWT auth profile
+      description: >-
+        Removes the named profile. A profile referenced by any LB rule is
+        not deletable (409); detach it from every rule first.
+      operationId: deleteConfigAiJwtauthprofileName
+      parameters:
+        - name: name
+          in: path
+          type: string
+          required: true
+          description: Name of the JWT auth profile
+      responses:
+        '200':
+          description: OK
+          schema:
+            $ref: '#/definitions/OperationResult'
+        '401':
+          description: Invalid authentication credentials
+          schema:
+            $ref: '#/definitions/Error'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
+        '404':
+          description: Resource not found
+          schema:
+            $ref: '#/definitions/Error'
+        '409':
+          description: Resource Conflict. Profile is referenced by one or more LB rules
+          schema:
+            $ref: '#/definitions/Error'
+        '500':
+          description: Internal service error
+          schema:
+            $ref: '#/definitions/Error'
+        '503':
+          description: Maintenance mode
+          schema:
+            $ref: '#/definitions/Error'
+      tags:
+        - ai
+#----------------------------------------------
 # Schema definitions
 #----------------------------------------------
 responses:
@@ -9255,10 +9377,10 @@ definitions:
               the system stream cap; enabling SSE does not make them unbounded.
           api_key_auth:
             type: string
-            enum: [disabled, required]
+            enum: [disabled, required, jwt, apikey-or-jwt]
             description: >-
-              Data-plane X-Api-Key enforcement declaration for this service.
-              Three states, and omission is one of them. OMITTED declares
+              Data-plane credential enforcement declaration for this service.
+              Omission is a state of its own. OMITTED declares
               nothing: the service is not marked AI-facing, proxying stays
               byte-identical, and a backend-owned X-Api-Key header passes
               through untouched. An explicit "disabled" declares the service
@@ -9267,7 +9389,14 @@ definitions:
               is stripped before dispatch. "required" makes the data plane
               validate the X-Api-Key header against the API-key store before
               the request reaches a backend, fails closed when the policy
-              cannot be evaluated, and likewise strips the header. Reading a
+              cannot be evaluated, and likewise strips the header. "jwt"
+              validates an Authorization Bearer JWT against the service's
+              jwt_auth_profile instead; X-Api-Key is not consulted.
+              "apikey-or-jwt" accepts either credential with a fixed
+              precedence: a present X-Api-Key decides alone (its rejection is
+              final, with no JWT fallback), otherwise a Bearer token decides,
+              and a request carrying neither is refused. Both JWT modes
+              require jwt_auth_profile to name a configured profile. Reading a
               service back preserves the declaration exactly: an omitted
               policy reads back with this field absent, never resolved to a
               value. On a replace of an existing service, omitting this field
@@ -9275,6 +9404,18 @@ definitions:
               enforcement off; to clear a declared policy, send "disabled"
               explicitly. Independent of sse_mode and pd_disagg_mode, and
               independent of the management-plane authentication mode.
+          jwt_auth_profile:
+            type: string
+            maxLength: 63
+            description: >-
+              Name of the JWT auth profile (config/ai/jwtauthprofile) that
+              decides this service's Bearer arm. Required by, and only valid
+              with, api_key_auth "jwt" and "apikey-or-jwt"; a create or
+              replace naming a profile that is not configured is rejected.
+              On a replace, omitting this field preserves the existing
+              reference, in lockstep with api_key_auth's replace semantics.
+              While a service references a profile, deleting that profile is
+              refused.
           max_stream_duration_sec:
             type: integer
             format: int32
@@ -10246,6 +10387,10 @@ definitions:
       policyIdent:
         type: string
         description: Policy name
+      attached:
+        type: boolean
+        readOnly: true
+        description: "Read-only on GET: true only when the policer and every one of its attachment points are programmed in the datapath. False means an attachment is still pending re-drive (for example its rule does not exist yet) and the policer currently shapes nothing."
       policyInfo:
         type: object
         properties:
@@ -13565,6 +13710,105 @@ definitions:
         type: string
         description: Health check timestamp (RFC3339)
         example: "2025-01-10T10:30:00Z"
+
+  JWTAuthProfileEntry:
+    type: object
+    description: >-
+      Named issuer configuration for data-plane bearer-token (JWT) admission.
+      LB rules reference a profile by name; several rules may share one
+      profile and several profiles (realms/issuers) may be active at once.
+      Claim extraction is fully configurable dot-paths because the identity
+      provider owns the claim schema; defaults are Keycloak-shaped. Zero or
+      absent numeric fields select the documented defaults; there is no field
+      where zero is a meaningful non-default configuration.
+    required:
+      - name
+      - issuer
+    properties:
+      name:
+        type: string
+        description: Profile name (the identity LB rules reference)
+      issuer:
+        type: string
+        description: >-
+          Exact string the token iss claim must equal; must be an http(s)
+          URL. When jwks_url is unset it is also the base for OIDC discovery
+          (issuer + /.well-known/openid-configuration).
+      jwks_url:
+        type: string
+        description: Overrides OIDC discovery of the JWKS endpoint when set
+      audiences:
+        type: array
+        items:
+          type: string
+        description: >-
+          Accept-list matched against the token aud values and azp; at least
+          one must match. Empty skips the audience check (logged at
+          activation).
+      algs:
+        type: array
+        items:
+          type: string
+        description: >-
+          Signature-algorithm accept-list (RS256/RS384/RS512, ES256/ES384/
+          ES512, PS256/PS384/PS512). Default RS256+ES256. alg=none and all
+          HMAC algorithms are rejected unconditionally and cannot be
+          configured.
+      leeway_sec:
+        type: integer
+        format: int64
+        description: Clock-skew allowance in seconds for exp/nbf/iat (default 30)
+      refresh_sec:
+        type: integer
+        format: int64
+        description: Periodic JWKS refresh interval in seconds (default 3600)
+      tenant_claim:
+        type: string
+        description: Dot-path to the tenant identity claim (default tenant_id)
+      user_claim:
+        type: string
+        description: Dot-path to the stable user identity claim (default sub)
+      models_claim:
+        type: string
+        description: >-
+          Dot-path to a string array of allowed models. Unset means models
+          derive from roles via model_role_prefix. When set and present in
+          the token it is authoritative, even when empty.
+      roles_claim:
+        type: string
+        description: Dot-path to the roles array (default realm_access.roles)
+      model_role_prefix:
+        type: string
+        description: >-
+          Prefix filter turning roles into allowed models (default "model:")
+      username_claim:
+        type: string
+        description: Dot-path to a display-only username (default preferred_username)
+      model_authz:
+        type: string
+        enum:
+          - claims-required
+          - allow-all
+        description: >-
+          What happens when no model list can be derived from the token.
+          claims-required (default) denies every model; allow-all admits any
+          model for an otherwise-valid token.
+      default_tenant:
+        type: string
+        description: >-
+          Tenant used when the tenant claim is absent. Empty means such
+          tokens are denied (401) — an unattributable request cannot be
+          metered.
+      forward_identity:
+        type: boolean
+        description: >-
+          Inject verified X-Auth-Tenant/X-Auth-User headers upstream
+          (client-sent copies are always stripped). Default false.
+      authorization_passthrough:
+        type: boolean
+        description: >-
+          Leave the client Authorization header on the upstream request
+          instead of stripping it after verification. Default false.
 
   ApiKeyCreateRequest:
     type: object

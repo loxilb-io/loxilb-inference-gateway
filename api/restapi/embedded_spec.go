@@ -2768,6 +2768,96 @@ func init() {
       ],
       "type": "object"
     },
+    "JWTAuthProfileEntry": {
+      "description": "Named issuer configuration for data-plane bearer-token (JWT) admission. LB rules reference a profile by name; several rules may share one profile and several profiles (realms/issuers) may be active at once. Claim extraction is fully configurable dot-paths because the identity provider owns the claim schema; defaults are Keycloak-shaped. Zero or absent numeric fields select the documented defaults; there is no field where zero is a meaningful non-default configuration.",
+      "properties": {
+        "algs": {
+          "description": "Signature-algorithm accept-list (RS256/RS384/RS512, ES256/ES384/ ES512, PS256/PS384/PS512). Default RS256+ES256. alg=none and all HMAC algorithms are rejected unconditionally and cannot be configured.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "audiences": {
+          "description": "Accept-list matched against the token aud values and azp; at least one must match. Empty skips the audience check (logged at activation).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "authorization_passthrough": {
+          "description": "Leave the client Authorization header on the upstream request instead of stripping it after verification. Default false.",
+          "type": "boolean"
+        },
+        "default_tenant": {
+          "description": "Tenant used when the tenant claim is absent. Empty means such tokens are denied (401) — an unattributable request cannot be metered.",
+          "type": "string"
+        },
+        "forward_identity": {
+          "description": "Inject verified X-Auth-Tenant/X-Auth-User headers upstream (client-sent copies are always stripped). Default false.",
+          "type": "boolean"
+        },
+        "issuer": {
+          "description": "Exact string the token iss claim must equal; must be an http(s) URL. When jwks_url is unset it is also the base for OIDC discovery (issuer + /.well-known/openid-configuration).",
+          "type": "string"
+        },
+        "jwks_url": {
+          "description": "Overrides OIDC discovery of the JWKS endpoint when set",
+          "type": "string"
+        },
+        "leeway_sec": {
+          "description": "Clock-skew allowance in seconds for exp/nbf/iat (default 30)",
+          "format": "int64",
+          "type": "integer"
+        },
+        "model_authz": {
+          "description": "What happens when no model list can be derived from the token. claims-required (default) denies every model; allow-all admits any model for an otherwise-valid token.",
+          "enum": [
+            "claims-required",
+            "allow-all"
+          ],
+          "type": "string"
+        },
+        "model_role_prefix": {
+          "description": "Prefix filter turning roles into allowed models (default \"model:\")",
+          "type": "string"
+        },
+        "models_claim": {
+          "description": "Dot-path to a string array of allowed models. Unset means models derive from roles via model_role_prefix. When set and present in the token it is authoritative, even when empty.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Profile name (the identity LB rules reference)",
+          "type": "string"
+        },
+        "refresh_sec": {
+          "description": "Periodic JWKS refresh interval in seconds (default 3600)",
+          "format": "int64",
+          "type": "integer"
+        },
+        "roles_claim": {
+          "description": "Dot-path to the roles array (default realm_access.roles)",
+          "type": "string"
+        },
+        "tenant_claim": {
+          "description": "Dot-path to the tenant identity claim (default tenant_id)",
+          "type": "string"
+        },
+        "user_claim": {
+          "description": "Dot-path to the stable user identity claim (default sub)",
+          "type": "string"
+        },
+        "username_claim": {
+          "description": "Dot-path to a display-only username (default preferred_username)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "issuer"
+      ],
+      "type": "object"
+    },
     "K8sConntrackEntry": {
       "description": "Legacy Kubernetes-enriched connection shape. The assigned /config/conntrack/all operation does not reference this definition and does not provide these enrichment fields.",
       "properties": {
@@ -3984,10 +4074,12 @@ func init() {
               "type": "object"
             },
             "api_key_auth": {
-              "description": "Data-plane X-Api-Key enforcement declaration for this service. Three states, and omission is one of them. OMITTED declares nothing: the service is not marked AI-facing, proxying stays byte-identical, and a backend-owned X-Api-Key header passes through untouched. An explicit \"disabled\" declares the service AI-facing without enforcement: no key is validated, but X-Api-Key is the gateway's credential namespace and the header is stripped before dispatch. \"required\" makes the data plane validate the X-Api-Key header against the API-key store before the request reaches a backend, fails closed when the policy cannot be evaluated, and likewise strips the header. Reading a service back preserves the declaration exactly: an omitted policy reads back with this field absent, never resolved to a value. On a replace of an existing service, omitting this field leaves the declared policy unchanged — it never silently turns enforcement off; to clear a declared policy, send \"disabled\" explicitly. Independent of sse_mode and pd_disagg_mode, and independent of the management-plane authentication mode.",
+              "description": "Data-plane credential enforcement declaration for this service. Omission is a state of its own. OMITTED declares nothing: the service is not marked AI-facing, proxying stays byte-identical, and a backend-owned X-Api-Key header passes through untouched. An explicit \"disabled\" declares the service AI-facing without enforcement: no key is validated, but X-Api-Key is the gateway's credential namespace and the header is stripped before dispatch. \"required\" makes the data plane validate the X-Api-Key header against the API-key store before the request reaches a backend, fails closed when the policy cannot be evaluated, and likewise strips the header. \"jwt\" validates an Authorization Bearer JWT against the service's jwt_auth_profile instead; X-Api-Key is not consulted. \"apikey-or-jwt\" accepts either credential with a fixed precedence: a present X-Api-Key decides alone (its rejection is final, with no JWT fallback), otherwise a Bearer token decides, and a request carrying neither is refused. Both JWT modes require jwt_auth_profile to name a configured profile. Reading a service back preserves the declaration exactly: an omitted policy reads back with this field absent, never resolved to a value. On a replace of an existing service, omitting this field leaves the declared policy unchanged — it never silently turns enforcement off; to clear a declared policy, send \"disabled\" explicitly. Independent of sse_mode and pd_disagg_mode, and independent of the management-plane authentication mode.",
               "enum": [
                 "disabled",
-                "required"
+                "required",
+                "jwt",
+                "apikey-or-jwt"
               ],
               "type": "string"
             },
@@ -4108,6 +4200,11 @@ func init() {
               "description": "Inactivity timeout in seconds. The domain rejects values above 86400; zero resolves to 240 for TCP/SCTP and 20 for other protocols. On an attached L7 policy, a nonzero timeoutMemberData overrides the relay idle deadline.",
               "format": "int32",
               "type": "integer"
+            },
+            "jwt_auth_profile": {
+              "description": "Name of the JWT auth profile (config/ai/jwtauthprofile) that decides this service's Bearer arm. Required by, and only valid with, api_key_auth \"jwt\" and \"apikey-or-jwt\"; a create or replace naming a profile that is not configured is rejected. On a replace, omitting this field preserves the existing reference, in lockstep with api_key_auth's replace semantics. While a service references a profile, deleting that profile is refused.",
+              "maxLength": 63,
+              "type": "string"
             },
             "kvBlockSize": {
               "default": 16,
@@ -5573,6 +5670,11 @@ func init() {
     "PolicyEntry": {
       "description": "Policer configuration. CIR and PIR use Mbps; burst sizes use bytes. CIR must be at least 8 and PIR may be zero or at least 8, but PIR/CIR ordering is not enforced. CBS zero becomes 30000000 and supplied EBS is overwritten with twice CBS. Signed inputs, scaling, and datapath narrowing are incompletely checked. Stored type does not currently select srTCM in the inspected eBPF path. Fullproxy rule targets use a separate byte-shaper path.",
       "properties": {
+        "attached": {
+          "description": "Read-only on GET: true only when the policer and every one of its attachment points are programmed in the datapath. False means an attachment is still pending re-drive (for example its rule does not exist yet) and the policer currently shapes nothing.",
+          "readOnly": true,
+          "type": "boolean"
+        },
         "policyIdent": {
           "description": "Policy name",
           "type": "string"
@@ -7498,6 +7600,167 @@ func init() {
           }
         },
         "summary": "Get a specific API key",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/config/ai/jwtauthprofile": {
+      "get": {
+        "description": "Returns every configured JWT auth profile. This reports desired configuration only, not issuer reachability or keyset health.",
+        "operationId": "getConfigAiJwtauthprofileAll",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "properties": {
+                "jwtAuthProfileAttr": {
+                  "items": {
+                    "$ref": "#/definitions/JWTAuthProfileEntry"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        },
+        "summary": "List JWT auth profiles",
+        "tags": [
+          "ai"
+        ]
+      },
+      "post": {
+        "description": "Configures a named issuer profile for data-plane bearer-token admission on LB rules. Posting an existing name replaces the profile and restarts its key lifecycle: the profile answers 503-class on the data plane until the first JWKS fetch against the new configuration succeeds (fail-closed). Only public key material is ever fetched or held; no secrets are stored. Activation does not wait for the first JWKS fetch, so a successful create is not proof the issuer is reachable.",
+        "operationId": "postConfigAiJwtauthprofile",
+        "parameters": [
+          {
+            "description": "Attributes of the JWT auth profile",
+            "in": "body",
+            "name": "attr",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/JWTAuthProfileEntry"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        },
+        "summary": "Create or replace a JWT auth profile",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/config/ai/jwtauthprofile/{name}": {
+      "delete": {
+        "description": "Removes the named profile. A profile referenced by any LB rule is not deletable (409); detach it from every rule first.",
+        "operationId": "deleteConfigAiJwtauthprofileName",
+        "parameters": [
+          {
+            "description": "Name of the JWT auth profile",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "409": {
+            "description": "Resource Conflict. Profile is referenced by one or more LB rules",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        },
+        "summary": "Delete a JWT auth profile",
         "tags": [
           "ai"
         ]
@@ -19020,6 +19283,176 @@ func init() {
           },
           "503": {
             "description": "Management credential store or API-key store unavailable",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ai/jwtauthprofile": {
+      "get": {
+        "description": "Returns every configured JWT auth profile. This reports desired configuration only, not issuer reachability or keyset health.",
+        "tags": [
+          "ai"
+        ],
+        "summary": "List JWT auth profiles",
+        "operationId": "getConfigAiJwtauthprofileAll",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "jwtAuthProfileAttr": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/JWTAuthProfileEntry"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "post": {
+        "description": "Configures a named issuer profile for data-plane bearer-token admission on LB rules. Posting an existing name replaces the profile and restarts its key lifecycle: the profile answers 503-class on the data plane until the first JWKS fetch against the new configuration succeeds (fail-closed). Only public key material is ever fetched or held; no secrets are stored. Activation does not wait for the first JWKS fetch, so a successful create is not proof the issuer is reachable.",
+        "tags": [
+          "ai"
+        ],
+        "summary": "Create or replace a JWT auth profile",
+        "operationId": "postConfigAiJwtauthprofile",
+        "parameters": [
+          {
+            "description": "Attributes of the JWT auth profile",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/JWTAuthProfileEntry"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ai/jwtauthprofile/{name}": {
+      "delete": {
+        "description": "Removes the named profile. A profile referenced by any LB rule is not deletable (409); detach it from every rule first.",
+        "tags": [
+          "ai"
+        ],
+        "summary": "Delete a JWT auth profile",
+        "operationId": "deleteConfigAiJwtauthprofileName",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Name of the JWT auth profile",
+            "name": "name",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/OperationResult"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "409": {
+            "description": "Resource Conflict. Profile is referenced by one or more LB rules",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Maintenance mode",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -33424,6 +33857,96 @@ func init() {
         }
       }
     },
+    "JWTAuthProfileEntry": {
+      "description": "Named issuer configuration for data-plane bearer-token (JWT) admission. LB rules reference a profile by name; several rules may share one profile and several profiles (realms/issuers) may be active at once. Claim extraction is fully configurable dot-paths because the identity provider owns the claim schema; defaults are Keycloak-shaped. Zero or absent numeric fields select the documented defaults; there is no field where zero is a meaningful non-default configuration.",
+      "type": "object",
+      "required": [
+        "name",
+        "issuer"
+      ],
+      "properties": {
+        "algs": {
+          "description": "Signature-algorithm accept-list (RS256/RS384/RS512, ES256/ES384/ ES512, PS256/PS384/PS512). Default RS256+ES256. alg=none and all HMAC algorithms are rejected unconditionally and cannot be configured.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "audiences": {
+          "description": "Accept-list matched against the token aud values and azp; at least one must match. Empty skips the audience check (logged at activation).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "authorization_passthrough": {
+          "description": "Leave the client Authorization header on the upstream request instead of stripping it after verification. Default false.",
+          "type": "boolean"
+        },
+        "default_tenant": {
+          "description": "Tenant used when the tenant claim is absent. Empty means such tokens are denied (401) — an unattributable request cannot be metered.",
+          "type": "string"
+        },
+        "forward_identity": {
+          "description": "Inject verified X-Auth-Tenant/X-Auth-User headers upstream (client-sent copies are always stripped). Default false.",
+          "type": "boolean"
+        },
+        "issuer": {
+          "description": "Exact string the token iss claim must equal; must be an http(s) URL. When jwks_url is unset it is also the base for OIDC discovery (issuer + /.well-known/openid-configuration).",
+          "type": "string"
+        },
+        "jwks_url": {
+          "description": "Overrides OIDC discovery of the JWKS endpoint when set",
+          "type": "string"
+        },
+        "leeway_sec": {
+          "description": "Clock-skew allowance in seconds for exp/nbf/iat (default 30)",
+          "type": "integer",
+          "format": "int64"
+        },
+        "model_authz": {
+          "description": "What happens when no model list can be derived from the token. claims-required (default) denies every model; allow-all admits any model for an otherwise-valid token.",
+          "type": "string",
+          "enum": [
+            "claims-required",
+            "allow-all"
+          ]
+        },
+        "model_role_prefix": {
+          "description": "Prefix filter turning roles into allowed models (default \"model:\")",
+          "type": "string"
+        },
+        "models_claim": {
+          "description": "Dot-path to a string array of allowed models. Unset means models derive from roles via model_role_prefix. When set and present in the token it is authoritative, even when empty.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Profile name (the identity LB rules reference)",
+          "type": "string"
+        },
+        "refresh_sec": {
+          "description": "Periodic JWKS refresh interval in seconds (default 3600)",
+          "type": "integer",
+          "format": "int64"
+        },
+        "roles_claim": {
+          "description": "Dot-path to the roles array (default realm_access.roles)",
+          "type": "string"
+        },
+        "tenant_claim": {
+          "description": "Dot-path to the tenant identity claim (default tenant_id)",
+          "type": "string"
+        },
+        "user_claim": {
+          "description": "Dot-path to the stable user identity claim (default sub)",
+          "type": "string"
+        },
+        "username_claim": {
+          "description": "Dot-path to a display-only username (default preferred_username)",
+          "type": "string"
+        }
+      }
+    },
     "K8sConntrackEntry": {
       "description": "Legacy Kubernetes-enriched connection shape. The assigned /config/conntrack/all operation does not reference this definition and does not provide these enrichment fields.",
       "type": "object",
@@ -34614,11 +35137,13 @@ func init() {
               }
             },
             "api_key_auth": {
-              "description": "Data-plane X-Api-Key enforcement declaration for this service. Three states, and omission is one of them. OMITTED declares nothing: the service is not marked AI-facing, proxying stays byte-identical, and a backend-owned X-Api-Key header passes through untouched. An explicit \"disabled\" declares the service AI-facing without enforcement: no key is validated, but X-Api-Key is the gateway's credential namespace and the header is stripped before dispatch. \"required\" makes the data plane validate the X-Api-Key header against the API-key store before the request reaches a backend, fails closed when the policy cannot be evaluated, and likewise strips the header. Reading a service back preserves the declaration exactly: an omitted policy reads back with this field absent, never resolved to a value. On a replace of an existing service, omitting this field leaves the declared policy unchanged — it never silently turns enforcement off; to clear a declared policy, send \"disabled\" explicitly. Independent of sse_mode and pd_disagg_mode, and independent of the management-plane authentication mode.",
+              "description": "Data-plane credential enforcement declaration for this service. Omission is a state of its own. OMITTED declares nothing: the service is not marked AI-facing, proxying stays byte-identical, and a backend-owned X-Api-Key header passes through untouched. An explicit \"disabled\" declares the service AI-facing without enforcement: no key is validated, but X-Api-Key is the gateway's credential namespace and the header is stripped before dispatch. \"required\" makes the data plane validate the X-Api-Key header against the API-key store before the request reaches a backend, fails closed when the policy cannot be evaluated, and likewise strips the header. \"jwt\" validates an Authorization Bearer JWT against the service's jwt_auth_profile instead; X-Api-Key is not consulted. \"apikey-or-jwt\" accepts either credential with a fixed precedence: a present X-Api-Key decides alone (its rejection is final, with no JWT fallback), otherwise a Bearer token decides, and a request carrying neither is refused. Both JWT modes require jwt_auth_profile to name a configured profile. Reading a service back preserves the declaration exactly: an omitted policy reads back with this field absent, never resolved to a value. On a replace of an existing service, omitting this field leaves the declared policy unchanged — it never silently turns enforcement off; to clear a declared policy, send \"disabled\" explicitly. Independent of sse_mode and pd_disagg_mode, and independent of the management-plane authentication mode.",
               "type": "string",
               "enum": [
                 "disabled",
-                "required"
+                "required",
+                "jwt",
+                "apikey-or-jwt"
               ]
             },
             "backend_ca_cert_id": {
@@ -34738,6 +35263,11 @@ func init() {
               "description": "Inactivity timeout in seconds. The domain rejects values above 86400; zero resolves to 240 for TCP/SCTP and 20 for other protocols. On an attached L7 policy, a nonzero timeoutMemberData overrides the relay idle deadline.",
               "type": "integer",
               "format": "int32"
+            },
+            "jwt_auth_profile": {
+              "description": "Name of the JWT auth profile (config/ai/jwtauthprofile) that decides this service's Bearer arm. Required by, and only valid with, api_key_auth \"jwt\" and \"apikey-or-jwt\"; a create or replace naming a profile that is not configured is rejected. On a replace, omitting this field preserves the existing reference, in lockstep with api_key_auth's replace semantics. While a service references a profile, deleting that profile is refused.",
+              "type": "string",
+              "maxLength": 63
             },
             "kvBlockSize": {
               "description": "Token block size for KV hashing. On create and replace POST, omission or explicit 0 stores the default declaration and resolves effectively to 16; explicit JSON null is rejected. PATCH does not support this field. Positive values are limited to 1..4096, the fixed request-token and CBOR workspace bound used by the hashing data path. Choose the value from the deployed engine tuple, not from the schema default. It must match vLLM block-size, SGLang page-size, or TRT-LLM tokens_per_block. A mismatch can cause hash misses; TRT-LLM server-info validation can instead refuse the endpoint's KV event poller while plain load balancing remains available. API acceptance proves safe representation, not engine-geometry compatibility.",
@@ -35299,11 +35829,13 @@ func init() {
           }
         },
         "api_key_auth": {
-          "description": "Data-plane X-Api-Key enforcement declaration for this service. Three states, and omission is one of them. OMITTED declares nothing: the service is not marked AI-facing, proxying stays byte-identical, and a backend-owned X-Api-Key header passes through untouched. An explicit \"disabled\" declares the service AI-facing without enforcement: no key is validated, but X-Api-Key is the gateway's credential namespace and the header is stripped before dispatch. \"required\" makes the data plane validate the X-Api-Key header against the API-key store before the request reaches a backend, fails closed when the policy cannot be evaluated, and likewise strips the header. Reading a service back preserves the declaration exactly: an omitted policy reads back with this field absent, never resolved to a value. On a replace of an existing service, omitting this field leaves the declared policy unchanged — it never silently turns enforcement off; to clear a declared policy, send \"disabled\" explicitly. Independent of sse_mode and pd_disagg_mode, and independent of the management-plane authentication mode.",
+          "description": "Data-plane credential enforcement declaration for this service. Omission is a state of its own. OMITTED declares nothing: the service is not marked AI-facing, proxying stays byte-identical, and a backend-owned X-Api-Key header passes through untouched. An explicit \"disabled\" declares the service AI-facing without enforcement: no key is validated, but X-Api-Key is the gateway's credential namespace and the header is stripped before dispatch. \"required\" makes the data plane validate the X-Api-Key header against the API-key store before the request reaches a backend, fails closed when the policy cannot be evaluated, and likewise strips the header. \"jwt\" validates an Authorization Bearer JWT against the service's jwt_auth_profile instead; X-Api-Key is not consulted. \"apikey-or-jwt\" accepts either credential with a fixed precedence: a present X-Api-Key decides alone (its rejection is final, with no JWT fallback), otherwise a Bearer token decides, and a request carrying neither is refused. Both JWT modes require jwt_auth_profile to name a configured profile. Reading a service back preserves the declaration exactly: an omitted policy reads back with this field absent, never resolved to a value. On a replace of an existing service, omitting this field leaves the declared policy unchanged — it never silently turns enforcement off; to clear a declared policy, send \"disabled\" explicitly. Independent of sse_mode and pd_disagg_mode, and independent of the management-plane authentication mode.",
           "type": "string",
           "enum": [
             "disabled",
-            "required"
+            "required",
+            "jwt",
+            "apikey-or-jwt"
           ]
         },
         "backend_ca_cert_id": {
@@ -35423,6 +35955,11 @@ func init() {
           "description": "Inactivity timeout in seconds. The domain rejects values above 86400; zero resolves to 240 for TCP/SCTP and 20 for other protocols. On an attached L7 policy, a nonzero timeoutMemberData overrides the relay idle deadline.",
           "type": "integer",
           "format": "int32"
+        },
+        "jwt_auth_profile": {
+          "description": "Name of the JWT auth profile (config/ai/jwtauthprofile) that decides this service's Bearer arm. Required by, and only valid with, api_key_auth \"jwt\" and \"apikey-or-jwt\"; a create or replace naming a profile that is not configured is rejected. On a replace, omitting this field preserves the existing reference, in lockstep with api_key_auth's replace semantics. While a service references a profile, deleting that profile is refused.",
+          "type": "string",
+          "maxLength": 63
         },
         "kvBlockSize": {
           "description": "Token block size for KV hashing. On create and replace POST, omission or explicit 0 stores the default declaration and resolves effectively to 16; explicit JSON null is rejected. PATCH does not support this field. Positive values are limited to 1..4096, the fixed request-token and CBOR workspace bound used by the hashing data path. Choose the value from the deployed engine tuple, not from the schema default. It must match vLLM block-size, SGLang page-size, or TRT-LLM tokens_per_block. A mismatch can cause hash misses; TRT-LLM server-info validation can instead refuse the endpoint's KV event poller while plain load balancing remains available. API acceptance proves safe representation, not engine-geometry compatibility.",
@@ -37062,6 +37599,11 @@ func init() {
         "targetObject"
       ],
       "properties": {
+        "attached": {
+          "description": "Read-only on GET: true only when the policer and every one of its attachment points are programmed in the datapath. False means an attachment is still pending re-drive (for example its rule does not exist yet) and the policer currently shapes nothing.",
+          "type": "boolean",
+          "readOnly": true
+        },
         "policyIdent": {
           "description": "Policy name",
           "type": "string"
