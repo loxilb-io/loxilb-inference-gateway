@@ -62,6 +62,15 @@ KV_ZMQ_PORT=5557
 KV_HASH_ALGO="sha256_cbor"
 KV_WARMUP_SEC=20
 KV_BLOCK_SIZE=16
+# A vllm kvExactMode rule MUST declare the served model: the control plane
+# refuses the rule outright without it ("model_name is required for vllm
+# kvExactMode ... must equal the served model and staged tokenizer identity"),
+# because the selector's block hashes are only comparable against a publisher
+# that tokenized with the SAME tokenizer. This is the tokenizer staged above
+# (TOKENIZER_SLUG) and the model validation.sh puts in every request body, so
+# the three identities are pinned to one value here.
+KV_MODEL="${KV_MODEL:-Qwen/Qwen3-0.6B}"
+export KV_MODEL
 
 # ── memory-safety knob (cap/eviction gate leg) ───────────────────────────────────────────────────────
 # LOXILB_KV_MAX_BLOCKS lowers the per-EP kvInventory cap (default 1_000_000, range 1000..100_000_000 —
@@ -195,6 +204,7 @@ read -r -d '' SEED_KVRULE <<JSON
     "sel": 0,
     "mode": 4,
     "host": "${VIP}",
+    "model_name": "${KV_MODEL}",
     "pd_disagg_mode": true,
     "probeRetries": 1,
     "kvExactMode": 1,
@@ -219,7 +229,7 @@ JSON
 cli_preflight llb1 && USE_CLI=1 || USE_CLI=0
 echo "Seeding KV-exact P/D service ${VIP}:${VPORT} (kvExactMode=1, 3 prefill + 3 decode)..."
 if [[ "$USE_CLI" == "1" ]]; then
-  create_lb_rule llb1 "${VIP}" --tcp=${VPORT}:80 --mode=fullproxy --host="${VIP}" --pd-disagg --proberetries=1 --kv-exact-mode=1 --kv-zmq-port=${KV_ZMQ_PORT} --kv-hash-algo=${KV_HASH_ALGO} --kv-warmup=${KV_WARMUP_SEC} --kv-block-size=${KV_BLOCK_SIZE} --endpoints=31.31.31.1:1,32.32.32.1:1,33.33.33.1:1,34.34.34.1:1,35.35.35.1:1,36.36.36.1:1 --ep-role=prefill,decode,prefill,decode,prefill,decode
+  create_lb_rule llb1 "${VIP}" --tcp=${VPORT}:80 --mode=fullproxy --host="${VIP}" --model-name="${KV_MODEL}" --pd-disagg --proberetries=1 --kv-exact-mode=1 --kv-zmq-port=${KV_ZMQ_PORT} --kv-hash-algo=${KV_HASH_ALGO} --kv-warmup=${KV_WARMUP_SEC} --kv-block-size=${KV_BLOCK_SIZE} --endpoints=31.31.31.1:1,32.32.32.1:1,33.33.33.1:1,34.34.34.1:1,35.35.35.1:1,36.36.36.1:1 --ep-role=prefill,decode,prefill,decode,prefill,decode
 else
 $hexec llb1 curl -s -o /dev/null -w "  POST /config/loadbalancer (KV-exact rule) -> HTTP %{http_code}\n" \
     -X POST "${LBBASE}" -H 'Content-Type: application/json' -d "${SEED_KVRULE}"
