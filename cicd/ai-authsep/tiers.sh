@@ -73,6 +73,32 @@ lcurl_mut() {
   printf '%s\n' "$out"
 }
 
+# mut_ok is lcurl_mut for a mutating call that MUST succeed, and it exists
+# because two silent-failure modes could combine into a wrong verdict rather
+# than an error. The freeze middleware answers 503 in the window that follows
+# any config write — about three seconds, per lcurl_mut above — and every
+# mutating call here passed `-o /dev/null`, so that answer was discarded.
+# A rule flip lost that way leaves the PREVIOUS policy in force, and the
+# assertions that follow then report the data plane admitting a request it
+# should have refused: a configuration failure wearing the costume of a
+# security defect. Retry like lcurl_mut, then fail the run by name on any
+# non-2xx, so the state that was never established says so itself.
+mut_ok() { # mut_ok <what> <curl args...>
+  local what="$1"; shift
+  local out code
+  out=$(lcurl_mut -w '\n%{http_code}' "$@")
+  code=$(printf '%s\n' "$out" | tail -1)
+  case "$code" in
+    2??) return 0 ;;
+    *)
+      echo "  [FAIL] $what: the management call answered ${code:-<none>}, so the" \
+           "state it was to establish does not exist; every assertion below it" \
+           "is scoring the previous configuration"
+      FAIL=$((FAIL + 1))
+      return 1 ;;
+  esac
+}
+
 MGMT_USER=tiersadmin
 MGMT_PASS='TiersAdm1n!pass'
 mgmt_login() { # mgmt_login <none|usvc|manual> — arms AUTH_HDR for lcurl
@@ -204,13 +230,17 @@ mk_rule() { # mk_rule <port> <sse:true|false> <pd:true|false> <policy:required|d
   else
     eps='[{"endpointIP":"31.31.31.1","targetPort":8080,"weight":1}]'
   fi
-  lcurl -o /dev/null -X POST $API/config/loadbalancer -H 'Content-Type: application/json' \
+  mut_ok "rule :$1 (policy ${4}, sse=$2, pd=$3)" \
+    -X POST $API/config/loadbalancer -H 'Content-Type: application/json' \
     -d "{\"serviceArguments\":{\"externalIP\":\"$VIP\",\"port\":$1,\"protocol\":\"tcp\",\"mode\":4,\"sse_mode\":$2,\"pd_disagg_mode\":$3$pol,\"inactiveTimeOut\":60,\"host\":\"$VIP\"},\"endpoints\":$eps}"
 }
 
+# Deliberately NOT mut_ok: exactly one of the two forms addresses the rule as
+# it was created, so the other is expected to answer 404. Retrying is still
+# right — a delete lost to the freeze window would leave a rule behind.
 rm_rule() { # rm_rule <port>
-  lcurl -o /dev/null -X DELETE "$API/config/loadbalancer/hosturl/$VIP/externalipaddress/$VIP/port/$1/protocol/tcp"
-  lcurl -o /dev/null -X DELETE "$API/config/loadbalancer/externalipaddress/$VIP/port/$1/protocol/tcp"
+  lcurl_mut -o /dev/null -X DELETE "$API/config/loadbalancer/hosturl/$VIP/externalipaddress/$VIP/port/$1/protocol/tcp"
+  lcurl_mut -o /dev/null -X DELETE "$API/config/loadbalancer/externalipaddress/$VIP/port/$1/protocol/tcp"
 }
 
 pg_ready() {
@@ -427,7 +457,7 @@ K_OFF=$(mkkey tiers-t1 toggled '[]' 500 1000 0)
 KID_OFF=$(lcurl "$API/config/ai/apikey?tenant_id=tiers-t1" | python3 -c 'import sys,json
 for k in json.load(sys.stdin):
     if k.get("name")=="toggled": print(k["key_id"]); break' 2>/dev/null)
-lcurl -o /dev/null -X PATCH "$API/config/ai/apikey/$KID_OFF" -H 'Content-Type: application/json' -d '{"enabled":false}'
+mut_ok "revoke the enabled=0 key" -X PATCH "$API/config/ai/apikey/$KID_OFF" -H 'Content-Type: application/json' -d '{"enabled":false}'
 sleep 1
 chk "C enabled=0 key"        "401 invalid_api_key" "$(probe 2020 -H "X-Api-Key: $K_OFF" -d "$BODY_OK")"
 
@@ -443,7 +473,7 @@ probe 2020 -H "X-Api-Key: $K_REVOKED" -d "$BODY_OK" >/dev/null   # warm the cach
 KID_REV=$(lcurl "$API/config/ai/apikey?tenant_id=tiers-t1" | python3 -c 'import sys,json
 for k in json.load(sys.stdin):
     if k.get("name")=="revoked": print(k["key_id"]); break' 2>/dev/null)
-lcurl -o /dev/null -X PATCH "$API/config/ai/apikey/$KID_REV" -H 'Content-Type: application/json' -d '{"enabled":false}'
+mut_ok "revoke the cache-invalidation key" -X PATCH "$API/config/ai/apikey/$KID_REV" -H 'Content-Type: application/json' -d '{"enabled":false}'
 sleep 1
 chk "C revoked one second earlier (cache invalidated)" "401 invalid_api_key" "$(probe 2020 -H "X-Api-Key: $K_REVOKED" -d "$BODY_OK")"
 
@@ -503,7 +533,7 @@ chk "D key RPS names rate_limit_exceeded" "429 rate_limit_exceeded" "$R429"
 
 # Tenant RPS: a fresh tenant whose KEY is generous but whose TENANT cap is 1.
 K_TRPS=$(mkkey tiers-trps trpskey '[]' 500 1000 0)
-lcurl -o /dev/null -X POST $API/config/ai/tenant/ratelimit -H 'Content-Type: application/json' \
+mut_ok "tenant quota (key RPS tier)" -X POST $API/config/ai/tenant/ratelimit -H 'Content-Type: application/json' \
   -d '{"tenant_id":"tiers-trps","rps":1,"tokens_per_min":0}'
 sleep 1
 CODES=""
@@ -516,7 +546,7 @@ esac
 # Tenant TPM via pre-admission: the declared ceiling exceeds the quota, so the
 # request is refused BEFORE dispatch with the token error, not the rate one.
 K_TPM=$(mkkey tiers-tpm tpmkey '[]' 500 1000 0)
-lcurl -o /dev/null -X POST $API/config/ai/tenant/ratelimit -H 'Content-Type: application/json' \
+mut_ok "tenant quota (tenant RPS tier)" -X POST $API/config/ai/tenant/ratelimit -H 'Content-Type: application/json' \
   -d '{"tenant_id":"tiers-tpm","rps":1000,"tokens_per_min":200}'
 sleep 1
 BIG='{"model":"test-model","max_tokens":4000,"messages":[{"role":"user","content":"hi"}]}'
@@ -526,7 +556,7 @@ chk_has "D tenant TPM error names tokens, not rate" "token_quota" "$T1"
 
 # Model TPM: same shape, keyed to the model.
 K_MTPM=$(mkkey tiers-mtpm mtpmkey '[]' 500 1000 0)
-lcurl -o /dev/null -X POST $API/config/ai/tenant/ratelimit -H 'Content-Type: application/json' \
+mut_ok "tenant quota (tenant TPM tier)" -X POST $API/config/ai/tenant/ratelimit -H 'Content-Type: application/json' \
   -d '{"tenant_id":"tiers-mtpm","rps":1000,"tokens_per_min":0,"model_limits":[{"model":"test-model","tokens_per_min":200}]}'
 sleep 1
 M1=$(probe 2020 -H "X-Api-Key: $K_MTPM" -d "$BIG")
@@ -536,10 +566,10 @@ chk_has "D model TPM error names tokens" "token_quota" "$M1"
 # Burst narrowing: same quota, narrowed bucket refuses the ceiling the
 # default bucket accepts.
 K_BURST=$(mkkey tiers-burst burstkey '[]' 500 1000 0)
-lcurl -o /dev/null -X POST $API/config/ai/tenant/ratelimit -H 'Content-Type: application/json' \
+mut_ok "tenant quota (model TPM tier)" -X POST $API/config/ai/tenant/ratelimit -H 'Content-Type: application/json' \
   -d '{"tenant_id":"tiers-burst","rps":1000,"tokens_per_min":6000,"burst_pct":5}'
 K_WIDE=$(mkkey tiers-wide widekey '[]' 500 1000 0)
-lcurl -o /dev/null -X POST $API/config/ai/tenant/ratelimit -H 'Content-Type: application/json' \
+mut_ok "tenant quota (burst tier)" -X POST $API/config/ai/tenant/ratelimit -H 'Content-Type: application/json' \
   -d '{"tenant_id":"tiers-wide","rps":1000,"tokens_per_min":6000}'
 sleep 1
 MID='{"model":"test-model","max_tokens":1500,"messages":[{"role":"user","content":"hi"}]}'
@@ -629,7 +659,7 @@ docker exec l3h1 curl -s -N -m 30 "http://$VIP:2029/v1/chat/completions?sse=1" \
   -H 'Content-Type: application/json' -H "X-Api-Key: $K_E5" -d "$BODY_OK" > /tmp/e5.stream 2>&1 &
 E5PID=$!
 sleep 2
-lcurl -o /dev/null -X PATCH "$API/config/ai/apikey/$KID_E5" -H 'Content-Type: application/json' -d '{"enabled":false}'
+mut_ok "revoke the E5 key mid-stream" -X PATCH "$API/config/ai/apikey/$KID_E5" -H 'Content-Type: application/json' -d '{"enabled":false}'
 wait $E5PID
 chk_has "E5 the stream completed across the revocation" "[DONE]" "$(cat /tmp/e5.stream)"
 chk "E5 the next request with the revoked key is refused" "401 invalid_api_key" "$(probe 2029 -H "X-Api-Key: $K_E5" -d "$BODY_OK")"
