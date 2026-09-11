@@ -1,17 +1,17 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-09T03:46:03+00:00",
-  "source_revision": "ccece0c4c0781936963a0adfbe3cecab8fbd944b",
+  "generated_at": "2026-09-11T02:21:28+00:00",
+  "source_revision": "419a51b18a5caea04d226530de3a75ce002f5c0f",
   "upstream_repository": "https://github.com/loxilb-io/loxilb",
   "upstream_revision": "71982cd61b23d82c8f2ff1dd38d395bbb4c9360d"
  },
  "contract": {
-  "gateway_families": 232,
+  "gateway_families": 233,
   "upstream_families": 60,
   "present_identical": 35,
   "present_divergent": 0,
-  "absent": 197,
+  "absent": 198,
   "upstream_only": 25
  },
  "upstream_only": [
@@ -2173,6 +2173,19 @@
     "type": "counter",
     "labels": [
      "result"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_policer_attached",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "ident"
     ]
    }
   },
