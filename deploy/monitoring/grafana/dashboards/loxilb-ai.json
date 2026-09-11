@@ -1175,6 +1175,80 @@
       },
       "panels": [
         {
+          "id": 51,
+          "type": "stat",
+          "title": "Policer attachment (datapath truth)",
+          "description": "loxilb_policer_attached per policer: ATTACHED (1) means the policer and every attachment point are programmed in the datapath; PENDING (0) means an attachment is waiting for its target (for example the rule does not exist yet) and the policer shapes nothing. A policer that stays PENDING is the mis-typed-VIP failure mode. This panel is the row's presence anchor: it has data whenever a policer is configured, even with zero traffic; the shaper panels below only have data for shaped fullproxy services.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "loxilb-prom"
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 24,
+            "x": 0,
+            "y": 65
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "loxilb-prom"
+              },
+              "expr": "loxilb_policer_attached{instance=~\"$instance\"}",
+              "legendFormat": "{{ident}}",
+              "refId": "A",
+              "instant": true
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "orientation": "auto",
+            "textMode": "value_and_name",
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "No policer configured",
+              "mappings": [
+                {
+                  "type": "value",
+                  "options": {
+                    "0": {
+                      "text": "PENDING",
+                      "color": "red",
+                      "index": 1
+                    },
+                    "1": {
+                      "text": "ATTACHED",
+                      "color": "green",
+                      "index": 0
+                    }
+                  }
+                }
+              ],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
           "id": 31,
           "type": "timeseries",
           "title": "Shaped throughput by service and direction",
@@ -1183,7 +1257,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 65
+            "y": 69
           },
           "datasource": {
             "type": "prometheus",
@@ -1250,7 +1324,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 65
+            "y": 69
           },
           "datasource": {
             "type": "prometheus",
@@ -1289,7 +1363,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 73
+            "y": 77
           },
           "datasource": {
             "type": "prometheus",
@@ -1331,7 +1405,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 73
+            "y": 77
           },
           "datasource": {
             "type": "prometheus",
@@ -1370,7 +1444,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 81
+            "y": 85
           },
           "datasource": {
             "type": "prometheus",
@@ -1412,7 +1486,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 81
+            "y": 85
           },
           "datasource": {
             "type": "prometheus",

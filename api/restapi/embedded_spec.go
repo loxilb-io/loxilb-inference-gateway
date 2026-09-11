@@ -5659,6 +5659,11 @@ func init() {
     "PolicyEntry": {
       "description": "Policer configuration. CIR and PIR use Mbps; burst sizes use bytes. CIR must be at least 8 and PIR may be zero or at least 8, but PIR/CIR ordering is not enforced. CBS zero becomes 30000000 and supplied EBS is overwritten with twice CBS. Signed inputs, scaling, and datapath narrowing are incompletely checked. Stored type does not currently select srTCM in the inspected eBPF path. Fullproxy rule targets use a separate byte-shaper path.",
       "properties": {
+        "attached": {
+          "description": "Read-only on GET: true only when the policer and every one of its attachment points are programmed in the datapath. False means an attachment is still pending re-drive (for example its rule does not exist yet) and the policer currently shapes nothing.",
+          "readOnly": true,
+          "type": "boolean"
+        },
         "policyIdent": {
           "description": "Policy name",
           "type": "string"
@@ -37561,6 +37566,11 @@ func init() {
         "targetObject"
       ],
       "properties": {
+        "attached": {
+          "description": "Read-only on GET: true only when the policer and every one of its attachment points are programmed in the datapath. False means an attachment is still pending re-drive (for example its rule does not exist yet) and the policer currently shapes nothing.",
+          "type": "boolean",
+          "readOnly": true
+        },
         "policyIdent": {
           "description": "Policy name",
           "type": "string"

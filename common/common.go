@@ -1730,6 +1730,13 @@ type PolMod struct {
 	Info PolInfo
 	// Target - target object information
 	Target PolObj
+	// Attached - read-only on GET: true only when the policer and every one
+	// of its attachment points are programmed in the datapath. False means
+	// the attachment is pending re-drive (e.g. its rule does not exist yet)
+	// and the policer currently shapes nothing. Ignored on create, and
+	// excluded from persistence: datapath state must not round-trip through
+	// a snapshot, and the canonical snapshot encoding stays unchanged.
+	Attached bool `json:"-"`
 }
 
 const (
