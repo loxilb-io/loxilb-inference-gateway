@@ -151,9 +151,14 @@ jobs:
           path: .loxicmd-under-test
           persist-credentials: false
       - name: Build the CLI under test
+        # Isolated module cache: the gateway build above runs under sudo -E
+        # and leaves root-owned directories in the shared Go module cache,
+        # so this unprivileged build cannot add the CLI's own modules there
+        # whenever the runner cache was cold (any go.sum change cycles it).
         run: |
           cd .loxicmd-under-test
-          CGO_ENABLED=0 go build -o "$GITHUB_WORKSPACE/loxicmd-under-test" .
+          CGO_ENABLED=0 GOMODCACHE="$GITHUB_WORKSPACE/.loxicmd-modcache" \
+            go build -o "$GITHUB_WORKSPACE/loxicmd-under-test" .
           "$GITHUB_WORKSPACE/loxicmd-under-test" version
 
       - name: Round-trip (persist + restart field-identical, deep-diff oracle)
