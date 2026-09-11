@@ -646,6 +646,39 @@ func (na *NetAPIStruct) NetPolicerDel(pm *cmn.PolMod) (int, error) {
 	return ret, err
 }
 
+// NetJWTAuthProfileGet - list configured JWT auth profiles
+func (na *NetAPIStruct) NetJWTAuthProfileGet() ([]cmn.JWTAuthProfileMod, error) {
+	if na.BgpPeerMode {
+		return nil, errors.New("running in bgp only mode")
+	}
+	// The holder has its own lock; the global config mutex is not needed
+	// for a read that touches no datapath state.
+	return mh.JWTAuthProfiles.ProfileGet()
+}
+
+// NetJWTAuthProfileAdd - create or replace a JWT auth profile
+func (na *NetAPIStruct) NetJWTAuthProfileAdd(pm *cmn.JWTAuthProfileMod) (int, error) {
+	if na.BgpPeerMode {
+		return JwtAuthProfileArgErr, errors.New("running in bgp only mode")
+	}
+	mh.mtx.Lock()
+	defer mh.mtx.Unlock()
+
+	return mh.JWTAuthProfiles.ProfileAdd(pm)
+}
+
+// NetJWTAuthProfileDel - delete a JWT auth profile (refused while any LB
+// rule references it)
+func (na *NetAPIStruct) NetJWTAuthProfileDel(name string) (int, error) {
+	if na.BgpPeerMode {
+		return JwtAuthProfileArgErr, errors.New("running in bgp only mode")
+	}
+	mh.mtx.Lock()
+	defer mh.mtx.Unlock()
+
+	return mh.JWTAuthProfiles.ProfileDel(name)
+}
+
 // NetCIStateGet - Get current node cluster state
 func (na *NetAPIStruct) NetCIStateGet() ([]cmn.HASMod, error) {
 	if na.BgpPeerMode {

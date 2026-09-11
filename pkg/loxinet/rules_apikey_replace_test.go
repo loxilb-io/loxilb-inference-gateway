@@ -67,6 +67,8 @@ func TestApiKeyAuthWireValue(t *testing.T) {
 		{"", 0},
 		{"required", 1},
 		{"disabled", 2},
+		{"jwt", 3},
+		{"apikey-or-jwt", 4},
 	}
 	for _, c := range cases {
 		if got := apiKeyAuthWireValue(c.declared); got != c.want {
@@ -87,6 +89,8 @@ func TestApiKeyAuthNamespaceTruthTable(t *testing.T) {
 		{declared: "", strip: false},
 		{declared: "disabled", strip: true},
 		{declared: "required", strip: true},
+		{declared: "jwt", strip: true},
+		{declared: "apikey-or-jwt", strip: true},
 	}
 	streaming := []struct {
 		sse bool
@@ -112,7 +116,7 @@ func TestApiKeyAuthNamespaceTruthTable(t *testing.T) {
 			}
 		}
 	}
-	if rows != 12 {
-		t.Fatalf("namespace truth table has %d rows, want 12", rows)
+	if rows != 20 {
+		t.Fatalf("namespace truth table has %d rows, want 20", rows)
 	}
 }

@@ -30,6 +30,8 @@ typedef struct {
     char model_name[128];
     char key_id[64];
     char error_code[64];
+    char user_id[128];
+    int  auth_flags;
 } ai_gw_decision_t;
 */
 import "C"
@@ -392,6 +394,98 @@ func llb_ai_validate_key(rawKey *C.char, modelName *C.char, result *C.ai_gw_deci
 	// record 403 metric directly at the point of denial.
 	if decision == 2 {
 		prom.RecordModelNotAllowed(tenantID, modelNameStr)
+	}
+	return -1
+}
+
+// llb_ai_validate_bearer validates an Authorization: Bearer JWT for an
+// incoming AI Gateway request — the JWT sibling of llb_ai_validate_key,
+// deciding the Bearer arm of api_key_auth modes "jwt" and "apikey-or-jwt".
+//
+// Parameters:
+//
+//	bearer      – compact JWS from the Authorization header, scheme stripped
+//	modelName   – effective model from the request (empty string if absent)
+//	profileName – the rule's jwt_auth_profile name
+//	bearerFlags – AI_GW_BEARERF_* capture flags (oversize → 401)
+//	result      – output decision structure filled by this function
+//
+// Returns 0 when the request is allowed; -1 when it must be rejected.
+// The caller inspects result->decision for the HTTP status:
+//
+//	0 – allow (tenant_id, user_id, auth_flags populated)
+//	1 – deny with 401 (missing/malformed/expired/oversize token)
+//	2 – deny with 403 (model not in the token's allowed set)
+//	4 – deny with 503 (keyset never fetched / profile missing — the
+//	    gateway's outage, distinct from 401 on purpose)
+//
+//export llb_ai_validate_bearer
+func llb_ai_validate_bearer(bearer *C.char, modelName *C.char, profileName *C.char, bearerFlags C.int, result *C.ai_gw_decision_t) (ret C.int) {
+	var metricTenant, metricModel string
+
+	// Fail closed on panic: deny with 401 rather than crashing the datapath.
+	defer func() {
+		if r := recover(); r != nil {
+			tk.LogIt(tk.LogCritical, "[AIGateway] llb_ai_validate_bearer: recovered panic: %v\n", r)
+			if result != nil {
+				result.decision = 1
+				cCopyStr((*C.char)(unsafe.Pointer(&result.error_code[0])), "internal_error", 64)
+			}
+			ret = -1
+		}
+		// Structural denial accounting, same shape as llb_ai_validate_key:
+		// a non-zero return means the C gate answers and tears the
+		// connection down, so this is the request's only entry into
+		// loxilb_ai_requests_total.
+		recordGateDenial(ret, result, metricTenant, metricModel)
+	}()
+	if result == nil {
+		tk.LogIt(tk.LogError, "[AIGateway] llb_ai_validate_bearer: nil result pointer\n")
+		return -1
+	}
+	metricModel = C.GoString(modelName)
+
+	*result = C.ai_gw_decision_t{}
+
+	h := mh.JWTAuthProfiles
+	if h == nil {
+		// Init order violation: the holder exists before the API surface
+		// comes up. Seeing nil here means a data-plane call raced process
+		// bootstrap — refuse as an outage, never admit.
+		prom.RecordPolicyStoreUnavailable()
+		result.decision = 4
+		cCopyStr((*C.char)(unsafe.Pointer(&result.error_code[0])), "policy_store_unavailable", 64)
+		return -1
+	}
+
+	decision, tenantID, userID, errorCode, authFlags := validateBearerInternal(
+		h.Manager(), h.ProfileUpstreamPolicy,
+		C.GoString(bearer), metricModel, C.GoString(profileName), int(bearerFlags))
+
+	// Known on the 403 arm; empty elsewhere ("denied before the tenant
+	// resolved"), mirroring the API-key arm's label discipline.
+	metricTenant = tenantID
+	result.decision = C.int(decision)
+
+	if decision == 0 {
+		cCopyStr((*C.char)(unsafe.Pointer(&result.tenant_id[0])), tenantID, 128)
+		cCopyStr((*C.char)(unsafe.Pointer(&result.user_id[0])), userID, 128)
+		cCopyStr((*C.char)(unsafe.Pointer(&result.model_name[0])), metricModel, 128)
+		result.auth_flags = C.int(authFlags)
+		return 0
+	}
+
+	cCopyStr((*C.char)(unsafe.Pointer(&result.error_code[0])), errorCode, 64)
+	switch decision {
+	case 2:
+		prom.RecordModelNotAllowed(tenantID, metricModel)
+	case 4:
+		// Same condition the API-key arm records: the credential policy
+		// store cannot answer, so the request is refused as an outage. It
+		// is the one denial an operator is expected to act on, and leaving
+		// it off this counter here made a JWKS outage invisible on the
+		// metric that exists to show it while the other arm reported it.
+		prom.RecordPolicyStoreUnavailable()
 	}
 	return -1
 }

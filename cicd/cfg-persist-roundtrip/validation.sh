@@ -149,9 +149,9 @@ echo "=== recovery_dependencies manifest: declared, honest, deterministic ==="
 # cert makes the cert store REQUIRED; no database is wired, so no DB entry
 # may appear. (The negative suite proves the REQUIRED flags bite.)
 sv=$(jq -r '.schema_version' < "$PLIB_ARTIFACTS/snap-idle-1.json")
-[[ "$sv" == "1.5" ]] \
-    && pass "document rides schema 1.5" \
-    || fail "schema_version=$sv, want 1.5"
+[[ "$sv" == "1.6" ]] \
+    && pass "document rides schema 1.6" \
+    || fail "schema_version=$sv, want 1.6"
 dep_types=$(jq -c '[.recovery_dependencies[].type]' < "$PLIB_ARTIFACTS/snap-idle-1.json")
 [[ "$dep_types" == '["cert-store","engine-contracts","kv-model-profiles"]' ]] \
     && pass "manifest declares exactly the wired stores, (type,id)-sorted" \
@@ -220,9 +220,9 @@ done
 persist_and_verify llb1 || fail "persist for the response-contract legs failed"
 presp="$PLIB_ARTIFACTS/persist-response.json"
 psv=$(jq -r '.schema_version' < "$presp")
-[[ "$psv" == "1.5" ]] \
-    && pass "persist response carries the persisted document's schema (1.5)" \
-    || fail "persist response schema_version=$psv, want 1.5"
+[[ "$psv" == "1.6" ]] \
+    && pass "persist response carries the persisted document's schema (1.6)" \
+    || fail "persist response schema_version=$psv, want 1.6"
 pgen1=$(jq -r '.generation' < "$presp")
 [[ "$pgen1" =~ ^[0-9]+$ && "$pgen1" -ge 1 ]] \
     && pass "persist response carries a lineage generation ($pgen1)" \

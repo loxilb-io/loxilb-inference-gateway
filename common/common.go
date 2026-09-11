@@ -994,6 +994,9 @@ type LbServiceArg struct {
 	// of sse_mode and pd_disagg_mode: an unset value resolves to "disabled" on
 	// every rule, with no reference to how the service streams.
 	ApiKeyAuth string `json:"api_key_auth,omitempty"`
+	// JwtAuthProfile - name of the JWT auth profile deciding the Bearer arm.
+	// Required by (and only valid with) the "jwt" and "apikey-or-jwt" modes.
+	JwtAuthProfile string `json:"jwt_auth_profile,omitempty"`
 	// MaxStreamDurationSec - Absolute wall-clock cap for SSE streams in seconds.
 	// 0 = use system hard cap (PROXY_SSE_HARD_CAP_SEC = 86400s / 24h).
 	MaxStreamDurationSec uint32 `json:"max_stream_duration_sec,omitempty"`
@@ -1306,6 +1309,50 @@ type L7PolicyArg struct {
 	LbId string `json:"lbId,omitempty"`
 	// Rules - the ordered L7 routes (FIRST-MATCH-WINS by ascending position).
 	Rules []L7RuleArg `json:"rules,omitempty"`
+}
+
+// JWTAuthProfileMod - named issuer configuration for data-plane bearer
+// (JWT) admission. LB rules reference a profile by Name; several rules may
+// share one profile and several profiles (realms/issuers) can be active at
+// once. Claim extraction is configured dot-paths because the identity
+// provider owns the claim schema; defaults are Keycloak-shaped. Zero-valued
+// numeric fields select the documented defaults. Holds public key sources
+// only -- no secret material.
+type JWTAuthProfileMod struct {
+	// Name - profile identity referenced by LB rules
+	Name string `json:"name"`
+	// Issuer - exact iss match; http(s) URL, also the OIDC discovery base
+	Issuer string `json:"issuer"`
+	// JWKSURL - overrides OIDC discovery when set
+	JWKSURL string `json:"jwks_url,omitempty"`
+	// Audiences - accept-list against aud/azp; empty skips the check
+	Audiences []string `json:"audiences,omitempty"`
+	// Algs - signature-algorithm accept-list (default RS256+ES256)
+	Algs []string `json:"algs,omitempty"`
+	// LeewaySec - clock-skew allowance for exp/nbf/iat (default 30)
+	LeewaySec int `json:"leeway_sec,omitempty"`
+	// RefreshSec - periodic JWKS refresh interval (default 3600)
+	RefreshSec int `json:"refresh_sec,omitempty"`
+	// TenantClaim - dot-path to the tenant claim (default tenant_id)
+	TenantClaim string `json:"tenant_claim,omitempty"`
+	// UserClaim - dot-path to the user claim (default sub)
+	UserClaim string `json:"user_claim,omitempty"`
+	// ModelsClaim - dot-path to an allowed-models array (unset: use roles)
+	ModelsClaim string `json:"models_claim,omitempty"`
+	// RolesClaim - dot-path to the roles array (default realm_access.roles)
+	RolesClaim string `json:"roles_claim,omitempty"`
+	// ModelRolePrefix - prefix turning roles into models (default "model:")
+	ModelRolePrefix string `json:"model_role_prefix,omitempty"`
+	// UsernameClaim - display-only username dot-path
+	UsernameClaim string `json:"username_claim,omitempty"`
+	// ModelAuthz - claims-required (default) or allow-all
+	ModelAuthz string `json:"model_authz,omitempty"`
+	// DefaultTenant - tenant for tokens without a tenant claim (empty: deny)
+	DefaultTenant string `json:"default_tenant,omitempty"`
+	// ForwardIdentity - inject verified X-Auth-* headers upstream
+	ForwardIdentity bool `json:"forward_identity,omitempty"`
+	// AuthorizationPassthrough - keep the Authorization header upstream
+	AuthorizationPassthrough bool `json:"authorization_passthrough,omitempty"`
 }
 
 // LbSecIPArg - Secondary IP
@@ -1809,7 +1856,31 @@ const (
 	ApiKeyAuthDisabled = "disabled"
 	// ApiKeyAuthRequired enforces X-Api-Key validation in the data plane.
 	ApiKeyAuthRequired = "required"
+	// ApiKeyAuthJWT enforces Authorization: Bearer JWT validation against
+	// the service's jwt_auth_profile. X-Api-Key is not consulted.
+	ApiKeyAuthJWT = "jwt"
+	// ApiKeyAuthApiKeyOrJWT accepts either credential, with a fixed
+	// precedence: a present X-Api-Key decides alone (its 401 is final — no
+	// JWT fallback after a failed key, which would turn the gate into a
+	// credential-probing oracle); otherwise a Bearer token decides; neither
+	// present is a 401. Identities are never merged across arms.
+	ApiKeyAuthApiKeyOrJWT = "apikey-or-jwt"
 )
+
+// ApiKeyAuthEnforcing reports whether a service's declared policy makes the
+// data plane validate a credential at admission. Every mode except the two
+// declared non-enforcing shapes (unset and "disabled") enforces.
+func ApiKeyAuthEnforcing(policy string) bool {
+	return ResolveApiKeyAuth(policy) != ApiKeyAuthDisabled
+}
+
+// ApiKeyAuthUsesJWT reports whether a service's declared policy can decide a
+// request on the JWT arm, which is what makes a jwt_auth_profile reference
+// meaningful.
+func ApiKeyAuthUsesJWT(policy string) bool {
+	r := ResolveApiKeyAuth(policy)
+	return r == ApiKeyAuthJWT || r == ApiKeyAuthApiKeyOrJWT
+}
 
 // ResolveApiKeyAuth maps a service's configured policy onto the closed set,
 // resolving the unset value to ApiKeyAuthDisabled.
@@ -1829,7 +1900,7 @@ func ResolveApiKeyAuth(policy string) string {
 // implements. The empty string is valid and means "unset".
 func IsValidApiKeyAuth(policy string) bool {
 	switch policy {
-	case "", ApiKeyAuthDisabled, ApiKeyAuthRequired:
+	case "", ApiKeyAuthDisabled, ApiKeyAuthRequired, ApiKeyAuthJWT, ApiKeyAuthApiKeyOrJWT:
 		return true
 	}
 	return false
@@ -1840,7 +1911,20 @@ func IsValidApiKeyAuth(policy string) bool {
 // answer 400 rather than installing a rule whose enforcement policy the data
 // plane would have to guess at — and guessing here means guessing between
 // "admit everything" and "reject everything".
-var ErrInvalidApiKeyAuth = errors.New("invalid api_key_auth: must be one of disabled, required")
+var ErrInvalidApiKeyAuth = errors.New("invalid api_key_auth: must be one of disabled, required, jwt, apikey-or-jwt")
+
+// ErrJwtProfileRequired is returned when a service declares a JWT-capable
+// api_key_auth mode without naming a jwt_auth_profile, or names one that is
+// not configured. Rejected at rule create/update rather than installed: a
+// rule pointing at a missing profile would fail closed (503) on every
+// request — safe, but silent, and the operator is right here to be told.
+var ErrJwtProfileRequired = errors.New("jwt_auth_profile: required by this api_key_auth mode and must name a configured profile")
+
+// ErrJwtProfileNotApplicable is returned when a service names a
+// jwt_auth_profile while its api_key_auth mode can never consult the JWT
+// arm. Storing the dangling reference would block that profile's deletion
+// for a rule that cannot use it.
+var ErrJwtProfileNotApplicable = errors.New("jwt_auth_profile: only valid with api_key_auth jwt or apikey-or-jwt")
 
 // ErrKvExactKeyUnservable marks a kvexactstatus read whose composite key can
 // never hold a rule (e.g. an unsupported protocol). It is a read answer, not
@@ -2041,6 +2125,15 @@ type NetHookInterface interface {
 	NetPolicerGet() ([]PolMod, error)
 	NetPolicerAdd(*PolMod) (int, error)
 	NetPolicerDel(*PolMod) (int, error)
+	// NetJWTAuthProfileGet returns every configured JWT auth profile
+	// (desired configuration, not keyset health).
+	NetJWTAuthProfileGet() ([]JWTAuthProfileMod, error)
+	// NetJWTAuthProfileAdd creates or replaces a profile by name; replacing
+	// restarts its key lifecycle fail-closed.
+	NetJWTAuthProfileAdd(*JWTAuthProfileMod) (int, error)
+	// NetJWTAuthProfileDel removes a profile; refused while any LB rule
+	// references it.
+	NetJWTAuthProfileDel(name string) (int, error)
 	NetCIStateMod(*HASMod) (int, error)
 	NetCIStateGet() ([]HASMod, error)
 	NetFwRuleAdd(*FwRuleMod) (int, error)

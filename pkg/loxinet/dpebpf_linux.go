@@ -1865,6 +1865,14 @@ func DpLBRuleMod(w *LBDpWorkQ) int {
 	// apiKeyAuthWireValue.
 	dat.apikey_auth = C.uint8_t(apiKeyAuthWireValue(w.ApiKeyAuth))
 
+	// JWT auth profile the Bearer arm resolves against. Rule validation
+	// guarantees the pairing (non-empty iff a JWT-capable mode), so the copy
+	// carries no policy of its own.
+	if !copyLBFixedCString(dat.jwt_auth_profile[:], w.JwtAuthProfile) {
+		tk.LogIt(tk.LogError, "[DP] jwt_auth_profile C field is smaller than its admission contract\n")
+		return EbpfErrNat4Add
+	}
+
 	// ai_gw_mode is sse || pd || apikey_auth, through the shared predicate so
 	// this cannot drift from the DOCA backend's copy. It means "this
 	// connection does AI accounting" and no longer doubles as an auth switch,
@@ -1878,9 +1886,9 @@ func DpLBRuleMod(w *LBDpWorkQ) int {
 	// instead of inferring it from traffic that is never rejected.
 	if dat.ai_gw_mode == 1 {
 		tk.LogIt(tk.LogInfo,
-			"[AIGateway] LB rule %s:%v api_key_auth=%s (sse=%v pd=%v)\n",
+			"[AIGateway] LB rule %s:%v api_key_auth=%s jwt_auth_profile=%s (sse=%v pd=%v)\n",
 			w.ServiceIP.String(), key.mark, cmn.ResolveApiKeyAuth(w.ApiKeyAuth),
-			w.SSEMode, w.PDDisaggMode)
+			w.JwtAuthProfile, w.SSEMode, w.PDDisaggMode)
 	}
 
 	if w.Work == DpCreate {
