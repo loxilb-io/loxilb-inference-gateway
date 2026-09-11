@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-10T09:11:15+00:00",
-  "source_revision": "ab75a03db365f15f4b9f198145bafb6852002809"
+  "generated_at": "2026-09-11T02:04:11+00:00",
+  "source_revision": "4f47c6600b0bbf5683e015ae935374609bf484f6"
  },
  "contract": {
   "total": 232,
@@ -564,16 +564,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -581,8 +581,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -654,16 +654,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -671,8 +671,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -744,16 +744,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -761,8 +761,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -834,16 +834,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -851,8 +851,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -894,8 +894,8 @@
      "symbol": "llb_ai_stream_start",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 913,
-     "call_line": 921,
+     "def_line": 1007,
+     "call_line": 1015,
      "calls": "AdjustActiveStreams",
      "entry_point": "cgo-export"
     }
@@ -944,8 +944,8 @@
      "symbol": "AddLbRule",
      "kind": "method",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3615,
-     "call_line": 4882,
+     "def_line": 3682,
+     "call_line": 4968,
      "calls": "LlamacppAdmissionProbe",
      "receiver": "RuleH"
     },
@@ -1006,16 +1006,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -1023,8 +1023,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -1126,8 +1126,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3615,
-     "call_line": 4458,
+     "def_line": 3682,
+     "call_line": 4543,
      "calls": "kvDataplaneContractInstallAsync"
     },
     {
@@ -1239,8 +1239,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3615,
-     "call_line": 4458,
+     "def_line": 3682,
+     "call_line": 4543,
      "calls": "kvDataplaneContractInstallAsync"
     },
     {
@@ -1363,8 +1363,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3615,
-     "call_line": 4458,
+     "def_line": 3682,
+     "call_line": 4543,
      "calls": "kvDataplaneContractInstallAsync"
     },
     {
@@ -1485,8 +1485,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3615,
-     "call_line": 4458,
+     "def_line": 3682,
+     "call_line": 4543,
      "calls": "kvDataplaneContractInstallAsync"
     },
     {
@@ -1580,8 +1580,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3615,
-     "call_line": 4839,
+     "def_line": 3682,
+     "call_line": 4925,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -1671,8 +1671,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3615,
-     "call_line": 4839,
+     "def_line": 3682,
+     "call_line": 4925,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -1733,8 +1733,8 @@
      "symbol": "AddLbRule",
      "kind": "method",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3615,
-     "call_line": 4882,
+     "def_line": 3682,
+     "call_line": 4968,
      "calls": "LlamacppAdmissionProbe",
      "receiver": "RuleH"
     },
@@ -1787,8 +1787,8 @@
      "symbol": "llb_ai_validate_key",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 326,
-     "call_line": 394,
+     "def_line": 328,
+     "call_line": 396,
      "calls": "RecordModelNotAllowed",
      "entry_point": "cgo-export"
     }
@@ -1829,8 +1829,8 @@
      "symbol": "llb_ai_normal_session_hit",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1031,
-     "call_line": 1034,
+     "def_line": 1125,
+     "call_line": 1128,
      "calls": "RecordNormalSessionHit",
      "entry_point": "cgo-export"
     }
@@ -1871,8 +1871,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1007,
-     "call_line": 1010,
+     "def_line": 1101,
+     "call_line": 1104,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -1914,8 +1914,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1007,
-     "call_line": 1010,
+     "def_line": 1101,
+     "call_line": 1104,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -1957,8 +1957,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1007,
-     "call_line": 1010,
+     "def_line": 1101,
+     "call_line": 1104,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -2000,8 +2000,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1007,
-     "call_line": 1010,
+     "def_line": 1101,
+     "call_line": 1104,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -2046,8 +2046,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1007,
-     "call_line": 1010,
+     "def_line": 1101,
+     "call_line": 1104,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -2089,8 +2089,8 @@
      "symbol": "llb_ai_pd_session_hit",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1019,
-     "call_line": 1022,
+     "def_line": 1113,
+     "call_line": 1116,
      "calls": "RecordPDSessionHit",
      "entry_point": "cgo-export"
     }
@@ -2130,8 +2130,8 @@
      "symbol": "llb_ai_validate_key",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 326,
-     "call_line": 368,
+     "def_line": 328,
+     "call_line": 370,
      "calls": "RecordPolicyStoreUnavailable",
      "entry_point": "cgo-export",
      "note": "two more sites share the family: validateAPIKeyInternal (:235) and llb_ai_ratelimit_check (:559)"
@@ -2175,8 +2175,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 506,
-     "call_line": 561,
+     "def_line": 600,
+     "call_line": 655,
      "calls": "RecordRateLimitHit",
      "entry_point": "cgo-export",
      "note": "llb_ai_token_quota_reserve records the same family at ai_gateway_dp.go:756 with reason token_quota_would_exceed"
@@ -2219,8 +2219,8 @@
      "symbol": "llb_ai_record_request",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 985,
-     "call_line": 990,
+     "def_line": 1079,
+     "call_line": 1084,
      "calls": "RecordAIRequest",
      "entry_point": "cgo-export"
     }
@@ -2267,8 +2267,8 @@
      "symbol": "llb_ai_record_request",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 985,
-     "call_line": 990,
+     "def_line": 1079,
+     "call_line": 1084,
      "calls": "RecordAIRequest",
      "entry_point": "cgo-export"
     }
@@ -2307,8 +2307,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 419,
-     "call_line": 444,
+     "def_line": 513,
+     "call_line": 538,
      "calls": "RecordTokenQuotaColdOpen",
      "note": "the no-peer branch; the warmup-deadline branch increments from the StartQuotaWarmup callback at :437"
     },
@@ -2316,8 +2316,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 506,
-     "call_line": 540,
+     "def_line": 600,
+     "call_line": 634,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -2358,8 +2358,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 506,
-     "call_line": 563,
+     "def_line": 600,
+     "call_line": 657,
      "calls": "RecordTokenQuotaDenied",
      "entry_point": "cgo-export",
      "note": "the reservation path denies from llb_ai_token_quota_reserve (:757) as well"
@@ -2411,8 +2411,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 419,
-     "call_line": 460,
+     "def_line": 513,
+     "call_line": 554,
      "calls": "RegisterTokenQuotaSource",
      "note": "registration happens on first use of the rate-limiter store, not at package init, so the collector can never observe a nil store"
     },
@@ -2420,8 +2420,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 506,
-     "call_line": 540,
+     "def_line": 600,
+     "call_line": 634,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -2471,8 +2471,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 419,
-     "call_line": 460,
+     "def_line": 513,
+     "call_line": 554,
      "calls": "RegisterTokenQuotaSource",
      "note": "registration happens on first use of the rate-limiter store, not at package init, so the collector can never observe a nil store"
     },
@@ -2480,8 +2480,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 506,
-     "call_line": 540,
+     "def_line": 600,
+     "call_line": 634,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -2533,8 +2533,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 419,
-     "call_line": 460,
+     "def_line": 513,
+     "call_line": 554,
      "calls": "RegisterTokenQuotaSource",
      "note": "registration happens on first use of the rate-limiter store, not at package init, so the collector can never observe a nil store"
     },
@@ -2542,8 +2542,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 506,
-     "call_line": 540,
+     "def_line": 600,
+     "call_line": 634,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -2595,8 +2595,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 419,
-     "call_line": 460,
+     "def_line": 513,
+     "call_line": 554,
      "calls": "RegisterTokenQuotaSource",
      "note": "registration happens on first use of the rate-limiter store, not at package init, so the collector can never observe a nil store"
     },
@@ -2604,8 +2604,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 506,
-     "call_line": 540,
+     "def_line": 600,
+     "call_line": 634,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -2648,8 +2648,8 @@
      "symbol": "llb_ai_token_quota_consume",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 795,
-     "call_line": 815,
+     "def_line": 889,
+     "call_line": 909,
      "calls": "RecordTokenUsage",
      "entry_point": "cgo-export"
     }
@@ -2691,8 +2691,8 @@
      "symbol": "llb_ai_token_quota_consume",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 795,
-     "call_line": 815,
+     "def_line": 889,
+     "call_line": 909,
      "calls": "RecordTokenUsage",
      "entry_point": "cgo-export"
     }
@@ -2734,8 +2734,8 @@
      "symbol": "llb_ai_token_quota_consume",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 795,
-     "call_line": 815,
+     "def_line": 889,
+     "call_line": 909,
      "calls": "RecordTokenUsage",
      "entry_point": "cgo-export"
     }
@@ -2778,8 +2778,8 @@
      "symbol": "llb_ai_record_unmetered",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1048,
-     "call_line": 1050,
+     "def_line": 1142,
+     "call_line": 1144,
      "calls": "RecordUnmeteredRequest",
      "entry_point": "cgo-export"
     }
@@ -2835,7 +2835,7 @@
      "kind": "func",
      "file": "api/restapi/configure_loxilb_rest_api.go",
      "def_line": 71,
-     "call_line": 454,
+     "call_line": 459,
      "calls": "InitAutoPersist"
     },
     {
@@ -2905,16 +2905,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -2922,8 +2922,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -2999,16 +2999,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -3016,8 +3016,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -3077,16 +3077,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -3094,8 +3094,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -3152,8 +3152,8 @@
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 747,
+     "def_line": 358,
+     "call_line": 752,
      "calls": "NlpInit",
      "note": "guarded by !opts.Opts.NoNlp"
     },
@@ -3161,8 +3161,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -3217,8 +3217,8 @@
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 747,
+     "def_line": 358,
+     "call_line": 752,
      "calls": "NlpInit",
      "note": "guarded by !opts.Opts.NoNlp"
     },
@@ -3226,8 +3226,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -3294,16 +3294,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -3311,8 +3311,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -3375,16 +3375,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -3392,8 +3392,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -3485,16 +3485,16 @@
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 556,
+     "def_line": 358,
+     "call_line": 561,
      "calls": "DpEbpfInit"
     },
     {
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -3560,16 +3560,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -3577,8 +3577,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -3690,16 +3690,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -3707,8 +3707,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -3779,16 +3779,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -3796,8 +3796,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -3846,16 +3846,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -3863,8 +3863,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -3915,16 +3915,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -3932,8 +3932,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -3985,16 +3985,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -4002,8 +4002,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -4053,16 +4053,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -4070,8 +4070,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -4118,16 +4118,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -4135,8 +4135,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -4186,16 +4186,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -4203,8 +4203,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -4257,16 +4257,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -4274,8 +4274,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -4325,16 +4325,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -4342,8 +4342,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -4393,16 +4393,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -4410,8 +4410,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -4463,16 +4463,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -4480,8 +4480,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -4595,8 +4595,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3615,
-     "call_line": 4839,
+     "def_line": 3682,
+     "call_line": 4925,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -4675,8 +4675,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3615,
-     "call_line": 4839,
+     "def_line": 3682,
+     "call_line": 4925,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -4758,8 +4758,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3615,
-     "call_line": 4839,
+     "def_line": 3682,
+     "call_line": 4925,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -4837,8 +4837,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3615,
-     "call_line": 4839,
+     "def_line": 3682,
+     "call_line": 4925,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -4926,8 +4926,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3615,
-     "call_line": 4839,
+     "def_line": 3682,
+     "call_line": 4925,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -5005,8 +5005,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3615,
-     "call_line": 4839,
+     "def_line": 3682,
+     "call_line": 4925,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -5087,8 +5087,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3615,
-     "call_line": 4839,
+     "def_line": 3682,
+     "call_line": 4925,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -5152,16 +5152,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus, so every family behind this tail needs the Prometheus subsystem enabled"
     },
@@ -5169,8 +5169,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -5287,16 +5287,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -5304,8 +5304,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -5371,16 +5371,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -5388,8 +5388,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -5441,16 +5441,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -5458,8 +5458,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -5507,16 +5507,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -5524,8 +5524,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -5597,16 +5597,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -5614,8 +5614,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -6183,16 +6183,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -6200,8 +6200,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -6249,16 +6249,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -6266,8 +6266,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -6315,16 +6315,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -6332,8 +6332,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -6381,16 +6381,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -6398,8 +6398,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -6447,16 +6447,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -6464,8 +6464,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -6515,16 +6515,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -6532,8 +6532,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -6582,16 +6582,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -6599,8 +6599,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -6825,16 +6825,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -6842,8 +6842,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -6891,16 +6891,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -6908,8 +6908,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -6959,8 +6959,8 @@
      "symbol": "AddLbRule",
      "kind": "method",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3615,
-     "call_line": 4839,
+     "def_line": 3682,
+     "call_line": 4925,
      "calls": "KvSubscriberStartRank",
      "receiver": "RuleH"
     },
@@ -7019,16 +7019,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -7036,8 +7036,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -7116,8 +7116,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3615,
-     "call_line": 4839,
+     "def_line": 3682,
+     "call_line": 4925,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -7224,16 +7224,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -7241,8 +7241,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -7335,16 +7335,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -7352,8 +7352,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -7509,16 +7509,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -7526,8 +7526,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -7575,16 +7575,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -7592,8 +7592,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -7642,16 +7642,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -7659,8 +7659,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -7709,16 +7709,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -7726,8 +7726,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -7776,16 +7776,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -7793,8 +7793,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -7843,16 +7843,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -7860,8 +7860,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -7910,16 +7910,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -7927,8 +7927,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -7977,16 +7977,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -7994,8 +7994,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -8044,16 +8044,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -8061,8 +8061,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -8178,16 +8178,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -8195,8 +8195,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -8252,16 +8252,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -8269,8 +8269,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -8325,16 +8325,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -8342,8 +8342,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -8400,16 +8400,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -8417,8 +8417,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -8473,16 +8473,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -8490,8 +8490,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -8548,16 +8548,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -8565,8 +8565,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -8621,16 +8621,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -8638,8 +8638,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -8696,16 +8696,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -8713,8 +8713,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -8763,16 +8763,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -8780,8 +8780,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -8829,16 +8829,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -8846,8 +8846,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -8896,16 +8896,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -8913,8 +8913,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -8962,16 +8962,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -8979,8 +8979,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -9028,16 +9028,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -9045,8 +9045,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -9094,16 +9094,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -9111,8 +9111,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -9160,16 +9160,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -9177,8 +9177,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -9226,16 +9226,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -9243,8 +9243,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -9292,16 +9292,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -9309,8 +9309,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -9359,16 +9359,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -9376,8 +9376,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -9425,16 +9425,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -9442,8 +9442,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -9491,16 +9491,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -9508,8 +9508,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -9557,16 +9557,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -9574,8 +9574,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -9623,16 +9623,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -9640,8 +9640,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -9689,16 +9689,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -9706,8 +9706,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -9761,16 +9761,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -9778,8 +9778,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -9828,16 +9828,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -9845,8 +9845,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -9938,16 +9938,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -9955,8 +9955,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -10398,16 +10398,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -10415,8 +10415,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -10569,16 +10569,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -10586,8 +10586,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -10635,16 +10635,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -10652,8 +10652,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -10703,16 +10703,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -10720,8 +10720,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -10769,16 +10769,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -10786,8 +10786,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -10835,16 +10835,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -10852,8 +10852,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -10902,16 +10902,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -10919,8 +10919,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -10968,16 +10968,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -10985,8 +10985,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -11032,16 +11032,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -11049,8 +11049,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -11098,16 +11098,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -11115,8 +11115,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -11165,16 +11165,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -11182,8 +11182,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -11257,16 +11257,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -11274,8 +11274,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -11349,16 +11349,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -11366,8 +11366,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -11426,16 +11426,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -11443,8 +11443,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -11501,16 +11501,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -11518,8 +11518,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -11590,8 +11590,8 @@
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 747,
+     "def_line": 358,
+     "call_line": 752,
      "calls": "NlpInit",
      "note": "guarded by !opts.Opts.NoNlp"
     },
@@ -11599,8 +11599,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -11828,8 +11828,8 @@
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 658,
+     "def_line": 358,
+     "call_line": 663,
      "calls": "Start",
      "note": "the coordinator is constructed unconditionally at :625; peersFn returns nil on a single-node Gateway, so drainLoop runs but no per-peer consumer ever spawns"
     },
@@ -11837,8 +11837,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -11978,8 +11978,8 @@
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 658,
+     "def_line": 358,
+     "call_line": 663,
      "calls": "Start",
      "note": "the coordinator is constructed unconditionally at :625; peersFn returns nil on a single-node Gateway, so drainLoop runs but no per-peer consumer ever spawns"
     },
@@ -11987,8 +11987,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -12057,8 +12057,8 @@
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 658,
+     "def_line": 358,
+     "call_line": 663,
      "calls": "Start",
      "note": "the coordinator is constructed unconditionally at :625; peersFn returns nil on a single-node Gateway, so drainLoop runs but no per-peer consumer ever spawns"
     },
@@ -12066,8 +12066,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -12145,8 +12145,8 @@
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 658,
+     "def_line": 358,
+     "call_line": 663,
      "calls": "Start",
      "note": "the coordinator is constructed unconditionally at :625; peersFn returns nil on a single-node Gateway, so drainLoop runs but no per-peer consumer ever spawns"
     },
@@ -12154,8 +12154,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -12225,8 +12225,8 @@
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 658,
+     "def_line": 358,
+     "call_line": 663,
      "calls": "Start",
      "note": "the coordinator is constructed unconditionally at :625; peersFn returns nil on a single-node Gateway, so drainLoop runs but no per-peer consumer ever spawns"
     },
@@ -12234,8 +12234,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -12323,8 +12323,8 @@
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 658,
+     "def_line": 358,
+     "call_line": 663,
      "calls": "Start",
      "note": "the coordinator is constructed unconditionally at :625; peersFn returns nil on a single-node Gateway, so drainLoop runs but no per-peer consumer ever spawns"
     },
@@ -12332,8 +12332,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -12383,16 +12383,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -12400,8 +12400,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -12450,16 +12450,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -12467,8 +12467,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -12517,16 +12517,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -12534,8 +12534,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
@@ -12584,16 +12584,16 @@
      "kind": "method",
      "receiver": "loxiNetH",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 164,
-     "call_line": 166,
+     "def_line": 169,
+     "call_line": 171,
      "calls": "Init"
     },
     {
      "symbol": "loxiNetInit",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 353,
-     "call_line": 757,
+     "def_line": 358,
+     "call_line": 762,
      "calls": "PrometheusInit",
      "note": "guarded by opts.Opts.Prometheus"
     },
@@ -12601,8 +12601,8 @@
      "symbol": "Main",
      "kind": "func",
      "file": "pkg/loxinet/loxinet.go",
-     "def_line": 1304,
-     "call_line": 1305,
+     "def_line": 1323,
+     "call_line": 1324,
      "calls": "loxiNetInit",
      "entry_point": "main"
     }
