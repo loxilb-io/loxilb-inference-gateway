@@ -2235,7 +2235,7 @@
       }
     },
     {
-      "id": 51,
+      "id": 52,
       "type": "timeseries",
       "title": "P/D routing tier mix",
       "description": "Terminal prefill-selection decisions by routing tier: tier0 session stickiness, tier1 prefix trie, tier15 KV-exact, tier2 min-load fallback. Every accepted P/D request lands in exactly one tier, so the stacked rates sum to the accepted selection rate; admission parks/sheds and pre-routing rejections are excluded by design. A tier2-dominated mix on a cache-aware rule means the cache tiers are not engaging.",
