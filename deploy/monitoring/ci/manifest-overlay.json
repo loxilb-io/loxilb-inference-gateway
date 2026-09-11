@@ -1157,6 +1157,13 @@
      { "symbol": "RecordPDTierSelected", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 607, "writes": "aiPDTierSelectedTotal" },
      { "symbol": "llb_ai_pd_tier_selected", "kind": "func", "file": "pkg/loxinet/ai_gateway_dp.go", "def_line": 1126, "call_line": 1129, "calls": "RecordPDTierSelected", "entry_point": "cgo-export" }
     ],
+    "native_callers": [
+     "loxilb-ebpf/common/sockproxy_pd.c:1766",
+     "loxilb-ebpf/common/sockproxy_pd.c:1947",
+     "loxilb-ebpf/common/sockproxy_pd.c:1993",
+     "loxilb-ebpf/common/sockproxy_pd.c:2036",
+     "loxilb-ebpf/common/sockproxy_pd.c:2153"
+    ],
     "evidence": "WP-8 isolated-container runtime verification 2026-09-11 (plan Part E, E.5 row 'WP-8 tier mix'): fresh build, plain P/D rule + cache-aware P/D rule on loopback; 22 accepted chat requests -> tier0=9, tier1=1, tier2=12, tier15 absent. Conservation 22 == 9+1+0+12 exact; reconciliation delta pd_session_hits == tier0 == 9. Red twins (malformed-JSON parse failure, 503 no-route GET) incremented nothing. The tier15 arm is verified-static only (call site at the Tier-1.5 terminal return in loxilb-ebpf/common/sockproxy_pd.c behind the same guard); supporting live evidence is the session-6 fallthrough identity (40 accepted == 25 tier0 + 15 tier15-fallthrough), which exercises the Tier-1.5 ladder position. The pre-existing Tier-0 and Tier-1.5 counters remain for one release and must reconcile with this family."
    },
    "loxilb_ai_normal_session_hits_total": {
