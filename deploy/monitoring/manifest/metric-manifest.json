@@ -1,18 +1,18 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-11T03:32:04+00:00",
-  "source_revision": "64fad73849c62c224e22a98b2f8a5a4a0183805d"
+  "generated_at": "2026-09-12T08:27:10+00:00",
+  "source_revision": "d260115043feb92d1eb9ac428a7224fd7b3f713c"
  },
  "contract": {
-  "total": 234,
+  "total": 239,
   "owners": {
-   "loxilb": 211,
+   "loxilb": 216,
    "loxilb-ai-controller": 19,
    "loxilb-kv-agent": 4
   },
   "classes": {
-   "default": 178,
+   "default": 183,
    "dpu-doca": 24,
    "aictrl-bridge": 8,
    "kv-agent-health": 1,
@@ -21,11 +21,11 @@
   }
  },
  "coverage": {
-  "default_families": 178,
+  "default_families": 183,
   "default_referenced": 157,
   "default_waived": 21,
-  "default_unreferenced": 0,
-  "writer_classified": 178,
+  "default_unreferenced": 5,
+  "writer_classified": 183,
   "writer_unclassified": 0,
   "writer_unverified": 83
  },
@@ -894,8 +894,8 @@
      "symbol": "llb_ai_stream_start",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1007,
-     "call_line": 1015,
+     "def_line": 1026,
+     "call_line": 1034,
      "calls": "AdjustActiveStreams",
      "entry_point": "cgo-export"
     }
@@ -962,6 +962,306 @@
     }
    ],
    "verification_evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/ai_llamacpp_probe.go:163. Scenario M16 owns the per-engine proof."
+  },
+  {
+   "name": "loxilb_ai_jwks_keys",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "definition_mechanism": "desc",
+   "labels": [
+    "profile"
+   ],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "waiver": "",
+   "source": "api/prometheus/jwt_metrics.go:103",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "conditional-with-proven-writer",
+   "activation_precondition": "at least one JWT auth profile configured; the collector reports one series per profile the manager knows, so an unconfigured Gateway exports nothing.",
+   "writer_sources": [
+    {
+     "symbol": "Collect",
+     "kind": "method",
+     "receiver": "jwksCollector",
+     "file": "api/prometheus/jwt_metrics.go",
+     "def_line": 132,
+     "writes": "jwksKeysDesc",
+     "note": "read from the manager at scrape time rather than pushed on refresh, so the exported number is the one the request path would act on"
+    },
+    {
+     "symbol": "RegisterJWKSSource",
+     "kind": "func",
+     "file": "api/prometheus/jwt_metrics.go",
+     "def_line": 171,
+     "call_line": 173,
+     "calls": "jwksCollector",
+     "note": "sync.Once; the collector reads the manager at scrape time rather than being set on the refresh path -- a gauge set on refresh would freeze at the last successful value exactly when the endpoint stops answering"
+    },
+    {
+     "symbol": "JWTAuthProfileInit",
+     "kind": "func",
+     "file": "pkg/loxinet/jwtauthprofile.go",
+     "def_line": 59,
+     "call_line": 65,
+     "calls": "RegisterJWKSSource"
+    },
+    {
+     "symbol": "loxiNetInit",
+     "kind": "func",
+     "file": "pkg/loxinet/loxinet.go",
+     "def_line": 358,
+     "call_line": 799,
+     "calls": "JWTAuthProfileInit"
+    },
+    {
+     "symbol": "Main",
+     "kind": "func",
+     "file": "pkg/loxinet/loxinet.go",
+     "def_line": 1323,
+     "call_line": 1324,
+     "calls": "loxiNetInit",
+     "entry_point": "main"
+    }
+   ],
+   "verification_evidence": "api/prometheus/jwt_metrics_test.go TestJWKSCollectorReportsKeysetState gathers through a pedantic registry and asserts the key count; TestJWKSCollectorDropsDuplicateSanitizedProfiles covers first-wins on a duplicate label. Runtime proof is owed."
+  },
+  {
+   "name": "loxilb_ai_jwks_last_success_timestamp_seconds",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "definition_mechanism": "desc",
+   "labels": [
+    "profile"
+   ],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "waiver": "",
+   "source": "api/prometheus/jwt_metrics.go:110",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "conditional-with-proven-writer",
+   "activation_precondition": "a JWT auth profile whose JWKS fetch has succeeded at least once. Deliberately ABSENT before the first success rather than zero: a zero would read as a 1970 timestamp and make every staleness expression true from the moment a profile is created.",
+   "writer_sources": [
+    {
+     "symbol": "Collect",
+     "kind": "method",
+     "receiver": "jwksCollector",
+     "file": "api/prometheus/jwt_metrics.go",
+     "def_line": 132,
+     "writes": "jwksLastSuccessDesc"
+    },
+    {
+     "symbol": "RegisterJWKSSource",
+     "kind": "func",
+     "file": "api/prometheus/jwt_metrics.go",
+     "def_line": 171,
+     "call_line": 173,
+     "calls": "jwksCollector",
+     "note": "sync.Once; the collector reads the manager at scrape time rather than being set on the refresh path -- a gauge set on refresh would freeze at the last successful value exactly when the endpoint stops answering"
+    },
+    {
+     "symbol": "JWTAuthProfileInit",
+     "kind": "func",
+     "file": "pkg/loxinet/jwtauthprofile.go",
+     "def_line": 59,
+     "call_line": 65,
+     "calls": "RegisterJWKSSource"
+    },
+    {
+     "symbol": "loxiNetInit",
+     "kind": "func",
+     "file": "pkg/loxinet/loxinet.go",
+     "def_line": 358,
+     "call_line": 799,
+     "calls": "JWTAuthProfileInit"
+    },
+    {
+     "symbol": "Main",
+     "kind": "func",
+     "file": "pkg/loxinet/loxinet.go",
+     "def_line": 1323,
+     "call_line": 1324,
+     "calls": "loxiNetInit",
+     "entry_point": "main"
+    }
+   ],
+   "verification_evidence": "api/prometheus/jwt_metrics_test.go TestJWKSCollectorOmitsTimestampBeforeFirstSuccess asserts the series is absent before a first success while the sibling families are present, so the absence is the rule and not a skipped profile. Runtime proof is owed."
+  },
+  {
+   "name": "loxilb_ai_jwks_refresh_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "definition_mechanism": "promauto",
+   "labels": [
+    "profile",
+    "outcome"
+   ],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "waiver": "",
+   "source": "api/prometheus/jwt_metrics.go:79",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "conditional-with-proven-writer",
+   "activation_precondition": "at least one JWT auth profile configured; the lifecycle goroutine only exists once a profile is set, and it is the only caller.",
+   "writer_sources": [
+    {
+     "symbol": "RecordJWKSRefresh",
+     "kind": "func",
+     "file": "api/prometheus/jwt_metrics.go",
+     "def_line": 194,
+     "writes": "aiJWKSRefreshTotal"
+    },
+    {
+     "symbol": "JWTAuthProfileInit",
+     "kind": "func",
+     "file": "pkg/loxinet/jwtauthprofile.go",
+     "def_line": 59,
+     "call_line": 62,
+     "calls": "RecordJWKSRefresh",
+     "note": "the wiring site, not the calling site: this installs the recorder as jwtauth's refresh observer, and the invocation happens later on each profile's JWKS lifecycle goroutine (pkg/jwtauth/manager.go fetchOnce). The seam exists so the credential-verification core needs no metrics dependency"
+    },
+    {
+     "symbol": "loxiNetInit",
+     "kind": "func",
+     "file": "pkg/loxinet/loxinet.go",
+     "def_line": 358,
+     "call_line": 799,
+     "calls": "JWTAuthProfileInit"
+    },
+    {
+     "symbol": "Main",
+     "kind": "func",
+     "file": "pkg/loxinet/loxinet.go",
+     "def_line": 1323,
+     "call_line": 1324,
+     "calls": "loxiNetInit",
+     "entry_point": "main"
+    }
+   ],
+   "verification_evidence": "pkg/jwtauth/manager_test.go TestRefreshObserverCountsEveryAttempt proves the observer fires once per attempt with the outcome reached, including a failure against a dead endpoint while the keyset stays usable. Runtime proof is owed."
+  },
+  {
+   "name": "loxilb_ai_jwks_usable",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "gauge",
+   "definition_mechanism": "desc",
+   "labels": [
+    "profile"
+   ],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "waiver": "",
+   "source": "api/prometheus/jwt_metrics.go:115",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "conditional-with-proven-writer",
+   "activation_precondition": "at least one JWT auth profile configured.",
+   "writer_sources": [
+    {
+     "symbol": "Collect",
+     "kind": "method",
+     "receiver": "jwksCollector",
+     "file": "api/prometheus/jwt_metrics.go",
+     "def_line": 132,
+     "writes": "jwksUsableDesc",
+     "note": "0 means the bearer arm is failing closed for the profile: never fetched, or past the staleness cutoff"
+    },
+    {
+     "symbol": "RegisterJWKSSource",
+     "kind": "func",
+     "file": "api/prometheus/jwt_metrics.go",
+     "def_line": 171,
+     "call_line": 173,
+     "calls": "jwksCollector",
+     "note": "sync.Once; the collector reads the manager at scrape time rather than being set on the refresh path -- a gauge set on refresh would freeze at the last successful value exactly when the endpoint stops answering"
+    },
+    {
+     "symbol": "JWTAuthProfileInit",
+     "kind": "func",
+     "file": "pkg/loxinet/jwtauthprofile.go",
+     "def_line": 59,
+     "call_line": 65,
+     "calls": "RegisterJWKSSource"
+    },
+    {
+     "symbol": "loxiNetInit",
+     "kind": "func",
+     "file": "pkg/loxinet/loxinet.go",
+     "def_line": 358,
+     "call_line": 799,
+     "calls": "JWTAuthProfileInit"
+    },
+    {
+     "symbol": "Main",
+     "kind": "func",
+     "file": "pkg/loxinet/loxinet.go",
+     "def_line": 1323,
+     "call_line": 1324,
+     "calls": "loxiNetInit",
+     "entry_point": "main"
+    }
+   ],
+   "verification_evidence": "api/prometheus/jwt_metrics_test.go TestJWKSCollectorReportsKeysetState (usable=1) and TestJWKSCollectorOmitsTimestampBeforeFirstSuccess (usable=0 on a never-fetched profile). Runtime proof is owed."
+  },
+  {
+   "name": "loxilb_ai_jwt_validation_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "definition_mechanism": "promauto",
+   "labels": [
+    "tenant",
+    "reason"
+   ],
+   "activation": "E",
+   "priority": "diagnostic",
+   "privacy": "label-review",
+   "consumers": [],
+   "waiver": "",
+   "source": "api/prometheus/jwt_metrics.go:67",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "conditional-with-proven-writer",
+   "activation_precondition": "a rule whose api_key_auth selects the bearer arm (\"jwt\" or \"apikey-or-jwt\") and a request carrying the Authorization header to it. A Gateway with no JWT profile never enters the bearer gate and exports nothing.",
+   "writer_sources": [
+    {
+     "symbol": "RecordJWTValidation",
+     "kind": "func",
+     "file": "api/prometheus/jwt_metrics.go",
+     "def_line": 181,
+     "writes": "aiJWTValidationTotal"
+    },
+    {
+     "symbol": "llb_ai_validate_bearer",
+     "kind": "func",
+     "file": "pkg/loxinet/ai_gateway_dp.go",
+     "def_line": 423,
+     "call_line": 450,
+     "calls": "RecordJWTValidation",
+     "entry_point": "cgo-export",
+     "note": "recorded in the same defer as recordGateDenial, so every arm counts exactly once -- including the nil-result and panic paths, which leave before a verdict is reached and are counted as internal_error"
+    }
+   ],
+   "verification_evidence": "api/prometheus/jwt_metrics_test.go TestRecordJWTValidationLabels asserts one increment per call and the '-' stand-in for a tenant that is not yet verified. Runtime proof is owed: this family has no scenario yet."
   },
   {
    "name": "loxilb_ai_keyed_services",
@@ -1829,8 +2129,8 @@
      "symbol": "llb_ai_normal_session_hit",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1138,
-     "call_line": 1141,
+     "def_line": 1157,
+     "call_line": 1160,
      "calls": "RecordNormalSessionHit",
      "entry_point": "cgo-export"
     }
@@ -1871,8 +2171,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1101,
-     "call_line": 1104,
+     "def_line": 1120,
+     "call_line": 1123,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -1914,8 +2214,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1101,
-     "call_line": 1104,
+     "def_line": 1120,
+     "call_line": 1123,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -1957,8 +2257,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1101,
-     "call_line": 1104,
+     "def_line": 1120,
+     "call_line": 1123,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -2000,8 +2300,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1101,
-     "call_line": 1104,
+     "def_line": 1120,
+     "call_line": 1123,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -2046,8 +2346,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1101,
-     "call_line": 1104,
+     "def_line": 1120,
+     "call_line": 1123,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -2089,8 +2389,8 @@
      "symbol": "llb_ai_pd_session_hit",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1113,
-     "call_line": 1116,
+     "def_line": 1132,
+     "call_line": 1135,
      "calls": "RecordPDSessionHit",
      "entry_point": "cgo-export"
     }
@@ -2132,8 +2432,8 @@
      "symbol": "llb_ai_pd_tier_selected",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1126,
-     "call_line": 1129,
+     "def_line": 1145,
+     "call_line": 1148,
      "calls": "RecordPDTierSelected",
      "entry_point": "cgo-export"
     }
@@ -2218,8 +2518,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 600,
-     "call_line": 655,
+     "def_line": 619,
+     "call_line": 674,
      "calls": "RecordRateLimitHit",
      "entry_point": "cgo-export",
      "note": "llb_ai_token_quota_reserve records the same family at ai_gateway_dp.go:756 with reason token_quota_would_exceed"
@@ -2262,8 +2562,8 @@
      "symbol": "llb_ai_record_request",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1079,
-     "call_line": 1084,
+     "def_line": 1098,
+     "call_line": 1103,
      "calls": "RecordAIRequest",
      "entry_point": "cgo-export"
     }
@@ -2310,8 +2610,8 @@
      "symbol": "llb_ai_record_request",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1079,
-     "call_line": 1084,
+     "def_line": 1098,
+     "call_line": 1103,
      "calls": "RecordAIRequest",
      "entry_point": "cgo-export"
     }
@@ -2350,8 +2650,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 513,
-     "call_line": 538,
+     "def_line": 532,
+     "call_line": 557,
      "calls": "RecordTokenQuotaColdOpen",
      "note": "the no-peer branch; the warmup-deadline branch increments from the StartQuotaWarmup callback at :437"
     },
@@ -2359,8 +2659,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 600,
-     "call_line": 634,
+     "def_line": 619,
+     "call_line": 653,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -2401,8 +2701,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 600,
-     "call_line": 657,
+     "def_line": 619,
+     "call_line": 676,
      "calls": "RecordTokenQuotaDenied",
      "entry_point": "cgo-export",
      "note": "the reservation path denies from llb_ai_token_quota_reserve (:757) as well"
@@ -2454,8 +2754,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 513,
-     "call_line": 554,
+     "def_line": 532,
+     "call_line": 573,
      "calls": "RegisterTokenQuotaSource",
      "note": "registration happens on first use of the rate-limiter store, not at package init, so the collector can never observe a nil store"
     },
@@ -2463,8 +2763,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 600,
-     "call_line": 634,
+     "def_line": 619,
+     "call_line": 653,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -2514,8 +2814,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 513,
-     "call_line": 554,
+     "def_line": 532,
+     "call_line": 573,
      "calls": "RegisterTokenQuotaSource",
      "note": "registration happens on first use of the rate-limiter store, not at package init, so the collector can never observe a nil store"
     },
@@ -2523,8 +2823,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 600,
-     "call_line": 634,
+     "def_line": 619,
+     "call_line": 653,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -2576,8 +2876,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 513,
-     "call_line": 554,
+     "def_line": 532,
+     "call_line": 573,
      "calls": "RegisterTokenQuotaSource",
      "note": "registration happens on first use of the rate-limiter store, not at package init, so the collector can never observe a nil store"
     },
@@ -2585,8 +2885,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 600,
-     "call_line": 634,
+     "def_line": 619,
+     "call_line": 653,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -2638,8 +2938,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 513,
-     "call_line": 554,
+     "def_line": 532,
+     "call_line": 573,
      "calls": "RegisterTokenQuotaSource",
      "note": "registration happens on first use of the rate-limiter store, not at package init, so the collector can never observe a nil store"
     },
@@ -2647,8 +2947,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 600,
-     "call_line": 634,
+     "def_line": 619,
+     "call_line": 653,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -2691,8 +2991,8 @@
      "symbol": "llb_ai_token_quota_consume",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 889,
-     "call_line": 909,
+     "def_line": 908,
+     "call_line": 928,
      "calls": "RecordTokenUsage",
      "entry_point": "cgo-export"
     }
@@ -2734,8 +3034,8 @@
      "symbol": "llb_ai_token_quota_consume",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 889,
-     "call_line": 909,
+     "def_line": 908,
+     "call_line": 928,
      "calls": "RecordTokenUsage",
      "entry_point": "cgo-export"
     }
@@ -2777,8 +3077,8 @@
      "symbol": "llb_ai_token_quota_consume",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 889,
-     "call_line": 909,
+     "def_line": 908,
+     "call_line": 928,
      "calls": "RecordTokenUsage",
      "entry_point": "cgo-export"
     }
@@ -2821,8 +3121,8 @@
      "symbol": "llb_ai_record_unmetered",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1155,
-     "call_line": 1157,
+     "def_line": 1174,
+     "call_line": 1176,
      "calls": "RecordUnmeteredRequest",
      "entry_point": "cgo-export"
     }

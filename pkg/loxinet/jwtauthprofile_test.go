@@ -140,3 +140,49 @@ func TestJWTAuthProfileDeleteRefusedWhileReferenced(t *testing.T) {
 		t.Fatalf("ProfileDel after detach: %v", err)
 	}
 }
+
+// TestJWKSStatesReportsEveryProfile covers the snapshot behind the
+// loxilb_ai_jwks_* families: one entry per configured profile, read from the
+// manager rather than from state the holder keeps of its own.
+//
+// The JWKS URL here is unreachable, which is the point. A profile whose
+// keyset has never loaded must still be REPORTED -- with zero keys and
+// usable=false -- because that is exactly the state an operator needs to see.
+// A snapshot that listed only healthy profiles would go quiet at the moment
+// it matters.
+func TestJWKSStatesReportsEveryProfile(t *testing.T) {
+	h := JWTAuthProfileInit()
+	defer h.Manager().Close()
+
+	pm := testJWTProfileMod("kc-metrics")
+	if _, err := h.ProfileAdd(&pm); err != nil {
+		t.Fatalf("ProfileAdd: %v", err)
+	}
+
+	states := h.jwksStates()
+	if len(states) != 1 {
+		t.Fatalf("jwksStates returned %d entries, want 1: %+v", len(states), states)
+	}
+	st := states[0]
+	if st.Profile != "kc-metrics" {
+		t.Errorf("profile = %q, want kc-metrics", st.Profile)
+	}
+	if st.Usable {
+		t.Error("a profile whose JWKS has never loaded must report usable=false")
+	}
+	if st.Keys != 0 {
+		t.Errorf("keys = %d, want 0 before any successful fetch", st.Keys)
+	}
+	if !st.LastSuccess.IsZero() {
+		t.Errorf("last success = %v, want the zero time before any fetch", st.LastSuccess)
+	}
+
+	// Removing the profile removes its series: a stale series would report a
+	// keyset for a profile that no longer exists.
+	if _, err := h.ProfileDel("kc-metrics"); err != nil {
+		t.Fatalf("ProfileDel: %v", err)
+	}
+	if states := h.jwksStates(); len(states) != 0 {
+		t.Errorf("a deleted profile must report no state, got %+v", states)
+	}
+}

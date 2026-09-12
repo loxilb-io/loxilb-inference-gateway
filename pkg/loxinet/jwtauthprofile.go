@@ -24,6 +24,7 @@ import (
 
 	tk "github.com/loxilb-io/loxilib"
 
+	prom "github.com/loxilb-io/loxilb/api/prometheus"
 	cmn "github.com/loxilb-io/loxilb/common"
 	"github.com/loxilb-io/loxilb/pkg/jwtauth"
 )
@@ -48,12 +49,49 @@ type JWTAuthProfileH struct {
 }
 
 // JWTAuthProfileInit builds the profile holder with a live manager.
+//
+// The manager is handed a refresh observer and the holder registers a
+// scrape-time keyset source, which is how the bearer arm becomes observable
+// without jwtauth depending on a metrics library: a failing JWKS endpoint
+// changes no request outcome until the staleness cutoff expires, so without
+// these two the first symptom is traffic being refused that was fine a
+// moment earlier.
 func JWTAuthProfileInit() *JWTAuthProfileH {
-	return &JWTAuthProfileH{
+	h := &JWTAuthProfileH{
 		profiles: make(map[string]cmn.JWTAuthProfileMod),
-		mgr:      jwtauth.New(),
+		mgr:      jwtauth.New(jwtauth.WithRefreshObserver(prom.RecordJWKSRefresh)),
 		ruleRefs: func(string) []string { return nil },
 	}
+	prom.RegisterJWKSSource(h.jwksStates)
+	return h
+}
+
+// jwksStates is the scrape-time snapshot behind loxilb_ai_jwks_*. It reads
+// the manager rather than tracking state of its own, so the exported numbers
+// are the ones the request path would act on.
+func (h *JWTAuthProfileH) jwksStates() []prom.JWKSProfileState {
+	mgr := h.mgr
+	if mgr == nil {
+		return nil
+	}
+	names := mgr.Profiles()
+	out := make([]prom.JWKSProfileState, 0, len(names))
+	for _, name := range names {
+		st, ok := mgr.Status(name)
+		if !ok {
+			// Removed between listing and reading: report nothing rather
+			// than a zeroed series, which would read as a profile with no
+			// keys instead of a profile that is gone.
+			continue
+		}
+		out = append(out, prom.JWKSProfileState{
+			Profile:     name,
+			Keys:        st.Keys,
+			LastSuccess: st.LastSuccess,
+			Usable:      st.Usable,
+		})
+	}
+	return out
 }
 
 // jwtProfileFromMod maps the wire/config shape onto the verifier's profile.
