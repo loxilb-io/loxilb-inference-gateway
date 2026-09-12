@@ -46,6 +46,18 @@ const (
 	maxJWKSBytes = 1 << 20
 )
 
+// Outcomes reported to a refresh observer. They are plain strings rather than
+// a metrics type because this package deliberately does not depend on one.
+const (
+	// RefreshSuccess is a fetch that installed a new keyset.
+	RefreshSuccess = "success"
+	// RefreshFailure is a fetch that did not, for any reason: discovery,
+	// transport, parse, or a keyset published with no usable key. The reason
+	// is logged rather than reported, so an endpoint failing in a novel way
+	// cannot grow an observer's label set.
+	RefreshFailure = "failure"
+)
+
 // Manager owns the active profiles and their background JWKS lifecycles,
 // and answers Verify calls from the request path off in-memory snapshots.
 type Manager struct {
@@ -60,6 +72,12 @@ type Manager struct {
 	backoffBase   time.Duration
 	backoffCap    time.Duration
 	fetchTimeout  time.Duration
+
+	// refreshObserver, when set, is told the outcome of every JWKS fetch
+	// attempt. It exists so the package can be observed without importing a
+	// metrics library: this is the credential-verification core, and what it
+	// may depend on is worth keeping deliberately small.
+	refreshObserver func(profile, outcome string)
 }
 
 // Option configures a Manager.
@@ -79,6 +97,14 @@ func WithMaxStaleness(d time.Duration) Option { return func(m *Manager) { m.maxS
 // WithMinRefetchGap overrides the minimum spacing between kid-miss
 // triggered refetches of one profile.
 func WithMinRefetchGap(d time.Duration) Option { return func(m *Manager) { m.minRefetchGap = d } }
+
+// WithRefreshObserver installs a callback invoked exactly once per JWKS
+// fetch attempt with the profile name and either RefreshSuccess or
+// RefreshFailure. It runs on the profile's lifecycle goroutine, so it must
+// not block.
+func WithRefreshObserver(fn func(profile, outcome string)) Option {
+	return func(m *Manager) { m.refreshObserver = fn }
+}
 
 // WithRetryBackoff overrides the initial-fetch retry backoff (base, cap).
 func WithRetryBackoff(base, ceiling time.Duration) Option {
@@ -303,7 +329,21 @@ func (m *Manager) requestRefetch(ps *profileState) {
 
 // fetchOnce resolves the JWKS URL (through OIDC discovery when the profile
 // does not pin one) and swaps in a fresh snapshot on success.
-func (m *Manager) fetchOnce(ps *profileState) error {
+func (m *Manager) fetchOnce(ps *profileState) (err error) {
+	// One observation per attempt, whichever way the function leaves. A
+	// notify at each return site would be a list to keep in step with the
+	// error paths, and the failure mode of getting that wrong is a refresh
+	// that silently never counted.
+	if m.refreshObserver != nil {
+		defer func() {
+			outcome := RefreshSuccess
+			if err != nil {
+				outcome = RefreshFailure
+			}
+			m.refreshObserver(ps.prof.Name, outcome)
+		}()
+	}
+
 	jwksURL, err := m.resolveJWKSURL(ps)
 	if err != nil {
 		return err

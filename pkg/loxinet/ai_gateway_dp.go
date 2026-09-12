@@ -422,6 +422,11 @@ func llb_ai_validate_key(rawKey *C.char, modelName *C.char, result *C.ai_gw_deci
 //export llb_ai_validate_bearer
 func llb_ai_validate_bearer(bearer *C.char, modelName *C.char, profileName *C.char, bearerFlags C.int, result *C.ai_gw_decision_t) (ret C.int) {
 	var metricTenant, metricModel string
+	// The verdict reason for loxilb_ai_jwt_validation_total, recorded once in
+	// the defer below so every arm counts -- including the two that leave
+	// before a verdict is reached. It starts at internal_error because the
+	// paths that cannot set it are exactly the ones that are.
+	metricJWTReason := "internal_error"
 
 	// Fail closed on panic: deny with 401 rather than crashing the datapath.
 	defer func() {
@@ -432,12 +437,17 @@ func llb_ai_validate_bearer(bearer *C.char, modelName *C.char, profileName *C.ch
 				cCopyStr((*C.char)(unsafe.Pointer(&result.error_code[0])), "internal_error", 64)
 			}
 			ret = -1
+			metricJWTReason = "internal_error"
 		}
 		// Structural denial accounting, same shape as llb_ai_validate_key:
 		// a non-zero return means the C gate answers and tears the
 		// connection down, so this is the request's only entry into
 		// loxilb_ai_requests_total.
 		recordGateDenial(ret, result, metricTenant, metricModel)
+		// The bearer arm's own verdict counter. Here rather than at each
+		// return so that adding an arm cannot forget to count it, and so a
+		// panic is counted as the internal error it is instead of vanishing.
+		prom.RecordJWTValidation(metricTenant, metricJWTReason)
 	}()
 	if result == nil {
 		tk.LogIt(tk.LogError, "[AIGateway] llb_ai_validate_bearer: nil result pointer\n")
@@ -454,6 +464,7 @@ func llb_ai_validate_bearer(bearer *C.char, modelName *C.char, profileName *C.ch
 		// bootstrap — refuse as an outage, never admit.
 		prom.RecordPolicyStoreUnavailable()
 		result.decision = 4
+		metricJWTReason = "policy_store_unavailable"
 		cCopyStr((*C.char)(unsafe.Pointer(&result.error_code[0])), "policy_store_unavailable", 64)
 		return -1
 	}
@@ -466,6 +477,14 @@ func llb_ai_validate_bearer(bearer *C.char, modelName *C.char, profileName *C.ch
 	// resolved"), mirroring the API-key arm's label discipline.
 	metricTenant = tenantID
 	result.decision = C.int(decision)
+
+	// The refusal's own error_code is the reason, so the counter's label set
+	// stays closed: the codes are a fixed vocabulary and no request can
+	// invent one.
+	metricJWTReason = errorCode
+	if decision == 0 {
+		metricJWTReason = prom.JWTReasonAllowed
+	}
 
 	if decision == 0 {
 		cCopyStr((*C.char)(unsafe.Pointer(&result.tenant_id[0])), tenantID, 128)
