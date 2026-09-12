@@ -1,0 +1,3 @@
+minsockmap
+minsockmap.bpf.o
+cert/

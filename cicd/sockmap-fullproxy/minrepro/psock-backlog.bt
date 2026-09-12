@@ -1,0 +1,12 @@
+/* sk_psock_backlog is the workqueue path that retries whatever could not be sent
+ * inline. work_state.{len,off} at probe entry is the partial-send progress.
+ * arg0 is the delayed_work.work pointer, and delayed_work sits at offset 544 of
+ * struct sk_psock. */
+kprobe:sk_psock_backlog {
+  $p = (struct sk_psock *)((int64)arg0 - 544);
+  @backlog_calls = count();
+  @off_hist = lhist($p->work_state.off, 0, 32768, 2048);
+  @len_hist = lhist($p->work_state.len, 0, 32768, 2048);
+  if ($p->work_state.off > 0) { @off_nonzero = count(); } else { @off_zero = count(); }
+}
+kprobe:sk_psock_skb_redirect { @redirect_calls = count(); }

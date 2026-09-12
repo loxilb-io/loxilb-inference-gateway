@@ -522,7 +522,7 @@
   "burndown": {
    "unverified_max": 83,
    "unclassified_max": 0,
-   "_note": "178 packaged families, all classified: 10 verified-runtime (the QoS shaper group measured in the plan's B.5b, plus ai_pd_session_hits and ai_pd_tier_selected both verified 2026-09-11), 12 verified-static (loxilb_policer_attached added 2026-09-11), 73 conditional-with-proven-writer, 83 writer-mapped. unclassified_max is done at 0; unverified_max is the remaining work and comes down as scenarios M00-M17 produce evidence. Never raise either."
+   "_note": "178 packaged families, all classified: 12 verified-runtime (the QoS shaper group measured in the plan's B.5b, plus ai_pd_session_hits, ai_pd_tier_selected and the two API-key denial counters all verified 2026-09-11), 12 verified-static (loxilb_policer_attached added 2026-09-11), 71 conditional-with-proven-writer, 83 writer-mapped. unclassified_max is done at 0; unverified_max is the remaining work and comes down as scenarios M00-M17 produce evidence. Never raise either."
   },
   "unverifiable_roots": [
    "loxilb-ebpf/"
@@ -618,7 +618,7 @@
    ],
    "kv-subscriber-rule-config": [
     { "symbol": "KvSubscriberStartRank", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 1230, "call_line": 1379, "calls": "runKvSubscriberLoopBinding", "note": "one subscriber goroutine per (service, endpoint, rank)" },
-    { "symbol": "AddLbRule", "kind": "method", "receiver": "RuleH", "file": "pkg/loxinet/rules.go", "def_line": 3682, "call_line": 4925, "calls": "KvSubscriberStartRank" },
+    { "symbol": "AddLbRule", "kind": "method", "receiver": "RuleH", "file": "pkg/loxinet/rules.go", "def_line": 3684, "call_line": 4944, "calls": "KvSubscriberStartRank" },
     { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 365, "call_line": 372, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
    ],
    "kv-attest-controller-loop": [
@@ -627,7 +627,7 @@
     { "symbol": "KvAttestStart", "kind": "func", "file": "pkg/loxinet/ai_kv_attest.go", "def_line": 326, "call_line": 351, "calls": "loop" },
     { "symbol": "kvAttestActivate", "kind": "func", "file": "pkg/loxinet/ai_kv_attest.go", "def_line": 927, "call_line": 934, "calls": "KvAttestStart" },
     { "symbol": "kvDataplaneContractInstallAsync", "kind": "func", "file": "pkg/loxinet/ai_kv_dataplane.go", "def_line": 381, "call_line": 385, "calls": "kvAttestActivate", "note": "the controller starts only after a full dataplane contract install ACK, which is the only path to eligible=1" },
-    { "symbol": "AddLbRule", "kind": "method", "receiver": "RuleH", "file": "pkg/loxinet/rules.go", "def_line": 3682, "call_line": 4543, "calls": "kvDataplaneContractInstallAsync" },
+    { "symbol": "AddLbRule", "kind": "method", "receiver": "RuleH", "file": "pkg/loxinet/rules.go", "def_line": 3684, "call_line": 4561, "calls": "kvDataplaneContractInstallAsync" },
     { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 365, "call_line": 372, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
    ],
    "kv-best-worker-cgo": [
@@ -680,7 +680,7 @@
     "evidence": "metric coverage RCA and plan, section 0.3.1 -- source re-verification 2026-09-10"
    },
    "loxilb_ai_rate_limit_hits_total": {
-    "status": "conditional-with-proven-writer",
+    "status": "verified-runtime",
     "activation_precondition": "an API-key store (--aikey-db-* flags) plus --api-key-auth=required on the LB rule, and a key whose rps/burst is actually exceeded. With no key store no request carries a tenant, so the denial can never fire.",
     "writer_sources": [
      { "symbol": "RecordRateLimitHit", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 396, "writes": "aiRateLimitHitsTotal" },
@@ -689,10 +689,10 @@
     "native_callers": [
      "loxilb-ebpf/common/sockproxy_http.c:6412"
     ],
-    "evidence": "metric coverage RCA and plan, section A.3 -- weak-stub tripwire never logged on the running gateway, so the strong Go CGO exports are the bound symbols"
+    "evidence": "metric coverage RCA and plan, E.5 row wp1-aikey-20260911 (M03 topology, key rps=2 burst=2): 20 requests in 0.40 s from inside the client netns -> 18x429 + 2x200 (accepted == burst exactly, zero refill at that speed), counter delta 18 == denial count EXACT, series reason=rate_limit_exceeded; independent replication on a second tenant 15x429 == delta 15 (accepted 5 == burst 2 + 2/s refill over 1.83 s); red twin 20 requests under 2 rps -> 0 denials, delta 0. Client-ledger caveat: parallel docker-exec clients abort before reading denial responses -- the burst generator must run inside the client netns in one exec"
    },
    "loxilb_ai_model_not_allowed_total": {
-    "status": "conditional-with-proven-writer",
+    "status": "verified-runtime",
     "activation_precondition": "an API-key store plus --api-key-auth=required on the LB rule, and a request naming a model outside the key's --allowed-models list (decision == 2, HTTP 403).",
     "writer_sources": [
      { "symbol": "RecordModelNotAllowed", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 406, "writes": "aiModelNotAllowedTotal" },
@@ -701,7 +701,7 @@
     "native_callers": [
      "loxilb-ebpf/common/sockproxy_http.c:6343"
     ],
-    "evidence": "metric coverage RCA and plan, section A.3 -- CGO call-site table, verified against ai_gateway_dp.go at 4d1f8a24"
+    "evidence": "metric coverage RCA and plan, E.5 row wp1-aikey-20260911 (M03 topology, key allowed_models=[other-model]): 10 requests naming the pinned served model -> 10x403 == counter delta 10 EXACT, label model=Qwen_Qwen3-0.6B (slash sanitized per the bounded model-label contract) tenant=t-model; red twin 10 requests naming the allowed model -> delta 0 (requests proceeded past key validation). Denial answered before any backend connect"
    },
    "loxilb_ai_tokens_consumed_total": {
     "status": "conditional-with-proven-writer",
@@ -2262,7 +2262,7 @@
     "writer_sources": [
      { "symbol": "SetKvEpInfo", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1196, "writes": "pdEpInfo", "note": "ClearKvEpInfo (:1215) deletes the child on teardown, so a departed endpoint leaves no stale identity series" },
      { "symbol": "KvSubscriberStartRank", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 1230, "call_line": 1273, "calls": "SetKvEpInfo" },
-     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 3682, "call_line": 4925, "calls": "KvSubscriberStartRank", "receiver": "RuleH" },
+     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 3684, "call_line": 4944, "calls": "KvSubscriberStartRank", "receiver": "RuleH" },
      { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 365, "call_line": 372, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/ai_kv_subscriber.go:1273. Scenario M08 owns the runtime proof."
@@ -2386,7 +2386,7 @@
     "writer_sources": [
      { "symbol": "SetAiEngineInfo", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1202, "writes": "aiEngineInfo" },
      { "symbol": "LlamacppAdmissionProbe", "kind": "func", "file": "pkg/loxinet/ai_llamacpp_probe.go", "def_line": 161, "call_line": 163, "calls": "SetAiEngineInfo", "note": "publishes engine=\"llamacpp\"; other engines are identified on their own probe paths" },
-     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 3682, "call_line": 4968, "calls": "LlamacppAdmissionProbe", "receiver": "RuleH" },
+     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 3684, "call_line": 4987, "calls": "LlamacppAdmissionProbe", "receiver": "RuleH" },
      { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 365, "call_line": 372, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/ai_llamacpp_probe.go:163. Scenario M16 owns the per-engine proof."
@@ -2397,7 +2397,7 @@
     "writer_sources": [
      { "symbol": "IncLlamacppProbeWarning", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1208, "writes": "llamacppProbeWarnTotal" },
      { "symbol": "LlamacppAdmissionProbe", "kind": "func", "file": "pkg/loxinet/ai_llamacpp_probe.go", "def_line": 161, "call_line": 198, "calls": "IncLlamacppProbeWarning", "note": "one increment per warning kind returned by the probe" },
-     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 3682, "call_line": 4968, "calls": "LlamacppAdmissionProbe", "receiver": "RuleH" },
+     { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 3684, "call_line": 4987, "calls": "LlamacppAdmissionProbe", "receiver": "RuleH" },
      { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 365, "call_line": 372, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/ai_llamacpp_probe.go:198. WP-5 owns the known-mismatch arm."

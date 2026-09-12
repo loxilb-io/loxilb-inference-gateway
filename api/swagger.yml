@@ -9333,6 +9333,11 @@ definitions:
           proxyprotocolv2:
             type: boolean
             description: Enables PROXY protocol v2 on the supported backend path. The domain rejects non-TCP services when this flag is true; configure a backend that accepts the protocol header.
+          sockMapMode:
+            type: string
+            enum: ["off", "both", "request", "response"]
+            default: "off"
+            description: directional sockmap acceleration for this FullProxy service - off (default), both, request (client->backend only), response (backend->client only). Requires a plaintext tcp fullproxy ipv4 service with ipv4 endpoints, and the daemon started with --sockmapsupport.
           egress:
             type: boolean
             description: Marks an egress rule. The ordinary LB2DP programming path returns early for this marker; do not infer ordinary ingress FullProxy behavior. The existing-rule path rejects changes to this flag.

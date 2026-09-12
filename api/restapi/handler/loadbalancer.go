@@ -115,6 +115,10 @@ func ConfigPostLoadbalancer(params operations.PostConfigLoadbalancerParams, prin
 	}
 
 	lbRules.Serv.ProxyProtocolV2 = params.Attr.ServiceArguments.Proxyprotocolv2
+	// Directional sockmap acceleration - optional; nil/absent means "off" (domain treats "" as off)
+	if params.Attr.ServiceArguments.SockMapMode != nil {
+		lbRules.Serv.SockMapMode = *params.Attr.ServiceArguments.SockMapMode
+	}
 	lbRules.Serv.Egress = params.Attr.ServiceArguments.Egress
 	lbRules.Serv.TraceType = params.Attr.ServiceArguments.TraceType // Tracing catalog (independent from GPU routing)
 
@@ -572,6 +576,12 @@ func serializeLBRule(lb cmn.LbRuleMod) *models.LoadbalanceEntry {
 			backendProtocol = "http1" // Show explicit default
 		}
 		tmpSvc.BackendProtocol = &backendProtocol
+		// Directional sockmap acceleration - only meaningful for fullproxy mode
+		sockMapMode := cmn.SockMapCodeToMode(0)
+		if lb.Serv.SockMapMode != "" {
+			sockMapMode = lb.Serv.SockMapMode
+		}
+		tmpSvc.SockMapMode = &sockMapMode
 	}
 
 	// AI model name for pool selection

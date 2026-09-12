@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-12T08:27:10+00:00",
-  "source_revision": "d260115043feb92d1eb9ac428a7224fd7b3f713c"
+  "generated_at": "2026-09-12T08:46:26+00:00",
+  "source_revision": "5803fd1f388047bbb112c0f28ff2a05ba0e03dc7"
  },
  "contract": {
   "total": 239,
@@ -944,8 +944,8 @@
      "symbol": "AddLbRule",
      "kind": "method",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3682,
-     "call_line": 4968,
+     "def_line": 3684,
+     "call_line": 4987,
      "calls": "LlamacppAdmissionProbe",
      "receiver": "RuleH"
     },
@@ -1426,8 +1426,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3682,
-     "call_line": 4543,
+     "def_line": 3684,
+     "call_line": 4561,
      "calls": "kvDataplaneContractInstallAsync"
     },
     {
@@ -1539,8 +1539,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3682,
-     "call_line": 4543,
+     "def_line": 3684,
+     "call_line": 4561,
      "calls": "kvDataplaneContractInstallAsync"
     },
     {
@@ -1663,8 +1663,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3682,
-     "call_line": 4543,
+     "def_line": 3684,
+     "call_line": 4561,
      "calls": "kvDataplaneContractInstallAsync"
     },
     {
@@ -1785,8 +1785,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3682,
-     "call_line": 4543,
+     "def_line": 3684,
+     "call_line": 4561,
      "calls": "kvDataplaneContractInstallAsync"
     },
     {
@@ -1880,8 +1880,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3682,
-     "call_line": 4925,
+     "def_line": 3684,
+     "call_line": 4944,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -1971,8 +1971,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3682,
-     "call_line": 4925,
+     "def_line": 3684,
+     "call_line": 4944,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -2033,8 +2033,8 @@
      "symbol": "AddLbRule",
      "kind": "method",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3682,
-     "call_line": 4968,
+     "def_line": 3684,
+     "call_line": 4987,
      "calls": "LlamacppAdmissionProbe",
      "receiver": "RuleH"
     },
@@ -2073,7 +2073,7 @@
    "source": "api/prometheus/ai_metrics.go:191",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
-   "implementation_status": "conditional-with-proven-writer",
+   "implementation_status": "verified-runtime",
    "activation_precondition": "an API-key store plus --api-key-auth=required on the LB rule, and a request naming a model outside the key's --allowed-models list (decision == 2, HTTP 403).",
    "writer_sources": [
     {
@@ -2093,7 +2093,7 @@
      "entry_point": "cgo-export"
     }
    ],
-   "verification_evidence": "metric coverage RCA and plan, section A.3 -- CGO call-site table, verified against ai_gateway_dp.go at 4d1f8a24"
+   "verification_evidence": "metric coverage RCA and plan, E.5 row wp1-aikey-20260911 (M03 topology, key allowed_models=[other-model]): 10 requests naming the pinned served model -> 10x403 == counter delta 10 EXACT, label model=Qwen_Qwen3-0.6B (slash sanitized per the bounded model-label contract) tenant=t-model; red twin 10 requests naming the allowed model -> delta 0 (requests proceeded past key validation). Denial answered before any backend connect"
   },
   {
    "name": "loxilb_ai_normal_session_hits_total",
@@ -2504,7 +2504,7 @@
    "source": "api/prometheus/ai_metrics.go:173",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
-   "implementation_status": "conditional-with-proven-writer",
+   "implementation_status": "verified-runtime",
    "activation_precondition": "an API-key store (--aikey-db-* flags) plus --api-key-auth=required on the LB rule, and a key whose rps/burst is actually exceeded. With no key store no request carries a tenant, so the denial can never fire.",
    "writer_sources": [
     {
@@ -2525,7 +2525,7 @@
      "note": "llb_ai_token_quota_reserve records the same family at ai_gateway_dp.go:756 with reason token_quota_would_exceed"
     }
    ],
-   "verification_evidence": "metric coverage RCA and plan, section A.3 -- weak-stub tripwire never logged on the running gateway, so the strong Go CGO exports are the bound symbols"
+   "verification_evidence": "metric coverage RCA and plan, E.5 row wp1-aikey-20260911 (M03 topology, key rps=2 burst=2): 20 requests in 0.40 s from inside the client netns -> 18x429 + 2x200 (accepted == burst exactly, zero refill at that speed), counter delta 18 == denial count EXACT, series reason=rate_limit_exceeded; independent replication on a second tenant 15x429 == delta 15 (accepted 5 == burst 2 + 2/s refill over 1.83 s); red twin 20 requests under 2 rps -> 0 denials, delta 0. Client-ledger caveat: parallel docker-exec clients abort before reading denial responses -- the burst generator must run inside the client netns in one exec"
   },
   {
    "name": "loxilb_ai_request_duration_seconds",
@@ -4938,8 +4938,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3682,
-     "call_line": 4925,
+     "def_line": 3684,
+     "call_line": 4944,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -5018,8 +5018,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3682,
-     "call_line": 4925,
+     "def_line": 3684,
+     "call_line": 4944,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -5101,8 +5101,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3682,
-     "call_line": 4925,
+     "def_line": 3684,
+     "call_line": 4944,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -5180,8 +5180,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3682,
-     "call_line": 4925,
+     "def_line": 3684,
+     "call_line": 4944,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -5269,8 +5269,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3682,
-     "call_line": 4925,
+     "def_line": 3684,
+     "call_line": 4944,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -5348,8 +5348,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3682,
-     "call_line": 4925,
+     "def_line": 3684,
+     "call_line": 4944,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -5430,8 +5430,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3682,
-     "call_line": 4925,
+     "def_line": 3684,
+     "call_line": 4944,
      "calls": "KvSubscriberStartRank"
     },
     {
@@ -7302,8 +7302,8 @@
      "symbol": "AddLbRule",
      "kind": "method",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3682,
-     "call_line": 4925,
+     "def_line": 3684,
+     "call_line": 4944,
      "calls": "KvSubscriberStartRank",
      "receiver": "RuleH"
     },
@@ -7459,8 +7459,8 @@
      "kind": "method",
      "receiver": "RuleH",
      "file": "pkg/loxinet/rules.go",
-     "def_line": 3682,
-     "call_line": 4925,
+     "def_line": 3684,
+     "call_line": 4944,
      "calls": "KvSubscriberStartRank"
     },
     {

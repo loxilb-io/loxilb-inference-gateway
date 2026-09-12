@@ -44,7 +44,7 @@ var Opts struct {
 	IPVSCompat        bool           `long:"ipvs-compat" description:"Enable ipvs-compat(experimental)"`
 	FallBack          bool           `long:"fallback" description:"Fallback to system default networking(experimental)"`
 	LocalSockPolicy   bool           `long:"localsockpolicy" description:"support local socket policies (experimental)"`
-	SockMapSupport    bool           `long:"sockmapsupport" description:"Support sockmap based L4 proxying (experimental)"`
+	SockMapSupport    bool           `long:"sockmapsupport" description:"Support sockmap based L4 proxying (experimental; requires -DHAVE_SOCKOPS build and a kernel with the sk_psock_backlog duplicate-transmission fix, see docs/sockmap-acceleration.md)"`
 	KtlsSupport       bool           `long:"ktlssupport" description:"Support kernel TLS offload for HTTPS sockmap (experimental)"`
 	Cloud             string         `long:"cloud" description:"cloud type if any e.g aws,ncloud" default:"on-prem"`
 	CloudCIDRBlock    string         `long:"cloudcidrblock" description:"cloud implementations need VIP cidr blocks(experimental)"`

@@ -1707,6 +1707,12 @@ func DpLBRuleMod(w *LBDpWorkQ) int {
 		dat.backend_protocol_cap = 0
 	}
 
+	if w.NatType == DpFullProxy {
+		dat.sockmap_en = C.uchar(w.SockMapMode)
+	} else {
+		dat.sockmap_en = 0
+	}
+
 	// Custom session header - supports both RR and Persist modes
 	if w.SessionHeaderName != "" {
 		if !copyLBFixedCString(dat.session_header_name[:], w.SessionHeaderName) {
