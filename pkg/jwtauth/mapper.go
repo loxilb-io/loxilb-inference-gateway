@@ -19,6 +19,8 @@ package jwtauth
 import (
 	"fmt"
 	"strings"
+
+	rl "github.com/loxilb-io/loxilb/pkg/ratelimit"
 )
 
 // Claims is the gateway-facing identity mapped out of a verified token.
@@ -72,12 +74,21 @@ const identityMaxBytes = 127
 // cannot be represented safely is better refused than rewritten into an
 // identity nobody chose. Bytes above 0x7E are left alone so non-ASCII
 // identities keep working.
+//
+// '|' is refused for the same carried-whole reason, one layer down: the
+// QoS accounting composes bucket keys as tenant|user (and deeper), so a
+// pipe inside either value makes two DIFFERENT identity pairs share one
+// bucket — ("t1", "a|b") and ("t1|a", "b") spend each other's quota. The
+// config surface refuses it for operator-supplied names
+// (pkg/aikey/qos_ladder.go ValidateQoSIdentity); claim-derived identities
+// get the same refusal here, because an IdP directory is user-writable in
+// exactly the ways the header-splice comment above describes.
 func safeIdentity(s string) bool {
 	if len(s) > identityMaxBytes {
 		return false
 	}
 	for i := 0; i < len(s); i++ {
-		if s[i] < 0x20 || s[i] == 0x7f {
+		if s[i] < 0x20 || s[i] == 0x7f || s[i] == '|' {
 			return false
 		}
 	}
@@ -149,8 +160,16 @@ func mapClaims(p *Profile, claims map[string]any) (*Claims, error) {
 	} {
 		if !safeIdentity(id.value) {
 			return nil, deny401(ReasonUnsafeIdentity,
-				fmt.Sprintf("%s identity is not safe to carry (%d bytes, control characters not allowed)",
+				fmt.Sprintf("%s identity is not safe to carry (%d bytes; control characters and '|' not allowed)",
 					id.what, len(id.value)))
+		}
+		// A value that BEGINS with a rate-limit scope prefix would round-trip
+		// through the quota sync wire into another scope's bucket ("uq:x" as
+		// a tenant IS a user-bucket wire key). The prefix list is the sync
+		// layer's own, so the two vocabularies cannot drift apart.
+		if rl.HasReservedScopePrefix(id.value) {
+			return nil, deny401(ReasonUnsafeIdentity,
+				fmt.Sprintf("%s identity collides with a reserved rate-limit scope prefix", id.what))
 		}
 	}
 
