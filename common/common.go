@@ -2622,10 +2622,11 @@ const (
 // no user_rate_limits row; DefaultTenantRPS/TPM bound each tenant without a
 // tenant_rate_limits row. VipSharedRPS/TPM arm the opt-in per-service shared
 // bucket: the request side (RPS) bounds keyless traffic on none-mode
-// services; the token side (TPM) is charged by metered traffic sharing the
-// service — keyless responses are not token-metered yet, so on a service
-// with only keyless traffic the TPM bound cannot trip. Zero = that
-// dimension has no default (fall through to unlimited).
+// services; the token side (TPM) is charged by every token-metered response
+// sharing the service — credentialed and keyless alike, exact usage at
+// settle. Keyless requests carry no pre-admission reservation: the bucket's
+// debt denies the NEXT keyless admission once spend crosses the bound.
+// Zero = that dimension has no default (fall through to unlimited).
 type RateLimitDefaultsEntry struct {
 	Scope            string    `json:"scope"`                // "global" or "rule"
 	RuleIdent        string    `json:"rule_ident,omitempty"` // service identity for scope "rule"; "" for global

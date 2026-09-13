@@ -226,6 +226,21 @@ for i in $(seq 1 20); do
   [ "$i" = 20 ] && { echo "FATAL: h2c echo backend did not become ready"; exit 1; }
   sleep 1
 done
+# Second h2 pool, DIFFERENT namespace: the multiplexing legs need two
+# model pools whose endpoint lists both start at index 0, so that a
+# backend cache keyed by index alone has an alias to hit. Each pool's
+# receipt counter is queried inside its own namespace — per-backend
+# delivery evidence no client-side response can fake.
+$hexec l3ep2 sh -c "nohup python3 $SDIR/h2c_echo.py server-h2-mistral 8090 >/tmp/ai-jwtauth-h2echo.log 2>&1 &"
+for i in $(seq 1 20); do
+  if $hexec l3ep2 curl -sf --max-time 1 --http2-prior-knowledge \
+       http://127.0.0.1:8090/__receipts/probe | grep -q "0"; then
+    echo "  server-h2-mistral backend ready (${i})"
+    break
+  fi
+  [ "$i" = 20 ] && { echo "FATAL: second h2c echo backend did not become ready"; exit 1; }
+  sleep 1
+done
 
 echo "#########################################"
 echo "Waiting for loxilb REST API to be ready"
@@ -410,6 +425,75 @@ case "$resp" in
   *Success*) ;;
   *) echo "FATAL: LB rule 2049 rejected"; exit 1 ;;
 esac
+
+# Multiplexing legs: ONE VIP:port, TWO model pools, each pool's endpoint
+# list starting at index 0 and each pool backed by a DIFFERENT h2 echo.
+# The models' authorized identities are disjoint (alice→llama, bob→mistral)
+# so every stream also proves per-stream identity on the shared connection.
+add_lb_rule 2050 "llama-70b"  "31.31.31.1" jwt kc 8090
+add_lb_rule 2050 "mistral-7b" "32.32.32.1" jwt kc 8090
+
+# Keyless per-VIP token-bound legs. api_key_auth 'none' with sse_mode on:
+# ai_gw_mode is sse||pd||required-auth, and only ai_gw_mode services run
+# the admission ladder and the response settle — a keyless service that
+# never opted into AI-gateway treatment pays no per-request probe.
+add_keyless_rule() { # <port> <ep_ip> <tport>
+  local port=$1 ep=$2 tport=$3 resp
+  resp=$($hexec l3h1 curl -s -X POST \
+    http://10.10.10.254:11111/netlox/v1/config/loadbalancer \
+    -H "Content-Type: application/json" \
+    -d '{
+      "serviceArguments": {
+        "externalIP":       "10.10.10.254",
+        "port":              '"$port"',
+        "protocol":         "tcp",
+        "sel":               0,
+        "mode":              4,
+        "host":             "10.10.10.254",
+        "path_prefix":      "/",
+        "path_match_mode":  "prefix",
+        "model_name":       "llama-70b",
+        "api_key_auth":     "disabled",
+        "sse_mode":          true,
+        "inactiveTimeOut":   30
+      },
+      "endpoints": [
+        {"endpointIP": "'"$ep"'", "targetPort": '"$tport"', "weight": 1}
+      ]
+    }')
+  echo "  rule $port/llama-70b (none+sse, keyless) -> $ep:$tport: $resp"
+  case "$resp" in
+    *Success*) ;;
+    *) echo "FATAL: keyless LB rule $port rejected"; exit 1 ;;
+  esac
+}
+add_keyless_rule 2051 "31.31.31.1" 8080   # H/1.1 echo (usage-bearing)
+add_keyless_rule 2052 "31.31.31.1" 8090   # h2 echo (usage-bearing)
+
+# The shared bucket is OPT-IN: a rule-scope defaults row arms it for the
+# two keyless services only. vip_shared_tpm=10 with the echoes' fixed
+# usage of 12 tokens/answer means: request 1 admitted (bucket clean),
+# its settle puts the bucket in debt, request 2 refused — two requests
+# decide the leg. vip_shared_rps stays high so only the token side binds.
+add_vip_bucket() { # <port>
+  local port=$1 resp
+  resp=$($hexec llb1 curl -s -w '\nhttp_code=%{http_code}' -X POST \
+    http://localhost:11111/netlox/v1/config/ai/ratelimit/defaults \
+    -H "Content-Type: application/json" \
+    -d '{
+      "scope": "rule",
+      "rule_ident": "10.10.10.254:'"$port"'",
+      "vip_shared_rps": 100,
+      "vip_shared_tpm": 10
+    }')
+  echo "  vip bucket 10.10.10.254:$port (rps=100 tpm=10): $(echo "$resp" | tail -1)"
+  case "$resp" in
+    *http_code=2*) ;;
+    *) echo "FATAL: defaults row for :$port rejected: $resp"; exit 1 ;;
+  esac
+}
+add_vip_bucket 2051
+add_vip_bucket 2052
 
 echo "#########################################"
 echo "Creating the llama-only API key"

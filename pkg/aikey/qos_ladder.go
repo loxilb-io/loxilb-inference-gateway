@@ -441,16 +441,6 @@ func (s *Service) SetRateLimitDefaults(entry cmn.RateLimitDefaultsEntry) error {
 		tenantRPS: entry.DefaultTenantRPS, tenantTPM: entry.DefaultTenantTPM,
 		vipRPS: entry.VipSharedRPS, vipTPM: entry.VipSharedTPM, exists: true,
 	})
-	if entry.VipSharedTPM > 0 {
-		// Same contract as the user-limit warning: the write is accepted,
-		// but it must not look like protection nothing provides. The token
-		// side of the shared bucket is charged by metered (credentialed)
-		// traffic; keyless responses are not token-metered yet, so on a
-		// service with only keyless traffic this bound cannot trip.
-		tk.LogIt(tk.LogWarning,
-			"[AIKey] rate limit defaults (%s/%s): vip_shared_tpm is charged by metered traffic only — keyless responses are not token-metered; vip_shared_rps is the always-live keyless bound\n",
-			entry.Scope, entry.RuleIdent)
-	}
 	tk.LogIt(tk.LogInfo, "[AIKey] Set rate limit defaults (%s/%s): user rps=%d tpm=%d, tenant rps=%d tpm=%d, vip rps=%d tpm=%d\n",
 		entry.Scope, entry.RuleIdent, entry.DefaultUserRPS, entry.DefaultUserTPM,
 		entry.DefaultTenantRPS, entry.DefaultTenantTPM, entry.VipSharedRPS, entry.VipSharedTPM)

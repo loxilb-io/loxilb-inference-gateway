@@ -546,6 +546,176 @@ else
 fi
 
 echo ""
+echo "== M: multi-model multiplexing on ONE HTTP/2 connection (port 2050) =="
+echo "   Two model pools on one VIP, each pool's endpoint list starting at"
+echo "   index 0, each pool a different backend. A backend cache keyed by"
+echo "   endpoint index alone has an alias here, and only a connection that"
+echo "   holds two in-flight streams of different models can reach it."
+
+# Per-backend receipt reader: M's whole point is WHICH backend a stream
+# reached, so the two counters are read separately (h2_receipt sums into
+# one namespace and cannot tell a cross-delivery from a clean run).
+h2_receipt_at() { # h2_receipt_at <ns> <name> <expected> <nonce>
+  note_case "$2"
+  local got
+  got=$($hexec "$1" curl -s --max-time 5 --http2-prior-knowledge \
+        "http://127.0.0.1:8090/__receipts/$4" 2>/dev/null)
+  case "$got" in
+    ''|*[!0-9]*)
+      echo "  [FAIL] $2 — receipt counter in $1 unreadable; not proof of $3"
+      FAIL=$((FAIL + 1)); return ;;
+  esac
+  if [ "$got" = "$3" ]; then
+    echo "  [PASS] $2 ($1 receipts=$got)"; PASS=$((PASS + 1))
+  else
+    echo "  [FAIL] $2 — $1 receipts=$got, want $3"; FAIL=$((FAIL + 1))
+  fi
+}
+
+chk_num() { # chk_num <name> <want> <got>
+  note_case "$1"
+  case "$3" in
+    ''|*[!0-9-]*)
+      echo "  [FAIL] $1 — value '$3' unreadable"; FAIL=$((FAIL + 1)); return ;;
+  esac
+  if [ "$3" -eq "$2" ]; then
+    echo "  [PASS] $1 ($3)"; PASS=$((PASS + 1))
+  else
+    echo "  [FAIL] $1 — got $3, want $2"; FAIL=$((FAIL + 1))
+  fi
+}
+
+# metric_labeled <family> <label-substr> [label-substr2] -> summed value of
+# the series carrying every given label, or "unreadable" when the scrape
+# itself failed (an absent family reads 0 — baselines need a number).
+metric_labeled() {
+  local body
+  body=$($hexec l3h1 curl -s --max-time 8 "http://$VIP:11111/netlox/v1/metrics" 2>/dev/null)
+  case "$body" in
+    *loxilb_*) ;;
+    *) echo "unreadable"; return ;;
+  esac
+  echo "$body" | awk -v fam="$1" -v a="$2" -v b="${3:-}" '
+    $0 ~ "^" fam "{" {
+      if (index($0, a) == 0) next
+      if (b != "" && index($0, b) == 0) next
+      v = $NF; if (v + 0 == v) s += v
+    }
+    END { printf "%d", s }'
+}
+
+echo ""
+echo "M1: control — each model reaches its own pool on SEPARATE connections"
+echo "    (rules out 'pool-B was never routable' as the reading of an M2/M3 red)"
+r=$(bearer_req 2050 "$body_llama" "$TOK_ALICE" --http2-prior-knowledge)
+chk_has "M1 llama 200 on its own connection"   "200"              "$(status_of "$r")"
+chk_has "M1 llama pool answers"                "server-h2-llama"  "$r"
+rm -f "$NONCE_FILE.last"
+r=$(bearer_req 2050 "$body_mistral" "$TOK_BOB" --http2-prior-knowledge)
+chk_has "M1 mistral 200 on its own connection" "200"               "$(status_of "$r")"
+chk_has "M1 mistral pool answers"              "server-h2-mistral" "$r"
+rm -f "$NONCE_FILE.last"
+
+# Metric baselines AFTER the controls (they settle tokens of their own).
+sleep 2
+TKA0=$(metric_labeled loxilb_ai_tokens_consumed_total 'tenant="tenant-a"' 'model="llama-70b"')
+TKB0=$(metric_labeled loxilb_ai_tokens_consumed_total 'tenant="tenant-b"' 'model="mistral-7b"')
+ESTA0=$(metric_labeled loxilb_ai_tokens_estimated_total 'tenant="tenant-a"')
+ESTB0=$(metric_labeled loxilb_ai_tokens_estimated_total 'tenant="tenant-b"')
+
+echo ""
+echo "M2: the multiplexed case — one connection, two interleaved streams,"
+echo "    different models, different identities. Both requests are on the"
+echo "    wire before either response is read."
+new_nonce; MA=$LAST_NONCE
+new_nonce; MB=$LAST_NONCE
+rm -f "$NONCE_FILE.last"   # minted here, consumed here; no leg may inherit
+printf '%s' "$TOK_ALICE" > .tok_alice_mux
+printf '%s' "$TOK_BOB"   > .tok_bob_mux
+MOUT=$($hexec l3h1 python3 ./h2_mux_client.py "$VIP" 2050 \
+        "llama-70b|$(pwd)/.tok_alice_mux|$MA" \
+        "mistral-7b|$(pwd)/.tok_bob_mux|$MB" 2>/dev/null)
+rm -f .tok_alice_mux .tok_bob_mux
+LLAMA_LINE=$(echo "$MOUT" | grep '"model": "llama-70b"')
+MIS_LINE=$(echo "$MOUT" | grep '"model": "mistral-7b"')
+chk_has     "M2 llama stream 200"                    '"status": "200"'   "$LLAMA_LINE"
+chk_has     "M2 llama stream answered by its pool"   "server-h2-llama"   "$LLAMA_LINE"
+chk_has     "M2 mistral stream 200"                  '"status": "200"'   "$MIS_LINE"
+chk_has     "M2 mistral stream answered by its pool" "server-h2-mistral" "$MIS_LINE"
+chk_not_has "M2 mistral stream not cross-answered"   "server-h2-llama"   "$MIS_LINE"
+
+echo ""
+echo "M3: backend-delivery evidence — each pool's OWN receipt counter, read"
+echo "    inside its namespace. A client-visible body cannot substitute:"
+echo "    delivery to the wrong pool is only visible at the pools."
+h2_receipt_at l3ep1 "M3 llama backend saw the llama nonce once"     1 "$MA"
+h2_receipt_at l3ep2 "M3 mistral backend saw the mistral nonce once" 1 "$MB"
+h2_receipt_at l3ep1 "M3 llama backend never saw the mistral nonce"  0 "$MB"
+h2_receipt_at l3ep2 "M3 mistral backend never saw the llama nonce"  0 "$MA"
+
+echo ""
+echo "M4: settlement attribution — each stream's tokens land on ITS tenant"
+echo "    and model, exactly (5 prompt + 7 completion from the echo), and"
+echo "    exactly, i.e. extracted from the usage object, never estimated."
+sleep 2
+TKA1=$(metric_labeled loxilb_ai_tokens_consumed_total 'tenant="tenant-a"' 'model="llama-70b"')
+TKB1=$(metric_labeled loxilb_ai_tokens_consumed_total 'tenant="tenant-b"' 'model="mistral-7b"')
+ESTA1=$(metric_labeled loxilb_ai_tokens_estimated_total 'tenant="tenant-a"')
+ESTB1=$(metric_labeled loxilb_ai_tokens_estimated_total 'tenant="tenant-b"')
+if [ "$TKA0" = "unreadable" ] || [ "$TKA1" = "unreadable" ] || \
+   [ "$TKB0" = "unreadable" ] || [ "$TKB1" = "unreadable" ]; then
+  note_case "M4 metrics"
+  echo "  [FAIL] M4 metrics scrape unreadable — cannot prove settlement attribution"
+  FAIL=$((FAIL + 1))
+else
+  chk_num "M4 tenant-a charged exactly its stream's tokens"  12 $((TKA1 - TKA0))
+  chk_num "M4 tenant-b charged exactly its stream's tokens"  12 $((TKB1 - TKB0))
+  chk_num "M4 tenant-a charge was exact, not estimated"       0 $((ESTA1 - ESTA0))
+  chk_num "M4 tenant-b charge was exact, not estimated"       0 $((ESTB1 - ESTB0))
+fi
+
+echo ""
+echo "== N: the keyless per-VIP token bound (ports 2051 H/1.1, 2052 H/2) =="
+echo "   vip_shared_tpm=10 and every echoed answer settles 12 tokens, so the"
+echo "   contract is decided in two requests: the first is admitted against"
+echo "   a clean bucket, its settle puts the bucket in debt, the second is"
+echo "   refused at admission. No credential is sent on any of them."
+
+echo ""
+echo "N1: first keyless HTTP/1.1 request → admitted, answered, settled"
+r=$(req 2051 "$body_llama")
+chk_has     "N1 200 status"                    "200"          "$(status_of "$r")"
+chk_has     "N1 the H/1.1 pool answers"        "server-llama" "$r"
+chk_receipt "N1 backend received exactly one"  1
+
+echo ""
+echo "N2: second keyless HTTP/1.1 request → 429 from the bucket's debt"
+sleep 2   # the settle rides the response relay; give it a beat to land
+r=$(req 2051 "$body_llama")
+chk_has     "N2 429 status"                   "429"                  "$(status_of "$r")"
+chk_has     "N2 token_quota_exceeded code"    "token_quota_exceeded" "$r"
+chk_has     "N2 Retry-After header"           "Retry-After: 60"      "$r"
+chk_receipt "N2 backend received nothing"     0
+
+echo ""
+echo "N3: first keyless HTTP/2 request → admitted, answered, settled"
+r=$(req 2052 "$body_llama" --http2-prior-knowledge)
+chk_has    "N3 200 status"                    "200"             "$(status_of "$r")"
+chk_has    "N3 the h2 pool answers"           "server-h2-llama" "$r"
+h2_receipt "N3 backend received exactly one"  1
+
+echo ""
+echo "N4: second keyless HTTP/2 request → 429, exactly like N2"
+echo "    (BORN RED while the H2 settle path skips keyless streams: the"
+echo "     bucket never learns of N3's spend and this request is admitted)"
+sleep 2
+r=$(req 2052 "$body_llama" --http2-prior-knowledge)
+chk_has    "N4 429 status"                  "429"                  "$(status_of "$r")"
+chk_has    "N4 token_quota_exceeded code"   "token_quota_exceeded" "$r"
+chk_has    "N4 retry-after header"          "retry-after: 60"      "$r"
+h2_receipt "N4 backend received nothing"    0
+
+echo ""
 echo "== G: fail-closed when the keyset was never fetched (port 2044) =="
 echo "   nothing listens on the profile's JWKS endpoint, so the verifier has"
 echo "   no keys — that is the gateway's outage, worth retrying: 503, and"
@@ -788,7 +958,7 @@ echo "   A deleted, renamed, or skipped block stops being tested silently:"
 echo "   the pass count simply gets smaller and the run still says OK. This"
 echo "   compares the case IDs that actually asserted against the declared"
 echo "   set, so coverage cannot shrink without turning the run RED."
-EXPECTED_CASES="A1 A2 A3 A4 A5 A6 A7 A8 B1 B2 B3 C1 C2 C3 C4 C5 C6 D1 D2 D3 D4 D5 D6 E1 E2 F1 F2 F3 F4 G1 G2 H0 H1 H2 H3 H4 I0 I1 I2 I3 J1"
+EXPECTED_CASES="A1 A2 A3 A4 A5 A6 A7 A8 B1 B2 B3 C1 C2 C3 C4 C5 C6 D1 D2 D3 D4 D5 D6 E1 E2 F1 F2 F3 F4 M1 M2 M3 M4 N1 N2 N3 N4 G1 G2 H0 H1 H2 H3 H4 I0 I1 I2 I3 J1"
 missing=""
 for want in $EXPECTED_CASES; do
   case " $SEEN_CASES " in

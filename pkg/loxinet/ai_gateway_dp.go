@@ -221,11 +221,11 @@ func rateLimitCheckInternal(svc rateLimitService, store *rl.RateLimiterStore, ke
 		}
 		// The token side of the shared bucket. The latch reads debt that
 		// SETTLES put there: attributed traffic sharing the service charges
-		// it today, and the keyless reserve/consume path accepts
-		// service-only settles — but the data plane does not yet meter
-		// keyless responses, so on a service with ONLY keyless traffic this
-		// latch cannot trip until it does. vip_shared_rps is the
-		// always-live keyless bound.
+		// it, and the data plane settles keyless responses into the same
+		// bucket through the service-only consume path — exact usage, no
+		// pre-admission reservation, so the bound is enforced by denying
+		// the NEXT keyless admission once spend crosses it (H1 and H2
+		// relays both meter keyless).
 		if d.vipTPM > 0 {
 			if store.QuotaWarming() {
 				return 3, 1, "token_quota_warming"

@@ -114,7 +114,13 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, OSError):
             self.close_connection = True
 
-        self._send("%s|authz=%s|apikey=%s|xauth_tenant=%s|xauth_user=%s" % (
+        # The usage suffix feeds the gateway's settle path (the extractor
+        # scans the response tail for the LAST complete "usage" object, so
+        # the surrounding pipe format is irrelevant to it). Fixed counts
+        # keep the token legs' arithmetic exact: 5+7 per answered request.
+        self._send("%s|authz=%s|apikey=%s|xauth_tenant=%s|xauth_user=%s"
+                   '|{"usage":{"prompt_tokens":5,"completion_tokens":7,'
+                   '"total_tokens":12}}' % (
             LABEL,
             "yes" if self.headers.get("Authorization") else "no",
             "yes" if self.headers.get("X-Api-Key") else "no",
