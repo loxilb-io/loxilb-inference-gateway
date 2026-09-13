@@ -225,7 +225,7 @@ var (
 		[]string{"model", "tenant"},
 	)
 
-	// aiTokensMissingTotal counts completed responses that produced no
+	// aiTokensMissingTotal counts SUCCESSFUL responses that produced no
 	// readable usage object. Two writers reach it and they charge
 	// differently, so it is NOT a subset of the estimated series: a streamed
 	// response falls back to the estimate net (RecordTokenUsage's estimated
@@ -233,10 +233,16 @@ var (
 	// is charged nothing at all (RecordTokenUsageMissing). Counts responses,
 	// not tokens — missing >= the number of responses in
 	// aiTokensEstimatedTotal, and the gap is the uncharged non-streamed half.
+	//
+	// An error response is NOT counted. The family reports an accounting hole
+	// — work that should have been charged and could not be — and a backend
+	// answering 4xx/5xx completed no work, so carrying no usage is correct
+	// rather than missing. Counting it would let a backend outage drive the
+	// series harder than the condition it exists to report.
 	aiTokensMissingTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "loxilb_ai_tokens_missing_total",
-			Help: "Total completed AI Gateway responses with no readable usage object, by model and tenant. A streamed response was charged from the estimate net; a non-streamed one was charged nothing.",
+			Help: "Total successful (2xx) AI Gateway responses with no readable usage object, by model and tenant. A streamed response was charged from the estimate net; a non-streamed one was charged nothing. Error responses are excluded -- they completed no work, so carrying no usage is correct rather than missing.",
 		},
 		[]string{"model", "tenant"},
 	)
