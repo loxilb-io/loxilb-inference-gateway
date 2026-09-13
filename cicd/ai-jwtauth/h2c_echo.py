@@ -14,7 +14,13 @@ Behaviour mirrors hdr_echo.py where it matters to the legs:
                        an x-test-nonce header is counted as a receipt.
   GET /__receipts/N -> the count for nonce N, as a decimal body.
 
-Usage: h2c_echo.py <label> <port>
+A third argument of "no-usage" suppresses the usage object, mirroring
+hdr_echo.py's mode of the same name. usage is optional in the response shape,
+and the HTTP/2 settle path reads it out of the stream's own tail window, so
+this is the only way to drive "an H2 response completed and no dialect could
+read usage from it" — the shape the missing-usage accounting leg needs.
+
+Usage: h2c_echo.py <label> <port> [no-usage]
 """
 
 import json
@@ -28,6 +34,7 @@ import h2.events
 
 LABEL = sys.argv[1] if len(sys.argv) > 1 else "server-h2"
 PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 8090
+EMIT_USAGE = (sys.argv[3] if len(sys.argv) > 3 else "") != "no-usage"
 
 receipts = {}
 receipts_lock = threading.Lock()
@@ -74,9 +81,10 @@ def handle_request(conn, stream_id, headers, body):
         "x_auth_tenant": hdr.get("x-auth-tenant", ""),
         "x_auth_user": hdr.get("x-auth-user", ""),
         "body_len": len(body),
-        "usage": {"prompt_tokens": 5, "completion_tokens": 7,
-                  "total_tokens": 12},
     }
+    if EMIT_USAGE:
+        reply["usage"] = {"prompt_tokens": 5, "completion_tokens": 7,
+                          "total_tokens": 12}
     respond(conn, stream_id, 200, json.dumps(reply).encode())
 
 

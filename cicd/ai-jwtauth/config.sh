@@ -59,6 +59,11 @@
 #     2055 jwt            profile kc           backend answers 200 with NO
 #                                              usage object (missing-usage
 #                                              accounting)
+#     2056 jwt            profile kc           the same, over HTTP/2 (h2c echo
+#                                              with usage suppressed) — the H2
+#                                              settle path is a different
+#                                              recorder from the H/1.1 one, so
+#                                              2055 proves nothing about it
 
 source ../common.sh
 
@@ -267,6 +272,29 @@ for i in $(seq 1 20); do
   [ "$i" = 20 ] && { echo "FATAL: h2c echo backend did not become ready"; exit 1; }
   sleep 1
 done
+# The H2 twin of the 8092 no-usage backend. An H/2 response settles through
+# proxy_h2_settle_stream, which reads usage out of the STREAM's own tail
+# window — a different recorder from the H/1.1 relay — so the 8092 pool proves
+# nothing about it. Same h2c echo, usage suppressed, own port so the
+# with-usage H2 control on 8090 keeps running beside it.
+$hexec l3ep1 sh -c "nohup python3 $SDIR/h2c_echo.py server-h2-nousage 8093 no-usage >/tmp/ai-jwtauth-h2nousage.log 2>&1 &"
+for i in $(seq 1 20); do
+  if $hexec l3ep1 curl -sf --max-time 1 --http2-prior-knowledge \
+       http://127.0.0.1:8093/__receipts/probe | grep -q "0"; then
+    echo "  server-h2-nousage backend ready (${i})"
+    break
+  fi
+  [ "$i" = 20 ] && { echo "FATAL: h2 no-usage backend did not become ready"; exit 1; }
+  sleep 1
+done
+# Same guard as the H/1.1 no-usage pool: if it is still emitting usage the
+# leg below would assert against the wrong response shape and pass for the
+# wrong reason.
+if $hexec l3ep1 curl -sf --max-time 2 --http2-prior-knowledge \
+     -X POST http://127.0.0.1:8093/ -d '{}' | grep -q '"usage"'; then
+  echo "FATAL: the H2 no-usage backend emitted a usage object"; exit 1
+fi
+
 # Second h2 pool, DIFFERENT namespace: the multiplexing legs need two
 # model pools whose endpoint lists both start at index 0, so that a
 # backend cache keyed by index alone has an alias to hit. Each pool's
@@ -436,6 +464,8 @@ add_lb_rule 2047 "llama-70b"  "31.31.31.1" jwt           kc-outage
 add_lb_rule 2048 "llama-70b"  "31.31.31.1" jwt           kc 8090
 # The no-usage service, for the missing-usage accounting leg.
 add_lb_rule 2055 "llama-70b"  "31.31.31.1" jwt           kc 8092
+# Its HTTP/2 twin, on the h2c no-usage pool.
+add_lb_rule 2056 "llama-70b"  "31.31.31.1" jwt           kc 8093
 
 # TLS + ALPN. Every H2 port above is h2c, so nothing here has ever run the
 # bearer gate on a connection whose HTTP/2 was negotiated through the TLS

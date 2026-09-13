@@ -1256,6 +1256,59 @@ else
 fi
 
 echo ""
+echo "== UH: the same accounting, over HTTP/2 =="
+echo "   U proves the H/1.1 recorder only. An H/2 response never reaches it:"
+echo "   backend frames go through the nghttp2 path, and the stream settles in"
+echo "   proxy_h2_settle_stream, which reads usage out of the STREAM's own tail"
+echo "   window. That is a second recorder with its own copy of the same"
+echo "   decision, so 'H2 is accounted correctly' does not follow from U — it"
+echo "   has to be driven."
+echo "   UH1 is the no-usage H2 pool (port 2056), UH2 the with-usage H2"
+echo "   control (port 2048) that stops UH1 passing on a counter that simply"
+echo "   ticks for every H2 response."
+
+sleep 2
+UHMISS0=$(metric_labeled loxilb_ai_tokens_missing_total 'tenant="tenant-a"')
+UHCONS0=$(metric_labeled loxilb_ai_tokens_consumed_total 'tenant="tenant-a"' 'model="llama-70b"')
+
+echo ""
+echo "UH1: an HTTP/2 response with no usage object is reported once, and"
+echo "     charged nothing"
+r=$(bearer_req 2056 "$body_llama" "$TOK_ALICE" --http2-prior-knowledge)
+chk_code "UH1 200 status" 200 "$r"
+chk_has  "UH1 the H2 no-usage pool answers" "server-h2-nousage" "$r"
+chk_not_has "UH1 the response really carried no usage object" '"usage"' "$r"
+sleep 2
+UHMISS1=$(metric_labeled loxilb_ai_tokens_missing_total 'tenant="tenant-a"')
+UHCONS1=$(metric_labeled loxilb_ai_tokens_consumed_total 'tenant="tenant-a"' 'model="llama-70b"')
+if [ "$UHMISS0" = "unreadable" ] || [ "$UHMISS1" = "unreadable" ] || \
+   [ "$UHCONS0" = "unreadable" ] || [ "$UHCONS1" = "unreadable" ]; then
+  note_case "UH1 missing"; note_case "UH1 charge"
+  echo "  [FAIL] UH1 metrics scrape unreadable — cannot prove the accounting"
+  FAIL=$((FAIL + 2))
+else
+  chk_num "UH1 missing counted exactly this one H2 response" 1 $((UHMISS1 - UHMISS0))
+  chk_num "UH1 reporting charged nothing"                    0 $((UHCONS1 - UHCONS0))
+fi
+
+echo ""
+echo "UH2: control — the with-usage H2 backend charges its exact counts and"
+echo "     does NOT tick missing"
+r=$(bearer_req 2048 "$body_llama" "$TOK_ALICE" --http2-prior-knowledge)
+chk_code "UH2 200 status" 200 "$r"
+sleep 2
+UHMISS2=$(metric_labeled loxilb_ai_tokens_missing_total 'tenant="tenant-a"')
+UHCONS2=$(metric_labeled loxilb_ai_tokens_consumed_total 'tenant="tenant-a"' 'model="llama-70b"')
+if [ "$UHMISS2" = "unreadable" ] || [ "$UHCONS2" = "unreadable" ]; then
+  note_case "UH2 missing"; note_case "UH2 charge"
+  echo "  [FAIL] UH2 metrics scrape unreadable — cannot prove the control"
+  FAIL=$((FAIL + 2))
+else
+  chk_num "UH2 a readable usage object does not tick missing" 0 $((UHMISS2 - UHMISS1))
+  chk_num "UH2 and it is charged exactly (5 prompt + 7 completion)" 12 $((UHCONS2 - UHCONS1))
+fi
+
+echo ""
 echo "== T: the bearer gate on TLS, where HTTP/2 came from ALPN (port 2053) =="
 echo "   Every other HTTP/2 leg in this suite is h2c: the client announces"
 echo "   HTTP/2 with a cleartext preface. A TLS client never sends that"
