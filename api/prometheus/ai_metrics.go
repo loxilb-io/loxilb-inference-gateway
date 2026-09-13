@@ -454,11 +454,16 @@ func RecordTokenUsage(modelName, tenantID string, promptTokens, completionTokens
 // nothing at all: the one condition the counter exists to expose was invisible
 // for that shape.
 //
-// Deliberately separate from RecordTokenUsage rather than folded into it.
-// Whether such a response should also be CHARGED an estimated amount is a
-// quota-policy question — it would debit tenants for responses that are free
-// today — and this function exists to make the condition observable without
-// pre-empting that decision. It therefore touches neither the consumed nor the
+// Deliberately separate from RecordTokenUsage rather than folded into it, and
+// charging nothing is a SETTLED decision rather than an unfinished one: these
+// responses stay free. Charging is not reversible the way reporting is — an
+// estimate can trip the quota latch and deny the tenant's NEXT request, for
+// traffic that costs them nothing today — and the estimate available here is
+// weaker than the streaming one anyway: a non-streamed response has no chunk
+// count, so there is no completion-side signal at all, only the prompt.
+// Revisit if loxilb_ai_tokens_missing_total shows real volume in production;
+// that counter exists precisely so the question can be reopened with data
+// instead of a guess. It therefore touches neither the consumed nor the
 // estimated series.
 //
 // Attributed-only, like every other per-tenant usage family: a keyless

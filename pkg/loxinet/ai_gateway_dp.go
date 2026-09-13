@@ -1167,8 +1167,9 @@ func llb_ai_record_unmetered(vip *C.char) {
 // without usage were invisible rather than merely uncharged.
 //
 // Accounting-only by construction: it moves loxilb_ai_tokens_missing_total and
-// nothing else. Whether these responses should also be charged an estimate is
-// a quota-policy decision and is deliberately not taken here.
+// nothing else. These responses stay free by decision, not by omission — see
+// prom.RecordTokenUsageMissing for why charging an estimate was rejected and
+// what would reopen it.
 //
 //export llb_ai_record_usage_missing
 func llb_ai_record_usage_missing(tenantID *C.char, modelName *C.char) {
