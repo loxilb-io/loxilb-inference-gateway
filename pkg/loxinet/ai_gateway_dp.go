@@ -794,17 +794,24 @@ func getGlobalRL() *rl.RateLimiterStore {
 //
 // Parameters:
 //
-//	keyID    – the validated API key's key_id string
-//	tenantID – the validated API key's tenant_id string
+//	keyID    – the validated API key's key_id string ("" on the JWT arm)
+//	tenantID – the deciding credential arm's tenant_id string
+//	userID   – the deciding arm's per-user identity ("" when none)
+//	svcIdent – the service identity "VIP:port" ("" when unknown); selects
+//	           the rule-scope defaults row and, when the whole identity is
+//	           empty, the opt-in keyless per-VIP shared bucket
 //	model    – the request's body-bound model name (may be empty); selects
 //	           the tenant|model token bucket for the stage-3 debt check
 //	result   – output decision structure; decision is set to 3 on denial
+//
+// Parameter order mirrors rateLimitCheckInternal — the C header
+// (sockproxy_ai_gw.h) is kept position-for-position with it.
 //
 // Returns 0 when allowed; -1 when rate-limited (result->decision == 3 and
 // result->retry_after is set to the recommended retry delay in seconds).
 //
 //export llb_ai_ratelimit_check
-func llb_ai_ratelimit_check(keyID *C.char, tenantID *C.char, model *C.char, result *C.ai_gw_decision_t) (ret C.int) {
+func llb_ai_ratelimit_check(keyID *C.char, tenantID *C.char, userID *C.char, svcIdent *C.char, model *C.char, result *C.ai_gw_decision_t) (ret C.int) {
 	// See llb_ai_validate_key for why the denial is recorded in the deferred
 	// function rather than at each deny arm.
 	var metricTenant, metricModel string
@@ -839,12 +846,7 @@ func llb_ai_ratelimit_check(keyID *C.char, tenantID *C.char, model *C.char, resu
 	}
 
 	store := getGlobalRL()
-	// The data plane's ratelimit ABI pre-dates the user/service identity:
-	// the C caller holds both (key_dec.user_id / the rule's VIP) but this
-	// export's signature cannot carry them yet. They arrive with the
-	// identity-forwarding ABI (WP-5 stage B); until then the user/VIP arms
-	// of the ladder are exercised by the unit corpus and dormant here.
-	decision, retrySecs, errorCode := rateLimitCheckInternal(svc, store, keyIDStr, tenantIDStr, "", "", modelStr)
+	decision, retrySecs, errorCode := rateLimitCheckInternal(svc, store, keyIDStr, tenantIDStr, C.GoString(userID), C.GoString(svcIdent), modelStr)
 	if decision != 0 {
 		result.decision = C.int(decision)
 		result.retry_after = C.int(retrySecs)
@@ -1069,8 +1071,12 @@ func tokenQuotaConsumeInternal(svc rateLimitService, store *rl.RateLimiterStore,
 // "token_quota_exceeded" so operators (and the acceptance harness) can tell
 // a pre-admission deny from a latched one.
 //
+// The identity trio (userID/keyID/svcIdent) reserves against the user,
+// user|model, key and per-VIP buckets next to the tenant aggregate;
+// parameter order mirrors tokenQuotaReserveInternal.
+//
 //export llb_ai_token_quota_reserve
-func llb_ai_token_quota_reserve(tenantID *C.char, modelName *C.char, promptEst C.int, maxTokens C.int, resEpoch *C.longlong, result *C.ai_gw_decision_t) (ret C.int) {
+func llb_ai_token_quota_reserve(tenantID *C.char, modelName *C.char, userID *C.char, keyID *C.char, svcIdent *C.char, promptEst C.int, maxTokens C.int, resEpoch *C.longlong, result *C.ai_gw_decision_t) (ret C.int) {
 	// See llb_ai_validate_key for why the denial is recorded in the deferred
 	// function rather than at each deny arm.
 	var metricTenant, metricModel string
@@ -1113,9 +1119,7 @@ func llb_ai_token_quota_reserve(tenantID *C.char, modelName *C.char, promptEst C
 	}
 
 	store := getGlobalRL()
-	// user/key/service identity: not in this export's ABI yet (WP-5 stage
-	// B); the user-dimension buckets are dormant here until it lands.
-	allowed, retrySecs, epoch := tokenQuotaReserveInternal(svc, store, tenant, C.GoString(modelName), "", "", "", want)
+	allowed, retrySecs, epoch := tokenQuotaReserveInternal(svc, store, tenant, C.GoString(modelName), C.GoString(userID), C.GoString(keyID), C.GoString(svcIdent), want)
 	if !allowed {
 		if result != nil {
 			result.decision = 3
@@ -1160,8 +1164,12 @@ func llb_ai_token_quota_reserve(tenantID *C.char, modelName *C.char, promptEst C
 // prompt+max_tokens claim back and replace it with the real charge; pass
 // 0/0 when no reservation was made.
 //
+// The identity trio (userID/keyID/svcIdent) charges the user, user|model,
+// key and per-VIP buckets the reservation claimed; parameter order mirrors
+// tokenQuotaConsumeInternal.
+//
 //export llb_ai_token_quota_consume
-func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, promptTokens C.int, completTokens C.int, estimated C.int, reservedToks C.int, resEpoch C.longlong, result *C.ai_gw_decision_t) (ret C.int) {
+func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, userID *C.char, keyID *C.char, svcIdent *C.char, promptTokens C.int, completTokens C.int, estimated C.int, reservedToks C.int, resEpoch C.longlong, result *C.ai_gw_decision_t) (ret C.int) {
 	// Fail-open on panic: the response is already served, so accounting must
 	// never take down the datapath — the quota simply misses this response.
 	defer func() {
@@ -1191,8 +1199,7 @@ func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, promptToken
 	}
 
 	store := getGlobalRL()
-	// user/key/service identity: not in this export's ABI yet (WP-5 stage B).
-	allowed, retrySecs := tokenQuotaConsumeInternal(svc, store, tenant, C.GoString(modelName), "", "", "", count,
+	allowed, retrySecs := tokenQuotaConsumeInternal(svc, store, tenant, C.GoString(modelName), C.GoString(userID), C.GoString(keyID), C.GoString(svcIdent), count,
 		int(reservedToks), int64(resEpoch))
 	if !allowed {
 		if result != nil {
