@@ -21,7 +21,14 @@
 #   - a large token sent in small TCP writes still admits (the header value
 #     reaches the parser in fragments; a capture that kept only one of them
 #     failed as an indistinguishable bad-signature 401);
-#   - HTTP/2 on a JWT-enforcing service is refused, not admitted unchecked;
+#   - the raw Authorization capture boundary is exact: 4095 raw bytes is
+#     the largest value that reaches verification, 4096 is refused at
+#     capture — on HTTP/1.1 and HTTP/2 alike;
+#   - HTTP/2 runs the SAME admission gate as HTTP/1.1: a valid JWT admits
+#     end to end, a valid API key on a jwt-only service is refused, and
+#     nothing refused is forwarded (the raw recorder is the witness);
+#   - two streams of different models and identities multiplexed on ONE
+#     HTTP/2 connection are routed, denied, and settled independently;
 #   - a profile whose JWKS endpoint never answers refuses 503 — never 200.
 #
 # Topology:
@@ -39,6 +46,12 @@
 #     2044 jwt            profile kc-blackhole JWKS never answers
 #     2045 jwt            profile kc-fwd       forward_identity=true
 #     2046 jwt            profile kc-pass      authorization_passthrough=true
+#     2047 jwt            profile kc-outage    IdP outage after a fetch (10s refresh)
+#     2048 jwt            profile kc           HTTP/2 legs (h2c echo backend)
+#     2049 jwt            profile kc           H2 forwarding oracle (raw recorder)
+#     2050 jwt            profile kc           H2 multiplex, two model pools
+#     2051 none+sse       (keyless)            per-VIP token bound, H/1.1
+#     2052 none+sse       (keyless)            per-VIP token bound, H/2
 
 source ../common.sh
 
