@@ -96,6 +96,7 @@ jobs:
             ./pkg/loxinet
           python3 -B cicd/ai-multitier-security/check_security_order.py
           make -C loxilb-ebpf/common test_aisec
+          make -C loxilb-ebpf/common test_aiident
 
       - name: Disposable PostgreSQL for the store-backed suites
         # The store legs run with *_TEST_PG=required below: with the server
