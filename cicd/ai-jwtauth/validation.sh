@@ -453,12 +453,97 @@ chk_receipt "E2 backend received exactly one" 1
 chk_not_has "E2 not a signature 401" "invalid_token" "$r"
 
 echo ""
-echo "== F: HTTP/2 on a JWT-enforcing service is refused, not admitted =="
-echo "   (the shared gate is not wired into the H2 path yet; the posture that"
-echo "    matters is that it fails CLOSED — nothing reaches a backend)"
-r=$(bearer_req 2040 "$body_llama" "$TOK_ALICE" --http2-prior-knowledge)
-chk_has     "F1 401 status"                "401"          "$(status_of "$r")"
-chk_receipt "F1 backend received nothing" 0
+echo "== F: HTTP/2 runs the SAME admission gate as HTTP/1 (ports 2048/2049) =="
+echo "   Port 2048 is jwt-only with a backend that actually speaks HTTP/2, so"
+echo "   admitted and refused produce different client-visible outcomes; port"
+echo "   2049 points at a raw recorder, the only oracle that can see a forward."
+
+# The h2c echo keeps its own receipt counter (the :8080 oracle belongs to
+# the H/1.1 pools). Same contract as chk_receipt: consumes the last nonce,
+# an unreadable counter is never proof of zero.
+h2_receipt() { # h2_receipt <name> <expected-count>
+  note_case "$1"
+  local n got
+  n=$(last_nonce)
+  if [ -z "$n" ]; then
+    echo "  [FAIL] $1 — no nonce recorded for the last request"; FAIL=$((FAIL + 1)); return
+  fi
+  got=$($hexec l3ep1 curl -s --max-time 5 --http2-prior-knowledge \
+        "http://127.0.0.1:8090/__receipts/$n" 2>/dev/null)
+  case "$got" in
+    ''|*[!0-9]*)
+      echo "  [FAIL] $1 — h2 backend receipt counter unreadable; not proof of $2"
+      FAIL=$((FAIL + 1)); return ;;
+  esac
+  if [ "$got" = "$2" ]; then
+    echo "  [PASS] $1 (h2 backend receipts=$got)"; PASS=$((PASS + 1))
+  else
+    echo "  [FAIL] $1 — h2 backend receipts=$got, want $2"; FAIL=$((FAIL + 1))
+  fi
+}
+
+echo ""
+echo "F1: H2 + valid JWT → admitted end-to-end, and the consumed token is"
+echo "    stripped upstream (hygiene parity: the backend must not see Authorization)"
+r=$(bearer_req 2048 "$body_llama" "$TOK_ALICE" --http2-prior-knowledge)
+chk_has    "F1 200 status"                 "200"                    "$(status_of "$r")"
+chk_has    "F1 h2 pool answers"            "server-h2-llama"        "$r"
+chk_has    "F1 Authorization stripped"     '"authorization": "no"'  "$r"
+h2_receipt "F1 h2 backend received exactly one" 1
+
+echo ""
+echo "F2: H2 + valid API KEY on the jwt-only service → refused like HTTP/1"
+echo "    (BORN RED on the H2-only gate: it ran the API-key arm no matter what"
+echo "     the service declared, so this exact request was admitted+forwarded)"
+r=$(req 2048 "$body_llama" -H "X-Api-Key: $RAW_KEY" --http2-prior-knowledge)
+chk_has    "F2 401 status"        "401"           "$(status_of "$r")"
+chk_has    "F2 missing_token — the JWT arm decided, not the key arm" "missing_token" "$r"
+h2_receipt "F2 h2 backend received nothing" 0
+
+echo ""
+echo "F3: H2 + no credential at all → 401 (this was true before the fix too;"
+echo "    it is the control that F2's refusal is not 'H2 is just broken')"
+r=$(req 2048 "$body_llama" --http2-prior-knowledge)
+chk_has    "F3 401 status" "401" "$(status_of "$r")"
+h2_receipt "F3 h2 backend received nothing" 0
+
+echo ""
+echo "F4: the forwarding oracle — H2 + valid API KEY on the recorder-backed"
+echo "    jwt-only service (2049). The recorded bytes must NOT contain the"
+echo "    nonce: a client-side 401 alone cannot prove nothing was forwarded."
+if ! $hexec l3ep1 test -f /tmp/ai-jwtauth-rawsink.out; then
+  echo "  [FAIL] F4 recorder output missing — the forwarding oracle is not running"
+  note_case "F4 recorder"; FAIL=$((FAIL + 1))
+else
+  # The marker must ride the BODY, not a header: forwarded HTTP/2 headers
+  # are HPACK-compressed (usually Huffman-coded), so a header nonce is not
+  # byte-searchable in the recording — DATA frames carry the body verbatim.
+  # Minted here in the parent shell so the body can carry it; the direct
+  # curl is deliberate (req() minted its nonce after the body was fixed).
+  new_nonce
+  F4_NONCE=$LAST_NONCE
+  rm -f "$NONCE_FILE.last"   # consumed here; no later leg may inherit it
+  f4_body='{"model":"llama-70b","messages":[{"role":"user","content":"'"$F4_NONCE"'"}]}'
+  r=$($hexec l3h1 curl -s -i --max-time 10 -X POST \
+        -H "Content-Type: application/json" \
+        -H "X-Api-Key: $RAW_KEY" \
+        --http2-prior-knowledge \
+        -d "$f4_body" \
+        "http://$VIP:2049/v1/chat/completions")
+  chk_has "F4 401 status" "401" "$(status_of "$r")"
+  note_case "F4 nothing forwarded"
+  # Give an in-flight forward a moment to land before declaring absence.
+  sleep 2
+  F4_HITS=$($hexec l3ep1 grep -c "$F4_NONCE" /tmp/ai-jwtauth-rawsink.out 2>/dev/null)
+  case "$F4_HITS" in ''|*[!0-9]*) F4_HITS=unreadable ;; esac
+  if [ "$F4_HITS" = "0" ]; then
+    echo "  [PASS] F4 nothing forwarded (recorder never saw the body marker)"; PASS=$((PASS + 1))
+  else
+    echo "  [FAIL] F4 nothing forwarded — recorder saw the body marker $F4_HITS time(s);"
+    echo "         the gateway forwarded a request its declared policy refuses"
+    FAIL=$((FAIL + 1))
+  fi
+fi
 
 echo ""
 echo "== G: fail-closed when the keyset was never fetched (port 2044) =="
@@ -703,7 +788,7 @@ echo "   A deleted, renamed, or skipped block stops being tested silently:"
 echo "   the pass count simply gets smaller and the run still says OK. This"
 echo "   compares the case IDs that actually asserted against the declared"
 echo "   set, so coverage cannot shrink without turning the run RED."
-EXPECTED_CASES="A1 A2 A3 A4 A5 A6 A7 A8 B1 B2 B3 C1 C2 C3 C4 C5 C6 D1 D2 D3 D4 D5 D6 E1 E2 F1 G1 G2 H0 H1 H2 H3 H4 I0 I1 I2 I3 J1"
+EXPECTED_CASES="A1 A2 A3 A4 A5 A6 A7 A8 B1 B2 B3 C1 C2 C3 C4 C5 C6 D1 D2 D3 D4 D5 D6 E1 E2 F1 F2 F3 F4 G1 G2 H0 H1 H2 H3 H4 I0 I1 I2 I3 J1"
 missing=""
 for want in $EXPECTED_CASES; do
   case " $SEEN_CASES " in

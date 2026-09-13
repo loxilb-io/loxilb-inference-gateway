@@ -203,6 +203,30 @@ start_hdr_backend() { # <namespace> <response label>
 start_hdr_backend l3ep1 server-llama   || exit 1
 start_hdr_backend l3ep2 server-mistral || exit 1
 
+# The H2 legs need two backends of their own. The h2c echo completes an
+# HTTP/2 exchange, so "admitted" and "refused" finally produce different
+# client-visible outcomes over H2 (the H/1.1 pools cannot parse the h2
+# frames the gateway forwards, and their silence looks like a refusal).
+# The raw recorder is the forwarding oracle: it answers nothing and keeps
+# every byte, so "nothing was forwarded" is read from the recorded bytes,
+# never inferred from a client-side reset.
+# python3-h2 must be importable on the host (the namespaces share it).
+if ! python3 -c "import h2" 2>/dev/null; then
+  echo "FATAL: python3 'h2' package missing (pip3 install --break-system-packages h2)"
+  exit 1
+fi
+$hexec l3ep1 sh -c "rm -f /tmp/ai-jwtauth-rawsink.out; nohup python3 $SDIR/rawsink.py 8091 /tmp/ai-jwtauth-rawsink.out >/tmp/ai-jwtauth-rawsink.log 2>&1 &"
+$hexec l3ep1 sh -c "nohup python3 $SDIR/h2c_echo.py server-h2-llama 8090 >/tmp/ai-jwtauth-h2echo.log 2>&1 &"
+for i in $(seq 1 20); do
+  if $hexec l3ep1 curl -sf --max-time 1 --http2-prior-knowledge \
+       http://127.0.0.1:8090/__receipts/probe | grep -q "0"; then
+    echo "  server-h2-llama backend ready (${i})"
+    break
+  fi
+  [ "$i" = 20 ] && { echo "FATAL: h2c echo backend did not become ready"; exit 1; }
+  sleep 1
+done
+
 echo "#########################################"
 echo "Waiting for loxilb REST API to be ready"
 echo "#########################################"
@@ -309,7 +333,7 @@ echo "#########################################"
 
 # add_lb_rule <port> <model> <ep_ip> <auth-mode> <profile>
 add_lb_rule() {
-  local port=$1 model=$2 ep=$3 auth=$4 profile=$5
+  local port=$1 model=$2 ep=$3 auth=$4 profile=$5 tport=${6:-8080}
   local resp
   resp=$($hexec l3h1 curl -s -X POST \
     http://10.10.10.254:11111/netlox/v1/config/loadbalancer \
@@ -330,7 +354,7 @@ add_lb_rule() {
         "inactiveTimeOut":   30
       },
       "endpoints": [
-        {"endpointIP": "'"$ep"'", "targetPort": 8080, "weight": 1}
+        {"endpointIP": "'"$ep"'", "targetPort": '"$tport"', "weight": 1}
       ]
     }')
   echo "  rule $port/$model ($auth/$profile) -> $ep: $resp"
@@ -352,6 +376,40 @@ add_lb_rule 2044 "llama-70b"  "31.31.31.1" jwt           kc-blackhole
 add_lb_rule 2045 "llama-70b"  "31.31.31.1" jwt           kc-fwd
 add_lb_rule 2046 "llama-70b"  "31.31.31.1" jwt           kc-pass
 add_lb_rule 2047 "llama-70b"  "31.31.31.1" jwt           kc-outage
+# H2 legs: a jwt-only service whose backend actually speaks HTTP/2.
+add_lb_rule 2048 "llama-70b"  "31.31.31.1" jwt           kc 8090
+
+# The forwarding-oracle rule: jwt-only, pointed at the raw recorder, and
+# deliberately WITHOUT a model key — on a build whose H2 forwarder still
+# looks endpoints up with the wildcard model, only a model-less rule can
+# resolve, and the red twin needs the forward to actually happen so the
+# recorder can catch it.
+resp=$($hexec l3h1 curl -s -X POST \
+  http://10.10.10.254:11111/netlox/v1/config/loadbalancer \
+  -H "Content-Type: application/json" \
+  -d '{
+    "serviceArguments": {
+      "externalIP":       "10.10.10.254",
+      "port":              2049,
+      "protocol":         "tcp",
+      "sel":               0,
+      "mode":              4,
+      "host":             "10.10.10.254",
+      "path_prefix":      "/",
+      "path_match_mode":  "prefix",
+      "api_key_auth":     "jwt",
+      "jwt_auth_profile": "kc",
+      "inactiveTimeOut":   30
+    },
+    "endpoints": [
+      {"endpointIP": "31.31.31.1", "targetPort": 8091, "weight": 1}
+    ]
+  }')
+echo "  rule 2049/(no model) (jwt/kc) -> rawsink: $resp"
+case "$resp" in
+  *Success*) ;;
+  *) echo "FATAL: LB rule 2049 rejected"; exit 1 ;;
+esac
 
 echo "#########################################"
 echo "Creating the llama-only API key"
