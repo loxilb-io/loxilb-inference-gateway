@@ -433,6 +433,27 @@ func RecordTokenUsage(modelName, tenantID string, promptTokens, completionTokens
 	}
 }
 
+// RecordTokenUsageMissing counts ONE completed response that produced no
+// readable usage object, and charges nothing.
+//
+// loxilb_ai_tokens_missing_total documents itself as counting completed AI
+// Gateway responses with no readable usage object — every such response, not
+// only the streaming ones. It was reachable solely through RecordTokenUsage's
+// estimated arm, which the data plane sets exclusively on the SSE terminator,
+// so a non-streamed response whose body carried no usage object incremented
+// nothing at all: the one condition the counter exists to expose was invisible
+// for that shape.
+//
+// Deliberately separate from RecordTokenUsage rather than folded into it.
+// Whether such a response should also be CHARGED an estimated amount is a
+// quota-policy question — it would debit tenants for responses that are free
+// today — and this function exists to make the condition observable without
+// pre-empting that decision. It therefore touches neither the consumed nor the
+// estimated series.
+func RecordTokenUsageMissing(modelName, tenantID string) {
+	aiTokensMissingTotal.WithLabelValues(boundModelLabel(modelName), sanitizeLabel(tenantID)).Inc()
+}
+
 // RecordTokenQuotaColdOpen increments loxilb_ai_token_quota_cold_open_total.
 // Call once per cold fail-open transition: quota enforcement is now running
 // on empty state that no peer warmed up.

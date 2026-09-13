@@ -330,6 +330,41 @@ func TestRecordTokenUsage_EstimatedFeedsSplitCounters(t *testing.T) {
 	}
 }
 
+// TestRecordTokenUsageMissing_ReportsWithoutCharging verifies the
+// accounting-only path: a completed response with no readable usage object
+// moves the missing counter and NOTHING else.
+//
+// The two halves are separable on purpose. Reporting the condition is an
+// observability fix; charging an estimate for it would debit tenants for
+// responses that are free today, which is a quota-policy decision nobody has
+// taken. If this recorder is ever folded back into RecordTokenUsage, or grows
+// a charge of its own, the consumed/estimated assertions below turn red.
+func TestRecordTokenUsageMissing_ReportsWithoutCharging(t *testing.T) {
+	model, tenant := "tok-model-missing", "tok-tenant-missing"
+
+	RecordTokenUsageMissing(model, tenant)
+
+	if v := getCounterValue(aiTokensMissingTotal, model, tenant); v != 1 {
+		t.Fatalf("expected missing=1, got %f", v)
+	}
+	if v := getCounterValue(aiTokensConsumedTotal, model, tenant, "prompt"); v != 0 {
+		t.Fatalf("reporting a missing usage object must charge nothing, prompt consumed=%f", v)
+	}
+	if v := getCounterValue(aiTokensConsumedTotal, model, tenant, "completion"); v != 0 {
+		t.Fatalf("reporting a missing usage object must charge nothing, completion consumed=%f", v)
+	}
+	if v := getCounterValue(aiTokensEstimatedTotal, model, tenant); v != 0 {
+		t.Fatalf("reporting a missing usage object must not price an estimate, estimated=%f", v)
+	}
+
+	// Response-weighted: a second completed response is a second tick, not a
+	// token sum.
+	RecordTokenUsageMissing(model, tenant)
+	if v := getCounterValue(aiTokensMissingTotal, model, tenant); v != 2 {
+		t.Fatalf("expected missing=2 after a second response, got %f", v)
+	}
+}
+
 // TestRecordTokenUsage_ClampsNegativeAndSkipsZero verifies negative counts
 // clamp to zero and an all-zero charge records nothing at all.
 func TestRecordTokenUsage_ClampsNegativeAndSkipsZero(t *testing.T) {
