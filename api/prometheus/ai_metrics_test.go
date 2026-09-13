@@ -365,6 +365,41 @@ func TestRecordTokenUsageMissing_ReportsWithoutCharging(t *testing.T) {
 	}
 }
 
+// TestRecordTokenUsageMissing_KeylessIsNotLabelled pins the attributed-only
+// invariant this family shares with the rest of the per-tenant usage series.
+//
+// The reporting call sites are response boundaries, not the gate: an
+// api_key_auth=disabled service reaches them with a completed AI response and
+// no tenant, so without a guard here a keyless deployment mints
+// loxilb_ai_tokens_missing_total{tenant=""} — the empty label value that
+// llb_ai_token_quota_consume refuses to emit for RecordTokenUsage on the very
+// same grounds ("an empty label value reads as a scrape bug"). Keyless volume
+// is attributable per VIP in loxilb_ai_unmetered_requests_total instead.
+//
+// Scoped to the unset tenant, which is the condition the data plane actually
+// presents (tenant_id[0] == '\0' on a keyless connection). A whitespace-only
+// tenant sanitises to "_" and is labelled, exactly as RecordTokenUsage labels
+// it — same family, same rule, and not this recorder's to change.
+func TestRecordTokenUsageMissing_KeylessIsNotLabelled(t *testing.T) {
+	model := "tok-model-keyless"
+
+	before := getCounterValue(aiTokensMissingTotal, model, "")
+	RecordTokenUsageMissing(model, "")
+	if d := getCounterValue(aiTokensMissingTotal, model, "") - before; d != 0 {
+		t.Fatalf("a keyless response must not be labelled into a per-tenant "+
+			"usage family, got delta %f", d)
+	}
+
+	// The guard must not swallow attributed reports: the same model with a
+	// real tenant still counts, so a green result above cannot come from the
+	// recorder having stopped working altogether.
+	beforeCtl := getCounterValue(aiTokensMissingTotal, model, "tok-tenant-keyless-control")
+	RecordTokenUsageMissing(model, "tok-tenant-keyless-control")
+	if d := getCounterValue(aiTokensMissingTotal, model, "tok-tenant-keyless-control") - beforeCtl; d != 1 {
+		t.Fatalf("control: an attributed response must still count, got delta %f", d)
+	}
+}
+
 // TestRecordTokenUsage_ClampsNegativeAndSkipsZero verifies negative counts
 // clamp to zero and an all-zero charge records nothing at all.
 func TestRecordTokenUsage_ClampsNegativeAndSkipsZero(t *testing.T) {

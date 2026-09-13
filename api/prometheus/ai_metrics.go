@@ -226,13 +226,17 @@ var (
 	)
 
 	// aiTokensMissingTotal counts completed responses that produced no
-	// readable usage object, so the estimate net had to price the charge.
-	// Counts responses (not tokens); pair with aiTokensEstimatedTotal for
-	// the token-weighted view.
+	// readable usage object. Two writers reach it and they charge
+	// differently, so it is NOT a subset of the estimated series: a streamed
+	// response falls back to the estimate net (RecordTokenUsage's estimated
+	// arm, which also feeds aiTokensEstimatedTotal), while a non-streamed one
+	// is charged nothing at all (RecordTokenUsageMissing). Counts responses,
+	// not tokens — missing >= the number of responses in
+	// aiTokensEstimatedTotal, and the gap is the uncharged non-streamed half.
 	aiTokensMissingTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "loxilb_ai_tokens_missing_total",
-			Help: "Total completed AI Gateway responses with no readable usage object (charge fell back to the estimate net), by model and tenant.",
+			Help: "Total completed AI Gateway responses with no readable usage object, by model and tenant. A streamed response was charged from the estimate net; a non-streamed one was charged nothing.",
 		},
 		[]string{"model", "tenant"},
 	)
@@ -450,8 +454,21 @@ func RecordTokenUsage(modelName, tenantID string, promptTokens, completionTokens
 // today — and this function exists to make the condition observable without
 // pre-empting that decision. It therefore touches neither the consumed nor the
 // estimated series.
+//
+// Attributed-only, like every other per-tenant usage family: a keyless
+// response has no tenant to label it with, and llb_ai_token_quota_consume
+// already skips RecordTokenUsage on exactly that condition because an empty
+// tenant label reads as a scrape bug. The data plane cannot make that call for
+// us — it reports from the response boundary, where an api_key_auth=disabled
+// service has a completed AI response and no tenant — so the guard lives here,
+// once, for both call sites. Keyless volume stays visible per VIP in
+// loxilb_ai_unmetered_requests_total.
 func RecordTokenUsageMissing(modelName, tenantID string) {
-	aiTokensMissingTotal.WithLabelValues(boundModelLabel(modelName), sanitizeLabel(tenantID)).Inc()
+	tenant := sanitizeLabel(tenantID)
+	if tenant == "" {
+		return
+	}
+	aiTokensMissingTotal.WithLabelValues(boundModelLabel(modelName), tenant).Inc()
 }
 
 // RecordTokenQuotaColdOpen increments loxilb_ai_token_quota_cold_open_total.
