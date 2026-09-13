@@ -52,6 +52,10 @@
 #     2050 jwt            profile kc           H2 multiplex, two model pools
 #     2051 none+sse       (keyless)            per-VIP token bound, H/1.1
 #     2052 none+sse       (keyless)            per-VIP token bound, H/2
+#     2054 jwt            profile kc           TLS + ALPN-negotiated h2 (the
+#                                              only leg where the gateway
+#                                              terminates TLS; every other H2
+#                                              port above is h2c)
 
 source ../common.sh
 
@@ -406,6 +410,59 @@ add_lb_rule 2046 "llama-70b"  "31.31.31.1" jwt           kc-pass
 add_lb_rule 2047 "llama-70b"  "31.31.31.1" jwt           kc-outage
 # H2 legs: a jwt-only service whose backend actually speaks HTTP/2.
 add_lb_rule 2048 "llama-70b"  "31.31.31.1" jwt           kc 8090
+
+# TLS + ALPN. Every H2 port above is h2c, so nothing here has ever run the
+# bearer gate on a connection whose HTTP/2 was negotiated through the TLS
+# handshake instead of a cleartext preface. That is a different entry path in
+# the datapath — proxy_check_and_setup_h2() reads SSL_get0_alpn_selected() at
+# accept time — so it needs its own legs rather than an assumption of parity.
+#
+# The server cert is issued here and installed before the rule exists: the
+# listener reads it when the rule is created, so a later copy would leave the
+# service unable to complete a handshake at all.
+TLS_DIR=$(mktemp -d)
+openssl req -x509 -newkey rsa:2048 -nodes -days 3 \
+  -keyout "$TLS_DIR/server.key" -out "$TLS_DIR/server.crt" \
+  -subj "/CN=10.10.10.254" \
+  -addext "subjectAltName=IP:10.10.10.254" >/dev/null 2>&1 || {
+    echo "FATAL: could not issue the TLS test certificate"; exit 1; }
+docker exec llb1 mkdir -p /opt/loxilb/cert
+docker cp "$TLS_DIR/server.crt" llb1:/opt/loxilb/cert/server.crt
+docker cp "$TLS_DIR/server.key" llb1:/opt/loxilb/cert/server.key
+rm -rf "$TLS_DIR"
+
+# security:1 = the gateway terminates TLS. backend_protocol http2 keeps the
+# backend leg on the h2c echo, so the only thing this rule changes relative to
+# 2048 is how the client's HTTP/2 was arrived at.
+resp=$($hexec l3h1 curl -s -X POST \
+  http://10.10.10.254:11111/netlox/v1/config/loadbalancer \
+  -H "Content-Type: application/json" \
+  -d '{
+    "serviceArguments": {
+      "externalIP":       "10.10.10.254",
+      "port":              2054,
+      "protocol":         "tcp",
+      "sel":               0,
+      "security":          1,
+      "mode":              4,
+      "host":             "10.10.10.254",
+      "path_prefix":      "/",
+      "path_match_mode":  "prefix",
+      "model_name":       "llama-70b",
+      "api_key_auth":     "jwt",
+      "jwt_auth_profile": "kc",
+      "backend_protocol": "http2",
+      "inactiveTimeOut":   30
+    },
+    "endpoints": [
+      {"endpointIP": "31.31.31.1", "targetPort": 8090, "weight": 1}
+    ]
+  }')
+echo "  rule 2054/llama-70b (jwt/kc, TLS+ALPN) -> 31.31.31.1:8090: $resp"
+case "$resp" in
+  *Success*) ;;
+  *) echo "FATAL: TLS LB rule 2054 rejected"; exit 1 ;;
+esac
 
 # The forwarding-oracle rule: jwt-only, pointed at the raw recorder, and
 # deliberately WITHOUT a model key — on a build whose H2 forwarder still

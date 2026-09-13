@@ -1199,12 +1199,75 @@ names=$(profile_names)
 chk_not_has "J1 the profile was not created" " kc-inject " "$names"
 
 echo ""
+echo "== T: the bearer gate on TLS, where HTTP/2 came from ALPN (port 2053) =="
+echo "   Every other HTTP/2 leg in this suite is h2c: the client announces"
+echo "   HTTP/2 with a cleartext preface. A TLS client never sends that"
+echo "   preface — the protocol is settled inside the handshake, and the"
+echo "   gateway picks the session up from SSL_get0_alpn_selected() at accept"
+echo "   time instead. That is a different entry into the same gate, so"
+echo "   'H2 is admitted correctly' proven over h2c does not carry over."
+echo "   T0 exists because these legs are worthless without it: if ALPN"
+echo "   settled on http/1.1, T1-T3 would pass while re-testing the HTTP/1.1"
+echo "   path and nothing would say so."
+
+# tls_req <port> <body> <extra curl args...> — https + ALPN offer of h2.
+# --insecure: the certificate is a throwaway issued by config.sh, and the
+# subject under test is protocol negotiation, not chain validation.
+# %{http_version} is curl's report of what was actually negotiated.
+tls_req() {
+  local port=$1 body=$2; shift 2
+  new_nonce
+  $hexec l3h1 curl -s -i --max-time 10 -X POST \
+    --http2 --insecure \
+    -H "Content-Type: application/json" \
+    -H "X-Test-Nonce: $LAST_NONCE" \
+    "$@" \
+    -d "$body" \
+    -w '\nhttp_code=%{http_code} http_version=%{http_version}' \
+    "https://$VIP:$port/v1/chat/completions"
+}
+
+echo ""
+echo "T0: the connection really is HTTP/2, negotiated by ALPN"
+r=$(tls_req 2054 "$body_llama" -H "Authorization: Bearer $TOK_ALICE")
+chk_has  "T0 ALPN negotiated HTTP/2" "http_version=2" "$r"
+
+echo ""
+echo "T1: valid token over TLS+ALPN h2 → admitted, and the backend saw it once"
+chk_code   "T1 200 status" 200 "$r"
+chk_has    "T1 h2 pool answers" "server-h2-llama" "$r"
+h2_receipt "T1 h2 backend received exactly one" 1
+
+echo ""
+echo "T2: no credential over TLS+ALPN h2 → 401, nothing forwarded"
+r=$(tls_req 2054 "$body_llama")
+chk_code   "T2 401 status" 401 "$r"
+chk_has    "T2 missing_token code" "missing_token" "$r"
+h2_receipt "T2 h2 backend received nothing" 0
+
+echo ""
+echo "T3: a token this service's profile cannot verify → 401, nothing forwarded"
+r=$(tls_req 2054 "$body_llama" -H "Authorization: Bearer ${TOK_ALICE}tampered")
+chk_code   "T3 401 status" 401 "$r"
+chk_has    "T3 invalid_token code" "invalid_token" "$r"
+h2_receipt "T3 h2 backend received nothing" 0
+
+echo ""
+echo "T4: authorization still applies on this path — a model alice's roles"
+echo "    do not allow is refused, and refused by policy rather than by the"
+echo "    absence of a route"
+r=$(tls_req 2054 "$body_mistral" -H "Authorization: Bearer $TOK_ALICE")
+chk_code   "T4 403 status" 403 "$r"
+chk_has    "T4 model_not_allowed code" "model_not_allowed" "$r"
+h2_receipt "T4 h2 backend received nothing" 0
+
+echo ""
 echo "== Z: the suite ran what it claims to run =="
 echo "   A deleted, renamed, or skipped block stops being tested silently:"
 echo "   the pass count simply gets smaller and the run still says OK. This"
 echo "   compares the case IDs that actually asserted against the declared"
 echo "   set, so coverage cannot shrink without turning the run RED."
-EXPECTED_CASES="A1 A2 A3 A4 A5 A6 A7 A8 B1 B2 B3 C1 C2 C3 C4 C5 C6 D1 D2 D3 D4 D5 D6 E1 E2 F1 F2 F3 F4 L1 L2 L3 L4 K1 K2 K3 K4 K5 X1 X2 M1 M2 M3 M4 N1 N2 N3 N4 G1 G2 H0 H1 H2 H3 H4 P1 P2 I0 I1 I2 I3 J1"
+EXPECTED_CASES="A1 A2 A3 A4 A5 A6 A7 A8 B1 B2 B3 C1 C2 C3 C4 C5 C6 D1 D2 D3 D4 D5 D6 E1 E2 F1 F2 F3 F4 L1 L2 L3 L4 K1 K2 K3 K4 K5 X1 X2 M1 M2 M3 M4 N1 N2 N3 N4 G1 G2 H0 H1 H2 H3 H4 P1 P2 I0 I1 I2 I3 J1 T0 T1 T2 T3 T4"
 missing=""
 for want in $EXPECTED_CASES; do
   case " $SEEN_CASES " in
