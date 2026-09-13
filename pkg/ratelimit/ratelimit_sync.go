@@ -60,12 +60,24 @@ import (
 // shape one-to-one so the coordinator can convert in a single pass.
 //
 // KeyID prefix encodes the scope:
-//   - "k:<id>"             per-key (CheckKey) rate-limiter entry
-//   - "t:<id>"             per-tenant (AllowTokens / CheckTenant) quota entry
-//   - "tm:<id>|<model>"    per-tenant-per-model quota entry
+//   - "k:<id>"                        per-key (CheckKey) rate-limiter entry
+//   - "u:<tenant>|<user>"             per-user (CheckUser) rate-limiter entry
+//   - "t:<id>"                        per-tenant (AllowTokens / CheckTenant) quota entry
+//   - "tm:<id>|<model>"               per-tenant-per-model quota entry
+//   - "uq:<tenant>|<user>"            per-user token-quota entry
+//   - "um:<tenant>|<user>|<model>"    per-user-per-model token-quota entry
+//   - "kq:<key_id>"                   per-key token-quota entry (key TPM)
+//   - "v:<svc>"                       per-VIP shared keyless-bucket quota entry
+//   - "ver:<n>"                       scope-version sentinel (ScopeSentinelKeyID);
+//     carries no state and is never stored
 //
 // The quota scopes extend by prefix only — never by new wire fields (the
 // proto message has a reserved CurrentTokens slot documented wire-incompat).
+// The identity scopes (uq:/um:/kq:/v:, and u: inside the quota map) keep
+// their wire prefix IN the local map key, so the wire mapping for them is
+// the identity function — shape inference from "|" only applies to the two
+// legacy tenant scopes, whose map keys pre-date prefixing and cannot be
+// migrated without invalidating live state.
 //
 // Since the smooth-bucket change, a quota entry's Consumed slot carries the
 // bucket's virtual drain time (tokenWindowEntry.tatMs, Unix milliseconds)
@@ -75,6 +87,12 @@ import (
 // across this change: an old peer would read the millisecond value as a
 // token count and latch every synced tenant over-quota. Upgrade all sync
 // peers together.
+//
+// The ladder scopes (u:/uq:/um:/kq:/v:) shipped under the same posture,
+// with one improvement: every push now leads with the ScopeSentinelKeyID
+// entry, so a NEW node can tell which side of the version line each peer
+// stands on and say so loudly (an old peer silently drops the unknown
+// prefixes — that code is immutable — but the new node's warning is not).
 type RateLimiterEntry struct {
 	KeyID        string // "k:<id>", "t:<id>" or "tm:<id>|<model>" — scope-prefixed identifier
 	RPS          int    // limiterEntry.rps (per-key only; 0 for tenant)
@@ -86,9 +104,51 @@ type RateLimiterEntry struct {
 	LastAccessNs int64  // limiterEntry.lastAccess.UnixNano (per-key only)
 }
 
+// ScopeWireVersion is the sync-wire scope vocabulary this build speaks.
+// Version 2 added the ladder scopes u:/uq:/um:/kq:/v: and the sentinel
+// itself; version 1 peers drop them all silently on receive.
+const ScopeWireVersion = 2
+
+// ScopeSentinelKeyID is the version-announcement entry every push leads
+// with. It is shaped so that BOTH sides handle it safely: a v1 peer's
+// QuotaMapKey does not recognise the prefix and drops it, a v2 peer strips
+// it before merging. It carries no bucket state.
+const ScopeSentinelKeyID = "ver:2"
+
+// ReservedIdentityScopePrefixes are the KeyID scope prefixes an identity
+// (tenant, user, model, key or service name) must not begin with: a tenant
+// named "uq:x" would otherwise round-trip through the wire mapping into
+// another scope's bucket. Enforced at the config API and the claims mapper
+// — never on the hot path.
+var ReservedIdentityScopePrefixes = []string{"k:", "u:", "t:", "tm:", "uq:", "um:", "kq:", "v:", "ver:"}
+
+// HasReservedScopePrefix reports whether an identity value collides with
+// the sync-wire scope vocabulary.
+func HasReservedScopePrefix(id string) bool {
+	for _, p := range ReservedIdentityScopePrefixes {
+		if strings.HasPrefix(id, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// identityScopedKey reports whether a quotaMap key belongs to one of the
+// ladder scopes, which keep their wire prefix in the map key itself.
+func identityScopedKey(mapKey string) bool {
+	return strings.HasPrefix(mapKey, "uq:") ||
+		strings.HasPrefix(mapKey, "um:") ||
+		strings.HasPrefix(mapKey, "kq:") ||
+		strings.HasPrefix(mapKey, "v:")
+}
+
 // QuotaWireKey maps a quotaMap key to its scope-prefixed sync-wire KeyID:
-// plain tenant keys get "t:", composite "tenant|model" keys get "tm:".
+// plain tenant keys get "t:", composite "tenant|model" keys get "tm:", and
+// the ladder scopes already carry their prefix (identity mapping).
 func QuotaWireKey(mapKey string) string {
+	if identityScopedKey(mapKey) {
+		return mapKey
+	}
 	if strings.Contains(mapKey, "|") {
 		return "tm:" + mapKey
 	}
@@ -97,8 +157,13 @@ func QuotaWireKey(mapKey string) string {
 
 // QuotaMapKey strips the scope prefix from a quota sync-wire KeyID,
 // returning the quotaMap key and whether the prefix was a known quota
-// scope.
+// scope. The version sentinel and the per-key/per-user RPS scopes
+// (k:/u: — limiter entries, not quota entries) report false: nothing about
+// them belongs in the quota map.
 func QuotaMapKey(wireKeyID string) (string, bool) {
+	if identityScopedKey(wireKeyID) {
+		return wireKeyID, true
+	}
 	if rest, ok := strings.CutPrefix(wireKeyID, "tm:"); ok {
 		return rest, true
 	}
