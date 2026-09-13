@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-13T14:06:19+00:00",
-  "source_revision": "266439187108a5a59ecadf64fd3939f2a01d5975"
+  "generated_at": "2026-09-13T21:51:03+00:00",
+  "source_revision": "eca507f9f56370094458d629093fc7d1835f564b"
  },
  "contract": {
   "total": 234,
@@ -886,7 +886,7 @@
      "symbol": "AdjustActiveStreams",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 388,
+     "def_line": 392,
      "writes": "aiActiveStreams",
      "note": "one Add(delta) for both directions; the decrement site is llb_ai_stream_end (pkg/loxinet/ai_gateway_dp.go:958)"
     },
@@ -1780,7 +1780,7 @@
      "symbol": "RecordModelNotAllowed",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 406,
+     "def_line": 410,
      "writes": "aiModelNotAllowedTotal"
     },
     {
@@ -1812,7 +1812,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:342",
+   "source": "api/prometheus/ai_metrics.go:346",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "conditional-with-proven-writer",
@@ -1822,7 +1822,7 @@
      "symbol": "RecordNormalSessionHit",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 648,
+     "def_line": 665,
      "writes": "aiNormalSessionHitsTotal"
     },
     {
@@ -1854,7 +1854,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:281",
+   "source": "api/prometheus/ai_metrics.go:285",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "conditional-with-proven-writer",
@@ -1864,7 +1864,7 @@
      "symbol": "RecordPDRequest",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 577,
+     "def_line": 594,
      "writes": "aiPDDecodeTTFT"
     },
     {
@@ -1897,7 +1897,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:300",
+   "source": "api/prometheus/ai_metrics.go:304",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "conditional-with-proven-writer",
@@ -1907,7 +1907,7 @@
      "symbol": "RecordPDRequest",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 577,
+     "def_line": 594,
      "writes": "aiPDKvParamsFound"
     },
     {
@@ -1940,7 +1940,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:309",
+   "source": "api/prometheus/ai_metrics.go:313",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "conditional-with-proven-writer",
@@ -1950,7 +1950,7 @@
      "symbol": "RecordPDRequest",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 577,
+     "def_line": 594,
      "writes": "aiPDKvParamsMissing"
     },
     {
@@ -1983,7 +1983,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:271",
+   "source": "api/prometheus/ai_metrics.go:275",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "conditional-with-proven-writer",
@@ -1993,7 +1993,7 @@
      "symbol": "RecordPDRequest",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 577,
+     "def_line": 594,
      "writes": "aiPDPrefillDuration"
     },
     {
@@ -2028,7 +2028,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:291",
+   "source": "api/prometheus/ai_metrics.go:295",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "conditional-with-proven-writer",
@@ -2038,7 +2038,7 @@
      "symbol": "RecordPDRequest",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 577,
+     "def_line": 594,
      "writes": "aiPDRequestsTotal",
      "note": "labelled model/phase/status; the phase and status are derived from errorPhase, so one call produces exactly one child increment"
     },
@@ -2072,7 +2072,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:318",
+   "source": "api/prometheus/ai_metrics.go:322",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "verified-runtime",
@@ -2082,7 +2082,7 @@
      "symbol": "RecordPDSessionHit",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 618,
+     "def_line": 635,
      "writes": "aiPDSessionHitsTotal"
     },
     {
@@ -2115,7 +2115,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:333",
+   "source": "api/prometheus/ai_metrics.go:337",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "verified-runtime",
@@ -2125,7 +2125,7 @@
      "symbol": "RecordPDTierSelected",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 628,
+     "def_line": 645,
      "writes": "aiPDTierSelectedTotal"
     },
     {
@@ -2156,7 +2156,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:376",
+   "source": "api/prometheus/ai_metrics.go:380",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "conditional-with-proven-writer",
@@ -2166,7 +2166,7 @@
      "symbol": "RecordPolicyStoreUnavailable",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 667,
+     "def_line": 684,
      "writes": "aiPolicyStoreUnavailableTotal"
     },
     {
@@ -2211,7 +2211,7 @@
      "symbol": "RecordRateLimitHit",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 396,
+     "def_line": 400,
      "writes": "aiRateLimitHitsTotal"
     },
     {
@@ -2255,7 +2255,7 @@
      "symbol": "RecordAIRequest",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 688,
+     "def_line": 705,
      "writes": "aiRequestDurationSeconds"
     },
     {
@@ -2302,7 +2302,7 @@
      "symbol": "RecordAIRequest",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 688,
+     "def_line": 705,
      "writes": "aiRequestsTotal",
      "note": "outcome=completed here; the denial half is RecordAIRequestDenied (:670), reached from recordGateDenial (pkg/loxinet/ai_gateway_dp.go:284). Summing the family without selecting an outcome double-counts denials as served requests"
     },
@@ -2333,7 +2333,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:259",
+   "source": "api/prometheus/ai_metrics.go:263",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "conditional-with-proven-writer",
@@ -2343,7 +2343,7 @@
      "symbol": "RecordTokenQuotaColdOpen",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 460,
+     "def_line": 477,
      "writes": "aiTokenQuotaColdOpenTotal"
     },
     {
@@ -2384,7 +2384,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:246",
+   "source": "api/prometheus/ai_metrics.go:250",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "conditional-with-proven-writer",
@@ -2394,7 +2394,7 @@
      "symbol": "RecordTokenQuotaDenied",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 467,
+     "def_line": 484,
      "writes": "aiTokenQuotaDeniedTotal"
     },
     {
@@ -2427,7 +2427,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:489",
+   "source": "api/prometheus/ai_metrics.go:506",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "verified-static",
@@ -2438,15 +2438,15 @@
      "kind": "method",
      "receiver": "tokenQuotaCollector",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 524,
+     "def_line": 541,
      "writes": "tokenQuotaLimitDesc"
     },
     {
      "symbol": "RegisterTokenQuotaSource",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 562,
-     "call_line": 564,
+     "def_line": 579,
+     "call_line": 581,
      "calls": "tokenQuotaCollector",
      "note": "sync.Once; the collector reads the live rate-limiter store at scrape time rather than being set on the charge path -- a gauge set on charge would freeze while a tenant is denied"
     },
@@ -2487,7 +2487,7 @@
    "privacy": "label-review",
    "consumers": [],
    "waiver": "Join denominator behind the dashboarded quota-utilization ratios; displaying raw configured limits duplicates config, utilization panels answer headroom.",
-   "source": "api/prometheus/ai_metrics.go:499",
+   "source": "api/prometheus/ai_metrics.go:516",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "conditional-with-proven-writer",
@@ -2498,15 +2498,15 @@
      "kind": "method",
      "receiver": "tokenQuotaCollector",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 524,
+     "def_line": 541,
      "writes": "tokenQuotaModelLimitDesc"
     },
     {
      "symbol": "RegisterTokenQuotaSource",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 562,
-     "call_line": 564,
+     "def_line": 579,
+     "call_line": 581,
      "calls": "tokenQuotaCollector",
      "note": "sync.Once; the collector reads the live rate-limiter store at scrape time rather than being set on the charge path -- a gauge set on charge would freeze while a tenant is denied"
     },
@@ -2549,7 +2549,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:494",
+   "source": "api/prometheus/ai_metrics.go:511",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "conditional-with-proven-writer",
@@ -2560,15 +2560,15 @@
      "kind": "method",
      "receiver": "tokenQuotaCollector",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 524,
+     "def_line": 541,
      "writes": "tokenQuotaModelUtilizationDesc"
     },
     {
      "symbol": "RegisterTokenQuotaSource",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 562,
-     "call_line": 564,
+     "def_line": 579,
+     "call_line": 581,
      "calls": "tokenQuotaCollector",
      "note": "sync.Once; the collector reads the live rate-limiter store at scrape time rather than being set on the charge path -- a gauge set on charge would freeze while a tenant is denied"
     },
@@ -2610,7 +2610,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:484",
+   "source": "api/prometheus/ai_metrics.go:501",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "verified-static",
@@ -2621,7 +2621,7 @@
      "kind": "method",
      "receiver": "tokenQuotaCollector",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 524,
+     "def_line": 541,
      "writes": "tokenQuotaUtilizationDesc",
      "note": "computed at scrape time as consumed/limit; two tenant IDs that sanitize to the same label emit once, first wins, because a duplicate series fails the whole scrape"
     },
@@ -2629,8 +2629,8 @@
      "symbol": "RegisterTokenQuotaSource",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 562,
-     "call_line": 564,
+     "def_line": 579,
+     "call_line": 581,
      "calls": "tokenQuotaCollector",
      "note": "sync.Once; the collector reads the live rate-limiter store at scrape time rather than being set on the charge path -- a gauge set on charge would freeze while a tenant is denied"
     },
@@ -2684,7 +2684,7 @@
      "symbol": "RecordTokenUsage",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 416,
+     "def_line": 420,
      "writes": "aiTokensConsumedTotal"
     },
     {
@@ -2727,7 +2727,7 @@
      "symbol": "RecordTokenUsage",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 416,
+     "def_line": 420,
      "writes": "aiTokensEstimatedTotal"
     },
     {
@@ -2760,18 +2760,19 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:232",
+   "source": "api/prometheus/ai_metrics.go:236",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "conditional-with-proven-writer",
-   "activation_precondition": "the same estimated branch as loxilb_ai_tokens_estimated_total -- one increment per response that carried no usage object.",
+   "activation_precondition": "AI traffic whose responses carry no usage object. The family partitions on how the response was charged, not on a single branch: a STREAMED response falls back to the estimate net (RecordTokenUsage estimated arm, which also feeds loxilb_ai_tokens_estimated_total), while a NON-STREAMED one is reported by RecordTokenUsageMissing and charged nothing. This family is therefore a superset of the estimated one, and the gap between them is the uncharged non-streamed half.",
    "writer_sources": [
     {
      "symbol": "RecordTokenUsage",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 416,
-     "writes": "aiTokensMissingTotal"
+     "def_line": 420,
+     "writes": "aiTokensMissingTotal",
+     "note": "the streamed half only, charged from the estimate net. The non-streamed half is RecordTokenUsageMissing, reached from the cgo export llb_ai_record_usage_missing (pkg/loxinet/ai_gateway_dp.go), which charges nothing -- so this family must never be read as a subset of loxilb_ai_tokens_estimated_total. Both writers are attributed-only: a keyless response has no tenant and is counted per VIP in loxilb_ai_unmetered_requests_total instead"
     },
     {
      "symbol": "llb_ai_token_quota_consume",
@@ -2783,7 +2784,7 @@
      "entry_point": "cgo-export"
     }
    ],
-   "verification_evidence": "metric coverage RCA and plan, section A.3; WP-2 asserts this equals the number of no-usage responses exactly"
+   "verification_evidence": "metric coverage RCA and plan, section A.3; WP-2 asserts this equals the number of no-usage responses exactly. api/prometheus/ai_metrics_test.go TestRecordTokenUsageMissing_ReportsWithoutCharging pins the non-streamed writer at zero charge and TestRecordTokenUsageMissing_KeylessIsNotLabelled pins the attributed-only rule; scenario leg U (cicd/ai-jwtauth) drives a no-usage backend against a with-usage control"
   },
   {
    "name": "loxilb_ai_unmetered_requests_total",
@@ -2803,7 +2804,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:359",
+   "source": "api/prometheus/ai_metrics.go:363",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "conditional-with-proven-writer",
@@ -2813,7 +2814,7 @@
      "symbol": "RecordUnmeteredRequest",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 656,
+     "def_line": 673,
      "writes": "aiUnmeteredRequestsTotal",
      "note": "labelled by vip, not tenant -- an unmetered request is precisely one with no tenant"
     },
