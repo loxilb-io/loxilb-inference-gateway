@@ -1309,6 +1309,67 @@ else
 fi
 
 echo ""
+echo "== UE: an error response is not an accounting hole =="
+echo "   loxilb_ai_tokens_missing_total reports a response that SHOULD have"
+echo "   been charged and could not be. A backend answering 5xx produced no"
+echo "   completion at all, so carrying no usage object is correct rather"
+echo "   than missing — and an OpenAI-compatible backend answers errors as"
+echo "   JSON, which the non-SSE recorder counts like any other response."
+echo "   Without a status test the counter would be driven hardest by a"
+echo "   backend outage, i.e. by exactly the condition it does NOT report."
+echo "   UE1 is H/1.1 (port 2057) and UE2 is HTTP/2 (port 2058): the two"
+echo "   protocols settle through different recorders, so the test has to"
+echo "   hold in both."
+
+sleep 2
+UEMISS0=$(metric_labeled loxilb_ai_tokens_missing_total 'tenant="tenant-a"')
+UECONS0=$(metric_labeled loxilb_ai_tokens_consumed_total 'tenant="tenant-a"' 'model="llama-70b"')
+
+echo ""
+echo "UE1: H/1.1 backend answers 500 with no usage object"
+r=$(bearer_req 2057 "$body_llama" "$TOK_ALICE")
+chk_code "UE1 500 status reaches the client" 500 "$r"
+chk_has  "UE1 the error pool answers" "server-err" "$r"
+chk_not_has "UE1 the error body carried no usage object" '"usage"' "$r"
+
+echo ""
+echo "UE2: the same 500, over HTTP/2"
+r=$(bearer_req 2058 "$body_llama" "$TOK_ALICE" --http2-prior-knowledge)
+chk_code "UE2 500 status reaches the client" 500 "$r"
+chk_has  "UE2 the H2 error pool answers" "server-h2-err" "$r"
+chk_not_has "UE2 the error body carried no usage object" '"usage"' "$r"
+
+sleep 2
+UEMISS1=$(metric_labeled loxilb_ai_tokens_missing_total 'tenant="tenant-a"')
+UECONS1=$(metric_labeled loxilb_ai_tokens_consumed_total 'tenant="tenant-a"' 'model="llama-70b"')
+if [ "$UEMISS0" = "unreadable" ] || [ "$UEMISS1" = "unreadable" ] || \
+   [ "$UECONS0" = "unreadable" ] || [ "$UECONS1" = "unreadable" ]; then
+  note_case "UE missing"; note_case "UE charge"
+  echo "  [FAIL] UE metrics scrape unreadable — cannot prove the status test"
+  FAIL=$((FAIL + 2))
+else
+  chk_num "UE neither error response ticked missing" 0 $((UEMISS1 - UEMISS0))
+  chk_num "UE and neither was charged"               0 $((UECONS1 - UECONS0))
+fi
+
+echo ""
+echo "UE3: the counter still works after the errors — the status test must"
+echo "     exclude errors, not switch the recorder off. Without this a filter"
+echo "     that rejected everything would pass UE1/UE2 and look correct."
+UEMISS2=$(metric_labeled loxilb_ai_tokens_missing_total 'tenant="tenant-a"')
+r=$(bearer_req 2055 "$body_llama" "$TOK_ALICE")
+chk_code "UE3 200 status" 200 "$r"
+sleep 2
+UEMISS3=$(metric_labeled loxilb_ai_tokens_missing_total 'tenant="tenant-a"')
+if [ "$UEMISS2" = "unreadable" ] || [ "$UEMISS3" = "unreadable" ]; then
+  note_case "UE3 missing"
+  echo "  [FAIL] UE3 metrics scrape unreadable — cannot prove the recorder lives"
+  FAIL=$((FAIL + 1))
+else
+  chk_num "UE3 a 200 with no usage still reports" 1 $((UEMISS3 - UEMISS2))
+fi
+
+echo ""
 echo "== T: the bearer gate on TLS, where HTTP/2 came from ALPN (port 2053) =="
 echo "   Every other HTTP/2 leg in this suite is h2c: the client announces"
 echo "   HTTP/2 with a cleartext preface. A TLS client never sends that"

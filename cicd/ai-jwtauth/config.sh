@@ -64,6 +64,10 @@
 #                                              settle path is a different
 #                                              recorder from the H/1.1 one, so
 #                                              2055 proves nothing about it
+#     2057 jwt            profile kc           backend answers 500 with no
+#                                              usage (H/1.1) — an error is not
+#                                              an accounting hole
+#     2058 jwt            profile kc           the same 500, over HTTP/2
 
 source ../common.sh
 
@@ -295,6 +299,33 @@ if $hexec l3ep1 curl -sf --max-time 2 --http2-prior-knowledge \
   echo "FATAL: the H2 no-usage backend emitted a usage object"; exit 1
 fi
 
+# The error pools. An error body carries no usage object either, so to the
+# accounting it looks exactly like the no-usage case — the only thing telling
+# them apart is the response status. Without a backend that actually answers
+# 4xx/5xx there is nothing to prove the status test with, and a filter nothing
+# exercises is indistinguishable from no filter at all.
+$hexec l3ep1 sh -c "nohup python3 $SDIR/hdr_echo.py server-err 8094 error-500 >/tmp/ai-jwtauth-err.log 2>&1 &"
+for i in $(seq 1 20); do
+  if $hexec l3ep1 curl -s --max-time 1 -o /dev/null -w '%{http_code}' \
+       http://127.0.0.1:8094/ | grep -q "500"; then
+    echo "  server-err backend ready (${i})"
+    break
+  fi
+  [ "$i" = 20 ] && { echo "FATAL: error backend did not become ready"; exit 1; }
+  sleep 1
+done
+$hexec l3ep1 sh -c "nohup python3 $SDIR/h2c_echo.py server-h2-err 8095 error-500 >/tmp/ai-jwtauth-h2err.log 2>&1 &"
+for i in $(seq 1 20); do
+  if $hexec l3ep1 curl -s --max-time 1 --http2-prior-knowledge \
+       -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8095/ -d '{}' \
+       | grep -q "500"; then
+    echo "  server-h2-err backend ready (${i})"
+    break
+  fi
+  [ "$i" = 20 ] && { echo "FATAL: H2 error backend did not become ready"; exit 1; }
+  sleep 1
+done
+
 # Second h2 pool, DIFFERENT namespace: the multiplexing legs need two
 # model pools whose endpoint lists both start at index 0, so that a
 # backend cache keyed by index alone has an alias to hit. Each pool's
@@ -466,6 +497,9 @@ add_lb_rule 2048 "llama-70b"  "31.31.31.1" jwt           kc 8090
 add_lb_rule 2055 "llama-70b"  "31.31.31.1" jwt           kc 8092
 # Its HTTP/2 twin, on the h2c no-usage pool.
 add_lb_rule 2056 "llama-70b"  "31.31.31.1" jwt           kc 8093
+# The error pools, one per protocol, for the status test.
+add_lb_rule 2057 "llama-70b"  "31.31.31.1" jwt           kc 8094
+add_lb_rule 2058 "llama-70b"  "31.31.31.1" jwt           kc 8095
 
 # TLS + ALPN. Every H2 port above is h2c, so nothing here has ever run the
 # bearer gate on a connection whose HTTP/2 was negotiated through the TLS

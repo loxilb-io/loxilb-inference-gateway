@@ -34,7 +34,14 @@ import h2.events
 
 LABEL = sys.argv[1] if len(sys.argv) > 1 else "server-h2"
 PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 8090
-EMIT_USAGE = (sys.argv[3] if len(sys.argv) > 3 else "") != "no-usage"
+MODE = sys.argv[3] if len(sys.argv) > 3 else ""
+EMIT_USAGE = MODE != "no-usage"
+# "error-500": the OpenAI-compatible error shape over HTTP/2. Indistinguishable
+# from the no-usage case to anything that only asks whether usage came back,
+# which is exactly why the settle path separates them on status.
+ERROR_STATUS = 500 if MODE == "error-500" else 0
+if ERROR_STATUS:
+    EMIT_USAGE = False
 
 receipts = {}
 receipts_lock = threading.Lock()
@@ -72,6 +79,14 @@ def handle_request(conn, stream_id, headers, body):
     if nonce:
         with receipts_lock:
             receipts[nonce] = receipts.get(nonce, 0) + 1
+
+    if ERROR_STATUS:
+        # Label retained so the leg can prove it reached THIS pool.
+        respond(conn, stream_id, ERROR_STATUS, json.dumps({
+            "label": LABEL,
+            "error": {"message": "upstream failure", "type": "server_error"},
+        }).encode())
+        return
 
     reply = {
         "label": LABEL,
