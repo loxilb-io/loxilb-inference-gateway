@@ -56,6 +56,9 @@
 #                                              only leg where the gateway
 #                                              terminates TLS; every other H2
 #                                              port above is h2c)
+#     2055 jwt            profile kc           backend answers 200 with NO
+#                                              usage object (missing-usage
+#                                              accounting)
 
 source ../common.sh
 
@@ -219,6 +222,27 @@ start_hdr_backend() { # <namespace> <response label>
 
 start_hdr_backend l3ep1 server-llama   || exit 1
 start_hdr_backend l3ep2 server-mistral || exit 1
+
+# A backend that answers 200 with NO usage object. Every other backend here
+# emits one, which is why nothing ever exercised the accounting path for a
+# response that carries none — and that path reported nothing at all, so the
+# gap was invisible rather than merely uncharged. Same echo, usage suppressed,
+# on its own port so the with-usage control keeps running beside it.
+$hexec l3ep1 sh -c "nohup python3 $SDIR/hdr_echo.py server-nousage 8092 no-usage >/tmp/ai-jwtauth-nousage.log 2>&1 &"
+for i in $(seq 1 20); do
+  if $hexec l3ep1 curl -sf --max-time 1 http://127.0.0.1:8092/ | grep -q "server-nousage"; then
+    echo "  server-nousage backend ready (${i})"
+    break
+  fi
+  [ "$i" = 20 ] && { echo "FATAL: no-usage backend did not become ready"; exit 1; }
+  sleep 1
+done
+# It must not accidentally still be emitting usage — that would make the
+# leg below assert against the wrong response shape and pass for the wrong
+# reason.
+if $hexec l3ep1 curl -sf --max-time 2 http://127.0.0.1:8092/ | grep -q '"usage"'; then
+  echo "FATAL: the no-usage backend emitted a usage object"; exit 1
+fi
 
 # The H2 legs need two backends of their own. The h2c echo completes an
 # HTTP/2 exchange, so "admitted" and "refused" finally produce different
@@ -410,6 +434,8 @@ add_lb_rule 2046 "llama-70b"  "31.31.31.1" jwt           kc-pass
 add_lb_rule 2047 "llama-70b"  "31.31.31.1" jwt           kc-outage
 # H2 legs: a jwt-only service whose backend actually speaks HTTP/2.
 add_lb_rule 2048 "llama-70b"  "31.31.31.1" jwt           kc 8090
+# The no-usage service, for the missing-usage accounting leg.
+add_lb_rule 2055 "llama-70b"  "31.31.31.1" jwt           kc 8092
 
 # TLS + ALPN. Every H2 port above is h2c, so nothing here has ever run the
 # bearer gate on a connection whose HTTP/2 was negotiated through the TLS

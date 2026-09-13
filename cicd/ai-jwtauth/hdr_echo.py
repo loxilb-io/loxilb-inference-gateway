@@ -31,6 +31,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 LABEL = sys.argv[1] if len(sys.argv) > 1 else "server"
 PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 8080
+# "no-usage" answers a complete, successful response that carries NO usage
+# object. Real backends do this — usage is optional in the OpenAI response
+# shape — and it is the one response shape whose accounting had no path at
+# all: nothing to extract meant nothing charged and nothing reported.
+EMIT_USAGE = (sys.argv[3] if len(sys.argv) > 3 else "") != "no-usage"
 
 RECEIPTS_PREFIX = "/__receipts/"
 NONCE_HEADER = "X-Test-Nonce"
@@ -118,14 +123,15 @@ class Handler(BaseHTTPRequestHandler):
         # scans the response tail for the LAST complete "usage" object, so
         # the surrounding pipe format is irrelevant to it). Fixed counts
         # keep the token legs' arithmetic exact: 5+7 per answered request.
-        self._send("%s|authz=%s|apikey=%s|xauth_tenant=%s|xauth_user=%s"
-                   '|{"usage":{"prompt_tokens":5,"completion_tokens":7,'
-                   '"total_tokens":12}}' % (
+        usage_suffix = ('|{"usage":{"prompt_tokens":5,"completion_tokens":7,'
+                        '"total_tokens":12}}') if EMIT_USAGE else ""
+        self._send("%s|authz=%s|apikey=%s|xauth_tenant=%s|xauth_user=%s%s" % (
             LABEL,
             "yes" if self.headers.get("Authorization") else "no",
             "yes" if self.headers.get("X-Api-Key") else "no",
             self._hdr("X-Auth-Tenant"),
             self._hdr("X-Auth-User"),
+            usage_suffix,
         ))
 
     do_GET = _respond

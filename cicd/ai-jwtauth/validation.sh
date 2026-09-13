@@ -1199,6 +1199,63 @@ names=$(profile_names)
 chk_not_has "J1 the profile was not created" " kc-inject " "$names"
 
 echo ""
+echo "== U: a response that carries NO usage object is still accounted for =="
+echo "   usage is optional in the response shape, and a backend that omits"
+echo "   it used to be accounted NOWHERE: with nothing to extract, the"
+echo "   non-streamed path charged nothing AND reported nothing, so a"
+echo "   completed response simply vanished from token accounting."
+echo "   loxilb_ai_tokens_missing_total exists to make exactly that visible"
+echo "   — it counts completed responses with no readable usage object, not"
+echo "   streaming ones — so it must tick here."
+echo "   Reporting is deliberately NOT charging: whether such a response"
+echo "   should be billed an estimate is a quota-policy question, so U1"
+echo "   pins the charge at zero rather than leaving it unstated."
+echo "   U2 is the control: the same request against the with-usage backend"
+echo "   must charge and must NOT tick missing, which is what stops U1 from"
+echo "   passing on a counter that simply ticks for everything."
+
+sleep 2
+UMISS0=$(metric_labeled loxilb_ai_tokens_missing_total 'tenant="tenant-a"')
+UCONS0=$(metric_labeled loxilb_ai_tokens_consumed_total 'tenant="tenant-a"' 'model="llama-70b"')
+
+echo ""
+echo "U1: the no-usage backend (port 2055) answers 200 — one response with"
+echo "    no usage object is reported once, and charged nothing"
+r=$(bearer_req 2055 "$body_llama" "$TOK_ALICE")
+chk_code "U1 200 status" 200 "$r"
+chk_has  "U1 the no-usage pool answers" "server-nousage" "$r"
+chk_not_has "U1 the response really carried no usage object" '"usage"' "$r"
+sleep 2
+UMISS1=$(metric_labeled loxilb_ai_tokens_missing_total 'tenant="tenant-a"')
+UCONS1=$(metric_labeled loxilb_ai_tokens_consumed_total 'tenant="tenant-a"' 'model="llama-70b"')
+if [ "$UMISS0" = "unreadable" ] || [ "$UMISS1" = "unreadable" ] || \
+   [ "$UCONS0" = "unreadable" ] || [ "$UCONS1" = "unreadable" ]; then
+  note_case "U1 missing"; note_case "U1 charge"
+  echo "  [FAIL] U1 metrics scrape unreadable — cannot prove the accounting"
+  FAIL=$((FAIL + 2))
+else
+  chk_num "U1 missing counted exactly this one response" 1 $((UMISS1 - UMISS0))
+  chk_num "U1 reporting charged nothing"                 0 $((UCONS1 - UCONS0))
+fi
+
+echo ""
+echo "U2: control — the with-usage backend (port 2040) charges its exact"
+echo "    counts and does NOT tick missing"
+r=$(bearer_req 2040 "$body_llama" "$TOK_ALICE")
+chk_code "U2 200 status" 200 "$r"
+sleep 2
+UMISS2=$(metric_labeled loxilb_ai_tokens_missing_total 'tenant="tenant-a"')
+UCONS2=$(metric_labeled loxilb_ai_tokens_consumed_total 'tenant="tenant-a"' 'model="llama-70b"')
+if [ "$UMISS2" = "unreadable" ] || [ "$UCONS2" = "unreadable" ]; then
+  note_case "U2 missing"; note_case "U2 charge"
+  echo "  [FAIL] U2 metrics scrape unreadable — cannot prove the control"
+  FAIL=$((FAIL + 2))
+else
+  chk_num "U2 a readable usage object does not tick missing" 0 $((UMISS2 - UMISS1))
+  chk_num "U2 and it is charged exactly (5 prompt + 7 completion)" 12 $((UCONS2 - UCONS1))
+fi
+
+echo ""
 echo "== T: the bearer gate on TLS, where HTTP/2 came from ALPN (port 2053) =="
 echo "   Every other HTTP/2 leg in this suite is h2c: the client announces"
 echo "   HTTP/2 with a cleartext preface. A TLS client never sends that"
@@ -1267,7 +1324,7 @@ echo "   A deleted, renamed, or skipped block stops being tested silently:"
 echo "   the pass count simply gets smaller and the run still says OK. This"
 echo "   compares the case IDs that actually asserted against the declared"
 echo "   set, so coverage cannot shrink without turning the run RED."
-EXPECTED_CASES="A1 A2 A3 A4 A5 A6 A7 A8 B1 B2 B3 C1 C2 C3 C4 C5 C6 D1 D2 D3 D4 D5 D6 E1 E2 F1 F2 F3 F4 L1 L2 L3 L4 K1 K2 K3 K4 K5 X1 X2 M1 M2 M3 M4 N1 N2 N3 N4 G1 G2 H0 H1 H2 H3 H4 P1 P2 I0 I1 I2 I3 J1 T0 T1 T2 T3 T4"
+EXPECTED_CASES="A1 A2 A3 A4 A5 A6 A7 A8 B1 B2 B3 C1 C2 C3 C4 C5 C6 D1 D2 D3 D4 D5 D6 E1 E2 F1 F2 F3 F4 L1 L2 L3 L4 K1 K2 K3 K4 K5 X1 X2 M1 M2 M3 M4 N1 N2 N3 N4 G1 G2 H0 H1 H2 H3 H4 P1 P2 I0 I1 I2 I3 J1 T0 T1 T2 T3 T4 U1 U2"
 missing=""
 for want in $EXPECTED_CASES; do
   case " $SEEN_CASES " in
