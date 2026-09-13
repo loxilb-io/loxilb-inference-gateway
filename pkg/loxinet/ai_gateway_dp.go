@@ -219,6 +219,13 @@ func rateLimitCheckInternal(svc rateLimitService, store *rl.RateLimiterStore, ke
 				return 3, retrySec, "rate_limit_exceeded"
 			}
 		}
+		// The token side of the shared bucket. The latch reads debt that
+		// SETTLES put there: attributed traffic sharing the service charges
+		// it today, and the keyless reserve/consume path accepts
+		// service-only settles — but the data plane does not yet meter
+		// keyless responses, so on a service with ONLY keyless traffic this
+		// latch cannot trip until it does. vip_shared_rps is the
+		// always-live keyless bound.
 		if d.vipTPM > 0 {
 			if store.QuotaWarming() {
 				return 3, 1, "token_quota_warming"
@@ -895,7 +902,10 @@ func llb_ai_ratelimit_check(keyID *C.char, tenantID *C.char, userID *C.char, svc
 // tag makes settlement skip a release the epoch advance already performed —
 // the standard orphan self-heal.
 func tokenQuotaReserveInternal(svc rateLimitService, store *rl.RateLimiterStore, tenantID, modelName, userID, keyID, svcIdent string, want int) (allowed bool, retrySecs int, resEpoch int64) {
-	if want <= 0 || tenantID == "" {
+	// A keyless request (no tenant) can still hold a claim: the per-VIP
+	// shared bucket is keyed on the service alone. With neither identity
+	// there is nothing to reserve against.
+	if want <= 0 || (tenantID == "" && svcIdent == "") {
 		return true, 0, 0
 	}
 	buckets := quotaBucketsFor(svc, tenantID, modelName, userID, keyID, svcIdent)
@@ -957,19 +967,26 @@ func quotaBucketsFor(svc rateLimitService, tenantID, modelName, userID, keyID, s
 		defaults = d
 	}
 
-	_, tenantTPM, burstPct, _ := svc.GetTenantRateLimit(tenantID)
-	if tenantTPM <= 0 {
-		tenantTPM = defaults.tenantTPM
-	}
-	if tenantTPM > 0 {
-		out = append(out, quotaBucket{key: tenantID, tpm: tenantTPM, burstPct: burstPct})
-	}
-	if modelName != "" {
-		if modelTPM, err := svc.GetTenantModelRateLimit(tenantID, modelName); err == nil && modelTPM > 0 {
-			out = append(out, quotaBucket{key: modelQuotaKey(tenantID, modelName), tpm: modelTPM, burstPct: burstPct})
+	// The tenant-keyed dimensions exist only for attributed traffic; a
+	// keyless caller (empty tenant) must not read the store for the empty
+	// pair, and its spend lands only on the per-VIP shared bucket below.
+	burstPct := 0
+	if tenantID != "" {
+		var tenantTPM int
+		_, tenantTPM, burstPct, _ = svc.GetTenantRateLimit(tenantID)
+		if tenantTPM <= 0 {
+			tenantTPM = defaults.tenantTPM
+		}
+		if tenantTPM > 0 {
+			out = append(out, quotaBucket{key: tenantID, tpm: tenantTPM, burstPct: burstPct})
+		}
+		if modelName != "" {
+			if modelTPM, err := svc.GetTenantModelRateLimit(tenantID, modelName); err == nil && modelTPM > 0 {
+				out = append(out, quotaBucket{key: modelQuotaKey(tenantID, modelName), tpm: modelTPM, burstPct: burstPct})
+			}
 		}
 	}
-	if userID != "" {
+	if userID != "" && tenantID != "" {
 		userTPM := 0
 		if _, _, t, err := svc.GetUserRateLimit(tenantID, userID); err == nil {
 			userTPM = t
@@ -1016,7 +1033,9 @@ func quotaBucketsFor(svc rateLimitService, tenantID, modelName, userID, keyID, s
 // returns deny_429 ("token_quota_exceeded") — the already-served response
 // is never affected.
 func tokenQuotaConsumeInternal(svc rateLimitService, store *rl.RateLimiterStore, tenantID, modelName, userID, keyID, svcIdent string, count, reservedAmt int, resEpoch int64) (allowed bool, retrySecs int) {
-	if tenantID == "" {
+	// Keyless settles are keyed on the service alone; with neither a
+	// tenant nor a service identity there is no bucket to touch.
+	if tenantID == "" && svcIdent == "" {
 		return true, 0
 	}
 	// Same tolerance as reservation: settlement must run even when the
@@ -1027,26 +1046,33 @@ func tokenQuotaConsumeInternal(svc rateLimitService, store *rl.RateLimiterStore,
 	if reservedAmt <= 0 && (count <= 0 || len(buckets) == 0) {
 		return true, 0
 	}
-	// The tenant aggregate settles even when its own limit resolved to zero
-	// (reservation release rides the settle call), matching the old shape;
-	// every other bucket exists only with a live limit.
-	settledTenant := false
+	// The request's PRIMARY bucket settles even when its own limit resolved
+	// to zero (reservation release rides the settle call): the tenant
+	// aggregate for attributed traffic — matching the old shape — and the
+	// per-VIP shared bucket for keyless traffic, whose claim would
+	// otherwise strand when the defaults row vanishes mid-request. Every
+	// other bucket exists only with a live limit.
+	primaryKey := tenantID
+	if tenantID == "" {
+		primaryKey = rl.VipSharedQuotaKey(svcIdent)
+	}
+	settledPrimary := false
 	allowed = true
 	for _, b := range buckets {
 		bAllowed, bRetry := store.SettleTokens(b.key, count, reservedAmt, resEpoch, b.tpm, b.burstPct)
-		if b.key == tenantID {
-			settledTenant = true
+		if b.key == primaryKey {
+			settledPrimary = true
 		}
 		if !bAllowed {
 			allowed = false
 			retrySecs = max(retrySecs, bRetry)
 		}
 	}
-	if !settledTenant {
-		tAllowed, tRetry := store.SettleTokens(tenantID, count, reservedAmt, resEpoch, 0, 0)
-		if !tAllowed {
+	if !settledPrimary {
+		pAllowed, pRetry := store.SettleTokens(primaryKey, count, reservedAmt, resEpoch, 0, 0)
+		if !pAllowed {
 			allowed = false
-			retrySecs = max(retrySecs, tRetry)
+			retrySecs = max(retrySecs, pRetry)
 		}
 	}
 	return allowed, retrySecs
@@ -1109,7 +1135,9 @@ func llb_ai_token_quota_reserve(tenantID *C.char, modelName *C.char, userID *C.c
 	if maxTokens > 0 {
 		want += int(maxTokens)
 	}
-	if tenant == "" || want <= 0 {
+	// A keyless caller (no tenant) may still reserve against the per-VIP
+	// shared bucket when it names the service.
+	if want <= 0 || (tenant == "" && C.GoString(svcIdent) == "") {
 		return 0
 	}
 
@@ -1183,12 +1211,18 @@ func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, userID *C.c
 	tenant := C.GoString(tenantID)
 	// A zero count no longer short-circuits when a reservation rides along:
 	// the claim must be released even for an uncounted response, or the
-	// tenant's admissions stay blocked until the window rolls over.
-	if tenant == "" || (count <= 0 && reservedToks <= 0) {
+	// tenant's admissions stay blocked until the window rolls over. A
+	// keyless caller (no tenant) settles the per-VIP shared bucket when it
+	// names the service.
+	if (tenant == "" && C.GoString(svcIdent) == "") || (count <= 0 && reservedToks <= 0) {
 		return 0
 	}
 
-	if count > 0 {
+	// The per-tenant usage families stay attributed-only: a keyless settle
+	// has no tenant to label, and an empty label value reads as a scrape
+	// bug. Keyless volume is already visible per VIP in the unmetered
+	// counter.
+	if count > 0 && tenant != "" {
 		prom.RecordTokenUsage(C.GoString(modelName), tenant, int(promptTokens),
 			int(completTokens), estimated != 0)
 	}

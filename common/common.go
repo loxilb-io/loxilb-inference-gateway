@@ -2620,9 +2620,12 @@ const (
 // RateLimitDefaultsEntry - QoS ladder level 3: the limits an identity gets
 // when no explicit row names it. DefaultUserRPS/TPM bound each user that has
 // no user_rate_limits row; DefaultTenantRPS/TPM bound each tenant without a
-// tenant_rate_limits row; VipSharedRPS/TPM arm the opt-in shared bucket for
-// keyless traffic on none-mode services. Zero = that dimension has no
-// default (fall through to unlimited).
+// tenant_rate_limits row. VipSharedRPS/TPM arm the opt-in per-service shared
+// bucket: the request side (RPS) bounds keyless traffic on none-mode
+// services; the token side (TPM) is charged by metered traffic sharing the
+// service — keyless responses are not token-metered yet, so on a service
+// with only keyless traffic the TPM bound cannot trip. Zero = that
+// dimension has no default (fall through to unlimited).
 type RateLimitDefaultsEntry struct {
 	Scope            string    `json:"scope"`                // "global" or "rule"
 	RuleIdent        string    `json:"rule_ident,omitempty"` // service identity for scope "rule"; "" for global
