@@ -66,6 +66,12 @@ jobs:
         # here, so install to the system site (visible to the root publisher launched via
         # `ip netns exec`) from prebuilt manylinux wheels. config.sh re-probes as a fallback.
         run: sudo python3 -m pip install pyzmq msgpack cbor2 xxhash transformers || sudo python3 -m pip install --break-system-packages pyzmq msgpack cbor2 xxhash transformers
+      - name: Install python h2 (ai-jwtauth HTTP/2 client and echo backend)
+        # ai-jwtauth's h2c echo backend, multiplexed client and raw recorder all
+        # import h2, and config.sh fails closed when it is missing rather than
+        # quietly dropping the HTTP/2 legs. Install to the system site: the
+        # mocks are launched as root through `ip netns exec`.
+        run: sudo python3 -m pip install h2 || sudo python3 -m pip install --break-system-packages h2
       - run: loxilb-ebpf/utils/mkllb_bpffs.sh
       - run: sudo -E env "PATH=$PATH" make
       # minica (github.com/jsha/minica) is fetched on demand by the TLS scenarios' config.sh
