@@ -4572,7 +4572,7 @@ func init() {
             },
             "sockMapMode": {
               "default": "off",
-              "description": "directional sockmap acceleration for this FullProxy service - off (default), both, request (client-\u003ebackend only), response (backend-\u003eclient only). Requires a plaintext tcp fullproxy ipv4 service with ipv4 endpoints, and the daemon started with --sockmapsupport.",
+              "description": "Directional sockmap acceleration for this FullProxy service - off (default), both, request (client-\u003ebackend only), response (backend-\u003eclient only). The direction that is not selected stays on the userspace relay and never runs the sockmap verdict. A mode other than off requires a plaintext tcp fullproxy service with an ipv4 external IP and ipv4 endpoints, and the daemon started with --sockmapsupport; a request that does not meet either condition is rejected with 400 before any rule state changes. A snapshot restore on a daemon without --sockmapsupport keeps the mode, logs a warning and runs the rule unaccelerated. Services are told apart by address and port, so services that share only a port do not affect each other; services pointing at the same endpoint address and port, or host-based services on the same VIP address and port, share acceleration state for that address. Enabling a mode applies to new connections; switching to off or to the other direction stops redirecting immediately. Redirect correctness depends on the kernel - see docs/sockmap-acceleration.md before enabling.",
               "enum": [
                 "off",
                 "both",
@@ -36675,7 +36675,7 @@ func init() {
               "type": "boolean"
             },
             "sockMapMode": {
-              "description": "directional sockmap acceleration for this FullProxy service - off (default), both, request (client-\u003ebackend only), response (backend-\u003eclient only). Requires a plaintext tcp fullproxy ipv4 service with ipv4 endpoints, and the daemon started with --sockmapsupport.",
+              "description": "Directional sockmap acceleration for this FullProxy service - off (default), both, request (client-\u003ebackend only), response (backend-\u003eclient only). The direction that is not selected stays on the userspace relay and never runs the sockmap verdict. A mode other than off requires a plaintext tcp fullproxy service with an ipv4 external IP and ipv4 endpoints, and the daemon started with --sockmapsupport; a request that does not meet either condition is rejected with 400 before any rule state changes. A snapshot restore on a daemon without --sockmapsupport keeps the mode, logs a warning and runs the rule unaccelerated. Services are told apart by address and port, so services that share only a port do not affect each other; services pointing at the same endpoint address and port, or host-based services on the same VIP address and port, share acceleration state for that address. Enabling a mode applies to new connections; switching to off or to the other direction stops redirecting immediately. Redirect correctness depends on the kernel - see docs/sockmap-acceleration.md before enabling.",
               "type": "string",
               "default": "off",
               "enum": [
@@ -37367,7 +37367,7 @@ func init() {
           "type": "boolean"
         },
         "sockMapMode": {
-          "description": "directional sockmap acceleration for this FullProxy service - off (default), both, request (client-\u003ebackend only), response (backend-\u003eclient only). Requires a plaintext tcp fullproxy ipv4 service with ipv4 endpoints, and the daemon started with --sockmapsupport.",
+          "description": "Directional sockmap acceleration for this FullProxy service - off (default), both, request (client-\u003ebackend only), response (backend-\u003eclient only). The direction that is not selected stays on the userspace relay and never runs the sockmap verdict. A mode other than off requires a plaintext tcp fullproxy service with an ipv4 external IP and ipv4 endpoints, and the daemon started with --sockmapsupport; a request that does not meet either condition is rejected with 400 before any rule state changes. A snapshot restore on a daemon without --sockmapsupport keeps the mode, logs a warning and runs the rule unaccelerated. Services are told apart by address and port, so services that share only a port do not affect each other; services pointing at the same endpoint address and port, or host-based services on the same VIP address and port, share acceleration state for that address. Enabling a mode applies to new connections; switching to off or to the other direction stops redirecting immediately. Redirect correctness depends on the kernel - see docs/sockmap-acceleration.md before enabling.",
           "type": "string",
           "default": "off",
           "enum": [
