@@ -93,7 +93,8 @@ func modelQuotaKey(tenantID, model string) string {
 // qosDefaults is the field-wise merge of the rule-scope defaults row over
 // the global one (QoS ladder level 3): a zero field in the rule row falls
 // through to the global row's field, and a zero there falls through to
-// unlimited — the D-6 sentinel discipline, applied per dimension.
+// unlimited: zero is the sentinel for "no bound", read that way
+// independently for every dimension.
 type qosDefaults struct {
 	userRPS, userTPM     int
 	tenantRPS, tenantTPM int
@@ -146,7 +147,7 @@ func resolveQoSDefaults(svc rateLimitService, svcIdent string) (qosDefaults, err
 // rateLimitCheckInternal is the pure-Go rate limit logic, separated from the
 // CGO export so that unit tests can exercise it without going through C types.
 //
-// The QoS ladder (D-2/D-6) resolves each dimension's limit as: explicit row
+// The QoS ladder resolves each dimension's limit as: explicit row
 // → configured default (rule scope over global) → unlimited; a zero field
 // falls through, so an operator states only what they mean to bound. The
 // enforcement stages then run most-specific first — key RPS, key TPM latch,
