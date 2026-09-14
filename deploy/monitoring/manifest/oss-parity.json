@@ -1,17 +1,17 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-11T03:32:15+00:00",
-  "source_revision": "0f21ee409f686cb53e280ae1beb7ec250966a54f",
+  "generated_at": "2026-09-12T08:50:06+00:00",
+  "source_revision": "5d1439c105b762ea91df3dd97e3a22820283928e",
   "upstream_repository": "https://github.com/loxilb-io/loxilb",
   "upstream_revision": "71982cd61b23d82c8f2ff1dd38d395bbb4c9360d"
  },
  "contract": {
-  "gateway_families": 234,
+  "gateway_families": 239,
   "upstream_families": 60,
   "present_identical": 35,
   "present_divergent": 0,
-  "absent": 199,
+  "absent": 204,
   "upstream_only": 25
  },
  "upstream_only": [
@@ -611,6 +611,73 @@
     "labels": [
      "engine",
      "service"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_jwks_keys",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "profile"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_jwks_last_success_timestamp_seconds",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "profile"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_jwks_refresh_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "outcome",
+     "profile"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_jwks_usable",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "profile"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_jwt_validation_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "reason",
+     "tenant"
     ]
    }
   },
