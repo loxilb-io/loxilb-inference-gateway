@@ -180,6 +180,54 @@ inv_exists() {
         | grep -q '"service_id"' && echo 1 || echo 0
 }
 
+# rule_present <vport> — 1 if a loadbalancer rule for VIP:<vport> is live in the rule table.
+# Used ONLY to tell "the POST never left the box" apart from "the POST landed and only its
+# http_code was lost"; never used as a leg oracle.
+rule_present() {
+    llb_curl "${LBBASE}/all" 2>/dev/null | tr ',{}' '\n' \
+        | grep -qE "\"port\" *: *$1( |$)" && echo 1 || echo 0
+}
+
+# readd_rule <label> <vport> <json> <body-file> <err-file> — POST a rule back onto the live
+# gateway; publishes RD_RC (http_code), RD_EXIT (curl exit) and RD_OK (1 == the rule is back).
+#
+# An EMPTY http_code is not a gateway answer. curl prints %{http_code} for every completed
+# request, 000 included, so empty output means curl never ran a request at all — the shape a
+# `sudo ip netns exec <ns> curl` returns when the spawn itself fails: instantly, silently,
+# with nothing sent. That is a lost MEASUREMENT, and it has now cost this leg on both VIPs
+# (VIP-B drove commit 92c6b8cf's evidence capture; VIP-A, still blind, failed the same way
+# three times on one branch). So an empty code is RESOLVED, not asserted on: if the rule is
+# in fact live the request did land and only its code was lost; if the rule is absent then
+# nothing was sent and the POST is re-attempted exactly once.
+#
+# Every real http_code is handed back untouched and never re-attempted — a 409, a 500, or a
+# 000 from a timeout is what the gateway did, and the leg must fail on it. Two lost
+# measurements in a row also leave RD_OK=0, so this leg can still go red.
+readd_rule() {
+    local label="$1" vport="$2" json="$3" body="$4" err="$5" attempt
+    RD_RC=""; RD_EXIT=0; RD_OK=0
+    for attempt in 1 2; do
+        RD_EXIT=0
+        RD_RC=$(llb_curl -o "${body}" -w "%{http_code}" -X POST "${LBBASE}" \
+            -H 'Content-Type: application/json' -d "${json}" 2>"${err}") || RD_EXIT=$?
+        if [[ -n "${RD_RC}" ]]; then
+            [[ "${RD_EXIT}" -eq 0 && "${RD_RC}" == 2* ]] && RD_OK=1
+            [[ "${attempt}" == 1 ]] || echo "  ${label} re-POST: attempt 2 answered HTTP ${RD_RC}"
+            break
+        fi
+        echo "  ${label} re-POST produced NO http_code (attempt ${attempt}): curl_exit=${RD_EXIT} stderr=$(head -c 240 "${err}" 2>/dev/null)"
+        if [[ "$(rule_present "${vport}")" == 1 ]]; then
+            echo "  ${label} re-POST: rule for port ${vport} IS live — the request landed, only its http_code was lost"
+            RD_OK=1
+            break
+        fi
+        [[ "${attempt}" == 1 ]] && echo "  ${label} re-POST: rule for port ${vport} absent, so nothing was sent — re-attempting once"
+    done
+    if [[ "${RD_OK}" != 1 ]]; then
+        echo "  ${label} re-POST diagnostic: curl_exit=${RD_EXIT} HTTP=${RD_RC:-<empty>} stderr=$(head -c 240 "${err}" 2>/dev/null) response=$(head -c 240 "${body}" 2>/dev/null)"
+    fi
+}
+
 # tier15_hits <ep_idx> — current loxilb_pd_kv_tier15_hits_total{ep_idx} (0 if absent).
 tier15_hits() {
     llb_curl "${METRICS}" 2>/dev/null \
@@ -461,17 +509,12 @@ read -r -d '' RULE_B_JSON <<JSON
   ]
 }
 JSON
-add_b_body="${CFGDIR}/.l3-b-readd-response.json"
-add_b_err="${CFGDIR}/.l3-b-readd-curl.err"
-add_b_exit=0
-add_b_rc=$(llb_curl -o "${add_b_body}" -w "%{http_code}" -X POST "${LBBASE}" \
-    -H 'Content-Type: application/json' -d "${RULE_B_JSON}" 2>"${add_b_err}") || add_b_exit=$?
-if [[ "${add_b_exit}" -ne 0 || "${add_b_rc}" != 2* ]]; then
-    echo "  VIP-B re-POST diagnostic: curl_exit=${add_b_exit} HTTP=${add_b_rc:-<empty>} stderr=$(head -c 240 "${add_b_err}" 2>/dev/null) response=$(head -c 240 "${add_b_body}" 2>/dev/null)"
-fi
+readd_rule "VIP-B" "${VPORT_B}" "${RULE_B_JSON}" \
+    "${CFGDIR}/.l3-b-readd-response.json" "${CFGDIR}/.l3-b-readd-curl.err"
+add_b_rc="${RD_RC}"; add_b_exit="${RD_EXIT}"; add_b_ok="${RD_OK}"
 sleep 3
 resolve_sids   # re-add mints a NEW ruleNum for B — re-resolve both (A must be unchanged)
-echo "  churn self-confirm: B served ${b_served}/3 ; DELETE rc=${del_b_rc} ; re-POST rc=${add_b_rc} curl_exit=${add_b_exit} ; re-resolved A=${SID_A} B=${SID_B}"
+echo "  churn self-confirm: B served ${b_served}/3 ; DELETE rc=${del_b_rc} ; re-POST rc=${add_b_rc:-<none>} curl_exit=${add_b_exit} back=${add_b_ok} ; re-resolved A=${SID_A} B=${SID_B}"
 # re-warm B idx 1 and prove B functional post-churn (part of the churn evidence).
 kill_publisher_ep "${EP_B1_IP}"; sleep 1
 launch_publisher "${EP_B1_IP}" "${KV_ZMQ_PORT_B}" "sha256_sglang" "${KV_DP_RANKS}" \
@@ -480,8 +523,8 @@ l3_b_rewarm=$(wait_inv "${SID_B}" 1 -gt 0 30)
 sleep 3
 l3_b_banner=$(req_banner "${VPORT_B}" "${PB_HIT}")
 [[ -n "${l3_b_banner}" ]] && b_served=$((b_served + 1))
-l3_churn_fired=$([[ "${b_served}" -ge 3 && "${del_b_rc}" == 2* && "${add_b_exit}" -eq 0 && "${add_b_rc}" == 2* ]] && echo 1 || echo 0)
-assert "(L3.1) churn FIRED: VIP-B served >=3, rule deleted (2xx) and re-added (2xx), re-warmed=${l3_b_rewarm}" "${l3_churn_fired}"
+l3_churn_fired=$([[ "${b_served}" -ge 3 && "${del_b_rc}" == 2* && "${add_b_ok}" == 1 ]] && echo 1 || echo 0)
+assert "(L3.1) churn FIRED: VIP-B served >=3, rule deleted (2xx) and demonstrably back, re-warmed=${l3_b_rewarm}" "${l3_churn_fired}"
 a_iso_h0_after=$(tier15_hits 0); a_iso_h2_after=$(tier15_hits 2)
 a_iso_i0_after=$(inv_total "${SID_A}" 0); a_iso_i2_after=$(inv_total "${SID_A}" 2)
 echo "  VIP-A stability: tier15{0} ${a_iso_h0}->${a_iso_h0_after} tier15{2} ${a_iso_h2}->${a_iso_h2_after} ; inv(A,0) ${a_iso_i0}->${a_iso_i0_after} inv(A,2) ${a_iso_i2}->${a_iso_i2_after} (want all unchanged)"
@@ -516,11 +559,12 @@ read -r -d '' RULE_A_JSON <<JSON
   ]
 }
 JSON
-add_a_rc=$(llb_curl -o /dev/null -w "%{http_code}" -X POST "${LBBASE}" \
-    -H 'Content-Type: application/json' -d "${RULE_A_JSON}" 2>/dev/null)
+readd_rule "VIP-A" "${VPORT_A}" "${RULE_A_JSON}" \
+    "${CFGDIR}/.l3-a-readd-response.json" "${CFGDIR}/.l3-a-readd-curl.err"
+add_a_rc="${RD_RC}"; add_a_exit="${RD_EXIT}"; add_a_ok="${RD_OK}"
 sleep 3
 resolve_sids
-echo "  churn self-confirm: A served ${a_served}/2 ; DELETE rc=${del_a_rc} ; re-POST rc=${add_a_rc} ; re-resolved A=${SID_A} B=${SID_B}"
+echo "  churn self-confirm: A served ${a_served}/2 ; DELETE rc=${del_a_rc} ; re-POST rc=${add_a_rc:-<none>} curl_exit=${add_a_exit} back=${add_a_ok} ; re-resolved A=${SID_A} B=${SID_B}"
 # re-warm A idx 0 and prove A functional post-churn.
 kill_publisher_ep "${EP_A0_IP}"; sleep 1
 launch_publisher "${EP_A0_IP}" "${KV_ZMQ_PORT_A}" "${KV_HASH_ALGO_A}" 1 \
@@ -529,8 +573,8 @@ l3_a_rewarm=$(wait_inv "${SID_A}" 0 -gt 0 30)
 sleep 3
 l3_a_banner=$(req_banner "${VPORT_A}" "${PA_HIT}")
 [[ -n "${l3_a_banner}" ]] && a_served=$((a_served + 1))
-l3a_churn_fired=$([[ "${a_served}" -ge 2 && "${del_a_rc}" == 2* && "${add_a_rc}" == 2* ]] && echo 1 || echo 0)
-assert "(L3.2) churn FIRED: VIP-A served >=2, rule deleted (2xx) and re-added (2xx), re-warmed=${l3_a_rewarm}" "${l3a_churn_fired}"
+l3a_churn_fired=$([[ "${a_served}" -ge 2 && "${del_a_rc}" == 2* && "${add_a_ok}" == 1 ]] && echo 1 || echo 0)
+assert "(L3.2) churn FIRED: VIP-A served >=2, rule deleted (2xx) and demonstrably back, re-warmed=${l3_a_rewarm}" "${l3a_churn_fired}"
 b_iso_h1_after=$(tier15_hits 1)
 b_iso_i0_after=$(inv_total "${SID_B}" 0); b_iso_i1_after=$(inv_total "${SID_B}" 1); b_iso_i2_after=$(inv_total "${SID_B}" 2)
 echo "  VIP-B stability: tier15{1} ${b_iso_h1}->${b_iso_h1_after} ; inv(B,0/1/2) ${b_iso_i0}/${b_iso_i1}/${b_iso_i2} -> ${b_iso_i0_after}/${b_iso_i1_after}/${b_iso_i2_after} (want all unchanged)"

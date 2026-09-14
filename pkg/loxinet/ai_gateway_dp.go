@@ -1432,3 +1432,23 @@ func llb_ai_record_unmetered(vip *C.char) {
 	defer cgoRecover("llb_ai_record_unmetered")
 	prom.RecordUnmeteredRequest(C.GoString(vip))
 }
+
+// llb_ai_record_usage_missing records one completed response that carried no
+// readable usage object, and charges nothing.
+//
+// C sockproxy calls this when a non-streamed AI Gateway response has finished
+// and no dialect ever extracted a usage object from it. The streaming path
+// reaches the same counter through the quota charge's estimated arm; the
+// non-streamed path had no route to it at all, so responses that completed
+// without usage were invisible rather than merely uncharged.
+//
+// Accounting-only by construction: it moves loxilb_ai_tokens_missing_total and
+// nothing else. These responses stay free by decision, not by omission — see
+// prom.RecordTokenUsageMissing for why charging an estimate was rejected and
+// what would reopen it.
+//
+//export llb_ai_record_usage_missing
+func llb_ai_record_usage_missing(tenantID *C.char, modelName *C.char) {
+	defer cgoRecover("llb_ai_record_usage_missing")
+	prom.RecordTokenUsageMissing(C.GoString(modelName), C.GoString(tenantID))
+}
