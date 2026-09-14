@@ -18,6 +18,7 @@ package jwtauth
 
 import (
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 )
@@ -340,5 +341,80 @@ func TestProfileValidation(t *testing.T) {
 	}
 	if got := len(m.Profiles()); got != 0 {
 		t.Fatalf("%d profiles active after rejected sets", got)
+	}
+}
+
+// TestRefreshObserverCountsEveryAttempt: the observer fires exactly once per
+// fetch attempt, with the outcome that attempt reached.
+//
+// This is what makes a JWKS outage visible. A failing refresh changes no
+// request outcome until the staleness cutoff expires — the gateway keeps
+// serving on the last-known-good keyset — so if the failure is not observed
+// here, the first symptom an operator sees is traffic being refused that was
+// fine a moment earlier.
+func TestRefreshObserverCountsEveryAttempt(t *testing.T) {
+	rsaKey := testRSAKey(t, "kid-rsa")
+	js := newJWKSServer(t, jwksDoc(t, jwkRSA("kid-rsa", &rsaKey.PublicKey)))
+
+	var mu sync.Mutex
+	seen := map[string]int{}
+	observe := func(profile, outcome string) {
+		mu.Lock()
+		defer mu.Unlock()
+		seen[profile+"/"+outcome]++
+	}
+	count := func(key string) int {
+		mu.Lock()
+		defer mu.Unlock()
+		return seen[key]
+	}
+
+	m := New(
+		WithRefreshObserver(observe),
+		WithRetryBackoff(10*time.Millisecond, 50*time.Millisecond),
+	)
+	t.Cleanup(m.Close)
+	if err := m.SetProfile(Profile{
+		Name: "obs", Issuer: "https://idp.example/realms/ai",
+		JWKSURL: js.srv.URL + "/jwks",
+	}); err != nil {
+		t.Fatalf("SetProfile: %v", err)
+	}
+
+	good := signToken(t, "RS256", "kid-rsa", rsaKey, baseClaims(nil))
+	waitVerified(t, m, good, "obs")
+
+	if n := count("obs/" + RefreshSuccess); n < 1 {
+		t.Fatalf("a verified token implies a successful fetch, but success count is %d", n)
+	}
+	// The control for the assertion below: nothing has failed yet, so a
+	// failure count that is already non-zero would make the next check
+	// pass for the wrong reason.
+	if n := count("obs/" + RefreshFailure); n != 0 {
+		t.Fatalf("no fetch has failed yet, but failure count is %d", n)
+	}
+
+	// Take the endpoint away and force an out-of-cycle fetch with an
+	// unknown-kid token. The keyset stays usable, so the ONLY signal that
+	// anything went wrong is the observer.
+	js.srv.Close()
+	strangerKey := testRSAKey(t, "kid-stranger")
+	bad := signToken(t, "RS256", "kid-nobody", strangerKey, baseClaims(nil))
+	if _, err := m.Verify(bad, "obs"); err == nil {
+		t.Fatal("an unknown kid must not verify")
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for count("obs/"+RefreshFailure) == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if n := count("obs/" + RefreshFailure); n == 0 {
+		t.Error("a fetch against a dead JWKS endpoint must be observed as a failure")
+	}
+
+	// The keyset is still good, which is precisely why the failure had to be
+	// counted: nothing in the request path reports it.
+	if _, err := m.Verify(good, "obs"); err != nil {
+		t.Errorf("last-known-good keyset must still verify: %v", err)
 	}
 }
