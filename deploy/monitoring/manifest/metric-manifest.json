@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-14T06:05:53+00:00",
-  "source_revision": "2a0a3ae2af7953dbd7fc36084288c63fb3dd47c2"
+  "generated_at": "2026-09-14T07:16:59+00:00",
+  "source_revision": "81f927d6a278eadbf42f638a91f48bda47718a0d"
  },
  "contract": {
   "total": 239,
@@ -2115,8 +2115,8 @@
    "source": "api/prometheus/ai_metrics.go:352",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
-   "implementation_status": "conditional-with-proven-writer",
-   "activation_precondition": "UNREACHABLE ON CURRENT MAIN for L7 rules: the only C call site (sockproxy_ep.c PROXY_MODE_ALL branch) serves non-L7 protocols and never sees a parsed session header, so no configuration makes this family appear on a fullproxy rule. Fix in loxilb-ebpf-inference-gateway PR #24 records the hit on the PROXY_MODE_DFL learned-binding path; promote to verified-runtime when the submodule pointer includes it.",
+   "implementation_status": "verified-runtime",
+   "activation_precondition": "a fullproxy (L7) rule carrying session_header_name, and at least one session key REUSED within its binding lifetime: the first request per key is a miss that installs the pin, so N requests over K distinct keys record exactly N-K hits. Reachable on main since the submodule pointer bump (gw #191) picked up loxilb-ebpf-inference-gateway #24, which records the hit on the PROXY_MODE_DFL learned-binding path; before that bump the only call site was the PROXY_MODE_ALL branch, which serves non-L7 protocols and never sees a parsed session header.",
    "writer_sources": [
     {
      "symbol": "RecordNormalSessionHit",
@@ -2135,7 +2135,7 @@
      "entry_point": "cgo-export"
     }
    ],
-   "verification_evidence": "defect + fix evidence 2026-09-11 (plan Part E, E.3 row D-6, E.5 row 'WP-4 normal stickiness'): pre-fix live run, fullproxy rule with session_header_name, 15 requests over 3 reused keys -> 12 NS_STICKY_HIT (DFL) log lines, counter absent. Fixed binary (isolated instance, same drive): counter appears at exactly 12 = N-K, matching logs one-for-one; red twin 8 all-unique keys -> unchanged."
+   "verification_evidence": "runtime evidence 2026-09-14 (E.5 row 'wp4-ns-20260914'): re-verified on a build off the BUMPED pin (gw main 81f927d6 / ebpf 8e234fa, image w2live-u24 sha256:78b6c7cb5c40) -- the pointer bump gw #191 is what made ebpf #24's DFL call site reachable. Fullproxy rule 10.10.10.254:8085, sel=rr, session_header_name=X-Session-Id, 2 EPs. Family ABSENT before the drive; 15 requests over 3 reused keys -> counter == 12 == N-K EXACTLY, one-for-one with 12 [NS_STICKY_HIT] (DFL) data-plane log lines. Red twin: 8 all-unique keys -> delta == 0 (a key that is never reused must record nothing). Supersedes the 2026-09-11 hand-built-binary evidence."
   },
   {
    "name": "loxilb_ai_pd_decode_ttft_seconds",
@@ -2636,7 +2636,7 @@
    "source": "api/prometheus/ai_metrics.go:269",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
-   "implementation_status": "conditional-with-proven-writer",
+   "implementation_status": "verified-runtime",
    "activation_precondition": "the token-quota rate-limiter store initialising with no warm peer state -- either no sync peers at all, or peers that did not answer within the warmup deadline. It fires once per process start at most, on the first request that touches the store.",
    "writer_sources": [
     {
@@ -2665,7 +2665,7 @@
      "entry_point": "cgo-export"
     }
    ],
-   "verification_evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): both cold-start branches in getGlobalRL. Scenario M04 owns the runtime proof."
+   "verification_evidence": "runtime evidence 2026-09-14 (E.5 row 'wp2-tpm-20260914', \u00a78 declaration, reviewer confirmed): M03 bed on a build off the BUMPED pin (gw main 81f927d6 / ebpf 8e234fa), image w2live-u24 sha256:78b6c7cb5c40, read back on the container. observed FIRING live rather than inferred from a log: the counter went 0 -> 1 on the node's first token-quota charge and stayed at 1 across every later arm, one-for-one with the single llb1 log line 'token-quota cold-start fail-open' at 07:02:04 UTC, which is the timestamp of that first burst. Supersedes the earlier log-correlation-only evidence."
   },
   {
    "name": "loxilb_ai_token_quota_denied_total",
@@ -2687,7 +2687,7 @@
    "source": "api/prometheus/ai_metrics.go:256",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
-   "implementation_status": "conditional-with-proven-writer",
+   "implementation_status": "verified-runtime",
    "activation_precondition": "a tenant with --tokens-per-min configured whose charged tokens exceed the limit inside the window; without a token limit the branch is never reached.",
    "writer_sources": [
     {
@@ -2708,7 +2708,7 @@
      "note": "the reservation path denies from llb_ai_token_quota_reserve (:757) as well"
     }
    ],
-   "verification_evidence": "api/prometheus/ai_metrics_test.go TestRecordTokenQuotaDenied asserts the labelled delta but drives the helper directly. WP-2 owns the exact assertion: HTTP 429 count == counter delta."
+   "verification_evidence": "runtime evidence 2026-09-14 (E.5 row 'wp2-tpm-20260914', \u00a78 declaration, reviewer confirmed): M03 bed on a build off the BUMPED pin (gw main 81f927d6 / ebpf 8e234fa), image w2live-u24 sha256:78b6c7cb5c40, read back on the container. Arm B: 15 back-to-back requests over a 500-token bucket -> client HTTP-429 ledger == delta EXACTLY, at two different splits on two runs (10 == 10 with 5 admitted, 15 == 15 with 0 admitted). Arm A is the under-limit red twin: delta == 0 with all 5 admitted."
   },
   {
    "name": "loxilb_ai_token_quota_limit_tokens",
@@ -2730,7 +2730,7 @@
    "source": "api/prometheus/ai_metrics.go:517",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
-   "implementation_status": "verified-static",
+   "implementation_status": "verified-runtime",
    "activation_precondition": "a tenant-scoped token limit greater than zero in the live rate-limiter store; zero-limit tenants are skipped rather than exported as 0.",
    "writer_sources": [
     {
@@ -2769,7 +2769,7 @@
      "entry_point": "cgo-export"
     }
    ],
-   "verification_evidence": "api/prometheus/ai_metrics_test.go TestTokenQuotaCollector asserts limit == 200 for the configured tenant through a pedantic registry Gather. Scenario M04 owns the runtime proof."
+   "verification_evidence": "runtime evidence 2026-09-14 (E.5 row 'wp2-tpm-20260914', \u00a78 declaration, reviewer confirmed): M03 bed on a build off the BUMPED pin (gw main 81f927d6 / ebpf 8e234fa), image w2live-u24 sha256:78b6c7cb5c40, read back on the container. read back at exactly 500 for the configured tenant bucket, matching the stored quota returned by GET /config/ai/tenant/ratelimit/t-tpm. Gauge is scrape-time over LIVE buckets, so it is absent until the tenant's first charge -- promoted on an observed sample, not on the config alone."
   },
   {
    "name": "loxilb_ai_token_quota_model_limit_tokens",
@@ -2790,7 +2790,7 @@
    "source": "api/prometheus/ai_metrics.go:527",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
-   "implementation_status": "conditional-with-proven-writer",
+   "implementation_status": "verified-runtime",
    "activation_precondition": "a per-MODEL token limit in the live store; with tenant-only quotas Collect returns before this line.",
    "writer_sources": [
     {
@@ -2829,7 +2829,7 @@
      "entry_point": "cgo-export"
     }
    ],
-   "verification_evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/ai_metrics.go:506. Unasserted by TestTokenQuotaCollector, which uses tenant-scoped states only; scenario M04 owns its proof."
+   "verification_evidence": "runtime evidence 2026-09-14 (E.5 row 'wp2-tpm-20260914', \u00a78 declaration, reviewer confirmed): M03 bed on a build off the BUMPED pin (gw main 81f927d6 / ebpf 8e234fa), image w2live-u24 sha256:78b6c7cb5c40, read back on the container. read back at exactly 1000 for the configured tenant+model bucket. NOTE: the exposition sanitises '/' to '_', so the sample is model=\"Qwen_Qwen3-0.6B\", not the wire model name -- a query keyed on the request's model string reads as an absent family."
   },
   {
    "name": "loxilb_ai_token_quota_model_utilization",
@@ -2852,7 +2852,7 @@
    "source": "api/prometheus/ai_metrics.go:522",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
-   "implementation_status": "conditional-with-proven-writer",
+   "implementation_status": "verified-runtime",
    "activation_precondition": "a per-MODEL token limit (a quota state carrying a non-empty model) in the live store; tenant-only quotas take the other branch of Collect and never emit this family.",
    "writer_sources": [
     {
@@ -2891,7 +2891,7 @@
      "entry_point": "cgo-export"
     }
    ],
-   "verification_evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/ai_metrics.go:504, the model branch of Collect. TestTokenQuotaCollector exercises only tenant-scoped states, so the model families are unasserted; scenario M04 owns their proof."
+   "verification_evidence": "runtime evidence 2026-09-14 (E.5 row 'wp2-tpm-20260914', \u00a78 declaration, reviewer confirmed): M03 bed on a build off the BUMPED pin (gw main 81f927d6 / ebpf 8e234fa), image w2live-u24 sha256:78b6c7cb5c40, read back on the container. observed at 0.198 for the tenant+model bucket while the tenant bucket read 0.448, confirming the two are separate buckets. Same label sanitisation as model_limit_tokens."
   },
   {
    "name": "loxilb_ai_token_quota_utilization",
@@ -2913,7 +2913,7 @@
    "source": "api/prometheus/ai_metrics.go:512",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
-   "implementation_status": "verified-static",
+   "implementation_status": "verified-runtime",
    "activation_precondition": "a tenant-scoped token limit greater than zero in the live rate-limiter store; the collector deliberately skips zero-limit tenants, so an unconfigured Gateway exports nothing.",
    "writer_sources": [
     {
@@ -2953,7 +2953,7 @@
      "entry_point": "cgo-export"
     }
    ],
-   "verification_evidence": "api/prometheus/ai_metrics_test.go TestTokenQuotaCollector gathers through a pedantic registry -- the collector's real entry point -- and asserts 0.25, the 1.5 overshoot, the zero-limit skip and the first-wins duplicate. Scenario M04 owns the runtime proof."
+   "verification_evidence": "runtime evidence 2026-09-14 (E.5 row 'wp2-tpm-20260914', \u00a78 declaration, reviewer confirmed): M03 bed on a build off the BUMPED pin (gw main 81f927d6 / ebpf 8e234fa), image w2live-u24 sha256:78b6c7cb5c40, read back on the container. observed in range across arms (0.448 after Arm A, 0.89 after a drained-bucket run), moving with the bucket as the declaration predicts."
   },
   {
    "name": "loxilb_ai_tokens_consumed_total",
@@ -2977,7 +2977,7 @@
    "source": "api/prometheus/ai_metrics.go:207",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
-   "implementation_status": "conditional-with-proven-writer",
+   "implementation_status": "verified-runtime",
    "activation_precondition": "a tenant with --tokens-per-min set on an API-key-enabled rule, and a completed response the quota path charges. The writer returns early when prompt+completion is zero, so a charge of nothing leaves the family absent.",
    "writer_sources": [
     {
@@ -2997,7 +2997,7 @@
      "entry_point": "cgo-export"
     }
    ],
-   "verification_evidence": "metric coverage RCA and plan, section A.3 -- CGO call-site table; exact-delta assertions specified in WP-2"
+   "verification_evidence": "runtime evidence 2026-09-14 (E.5 row 'wp2-tpm-20260914', \u00a78 declaration, reviewer confirmed): M03 bed on a build off the BUMPED pin (gw main 81f927d6 / ebpf 8e234fa), image w2live-u24 sha256:78b6c7cb5c40, read back on the container. Arm A: 5 non-streaming requests against a usage-echo backend fixed at usage {30,20} -> delta prompt == 150 and completion == 100 EXACTLY, twice independently. Arm B reproduced the identity at a different admit/deny split (5 admitted -> 150/100; 0 admitted -> 0/0)."
   },
   {
    "name": "loxilb_ai_tokens_estimated_total",
@@ -3063,7 +3063,7 @@
    "source": "api/prometheus/ai_metrics.go:242",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
-   "implementation_status": "conditional-with-proven-writer",
+   "implementation_status": "verified-runtime",
    "activation_precondition": "AI traffic whose responses carry no usage object. The family partitions on how the response was charged, not on a single branch: a STREAMED response falls back to the estimate net (RecordTokenUsage estimated arm, which also feeds loxilb_ai_tokens_estimated_total), while a NON-STREAMED one is reported by RecordTokenUsageMissing and charged nothing. This family is therefore a superset of the estimated one, and the gap between them is the uncharged non-streamed half. Restricted to SUCCESSFUL (2xx) responses: an error body carries no usage object either, but it completed no work, so it is not an accounting hole and the data plane does not report it. Without that test a backend outage would drive the family harder than the condition it reports.",
    "writer_sources": [
     {
@@ -3084,7 +3084,7 @@
      "entry_point": "cgo-export"
     }
    ],
-   "verification_evidence": "metric coverage RCA and plan, section A.3; WP-2 asserts this equals the number of no-usage responses exactly. api/prometheus/ai_metrics_test.go TestRecordTokenUsageMissing_ReportsWithoutCharging pins the non-streamed writer at zero charge and TestRecordTokenUsageMissing_KeylessIsNotLabelled pins the attributed-only rule; scenario leg U (cicd/ai-jwtauth) drives a no-usage backend against a with-usage control"
+   "verification_evidence": "runtime evidence 2026-09-14 (E.5 row 'wp2-tpm-20260914', \u00a78 declaration, reviewer confirmed): M03 bed on a build off the BUMPED pin (gw main 81f927d6 / ebpf 8e234fa), image w2live-u24 sha256:78b6c7cb5c40, read back on the container. Red twin (M05): usage-echo OFF so every response completes without a usage object -> delta{t-est} == 3 EXACTLY, one per completed response, while the exact branch's delta{t-tpm} stayed 0 across the same twin. This is the counter half of W2-1; its CHARGING half is still open by decision -- the estimate net is SSE-only (sockproxy_http.c:1871/1889/1904), so the same three responses charged nothing (delta estimated == 0, delta consumed == 0)."
   },
   {
    "name": "loxilb_ai_unmetered_requests_total",
