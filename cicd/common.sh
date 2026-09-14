@@ -161,10 +161,10 @@ spawn_docker_host() {
       sudo mkdir -p /etc/shared/$dname/
       docker run -u root --cap-add SYS_ADMIN   --restart unless-stopped --privileged -dt $docker_extra_opts --entrypoint /bin/bash $bgp_conf -v /dev/log:/dev/log -v /etc/shared/$dname:/etc/shared $loxilb_config --name $dname $lxdocker
       get_llb_peerIP $dname
-      docker exec -dt $dname /root/loxilb-io/loxilb/loxilb $bgp_opts $cluster_opts $ka_opts $prom_opts $extra_opts
+      docker exec -d $dname bash -c "/root/loxilb-io/loxilb/loxilb $bgp_opts $cluster_opts $ka_opts $prom_opts $extra_opts > /tmp/loxilb.out 2> /tmp/loxilb.err"
     else
       docker run -u root --cap-add SYS_ADMIN   --restart unless-stopped --privileged -dt $docker_extra_opts --entrypoint /bin/bash $bgp_conf -v /dev/log:/dev/log -v `pwd`/cert:/opt/loxilb/cert/ $loxilb_config --name $dname $lxdocker $bgp_opts
-      docker exec -dt $dname /root/loxilb-io/loxilb/loxilb $bgp_opts $cluster_opts $prom_opts $extra_opts
+      docker exec -d $dname bash -c "/root/loxilb-io/loxilb/loxilb $bgp_opts $cluster_opts $prom_opts $extra_opts > /tmp/loxilb.out 2> /tmp/loxilb.err"
     fi
   elif [[ "$dtype" == "host" ]]; then
     if [[ ! -z "$bpath" ]]; then
