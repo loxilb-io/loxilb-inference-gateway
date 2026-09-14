@@ -4,12 +4,20 @@
 # NOTE: GitHub reads .github/CODEOWNERS with precedence over a root CODEOWNERS —
 # this is the single authoritative file. Order matters: the LAST matching
 # pattern for a path wins. Every listed owner must have write access.
-# Handles per MAINTAINERS.md (maintainer council) + the fork release engineer.
+# Handles per MAINTAINERS.md (maintainer council), the fork release engineer,
+# and the loxilb-devel review account.
 
 # ---------------------------------------------------------------------------
-# Default owners — the maintainer council (mirrors loxilb-io/loxilb)
+# Default owners — the maintainer council (mirrors loxilb-io/loxilb), plus the
+# loxilb-devel review account.
+#
+# loxilb-devel is listed HERE ONLY, by decision. Because the last matching
+# pattern wins, that means it is auto-requested for paths no narrower pattern
+# below claims — not for the fork's AI-gateway, CI, monitoring or docs paths,
+# which have their own owner lines. Widen it by adding the handle to those
+# lines too; adding it here again will not do it.
 # ---------------------------------------------------------------------------
-*                                   @TrekkieCoder @UltraInstinct14 @backguynn @inhogog2 @NLX-SeokHwanKong
+*                                   @TrekkieCoder @UltraInstinct14 @backguynn @inhogog2 @NLX-SeokHwanKong @loxilb-devel
 
 # ---------------------------------------------------------------------------
 # Inference-gateway (AI) control plane — added in this fork
