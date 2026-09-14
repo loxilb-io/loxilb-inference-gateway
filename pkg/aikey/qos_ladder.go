@@ -80,9 +80,6 @@ var (
 		` ON CONFLICT (tenant_id, user_id, model) DO UPDATE SET`+
 		` tokens_per_min = EXCLUDED.tokens_per_min, updated_at = EXCLUDED.updated_at`, Schema)
 
-	sqlDeleteUserModelRateLimit = fmt.Sprintf(
-		`DELETE FROM %s.user_model_rate_limits WHERE tenant_id = $1 AND user_id = $2 AND model = $3`, Schema)
-
 	sqlDeleteUserModelRateLimits = fmt.Sprintf(
 		`DELETE FROM %s.user_model_rate_limits WHERE tenant_id = $1 AND user_id = $2`, Schema)
 

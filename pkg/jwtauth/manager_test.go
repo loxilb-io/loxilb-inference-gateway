@@ -18,6 +18,7 @@ package jwtauth
 
 import (
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -331,6 +332,9 @@ func TestProfileValidation(t *testing.T) {
 		{"negative leeway", Profile{Name: "p", Issuer: "https://idp.example", LeewaySec: -1}},
 		{"negative refresh", Profile{Name: "p", Issuer: "https://idp.example", RefreshSec: -1}},
 		{"bad model authz", Profile{Name: "p", Issuer: "https://idp.example", ModelAuthz: "maybe"}},
+		// One byte over the rule-reference limit: accepted, it would be a
+		// profile no service rule could ever name.
+		{"name over the reference limit", Profile{Name: strings.Repeat("q", 64), Issuer: "https://idp.example"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -341,6 +345,12 @@ func TestProfileValidation(t *testing.T) {
 	}
 	if got := len(m.Profiles()); got != 0 {
 		t.Fatalf("%d profiles active after rejected sets", got)
+	}
+	// The green side of the same bound: exactly 63 bytes is accepted, so the
+	// two limits meet instead of leaving a band of names one API takes and
+	// the other cannot reference.
+	if err := m.SetProfile(Profile{Name: strings.Repeat("p", 63), Issuer: "https://idp.example"}); err != nil {
+		t.Fatalf("63-byte profile name rejected: %v", err)
 	}
 }
 

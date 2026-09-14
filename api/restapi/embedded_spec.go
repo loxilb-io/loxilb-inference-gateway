@@ -6035,7 +6035,7 @@ func init() {
           "type": "integer"
         },
         "vip_shared_tpm": {
-          "description": "LLM tokens per minute shared by ALL keyless traffic on the service",
+          "description": "LLM tokens per minute for the service's shared bucket, charged by every token-metered response on the service — credentialed and keyless alike, with the exact usage extracted at response settle. Keyless requests carry no pre-admission reservation: the bucket's debt denies the NEXT keyless admission once spend crosses the bound",
           "format": "int64",
           "type": "integer"
         }
@@ -6046,7 +6046,7 @@ func init() {
       "type": "object"
     },
     "RateLimitDefaultsMod": {
-      "description": "One defaults row of the QoS ladder (level 3). Scope 'global' takes no rule_ident; scope 'rule' requires one and overrides the global row field-wise for that service. Zero fields fall through; an entry whose limit fields are all zero is rejected. vip_shared_* arm the opt-in shared bucket for keyless traffic on non-enforcing services.",
+      "description": "One defaults row of the QoS ladder (level 3). Scope 'global' takes no rule_ident; scope 'rule' requires one and overrides the global row field-wise for that service. Zero fields fall through; an entry whose limit fields are all zero is rejected. vip_shared_* arm the opt-in per-service shared bucket; see the two fields for which traffic each side of it bounds.",
       "properties": {
         "default_tenant_rps": {
           "description": "Requests per second for tenants without an explicit entry",
@@ -6086,7 +6086,7 @@ func init() {
           "type": "integer"
         },
         "vip_shared_tpm": {
-          "description": "LLM tokens per minute shared by ALL keyless traffic on the service",
+          "description": "LLM tokens per minute for the service's shared bucket, charged by every token-metered response on the service — credentialed and keyless alike, with the exact usage extracted at response settle. Keyless requests carry no pre-admission reservation: the bucket's debt denies the NEXT keyless admission once spend crosses the bound",
           "format": "int64",
           "type": "integer"
         }
@@ -39189,14 +39189,14 @@ func init() {
           "format": "int64"
         },
         "vip_shared_tpm": {
-          "description": "LLM tokens per minute shared by ALL keyless traffic on the service",
+          "description": "LLM tokens per minute for the service's shared bucket, charged by every token-metered response on the service — credentialed and keyless alike, with the exact usage extracted at response settle. Keyless requests carry no pre-admission reservation: the bucket's debt denies the NEXT keyless admission once spend crosses the bound",
           "type": "integer",
           "format": "int64"
         }
       }
     },
     "RateLimitDefaultsMod": {
-      "description": "One defaults row of the QoS ladder (level 3). Scope 'global' takes no rule_ident; scope 'rule' requires one and overrides the global row field-wise for that service. Zero fields fall through; an entry whose limit fields are all zero is rejected. vip_shared_* arm the opt-in shared bucket for keyless traffic on non-enforcing services.",
+      "description": "One defaults row of the QoS ladder (level 3). Scope 'global' takes no rule_ident; scope 'rule' requires one and overrides the global row field-wise for that service. Zero fields fall through; an entry whose limit fields are all zero is rejected. vip_shared_* arm the opt-in per-service shared bucket; see the two fields for which traffic each side of it bounds.",
       "type": "object",
       "required": [
         "scope"
@@ -39240,7 +39240,7 @@ func init() {
           "format": "int64"
         },
         "vip_shared_tpm": {
-          "description": "LLM tokens per minute shared by ALL keyless traffic on the service",
+          "description": "LLM tokens per minute for the service's shared bucket, charged by every token-metered response on the service — credentialed and keyless alike, with the exact usage extracted at response settle. Keyless requests carry no pre-admission reservation: the bucket's debt denies the NEXT keyless admission once spend crosses the bound",
           "type": "integer",
           "format": "int64"
         }

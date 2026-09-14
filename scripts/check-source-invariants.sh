@@ -308,6 +308,63 @@ else
   pass "auth/bearer flag bits are lockstep between C and Go"
 fi
 
+# ---------------------------------------------------------------------------
+# 9. Exported-function arity is lockstep between the C header and Go.
+#
+# The C callers and the Go //exports meet at the linker by SYMBOL NAME ONLY:
+# nothing checks that both sides agree on the parameter list. When an export
+# gains a parameter on one side while the checked-out submodule still calls
+# the old shape, the build succeeds and the extra arguments are read from
+# whatever the registers happen to hold — a datapath crash (or worse, a
+# GoString over a garbage pointer) on the first admission, not a compile
+# error. This check compares the parameter COUNT of every extern prototype
+# in the gate header against its Go //export twin, so a pin/export mismatch
+# turns red here instead of at runtime.
+#
+# Counting is by top-level comma; neither side declares function-typed or
+# grouped parameters in this surface, and if one ever appears the check
+# fails loud rather than guessing.
+# ---------------------------------------------------------------------------
+c_param_count() { # c_param_count <name> — arity of the extern prototype
+  sed -n "/extern int $1(/,/);/p" "$C_DECL" | tr '\n' ' ' \
+    | sed -e "s/.*$1(//" -e 's/).*//' \
+    | awk -F',' '{ gsub(/^[ \t]+|[ \t]+$/, ""); if ($0 == "" || $0 == "void") print 0; else print NF }'
+}
+arity_bad=""
+arity_checked=0
+for name in $(grep -ohE 'extern int (llb_[a-z0-9_]+)\(' "$C_DECL" | sed -e 's/extern int //' -e 's/($//' -e 's/(.*//'); do
+  gofile="$(grep -rlE "^//export $name\$" pkg/loxinet/*.go 2>/dev/null | head -1)"
+  # Header-declared, no Go export: the weak stub covers it; section 7 owns
+  # whether that is allowed for a given symbol. Arity has nothing to check.
+  [ -z "$gofile" ] && continue
+  # The Go signature may span lines and group names under one type
+  # ("text, modelName *C.char" is TWO parameters — so is its C twin, and
+  # top-level commas count identically on both sides). Flatten up to the
+  # first ')' after the //export marker; parameters carry no parentheses.
+  goflat="$(grep -A16 "^//export $name\$" "$gofile" | tail -n +2 | tr '\n' ' ')"
+  case "$goflat" in
+    "func $name("*) ;;
+    *) arity_bad="$arity_bad $name(no-func-after-export)"; continue ;;
+  esac
+  gcount="$(printf '%s' "$goflat" | sed -e "s/^func $name(//" -e 's/).*//' \
+    | awk -F',' '{ gsub(/^[ \t]+|[ \t]+$/, ""); if ($0 == "") print 0; else print NF }')"
+  ccount="$(c_param_count "$name")"
+  arity_checked=$((arity_checked + 1))
+  if [ -z "$ccount" ] || [ -z "$gcount" ] || [ "$ccount" != "$gcount" ]; then
+    arity_bad="$arity_bad $name(C=$ccount,Go=$gcount)"
+  fi
+done
+if [ "$arity_checked" -lt 6 ]; then
+  # The parser finding almost nothing is its own failure: a header rename
+  # must not turn this check into a vacuous pass.
+  fail "export-arity check matched only $arity_checked symbols — parser or header moved"
+elif [ -n "$arity_bad" ]; then
+  fail "export arity disagrees between the pinned C header and the Go exports:$arity_bad"
+  printf '          the checked-out loxilb-ebpf pin and the Go //export signatures must move together\n'
+else
+  pass "export arity is lockstep between C header and Go exports ($arity_checked symbols)"
+fi
+
 echo "==========================="
 if [ "$FAILED" = "0" ]; then echo "ALL INVARIANTS HOLD"; else echo "INVARIANTS VIOLATED"; fi
 exit "$FAILED"
