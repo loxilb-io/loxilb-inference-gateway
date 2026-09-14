@@ -55,6 +55,21 @@ func TestAbsentKeyStoreDistinguishesUnconfiguredFromUnreachable(t *testing.T) {
 		"NetAPIKeyPatch":        func() error { return na.NetAPIKeyPatch("k", nil, &enabled) },
 		"NetTenantRateLimitSet": func() error { return na.NetTenantRateLimitSet("t", 1, 1, 1, nil) },
 		"NetTenantRateLimitGet": func() error { _, err := na.NetTenantRateLimitGet("t"); return err },
+		"NetAPIKeyRateLimitPatch": func() error {
+			one := 1
+			return na.NetAPIKeyRateLimitPatch("k", &one, nil, nil)
+		},
+		"NetUserRateLimitSet": func() error {
+			return na.NetUserRateLimitSet(cmn.UserRateLimitEntry{TenantID: "t", UserID: "u", RPS: 1})
+		},
+		"NetUserRateLimitGet":    func() error { _, err := na.NetUserRateLimitGet("t", "u"); return err },
+		"NetUserRateLimitList":   func() error { _, err := na.NetUserRateLimitList("t"); return err },
+		"NetUserRateLimitDelete": func() error { return na.NetUserRateLimitDelete("t", "u") },
+		"NetRateLimitDefaultsSet": func() error {
+			return na.NetRateLimitDefaultsSet(cmn.RateLimitDefaultsEntry{Scope: cmn.RateLimitScopeGlobal, DefaultUserRPS: 1})
+		},
+		"NetRateLimitDefaultsGet":    func() error { _, err := na.NetRateLimitDefaultsGet(cmn.RateLimitScopeGlobal, ""); return err },
+		"NetRateLimitDefaultsDelete": func() error { return na.NetRateLimitDefaultsDelete(cmn.RateLimitScopeGlobal, "") },
 	}
 
 	opts.Opts.AIKeyDBHost = ""

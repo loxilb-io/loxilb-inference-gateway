@@ -137,6 +137,19 @@ var RouteLifecycles = []RouteLifecycle{
 	{Method: "post", Path: "/config/ai/apikey", Class: ClassExternalStore, Area: AreaAIKeys, DesiredState: true},
 	{Method: "delete", Path: "/config/ai/apikey/{key_id}", Class: ClassExternalStore, Area: AreaAIKeys, DesiredState: true},
 	{Method: "post", Path: "/config/ai/tenant/ratelimit", Class: ClassExternalStore, Area: AreaAIRateLimit, DesiredState: true},
+	// The QoS ladder's other two configurable levels. Same class as the
+	// tenant limit above and for the same reason: level 1 (explicit
+	// per-user limits) and level 3 (the configurable defaults) are rows in
+	// the same key/quota database — user_rate_limits, user_model_rate_limits
+	// and rate_limit_defaults in pkg/aikey/schema.go — so they are recovered
+	// from that store at boot and are deliberately NOT embedded in the
+	// snapshot document. Level 2 (per-tenant) and level 4 (the built-in
+	// fallback) add no routes: the former is the entry above, the latter is
+	// compiled in and has no API at all.
+	{Method: "post", Path: "/config/ai/user/ratelimit", Class: ClassExternalStore, Area: AreaAIRateLimit, DesiredState: true},
+	{Method: "delete", Path: "/config/ai/user/ratelimit/{tenant_id}/{user_id}", Class: ClassExternalStore, Area: AreaAIRateLimit, DesiredState: true},
+	{Method: "post", Path: "/config/ai/ratelimit/defaults", Class: ClassExternalStore, Area: AreaAIRateLimit, DesiredState: true},
+	{Method: "delete", Path: "/config/ai/ratelimit/defaults/{scope}", Class: ClassExternalStore, Area: AreaAIRateLimit, DesiredState: true},
 
 	// --- Snapshot domains (doc.go Domains struct).
 	{Method: "post", Path: "/config/endpoint", Class: ClassSnapshot, Area: DomainEndpoint, DesiredState: true},

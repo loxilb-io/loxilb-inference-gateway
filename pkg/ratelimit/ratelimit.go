@@ -359,6 +359,78 @@ func (s *RateLimiterStore) CheckKey(keyID string, rps, burst int) (allowed bool,
 	return s.check("k:"+keyID, rps, burst)
 }
 
+// UserRPSKey is the per-user limiter-map key: user identities are only
+// meaningful inside their tenant, so the bucket is keyed by the pair. The
+// "|" delimiter matches the quota scopes' convention; identities containing
+// it are rejected at config/claims time so no pair can alias another.
+func UserRPSKey(tenantID, userID string) string {
+	return "u:" + tenantID + "|" + userID
+}
+
+// UserQuotaKey is the per-user token-quota map key (scope-prefixed — the
+// ladder scopes carry their wire prefix in the map key, see QuotaWireKey).
+func UserQuotaKey(tenantID, userID string) string {
+	return "uq:" + tenantID + "|" + userID
+}
+
+// UserModelQuotaKey is the per-user-per-model token-quota map key.
+func UserModelQuotaKey(tenantID, userID, model string) string {
+	return "um:" + tenantID + "|" + userID + "|" + model
+}
+
+// KeyQuotaKey is the per-key token-quota map key (the API key's own
+// tokens_per_min, ladder level 1.5).
+func KeyQuotaKey(keyID string) string {
+	return "kq:" + keyID
+}
+
+// VipSharedQuotaKey is the opt-in shared keyless-bucket quota map key for a
+// none-mode service.
+func VipSharedQuotaKey(svcIdent string) string {
+	return "v:" + svcIdent
+}
+
+// CheckUser tests whether a request attributed to (tenantID, userID) is
+// within the given per-user rate limit. The limit arrives resolved — the
+// caller owns the ladder (explicit user row, or a default) — so this
+// function stays a plain bucket check like CheckKey/CheckTenant.
+//
+// rps <= 0 skips the check (no per-user limit resolved). burst <= 0
+// defaults to rps.
+func (s *RateLimiterStore) CheckUser(tenantID, userID string, rps, burst int) (allowed bool, retryAfterSecs int) {
+	if rps <= 0 || userID == "" {
+		return true, 0
+	}
+	if burst <= 0 {
+		burst = rps
+	}
+	return s.check(UserRPSKey(tenantID, userID), rps, burst)
+}
+
+// UpdateUser replaces (or creates) the per-user rate limiter with a fresh
+// bucket. Call on user rate-limit config changes so the live bucket follows
+// the config immediately instead of after the cache TTL.
+func (s *RateLimiterStore) UpdateUser(tenantID, userID string, rps, burst int) {
+	if userID == "" {
+		return
+	}
+	if burst <= 0 {
+		burst = rps
+	}
+	s.update(UserRPSKey(tenantID, userID), rps, burst)
+}
+
+// CheckVipShared tests a keyless request against a service's opt-in shared
+// bucket. Everything keyless on the service shares the one bucket — that is
+// the point: it bounds what unattributed traffic can take from the backends
+// without pretending to know who sent it.
+func (s *RateLimiterStore) CheckVipShared(svcIdent string, rps int) (allowed bool, retryAfterSecs int) {
+	if rps <= 0 || svcIdent == "" {
+		return true, 0
+	}
+	return s.check(VipSharedQuotaKey(svcIdent), rps, rps)
+}
+
 // CheckTenant tests whether a request associated with tenantID is within the
 // configured per-tenant rate limit.
 //

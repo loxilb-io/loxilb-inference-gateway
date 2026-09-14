@@ -225,14 +225,24 @@ var (
 		[]string{"model", "tenant"},
 	)
 
-	// aiTokensMissingTotal counts completed responses that produced no
-	// readable usage object, so the estimate net had to price the charge.
-	// Counts responses (not tokens); pair with aiTokensEstimatedTotal for
-	// the token-weighted view.
+	// aiTokensMissingTotal counts SUCCESSFUL responses that produced no
+	// readable usage object. Two writers reach it and they charge
+	// differently, so it is NOT a subset of the estimated series: a streamed
+	// response falls back to the estimate net (RecordTokenUsage's estimated
+	// arm, which also feeds aiTokensEstimatedTotal), while a non-streamed one
+	// is charged nothing at all (RecordTokenUsageMissing). Counts responses,
+	// not tokens — missing >= the number of responses in
+	// aiTokensEstimatedTotal, and the gap is the uncharged non-streamed half.
+	//
+	// An error response is NOT counted. The family reports an accounting hole
+	// — work that should have been charged and could not be — and a backend
+	// answering 4xx/5xx completed no work, so carrying no usage is correct
+	// rather than missing. Counting it would let a backend outage drive the
+	// series harder than the condition it exists to report.
 	aiTokensMissingTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "loxilb_ai_tokens_missing_total",
-			Help: "Total completed AI Gateway responses with no readable usage object (charge fell back to the estimate net), by model and tenant.",
+			Help: "Total successful (2xx) AI Gateway responses with no readable usage object, by model and tenant. A streamed response was charged from the estimate net; a non-streamed one was charged nothing. Error responses are excluded -- they completed no work, so carrying no usage is correct rather than missing.",
 		},
 		[]string{"model", "tenant"},
 	)
@@ -431,6 +441,45 @@ func RecordTokenUsage(modelName, tenantID string, promptTokens, completionTokens
 		aiTokensEstimatedTotal.WithLabelValues(model, tenant).Add(float64(promptTokens + completionTokens))
 		aiTokensMissingTotal.WithLabelValues(model, tenant).Inc()
 	}
+}
+
+// RecordTokenUsageMissing counts ONE completed response that produced no
+// readable usage object, and charges nothing.
+//
+// loxilb_ai_tokens_missing_total documents itself as counting completed AI
+// Gateway responses with no readable usage object — every such response, not
+// only the streaming ones. It was reachable solely through RecordTokenUsage's
+// estimated arm, which the data plane sets exclusively on the SSE terminator,
+// so a non-streamed response whose body carried no usage object incremented
+// nothing at all: the one condition the counter exists to expose was invisible
+// for that shape.
+//
+// Deliberately separate from RecordTokenUsage rather than folded into it, and
+// charging nothing is a SETTLED decision rather than an unfinished one: these
+// responses stay free. Charging is not reversible the way reporting is — an
+// estimate can trip the quota latch and deny the tenant's NEXT request, for
+// traffic that costs them nothing today — and the estimate available here is
+// weaker than the streaming one anyway: a non-streamed response has no chunk
+// count, so there is no completion-side signal at all, only the prompt.
+// Revisit if loxilb_ai_tokens_missing_total shows real volume in production;
+// that counter exists precisely so the question can be reopened with data
+// instead of a guess. It therefore touches neither the consumed nor the
+// estimated series.
+//
+// Attributed-only, like every other per-tenant usage family: a keyless
+// response has no tenant to label it with, and llb_ai_token_quota_consume
+// already skips RecordTokenUsage on exactly that condition because an empty
+// tenant label reads as a scrape bug. The data plane cannot make that call for
+// us — it reports from the response boundary, where an api_key_auth=disabled
+// service has a completed AI response and no tenant — so the guard lives here,
+// once, for both call sites. Keyless volume stays visible per VIP in
+// loxilb_ai_unmetered_requests_total.
+func RecordTokenUsageMissing(modelName, tenantID string) {
+	tenant := sanitizeLabel(tenantID)
+	if tenant == "" {
+		return
+	}
+	aiTokensMissingTotal.WithLabelValues(boundModelLabel(modelName), tenant).Inc()
 }
 
 // RecordTokenQuotaColdOpen increments loxilb_ai_token_quota_cold_open_total.

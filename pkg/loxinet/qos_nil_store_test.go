@@ -57,7 +57,7 @@ func TestU21_QoSFailsClosedWithNoKeyStore(t *testing.T) {
 	// With a service, the tight limits bite within a handful of requests.
 	deniedWithService := false
 	for i := 0; i < 20; i++ {
-		decision, _, _ := rateLimitCheckInternal(limited, store, key, tenant, model)
+		decision, _, _ := rateLimitCheckInternal(limited, store, key, tenant, "", "", model)
 		if decision != 0 {
 			deniedWithService = true
 			break
@@ -71,7 +71,7 @@ func TestU21_QoSFailsClosedWithNoKeyStore(t *testing.T) {
 	// outage, from the very first request — never admitted against limits
 	// nobody can read, and never blamed on the credential.
 	storeNil := rl.New()
-	decision, _, code := rateLimitCheckInternal(nil, storeNil, key, tenant, model)
+	decision, _, code := rateLimitCheckInternal(nil, storeNil, key, tenant, "", "", model)
 	if decision != 4 || code != "policy_store_unavailable" {
 		t.Fatalf("keyed identity with no key store: got decision=%d code=%q, want the fail-closed store verdict — the inert no-op this test used to pin has come back", decision, code)
 	}
@@ -79,7 +79,7 @@ func TestU21_QoSFailsClosedWithNoKeyStore(t *testing.T) {
 	// The empty identity still passes: nothing attributes it, so there is
 	// no limit to fail closed on.
 	for i := 0; i < 200; i++ {
-		decision, _, code := rateLimitCheckInternal(nil, storeNil, "", "", "")
+		decision, _, code := rateLimitCheckInternal(nil, storeNil, "", "", "", "", "")
 		if decision != 0 {
 			t.Fatalf("request %d: non-attributing traffic was denied (code=%q) — the fail-closed guard has grown past keyed identities", i, code)
 		}
@@ -105,4 +105,19 @@ func (s *stubRateLimitService) GetTenantModelRateLimit(tenantID, model string) (
 
 func (s *stubRateLimitService) GetAPIKeyByID(keyID string) (*cmn.ApiKeySummary, error) {
 	return &cmn.ApiKeySummary{RateLimitRPS: s.keyRPS, BurstSize: s.keyBurst}, nil
+}
+
+// The ladder reads: this stub pre-dates them and configures none, so they
+// answer "nothing explicit, no defaults" — the fall-through the ladder
+// takes on any deployment that has not opted in.
+func (s *stubRateLimitService) GetUserRateLimit(tenantID, userID string) (int, int, int, error) {
+	return 0, 0, 0, s.limitsErr
+}
+
+func (s *stubRateLimitService) GetUserModelRateLimit(tenantID, userID, model string) (int, error) {
+	return 0, s.limitsErr
+}
+
+func (s *stubRateLimitService) GetRateLimitDefaults(scope, ruleIdent string) (cmn.RateLimitDefaultsEntry, bool, error) {
+	return cmn.RateLimitDefaultsEntry{}, false, s.limitsErr
 }
