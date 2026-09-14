@@ -15,6 +15,22 @@ hide in a large sockproxy diff:
   may arm accounting but cannot consume a backend-owned X-Api-Key on an
   undeclared service.
 
+The datapath symbols this gate anchors on are ONE gate and ONE removal
+primitive, shared by both protocols:
+
+* ai_gw_admit() is the admission gate. It replaced the H2-only
+  ai_security_admit() arm, which consulted the API-key check regardless of what
+  the service declared and so let the two protocol paths disagree about one
+  service's authentication mode.
+* ai_security_h2_upstream_hygiene() is the removal primitive and owns the
+  ai_security_should_strip_api_key() predicate. ai_security_filter_h2_headers()
+  still exists but is now a thin wrapper that delegates to it, so asserting on
+  the wrapper would assert on nothing.
+
+Anchoring on a renamed symbol is how this gate fails OPEN, so the names above
+are load-bearing: if the datapath renames either one, update this file rather
+than relaxing the assertion.
+
 The HTTP/1 denial escape hatch is retained as a fourth invariant: a callback
 denial must leave the read loop before setup_proxy_path() can dispatch it.
 """
@@ -49,6 +65,19 @@ def function_body(text: str, name: str) -> str:
     raise AssertionError(f"function {name} has no closing brace")
 
 
+def call_site(body: str, name: str) -> int:
+    """Offset of a CALL to `name`, never of an identifier that merely contains it.
+
+    The admission gate's own result type is ai_gw_admit_result_t and its
+    declaration precedes the call, so a plain substring search would anchor
+    "admission" ~30 bytes early. Every "a selector must not precede admission"
+    comparison below is measured against that offset, so an early anchor
+    silently widens the window in which a selector could hide.
+    """
+    match = re.search(rf"\b{re.escape(name)}\s*\(", body)
+    return match.start() if match else -1
+
+
 def ordered(body: str, *needles: str) -> None:
     positions = []
     for needle in needles:
@@ -79,7 +108,7 @@ def main() -> int:
         raise AssertionError("HTTP/2 x-api-key capture does not use the bounded helper")
 
     forward = code_only(function_body(h2, "proxy_h2_forward_to_backend"))
-    admission = forward.find("ai_security_admit")
+    admission = call_site(forward, "ai_gw_admit")
     if admission < 0:
         raise AssertionError("HTTP/2 forward path has no AI security admission gate")
     for call in re.findall(r"log_[a-z]+\s*\(.*?\);", forward, flags=re.S):
@@ -97,11 +126,11 @@ def main() -> int:
     ordered(
         forward,
         "proxy_h2_build_l7_req_headers",
-        "ai_security_filter_h2_headers",
+        "ai_security_h2_upstream_hygiene",
         "nghttp2_submit_request",
     )
 
-    strip_h2 = code_only(function_body(security, "ai_security_filter_h2_headers"))
+    strip_h2 = code_only(function_body(security, "ai_security_h2_upstream_hygiene"))
     if "ai_security_should_strip_api_key(policy)" not in strip_h2:
         raise AssertionError("HTTP/2 header filter bypasses the shared policy-ownership predicate")
     if "ai_gw_mode" in strip_h2:
