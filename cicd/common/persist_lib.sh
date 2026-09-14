@@ -358,10 +358,28 @@ plib_collect_logs() {
         grep -nE -A25 "panic: |runtime error:|fatal error: " \
             "$PLIB_ARTIFACTS/loxilb.dockerlog.tail" 2>/dev/null | head -40 | sed 's/^/    /'
     fi
+    # Scrubbing is not optional -- snapshots embed tunnel PSKs and private-key
+    # PEM -- but it leaves a document that can no longer be replayed: the
+    # checksum is gone, so a restore of it answers 400. Say so IN the file and
+    # record what the original was, because the failure being diagnosed is
+    # usually "the gateway rejected this exact document" and a silent
+    # substitution sends the reader chasing the wrong one. -c keeps the
+    # encoding compact rather than reflowing it, so the recorded size stays
+    # comparable to what the suite actually sent.
     for f in "$PLIB_ARTIFACTS"/*.json; do
         [ -f "$f" ] || continue
         if sudo jq -e '.domains.ipsec?' "$f" >/dev/null 2>&1; then
-            sudo jq '.domains.ipsec = {"scrubbed": true} | .checksum = "scrubbed"' "$f" > "$f.scrub" \
+            local osize osum
+            osize=$(sudo stat -c %s "$f" 2>/dev/null)
+            osum=$(sudo sha256sum "$f" 2>/dev/null | cut -d" " -f1)
+            sudo jq -c --arg size "$osize" --arg sum "$osum" \
+                '.domains.ipsec = {"scrubbed": true}
+                 | .checksum = "scrubbed"
+                 | ._scrubbed = {
+                     "note": "ipsec domain and checksum removed before upload; this document can NOT be restored (400) and is not byte-identical to the one the suite sent",
+                     "original_bytes": ($size | tonumber? // $size),
+                     "original_sha256": $sum
+                   }' "$f" > "$f.scrub" \
                 && sudo mv "$f.scrub" "$f"
         fi
     done
