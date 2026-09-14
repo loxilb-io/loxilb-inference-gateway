@@ -137,6 +137,18 @@ jobs:
           ./validation.sh
           ./rmconfig.sh
           cd -
+      # The other half of the model contract: one body-first resolution shared
+      # by authorization and routing, and a hard 400 when the body and the
+      # X-Model header disagree. It ran only in the local runner, so a change
+      # that agreed with the router but disagreed with the authorizer reached
+      # main ungated.
+      - name: Effective-model contract on enforcing services
+        run: |
+          cd cicd/ai-model-conflict/
+          ./config.sh
+          ./validation.sh
+          ./rmconfig.sh
+          cd -
       - name: Endpoint health fans out to every pool (address-keyed)
         run: |
           cd cicd/ai-ephealth/
@@ -154,6 +166,26 @@ jobs:
       - name: API keys + tenant rate limits (PostgreSQL-backed)
         run: |
           cd cicd/ai-apikey/
+          ./config.sh
+          ./validation.sh
+          ./rmconfig.sh
+          cd -
+      # The bearer (JWT) admission arm against a real Keycloak realm: the token
+      # verdict ladder, apikey-or-jwt precedence, upstream header hygiene, the
+      # HTTP/2 admission legs, the keyless VIP quota arm and the missing-usage
+      # accounting arm. 69 declared case IDs with a Z1/Z2 inventory, so a case
+      # that stops running turns the step red instead of shrinking the count.
+      #
+      # It ran only in the local runner until now, which left the largest AI
+      # regression suite in the tree gating no pull request. Measured cost on
+      # the reference bed: 84s config + 77s validation + 16s cleanup, plus 43s
+      # the first time it builds the pinned Keycloak image (config.sh builds it
+      # on demand and reuses it afterwards). Keycloak and PostgreSQL are
+      # locally built/pulled containers, so the job stays within this
+      # workflow's no-external-service charter.
+      - name: JWT bearer admission against a live Keycloak realm
+        run: |
+          cd cicd/ai-jwtauth/
           ./config.sh
           ./validation.sh
           ./rmconfig.sh

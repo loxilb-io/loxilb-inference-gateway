@@ -276,6 +276,17 @@ cd ai-sse-quota/
 ./rmconfig.sh
 cd -
 
+# ai-ephealth: the lightweight endpoint-health path — one probe transition has
+# to reach every pool that shares the failed backend, not just the first. The
+# oracle is the datapath's per-pool receipt lines, not traffic: the full
+# rule-sync fallback converges seconds later, so a broken health mechanism
+# still passes every traffic assertion.
+cd ai-ephealth/
+./config.sh
+./validation.sh
+./rmconfig.sh
+cd -
+
 # ai-model-conflict: the effective-model contract on enforcing services —
 # one body-first model resolution shared by authorization and routing, and a
 # hard 400 when a request's body and X-Model header disagree.
