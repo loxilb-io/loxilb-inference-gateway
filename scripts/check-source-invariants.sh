@@ -368,61 +368,19 @@ fi
 # ---------------------------------------------------------------------------
 # N. Conversation stickiness names the pool whose endpoint index it carries.
 #
-# ent->val.conv_map is one table per VIP:port keyed by conv_id ALONE, but a
-# stored ep_idx indexes ONE proxy_epval_t's eps[], and every model pool on a
-# service starts its index space at 0. Two pools on one VIP therefore collide
-# on a single row: one pool consumes the other's binding (and so never stores
-# its own), or overwrites it, sending that conversation to a different member
-# of its own pool and losing the affinity the binding existed to preserve.
-# is_endpoint_healthy() does not catch it, because an in-range index naming a
-# live endpoint passes. The model served is always correct; the STICKINESS is
-# what breaks.
-#
-# The pool argument itself is compiler-enforced (the helpers take one). Two
-# things the compiler cannot express are checked here:
-#
-#   a) no call site may pass a literal NULL pool -- that stores a row no
-#      lookup can ever match, or asks for a lookup that always misses;
-#   b) in HTTP/2 the pool must be the STREAM's resolved pool (tepval), never
-#      the connection-scoped pfe->epv. One H2 connection multiplexes streams
-#      of several pools, so pfe->epv is last-write state that on a
-#      multi-model connection names a different pool than this stream's.
+# Delegated to Python, because this one cannot be done with grep. The pool is
+# the LAST argument of each conv_map helper, so the check has to read a whole
+# argument list -- and an ERE that stops at the first ")" stops at a CAST's
+# paren, which is how "(const proxy_epval_t *)NULL" passed as a pool. It also
+# has to tell a CALL from a prototype, or a file's forward declarations keep
+# it "covered" after its real calls are renamed away. Both need paren and
+# brace matching; see the module docstring for the three holes this replaced
+# and how each was demonstrated.
 # ---------------------------------------------------------------------------
-CONV_FNS='get_conversation_mapping|store_conversation_endpoint|lookup_conversation_endpoint|update_conversation_validation'
-conv_files="loxilb-ebpf/common/sockproxy_ep.c loxilb-ebpf/common/sockproxy_h2.c loxilb-ebpf/common/sockproxy_http.c"
-# Flatten continuations so a call split across lines is still one record.
-conv_calls="$(for f in $conv_files; do
-    tr '\n' ' ' < "$f" | grep -oE "($CONV_FNS)\([^;]*?\)" | sed "s|^|$f: |"
-  done)"
-conv_total="$(printf '%s\n' "$conv_calls" | grep -c . || true)"
-# Per-file floor, not just a total: a rename that moves ONE file's call sites
-# out of view still leaves the total above a global floor, and the gate would
-# pass while no longer watching that file at all.
-conv_thin=""
-for f in $conv_files; do
-  n="$(printf '%s\n' "$conv_calls" | grep -c "^$f: " || true)"
-  [ "$n" -eq 0 ] && conv_thin="$conv_thin $f"
-done
-conv_null="$(printf '%s\n' "$conv_calls" | grep -E ',[[:space:]]*NULL[[:space:]]*\)' | grep -c . || true)"
-conv_h2_bad="$(printf '%s\n' "$conv_calls" | grep 'sockproxy_h2\.c' | grep -c 'pfe->epv' || true)"
-if [ "$conv_total" -lt 6 ] || [ -n "$conv_thin" ]; then
-  # Renamed helpers or a moved file must not turn this into a vacuous pass.
-  fail "conversation-pool check lost sight of its call sites (total=$conv_total, no calls in:${conv_thin:- none}) — helpers renamed or moved"
-elif [ "$conv_null" -ne 0 ] || [ "$conv_h2_bad" -ne 0 ]; then
-  fail "conversation stickiness must name the pool its endpoint index belongs to:"
-  printf '%s\n' "$conv_calls" | grep -E ',[[:space:]]*NULL[[:space:]]*\)' | sed 's/^/          NULL pool: /'
-  printf '%s\n' "$conv_calls" | grep 'sockproxy_h2\.c' | grep 'pfe->epv' | sed 's/^/          H2 must pass the stream pool (tepval): /'
+if python3 -B scripts/check_conv_pool_identity.py; then
+  pass "conversation stickiness names its pool (see line above for call counts)"
 else
-  pass "conversation stickiness names its pool at all $conv_total call sites"
-fi
-
-# The row must actually carry the identity, and a store without one must be
-# refused rather than silently written as a row nothing can match.
-if grep -q 'uint64_t pool_tag;' loxilb-ebpf/common/sockproxy.h &&
-   grep -q 'CONV_POOL_TAG_UNKNOWN' loxilb-ebpf/common/sockproxy_ep.c; then
-  pass "conversation rows carry a pool tag and an untagged store is refused"
-else
-  fail "conversation_mapping_t must carry pool_tag and store_conversation_endpoint must refuse CONV_POOL_TAG_UNKNOWN"
+  fail "conversation stickiness must name the pool its endpoint index belongs to"
 fi
 
 echo "==========================="
