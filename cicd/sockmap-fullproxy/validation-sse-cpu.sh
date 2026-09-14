@@ -46,7 +46,8 @@
 # Run: ./config.sh && ./validation-sse-cpu.sh && ./rmconfig.sh
 #
 # Tuning (environment variables):
-#   MODES        arms to compare (default "on off"; "on resp off" adds response-only)
+#   MODES        arms to compare (default "on off"; "on resp req off" adds the
+#                response-only and request-only arms)
 #   REGIMES      any of "paced burst" (default "paced burst")
 #   CONC         concurrent streams per client (default 128)
 #   PAR_CLIENTS  parallel client processes (default 4); total streams = CONC*PAR_CLIENTS
@@ -68,9 +69,9 @@ SSE_VIP="10.10.10.254"
 EPS="31.31.31.1,32.32.32.1"
 
 # Arm definitions: mode -> vport, bport, sockMapMode
-declare -A ARM_VPORT=( [on]=2040  [off]=2041  [resp]=2042 )
-declare -A ARM_BPORT=( [on]=9081  [off]=9091  [resp]=9082 )
-declare -A ARM_SMODE=( [on]=both  [off]=off   [resp]=response )
+declare -A ARM_VPORT=( [on]=2040  [off]=2041  [resp]=2042     [req]=2043 )
+declare -A ARM_BPORT=( [on]=9081  [off]=9091  [resp]=9082     [req]=9083 )
+declare -A ARM_SMODE=( [on]=both  [off]=off   [resp]=response [req]=request )
 
 MODES=${MODES:-"on off"}
 REGIMES=${REGIMES:-"paced burst"}
@@ -151,7 +152,7 @@ fi
 sockmap_section 2 "Create SSE rules per arm"
 for m in $MODES; do
   if [[ -z "${ARM_VPORT[$m]:-}" ]]; then
-    echo "    ERROR: unknown mode '$m' (on|off|resp)"; exit 1
+    echo "    ERROR: unknown mode '$m' (on|off|resp|req)"; exit 1
   fi
   if sockmap_create_lb_via_api llb1 "$SSE_VIP" "${ARM_VPORT[$m]}" "${ARM_BPORT[$m]}" \
        "$EPS" "${ARM_SMODE[$m]}" "sse-$m"; then
@@ -219,7 +220,7 @@ M_TTFT_MEAN=0; M_TTFT_P50=0; M_TTFT_P99=0
 M_ITL_MEAN=0;  M_ITL_P50=0;  M_ITL_P99=0
 M_CORES=0; M_HOST_CORES=0; M_SI_CORES=0
 M_CPU_PER_TOK=0; M_HOST_PER_TOK=0; M_CPU_PER_STREAM=0; M_CPU_PER_MB=0; M_CPU_PER_TOK_NET=0
-M_REDIR_DELTA=0; M_REDIR_RESP_DELTA=0; M_PEERMISS_DELTA=0
+M_REDIR_DELTA=0; M_REDIR_RESP_DELTA=0; M_PEERMISS_DELTA=0; M_INELIG_DELTA=0
 measure_sse() {
   local vport=$1 tokens=$2 rate=$3 tag=$4
   local i out pids=() outs=()
@@ -233,20 +234,22 @@ measure_sse() {
   done
 
   ms_sleep "$(( WARM_MS + SETTLE_MS ))"
-  local cb ub sb hbb hsib hsyb rdb rrb pmb
+  local cb ub sb hbb hsib hsyb rdb rrb pmb ieb
   read -r cb ub sb < <(sockmap_cpu_stat_usec llb1)
   read -r hbb hsib hsyb < <(host_cpu_jiffies)
   rdb=$(sockmap_redirect_count llb1)
   rrb=$(sockmap_redirect_resp_count llb1)
   pmb=$(sockmap_peer_miss_count llb1)
+  ieb=$(sockmap_ineligible_count llb1)
 
   ms_sleep "$CPU_WIN_MS"
-  local ca ua sa hba hsia hsya rda rra pma
+  local ca ua sa hba hsia hsya rda rra pma iea
   read -r ca ua sa < <(sockmap_cpu_stat_usec llb1)
   read -r hba hsia hsya < <(host_cpu_jiffies)
   rda=$(sockmap_redirect_count llb1)
   rra=$(sockmap_redirect_resp_count llb1)
   pma=$(sockmap_peer_miss_count llb1)
+  iea=$(sockmap_ineligible_count llb1)
 
   for i in "${pids[@]}"; do wait "$i" 2>/dev/null || true; done
 
@@ -265,6 +268,7 @@ measure_sse() {
   M_REDIR_DELTA=$(( rda - rdb ))
   M_REDIR_RESP_DELTA=$(( rra - rrb ))
   M_PEERMISS_DELTA=$(( pma - pmb ))
+  M_INELIG_DELTA=$(( iea - ieb ))
 
   # Normalization: the CPU window is a sub-interval of the client's measurement window.
   # Assuming steady state, scale tokens/streams/MB into that window.
@@ -315,7 +319,7 @@ sockmap_result "loxilb idle CPU measured" "OK" "idle=${IDLE_CORES} cores over ${
 
 # ---------- [5] run regimes x arms ----------
 declare -A R_TPS R_SPS R_MBPS R_CORES R_HCORES R_SICORES R_CPTOK R_HPTOK R_CPTOK_NET R_CPS R_CPMB
-declare -A R_TTFT50 R_TTFT99 R_ITL50 R_ITL99 R_REDIR R_RRESP R_PMISS R_ERR
+declare -A R_TTFT50 R_TTFT99 R_ITL50 R_ITL99 R_REDIR R_RRESP R_PMISS R_INELIG R_ERR
 
 for regime in $REGIMES; do
   case "$regime" in
@@ -336,7 +340,7 @@ for regime in $REGIMES; do
     R_TTFT50[$k]=$M_TTFT_P50; R_TTFT99[$k]=$M_TTFT_P99
     R_ITL50[$k]=$M_ITL_P50;   R_ITL99[$k]=$M_ITL_P99
     R_REDIR[$k]=$M_REDIR_DELTA; R_RRESP[$k]=$M_REDIR_RESP_DELTA
-    R_PMISS[$k]=$M_PEERMISS_DELTA; R_ERR[$k]=$M_ERR
+    R_PMISS[$k]=$M_PEERMISS_DELTA; R_INELIG[$k]=$M_INELIG_DELTA; R_ERR[$k]=$M_ERR
 
     # Engagement gate: the on/resp arms must show redirects, the off arm must not.
     if [[ "$m" == "off" ]]; then
@@ -352,6 +356,21 @@ for regime in $REGIMES; do
       else
         sockmap_result "$regime/$m sockmap engaged (redirect>0)" "FAILED" \
           "delta=0 peer_miss=$M_PEERMISS_DELTA; CPU comparison is meaningless"
+      fi
+    fi
+    # A one-direction arm must keep the other direction off the sk_skb verdict: only
+    # the sockets that receive the accelerated direction are in sock_verdict_map. What
+    # may still reach the verdict unpaired is the first request of each stream, read
+    # before the backend connection exists (request arm). Without the split, every
+    # response chunk of the request arm and every request of the response arm would
+    # show up here, which is hundreds per stream in the paced regime.
+    if [[ "$m" == "req" || "$m" == "resp" ]]; then
+      vmiss=$(( M_PEERMISS_DELTA + M_INELIG_DELTA ))
+      vbound=$(awk -v sps="$M_SPS" -v win_ms="$CPU_WIN_MS" 'BEGIN{ printf "%d", 4*sps*win_ms/1000.0 + 64 }')
+      if (( vmiss <= vbound )); then
+        sockmap_result "$regime/$m other direction skips verdict" "OK" "miss+inelig=$vmiss (bound $vbound)"
+      else
+        sockmap_result "$regime/$m other direction skips verdict" "FAILED" "miss+inelig=$vmiss > bound $vbound"
       fi
     fi
     (( M_ERR > 0 )) && sockmap_result "$regime/$m stream errors" "FAILED" "errors=$M_ERR"
@@ -395,11 +414,11 @@ done
   echo "# sockmap SSE CPU comparison ($(date -u +%FT%TZ))"
   echo "# streams=$(( CONC * PAR_CLIENTS )) conc=$CONC par=$PAR_CLIENTS dur_ms=$DUR_MS warm_ms=$WARM_MS cpu_win_ms=$CPU_WIN_MS"
   echo "# paced_rate=$PACED_RATE paced_tokens=$PACED_TOKENS burst_tokens=$BURST_TOKENS tok_chars=$TOK_CHARS prompt=$PROMPT_BYTES"
-  echo "regime arm tok_s stream_s MB_s lox_cores host_cores si_cores lox_us_tok net_us_tok host_us_tok lox_us_stream lox_us_MB ttft_p50 ttft_p99 itl_p50 itl_p99 redirect_delta redirect_resp_delta peer_miss_delta errors"
+  echo "regime arm tok_s stream_s MB_s lox_cores host_cores si_cores lox_us_tok net_us_tok host_us_tok lox_us_stream lox_us_MB ttft_p50 ttft_p99 itl_p50 itl_p99 redirect_delta redirect_resp_delta peer_miss_delta ineligible_delta errors"
   for regime in $REGIMES; do
     for m in "${ACTIVE_MODES[@]}"; do
       k="${regime}_${m}"
-      echo "$regime $m ${R_TPS[$k]} ${R_SPS[$k]} ${R_MBPS[$k]} ${R_CORES[$k]} ${R_HCORES[$k]} ${R_SICORES[$k]} ${R_CPTOK[$k]} ${R_CPTOK_NET[$k]} ${R_HPTOK[$k]} ${R_CPS[$k]} ${R_CPMB[$k]} ${R_TTFT50[$k]} ${R_TTFT99[$k]} ${R_ITL50[$k]} ${R_ITL99[$k]} ${R_REDIR[$k]} ${R_RRESP[$k]} ${R_PMISS[$k]} ${R_ERR[$k]}"
+      echo "$regime $m ${R_TPS[$k]} ${R_SPS[$k]} ${R_MBPS[$k]} ${R_CORES[$k]} ${R_HCORES[$k]} ${R_SICORES[$k]} ${R_CPTOK[$k]} ${R_CPTOK_NET[$k]} ${R_HPTOK[$k]} ${R_CPS[$k]} ${R_CPMB[$k]} ${R_TTFT50[$k]} ${R_TTFT99[$k]} ${R_ITL50[$k]} ${R_ITL99[$k]} ${R_REDIR[$k]} ${R_RRESP[$k]} ${R_PMISS[$k]} ${R_INELIG[$k]} ${R_ERR[$k]}"
     done
   done
 } > "$SOCKMAP_ARTIFACTS_DIR/sse_cpu_comparison.txt"

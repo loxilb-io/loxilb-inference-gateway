@@ -11,6 +11,7 @@ SOCKMAP_ARTIFACTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/artifacts"
 SOCKMAP_VIP_NAME="sockmap_vip_por"
 SOCKMAP_EP_NAME="sockmap_ep_port"
 SOCKMAP_PROXY_NAME="sock_proxy_map"
+SOCKMAP_VERDICT_NAME="sock_verdict_ma"
 SOCKMAP_PEER_NAME="peer_map"
 SOCKMAP_STATS_NAME="sockmap_stats"
 
@@ -223,45 +224,80 @@ sockmap_map_id() {
     | tr -d ' '
 }
 
-# Converts a port integer to "<low_byte_hex> <high_byte_hex>", the bytes as the kernel
-# stores them in memory. This assumes little-endian x86_64: the htons'd value is stored
-# as-is, so a bpftool lookup is given network byte order (high, low) directly.
-sockmap_port_to_hex() {
-  local port=$1
-  printf '%02x %02x' $((port >> 8)) $((port & 0xff))
+# Portset key bytes as the kernel stores struct llb_sockmap_portset_key:
+# IPv4 address (4 bytes, network order), port (2 bytes, network order), 2 bytes pad.
+sockmap_portset_key_hex() {
+  local ip=$1 port=$2 a b c d
+  IFS=. read -r a b c d <<< "$ip"
+  printf '%02x %02x %02x %02x %02x %02x 00 00' "$a" "$b" "$c" "$d" $((port >> 8)) $((port & 0xff))
 }
 
-# Checks whether a port is present in a portset map.
+# Checks whether a portset holds an entry.
+#   $1 llb, $2 portset map name, $3 port, $4 IPv4 address (optional)
+# With an address the exact (address, port) entry is looked up. Without one, any entry
+# with that port matches, whatever its address.
 # Returns 0 if present, 1 if absent or the map does not exist.
 sockmap_portset_has() {
   local llb=$1
   local map_name=$2
   local port=$3
+  local ip=${4:-}
   local id
   id=$(sockmap_map_id "$llb" "$map_name")
   if [[ -z "$id" ]]; then
     return 1
   fi
-  local hex
-  hex=$(sockmap_port_to_hex "$port")
-  if _sm_dexec "$llb" bash -c "bpftool map lookup id $id key hex $hex 2>/dev/null" \
-       | grep -q '"value":'; then
-    return 0
+  if [[ -n "$ip" ]]; then
+    local hex
+    hex=$(sockmap_portset_key_hex "$ip" "$port")
+    _sm_dexec "$llb" bash -c "bpftool -j map lookup id $id key hex $hex 2>/dev/null" \
+      | grep -q '"value":'
+    return $?
   fi
-  return 1
+  local phex
+  phex=$(printf '"0x%02x","0x%02x"' $((port >> 8)) $((port & 0xff)))
+  _sm_dexec "$llb" bash -c "bpftool -j map dump id $id 2>/dev/null" \
+    | grep -oE '"key":\["0x[0-9a-f]{2}","0x[0-9a-f]{2}","0x[0-9a-f]{2}","0x[0-9a-f]{2}","0x[0-9a-f]{2}","0x[0-9a-f]{2}"' \
+    | grep -q "${phex}\$"
+}
+
+# verdict_refs of one portset entry: how many enabled rules accelerate the direction in
+# which a matching socket receives. Prints nothing if the entry is absent.
+#   $1 llb, $2 portset map name, $3 IPv4 address, $4 port
+sockmap_portset_verdict_refs() {
+  local llb=$1 map_name=$2 ip=$3 port=$4 id hex
+  id=$(sockmap_map_id "$llb" "$map_name")
+  [[ -n "$id" ]] || return 0
+  hex=$(sockmap_portset_key_hex "$ip" "$port")
+  _sm_dexec "$llb" bash -c "bpftool -j map lookup id $id key hex $hex 2>/dev/null" \
+    | grep -oE '"verdict_refs":[[:space:]]*[0-9]+' \
+    | grep -oE '[0-9]+$' \
+    | head -1
 }
 
 # Current number of entries in sock_proxy_map.
-# sock_proxy_map is a SOCKHASH. bpftool cannot read a sockhash value (a socket) from
-# userspace, so it prints "value: No space left on device" and finishes with
-# "Found 0 elements" - but the key lines still print correctly, in the plain-text form
-# 'key: <hex>...' rather than the JSON '"key"' a HASH would emit. Both forms must
-# therefore be counted. Counting only JSON '"key"' yields a false negative: always 0
-# even when the SOCKHASH is populated.
+# sock_proxy_map is a SOCKHASH. With an 8-byte value bpftool prints each socket's cookie
+# as a normal JSON '"key"' entry; with the older 4-byte value it could not read the value
+# and printed plain-text 'key: <hex>...' lines with "value: No space left on device"
+# and "Found 0 elements". Both forms are counted so either image reads correctly.
 sockmap_sockhash_count() {
   local llb=$1
   local id
   id=$(sockmap_map_id "$llb" "$SOCKMAP_PROXY_NAME")
+  if [[ -z "$id" ]]; then
+    echo 0
+    return 0
+  fi
+  _sm_dexec "$llb" bash -c "bpftool map dump id $id 2>/dev/null" \
+    | grep -cE '"key"|^key:'
+}
+
+# Current number of entries in sock_verdict_map, the subset of sock_proxy_map whose
+# ingress runs the sk_skb verdict (same bpftool caveats as above).
+sockmap_verdict_sockhash_count() {
+  local llb=$1
+  local id
+  id=$(sockmap_map_id "$llb" "$SOCKMAP_VERDICT_NAME")
   if [[ -z "$id" ]]; then
     echo 0
     return 0
@@ -323,13 +359,14 @@ sockmap_ineligible_count() {
 
 # Polls until a portset reaches the wanted state, waiting for asynchronous dp work.
 #   $1 llb, $2 portset map name, $3 port, $4 want (present|absent),
-#   $5 tries (default 16, at 0.5s intervals)
+#   $5 tries (default 16, at 0.5s intervals), $6 IPv4 address (optional, see
+#   sockmap_portset_has)
 # Returns 0 once the wanted state is reached, 1 on timeout.
 sockmap_portset_wait() {
-  local llb=$1 name=$2 port=$3 want=$4 tries=${5:-16}
+  local llb=$1 name=$2 port=$3 want=$4 tries=${5:-16} ip=${6:-}
   local i
   for ((i=0; i<tries; i++)); do
-    if sockmap_portset_has "$llb" "$name" "$port"; then
+    if sockmap_portset_has "$llb" "$name" "$port" "$ip"; then
       [[ "$want" == "present" ]] && return 0
     else
       [[ "$want" == "absent" ]] && return 0
@@ -358,21 +395,23 @@ sockmap_log_failure_count() {
     | grep -cE "Sockmap: Registration failed!|Sockmap: peer_map registration failed!|Sockmap: peer_map delete failed|sockmap: load failed|sockmap: attach failed|sockmap: portset map get failed|sockmap: portset fd get failed|sockmap: skmsg helper load failed|sockmap: skstream helper load failed|sockmap: portset update failed|sockmap: failed to (add|delete|remove)|sockmap: rule [0-9]+: failed|sockmap: rule id [0-9]+ out of range|sockmap: --sockmapsupport requires"
 }
 
-# Checks that the required sockmap BPF assets (sockops prog and 4 maps) are attached.
+# Checks that the required sockmap BPF assets (sockops prog and 6 maps) are attached.
 sockmap_assert_bpf_assets() {
   local llb=$1
   local ok=1
 
-  local vip_id ep_id proxy_id peer_id stats_id
+  local vip_id ep_id proxy_id verdict_id peer_id stats_id
   vip_id=$(sockmap_map_id "$llb" "$SOCKMAP_VIP_NAME")
   ep_id=$(sockmap_map_id "$llb" "$SOCKMAP_EP_NAME")
   proxy_id=$(sockmap_map_id "$llb" "$SOCKMAP_PROXY_NAME")
+  verdict_id=$(sockmap_map_id "$llb" "$SOCKMAP_VERDICT_NAME")
   peer_id=$(sockmap_map_id "$llb" "$SOCKMAP_PEER_NAME")
   stats_id=$(sockmap_map_id "$llb" "$SOCKMAP_STATS_NAME")
 
   [[ -n "$vip_id"  ]] || ok=0
   [[ -n "$ep_id"   ]] || ok=0
   [[ -n "$proxy_id" ]] || ok=0
+  [[ -n "$verdict_id" ]] || ok=0
   [[ -n "$peer_id"  ]] || ok=0
   [[ -n "$stats_id" ]] || ok=0
 
@@ -387,7 +426,7 @@ sockmap_assert_bpf_assets() {
     return 0
   fi
 
-  echo "[sockmap] BPF assets missing: vip_id='$vip_id' ep_id='$ep_id' proxy_id='$proxy_id' peer_id='$peer_id' stats_id='$stats_id' sockops_progs=$sockops_count" >&2
+  echo "[sockmap] BPF assets missing: vip_id='$vip_id' ep_id='$ep_id' proxy_id='$proxy_id' verdict_id='$verdict_id' peer_id='$peer_id' stats_id='$stats_id' sockops_progs=$sockops_count" >&2
   return 1
 }
 
