@@ -234,6 +234,14 @@ var (
 	// not tokens — missing >= the number of responses in
 	// aiTokensEstimatedTotal, and the gap is the uncharged non-streamed half.
 	//
+	// The reason label splits that gap further, because one counter was
+	// covering two opposite policy cases. A backend answering 2xx with no
+	// usage object is a conformance problem and the response staying free is
+	// the right answer; a connection that ended after the 2xx before any
+	// usage was read is not that at all — the work was done — yet both looked
+	// identical in the series. See TokenMissingReason* for the accepted
+	// values and what each one proves.
+	//
 	// An error response is NOT counted. The family reports an accounting hole
 	// — work that should have been charged and could not be — and a backend
 	// answering 4xx/5xx completed no work, so carrying no usage is correct
@@ -242,9 +250,9 @@ var (
 	aiTokensMissingTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "loxilb_ai_tokens_missing_total",
-			Help: "Total successful (2xx) AI Gateway responses with no readable usage object, by model and tenant. A streamed response was charged from the estimate net; a non-streamed one was charged nothing. Error responses are excluded -- they completed no work, so carrying no usage is correct rather than missing.",
+			Help: "Total successful (2xx) AI Gateway responses with no readable usage object, by model, tenant and reason. reason names the boundary the report fired at: response_complete (the exchange demonstrably finished, so the backend omitted usage), h2_stream_close (an HTTP/2 stream closed; finished and aborted-after-headers are not distinguishable there), connection_close (the connection ended with a 2xx seen and no usage read) or stream_estimated (a stream charged from the estimate net). Only stream_estimated was charged. Error responses are excluded -- they completed no work, so carrying no usage is correct rather than missing.",
 		},
-		[]string{"model", "tenant"},
+		[]string{"model", "tenant", "reason"},
 	)
 
 	// aiTokenQuotaDeniedTotal counts requests denied 429 at the rate-limit
@@ -439,7 +447,100 @@ func RecordTokenUsage(modelName, tenantID string, promptTokens, completionTokens
 	}
 	if estimated {
 		aiTokensEstimatedTotal.WithLabelValues(model, tenant).Add(float64(promptTokens + completionTokens))
-		aiTokensMissingTotal.WithLabelValues(model, tenant).Inc()
+		aiTokensMissingTotal.WithLabelValues(model, tenant, TokenMissingReasonStreamEstimated).Inc()
+	}
+}
+
+// Accepted values for the reason label on loxilb_ai_tokens_missing_total.
+//
+// Each names the BOUNDARY the report fired at, not a diagnosis of why the
+// usage object was absent, because the boundary is the only thing the
+// reporter actually knows. The data plane spells the first three in
+// common/sockproxy_ai_gw.h (LLB_AI_UMISS_*) and they must stay in step with
+// these; the fourth is written here, on the streamed path that never crosses
+// the cgo boundary.
+//
+// The split exists to make one operational question answerable. Missing-usage
+// responses are free (see RecordTokenUsageMissing), which is the right answer
+// when a backend simply omits the usage object and the wrong answer if a
+// tenant learns to induce the free path on purpose. Those two look identical
+// in an unlabelled counter. Compared against the fleet baseline they do not:
+//
+//   - elevated on every tenant at once  => a backend conformance problem,
+//     and leaving it free is correct;
+//   - one tenant materially above baseline on ConnectionClose => behavioural,
+//     and that is the signal worth acting on.
+//
+// Only TokenMissingReasonResponseComplete proves the exchange finished. The
+// other two are honestly ambiguous and are named so nobody reads more into
+// them than the code can support.
+const (
+	// TokenMissingReasonResponseComplete: the HTTP/1.1 keep-alive reset. The
+	// client sent the NEXT request on the same connection, so the previous
+	// response demonstrably completed and the backend simply put no usage
+	// object in it. The strongest of the four.
+	TokenMissingReasonResponseComplete = "response_complete"
+	// TokenMissingReasonH2StreamClose: an HTTP/2 client stream closed. The
+	// same close runs for a finished response and for one aborted after its
+	// 2xx headers, and nghttp2's error code is not plumbed to the reporter,
+	// so completion is NOT established here.
+	TokenMissingReasonH2StreamClose = "h2_stream_close"
+	// TokenMissingReasonConnectionClose: the connection was destroyed with a
+	// 2xx status seen and no usage read — the H1 teardown and the H2
+	// in-flight sweep both land here. A non-conforming backend closing the
+	// connection and a client that took the 2xx and cut are indistinguishable
+	// from this side; this is the bucket the per-tenant comparison watches.
+	TokenMissingReasonConnectionClose = "connection_close"
+	// TokenMissingReasonStreamEstimated: a streamed response reached its
+	// terminator with no usage object and was charged from the estimate net
+	// (RecordTokenUsage's estimated arm). The ONE value on this family that
+	// was charged for, which is why it is labelled rather than merged into
+	// the free ones.
+	TokenMissingReasonStreamEstimated = "stream_estimated"
+	// TokenMissingReasonUnknown absorbs anything else, as a runtime backstop
+	// rather than as the primary detector.
+	//
+	// It is NOT reachable by a version skew between the two repos: the data
+	// plane is linked statically (-l:libloxilbdp.a, pkg/loxinet/dpebpf_linux.go),
+	// so a mismatched build fails to build — the C compiler rejects an argument
+	// the header does not declare, and check-source-invariants.sh §9 rejects a
+	// Go signature that moves without it. What a skew cannot do is reach
+	// runtime.
+	//
+	// What could is a reason VALUE added on one side only, which changes no
+	// signature and so compiles clean on both. That is what §10 of the same
+	// script now checks, by comparing the LLB_AI_UMISS_* literals against these
+	// constants and requiring every call site to use a define rather than a
+	// bare string. So the drift this once absorbed silently now fails a gate.
+	//
+	// This stays because a gate reads the source it is pointed at: a reason
+	// built at runtime instead of passed as a literal, a call site in a file
+	// §10 does not scan, or an empty string (C.GoString of a NULL reason) all
+	// still arrive here. Collapsing keeps the label's cardinality closed — the
+	// point of an allow-list — and leaves anything unforeseen visible as a
+	// series nobody expects, instead of as a new one nobody bounded.
+	TokenMissingReasonUnknown = "unknown"
+)
+
+// boundTokenMissingReason maps a data-plane reason onto the accepted set,
+// collapsing anything unrecognised (including the empty string) onto
+// TokenMissingReasonUnknown.
+//
+// An allow-list rather than sanitizeLabel, because the two are not the same
+// kind of guard. sanitizeLabel bounds the ALPHABET of a label value; it does
+// nothing about how many distinct values exist. This label is per-tenant on a
+// counter vector, so an unbounded set of values is an unbounded set of series,
+// and the values originate in a different repository's source. A closed set is
+// the only guard that holds.
+func boundTokenMissingReason(reason string) string {
+	switch reason {
+	case TokenMissingReasonResponseComplete,
+		TokenMissingReasonH2StreamClose,
+		TokenMissingReasonConnectionClose,
+		TokenMissingReasonStreamEstimated:
+		return reason
+	default:
+		return TokenMissingReasonUnknown
 	}
 }
 
@@ -474,12 +575,21 @@ func RecordTokenUsage(modelName, tenantID string, promptTokens, completionTokens
 // service has a completed AI response and no tenant — so the guard lives here,
 // once, for both call sites. Keyless volume stays visible per VIP in
 // loxilb_ai_unmetered_requests_total.
-func RecordTokenUsageMissing(modelName, tenantID string) {
+//
+// reason is the boundary the data plane reported from, one of the
+// TokenMissingReason* values above; anything else collapses onto "unknown"
+// rather than minting a series. It records where the report came from, never
+// a verdict on the tenant — see boundTokenMissingReason. The values are held
+// in step with the data plane's LLB_AI_UMISS_* defines by
+// check-source-invariants.sh §10, because a value that drifts does not crash
+// and does not fail a unit test: it just stops splitting.
+func RecordTokenUsageMissing(modelName, tenantID, reason string) {
 	tenant := sanitizeLabel(tenantID)
 	if tenant == "" {
 		return
 	}
-	aiTokensMissingTotal.WithLabelValues(boundModelLabel(modelName), tenant).Inc()
+	aiTokensMissingTotal.WithLabelValues(boundModelLabel(modelName), tenant,
+		boundTokenMissingReason(reason)).Inc()
 }
 
 // RecordTokenQuotaColdOpen increments loxilb_ai_token_quota_cold_open_total.

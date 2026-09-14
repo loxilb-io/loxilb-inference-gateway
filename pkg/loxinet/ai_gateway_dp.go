@@ -1488,8 +1488,15 @@ func llb_ai_record_unmetered(vip *C.char) {
 // prom.RecordTokenUsageMissing for why charging an estimate was rejected and
 // what would reopen it.
 //
+// reason names the reporting boundary the data plane fired at — one of the
+// LLB_AI_UMISS_* literals in common/sockproxy_ai_gw.h — and becomes the
+// family's reason label. It is passed through unread: RecordTokenUsageMissing
+// owns the accepted set, so an unknown value lands on "unknown" there rather
+// than opening a cardinality hole here.
+//
 //export llb_ai_record_usage_missing
-func llb_ai_record_usage_missing(tenantID *C.char, modelName *C.char) {
+func llb_ai_record_usage_missing(tenantID *C.char, modelName *C.char, reason *C.char) {
 	defer cgoRecover("llb_ai_record_usage_missing")
-	prom.RecordTokenUsageMissing(C.GoString(modelName), C.GoString(tenantID))
+	prom.RecordTokenUsageMissing(C.GoString(modelName), C.GoString(tenantID),
+		C.GoString(reason))
 }
