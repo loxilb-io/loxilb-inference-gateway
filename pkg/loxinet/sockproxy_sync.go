@@ -57,7 +57,10 @@ import "C"
 
 import (
 	"context"
+	"fmt"
 	"math/rand"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -1183,19 +1186,36 @@ func (s *SockproxySync) sendRateLimiterBatch(peer *DpPeer, client XSyncClient,
 	entries []rl.RateLimiterEntry, isDelta bool) error {
 
 	peerKey := peer.Peer.String()
-	for start := 0; start < len(entries); start += rlPushBatchMax {
-		end := start + rlPushBatchMax
-		if end > len(entries) {
-			end = len(entries)
+	for start := 0; start < len(entries); {
+		// The 500-entry RPC ceiling includes the sentinel: the first chunk
+		// carries it plus 499 payload entries, so no call ever exceeds the
+		// SPEC bound the ceiling encodes.
+		capacity := rlPushBatchMax
+		if start == 0 {
+			capacity--
 		}
+		end := min(start+capacity, len(entries))
 		batch := entries[start:end]
 		protoBatch := &RateLimiterBatch{
 			IsDelta: isDelta,
-			Entries: make([]*RateLimiterEntry, 0, len(batch)),
+			Entries: make([]*RateLimiterEntry, 0, len(batch)+1),
+		}
+		if start == 0 {
+			// Scope-version announcement, first entry of every push. Shaped
+			// as a tenant-quota row whose prefix no merge path recognises:
+			// a v1 peer drops it inside mergeQuotaEntry, a v2 peer strips it
+			// at ingest and learns which vocabulary this node speaks. It is
+			// deliberately NOT in `entries`, so the delta prevSnapshot
+			// bookkeeping below never sees it.
+			protoBatch.Entries = append(protoBatch.Entries, &RateLimiterEntry{
+				KeyId:    rl.ScopeSentinelKeyID,
+				IsTenant: true,
+			})
 		}
 		for i := range batch {
 			protoBatch.Entries = append(protoBatch.Entries, rlGoEntryToProto(&batch[i]))
 		}
+		start = end
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		prom.SockproxySyncInflightRpcInc(peerKey)
@@ -1246,8 +1266,21 @@ func (s *SockproxySync) ApplyRateLimiterBatch(m *RateLimiterBatch) error {
 		return nil
 	}
 	goEntries := make([]rl.RateLimiterEntry, 0, len(m.Entries))
+	sawSentinel := false
 	for _, e := range m.Entries {
 		if e == nil {
+			continue
+		}
+		// Scope-version sentinel: not state, never merged. Recording that
+		// it was present is what lets the warning below name the peers
+		// that pre-date the ladder scopes instead of leaving a mixed
+		// fleet to discover the gap at failover.
+		if ver, isSentinel := strings.CutPrefix(e.KeyId, "ver:"); isSentinel {
+			sawSentinel = true
+			if v, err := strconv.Atoi(ver); err == nil && v > rl.ScopeWireVersion {
+				s.warnOncePeerRPC("rl-scope-ver", "RateLimiterSync",
+					fmt.Sprintf("peer speaks scope version %d, this node speaks %d — entries in scopes this build does not know are DROPPED; upgrade this node", v, rl.ScopeWireVersion))
+			}
 			continue
 		}
 		// WR-01: ApplyGossipDelta silently no-ops non-tenant rows
@@ -1259,6 +1292,16 @@ func (s *SockproxySync) ApplyRateLimiterBatch(m *RateLimiterBatch) error {
 			continue
 		}
 		goEntries = append(goEntries, rlProtoEntryToGo(e))
+	}
+	if !sawSentinel {
+		// A batch with no sentinel comes from a peer that pre-dates the
+		// ladder scopes (u:/uq:/um:/kq:/v:). Its merge path drops those
+		// entries SILENTLY, so per-user / per-key-TPM / keyless-bucket
+		// debt does not survive a failover through it. Mixed-version HA
+		// peering is unsupported (standing posture) — but it should be
+		// loud, not discovered from a bill.
+		s.warnOncePeerRPC("rl-scope-ver", "RateLimiterSync",
+			"a sync peer pre-dates the per-user/per-key-TPM/keyless quota scopes and silently drops their state; upgrade all sync peers together (mixed-version HA is unsupported)")
 	}
 	if m.IsDelta {
 		store.ApplyGossipDelta(goEntries)

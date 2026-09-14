@@ -70,6 +70,11 @@ type rateLimitService interface {
 	GetTenantRateLimit(tenantID string) (rps, tokensPerMin, burstPct int, err error)
 	GetTenantModelRateLimit(tenantID, model string) (tokensPerMin int, err error)
 	GetAPIKeyByID(keyID string) (*cmn.ApiKeySummary, error)
+	// The ladder reads (level 1 explicit user rows, level 3 defaults) carry
+	// the same cache/outage/error contract as the tenant reads above.
+	GetUserRateLimit(tenantID, userID string) (rps, burstSize, tokensPerMin int, err error)
+	GetUserModelRateLimit(tenantID, userID, model string) (tokensPerMin int, err error)
+	GetRateLimitDefaults(scope, ruleIdent string) (entry cmn.RateLimitDefaultsEntry, exists bool, err error)
 }
 
 // noKeyStoreOnce keeps the "no key store configured" notice to one line per
@@ -85,21 +90,92 @@ func modelQuotaKey(tenantID, model string) string {
 	return tenantID + "|" + model
 }
 
+// qosDefaults is the field-wise merge of the rule-scope defaults row over
+// the global one (QoS ladder level 3): a zero field in the rule row falls
+// through to the global row's field, and a zero there falls through to
+// unlimited: zero is the sentinel for "no bound", per dimension.
+type qosDefaults struct {
+	userRPS, userTPM     int
+	tenantRPS, tenantTPM int
+	vipRPS, vipTPM       int
+}
+
+// resolveQoSDefaults reads the level-3 rows for a request. A store error
+// (unreachable AND never answered) propagates so the caller can pick the
+// posture: fail closed for identity-bearing traffic, fail open for keyless
+// traffic whose bucket is opt-in.
+func resolveQoSDefaults(svc rateLimitService, svcIdent string) (qosDefaults, error) {
+	var d qosDefaults
+	if svc == nil {
+		return d, nil
+	}
+	g, gOK, gErr := svc.GetRateLimitDefaults(cmn.RateLimitScopeGlobal, "")
+	if gErr != nil {
+		return d, gErr
+	}
+	if gOK {
+		d = qosDefaults{
+			userRPS: g.DefaultUserRPS, userTPM: g.DefaultUserTPM,
+			tenantRPS: g.DefaultTenantRPS, tenantTPM: g.DefaultTenantTPM,
+			vipRPS: g.VipSharedRPS, vipTPM: g.VipSharedTPM,
+		}
+	}
+	if svcIdent == "" {
+		return d, nil
+	}
+	r, rOK, rErr := svc.GetRateLimitDefaults(cmn.RateLimitScopeRule, svcIdent)
+	if rErr != nil {
+		return d, rErr
+	}
+	if rOK {
+		override := func(dst *int, v int) {
+			if v > 0 {
+				*dst = v
+			}
+		}
+		override(&d.userRPS, r.DefaultUserRPS)
+		override(&d.userTPM, r.DefaultUserTPM)
+		override(&d.tenantRPS, r.DefaultTenantRPS)
+		override(&d.tenantTPM, r.DefaultTenantTPM)
+		override(&d.vipRPS, r.VipSharedRPS)
+		override(&d.vipTPM, r.VipSharedTPM)
+	}
+	return d, nil
+}
+
 // rateLimitCheckInternal is the pure-Go rate limit logic, separated from the
 // CGO export so that unit tests can exercise it without going through C types.
+//
+// The QoS ladder resolves each dimension's limit as: explicit row
+// → configured default (rule scope over global) → unlimited; a zero field
+// falls through, so an operator states only what they mean to bound. The
+// enforcement stages then run most-specific first — key RPS, key TPM latch,
+// user RPS, user TPM latches, tenant RPS, tenant TPM latches — and every
+// bucket must admit: a user inside its own budget is still stopped by its
+// tenant's ceiling, which is what makes the tenant limit a cap on the SUM
+// of its users. Keyless requests (no key, no tenant, no user) consult only
+// the opt-in per-VIP shared bucket, and only when svcIdent names the
+// service.
+//
+// userID and svcIdent arrive empty from data planes that pre-date the
+// identity-forwarding ABI (the CGO exports pass what the C caller gives
+// them); every user/VIP stage degrades to a no-op then, and the ladder is
+// exercised end-to-end by the unit corpus until the ABI lands.
 //
 // Returns (decision, retrySecs, errorCode):
 //   - decision 0 = allow
 //   - decision 3 = deny_429 (rate limited)
+//   - decision 4 = deny_503 (limits unknowable — the store's outage)
 //
 // error codes:
-//   - "rate_limit_exceeded"   – per-key token bucket denied
-//   - "tenant_quota_exceeded" – per-tenant token bucket denied
-//   - "token_quota_warming"   – quota state cold after restart; peer warm-up
-//     still inside its bounded deadline
-//   - "token_quota_exceeded"  – tenant aggregate or tenant|model token bucket
-//     in debt
-func rateLimitCheckInternal(svc rateLimitService, store *rl.RateLimiterStore, keyIDStr, tenantIDStr, modelName string) (decision, retrySecs int, errorCode string) {
+//   - "rate_limit_exceeded"       – per-key token bucket denied
+//   - "user_rate_limit_exceeded"  – per-user token bucket denied
+//   - "tenant_quota_exceeded"     – per-tenant token bucket denied
+//   - "token_quota_warming"       – quota state cold after restart; peer
+//     warm-up still inside its bounded deadline
+//   - "token_quota_exceeded"      – a token bucket (key, user, user|model,
+//     tenant, tenant|model or VIP) in debt
+func rateLimitCheckInternal(svc rateLimitService, store *rl.RateLimiterStore, keyIDStr, tenantIDStr, userIDStr, svcIdent, modelName string) (decision, retrySecs int, errorCode string) {
 	// A keyed identity with no service behind it is an invariant violation,
 	// not a configuration: the gate only calls this stage with a key_id or
 	// tenant_id it got from a SUCCESSFUL validation, and validation cannot
@@ -112,14 +188,64 @@ func rateLimitCheckInternal(svc rateLimitService, store *rl.RateLimiterStore, ke
 	// An EMPTY identity with a nil service is different and stays allowed:
 	// that is ordinary traffic on a service whose policy does not attribute
 	// tenants, and there is nothing to enforce against.
-	if svc == nil && (keyIDStr != "" || tenantIDStr != "") {
+	if svc == nil && (keyIDStr != "" || tenantIDStr != "" || userIDStr != "") {
 		tk.LogIt(tk.LogCritical,
-			"[AIGateway] rateLimitCheckInternal: keyed identity (key=%s tenant=%s) with NO key service — failing closed\n",
-			keyIDStr, tenantIDStr)
+			"[AIGateway] rateLimitCheckInternal: keyed identity (key=%s tenant=%s user=%s) with NO key service — failing closed\n",
+			keyIDStr, tenantIDStr, userIDStr)
 		return 4, 5, "policy_store_unavailable"
 	}
 
-	// Stage 1: per-key check with key-specific RPS and burst values.
+	// Keyless traffic: no credential decided, so there is no identity to
+	// enforce against — except the opt-in per-VIP shared bucket, when the
+	// defaults name one for this service. An unknowable defaults row fails
+	// OPEN here, alone among the arms: the bucket is opt-in, and giving
+	// none-mode services a brand-new outage mode for a feature they may
+	// never have enabled would be the wrong side of that trade. (Every
+	// identity-bearing arm below still fails closed.)
+	if keyIDStr == "" && tenantIDStr == "" && userIDStr == "" {
+		if svcIdent == "" || svc == nil {
+			return 0, 0, ""
+		}
+		d, dErr := resolveQoSDefaults(svc, svcIdent)
+		if dErr != nil {
+			tk.LogIt(tk.LogWarning,
+				"[AIGateway] rateLimitCheckInternal: keyless defaults for %s unknowable — shared bucket skipped (opt-in, fail-open)\n",
+				svcIdent)
+			return 0, 0, ""
+		}
+		if d.vipRPS > 0 {
+			if allowed, retrySec := store.CheckVipShared(svcIdent, d.vipRPS); !allowed {
+				tk.LogIt(tk.LogWarning, "[AIGateway] rateLimitCheckInternal: service %s keyless bucket rate-limited (retry %ds)\n", svcIdent, retrySec)
+				return 3, retrySec, "rate_limit_exceeded"
+			}
+		}
+		if d.vipTPM > 0 {
+			if store.QuotaWarming() {
+				return 3, 1, "token_quota_warming"
+			}
+			if store.IsTokenQuotaExceeded(rl.VipSharedQuotaKey(svcIdent)) {
+				tk.LogIt(tk.LogWarning, "[AIGateway] rateLimitCheckInternal: service %s keyless bucket token quota exceeded\n", svcIdent)
+				return 3, 60, "token_quota_exceeded"
+			}
+		}
+		return 0, 0, ""
+	}
+
+	// Level-3 defaults for the identity-bearing arms. Unknowable defaults
+	// fail closed exactly as an unknowable tenant row does: the identities
+	// are real, and admitting on zeroes would switch off the very limits an
+	// operator configured a default to guarantee.
+	defaults, dErr := resolveQoSDefaults(svc, svcIdent)
+	if dErr != nil {
+		tk.LogIt(tk.LogWarning,
+			"[AIGateway] rateLimitCheckInternal: rate-limit defaults unknowable (store outage, nothing cached) — failing closed\n")
+		return 4, 5, "policy_store_unavailable"
+	}
+
+	// Stage 1: per-key RPS with key-specific burst, then the key's own
+	// tokens-per-min debt latch (ladder level 1.5 — the field was stored
+	// and never enforced; now it is a bucket like every other).
+	keyTPM := 0
 	if keyIDStr != "" {
 		keyRPS := 0
 		keyBurst := 0
@@ -127,6 +253,7 @@ func rateLimitCheckInternal(svc rateLimitService, store *rl.RateLimiterStore, ke
 			if key, err := svc.GetAPIKeyByID(keyIDStr); err == nil {
 				keyRPS = key.RateLimitRPS
 				keyBurst = key.BurstSize
+				keyTPM = key.TokensPerMin
 			}
 		}
 		// BurstSize=0 falls back to RateLimitRPS (consistent with CheckKey semantics).
@@ -140,7 +267,38 @@ func rateLimitCheckInternal(svc rateLimitService, store *rl.RateLimiterStore, ke
 		}
 	}
 
-	// Stage 2: per-tenant check with tenant-level RPS.
+	// Stage 1.7: per-user RPS. The limit is the ladder's: the explicit user
+	// row's rps, else the configured default-user rps, else nothing.
+	userTPM := 0
+	if userIDStr != "" && tenantIDStr != "" {
+		userRPS, userBurst := 0, 0
+		if svc != nil {
+			r, b, t, uErr := svc.GetUserRateLimit(tenantIDStr, userIDStr)
+			if uErr != nil {
+				tk.LogIt(tk.LogWarning,
+					"[AIGateway] rateLimitCheckInternal: user %s/%s limits unknowable (store outage, nothing cached) — failing closed\n",
+					tenantIDStr, userIDStr)
+				return 4, 5, "policy_store_unavailable"
+			}
+			userRPS, userBurst, userTPM = r, b, t
+		}
+		if userRPS <= 0 {
+			userRPS = defaults.userRPS
+			userBurst = 0
+		}
+		if userTPM <= 0 {
+			userTPM = defaults.userTPM
+		}
+		allowed, retrySec := store.CheckUser(tenantIDStr, userIDStr, userRPS, userBurst)
+		if !allowed {
+			tk.LogIt(tk.LogWarning, "[AIGateway] rateLimitCheckInternal: user %s/%s rate-limited (retry %ds)\n", tenantIDStr, userIDStr, retrySec)
+			return 3, retrySec, "user_rate_limit_exceeded"
+		}
+	}
+
+	// Stage 2: per-tenant RPS — explicit row, else the default-tenant rps.
+	// The tenant bucket runs for EVERY attributed request, which is what
+	// makes it a cap on the sum of the tenant's users and keys.
 	if tenantIDStr != "" {
 		tenantRPS := 0
 		tenantTPM := 0
@@ -158,16 +316,24 @@ func rateLimitCheckInternal(svc rateLimitService, store *rl.RateLimiterStore, ke
 				return 4, 5, "policy_store_unavailable"
 			}
 		}
+		if tenantRPS <= 0 {
+			tenantRPS = defaults.tenantRPS
+		}
+		if tenantTPM <= 0 {
+			tenantTPM = defaults.tenantTPM
+		}
 		allowed, retrySec := store.CheckTenant(tenantIDStr, tenantRPS)
 		if !allowed {
 			tk.LogIt(tk.LogWarning, "[AIGateway] rateLimitCheckInternal: tenant %s rate-limited (retry %ds)\n", tenantIDStr, retrySec)
 			return 3, retrySec, "tenant_quota_exceeded"
 		}
 
-		// Stage 3: token quota checks — only meaningful for tenants that
-		// HAVE a token quota configured, at the aggregate level or for the
-		// request's model.
+		// Stage 3: token-quota debt latches. Every bucket the settle path
+		// charges is consulted — key, user, user|model, tenant aggregate,
+		// tenant|model — because a latch nobody reads is a quota nobody
+		// has.
 		modelTPM := 0
+		userModelTPM := 0
 		if svc != nil && modelName != "" {
 			var mErr error
 			modelTPM, mErr = svc.GetTenantModelRateLimit(tenantIDStr, modelName)
@@ -177,6 +343,15 @@ func rateLimitCheckInternal(svc rateLimitService, store *rl.RateLimiterStore, ke
 					tenantIDStr, modelName)
 				return 4, 5, "policy_store_unavailable"
 			}
+			if userIDStr != "" {
+				userModelTPM, mErr = svc.GetUserModelRateLimit(tenantIDStr, userIDStr, modelName)
+				if mErr != nil {
+					tk.LogIt(tk.LogWarning,
+						"[AIGateway] rateLimitCheckInternal: user %s/%s model %s limits unknowable (store outage, nothing cached) — failing closed\n",
+						tenantIDStr, userIDStr, modelName)
+					return 4, 5, "policy_store_unavailable"
+				}
+			}
 		}
 
 		// Warming gate first: after a cold start the consumed counters are
@@ -184,9 +359,22 @@ func rateLimitCheckInternal(svc rateLimitService, store *rl.RateLimiterStore, ke
 		// nor a pre-admission reservation can be decided truthfully yet.
 		// Deny with a short retry for the bounded warmup window rather than
 		// silently admitting against a zeroed quota.
-		if (tenantTPM > 0 || modelTPM > 0) && store.QuotaWarming() {
+		anyTPM := tenantTPM > 0 || modelTPM > 0 || userTPM > 0 || userModelTPM > 0 || keyTPM > 0
+		if anyTPM && store.QuotaWarming() {
 			tk.LogIt(tk.LogWarning, "[AIGateway] rateLimitCheckInternal: tenant %s denied during token-quota warmup\n", tenantIDStr)
 			return 3, 1, "token_quota_warming"
+		}
+		if keyTPM > 0 && store.IsTokenQuotaExceeded(rl.KeyQuotaKey(keyIDStr)) {
+			tk.LogIt(tk.LogWarning, "[AIGateway] rateLimitCheckInternal: key %s token quota exceeded\n", keyIDStr)
+			return 3, 60, "token_quota_exceeded"
+		}
+		if userTPM > 0 && store.IsTokenQuotaExceeded(rl.UserQuotaKey(tenantIDStr, userIDStr)) {
+			tk.LogIt(tk.LogWarning, "[AIGateway] rateLimitCheckInternal: user %s/%s token quota exceeded\n", tenantIDStr, userIDStr)
+			return 3, 60, "token_quota_exceeded"
+		}
+		if userModelTPM > 0 && store.IsTokenQuotaExceeded(rl.UserModelQuotaKey(tenantIDStr, userIDStr, modelName)) {
+			tk.LogIt(tk.LogWarning, "[AIGateway] rateLimitCheckInternal: user %s/%s model %s token quota exceeded\n", tenantIDStr, userIDStr, modelName)
+			return 3, 60, "token_quota_exceeded"
 		}
 		if store.IsTokenQuotaExceeded(tenantIDStr) {
 			tk.LogIt(tk.LogWarning, "[AIGateway] rateLimitCheckInternal: tenant %s token quota exceeded\n", tenantIDStr)
@@ -651,7 +839,12 @@ func llb_ai_ratelimit_check(keyID *C.char, tenantID *C.char, model *C.char, resu
 	}
 
 	store := getGlobalRL()
-	decision, retrySecs, errorCode := rateLimitCheckInternal(svc, store, keyIDStr, tenantIDStr, modelStr)
+	// The data plane's ratelimit ABI pre-dates the user/service identity:
+	// the C caller holds both (key_dec.user_id / the rule's VIP) but this
+	// export's signature cannot carry them yet. They arrive with the
+	// identity-forwarding ABI (WP-5 stage B); until then the user/VIP arms
+	// of the ladder are exercised by the unit corpus and dormant here.
+	decision, retrySecs, errorCode := rateLimitCheckInternal(svc, store, keyIDStr, tenantIDStr, "", "", modelStr)
 	if decision != 0 {
 		result.decision = C.int(decision)
 		result.retry_after = C.int(retrySecs)
@@ -699,52 +892,107 @@ func llb_ai_ratelimit_check(keyID *C.char, tenantID *C.char, model *C.char, resu
 // land in the same minute except across a boundary race, where the stale
 // tag makes settlement skip a release the epoch advance already performed —
 // the standard orphan self-heal.
-func tokenQuotaReserveInternal(svc rateLimitService, store *rl.RateLimiterStore, tenantID, modelName string, want int) (allowed bool, retrySecs int, resEpoch int64) {
+func tokenQuotaReserveInternal(svc rateLimitService, store *rl.RateLimiterStore, tenantID, modelName, userID, keyID, svcIdent string, want int) (allowed bool, retrySecs int, resEpoch int64) {
 	if want <= 0 || tenantID == "" {
 		return true, 0, 0
 	}
-	tenantTPM := 0
-	modelTPM := 0
-	// burstPct is the tenant's bucket-capacity override. The per-model bucket
-	// deliberately shares it: it is a property of how bursty the TENANT is
-	// allowed to be, and giving a model bucket its own capacity would let a
-	// tenant widen its aggregate burst by splitting spend across models.
-	burstPct := 0
-	if svc != nil {
-		// An unknowable-limits error is tolerated here, not failed closed:
-		// admission (rateLimitCheckInternal) has already refused fresh
-		// requests for such a tenant, so a read that still errors here is
-		// the outage beginning mid-request — the reservation proceeds on
-		// zeroes exactly as an unlimited tenant's would, and the admission
-		// gate owns the deny from the next request on.
-		_, tenantTPM, burstPct, _ = svc.GetTenantRateLimit(tenantID)
-		if modelName != "" {
-			modelTPM, _ = svc.GetTenantModelRateLimit(tenantID, modelName)
-		}
-	}
-	if tenantTPM <= 0 && modelTPM <= 0 {
+	buckets := quotaBucketsFor(svc, tenantID, modelName, userID, keyID, svcIdent)
+	if len(buckets) == 0 {
 		return true, 0, 0
 	}
 
-	allowed, retrySecs, resEpoch = store.ReserveTokens(tenantID, want, tenantTPM, burstPct)
-	if !allowed {
-		return false, retrySecs, 0
-	}
-	if modelTPM > 0 {
-		mAllowed, mRetry, mEpoch := store.ReserveTokens(modelQuotaKey(tenantID, modelName), want, modelTPM, burstPct)
-		if !mAllowed {
-			// Give the aggregate claim back (epoch-tagged, clamped release;
-			// nothing charged).
-			if resEpoch != 0 {
-				store.SettleTokens(tenantID, 0, want, resEpoch, tenantTPM, burstPct)
+	// Claim every bucket in ladder order; a later denial gives back every
+	// claim already taken (epoch-tagged, clamped release; nothing charged)
+	// — a half-held reservation would leak headroom until the epoch
+	// expires it.
+	taken := 0
+	for i, b := range buckets {
+		bAllowed, bRetry, bEpoch := store.ReserveTokens(b.key, want, b.tpm, b.burstPct)
+		if !bAllowed {
+			for j := range taken {
+				p := buckets[j]
+				if resEpoch != 0 {
+					store.SettleTokens(p.key, 0, want, resEpoch, p.tpm, p.burstPct)
+				}
 			}
-			return false, mRetry, 0
+			return false, bRetry, 0
 		}
+		taken = i + 1
 		if resEpoch == 0 {
-			resEpoch = mEpoch
+			resEpoch = bEpoch
 		}
 	}
 	return true, 0, resEpoch
+}
+
+// quotaBucket names one token-quota bucket a request is accountable to.
+type quotaBucket struct {
+	key      string
+	tpm      int
+	burstPct int
+}
+
+// quotaBucketsFor resolves the token buckets a request's spend lands on, in
+// ladder order: tenant aggregate, tenant|model, user aggregate, user|model,
+// key, VIP-shared. Only buckets with a resolved non-zero limit exist. The
+// read errors are tolerated here (reservation and settlement both run
+// mid-request): admission has already refused fresh requests for an
+// unknowable identity, so an error now is the outage beginning mid-flight —
+// the affected bucket drops out exactly as an unlimited one would, and the
+// admission gate owns the deny from the next request on.
+//
+// burstPct is the tenant's bucket-capacity override, shared by every bucket
+// under the tenant (model, user, user|model): burstiness is a property of
+// how bursty the TENANT may be, and a per-bucket capacity would let a
+// tenant widen its aggregate burst by splitting spend.
+func quotaBucketsFor(svc rateLimitService, tenantID, modelName, userID, keyID, svcIdent string) []quotaBucket {
+	if svc == nil {
+		return nil
+	}
+	var out []quotaBucket
+	var defaults qosDefaults
+	if d, err := resolveQoSDefaults(svc, svcIdent); err == nil {
+		defaults = d
+	}
+
+	_, tenantTPM, burstPct, _ := svc.GetTenantRateLimit(tenantID)
+	if tenantTPM <= 0 {
+		tenantTPM = defaults.tenantTPM
+	}
+	if tenantTPM > 0 {
+		out = append(out, quotaBucket{key: tenantID, tpm: tenantTPM, burstPct: burstPct})
+	}
+	if modelName != "" {
+		if modelTPM, err := svc.GetTenantModelRateLimit(tenantID, modelName); err == nil && modelTPM > 0 {
+			out = append(out, quotaBucket{key: modelQuotaKey(tenantID, modelName), tpm: modelTPM, burstPct: burstPct})
+		}
+	}
+	if userID != "" {
+		userTPM := 0
+		if _, _, t, err := svc.GetUserRateLimit(tenantID, userID); err == nil {
+			userTPM = t
+		}
+		if userTPM <= 0 {
+			userTPM = defaults.userTPM
+		}
+		if userTPM > 0 {
+			out = append(out, quotaBucket{key: rl.UserQuotaKey(tenantID, userID), tpm: userTPM, burstPct: burstPct})
+		}
+		if modelName != "" {
+			if umTPM, err := svc.GetUserModelRateLimit(tenantID, userID, modelName); err == nil && umTPM > 0 {
+				out = append(out, quotaBucket{key: rl.UserModelQuotaKey(tenantID, userID, modelName), tpm: umTPM, burstPct: burstPct})
+			}
+		}
+	}
+	if keyID != "" {
+		if key, err := svc.GetAPIKeyByID(keyID); err == nil && key.TokensPerMin > 0 {
+			out = append(out, quotaBucket{key: rl.KeyQuotaKey(keyID), tpm: key.TokensPerMin, burstPct: burstPct})
+		}
+	}
+	if svcIdent != "" && defaults.vipTPM > 0 {
+		out = append(out, quotaBucket{key: rl.VipSharedQuotaKey(svcIdent), tpm: defaults.vipTPM, burstPct: 0})
+	}
+	return out
 }
 
 // tokenQuotaConsumeInternal is the pure-Go token accounting logic, separated
@@ -765,32 +1013,38 @@ func tokenQuotaReserveInternal(svc rateLimitService, store *rl.RateLimiterStore,
 // bucket into debt: the NEXT request's rateLimitCheckInternal stage 3
 // returns deny_429 ("token_quota_exceeded") — the already-served response
 // is never affected.
-func tokenQuotaConsumeInternal(svc rateLimitService, store *rl.RateLimiterStore, tenantID, modelName string, count, reservedAmt int, resEpoch int64) (allowed bool, retrySecs int) {
+func tokenQuotaConsumeInternal(svc rateLimitService, store *rl.RateLimiterStore, tenantID, modelName, userID, keyID, svcIdent string, count, reservedAmt int, resEpoch int64) (allowed bool, retrySecs int) {
 	if tenantID == "" {
 		return true, 0
 	}
-	tenantTPM := 0
-	modelTPM := 0
-	burstPct := 0
-	if svc != nil {
-		// Same tolerance as reservation: settlement must run even when the
-		// limits are unknowable — an unreleased claim would deny the tenant's
-		// admissions until the epoch expires it, turning the outage into a
-		// second, self-inflicted quota failure.
-		_, tenantTPM, burstPct, _ = svc.GetTenantRateLimit(tenantID)
-		if modelName != "" {
-			modelTPM, _ = svc.GetTenantModelRateLimit(tenantID, modelName)
-		}
-	}
-	if reservedAmt <= 0 && (count <= 0 || (tenantTPM <= 0 && modelTPM <= 0)) {
+	// Same tolerance as reservation: settlement must run even when the
+	// limits are unknowable — an unreleased claim would deny the tenant's
+	// admissions until the epoch expires it, turning the outage into a
+	// second, self-inflicted quota failure.
+	buckets := quotaBucketsFor(svc, tenantID, modelName, userID, keyID, svcIdent)
+	if reservedAmt <= 0 && (count <= 0 || len(buckets) == 0) {
 		return true, 0
 	}
-	allowed, retrySecs = store.SettleTokens(tenantID, count, reservedAmt, resEpoch, tenantTPM, burstPct)
-	if modelTPM > 0 {
-		mAllowed, mRetry := store.SettleTokens(modelQuotaKey(tenantID, modelName), count, reservedAmt, resEpoch, modelTPM, burstPct)
-		if !mAllowed {
+	// The tenant aggregate settles even when its own limit resolved to zero
+	// (reservation release rides the settle call), matching the old shape;
+	// every other bucket exists only with a live limit.
+	settledTenant := false
+	allowed = true
+	for _, b := range buckets {
+		bAllowed, bRetry := store.SettleTokens(b.key, count, reservedAmt, resEpoch, b.tpm, b.burstPct)
+		if b.key == tenantID {
+			settledTenant = true
+		}
+		if !bAllowed {
 			allowed = false
-			retrySecs = max(retrySecs, mRetry)
+			retrySecs = max(retrySecs, bRetry)
+		}
+	}
+	if !settledTenant {
+		tAllowed, tRetry := store.SettleTokens(tenantID, count, reservedAmt, resEpoch, 0, 0)
+		if !tAllowed {
+			allowed = false
+			retrySecs = max(retrySecs, tRetry)
 		}
 	}
 	return allowed, retrySecs
@@ -859,7 +1113,9 @@ func llb_ai_token_quota_reserve(tenantID *C.char, modelName *C.char, promptEst C
 	}
 
 	store := getGlobalRL()
-	allowed, retrySecs, epoch := tokenQuotaReserveInternal(svc, store, tenant, C.GoString(modelName), want)
+	// user/key/service identity: not in this export's ABI yet (WP-5 stage
+	// B); the user-dimension buckets are dormant here until it lands.
+	allowed, retrySecs, epoch := tokenQuotaReserveInternal(svc, store, tenant, C.GoString(modelName), "", "", "", want)
 	if !allowed {
 		if result != nil {
 			result.decision = 3
@@ -935,7 +1191,8 @@ func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, promptToken
 	}
 
 	store := getGlobalRL()
-	allowed, retrySecs := tokenQuotaConsumeInternal(svc, store, tenant, C.GoString(modelName), count,
+	// user/key/service identity: not in this export's ABI yet (WP-5 stage B).
+	allowed, retrySecs := tokenQuotaConsumeInternal(svc, store, tenant, C.GoString(modelName), "", "", "", count,
 		int(reservedToks), int64(resEpoch))
 	if !allowed {
 		if result != nil {
@@ -1174,4 +1431,24 @@ func llb_ai_normal_session_hit(modelName *C.char) {
 func llb_ai_record_unmetered(vip *C.char) {
 	defer cgoRecover("llb_ai_record_unmetered")
 	prom.RecordUnmeteredRequest(C.GoString(vip))
+}
+
+// llb_ai_record_usage_missing records one completed response that carried no
+// readable usage object, and charges nothing.
+//
+// C sockproxy calls this when a non-streamed AI Gateway response has finished
+// and no dialect ever extracted a usage object from it. The streaming path
+// reaches the same counter through the quota charge's estimated arm; the
+// non-streamed path had no route to it at all, so responses that completed
+// without usage were invisible rather than merely uncharged.
+//
+// Accounting-only by construction: it moves loxilb_ai_tokens_missing_total and
+// nothing else. These responses stay free by decision, not by omission — see
+// prom.RecordTokenUsageMissing for why charging an estimate was rejected and
+// what would reopen it.
+//
+//export llb_ai_record_usage_missing
+func llb_ai_record_usage_missing(tenantID *C.char, modelName *C.char) {
+	defer cgoRecover("llb_ai_record_usage_missing")
+	prom.RecordTokenUsageMissing(C.GoString(modelName), C.GoString(tenantID))
 }

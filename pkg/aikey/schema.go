@@ -98,6 +98,50 @@ var (
 	updated_at     TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	PRIMARY KEY (tenant_id, model)
 )`, Schema)
+
+	// Ladder level 1: explicit per-user limits inside a tenant. A zero in
+	// any column means "this row does not constrain that dimension — fall
+	// through the ladder"; a row of all zeroes is rejected at the API, so
+	// the table never holds an entry that decides nothing.
+	createUserRateLimitsTable = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.user_rate_limits (
+	tenant_id      VARCHAR(128) NOT NULL,
+	user_id        VARCHAR(128) NOT NULL,
+	rps            INTEGER NOT NULL DEFAULT 0,
+	burst_size     INTEGER NOT NULL DEFAULT 0,
+	tokens_per_min INTEGER NOT NULL DEFAULT 0,
+	updated_at     TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	PRIMARY KEY (tenant_id, user_id)
+)`, Schema)
+
+	createUserModelRateLimitsTable = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.user_model_rate_limits (
+	tenant_id      VARCHAR(128) NOT NULL,
+	user_id        VARCHAR(128) NOT NULL,
+	model          VARCHAR(255) NOT NULL,
+	tokens_per_min INTEGER NOT NULL DEFAULT 0,
+	updated_at     TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	PRIMARY KEY (tenant_id, user_id, model)
+)`, Schema)
+
+	// Ladder level 3: configurable defaults, one row per scope. The global
+	// row uses rule_ident '' (PostgreSQL treats NULLs as distinct in a
+	// primary key, so the empty string is what makes "one global row" a
+	// constraint instead of a convention). scope 'rule' rows carry the
+	// service identity they apply to. Zero columns fall through, exactly
+	// as in the explicit tables above.
+	createRateLimitDefaultsTable = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.rate_limit_defaults (
+	scope              VARCHAR(16) NOT NULL CHECK (scope IN ('global', 'rule')),
+	rule_ident         VARCHAR(128) NOT NULL DEFAULT '',
+	default_user_rps   INTEGER NOT NULL DEFAULT 0,
+	default_user_tpm   INTEGER NOT NULL DEFAULT 0,
+	default_tenant_rps INTEGER NOT NULL DEFAULT 0,
+	default_tenant_tpm INTEGER NOT NULL DEFAULT 0,
+	vip_shared_rps     INTEGER NOT NULL DEFAULT 0,
+	vip_shared_tpm     INTEGER NOT NULL DEFAULT 0,
+	updated_at         TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	PRIMARY KEY (scope, rule_ident),
+	CHECK (scope != 'global' OR rule_ident = ''),
+	CHECK (scope != 'rule' OR rule_ident != '')
+)`, Schema)
 )
 
 // preflight verifies the store is provisioned the way this package needs
@@ -154,6 +198,9 @@ func ensureSchema(db *sql.DB) error {
 		{"tenant_rate_limits table", createTenantRateLimitsTable},
 		{"tenant_rate_limits.burst_pct column", alterTenantRateLimitsAddBurst},
 		{"tenant_model_rate_limits table", createTenantModelRateLimitsTable},
+		{"user_rate_limits table", createUserRateLimitsTable},
+		{"user_model_rate_limits table", createUserModelRateLimitsTable},
+		{"rate_limit_defaults table", createRateLimitDefaultsTable},
 	}
 	for _, s := range stmts {
 		if _, err := db.Exec(s.sql); err != nil {

@@ -221,7 +221,7 @@ func TestRateLimiterSendBatchChunking(t *testing.T) {
 
 	got := srv.calls.Load()
 	if got != 3 {
-		t.Errorf("expected 3 chunked RPCs (1200 / 500 = ceil 3), got %d", got)
+		t.Errorf("expected 3 chunked RPCs (sentinel + 1200 payload under the 500 ceiling), got %d", got)
 	}
 
 	srv.mu.Lock()
@@ -229,11 +229,22 @@ func TestRateLimiterSendBatchChunking(t *testing.T) {
 	if len(srv.batches) != 3 {
 		t.Fatalf("expected 3 batches recorded, got %d", len(srv.batches))
 	}
-	wantSizes := []int{500, 500, 200}
+	// Every push leads with the scope-version sentinel, INSIDE the
+	// 500-entry RPC ceiling: the first chunk is the sentinel + 499 payload
+	// entries, so no call ever exceeds the SPEC bound. 1200 payload rows
+	// therefore chunk as 499+500+201, and the first wire batch's first
+	// entry is the sentinel, not payload.
+	wantSizes := []int{500, 500, 201}
 	for i, b := range srv.batches {
 		if len(b.Entries) != wantSizes[i] {
 			t.Errorf("batch %d: expected %d entries, got %d", i, wantSizes[i], len(b.Entries))
 		}
+	}
+	if srv.batches[0].Entries[0].KeyId != rl.ScopeSentinelKeyID {
+		t.Errorf("first wire entry must be the scope sentinel, got %q", srv.batches[0].Entries[0].KeyId)
+	}
+	if srv.batches[1].Entries[0].KeyId == rl.ScopeSentinelKeyID {
+		t.Errorf("the sentinel must lead the PUSH, not every chunk")
 	}
 }
 

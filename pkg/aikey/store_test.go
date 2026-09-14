@@ -73,7 +73,8 @@ func storeFixture(t *testing.T) *Service {
 
 func truncate(t *testing.T, db *sql.DB) {
 	t.Helper()
-	for _, table := range []string{"api_keys", "tenant_rate_limits", "tenant_model_rate_limits"} {
+	for _, table := range []string{"api_keys", "tenant_rate_limits", "tenant_model_rate_limits",
+		"user_rate_limits", "user_model_rate_limits", "rate_limit_defaults"} {
 		if _, err := db.Exec(fmt.Sprintf("DELETE FROM %s.%s", Schema, table)); err != nil {
 			t.Fatalf("clear %s: %v", table, err)
 		}
