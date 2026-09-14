@@ -345,6 +345,19 @@ plib_collect_logs() {
     local llb=$1 f
     docker exec "$llb" tail -200 /tmp/loxilb.out > "$PLIB_ARTIFACTS/loxilb.out.tail" 2>/dev/null
     docker exec "$llb" tail -100 /tmp/loxilb.err > "$PLIB_ARTIFACTS/loxilb.err.tail" 2>/dev/null
+    # Not every suite runs the gateway under the in-container redirect that
+    # produces /tmp/loxilb.out: where spawn_docker_host launches the daemon
+    # itself, both of the tails above are EMPTY and this collector gathers
+    # nothing at all. The daemon's stdout/stderr are the container's log
+    # there, and that is where a panic trace lands -- without it, a handler
+    # that dies mid-request is visible only as an empty reply on the client
+    # side, with nothing naming the line.
+    docker logs --tail 400 "$llb" > "$PLIB_ARTIFACTS/loxilb.dockerlog.tail" 2>&1 || true
+    if grep -qE "panic: |runtime error:|fatal error: " "$PLIB_ARTIFACTS/loxilb.dockerlog.tail" 2>/dev/null; then
+        echo "  GATEWAY PANIC in the container log (see loxilb.dockerlog.tail):"
+        grep -nE -A25 "panic: |runtime error:|fatal error: " \
+            "$PLIB_ARTIFACTS/loxilb.dockerlog.tail" 2>/dev/null | head -40 | sed 's/^/    /'
+    fi
     for f in "$PLIB_ARTIFACTS"/*.json; do
         [ -f "$f" ] || continue
         if sudo jq -e '.domains.ipsec?' "$f" >/dev/null 2>&1; then
