@@ -739,6 +739,29 @@ func loxiNetInit() {
 		handler.CertBootReconcile()
 	}
 
+	// JWT auth profiles live in memory (public key material only); the holder
+	// exists regardless of any store configuration, so it is built with the
+	// other in-memory state and BEFORE the REST server starts serving.
+	// Ordering is load-bearing, not cosmetic: the snapshot registry reads this
+	// domain on every capture, plan and restore, so a config restore arriving
+	// in the window between RunAPIServer and this line dereferenced a nil
+	// holder. net/http turns that panic into a closed connection carrying no
+	// response, so the operator recovery path documented on the readiness
+	// surface failed with nothing to read.
+	mh.JWTAuthProfiles = JWTAuthProfileInit()
+	// Ground the delete guard in the real rule table: a profile still named
+	// by an installed LB rule cannot be removed. Bound here rather than in
+	// the holder so pkg/jwtauth stays free of loxinet types; every path into
+	// the holder takes mh.mtx first, which is the lock the rule walk needs.
+	// The closure reads mh.zr lazily, so binding it here does not require the
+	// rule table to exist yet.
+	mh.JWTAuthProfiles.ruleRefs = func(name string) []string {
+		if mh.zr == nil || mh.zr.Rules == nil {
+			return nil
+		}
+		return mh.zr.Rules.JwtProfileRuleRefs(name)
+	}
+
 	// Initialize and spawn the api server subsystem
 	if !opts.Opts.NoAPI {
 		apiserver.RegisterAPIHooks(NetAPIInit(opts.Opts.BgpPeerMode))
@@ -794,19 +817,6 @@ func loxiNetInit() {
 	// user service rather than nested inside it: availability of the key store
 	// follows from its own connection options, and enforcement follows from
 	// per-service policy. Neither is a function of --userservice.
-	// JWT auth profiles live in memory (public key material only); the
-	// holder exists regardless of any store configuration.
-	mh.JWTAuthProfiles = JWTAuthProfileInit()
-	// Ground the delete guard in the real rule table: a profile still named
-	// by an installed LB rule cannot be removed. Bound here rather than in
-	// the holder so pkg/jwtauth stays free of loxinet types; every path into
-	// the holder takes mh.mtx first, which is the lock the rule walk needs.
-	mh.JWTAuthProfiles.ruleRefs = func(name string) []string {
-		if mh.zr == nil || mh.zr.Rules == nil {
-			return nil
-		}
-		return mh.zr.Rules.JwtProfileRuleRefs(name)
-	}
 
 	if opts.Opts.AIKeyDBHost != "" {
 		// Publish the service before dialling, not after. Connect retries with
