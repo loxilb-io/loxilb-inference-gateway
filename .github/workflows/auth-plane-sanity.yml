@@ -96,6 +96,7 @@ jobs:
             ./pkg/loxinet
           python3 -B cicd/ai-multitier-security/check_security_order.py
           make -C loxilb-ebpf/common test_aisec
+          make -C loxilb-ebpf/common test_aiident
           # The guard that stands between a header field and the wire. It
           # belongs to this gate because the fields it refuses are the ones a
           # backend trusts to say who is calling: a CR or LF in X-Auth-User

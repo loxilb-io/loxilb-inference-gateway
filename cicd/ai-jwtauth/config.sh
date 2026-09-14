@@ -21,7 +21,14 @@
 #   - a large token sent in small TCP writes still admits (the header value
 #     reaches the parser in fragments; a capture that kept only one of them
 #     failed as an indistinguishable bad-signature 401);
-#   - HTTP/2 on a JWT-enforcing service is refused, not admitted unchecked;
+#   - the raw Authorization capture boundary is exact: 4095 raw bytes is
+#     the largest value that reaches verification, 4096 is refused at
+#     capture — on HTTP/1.1 and HTTP/2 alike;
+#   - HTTP/2 runs the SAME admission gate as HTTP/1.1: a valid JWT admits
+#     end to end, a valid API key on a jwt-only service is refused, and
+#     nothing refused is forwarded (the raw recorder is the witness);
+#   - two streams of different models and identities multiplexed on ONE
+#     HTTP/2 connection are routed, denied, and settled independently;
 #   - a profile whose JWKS endpoint never answers refuses 503 — never 200.
 #
 # Topology:
@@ -39,6 +46,28 @@
 #     2044 jwt            profile kc-blackhole JWKS never answers
 #     2045 jwt            profile kc-fwd       forward_identity=true
 #     2046 jwt            profile kc-pass      authorization_passthrough=true
+#     2047 jwt            profile kc-outage    IdP outage after a fetch (10s refresh)
+#     2048 jwt            profile kc           HTTP/2 legs (h2c echo backend)
+#     2049 jwt            profile kc           H2 forwarding oracle (raw recorder)
+#     2050 jwt            profile kc           H2 multiplex, two model pools
+#     2051 none+sse       (keyless)            per-VIP token bound, H/1.1
+#     2052 none+sse       (keyless)            per-VIP token bound, H/2
+#     2054 jwt            profile kc           TLS + ALPN-negotiated h2 (the
+#                                              only leg where the gateway
+#                                              terminates TLS; every other H2
+#                                              port above is h2c)
+#     2055 jwt            profile kc           backend answers 200 with NO
+#                                              usage object (missing-usage
+#                                              accounting)
+#     2056 jwt            profile kc           the same, over HTTP/2 (h2c echo
+#                                              with usage suppressed) — the H2
+#                                              settle path is a different
+#                                              recorder from the H/1.1 one, so
+#                                              2055 proves nothing about it
+#     2057 jwt            profile kc           backend answers 500 with no
+#                                              usage (H/1.1) — an error is not
+#                                              an accounting hole
+#     2058 jwt            profile kc           the same 500, over HTTP/2
 
 source ../common.sh
 
@@ -203,6 +232,116 @@ start_hdr_backend() { # <namespace> <response label>
 start_hdr_backend l3ep1 server-llama   || exit 1
 start_hdr_backend l3ep2 server-mistral || exit 1
 
+# A backend that answers 200 with NO usage object. Every other backend here
+# emits one, which is why nothing ever exercised the accounting path for a
+# response that carries none — and that path reported nothing at all, so the
+# gap was invisible rather than merely uncharged. Same echo, usage suppressed,
+# on its own port so the with-usage control keeps running beside it.
+$hexec l3ep1 sh -c "nohup python3 $SDIR/hdr_echo.py server-nousage 8092 no-usage >/tmp/ai-jwtauth-nousage.log 2>&1 &"
+for i in $(seq 1 20); do
+  if $hexec l3ep1 curl -sf --max-time 1 http://127.0.0.1:8092/ | grep -q "server-nousage"; then
+    echo "  server-nousage backend ready (${i})"
+    break
+  fi
+  [ "$i" = 20 ] && { echo "FATAL: no-usage backend did not become ready"; exit 1; }
+  sleep 1
+done
+# It must not accidentally still be emitting usage — that would make the
+# leg below assert against the wrong response shape and pass for the wrong
+# reason.
+if $hexec l3ep1 curl -sf --max-time 2 http://127.0.0.1:8092/ | grep -q '"usage"'; then
+  echo "FATAL: the no-usage backend emitted a usage object"; exit 1
+fi
+
+# The H2 legs need two backends of their own. The h2c echo completes an
+# HTTP/2 exchange, so "admitted" and "refused" finally produce different
+# client-visible outcomes over H2 (the H/1.1 pools cannot parse the h2
+# frames the gateway forwards, and their silence looks like a refusal).
+# The raw recorder is the forwarding oracle: it answers nothing and keeps
+# every byte, so "nothing was forwarded" is read from the recorded bytes,
+# never inferred from a client-side reset.
+# python3-h2 must be importable on the host (the namespaces share it).
+if ! python3 -c "import h2" 2>/dev/null; then
+  echo "FATAL: python3 'h2' package missing (pip3 install --break-system-packages h2)"
+  exit 1
+fi
+$hexec l3ep1 sh -c "rm -f /tmp/ai-jwtauth-rawsink.out; nohup python3 $SDIR/rawsink.py 8091 /tmp/ai-jwtauth-rawsink.out >/tmp/ai-jwtauth-rawsink.log 2>&1 &"
+$hexec l3ep1 sh -c "nohup python3 $SDIR/h2c_echo.py server-h2-llama 8090 >/tmp/ai-jwtauth-h2echo.log 2>&1 &"
+for i in $(seq 1 20); do
+  if $hexec l3ep1 curl -sf --max-time 1 --http2-prior-knowledge \
+       http://127.0.0.1:8090/__receipts/probe | grep -q "0"; then
+    echo "  server-h2-llama backend ready (${i})"
+    break
+  fi
+  [ "$i" = 20 ] && { echo "FATAL: h2c echo backend did not become ready"; exit 1; }
+  sleep 1
+done
+# The H2 twin of the 8092 no-usage backend. An H/2 response settles through
+# proxy_h2_settle_stream, which reads usage out of the STREAM's own tail
+# window — a different recorder from the H/1.1 relay — so the 8092 pool proves
+# nothing about it. Same h2c echo, usage suppressed, own port so the
+# with-usage H2 control on 8090 keeps running beside it.
+$hexec l3ep1 sh -c "nohup python3 $SDIR/h2c_echo.py server-h2-nousage 8093 no-usage >/tmp/ai-jwtauth-h2nousage.log 2>&1 &"
+for i in $(seq 1 20); do
+  if $hexec l3ep1 curl -sf --max-time 1 --http2-prior-knowledge \
+       http://127.0.0.1:8093/__receipts/probe | grep -q "0"; then
+    echo "  server-h2-nousage backend ready (${i})"
+    break
+  fi
+  [ "$i" = 20 ] && { echo "FATAL: h2 no-usage backend did not become ready"; exit 1; }
+  sleep 1
+done
+# Same guard as the H/1.1 no-usage pool: if it is still emitting usage the
+# leg below would assert against the wrong response shape and pass for the
+# wrong reason.
+if $hexec l3ep1 curl -sf --max-time 2 --http2-prior-knowledge \
+     -X POST http://127.0.0.1:8093/ -d '{}' | grep -q '"usage"'; then
+  echo "FATAL: the H2 no-usage backend emitted a usage object"; exit 1
+fi
+
+# The error pools. An error body carries no usage object either, so to the
+# accounting it looks exactly like the no-usage case — the only thing telling
+# them apart is the response status. Without a backend that actually answers
+# 4xx/5xx there is nothing to prove the status test with, and a filter nothing
+# exercises is indistinguishable from no filter at all.
+$hexec l3ep1 sh -c "nohup python3 $SDIR/hdr_echo.py server-err 8094 error-500 >/tmp/ai-jwtauth-err.log 2>&1 &"
+for i in $(seq 1 20); do
+  if $hexec l3ep1 curl -s --max-time 1 -o /dev/null -w '%{http_code}' \
+       http://127.0.0.1:8094/ | grep -q "500"; then
+    echo "  server-err backend ready (${i})"
+    break
+  fi
+  [ "$i" = 20 ] && { echo "FATAL: error backend did not become ready"; exit 1; }
+  sleep 1
+done
+$hexec l3ep1 sh -c "nohup python3 $SDIR/h2c_echo.py server-h2-err 8095 error-500 >/tmp/ai-jwtauth-h2err.log 2>&1 &"
+for i in $(seq 1 20); do
+  if $hexec l3ep1 curl -s --max-time 1 --http2-prior-knowledge \
+       -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8095/ -d '{}' \
+       | grep -q "500"; then
+    echo "  server-h2-err backend ready (${i})"
+    break
+  fi
+  [ "$i" = 20 ] && { echo "FATAL: H2 error backend did not become ready"; exit 1; }
+  sleep 1
+done
+
+# Second h2 pool, DIFFERENT namespace: the multiplexing legs need two
+# model pools whose endpoint lists both start at index 0, so that a
+# backend cache keyed by index alone has an alias to hit. Each pool's
+# receipt counter is queried inside its own namespace — per-backend
+# delivery evidence no client-side response can fake.
+$hexec l3ep2 sh -c "nohup python3 $SDIR/h2c_echo.py server-h2-mistral 8090 >/tmp/ai-jwtauth-h2echo.log 2>&1 &"
+for i in $(seq 1 20); do
+  if $hexec l3ep2 curl -sf --max-time 1 --http2-prior-knowledge \
+       http://127.0.0.1:8090/__receipts/probe | grep -q "0"; then
+    echo "  server-h2-mistral backend ready (${i})"
+    break
+  fi
+  [ "$i" = 20 ] && { echo "FATAL: second h2c echo backend did not become ready"; exit 1; }
+  sleep 1
+done
+
 echo "#########################################"
 echo "Waiting for loxilb REST API to be ready"
 echo "#########################################"
@@ -309,7 +448,7 @@ echo "#########################################"
 
 # add_lb_rule <port> <model> <ep_ip> <auth-mode> <profile>
 add_lb_rule() {
-  local port=$1 model=$2 ep=$3 auth=$4 profile=$5
+  local port=$1 model=$2 ep=$3 auth=$4 profile=$5 tport=${6:-8080}
   local resp
   resp=$($hexec l3h1 curl -s -X POST \
     http://10.10.10.254:11111/netlox/v1/config/loadbalancer \
@@ -330,7 +469,7 @@ add_lb_rule() {
         "inactiveTimeOut":   30
       },
       "endpoints": [
-        {"endpointIP": "'"$ep"'", "targetPort": 8080, "weight": 1}
+        {"endpointIP": "'"$ep"'", "targetPort": '"$tport"', "weight": 1}
       ]
     }')
   echo "  rule $port/$model ($auth/$profile) -> $ep: $resp"
@@ -352,6 +491,169 @@ add_lb_rule 2044 "llama-70b"  "31.31.31.1" jwt           kc-blackhole
 add_lb_rule 2045 "llama-70b"  "31.31.31.1" jwt           kc-fwd
 add_lb_rule 2046 "llama-70b"  "31.31.31.1" jwt           kc-pass
 add_lb_rule 2047 "llama-70b"  "31.31.31.1" jwt           kc-outage
+# H2 legs: a jwt-only service whose backend actually speaks HTTP/2.
+add_lb_rule 2048 "llama-70b"  "31.31.31.1" jwt           kc 8090
+# The no-usage service, for the missing-usage accounting leg.
+add_lb_rule 2055 "llama-70b"  "31.31.31.1" jwt           kc 8092
+# Its HTTP/2 twin, on the h2c no-usage pool.
+add_lb_rule 2056 "llama-70b"  "31.31.31.1" jwt           kc 8093
+# The error pools, one per protocol, for the status test.
+add_lb_rule 2057 "llama-70b"  "31.31.31.1" jwt           kc 8094
+add_lb_rule 2058 "llama-70b"  "31.31.31.1" jwt           kc 8095
+
+# TLS + ALPN. Every H2 port above is h2c, so nothing here has ever run the
+# bearer gate on a connection whose HTTP/2 was negotiated through the TLS
+# handshake instead of a cleartext preface. That is a different entry path in
+# the datapath — proxy_check_and_setup_h2() reads SSL_get0_alpn_selected() at
+# accept time — so it needs its own legs rather than an assumption of parity.
+#
+# The server cert is issued here and installed before the rule exists: the
+# listener reads it when the rule is created, so a later copy would leave the
+# service unable to complete a handshake at all.
+TLS_DIR=$(mktemp -d)
+openssl req -x509 -newkey rsa:2048 -nodes -days 3 \
+  -keyout "$TLS_DIR/server.key" -out "$TLS_DIR/server.crt" \
+  -subj "/CN=10.10.10.254" \
+  -addext "subjectAltName=IP:10.10.10.254" >/dev/null 2>&1 || {
+    echo "FATAL: could not issue the TLS test certificate"; exit 1; }
+docker exec llb1 mkdir -p /opt/loxilb/cert
+docker cp "$TLS_DIR/server.crt" llb1:/opt/loxilb/cert/server.crt
+docker cp "$TLS_DIR/server.key" llb1:/opt/loxilb/cert/server.key
+rm -rf "$TLS_DIR"
+
+# security:1 = the gateway terminates TLS. backend_protocol http2 keeps the
+# backend leg on the h2c echo, so the only thing this rule changes relative to
+# 2048 is how the client's HTTP/2 was arrived at.
+resp=$($hexec l3h1 curl -s -X POST \
+  http://10.10.10.254:11111/netlox/v1/config/loadbalancer \
+  -H "Content-Type: application/json" \
+  -d '{
+    "serviceArguments": {
+      "externalIP":       "10.10.10.254",
+      "port":              2054,
+      "protocol":         "tcp",
+      "sel":               0,
+      "security":          1,
+      "mode":              4,
+      "host":             "10.10.10.254",
+      "path_prefix":      "/",
+      "path_match_mode":  "prefix",
+      "model_name":       "llama-70b",
+      "api_key_auth":     "jwt",
+      "jwt_auth_profile": "kc",
+      "backend_protocol": "http2",
+      "inactiveTimeOut":   30
+    },
+    "endpoints": [
+      {"endpointIP": "31.31.31.1", "targetPort": 8090, "weight": 1}
+    ]
+  }')
+echo "  rule 2054/llama-70b (jwt/kc, TLS+ALPN) -> 31.31.31.1:8090: $resp"
+case "$resp" in
+  *Success*) ;;
+  *) echo "FATAL: TLS LB rule 2054 rejected"; exit 1 ;;
+esac
+
+# The forwarding-oracle rule: jwt-only, pointed at the raw recorder, and
+# deliberately WITHOUT a model key — on a build whose H2 forwarder still
+# looks endpoints up with the wildcard model, only a model-less rule can
+# resolve, and the red twin needs the forward to actually happen so the
+# recorder can catch it.
+resp=$($hexec l3h1 curl -s -X POST \
+  http://10.10.10.254:11111/netlox/v1/config/loadbalancer \
+  -H "Content-Type: application/json" \
+  -d '{
+    "serviceArguments": {
+      "externalIP":       "10.10.10.254",
+      "port":              2049,
+      "protocol":         "tcp",
+      "sel":               0,
+      "mode":              4,
+      "host":             "10.10.10.254",
+      "path_prefix":      "/",
+      "path_match_mode":  "prefix",
+      "api_key_auth":     "jwt",
+      "jwt_auth_profile": "kc",
+      "inactiveTimeOut":   30
+    },
+    "endpoints": [
+      {"endpointIP": "31.31.31.1", "targetPort": 8091, "weight": 1}
+    ]
+  }')
+echo "  rule 2049/(no model) (jwt/kc) -> rawsink: $resp"
+case "$resp" in
+  *Success*) ;;
+  *) echo "FATAL: LB rule 2049 rejected"; exit 1 ;;
+esac
+
+# Multiplexing legs: ONE VIP:port, TWO model pools, each pool's endpoint
+# list starting at index 0 and each pool backed by a DIFFERENT h2 echo.
+# The models' authorized identities are disjoint (alice→llama, bob→mistral)
+# so every stream also proves per-stream identity on the shared connection.
+add_lb_rule 2050 "llama-70b"  "31.31.31.1" jwt kc 8090
+add_lb_rule 2050 "mistral-7b" "32.32.32.1" jwt kc 8090
+
+# Keyless per-VIP token-bound legs. api_key_auth 'none' with sse_mode on:
+# ai_gw_mode is sse||pd||required-auth, and only ai_gw_mode services run
+# the admission ladder and the response settle — a keyless service that
+# never opted into AI-gateway treatment pays no per-request probe.
+add_keyless_rule() { # <port> <ep_ip> <tport>
+  local port=$1 ep=$2 tport=$3 resp
+  resp=$($hexec l3h1 curl -s -X POST \
+    http://10.10.10.254:11111/netlox/v1/config/loadbalancer \
+    -H "Content-Type: application/json" \
+    -d '{
+      "serviceArguments": {
+        "externalIP":       "10.10.10.254",
+        "port":              '"$port"',
+        "protocol":         "tcp",
+        "sel":               0,
+        "mode":              4,
+        "host":             "10.10.10.254",
+        "path_prefix":      "/",
+        "path_match_mode":  "prefix",
+        "model_name":       "llama-70b",
+        "api_key_auth":     "disabled",
+        "sse_mode":          true,
+        "inactiveTimeOut":   30
+      },
+      "endpoints": [
+        {"endpointIP": "'"$ep"'", "targetPort": '"$tport"', "weight": 1}
+      ]
+    }')
+  echo "  rule $port/llama-70b (none+sse, keyless) -> $ep:$tport: $resp"
+  case "$resp" in
+    *Success*) ;;
+    *) echo "FATAL: keyless LB rule $port rejected"; exit 1 ;;
+  esac
+}
+add_keyless_rule 2051 "31.31.31.1" 8080   # H/1.1 echo (usage-bearing)
+add_keyless_rule 2052 "31.31.31.1" 8090   # h2 echo (usage-bearing)
+
+# The shared bucket is OPT-IN: a rule-scope defaults row arms it for the
+# two keyless services only. vip_shared_tpm=10 with the echoes' fixed
+# usage of 12 tokens/answer means: request 1 admitted (bucket clean),
+# its settle puts the bucket in debt, request 2 refused — two requests
+# decide the leg. vip_shared_rps stays high so only the token side binds.
+add_vip_bucket() { # <port>
+  local port=$1 resp
+  resp=$($hexec llb1 curl -s -w '\nhttp_code=%{http_code}' -X POST \
+    http://localhost:11111/netlox/v1/config/ai/ratelimit/defaults \
+    -H "Content-Type: application/json" \
+    -d '{
+      "scope": "rule",
+      "rule_ident": "10.10.10.254:'"$port"'",
+      "vip_shared_rps": 100,
+      "vip_shared_tpm": 10
+    }')
+  echo "  vip bucket 10.10.10.254:$port (rps=100 tpm=10): $(echo "$resp" | tail -1)"
+  case "$resp" in
+    *http_code=2*) ;;
+    *) echo "FATAL: defaults row for :$port rejected: $resp"; exit 1 ;;
+  esac
+}
+add_vip_bucket 2051
+add_vip_bucket 2052
 
 echo "#########################################"
 echo "Creating the llama-only API key"
