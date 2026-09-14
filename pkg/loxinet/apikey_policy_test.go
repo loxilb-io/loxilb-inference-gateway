@@ -296,7 +296,7 @@ func TestRateLimitCheckFailsClosedWithoutService(t *testing.T) {
 		{key: "key-1", tenant: ""},
 		{key: "", tenant: "tenant-1"},
 	} {
-		decision, _, errorCode := rateLimitCheckInternal(nil, store, tc.key, tc.tenant, "")
+		decision, _, errorCode := rateLimitCheckInternal(nil, store, tc.key, tc.tenant, "", "", "")
 		if decision == 0 {
 			t.Errorf("key=%q tenant=%q: nil service silently allowed a keyed identity — "+
 				"the QoS plane switched off without a sound", tc.key, tc.tenant)
@@ -310,14 +310,14 @@ func TestRateLimitCheckFailsClosedWithoutService(t *testing.T) {
 	// No identity, no service: allowed. This is ordinary traffic on a
 	// non-attributing service, and denying it would take down every
 	// non-enforcing AI service the moment the store flag was omitted.
-	if decision, _, _ := rateLimitCheckInternal(nil, store, "", "", ""); decision != 0 {
+	if decision, _, _ := rateLimitCheckInternal(nil, store, "", "", "", "", ""); decision != 0 {
 		t.Errorf("nil service with no identity denied (decision=%d) — non-enforcing traffic must pass", decision)
 	}
 
 	// Non-vacuity: a real (mock) service with no limits configured still
 	// allows, so the guard above is about the nil, not about this function
 	// denying everything.
-	if decision, _, _ := rateLimitCheckInternal(&mockRateLimitService{}, store, "key-1", "tenant-1", ""); decision != 0 {
+	if decision, _, _ := rateLimitCheckInternal(&mockRateLimitService{}, store, "key-1", "tenant-1", "", "", ""); decision != 0 {
 		t.Errorf("a live service with no limits was denied (decision=%d)", decision)
 	}
 }
@@ -334,7 +334,7 @@ func TestRateLimitCheckFailsClosedOnUnknowableLimits(t *testing.T) {
 	store := rl.New()
 	degraded := &mockRateLimitService{limitsErr: errors.New("store unreachable, nothing cached")}
 
-	decision, _, errorCode := rateLimitCheckInternal(degraded, store, "key-1", "tenant-1", "")
+	decision, _, errorCode := rateLimitCheckInternal(degraded, store, "key-1", "tenant-1", "", "", "")
 	if decision != 4 || errorCode != "policy_store_unavailable" {
 		t.Errorf("tenant limits unknowable: decision=%d code=%q, want 4/policy_store_unavailable", decision, errorCode)
 	}
@@ -343,14 +343,14 @@ func TestRateLimitCheckFailsClosedOnUnknowableLimits(t *testing.T) {
 	// it must not be reachable past a failed tenant read, and when it is the
 	// one that fails, the answer is the same refusal.
 	modelOnly := &mockRateLimitService{limitsErr: nil}
-	decision, _, errorCode = rateLimitCheckInternal(modelOnly, store, "key-1", "tenant-1", "m")
+	decision, _, errorCode = rateLimitCheckInternal(modelOnly, store, "key-1", "tenant-1", "", "", "m")
 	if decision != 0 {
 		t.Fatalf("control: a healthy no-limit service denied (decision=%d code=%q)", decision, errorCode)
 	}
 
 	// Non-vacuity control: same call shape, no error — allowed. The refusal
 	// above is about the error, not about a degraded-looking zero config.
-	if decision, _, _ := rateLimitCheckInternal(&mockRateLimitService{}, store, "key-1", "tenant-1", ""); decision != 0 {
+	if decision, _, _ := rateLimitCheckInternal(&mockRateLimitService{}, store, "key-1", "tenant-1", "", "", ""); decision != 0 {
 		t.Errorf("a live service with no limits was denied (decision=%d)", decision)
 	}
 }

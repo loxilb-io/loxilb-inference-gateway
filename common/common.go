@@ -2311,8 +2311,18 @@ type NetHookInterface interface {
 	NetAPIKeyRevoke(keyID string) error
 	NetAPIKeyDelete(keyID string) error
 	NetAPIKeyPatch(keyID string, allowedModels []string, enabled *bool) error
+	NetAPIKeyRateLimitPatch(keyID string, rps, burstSize, tokensPerMin *int) error
 	NetTenantRateLimitSet(tenantID string, rps, tokensPerMin, burstPct int, modelLimits []TenantModelRateLimit) error
 	NetTenantRateLimitGet(tenantID string) (*TenantRateLimitEntry, error)
+
+	// AI Gateway - QoS ladder: per-user limits and configurable defaults.
+	NetUserRateLimitSet(entry UserRateLimitEntry) error
+	NetUserRateLimitGet(tenantID, userID string) (*UserRateLimitEntry, error)
+	NetUserRateLimitList(tenantID string) ([]UserRateLimitEntry, error)
+	NetUserRateLimitDelete(tenantID, userID string) error
+	NetRateLimitDefaultsSet(entry RateLimitDefaultsEntry) error
+	NetRateLimitDefaultsGet(scope, ruleIdent string) (*RateLimitDefaultsEntry, error)
+	NetRateLimitDefaultsDelete(scope, ruleIdent string) error
 
 	// Bridge-VID allocator indirection.
 	// Thin wrappers over pkg/loxinet.{GetOrAllocBridgeVid,LookupBridgeVid,
@@ -2576,6 +2586,53 @@ type TenantRateLimitEntry struct {
 	BurstPct    int                    `json:"burst_pct"`
 	ModelLimits []TenantModelRateLimit `json:"model_limits,omitempty"`
 	UpdatedAt   time.Time              `json:"updated_at"`
+}
+
+// UserModelRateLimit - one model's token quota inside a user's rate limit
+// configuration (ladder level 1, per-model dimension)
+type UserModelRateLimit struct {
+	Model        string `json:"model"`
+	TokensPerMin int    `json:"tokens_per_min"`
+}
+
+// UserRateLimitEntry - explicit per-user rate limit configuration inside a
+// tenant (QoS ladder level 1). A zero field constrains nothing and falls
+// through the ladder; an entry whose limit fields are all zero is rejected
+// at validation, so a stored row always decides something.
+type UserRateLimitEntry struct {
+	TenantID     string               `json:"tenant_id"`
+	UserID       string               `json:"user_id"`
+	RPS          int                  `json:"rps"`
+	BurstSize    int                  `json:"burst_size"`
+	TokensPerMin int                  `json:"tokens_per_min"`
+	ModelLimits  []UserModelRateLimit `json:"model_limits,omitempty"`
+	UpdatedAt    time.Time            `json:"updated_at"`
+}
+
+// Rate-limit defaults scopes (RateLimitDefaultsEntry.Scope). A 'rule' row
+// overrides the 'global' row for traffic on that service; both sit below
+// every explicit per-user / per-tenant row in the ladder.
+const (
+	RateLimitScopeGlobal = "global"
+	RateLimitScopeRule   = "rule"
+)
+
+// RateLimitDefaultsEntry - QoS ladder level 3: the limits an identity gets
+// when no explicit row names it. DefaultUserRPS/TPM bound each user that has
+// no user_rate_limits row; DefaultTenantRPS/TPM bound each tenant without a
+// tenant_rate_limits row; VipSharedRPS/TPM arm the opt-in shared bucket for
+// keyless traffic on none-mode services. Zero = that dimension has no
+// default (fall through to unlimited).
+type RateLimitDefaultsEntry struct {
+	Scope            string    `json:"scope"`                // "global" or "rule"
+	RuleIdent        string    `json:"rule_ident,omitempty"` // service identity for scope "rule"; "" for global
+	DefaultUserRPS   int       `json:"default_user_rps"`
+	DefaultUserTPM   int       `json:"default_user_tpm"`
+	DefaultTenantRPS int       `json:"default_tenant_rps"`
+	DefaultTenantTPM int       `json:"default_tenant_tpm"`
+	VipSharedRPS     int       `json:"vip_shared_rps"`
+	VipSharedTPM     int       `json:"vip_shared_tpm"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 // KvExactBindingMod - persisted form of one rule's KV-exact binding: the

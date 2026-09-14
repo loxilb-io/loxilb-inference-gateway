@@ -1877,6 +1877,27 @@ func (na *NetAPIStruct) NetAPIKeyPatch(keyID string, allowedModels []string, ena
 	return mh.AIKeyService.PatchAPIKey(keyID, allowedModels, enabled)
 }
 
+// NetAPIKeyRateLimitPatch - Update an existing key's rate-limit fields (the
+// PATCH gap fix: they were settable at creation and then frozen). The live
+// RPS bucket is reset in the same call — the push path — so the new limit
+// binds on the next request instead of after the config cache's TTL.
+func (na *NetAPIStruct) NetAPIKeyRateLimitPatch(keyID string, rps, burstSize, tokensPerMin *int) error {
+	if mh.AIKeyService == nil {
+		return keyStoreAbsentErr()
+	}
+	if err := mh.AIKeyService.PatchAPIKeyRateLimits(keyID, rps, burstSize, tokensPerMin); err != nil {
+		return err
+	}
+	if rps != nil || burstSize != nil {
+		// Re-read the row rather than trusting the patch arguments: a
+		// nil field kept its stored value, which the bucket needs too.
+		if key, err := mh.AIKeyService.GetAPIKeyByID(keyID); err == nil {
+			getGlobalRL().UpdateKey(keyID, key.RateLimitRPS, key.BurstSize)
+		}
+	}
+	return nil
+}
+
 // NetTenantRateLimitSet - Upsert per-tenant rate limit configuration,
 // including any per-model token quotas carried alongside it.
 func (na *NetAPIStruct) NetTenantRateLimitSet(tenantID string, rps, tokensPerMin, burstPct int, modelLimits []cmn.TenantModelRateLimit) error {
@@ -1915,6 +1936,88 @@ func (na *NetAPIStruct) NetTenantRateLimitGet(tenantID string) (*cmn.TenantRateL
 		return nil, keyStoreAbsentErr()
 	}
 	return mh.AIKeyService.GetTenantRateLimitEntry(tenantID)
+}
+
+// NetUserRateLimitSet - Upsert one user's explicit rate limits (QoS ladder
+// level 1). The live per-user RPS bucket is reset in the same call, so the
+// new limit binds on the next request on this node instead of after the
+// config cache's TTL. (Peers converge within their own TTL — the same
+// posture tenant limits have always had.)
+func (na *NetAPIStruct) NetUserRateLimitSet(entry cmn.UserRateLimitEntry) error {
+	if mh.AIKeyService == nil {
+		return keyStoreAbsentErr()
+	}
+	if err := mh.AIKeyService.SetUserRateLimit(entry); err != nil {
+		return err
+	}
+	getGlobalRL().UpdateUser(entry.TenantID, entry.UserID, entry.RPS, entry.BurstSize)
+	// Enforcement needs a service whose policy attributes users — the JWT
+	// arm (modes jwt / apikey-or-jwt). Same warning contract as the tenant
+	// surface: the write is accepted, but it must not look like protection
+	// while nothing enforces it.
+	mh.mtx.RLock()
+	enforcing := mh.zr.Rules.HasApiKeyEnforcingRule()
+	mh.mtx.RUnlock()
+	if !enforcing {
+		tk.LogIt(tk.LogWarning,
+			"[AIGateway] user %s/%s rate limit configured but NO service enforces credentials: nothing will attribute a user until one does\n",
+			entry.TenantID, entry.UserID)
+	}
+	return nil
+}
+
+// NetUserRateLimitGet - Retrieve one user's explicit rate-limit entry.
+func (na *NetAPIStruct) NetUserRateLimitGet(tenantID, userID string) (*cmn.UserRateLimitEntry, error) {
+	if mh.AIKeyService == nil {
+		return nil, keyStoreAbsentErr()
+	}
+	return mh.AIKeyService.GetUserRateLimitEntry(tenantID, userID)
+}
+
+// NetUserRateLimitList - List a tenant's explicit user rate-limit rows.
+func (na *NetAPIStruct) NetUserRateLimitList(tenantID string) ([]cmn.UserRateLimitEntry, error) {
+	if mh.AIKeyService == nil {
+		return nil, keyStoreAbsentErr()
+	}
+	return mh.AIKeyService.ListUserRateLimits(tenantID)
+}
+
+// NetUserRateLimitDelete - Remove one user's explicit rate-limit rows; the
+// user falls back to the configured defaults, then to unlimited. The live
+// bucket is reset to unlimited in the same call.
+func (na *NetAPIStruct) NetUserRateLimitDelete(tenantID, userID string) error {
+	if mh.AIKeyService == nil {
+		return keyStoreAbsentErr()
+	}
+	if err := mh.AIKeyService.DeleteUserRateLimit(tenantID, userID); err != nil {
+		return err
+	}
+	getGlobalRL().UpdateUser(tenantID, userID, 0, 0)
+	return nil
+}
+
+// NetRateLimitDefaultsSet - Upsert a defaults row (QoS ladder level 3).
+func (na *NetAPIStruct) NetRateLimitDefaultsSet(entry cmn.RateLimitDefaultsEntry) error {
+	if mh.AIKeyService == nil {
+		return keyStoreAbsentErr()
+	}
+	return mh.AIKeyService.SetRateLimitDefaults(entry)
+}
+
+// NetRateLimitDefaultsGet - Retrieve one defaults row.
+func (na *NetAPIStruct) NetRateLimitDefaultsGet(scope, ruleIdent string) (*cmn.RateLimitDefaultsEntry, error) {
+	if mh.AIKeyService == nil {
+		return nil, keyStoreAbsentErr()
+	}
+	return mh.AIKeyService.GetRateLimitDefaultsEntry(scope, ruleIdent)
+}
+
+// NetRateLimitDefaultsDelete - Remove one defaults row.
+func (na *NetAPIStruct) NetRateLimitDefaultsDelete(scope, ruleIdent string) error {
+	if mh.AIKeyService == nil {
+		return keyStoreAbsentErr()
+	}
+	return mh.AIKeyService.DeleteRateLimitDefaults(scope, ruleIdent)
 }
 
 // NetGetOrAllocBridgeVid - : thin wrapper over the
