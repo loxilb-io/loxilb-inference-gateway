@@ -137,6 +137,13 @@ jobs:
           ./validation.sh
           ./rmconfig.sh
           cd -
+      - name: Endpoint health fans out to every pool (address-keyed)
+        run: |
+          cd cicd/ai-ephealth/
+          ./config.sh
+          ./validation.sh
+          ./rmconfig.sh
+          cd -
       - name: SSE streaming quota
         run: |
           cd cicd/ai-sse-quota/
