@@ -3793,15 +3793,9 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		return RuleUnknownServiceErr, errors.New("proxy-proto-v2 not tcp service error")
 	}
 
-	sockMapCode, sockMapOk := cmn.SockMapModeToCode(serv.SockMapMode)
-	if !sockMapOk {
-		return RuleArgsErr, errors.New("invalid sockMapMode (off|both|request|response)")
-	}
-	if sockMapCode != 0 {
-		if serv.Mode != cmn.LBModeFullProxy || serv.Proto != "tcp" ||
-			serv.Security != cmn.LBServPlain || !tk.IsNetIPv4(serv.ServIP) {
-			return RuleArgsErr, errors.New("sockmap-accel requires plaintext tcp fullproxy ipv4 service")
-		}
+	sockMapCode, err := lbSockMapCode(&serv, mh.sockMapEn)
+	if err != nil {
+		return RuleArgsErr, err
 	}
 
 	if serv.Proto == "tcp" {
