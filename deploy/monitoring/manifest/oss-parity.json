@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-12T08:50:06+00:00",
-  "source_revision": "5d1439c105b762ea91df3dd97e3a22820283928e",
+  "generated_at": "2026-09-14T11:03:22+00:00",
+  "source_revision": "bcf386273ce342a7f55e7083d5645fb5fce8a5e4",
   "upstream_repository": "https://github.com/loxilb-io/loxilb",
   "upstream_revision": "71982cd61b23d82c8f2ff1dd38d395bbb4c9360d"
  },
@@ -1076,6 +1076,7 @@
     "type": "counter",
     "labels": [
      "model",
+     "reason",
      "tenant"
     ]
    }

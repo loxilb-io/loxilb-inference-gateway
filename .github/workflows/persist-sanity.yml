@@ -58,6 +58,22 @@ on:
       - 'api/restapi/handler/cert.go'
       - 'api/restapi/handler/cors.go'
       - 'api/restapi/handler/configure_trace.go'
+      # The loxinet half of the same domains. The restore engine drives
+      # cmn.NetHookInterface, whose methods live in these files, and boot
+      # write-through / node-secret init are decided in loxinet.go. Only the
+      # REST twins above were filtered, so a change on the loxinet side
+      # reached main with no persist run at all -- which is how a startup
+      # ordering fix merged and left the upgrade matrix red. Named files
+      # rather than pkg/loxinet/**: the package is large and changes
+      # constantly, and a filter that fires on everything is one somebody
+      # turns off.
+      - 'pkg/loxinet/apiclient.go'
+      - 'pkg/loxinet/loxinet.go'
+      - 'pkg/loxinet/recoverydeps.go'
+      - 'pkg/loxinet/l7policy.go'
+      - 'pkg/loxinet/cert.go'
+      - 'pkg/loxinet/cors.go'
+      - 'pkg/loxinet/tracing.go'
       - 'common/**'
       - 'cicd/cfg-persist-*/**'
       - 'cicd/common/persist_lib.sh'
@@ -73,6 +89,22 @@ on:
       - 'api/restapi/handler/cert.go'
       - 'api/restapi/handler/cors.go'
       - 'api/restapi/handler/configure_trace.go'
+      # The loxinet half of the same domains. The restore engine drives
+      # cmn.NetHookInterface, whose methods live in these files, and boot
+      # write-through / node-secret init are decided in loxinet.go. Only the
+      # REST twins above were filtered, so a change on the loxinet side
+      # reached main with no persist run at all -- which is how a startup
+      # ordering fix merged and left the upgrade matrix red. Named files
+      # rather than pkg/loxinet/**: the package is large and changes
+      # constantly, and a filter that fires on everything is one somebody
+      # turns off.
+      - 'pkg/loxinet/apiclient.go'
+      - 'pkg/loxinet/loxinet.go'
+      - 'pkg/loxinet/recoverydeps.go'
+      - 'pkg/loxinet/l7policy.go'
+      - 'pkg/loxinet/cert.go'
+      - 'pkg/loxinet/cors.go'
+      - 'pkg/loxinet/tracing.go'
       - 'common/**'
       - 'cicd/cfg-persist-*/**'
       - 'cicd/common/persist_lib.sh'

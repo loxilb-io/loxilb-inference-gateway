@@ -62,6 +62,25 @@ func getCounterValue(cv *prometheus.CounterVec, lvs ...string) float64 {
 	return m.GetCounter().GetValue()
 }
 
+// tokensMissingAllReasons sums loxilb_ai_tokens_missing_total across every
+// accepted reason for one model/tenant. Assertions that care "did anything
+// land in this family at all" use this rather than one reason, so a recorder
+// that starts writing a DIFFERENT reason than the test expects still fails
+// the zero checks instead of sliding past them into an unread series.
+func tokensMissingAllReasons(model, tenant string) float64 {
+	var sum float64
+	for _, r := range []string{
+		TokenMissingReasonResponseComplete,
+		TokenMissingReasonH2StreamClose,
+		TokenMissingReasonConnectionClose,
+		TokenMissingReasonStreamEstimated,
+		TokenMissingReasonUnknown,
+	} {
+		sum += getCounterValue(aiTokensMissingTotal, model, tenant, r)
+	}
+	return sum
+}
+
 // TestRecordAIRequest verifies that RecordAIRequest increments the request
 // counter with the status label and does not touch the rate-limit counter
 // (429 accounting is owned by RecordRateLimitHit at the point of denial).
@@ -303,7 +322,7 @@ func TestRecordTokenUsage_KindSplit(t *testing.T) {
 	if v := getCounterValue(aiTokensEstimatedTotal, model, tenant); v != 0 {
 		t.Fatalf("exact charge must not feed estimated counter, got %f", v)
 	}
-	if v := getCounterValue(aiTokensMissingTotal, model, tenant); v != 0 {
+	if v := tokensMissingAllReasons(model, tenant); v != 0 {
 		t.Fatalf("exact charge must not feed missing counter, got %f", v)
 	}
 }
@@ -325,8 +344,17 @@ func TestRecordTokenUsage_EstimatedFeedsSplitCounters(t *testing.T) {
 	if v := getCounterValue(aiTokensEstimatedTotal, model, tenant); v != 15 {
 		t.Fatalf("expected estimated=15, got %f", v)
 	}
-	if v := getCounterValue(aiTokensMissingTotal, model, tenant); v != 1 {
-		t.Fatalf("expected missing=1, got %f", v)
+	if v := getCounterValue(aiTokensMissingTotal, model, tenant,
+		TokenMissingReasonStreamEstimated); v != 1 {
+		t.Fatalf("expected missing{reason=stream_estimated}=1, got %f", v)
+	}
+	// The estimate net is the one arm of this family that WAS charged, so it
+	// must never land in a free bucket: an operator comparing tenants on
+	// connection_close is looking for uncharged work, and a charged response
+	// leaking into that series would answer the wrong question.
+	if v := tokensMissingAllReasons(model, tenant); v != 1 {
+		t.Fatalf("a charged estimate must occupy exactly the stream_estimated "+
+			"series, total across reasons=%f", v)
 	}
 }
 
@@ -342,10 +370,11 @@ func TestRecordTokenUsage_EstimatedFeedsSplitCounters(t *testing.T) {
 func TestRecordTokenUsageMissing_ReportsWithoutCharging(t *testing.T) {
 	model, tenant := "tok-model-missing", "tok-tenant-missing"
 
-	RecordTokenUsageMissing(model, tenant)
+	RecordTokenUsageMissing(model, tenant, TokenMissingReasonResponseComplete)
 
-	if v := getCounterValue(aiTokensMissingTotal, model, tenant); v != 1 {
-		t.Fatalf("expected missing=1, got %f", v)
+	if v := getCounterValue(aiTokensMissingTotal, model, tenant,
+		TokenMissingReasonResponseComplete); v != 1 {
+		t.Fatalf("expected missing{reason=response_complete}=1, got %f", v)
 	}
 	if v := getCounterValue(aiTokensConsumedTotal, model, tenant, "prompt"); v != 0 {
 		t.Fatalf("reporting a missing usage object must charge nothing, prompt consumed=%f", v)
@@ -359,8 +388,9 @@ func TestRecordTokenUsageMissing_ReportsWithoutCharging(t *testing.T) {
 
 	// Response-weighted: a second completed response is a second tick, not a
 	// token sum.
-	RecordTokenUsageMissing(model, tenant)
-	if v := getCounterValue(aiTokensMissingTotal, model, tenant); v != 2 {
+	RecordTokenUsageMissing(model, tenant, TokenMissingReasonResponseComplete)
+	if v := getCounterValue(aiTokensMissingTotal, model, tenant,
+		TokenMissingReasonResponseComplete); v != 2 {
 		t.Fatalf("expected missing=2 after a second response, got %f", v)
 	}
 }
@@ -383,9 +413,9 @@ func TestRecordTokenUsageMissing_ReportsWithoutCharging(t *testing.T) {
 func TestRecordTokenUsageMissing_KeylessIsNotLabelled(t *testing.T) {
 	model := "tok-model-keyless"
 
-	before := getCounterValue(aiTokensMissingTotal, model, "")
-	RecordTokenUsageMissing(model, "")
-	if d := getCounterValue(aiTokensMissingTotal, model, "") - before; d != 0 {
+	before := tokensMissingAllReasons(model, "")
+	RecordTokenUsageMissing(model, "", TokenMissingReasonConnectionClose)
+	if d := tokensMissingAllReasons(model, "") - before; d != 0 {
 		t.Fatalf("a keyless response must not be labelled into a per-tenant "+
 			"usage family, got delta %f", d)
 	}
@@ -393,10 +423,66 @@ func TestRecordTokenUsageMissing_KeylessIsNotLabelled(t *testing.T) {
 	// The guard must not swallow attributed reports: the same model with a
 	// real tenant still counts, so a green result above cannot come from the
 	// recorder having stopped working altogether.
-	beforeCtl := getCounterValue(aiTokensMissingTotal, model, "tok-tenant-keyless-control")
-	RecordTokenUsageMissing(model, "tok-tenant-keyless-control")
-	if d := getCounterValue(aiTokensMissingTotal, model, "tok-tenant-keyless-control") - beforeCtl; d != 1 {
+	beforeCtl := tokensMissingAllReasons(model, "tok-tenant-keyless-control")
+	RecordTokenUsageMissing(model, "tok-tenant-keyless-control",
+		TokenMissingReasonConnectionClose)
+	if d := tokensMissingAllReasons(model, "tok-tenant-keyless-control") - beforeCtl; d != 1 {
 		t.Fatalf("control: an attributed response must still count, got delta %f", d)
+	}
+}
+
+// TestRecordTokenUsageMissing_ReasonIsAllowListed pins the reason label's
+// closed vocabulary and the separation the label exists to provide.
+//
+// The reason arrives from the data plane over cgo as a C string, from a repo
+// that versions independently of this one, so "whatever the caller sent" is
+// not a safe label value: a pin skew, or a future call site spelling its own
+// reason, would mint unbounded series on a per-tenant family. The recorder
+// therefore maps onto a fixed set and collapses everything else.
+//
+// Collapsing rather than dropping is deliberate. A report on an unrecognised
+// reason still happened — the accounting hole is real — and dropping it would
+// under-report the very condition the family exists to expose, silently. It
+// lands on "unknown", which is a series nobody expects and so reads as the
+// drift signal it is.
+func TestRecordTokenUsageMissing_ReasonIsAllowListed(t *testing.T) {
+	model := "tok-model-reason"
+
+	// Every accepted reason keeps its own identity, and lands ONLY there.
+	for _, reason := range []string{
+		TokenMissingReasonResponseComplete,
+		TokenMissingReasonH2StreamClose,
+		TokenMissingReasonConnectionClose,
+		TokenMissingReasonStreamEstimated,
+	} {
+		tenant := "tok-tenant-reason-" + reason
+		RecordTokenUsageMissing(model, tenant, reason)
+		if v := getCounterValue(aiTokensMissingTotal, model, tenant, reason); v != 1 {
+			t.Fatalf("reason %q must keep its own series, got %f", reason, v)
+		}
+		if v := tokensMissingAllReasons(model, tenant); v != 1 {
+			t.Fatalf("reason %q must not also increment another series, "+
+				"total across reasons=%f", reason, v)
+		}
+	}
+
+	// Anything else — a reason this build does not know, or none at all —
+	// collapses onto "unknown" rather than opening a new series.
+	for _, bogus := range []string{"", "client_cut", "RESPONSE_COMPLETE", "response complete"} {
+		tenant := "tok-tenant-reason-bogus"
+		before := getCounterValue(aiTokensMissingTotal, model, tenant,
+			TokenMissingReasonUnknown)
+		RecordTokenUsageMissing(model, tenant, bogus)
+		if d := getCounterValue(aiTokensMissingTotal, model, tenant,
+			TokenMissingReasonUnknown) - before; d != 1 {
+			t.Fatalf("unrecognised reason %q must land on %q, got delta %f",
+				bogus, TokenMissingReasonUnknown, d)
+		}
+		// ... and the report is not lost on the way: the total moved too.
+		if v := tokensMissingAllReasons(model, tenant); v != before+1 {
+			t.Fatalf("unrecognised reason %q must still be counted once, "+
+				"total across reasons=%f want %f", bogus, v, before+1)
+		}
 	}
 }
 
@@ -406,7 +492,7 @@ func TestRecordTokenUsage_ClampsNegativeAndSkipsZero(t *testing.T) {
 	model, tenant := "tok-model-c", "tok-tenant-c"
 
 	RecordTokenUsage(model, tenant, -5, 0, true)
-	if v := getCounterValue(aiTokensMissingTotal, model, tenant); v != 0 {
+	if v := tokensMissingAllReasons(model, tenant); v != 0 {
 		t.Fatalf("all-zero charge must record nothing, missing=%f", v)
 	}
 
