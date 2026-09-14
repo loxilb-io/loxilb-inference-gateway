@@ -651,6 +651,17 @@ func (na *NetAPIStruct) NetJWTAuthProfileGet() ([]cmn.JWTAuthProfileMod, error) 
 	if na.BgpPeerMode {
 		return nil, errors.New("running in bgp only mode")
 	}
+	// The holder is built during loxinet init, which finishes AFTER the REST
+	// server starts serving: until then this pointer is nil, and every other
+	// late-initialized subsystem here answers that window with a startup
+	// error rather than dereferencing. Without it a config restore landing in
+	// the window locks a mutex on a nil receiver, and net/http turns the
+	// panic into a closed connection with no response at all -- the caller
+	// cannot even tell it failed. "not initialized" is the shared wording the
+	// boot replay and the REST commit restore both retry on.
+	if mh.JWTAuthProfiles == nil {
+		return nil, errors.New("JWT auth profiles not initialized")
+	}
 	// The holder has its own lock; the global config mutex is not needed
 	// for a read that touches no datapath state.
 	return mh.JWTAuthProfiles.ProfileGet()
@@ -660,6 +671,9 @@ func (na *NetAPIStruct) NetJWTAuthProfileGet() ([]cmn.JWTAuthProfileMod, error) 
 func (na *NetAPIStruct) NetJWTAuthProfileAdd(pm *cmn.JWTAuthProfileMod) (int, error) {
 	if na.BgpPeerMode {
 		return JwtAuthProfileArgErr, errors.New("running in bgp only mode")
+	}
+	if mh.JWTAuthProfiles == nil {
+		return JwtAuthProfileArgErr, errors.New("JWT auth profiles not initialized")
 	}
 	mh.mtx.Lock()
 	defer mh.mtx.Unlock()
@@ -672,6 +686,9 @@ func (na *NetAPIStruct) NetJWTAuthProfileAdd(pm *cmn.JWTAuthProfileMod) (int, er
 func (na *NetAPIStruct) NetJWTAuthProfileDel(name string) (int, error) {
 	if na.BgpPeerMode {
 		return JwtAuthProfileArgErr, errors.New("running in bgp only mode")
+	}
+	if mh.JWTAuthProfiles == nil {
+		return JwtAuthProfileArgErr, errors.New("JWT auth profiles not initialized")
 	}
 	mh.mtx.Lock()
 	defer mh.mtx.Unlock()
