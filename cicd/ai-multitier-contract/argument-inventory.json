@@ -3,7 +3,7 @@
   "scope": "LoadbalanceEntry fields and AI KV inventory query parameters; not a test-coverage claim",
   "sourceSha256": {
     "swagger-extras.yml": "4e602fc9652f481e48ede784e51d462300940b1995cb2cd19473fe840e6e0efb",
-    "swagger.yml": "8a22e2d566e5d37b7771b850a80d54c211c4aef4ab5543106ea1f06eeb146763"
+    "swagger.yml": "d476698e4b95811778d8c0dbfb74ef00ae556b7de34181e2879c7a15006d67a7"
   },
   "fields": [
     {
@@ -1138,6 +1138,21 @@
       "contract": {
         "description": "SNAT rule indicator on domain readback. Implementation gap - this REST POST does not copy the property and PATCH does not overlay it, so setting it here does not create a SNAT rule.",
         "type": "boolean"
+      }
+    },
+    {
+      "id": "swagger.yml#/definitions/LoadbalanceEntry/serviceArguments/sockMapMode",
+      "required": false,
+      "contract": {
+        "default": "off",
+        "description": "directional sockmap acceleration for this FullProxy service - off (default), both, request (client-\u003ebackend only), response (backend-\u003eclient only). Requires a plaintext tcp fullproxy ipv4 service with ipv4 endpoints, and the daemon started with --sockmapsupport.",
+        "enum": [
+          "off",
+          "both",
+          "request",
+          "response"
+        ],
+        "type": "string"
       }
     },
     {
