@@ -58,6 +58,15 @@ func NormalizeDomains(d *Domains) error {
 	for i := range d.LoadBalancer {
 		r := &d.LoadBalancer[i]
 		r.Serv.Oper = 0 // transient attach/detach opcode, not state
+		// Sockmap-off has two spellings on the wire: a document written
+		// before the field existed carries nothing, while live state
+		// renders dataplane code 0 back as the canonical "off". They
+		// describe the same desired state, so canonicalize to one
+		// spelling -- otherwise the verify digest flips by document age
+		// and boot quarantines a perfectly good pre-sockmap document.
+		if r.Serv.SockMapMode == "" {
+			r.Serv.SockMapMode = cmn.SockMapModeOff
+		}
 		// Rebuild nested lists before mutating/sorting them: a Get hook
 		// may hand back slices whose backing arrays alias live rule
 		// state, and normalization must never write through such an
