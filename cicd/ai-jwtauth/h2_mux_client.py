@@ -54,7 +54,7 @@ def main():
                                          header_encoding=None))
     conn.initiate_connection()
 
-    # Phase 1: every stream's request goes out before any response is
+    # Send first: every stream's request goes out before any response is
     # read. This is the interleaving under test — do not reorder.
     streams = {}
     for spec in specs:
@@ -80,7 +80,7 @@ def main():
                         "done": False}
     sock.sendall(conn.data_to_send())
 
-    # Phase 2: collect every response.
+    # Only then collect the responses.
     try:
         while not all(st["done"] for st in streams.values()):
             data = sock.recv(65535)
