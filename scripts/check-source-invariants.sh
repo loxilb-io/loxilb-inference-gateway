@@ -365,6 +365,24 @@ else
   pass "export arity is lockstep between C header and Go exports ($arity_checked symbols)"
 fi
 
+# ---------------------------------------------------------------------------
+# N. Conversation stickiness names the pool whose endpoint index it carries.
+#
+# Delegated to Python, because this one cannot be done with grep. The pool is
+# the LAST argument of each conv_map helper, so the check has to read a whole
+# argument list -- and an ERE that stops at the first ")" stops at a CAST's
+# paren, which is how "(const proxy_epval_t *)NULL" passed as a pool. It also
+# has to tell a CALL from a prototype, or a file's forward declarations keep
+# it "covered" after its real calls are renamed away. Both need paren and
+# brace matching; see the module docstring for the three holes this replaced
+# and how each was demonstrated.
+# ---------------------------------------------------------------------------
+if python3 -B scripts/check_conv_pool_identity.py; then
+  pass "conversation stickiness names its pool (see line above for call counts)"
+else
+  fail "conversation stickiness must name the pool its endpoint index belongs to"
+fi
+
 echo "==========================="
 if [ "$FAILED" = "0" ]; then echo "ALL INVARIANTS HOLD"; else echo "INVARIANTS VIOLATED"; fi
 exit "$FAILED"
