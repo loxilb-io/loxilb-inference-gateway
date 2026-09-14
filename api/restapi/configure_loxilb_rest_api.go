@@ -432,6 +432,13 @@ func configureAPI(api *operations.LoxilbRestAPIAPI) http.Handler {
 	api.AiGetConfigAiModelProfilesProfileIDHandler = ai.GetConfigAiModelProfilesProfileIDHandlerFunc(handler.ConfigGetAIModelProfileByID)
 	api.AiPostConfigAiTenantRatelimitHandler = ai.PostConfigAiTenantRatelimitHandlerFunc(handler.ConfigPostAITenantRateLimit)
 	api.AiGetConfigAiTenantRatelimitTenantIDHandler = ai.GetConfigAiTenantRatelimitTenantIDHandlerFunc(handler.ConfigGetAITenantRateLimit)
+	api.AiPostConfigAiUserRatelimitHandler = ai.PostConfigAiUserRatelimitHandlerFunc(handler.ConfigPostAIUserRateLimit)
+	api.AiGetConfigAiUserRatelimitTenantIDHandler = ai.GetConfigAiUserRatelimitTenantIDHandlerFunc(handler.ConfigListAIUserRateLimits)
+	api.AiGetConfigAiUserRatelimitTenantIDUserIDHandler = ai.GetConfigAiUserRatelimitTenantIDUserIDHandlerFunc(handler.ConfigGetAIUserRateLimit)
+	api.AiDeleteConfigAiUserRatelimitTenantIDUserIDHandler = ai.DeleteConfigAiUserRatelimitTenantIDUserIDHandlerFunc(handler.ConfigDeleteAIUserRateLimit)
+	api.AiPostConfigAiRatelimitDefaultsHandler = ai.PostConfigAiRatelimitDefaultsHandlerFunc(handler.ConfigPostAIRateLimitDefaults)
+	api.AiGetConfigAiRatelimitDefaultsScopeHandler = ai.GetConfigAiRatelimitDefaultsScopeHandlerFunc(handler.ConfigGetAIRateLimitDefaults)
+	api.AiDeleteConfigAiRatelimitDefaultsScopeHandler = ai.DeleteConfigAiRatelimitDefaultsScopeHandlerFunc(handler.ConfigDeleteAIRateLimitDefaults)
 
 	if opts.Opts.Oauth2Enable {
 		// OAuth2 API

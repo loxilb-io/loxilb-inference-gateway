@@ -5989,6 +5989,113 @@ func init() {
       },
       "type": "object"
     },
+    "RateLimitDefaultsEntry": {
+      "description": "Stored rate-limit defaults for one scope row, with metadata.",
+      "properties": {
+        "default_tenant_rps": {
+          "description": "Requests per second for tenants without an explicit entry",
+          "format": "int64",
+          "type": "integer"
+        },
+        "default_tenant_tpm": {
+          "description": "LLM tokens per minute for tenants without an explicit entry",
+          "format": "int64",
+          "type": "integer"
+        },
+        "default_user_rps": {
+          "description": "Requests per second for users without an explicit entry",
+          "format": "int64",
+          "type": "integer"
+        },
+        "default_user_tpm": {
+          "description": "LLM tokens per minute for users without an explicit entry",
+          "format": "int64",
+          "type": "integer"
+        },
+        "rule_ident": {
+          "description": "Service identity for scope 'rule'; empty for 'global'",
+          "type": "string"
+        },
+        "scope": {
+          "description": "Defaults scope",
+          "enum": [
+            "global",
+            "rule"
+          ],
+          "type": "string"
+        },
+        "updated_at": {
+          "description": "Timestamp of the last update",
+          "format": "date-time",
+          "type": "string"
+        },
+        "vip_shared_rps": {
+          "description": "Requests per second shared by ALL keyless traffic on the service",
+          "format": "int64",
+          "type": "integer"
+        },
+        "vip_shared_tpm": {
+          "description": "LLM tokens per minute shared by ALL keyless traffic on the service",
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "scope"
+      ],
+      "type": "object"
+    },
+    "RateLimitDefaultsMod": {
+      "description": "One defaults row of the QoS ladder (level 3). Scope 'global' takes no rule_ident; scope 'rule' requires one and overrides the global row field-wise for that service. Zero fields fall through; an entry whose limit fields are all zero is rejected. vip_shared_* arm the opt-in shared bucket for keyless traffic on non-enforcing services.",
+      "properties": {
+        "default_tenant_rps": {
+          "description": "Requests per second for tenants without an explicit entry",
+          "format": "int64",
+          "type": "integer"
+        },
+        "default_tenant_tpm": {
+          "description": "LLM tokens per minute for tenants without an explicit entry",
+          "format": "int64",
+          "type": "integer"
+        },
+        "default_user_rps": {
+          "description": "Requests per second for users without an explicit entry",
+          "format": "int64",
+          "type": "integer"
+        },
+        "default_user_tpm": {
+          "description": "LLM tokens per minute for users without an explicit entry",
+          "format": "int64",
+          "type": "integer"
+        },
+        "rule_ident": {
+          "description": "Service identity for scope 'rule'; empty for 'global'",
+          "type": "string"
+        },
+        "scope": {
+          "description": "Defaults scope",
+          "enum": [
+            "global",
+            "rule"
+          ],
+          "type": "string"
+        },
+        "vip_shared_rps": {
+          "description": "Requests per second shared by ALL keyless traffic on the service",
+          "format": "int64",
+          "type": "integer"
+        },
+        "vip_shared_tpm": {
+          "description": "LLM tokens per minute shared by ALL keyless traffic on the service",
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "scope"
+      ],
+      "type": "object"
+    },
     "ReadyStatus": {
       "description": "Configuration readiness verdict with the evidence behind it - the boot replay outcome, live external-dependency probes, and the most recent successful persist/restore identities.",
       "properties": {
@@ -6749,6 +6856,106 @@ func init() {
       "required": [
         "username",
         "password"
+      ],
+      "type": "object"
+    },
+    "UserModelRateLimit": {
+      "description": "One model's token quota inside a user's rate-limit entry. A nonempty model name is required; identities and models containing '|' or a reserved scope prefix are rejected (they would alias another bucket).",
+      "properties": {
+        "model": {
+          "description": "Model name the quota applies to",
+          "type": "string"
+        },
+        "tokens_per_min": {
+          "description": "Maximum LLM tokens per minute for this user and model; 0 removes the model quota",
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "UserRateLimitEntry": {
+      "description": "Stored per-user quotas, not enforcement status. Zero fields fall through the QoS ladder to the configured defaults. Enforcement requires a service whose credential policy attributes users.",
+      "properties": {
+        "burst_size": {
+          "description": "Request burst size; 0 defaults to rps",
+          "format": "int64",
+          "type": "integer"
+        },
+        "model_limits": {
+          "description": "Per-model token quotas for the user",
+          "items": {
+            "$ref": "#/definitions/UserModelRateLimit"
+          },
+          "type": "array"
+        },
+        "rps": {
+          "description": "Maximum requests per second for the user",
+          "format": "int64",
+          "type": "integer"
+        },
+        "tenant_id": {
+          "description": "Tenant identifier",
+          "type": "string"
+        },
+        "tokens_per_min": {
+          "description": "Maximum LLM tokens per minute for the user",
+          "format": "int64",
+          "type": "integer"
+        },
+        "updated_at": {
+          "description": "Timestamp of the last update",
+          "format": "date-time",
+          "type": "string"
+        },
+        "user_id": {
+          "description": "User identifier",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tenant_id",
+        "user_id"
+      ],
+      "type": "object"
+    },
+    "UserRateLimitMod": {
+      "description": "POST replaces the user's explicit entry; a zero field constrains nothing and falls through to the configured defaults. An entry whose limit fields are all zero is rejected — DELETE removes limits. Supplied model_limits replace the user's model rows as a set; omitted/empty model_limits clears them.",
+      "properties": {
+        "burst_size": {
+          "description": "Request burst size; 0 defaults to rps",
+          "format": "int64",
+          "type": "integer"
+        },
+        "model_limits": {
+          "description": "Per-model token quotas for the user",
+          "items": {
+            "$ref": "#/definitions/UserModelRateLimit"
+          },
+          "type": "array"
+        },
+        "rps": {
+          "description": "Maximum requests per second for the user",
+          "format": "int64",
+          "type": "integer"
+        },
+        "tenant_id": {
+          "description": "Tenant identifier",
+          "type": "string"
+        },
+        "tokens_per_min": {
+          "description": "Maximum LLM tokens per minute for the user",
+          "format": "int64",
+          "type": "integer"
+        },
+        "user_id": {
+          "description": "User identifier (the verified identity's subject)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tenant_id",
+        "user_id"
       ],
       "type": "object"
     },
@@ -7865,6 +8072,192 @@ func init() {
         ]
       }
     },
+    "/config/ai/ratelimit/defaults": {
+      "post": {
+        "description": "Creates or replaces one defaults row (QoS ladder level 3). Scope 'global' takes no rule_ident and applies everywhere; scope 'rule' names one service and overrides the global row field-wise on it. A zero field falls through; an entry whose limit fields are all zero is rejected.",
+        "operationId": "postConfigAiRatelimitDefaults",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/RateLimitDefaultsMod"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized to update rate-limit defaults",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store or API-key store unavailable",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        },
+        "summary": "Set or update rate-limit defaults",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/config/ai/ratelimit/defaults/{scope}": {
+      "delete": {
+        "description": "Removes the defaults row for the scope (rule_ident selects the service for scope 'rule'); identities it governed fall through to the next ladder level.",
+        "operationId": "deleteConfigAiRatelimitDefaultsScope",
+        "parameters": [
+          {
+            "description": "Defaults scope",
+            "enum": [
+              "global",
+              "rule"
+            ],
+            "in": "path",
+            "name": "scope",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "description": "Service identity for scope 'rule'",
+            "in": "query",
+            "name": "rule_ident",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized to update rate-limit defaults",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store or API-key store unavailable",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        },
+        "summary": "Delete one rate-limit defaults row",
+        "tags": [
+          "ai"
+        ]
+      },
+      "get": {
+        "description": "Returns the defaults row for the scope. For scope 'rule' the rule_ident query parameter selects the service; it is ignored for scope 'global'.",
+        "operationId": "getConfigAiRatelimitDefaultsScope",
+        "parameters": [
+          {
+            "description": "Defaults scope",
+            "enum": [
+              "global",
+              "rule"
+            ],
+            "in": "path",
+            "name": "scope",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "description": "Service identity for scope 'rule'",
+            "in": "query",
+            "name": "rule_ident",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/RateLimitDefaultsEntry"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized to read rate-limit defaults",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store or API-key store unavailable",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        },
+        "summary": "Get one rate-limit defaults row",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
     "/config/ai/tenant/ratelimit": {
       "post": {
         "description": "Creates or updates the rate limit configuration for a tenant.",
@@ -7972,6 +8365,238 @@ func init() {
           }
         },
         "summary": "Get tenant rate limit configuration",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/config/ai/user/ratelimit": {
+      "post": {
+        "description": "Creates or replaces the explicit per-user rate-limit entry inside a tenant (QoS ladder level 1). A zero field constrains nothing and falls through to the configured defaults; an entry whose limit fields are all zero is rejected. Supplied model_limits REPLACE the user's model rows as a set.",
+        "operationId": "postConfigAiUserRatelimit",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/UserRateLimitMod"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized to update user quotas",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store or API-key store unavailable",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        },
+        "summary": "Set or update a user's rate limits",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/config/ai/user/ratelimit/{tenant_id}": {
+      "get": {
+        "description": "Returns every explicit per-user rate-limit row for the tenant, without model limits (the per-user GET carries those). Users with no explicit row are governed by the configured defaults and do not appear here.",
+        "operationId": "getConfigAiUserRatelimitTenantID",
+        "parameters": [
+          {
+            "description": "Tenant identifier",
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "items": {
+                "$ref": "#/definitions/UserRateLimitEntry"
+              },
+              "type": "array"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized to read user quotas",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store or API-key store unavailable",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        },
+        "summary": "List a tenant's explicit user rate limits",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/config/ai/user/ratelimit/{tenant_id}/{user_id}": {
+      "delete": {
+        "description": "Removes the user's explicit entry and model rows; the user falls back to the configured defaults, then to unlimited.",
+        "operationId": "deleteConfigAiUserRatelimitTenantIDUserID",
+        "parameters": [
+          {
+            "description": "Tenant identifier",
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "description": "User identifier",
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized to update user quotas",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store or API-key store unavailable",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        },
+        "summary": "Delete one user's explicit rate limits",
+        "tags": [
+          "ai"
+        ]
+      },
+      "get": {
+        "description": "Returns the explicit rate-limit entry for the user, including model limits.",
+        "operationId": "getConfigAiUserRatelimitTenantIDUserID",
+        "parameters": [
+          {
+            "description": "Tenant identifier",
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "description": "User identifier (the verified identity's subject)",
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/UserRateLimitEntry"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized to read user quotas",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store or API-key store unavailable",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        },
+        "summary": "Get one user's rate limit configuration",
         "tags": [
           "ai"
         ]
@@ -19559,6 +20184,190 @@ func init() {
         }
       }
     },
+    "/config/ai/ratelimit/defaults": {
+      "post": {
+        "description": "Creates or replaces one defaults row (QoS ladder level 3). Scope 'global' takes no rule_ident and applies everywhere; scope 'rule' names one service and overrides the global row field-wise on it. A zero field falls through; an entry whose limit fields are all zero is rejected.",
+        "tags": [
+          "ai"
+        ],
+        "summary": "Set or update rate-limit defaults",
+        "operationId": "postConfigAiRatelimitDefaults",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/RateLimitDefaultsMod"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized to update rate-limit defaults",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store or API-key store unavailable",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ai/ratelimit/defaults/{scope}": {
+      "get": {
+        "description": "Returns the defaults row for the scope. For scope 'rule' the rule_ident query parameter selects the service; it is ignored for scope 'global'.",
+        "tags": [
+          "ai"
+        ],
+        "summary": "Get one rate-limit defaults row",
+        "operationId": "getConfigAiRatelimitDefaultsScope",
+        "parameters": [
+          {
+            "enum": [
+              "global",
+              "rule"
+            ],
+            "type": "string",
+            "description": "Defaults scope",
+            "name": "scope",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "Service identity for scope 'rule'",
+            "name": "rule_ident",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/RateLimitDefaultsEntry"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized to read rate-limit defaults",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store or API-key store unavailable",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "delete": {
+        "description": "Removes the defaults row for the scope (rule_ident selects the service for scope 'rule'); identities it governed fall through to the next ladder level.",
+        "tags": [
+          "ai"
+        ],
+        "summary": "Delete one rate-limit defaults row",
+        "operationId": "deleteConfigAiRatelimitDefaultsScope",
+        "parameters": [
+          {
+            "enum": [
+              "global",
+              "rule"
+            ],
+            "type": "string",
+            "description": "Defaults scope",
+            "name": "scope",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "Service identity for scope 'rule'",
+            "name": "rule_ident",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized to update rate-limit defaults",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store or API-key store unavailable",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
     "/config/ai/tenant/ratelimit": {
       "post": {
         "description": "Creates or updates the rate limit configuration for a tenant.",
@@ -19646,6 +20455,238 @@ func init() {
           },
           "403": {
             "description": "Authenticated principal is not authorized to read tenant quotas",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store or API-key store unavailable",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ai/user/ratelimit": {
+      "post": {
+        "description": "Creates or replaces the explicit per-user rate-limit entry inside a tenant (QoS ladder level 1). A zero field constrains nothing and falls through to the configured defaults; an entry whose limit fields are all zero is rejected. Supplied model_limits REPLACE the user's model rows as a set.",
+        "tags": [
+          "ai"
+        ],
+        "summary": "Set or update a user's rate limits",
+        "operationId": "postConfigAiUserRatelimit",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/UserRateLimitMod"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Malformed arguments for API call",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized to update user quotas",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store or API-key store unavailable",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ai/user/ratelimit/{tenant_id}": {
+      "get": {
+        "description": "Returns every explicit per-user rate-limit row for the tenant, without model limits (the per-user GET carries those). Users with no explicit row are governed by the configured defaults and do not appear here.",
+        "tags": [
+          "ai"
+        ],
+        "summary": "List a tenant's explicit user rate limits",
+        "operationId": "getConfigAiUserRatelimitTenantID",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Tenant identifier",
+            "name": "tenant_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/UserRateLimitEntry"
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized to read user quotas",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store or API-key store unavailable",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
+    "/config/ai/user/ratelimit/{tenant_id}/{user_id}": {
+      "get": {
+        "description": "Returns the explicit rate-limit entry for the user, including model limits.",
+        "tags": [
+          "ai"
+        ],
+        "summary": "Get one user's rate limit configuration",
+        "operationId": "getConfigAiUserRatelimitTenantIDUserID",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Tenant identifier",
+            "name": "tenant_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "User identifier (the verified identity's subject)",
+            "name": "user_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/UserRateLimitEntry"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized to read user quotas",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store or API-key store unavailable",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      },
+      "delete": {
+        "description": "Removes the user's explicit entry and model rows; the user falls back to the configured defaults, then to unlimited.",
+        "tags": [
+          "ai"
+        ],
+        "summary": "Delete one user's explicit rate limits",
+        "operationId": "deleteConfigAiUserRatelimitTenantIDUserID",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Tenant identifier",
+            "name": "tenant_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "User identifier",
+            "name": "user_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized to update user quotas",
             "schema": {
               "$ref": "#/definitions/Error"
             }
@@ -38098,6 +39139,113 @@ func init() {
         }
       }
     },
+    "RateLimitDefaultsEntry": {
+      "description": "Stored rate-limit defaults for one scope row, with metadata.",
+      "type": "object",
+      "required": [
+        "scope"
+      ],
+      "properties": {
+        "default_tenant_rps": {
+          "description": "Requests per second for tenants without an explicit entry",
+          "type": "integer",
+          "format": "int64"
+        },
+        "default_tenant_tpm": {
+          "description": "LLM tokens per minute for tenants without an explicit entry",
+          "type": "integer",
+          "format": "int64"
+        },
+        "default_user_rps": {
+          "description": "Requests per second for users without an explicit entry",
+          "type": "integer",
+          "format": "int64"
+        },
+        "default_user_tpm": {
+          "description": "LLM tokens per minute for users without an explicit entry",
+          "type": "integer",
+          "format": "int64"
+        },
+        "rule_ident": {
+          "description": "Service identity for scope 'rule'; empty for 'global'",
+          "type": "string"
+        },
+        "scope": {
+          "description": "Defaults scope",
+          "type": "string",
+          "enum": [
+            "global",
+            "rule"
+          ]
+        },
+        "updated_at": {
+          "description": "Timestamp of the last update",
+          "type": "string",
+          "format": "date-time"
+        },
+        "vip_shared_rps": {
+          "description": "Requests per second shared by ALL keyless traffic on the service",
+          "type": "integer",
+          "format": "int64"
+        },
+        "vip_shared_tpm": {
+          "description": "LLM tokens per minute shared by ALL keyless traffic on the service",
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
+    "RateLimitDefaultsMod": {
+      "description": "One defaults row of the QoS ladder (level 3). Scope 'global' takes no rule_ident; scope 'rule' requires one and overrides the global row field-wise for that service. Zero fields fall through; an entry whose limit fields are all zero is rejected. vip_shared_* arm the opt-in shared bucket for keyless traffic on non-enforcing services.",
+      "type": "object",
+      "required": [
+        "scope"
+      ],
+      "properties": {
+        "default_tenant_rps": {
+          "description": "Requests per second for tenants without an explicit entry",
+          "type": "integer",
+          "format": "int64"
+        },
+        "default_tenant_tpm": {
+          "description": "LLM tokens per minute for tenants without an explicit entry",
+          "type": "integer",
+          "format": "int64"
+        },
+        "default_user_rps": {
+          "description": "Requests per second for users without an explicit entry",
+          "type": "integer",
+          "format": "int64"
+        },
+        "default_user_tpm": {
+          "description": "LLM tokens per minute for users without an explicit entry",
+          "type": "integer",
+          "format": "int64"
+        },
+        "rule_ident": {
+          "description": "Service identity for scope 'rule'; empty for 'global'",
+          "type": "string"
+        },
+        "scope": {
+          "description": "Defaults scope",
+          "type": "string",
+          "enum": [
+            "global",
+            "rule"
+          ]
+        },
+        "vip_shared_rps": {
+          "description": "Requests per second shared by ALL keyless traffic on the service",
+          "type": "integer",
+          "format": "int64"
+        },
+        "vip_shared_tpm": {
+          "description": "LLM tokens per minute shared by ALL keyless traffic on the service",
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
     "ReadyStatus": {
       "description": "Configuration readiness verdict with the evidence behind it - the boot replay outcome, live external-dependency probes, and the most recent successful persist/restore identities.",
       "type": "object",
@@ -38922,6 +40070,106 @@ func init() {
         },
         "username": {
           "description": "Account name. Complete normalization and delimiter validation are absent; see the User security limitation. The submitted value also selects the previous-password comparison on update.",
+          "type": "string"
+        }
+      }
+    },
+    "UserModelRateLimit": {
+      "description": "One model's token quota inside a user's rate-limit entry. A nonempty model name is required; identities and models containing '|' or a reserved scope prefix are rejected (they would alias another bucket).",
+      "type": "object",
+      "properties": {
+        "model": {
+          "description": "Model name the quota applies to",
+          "type": "string"
+        },
+        "tokens_per_min": {
+          "description": "Maximum LLM tokens per minute for this user and model; 0 removes the model quota",
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
+    "UserRateLimitEntry": {
+      "description": "Stored per-user quotas, not enforcement status. Zero fields fall through the QoS ladder to the configured defaults. Enforcement requires a service whose credential policy attributes users.",
+      "type": "object",
+      "required": [
+        "tenant_id",
+        "user_id"
+      ],
+      "properties": {
+        "burst_size": {
+          "description": "Request burst size; 0 defaults to rps",
+          "type": "integer",
+          "format": "int64"
+        },
+        "model_limits": {
+          "description": "Per-model token quotas for the user",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/UserModelRateLimit"
+          }
+        },
+        "rps": {
+          "description": "Maximum requests per second for the user",
+          "type": "integer",
+          "format": "int64"
+        },
+        "tenant_id": {
+          "description": "Tenant identifier",
+          "type": "string"
+        },
+        "tokens_per_min": {
+          "description": "Maximum LLM tokens per minute for the user",
+          "type": "integer",
+          "format": "int64"
+        },
+        "updated_at": {
+          "description": "Timestamp of the last update",
+          "type": "string",
+          "format": "date-time"
+        },
+        "user_id": {
+          "description": "User identifier",
+          "type": "string"
+        }
+      }
+    },
+    "UserRateLimitMod": {
+      "description": "POST replaces the user's explicit entry; a zero field constrains nothing and falls through to the configured defaults. An entry whose limit fields are all zero is rejected — DELETE removes limits. Supplied model_limits replace the user's model rows as a set; omitted/empty model_limits clears them.",
+      "type": "object",
+      "required": [
+        "tenant_id",
+        "user_id"
+      ],
+      "properties": {
+        "burst_size": {
+          "description": "Request burst size; 0 defaults to rps",
+          "type": "integer",
+          "format": "int64"
+        },
+        "model_limits": {
+          "description": "Per-model token quotas for the user",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/UserModelRateLimit"
+          }
+        },
+        "rps": {
+          "description": "Maximum requests per second for the user",
+          "type": "integer",
+          "format": "int64"
+        },
+        "tenant_id": {
+          "description": "Tenant identifier",
+          "type": "string"
+        },
+        "tokens_per_min": {
+          "description": "Maximum LLM tokens per minute for the user",
+          "type": "integer",
+          "format": "int64"
+        },
+        "user_id": {
+          "description": "User identifier (the verified identity's subject)",
           "type": "string"
         }
       }
