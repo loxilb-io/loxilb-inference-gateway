@@ -300,7 +300,72 @@ def check_session_id_is_bound_not_dropped(failures: list[str]) -> None:
         )
 
 
-def main() -> int:
+def check_health_signal_reaches_every_pool(failures: list[str]) -> None:
+    """The address-keyed health loop must not return from inside HASH_ITER.
+
+    The defect this guards actually shipped: proxy_update_ep_health's loop
+    body ended in `return 0`, so a multi-pool service applied the signal to
+    whichever pool hashed first and no other -- the failed endpoint was never
+    marked down while a healthy one was. The fix's whole contract is "every
+    pool", and the only structural way to break it again is a return (or a
+    bare break) inside the HASH_ITER body, so that is what is asserted --
+    on the masked text, at measured brace depth, never on indentation.
+    """
+    path = EBPF / BINDER_FILE
+    if not path.exists():
+        failures.append(f"{BINDER_FILE}: missing -- the datapath moved, update this gate")
+        return
+    masked = mask(path.read_text(encoding="utf-8"))
+
+    try:
+        body, base = function_body(masked, "proxy_update_ep_health_by_addr")
+    except AssertionError as problem:
+        failures.append(f"{BINDER_FILE}: {problem} -- the address-keyed health "
+                        f"entry point is the fix; its absence is the regression")
+        return
+
+    iters = list(re.finditer(r"\bHASH_ITER\s*\(", body))
+    if len(iters) != 1:
+        failures.append(
+            f"{BINDER_FILE}: proxy_update_ep_health_by_addr has {len(iters)} "
+            f"HASH_ITER loops, expected 1 -- the shape changed, re-derive this gate"
+        )
+        return
+
+    _, after_args = argument_list(body, iters[0].end() - 1)
+    open_brace = body.find("{", after_args)
+    if open_brace < 0:
+        failures.append(f"{BINDER_FILE}: HASH_ITER in proxy_update_ep_health_by_addr "
+                        f"has no brace body -- re-derive this gate")
+        return
+    depth = 0
+    close_brace = -1
+    for i in range(open_brace, len(body)):
+        if body[i] == "{":
+            depth += 1
+        elif body[i] == "}":
+            depth -= 1
+            if depth == 0:
+                close_brace = i
+                break
+    if close_brace < 0:
+        failures.append(f"{BINDER_FILE}: unbalanced HASH_ITER body in "
+                        f"proxy_update_ep_health_by_addr")
+        return
+
+    loop_body = body[open_brace : close_brace + 1]
+    escape = re.search(r"\breturn\b", loop_body)
+    if escape:
+        failures.append(
+            f"{BINDER_FILE}:{line_of(masked, base + open_brace + escape.start())} "
+            f"proxy_update_ep_health_by_addr returns from inside its HASH_ITER "
+            f"body -- only the first pool is ever touched, which is the exact "
+            f"defect this loop was rewritten to fix"
+        )
+
+
+def run_all_checks() -> tuple[list[str], dict[str, int], int]:
+    """Every check, no printing. main() reports; self_test() red-twins."""
     failures: list[str] = []
     per_file: dict[str, int] = {}
     total = 0
@@ -360,6 +425,7 @@ def main() -> int:
 
     check_sync_refuses_to_guess(failures)
     check_session_id_is_bound_not_dropped(failures)
+    check_health_signal_reaches_every_pool(failures)
 
     # The row must carry the identity, and a store without one must be refused
     # rather than written as a row nothing can ever match.
@@ -373,6 +439,137 @@ def main() -> int:
             "CONV_POOL_TAG_UNKNOWN rather than store an unmatchable row"
         )
 
+    return failures, per_file, total
+
+
+def _last_top_level_comma(text: str, start: int, end: int) -> int:
+    """Offset of the last depth-0 comma in text[start:end], or -1."""
+    depth = 0
+    found = -1
+    for i in range(start, end):
+        if text[i] in "([{":
+            depth += 1
+        elif text[i] in ")]}":
+            depth -= 1
+        elif text[i] == "," and depth == 0:
+            found = i
+    return found
+
+
+def _doctor_return_inside_iter(root: pathlib.Path) -> None:
+    """Re-insert the exact defect the health check guards: a return inside
+    the HASH_ITER body of proxy_update_ep_health_by_addr."""
+    path = root / BINDER_FILE
+    text = path.read_text(encoding="utf-8")
+    masked = mask(text)
+    body, base = function_body(masked, "proxy_update_ep_health_by_addr")
+    it = re.search(r"\bHASH_ITER\s*\(", body)
+    _, after_args = argument_list(body, it.end() - 1)
+    open_brace = body.index("{", after_args)
+    at = base + open_brace + 1
+    path.write_text(text[:at] + " return 0; " + text[at:], encoding="utf-8")
+
+
+def _doctor_remove_entry_point(root: pathlib.Path) -> None:
+    """Pre-fix world: the address-keyed entry point does not exist."""
+    path = root / BINDER_FILE
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "proxy_update_ep_health_by_addr", "proxy_update_ep_health_by_index2"),
+        encoding="utf-8")
+
+
+def _doctor_drop_pool_argument(root: pathlib.Path) -> None:
+    """Pre-fix signature: strip the trailing pool argument from one real
+    store_conversation_endpoint call, so the ARITY assert must catch it."""
+    path = root / "sockproxy_ep.c"
+    text = path.read_text(encoding="utf-8")
+    masked = mask(text)
+    sites = calls(masked, "store_conversation_endpoint")
+    assert sites, "self-test fixture drifted: no store_conversation_endpoint call"
+    offset, _ = sites[0]
+    open_paren = masked.index("(", offset)
+    _, end = argument_list(masked, open_paren)   # end = just past ')'
+    comma = _last_top_level_comma(masked, open_paren + 1, end - 1)
+    assert comma > 0, "self-test fixture drifted: call has fewer than 2 arguments"
+    path.write_text(text[:comma] + text[end - 1:], encoding="utf-8")
+
+
+def _doctor_unguard_sync(root: pathlib.Path) -> None:
+    """Failover applies a remote row without the pool-resolvability guard."""
+    path = root / SYNC_FILE
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "conv_pool_sync_may_apply", "conv_pool_sync_guess_is_fine"),
+        encoding="utf-8")
+
+
+def _doctor_drop_binder(root: pathlib.Path) -> None:
+    """The plain-header session id is no longer bound through the digester."""
+    path = root / BINDER_FILE
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "conv_pool_store_id", "conv_pool_copy_if_it_fits"),
+        encoding="utf-8")
+
+
+def self_test() -> int:
+    """Prove every check can go red. A gate whose failure mode has never been
+    demonstrated is indistinguishable from one that cannot fail; each scenario
+    below doctors a pristine copy back into the defect its check guards and
+    requires the expected failure to surface -- and the pristine copy itself
+    must still pass, or the doctoring proved nothing."""
+    import shutil
+    import tempfile
+
+    global EBPF
+    real = EBPF
+    needed = sorted({*CONV_FILES, SYNC_FILE, "sockproxy.h"})
+    scenarios = [
+        ("health loop returns inside HASH_ITER",
+         _doctor_return_inside_iter, "returns from inside its HASH_ITER"),
+        ("address-keyed entry point absent",
+         _doctor_remove_entry_point, "proxy_update_ep_health_by_addr not found"),
+        ("conv call loses its pool argument",
+         _doctor_drop_pool_argument, "the pool argument is missing"),
+        ("failover applies under a guessed pool",
+         _doctor_unguard_sync, "without calling conv_pool_sync_may_apply"),
+        ("session id dropped instead of bound",
+         _doctor_drop_binder, "not bound through"),
+    ]
+
+    bad = 0
+    for name, doctor, expect in scenarios:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            twin = pathlib.Path(tmpdir)
+            for filename in needed:
+                shutil.copy(real / filename, twin / filename)
+            EBPF = twin
+            try:
+                control, _, _ = run_all_checks()
+                doctor(twin)
+                failures, _, _ = run_all_checks()
+            finally:
+                EBPF = real
+        if control:
+            print(f"self-test BROKEN: pristine copy already fails ({control[0]})")
+            bad += 1
+        elif any(expect in failure for failure in failures):
+            print(f"self-test ok: {name} -> caught")
+        else:
+            print(f"self-test MISSED: {name} -- the doctored twin PASSED; "
+                  f"this check can no longer go red")
+            bad += 1
+
+    if bad:
+        return 1
+    print("self-test: every check can go red")
+    return 0
+
+
+def main() -> int:
+    failures, per_file, total = run_all_checks()
+
     if failures:
         print("FAIL: conversation stickiness must name the pool its endpoint index belongs to")
         for failure in failures:
@@ -384,8 +581,11 @@ def main() -> int:
     # Named separately so a CI log shows these ran, rather than only a summary.
     print("PASS: HA failover refuses a conversation row whose pool it can only guess")
     print("PASS: a session id that does not fit is bound, not dropped")
+    print("PASS: a health signal reaches every pool that carries its endpoint")
     return 0
 
 
 if __name__ == "__main__":
+    if "--self-test" in sys.argv[1:]:
+        sys.exit(self_test())
     sys.exit(main())
