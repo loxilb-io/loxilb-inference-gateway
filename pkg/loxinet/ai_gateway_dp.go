@@ -93,7 +93,7 @@ func modelQuotaKey(tenantID, model string) string {
 // qosDefaults is the field-wise merge of the rule-scope defaults row over
 // the global one (QoS ladder level 3): a zero field in the rule row falls
 // through to the global row's field, and a zero there falls through to
-// unlimited — the D-6 sentinel discipline, applied per dimension.
+// unlimited: zero is the sentinel for "no bound", per dimension.
 type qosDefaults struct {
 	userRPS, userTPM     int
 	tenantRPS, tenantTPM int
@@ -146,7 +146,7 @@ func resolveQoSDefaults(svc rateLimitService, svcIdent string) (qosDefaults, err
 // rateLimitCheckInternal is the pure-Go rate limit logic, separated from the
 // CGO export so that unit tests can exercise it without going through C types.
 //
-// The QoS ladder (D-2/D-6) resolves each dimension's limit as: explicit row
+// The QoS ladder resolves each dimension's limit as: explicit row
 // → configured default (rule scope over global) → unlimited; a zero field
 // falls through, so an operator states only what they mean to bound. The
 // enforcement stages then run most-specific first — key RPS, key TPM latch,
@@ -1472,4 +1472,24 @@ func llb_ai_normal_session_hit(modelName *C.char) {
 func llb_ai_record_unmetered(vip *C.char) {
 	defer cgoRecover("llb_ai_record_unmetered")
 	prom.RecordUnmeteredRequest(C.GoString(vip))
+}
+
+// llb_ai_record_usage_missing records one completed response that carried no
+// readable usage object, and charges nothing.
+//
+// C sockproxy calls this when a non-streamed AI Gateway response has finished
+// and no dialect ever extracted a usage object from it. The streaming path
+// reaches the same counter through the quota charge's estimated arm; the
+// non-streamed path had no route to it at all, so responses that completed
+// without usage were invisible rather than merely uncharged.
+//
+// Accounting-only by construction: it moves loxilb_ai_tokens_missing_total and
+// nothing else. These responses stay free by decision, not by omission — see
+// prom.RecordTokenUsageMissing for why charging an estimate was rejected and
+// what would reopen it.
+//
+//export llb_ai_record_usage_missing
+func llb_ai_record_usage_missing(tenantID *C.char, modelName *C.char) {
+	defer cgoRecover("llb_ai_record_usage_missing")
+	prom.RecordTokenUsageMissing(C.GoString(modelName), C.GoString(tenantID))
 }

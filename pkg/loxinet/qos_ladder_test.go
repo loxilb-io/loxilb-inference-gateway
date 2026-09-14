@@ -16,7 +16,7 @@
 
 package loxinet
 
-// The QoS ladder corpus (D-2/D-6). The dimension under test in each case is
+// The QoS ladder corpus. The dimension under test in each case is
 // the ONLY limited one, so a denial can come from exactly one bucket — and
 // the adversarial cases then stack dimensions to prove the buckets do not
 // bleed into each other: one user's throttling must not touch its
