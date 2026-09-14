@@ -497,19 +497,41 @@ const (
 	// was charged for, which is why it is labelled rather than merged into
 	// the free ones.
 	TokenMissingReasonStreamEstimated = "stream_estimated"
-	// TokenMissingReasonUnknown absorbs anything else. The reason arrives
-	// over a cgo boundary as a C string, so a pin skew between the two repos
-	// is a real way to get a value this build does not know. Collapsing it
-	// keeps the label's cardinality closed — the whole point of an allow-list
-	// — while leaving the drift visible as a series nobody expects.
+	// TokenMissingReasonUnknown absorbs anything else, as a runtime backstop
+	// rather than as the primary detector.
+	//
+	// It is NOT reachable by a version skew between the two repos: the data
+	// plane is linked statically (-l:libloxilbdp.a, pkg/loxinet/dpebpf_linux.go),
+	// so a mismatched build fails to build — the C compiler rejects an argument
+	// the header does not declare, and check-source-invariants.sh §9 rejects a
+	// Go signature that moves without it. What a skew cannot do is reach
+	// runtime.
+	//
+	// What could is a reason VALUE added on one side only, which changes no
+	// signature and so compiles clean on both. That is what §10 of the same
+	// script now checks, by comparing the LLB_AI_UMISS_* literals against these
+	// constants and requiring every call site to use a define rather than a
+	// bare string. So the drift this once absorbed silently now fails a gate.
+	//
+	// This stays because a gate reads the source it is pointed at: a reason
+	// built at runtime instead of passed as a literal, a call site in a file
+	// §10 does not scan, or an empty string (C.GoString of a NULL reason) all
+	// still arrive here. Collapsing keeps the label's cardinality closed — the
+	// point of an allow-list — and leaves anything unforeseen visible as a
+	// series nobody expects, instead of as a new one nobody bounded.
 	TokenMissingReasonUnknown = "unknown"
 )
 
 // boundTokenMissingReason maps a data-plane reason onto the accepted set,
 // collapsing anything unrecognised (including the empty string) onto
-// TokenMissingReasonUnknown. An allow-list rather than sanitizeLabel: this
-// value crosses a cgo boundary between two separately versioned repos, and
-// sanitising would admit an unbounded alphabet of new series on skew.
+// TokenMissingReasonUnknown.
+//
+// An allow-list rather than sanitizeLabel, because the two are not the same
+// kind of guard. sanitizeLabel bounds the ALPHABET of a label value; it does
+// nothing about how many distinct values exist. This label is per-tenant on a
+// counter vector, so an unbounded set of values is an unbounded set of series,
+// and the values originate in a different repository's source. A closed set is
+// the only guard that holds.
 func boundTokenMissingReason(reason string) string {
 	switch reason {
 	case TokenMissingReasonResponseComplete,
@@ -557,7 +579,10 @@ func boundTokenMissingReason(reason string) string {
 // reason is the boundary the data plane reported from, one of the
 // TokenMissingReason* values above; anything else collapses onto "unknown"
 // rather than minting a series. It records where the report came from, never
-// a verdict on the tenant — see boundTokenMissingReason.
+// a verdict on the tenant — see boundTokenMissingReason. The values are held
+// in step with the data plane's LLB_AI_UMISS_* defines by
+// check-source-invariants.sh §10, because a value that drifts does not crash
+// and does not fail a unit test: it just stops splitting.
 func RecordTokenUsageMissing(modelName, tenantID, reason string) {
 	tenant := sanitizeLabel(tenantID)
 	if tenant == "" {

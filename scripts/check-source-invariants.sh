@@ -376,6 +376,105 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# 10. The missing-usage reason vocabulary is lockstep between C and Go.
+#
+# loxilb_ai_tokens_missing_total's reason label is a STRING chosen in the data
+# plane (LLB_AI_UMISS_* in the gate header) and validated in the control plane
+# (TokenMissingReason* in api/prometheus/ai_metrics.go). Same problem as the
+# flag bits above, one step worse: the arity check in section 9 compares
+# parameter COUNTS, which a value change does not touch, and the Go allow-list
+# deliberately COLLAPSES anything it does not recognise onto "unknown" so a
+# skewed value can never crash the datapath.
+#
+# That is right at runtime and silent in CI. Mistype one literal on either side
+# and the C still compiles, the Go unit tests still pass (they assert against
+# the Go constants, which agree with themselves), the manifest still validates
+# (it declares the label NAME, not its values) -- and every report in
+# production lands in "unknown". The label stops splitting anything, the
+# per-tenant comparison it exists for answers nothing, and the dashboard shows
+# one flat series that reads like an absence of traffic. Nothing goes red.
+#
+# Three ways that drift can happen, and this section closes all three:
+#   a. a value typed differently on the two sides   -> pairwise comparison
+#   b. a NEW reason added in C with no Go constant  -> C define count
+#   c. a Go constant with no C producer             -> Go constant count
+#
+# The pair list is explicit, exactly like flags_pairs above: adding a reason is
+# supposed to be a two-repo change, and having to name it here is the point.
+# ---------------------------------------------------------------------------
+PROM_GO="api/prometheus/ai_metrics.go"
+# C suffix : Go suffix. Values that cross the cgo boundary, so both sides must
+# spell them identically.
+umiss_pairs="RESPONSE_COMPLETE:ResponseComplete H2_STREAM_CLOSE:H2StreamClose CONNECTION_CLOSE:ConnectionClose"
+# Go-only reasons: written on paths that never reach C. stream_estimated is the
+# streamed arm inside RecordTokenUsage; unknown is where an unrecognised value
+# lands. Named here so the Go-side count below cannot absorb a stray constant.
+umiss_go_only="StreamEstimated Unknown"
+
+umiss_bad=""
+umiss_pair_count=0
+for pair in $umiss_pairs; do
+  cname="${pair%%:*}"; goname="${pair##*:}"
+  umiss_pair_count=$((umiss_pair_count + 1))
+  cval="$(grep -ohE "#define +LLB_AI_UMISS_$cname +\"[a-z0-9_]+\"" "$C_DECL" \
+          | grep -oE '"[a-z0-9_]+"' | tr -d '"' | head -1)"
+  gval="$(grep -ohE "TokenMissingReason$goname += +\"[a-z0-9_]+\"" "$PROM_GO" \
+          | grep -oE '"[a-z0-9_]+"' | tr -d '"' | head -1)"
+  if [ -z "$cval" ] || [ -z "$gval" ] || [ "$cval" != "$gval" ]; then
+    umiss_bad="$umiss_bad $cname(C=${cval:-missing},Go=${gval:-missing})"
+  fi
+done
+
+# (b) Every LLB_AI_UMISS_* define must be named above. A fourth reason added in
+# the data plane with no Go constant is the drift that lands silently in
+# "unknown", so an unnamed define is a failure, not a skip.
+c_umiss_count="$(grep -cE '^#define +LLB_AI_UMISS_[A-Z0-9_]+ +"' "$C_DECL")"
+if [ "$c_umiss_count" != "$umiss_pair_count" ]; then
+  umiss_bad="$umiss_bad define-count(header=$c_umiss_count,checked=$umiss_pair_count)"
+fi
+
+# (c) And every Go constant must be either one of the pairs or declared Go-only,
+# so a constant added to the allow-list with nothing in the data plane to
+# produce it is visible rather than dead.
+go_only_count="$(printf '%s\n' $umiss_go_only | grep -c .)"
+go_umiss_count="$(grep -cE '^[[:space:]]*TokenMissingReason[A-Za-z0-9]+ += +"' "$PROM_GO")"
+go_umiss_expect=$((umiss_pair_count + go_only_count))
+if [ "$go_umiss_count" != "$go_umiss_expect" ]; then
+  umiss_bad="$umiss_bad go-const-count(file=$go_umiss_count,expected=$go_umiss_expect)"
+fi
+
+# (d) And the call sites must USE the defines. A bare "connection_close" typed
+# at a call site would satisfy everything above while drifting on its own, and
+# would make the whole section vacuous.
+umiss_calls="$(awk '
+  /llb_ai_record_usage_missing[ ]*\(/ {
+    if ($0 ~ /^[A-Za-z_]/) next       # the definition, at column 0
+    if ($0 ~ /extern/) next           # a prototype
+    buf = $0
+    while (buf !~ /;/) { if ((getline line) <= 0) break; buf = buf " " line }
+    calls++
+    if (buf ~ /LLB_AI_UMISS_/) ok++
+  }
+  END { printf "%d %d", calls, ok }
+' loxilb-ebpf/common/sockproxy_http.c loxilb-ebpf/common/sockproxy_h2.c)"
+umiss_ncall="${umiss_calls%% *}"; umiss_nok="${umiss_calls##* }"
+if [ "$umiss_ncall" -lt 4 ]; then
+  # Fewer call sites than the four report boundaries means the scan lost them,
+  # which would make (d) pass by finding nothing.
+  umiss_bad="$umiss_bad call-scan(found=$umiss_ncall,expected>=4)"
+elif [ "$umiss_ncall" != "$umiss_nok" ]; then
+  umiss_bad="$umiss_bad literal-at-call-site($((umiss_ncall - umiss_nok)) of $umiss_ncall)"
+fi
+
+if [ -n "$umiss_bad" ]; then
+  fail "missing-usage reason vocabulary is not lockstep between C and Go:$umiss_bad"
+  printf '          a value that disagrees does not crash and does not fail a test:\n'
+  printf '          it collapses to reason="unknown" and the label stops splitting\n'
+else
+  pass "missing-usage reason values are lockstep between C and Go ($umiss_pair_count shared, $umiss_nok call sites use the defines)"
+fi
+
+# ---------------------------------------------------------------------------
 # N. Conversation stickiness names the pool whose endpoint index it carries.
 #
 # Delegated to Python, because this one cannot be done with grep. The pool is
