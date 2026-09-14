@@ -40,9 +40,9 @@ echo "================ $SCENARIO ================"
 sockmap_section 1 "Daemon boot assets"
 
 if sockmap_assert_bpf_assets llb1; then
-  sockmap_result "sockops prog + 5 sockmap maps attached" "OK"
+  sockmap_result "sockops prog + 6 sockmap maps attached" "OK"
 else
-  sockmap_result "sockops prog + 5 sockmap maps attached" "FAILED"
+  sockmap_result "sockops prog + 6 sockmap maps attached" "FAILED"
   echo "RESULT: $SCENARIO [FAILED] (bootstrap)"
   exit 1
 fi

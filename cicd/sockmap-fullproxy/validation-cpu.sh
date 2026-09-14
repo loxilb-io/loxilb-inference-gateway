@@ -54,10 +54,14 @@ source ./sockmap_common.sh
 sockmap_init_artifacts
 
 SCENARIO="SCENARIO-sockmap-fullproxy-cpu"
-PERF_VIP="10.10.10.254"
-ON_VPORT=2030;  ON_BPORT=9080
-OFF_VPORT=2031; OFF_BPORT=9090
-EPS="31.31.31.1,32.32.32.1"
+# The arms share every port and differ only in address, so the comparison also checks
+# that portsets keyed by (address, port) keep the off service out of the sockhash.
+# The .253 VIP and the .2 endpoint addresses are added for the run; each arm keeps
+# both backend hosts so neither arm is capped by a single backend process.
+# Each arm gets both backend hosts, on addresses of its own: .1 for on, .2 for off.
+ON_VIP="10.10.10.254";  ON_EPS="31.31.31.1,32.32.32.1"
+OFF_VIP="10.10.10.253"; OFF_EPS="31.31.31.2,32.32.32.2"
+VPORT=2030; BPORT=9080
 
 CONC=${CONC:-32}              # concurrent keep-alive connections per client
 PAR_CLIENTS=${PAR_CLIENTS:-4} # parallel clients, each its own Node process
@@ -85,8 +89,11 @@ cleanup() {
   sudo pkill -f "perf_client.js" >/dev/null 2>&1 || true
   local p
   for p in "${PERF_SRV_PIDS[@]}"; do wait "$p" 2>/dev/null || true; done
-  sockmap_delete_lb_via_api llb1 "$PERF_VIP" "$ON_VPORT"  >/dev/null 2>&1 || true
-  sockmap_delete_lb_via_api llb1 "$PERF_VIP" "$OFF_VPORT" >/dev/null 2>&1 || true
+  sockmap_delete_lb_via_api llb1 "$ON_VIP"  "$VPORT" >/dev/null 2>&1 || true
+  sockmap_delete_lb_via_api llb1 "$OFF_VIP" "$VPORT" >/dev/null 2>&1 || true
+  sudo ip -n llb1 addr del "$OFF_VIP/24" dev ellb1l3h1 >/dev/null 2>&1 || true
+  sudo ip -n l3ep1 addr del 31.31.31.2/24 dev el3ep1llb1 >/dev/null 2>&1 || true
+  sudo ip -n l3ep2 addr del 32.32.32.2/24 dev el3ep2llb1 >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -131,63 +138,70 @@ echo "conc=$CONC par_clients=$PAR_CLIENTS dur_ms=$DUR_MS warm_ms=$WARM_MS cpu_wi
 # ---------- [1] boot assets ----------
 sockmap_section 1 "Daemon boot assets"
 if sockmap_assert_bpf_assets llb1; then
-  sockmap_result "sockops prog + 5 sockmap maps attached" "OK"
+  sockmap_result "sockops prog + 6 sockmap maps attached" "OK"
 else
-  sockmap_result "sockops prog + 5 sockmap maps attached" "FAILED"
+  sockmap_result "sockops prog + 6 sockmap maps attached" "FAILED"
   echo "RESULT: $SCENARIO [FAILED] (bootstrap)"; exit 1
 fi
 
-# ---------- [2] create on/off rules (separate backend ports) ----------
-sockmap_section 2 "Create CPU rules (on=$ON_VPORT->$ON_BPORT, off=$OFF_VPORT->$OFF_BPORT)"
-if sockmap_create_lb_via_api llb1 "$PERF_VIP" "$ON_VPORT"  "$ON_BPORT"  "$EPS" true  "cpu-on" \
-   && sockmap_create_lb_via_api llb1 "$PERF_VIP" "$OFF_VPORT" "$OFF_BPORT" "$EPS" false "cpu-off"; then
+# ---------- [2] create on/off rules (same ports, different addresses) ----------
+sockmap_section 2 "Create CPU rules (on=$ON_VIP:$VPORT->$ON_EPS:$BPORT, off=$OFF_VIP:$VPORT->$OFF_EPS:$BPORT)"
+# The off VIP must exist before its rule is created: the proxy listener binds to it.
+sudo ip -n llb1 addr replace "$OFF_VIP/24" dev ellb1l3h1
+sudo ip -n l3ep1 addr replace 31.31.31.2/24 dev el3ep1llb1
+sudo ip -n l3ep2 addr replace 32.32.32.2/24 dev el3ep2llb1
+if sockmap_create_lb_via_api llb1 "$ON_VIP"  "$VPORT" "$BPORT" "$ON_EPS"  both "cpu-on" \
+   && sockmap_create_lb_via_api llb1 "$OFF_VIP" "$VPORT" "$BPORT" "$OFF_EPS" off  "cpu-off"; then
   sockmap_result "cpu-on / cpu-off rules created" "OK"
 else
   sockmap_result "cpu-on / cpu-off rules created" "FAILED"
   echo "RESULT: $SCENARIO [FAILED] (rule create)"; exit 1
 fi
-sleep 2
 
-if sockmap_portset_has llb1 "$SOCKMAP_VIP_NAME" "$ON_VPORT" \
-   && sockmap_portset_has llb1 "$SOCKMAP_EP_NAME" "$ON_BPORT"; then
-  sockmap_result "cpu-on vip $ON_VPORT + ep $ON_BPORT in portsets" "OK"
+if sockmap_portset_wait llb1 "$SOCKMAP_VIP_NAME" "$VPORT" present 16 "$ON_VIP" \
+   && sockmap_portset_wait llb1 "$SOCKMAP_EP_NAME" "$BPORT" present 16 "${ON_EPS%%,*}" \
+   && sockmap_portset_wait llb1 "$SOCKMAP_EP_NAME" "$BPORT" present 16 "${ON_EPS##*,}"; then
+  sockmap_result "cpu-on $ON_VIP:$VPORT + $ON_EPS:$BPORT in portsets" "OK"
 else
-  sockmap_result "cpu-on vip $ON_VPORT + ep $ON_BPORT in portsets" "FAILED"
+  sockmap_result "cpu-on $ON_VIP:$VPORT + $ON_EPS:$BPORT in portsets" "FAILED"
+fi
+if sockmap_portset_has llb1 "$SOCKMAP_VIP_NAME" "$VPORT" "$OFF_VIP" \
+   || sockmap_portset_has llb1 "$SOCKMAP_EP_NAME" "$BPORT" "${OFF_EPS%%,*}" \
+   || sockmap_portset_has llb1 "$SOCKMAP_EP_NAME" "$BPORT" "${OFF_EPS##*,}"; then
+  sockmap_result "cpu-off addresses NOT in portsets" "FAILED" "leaked"
+else
+  sockmap_result "cpu-off addresses NOT in portsets" "OK"
 fi
 
-# ---------- [3] start backend servers (9080 + 9090) ----------
-sockmap_section 3 "Start backend HTTP servers on $ON_BPORT and $OFF_BPORT"
-$hexec l3ep1 node ./perf_server.js server1 "$ON_BPORT"  256 & PERF_SRV_PIDS+=("$!")
-$hexec l3ep1 node ./perf_server.js server1 "$OFF_BPORT" 256 & PERF_SRV_PIDS+=("$!")
-$hexec l3ep2 node ./perf_server.js server2 "$ON_BPORT"  256 & PERF_SRV_PIDS+=("$!")
-$hexec l3ep2 node ./perf_server.js server2 "$OFF_BPORT" 256 & PERF_SRV_PIDS+=("$!")
+# ---------- [3] start backend servers ----------
+sockmap_section 3 "Start backend HTTP servers on $ON_EPS:$BPORT and $OFF_EPS:$BPORT"
+$hexec l3ep1 node ./perf_server.js server1 "$BPORT" 256 & PERF_SRV_PIDS+=("$!")
+$hexec l3ep2 node ./perf_server.js server2 "$BPORT" 256 & PERF_SRV_PIDS+=("$!")
 
 sleep 3
 ready=0
 for i in $(seq 1 20); do
   ok=1
-  for ep in 31.31.31.1 32.32.32.1; do
-    for pp in "$ON_BPORT" "$OFF_BPORT"; do
-      code=$($hexec l3h1 curl -s -o /dev/null -w '%{http_code}' --max-time 3 "http://$ep:$pp/?bytes=16" 2>/dev/null || echo 000)
-      [[ "$code" == "200" ]] || ok=0
-    done
+  for ep in ${ON_EPS//,/ } ${OFF_EPS//,/ }; do
+    code=$($hexec l3h1 curl -s -o /dev/null -w '%{http_code}' --max-time 3 "http://$ep:$BPORT/?bytes=16" 2>/dev/null || echo 000)
+    [[ "$code" == "200" ]] || ok=0
   done
   (( ok == 1 )) && { ready=1; break; }
   sleep 1
 done
 if (( ready == 1 )); then
-  sockmap_result "backends ready on $ON_BPORT/$OFF_BPORT (both eps)" "OK"
+  sockmap_result "backends ready on $ON_EPS/$OFF_EPS:$BPORT" "OK"
 else
-  sockmap_result "backends ready on $ON_BPORT/$OFF_BPORT (both eps)" "FAILED"
+  sockmap_result "backends ready on $ON_EPS/$OFF_EPS:$BPORT" "FAILED"
   echo "RESULT: $SCENARIO [FAILED] (backend not ready)"; exit 1
 fi
 
 # ---------- [4] sanity via VIPs ----------
 sockmap_section 4 "Sanity: both VIPs serve via fullproxy"
-on_code=$($hexec l3h1 curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://$PERF_VIP:$ON_VPORT/?bytes=256" 2>/dev/null || echo 000)
-off_code=$($hexec l3h1 curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://$PERF_VIP:$OFF_VPORT/?bytes=256" 2>/dev/null || echo 000)
-[[ "$on_code"  == "200" ]] && sockmap_result "cpu-on VIP $ON_VPORT serves (200)"  "OK" || sockmap_result "cpu-on VIP $ON_VPORT serves (200)"  "FAILED" "code=$on_code"
-[[ "$off_code" == "200" ]] && sockmap_result "cpu-off VIP $OFF_VPORT serves (200)" "OK" || sockmap_result "cpu-off VIP $OFF_VPORT serves (200)" "FAILED" "code=$off_code"
+on_code=$($hexec l3h1 curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://$ON_VIP:$VPORT/?bytes=256" 2>/dev/null || echo 000)
+off_code=$($hexec l3h1 curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://$OFF_VIP:$VPORT/?bytes=256" 2>/dev/null || echo 000)
+[[ "$on_code"  == "200" ]] && sockmap_result "cpu-on VIP $ON_VIP:$VPORT serves (200)"  "OK" || sockmap_result "cpu-on VIP $ON_VIP:$VPORT serves (200)"  "FAILED" "code=$on_code"
+[[ "$off_code" == "200" ]] && sockmap_result "cpu-off VIP $OFF_VIP:$VPORT serves (200)" "OK" || sockmap_result "cpu-off VIP $OFF_VIP:$VPORT serves (200)" "FAILED" "code=$off_code"
 
 # ---------- CPU measure helper ----------
 # $1 vip $2 vport $3 bytes $4 tag
@@ -195,7 +209,7 @@ off_code=$($hexec l3h1 curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http
 M_RPS=0; M_MBPS=0; M_REQ=0; M_ERR=0; M_NCLI=0; M_MEAN=0
 M_CPU_US=0; M_USER_US=0; M_SYS_US=0; M_CORES=0
 M_CPU_PER_REQ=0; M_CPU_PER_MB=0; M_USER_PER_REQ=0; M_SYS_PER_REQ=0
-M_REDIR_DELTA=0
+M_REDIR_DELTA=0; M_VERDICT_MISS_DELTA=0
 M_HOST_CORES=0; M_SI_CORES=0; M_HOST_PER_REQ=0; M_SI_PER_REQ=0
 measure_cpu() {
   local vip=$1 vport=$2 bytes=$3 tag=$4
@@ -216,6 +230,7 @@ measure_cpu() {
   read -r cb ub sb < <(sockmap_cpu_stat_usec llb1)
   read -r hbb hsib hsyb < <(host_cpu_jiffies)
   rdb=$(sockmap_redirect_count llb1)
+  local vmb=$(( $(sockmap_peer_miss_count llb1) + $(sockmap_ineligible_count llb1) ))
 
   # Wait out the CPU window, which sits inside the client window.
   ms_sleep "$CPU_WIN_MS"
@@ -223,6 +238,7 @@ measure_cpu() {
   read -r ca ua sa < <(sockmap_cpu_stat_usec llb1)
   read -r hba hsia hsya < <(host_cpu_jiffies)
   rda=$(sockmap_redirect_count llb1)
+  local vma=$(( $(sockmap_peer_miss_count llb1) + $(sockmap_ineligible_count llb1) ))
 
   # Wait for the clients to finish, then aggregate their output.
   for i in "${pids[@]}"; do wait "$i" 2>/dev/null || true; done
@@ -237,6 +253,7 @@ measure_cpu() {
   M_USER_US=$(( ua - ub ))
   M_SYS_US=$(( sa - sb ))
   M_REDIR_DELTA=$(( rda - rdb ))
+  M_VERDICT_MISS_DELTA=$(( vma - vmb ))
 
   # Normalization: the CPU window is a sub-interval of the client window, of relative
   # length CPU_WIN_MS/DUR_MS. Assuming steady state, requests and bytes within the CPU
@@ -290,7 +307,7 @@ declare -A OFF_RPS OFF_MBPS OFF_CORES OFF_CPR OFF_CPM OFF_UPR OFF_SPR OFF_REDIR 
 
 for bytes in $SIZES; do
   # --- ON ---
-  measure_cpu "$PERF_VIP" "$ON_VPORT" "$bytes" "on"
+  measure_cpu "$ON_VIP" "$VPORT" "$bytes" "on"
   ON_RPS[$bytes]=$M_RPS;   ON_MBPS[$bytes]=$M_MBPS; ON_CORES[$bytes]=$M_CORES
   ON_CPR[$bytes]=$M_CPU_PER_REQ; ON_CPM[$bytes]=$M_CPU_PER_MB
   ON_UPR[$bytes]=$M_USER_PER_REQ; ON_SPR[$bytes]=$M_SYS_PER_REQ
@@ -300,7 +317,7 @@ for bytes in $SIZES; do
   on_cores=$M_CORES
 
   # --- OFF ---
-  measure_cpu "$PERF_VIP" "$OFF_VPORT" "$bytes" "off"
+  measure_cpu "$OFF_VIP" "$VPORT" "$bytes" "off"
   OFF_RPS[$bytes]=$M_RPS;   OFF_MBPS[$bytes]=$M_MBPS; OFF_CORES[$bytes]=$M_CORES
   OFF_CPR[$bytes]=$M_CPU_PER_REQ; OFF_CPM[$bytes]=$M_CPU_PER_MB
   OFF_UPR[$bytes]=$M_USER_PER_REQ; OFF_SPR[$bytes]=$M_SYS_PER_REQ
@@ -318,6 +335,12 @@ for bytes in $SIZES; do
     sockmap_result "bytes=$bytes OFF not engaged (redirect==0)" "OK"
   else
     sockmap_result "bytes=$bytes OFF not engaged (redirect==0)" "FAILED" "delta=${OFF_REDIR[$bytes]}"
+  fi
+  # The off arm shares the on arm's ports; its sockets must never reach the verdict.
+  if (( M_VERDICT_MISS_DELTA == 0 )); then
+    sockmap_result "bytes=$bytes OFF never reaches verdict (miss+inelig==0)" "OK"
+  else
+    sockmap_result "bytes=$bytes OFF never reaches verdict (miss+inelig==0)" "FAILED" "delta=$M_VERDICT_MISS_DELTA"
   fi
 
   # Warn if loxilb did not get enough load.
