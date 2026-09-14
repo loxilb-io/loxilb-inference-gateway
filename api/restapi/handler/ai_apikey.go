@@ -202,6 +202,13 @@ func ConfigPatchAIApikey(w http.ResponseWriter, r *http.Request, keyID string) {
 	var body struct {
 		AllowedModels []string `json:"allowed_models"`
 		Enabled       *bool    `json:"enabled"`
+		// The PATCH gap fix: the three rate-limit fields were settable at
+		// creation and then frozen, so changing a limit meant recycling the
+		// key — invalidating a credential clients were still holding. nil
+		// (absent) leaves a field untouched; 0 is an explicit "no limit".
+		RateLimitRPS *int `json:"rate_limit_rps"`
+		BurstSize    *int `json:"burst_size"`
+		TokensPerMin *int `json:"tokens_per_min"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -210,19 +217,34 @@ func ConfigPatchAIApikey(w http.ResponseWriter, r *http.Request, keyID string) {
 		return
 	}
 
-	if err := ApiHooks.NetAPIKeyPatch(keyID, body.AllowedModels, body.Enabled); err != nil {
+	writePatchErr := func(err error) {
 		tk.LogIt(tk.LogError, "[AIApikey] Failed to patch API key %s: %v\n", keyID, err)
 		if writeKeyStoreFailure(w, err) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		status := http.StatusInternalServerError
+		var invalid *cmn.ValidationError
 		if strings.Contains(err.Error(), "not found") {
 			status = http.StatusNotFound
+		} else if errors.As(err, &invalid) {
+			status = http.StatusBadRequest
 		}
 		w.WriteHeader(status)
 		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-		return
+	}
+
+	if body.AllowedModels != nil || body.Enabled != nil {
+		if err := ApiHooks.NetAPIKeyPatch(keyID, body.AllowedModels, body.Enabled); err != nil {
+			writePatchErr(err)
+			return
+		}
+	}
+	if body.RateLimitRPS != nil || body.BurstSize != nil || body.TokensPerMin != nil {
+		if err := ApiHooks.NetAPIKeyRateLimitPatch(keyID, body.RateLimitRPS, body.BurstSize, body.TokensPerMin); err != nil {
+			writePatchErr(err)
+			return
+		}
 	}
 
 	w.WriteHeader(http.StatusNoContent)
