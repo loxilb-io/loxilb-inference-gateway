@@ -531,8 +531,8 @@
   "tails": {
    "loxinet-prometheus-main": [
     { "symbol": "PrometheusInit", "kind": "method", "receiver": "loxiNetH", "file": "pkg/loxinet/loxinet.go", "def_line": 169, "call_line": 171, "calls": "Init" },
-    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 358, "call_line": 762, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus, so every family behind this tail needs the Prometheus subsystem enabled" },
-    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1323, "call_line": 1324, "calls": "loxiNetInit", "entry_point": "main" }
+    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 358, "call_line": 785, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus, so every family behind this tail needs the Prometheus subsystem enabled" },
+    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1332, "call_line": 1333, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "opa-watcher-rest": [
     { "symbol": "run", "kind": "method", "receiver": "Watcher", "file": "pkg/opa/watcher.go", "def_line": 158, "call_line": 175, "calls": "syncOnce", "note": "ticker loop at config.PollInterval; the first sync is the direct call at :167" },
@@ -541,15 +541,15 @@
    ],
    "loxinet-nlp-boot": [
     { "symbol": "NlpInit", "kind": "func", "file": "api/loxinlp/nlp.go", "def_line": 2122, "call_line": 2191, "calls": "LbSessionGet", "note": "launched as a goroutine; LbSessionGet(done) runs the boot config replay" },
-    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 358, "call_line": 752, "calls": "NlpInit", "note": "guarded by !opts.Opts.NoNlp" },
-    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1323, "call_line": 1324, "calls": "loxiNetInit", "entry_point": "main" }
+    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 358, "call_line": 775, "calls": "NlpInit", "note": "guarded by !opts.Opts.NoNlp" },
+    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1332, "call_line": 1333, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "restapi-configure-main": [
     { "symbol": "ConfigureAPI", "kind": "method", "receiver": "Server", "file": "api/restapi/server.go", "def_line": 57, "call_line": 59, "calls": "configureAPI", "entry_point": "main" }
    ],
    "loxinet-sockproxy-sync-main": [
     { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 358, "call_line": 663, "calls": "Start", "note": "the coordinator is constructed unconditionally at :625; peersFn returns nil on a single-node Gateway, so drainLoop runs but no per-peer consumer ever spawns" },
-    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1323, "call_line": 1324, "calls": "loxiNetInit", "entry_point": "main" }
+    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1332, "call_line": 1333, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "sockproxy-xsync-server": [
     { "symbol": "SockproxySessionMod", "kind": "method", "receiver": "XSync", "file": "pkg/loxinet/xsync_server.go", "def_line": 234, "call_line": 244, "calls": "ApplyOne", "entry_point": "http-handler", "note": "XSync gRPC service method -- an inbound request path from a peer Gateway, not a REST route; PullSnapshot (pkg/loxinet/sockproxy_sync.go:970) reaches the same writer on rejoin" }
@@ -560,8 +560,8 @@
    "ai-jwks-collector": [
    { "symbol": "RegisterJWKSSource", "kind": "func", "file": "api/prometheus/jwt_metrics.go", "def_line": 171, "call_line": 173, "calls": "jwksCollector", "note": "sync.Once; the collector reads the manager at scrape time rather than being set on the refresh path -- a gauge set on refresh would freeze at the last successful value exactly when the endpoint stops answering" },
    { "symbol": "JWTAuthProfileInit", "kind": "func", "file": "pkg/loxinet/jwtauthprofile.go", "def_line": 59, "call_line": 65, "calls": "RegisterJWKSSource" },
-   { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 358, "call_line": 799, "calls": "JWTAuthProfileInit" },
-   { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1323, "call_line": 1324, "calls": "loxiNetInit", "entry_point": "main" }
+   { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 358, "call_line": 751, "calls": "JWTAuthProfileInit" },
+   { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1332, "call_line": 1333, "calls": "loxiNetInit", "entry_point": "main" }
   ],
   "ai-token-quota-collector": [
     { "symbol": "RegisterTokenQuotaSource", "kind": "func", "file": "api/prometheus/ai_metrics.go", "def_line": 590, "call_line": 592, "calls": "tokenQuotaCollector", "note": "sync.Once; the collector reads the live rate-limiter store at scrape time rather than being set on the charge path -- a gauge set on charge would freeze while a tenant is denied" },
@@ -571,50 +571,50 @@
    "prom-init-lbrule-main": [
     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 796, "calls": "RunGetLBRule", "note": "collector goroutine; one pass per PrometheusDefaultPeriod" },
     { "symbol": "PrometheusInit", "kind": "method", "receiver": "loxiNetH", "file": "pkg/loxinet/loxinet.go", "def_line": 169, "call_line": 171, "calls": "Init" },
-    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 358, "call_line": 762, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
-    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1323, "call_line": 1324, "calls": "loxiNetInit", "entry_point": "main" }
+    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 358, "call_line": 785, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
+    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1332, "call_line": 1333, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "prom-init-conntrack-main": [
     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 800, "calls": "RunActiveConntrackCount" },
     { "symbol": "PrometheusInit", "kind": "method", "receiver": "loxiNetH", "file": "pkg/loxinet/loxinet.go", "def_line": 169, "call_line": 171, "calls": "Init" },
-    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 358, "call_line": 762, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
-    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1323, "call_line": 1324, "calls": "loxiNetInit", "entry_point": "main" }
+    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 358, "call_line": 785, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
+    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1332, "call_line": 1333, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "prom-init-security-main": [
     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 809, "calls": "RunSecurityRateStats" },
     { "symbol": "PrometheusInit", "kind": "method", "receiver": "loxiNetH", "file": "pkg/loxinet/loxinet.go", "def_line": 169, "call_line": 171, "calls": "Init" },
-    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 358, "call_line": 762, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
-    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1323, "call_line": 1324, "calls": "loxiNetInit", "entry_point": "main" }
+    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 358, "call_line": 785, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
+    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1332, "call_line": 1333, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "prom-init-ipfilter-main": [
     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 810, "calls": "RunIPFilterStats" },
     { "symbol": "PrometheusInit", "kind": "method", "receiver": "loxiNetH", "file": "pkg/loxinet/loxinet.go", "def_line": 169, "call_line": 171, "calls": "Init" },
-    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 358, "call_line": 762, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
-    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1323, "call_line": 1324, "calls": "loxiNetInit", "entry_point": "main" }
+    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 358, "call_line": 785, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
+    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1332, "call_line": 1333, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "prom-init-sysutil-main": [
     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 798, "calls": "RunSystemUtilization" },
     { "symbol": "PrometheusInit", "kind": "method", "receiver": "loxiNetH", "file": "pkg/loxinet/loxinet.go", "def_line": 169, "call_line": 171, "calls": "Init" },
-    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 358, "call_line": 762, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
-    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1323, "call_line": 1324, "calls": "loxiNetInit", "entry_point": "main" }
+    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 358, "call_line": 785, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
+    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1332, "call_line": 1333, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "prom-init-fwrule-main": [
     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 795, "calls": "RunGetFwRule" },
     { "symbol": "PrometheusInit", "kind": "method", "receiver": "loxiNetH", "file": "pkg/loxinet/loxinet.go", "def_line": 169, "call_line": 171, "calls": "Init" },
-    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 358, "call_line": 762, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
-    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1323, "call_line": 1324, "calls": "loxiNetInit", "entry_point": "main" }
+    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 358, "call_line": 785, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
+    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1332, "call_line": 1333, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "prom-init-endpoint-main": [
     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 794, "calls": "RunGetEndpoint" },
     { "symbol": "PrometheusInit", "kind": "method", "receiver": "loxiNetH", "file": "pkg/loxinet/loxinet.go", "def_line": 169, "call_line": 171, "calls": "Init" },
-    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 358, "call_line": 762, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
-    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1323, "call_line": 1324, "calls": "loxiNetInit", "entry_point": "main" }
+    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 358, "call_line": 785, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
+    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1332, "call_line": 1333, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "prom-init-sockproxy-main": [
     { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics" },
     { "symbol": "PrometheusInit", "kind": "method", "receiver": "loxiNetH", "file": "pkg/loxinet/loxinet.go", "def_line": 169, "call_line": 171, "calls": "Init" },
-    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 358, "call_line": 762, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
-    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1323, "call_line": 1324, "calls": "loxiNetInit", "entry_point": "main" }
+    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 358, "call_line": 785, "calls": "PrometheusInit", "note": "guarded by opts.Opts.Prometheus" },
+    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1332, "call_line": 1333, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "kv-subscriber-rule-config": [
     { "symbol": "KvSubscriberStartRank", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 1230, "call_line": 1379, "calls": "runKvSubscriberLoopBinding", "note": "one subscriber goroutine per (service, endpoint, rank)" },
@@ -760,8 +760,8 @@
      { "symbol": "PolTicker", "kind": "method", "receiver": "PolH", "file": "pkg/loxinet/qospol.go", "def_line": 391, "call_line": 428, "calls": "publishAttachment", "note": "also republished synchronously from PolAdd (qospol.go:272), PolAssociateLbRule (:333) and PolDelete (:362), so a config change is visible without waiting for the tick" },
      { "symbol": "ZoneTicker", "kind": "method", "receiver": "ZoneH", "file": "pkg/loxinet/zones.go", "def_line": 227, "call_line": 239, "calls": "PolTicker" },
      { "symbol": "loxiNetTicker", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 220, "call_line": 332, "calls": "ZoneTicker" },
-     { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 358, "call_line": 861, "calls": "loxiNetTicker", "note": "go statement; the ticker goroutine runs for the life of the process" },
-     { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1323, "call_line": 1324, "calls": "loxiNetInit", "entry_point": "main" }
+     { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 358, "call_line": 870, "calls": "loxiNetTicker", "note": "go statement; the ticker goroutine runs for the life of the process" },
+     { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1332, "call_line": 1333, "calls": "loxiNetInit", "entry_point": "main" }
     ],
     "evidence": "api/prometheus/policer_metrics_test.go asserts the published store is emitted verbatim on gather (0 for pending, 1 for attached, series vanish after republish without the policer); pkg/loxinet attachment tests pin the attached() truth table. Not yet observed on a bed; the ghost-policer red twin owns the runtime proof."
    },
@@ -1246,8 +1246,8 @@
    "writer_sources": [
     { "symbol": "RecordJWKSRefresh", "kind": "func", "file": "api/prometheus/jwt_metrics.go", "def_line": 194, "writes": "aiJWKSRefreshTotal" },
     { "symbol": "JWTAuthProfileInit", "kind": "func", "file": "pkg/loxinet/jwtauthprofile.go", "def_line": 59, "call_line": 62, "calls": "RecordJWKSRefresh", "note": "the wiring site, not the calling site: this installs the recorder as jwtauth's refresh observer, and the invocation happens later on each profile's JWKS lifecycle goroutine (pkg/jwtauth/manager.go fetchOnce). The seam exists so the credential-verification core needs no metrics dependency" },
-    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 358, "call_line": 799, "calls": "JWTAuthProfileInit" },
-    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1323, "call_line": 1324, "calls": "loxiNetInit", "entry_point": "main" }
+    { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 358, "call_line": 751, "calls": "JWTAuthProfileInit" },
+    { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1332, "call_line": 1333, "calls": "loxiNetInit", "entry_point": "main" }
    ],
    "evidence": "pkg/jwtauth/manager_test.go TestRefreshObserverCountsEveryAttempt proves the observer fires once per attempt with the outcome reached, including a failure against a dead endpoint while the keyset stays usable. Runtime proof is owed."
   },
@@ -1849,7 +1849,7 @@
      { "symbol": "SetConntrackMaxEntries", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 2269, "writes": "conntrackMaxGauge", "note": "registers the gauge inside a sync.Once and then sets it; values <= 0 return before either step" },
      { "symbol": "DpEbpfInit", "kind": "func", "file": "pkg/loxinet/dpebpf_linux.go", "def_line": 621, "call_line": 701, "calls": "SetConntrackMaxEntries", "note": "Linux build only; pkg/loxinet/dpebpf_windows.go has its own DpEbpfInit that never calls this" },
      { "symbol": "loxiNetInit", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 358, "call_line": 561, "calls": "DpEbpfInit" },
-     { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1323, "call_line": 1324, "calls": "loxiNetInit", "entry_point": "main" }
+     { "symbol": "Main", "kind": "func", "file": "pkg/loxinet/loxinet.go", "def_line": 1332, "call_line": 1333, "calls": "loxiNetInit", "entry_point": "main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/dpebpf_linux.go:701 passes the compiled-in map size. Scenario M00 owns the runtime proof, where the gauge must be present on an eBPF bed and absent without one."
    },
