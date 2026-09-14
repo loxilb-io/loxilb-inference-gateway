@@ -175,10 +175,33 @@ persist_and_verify() { # persist_and_verify <llb> — asserts contract + file
 }
 
 restore_commit() { # restore_commit <llb> <docfile> [extra-query] — echoes http code, body in artifacts
-    local llb=$1 doc=$2 q=$3
-    plib_curl "$llb" -o "$PLIB_ARTIFACTS/restore-response.json" -w "%{http_code}" \
-        -X POST "$PLIB_API/config/restore?mode=commit${q}" \
-        -H 'Content-Type: application/json' --data-binary @"$doc"
+    local llb=$1 doc=$2 q=$3 code cexit
+    # Hand the document over on STDIN rather than by path, for the same
+    # reason ondisk_doc_valid does: a staged document may be root-owned 0600
+    # (sudo cp of the live snapshot), and curl's @file reader has been seen
+    # to fail on a staged path mid-suite. When it does, the caller sees a
+    # bare 000 that is indistinguishable from a gateway refusing the
+    # connection -- one is a lost measurement, the other a product verdict.
+    code=$(sudo cat "$doc" 2>"$PLIB_ARTIFACTS/restore-commit.err" \
+        | plib_curl "$llb" -o "$PLIB_ARTIFACTS/restore-response.json" -w "%{http_code}" \
+            -X POST "$PLIB_API/config/restore?mode=commit${q}" \
+            -H 'Content-Type: application/json' --data-binary @- \
+            2>>"$PLIB_ARTIFACTS/restore-commit.err")
+    cexit=$?
+    # 000 is not an answer from the gateway: either nothing was sent or
+    # nothing came back. Say which, on stderr so the echoed code (which
+    # callers capture) stays exactly the http code and nothing else.
+    if [[ "$code" == "000" || -z "$code" ]]; then
+        {
+            echo "  restore_commit: no HTTP response (curl exit ${cexit})"
+            echo "    document:  $doc ($(sudo stat -c '%a %U %s bytes' "$doc" 2>&1))"
+            echo "    stderr:    $(tr '\n' ' ' < "$PLIB_ARTIFACTS/restore-commit.err" 2>/dev/null)"
+            echo "    /version:  $(plib_curl "$llb" -o /dev/null -w '%{http_code}' "$PLIB_API/version" 2>/dev/null)"
+            echo "    /status/ready: $(plib_curl "$llb" -o /dev/null -w '%{http_code}' "$PLIB_API/status/ready" 2>/dev/null)"
+            echo "    gateway process: $(docker exec "$llb" pgrep -c loxilb 2>&1)"
+        } >&2
+    fi
+    echo "$code"
 }
 
 restore_dryrun() { # restore_dryrun <llb> <docfile> — echoes http code, body in artifacts
@@ -239,10 +262,22 @@ wait_replay_receipt() { # wait_replay_receipt <llb>
 # legacy-only volume) has no snapshot receipt to poll, so this is the
 # receipt for those classes -- and the settle point after ANY respawn.
 wait_boot_settled() {
-    local llb=$1 i r
+    local llb=$1 i r code
     for i in $(seq 1 45); do
-        r=$(plib_curl "$llb" "$PLIB_API/status/ready" | jq -r '(.reasons // []) | join(" ")' 2>/dev/null)
-        [[ "$r" != *"boot config replay has not settled"* ]] && return 0
+        # Read the receipt and the transport separately. Scoring settledness
+        # from the reasons string ALONE treats an unreadable gateway as
+        # settled: a refused connection yields an empty string, which does
+        # not contain the pending phrase, so the very first poll returns
+        # success and the caller proceeds against an API that is not there.
+        # A readiness answer has to arrive before its content means anything.
+        code=$(plib_curl "$llb" -o "$PLIB_ARTIFACTS/ready-probe.json" -w "%{http_code}" \
+            "$PLIB_API/status/ready" 2>/dev/null)
+        if [[ "$code" == "200" || "$code" == "503" ]]; then
+            r=$(jq -r '(.reasons // []) | join(" ")' < "$PLIB_ARTIFACTS/ready-probe.json" 2>/dev/null)
+            [[ "$r" != *"boot config replay has not settled"* ]] && return 0
+        else
+            r="(no readiness answer: HTTP $code)"
+        fi
         sleep 2
     done
     echo "  boot config replay never settled; readiness reasons: $r"
