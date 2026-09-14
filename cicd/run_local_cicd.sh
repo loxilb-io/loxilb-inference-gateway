@@ -18,283 +18,115 @@ set -e
 #   CLI_TESTS=auto ./run_local_cicd.sh   (or CLI_TESTS=skip to skip CLI entirely)
 export CLI_TESTS="${CLI_TESTS:-required}"
 
-cd sconnect/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+# Every scenario runs through the wrapper: cleanup always happens, the original
+# failure survives it, and one broken scenario no longer hides every scenario
+# after it. See cicd/scenario_runner.sh.
+source "$(dirname "$0")/scenario_runner.sh"
 
-cd tcplb/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+# Cheap gates first — none of these needs a container.
+scenario_preflight
 
-cd tcplbmark/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario sconnect -- './config.sh' './validation.sh'
 
-cd tcplbdsr1/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario tcplb -- './config.sh' './validation.sh'
 
-cd tcplbdsr2/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario tcplbmark -- './config.sh' './validation.sh'
 
-cd tcplbl3dsr/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario tcplbdsr1 -- './config.sh' './validation.sh'
 
-cd tcplbhash/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario tcplbdsr2 -- './config.sh' './validation.sh'
+
+run_scenario tcplbl3dsr -- './config.sh' './validation.sh'
+
+run_scenario tcplbhash -- './config.sh' './validation.sh'
 
 
-cd sctplb/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario sctplb -- './config.sh' './validation.sh'
 
-cd sctponearm/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario sctponearm -- './config.sh' './validation.sh'
 
-cd sctplbdsr/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario sctplbdsr -- './config.sh' './validation.sh'
 
-cd tcplbmon/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario tcplbmon -- './config.sh' './validation.sh'
 
-cd tcplbmon-epstat/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario tcplbmon-epstat -- './config.sh' './validation.sh'
     
-cd udplbmon/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario udplbmon -- './config.sh' './validation.sh'
  
-cd sctplbmon/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario sctplbmon -- './config.sh' './validation.sh'
   
-cd tcplbmon6/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario tcplbmon6 -- './config.sh' './validation.sh'
 
-cd tcplbepmod/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario tcplbepmod -- './config.sh' './validation.sh'
 
-cd lbtimeout/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario lbtimeout -- './config.sh' './validation.sh'
 
-cd lb6timeout/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario lb6timeout -- './config.sh' './validation.sh'
 
-cd tcpsctpperf
-./config.sh
-./validation.sh 20  30
-./rmconfig.sh
-cd -
+run_scenario tcpsctpperf -- './config.sh' './validation.sh 20  30'
 
-cd http2ep/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario http2ep -- './config.sh' './validation.sh'
 
-cd e2ehttpsproxy/
-./config.sh
-./validation-http1.sh
-./validation-http2.sh
-./rmconfig.sh
-cd -
+run_scenario e2ehttpsproxy -- './config.sh' './validation-http1.sh' './validation-http2.sh'
 
-cd e2ehttpsproxy-prefix/
-./config.sh
-./validation-http1.sh
-./validation-http2.sh
-./rmconfig.sh
-cd -
+run_scenario e2ehttpsproxy-prefix -- './config.sh' './validation-http1.sh' './validation-http2.sh'
 
-cd e2ehttpsproxy-grpc/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario e2ehttpsproxy-grpc -- './config.sh' './validation.sh'
 
-cd httpproxy/
-./config.sh
-./validation.sh
-./validation-http2.sh
-./rmconfig.sh
-cd -
+run_scenario httpproxy -- './config.sh' './validation.sh' './validation-http2.sh'
 
-cd httpproxy-prefix/
-./config.sh
-./validation.sh
-./validation-http2.sh
-./rmconfig.sh
-cd -
+run_scenario httpproxy-prefix -- './config.sh' './validation.sh' './validation-http2.sh'
 
-cd httpsproxy/
-./config.sh
-./validation.sh
-./validation-http2.sh
-./rmconfig.sh
-cd -
+run_scenario httpsproxy -- './config.sh' './validation.sh' './validation-http2.sh'
 
-cd httpsproxy-prefix/
-./config.sh
-./validation.sh
-./validation-http2.sh
-./rmconfig.sh
-cd -
+run_scenario httpsproxy-prefix -- './config.sh' './validation.sh' './validation-http2.sh'
 
-cd tlsproxyprotov2/
 # fullnat: eBPF L4 dp_ins_ppv2 GSO fix. EXPECT=fixed is the post-fix regression
 # gate; the default EXPECT=bug asserts the historical #1044/#1089 bug REPRODUCES,
 # which no longer happens now that the GSO fix has landed (so it would fail).
-./config.sh
-EXPECT=fixed ./validation.sh
-./rmconfig.sh
+run_scenario tlsproxyprotov2 'tlsproxyprotov2 (fullnat)' -- './config.sh' 'EXPECT=fixed ./validation.sh'
 # fullproxy: L7 userspace sockproxy PPv2 header emit (a separate testbed setup -
 # plaintext proxy_protocol backends + a fullproxy LB rule).
-PPV2MODE=fullproxy ./config.sh
-PPV2MODE=fullproxy ./validation.sh
-./rmconfig.sh
-cd -
+run_scenario tlsproxyprotov2 'tlsproxyprotov2 (fullproxy)' -- 'PPV2MODE=fullproxy ./config.sh' 'PPV2MODE=fullproxy ./validation.sh'
 
-cd vllm-fullproxy/
-./config.sh
-./validation-level1.sh
-./rmconfig.sh
-cd -
+run_scenario vllm-fullproxy -- './config.sh' './validation-level1.sh'
 
-cd vllm-httpproxy/
-./config.sh
-./validation-level1.sh
-./rmconfig.sh
-cd -
+run_scenario vllm-httpproxy -- './config.sh' './validation-level1.sh'
 
-cd vllm-fullproxy-wrr/
-./config.sh
-./validation-level1.sh
-./rmconfig.sh
-cd -
+run_scenario vllm-fullproxy-wrr -- './config.sh' './validation-level1.sh'
 
-cd vllm-httpproxy-wrr/
-./config.sh
-./validation-level1.sh
-./rmconfig.sh
-cd -
+run_scenario vllm-httpproxy-wrr -- './config.sh' './validation-level1.sh'
 
-cd mcp-fullproxy/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario mcp-fullproxy -- './config.sh' './validation.sh'
 
-cd mcp-httpproxy/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario mcp-httpproxy -- './config.sh' './validation.sh'
 
-cd mcp-e2ehttps/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario mcp-e2ehttps -- './config.sh' './validation.sh'
 
-cd httpsproxy-mtls/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario httpsproxy-mtls -- './config.sh' './validation.sh'
 
-cd e2ehttpsproxy-mtls/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario e2ehttpsproxy-mtls -- './config.sh' './validation.sh'
 
 # ai-apikey / ai-model-routing / ai-sse-quota: their validation.sh runs the REST
 # suite and then bash validate_cli.sh (CLI-driven, REST oracle). With the
 # CLI_TESTS=required default above, the CLI half is enforced, not skipped.
-cd ai-apikey/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario ai-apikey -- './config.sh' './validation.sh'
 
-cd ai-model-routing/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario ai-model-routing -- './config.sh' './validation.sh'
 
-cd ai-sse-quota/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario ai-sse-quota -- './config.sh' './validation.sh'
 
 # ai-ephealth: the lightweight endpoint-health path — one probe transition has
 # to reach every pool that shares the failed backend, not just the first. The
 # oracle is the datapath's per-pool receipt lines, not traffic: the full
 # rule-sync fallback converges seconds later, so a broken health mechanism
 # still passes every traffic assertion.
-cd ai-ephealth/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario ai-ephealth -- './config.sh' './validation.sh'
 
 # ai-model-conflict: the effective-model contract on enforcing services —
 # one body-first model resolution shared by authorization and routing, and a
 # hard 400 when a request's body and X-Model header disagree.
-cd ai-model-conflict/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario ai-model-conflict -- './config.sh' './validation.sh'
 
 # ai-jwtauth: the bearer (JWT) admission arm against a real Keycloak realm —
 # the token verdict ladder, apikey-or-jwt precedence, upstream header
@@ -302,11 +134,7 @@ cd -
 # loxilb-aigw-keycloak:26.0-aigw on first use and reuses it afterwards
 # (cicd/ai-jwtauth/keycloak/build.sh); config.sh also pulls postgres:18.6 for
 # the key store the precedence legs need.
-cd ai-jwtauth/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario ai-jwtauth -- './config.sh' './validation.sh'
 
 # ai-authsep: the authentication-plane regression, container-only (no GPU) —
 # the same four suites the auth-plane-sanity workflow runs. validation.sh is
@@ -317,147 +145,56 @@ cd -
 # PATH (the TLS legs mint their own CA) and python3 (the counting backend);
 # config.sh pulls postgres:18.6 for the two credential stores. See the
 # suite's README for the reference green counts.
-cd ai-authsep/
-./config.sh
-./validation.sh
-./tiers.sh
-./backcompat.sh
-./rmconfig.sh
-cd -
+run_scenario ai-authsep -- './config.sh' './validation.sh' './tiers.sh' './backcompat.sh'
 
 # AI QoS on the mock topology (no GPU): rule-attached ingress policing,
 # full-proxy payload shaping, and egress-direction policing. The per-engine
 # QoS acceptance (token quotas end-to-end against real inference engines)
 # needs GPUs and runs on the testbed out of band; these three gate the
 # datapath mechanics that do not.
-cd qos-rulepol/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario qos-rulepol -- './config.sh' './validation.sh'
 
-cd qos-fullproxy/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario qos-fullproxy -- './config.sh' './validation.sh'
 
-cd qos-egrpol/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario qos-egrpol -- './config.sh' './validation.sh'
 
-cd vllm-pd-disagg/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario vllm-pd-disagg -- './config.sh' './validation.sh'
 
-cd sglang-pd-disagg/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario sglang-pd-disagg -- './config.sh' './validation.sh'
 
-cd trtllm-pd-disagg/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario trtllm-pd-disagg -- './config.sh' './validation.sh'
 
-cd llamacpp-lb/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario llamacpp-lb -- './config.sh' './validation.sh'
 
-cd vllm-kvcache-routing-cpu/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario vllm-kvcache-routing-cpu -- './config.sh' './validation.sh'
 
-cd sglang-loxilb-kvcache/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario sglang-loxilb-kvcache -- './config.sh' './validation.sh'
 
-cd k8slbsim/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario k8slbsim -- './config.sh' './validation.sh'
 
-cd onearml2/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario onearml2 -- './config.sh' './validation.sh'
 
-cd tcptunlb/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario tcptunlb -- './config.sh' './validation.sh'
 
-cd sctptunlb/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario sctptunlb -- './config.sh' './validation.sh'
 
-cd wrrtcplb1/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario wrrtcplb1 -- './config.sh' './validation.sh'
 
-cd wrrtcplb2/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario wrrtcplb2 -- './config.sh' './validation.sh'
 
-cd nat64tcp/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario nat64tcp -- './config.sh' './validation.sh'
 
-cd tcplbmaxep/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario tcplbmaxep -- './config.sh' './validation.sh'
 
-cd ipmasquerade/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario ipmasquerade -- './config.sh' './validation.sh'
 
-cd httpsproxy/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario httpsproxy 'httpsproxy (second run)' -- './config.sh' './validation.sh'
 
-cd e2ehttpsproxy/
-./config.sh
-./validation-http1.sh
-./validation-http2.sh
-./rmconfig.sh
-cd -
+run_scenario e2ehttpsproxy 'e2ehttpsproxy (second run)' -- './config.sh' './validation-http1.sh' './validation-http2.sh'
 
-cd tcplb-src/
-./config.sh
-./validation.sh
-./rmconfig.sh
-cd -
+run_scenario tcplb-src -- './config.sh' './validation.sh'
 
-cd udplb-persist/
-./config.sh
-./validation.sh
-./rmconfig.sh
+run_scenario udplb-persist -- './config.sh' './validation.sh'
+
+# One honest verdict for the whole run. Non-zero when anything failed.
+scenario_summary
