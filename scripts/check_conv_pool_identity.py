@@ -54,6 +54,11 @@ CONV_FNS = {
 # cannot quietly drop one out of view while the total stays healthy.
 CONV_FILES = ("sockproxy_ep.c", "sockproxy_h2.c", "sockproxy_http.c")
 
+# The two places the pool identity is not expressed as a call argument, and so
+# is not covered by the call-site sweep above.
+SYNC_FILE = "sockproxy_sync.c"          # HA failover applies remote rows here
+BINDER_FILE = "sockproxy_http.c"        # the session id is captured here
+
 # A pool argument that names nothing. Stored, it writes a row no lookup can
 # match; read, it asks for a lookup that always misses.
 NULL_POOLS = {"NULL", "0", "nullptr", "(void *)0"}
@@ -180,8 +185,119 @@ def calls(masked: str, name: str) -> list[tuple[int, list[str]]]:
     return found
 
 
+def function_body(masked: str, name: str) -> tuple[str, int]:
+    """Body of a function definition, plus its offset in the file."""
+    match = re.search(rf"\n{re.escape(name)}\s*\([^;]*?\)\s*\{{", masked, re.S)
+    if not match:
+        raise AssertionError(f"function {name} not found")
+    start = match.end() - 1
+    depth = 0
+    for index in range(start, len(masked)):
+        if masked[index] == "{":
+            depth += 1
+        elif masked[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return masked[start : index + 1], start
+    raise AssertionError(f"function {name} has no closing brace")
+
+
 def line_of(text: str, index: int) -> int:
     return text.count("\n", 0, index) + 1
+
+
+def check_sync_refuses_to_guess(failures: list[str]) -> None:
+    """A failover row may not be installed under a GUESSED pool.
+
+    proxy_sync_event_t carries a service_key of "xip:xport:proto" and nothing
+    finer, so the receiver resolves the pool by taking the first one on the
+    service. With one pool that is the only possible answer. With several the
+    guess is written into the row's tag, so the guessed pool MATCHES the row
+    and is handed an index chosen inside a different pool's eps[] -- in range
+    and naming a live endpoint, so nothing downstream can catch it -- and a
+    DELETE under a wrong guess removes a live binding of a pool the event
+    never named. That is the aliasing this whole file guards, arriving through
+    failover with a tag that certifies it.
+
+    Nothing in the argument sweep above can see this, because here the pool is
+    not an argument: it is the decision of whether to apply at all. So the
+    guard is asserted structurally -- it must exist, it must be the only route
+    in, and it must come first.
+    """
+    path = EBPF / SYNC_FILE
+    if not path.exists():
+        failures.append(f"{SYNC_FILE}: missing -- the datapath moved, update this gate")
+        return
+    masked = mask(path.read_text(encoding="utf-8"))
+
+    entries = calls(masked, "apply_conv_sync_entry")
+    if len(entries) != 1:
+        failures.append(
+            f"{SYNC_FILE}: apply_conv_sync_entry has {len(entries)} call sites, expected 1 "
+            f"-- every route in must pass the pool-resolvability guard"
+        )
+        return
+
+    try:
+        body, base = function_body(masked, "proxy_sync_apply_session_entry")
+    except AssertionError as problem:
+        failures.append(f"{SYNC_FILE}: {problem}")
+        return
+
+    guard = re.search(r"\bconv_pool_sync_may_apply\s*\(", body)
+    apply_call = re.search(r"\bapply_conv_sync_entry\s*\(", body)
+
+    if apply_call is None:
+        failures.append(
+            f"{SYNC_FILE}: the only apply_conv_sync_entry call is not inside "
+            f"proxy_sync_apply_session_entry -- this gate no longer sees the guard"
+        )
+        return
+    if guard is None:
+        failures.append(
+            f"{SYNC_FILE}: proxy_sync_apply_session_entry installs a remote "
+            f"conversation row without calling conv_pool_sync_may_apply -- the "
+            f"receiver would resolve the pool by guessing"
+        )
+        return
+    if guard.start() > apply_call.start():
+        failures.append(
+            f"{SYNC_FILE}:{line_of(masked, base + guard.start())} "
+            f"conv_pool_sync_may_apply is checked AFTER the row is applied"
+        )
+
+
+def check_session_id_is_bound_not_dropped(failures: list[str]) -> None:
+    """A session id that does not fit must still be bound.
+
+    The plain-header route used to capture the value only when it fit the
+    buffer, so a longer one was not truncated but DISCARDED: stickiness
+    silently did nothing, and did nothing precisely for the configuration the
+    tree documents, session_header_name "authorization", whose value is a
+    bearer token longer than the buffer. conv_pool_store_id binds it instead,
+    digesting what will not fit.
+
+    This asserts the binder is still the binder. It catches the regression
+    that actually happened -- reverting to a length test and a straight copy --
+    rather than claiming to catch every way the property could be lost.
+    """
+    path = EBPF / BINDER_FILE
+    if not path.exists():
+        failures.append(f"{BINDER_FILE}: missing -- the datapath moved, update this gate")
+        return
+    masked = mask(path.read_text(encoding="utf-8"))
+
+    bound = [
+        args
+        for _, args in calls(masked, "conv_pool_store_id")
+        if args and args[0].strip().endswith("custom_session_header_value")
+    ]
+    if not bound:
+        failures.append(
+            f"{BINDER_FILE}: custom_session_header_value is not bound through "
+            f"conv_pool_store_id -- an id that does not fit is dropped or "
+            f"truncated again, so stickiness silently stops for long values"
+        )
 
 
 def main() -> int:
@@ -242,6 +358,9 @@ def main() -> int:
                 f"or moved, and this gate is no longer watching this file"
             )
 
+    check_sync_refuses_to_guess(failures)
+    check_session_id_is_bound_not_dropped(failures)
+
     # The row must carry the identity, and a store without one must be refused
     # rather than written as a row nothing can ever match.
     header = (EBPF / "sockproxy.h").read_text(encoding="utf-8")
@@ -262,6 +381,9 @@ def main() -> int:
 
     detail = ", ".join(f"{name} {count}" for name, count in per_file.items())
     print(f"PASS: conversation stickiness names its pool at all {total} call sites ({detail})")
+    # Named separately so a CI log shows these ran, rather than only a summary.
+    print("PASS: HA failover refuses a conversation row whose pool it can only guess")
+    print("PASS: a session id that does not fit is bound, not dropped")
     return 0
 
 
