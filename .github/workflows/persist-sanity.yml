@@ -27,11 +27,23 @@ name: Persist-Sanity-CI
 #                 either side of that contract shows up as a red gate
 #                 rather than as drift discovered at a release.
 #
-#   persist-soak / persist-upgrade   nightly and dispatch only, never a
-#                 per-PR gate: the drift/leak classes that need repetition
-#                 (cfg-persist-soak) and the two-image version matrix
-#                 (cfg-persist-upgrade), which needs a released image on
-#                 the other side of the volume.
+#   persist-soak  nightly and dispatch only, never a per-PR gate: the
+#                 drift/leak classes that need repetition
+#                 (cfg-persist-soak).
+#
+#   persist-upgrade   the two-image version matrix (cfg-persist-upgrade),
+#                 which needs a released image on the other side of the
+#                 volume. It runs nightly AND on the same persist paths as
+#                 the gates above, because schedule-only was not enough: a
+#                 field added to the persisted wire model reached main and
+#                 sat there for three nightlies, quarantining every
+#                 document written by an older build. The upgrade matrix is
+#                 the ONLY gate that reads a document an older version
+#                 wrote, so any change that can alter the document shape
+#                 has to face it before it merges, not a day later mixed in
+#                 with twenty other commits. Fork pull requests are excluded
+#                 -- pulling the released image needs registry credentials a
+#                 fork run does not get.
 
 on:
   push:
@@ -257,10 +269,23 @@ jobs:
     name: persist-upgrade
     runs-on: ubuntu-22.04
     # The version matrix: a released image on one side of the config
-    # volume, this build on the other. Needs two distinct images, so it is
-    # dispatch/nightly only and fails loudly rather than running vacuously
-    # when both sides resolve to the same reference.
-    if: github.actor != 'dependabot[bot]' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    # volume, this build on the other. Needs two distinct images, and fails
+    # loudly rather than running vacuously when both sides resolve to the
+    # same reference.
+    #
+    # On push/pull_request this job inherits the workflow's persist path
+    # filter, so it runs exactly when something that can change the shape of
+    # the persisted document changed -- pkg/snapshot/**, common/** (the wire
+    # model itself), the persist handlers, or the scenario. That filter is
+    # why this can be a PR gate without running the two-image matrix on
+    # every pull request.
+    if: >-
+      github.actor != 'dependabot[bot]' &&
+      (github.event_name == 'schedule' ||
+       github.event_name == 'workflow_dispatch' ||
+       github.event_name == 'push' ||
+       (github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository))
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
