@@ -383,6 +383,16 @@ else
   fail "conversation stickiness must name the pool its endpoint index belongs to"
 fi
 
+# The gate above is only worth what its failure mode is worth: each of its
+# checks is red-twinned on a doctored copy of the pinned source, so a check
+# that can no longer fail (helpers renamed, regex drifted, source moved) is
+# itself a failure here rather than a silently green line.
+if python3 -B scripts/check_conv_pool_identity.py --self-test; then
+  pass "conv-pool gate self-test: every check can go red"
+else
+  fail "conv-pool gate self-test: a check can no longer fail -- the gate is watching nothing"
+fi
+
 echo "==========================="
 if [ "$FAILED" = "0" ]; then echo "ALL INVARIANTS HOLD"; else echo "INVARIANTS VIOLATED"; fi
 exit "$FAILED"
