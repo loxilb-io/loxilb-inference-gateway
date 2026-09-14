@@ -37,8 +37,12 @@ import (
 // a startup error instead, and the wording matters: the boot replay and the
 // REST commit restore both retry on it.
 func TestJWTAuthProfileNilHolderAnswersTheStartupWindow(t *testing.T) {
+	// Fail rather than skip, like the key-store legs: if some later test
+	// constructs a holder in this process, a skip would delete this coverage
+	// silently and the guard it pins could be removed without anything going
+	// red.
 	if mh.JWTAuthProfiles != nil {
-		t.Skip("a profile holder is constructed in this test process; these legs are about the window in which none is")
+		t.Fatal("a profile holder is constructed in this test process; these legs are about the window in which none is")
 	}
 	na := &NetAPIStruct{}
 

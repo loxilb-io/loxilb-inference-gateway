@@ -817,7 +817,6 @@ func loxiNetInit() {
 	// user service rather than nested inside it: availability of the key store
 	// follows from its own connection options, and enforcement follows from
 	// per-service policy. Neither is a function of --userservice.
-
 	if opts.Opts.AIKeyDBHost != "" {
 		// Publish the service before dialling, not after. Connect retries with
 		// a doubling backoff and takes tens of seconds against a store that is
