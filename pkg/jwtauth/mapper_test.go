@@ -305,6 +305,29 @@ func TestMapClaimsRejectsUnsafeIdentity(t *testing.T) {
 			mutate: func(p *Profile) { p.DefaultTenant = "acme\r\nX-Auth-User: admin" },
 			claims: map[string]any{"sub": "u1"},
 		},
+		{
+			// The QoS bucket keys compose tenant|user, so a pipe inside
+			// either value makes two DIFFERENT identity pairs share one
+			// bucket: ("t1", "a|b") and ("t1|a", "b") spend each other's
+			// quota and read each other's debt.
+			name:   "pipe in tenant aliases a composite bucket key",
+			claims: map[string]any{"tenant_id": "t1|a", "sub": "b"},
+		},
+		{
+			name:   "pipe in the user claim",
+			claims: map[string]any{"tenant_id": "acme", "sub": "a|b"},
+		},
+		{
+			// "uq:x" as a tenant IS a user-quota wire key: the value would
+			// round-trip through the peer-sync wire into another scope's
+			// bucket. The reserved list is the sync layer's own.
+			name:   "tenant colliding with a reserved sync-scope prefix",
+			claims: map[string]any{"tenant_id": "uq:acme", "sub": "u1"},
+		},
+		{
+			name:   "user colliding with a reserved sync-scope prefix",
+			claims: map[string]any{"tenant_id": "acme", "sub": "v:steal"},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

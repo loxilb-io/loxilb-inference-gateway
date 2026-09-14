@@ -894,8 +894,8 @@
      "symbol": "llb_ai_stream_start",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1026,
-     "call_line": 1034,
+     "def_line": 1283,
+     "call_line": 1291,
      "calls": "AdjustActiveStreams",
      "entry_point": "cgo-export"
     }
@@ -1254,8 +1254,8 @@
      "symbol": "llb_ai_validate_bearer",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 423,
-     "call_line": 450,
+     "def_line": 611,
+     "call_line": 638,
      "calls": "RecordJWTValidation",
      "entry_point": "cgo-export",
      "note": "recorded in the same defer as recordGateDenial, so every arm counts exactly once -- including the nil-result and panic paths, which leave before a verdict is reached and are counted as internal_error"
@@ -2087,8 +2087,8 @@
      "symbol": "llb_ai_validate_key",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 328,
-     "call_line": 396,
+     "def_line": 516,
+     "call_line": 584,
      "calls": "RecordModelNotAllowed",
      "entry_point": "cgo-export"
     }
@@ -2129,8 +2129,8 @@
      "symbol": "llb_ai_normal_session_hit",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1157,
-     "call_line": 1160,
+     "def_line": 1414,
+     "call_line": 1417,
      "calls": "RecordNormalSessionHit",
      "entry_point": "cgo-export"
     }
@@ -2171,8 +2171,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1120,
-     "call_line": 1123,
+     "def_line": 1377,
+     "call_line": 1380,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -2214,8 +2214,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1120,
-     "call_line": 1123,
+     "def_line": 1377,
+     "call_line": 1380,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -2257,8 +2257,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1120,
-     "call_line": 1123,
+     "def_line": 1377,
+     "call_line": 1380,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -2300,8 +2300,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1120,
-     "call_line": 1123,
+     "def_line": 1377,
+     "call_line": 1380,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -2346,8 +2346,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1120,
-     "call_line": 1123,
+     "def_line": 1377,
+     "call_line": 1380,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -2389,8 +2389,8 @@
      "symbol": "llb_ai_pd_session_hit",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1132,
-     "call_line": 1135,
+     "def_line": 1389,
+     "call_line": 1392,
      "calls": "RecordPDSessionHit",
      "entry_point": "cgo-export"
     }
@@ -2432,8 +2432,8 @@
      "symbol": "llb_ai_pd_tier_selected",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1145,
-     "call_line": 1148,
+     "def_line": 1402,
+     "call_line": 1405,
      "calls": "RecordPDTierSelected",
      "entry_point": "cgo-export"
     }
@@ -2473,8 +2473,8 @@
      "symbol": "llb_ai_validate_key",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 328,
-     "call_line": 370,
+     "def_line": 516,
+     "call_line": 558,
      "calls": "RecordPolicyStoreUnavailable",
      "entry_point": "cgo-export",
      "note": "two more sites share the family: validateAPIKeyInternal (:235) and llb_ai_ratelimit_check (:559)"
@@ -2518,8 +2518,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 619,
-     "call_line": 674,
+     "def_line": 807,
+     "call_line": 867,
      "calls": "RecordRateLimitHit",
      "entry_point": "cgo-export",
      "note": "llb_ai_token_quota_reserve records the same family at ai_gateway_dp.go:756 with reason token_quota_would_exceed"
@@ -2562,8 +2562,8 @@
      "symbol": "llb_ai_record_request",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1098,
-     "call_line": 1103,
+     "def_line": 1355,
+     "call_line": 1360,
      "calls": "RecordAIRequest",
      "entry_point": "cgo-export"
     }
@@ -2610,8 +2610,8 @@
      "symbol": "llb_ai_record_request",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1098,
-     "call_line": 1103,
+     "def_line": 1355,
+     "call_line": 1360,
      "calls": "RecordAIRequest",
      "entry_point": "cgo-export"
     }
@@ -2650,8 +2650,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 532,
-     "call_line": 557,
+     "def_line": 720,
+     "call_line": 745,
      "calls": "RecordTokenQuotaColdOpen",
      "note": "the no-peer branch; the warmup-deadline branch increments from the StartQuotaWarmup callback at :437"
     },
@@ -2659,8 +2659,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 619,
-     "call_line": 653,
+     "def_line": 807,
+     "call_line": 841,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -2701,8 +2701,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 619,
-     "call_line": 676,
+     "def_line": 807,
+     "call_line": 869,
      "calls": "RecordTokenQuotaDenied",
      "entry_point": "cgo-export",
      "note": "the reservation path denies from llb_ai_token_quota_reserve (:757) as well"
@@ -2754,8 +2754,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 532,
-     "call_line": 573,
+     "def_line": 720,
+     "call_line": 761,
      "calls": "RegisterTokenQuotaSource",
      "note": "registration happens on first use of the rate-limiter store, not at package init, so the collector can never observe a nil store"
     },
@@ -2763,8 +2763,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 619,
-     "call_line": 653,
+     "def_line": 807,
+     "call_line": 841,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -2814,8 +2814,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 532,
-     "call_line": 573,
+     "def_line": 720,
+     "call_line": 761,
      "calls": "RegisterTokenQuotaSource",
      "note": "registration happens on first use of the rate-limiter store, not at package init, so the collector can never observe a nil store"
     },
@@ -2823,8 +2823,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 619,
-     "call_line": 653,
+     "def_line": 807,
+     "call_line": 841,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -2876,8 +2876,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 532,
-     "call_line": 573,
+     "def_line": 720,
+     "call_line": 761,
      "calls": "RegisterTokenQuotaSource",
      "note": "registration happens on first use of the rate-limiter store, not at package init, so the collector can never observe a nil store"
     },
@@ -2885,8 +2885,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 619,
-     "call_line": 653,
+     "def_line": 807,
+     "call_line": 841,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -2938,8 +2938,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 532,
-     "call_line": 573,
+     "def_line": 720,
+     "call_line": 761,
      "calls": "RegisterTokenQuotaSource",
      "note": "registration happens on first use of the rate-limiter store, not at package init, so the collector can never observe a nil store"
     },
@@ -2947,8 +2947,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 619,
-     "call_line": 653,
+     "def_line": 807,
+     "call_line": 841,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -2991,8 +2991,8 @@
      "symbol": "llb_ai_token_quota_consume",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 908,
-     "call_line": 928,
+     "def_line": 1164,
+     "call_line": 1184,
      "calls": "RecordTokenUsage",
      "entry_point": "cgo-export"
     }
@@ -3034,8 +3034,8 @@
      "symbol": "llb_ai_token_quota_consume",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 908,
-     "call_line": 928,
+     "def_line": 1164,
+     "call_line": 1184,
      "calls": "RecordTokenUsage",
      "entry_point": "cgo-export"
     }
@@ -3078,8 +3078,8 @@
      "symbol": "llb_ai_token_quota_consume",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 908,
-     "call_line": 928,
+     "def_line": 1164,
+     "call_line": 1184,
      "calls": "RecordTokenUsage",
      "entry_point": "cgo-export"
     }
@@ -3122,8 +3122,8 @@
      "symbol": "llb_ai_record_unmetered",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1174,
-     "call_line": 1176,
+     "def_line": 1431,
+     "call_line": 1433,
      "calls": "RecordUnmeteredRequest",
      "entry_point": "cgo-export"
     }
@@ -3179,7 +3179,7 @@
      "kind": "func",
      "file": "api/restapi/configure_loxilb_rest_api.go",
      "def_line": 71,
-     "call_line": 459,
+     "call_line": 466,
      "calls": "InitAutoPersist"
     },
     {
@@ -12073,8 +12073,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 853,
-     "call_line": 885,
+     "def_line": 856,
+     "call_line": 888,
      "calls": "SockproxySyncApplyErrorInc"
     },
     {
@@ -12126,8 +12126,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 853,
-     "call_line": 874,
+     "def_line": 856,
+     "call_line": 877,
      "calls": "SockproxySyncConflictInc",
      "note": "one outcome per branch: :874, :876 and :878"
     },
@@ -12180,8 +12180,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 465,
-     "call_line": 504,
+     "def_line": 468,
+     "call_line": 507,
      "calls": "SockproxySyncDropInc",
      "note": "reason=\"peer_unreachable\" once the retry budget is spent; the batch is dropped rather than queued forever"
     },
@@ -12190,8 +12190,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 434,
-     "call_line": 457,
+     "def_line": 437,
+     "call_line": 460,
      "calls": "sendWithRetry"
     },
     {
@@ -12199,8 +12199,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 385,
-     "call_line": 409,
+     "def_line": 388,
+     "call_line": 412,
      "calls": "consumerLoop"
     },
     {
@@ -12208,8 +12208,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 347,
-     "call_line": 360,
+     "def_line": 350,
+     "call_line": 363,
      "calls": "spawnConsumersForKnownPeers"
     },
     {
@@ -12268,8 +12268,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 853,
-     "call_line": 880,
+     "def_line": 856,
+     "call_line": 883,
      "calls": "SockproxySyncHealthRejectInc"
     },
     {
@@ -12321,8 +12321,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 808,
-     "call_line": 818,
+     "def_line": 811,
+     "call_line": 821,
      "calls": "SockproxySyncInflightRpcInc",
      "note": "decremented again at :822; the rate-limiter push path does the same pair at :1201 and :1205"
     },
@@ -12331,8 +12331,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 465,
-     "call_line": 492,
+     "def_line": 468,
+     "call_line": 495,
      "calls": "sendOnce"
     },
     {
@@ -12340,8 +12340,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 434,
-     "call_line": 457,
+     "def_line": 437,
+     "call_line": 460,
      "calls": "sendWithRetry"
     },
     {
@@ -12349,8 +12349,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 385,
-     "call_line": 409,
+     "def_line": 388,
+     "call_line": 412,
      "calls": "consumerLoop"
     },
     {
@@ -12358,8 +12358,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 347,
-     "call_line": 360,
+     "def_line": 350,
+     "call_line": 363,
      "calls": "spawnConsumersForKnownPeers"
     },
     {
@@ -12418,8 +12418,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 740,
-     "call_line": 761,
+     "def_line": 743,
+     "call_line": 764,
      "calls": "SockproxySyncOverflowInc",
      "note": "three kinds at :761, :768 and :775; the C-side producer path increments the same family from sendNonBlockingDropOldest (:917, :925, :935), which is reached from the cgo export llb_sockproxy_emit_sync_event (:1012)"
     },
@@ -12428,8 +12428,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 664,
-     "call_line": 682,
+     "def_line": 667,
+     "call_line": 685,
      "calls": "enqueueForPeer"
     },
     {
@@ -12437,8 +12437,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 347,
-     "call_line": 353,
+     "def_line": 350,
+     "call_line": 356,
      "calls": "drainLoop"
     },
     {
@@ -12497,8 +12497,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 465,
-     "call_line": 496,
+     "def_line": 468,
+     "call_line": 499,
      "calls": "SockproxySyncPeerLagSet",
      "note": "stamped only after a push the peer accepted, so an unstamped gauge reads 0 rather than a stale lag"
     },
@@ -12507,8 +12507,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 434,
-     "call_line": 457,
+     "def_line": 437,
+     "call_line": 460,
      "calls": "sendWithRetry"
     },
     {
@@ -12516,8 +12516,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 385,
-     "call_line": 409,
+     "def_line": 388,
+     "call_line": 412,
      "calls": "consumerLoop"
     },
     {
@@ -12525,8 +12525,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 347,
-     "call_line": 360,
+     "def_line": 350,
+     "call_line": 363,
      "calls": "spawnConsumersForKnownPeers"
     },
     {
@@ -12585,8 +12585,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 434,
-     "call_line": 445,
+     "def_line": 437,
+     "call_line": 448,
      "calls": "SockproxySyncPeerUpSet",
      "note": "also set from sendWithRetry on success (:488, :495) and on retry exhaustion (:505), and from sendRateLimiterBatch (:1218, :1229)"
     },
@@ -12595,8 +12595,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 385,
-     "call_line": 409,
+     "def_line": 388,
+     "call_line": 412,
      "calls": "consumerLoop",
      "note": "also re-entered from OnStateChange (:657) when a BFD role change promotes this node to MASTER"
     },
@@ -12605,8 +12605,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 347,
-     "call_line": 360,
+     "def_line": 350,
+     "call_line": 363,
      "calls": "spawnConsumersForKnownPeers"
     },
     {
@@ -12666,8 +12666,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 808,
-     "call_line": 821,
+     "def_line": 811,
+     "call_line": 824,
      "calls": "SockproxySyncPushLatencyObserve",
      "note": "rpc=\"SockproxySessionMod\"; the rate-limiter batch path observes its own rpc label at :1204"
     },
@@ -12676,8 +12676,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 465,
-     "call_line": 492,
+     "def_line": 468,
+     "call_line": 495,
      "calls": "sendOnce"
     },
     {
@@ -12685,8 +12685,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 434,
-     "call_line": 457,
+     "def_line": 437,
+     "call_line": 460,
      "calls": "sendWithRetry"
     },
     {
@@ -12694,8 +12694,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 385,
-     "call_line": 409,
+     "def_line": 388,
+     "call_line": 412,
      "calls": "consumerLoop"
     },
     {
@@ -12703,8 +12703,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 347,
-     "call_line": 360,
+     "def_line": 350,
+     "call_line": 363,
      "calls": "spawnConsumersForKnownPeers"
     },
     {
