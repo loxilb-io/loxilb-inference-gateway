@@ -47,7 +47,7 @@ type RateLimitDefaultsEntry struct {
 	// Requests per second shared by ALL keyless traffic on the service
 	VipSharedRps int64 `json:"vip_shared_rps,omitempty"`
 
-	// LLM tokens per minute shared by ALL keyless traffic on the service
+	// LLM tokens per minute for the service's shared bucket, charged by every token-metered response on the service — credentialed and keyless alike, with the exact usage extracted at response settle. Keyless requests carry no pre-admission reservation: the bucket's debt denies the NEXT keyless admission once spend crosses the bound
 	VipSharedTpm int64 `json:"vip_shared_tpm,omitempty"`
 }
 

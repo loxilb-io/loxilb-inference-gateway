@@ -33,7 +33,9 @@ const (
 // Client-facing error codes. The 401 surface is deliberately coarse: a
 // caller learns only that its token is invalid or expired (expiry is safe
 // and actionable to reveal — re-authenticate). Everything finer-grained is
-// a server-side oracle and lives in Reason for metrics and logs only.
+// a server-side oracle and lives in Reason, which today reaches logs only —
+// loxilb_ai_jwt_validation_total labels its reason with THESE codes (see
+// pkg/loxinet/ai_gateway_dp.go), so the metric vocabulary is this one.
 const (
 	CodeMissingToken     = "missing_token"
 	CodeInvalidToken     = "invalid_token"
@@ -42,8 +44,12 @@ const (
 	CodeStoreUnavailable = "policy_store_unavailable"
 )
 
-// Metric-grade reasons for JWT validation outcomes. A closed set: metric
-// label values must stay bounded.
+// Fine-grained refusal reasons. A closed set, bounded like a label
+// vocabulary, but today they reach logs only: the validation metric labels
+// its reason with the client-facing codes above. Promoting these to the
+// metric (so bad_signature, unknown_kid, and oversize become separately
+// countable) is an open product decision — it changes the family's label
+// values, so it must land with the dashboards, not before them.
 const (
 	ReasonOK             = "ok"
 	ReasonMissing        = "missing"
@@ -61,8 +67,9 @@ const (
 )
 
 // VerdictError is a verification failure carrying its decision-ladder arm.
-// Code is what the client may see; Reason is the bounded metric label;
-// detail is for logs only and must never reach a response body.
+// Code is what the client may see and what the validation metric counts;
+// Reason is the finer log-side taxonomy; detail is for logs only and must
+// never reach a response body.
 type VerdictError struct {
 	Decision int
 	Code     string

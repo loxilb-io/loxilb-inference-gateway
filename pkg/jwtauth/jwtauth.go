@@ -48,6 +48,11 @@ import (
 // common/sockproxy_http.c); anything longer is denied before parsing.
 const MaxTokenBytes = 4096
 
+// maxProfileNameBytes mirrors the LB rule's jwt_auth_profile maxLength in
+// api/swagger.yml. The two limits meet exactly, so no name this package
+// accepts can be one a service rule is unable to reference.
+const maxProfileNameBytes = 63
+
 // Model-authorization modes for a profile whose token yields no model list.
 const (
 	// ModelAuthzClaimsRequired denies every model when neither the models
@@ -180,6 +185,14 @@ func (p Profile) normalize() Profile {
 func (p Profile) validate() error {
 	if p.Name == "" {
 		return fmt.Errorf("jwtauth: profile name is required")
+	}
+	// The LB rule's jwt_auth_profile reference is capped at 63 bytes by the
+	// API contract (api/swagger.yml). A longer name would be accepted here
+	// but impossible to reference — configuration that can only ever fail,
+	// and only later, at rule-create time. Refuse it where it is typed.
+	if len(p.Name) > maxProfileNameBytes {
+		return fmt.Errorf("jwtauth: profile name is %d bytes (max %d, the rule reference limit)",
+			len(p.Name), maxProfileNameBytes)
 	}
 	if err := checkHTTPURL("issuer", p.Issuer); err != nil {
 		return err

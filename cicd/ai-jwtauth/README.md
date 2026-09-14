@@ -20,7 +20,11 @@ carries real roles.
 |---|---|
 | `mkrealm.py` | emits the imported realm (users, roles, mappers, clients) |
 | `hdr_echo.py` | backend that reports the headers that reached it, in its response body |
+| `h2c_echo.py` | HTTP/2 (h2c) echo backend with its own receipt counter |
+| `h2_mux_client.py` | drives two interleaved streams on ONE HTTP/2 connection |
+| `rawsink.py` | records every forwarded byte and answers nothing — the forwarding oracle |
 | `segmented_send.py` | sends one request in small TCP writes so header values arrive fragmented |
+| `raw_http.py` | hand-framed requests curl cannot send: chunked, mixed-case TE, CL+TE |
 | `config.sh` | Keycloak + key store + topology + profiles + rules + tokens |
 | `validation.sh` | the matrix |
 | `rmconfig.sh` | teardown (leaves the Keycloak image cached) |
@@ -62,10 +66,45 @@ refusal and its control.
 | 2045 | `jwt` | `kc-fwd` | `forward_identity=true` |
 | 2046 | `jwt` | `kc-pass` | `authorization_passthrough=true` |
 | 2047 | `jwt` | `kc-outage` | an IdP that goes away after its keys were fetched (`refresh_sec` 10) |
+| 2048 | `jwt` | `kc` | HTTP/2 admission legs (h2c echo backend) |
+| 2049 | `jwt` | `kc` | the H2 forwarding oracle (raw recorder, no model key) |
+| 2050 | `jwt` | `kc` | two model pools on one VIP — the H2 multiplex legs |
+| 2051 | `none`+`sse` | — | keyless per-VIP token bound, H/1.1 |
+| 2052 | `none`+`sse` | — | keyless per-VIP token bound, H/2 |
 
 Realm users: `alice` (tenant-a, llama-70b), `bob` (tenant-b, mistral-7b),
 `carol` (no tenant attribute), `dave` (tenant-d, llama-70b plus padding
 roles so the token spans several parser reads).
+
+## Exact limits and framing
+
+**L** pins the raw-Authorization capture boundary with a genuinely valid
+token: RFC 7235 allows repeated SP after the scheme, so the same token is
+padded until the raw value is exactly 4095 bytes (admitted — the capture's
+largest storable value) and 4096 bytes (refused at capture, before the
+verifier sees a byte), on HTTP/1.1 and HTTP/2 alike. The serialized-JWT
+limit reachable through this path is therefore `4095 − len("Bearer ") =
+4088` bytes — smaller than the verifier's own 4096-byte bound, which only
+direct callers of the Go API can reach.
+
+**K** sends actual `Transfer-Encoding: chunked` requests (E2 is TCP
+fragmentation of an ordinary Content-Length request — different layer).
+The pinned contract: chunked requests are admitted and their credential is
+consumed and stripped exactly like Content-Length traffic, but
+`forward_identity` does **not** inject `X-Auth-*` into a chunked request —
+the header splice needs body headroom, and a deterministic skip beats a
+load-dependent one. That skip must not depend on header casing (K3), and a
+request carrying both Content-Length and Transfer-Encoding — the classic
+smuggling ambiguity — must never reach a backend (K4).
+
+**X** pins repeated-Authorization semantics: the LAST value decides,
+exactly one credential is evaluated, and every instance is stripped
+upstream on a consuming service — deterministic, and never a leak.
+
+**P** pins the two name limits to each other: the LB rule's
+`jwt_auth_profile` reference is capped at 63 bytes, so a 64-byte profile
+name is refused at profile create — an accepted name that no rule could
+ever reference is configuration that can only fail later and elsewhere.
 
 ## The two legs that are born red
 
