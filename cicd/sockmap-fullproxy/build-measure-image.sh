@@ -26,6 +26,11 @@
 #   ./build-measure-image.sh sockmap-dbgctl 1   # same tree, control image with logging
 #
 # Args: $1 = resulting tag (default sockmap-nodebug), $2 = 1 keeps logging (control)
+#
+# The Go binary links libtokenizers (KV-router HF backend), which the runtime image does
+# not ship. Point TOKENIZERS_LIB_DIR at a directory holding libtokenizers.a, the same
+# release CI installs:
+#   wget https://github.com/daulet/tokenizers/releases/download/v1.27.0/libtokenizers.linux-amd64.tar.gz
 set -e
 
 TAG=${1:-sockmap-nodebug}
@@ -44,6 +49,13 @@ fi
 command -v go >/dev/null || { echo "ERROR: go not found on host (needed for the GOROOT mount)"; exit 1; }
 HOST_GOROOT=$(go env GOROOT)
 HOST_GOMODCACHE=$(go env GOMODCACHE)
+TOK_MOUNT=()
+TOK_LDFLAGS=""
+if [[ -n "${TOKENIZERS_LIB_DIR:-}" ]]; then
+  [[ -f "$TOKENIZERS_LIB_DIR/libtokenizers.a" ]] || { echo "ERROR: no libtokenizers.a in $TOKENIZERS_LIB_DIR"; exit 1; }
+  TOK_MOUNT=(-v "$(cd "$TOKENIZERS_LIB_DIR" && pwd)":/tokenizers:ro)
+  TOK_LDFLAGS="-L/tokenizers"
+fi
 
 # ---- 1) builder image (runtime image + toolchain), built once and reused
 if ! sudo docker image inspect "$BUILDER_IMG" >/dev/null 2>&1; then
@@ -65,6 +77,7 @@ sudo docker run -dt --name "$BUILDER" \
   -v "$REPO":/src -w /src \
   -v "$HOST_GOROOT":/hostgo:ro \
   -v "$HOST_GOMODCACHE":/gomodcache \
+  "${TOK_MOUNT[@]}" \
   --entrypoint /bin/bash "$BUILDER_IMG" >/dev/null
 
 # ---- 3) build subsys and the Go binary inside the container
@@ -72,6 +85,7 @@ echo "[build] compiling in-container with EXTRA_CFLAGS=\"$XCF\""
 sudo docker exec "$BUILDER" bash -c "
   set -e
   export GOROOT=/hostgo PATH=/hostgo/bin:\$PATH GOMODCACHE=/gomodcache GOFLAGS=-mod=mod
+  export CGO_LDFLAGS=\"$TOK_LDFLAGS\"
   cd /src/loxilb-ebpf
   # A host-built libbpf.a references __isoc23_* symbols and will not link on 22.04,
   # so everything is rebuilt here.
