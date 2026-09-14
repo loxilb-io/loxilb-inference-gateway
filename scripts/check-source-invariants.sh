@@ -321,18 +321,25 @@ fi
 # in the gate header against its Go //export twin, so a pin/export mismatch
 # turns red here instead of at runtime.
 #
+# Both int- and void-returning prototypes. It read only `extern int` at first,
+# which quietly exempted every REPORTING export -- the record/hit/usage
+# family, all of them void -- from the one check that covers them. Those are
+# the exports most likely to gain a parameter, because a counter gaining a
+# label is exactly how that happens, and they were the ones not being looked
+# at. Nothing about the failure mode depends on the return type.
+#
 # Counting is by top-level comma; neither side declares function-typed or
 # grouped parameters in this surface, and if one ever appears the check
 # fails loud rather than guessing.
 # ---------------------------------------------------------------------------
 c_param_count() { # c_param_count <name> — arity of the extern prototype
-  sed -n "/extern int $1(/,/);/p" "$C_DECL" | tr '\n' ' ' \
+  sed -n "/extern [a-z]* $1(/,/);/p" "$C_DECL" | tr '\n' ' ' \
     | sed -e "s/.*$1(//" -e 's/).*//' \
     | awk -F',' '{ gsub(/^[ \t]+|[ \t]+$/, ""); if ($0 == "" || $0 == "void") print 0; else print NF }'
 }
 arity_bad=""
 arity_checked=0
-for name in $(grep -ohE 'extern int (llb_[a-z0-9_]+)\(' "$C_DECL" | sed -e 's/extern int //' -e 's/($//' -e 's/(.*//'); do
+for name in $(grep -ohE 'extern (int|void) (llb_[a-z0-9_]+)\(' "$C_DECL" | sed -e 's/extern \(int\|void\) //' -e 's/($//' -e 's/(.*//'); do
   gofile="$(grep -rlE "^//export $name\$" pkg/loxinet/*.go 2>/dev/null | head -1)"
   # Header-declared, no Go export: the weak stub covers it; section 7 owns
   # whether that is allowed for a given symbol. Arity has nothing to check.
@@ -354,9 +361,12 @@ for name in $(grep -ohE 'extern int (llb_[a-z0-9_]+)\(' "$C_DECL" | sed -e 's/ex
     arity_bad="$arity_bad $name(C=$ccount,Go=$gcount)"
   fi
 done
-if [ "$arity_checked" -lt 6 ]; then
+if [ "$arity_checked" -lt 16 ]; then
   # The parser finding almost nothing is its own failure: a header rename
-  # must not turn this check into a vacuous pass.
+  # must not turn this check into a vacuous pass. The floor tracks the real
+  # surface and was raised when void-returning exports were brought in: it
+  # sat at 6 while 11 symbols matched, so the reporting exports could all
+  # have vanished from the scan without the floor noticing.
   fail "export-arity check matched only $arity_checked symbols — parser or header moved"
 elif [ -n "$arity_bad" ]; then
   fail "export arity disagrees between the pinned C header and the Go exports:$arity_bad"

@@ -1158,6 +1158,89 @@
             },
             "overrides": []
           }
+        },
+        {
+          "id": 53,
+          "type": "timeseries",
+          "title": "Missing usage by reason",
+          "description": "Splits the responses-without-usage series by the BOUNDARY the report fired at. response_complete is the HTTP/1.1 keep-alive reset \u2014 the client sent the next request on the same connection, so the exchange demonstrably finished and the backend simply omitted usage. connection_close is the teardown sweep: a 2xx was seen and the connection ended before any usage was read, which a client that takes the 2xx and cuts reaches identically, so it is the one reason that is not self-evidently a backend problem. h2_stream_close establishes neither, because nghttp2 runs the same close for a finished stream and for one aborted after its headers. stream_estimated is the only arm that WAS charged, from the estimate net. unknown means a data-plane reason this build does not recognise \u2014 normally a pin skew between the gateway and its data plane rather than anything about the traffic.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 64
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "loxilb-prom"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (reason) (rate(loxilb_ai_tokens_missing_total{model=~\"$model\",tenant=~\"$tenant\",instance=~\"$instance\"}[$__rate_interval]))",
+              "legendFormat": "{{reason}}"
+            }
+          ],
+          "options": {
+            "tooltip": {
+              "mode": "multi"
+            },
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 54,
+          "type": "timeseries",
+          "title": "Uncharged-on-close rate: per tenant vs fleet",
+          "description": "The comparison that decides whether the uncharged path is a backend problem or a behavioural one. Each series is a tenant's connection_close reports as a share of that tenant's AI responses, so tenants of very different sizes are comparable; FLEET is the same ratio taken over everything. Every tenant elevated together means a backend is ending connections before usage is readable, and leaving those responses free is the right answer. ONE tenant materially above FLEET is the signal \u2014 that tenant reaches the uncharged path far more often than the fleet does, which is what would reopen the charging question with data instead of argument. Empty is the healthy state.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 64
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "loxilb-prom"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (tenant) (rate(loxilb_ai_tokens_missing_total{reason=\"connection_close\",model=~\"$model\",tenant=~\"$tenant\",instance=~\"$instance\"}[$__rate_interval])) / sum by (tenant) (rate(loxilb_ai_requests_total{model=~\"$model\",tenant=~\"$tenant\",instance=~\"$instance\"}[$__rate_interval]))",
+              "legendFormat": "{{tenant}}"
+            },
+            {
+              "refId": "B",
+              "expr": "sum (rate(loxilb_ai_tokens_missing_total{reason=\"connection_close\",model=~\"$model\",tenant=~\"$tenant\",instance=~\"$instance\"}[$__rate_interval])) / sum (rate(loxilb_ai_requests_total{model=~\"$model\",tenant=~\"$tenant\",instance=~\"$instance\"}[$__rate_interval]))",
+              "legendFormat": "FLEET"
+            }
+          ],
+          "options": {
+            "tooltip": {
+              "mode": "multi"
+            },
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "noValue": "No data"
+            },
+            "overrides": []
+          }
         }
       ]
     },
