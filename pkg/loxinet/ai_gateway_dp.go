@@ -219,6 +219,13 @@ func rateLimitCheckInternal(svc rateLimitService, store *rl.RateLimiterStore, ke
 				return 3, retrySec, "rate_limit_exceeded"
 			}
 		}
+		// The token side of the shared bucket. The latch reads debt that
+		// SETTLES put there: attributed traffic sharing the service charges
+		// it, and the data plane settles keyless responses into the same
+		// bucket through the service-only consume path — exact usage, no
+		// pre-admission reservation, so the bound is enforced by denying
+		// the NEXT keyless admission once spend crosses it (H1 and H2
+		// relays both meter keyless).
 		if d.vipTPM > 0 {
 			if store.QuotaWarming() {
 				return 3, 1, "token_quota_warming"
@@ -794,17 +801,24 @@ func getGlobalRL() *rl.RateLimiterStore {
 //
 // Parameters:
 //
-//	keyID    – the validated API key's key_id string
-//	tenantID – the validated API key's tenant_id string
+//	keyID    – the validated API key's key_id string ("" on the JWT arm)
+//	tenantID – the deciding credential arm's tenant_id string
+//	userID   – the deciding arm's per-user identity ("" when none)
+//	svcIdent – the service identity "VIP:port" ("" when unknown); selects
+//	           the rule-scope defaults row and, when the whole identity is
+//	           empty, the opt-in keyless per-VIP shared bucket
 //	model    – the request's body-bound model name (may be empty); selects
 //	           the tenant|model token bucket for the stage-3 debt check
 //	result   – output decision structure; decision is set to 3 on denial
+//
+// Parameter order mirrors rateLimitCheckInternal — the C header
+// (sockproxy_ai_gw.h) is kept position-for-position with it.
 //
 // Returns 0 when allowed; -1 when rate-limited (result->decision == 3 and
 // result->retry_after is set to the recommended retry delay in seconds).
 //
 //export llb_ai_ratelimit_check
-func llb_ai_ratelimit_check(keyID *C.char, tenantID *C.char, model *C.char, result *C.ai_gw_decision_t) (ret C.int) {
+func llb_ai_ratelimit_check(keyID *C.char, tenantID *C.char, userID *C.char, svcIdent *C.char, model *C.char, result *C.ai_gw_decision_t) (ret C.int) {
 	// See llb_ai_validate_key for why the denial is recorded in the deferred
 	// function rather than at each deny arm.
 	var metricTenant, metricModel string
@@ -839,12 +853,7 @@ func llb_ai_ratelimit_check(keyID *C.char, tenantID *C.char, model *C.char, resu
 	}
 
 	store := getGlobalRL()
-	// The data plane's ratelimit ABI pre-dates the user/service identity:
-	// the C caller holds both (key_dec.user_id / the rule's VIP) but this
-	// export's signature cannot carry them yet. They arrive with the
-	// identity-forwarding ABI (WP-5 stage B); until then the user/VIP arms
-	// of the ladder are exercised by the unit corpus and dormant here.
-	decision, retrySecs, errorCode := rateLimitCheckInternal(svc, store, keyIDStr, tenantIDStr, "", "", modelStr)
+	decision, retrySecs, errorCode := rateLimitCheckInternal(svc, store, keyIDStr, tenantIDStr, C.GoString(userID), C.GoString(svcIdent), modelStr)
 	if decision != 0 {
 		result.decision = C.int(decision)
 		result.retry_after = C.int(retrySecs)
@@ -893,7 +902,10 @@ func llb_ai_ratelimit_check(keyID *C.char, tenantID *C.char, model *C.char, resu
 // tag makes settlement skip a release the epoch advance already performed —
 // the standard orphan self-heal.
 func tokenQuotaReserveInternal(svc rateLimitService, store *rl.RateLimiterStore, tenantID, modelName, userID, keyID, svcIdent string, want int) (allowed bool, retrySecs int, resEpoch int64) {
-	if want <= 0 || tenantID == "" {
+	// A keyless request (no tenant) can still hold a claim: the per-VIP
+	// shared bucket is keyed on the service alone. With neither identity
+	// there is nothing to reserve against.
+	if want <= 0 || (tenantID == "" && svcIdent == "") {
 		return true, 0, 0
 	}
 	buckets := quotaBucketsFor(svc, tenantID, modelName, userID, keyID, svcIdent)
@@ -955,19 +967,26 @@ func quotaBucketsFor(svc rateLimitService, tenantID, modelName, userID, keyID, s
 		defaults = d
 	}
 
-	_, tenantTPM, burstPct, _ := svc.GetTenantRateLimit(tenantID)
-	if tenantTPM <= 0 {
-		tenantTPM = defaults.tenantTPM
-	}
-	if tenantTPM > 0 {
-		out = append(out, quotaBucket{key: tenantID, tpm: tenantTPM, burstPct: burstPct})
-	}
-	if modelName != "" {
-		if modelTPM, err := svc.GetTenantModelRateLimit(tenantID, modelName); err == nil && modelTPM > 0 {
-			out = append(out, quotaBucket{key: modelQuotaKey(tenantID, modelName), tpm: modelTPM, burstPct: burstPct})
+	// The tenant-keyed dimensions exist only for attributed traffic; a
+	// keyless caller (empty tenant) must not read the store for the empty
+	// pair, and its spend lands only on the per-VIP shared bucket below.
+	burstPct := 0
+	if tenantID != "" {
+		var tenantTPM int
+		_, tenantTPM, burstPct, _ = svc.GetTenantRateLimit(tenantID)
+		if tenantTPM <= 0 {
+			tenantTPM = defaults.tenantTPM
+		}
+		if tenantTPM > 0 {
+			out = append(out, quotaBucket{key: tenantID, tpm: tenantTPM, burstPct: burstPct})
+		}
+		if modelName != "" {
+			if modelTPM, err := svc.GetTenantModelRateLimit(tenantID, modelName); err == nil && modelTPM > 0 {
+				out = append(out, quotaBucket{key: modelQuotaKey(tenantID, modelName), tpm: modelTPM, burstPct: burstPct})
+			}
 		}
 	}
-	if userID != "" {
+	if userID != "" && tenantID != "" {
 		userTPM := 0
 		if _, _, t, err := svc.GetUserRateLimit(tenantID, userID); err == nil {
 			userTPM = t
@@ -1014,7 +1033,9 @@ func quotaBucketsFor(svc rateLimitService, tenantID, modelName, userID, keyID, s
 // returns deny_429 ("token_quota_exceeded") — the already-served response
 // is never affected.
 func tokenQuotaConsumeInternal(svc rateLimitService, store *rl.RateLimiterStore, tenantID, modelName, userID, keyID, svcIdent string, count, reservedAmt int, resEpoch int64) (allowed bool, retrySecs int) {
-	if tenantID == "" {
+	// Keyless settles are keyed on the service alone; with neither a
+	// tenant nor a service identity there is no bucket to touch.
+	if tenantID == "" && svcIdent == "" {
 		return true, 0
 	}
 	// Same tolerance as reservation: settlement must run even when the
@@ -1025,26 +1046,33 @@ func tokenQuotaConsumeInternal(svc rateLimitService, store *rl.RateLimiterStore,
 	if reservedAmt <= 0 && (count <= 0 || len(buckets) == 0) {
 		return true, 0
 	}
-	// The tenant aggregate settles even when its own limit resolved to zero
-	// (reservation release rides the settle call), matching the old shape;
-	// every other bucket exists only with a live limit.
-	settledTenant := false
+	// The request's PRIMARY bucket settles even when its own limit resolved
+	// to zero (reservation release rides the settle call): the tenant
+	// aggregate for attributed traffic — matching the old shape — and the
+	// per-VIP shared bucket for keyless traffic, whose claim would
+	// otherwise strand when the defaults row vanishes mid-request. Every
+	// other bucket exists only with a live limit.
+	primaryKey := tenantID
+	if tenantID == "" {
+		primaryKey = rl.VipSharedQuotaKey(svcIdent)
+	}
+	settledPrimary := false
 	allowed = true
 	for _, b := range buckets {
 		bAllowed, bRetry := store.SettleTokens(b.key, count, reservedAmt, resEpoch, b.tpm, b.burstPct)
-		if b.key == tenantID {
-			settledTenant = true
+		if b.key == primaryKey {
+			settledPrimary = true
 		}
 		if !bAllowed {
 			allowed = false
 			retrySecs = max(retrySecs, bRetry)
 		}
 	}
-	if !settledTenant {
-		tAllowed, tRetry := store.SettleTokens(tenantID, count, reservedAmt, resEpoch, 0, 0)
-		if !tAllowed {
+	if !settledPrimary {
+		pAllowed, pRetry := store.SettleTokens(primaryKey, count, reservedAmt, resEpoch, 0, 0)
+		if !pAllowed {
 			allowed = false
-			retrySecs = max(retrySecs, tRetry)
+			retrySecs = max(retrySecs, pRetry)
 		}
 	}
 	return allowed, retrySecs
@@ -1069,8 +1097,12 @@ func tokenQuotaConsumeInternal(svc rateLimitService, store *rl.RateLimiterStore,
 // "token_quota_exceeded" so operators (and the acceptance harness) can tell
 // a pre-admission deny from a latched one.
 //
+// The identity trio (userID/keyID/svcIdent) reserves against the user,
+// user|model, key and per-VIP buckets next to the tenant aggregate;
+// parameter order mirrors tokenQuotaReserveInternal.
+//
 //export llb_ai_token_quota_reserve
-func llb_ai_token_quota_reserve(tenantID *C.char, modelName *C.char, promptEst C.int, maxTokens C.int, resEpoch *C.longlong, result *C.ai_gw_decision_t) (ret C.int) {
+func llb_ai_token_quota_reserve(tenantID *C.char, modelName *C.char, userID *C.char, keyID *C.char, svcIdent *C.char, promptEst C.int, maxTokens C.int, resEpoch *C.longlong, result *C.ai_gw_decision_t) (ret C.int) {
 	// See llb_ai_validate_key for why the denial is recorded in the deferred
 	// function rather than at each deny arm.
 	var metricTenant, metricModel string
@@ -1103,7 +1135,9 @@ func llb_ai_token_quota_reserve(tenantID *C.char, modelName *C.char, promptEst C
 	if maxTokens > 0 {
 		want += int(maxTokens)
 	}
-	if tenant == "" || want <= 0 {
+	// A keyless caller (no tenant) may still reserve against the per-VIP
+	// shared bucket when it names the service.
+	if want <= 0 || (tenant == "" && C.GoString(svcIdent) == "") {
 		return 0
 	}
 
@@ -1113,9 +1147,7 @@ func llb_ai_token_quota_reserve(tenantID *C.char, modelName *C.char, promptEst C
 	}
 
 	store := getGlobalRL()
-	// user/key/service identity: not in this export's ABI yet (WP-5 stage
-	// B); the user-dimension buckets are dormant here until it lands.
-	allowed, retrySecs, epoch := tokenQuotaReserveInternal(svc, store, tenant, C.GoString(modelName), "", "", "", want)
+	allowed, retrySecs, epoch := tokenQuotaReserveInternal(svc, store, tenant, C.GoString(modelName), C.GoString(userID), C.GoString(keyID), C.GoString(svcIdent), want)
 	if !allowed {
 		if result != nil {
 			result.decision = 3
@@ -1160,8 +1192,12 @@ func llb_ai_token_quota_reserve(tenantID *C.char, modelName *C.char, promptEst C
 // prompt+max_tokens claim back and replace it with the real charge; pass
 // 0/0 when no reservation was made.
 //
+// The identity trio (userID/keyID/svcIdent) charges the user, user|model,
+// key and per-VIP buckets the reservation claimed; parameter order mirrors
+// tokenQuotaConsumeInternal.
+//
 //export llb_ai_token_quota_consume
-func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, promptTokens C.int, completTokens C.int, estimated C.int, reservedToks C.int, resEpoch C.longlong, result *C.ai_gw_decision_t) (ret C.int) {
+func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, userID *C.char, keyID *C.char, svcIdent *C.char, promptTokens C.int, completTokens C.int, estimated C.int, reservedToks C.int, resEpoch C.longlong, result *C.ai_gw_decision_t) (ret C.int) {
 	// Fail-open on panic: the response is already served, so accounting must
 	// never take down the datapath — the quota simply misses this response.
 	defer func() {
@@ -1175,12 +1211,18 @@ func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, promptToken
 	tenant := C.GoString(tenantID)
 	// A zero count no longer short-circuits when a reservation rides along:
 	// the claim must be released even for an uncounted response, or the
-	// tenant's admissions stay blocked until the window rolls over.
-	if tenant == "" || (count <= 0 && reservedToks <= 0) {
+	// tenant's admissions stay blocked until the window rolls over. A
+	// keyless caller (no tenant) settles the per-VIP shared bucket when it
+	// names the service.
+	if (tenant == "" && C.GoString(svcIdent) == "") || (count <= 0 && reservedToks <= 0) {
 		return 0
 	}
 
-	if count > 0 {
+	// The per-tenant usage families stay attributed-only: a keyless settle
+	// has no tenant to label, and an empty label value reads as a scrape
+	// bug. Keyless volume is already visible per VIP in the unmetered
+	// counter.
+	if count > 0 && tenant != "" {
 		prom.RecordTokenUsage(C.GoString(modelName), tenant, int(promptTokens),
 			int(completTokens), estimated != 0)
 	}
@@ -1191,8 +1233,7 @@ func llb_ai_token_quota_consume(tenantID *C.char, modelName *C.char, promptToken
 	}
 
 	store := getGlobalRL()
-	// user/key/service identity: not in this export's ABI yet (WP-5 stage B).
-	allowed, retrySecs := tokenQuotaConsumeInternal(svc, store, tenant, C.GoString(modelName), "", "", "", count,
+	allowed, retrySecs := tokenQuotaConsumeInternal(svc, store, tenant, C.GoString(modelName), C.GoString(userID), C.GoString(keyID), C.GoString(svcIdent), count,
 		int(reservedToks), int64(resEpoch))
 	if !allowed {
 		if result != nil {

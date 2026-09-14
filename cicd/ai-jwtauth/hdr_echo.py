@@ -31,6 +31,20 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 LABEL = sys.argv[1] if len(sys.argv) > 1 else "server"
 PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 8080
+# "no-usage" answers a complete, successful response that carries NO usage
+# object. Real backends do this — usage is optional in the OpenAI response
+# shape — and it is the one response shape whose accounting had no path at
+# all: nothing to extract meant nothing charged and nothing reported.
+MODE = sys.argv[3] if len(sys.argv) > 3 else ""
+EMIT_USAGE = MODE != "no-usage"
+# "error-500" answers the OpenAI-compatible ERROR shape: a 5xx whose JSON body
+# carries no usage object. It looks identical to the no-usage case to anything
+# that only asks "did a usage object come back", which is why the accounting
+# has to separate them on status — an error produced no completion, so having
+# no usage is correct rather than missing.
+ERROR_STATUS = 500 if MODE == "error-500" else 0
+if ERROR_STATUS:
+    EMIT_USAGE = False
 
 RECEIPTS_PREFIX = "/__receipts/"
 NONCE_HEADER = "X-Test-Nonce"
@@ -114,12 +128,25 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, OSError):
             self.close_connection = True
 
-        self._send("%s|authz=%s|apikey=%s|xauth_tenant=%s|xauth_user=%s" % (
+        # The usage suffix feeds the gateway's settle path (the extractor
+        # scans the response tail for the LAST complete "usage" object, so
+        # the surrounding pipe format is irrelevant to it). Fixed counts
+        # keep the token legs' arithmetic exact: 5+7 per answered request.
+        usage_suffix = ('|{"usage":{"prompt_tokens":5,"completion_tokens":7,'
+                        '"total_tokens":12}}') if EMIT_USAGE else ""
+        if ERROR_STATUS:
+            # Keep the label so the leg can prove it reached THIS pool, and
+            # answer the error shape a real backend would.
+            self._send('%s|{"error":{"message":"upstream failure",'
+                       '"type":"server_error"}}' % LABEL, ERROR_STATUS)
+            return
+        self._send("%s|authz=%s|apikey=%s|xauth_tenant=%s|xauth_user=%s%s" % (
             LABEL,
             "yes" if self.headers.get("Authorization") else "no",
             "yes" if self.headers.get("X-Api-Key") else "no",
             self._hdr("X-Auth-Tenant"),
             self._hdr("X-Auth-User"),
+            usage_suffix,
         ))
 
     do_GET = _respond

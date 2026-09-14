@@ -11,7 +11,11 @@ The chunk size and the pause matter: writes must land in separate reads,
 which is what a small chunk plus a flush gap buys. Prints the raw response
 (status line included) on stdout.
 
-usage: segmented_send.py <host> <port> <token-file> [chunk] [delay-ms]
+usage: segmented_send.py <host> <port> <token-file> [chunk] [delay-ms] [nonce]
+
+The nonce is the caller's receipt oracle: without one riding THIS request,
+a receipt assertion can only consume whatever nonce an earlier leg minted,
+and would score that request's delivery instead of this one's.
 """
 import socket
 import sys
@@ -22,16 +26,19 @@ port = int(sys.argv[2])
 token = open(sys.argv[3]).read().strip()
 chunk = int(sys.argv[4]) if len(sys.argv) > 4 else 200
 delay = (int(sys.argv[5]) if len(sys.argv) > 5 else 15) / 1000.0
+nonce = sys.argv[6] if len(sys.argv) > 6 else ""
 
 body = b'{"model":"llama-70b","messages":[{"role":"user","content":"hi"}]}'
+nonce_line = ("X-Test-Nonce: %s\r\n" % nonce) if nonce else ""
 head = (
     "POST /v1/chat/completions HTTP/1.1\r\n"
     "Host: %s:%d\r\n"
     "Content-Type: application/json\r\n"
     "Authorization: Bearer %s\r\n"
+    "%s"
     "Content-Length: %d\r\n"
     "Connection: close\r\n"
-    "\r\n" % (host, port, token, len(body))
+    "\r\n" % (host, port, token, nonce_line, len(body))
 ).encode()
 
 req = head + body

@@ -6,6 +6,8 @@ echo SCENARIO-ai-jwtauth-cleanup
 # the host PID namespace, so a name-wide kill here would reach every
 # unrelated python process on the machine.
 sudo pkill -f 'hdr_echo\.py' 2>/dev/null
+sudo pkill -f 'h2c_echo\.py' 2>/dev/null
+sudo pkill -f 'rawsink\.py' 2>/dev/null
 sleep 1
 
 disconnect_docker_hosts llb1 l3h1

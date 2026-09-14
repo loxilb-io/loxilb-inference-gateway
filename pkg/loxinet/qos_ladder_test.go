@@ -401,3 +401,96 @@ func TestLadderDormantWithoutIdentity(t *testing.T) {
 		}
 	}
 }
+
+// TestLadderKeylessVipTokenCharge: a keyless settle (no tenant, service
+// named) charges the per-VIP shared bucket, and the keyless admission
+// latch then denies. This is the Go half of keyless token metering; the
+// data plane does not make this call yet, so until it does the pair
+// below is what keeps the path honest.
+func TestLadderKeylessVipTokenCharge(t *testing.T) {
+	store := rl.New()
+	svc := ladderSvc()
+	svc.defaults["rule|10.10.10.254:2050"] = cmn.RateLimitDefaultsEntry{
+		Scope: cmn.RateLimitScopeRule, RuleIdent: "10.10.10.254:2050", VipSharedTPM: 100,
+	}
+
+	// Charge 150/100 through the settle path — the shared bucket latches.
+	if allowed, _ := tokenQuotaConsumeInternal(svc, store, "", "", "", "", "10.10.10.254:2050", 150, 0, 0); allowed {
+		t.Fatalf("keyless charge 150 against vip tpm=100 must report debt")
+	}
+	if d, _, code := rateLimitCheckInternal(svc, store, "", "", "", "10.10.10.254:2050", ""); d != 3 || code != "token_quota_exceeded" {
+		t.Fatalf("keyless after debt: expected token_quota_exceeded, got decision=%d code=%q", d, code)
+	}
+	// Another service's keyless traffic is untouched: the bucket is
+	// per-VIP, not global.
+	if d, _, _ := rateLimitCheckInternal(svc, store, "", "", "", "10.10.10.254:2051", ""); d != 0 {
+		t.Fatalf("neighbour service caught the debt: expected allow, got decision=%d", d)
+	}
+	// With neither tenant nor service there is nothing to settle: no
+	// bucket may be minted for the empty identity.
+	if allowed, _ := tokenQuotaConsumeInternal(svc, store, "", "", "", "", "", 150, 0, 0); !allowed {
+		t.Fatalf("settle with no identity at all must be a no-op allow")
+	}
+}
+
+// TestLadderKeylessVipReserveAndRelease: the keyless reserve claims the
+// shared bucket and an abort settle hands the claim back — the same
+// claim/release contract every attributed bucket has.
+func TestLadderKeylessVipReserveAndRelease(t *testing.T) {
+	store := rl.New()
+	svc := ladderSvc()
+	svc.defaults["rule|10.10.10.254:2050"] = cmn.RateLimitDefaultsEntry{
+		Scope: cmn.RateLimitScopeRule, RuleIdent: "10.10.10.254:2050", VipSharedTPM: 200,
+	}
+
+	allowed, _, epoch := tokenQuotaReserveInternal(svc, store, "", "", "", "", "10.10.10.254:2050", 150)
+	if !allowed || epoch == 0 {
+		t.Fatalf("keyless reserve 150/200 must admit with an epoch")
+	}
+	// While the claim is held, a second 150 must NOT fit.
+	if a2, _, _ := tokenQuotaReserveInternal(svc, store, "", "", "", "", "10.10.10.254:2050", 150); a2 {
+		t.Fatalf("second 150 with 150 reserved must deny — the shared-bucket claim is not being held")
+	}
+	// Abort: settle with zero actuals, releasing the claim.
+	if allowed, _ := tokenQuotaConsumeInternal(svc, store, "", "", "", "", "10.10.10.254:2050", 0, 150, epoch); !allowed {
+		t.Fatalf("keyless abort settlement must not latch debt")
+	}
+	if a3, _, _ := tokenQuotaReserveInternal(svc, store, "", "", "", "", "10.10.10.254:2050", 150); !a3 {
+		t.Fatalf("after abort release the shared bucket's allowance must be whole again")
+	}
+	// A service with no shared bucket reserves nothing and admits.
+	if a, _, e := tokenQuotaReserveInternal(svc, store, "", "", "", "", "10.10.10.254:2051", 150); !a || e != 0 {
+		t.Fatalf("keyless reserve on an unconfigured service must be a no-op allow, got allowed=%v epoch=%d", a, e)
+	}
+}
+
+// TestLadderKeylessVipReleaseSurvivesDefaultsRemoval: the defaults row
+// vanishing between reserve and settle must not strand the claim — the
+// shared bucket is the keyless request's PRIMARY bucket and settles even
+// when its limit no longer resolves, exactly as the tenant aggregate does
+// for attributed traffic.
+func TestLadderKeylessVipReleaseSurvivesDefaultsRemoval(t *testing.T) {
+	store := rl.New()
+	svc := ladderSvc()
+	svc.defaults["rule|10.10.10.254:2050"] = cmn.RateLimitDefaultsEntry{
+		Scope: cmn.RateLimitScopeRule, RuleIdent: "10.10.10.254:2050", VipSharedTPM: 200,
+	}
+
+	allowed, _, epoch := tokenQuotaReserveInternal(svc, store, "", "", "", "", "10.10.10.254:2050", 150)
+	if !allowed || epoch == 0 {
+		t.Fatalf("keyless reserve 150/200 must admit with an epoch")
+	}
+	// The operator deletes the row mid-request.
+	delete(svc.defaults, "rule|10.10.10.254:2050")
+	if allowed, _ := tokenQuotaConsumeInternal(svc, store, "", "", "", "", "10.10.10.254:2050", 0, 150, epoch); !allowed {
+		t.Fatalf("settle after defaults removal must not latch debt")
+	}
+	// The row comes back: the full allowance is available, so the claim
+	// was released rather than stranded until the epoch expires it.
+	svc.defaults["rule|10.10.10.254:2050"] = cmn.RateLimitDefaultsEntry{
+		Scope: cmn.RateLimitScopeRule, RuleIdent: "10.10.10.254:2050", VipSharedTPM: 200,
+	}
+	if a, _, _ := tokenQuotaReserveInternal(svc, store, "", "", "", "", "10.10.10.254:2050", 200); !a {
+		t.Fatalf("claim stranded: full-allowance reserve denied after release")
+	}
+}
