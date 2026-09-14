@@ -8,8 +8,8 @@
 # reconcile, QoS attach, fold/unfold) and proxy_add_entry refreshes a live pool
 # in place, so a naive "+1 per add / -1 per delete" would leak portset entries.
 #
-# Self-contained: creates its own rules on dedicated VIP ports (2050-2053) and
-# dedicated backend ports (9100-9105) so it never collides with config.sh's
+# Self-contained: creates its own rules on dedicated VIP ports (2050-2055) and
+# dedicated backend ports (9100-9106) so it never collides with config.sh's
 # 2020/2021 -> 8080 rules, and deletes everything it created. No traffic is
 # generated: only control-plane operations and bpftool map observation.
 #
@@ -21,6 +21,8 @@
 #   (d) two L7 rules (different host) on the same VIP:port -> deleting one keeps
 #       the other's endpoint port and the shared VIP port; deleting both clears
 #   (e) no sockmap failure messages in the loxilb log (fail-open never fired)
+#   (f) verdict_refs follow in-place mode changes (both->response->request), and two
+#       rules with different modes on one endpoint address:port count independently
 
 source ../common.sh
 source ./sockmap_common.sh
@@ -84,6 +86,21 @@ _rc_lb_json() {
 EOF
 }
 
+_rc_expect_vrefs() {
+  # $1 label $2 map name $3 ip $4 port $5 wanted verdict_refs
+  local label=$1 map=$2 ip=$3 port=$4 want=$5 got i
+  for ((i=0; i<16; i++)); do
+    got=$(sockmap_portset_verdict_refs llb1 "$map" "$ip" "$port")
+    [[ "$got" == "$want" ]] && break
+    sleep 0.5
+  done
+  if [[ "$got" == "$want" ]]; then
+    sockmap_result "$label" "OK"
+  else
+    sockmap_result "$label" "FAILED" "$ip:$port verdict_refs=${got:-absent}, want $want"
+  fi
+}
+
 _rc_expect() {
   # $1 label $2 map name $3 port $4 present|absent
   local label=$1 map=$2 port=$3 want=$4
@@ -100,6 +117,8 @@ cleanup() {
   _rc_delete_lb_host any "$VIP" 2052 >/dev/null 2>&1 || true
   _rc_delete_lb_host a.refcount.test "$VIP" 2053 >/dev/null 2>&1 || true
   _rc_delete_lb_host b.refcount.test "$VIP" 2053 >/dev/null 2>&1 || true
+  _rc_delete_lb_host any "$VIP" 2054 >/dev/null 2>&1 || true
+  _rc_delete_lb_host any "$VIP" 2055 >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -196,8 +215,43 @@ else
   sockmap_result "create host-based rules on vip 2053" "FAILED" "API"
 fi
 
+# ---------- (f) direction bookkeeping ----------
+sockmap_section 5 "(f) verdict_refs across mode changes and a shared endpoint (vip 2054/2055 -> $EP1:9106)"
+if _rc_post_lb "$(_rc_lb_json 2054 both 0 "" $EP1:9106)"; then
+  _rc_expect_vrefs "both: vip 2054 verdict_refs=1"      "$SOCKMAP_VIP_NAME" "$VIP" 2054 1
+  _rc_expect_vrefs "both: ep 9106 verdict_refs=1"       "$SOCKMAP_EP_NAME"  "$EP1" 9106 1
+  _rc_post_lb "$(_rc_lb_json 2054 response 0 "" $EP1:9106)" || sockmap_result "both->response" "FAILED" "API"
+  _rc_expect_vrefs "response: vip 2054 verdict_refs=0"  "$SOCKMAP_VIP_NAME" "$VIP" 2054 0
+  _rc_expect_vrefs "response: ep 9106 verdict_refs=1"   "$SOCKMAP_EP_NAME"  "$EP1" 9106 1
+  _rc_post_lb "$(_rc_lb_json 2054 request 0 "" $EP1:9106)" || sockmap_result "response->request" "FAILED" "API"
+  _rc_expect_vrefs "request: vip 2054 verdict_refs=1"   "$SOCKMAP_VIP_NAME" "$VIP" 2054 1
+  _rc_expect_vrefs "request: ep 9106 verdict_refs=0"    "$SOCKMAP_EP_NAME"  "$EP1" 9106 0
+
+  # A second rule on the same endpoint address:port, response-only.
+  if _rc_post_lb "$(_rc_lb_json 2055 response 0 "" $EP1:9106)"; then
+    _rc_expect_vrefs "shared ep: verdict_refs=1 (response rule only)" "$SOCKMAP_EP_NAME" "$EP1" 9106 1
+    if _rc_delete_lb_host any "$VIP" 2055; then
+      _rc_expect_vrefs "delete 2055: ep 9106 back to verdict_refs=0" "$SOCKMAP_EP_NAME" "$EP1" 9106 0
+      _rc_expect "delete 2055: vip 2055 removed"        "$SOCKMAP_VIP_NAME" 2055 absent
+    else
+      sockmap_result "delete vip 2055" "FAILED" "API"
+    fi
+  else
+    sockmap_result "create vip 2055" "FAILED" "API"
+  fi
+
+  if _rc_delete_lb_host any "$VIP" 2054; then
+    _rc_expect "delete 2054: vip 2054 removed"          "$SOCKMAP_VIP_NAME" 2054 absent
+    _rc_expect "delete 2054: ep 9106 removed"           "$SOCKMAP_EP_NAME"  9106 absent
+  else
+    sockmap_result "delete vip 2054" "FAILED" "API"
+  fi
+else
+  sockmap_result "create vip 2054" "FAILED" "API"
+fi
+
 # ---------- (e) no fail-open / failure logs ----------
-sockmap_section 5 "(e) loxilb log scan"
+sockmap_section 6 "(e) loxilb log scan"
 fail_after=$(sockmap_log_failure_count llb1)
 if (( fail_after - fail_before == 0 )); then
   sockmap_result "no new sockmap failure messages" "OK"
@@ -207,7 +261,7 @@ else
 fi
 
 # config.sh rules must be untouched by all of the above
-sockmap_section 6 "config.sh rules unaffected"
+sockmap_section 7 "config.sh rules unaffected"
 _rc_expect "R1 vip 2020 still present"              "$SOCKMAP_VIP_NAME" 2020 present
 _rc_expect "R1 ep 8080 still present"               "$SOCKMAP_EP_NAME"  8080 present
 

@@ -34,6 +34,11 @@
 #         REDIRECT_REQ > 0, with REDIRECT_RESP == 0
 #   - The directional counters (REDIRECT_REQ/RESP) are global PERCPU values, so each
 #     measurement window drives traffic to one VIP only and is judged by the delta.
+#   - Only the sockets that receive the accelerated direction are in sock_verdict_map
+#     (the VIP portset entry of a request-only rule and the endpoint entry of a
+#     response-only rule carry verdict_refs). The other direction therefore never runs
+#     the verdict: PEER_MISS + INELIGIBLE may only grow by the unpaired first request of
+#     each connection (request-only), never per request or per response.
 
 source ../common.sh
 source ./sockmap_common.sh
@@ -67,9 +72,9 @@ echo "================ $SCENARIO ================"
 # ---------- Step 1: boot-time assets ----------
 sockmap_section 1 "Daemon boot assets"
 if sockmap_assert_bpf_assets llb1; then
-  sockmap_result "sockops prog + 5 sockmap maps attached" "OK"
+  sockmap_result "sockops prog + 6 sockmap maps attached" "OK"
 else
-  sockmap_result "sockops prog + 5 sockmap maps attached" "FAILED"
+  sockmap_result "sockops prog + 6 sockmap maps attached" "FAILED"
   echo "RESULT: $SCENARIO [FAILED] (bootstrap)"
   exit 1
 fi
@@ -143,6 +148,20 @@ else
   sockmap_result "both endpoint ports in sockmap_ep_portset" "FAILED"
 fi
 
+# Direction split: which side's sockets get the verdict.
+#   request-only : VIP verdict_refs=1, endpoints verdict_refs=0
+#   response-only: VIP verdict_refs=0, endpoints verdict_refs=1
+vr_req_vip=$(sockmap_portset_verdict_refs llb1 "$SOCKMAP_VIP_NAME" "$REQ_VIP" "$REQ_PORT")
+vr_resp_vip=$(sockmap_portset_verdict_refs llb1 "$SOCKMAP_VIP_NAME" "$REQ_VIP" "$RESP_PORT")
+vr_req_ep=$(sockmap_portset_verdict_refs llb1 "$SOCKMAP_EP_NAME" 31.31.31.1 "$EP_PORT_REQ")
+vr_resp_ep=$(sockmap_portset_verdict_refs llb1 "$SOCKMAP_EP_NAME" 31.31.31.1 "$EP_PORT_RESP")
+vr_detail="req vip=$vr_req_vip ep=$vr_req_ep, resp vip=$vr_resp_vip ep=$vr_resp_ep"
+if [[ "$vr_req_vip" == "1" && "$vr_req_ep" == "0" && "$vr_resp_vip" == "0" && "$vr_resp_ep" == "1" ]]; then
+  sockmap_result "verdict_refs follow the accelerated direction" "OK" "$vr_detail"
+else
+  sockmap_result "verdict_refs follow the accelerated direction" "FAILED" "$vr_detail"
+fi
+
 # keep-alive traffic: one curl invocation sends KA_REQS URLs to the same host in
 # sequence, reusing a single connection.
 # Output: "<ok_count> <bad_count> <total>"
@@ -175,6 +194,7 @@ sleep 2
 
 resp_req_before=$(sockmap_redirect_req_count llb1)
 resp_resp_before=$(sockmap_redirect_resp_count llb1)
+resp_miss_before=$(( $(sockmap_peer_miss_count llb1) + $(sockmap_ineligible_count llb1) ))
 
 read ro_ok ro_bad ro_total < <(run_keepalive_traffic "http://$REQ_VIP:$RESP_PORT/" "resp_only")
 
@@ -182,6 +202,7 @@ resp_req_after=$(sockmap_redirect_req_count llb1)
 resp_resp_after=$(sockmap_redirect_resp_count llb1)
 resp_req_delta=$(( resp_req_after - resp_req_before ))
 resp_resp_delta=$(( resp_resp_after - resp_resp_before ))
+resp_miss_delta=$(( $(sockmap_peer_miss_count llb1) + $(sockmap_ineligible_count llb1) - resp_miss_before ))
 
 if (( ro_bad == 0 && ro_ok == ro_total )); then
   sockmap_result "resp-only all responses intact (no hijack)" "OK" "ok=$ro_ok/$ro_total"
@@ -198,6 +219,15 @@ if (( resp_req_delta == 0 )); then
 else
   sockmap_result "resp-only REDIRECT_REQ unchanged (==0)" "FAILED" "delta=$resp_req_delta; request leaked to kernel"
 fi
+# Client sockets are not in sock_verdict_map, so no request reaches the verdict. Without
+# the split every request after the first would (>= (KA_REQS-1)*KA_CONNS). The bound
+# leaves room for a request that happens to span two segments.
+MISS_BOUND=$(( 2 * KA_CONNS ))
+if (( resp_miss_delta <= MISS_BOUND )); then
+  sockmap_result "resp-only requests skip verdict (miss+inelig<=$MISS_BOUND)" "OK" "delta=$resp_miss_delta"
+else
+  sockmap_result "resp-only requests skip verdict (miss+inelig<=$MISS_BOUND)" "FAILED" "delta=$resp_miss_delta; client sockets run the verdict"
+fi
 
 # ---------- Step 5: request-only ----------
 sockmap_section 5 "request-only traffic (vip $REQ_PORT) — expect REQ>0, RESP==0"
@@ -205,6 +235,7 @@ sleep 3   # let the response-only connections drain, so the global counters stay
 
 req_req_before=$(sockmap_redirect_req_count llb1)
 req_resp_before=$(sockmap_redirect_resp_count llb1)
+req_miss_before=$(( $(sockmap_peer_miss_count llb1) + $(sockmap_ineligible_count llb1) ))
 
 read rq_ok rq_bad rq_total < <(run_keepalive_traffic "http://$REQ_VIP:$REQ_PORT/" "req_only")
 
@@ -212,6 +243,7 @@ req_req_after=$(sockmap_redirect_req_count llb1)
 req_resp_after=$(sockmap_redirect_resp_count llb1)
 req_req_delta=$(( req_req_after - req_req_before ))
 req_resp_delta=$(( req_resp_after - req_resp_before ))
+req_miss_delta=$(( $(sockmap_peer_miss_count llb1) + $(sockmap_ineligible_count llb1) - req_miss_before ))
 
 if (( rq_bad == 0 && rq_ok == rq_total )); then
   sockmap_result "req-only all responses intact" "OK" "ok=$rq_ok/$rq_total"
@@ -229,6 +261,14 @@ if (( req_resp_delta == 0 )); then
   sockmap_result "req-only REDIRECT_RESP unchanged (==0)" "OK"
 else
   sockmap_result "req-only REDIRECT_RESP unchanged (==0)" "FAILED" "delta=$req_resp_delta; response leaked to kernel"
+fi
+# Backend sockets are not in sock_verdict_map, so no response reaches the verdict. Only
+# each connection's first request, read before its backend exists, may miss peer_map.
+# Without the split every response would (>= KA_REQS*KA_CONNS).
+if (( req_miss_delta <= MISS_BOUND )); then
+  sockmap_result "req-only responses skip verdict (miss+inelig<=$MISS_BOUND)" "OK" "delta=$req_miss_delta"
+else
+  sockmap_result "req-only responses skip verdict (miss+inelig<=$MISS_BOUND)" "FAILED" "delta=$req_miss_delta; backend sockets run the verdict"
 fi
 
 # ---------- Step 6: log scan ----------
@@ -260,6 +300,36 @@ if sockmap_portset_wait llb1 "$SOCKMAP_EP_NAME" "$EP_PORT_REQ"  absent \
 else
   sockmap_result "both ep ports removed from sockmap_ep_portset" "FAILED" \
     "$EP_PORT_REQ=$(sockmap_portset_has llb1 "$SOCKMAP_EP_NAME" "$EP_PORT_REQ" && echo y || echo n) $EP_PORT_RESP=$(sockmap_portset_has llb1 "$SOCKMAP_EP_NAME" "$EP_PORT_RESP" && echo y || echo n)"
+fi
+
+# ---------- Step 8: re-create on the same VIP:port with another mode ----------
+# Deleting the last rule on a VIP:port keeps the proxy listener, so a new rule there
+# lands on the surviving listener. It must be paired by its own mode, not the one the
+# deleted rule had: vip $REQ_PORT was request-only above and is response-only now.
+sockmap_section 8 "Re-create vip $REQ_PORT as response-only (was request-only)"
+if sockmap_create_lb_via_api llb1 "$REQ_VIP" "$REQ_PORT" "$EP_PORT_REQ" \
+      "31.31.31.1,32.32.32.1" "response" "sockmap-recreated"; then
+  sockmap_portset_wait llb1 "$SOCKMAP_EP_NAME" "$EP_PORT_REQ" present >/dev/null
+  sleep 2
+  rc_req_before=$(sockmap_redirect_req_count llb1)
+  rc_resp_before=$(sockmap_redirect_resp_count llb1)
+  read rc_ok rc_bad rc_total < <(run_keepalive_traffic "http://$REQ_VIP:$REQ_PORT/" "recreated")
+  rc_req_delta=$(( $(sockmap_redirect_req_count llb1) - rc_req_before ))
+  rc_resp_delta=$(( $(sockmap_redirect_resp_count llb1) - rc_resp_before ))
+  if (( rc_bad == 0 && rc_ok == rc_total )); then
+    sockmap_result "re-created rule responses intact" "OK" "ok=$rc_ok/$rc_total"
+  else
+    sockmap_result "re-created rule responses intact" "FAILED" "ok=$rc_ok/$rc_total bad=$rc_bad"
+  fi
+  if (( rc_resp_delta > 0 && rc_req_delta == 0 )); then
+    sockmap_result "re-created rule follows its own mode" "OK" "resp=$rc_resp_delta req=$rc_req_delta"
+  else
+    sockmap_result "re-created rule follows its own mode" "FAILED" \
+      "resp=$rc_resp_delta req=$rc_req_delta; paired by the deleted rule's mode"
+  fi
+  sockmap_delete_lb_via_api llb1 "$REQ_VIP" "$REQ_PORT" >/dev/null 2>&1 || true
+else
+  sockmap_result "re-create vip $REQ_PORT as response-only" "FAILED" "API"
 fi
 
 # ---------- finalize ----------

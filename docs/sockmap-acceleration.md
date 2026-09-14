@@ -30,8 +30,12 @@ Acceleration is opt-in at two levels. Both must be set.
 loxilb --sockmapsupport
 ```
 
-Without this flag no service can be accelerated, regardless of its
-configuration.
+Without this flag no service can be accelerated. A request that sets
+`sockMapMode` to anything but `off` is rejected with
+`sockmap-accel requires loxilb started with --sockmapsupport`, so a service is
+never shown as accelerated when it is not. A snapshot restore on a daemon
+restarted without the flag is the one exception: the rule is restored with a
+warning in the log and runs unaccelerated, rather than failing the restore.
 
 **2. Per-service `sockMapMode`** — selects the direction to accelerate:
 
@@ -58,6 +62,34 @@ configuration.
 streaming, for example, where the request is one small POST and the response is
 a long stream.
 
+The direction you do not accelerate stays on the ordinary TCP path: in
+`response` mode the client socket never runs the sockmap verdict program, and
+in `request` mode the backend socket never does. The requests of a `response`
+service, or the responses of a `request` service, are relayed in userspace
+exactly as with `off`.
+
+## How services are kept apart
+
+Each service is accelerated or not on its own, even when services share ports.
+The datapath recognizes a service's sockets by address **and** port:
+
+- a client socket by the VIP address and port it was accepted on
+- a backend socket by the endpoint address and port it connected to
+
+So `10.0.0.1:80` with `sockMapMode: both` and `10.0.0.2:80` with `off` do not
+affect each other, and neither do two services whose backends listen on the same
+port on different hosts. A VIP of `0.0.0.0` matches any local address on its
+port.
+
+The limit is a shared address and port. Two services that point at the **same
+endpoint address and port** share its acceleration state, because a backend
+connection carries nothing that says which service opened it. The same holds
+for host-based services on one VIP address and port. If one of them accelerates
+a direction, the matching sockets of the other also run the verdict program.
+They are not redirected (the verdict finds no peer and passes the data on), but
+they do take the psock receive path. Give such services separate ports if that
+matters.
+
 ## Eligibility
 
 A service is rejected at configuration time unless all of these hold:
@@ -68,9 +100,12 @@ A service is rejected at configuration time unless all of these hold:
 | `protocol` = `tcp` | sockmap redirect is TCP-only |
 | plaintext service (no TLS) | see below |
 | IPv4 external IP | current implementation limit |
+| daemon started with `--sockmapsupport` | the BPF assets must be loaded |
 
 Setting `sockMapMode` on a service that does not qualify returns
-`sockmap-accel requires plaintext tcp fullproxy ipv4 service`.
+`sockmap-accel requires plaintext tcp fullproxy ipv4 service`, or
+`sockmap-accel requires loxilb started with --sockmapsupport` when only the
+daemon flag is missing.
 
 A further check happens per connection in the datapath: **only plaintext
 HTTP→HTTP is accelerated.** If TLS is in play on either side — TLS termination,
@@ -209,17 +244,31 @@ Two caveats on reading this:
 ## Verifying it is engaged
 
 Configuring `sockMapMode` does not guarantee the connection is accelerated — the
-eligibility rules above are applied per connection. Check that the sockhash is
-actually populated:
+eligibility rules above are applied per connection. Check what the datapath
+holds:
 
 ```
 bpftool map dump name sockmap_vip_portset
 bpftool map dump name sockmap_ep_portset
-bpftool prog show | grep sk_skb
+bpftool map dump name sock_proxy_map
+bpftool map dump name sock_verdict_map
+bpftool map dump name sockmap_stats
 ```
 
-An empty sockhash under load means acceleration is not engaging; the traffic is
-being relayed in userspace and the configuration is having no effect.
+| map | what it holds |
+|---|---|
+| `sockmap_vip_portset` | one entry per accelerated service: VIP address and port |
+| `sockmap_ep_portset` | one entry per endpoint address and port of accelerated services |
+| `sock_proxy_map` | every live socket of an accelerated service (redirect targets) |
+| `sock_verdict_map` | the sockets whose incoming direction is accelerated |
+| `sockmap_stats` | verdict counters: redirects, peer misses, ineligible |
+
+Each portset entry carries `refs` (accelerated services using it) and
+`verdict_refs` (how many of them accelerate the direction a matching socket
+receives: requests for a VIP entry, responses for an endpoint entry).
+
+An empty `sock_proxy_map` under load means acceleration is not engaging; the
+traffic is being relayed in userspace and the configuration is having no effect.
 
 ## Testing
 
@@ -229,9 +278,11 @@ being relayed in userspace and the configuration is having no effect.
 |---|---|
 | `validation.sh` | BPF assets attach, rules register, offload engages |
 | `validation_concurrent.sh` | concurrent connection handling |
-| `validation_directional.sh` | `request` / `response` modes and portset cleanup |
-| `validation_perf.sh` | throughput, acceleration on vs off |
-| `validation-cpu.sh` | CPU comparison |
+| `validation_directional.sh` | `request` / `response` modes, the unaccelerated direction skipping the verdict, portset cleanup |
+| `validation_refcount.sh` | portset refcounts across in-place updates, mode changes and shared endpoints |
+| `validation_perf.sh` | throughput, acceleration on vs off, on a pair of services sharing every port |
+| `validation-cpu.sh` | CPU comparison on the same pair |
+| `validation-sse-cpu.sh` | CPU per token on SSE streaming, including `request` / `response` arms |
 
 `cicd/sockmap-fullproxy/minrepro/` is a standalone reproducer for the kernel
 defect. It uses no loxilb code and can be submitted upstream as-is.
