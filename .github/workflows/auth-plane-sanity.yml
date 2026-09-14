@@ -28,6 +28,7 @@ on:
       - 'pkg/user/**'
       - 'pkg/authz/**'
       - 'pkg/pgstore/**'
+      - 'pkg/jwtauth/**'
       - 'pkg/loxinet/**'
       - 'api/**'
       - 'common/**'
@@ -45,6 +46,7 @@ on:
       - 'pkg/user/**'
       - 'pkg/authz/**'
       - 'pkg/pgstore/**'
+      - 'pkg/jwtauth/**'
       - 'pkg/loxinet/**'
       - 'api/**'
       - 'common/**'
@@ -130,6 +132,23 @@ jobs:
           sudo -E env "PATH=$PATH" go vet ./pkg/aikey ./pkg/user ./pkg/authz ./pkg/pgstore
           sudo -E env "PATH=$PATH" go test -count=1 ./pkg/authz ./pkg/pgstore
           sudo -E env "PATH=$PATH" go test -count=1 -race ./pkg/aikey ./pkg/user
+
+      - name: Bearer verifier unit suite
+        # pkg/jwtauth was executed by no workflow at all. The path filter above
+        # did not name it, and the suites here run loxinet, aikey, user, authz
+        # and pgstore by package, never the verifier itself; `make test` is
+        # `go test .`, the root package only. So the token corpus, claim
+        # mapping, model authorization, key rotation, last-known-good,
+        # staleness and discovery tests compiled and passed solely when
+        # somebody ran them by hand -- for the package that decides every
+        # bearer admission. Same gap, and same reasoning, as the
+        # management-plane step below.
+        #
+        # -race because the manager runs a lifecycle goroutine per profile and
+        # the rotation and refetch tests drive it concurrently.
+        run: |
+          sudo -E env "PATH=$PATH" go vet ./pkg/jwtauth
+          sudo -E env "PATH=$PATH" go test -count=1 -race ./pkg/jwtauth
 
       - name: Management-plane API and listener-policy gates
         # Neither of these packages was executed by any workflow.
