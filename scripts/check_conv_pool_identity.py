@@ -300,6 +300,70 @@ def check_session_id_is_bound_not_dropped(failures: list[str]) -> None:
         )
 
 
+def check_health_signal_reaches_every_pool(failures: list[str]) -> None:
+    """The address-keyed health loop must not return from inside HASH_ITER.
+
+    The defect this guards actually shipped: proxy_update_ep_health's loop
+    body ended in `return 0`, so a multi-pool service applied the signal to
+    whichever pool hashed first and no other -- the failed endpoint was never
+    marked down while a healthy one was. The fix's whole contract is "every
+    pool", and the only structural way to break it again is a return (or a
+    bare break) inside the HASH_ITER body, so that is what is asserted --
+    on the masked text, at measured brace depth, never on indentation.
+    """
+    path = EBPF / BINDER_FILE
+    if not path.exists():
+        failures.append(f"{BINDER_FILE}: missing -- the datapath moved, update this gate")
+        return
+    masked = mask(path.read_text(encoding="utf-8"))
+
+    try:
+        body, base = function_body(masked, "proxy_update_ep_health_by_addr")
+    except AssertionError as problem:
+        failures.append(f"{BINDER_FILE}: {problem} -- the address-keyed health "
+                        f"entry point is the fix; its absence is the regression")
+        return
+
+    iters = list(re.finditer(r"\bHASH_ITER\s*\(", body))
+    if len(iters) != 1:
+        failures.append(
+            f"{BINDER_FILE}: proxy_update_ep_health_by_addr has {len(iters)} "
+            f"HASH_ITER loops, expected 1 -- the shape changed, re-derive this gate"
+        )
+        return
+
+    _, after_args = argument_list(body, iters[0].end() - 1)
+    open_brace = body.find("{", after_args)
+    if open_brace < 0:
+        failures.append(f"{BINDER_FILE}: HASH_ITER in proxy_update_ep_health_by_addr "
+                        f"has no brace body -- re-derive this gate")
+        return
+    depth = 0
+    close_brace = -1
+    for i in range(open_brace, len(body)):
+        if body[i] == "{":
+            depth += 1
+        elif body[i] == "}":
+            depth -= 1
+            if depth == 0:
+                close_brace = i
+                break
+    if close_brace < 0:
+        failures.append(f"{BINDER_FILE}: unbalanced HASH_ITER body in "
+                        f"proxy_update_ep_health_by_addr")
+        return
+
+    loop_body = body[open_brace : close_brace + 1]
+    escape = re.search(r"\breturn\b", loop_body)
+    if escape:
+        failures.append(
+            f"{BINDER_FILE}:{line_of(masked, base + open_brace + escape.start())} "
+            f"proxy_update_ep_health_by_addr returns from inside its HASH_ITER "
+            f"body -- only the first pool is ever touched, which is the exact "
+            f"defect this loop was rewritten to fix"
+        )
+
+
 def main() -> int:
     failures: list[str] = []
     per_file: dict[str, int] = {}
@@ -360,6 +424,7 @@ def main() -> int:
 
     check_sync_refuses_to_guess(failures)
     check_session_id_is_bound_not_dropped(failures)
+    check_health_signal_reaches_every_pool(failures)
 
     # The row must carry the identity, and a store without one must be refused
     # rather than written as a row nothing can ever match.
@@ -384,6 +449,7 @@ def main() -> int:
     # Named separately so a CI log shows these ran, rather than only a summary.
     print("PASS: HA failover refuses a conversation row whose pool it can only guess")
     print("PASS: a session id that does not fit is bound, not dropped")
+    print("PASS: a health signal reaches every pool that carries its endpoint")
     return 0
 
 

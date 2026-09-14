@@ -2314,7 +2314,13 @@ func (R *RuleH) syncEPHostState2Rule(rule *ruleEnt, checkNow bool) bool {
 							svcIP := rule.tuples.l3Dst.addr.IP
 							svcPort := rule.tuples.l4Dst.valMin
 							proto := rule.tuples.l4Prot.val
-							ret := mh.dp.DpHooks.DpLBEndpointHealthUpdate(svcIP, svcPort, proto, idx, true)
+							// Key the signal on the endpoint ADDRESS, not on idx. idx numbers
+							// na.endPoints, while the datapath numbers each model pool's eps[]
+							// from 0 separately -- so on a multi-pool service an index names a
+							// position in a list this caller never identified, and the datapath
+							// refuses it rather than guessing. The address names the same backend
+							// in every pool that carries it.
+							ret := mh.dp.DpHooks.DpLBEndpointHealthUpdateByAddr(svcIP, svcPort, proto, n.xIP, n.xPort, true)
 							if ret == 0 {
 								// Lightweight update succeeded - no need for full rule sync
 								tk.LogIt(tk.LogDebug, "P2: Lightweight EP health update succeeded (no full sync needed)\n")
@@ -2338,7 +2344,13 @@ func (R *RuleH) syncEPHostState2Rule(rule *ruleEnt, checkNow bool) bool {
 							svcIP := rule.tuples.l3Dst.addr.IP
 							svcPort := rule.tuples.l4Dst.valMin
 							proto := rule.tuples.l4Prot.val
-							ret := mh.dp.DpHooks.DpLBEndpointHealthUpdate(svcIP, svcPort, proto, idx, false)
+							// Key the signal on the endpoint ADDRESS, not on idx. idx numbers
+							// na.endPoints, while the datapath numbers each model pool's eps[]
+							// from 0 separately -- so on a multi-pool service an index names a
+							// position in a list this caller never identified, and the datapath
+							// refuses it rather than guessing. The address names the same backend
+							// in every pool that carries it.
+							ret := mh.dp.DpHooks.DpLBEndpointHealthUpdateByAddr(svcIP, svcPort, proto, n.xIP, n.xPort, false)
 							if ret == 0 {
 								// Lightweight update succeeded - no need for full rule sync
 								tk.LogIt(tk.LogDebug, "P2: Lightweight EP health update succeeded (no full sync needed)\n")

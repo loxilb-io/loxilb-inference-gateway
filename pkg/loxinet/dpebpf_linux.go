@@ -43,6 +43,10 @@ struct proxy_ent {
 };
 int proxy_update_ep_health(struct proxy_ent *key, int ep_index, uint8_t inactive);
 int proxy_update_ep_health_by_ip(struct proxy_ent *key, uint32_t ep_ip, uint8_t inactive);
+// Health keyed on the endpoint ADDRESS. An endpoint index numbers one pool's eps[], and
+// every model pool on a service starts at 0, so an index is refused once a service holds
+// more than one pool. An address names the same backend in every pool that carries it.
+int proxy_update_ep_health_by_addr(struct proxy_ent *key, uint32_t ep_ip, uint16_t ep_port, uint8_t inactive);
 int proxy_update_kv_exact_contract(struct proxy_ent *key, uint32_t binding_gen, uint8_t api_mode, uint8_t eligible, uint64_t *applied);
 int kv_compute_block_hashes(uint8_t hash_algo, const uint32_t *tokens, int n_tokens, uint32_t block_size, uint8_t *out_hashes, int hash_stride, int max_blocks);
 int proxy_set_drain_policy(struct proxy_ent *key, unsigned int policy, uint32_t timeout_sec);
@@ -2063,6 +2067,78 @@ func (e *DpEbpfH) DpLBEndpointHealthUpdate(svcIP net.IP, svcPort uint16, proto u
 
 	tk.LogIt(tk.LogDebug, "[DP] P2: Sockproxy EP health updated - VIP=%v, port=%v, ep=%d, inactive=%v\n",
 		svcIP, svcPort, epIndex, inactive)
+
+	return 0
+}
+
+// DpLBEndpointHealthUpdateByAddr - endpoint health keyed on the endpoint ADDRESS.
+//
+// DpLBEndpointHealthUpdate above passes a pool-local endpoint index. A service
+// with model-keyed rules holds several endpoint pools, each numbering its own
+// eps[] from 0, so an index names a position in a list the caller never
+// identified. The datapath refuses it on a multi-pool service rather than
+// guessing (-EINVAL), and the caller then falls back to a full rule sync --
+// correct, but the lightweight path is lost. An address names the same backend
+// in every pool that carries it, so it needs no pool to resolve against and
+// reaches all of them.
+//
+// Parameters:
+//   - svcIP: Service VIP
+//   - svcPort: Service port
+//   - proto: Protocol (TCP=6, UDP=17)
+//   - epIP: Endpoint IP address
+//   - epPort: Endpoint port; 0 matches any port on the address (a host-level
+//     signal), non-zero matches exactly so a probe cannot mark a sibling
+//     listener on the same host down
+//   - inactive: true = mark inactive, false = mark active
+//
+// Returns: 0 on success, -1 on error
+func (e *DpEbpfH) DpLBEndpointHealthUpdateByAddr(svcIP net.IP, svcPort uint16, proto uint8, epIP net.IP, epPort uint16, inactive bool) int {
+	// Build proxy key for sockproxy lookup
+	var proxyKey C.struct_proxy_ent
+
+	// Convert service IP to uint32 (IPv4 only for now)
+	if svcIP.To4() == nil {
+		tk.LogIt(tk.LogError, "[DP] P2: IPv6 not yet supported for health updates\n")
+		return -1
+	}
+	proxyKey.xip = C.uint(tk.IPtonl(svcIP))
+	proxyKey.xport = C.ushort(tk.Htons(svcPort))
+	proxyKey.protocol = C.uchar(proto)
+
+	if epIP.To4() == nil {
+		tk.LogIt(tk.LogError, "[DP] P2: IPv6 endpoint not yet supported for health updates\n")
+		return -1
+	}
+
+	// Convert with the SAME functions the rule-add path used to write eps[],
+	// so the compare is exact by construction rather than by convention:
+	// rules.go copies xPort raw into the work queue, DpLBRuleAdd stores it as
+	// tk.Htons(k.XPort) into nat_xport, and llb_conv_nat2proxy copies
+	// nat_xport raw into eps[].xport (proxy_setup_ep_connect then assigns it
+	// straight to sin_port, confirming network order). The address half has a
+	// live witness: DpLBEndpointHostStateUpdate passes tk.IPtonl(epIP) against
+	// the same eps[].xip compare.
+	epIPUint := C.uint(tk.IPtonl(epIP))
+	epPortNet := C.ushort(tk.Htons(epPort))
+
+	// Convert inactive bool to C uint8_t
+	var inact C.uchar
+	if inactive {
+		inact = 1
+	} else {
+		inact = 0
+	}
+
+	ret := C.proxy_update_ep_health_by_addr(&proxyKey, epIPUint, epPortNet, inact)
+	if ret != 0 {
+		tk.LogIt(tk.LogError, "[DP] P2: Failed to update sockproxy ep health - VIP=%v, port=%v, ep=%v:%v\n",
+			svcIP, svcPort, epIP, epPort)
+		return -1
+	}
+
+	tk.LogIt(tk.LogDebug, "[DP] P2: Sockproxy EP health updated - VIP=%v, port=%v, ep=%v:%v, inactive=%v\n",
+		svcIP, svcPort, epIP, epPort, inactive)
 
 	return 0
 }
