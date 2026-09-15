@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-15T08:25:14+00:00",
-  "source_revision": "73055b906ef68309069998ce16b60248556ebe85"
+  "generated_at": "2026-09-15T08:38:13+00:00",
+  "source_revision": "4e28d48f81bda8c1698aa424c2a00be48e6ed04b"
  },
  "contract": {
   "total": 240,
@@ -27,7 +27,7 @@
   "default_unreferenced": 6,
   "writer_classified": 184,
   "writer_unclassified": 0,
-  "writer_unverified": 70
+  "writer_unverified": 67
  },
  "families": [
   {
@@ -6880,7 +6880,7 @@
      "entry_point": "main"
     }
    ],
-   "verification_evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-connect-failover', WP-11): same M08 CPU mock P/D bed, image and custody as the other WP-11 rows; harness md5 19eea6ec4315 identical at author and bed. THIS FAMILY IS NOT SINGLE-WRITER and the arm was built around that. Four atomic_fetch_add sites exist -- sockproxy_ep.c:1172 ('US-PD804: P/D mid-cycle failover ->'), sockproxy_ep.c:1269 ('LB mid-cycle failover: EP%d unreachable'), sockproxy_pd_vllm.c:686 ('prefill mid-request failover: EP%d died -> EP%d') and the engine-gated sockproxy_pd_sglang.c:944 -- so a bare delta does not say WHICH writer moved and 'the family moves' would overclaim. The arm therefore counts all three reachable log lines separately. SITE PROVEN: sockproxy_pd_vllm.c:686, the vLLM prefill mid-request re-dispatch. Trigger driven: all three prefill EPs put into 'zerobyte', so connect SUCCEEDS (the stub listens) and the backend then dies mid-request; the deferred re-dispatch reconnects to a re-selected EP successfully, which is what site 686 counts. FAULT ARM: delta 3.0. CONTROL ARM (healthy prefill EPs, IDENTICAL 14 s settle): 3x200, counter FLAT at 0.0 and ALL THREE log sites silent at (3,0,0) -> (3,0,0). IDENTITY delta counter == count('prefill mid-request failover') == 3 == 3. PREDICTED delta == N (one successful re-dispatch per client request), exact. SITE SPECIFICITY HELD: delta at sockproxy_ep.c:1172 and :1269 both ZERO, so this delta identifies one writer rather than the family as a whole -- the other two reachable sites remain UNPROVEN at runtime and would need a failover that succeeds onto a HEALTHY EP (site 1172) and a plain-LB mid-cycle failover (site 1269). Note the clients still ended at 503: the failover succeeded AT CONNECT and the request then died again on the replacement EP, which is precisely what a 'reconnect succeeded' counter should record, and is why the client receipt cannot be this family's oracle. 8/8 checks. HOW THE SITE WAS FOUND: the connect-retry arm's baseline showed this counter already at 3.0 when the session began at 0 -- the prefill-died arm had moved it as a side effect -- and the log showed 3 lines at site 686 with 0 at the other two. Polled-pipeline caveat as per the decode row."
+   "verification_evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-connect-failover', WP-11): same M08 CPU mock P/D bed, image and custody as the other WP-11 rows; harness md5 19eea6ec4315 identical at author and bed. THIS FAMILY IS NOT SINGLE-WRITER and the arm was built around that. Four atomic_fetch_add sites exist -- sockproxy_ep.c:1172 ('US-PD804: P/D mid-cycle failover ->'), sockproxy_ep.c:1269 ('LB mid-cycle failover: EP%d unreachable'), sockproxy_pd_vllm.c:686 ('prefill mid-request failover: EP%d died -> EP%d') and sockproxy_pd_sglang.c:944 -- so a bare delta does not say WHICH writer moved and 'the family moves' would overclaim. The arm therefore counts all three reachable log lines separately. SECOND SITE PROVEN 2026-09-15 by the sg-room-retry arm (E.5 row 'wp11-sg-room-retry'): sockproxy_pd_sglang.c:944 is the statement immediately after the pd_sg_room_retry increment at :943, in the same block with no branch between them, and that arm measured delta failover == delta room_retry == 3 -- equality is what makes it a per-SITE claim rather than a family-level one. That site was recorded here as 'engine-gated'; it is not, and it was driven on the CPU mock with no SGLang engine. Sites sockproxy_ep.c:1172 and :1269 REMAIN UNPROVEN at runtime. SITE PROVEN: sockproxy_pd_vllm.c:686, the vLLM prefill mid-request re-dispatch. Trigger driven: all three prefill EPs put into 'zerobyte', so connect SUCCEEDS (the stub listens) and the backend then dies mid-request; the deferred re-dispatch reconnects to a re-selected EP successfully, which is what site 686 counts. FAULT ARM: delta 3.0. CONTROL ARM (healthy prefill EPs, IDENTICAL 14 s settle): 3x200, counter FLAT at 0.0 and ALL THREE log sites silent at (3,0,0) -> (3,0,0). IDENTITY delta counter == count('prefill mid-request failover') == 3 == 3. PREDICTED delta == N (one successful re-dispatch per client request), exact. SITE SPECIFICITY HELD: delta at sockproxy_ep.c:1172 and :1269 both ZERO, so this delta identifies one writer rather than the family as a whole -- the other two reachable sites remain UNPROVEN at runtime and would need a failover that succeeds onto a HEALTHY EP (site 1172) and a plain-LB mid-cycle failover (site 1269). Note the clients still ended at 503: the failover succeeded AT CONNECT and the request then died again on the replacement EP, which is precisely what a 'reconnect succeeded' counter should record, and is why the client receipt cannot be this family's oracle. 8/8 checks. HOW THE SITE WAS FOUND: the connect-retry arm's baseline showed this counter already at 3.0 when the session began at 0 -- the prefill-died arm had moved it as a side effect -- and the log showed 3 lines at site 686 with 0 at the other two. Polled-pipeline caveat as per the decode row."
   },
   {
    "name": "loxilb_pd_connect_retry_same_ep_ok_total",
@@ -8229,7 +8229,7 @@
    "source": "api/prometheus/sockproxy_metrics.go:725",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
-   "implementation_status": "writer-mapped",
+   "implementation_status": "verified-runtime",
    "activation_precondition": "",
    "writer_sources": [
     {
@@ -8238,7 +8238,7 @@
      "file": "api/prometheus/sockproxy_metrics.go",
      "def_line": 943,
      "writes": "pdSgPrefillRejectRelayTotal",
-     "note": "SGLang-specific: the C counter only moves for an SGLang P/D deployment, so on any other engine this stays 0 while still being exported"
+     "note": "SGLang-specific in the sense that the C counter only moves on a rule whose kvEngineType is sglang -- a per-rule API field, NOT a property of the deployment. Proven driven on a CPU mock with no SGLang engine present; on any other dialect this stays 0 while still being exported."
     },
     {
      "symbol": "Init",
@@ -8276,7 +8276,7 @@
      "entry_point": "main"
     }
    ],
-   "verification_evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:1138, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M16 owns the runtime proof."
+   "verification_evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-sg-reject-relay', WP-11): M08 CPU mock P/D bed (scenario cicd/vllm-kvcache-routing-cpu, image tag wp11-u24, digest sha256:fd072b4b7a0a), harness md5 c5a47bce7642 (verify) / 1eea0a2a5fd3 (backend) / 4bcc238fdc6f (swap) / d23a567a6b06 (marker driver), identical at author and bed. 23/23 checks. OVERTURNS THE 'ENGINE-GATED' LABEL A FIFTH TIME: carried as needing an SGLang engine purely because of the pd_sg_* prefix. The gate (sockproxy_pd_sglang.c:312-331) is !drain_handled && status>=400 && pd_sg_decode_untouched() && status<500 && first_feed && !drain_desync -- the rule's dialect plus what the backend SAYS and HOW IT FRAMES IT. No engine internals, and no engine of any dialect took part. FOUR STAGES over one byte-identical request body, decode legs held silent in 'slowok' throughout so the only variable is what the prefill leg answers. A (prefill 200): counter FLAT, both log lines flat, 3x200, client served by decode. B (prefill 500): counter FLAT -- and the control is NON-VACUOUS BY MEASUREMENT because the else-branch of the same if logs instead, 3 'aborting decode leg' lines, client 502 pd_sg_prefill_failed. C (prefill 400): delta 3.0 == n, 3 relay lines, and the CLIENT RECEIVED 400 CARRYING THE ORIGIN'S OWN MARKER -- response-path proof the relay was verbatim rather than a gateway-synthesised error. B AND C DIFFER IN A SINGLE INTEGER IN THE BACKEND'S STATUS LINE and in nothing else. \ud83d\udea8 PATTERN COLLISION FOUND AND GUARDED: the relay log line CONTAINS the abort line's phrase verbatim ('... relaying origin reject verbatim, aborting decode leg ...'), so counting 'aborting decode leg' counts BOTH writers -- the same substring-collision class as the session-21 admission shed/overflow pair. The discriminator is the em dash immediately before 'aborting', and the arm asserts the arithmetic identity loose == relay + strict on EVERY stage, so a pattern that silently stopped matching fails the run instead of under-counting the control. D1 (the same 400 at the vllm fixture rule): counter and relay log FLAT, and the DECODE leg served the client 200 without the origin marker -- same backend, same body, only the rule's dialect differs from C. \ud83d\udd11 That vLLM behaviour is DOCUMENTED, NOT A GAP: sockproxy_pd_vllm.c:160-176 classifies <400 as a breaker success, >=500 as an origin error, and leaves 4xx NEUTRAL ('client faults'), after which the flow continues to the decode leg's recompute. D2 (prefill 500 at the vllm rule) supplies the non-vacuity that D1 alone cannot: the vLLM dialect's own prefill-status site logged 3 times, proving that path DOES read the prefill response, so its silence on a 4xx is a classification decision rather than a blind spot. An earlier run of this arm FAILED on a weaker D that asserted 'some request returned non-200' as a proxy for 'something happened'; that assertion was wrong about the product, and it was replaced with these two rather than relaxed. Polled-pipeline caveat as per the decode row."
   },
   {
    "name": "loxilb_pd_sg_room_retry_total",
@@ -8296,7 +8296,7 @@
    "source": "api/prometheus/sockproxy_metrics.go:717",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
-   "implementation_status": "writer-mapped",
+   "implementation_status": "verified-runtime",
    "activation_precondition": "",
    "writer_sources": [
     {
@@ -8305,7 +8305,7 @@
      "file": "api/prometheus/sockproxy_metrics.go",
      "def_line": 943,
      "writes": "pdSgRoomRetryTotal",
-     "note": "SGLang-specific: the C counter only moves for an SGLang P/D deployment, so on any other engine this stays 0 while still being exported"
+     "note": "SGLang-specific in the sense that the C counter only moves on a rule whose kvEngineType is sglang -- a per-rule API field, NOT a property of the deployment. Proven driven on a CPU mock with no SGLang engine present; on any other dialect this stays 0 while still being exported."
     },
     {
      "symbol": "Init",
@@ -8343,7 +8343,7 @@
      "entry_point": "main"
     }
    ],
-   "verification_evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:1134, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M16 owns the runtime proof."
+   "verification_evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-sg-room-retry', WP-11): M08 CPU mock P/D bed (scenario cicd/vllm-kvcache-routing-cpu, image tag wp11-u24, digest sha256:fd072b4b7a0a), harness md5 3dd30733f283 / backend bf147d41cb0d / swap fd12870dd305 identical at author and bed. 16/16 checks on the first run. OVERTURNS THE 'ENGINE-GATED' LABEL A FOURTH TIME: this family was carried as needing an SGLang engine on the GPU fleet purely because it is named pd_sg_*. The gate (sockproxy_pd_sglang.c:626-633, entered from sockproxy_http.c:4811) reads the rule's dialect, the request's phase and saved buffers, a DRAIN leg that dies, and pd_sg_decode_untouched() -- backend behaviour a mock supplies exactly as a worker would. No engine of any dialect took part. DRIVE: a second rule on :8081 cloned from the fixture with kvEngineType=sglang (kvHashAlgo omitted, which the server requires for that dialect) over the same six endpoints; all three prefill EPs in 'zerobyte' so the first dispatch always lands on a dying drain leg, and all three decode EPs in a new 'slowok' mode, silent for 8s. The stall is load-bearing: a dual dispatch feeds both legs at once, so with a normal decode backend pd_sg_decode_untouched() is decided by a RACE, and losing it yields a flat counter indistinguishable from 'cannot be driven'. FAULT: delta 3.0 == n, exactly one retry per request (budget 1). IDENTITY delta counter == count of the counted block's own log line == 3 == 3, matched on 'died -> pair(EP', which is DISCRIMINATING: the bare string 'pair retry' stood at 9 on the same log (counted + deferred + leg-close) and sockproxy_pd_vllm.c:687 emits 'died -> EP' beside its own failover increment, so either looser pattern would have over-counted across writers and dialects. DRIVE-SHAPE ORACLE: the enqueue line 'pair retry deferred' moved 3, so a flat counter would have read as 'retried but could not re-pair' rather than 'the trigger was never reached'; 'pair retry exhausted' stayed 0. RECEIPT: 3/3 clients got 502 pd_sg_prefill_failed -- the retry's own fresh prefill dies with the budget spent. CONTROL (prefill EPs healthy, decode legs identically stalled, identical 14s settle): 3x200, no receipt, counter FLAT 0.0, both log lines flat including the deferral. SPECIFICITY: the identical prefill fault at the vllm fixture rule on :8080 left this family and its log line at zero while pd_prefill_ep_died moved 6.0, so the flat reading is a dialect boundary and not a dead arm. No circuit-breaker flip confounded the run (cb_flips 0.0 -> 0.0). Polled-pipeline caveat as per the decode row."
   },
   {
    "name": "loxilb_pd_trie_nodes",
@@ -8430,7 +8430,7 @@
    "source": "api/prometheus/sockproxy_metrics.go:741",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
-   "implementation_status": "writer-mapped",
+   "implementation_status": "verified-runtime",
    "activation_precondition": "",
    "writer_sources": [
     {
@@ -8439,7 +8439,7 @@
      "file": "api/prometheus/sockproxy_metrics.go",
      "def_line": 943,
      "writes": "pdTrtCtxEarlyExitTotal",
-     "note": "SGLang-specific: the C counter only moves for an SGLang P/D deployment, so on any other engine this stays 0 while still being exported"
+     "note": "single C writer, pd_trt_early_exit_relay in the TRT-LLM dialect module, reached from the sequential prefill-then-decode handler once the buffered context response is parsed. The earlier note on this row read 'SGLang-specific: the C counter only moves for an SGLang P/D deployment' \u2014 that was a copy of the pd_sg_* note onto a pd_trt_* row and was wrong twice over: this family is not on the SGLang path at all, and its gate reads no engine internals of any dialect. Driven runtime evidence below."
     },
     {
      "symbol": "Init",
@@ -8477,7 +8477,7 @@
      "entry_point": "main"
     }
    ],
-   "verification_evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:1146, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M16 owns the runtime proof."
+   "verification_evidence": "runtime evidence, M08 CPU mock P/D bed (scenario cicd/vllm-kvcache-routing-cpu, image tag wp11-u24, digest sha256:fd072b4b7a0a, host-build md5 83754e4fcb5d matched inside the running datapath container), E.5 row 'wp11-trt-early-exit', 15/15 checks. Three stages over ONE request body, each isolating a single term of the gate is_trt && prefill_status==200 && ctx_early_exit_check(prefill_body). A: the campaign's vllm rule, context leg answering finish_reason=stop \u2014 counter flat 0, log flat 0, all three requests answered 200 by the DECODE leg. B: a second rule on another port carrying kvEngineType=trtllm (immutable after create, hence a second rule) with the context leg answering finish_reason=length \u2014 counter flat 0, log flat 0, again served by the decode leg, so the flow demonstrably reached and passed the check. C: the same trtllm rule, same body, context leg answering finish_reason=stop \u2014 delta exactly 3, exactly 3 datapath lines '[PD_TRT_EARLY_EXIT] context response finished the request', and all three clients received the CONTEXT response verbatim rather than a generated one, which is what a skipped generation leg looks like on the response path. B and C differ in one JSON string inside the backend's reply and in nothing else. This family had been carried as the one genuinely engine-gated member of the remaining pd_* pool; no TensorRT-LLM engine and no GPU took part in the run. Metrics path and datapath log agree at 3 == 3 == n; collector period 10s, both halves given the same settle window."
   },
   {
    "name": "loxilb_persist_total",
