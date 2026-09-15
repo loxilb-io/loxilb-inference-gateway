@@ -44,6 +44,12 @@ note_case() {
   local id="${1%% *}"
   case "$id" in
     [A-Z][0-9]|[A-Z][0-9][0-9]) ;;
+    # The QoS ladder's IDs are three-part and would not match the letter+digit
+    # shapes above. A label this function declines is not an error anywhere —
+    # it is simply never recorded, so Z1/Z2 cannot notice the case being
+    # deleted, and the block would be exactly as unprotected as if it carried
+    # no label at all.
+    QOS-[A-Z][A-Z][A-Z]-[0-9][0-9][0-9]) ;;
     *) return ;;
   esac
   case " $SEEN_CASES " in
@@ -1434,13 +1440,314 @@ chk_code   "T4 403 status" 403 "$r"
 chk_has    "T4 model_not_allowed code" "model_not_allowed" "$r"
 h2_receipt "T4 h2 backend received nothing" 0
 
+
+# ---------------------------------------------------------------------------
+# == QOS: the QoS ladder at runtime ==
+#
+# Everything above this point proves the ladder's CONFIGURATION surface or the
+# one rung keyless traffic has (N1-N4, the per-VIP shared bucket). The rungs
+# that decide credentialed traffic -- the explicit per-user row, the
+# configured default, the tenant ceiling and the key's own limit -- had never
+# been driven. The management-API block asserts that a row can be written and
+# read back; a row that is written, read back, and then ignored by the gate
+# passes every one of those assertions.
+#
+# The ladder resolves each dimension as: explicit row -> configured default
+# (rule scope over global, field by field) -> unlimited. The cases below walk
+# that resolution one rung at a time, and each is decided by a REFUSAL the
+# gate must produce, never by traffic merely succeeding: an admitted request
+# is the same observation whether the limit was respected or absent, so the
+# permissive half of every case is paired with a refusal that could only come
+# from the rung under test.
+#
+# Identities: tenant-q's q1..q8 and tenant-qt's t1/t2, used by nothing else.
+# Every rung is a per-(tenant, user) or per-tenant token bucket, so a case
+# that borrowed alice would score whatever spend the A block left behind.
+# ---------------------------------------------------------------------------
+
+QOS_T="tenant-q"
+QOS_TT="tenant-qt"
+QOS_MGMT="http://localhost:11111/netlox/v1"
+
+# qos_cfg <method> <path> [body] -- the management surface, from inside llb1.
+# Publishes QOS_CFG_CODE and QOS_CFG_BODY.
+#
+# NEVER call this inside $( ). A command substitution is a subshell and a
+# global assigned there dies with it, so the next assertion would silently
+# score the PREVIOUS call's status -- a whole block of "the write succeeded"
+# passes that measured one stale result.
+QOS_CFG_FRESH=0
+qos_cfg() {
+  local method=$1 path=$2 body=${3:-} out
+  if [ -n "$body" ]; then
+    out=$($hexec llb1 curl -s -w '\nhttp_code=%{http_code}' -X "$method" \
+      "$QOS_MGMT$path" -H "Content-Type: application/json" -d "$body" 2>/dev/null)
+  else
+    out=$($hexec llb1 curl -s -w '\nhttp_code=%{http_code}' -X "$method" \
+      "$QOS_MGMT$path" 2>/dev/null)
+  fi
+  QOS_CFG_BODY="$out"
+  QOS_CFG_CODE=$(http_code_of "$out")
+  QOS_CFG_FRESH=1
+}
+
+# qos_cfg_ok <name> -- the configuration step a runtime case rests on really
+# happened. A silently-failed write is the worst outcome available here: the
+# limit is simply absent, every request is admitted, and the case reports the
+# product as unbounded when it was never asked to bound anything.
+#
+# The freshness flag is one-shot, so scoring twice without an intervening call
+# is a failure rather than a repeat of the last answer.
+qos_cfg_ok() {
+  note_case "$1"
+  if [ "$QOS_CFG_FRESH" != "1" ]; then
+    echo "  [FAIL] $1 - no fresh config result to score; the call did not run, or ran inside a subshell"
+    FAIL=$((FAIL + 1)); return
+  fi
+  QOS_CFG_FRESH=0
+  case "$QOS_CFG_CODE" in
+    2*) echo "  [PASS] $1 (HTTP $QOS_CFG_CODE)"; PASS=$((PASS + 1)) ;;
+    *)  echo "  [FAIL] $1 - HTTP ${QOS_CFG_CODE:-none}: $(echo "$QOS_CFG_BODY" | tr '\n' ' ' | head -c 200)"
+        FAIL=$((FAIL + 1)) ;;
+  esac
+}
+
+# qos_pair <port> <cred-header-1> <cred-header-2> -- two requests, back to
+# back, from the credentials named. Publishes QP1/QP2 and their receipt
+# nonces, plus the gap between the two requests' departures.
+#
+# The nonce is captured after each request because reading it CONSUMES it:
+# the second request overwrites the file, and a receipt assertion made later
+# would otherwise score the wrong request.
+qos_pair() {
+  local port=$1 h1=$2 h2=$3 t0 t1
+  t0=$(date +%s%N)
+  QP1=$(req "$port" "$body_llama" -H "$h1")
+  QP1_NONCE=$(last_nonce)
+  t1=$(date +%s%N)
+  QP2=$(req "$port" "$body_llama" -H "$h2")
+  QP2_NONCE=$(last_nonce)
+  QP_GAP_MS=$(( (t1 - t0) / 1000000 ))
+}
+
+# qos_triple <port> <cred-header> -- three back-to-back requests from one
+# credential, for the cases whose claim is that a limit did NOT bind.
+qos_triple() {
+  local port=$1 h=$2
+  QT1=$(req "$port" "$body_llama" -H "$h"); QT1_NONCE=$(last_nonce)
+  QT2=$(req "$port" "$body_llama" -H "$h"); QT2_NONCE=$(last_nonce)
+  QT3=$(req "$port" "$body_llama" -H "$h"); QT3_NONCE=$(last_nonce)
+}
+
+# qos_gap_ok <name> -- a 1-rps bucket hands back a token every second, so the
+# second request of a pair only decides anything if it left inside that
+# second. A slower pair did not measure the product at all, and reporting its
+# admitted second request as "the limit is missing" would turn a slow bed
+# into a product defect. An unreadable measurement is a failure, not a pass.
+QOS_GAP_BUDGET_MS=800
+qos_gap_ok() {
+  note_case "$1"
+  if [ -z "$QP_GAP_MS" ]; then
+    echo "  [FAIL] $1 - no inter-request gap recorded; the pair never ran"
+    FAIL=$((FAIL + 1)); return
+  fi
+  if [ "$QP_GAP_MS" -lt "$QOS_GAP_BUDGET_MS" ]; then
+    echo "  [PASS] $1 (${QP_GAP_MS}ms apart, inside the 1-rps refill)"; PASS=$((PASS + 1))
+  else
+    echo "  [FAIL] $1 - the requests left ${QP_GAP_MS}ms apart, at or past the ${QOS_GAP_BUDGET_MS}ms budget:"
+    echo "         the bucket refilled between them, so this pair measured nothing"
+    FAIL=$((FAIL + 1))
+  fi
+}
+
+echo ""
+echo "== QOS: the QoS ladder at runtime (tenant-q / tenant-qt) =="
+echo "   Stage 1 runs with NO defaults row anywhere, so an identity with no"
+echo "   explicit row falls through to unlimited and every refusal below can"
+echo "   only have come from the rung the case configured."
+
+echo ""
+echo "QOS-RPS-001: an explicit per-user row throttles the user it names, and"
+echo "             only that user"
+qos_cfg POST /config/ai/user/ratelimit \
+  "{\"tenant_id\":\"$QOS_T\",\"user_id\":\"$SUB_q1\",\"rps\":1}"
+qos_cfg_ok   "QOS-RPS-001 explicit rps=1 row for q1 accepted"
+qos_pair 2040 "Authorization: Bearer $TOK_q1" "Authorization: Bearer $TOK_q1"
+qos_gap_ok   "QOS-RPS-001 the pair decided inside one refill"
+chk_code     "QOS-RPS-001 q1's first request admitted" 200 "$QP1"
+chk_receipt  "QOS-RPS-001 q1's first request reached the backend" 1 "$QP1_NONCE"
+chk_code     "QOS-RPS-001 q1's second request refused" 429 "$QP2"
+chk_has      "QOS-RPS-001 the refusal names the user rung" "user_rate_limit_exceeded" "$QP2"
+chk_receipt  "QOS-RPS-001 q1's second request never reached the backend" 0 "$QP2_NONCE"
+echo "  control: q2 shares q1's tenant but has no row of its own"
+qos_pair 2040 "Authorization: Bearer $TOK_q2" "Authorization: Bearer $TOK_q2"
+chk_code     "QOS-RPS-001 q2's first request admitted" 200 "$QP1"
+chk_code     "QOS-RPS-001 q2's second request admitted - the row bound q1 alone" 200 "$QP2"
+chk_receipt  "QOS-RPS-001 q2's second request reached the backend" 1 "$QP2_NONCE"
+
+echo ""
+echo "QOS-RPS-004: the tenant ceiling caps the SUM of its users"
+echo "             t1 and t2 have no rows of their own and no default stands"
+echo "             above them, so nothing but the tenant bucket can refuse t2."
+qos_cfg POST /config/ai/tenant/ratelimit \
+  "{\"tenant_id\":\"$QOS_TT\",\"rps\":1,\"tokens_per_min\":100000}"
+qos_cfg_ok   "QOS-RPS-004 tenant rps=1 row for tenant-qt accepted"
+qos_pair 2040 "Authorization: Bearer $TOK_t1" "Authorization: Bearer $TOK_t2"
+qos_gap_ok   "QOS-RPS-004 the pair decided inside one refill"
+chk_code     "QOS-RPS-004 t1 admitted" 200 "$QP1"
+chk_code     "QOS-RPS-004 t2 refused by its tenant's ceiling, not by its own" 429 "$QP2"
+chk_has      "QOS-RPS-004 the refusal names the tenant rung" "tenant_quota_exceeded" "$QP2"
+chk_not_has  "QOS-RPS-004 the user rung did not decide it" "user_rate_limit_exceeded" "$QP2"
+chk_receipt  "QOS-RPS-004 t2 never reached the backend" 0 "$QP2_NONCE"
+qos_cfg POST /config/ai/tenant/ratelimit \
+  "{\"tenant_id\":\"$QOS_TT\",\"rps\":0,\"tokens_per_min\":100000}"
+qos_cfg_ok   "QOS-RPS-004 the tenant ceiling is lifted again"
+
+echo ""
+echo "QOS-RPS-005: the key's own limit binds the key arm, the user rung binds"
+echo "             the bearer arm, and neither reaches across"
+echo "             Port 2041 is apikey-or-jwt: a present X-Api-Key decides"
+echo "             alone, so both credential types are exercised on ONE"
+echo "             service and the arm is the only variable."
+echo "  before: the key was created with no rate limit"
+qos_pair 2041 "X-Api-Key: $QOS_RAW_KEY" "X-Api-Key: $QOS_RAW_KEY"
+chk_code     "QOS-RPS-005 the unpatched key's first request admitted" 200 "$QP1"
+chk_code     "QOS-RPS-005 the unpatched key's second request admitted" 200 "$QP2"
+qos_cfg PATCH "/config/ai/apikey/$QOS_KEY_ID" '{"rate_limit_rps":1}'
+qos_cfg_ok   "QOS-RPS-005 PATCH the key's rps to 1 accepted"
+qos_pair 2041 "X-Api-Key: $QOS_RAW_KEY" "X-Api-Key: $QOS_RAW_KEY"
+qos_gap_ok   "QOS-RPS-005 the pair decided inside one refill"
+chk_code     "QOS-RPS-005 the patched key's first request admitted" 200 "$QP1"
+chk_code     "QOS-RPS-005 the patched key's second request refused" 429 "$QP2"
+# "rate_limit_exceeded" is a substring of "user_rate_limit_exceeded", so the
+# presence check alone cannot tell the key rung from the user rung. The
+# absence check is what makes the pair decisive.
+chk_has      "QOS-RPS-005 the refusal names a rate rung" "rate_limit_exceeded" "$QP2"
+chk_not_has  "QOS-RPS-005 it was the KEY rung, not the user rung" "user_rate_limit_exceeded" "$QP2"
+chk_receipt  "QOS-RPS-005 the refused key request never reached the backend" 0 "$QP2_NONCE"
+echo "  control: a bearer credential on the SAME service is untouched by it"
+r=$(req 2041 "$body_llama" -H "Authorization: Bearer $TOK_q2")
+n=$(last_nonce)
+chk_code     "QOS-RPS-005 the bearer arm is not bound by the key's limit" 200 "$r"
+chk_receipt  "QOS-RPS-005 the bearer request reached the backend" 1 "$n"
+
+echo ""
+echo "   Stage 2 installs a global defaults row (default_user_rps=1) and the"
+echo "   two rule-scope rows that disagree with it. The global row bounds"
+echo "   every attributed identity on every service, so it is installed here"
+echo "   -- after the blocks that drive alice and bob -- and removed again by"
+echo "   QOS-DEF-003 before the run ends."
+qos_cfg POST /config/ai/ratelimit/defaults '{"scope":"global","default_user_rps":1}'
+qos_cfg_ok   "QOS-DEF-001 the global defaults row is installed"
+qos_cfg POST /config/ai/ratelimit/defaults \
+  '{"scope":"rule","rule_ident":"10.10.10.254:2059","default_user_rps":9}'
+qos_cfg_ok   "QOS-DEF-001 the rule row for :2059 sets the user rps"
+qos_cfg POST /config/ai/ratelimit/defaults \
+  '{"scope":"rule","rule_ident":"10.10.10.254:2060","default_user_tpm":100000}'
+qos_cfg_ok   "QOS-DEF-002 the rule row for :2060 exists but leaves the user rps zero"
+
+echo ""
+echo "QOS-RPS-002: a user with no explicit row follows the default, and each"
+echo "             such user gets its OWN bucket"
+qos_pair 2040 "Authorization: Bearer $TOK_q5" "Authorization: Bearer $TOK_q5"
+qos_gap_ok   "QOS-RPS-002 the pair decided inside one refill"
+chk_code     "QOS-RPS-002 q5's first request admitted" 200 "$QP1"
+chk_code     "QOS-RPS-002 q5's second request refused by the default" 429 "$QP2"
+chk_has      "QOS-RPS-002 the refusal names the user rung" "user_rate_limit_exceeded" "$QP2"
+echo "  isolation: q6 shares the tenant and the default, and is unaffected by"
+echo "  q6 is refused by nothing here - a shared bucket would have refused it"
+r=$(req 2040 "$body_llama" -H "Authorization: Bearer $TOK_q6")
+n=$(last_nonce)
+chk_code     "QOS-RPS-002 q6's bucket is untouched by q5's exhaustion" 200 "$r"
+chk_receipt  "QOS-RPS-002 q6's request reached the backend" 1 "$n"
+
+echo ""
+echo "QOS-RPS-003: an explicit row wins over the default, and deleting it"
+echo "             puts the identity back under the default"
+echo "             This is the runtime half of the management block's DELETE"
+echo "             case, which could only assert that the row was gone."
+qos_cfg POST /config/ai/user/ratelimit \
+  "{\"tenant_id\":\"$QOS_T\",\"user_id\":\"$SUB_q3\",\"rps\":9}"
+qos_cfg_ok   "QOS-RPS-003 explicit rps=9 row for q3 accepted"
+qos_triple 2040 "Authorization: Bearer $TOK_q3"
+chk_code     "QOS-RPS-003 q3's first request admitted" 200 "$QT1"
+chk_code     "QOS-RPS-003 q3's second request admitted - the default would have refused it" 200 "$QT2"
+chk_code     "QOS-RPS-003 q3's third request admitted" 200 "$QT3"
+qos_cfg DELETE "/config/ai/user/ratelimit/$QOS_T/$SUB_q3"
+qos_cfg_ok   "QOS-RPS-003 the explicit row is deleted"
+qos_pair 2040 "Authorization: Bearer $TOK_q3" "Authorization: Bearer $TOK_q3"
+qos_gap_ok   "QOS-RPS-003 the pair decided inside one refill"
+chk_code     "QOS-RPS-003 q3's first request after the delete admitted" 200 "$QP1"
+chk_code     "QOS-RPS-003 q3 now follows the default and is refused" 429 "$QP2"
+chk_has      "QOS-RPS-003 the refusal names the user rung" "user_rate_limit_exceeded" "$QP2"
+chk_receipt  "QOS-RPS-003 the refused request never reached the backend" 0 "$QP2_NONCE"
+
+echo ""
+echo "QOS-DEF-001: the rule-scope row overrides global for the field it sets"
+echo "             The control is the SAME identity on a service with no rule"
+echo "             row: one user, two services, two verdicts - so the service's"
+echo "             row is what decided, not anything about the user."
+qos_triple 2059 "Authorization: Bearer $TOK_q7"
+chk_code     "QOS-DEF-001 q7's first request on :2059 admitted" 200 "$QT1"
+chk_code     "QOS-DEF-001 q7's second request on :2059 admitted - global's 1 would have refused it" 200 "$QT2"
+chk_code     "QOS-DEF-001 q7's third request on :2059 admitted" 200 "$QT3"
+qos_pair 2040 "Authorization: Bearer $TOK_q7" "Authorization: Bearer $TOK_q7"
+qos_gap_ok   "QOS-DEF-001 the control pair decided inside one refill"
+chk_code     "QOS-DEF-001 the same user's first request on :2040 admitted" 200 "$QP1"
+chk_code     "QOS-DEF-001 the same user is refused on :2040, where no rule row stands" 429 "$QP2"
+chk_has      "QOS-DEF-001 the control refusal names the user rung" "user_rate_limit_exceeded" "$QP2"
+
+echo ""
+echo "QOS-DEF-002: a rule row that leaves a field zero does not shadow global"
+echo "             :2060 HAS a rule row, but it sets only the token field, so"
+echo "             the rps must reach through it from global. An"
+echo "             all-or-nothing override would leave q4 unlimited here."
+qos_cfg GET "/config/ai/ratelimit/defaults/rule?rule_ident=10.10.10.254:2060"
+qos_cfg_ok   "QOS-DEF-002 the rule row for :2060 reads back"
+chk_has      "QOS-DEF-002 the row carries the token field it set" "100000" "$QOS_CFG_BODY"
+qos_pair 2060 "Authorization: Bearer $TOK_q4" "Authorization: Bearer $TOK_q4"
+qos_gap_ok   "QOS-DEF-002 the pair decided inside one refill"
+chk_code     "QOS-DEF-002 q4's first request on :2060 admitted" 200 "$QP1"
+chk_code     "QOS-DEF-002 q4 is refused by global's rps through an existing rule row" 429 "$QP2"
+chk_has      "QOS-DEF-002 the refusal names the user rung" "user_rate_limit_exceeded" "$QP2"
+chk_receipt  "QOS-DEF-002 the refused request never reached the backend" 0 "$QP2_NONCE"
+
+echo ""
+echo "QOS-DEF-003: with no explicit row and no default, the identity is"
+echo "             unlimited - proven as a transition, not an end state"
+echo "             q8 is bound first, so 'admitted' afterwards cannot be the"
+echo "             reading of a rung that was never installed."
+qos_pair 2040 "Authorization: Bearer $TOK_q8" "Authorization: Bearer $TOK_q8"
+qos_gap_ok   "QOS-DEF-003 the before pair decided inside one refill"
+chk_code     "QOS-DEF-003 q8's first request admitted while the default stands" 200 "$QP1"
+chk_code     "QOS-DEF-003 q8's second request refused while the default stands" 429 "$QP2"
+chk_has      "QOS-DEF-003 the refusal names the user rung" "user_rate_limit_exceeded" "$QP2"
+qos_cfg DELETE /config/ai/ratelimit/defaults/global
+qos_cfg_ok   "QOS-DEF-003 the global defaults row is deleted"
+qos_triple 2040 "Authorization: Bearer $TOK_q8"
+chk_code     "QOS-DEF-003 q8's first request after the delete admitted" 200 "$QT1"
+chk_code     "QOS-DEF-003 q8's second request admitted - the rung is gone" 200 "$QT2"
+chk_code     "QOS-DEF-003 q8's third request admitted" 200 "$QT3"
+chk_receipt  "QOS-DEF-003 q8's third request reached the backend" 1 "$QT3_NONCE"
+
+# Hygiene: the rule-scope rows outlive the cases that needed them, and the
+# next thing to run on :2059/:2060 would inherit limits it never asked for.
+# Not asserted - the cases that matter have already been decided, and a
+# teardown failure here must not be reported as a product verdict.
+qos_cfg DELETE "/config/ai/ratelimit/defaults/rule?rule_ident=10.10.10.254:2059"
+qos_cfg DELETE "/config/ai/ratelimit/defaults/rule?rule_ident=10.10.10.254:2060"
+qos_cfg DELETE "/config/ai/user/ratelimit/$QOS_T/$SUB_q1"
+QOS_CFG_FRESH=0
+
 echo ""
 echo "== Z: the suite ran what it claims to run =="
 echo "   A deleted, renamed, or skipped block stops being tested silently:"
 echo "   the pass count simply gets smaller and the run still says OK. This"
 echo "   compares the case IDs that actually asserted against the declared"
 echo "   set, so coverage cannot shrink without turning the run RED."
-EXPECTED_CASES="A1 A2 A3 A4 A5 A6 A7 A8 B1 B2 B3 C1 C2 C3 C4 C5 C6 D1 D2 D3 D4 D5 D6 E1 E2 F1 F2 F3 F4 L1 L2 L3 L4 K1 K2 K3 K4 K5 X1 X2 M1 M2 M3 M4 N1 N2 N3 N4 G1 G2 H0 H1 H2 H3 H4 P1 P2 I0 I1 I2 I3 J1 T0 T1 T2 T3 T4 U1 U2"
+EXPECTED_CASES="A1 A2 A3 A4 A5 A6 A7 A8 B1 B2 B3 C1 C2 C3 C4 C5 C6 D1 D2 D3 D4 D5 D6 E1 E2 F1 F2 F3 F4 L1 L2 L3 L4 K1 K2 K3 K4 K5 X1 X2 M1 M2 M3 M4 N1 N2 N3 N4 G1 G2 H0 H1 H2 H3 H4 P1 P2 I0 I1 I2 I3 J1 T0 T1 T2 T3 T4 U1 U2 \
+QOS-RPS-001 QOS-RPS-002 QOS-RPS-003 QOS-RPS-004 QOS-RPS-005 \
+QOS-DEF-001 QOS-DEF-002 QOS-DEF-003"
 missing=""
 for want in $EXPECTED_CASES; do
   case " $SEEN_CASES " in

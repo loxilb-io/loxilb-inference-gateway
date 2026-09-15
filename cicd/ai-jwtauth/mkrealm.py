@@ -120,7 +120,21 @@ realm = {
         # this token verifies but cannot be attributed and must be refused.
         user("carol", "carolpw", ["model:llama-70b"]),
         user("dave", "davepw", ["model:llama-70b"] + PAD_ROLES, "tenant-d"),
-    ],
+    ]
+    # The QoS ladder's runtime arm. Every rung is a per-(tenant, user) token
+    # bucket, so two cases that share a user share a bucket and the second
+    # one scores whatever spend the first left behind. One user per case is
+    # what makes the block re-runnable and order-independent — and it is why
+    # these are separate identities rather than reuses of alice and bob,
+    # whose buckets the rest of the suite is already spending.
+    + [user("q%d" % i, "q%dpw" % i, ["model:llama-70b"], "tenant-q")
+       for i in range(1, 9)]
+    # The tenant-aggregate rung needs two users who share a tenant and are
+    # used by nothing else: the claim is that the TENANT bucket caps the sum
+    # of its users, and it is only decisive if no per-user bucket could have
+    # produced the same denial.
+    + [user("t%d" % i, "t%dpw" % i, ["model:llama-70b"], "tenant-qt")
+       for i in range(1, 3)],
 }
 
 with open(sys.argv[1], "w") as f:

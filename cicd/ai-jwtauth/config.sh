@@ -68,6 +68,15 @@
 #                                              usage (H/1.1) — an error is not
 #                                              an accounting hole
 #     2058 jwt            profile kc           the same 500, over HTTP/2
+#     2059 jwt            profile kc           QoS ladder: the rule-scope
+#                                              defaults row SETS the user rps,
+#                                              so the rule value must win over
+#                                              global
+#     2060 jwt            profile kc           QoS ladder: the rule-scope row
+#                                              exists but leaves the user rps
+#                                              zero, so global must reach
+#                                              through it (field-wise, not
+#                                              all-or-nothing)
 
 source ../common.sh
 
@@ -96,12 +105,40 @@ echo "#########################################"
 # keycloak/build.sh regenerates the realm from mkrealm.py, so the image can
 # never drift from the users and roles the assertions assume.
 KC_IMAGE=${AIGW_KEYCLOAK_IMAGE:-loxilb-aigw-keycloak:26.0-aigw}
-if ! docker image inspect "$KC_IMAGE" >/dev/null 2>&1; then
-  echo "  $KC_IMAGE not present — building it (first run only)"
+
+# Rebuild on realm CHANGE, not merely on absence. Presence alone was the old
+# trigger, and it cannot notice that the baked realm has drifted from
+# mkrealm.py: an image built before a user was added is still present, so it
+# is still reused, and the drift surfaces much later as a token that cannot
+# be minted — which reads like an identity-provider fault and is not one.
+#
+# The realm is generated here and fingerprinted; the image carries the
+# fingerprint it was baked from as a label. Different, or absent on an image
+# built before the label existed, means rebuild.
+KC_REALM_JSON="$SDIR/keycloak/aigw-realm.json"
+python3 "$SDIR/mkrealm.py" "$KC_REALM_JSON" >/dev/null || {
+  echo "FATAL: could not generate the aigw realm"; exit 1; }
+KC_REALM_HASH=$(sha256sum "$KC_REALM_JSON" | cut -c1-16)
+KC_IMAGE_HASH=$(docker image inspect \
+  -f '{{index .Config.Labels "aigw.realm.hash"}}' "$KC_IMAGE" 2>/dev/null || true)
+if [ "$KC_IMAGE_HASH" != "$KC_REALM_HASH" ]; then
+  if [ -z "$KC_IMAGE_HASH" ]; then
+    echo "  $KC_IMAGE is absent or carries no realm fingerprint — building it"
+  else
+    echo "  $KC_IMAGE was baked from realm $KC_IMAGE_HASH, the suite needs $KC_REALM_HASH — rebuilding"
+  fi
   AIGW_KEYCLOAK_IMAGE="$KC_IMAGE" "$SDIR/keycloak/build.sh" "$KC_IMAGE" || {
     echo "FATAL: could not build $KC_IMAGE"; exit 1; }
+  KC_IMAGE_HASH=$(docker image inspect \
+    -f '{{index .Config.Labels "aigw.realm.hash"}}' "$KC_IMAGE" 2>/dev/null || true)
+  # A build that "succeeded" without producing the realm the suite asked for
+  # would put every identity assertion back on an unknown realm.
+  if [ "$KC_IMAGE_HASH" != "$KC_REALM_HASH" ]; then
+    echo "FATAL: $KC_IMAGE still carries realm '${KC_IMAGE_HASH:-none}', want $KC_REALM_HASH"
+    exit 1
+  fi
 fi
-echo "  using $KC_IMAGE"
+echo "  using $KC_IMAGE (realm $KC_REALM_HASH)"
 
 docker rm -f "$KC_NAME" >/dev/null 2>&1
 docker run --rm -d --name "$KC_NAME" \
@@ -501,6 +538,24 @@ add_lb_rule 2056 "llama-70b"  "31.31.31.1" jwt           kc 8093
 add_lb_rule 2057 "llama-70b"  "31.31.31.1" jwt           kc 8094
 add_lb_rule 2058 "llama-70b"  "31.31.31.1" jwt           kc 8095
 
+# The QoS ladder's two defaults-scoped services. Level-3 defaults resolve as
+# global, then the rule-scope row for THIS service overriding it field by
+# field, so a claim about the rule/global relationship needs a service whose
+# rule row the claim controls. 2040 cannot be that service: it carries the
+# bearer arm every other block drives, and a defaults row there would bound
+# alice and bob for the rest of the suite.
+#
+# Two are needed rather than one because the two halves of the relationship
+# disagree about the same field: :2059's rule row SETS default_user_rps (so
+# the rule value must win), while :2060's leaves it zero (so the global value
+# must reach through a row that exists). One row cannot do both.
+#
+# Both point at the usage-bearing echo, the same backend :2040 uses — the
+# ladder's subject is the limit that admitted or refused the request, so the
+# pool must not be a second variable.
+add_lb_rule 2059 "llama-70b"  "31.31.31.1" jwt           kc 8080
+add_lb_rule 2060 "llama-70b"  "31.31.31.1" jwt           kc 8080
+
 # TLS + ALPN. Every H2 port above is h2c, so nothing here has ever run the
 # bearer gate on a connection whose HTTP/2 was negotiated through the TLS
 # handshake instead of a cleartext preface. That is a different entry path in
@@ -720,10 +775,78 @@ print('.'.join([h, p, s]))
 ")
 [ -n "$TOK_BADSIG" ] || { echo "FATAL: could not build the bad-signature token"; exit 1; }
 
+echo "#########################################"
+echo "Minting the QoS ladder's identities"
+echo "#########################################"
+
+# The per-user rungs are keyed by (tenant_id, user_id), and user_id is
+# whatever the profile's user_claim resolves to. The kc profile names no
+# user_claim, so the shipped default applies and the identity is the token's
+# "sub" — a Keycloak UUID, not the username. Writing a row for "q1" would
+# configure a user the gateway never sees, and every throttling assertion
+# would then pass on a build that enforces nothing.
+#
+# So the identity is read out of the minted token rather than assumed. That
+# also keeps the block honest about which claim the product actually uses: if
+# the default ever moves off "sub", these rows stop matching and the cases go
+# red instead of quietly becoming unlimited.
+sub_of() { # sub_of <jwt> -> the token's sub claim
+  printf '%s' "$1" | python3 -c "
+import base64, json, sys
+t = sys.stdin.read().strip()
+p = t.split('.')[1]
+p += '=' * (-len(p) % 4)
+print(json.loads(base64.urlsafe_b64decode(p)).get('sub', ''))
+" 2>/dev/null
+}
+
+QOS_STATE=""
+for qu in q1 q2 q3 q4 q5 q6 q7 q8 t1 t2; do
+  tok=$(mint aigw-client "$qu" "${qu}pw")
+  if [ -z "$tok" ]; then
+    echo "FATAL: could not mint a token for the QoS identity $qu"
+    exit 1
+  fi
+  sub=$(sub_of "$tok")
+  # An empty sub is not a small problem: the ladder's user stage is skipped
+  # outright when user_id is empty, so every per-user case would report the
+  # product as unlimited when the harness is what failed.
+  if [ -z "$sub" ]; then
+    echo "FATAL: token for $qu carries no sub claim — the per-user rungs would"
+    echo "       configure nothing and pass against any build"
+    exit 1
+  fi
+  QOS_STATE="$QOS_STATE
+TOK_${qu}='$tok'
+SUB_${qu}='$sub'"
+done
+echo "QoS identities minted (q1..q8 in tenant-q, t1/t2 in tenant-qt)"
+
+# The key arm's own credential. The llama-only key above is spent by the
+# precedence legs, and the key rung PATCHes its holder's rps — doing that to
+# a key another block is using would bound that block too.
+QOS_KEY_RESP=$($hexec llb1 curl -s -X POST \
+  http://localhost:11111/netlox/v1/config/ai/apikey \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tenant_id": "qos-key-tenant",
+    "name": "qos-ladder",
+    "allowed_models": ["llama-70b"]
+  }')
+QOS_RAW_KEY=$(echo "$QOS_KEY_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('raw_key',''))" 2>/dev/null)
+QOS_KEY_ID=$(echo "$QOS_KEY_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('key_id',''))" 2>/dev/null)
+if [ -z "$QOS_RAW_KEY" ] || [ -z "$QOS_KEY_ID" ]; then
+  echo "FATAL: QoS ladder API key creation failed: $QOS_KEY_RESP"
+  exit 1
+fi
+echo "QoS ladder key created (key_id $QOS_KEY_ID)"
+
 # Quoted: validation.sh sources this file, so an unquoted credential would be
 # word-split and glob-expanded by the shell before it ever reached a request.
 cat > .state <<EOF
 RAW_KEY='$RAW_KEY'
+QOS_RAW_KEY='$QOS_RAW_KEY'
+QOS_KEY_ID='$QOS_KEY_ID'$QOS_STATE
 TOK_ALICE='$TOK_ALICE'
 TOK_BOB='$TOK_BOB'
 TOK_CAROL='$TOK_CAROL'
