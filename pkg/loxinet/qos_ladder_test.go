@@ -238,6 +238,60 @@ func TestLadderKeyTPMDebtLatch(t *testing.T) {
 	}
 }
 
+// TestLadderTenantTPMLiftReleases: lifting a tenant's token quota while its
+// bucket is in debt releases the tenant, exactly as lifting a USER's does.
+//
+// The two halves are the point. The user half already held; the tenant half
+// did not, because its debt latch was the only one of the five read without
+// a "this quota exists" guard. The charge side creates the tenant bucket
+// only while the quota stands, so after the lift nothing charges it again
+// and the limit it recorded can never be refreshed to zero — an unguarded
+// read goes on refusing against a bucket the charge side has abandoned,
+// until the debt drains on its own. Setting tokens_per_min to 0 is the only
+// lift the tenant surface offers, so unguarded it does not work at all.
+func TestLadderTenantTPMLiftReleases(t *testing.T) {
+	store := rl.New()
+	svc := ladderSvc()
+	svc.tenantRPS = 1000
+	svc.tenantTPM = 100
+
+	// Charge 150 against a 100-token quota: the tenant bucket latches.
+	if allowed, _ := tokenQuotaConsumeInternal(svc, store, "t1", "", "alice", "", "", 150, 0, 0); allowed {
+		t.Fatalf("charging 150 against tenant tpm=100 must report debt")
+	}
+	if d, _, code := rateLimitCheckInternal(svc, store, "", "t1", "alice", "", ""); d != 3 || code != "token_quota_exceeded" {
+		t.Fatalf("tenant in debt: expected token_quota_exceeded deny, got decision=%d code=%q", d, code)
+	}
+
+	// The operator lifts the quota. The debt is still in the bucket — that
+	// is what makes this the interesting moment rather than a wait.
+	svc.tenantTPM = 0
+	if d, _, code := rateLimitCheckInternal(svc, store, "", "t1", "alice", "", ""); d != 0 {
+		t.Fatalf("after the tenant quota is lifted: expected allow, got decision=%d code=%q", d, code)
+	}
+
+	// The user rung's counterpart, in the same test, so the two can never
+	// drift apart again: a user quota lifted mid-debt releases too.
+	svc.userRows["t1|bob"] = cmn.UserRateLimitEntry{TenantID: "t1", UserID: "bob", TokensPerMin: 100}
+	if allowed, _ := tokenQuotaConsumeInternal(svc, store, "t1", "", "bob", "", "", 150, 0, 0); allowed {
+		t.Fatalf("charging 150 against user tpm=100 must report debt")
+	}
+	if d, _, code := rateLimitCheckInternal(svc, store, "", "t1", "bob", "", ""); d != 3 || code != "token_quota_exceeded" {
+		t.Fatalf("user in debt: expected token_quota_exceeded deny, got decision=%d code=%q", d, code)
+	}
+	delete(svc.userRows, "t1|bob")
+	if d, _, code := rateLimitCheckInternal(svc, store, "", "t1", "bob", "", ""); d != 0 {
+		t.Fatalf("after the user quota is removed: expected allow, got decision=%d code=%q", d, code)
+	}
+
+	// And the guard must not switch the rung off while the quota stands:
+	// re-arming the tenant quota brings the still-undrained debt back.
+	svc.tenantTPM = 100
+	if d, _, code := rateLimitCheckInternal(svc, store, "", "t1", "carol", "", ""); d != 3 || code != "token_quota_exceeded" {
+		t.Fatalf("tenant quota re-armed over live debt: expected deny, got decision=%d code=%q", d, code)
+	}
+}
+
 // TestLadderReserveRollbackAcrossBuckets: when a later bucket denies a
 // reservation, every earlier claim is released — otherwise the denied
 // request leaks headroom out of the tenant until the epoch expires it.
