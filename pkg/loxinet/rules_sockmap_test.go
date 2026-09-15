@@ -17,6 +17,7 @@
 package loxinet
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -98,5 +99,67 @@ func TestLbSockMapCodeEligibility(t *testing.T) {
 				t.Fatalf("%s (support=%v): want eligibility error, got %v", name, support, err)
 			}
 		}
+	}
+}
+
+// An AI gateway service re-runs admission at every keep-alive request and records
+// requests from their responses, so an accelerated direction would let later
+// requests through unchecked and leave responses unrecorded. Every non-off mode is
+// refused, whichever of the three inputs makes the service an AI gateway.
+func TestLbSockMapAiGwCodeRefused(t *testing.T) {
+	aiGw := map[string]func(*cmn.LbServiceArg) string{
+		"sse_mode":                   func(s *cmn.LbServiceArg) string { s.SSEMode = true; return "" },
+		"pd_disagg_mode":             func(s *cmn.LbServiceArg) string { s.PDDisaggMode = true; return "" },
+		"api_key_auth=required":      func(s *cmn.LbServiceArg) string { return cmn.ApiKeyAuthRequired },
+		"api_key_auth=jwt":           func(s *cmn.LbServiceArg) string { return cmn.ApiKeyAuthJWT },
+		"api_key_auth=apikey-or-jwt": func(s *cmn.LbServiceArg) string { return cmn.ApiKeyAuthApiKeyOrJWT },
+	}
+	for name, mutate := range aiGw {
+		for mode, code := range map[string]uint8{"both": 1, "request": 2, "response": 3} {
+			serv := sockMapServ(mode)
+			apiKeyAuth := mutate(&serv)
+			got, err := lbSockMapAiGwCode(&serv, code, apiKeyAuth)
+			if !errors.Is(err, errSockMapAiGateway) || got != 0 {
+				t.Fatalf("%s, mode %s: want errSockMapAiGateway and code 0, got %d err %v", name, mode, got, err)
+			}
+		}
+	}
+}
+
+// A service that is not an AI gateway keeps its mode, and off is valid on any service.
+func TestLbSockMapAiGwCodeAllowed(t *testing.T) {
+	for _, apiKeyAuth := range []string{"", cmn.ApiKeyAuthDisabled} {
+		serv := sockMapServ("request")
+		if got, err := lbSockMapAiGwCode(&serv, 2, apiKeyAuth); err != nil || got != 2 {
+			t.Fatalf("api_key_auth %q: want code 2, got %d err %v", apiKeyAuth, got, err)
+		}
+	}
+
+	serv := sockMapServ("off")
+	serv.SSEMode = true
+	if got, err := lbSockMapAiGwCode(&serv, 0, cmn.ApiKeyAuthRequired); err != nil || got != 0 {
+		t.Fatalf("off on an AI gateway service: want code 0, got %d err %v", got, err)
+	}
+}
+
+// The check follows the api_key_auth the rule will carry, not the incoming field. A
+// replace that omits api_key_auth keeps enforcement on (apiKeyAuthOnReplace), so an
+// empty incoming value must not let acceleration through on a protected service.
+func TestLbSockMapAiGwCodeUsesResolvedApiKeyAuth(t *testing.T) {
+	serv := sockMapServ("both") // incoming api_key_auth omitted
+	resolved := apiKeyAuthOnReplace(cmn.ApiKeyAuthRequired, serv.ApiKeyAuth)
+	if _, err := lbSockMapAiGwCode(&serv, 1, resolved); !errors.Is(err, errSockMapAiGateway) {
+		t.Fatalf("replace omitting api_key_auth on a protected service: want errSockMapAiGateway, got %v", err)
+	}
+}
+
+// A snapshot restore must not fail, since an error aborts the whole loadbalancer
+// domain. The rule is restored with acceleration off.
+func TestLbSockMapAiGwCodeRestoreReplay(t *testing.T) {
+	serv := sockMapServ("request")
+	serv.SSEMode = true
+	serv.RestoreReplay = true
+	if got, err := lbSockMapAiGwCode(&serv, 2, ""); err != nil || got != 0 {
+		t.Fatalf("restore replay of an AI gateway service: want code 0 and no error, got %d err %v", got, err)
 	}
 }
