@@ -1730,6 +1730,132 @@ chk_code     "QOS-DEF-003 q8's second request admitted - the rung is gone" 200 "
 chk_code     "QOS-DEF-003 q8's third request admitted" 200 "$QT3"
 chk_receipt  "QOS-DEF-003 q8's third request reached the backend" 1 "$QT3_NONCE"
 
+echo ""
+echo "   The token rungs. Every echoed answer settles exactly 12 tokens, so a"
+echo "   budget of 10 is decided in two requests: the first is admitted"
+echo "   against a clean bucket, its settle puts the bucket in debt, and the"
+echo "   next request is refused at admission. That is the same shape the"
+echo "   keyless N block uses, applied to the credentialed rungs."
+echo "   All five token rungs answer with the SAME code, token_quota_exceeded,"
+echo "   so no case here can be decided by the error string alone: each one"
+echo "   is paired with a sibling that must still be served."
+
+# The settle rides the response relay, so it lands after the answer reaches
+# the client. A second request issued immediately would be admitted against a
+# bucket that has not yet been told about the first, and the case would read
+# as a missing limit.
+QOS_SETTLE_WAIT=2
+
+# qreq <port> <cred-header> [body] -- one request; publishes QR and QR_NONCE.
+# Called directly, never inside $( ), so the globals reach the caller.
+qreq() {
+  local port=$1 h=$2 b=${3:-$body_llama}
+  QR=$(req "$port" "$b" -H "$h")
+  QR_NONCE=$(last_nonce)
+}
+
+echo ""
+echo "QOS-TPM-001: a user's aggregate token budget refuses their next request"
+echo "             once the answer has been charged, and deleting the row"
+echo "             lifts the rung even though the bucket is still in debt"
+qos_cfg POST /config/ai/user/ratelimit \
+  "{\"tenant_id\":\"$QOS_T\",\"user_id\":\"$SUB_q9\",\"tokens_per_min\":10}"
+qos_cfg_ok   "QOS-TPM-001 a token-only row for q9 accepted"
+qreq 2040 "Authorization: Bearer $TOK_q9"
+chk_code     "QOS-TPM-001 q9's first request admitted" 200 "$QR"
+chk_receipt  "QOS-TPM-001 q9's first request reached the backend" 1 "$QR_NONCE"
+sleep $QOS_SETTLE_WAIT
+qreq 2040 "Authorization: Bearer $TOK_q9"
+chk_code     "QOS-TPM-001 q9's next request refused by its token budget" 429 "$QR"
+chk_has      "QOS-TPM-001 the refusal names the token quota" "token_quota_exceeded" "$QR"
+chk_receipt  "QOS-TPM-001 the refused request never reached the backend" 0 "$QR_NONCE"
+qos_cfg DELETE "/config/ai/user/ratelimit/$QOS_T/$SUB_q9"
+qos_cfg_ok   "QOS-TPM-001 the user's token row is deleted"
+qreq 2040 "Authorization: Bearer $TOK_q9"
+chk_code     "QOS-TPM-001 q9 is served again once the rung is gone" 200 "$QR"
+chk_receipt  "QOS-TPM-001 q9's request reaches the backend again" 1 "$QR_NONCE"
+
+echo ""
+echo "QOS-TPM-002: a per-model budget refuses only the model it names, and"
+echo "             stops refusing once it is removed"
+echo "             The removal half is the one that matters: the row can be"
+echo "             read back as gone while the gate goes on refusing against"
+echo "             it, because the gate's read is cache-first and the config"
+echo "             read is not."
+qos_cfg POST /config/ai/user/ratelimit \
+  "{\"tenant_id\":\"$QOS_T\",\"user_id\":\"$SUB_q10\",\"model_limits\":[{\"model\":\"llama-70b\",\"tokens_per_min\":10}]}"
+qos_cfg_ok   "QOS-TPM-002 a llama-only token row for q10 accepted"
+qreq 2040 "Authorization: Bearer $TOK_q10"
+chk_code     "QOS-TPM-002 q10's first llama request admitted" 200 "$QR"
+chk_receipt  "QOS-TPM-002 q10's first llama request reached the backend" 1 "$QR_NONCE"
+sleep $QOS_SETTLE_WAIT
+qreq 2040 "Authorization: Bearer $TOK_q10"
+chk_code     "QOS-TPM-002 q10's next llama request refused" 429 "$QR"
+chk_has      "QOS-TPM-002 the refusal names the token quota" "token_quota_exceeded" "$QR"
+chk_receipt  "QOS-TPM-002 the refused llama request never reached the backend" 0 "$QR_NONCE"
+echo "  the same user's other model carries no budget and must still be served"
+qreq 2040 "Authorization: Bearer $TOK_q10" "$body_mistral"
+chk_code     "QOS-TPM-002 q10's mistral request is still served" 200 "$QR"
+chk_receipt  "QOS-TPM-002 q10's mistral request reached the backend" 1 "$QR_NONCE"
+qos_cfg DELETE "/config/ai/user/ratelimit/$QOS_T/$SUB_q10"
+qos_cfg_ok   "QOS-TPM-002 the row carrying the model budget is deleted"
+qreq 2040 "Authorization: Bearer $TOK_q10"
+chk_code     "QOS-TPM-002 the removed model budget stops refusing" 200 "$QR"
+chk_receipt  "QOS-TPM-002 the llama request reaches the backend again" 1 "$QR_NONCE"
+
+echo ""
+echo "QOS-TPM-003: a tenant's token budget caps the SUM of its users"
+echo "             m1 and m2 have no rows of their own, so a refusal of m2"
+echo "             after m1 spent the budget can only be the tenant bucket."
+qos_cfg POST /config/ai/tenant/ratelimit \
+  '{"tenant_id":"tenant-qm","tokens_per_min":10}'
+qos_cfg_ok   "QOS-TPM-003 tenant tokens_per_min=10 for tenant-qm accepted"
+qreq 2040 "Authorization: Bearer $TOK_m1"
+chk_code     "QOS-TPM-003 m1's request admitted" 200 "$QR"
+chk_receipt  "QOS-TPM-003 m1's request reached the backend" 1 "$QR_NONCE"
+sleep $QOS_SETTLE_WAIT
+qreq 2040 "Authorization: Bearer $TOK_m2"
+chk_code     "QOS-TPM-003 m2 is refused by what m1 spent" 429 "$QR"
+chk_has      "QOS-TPM-003 the refusal names the token quota" "token_quota_exceeded" "$QR"
+chk_receipt  "QOS-TPM-003 m2 never reached the backend" 0 "$QR_NONCE"
+
+echo ""
+echo "QOS-TPM-004: a tenant|model budget leaves the tenant's other models"
+echo "             with headroom"
+echo "             tenant-qn carries no aggregate budget, so the only rung"
+echo "             that can refuse the llama request is the model's own."
+qos_cfg POST /config/ai/tenant/ratelimit \
+  '{"tenant_id":"tenant-qn","model_limits":[{"model":"llama-70b","tokens_per_min":10}]}'
+qos_cfg_ok   "QOS-TPM-004 a llama-only tenant budget for tenant-qn accepted"
+qreq 2040 "Authorization: Bearer $TOK_n1"
+chk_code     "QOS-TPM-004 n1's first llama request admitted" 200 "$QR"
+chk_receipt  "QOS-TPM-004 n1's first llama request reached the backend" 1 "$QR_NONCE"
+sleep $QOS_SETTLE_WAIT
+qreq 2040 "Authorization: Bearer $TOK_n1"
+chk_code     "QOS-TPM-004 n1's next llama request refused" 429 "$QR"
+chk_has      "QOS-TPM-004 the refusal names the token quota" "token_quota_exceeded" "$QR"
+chk_receipt  "QOS-TPM-004 the refused llama request never reached the backend" 0 "$QR_NONCE"
+qreq 2040 "Authorization: Bearer $TOK_n1" "$body_mistral"
+chk_code     "QOS-TPM-004 the tenant's other model retains headroom" 200 "$QR"
+chk_receipt  "QOS-TPM-004 the mistral request reached the backend" 1 "$QR_NONCE"
+
+echo ""
+echo "QOS-TPM-005: a key's stored tokens_per_min is actually enforced"
+echo "             The key's request-rate limit is lifted in the same PATCH,"
+echo "             so the rung under test is the only one that can refuse -"
+echo "             and the rate rung's own code must be absent from the answer."
+qos_cfg PATCH "/config/ai/apikey/$QOS_KEY_ID" '{"rate_limit_rps":0,"tokens_per_min":10}'
+qos_cfg_ok   "QOS-TPM-005 the key's rate limit is lifted and a token budget set"
+qreq 2041 "X-Api-Key: $QOS_RAW_KEY"
+chk_code     "QOS-TPM-005 the key's first request admitted" 200 "$QR"
+chk_receipt  "QOS-TPM-005 the key's first request reached the backend" 1 "$QR_NONCE"
+sleep $QOS_SETTLE_WAIT
+qreq 2041 "X-Api-Key: $QOS_RAW_KEY"
+chk_code     "QOS-TPM-005 the key's next request refused by its token budget" 429 "$QR"
+chk_has      "QOS-TPM-005 the refusal names the token quota" "token_quota_exceeded" "$QR"
+chk_not_has  "QOS-TPM-005 it was the token rung, not the request-rate rung" "rate_limit_exceeded" "$QR"
+chk_receipt  "QOS-TPM-005 the refused request never reached the backend" 0 "$QR_NONCE"
+
 # Hygiene: the rule-scope rows outlive the cases that needed them, and the
 # next thing to run on :2059/:2060 would inherit limits it never asked for.
 # Not asserted - the cases that matter have already been decided, and a
@@ -1747,7 +1873,8 @@ echo "   compares the case IDs that actually asserted against the declared"
 echo "   set, so coverage cannot shrink without turning the run RED."
 EXPECTED_CASES="A1 A2 A3 A4 A5 A6 A7 A8 B1 B2 B3 C1 C2 C3 C4 C5 C6 D1 D2 D3 D4 D5 D6 E1 E2 F1 F2 F3 F4 L1 L2 L3 L4 K1 K2 K3 K4 K5 X1 X2 M1 M2 M3 M4 N1 N2 N3 N4 G1 G2 H0 H1 H2 H3 H4 P1 P2 I0 I1 I2 I3 J1 T0 T1 T2 T3 T4 U1 U2 \
 QOS-RPS-001 QOS-RPS-002 QOS-RPS-003 QOS-RPS-004 QOS-RPS-005 \
-QOS-DEF-001 QOS-DEF-002 QOS-DEF-003"
+QOS-DEF-001 QOS-DEF-002 QOS-DEF-003 \
+QOS-TPM-001 QOS-TPM-002 QOS-TPM-003 QOS-TPM-004 QOS-TPM-005"
 missing=""
 for want in $EXPECTED_CASES; do
   case " $SEEN_CASES " in

@@ -801,7 +801,7 @@ print(json.loads(base64.urlsafe_b64decode(p)).get('sub', ''))
 }
 
 QOS_STATE=""
-for qu in q1 q2 q3 q4 q5 q6 q7 q8 t1 t2; do
+for qu in q1 q2 q3 q4 q5 q6 q7 q8 q9 q10 t1 t2 m1 m2 n1; do
   tok=$(mint aigw-client "$qu" "${qu}pw")
   if [ -z "$tok" ]; then
     echo "FATAL: could not mint a token for the QoS identity $qu"
@@ -820,7 +820,7 @@ for qu in q1 q2 q3 q4 q5 q6 q7 q8 t1 t2; do
 TOK_${qu}='$tok'
 SUB_${qu}='$sub'"
 done
-echo "QoS identities minted (q1..q8 in tenant-q, t1/t2 in tenant-qt)"
+echo "QoS identities minted (q1..q10 tenant-q, t1/t2 tenant-qt, m1/m2 tenant-qm, n1 tenant-qn)"
 
 # The key arm's own credential. The llama-only key above is spent by the
 # precedence legs, and the key rung PATCHes its holder's rps — doing that to
