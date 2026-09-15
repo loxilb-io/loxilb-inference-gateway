@@ -75,8 +75,21 @@ var ErrDBUnavailable = cmn.ErrDBUnavailable
 // down when it is the key store that is down sends them to the wrong server.
 var errStoreUnavailable = fmt.Errorf("aikey: key store unavailable: %w", ErrDBUnavailable)
 
-// ErrKeyNotFound is returned when no key matches the identifier given.
-var ErrKeyNotFound = errors.New("API key not found")
+// ErrNotFound is the shared "no such row" sentinel for everything this
+// package stores. Callers classify on it with errors.Is rather than on the
+// wording: the REST layer used to decide 404-vs-500 by looking for the
+// substring "not found" in the message, which made an HTTP status code
+// depend on phrasing — and would have answered "this row does not exist" to
+// any store or driver error that happened to contain those two words.
+var ErrNotFound = errors.New("not found")
+
+// ErrKeyNotFound is returned when no key matches the identifier given. It
+// wraps ErrNotFound, so errors.Is recognises the condition while the message
+// still names the resource — the same reason errStoreUnavailable above names
+// the store it could not reach. A row of some other kind must NOT borrow this
+// one: a client told "API key not found" after asking for a rate-limit row
+// has been handed the wrong resource's name.
+var ErrKeyNotFound = fmt.Errorf("API key %w", ErrNotFound)
 
 // ErrInvalidKey is returned when a presented key is unknown, disabled, or
 // malformed. It is deliberately one error for all three: distinguishing them
