@@ -25,6 +25,15 @@ package restapi
 // handlers that return a generated *NoContent responder really emit 204.
 // These tests pin the declared-204 set to exactly the operations whose
 // handlers do, so the mismatch cannot reappear silently.
+//
+// A third category exists: an operation marked x-raw-middleware is never
+// served by a generated responder at all — setupGlobalMiddleware intercepts
+// the path first and the raw handler writes the status itself. The shared
+// responder's 200 argument therefore does not apply to it, and declaring 200
+// to satisfy this test would put a status in the specification that the
+// server never sends. Those operations are listed separately below and are
+// only accepted while the specification still marks them raw-served, so the
+// exemption cannot be claimed for a generated operation by editing a map.
 
 import (
 	"encoding/json"
@@ -59,6 +68,44 @@ var declared204Operations = map[string]bool{
 	"GET /config/params":        true,
 	"GET /config/bgp/neigh/all": true,
 	"GET /config/bgp/policy/definedsets/{defineset_type}/{type_name}": true,
+}
+
+// declared204RawServed lists operations whose 204 is written by a raw
+// handler rather than a generated responder. Each entry must still be marked
+// x-raw-middleware in the specification; the test checks that, so this map
+// cannot be used to exempt a generated operation.
+//
+// PATCH /config/ai/apikey/{key_id} is served by ConfigPatchAIApikey
+// (api/restapi/handler/ai_apikey.go), which ends in an explicit
+// w.WriteHeader(http.StatusNoContent).
+var declared204RawServed = map[string]bool{
+	"PATCH /config/ai/apikey/{key_id}": true,
+}
+
+// rawMiddlewareOperations returns the operations the specification marks as
+// served by raw middleware. Walked separately from forEachOperation so the
+// shared iterator keeps its signature.
+func rawMiddlewareOperations(t *testing.T, raw json.RawMessage) map[string]bool {
+	t.Helper()
+	out := map[string]bool{}
+	for path, ops := range specPaths(t, raw) {
+		for _, verb := range []string{"get", "post", "put", "delete", "patch"} {
+			op, ok := ops[verb]
+			if !ok {
+				continue
+			}
+			var meta struct {
+				Raw bool `json:"x-raw-middleware"`
+			}
+			if err := json.Unmarshal(op, &meta); err != nil {
+				continue
+			}
+			if meta.Raw {
+				out[strings.ToUpper(verb)+" "+path] = true
+			}
+		}
+	}
+	return out
 }
 
 func specPaths(t *testing.T, raw json.RawMessage) map[string]map[string]json.RawMessage {
@@ -125,14 +172,30 @@ func TestDeclared204SetIsPinned(t *testing.T) {
 					seen[verb+" "+path] = true
 				}
 			})
+			rawServed := rawMiddlewareOperations(t, raw)
 			for op := range seen {
-				if !declared204Operations[op] {
-					t.Errorf("unexpected 204 declaration on %s — the shared success responder answers 200 with a body; declare 200, or return a generated NoContent responder and extend the pin", op)
+				if declared204Operations[op] {
+					continue
 				}
+				if declared204RawServed[op] {
+					// The exemption is only real while the specification
+					// still says the generated router does not serve it.
+					if !rawServed[op] {
+						t.Errorf("%s is pinned as raw-served but the spec no longer marks it x-raw-middleware — "+
+							"it is now a generated operation, and its 204 must come from a NoContent responder", op)
+					}
+					continue
+				}
+				t.Errorf("unexpected 204 declaration on %s — the shared success responder answers 200 with a body; declare 200, or return a generated NoContent responder and extend the pin", op)
 			}
 			for op := range declared204Operations {
 				if !seen[op] {
 					t.Errorf("pinned 204 declaration missing from spec: %s", op)
+				}
+			}
+			for op := range declared204RawServed {
+				if !seen[op] {
+					t.Errorf("pinned raw-served 204 declaration missing from spec: %s", op)
 				}
 			}
 		})
