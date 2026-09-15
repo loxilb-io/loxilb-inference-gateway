@@ -291,3 +291,89 @@ func TestPatchAPIKeyRateLimits(t *testing.T) {
 		t.Fatalf("all-nil patch: %v", err)
 	}
 }
+
+// TestUserModelRateLimitRemovalLeavesNoCachedQuota: a per-model quota that
+// was removed must stop being enforced.
+//
+// Both user-side writers clear model rows WHOLESALE — SetUserRateLimit
+// replaces the set, DeleteUserRateLimit removes all of them — so the models
+// being dropped are never named to the writer. The hot path
+// (GetUserModelRateLimit) is cache-first, so a removal that does not evict
+// leaves the old quota enforcing for the rest of the TTL and, through the
+// last-known map, for every later store outage.
+//
+// TestUserRateLimitRoundTrip already covers the removal, but only through
+// GetUserRateLimitEntry — the CONFIG read, which goes straight to the store.
+// That read is green whether or not the cache was evicted, which is exactly
+// why the hole survived: the API reported the row gone while the gateway
+// went on refusing requests against it. Every assertion here reads the HOT
+// path instead.
+func TestUserModelRateLimitRemovalLeavesNoCachedQuota(t *testing.T) {
+	svc := storeFixture(t)
+
+	entry := cmn.UserRateLimitEntry{
+		TenantID: "t1", UserID: "alice", RPS: 5,
+		ModelLimits: []cmn.UserModelRateLimit{
+			{Model: "llama-70b", TokensPerMin: 400},
+			{Model: "mistral-7b", TokensPerMin: 300},
+		},
+	}
+	if err := svc.SetUserRateLimit(entry); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	// Prime the hot path for BOTH models: a cache that was never populated
+	// could not demonstrate a stale read, and this test would pass on the
+	// unfixed code for the wrong reason.
+	if tpm, err := svc.GetUserModelRateLimit("t1", "alice", "mistral-7b"); err != nil || tpm != 300 {
+		t.Fatalf("prime mistral: got (%d,%v) want (300,nil)", tpm, err)
+	}
+	if tpm, err := svc.GetUserModelRateLimit("t1", "alice", "llama-70b"); err != nil || tpm != 400 {
+		t.Fatalf("prime llama: got (%d,%v) want (400,nil)", tpm, err)
+	}
+
+	// Replace the set with llama only. mistral's row is deleted.
+	entry.ModelLimits = []cmn.UserModelRateLimit{{Model: "llama-70b", TokensPerMin: 200}}
+	if err := svc.SetUserRateLimit(entry); err != nil {
+		t.Fatalf("replace: %v", err)
+	}
+	if tpm, err := svc.GetUserModelRateLimit("t1", "alice", "mistral-7b"); err != nil || tpm != 0 {
+		t.Fatalf("removed model still quoted on the hot path: got (%d,%v) want (0,nil)", tpm, err)
+	}
+	// The model that SURVIVED the replace must carry its NEW value, not be
+	// collaterally forgotten by the eviction that cleared its neighbour.
+	if tpm, err := svc.GetUserModelRateLimit("t1", "alice", "llama-70b"); err != nil || tpm != 200 {
+		t.Fatalf("surviving model after replace: got (%d,%v) want (200,nil)", tpm, err)
+	}
+
+	// The outage window is the other half: evicting the TTL cache alone
+	// would leave the last-known map answering 300 the moment the store
+	// goes away.
+	detachStore(svc)
+	svc.Cache.Flush()
+	if tpm, err := svc.GetUserModelRateLimit("t1", "alice", "mistral-7b"); err != nil || tpm != 0 {
+		t.Fatalf("removed model resurrected by the outage path: got (%d,%v) want (0,nil)", tpm, err)
+	}
+
+	// The DELETE path clears model rows the same wholesale way.
+	svc = storeFixture(t)
+	if err := svc.SetUserRateLimit(cmn.UserRateLimitEntry{
+		TenantID: "t1", UserID: "bob", RPS: 5,
+		ModelLimits: []cmn.UserModelRateLimit{{Model: "llama-70b", TokensPerMin: 400}},
+	}); err != nil {
+		t.Fatalf("set bob: %v", err)
+	}
+	if tpm, err := svc.GetUserModelRateLimit("t1", "bob", "llama-70b"); err != nil || tpm != 400 {
+		t.Fatalf("prime bob: got (%d,%v) want (400,nil)", tpm, err)
+	}
+	if err := svc.DeleteUserRateLimit("t1", "bob"); err != nil {
+		t.Fatalf("delete bob: %v", err)
+	}
+	if tpm, err := svc.GetUserModelRateLimit("t1", "bob", "llama-70b"); err != nil || tpm != 0 {
+		t.Fatalf("deleted user's model quota still enforced: got (%d,%v) want (0,nil)", tpm, err)
+	}
+	detachStore(svc)
+	svc.Cache.Flush()
+	if tpm, err := svc.GetUserModelRateLimit("t1", "bob", "llama-70b"); err != nil || tpm != 0 {
+		t.Fatalf("deleted user's model quota resurrected by the outage path: got (%d,%v) want (0,nil)", tpm, err)
+	}
+}
