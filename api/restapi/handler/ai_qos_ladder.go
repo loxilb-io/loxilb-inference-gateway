@@ -16,7 +16,7 @@
 package handler
 
 import (
-	"strings"
+	"errors"
 
 	"github.com/go-openapi/runtime/middleware"
 	"github.com/go-openapi/strfmt"
@@ -25,6 +25,7 @@ import (
 	"github.com/loxilb-io/loxilb/api/models"
 	aiops "github.com/loxilb-io/loxilb/api/restapi/operations/ai"
 	cmn "github.com/loxilb-io/loxilb/common"
+	"github.com/loxilb-io/loxilb/pkg/aikey"
 )
 
 // QoS ladder configuration surface: explicit per-user limits (level 1) and
@@ -33,8 +34,14 @@ import (
 
 // notFoundErr reports whether a service error is the "no such row" answer,
 // which the routes map to 404 rather than a generic 500.
+//
+// The test is on the sentinel, not on the wording. Matching the substring
+// "not found" made the status code depend on the phrasing of an error
+// message: any store or driver error that happened to contain those two
+// words would have been reported to the client as "this row does not
+// exist" — the one answer that invites a caller to create it.
 func notFoundErr(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "not found")
+	return errors.Is(err, aikey.ErrNotFound)
 }
 
 // ConfigPostAIUserRateLimit - POST /config/ai/user/ratelimit
@@ -187,9 +194,21 @@ func ConfigPostAIRateLimitDefaults(params aiops.PostConfigAiRatelimitDefaultsPar
 	return aiops.NewPostConfigAiRatelimitDefaultsNoContent()
 }
 
-// defaultsRuleIdent resolves the optional rule_ident query parameter.
-func defaultsRuleIdent(p *string) string {
-	if p == nil {
+// defaultsRuleIdent resolves the optional rule_ident query parameter for a
+// scope.
+//
+// The spec says rule_ident "is ignored for scope 'global'", and POST enforces
+// the same coherence from the other side by refusing a global body that
+// carries one. GET and DELETE used to pass the parameter straight through to
+// the store, which keys defaults rows on (scope, rule_ident) — so a stray
+// rule_ident on a global request addressed a row that cannot exist: GET
+// answered 404 with the global row sitting there untouched, and DELETE
+// answered 404 having removed nothing. A client keeping one query template
+// for both scopes therefore read "no global defaults configured" and could
+// recreate a row that already existed. Dropping it here is what makes the
+// three verbs agree with one another and with the published contract.
+func defaultsRuleIdent(scope string, p *string) string {
+	if scope == cmn.RateLimitScopeGlobal || p == nil {
 		return ""
 	}
 	return *p
@@ -200,7 +219,7 @@ func ConfigGetAIRateLimitDefaults(params aiops.GetConfigAiRatelimitDefaultsScope
 	tk.LogIt(tk.LogTrace, "api: AIRateLimitDefaults %s API called by IP: %s. url: %s\n",
 		params.HTTPRequest.Method, params.HTTPRequest.RemoteAddr, params.HTTPRequest.URL)
 
-	entry, err := ApiHooks.NetRateLimitDefaultsGet(params.Scope, defaultsRuleIdent(params.RuleIdent))
+	entry, err := ApiHooks.NetRateLimitDefaultsGet(params.Scope, defaultsRuleIdent(params.Scope, params.RuleIdent))
 	if err != nil {
 		tk.LogIt(tk.LogError, "[AIRateLimitDefaults] Failed to get defaults (%s): %v\n", params.Scope, err)
 		if resp := keyStoreFailure(err); resp != nil {
@@ -231,7 +250,7 @@ func ConfigDeleteAIRateLimitDefaults(params aiops.DeleteConfigAiRatelimitDefault
 	tk.LogIt(tk.LogTrace, "api: AIRateLimitDefaults %s API called by IP: %s. url: %s\n",
 		params.HTTPRequest.Method, params.HTTPRequest.RemoteAddr, params.HTTPRequest.URL)
 
-	if err := ApiHooks.NetRateLimitDefaultsDelete(params.Scope, defaultsRuleIdent(params.RuleIdent)); err != nil {
+	if err := ApiHooks.NetRateLimitDefaultsDelete(params.Scope, defaultsRuleIdent(params.Scope, params.RuleIdent)); err != nil {
 		tk.LogIt(tk.LogError, "[AIRateLimitDefaults] Failed to delete defaults (%s): %v\n", params.Scope, err)
 		if resp := keyStoreFailure(err); resp != nil {
 			return resp

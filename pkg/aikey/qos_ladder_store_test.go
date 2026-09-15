@@ -151,11 +151,21 @@ func TestUserRateLimitRoundTrip(t *testing.T) {
 	if err := svc.DeleteUserRateLimit("t1", "alice"); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if _, err := svc.GetUserRateLimitEntry("t1", "alice"); !errors.Is(err, ErrKeyNotFound) {
-		t.Fatalf("after delete: want ErrKeyNotFound, got %v", err)
+	// A missing user rate-limit row reports itself as a user rate-limit row,
+	// not as an API key. It still satisfies errors.Is(err, ErrNotFound), which
+	// is what the REST layer classifies 404 on.
+	_, err = svc.GetUserRateLimitEntry("t1", "alice")
+	if !errors.Is(err, ErrUserRateLimitNotFound) {
+		t.Fatalf("after delete: want ErrUserRateLimitNotFound, got %v", err)
 	}
-	if err := svc.DeleteUserRateLimit("t1", "alice"); !errors.Is(err, ErrKeyNotFound) {
-		t.Fatalf("double delete: want ErrKeyNotFound, got %v", err)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("after delete: want it to satisfy ErrNotFound, got %v", err)
+	}
+	if errors.Is(err, ErrKeyNotFound) {
+		t.Fatalf("after delete: a user rate-limit row must not report as a missing API key: %v", err)
+	}
+	if err := svc.DeleteUserRateLimit("t1", "alice"); !errors.Is(err, ErrUserRateLimitNotFound) {
+		t.Fatalf("double delete: want ErrUserRateLimitNotFound, got %v", err)
 	}
 	// The hot path reads the confirmed "no row" — zeroes with nil error.
 	rps, _, tpm, err = svc.GetUserRateLimit("t1", "alice")
@@ -228,8 +238,15 @@ func TestRateLimitDefaultsRoundTrip(t *testing.T) {
 	if err := svc.DeleteRateLimitDefaults(cmn.RateLimitScopeGlobal, ""); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if _, err := svc.GetRateLimitDefaultsEntry(cmn.RateLimitScopeGlobal, ""); !errors.Is(err, ErrKeyNotFound) {
-		t.Fatalf("after delete: want ErrKeyNotFound, got %v", err)
+	_, err = svc.GetRateLimitDefaultsEntry(cmn.RateLimitScopeGlobal, "")
+	if !errors.Is(err, ErrRateLimitDefaultsNotFound) {
+		t.Fatalf("after delete: want ErrRateLimitDefaultsNotFound, got %v", err)
+	}
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("after delete: want it to satisfy ErrNotFound, got %v", err)
+	}
+	if errors.Is(err, ErrKeyNotFound) {
+		t.Fatalf("after delete: a defaults row must not report as a missing API key: %v", err)
 	}
 }
 

@@ -217,6 +217,26 @@ func ConfigPatchAIApikey(w http.ResponseWriter, r *http.Request, keyID string) {
 		return
 	}
 
+	// A PATCH that names no field this handler recognises is not a no-op to be
+	// waved through — it is a request that cannot have meant anything.
+	//
+	// Without this guard the handler fell through every branch and answered
+	// 204. Two ways that lies to a client: a misspelled field
+	// ("ratelimit_rps" for "rate_limit_rps") was reported as a successful
+	// update that never happened, and 204 on PATCH asserts the resource
+	// exists — so `PATCH /config/ai/apikey/no-such-key {}` answered 204 for a
+	// key that is absent, and a provisioning loop of "patch, create on 404"
+	// would never create. Both were confirmed live before this was written.
+	if body.AllowedModels == nil && body.Enabled == nil &&
+		body.RateLimitRPS == nil && body.BurstSize == nil && body.TokensPerMin == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "no patchable field supplied: name at least one of " +
+				"allowed_models, enabled, rate_limit_rps, burst_size, tokens_per_min"})
+		return
+	}
+
 	writePatchErr := func(err error) {
 		tk.LogIt(tk.LogError, "[AIApikey] Failed to patch API key %s: %v\n", keyID, err)
 		if writeKeyStoreFailure(w, err) {
@@ -225,7 +245,9 @@ func ConfigPatchAIApikey(w http.ResponseWriter, r *http.Request, keyID string) {
 		w.Header().Set("Content-Type", "application/json")
 		status := http.StatusInternalServerError
 		var invalid *cmn.ValidationError
-		if strings.Contains(err.Error(), "not found") {
+		// Same reason notFoundErr stopped matching on wording: a status code
+		// must not depend on how an error happens to be phrased.
+		if notFoundErr(err) {
 			status = http.StatusNotFound
 		} else if errors.As(err, &invalid) {
 			status = http.StatusBadRequest
