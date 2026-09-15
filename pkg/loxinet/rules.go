@@ -4898,27 +4898,14 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		kvDataplaneContractInstallAsync(uint32(r.ruleNum))
 	}
 
-	// Enable circuit breaker for P/D disaggregation services (fix)
-	// proxy_set_circuit_breaker requires the proxy entry to exist first (created async by DP worker),
-	// so we retry with backoff until the entry is available.
-	if r.pdDisaggMode && mh.dpEbpf != nil {
-		svcIP := r.tuples.l3Dst.addr.IP
-		svcPort := r.tuples.l4Dst.valMin
-		svcProto := r.tuples.l4Prot.val
-		go func() {
-			for attempt := 0; attempt < 20; attempt++ {
-				time.Sleep(200 * time.Millisecond)
-				ret := mh.dpEbpf.DpLBSetCircuitBreaker(svcIP, svcPort, svcProto, true, 3, 30)
-				if ret == 0 {
-					tk.LogIt(tk.LogInfo, "[CB] Circuit breaker enabled for P/D service %v:%d (attempt %d)\n",
-						svcIP, svcPort, attempt+1)
-					return
-				}
-			}
-			tk.LogIt(tk.LogWarning, "[CB] Failed to enable circuit breaker for P/D service %v:%d after retries\n",
-				svcIP, svcPort)
-		}()
-	}
+	// The P/D circuit-breaker default is resolved at the API layer (an
+	// omitted cb_enable on a pd_disagg_mode rule resolves to true) and
+	// travels with the rule work like every other per-rule field, on create
+	// AND update alike. The out-of-band enable goroutine that used to live
+	// here — create-only, hardcoded enable=true with failure threshold 3
+	// against the documented default of 5, writing nothing back to the rule
+	// — is gone: it made a rule UPDATE silently disable the breaker for the
+	// life of the rule while the API kept reading the field as absent.
 
 	// Auto-start ZMQ subscribers for KV-cache routing (KV-12).
 	// A strict rule's composed binding pins the engine contract; the

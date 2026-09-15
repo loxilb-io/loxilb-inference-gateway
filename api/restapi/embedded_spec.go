@@ -4119,10 +4119,9 @@ func init() {
               "type": "integer"
             },
             "cb_enable": {
-              "default": false,
-              "description": "Enable the per-endpoint circuit breaker for full-proxy rules. Five consecutive backend connect failures open the breaker; an open endpoint is excluded from selection. Recovery uses a 30-second open interval followed by half-open probing. This is independent of the configured health monitor (probetype); one failed request does not by itself meet the opening threshold.",
+              "description": "Enable the per-endpoint circuit breaker for full-proxy rules. Five consecutive backend connect failures open the breaker; an open endpoint is excluded from selection. Recovery uses a 30-second open interval followed by half-open probing. This is independent of the configured health monitor (probetype); one failed request does not by itself meet the opening threshold. Omission is resolved at the API layer: on a rule with pd_disagg_mode=true it resolves to true (P/D services default to breaker protection), otherwise to false. An explicit value is honored as given — including false on a P/D rule — and create and update resolve identically, so updating a rule never silently changes the breaker state. GET reports the resolved value.",
               "type": "boolean",
-              "x-nullable": false
+              "x-nullable": true
             },
             "chwbl_enable_cache_salt": {
               "default": false,
@@ -36223,10 +36222,9 @@ func init() {
               "format": "uint32"
             },
             "cb_enable": {
-              "description": "Enable the per-endpoint circuit breaker for full-proxy rules. Five consecutive backend connect failures open the breaker; an open endpoint is excluded from selection. Recovery uses a 30-second open interval followed by half-open probing. This is independent of the configured health monitor (probetype); one failed request does not by itself meet the opening threshold.",
+              "description": "Enable the per-endpoint circuit breaker for full-proxy rules. Five consecutive backend connect failures open the breaker; an open endpoint is excluded from selection. Recovery uses a 30-second open interval followed by half-open probing. This is independent of the configured health monitor (probetype); one failed request does not by itself meet the opening threshold. Omission is resolved at the API layer: on a rule with pd_disagg_mode=true it resolves to true (P/D services default to breaker protection), otherwise to false. An explicit value is honored as given — including false on a P/D rule — and create and update resolve identically, so updating a rule never silently changes the breaker state. GET reports the resolved value.",
               "type": "boolean",
-              "default": false,
-              "x-nullable": false
+              "x-nullable": true
             },
             "chwbl_enable_cache_salt": {
               "description": "Require a non-empty JSON string cache_salt of at most 63 bytes on H1 and H2 requests and include it in the configured hash identity. Missing or malformed salt is rejected locally with HTTP 400 before upstream dispatch. This is cache-key namespacing, not authentication and not an authenticated tenant-isolation boundary.",
@@ -36915,10 +36913,9 @@ func init() {
           "format": "uint32"
         },
         "cb_enable": {
-          "description": "Enable the per-endpoint circuit breaker for full-proxy rules. Five consecutive backend connect failures open the breaker; an open endpoint is excluded from selection. Recovery uses a 30-second open interval followed by half-open probing. This is independent of the configured health monitor (probetype); one failed request does not by itself meet the opening threshold.",
+          "description": "Enable the per-endpoint circuit breaker for full-proxy rules. Five consecutive backend connect failures open the breaker; an open endpoint is excluded from selection. Recovery uses a 30-second open interval followed by half-open probing. This is independent of the configured health monitor (probetype); one failed request does not by itself meet the opening threshold. Omission is resolved at the API layer: on a rule with pd_disagg_mode=true it resolves to true (P/D services default to breaker protection), otherwise to false. An explicit value is honored as given — including false on a P/D rule — and create and update resolve identically, so updating a rule never silently changes the breaker state. GET reports the resolved value.",
           "type": "boolean",
-          "default": false,
-          "x-nullable": false
+          "x-nullable": true
         },
         "chwbl_enable_cache_salt": {
           "description": "Require a non-empty JSON string cache_salt of at most 63 bytes on H1 and H2 requests and include it in the configured hash identity. Missing or malformed salt is rejected locally with HTTP 400 before upstream dispatch. This is cache-key namespacing, not authentication and not an authenticated tenant-isolation boundary.",
