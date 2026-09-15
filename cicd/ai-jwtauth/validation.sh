@@ -1730,16 +1730,6 @@ chk_code     "QOS-DEF-003 q8's second request admitted - the rung is gone" 200 "
 chk_code     "QOS-DEF-003 q8's third request admitted" 200 "$QT3"
 chk_receipt  "QOS-DEF-003 q8's third request reached the backend" 1 "$QT3_NONCE"
 
-echo ""
-echo "   The token rungs. Every echoed answer settles exactly 12 tokens, so a"
-echo "   budget of 10 is decided in two requests: the first is admitted"
-echo "   against a clean bucket, its settle puts the bucket in debt, and the"
-echo "   next request is refused at admission. That is the same shape the"
-echo "   keyless N block uses, applied to the credentialed rungs."
-echo "   All five token rungs answer with the SAME code, token_quota_exceeded,"
-echo "   so no case here can be decided by the error string alone: each one"
-echo "   is paired with a sibling that must still be served."
-
 # The settle rides the response relay, so it lands after the answer reaches
 # the client. A second request issued immediately would be admitted against a
 # bucket that has not yet been told about the first, and the case would read
@@ -1753,6 +1743,77 @@ qreq() {
   QR=$(req "$port" "$b" -H "$h")
   QR_NONCE=$(last_nonce)
 }
+
+echo ""
+echo "   The per-VIP shared bucket. N1..N4 already pin its TOKEN half on"
+echo "   keyless traffic; these two pin the halves N1..N4 cannot see — the"
+echo "   RATE half, and what happens to it when the caller DOES present a"
+echo "   credential. Both run here, before any token rung is configured, so"
+echo "   the identities they use still carry no rows of their own."
+
+echo ""
+echo "QOS-VIP-001: the shared bucket's RATE half caps traffic carrying no"
+echo "             credential at all. :2062 arms rps=1 with NO token bound,"
+echo "             so the refusal names the rate rung and the token rung"
+echo "             cannot be what produced it — which is exactly what"
+echo "             N1..N4 cannot tell you, since there the rate side is"
+echo "             deliberately left wide open so only tokens can bind."
+qv_t0=$(date +%s%N)
+QV1=$(req 2062 "$body_llama"); QV1_NONCE=$(last_nonce)
+qv_t1=$(date +%s%N)
+QV2=$(req 2062 "$body_llama"); QV2_NONCE=$(last_nonce)
+QP_GAP_MS=$(( (qv_t1 - qv_t0) / 1000000 ))
+qos_gap_ok   "QOS-VIP-001 the keyless pair decided inside one refill"
+chk_code     "QOS-VIP-001 the first keyless request admitted" 200 "$QV1"
+chk_receipt  "QOS-VIP-001 the first keyless request reached the backend" 1 "$QV1_NONCE"
+chk_code     "QOS-VIP-001 the second keyless request refused" 429 "$QV2"
+chk_has      "QOS-VIP-001 the refusal names the rate rung" "rate_limit_exceeded" "$QV2"
+chk_not_has  "QOS-VIP-001 the token rung did not decide it" "token_quota_exceeded" "$QV2"
+chk_receipt  "QOS-VIP-001 the refused request never reached the backend" 0 "$QV2_NONCE"
+echo "  and it is a bucket, not a wedge: the token is back a second later."
+sleep 2
+QV3=$(req 2062 "$body_llama"); QV3_NONCE=$(last_nonce)
+chk_code     "QOS-VIP-001 the refilled bucket admits again" 200 "$QV3"
+chk_receipt  "QOS-VIP-001 the refilled request reached the backend" 1 "$QV3_NONCE"
+
+echo ""
+echo "QOS-VIP-004: an answer served to a CREDENTIALED caller charges the"
+echo "             shared bucket too, so the bucket bounds the SERVICE and"
+echo "             not merely its anonymous half."
+echo "             q4 (tenant-q) and t1 (tenant-qt) carry no rows of their"
+echo "             own here and sit in different tenants, so the VIP is the"
+echo "             only thing they share. The limit gauge is the charge"
+echo "             oracle: a quota key publishes its limit only when"
+echo "             something CHARGES it, so absent-then-10 is the spend"
+echo "             arriving, not a row being configured."
+QOS_VIP_LABEL='tenant="v_10.10.10.254_2061"'
+VLIM0=$(metric_labeled loxilb_ai_token_quota_limit_tokens "$QOS_VIP_LABEL")
+chk_num      "QOS-VIP-004 nothing has charged the shared bucket yet" 0 "$VLIM0"
+qreq 2061 "Authorization: Bearer $TOK_q4"
+chk_code     "QOS-VIP-004 q4's credentialed request admitted" 200 "$QR"
+chk_receipt  "QOS-VIP-004 q4's request reached the backend" 1 "$QR_NONCE"
+sleep $QOS_SETTLE_WAIT
+VLIM1=$(metric_labeled loxilb_ai_token_quota_limit_tokens "$QOS_VIP_LABEL")
+chk_num      "QOS-VIP-004 the credentialed answer charged the shared bucket" 10 "$VLIM1"
+qreq 2061 "Authorization: Bearer $TOK_t1"
+chk_code     "QOS-VIP-004 a different tenant is refused by what q4 spent" 429 "$QR"
+chk_has      "QOS-VIP-004 the shared bucket refused it before dispatch" "token_quota_would_exceed" "$QR"
+chk_receipt  "QOS-VIP-004 the refused request never reached the backend" 0 "$QR_NONCE"
+echo "  control: the same identity on :2040, which arms no shared bucket, is"
+echo "  served — so it was the VIP that refused t1, not anything about t1."
+qreq 2040 "Authorization: Bearer $TOK_t1"
+chk_code     "QOS-VIP-004 t1 is served where no shared bucket stands" 200 "$QR"
+chk_receipt  "QOS-VIP-004 t1's request there reached the backend" 1 "$QR_NONCE"
+
+echo ""
+echo "   The token rungs. Every echoed answer settles exactly 12 tokens, so a"
+echo "   budget of 10 is decided in two requests: the first is admitted"
+echo "   against a clean bucket, its settle puts the bucket in debt, and the"
+echo "   next request is refused at admission. That is the same shape the"
+echo "   keyless N block uses, applied to the credentialed rungs."
+echo "   All five token rungs answer with the SAME code, token_quota_exceeded,"
+echo "   so no case here can be decided by the error string alone: each one"
+echo "   is paired with a sibling that must still be served."
 
 echo ""
 echo "QOS-TPM-001: a user's aggregate token budget refuses their next request"
@@ -1856,6 +1917,46 @@ chk_has      "QOS-TPM-005 the refusal names the token quota" "token_quota_exceed
 chk_not_has  "QOS-TPM-005 it was the token rung, not the request-rate rung" "rate_limit_exceeded" "$QR"
 chk_receipt  "QOS-TPM-005 the refused request never reached the backend" 0 "$QR_NONCE"
 
+echo ""
+echo "QOS-TPM-006: lifting a TENANT token quota releases the tenant, exactly"
+echo "             as lifting a USER's does (QOS-TPM-001's second half)."
+echo "             The tenant surface has no DELETE, so tokens_per_min=0 is"
+echo "             the only lift there is: if it does not take effect, the"
+echo "             quota cannot be removed at all. The budget is 8 rather"
+echo "             than 10 on purpose — an answer of 12 leaves the bucket"
+echo "             far enough in debt that the drain cannot be mistaken for"
+echo "             the release, which at 10 is only a few seconds away."
+echo "             The re-arm at the end is what makes this measure the"
+echo "             GUARD: deleting the tenant rung outright would satisfy"
+echo "             every assertion above it and none of the last one."
+qos_cfg POST /config/ai/tenant/ratelimit \
+  '{"tenant_id":"tenant-qt","tokens_per_min":8}'
+qos_cfg_ok   "QOS-TPM-006 tenant tokens_per_min=8 for tenant-qt accepted"
+qreq 2040 "Authorization: Bearer $TOK_t1"
+chk_code     "QOS-TPM-006 t1's request admitted" 200 "$QR"
+chk_receipt  "QOS-TPM-006 t1's request reached the backend" 1 "$QR_NONCE"
+sleep $QOS_SETTLE_WAIT
+qreq 2040 "Authorization: Bearer $TOK_t2"
+chk_code     "QOS-TPM-006 t2 is refused by what t1 spent" 429 "$QR"
+chk_has      "QOS-TPM-006 the refusal names the token quota" "token_quota_exceeded" "$QR"
+chk_not_has  "QOS-TPM-006 it was the token rung, not the tenant's rate rung" "tenant_quota_exceeded" "$QR"
+chk_receipt  "QOS-TPM-006 the refused request never reached the backend" 0 "$QR_NONCE"
+qos_cfg POST /config/ai/tenant/ratelimit \
+  '{"tenant_id":"tenant-qt","tokens_per_min":0}'
+qos_cfg_ok   "QOS-TPM-006 the tenant's token quota is lifted"
+qreq 2040 "Authorization: Bearer $TOK_t2"
+chk_code     "QOS-TPM-006 t2 is served again once the rung is gone" 200 "$QR"
+chk_receipt  "QOS-TPM-006 t2's request reaches the backend again" 1 "$QR_NONCE"
+echo "  and the lift removed the RUNG, not the spend: re-arming the same"
+echo "  budget brings back the debt that is still sitting in the bucket."
+qos_cfg POST /config/ai/tenant/ratelimit \
+  '{"tenant_id":"tenant-qt","tokens_per_min":8}'
+qos_cfg_ok   "QOS-TPM-006 the tenant's token quota is re-armed"
+qreq 2040 "Authorization: Bearer $TOK_t2"
+chk_code     "QOS-TPM-006 the undrained debt refuses t2 again" 429 "$QR"
+chk_has      "QOS-TPM-006 the re-armed refusal names the token quota" "token_quota_exceeded" "$QR"
+chk_receipt  "QOS-TPM-006 the re-refused request never reached the backend" 0 "$QR_NONCE"
+
 # Hygiene: the rule-scope rows outlive the cases that needed them, and the
 # next thing to run on :2059/:2060 would inherit limits it never asked for.
 # Not asserted - the cases that matter have already been decided, and a
@@ -1863,6 +1964,7 @@ chk_receipt  "QOS-TPM-005 the refused request never reached the backend" 0 "$QR_
 qos_cfg DELETE "/config/ai/ratelimit/defaults/rule?rule_ident=10.10.10.254:2059"
 qos_cfg DELETE "/config/ai/ratelimit/defaults/rule?rule_ident=10.10.10.254:2060"
 qos_cfg DELETE "/config/ai/user/ratelimit/$QOS_T/$SUB_q1"
+qos_cfg POST /config/ai/tenant/ratelimit '{"tenant_id":"tenant-qt","tokens_per_min":0}'
 QOS_CFG_FRESH=0
 
 echo ""
@@ -1874,7 +1976,8 @@ echo "   set, so coverage cannot shrink without turning the run RED."
 EXPECTED_CASES="A1 A2 A3 A4 A5 A6 A7 A8 B1 B2 B3 C1 C2 C3 C4 C5 C6 D1 D2 D3 D4 D5 D6 E1 E2 F1 F2 F3 F4 L1 L2 L3 L4 K1 K2 K3 K4 K5 X1 X2 M1 M2 M3 M4 N1 N2 N3 N4 G1 G2 H0 H1 H2 H3 H4 P1 P2 I0 I1 I2 I3 J1 T0 T1 T2 T3 T4 U1 U2 \
 QOS-RPS-001 QOS-RPS-002 QOS-RPS-003 QOS-RPS-004 QOS-RPS-005 \
 QOS-DEF-001 QOS-DEF-002 QOS-DEF-003 \
-QOS-TPM-001 QOS-TPM-002 QOS-TPM-003 QOS-TPM-004 QOS-TPM-005"
+QOS-VIP-001 QOS-VIP-004 \
+QOS-TPM-001 QOS-TPM-002 QOS-TPM-003 QOS-TPM-004 QOS-TPM-005 QOS-TPM-006"
 missing=""
 for want in $EXPECTED_CASES; do
   case " $SEEN_CASES " in

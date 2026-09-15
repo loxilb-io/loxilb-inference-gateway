@@ -77,6 +77,20 @@
 #                                              zero, so global must reach
 #                                              through it (field-wise, not
 #                                              all-or-nothing)
+#     2061 jwt            profile kc           QoS ladder: a CREDENTIALED
+#                                              service whose rule-scope row
+#                                              arms the per-VIP shared bucket,
+#                                              so an attributed answer's spend
+#                                              can be seen landing there
+#     2062 none+sse       (keyless)            QoS ladder: per-VIP RATE bound
+#                                              (rps=1, no token bound), so a
+#                                              refusal there names the rate
+#                                              rung and could not have come
+#                                              from the token side
+#
+#   :2053 is NOT in this map on purpose — the P2 case creates a rule there at
+#   RUNTIME, to prove a 63-byte profile name is usable. A port added here
+#   would silently collide with it.
 
 source ../common.sh
 
@@ -556,6 +570,11 @@ add_lb_rule 2058 "llama-70b"  "31.31.31.1" jwt           kc 8095
 add_lb_rule 2059 "llama-70b"  "31.31.31.1" jwt           kc 8080
 add_lb_rule 2060 "llama-70b"  "31.31.31.1" jwt           kc 8080
 
+# The credentialed service whose rule-scope row arms the per-VIP shared
+# bucket. Same profile and same backend as :2040, so the only difference
+# between a request here and one there is the shared bucket itself.
+add_lb_rule 2061 "llama-70b"  "31.31.31.1" jwt           kc 8080
+
 # TLS + ALPN. Every H2 port above is h2c, so nothing here has ever run the
 # bearer gate on a connection whose HTTP/2 was negotiated through the TLS
 # handshake instead of a cleartext preface. That is a different entry path in
@@ -684,24 +703,27 @@ add_keyless_rule() { # <port> <ep_ip> <tport>
 }
 add_keyless_rule 2051 "31.31.31.1" 8080   # H/1.1 echo (usage-bearing)
 add_keyless_rule 2052 "31.31.31.1" 8090   # h2 echo (usage-bearing)
+add_keyless_rule 2062 "31.31.31.1" 8080   # H/1.1 echo — the VIP rate rung
 
 # The shared bucket is OPT-IN: a rule-scope defaults row arms it for the
-# two keyless services only. vip_shared_tpm=10 with the echoes' fixed
+# services that ask for one. vip_shared_tpm=10 with the echoes' fixed
 # usage of 12 tokens/answer means: request 1 admitted (bucket clean),
 # its settle puts the bucket in debt, request 2 refused — two requests
-# decide the leg. vip_shared_rps stays high so only the token side binds.
-add_vip_bucket() { # <port>
-  local port=$1 resp
+# decide the leg. vip_shared_rps stays high where only the token side is
+# under test, and the rate side is armed on its own port instead, so that
+# neither half can ever be the reason the other one refused.
+add_vip_bucket() { # <port> [rps] [tpm]
+  local port=$1 rps=${2:-100} tpm=${3:-10} resp
   resp=$($hexec llb1 curl -s -w '\nhttp_code=%{http_code}' -X POST \
     http://localhost:11111/netlox/v1/config/ai/ratelimit/defaults \
     -H "Content-Type: application/json" \
     -d '{
       "scope": "rule",
       "rule_ident": "10.10.10.254:'"$port"'",
-      "vip_shared_rps": 100,
-      "vip_shared_tpm": 10
+      "vip_shared_rps": '"$rps"',
+      "vip_shared_tpm": '"$tpm"'
     }')
-  echo "  vip bucket 10.10.10.254:$port (rps=100 tpm=10): $(echo "$resp" | tail -1)"
+  echo "  vip bucket 10.10.10.254:$port (rps=$rps tpm=$tpm): $(echo "$resp" | tail -1)"
   case "$resp" in
     *http_code=2*) ;;
     *) echo "FATAL: defaults row for :$port rejected: $resp"; exit 1 ;;
@@ -709,6 +731,14 @@ add_vip_bucket() { # <port>
 }
 add_vip_bucket 2051
 add_vip_bucket 2052
+# The rate half of the same shared bucket, on its own keyless service:
+# rps=1 and NO token bound, so a refusal here can only be the rate rung.
+add_vip_bucket 2062 1 0
+# The shared bucket armed on a CREDENTIALED service. Nothing else on :2061
+# bounds anything, and the two identities driven there sit in different
+# tenants with no rows of their own, so the VIP is the only thing they
+# share — which is the whole claim.
+add_vip_bucket 2061 100 10
 
 echo "#########################################"
 echo "Creating the llama-only API key"
