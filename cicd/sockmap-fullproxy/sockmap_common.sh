@@ -36,9 +36,9 @@ sockmap_clear_artifacts() {
 }
 
 # Backend ports used by the sockmap scenarios (validation: 8080, perf: 9080/9090,
-# directional: 9090/9091). All of them are killed on cleanup; otherwise the EXIT
-# trap's `wait` on the node servers never returns.
-SOCKMAP_BACKEND_PORTS="8080 9080 9090 9091"
+# directional: 9090/9091, request path: 9092/9093). All of them are killed on
+# cleanup; otherwise the EXIT trap's `wait` on the node servers never returns.
+SOCKMAP_BACKEND_PORTS="8080 9080 9090 9091 9092 9093"
 
 sockmap_listener_pids() {
   local host=$1
@@ -347,14 +347,33 @@ sockmap_redirect_count() {
   sockmap_stat_sum "$1" "$SOCKMAP_STAT_REDIRECT_OK"
 }
 
-# Cumulative SK_PASS results that were eligible but missed peer_map (diagnostic).
+# Cumulative SK_PASS results of the stream verdict (peer_map miss). Must not grow:
+# the proxy adds a socket to sock_verdict_map only after its peer_map entry, and
+# SK_PASS data on a strparser socket can stall the reader (kernel defect, see
+# loxilb-ebpf kernel/llb_kern_sockmap.c).
 sockmap_peer_miss_count() {
   sockmap_stat_sum "$1" "$SOCKMAP_STAT_PEER_MISS"
 }
 
-# Cumulative SK_PASS results caused by a portset mismatch (diagnostic).
+# Retired: the stream verdict no longer consults the portset. Always 0.
 sockmap_ineligible_count() {
   sockmap_stat_sum "$1" "$SOCKMAP_STAT_INELIGIBLE"
+}
+
+# Records a result line asserting that the verdict passed nothing up since
+# $2 (a sockmap_peer_miss_count taken earlier).
+#   $1 llb, $2 PEER_MISS before, $3 label
+# Close the measurement window before connections are torn down: during teardown
+# a verdict already running when the proxy removes the pair can still miss the
+# peer, which is harmless but would read as a failure here.
+sockmap_assert_no_pass() {
+  local llb=$1 before=$2 label=$3
+  local delta=$(( $(sockmap_peer_miss_count "$llb") - before ))
+  if (( delta == 0 )); then
+    sockmap_result "$label" "OK"
+  else
+    sockmap_result "$label" "FAILED" "PEER_MISS +$delta; a socket ran the verdict without a peer"
+  fi
 }
 
 # Polls until a portset reaches the wanted state, waiting for asynchronous dp work.
@@ -392,7 +411,7 @@ sockmap_redirect_resp_count() {
 sockmap_log_failure_count() {
   local llb=$1
   sudo docker logs "$llb" 2>&1 \
-    | grep -cE "Sockmap: Registration failed!|Sockmap: peer_map registration failed!|Sockmap: peer_map delete failed|sockmap: load failed|sockmap: attach failed|sockmap: portset map get failed|sockmap: portset fd get failed|sockmap: skmsg helper load failed|sockmap: skstream helper load failed|sockmap: portset update failed|sockmap: failed to (add|delete|remove)|sockmap: rule [0-9]+: failed|sockmap: rule id [0-9]+ out of range|sockmap: --sockmapsupport requires"
+    | grep -cE "Sockmap: Registration failed!|Sockmap: peer_map registration failed!|Sockmap: peer_map delete failed|Sockmap: sock_verdict_map (add|delete) failed|sockmap: load failed|sockmap: attach failed|sockmap: portset map get failed|sockmap: portset fd get failed|sockmap: skmsg helper load failed|sockmap: skstream helper load failed|sockmap: portset update failed|sockmap: failed to (add|delete|remove)|sockmap: rule [0-9]+: failed|sockmap: rule id [0-9]+ out of range|sockmap: --sockmapsupport requires"
 }
 
 # Checks that the required sockmap BPF assets (sockops prog and 6 maps) are attached.
