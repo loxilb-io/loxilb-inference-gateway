@@ -926,10 +926,10 @@ else
   # to assert is that the SAME raw key still works after the change.
   #
   # Scope note: this asserts the stored limit changed and the credential
-  # survived. Whether the data plane then *enforces* the new rate is Phase 3's
-  # QoS runtime ladder, and belongs in a scenario that can drive sustained
-  # traffic; asserting a 429 here would be timing-dependent and would fail for
-  # reasons unrelated to the API under test.
+  # survived. Whether the data plane then *enforces* the new rate belongs to
+  # the QoS runtime ladder, in a scenario that can drive sustained traffic;
+  # asserting a 429 here would be timing-dependent and would fail for reasons
+  # unrelated to the API under test.
   echo ""
   echo "QOS-API-011: after PATCH the same credential still authenticates"
   api PATCH "/config/ai/apikey/$QOS_KEY_ID" '{"rate_limit_rps":6}'
