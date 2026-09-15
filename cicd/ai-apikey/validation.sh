@@ -580,10 +580,21 @@ qos_note() {
 qcheck()      { qos_note "$1"; check "$@"; }
 qcheck_json() { qos_note "$1"; check_json "$@"; }
 
-# api <METHOD> <path> [json] — prints the body, sets QOS_CODE to the status.
+# api <METHOD> <path> [json] — drives one request and publishes its result in
+# QOS_BODY / QOS_CODE. It deliberately does NOT print the body.
+#
+# 🚨 It used to print the body so call sites could write `got=$(api GET ...)`.
+# That put every call in a command-substitution SUBSHELL, so the QOS_CODE
+# assignment never reached the caller and the next status assertion scored the
+# PREVIOUS request's status. Eight assertions were reading a stale value on the
+# first live run. Publishing the body through a global keeps the status and the
+# body that produced it in the same shell, so they cannot drift apart.
+#
 # An empty status is never a gateway answer; it means curl never completed, so
 # it is reported as a failure of the measurement rather than scored as one.
 QOS_CODE=""
+QOS_BODY=""
+QOS_CODE_FRESH=0
 api() {
   local m=$1 p=$2 b=${3:-} out
   if [[ -n "$b" ]]; then
@@ -596,12 +607,31 @@ api() {
       "http://localhost:11111/netlox/v1$p" 2>/dev/null)
   fi
   QOS_CODE=$(printf '%s' "$out" | tail -n1)
+  QOS_BODY=$(printf '%s' "$out" | sed '$d')
+  QOS_CODE_FRESH=1
   if [[ -z "$QOS_CODE" ]]; then
     echo "  FATAL: $m $p produced no HTTP status — the request never completed"
     code=1
     QOS_CODE="000"
   fi
-  printf '%s' "$out" | sed '$d'
+}
+
+# qcheck_code <label> <want> — assert the status of the request just made.
+#
+# The freshness flag is the harness's own red twin for the staleness defect
+# above: a status may be scored exactly once, by the assertion that follows its
+# request. A second assertion with no request in between is not a pass and not
+# a fail of the product — it is a broken test, and says so.
+qcheck_code() {
+  local label="$1" want="$2"
+  if [[ "$QOS_CODE_FRESH" != "1" ]]; then
+    qos_note "$label"
+    echo "  $label [FAILED] — stale status: no request was made since the last status assertion"
+    code=1
+    return
+  fi
+  QOS_CODE_FRESH=0
+  qcheck "$label" "$want" "$QOS_CODE"
 }
 
 # api_noauth <METHOD> <path> — status only, no Authorization header.
@@ -615,18 +645,20 @@ api_noauth() {
 echo ""
 echo "QOS-API-001: POST user limits, read back by identity and in the tenant list"
 api POST /config/ai/user/ratelimit \
-  "{\"tenant_id\":\"$QOS_T\",\"user_id\":\"$QOS_U\",\"rps\":7,\"burst_size\":14,\"tokens_per_min\":900}" >/dev/null
-qcheck "QOS-API-001 POST user limits → 204" "204" "$QOS_CODE"
+  "{\"tenant_id\":\"$QOS_T\",\"user_id\":\"$QOS_U\",\"rps\":7,\"burst_size\":14,\"tokens_per_min\":900}"
+qcheck_code "QOS-API-001 POST user limits → 204" "204"
 
-got=$(api GET "/config/ai/user/ratelimit/$QOS_T/$QOS_U")
-qcheck      "QOS-API-001 GET user limits → 200" "200" "$QOS_CODE"
+api GET "/config/ai/user/ratelimit/$QOS_T/$QOS_U"
+got=$QOS_BODY
+qcheck_code "QOS-API-001 GET user limits → 200" "200"
 qcheck_json "QOS-API-001 rps read back"            ".rps"            "7"      "$got"
 qcheck_json "QOS-API-001 burst_size read back"     ".burst_size"     "14"     "$got"
 qcheck_json "QOS-API-001 tokens_per_min read back" ".tokens_per_min" "900"    "$got"
 qcheck_json "QOS-API-001 identity read back"       ".user_id"        "$QOS_U" "$got"
 
-lst=$(api GET "/config/ai/user/ratelimit/$QOS_T")
-qcheck      "QOS-API-001 list → 200" "200" "$QOS_CODE"
+api GET "/config/ai/user/ratelimit/$QOS_T"
+lst=$QOS_BODY
+qcheck_code "QOS-API-001 list → 200" "200"
 qcheck_json "QOS-API-001 list contains the user" \
   "[.[] | select(.user_id==\"$QOS_U\")] | length" "1" "$lst"
 
@@ -641,15 +673,16 @@ echo ""
 echo "QOS-API-002: POST replacing the user's model_limits — removed rows must be gone"
 api POST /config/ai/user/ratelimit \
   "{\"tenant_id\":\"$QOS_T\",\"user_id\":\"$QOS_U\",\"rps\":7,\"tokens_per_min\":900,\
-\"model_limits\":[{\"model\":\"llama-3\",\"tokens_per_min\":100},{\"model\":\"mistral-7b\",\"tokens_per_min\":200}]}" >/dev/null
-qcheck "QOS-API-002 POST two model rows → 204" "204" "$QOS_CODE"
+\"model_limits\":[{\"model\":\"llama-3\",\"tokens_per_min\":100},{\"model\":\"mistral-7b\",\"tokens_per_min\":200}]}"
+qcheck_code "QOS-API-002 POST two model rows → 204" "204"
 
 api POST /config/ai/user/ratelimit \
   "{\"tenant_id\":\"$QOS_T\",\"user_id\":\"$QOS_U\",\"rps\":7,\"tokens_per_min\":900,\
-\"model_limits\":[{\"model\":\"llama-3\",\"tokens_per_min\":150}]}" >/dev/null
-qcheck "QOS-API-002 POST replacing with one row → 204" "204" "$QOS_CODE"
+\"model_limits\":[{\"model\":\"llama-3\",\"tokens_per_min\":150}]}"
+qcheck_code "QOS-API-002 POST replacing with one row → 204" "204"
 
-got=$(api GET "/config/ai/user/ratelimit/$QOS_T/$QOS_U")
+api GET "/config/ai/user/ratelimit/$QOS_T/$QOS_U"
+got=$QOS_BODY
 qcheck_json "QOS-API-002 surviving row updated" \
   "[.model_limits[] | select(.model==\"llama-3\")] | .[0].tokens_per_min" "150" "$got"
 qcheck_json "QOS-API-002 removed row is absent" \
@@ -660,20 +693,21 @@ qcheck_json "QOS-API-002 exactly one model row remains" \
 # ── QOS-API-003: DELETE the user's limits ────────────────────────────────────
 echo ""
 echo "QOS-API-003: DELETE user limits → 204, and the row is gone"
-api DELETE "/config/ai/user/ratelimit/$QOS_T/$QOS_U" >/dev/null
-qcheck "QOS-API-003 DELETE → 204" "204" "$QOS_CODE"
-api GET "/config/ai/user/ratelimit/$QOS_T/$QOS_U" >/dev/null
-qcheck "QOS-API-003 GET after DELETE → 404" "404" "$QOS_CODE"
+api DELETE "/config/ai/user/ratelimit/$QOS_T/$QOS_U"
+qcheck_code "QOS-API-003 DELETE → 204" "204"
+api GET "/config/ai/user/ratelimit/$QOS_T/$QOS_U"
+qcheck_code "QOS-API-003 GET after DELETE → 404" "404"
 
 # ── QOS-API-004: global defaults ─────────────────────────────────────────────
 echo ""
 echo "QOS-API-004: POST/GET scope 'global' defaults"
 api POST /config/ai/ratelimit/defaults \
-  '{"scope":"global","default_user_rps":3,"default_user_tpm":300,"default_tenant_rps":30,"default_tenant_tpm":3000}' >/dev/null
-qcheck "QOS-API-004 POST global defaults → 204" "204" "$QOS_CODE"
+  '{"scope":"global","default_user_rps":3,"default_user_tpm":300,"default_tenant_rps":30,"default_tenant_tpm":3000}'
+qcheck_code "QOS-API-004 POST global defaults → 204" "204"
 
-got=$(api GET /config/ai/ratelimit/defaults/global)
-qcheck      "QOS-API-004 GET global → 200" "200" "$QOS_CODE"
+api GET /config/ai/ratelimit/defaults/global
+got=$QOS_BODY
+qcheck_code "QOS-API-004 GET global → 200" "200"
 qcheck_json "QOS-API-004 default_user_rps"   ".default_user_rps"   "3"    "$got"
 qcheck_json "QOS-API-004 default_user_tpm"   ".default_user_tpm"   "300"  "$got"
 qcheck_json "QOS-API-004 default_tenant_rps" ".default_tenant_rps" "30"   "$got"
@@ -683,35 +717,39 @@ qcheck_json "QOS-API-004 default_tenant_tpm" ".default_tenant_tpm" "3000" "$got"
 echo ""
 echo "QOS-API-005: scope 'rule' defaults are selected by rule_ident, not shared with 'global'"
 api POST /config/ai/ratelimit/defaults \
-  '{"scope":"rule","rule_ident":"qos-svc-a","default_user_rps":11,"default_user_tpm":1100}' >/dev/null
-qcheck "QOS-API-005 POST rule defaults (svc-a) → 204" "204" "$QOS_CODE"
+  '{"scope":"rule","rule_ident":"qos-svc-a","default_user_rps":11,"default_user_tpm":1100}'
+qcheck_code "QOS-API-005 POST rule defaults (svc-a) → 204" "204"
 api POST /config/ai/ratelimit/defaults \
-  '{"scope":"rule","rule_ident":"qos-svc-b","default_user_rps":22,"default_user_tpm":2200}' >/dev/null
-qcheck "QOS-API-005 POST rule defaults (svc-b) → 204" "204" "$QOS_CODE"
+  '{"scope":"rule","rule_ident":"qos-svc-b","default_user_rps":22,"default_user_tpm":2200}'
+qcheck_code "QOS-API-005 POST rule defaults (svc-b) → 204" "204"
 
-got=$(api GET "/config/ai/ratelimit/defaults/rule?rule_ident=qos-svc-a")
-qcheck      "QOS-API-005 GET svc-a → 200" "200" "$QOS_CODE"
+api GET "/config/ai/ratelimit/defaults/rule?rule_ident=qos-svc-a"
+got=$QOS_BODY
+qcheck_code "QOS-API-005 GET svc-a → 200" "200"
 qcheck_json "QOS-API-005 svc-a keeps its own value" ".default_user_rps" "11" "$got"
-got=$(api GET "/config/ai/ratelimit/defaults/rule?rule_ident=qos-svc-b")
+api GET "/config/ai/ratelimit/defaults/rule?rule_ident=qos-svc-b"
+got=$QOS_BODY
 qcheck_json "QOS-API-005 svc-b keeps its own value" ".default_user_rps" "22" "$got"
 # The global row must not have been overwritten by either rule write.
-got=$(api GET /config/ai/ratelimit/defaults/global)
+api GET /config/ai/ratelimit/defaults/global
+got=$QOS_BODY
 qcheck_json "QOS-API-005 global row untouched by rule writes" ".default_user_rps" "3" "$got"
 
 # ── QOS-API-006: DELETE defaults by scope ────────────────────────────────────
 echo ""
 echo "QOS-API-006: DELETE defaults by scope removes only the addressed row"
-api DELETE "/config/ai/ratelimit/defaults/rule?rule_ident=qos-svc-a" >/dev/null
-qcheck "QOS-API-006 DELETE rule/svc-a → 204" "204" "$QOS_CODE"
-api GET "/config/ai/ratelimit/defaults/rule?rule_ident=qos-svc-a" >/dev/null
-qcheck "QOS-API-006 GET deleted rule row → 404" "404" "$QOS_CODE"
+api DELETE "/config/ai/ratelimit/defaults/rule?rule_ident=qos-svc-a"
+qcheck_code "QOS-API-006 DELETE rule/svc-a → 204" "204"
+api GET "/config/ai/ratelimit/defaults/rule?rule_ident=qos-svc-a"
+qcheck_code "QOS-API-006 GET deleted rule row → 404" "404"
 # The sibling and the global row must survive: a delete that takes neighbours
 # with it looks identical to a correct delete if you only check the target.
-got=$(api GET "/config/ai/ratelimit/defaults/rule?rule_ident=qos-svc-b")
-qcheck      "QOS-API-006 sibling rule row survives → 200" "200" "$QOS_CODE"
+api GET "/config/ai/ratelimit/defaults/rule?rule_ident=qos-svc-b"
+got=$QOS_BODY
+qcheck_code "QOS-API-006 sibling rule row survives → 200" "200"
 qcheck_json "QOS-API-006 sibling value intact" ".default_user_rps" "22" "$got"
-api GET /config/ai/ratelimit/defaults/global >/dev/null
-qcheck "QOS-API-006 global row survives → 200" "200" "$QOS_CODE"
+api GET /config/ai/ratelimit/defaults/global
+qcheck_code "QOS-API-006 global row survives → 200" "200"
 
 # ── QOS-API-007: an entry that constrains nothing is refused ─────────────────
 #
@@ -722,26 +760,27 @@ qcheck "QOS-API-006 global row survives → 200" "200" "$QOS_CODE"
 echo ""
 echo "QOS-API-007: all-zero and burst-only entries are refused"
 api POST /config/ai/user/ratelimit \
-  "{\"tenant_id\":\"$QOS_T\",\"user_id\":\"zero-user\",\"rps\":0,\"burst_size\":0,\"tokens_per_min\":0}" >/dev/null
-qcheck "QOS-API-007 all-zero user entry → 400" "400" "$QOS_CODE"
+  "{\"tenant_id\":\"$QOS_T\",\"user_id\":\"zero-user\",\"rps\":0,\"burst_size\":0,\"tokens_per_min\":0}"
+qcheck_code "QOS-API-007 all-zero user entry → 400" "400"
 api POST /config/ai/user/ratelimit \
-  "{\"tenant_id\":\"$QOS_T\",\"user_id\":\"burst-only\",\"rps\":0,\"burst_size\":50,\"tokens_per_min\":0}" >/dev/null
-qcheck "QOS-API-007 burst-only user entry → 400 (burst alone decides nothing)" "400" "$QOS_CODE"
-api GET "/config/ai/user/ratelimit/$QOS_T/burst-only" >/dev/null
-qcheck "QOS-API-007 refused entry created no row → 404" "404" "$QOS_CODE"
-api POST /config/ai/ratelimit/defaults '{"scope":"rule","rule_ident":"qos-zero"}' >/dev/null
-qcheck "QOS-API-007 all-zero defaults entry → 400" "400" "$QOS_CODE"
+  "{\"tenant_id\":\"$QOS_T\",\"user_id\":\"burst-only\",\"rps\":0,\"burst_size\":50,\"tokens_per_min\":0}"
+qcheck_code "QOS-API-007 burst-only user entry → 400 (burst alone decides nothing)" "400"
+api GET "/config/ai/user/ratelimit/$QOS_T/burst-only"
+qcheck_code "QOS-API-007 refused entry created no row → 404" "404"
+api POST /config/ai/ratelimit/defaults '{"scope":"rule","rule_ident":"qos-zero"}'
+qcheck_code "QOS-API-007 all-zero defaults entry → 400" "400"
 
 # ── QOS-API-008: negative values are refused, and change nothing ─────────────
 echo ""
 echo "QOS-API-008: negative values are refused and leave existing state alone"
 api POST /config/ai/user/ratelimit \
-  "{\"tenant_id\":\"$QOS_T\",\"user_id\":\"neg-user\",\"rps\":-1,\"tokens_per_min\":10}" >/dev/null
-qcheck "QOS-API-008 negative rps → 400" "400" "$QOS_CODE"
+  "{\"tenant_id\":\"$QOS_T\",\"user_id\":\"neg-user\",\"rps\":-1,\"tokens_per_min\":10}"
+qcheck_code "QOS-API-008 negative rps → 400" "400"
 api POST /config/ai/ratelimit/defaults \
-  '{"scope":"global","default_user_rps":-5,"default_user_tpm":10}' >/dev/null
-qcheck "QOS-API-008 negative default → 400" "400" "$QOS_CODE"
-got=$(api GET /config/ai/ratelimit/defaults/global)
+  '{"scope":"global","default_user_rps":-5,"default_user_tpm":10}'
+qcheck_code "QOS-API-008 negative default → 400" "400"
+api GET /config/ai/ratelimit/defaults/global
+got=$QOS_BODY
 qcheck_json "QOS-API-008 rejected write left the global row unchanged" \
   ".default_user_rps" "3" "$got"
 
@@ -753,15 +792,15 @@ qcheck_json "QOS-API-008 rejected write left the global row unchanged" \
 # 400 here would be asserting a line of code that is unreachable over HTTP.
 echo ""
 echo "QOS-API-009: invalid scope is refused at binding (422); scope/rule_ident mismatch at 400"
-api POST /config/ai/ratelimit/defaults '{"scope":"bogus","default_user_rps":1}' >/dev/null
-qcheck "QOS-API-009 invalid scope in body → 422 (enum, refused by binding)" "422" "$QOS_CODE"
-api GET /config/ai/ratelimit/defaults/bogus >/dev/null
-qcheck "QOS-API-009 invalid scope in path → 422" "422" "$QOS_CODE"
-api POST /config/ai/ratelimit/defaults '{"scope":"rule","default_user_rps":1}' >/dev/null
-qcheck "QOS-API-009 scope 'rule' without rule_ident → 400" "400" "$QOS_CODE"
+api POST /config/ai/ratelimit/defaults '{"scope":"bogus","default_user_rps":1}'
+qcheck_code "QOS-API-009 invalid scope in body → 422 (enum, refused by binding)" "422"
+api GET /config/ai/ratelimit/defaults/bogus
+qcheck_code "QOS-API-009 invalid scope in path → 422" "422"
+api POST /config/ai/ratelimit/defaults '{"scope":"rule","default_user_rps":1}'
+qcheck_code "QOS-API-009 scope 'rule' without rule_ident → 400" "400"
 api POST /config/ai/ratelimit/defaults \
-  '{"scope":"global","rule_ident":"nope","default_user_rps":1}' >/dev/null
-qcheck "QOS-API-009 scope 'global' with a rule_ident → 400" "400" "$QOS_CODE"
+  '{"scope":"global","rule_ident":"nope","default_user_rps":1}'
+qcheck_code "QOS-API-009 scope 'global' with a rule_ident → 400" "400"
 
 # ── QOS-API-010: the API key's own rate fields, at create and over PATCH ─────
 #
@@ -771,10 +810,11 @@ qcheck "QOS-API-009 scope 'global' with a rule_ident → 400" "400" "$QOS_CODE"
 # generated spec is the only thing consulted.
 echo ""
 echo "QOS-API-010: key rate fields set at create, then changed by PATCH"
-kb=$(api POST /config/ai/apikey \
+api POST /config/ai/apikey \
   "{\"tenant_id\":\"$QOS_T\",\"name\":\"qos-key\",\"enabled\":true,\
-\"allowed_models\":[\"llama-3\"],\"rate_limit_rps\":5,\"burst_size\":10,\"tokens_per_min\":500}")
-qcheck "QOS-API-010 create key → 2xx" "20" "$QOS_CODE"
+\"allowed_models\":[\"llama-3\"],\"rate_limit_rps\":5,\"burst_size\":10,\"tokens_per_min\":500}"
+kb=$QOS_BODY
+qcheck_code "QOS-API-010 create key → 2xx" "20"
 QOS_KEY_ID=$(echo "$kb" | jq -r '.key_id // empty' 2>/dev/null)
 QOS_RAW_KEY=$(echo "$kb" | jq -r '.raw_key // empty' 2>/dev/null)
 
@@ -782,15 +822,17 @@ if [[ -z "$QOS_KEY_ID" ]]; then
   echo "  QOS-API-010 [FAILED] — key creation returned no key_id; PATCH cases cannot run"
   code=1
 else
-  got=$(api GET "/config/ai/apikey/$QOS_KEY_ID")
+  api GET "/config/ai/apikey/$QOS_KEY_ID"
+  got=$QOS_BODY
   qcheck_json "QOS-API-010 create-time rate_limit_rps"  ".rate_limit_rps"  "5"   "$got"
   qcheck_json "QOS-API-010 create-time burst_size"      ".burst_size"      "10"  "$got"
   qcheck_json "QOS-API-010 create-time tokens_per_min"  ".tokens_per_min"  "500" "$got"
 
   api PATCH "/config/ai/apikey/$QOS_KEY_ID" \
-    '{"rate_limit_rps":9,"burst_size":18,"tokens_per_min":1500}' >/dev/null
-  qcheck "QOS-API-010 PATCH the three rate fields → 2xx" "20" "$QOS_CODE"
-  got=$(api GET "/config/ai/apikey/$QOS_KEY_ID")
+    '{"rate_limit_rps":9,"burst_size":18,"tokens_per_min":1500}'
+  qcheck_code "QOS-API-010 PATCH the three rate fields → 2xx" "20"
+  api GET "/config/ai/apikey/$QOS_KEY_ID"
+  got=$QOS_BODY
   qcheck_json "QOS-API-010 patched rate_limit_rps" ".rate_limit_rps" "9"    "$got"
   qcheck_json "QOS-API-010 patched burst_size"     ".burst_size"     "18"   "$got"
   qcheck_json "QOS-API-010 patched tokens_per_min" ".tokens_per_min" "1500" "$got"
@@ -803,17 +845,26 @@ else
   # halves have to be asserted or the distinction can rot unnoticed.
   echo ""
   echo "QOS-API-010b: an omitted PATCH field is untouched; an explicit 0 is stored"
-  api PATCH "/config/ai/apikey/$QOS_KEY_ID" '{"rate_limit_rps":4}' >/dev/null
-  qcheck "QOS-API-010b PATCH one field → 2xx" "20" "$QOS_CODE"
-  got=$(api GET "/config/ai/apikey/$QOS_KEY_ID")
+  api PATCH "/config/ai/apikey/$QOS_KEY_ID" '{"rate_limit_rps":4}'
+  qcheck_code "QOS-API-010b PATCH one field → 2xx" "20"
+  api GET "/config/ai/apikey/$QOS_KEY_ID"
+  got=$QOS_BODY
   qcheck_json "QOS-API-010b named field changed"      ".rate_limit_rps" "4"    "$got"
   qcheck_json "QOS-API-010b omitted burst_size kept"  ".burst_size"     "18"   "$got"
   qcheck_json "QOS-API-010b omitted tokens_per_min kept" ".tokens_per_min" "1500" "$got"
 
-  api PATCH "/config/ai/apikey/$QOS_KEY_ID" '{"tokens_per_min":0}' >/dev/null
-  qcheck "QOS-API-010b PATCH explicit zero → 2xx" "20" "$QOS_CODE"
-  got=$(api GET "/config/ai/apikey/$QOS_KEY_ID")
-  qcheck_json "QOS-API-010b explicit 0 stored as no-limit" ".tokens_per_min" "0" "$got"
+  # ApiKeySummary serialises the three rate fields with `omitempty`, so a
+  # stored 0 leaves the wire, not a `"tokens_per_min": 0`. Measured, not
+  # predicted: the first run read `null` here. `// 0` reads the wire the way
+  # the schema defines it — and because the field held 1500 immediately
+  # before, this still proves the write LANDED rather than being skipped.
+  api PATCH "/config/ai/apikey/$QOS_KEY_ID" '{"tokens_per_min":0}'
+  qcheck_code "QOS-API-010b PATCH explicit zero → 2xx" "20"
+  api GET "/config/ai/apikey/$QOS_KEY_ID"
+  got=$QOS_BODY
+  qcheck_json "QOS-API-010b explicit 0 stored as no-limit" "(.tokens_per_min // 0)" "0" "$got"
+  qcheck_json "QOS-API-010b explicit 0 replaced the previous 1500" \
+    "if (.tokens_per_min // 0) == 1500 then \"unchanged\" else \"changed\" end" "changed" "$got"
   qcheck_json "QOS-API-010b explicit 0 did not disturb rps" ".rate_limit_rps" "4" "$got"
 
   # ── QOS-API-010c: the raw arm's own error contract ────────────────────────
@@ -825,8 +876,9 @@ else
   # these pin what a client actually receives for 404 and 401.
   echo ""
   echo "QOS-API-010c: PATCH on the raw arm — unknown key, no auth, error envelope"
-  body=$(api PATCH "/config/ai/apikey/no-such-key-id" '{"rate_limit_rps":1}')
-  qcheck "QOS-API-010c PATCH unknown key_id → 404" "404" "$QOS_CODE"
+  api PATCH "/config/ai/apikey/no-such-key-id" '{"rate_limit_rps":1}'
+  body=$QOS_BODY
+  qcheck_code "QOS-API-010c PATCH unknown key_id → 404" "404"
   qcheck_json "QOS-API-010c error envelope is SimpleError {\"error\":...}" \
     "if has(\"error\") then \"yes\" else \"no\" end" "yes" "$body"
   st=$(api_noauth PATCH "/config/ai/apikey/$QOS_KEY_ID")
@@ -845,9 +897,10 @@ else
   # reasons unrelated to the API under test.
   echo ""
   echo "QOS-API-011: after PATCH the same credential still authenticates"
-  api PATCH "/config/ai/apikey/$QOS_KEY_ID" '{"rate_limit_rps":6}' >/dev/null
-  qcheck "QOS-API-011 PATCH → 2xx" "20" "$QOS_CODE"
-  got=$(api GET "/config/ai/apikey/$QOS_KEY_ID")
+  api PATCH "/config/ai/apikey/$QOS_KEY_ID" '{"rate_limit_rps":6}'
+  qcheck_code "QOS-API-011 PATCH → 2xx" "20"
+  api GET "/config/ai/apikey/$QOS_KEY_ID"
+  got=$QOS_BODY
   qcheck_json "QOS-API-011 new limit is stored" ".rate_limit_rps" "6" "$got"
   qcheck_json "QOS-API-011 key was not recreated (key_id stable)" \
     ".key_id" "$QOS_KEY_ID" "$got"
@@ -861,7 +914,7 @@ else
     qos_note "QOS-API-011"
   fi
 
-  api DELETE "/config/ai/apikey/$QOS_KEY_ID" >/dev/null
+  api DELETE "/config/ai/apikey/$QOS_KEY_ID"
 fi
 
 # ── QOS-API-012: every new endpoint rejects an unauthenticated caller ────────
@@ -883,14 +936,15 @@ done
 # ── QOS-API-013: absent rows answer 404, not an empty success ───────────────
 echo ""
 echo "QOS-API-013: a row that does not exist is 404"
-api GET "/config/ai/user/ratelimit/$QOS_T/definitely-absent" >/dev/null
-qcheck "QOS-API-013 absent user row → 404" "404" "$QOS_CODE"
-api GET "/config/ai/ratelimit/defaults/rule?rule_ident=definitely-absent" >/dev/null
-qcheck "QOS-API-013 absent defaults row → 404" "404" "$QOS_CODE"
+api GET "/config/ai/user/ratelimit/$QOS_T/definitely-absent"
+qcheck_code "QOS-API-013 absent user row → 404" "404"
+api GET "/config/ai/ratelimit/defaults/rule?rule_ident=definitely-absent"
+qcheck_code "QOS-API-013 absent defaults row → 404" "404"
 # A tenant with no rows must list empty rather than 404 — the list and the
 # single-item GET answer differently and both answers are deliberate.
-lst=$(api GET "/config/ai/user/ratelimit/tenant-with-no-rows")
-qcheck      "QOS-API-013 list for an unknown tenant → 200" "200" "$QOS_CODE"
+api GET "/config/ai/user/ratelimit/tenant-with-no-rows"
+lst=$QOS_BODY
+qcheck_code "QOS-API-013 list for an unknown tenant → 200" "200"
 qcheck_json "QOS-API-013 list for an unknown tenant is empty" "length" "0" "$lst"
 
 # ── QOS-API-014 / 015: identities that would alias a bucket key ─────────────
@@ -902,28 +956,28 @@ qcheck_json "QOS-API-013 list for an unknown tenant is empty" "length" "0" "$lst
 echo ""
 echo "QOS-API-014: an identity containing the bucket-key delimiter is refused"
 api POST /config/ai/user/ratelimit \
-  "{\"tenant_id\":\"$QOS_T\",\"user_id\":\"bad|user\",\"rps\":1}" >/dev/null
-qcheck "QOS-API-014 user_id containing '|' → 400" "400" "$QOS_CODE"
+  "{\"tenant_id\":\"$QOS_T\",\"user_id\":\"bad|user\",\"rps\":1}"
+qcheck_code "QOS-API-014 user_id containing '|' → 400" "400"
 api POST /config/ai/user/ratelimit \
-  "{\"tenant_id\":\"bad|tenant\",\"user_id\":\"$QOS_U\",\"rps\":1}" >/dev/null
-qcheck "QOS-API-014 tenant_id containing '|' → 400" "400" "$QOS_CODE"
+  "{\"tenant_id\":\"bad|tenant\",\"user_id\":\"$QOS_U\",\"rps\":1}"
+qcheck_code "QOS-API-014 tenant_id containing '|' → 400" "400"
 api POST /config/ai/user/ratelimit \
   "{\"tenant_id\":\"$QOS_T\",\"user_id\":\"$QOS_U\",\"rps\":1,\
-\"model_limits\":[{\"model\":\"bad|model\",\"tokens_per_min\":10}]}" >/dev/null
-qcheck "QOS-API-014 model name containing '|' → 400" "400" "$QOS_CODE"
-api GET "/config/ai/user/ratelimit/$QOS_T/bad|user" >/dev/null
-qcheck "QOS-API-014 refused identity created no row → 404" "404" "$QOS_CODE"
+\"model_limits\":[{\"model\":\"bad|model\",\"tokens_per_min\":10}]}"
+qcheck_code "QOS-API-014 model name containing '|' → 400" "400"
+api GET "/config/ai/user/ratelimit/$QOS_T/bad|user"
+qcheck_code "QOS-API-014 refused identity created no row → 404" "404"
 
 echo ""
 echo "QOS-API-015: an identity beginning with a reserved sync-wire prefix is refused"
 for pfx in "uq:" "um:" "kq:" "t:" "ver:"; do
   api POST /config/ai/user/ratelimit \
-    "{\"tenant_id\":\"$QOS_T\",\"user_id\":\"${pfx}victim\",\"rps\":1}" >/dev/null
-  qcheck "QOS-API-015 user_id starting '$pfx' → 400" "400" "$QOS_CODE"
+    "{\"tenant_id\":\"$QOS_T\",\"user_id\":\"${pfx}victim\",\"rps\":1}"
+  qcheck_code "QOS-API-015 user_id starting '$pfx' → 400" "400"
 done
 api POST /config/ai/ratelimit/defaults \
-  '{"scope":"rule","rule_ident":"v:svc","default_user_rps":1}' >/dev/null
-qcheck "QOS-API-015 rule_ident starting 'v:' → 400" "400" "$QOS_CODE"
+  '{"scope":"rule","rule_ident":"v:svc","default_user_rps":1}'
+qcheck_code "QOS-API-015 rule_ident starting 'v:' → 400" "400"
 
 # ── QOS-API-016: tenant burst_pct and user burst_size are different fields ──
 #
@@ -935,25 +989,27 @@ qcheck "QOS-API-015 rule_ident starting 'v:' → 400" "400" "$QOS_CODE"
 echo ""
 echo "QOS-API-016: tenant burst_pct and user burst_size do not contaminate each other"
 api POST /config/ai/tenant/ratelimit \
-  "{\"tenant_id\":\"$QOS_T\",\"rps\":40,\"tokens_per_min\":4000,\"burst_pct\":150}" >/dev/null
-qcheck "QOS-API-016 POST tenant limits with burst_pct → 2xx" "20" "$QOS_CODE"
+  "{\"tenant_id\":\"$QOS_T\",\"rps\":40,\"tokens_per_min\":4000,\"burst_pct\":150}"
+qcheck_code "QOS-API-016 POST tenant limits with burst_pct → 2xx" "20"
 api POST /config/ai/user/ratelimit \
-  "{\"tenant_id\":\"$QOS_T\",\"user_id\":\"$QOS_U\",\"rps\":7,\"burst_size\":14,\"tokens_per_min\":900}" >/dev/null
-qcheck "QOS-API-016 POST user limits with burst_size → 204" "204" "$QOS_CODE"
+  "{\"tenant_id\":\"$QOS_T\",\"user_id\":\"$QOS_U\",\"rps\":7,\"burst_size\":14,\"tokens_per_min\":900}"
+qcheck_code "QOS-API-016 POST user limits with burst_size → 204" "204"
 
-tg=$(api GET "/config/ai/tenant/ratelimit/$QOS_T")
+api GET "/config/ai/tenant/ratelimit/$QOS_T"
+tg=$QOS_BODY
 qcheck_json "QOS-API-016 tenant reports burst_pct"    ".burst_pct" "150" "$tg"
 qcheck_json "QOS-API-016 tenant carries no burst_size" \
   "if has(\"burst_size\") then \"present\" else \"absent\" end" "absent" "$tg"
-ug=$(api GET "/config/ai/user/ratelimit/$QOS_T/$QOS_U")
+api GET "/config/ai/user/ratelimit/$QOS_T/$QOS_U"
+ug=$QOS_BODY
 qcheck_json "QOS-API-016 user reports burst_size"     ".burst_size" "14" "$ug"
 qcheck_json "QOS-API-016 user carries no burst_pct" \
   "if has(\"burst_pct\") then \"present\" else \"absent\" end" "absent" "$ug"
 
 # ── clean up the rows this block created ────────────────────────────────────
-api DELETE "/config/ai/user/ratelimit/$QOS_T/$QOS_U"               >/dev/null 2>&1
-api DELETE "/config/ai/ratelimit/defaults/global"                  >/dev/null 2>&1
-api DELETE "/config/ai/ratelimit/defaults/rule?rule_ident=qos-svc-b" >/dev/null 2>&1
+api DELETE "/config/ai/user/ratelimit/$QOS_T/$QOS_U"
+api DELETE "/config/ai/ratelimit/defaults/global"
+api DELETE "/config/ai/ratelimit/defaults/rule?rule_ident=qos-svc-b"
 
 # ── QOS-API-Z1/Z2: the block ran what it claims to run ──────────────────────
 #
