@@ -77,13 +77,23 @@ cd "$(dirname "$0")" || exit 1
 # appear in more than one phase's work; the tag records which phase put it
 # under CI, so `--phase` answers "what did that phase deliver", not "what does
 # that phase touch".
+#
+# 🚨 A step must be the thing CI runs, not something adjacent to it. This row
+# pointed at ai-multitier-contract's run-unit.sh, which is the evidence-
+# producing baseline rail: it takes two mandatory arguments and exits 2
+# without them, and it is committed non-executable, so './run-unit.sh' exited
+# 126. The row could never have passed — and even repaired it would have run
+# twelve Docker gates, where what CI actually gates on is three commands.
+# Those now live in run-ci-gates.sh, which the workflow and this row both
+# call, so the two cannot drift apart again. Measured, not predicted: the
+# first execution of this registry is what exposed it.
 # ---------------------------------------------------------------------------
 REGISTRY=(
   "ai-apikey|2|./rmconfig.sh|./config.sh;./validation.sh"
   "ai-jwtauth|0|./rmconfig.sh|./config.sh;./validation.sh"
   "ai-model-conflict|0|./rmconfig.sh|./config.sh;./validation.sh"
   "ai-ephealth|0|./rmconfig.sh|./config.sh;./validation.sh"
-  "ai-multitier-contract|0|true|./run-unit.sh"
+  "ai-multitier-contract|0|true|./run-ci-gates.sh"
   "ai-sse-quota|-|./rmconfig.sh|./config.sh;./validation.sh"
   "ai-model-routing|-|./rmconfig.sh|./config.sh;./validation.sh"
 )
