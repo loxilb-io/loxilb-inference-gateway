@@ -51,3 +51,33 @@ func lbSockMapCode(serv *cmn.LbServiceArg, sockMapSupport bool) (uint8, error) {
 	}
 	return code, nil
 }
+
+// errSockMapAiGateway refuses sockmap acceleration on an AI gateway service.
+var errSockMapAiGateway = errors.New("sockmap-accel is not allowed on an AI gateway service (sse_mode, pd_disagg_mode or api_key_auth)")
+
+// lbSockMapAiGwCode refuses a sockMapMode other than off on a service that does
+// AI-gateway processing, and returns the code the rule keeps. Such a service needs
+// userspace to see every request and every response on a connection: the proxy
+// re-runs admission (the API key and the rate limit among its checks) at each
+// keep-alive request boundary and records the request from its response. Once a
+// direction is accelerated the kernel moves those bytes between the sockets, so on
+// the same connection the second and later requests reach the backend unchecked,
+// and responses are never recorded.
+//
+// apiKeyAuth must be the policy the rule will carry after a replace, not the
+// incoming field: a replace that omits api_key_auth keeps enforcement on, so the
+// incoming value alone would let acceleration through on a protected service.
+//
+// A snapshot restore replay is not failed, since that would abort the whole
+// loadbalancer domain. The rule is restored with acceleration off instead.
+func lbSockMapAiGwCode(serv *cmn.LbServiceArg, code uint8, apiKeyAuth string) (uint8, error) {
+	if code == 0 || !aiGwModeFor(serv.SSEMode, serv.PDDisaggMode, apiKeyAuth) {
+		return code, nil
+	}
+	if !serv.RestoreReplay {
+		return 0, errSockMapAiGateway
+	}
+	tk.LogIt(tk.LogWarning, "lb-rule %s:%d: sockMapMode %s dropped on restore, not allowed on an AI gateway service\n",
+		serv.ServIP, serv.ServPort, serv.SockMapMode)
+	return 0, nil
+}

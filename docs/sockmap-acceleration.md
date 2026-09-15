@@ -101,11 +101,24 @@ A service is rejected at configuration time unless all of these hold:
 | plaintext service (no TLS) | see below |
 | IPv4 external IP | current implementation limit |
 | daemon started with `--sockmapsupport` | the BPF assets must be loaded |
+| not an AI gateway service: no `sse_mode`, `pd_disagg_mode` or `api_key_auth` | see below |
 
 Setting `sockMapMode` on a service that does not qualify returns
 `sockmap-accel requires plaintext tcp fullproxy ipv4 service`, or
 `sockmap-accel requires loxilb started with --sockmapsupport` when only the
-daemon flag is missing.
+daemon flag is missing, or
+`sockmap-accel is not allowed on an AI gateway service (sse_mode, pd_disagg_mode or api_key_auth)`.
+
+An AI gateway service needs the proxy to see every request and every response.
+It checks the API key and the rate limit again at each keep-alive request, and it
+records each request from its response. An accelerated direction moves those bytes
+in the kernel instead. With `request` or `both`, the second and later requests on
+a connection reach the backend without those checks. With `response` or `both`,
+responses are not recorded. So only `off` is accepted on such a service. The check
+uses the `api_key_auth` the service keeps after an update, so an update that omits
+`api_key_auth` on a protected service is refused as well. A snapshot restore of an
+older configuration that combines the two does not fail: the service is restored with
+`sockMapMode` off and a warning is logged.
 
 A further check happens per connection in the datapath: **only plaintext
 HTTP→HTTP is accelerated.** If TLS is in play on either side — TLS termination,
@@ -276,7 +289,7 @@ traffic is being relayed in userspace and the configuration is having no effect.
 
 | script | covers |
 |---|---|
-| `validation.sh` | BPF assets attach, rules register, offload engages |
+| `validation.sh` | BPF assets attach, rules register, offload engages, AI gateway services refuse a `sockMapMode` |
 | `validation_concurrent.sh` | concurrent connection handling |
 | `validation_directional.sh` | `request` / `response` modes, the unaccelerated direction skipping the verdict, portset cleanup |
 | `validation_refcount.sh` | portset refcounts across in-place updates, mode changes and shared endpoints |

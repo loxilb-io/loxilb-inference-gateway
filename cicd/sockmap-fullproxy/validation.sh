@@ -11,6 +11,7 @@
 #   5. HTTP traffic through R2: responses are correct and sock_proxy_map does not grow
 #   6. docker logs contain no sockmap failure messages
 #   7. after deleting R1, port 2020 is removed from vip_portset
+#   8. an AI gateway service (sse_mode, api_key_auth) refuses a sockMapMode other than off
 
 source ../common.sh
 source ./sockmap_common.sh
@@ -306,6 +307,53 @@ if sockmap_portset_has llb1 "$SOCKMAP_EP_NAME" 8080; then
   sockmap_result "ep port 8080 removed from sockmap_ep_portset" "FAILED" "still present (refcount leak?)"
 else
   sockmap_result "ep port 8080 removed from sockmap_ep_portset" "OK"
+fi
+
+# ---------- Step 8: AI gateway services refuse a sockMapMode ----------
+# An AI gateway service (sse_mode, pd_disagg_mode or api_key_auth) re-runs admission
+# at every keep-alive request and records requests from their responses. With a
+# direction accelerated, later requests on a connection reach the backend without
+# the API key or rate-limit check, and responses are not recorded, so any mode other
+# than off is refused with 400. The replace case covers api_key_auth being preserved
+# when a replace omits it.
+sockmap_section 8 "AI gateway services refuse a sockMapMode"
+
+AIGW_PORT=2060
+AIGW_EP_PORT=8260
+
+# $1 extra serviceArguments JSON fields, $2 sockMapMode; prints "<http code> <body>"
+aigw_post() {
+  local body="{\"serviceArguments\":{\"externalIP\":\"10.10.10.254\",\"port\":$AIGW_PORT,\"protocol\":\"tcp\",\"mode\":4,\"name\":\"aigw-reject\",\"sockMapMode\":\"$2\"$1},\"endpoints\":[{\"endpointIP\":\"31.31.31.1\",\"targetPort\":$AIGW_EP_PORT,\"weight\":1}]}"
+  _sm_dexec llb1 curl -sS -w '\n%{http_code}' -X POST -H 'Content-Type: application/json' \
+    -d "$body" "http://localhost:11111/netlox/v1/config/loadbalancer" \
+    | awk 'NR==1{b=$0} END{print $0" "b}'
+}
+
+# $1 label, $2 extra fields, $3 sockMapMode
+aigw_expect_refused() {
+  local out
+  out=$(aigw_post "$2" "$3")
+  if [[ "$out" == 400\ * && "$out" == *"AI gateway"* ]]; then
+    sockmap_result "$1 refused" "OK"
+  else
+    sockmap_result "$1 refused" "FAILED" "$out"
+    sockmap_delete_lb_via_api llb1 10.10.10.254 "$AIGW_PORT" >/dev/null 2>&1 || true
+  fi
+}
+
+# pd_disagg_mode is covered by the unit tests: a P/D rule also needs prefill and
+# decode endpoints, and that check answers before this one.
+aigw_expect_refused "sse_mode + request"           ',"sse_mode":true'            request
+aigw_expect_refused "sse_mode + response"          ',"sse_mode":true'            response
+aigw_expect_refused "api_key_auth=required + both" ',"api_key_auth":"required"' both
+
+out=$(aigw_post ',"api_key_auth":"required"' off)
+if [[ "$out" == 200\ * ]]; then
+  sockmap_result "api_key_auth=required + off accepted" "OK"
+  aigw_expect_refused "replace omitting api_key_auth + request" '' request
+  sockmap_delete_lb_via_api llb1 10.10.10.254 "$AIGW_PORT" >/dev/null 2>&1 || true
+else
+  sockmap_result "api_key_auth=required + off accepted" "FAILED" "$out"
 fi
 
 # ---------- finalize ----------
