@@ -462,6 +462,13 @@ func validateSuppliedKey(raw string) error {
 // from the first half of the secret, as the MySQL implementation did, made a
 // public identifier a function of the credential it identifies.
 func (s *Service) CreateAPIKey(entry cmn.ApiKeyEntry) (string, string, error) {
+	// A key's tenant_id reaches the QoS ladder as a bucket key exactly as an
+	// operator-set tenant row does, so it is held to the same rule. Without
+	// this, the key surface was a way to introduce an aliasing tenant that
+	// the rate-limit surfaces refuse.
+	if err := ValidateQoSIdentity("tenant_id", entry.TenantID); err != nil {
+		return "", "", err
+	}
 	db, err := s.store()
 	if err != nil {
 		return "", "", err
@@ -664,6 +671,18 @@ func (s *Service) keyHashByID(db DBTX, keyID string) (string, error) {
 // SetTenantRateLimit upserts the per-tenant rate limit and refreshes the
 // cache so subsequent reads do not need a round-trip.
 func (s *Service) SetTenantRateLimit(tenantID string, rps, tokensPerMin, burstPct int) error {
+	// The tenant id becomes a bucket key verbatim: the tenant aggregate quota
+	// is keyed on the BARE id, so a tenant named "t1|gpt-4" is the same
+	// quotaMap entry as tenant t1's gpt-4 model bucket, and one named "uq:t|u"
+	// round-trips through the quota sync wire as a USER-scope key. The user
+	// surface has always refused both; this one accepted them, so the guard
+	// the reserved-prefix list exists to provide had a way around it.
+	if err := ValidateQoSIdentity("tenant_id", tenantID); err != nil {
+		return err
+	}
+	if tenantID == "" {
+		return cmn.NewValidationError("tenant_id", "tenant_id is required")
+	}
 	db, err := s.store()
 	if err != nil {
 		return err
@@ -733,14 +752,28 @@ func (s *Service) GetTenantRateLimit(tenantID string) (rps, tokensPerMin, burstP
 // tokensPerMin <= 0 removes the row: the model falls back to the tenant-level
 // quota alone.
 func (s *Service) SetTenantModelRateLimit(tenantID, model string, tokensPerMin int) error {
+	// "|" is the composite quota-key delimiter (tenant|model): a name
+	// containing it would alias another tenant/model pair's bucket. The
+	// reserved scope prefixes are the second half of the same property and
+	// the ad-hoc check here never covered them, so the shared validator is
+	// used instead of a local spelling that can drift from it.
+	//
+	// Ahead of the store handle, like every other QoS write surface: a
+	// refusal that only fires once a pool exists is not a refusal on a
+	// gateway whose store is down, and it reports the outage's error
+	// instead of the caller's mistake.
+	if err := ValidateQoSIdentity("tenant_id", tenantID); err != nil {
+		return err
+	}
+	if err := ValidateQoSIdentity("model", model); err != nil {
+		return err
+	}
+	if model == "" {
+		return cmn.NewValidationError("model", "model is required for a model rate limit")
+	}
 	db, err := s.store()
 	if err != nil {
 		return err
-	}
-	if model == "" || strings.ContainsAny(tenantID+model, "|") {
-		// "|" is the composite quota-key delimiter (tenant|model): a name
-		// containing it would alias another tenant/model pair's bucket.
-		return fmt.Errorf("invalid tenant/model name for model rate limit (%q/%q)", tenantID, model)
 	}
 	cacheKey := cacheKeyForModel(tenantID, model)
 	if tokensPerMin <= 0 {
