@@ -105,6 +105,11 @@ typedef struct proxy_metrics_snapshot {
      * sockproxy_metrics.go; keep ALL THREE in lockstep, same commit. */
     uint64_t pd_connect_retry_same_ep;
     uint64_t pd_connect_retry_same_ep_ok;
+
+    /* Bounded-admission overflow shed. TAIL-APPEND ONLY — twin-declared in
+     * loxilb-ebpf/common/sockproxy_metrics.h and the cgo preamble of
+     * sockproxy_metrics.go; keep ALL THREE in lockstep, same commit. */
+    uint64_t pd_admission_overflow_shed;
 } proxy_metrics_snapshot_t;
 
 __attribute__((weak))

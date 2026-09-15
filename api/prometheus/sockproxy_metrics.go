@@ -110,6 +110,12 @@ typedef struct proxy_metrics_snapshot {
     // keep ALL THREE in lockstep, same commit.
     uint64_t pd_connect_retry_same_ep;
     uint64_t pd_connect_retry_same_ep_ok;
+
+    // Bounded-admission overflow shed (parked FIFO full on every eligible
+    // EP -> 429). TAIL-APPEND ONLY — twin-declared in
+    // loxilb-ebpf/common/sockproxy_metrics.h and proxy_metrics_stub.c;
+    // keep ALL THREE in lockstep, same commit.
+    uint64_t pd_admission_overflow_shed;
 } proxy_metrics_snapshot_t;
 
 // C function from sockproxy.c
@@ -615,6 +621,18 @@ var (
 		},
 	)
 
+	// Metric #27b: P/D per-EP admission overflow sheds (Counter).
+	// With LLB_PD_QUEUE_DEPTH_PER_EP > 0 the plain shed branch is
+	// unreachable and this valve is the ONLY shed that can fire — without
+	// this family every overload drop on a queueing deployment is
+	// invisible.
+	pdAdmissionOverflowShedTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "loxilb_pd_admission_overflow_shed_total",
+			Help: "Total requests shed (retriable 429) by the per-EP admission layer because every healthy prefill EP was at the in-flight cap AND its parked FIFO was full (overflow valve; the only reachable shed when queueing is enabled). Distinct from loxilb_pd_admission_shed_total, which counts sheds with queueing disabled.",
+		},
+	)
+
 	// Metric #28: P/D circuit-breaker proactive heals (Counter)
 	pdCbProactiveHealTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
@@ -1086,6 +1104,10 @@ func RunSockproxyMetrics(ctx context.Context) {
 		if current.pd_admission_queued >= prevSockproxyMetrics.pd_admission_queued {
 			delta := current.pd_admission_queued - prevSockproxyMetrics.pd_admission_queued
 			pdAdmissionQueuedTotal.Add(float64(delta))
+		}
+		if current.pd_admission_overflow_shed >= prevSockproxyMetrics.pd_admission_overflow_shed {
+			delta := current.pd_admission_overflow_shed - prevSockproxyMetrics.pd_admission_overflow_shed
+			pdAdmissionOverflowShedTotal.Add(float64(delta))
 		}
 		if current.pd_cb_proactive_heal >= prevSockproxyMetrics.pd_cb_proactive_heal {
 			delta := current.pd_cb_proactive_heal - prevSockproxyMetrics.pd_cb_proactive_heal
