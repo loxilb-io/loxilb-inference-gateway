@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-15T01:49:17+00:00",
-  "source_revision": "b05e0ae1390f3e89e093324ba42123516afe9c80"
+  "generated_at": "2026-09-15T01:56:02+00:00",
+  "source_revision": "9bda2a0d4e4f6336987108c8b0fb9875e3db7ef2"
  },
  "contract": {
   "total": 239,
@@ -27,7 +27,7 @@
   "default_unreferenced": 5,
   "writer_classified": 183,
   "writer_unclassified": 0,
-  "writer_unverified": 72
+  "writer_unverified": 71
  },
  "families": [
   {
@@ -6505,7 +6505,7 @@
    "source": "api/prometheus/sockproxy_metrics.go:611",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
-   "implementation_status": "writer-mapped",
+   "implementation_status": "verified-runtime",
    "activation_precondition": "",
    "writer_sources": [
     {
@@ -6551,7 +6551,7 @@
      "entry_point": "main"
     }
    ],
-   "verification_evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:1088, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M08 owns the runtime proof."
+   "verification_evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-admission-queued', M08 CPU mock P/D bed, scenario cicd/vllm-kvcache-routing-cpu): 11/11, exact multiplicity from pool arithmetic. Same admission gate as the shed family but the OTHER branch: once every healthy prefill EP is at the in-flight cap, pd_queue_depth_per_ep() chooses shed (depth 0, sockproxy_pd.c:1848) or park (depth > 0, :1887), and the two are mutually exclusive for a given bed. This bed was rebuilt with cap=1 and depth=2, both asserted off the RUNNING container because the values are env-only and getenv-once. Capacity is therefore exact: 3 prefill EPs hold 3 requests in flight and offer 3 x 2 == 6 park slots, so 3 staggered holders plus 9 simultaneous probes must park exactly 6 and overflow exactly 3 -- deterministic in COUNT even though the order of the 9 probes is not. Measured: delta 6.0 == 6 PARKED log lines; pd_admission_shed asserted FLAT because its branch is unreachable at depth 2, so the delta identifies which branch ran; 3 overflow log lines and 3 client receipts of 429 pd_overloaded, the parked requests correctly answering nothing because parking is hold-don't-drop. Control is the same backends, cap and depth with only 3 overlapping requests, leaving under_cap non-zero at every selection: delta 0 with all three log sites silent."
   },
   {
    "name": "loxilb_pd_admission_shed_total",
