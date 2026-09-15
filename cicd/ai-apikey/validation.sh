@@ -884,6 +884,41 @@ else
   st=$(api_noauth PATCH "/config/ai/apikey/$QOS_KEY_ID")
   qcheck "QOS-API-010c PATCH without auth → 401" "401" "$st"
 
+  # ── QOS-API-010e: a PATCH that names no known field is refused ────────────
+  #
+  # The raw arm used to fall through every branch and answer 204 when the body
+  # carried no field it recognises. Two lies in one status code, both measured
+  # live before this case was written:
+  #
+  #   PATCH /config/ai/apikey/definitely-no-such-key {}                 → 204
+  #   PATCH /config/ai/apikey/definitely-no-such-key {"not_a_field":1}  → 204
+  #   GET   /config/ai/apikey/definitely-no-such-key                    → 404
+  #
+  # A misspelled field name ("ratelimit_rps") was therefore reported as a
+  # successful update that never happened, and 204 on PATCH asserts the
+  # resource exists — so a provisioning loop of "patch, create on 404" would
+  # never create. The control below keeps the honest 404 honest: naming a real
+  # field on a missing key must still be 404, not swept into the new 400.
+  echo ""
+  echo "QOS-API-010e: a PATCH naming no known field is refused, on a real key and a missing one"
+  api PATCH "/config/ai/apikey/$QOS_KEY_ID" '{}'
+  qcheck_code "QOS-API-010e empty PATCH body on a real key → 400" "400"
+  api PATCH "/config/ai/apikey/$QOS_KEY_ID" '{"ratelimit_rps":123}'
+  got=$QOS_BODY
+  qcheck_code "QOS-API-010e misspelled field is refused, not silently ignored → 400" "400"
+  qcheck_json "QOS-API-010e and the refusal says what is missing" \
+    "if (.error // \"\") | test(\"no patchable field\") then \"explained\" else \"opaque\" end" \
+    "explained" "$got"
+  # It really was a no-op: the misspelling must not have reached rate_limit_rps.
+  api GET "/config/ai/apikey/$QOS_KEY_ID"
+  got=$QOS_BODY
+  qcheck_json "QOS-API-010e the refused PATCH changed nothing" ".rate_limit_rps" "4" "$got"
+
+  api PATCH "/config/ai/apikey/no-such-key-at-all" '{}'
+  qcheck_code "QOS-API-010e empty PATCH on a MISSING key → 400, never a 204 that implies it exists" "400"
+  api PATCH "/config/ai/apikey/no-such-key-at-all" '{"rate_limit_rps":1}'
+  qcheck_code "QOS-API-010e control: a real field on a missing key is still 404" "404"
+
   # ── QOS-API-011: PATCH activates without recreating the credential ─────────
   #
   # The point of the PATCH gap fix: changing a limit used to mean recycling the
@@ -1006,6 +1041,82 @@ qcheck_json "QOS-API-016 user reports burst_size"     ".burst_size" "14" "$ug"
 qcheck_json "QOS-API-016 user carries no burst_pct" \
   "if has(\"burst_pct\") then \"present\" else \"absent\" end" "absent" "$ug"
 
+# ── QOS-API-017: rule_ident coherence across the three verbs ────────────────
+#
+# The spec for GET and DELETE /config/ai/ratelimit/defaults/{scope} says the
+# rule_ident query parameter "is ignored for scope 'global'", and POST enforces
+# the same coherence from the other side by refusing a global body that carries
+# one (QOS-API-009). GET and DELETE passed it straight to the store, which keys
+# rows on (scope, rule_ident) — so a stray rule_ident on a global request
+# addressed a row that cannot exist: GET answered 404 while the global row sat
+# there, and DELETE answered 404 having removed nothing.
+#
+# That is not cosmetic. A client keeping one query template for both scopes
+# reads "no global defaults configured" for a tenant that has them, and a
+# reconciler that does GET → 404 → POST recreates a row it never saw.
+#
+# The second half guards the fix from over-reaching: dropping rule_ident must
+# happen for 'global' ONLY. If scope 'rule' ever stopped keying on it, every
+# service would share one defaults row, which is the far worse bug.
+echo ""
+echo "QOS-API-017: rule_ident is ignored for scope 'global' and still selects for scope 'rule'"
+api POST /config/ai/ratelimit/defaults \
+  '{"scope":"global","default_user_rps":3,"default_user_tpm":300,"default_tenant_rps":30,"default_tenant_tpm":3000}'
+qcheck_code "QOS-API-017 re-seed the global row → 204" "204"
+
+api GET "/config/ai/ratelimit/defaults/global?rule_ident=stray"
+got=$QOS_BODY
+qcheck_code "QOS-API-017 GET global with a stray rule_ident → 200 (ignored, not 404)" "200"
+qcheck_json "QOS-API-017 it is the global row that came back" ".scope" "global" "$got"
+qcheck_json "QOS-API-017 with the global row's values" ".default_user_rps" "3" "$got"
+
+api GET "/config/ai/ratelimit/defaults/rule?rule_ident=qos-svc-b"
+got=$QOS_BODY
+qcheck_code "QOS-API-017 scope 'rule' still selects by rule_ident → 200" "200"
+qcheck_json "QOS-API-017 and returns that service's own value" ".default_user_rps" "22" "$got"
+api GET "/config/ai/ratelimit/defaults/rule?rule_ident=qos-svc-never"
+qcheck_code "QOS-API-017 an unknown rule_ident is still 404" "404"
+
+api DELETE "/config/ai/ratelimit/defaults/global?rule_ident=stray"
+qcheck_code "QOS-API-017 DELETE global with a stray rule_ident → 204 (ignored, not 404)" "204"
+api GET /config/ai/ratelimit/defaults/global
+qcheck_code "QOS-API-017 and the global row really is gone → 404" "404"
+
+# ── QOS-API-018: a 404 names the resource that was asked for ────────────────
+#
+# Every "no such row" in the key store used to be the single ErrKeyNotFound
+# sentinel, whose message is "API key not found" — so asking for an absent
+# rate-limit row was answered with the wrong resource's name, and the REST
+# layer decided 404-vs-500 by looking for the substring "not found" in it.
+# Both halves matter: the wording misleads an operator, and a status code that
+# depends on phrasing turns any store error containing those two words into
+# "this row does not exist", the one answer that invites a caller to create it.
+echo ""
+echo "QOS-API-018: not-found bodies name the resource, not the API key"
+api GET "/config/ai/user/ratelimit/$QOS_T/definitely-absent"
+got=$QOS_BODY
+qcheck_code "QOS-API-018 absent user row → 404" "404"
+qcheck_json "QOS-API-018 the user 404 does not claim an API key is missing" \
+  "if (.result // \"\") | test(\"API key\") then \"wrong-resource\" else \"ok\" end" "ok" "$got"
+qcheck_json "QOS-API-018 it names the user rate-limit row" \
+  "if (.result // \"\") | test(\"user rate-limit row\") then \"named\" else \"unnamed\" end" "named" "$got"
+
+api GET "/config/ai/ratelimit/defaults/rule?rule_ident=definitely-absent"
+got=$QOS_BODY
+qcheck_code "QOS-API-018 absent defaults row → 404" "404"
+qcheck_json "QOS-API-018 the defaults 404 does not claim an API key is missing" \
+  "if (.result // \"\") | test(\"API key\") then \"wrong-resource\" else \"ok\" end" "ok" "$got"
+qcheck_json "QOS-API-018 it names the defaults row" \
+  "if (.result // \"\") | test(\"rate-limit defaults row\") then \"named\" else \"unnamed\" end" "named" "$got"
+
+# The API key's own 404 must keep saying "API key" — the fix splits the
+# sentinels, it does not rename the one that was already right.
+api GET "/config/ai/apikey/no-such-key-at-all"
+got=$QOS_BODY
+qcheck_code "QOS-API-018 absent API key → 404" "404"
+qcheck_json "QOS-API-018 and that one still names the API key" \
+  "if (.result // .error // \"\") | test(\"API key\") then \"named\" else \"unnamed\" end" "named" "$got"
+
 # ── clean up the rows this block created ────────────────────────────────────
 api DELETE "/config/ai/user/ratelimit/$QOS_T/$QOS_U"
 api DELETE "/config/ai/ratelimit/defaults/global"
@@ -1021,8 +1132,8 @@ echo ""
 echo "QOS-API-Z: declared-vs-executed inventory"
 QOS_EXPECTED="QOS-API-001 QOS-API-002 QOS-API-003 QOS-API-004 QOS-API-005 \
 QOS-API-006 QOS-API-007 QOS-API-008 QOS-API-009 QOS-API-010 QOS-API-010b \
-QOS-API-010c QOS-API-011 QOS-API-012 QOS-API-013 QOS-API-014 QOS-API-015 \
-QOS-API-016"
+QOS-API-010c QOS-API-010e QOS-API-011 QOS-API-012 QOS-API-013 QOS-API-014 QOS-API-015 \
+QOS-API-016 QOS-API-017 QOS-API-018"
 qos_missing=""
 for want in $QOS_EXPECTED; do
   case " $QOS_SEEN " in *" $want "*) ;; *) qos_missing="$qos_missing $want" ;; esac
