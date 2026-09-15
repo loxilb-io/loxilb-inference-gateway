@@ -25,7 +25,8 @@
 #   ./run_product_harness.sh --list           # show the registry and exit
 #   ./run_product_harness.sh ai-apikey        # one or more scenarios by name
 #   ./run_product_harness.sh --phase 2        # everything a phase delivered
-#   ./run_product_harness.sh --no-preflight   # skip the cheap source gates
+#   ./run_product_harness.sh --no-preflight   # skip the runner self-test and
+#                                             # the cheap source gates
 #
 #   Knobs are scenario_runner.sh's, unchanged:
 #     SCENARIO_TIMEOUT  per-step timeout, seconds        (default 1800)
@@ -170,6 +171,30 @@ echo
 source ./scenario_runner.sh
 
 if [[ $DO_PREFLIGHT == 1 ]]; then
+  # The runner proves itself before it spends an afternoon on scenarios.
+  # It is the thing that decides whether every other scenario passed, so when
+  # it is wrong it is wrong about all of them at once, and quietly: a wrapper
+  # that misreports a status, or one that never returns, is indistinguishable
+  # from a slow suite. This costs about a second and needs no Docker, no
+  # topology and no image.
+  #
+  # Deliberately NOT a workflow step. The product harness is QA's to run on
+  # their own cadence, and nothing here belongs in CI.
+  echo "==== preflight: scenario runner self-test ===="
+  if [[ -x ./scenario_runner_selftest.sh ]]; then
+    if ! ./scenario_runner_selftest.sh; then
+      echo "[FAIL] the scenario runner failed its own self-test — every verdict"
+      echo "       below would be suspect, so nothing else is run"
+      exit 1
+    fi
+  else
+    # Loud, never silent: a missing self-test is a gate that did not run, and
+    # it must not read as one that passed.
+    echo "[SKIP] scenario_runner_selftest.sh absent or not executable —"
+    echo "       this gate did NOT run"
+  fi
+  echo
+
   scenario_preflight
 fi
 
