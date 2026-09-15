@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-15T08:13:27+00:00",
-  "source_revision": "c8f7236dd26b9618cf1c88f0f6f729d31f507785"
+  "generated_at": "2026-09-15T08:38:13+00:00",
+  "source_revision": "4e28d48f81bda8c1698aa424c2a00be48e6ed04b"
  },
  "contract": {
   "total": 240,
@@ -894,8 +894,8 @@
      "symbol": "llb_ai_stream_start",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1324,
-     "call_line": 1332,
+     "def_line": 1337,
+     "call_line": 1345,
      "calls": "AdjustActiveStreams",
      "entry_point": "cgo-export"
     }
@@ -1254,8 +1254,8 @@
      "symbol": "llb_ai_validate_bearer",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 618,
-     "call_line": 645,
+     "def_line": 631,
+     "call_line": 658,
      "calls": "RecordJWTValidation",
      "entry_point": "cgo-export",
      "note": "recorded in the same defer as recordGateDenial, so every arm counts exactly once -- including the nil-result and panic paths, which leave before a verdict is reached and are counted as internal_error"
@@ -2087,8 +2087,8 @@
      "symbol": "llb_ai_validate_key",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 523,
-     "call_line": 591,
+     "def_line": 536,
+     "call_line": 604,
      "calls": "RecordModelNotAllowed",
      "entry_point": "cgo-export"
     }
@@ -2129,8 +2129,8 @@
      "symbol": "llb_ai_normal_session_hit",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1455,
-     "call_line": 1458,
+     "def_line": 1468,
+     "call_line": 1471,
      "calls": "RecordNormalSessionHit",
      "entry_point": "cgo-export"
     }
@@ -2171,8 +2171,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1418,
-     "call_line": 1421,
+     "def_line": 1431,
+     "call_line": 1434,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -2214,8 +2214,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1418,
-     "call_line": 1421,
+     "def_line": 1431,
+     "call_line": 1434,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -2257,8 +2257,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1418,
-     "call_line": 1421,
+     "def_line": 1431,
+     "call_line": 1434,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -2300,8 +2300,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1418,
-     "call_line": 1421,
+     "def_line": 1431,
+     "call_line": 1434,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -2346,8 +2346,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1418,
-     "call_line": 1421,
+     "def_line": 1431,
+     "call_line": 1434,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -2389,8 +2389,8 @@
      "symbol": "llb_ai_pd_session_hit",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1430,
-     "call_line": 1433,
+     "def_line": 1443,
+     "call_line": 1446,
      "calls": "RecordPDSessionHit",
      "entry_point": "cgo-export"
     }
@@ -2432,8 +2432,8 @@
      "symbol": "llb_ai_pd_tier_selected",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1443,
-     "call_line": 1446,
+     "def_line": 1456,
+     "call_line": 1459,
      "calls": "RecordPDTierSelected",
      "entry_point": "cgo-export"
     }
@@ -2473,8 +2473,8 @@
      "symbol": "llb_ai_validate_key",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 523,
-     "call_line": 565,
+     "def_line": 536,
+     "call_line": 578,
      "calls": "RecordPolicyStoreUnavailable",
      "entry_point": "cgo-export",
      "note": "two more sites share the family: validateAPIKeyInternal (:235) and llb_ai_ratelimit_check (:559)"
@@ -2518,8 +2518,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 821,
-     "call_line": 876,
+     "def_line": 834,
+     "call_line": 889,
      "calls": "RecordRateLimitHit",
      "entry_point": "cgo-export",
      "note": "llb_ai_token_quota_reserve records the same family at ai_gateway_dp.go:756 with reason token_quota_would_exceed"
@@ -2562,8 +2562,8 @@
      "symbol": "llb_ai_record_request",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1396,
-     "call_line": 1401,
+     "def_line": 1409,
+     "call_line": 1414,
      "calls": "RecordAIRequest",
      "entry_point": "cgo-export"
     }
@@ -2610,8 +2610,8 @@
      "symbol": "llb_ai_record_request",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1396,
-     "call_line": 1401,
+     "def_line": 1409,
+     "call_line": 1414,
      "calls": "RecordAIRequest",
      "entry_point": "cgo-export"
     }
@@ -2650,8 +2650,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 727,
-     "call_line": 745,
+     "def_line": 740,
+     "call_line": 758,
      "calls": "RecordTokenQuotaColdOpen",
      "note": "the no-peer branch; the warmup-deadline branch increments from the StartQuotaWarmup callback at :437"
     },
@@ -2659,8 +2659,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 821,
-     "call_line": 855,
+     "def_line": 834,
+     "call_line": 868,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -2701,8 +2701,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 821,
-     "call_line": 878,
+     "def_line": 834,
+     "call_line": 891,
      "calls": "RecordTokenQuotaDenied",
      "entry_point": "cgo-export",
      "note": "the reservation path denies from llb_ai_token_quota_reserve (:757) as well"
@@ -2754,8 +2754,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 727,
-     "call_line": 768,
+     "def_line": 740,
+     "call_line": 781,
      "calls": "RegisterTokenQuotaSource",
      "note": "registration happens on first use of the rate-limiter store, not at package init, so the collector can never observe a nil store"
     },
@@ -2763,8 +2763,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 821,
-     "call_line": 855,
+     "def_line": 834,
+     "call_line": 868,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -2814,8 +2814,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 727,
-     "call_line": 768,
+     "def_line": 740,
+     "call_line": 781,
      "calls": "RegisterTokenQuotaSource",
      "note": "registration happens on first use of the rate-limiter store, not at package init, so the collector can never observe a nil store"
     },
@@ -2823,8 +2823,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 821,
-     "call_line": 855,
+     "def_line": 834,
+     "call_line": 868,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -2876,8 +2876,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 727,
-     "call_line": 768,
+     "def_line": 740,
+     "call_line": 781,
      "calls": "RegisterTokenQuotaSource",
      "note": "registration happens on first use of the rate-limiter store, not at package init, so the collector can never observe a nil store"
     },
@@ -2885,8 +2885,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 821,
-     "call_line": 855,
+     "def_line": 834,
+     "call_line": 868,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -2938,8 +2938,8 @@
      "symbol": "getGlobalRL",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 727,
-     "call_line": 768,
+     "def_line": 740,
+     "call_line": 781,
      "calls": "RegisterTokenQuotaSource",
      "note": "registration happens on first use of the rate-limiter store, not at package init, so the collector can never observe a nil store"
     },
@@ -2947,8 +2947,8 @@
      "symbol": "llb_ai_ratelimit_check",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 821,
-     "call_line": 855,
+     "def_line": 834,
+     "call_line": 868,
      "calls": "getGlobalRL",
      "entry_point": "cgo-export"
     }
@@ -2991,8 +2991,8 @@
      "symbol": "llb_ai_token_quota_consume",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1200,
-     "call_line": 1226,
+     "def_line": 1213,
+     "call_line": 1239,
      "calls": "RecordTokenUsage",
      "entry_point": "cgo-export"
     }
@@ -3034,8 +3034,8 @@
      "symbol": "llb_ai_token_quota_consume",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1200,
-     "call_line": 1226,
+     "def_line": 1213,
+     "call_line": 1239,
      "calls": "RecordTokenUsage",
      "entry_point": "cgo-export"
     }
@@ -3079,8 +3079,8 @@
      "symbol": "llb_ai_token_quota_consume",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1200,
-     "call_line": 1226,
+     "def_line": 1213,
+     "call_line": 1239,
      "calls": "RecordTokenUsage",
      "entry_point": "cgo-export"
     }
@@ -3123,8 +3123,8 @@
      "symbol": "llb_ai_record_unmetered",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1472,
-     "call_line": 1474,
+     "def_line": 1485,
+     "call_line": 1487,
      "calls": "RecordUnmeteredRequest",
      "entry_point": "cgo-export"
     }

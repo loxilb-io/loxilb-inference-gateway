@@ -194,7 +194,12 @@ func (s *Service) SetUserRateLimit(entry cmn.UserRateLimitEntry) error {
 
 	// Model limits are REPLACED as a set, mirroring the tenant surface's
 	// posture (NetTenantRateLimitSet): the entry the caller sends is the
-	// entry that exists afterwards.
+	// entry that exists afterwards. The models about to be dropped are
+	// forgotten first — after the delete their names are unrecoverable and
+	// their cached quotas would go on being enforced. The loop below then
+	// re-remembers the models this entry does carry, so a model present in
+	// both the old and the new set is never left without a cached value.
+	s.forgetUserModelRateLimits(entry.TenantID, entry.UserID)
 	if _, err := db.Exec(sqlDeleteUserModelRateLimits, entry.TenantID, entry.UserID); err != nil {
 		tk.LogIt(tk.LogError, "[AIKey] Failed to clear user model rate limits for %s/%s: %v\n", entry.TenantID, entry.UserID, err)
 		return err
@@ -218,6 +223,63 @@ func (s *Service) SetUserRateLimit(entry cmn.UserRateLimitEntry) error {
 	tk.LogIt(tk.LogInfo, "[AIKey] Set user rate limit for %s/%s: rps=%d burst=%d tokensPerMin=%d models=%d\n",
 		entry.TenantID, entry.UserID, entry.RPS, entry.BurstSize, entry.TokensPerMin, len(entry.ModelLimits))
 	return nil
+}
+
+// forgetUserModelRateLimits clears the cached per-model quotas of every model
+// row the pair currently has, and must be called BEFORE the rows are deleted
+// — afterwards there is nothing left to enumerate and the cached values are
+// unreachable until their TTL runs out.
+//
+// Both user-side writers remove model rows wholesale: SetUserRateLimit
+// replaces the set (so a model dropped from model_limits is deleted), and
+// DeleteUserRateLimit removes all of them. Neither could evict what it
+// removed, because the cache is keyed by model name and the names being
+// dropped were never named to the writer. The removed quota therefore kept
+// being enforced for the rest of the TTL, and — through rlLastKnown — for
+// every later store outage, while the API read-back reported the row gone.
+// The tenant surface already takes this care for its own clear path
+// (SetTenantModelRateLimit); this is the same reasoning applied to the pair
+// of writers that clear by omission rather than by name.
+//
+// A store that cannot answer is not an error here: the rows could not be
+// deleted either, so there is nothing stale to forget.
+func (s *Service) forgetUserModelRateLimits(tenantID, userID string) {
+	db, err := s.store()
+	if err != nil {
+		return
+	}
+	rows, err := db.Query(sqlSelectUserModelRateLimits, tenantID, userID)
+	if err != nil {
+		tk.LogIt(tk.LogError, "[AIKey] Failed to list user model rate limits for cache eviction %s/%s: %v\n",
+			tenantID, userID, err)
+		return
+	}
+	defer rows.Close()
+	var models []string
+	for rows.Next() {
+		var model string
+		var tpm int
+		if err := rows.Scan(&model, &tpm); err != nil {
+			tk.LogIt(tk.LogError, "[AIKey] Failed to scan user model rate limit for cache eviction %s/%s: %v\n",
+				tenantID, userID, err)
+			return
+		}
+		models = append(models, model)
+	}
+	if err := rows.Err(); err != nil {
+		tk.LogIt(tk.LogError, "[AIKey] Failed to read user model rate limits for cache eviction %s/%s: %v\n",
+			tenantID, userID, err)
+		return
+	}
+	for _, model := range models {
+		cacheKey := cacheKeyForUserModel(tenantID, userID, model)
+		// Remembered as a store-confirmed "no limit" rather than merely
+		// dropped, for the reason the tenant clear path states: a bare
+		// delete leaves the last-known map still enforcing the removed
+		// limit through the next outage.
+		s.rememberUserRateLimit(cacheKey, &userRateLimitCacheEntry{})
+		s.Cache.Delete(cacheKey)
+	}
 }
 
 // rememberUserRateLimit is rememberRateLimit's twin for the user tables:
@@ -381,6 +443,9 @@ func (s *Service) DeleteUserRateLimit(tenantID, userID string) error {
 	if n, aerr := res.RowsAffected(); aerr == nil && n == 0 {
 		return ErrUserRateLimitNotFound
 	}
+	// Same order as the replace path: name the models while they still
+	// exist, or their quotas outlive the row that configured them.
+	s.forgetUserModelRateLimits(tenantID, userID)
 	if _, err := db.Exec(sqlDeleteUserModelRateLimits, tenantID, userID); err != nil {
 		tk.LogIt(tk.LogError, "[AIKey] Failed to delete user model rate limits for %s/%s: %v\n", tenantID, userID, err)
 		return err
