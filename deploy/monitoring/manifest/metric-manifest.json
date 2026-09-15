@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-14T13:32:04+00:00",
-  "source_revision": "3661ba013fb856f5acbee3d312828371a8315078"
+  "generated_at": "2026-09-15T00:30:30+00:00",
+  "source_revision": "aafbcdfa8c323b8dfbf372cde9f158a3b77f29c1"
  },
  "contract": {
   "total": 239,
@@ -27,7 +27,7 @@
   "default_unreferenced": 5,
   "writer_classified": 183,
   "writer_unclassified": 0,
-  "writer_unverified": 83
+  "writer_unverified": 76
  },
  "families": [
   {
@@ -6683,7 +6683,7 @@
      "entry_point": "main"
     }
    ],
-   "verification_evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:1030, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M08 owns the runtime proof."
+   "verification_evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:1030, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M08 owns the runtime proof. ATTEMPTED AND DELIBERATELY NOT PROMOTED 2026-09-15 (WP-11, E.5 row 'wp11-cb-heal'): the cb-heal arm DID drive this counter -- delta 6.0, fully attributable one-for-one to two named sites (sockproxy_health.c:1143 CLOSED->OPEN x3 and :424 OPEN->HALF_OPEN via the 1 Hz health pass x3), with the other four observable sites at zero. It is NOT promoted for one reason: ITS CONTROL COULD NOT BE MADE FLAT. On a back-to-back second run the control window scored delta 3.0 against HEALTHY endpoints, because the preceding run left breakers in HALF_OPEN and they transitioned HALF_OPEN->CLOSED under the control's own traffic. So the arm is not idempotent in circuit-breaker state and the fault delta has no clean control to be different from. NOTE this family has SEVEN writers, one of which -- sockproxy_health.c:1103, OPEN->HALF_OPEN on open_timeout expiry in the traffic path -- increments with NO log line at all, so it is unattributable after the fact; the arm therefore asserts only delta >= sum(six observable site lines), never equality. WHAT AN ARM THAT COULD PROMOTE IT NEEDS: drain the breaker state before the control (drive healthy traffic until this counter stops moving, and assert it has stopped) so the control starts from CLOSED on every EP."
   },
   {
    "name": "loxilb_pd_cb_proactive_heal_total",
@@ -6703,7 +6703,7 @@
    "source": "api/prometheus/sockproxy_metrics.go:619",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
-   "implementation_status": "writer-mapped",
+   "implementation_status": "verified-runtime",
    "activation_precondition": "",
    "writer_sources": [
     {
@@ -6749,7 +6749,7 @@
      "entry_point": "main"
     }
    ],
-   "verification_evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:1092, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M08 owns the runtime proof."
+   "verification_evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-cb-heal', WP-11): same M08 CPU mock P/D bed, image and custody as the other WP-11 rows; harness md5 795459a556f5. SINGLE WRITER (sockproxy_health.c:425), which is what makes the identity below exact -- contrast loxilb_pd_cb_flips_total, its neighbour at :424, which has SEVEN writers and was deliberately NOT promoted (see below). This arm is TIME-driven, not purely traffic-driven: circuit breaker defaults are failure_threshold=5, open_timeout_sec=30, half_open_max_requests=3 (sockproxy_health.c:1072-1075), and the heal at :424-425 is reached by the 1 Hz health pass, as the field comment at sockproxy.h:147 states. THREE PHASES. Control: all six EPs healthy, the SAME 6-request drive and the SAME 65 s window as the fault arm, 6x200 -- counter FLAT at 0.0 with ZERO '[CB heal] ... 1Hz health pass' log lines. Fault A: all six EPs into 'refuse', 6 requests driven (6x503 pd_pool_unavailable, drive shape asserted so a lost measurement cannot be scored) -- breakers tripped, delta cb_flips 3.0, and critically loxilb_pd_cb_proactive_heal_total stayed FLAT at 0.0 WHILE THE EPS WERE STILL DOWN, so the counter does not heal an endpoint that is still refusing. Fault B: EPs restored, 45 s waited out (open_timeout_sec=30 plus a health pass) -- delta 3.0, one per prefill EP. IDENTITY delta == count('OPEN->HALF_OPEN driven by 1Hz health pass') == 3 == 3, exact because the family has one writer. 9 of 10 checks; the single failure is the CONTROL check for the NEIGHBOUR family cb_flips and is explained below -- every check scoring THIS family passed. HARNESS FINDING recorded rather than papered over: the first version of this arm assumed the 1 Hz health pass would trip the breaker on its own and went RED at delta cb_flips 0. That assumption was wrong, not the product -- failures are recorded by circuit_breaker_record_failure() in the REQUEST path (sockproxy_ep.c:1071 and :1186), so with no traffic there is nothing to count; only the HEAL is health-pass driven. The DRIVE was fixed and the assertions were left untouched. Polled-pipeline caveat as per the decode row."
   },
   {
    "name": "loxilb_pd_connect_failover_total",
@@ -6769,7 +6769,7 @@
    "source": "api/prometheus/sockproxy_metrics.go:651",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
-   "implementation_status": "writer-mapped",
+   "implementation_status": "verified-runtime",
    "activation_precondition": "",
    "writer_sources": [
     {
@@ -6815,7 +6815,7 @@
      "entry_point": "main"
     }
    ],
-   "verification_evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:1110, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M08 owns the runtime proof."
+   "verification_evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-connect-failover', WP-11): same M08 CPU mock P/D bed, image and custody as the other WP-11 rows; harness md5 19eea6ec4315 identical at author and bed. THIS FAMILY IS NOT SINGLE-WRITER and the arm was built around that. Four atomic_fetch_add sites exist -- sockproxy_ep.c:1172 ('US-PD804: P/D mid-cycle failover ->'), sockproxy_ep.c:1269 ('LB mid-cycle failover: EP%d unreachable'), sockproxy_pd_vllm.c:686 ('prefill mid-request failover: EP%d died -> EP%d') and the engine-gated sockproxy_pd_sglang.c:944 -- so a bare delta does not say WHICH writer moved and 'the family moves' would overclaim. The arm therefore counts all three reachable log lines separately. SITE PROVEN: sockproxy_pd_vllm.c:686, the vLLM prefill mid-request re-dispatch. Trigger driven: all three prefill EPs put into 'zerobyte', so connect SUCCEEDS (the stub listens) and the backend then dies mid-request; the deferred re-dispatch reconnects to a re-selected EP successfully, which is what site 686 counts. FAULT ARM: delta 3.0. CONTROL ARM (healthy prefill EPs, IDENTICAL 14 s settle): 3x200, counter FLAT at 0.0 and ALL THREE log sites silent at (3,0,0) -> (3,0,0). IDENTITY delta counter == count('prefill mid-request failover') == 3 == 3. PREDICTED delta == N (one successful re-dispatch per client request), exact. SITE SPECIFICITY HELD: delta at sockproxy_ep.c:1172 and :1269 both ZERO, so this delta identifies one writer rather than the family as a whole -- the other two reachable sites remain UNPROVEN at runtime and would need a failover that succeeds onto a HEALTHY EP (site 1172) and a plain-LB mid-cycle failover (site 1269). Note the clients still ended at 503: the failover succeeded AT CONNECT and the request then died again on the replacement EP, which is precisely what a 'reconnect succeeded' counter should record, and is why the client receipt cannot be this family's oracle. 8/8 checks. HOW THE SITE WAS FOUND: the connect-retry arm's baseline showed this counter already at 3.0 when the session began at 0 -- the prefill-died arm had moved it as a side effect -- and the log showed 3 lines at site 686 with 0 at the other two. Polled-pipeline caveat as per the decode row."
   },
   {
    "name": "loxilb_pd_connect_retry_same_ep_ok_total",
@@ -6904,7 +6904,7 @@
    "source": "api/prometheus/sockproxy_metrics.go:661",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
-   "implementation_status": "writer-mapped",
+   "implementation_status": "verified-runtime",
    "activation_precondition": "",
    "writer_sources": [
     {
@@ -6950,7 +6950,7 @@
      "entry_point": "main"
     }
    ],
-   "verification_evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:1114, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M08 owns the runtime proof."
+   "verification_evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-connect-retry', WP-11): same M08 CPU mock P/D bed, image and custody as the other WP-11 rows; harness md5 285e95aa6c85 identical at author and bed. Trigger driven: all three PREFILL EPs put into 'refuse' (the stub deliberately does NOT listen, so the netns REDIRECT aims traffic at a closed port and connect() gets ECONNREFUSED), which is the proxy_setup_ep_connect failure sockproxy_ep.c:1053-1068 retries. FAULT ARM: 3 requests -> 3x503 all carrying pd_pool_unavailable, delta 3.0. CONTROL ARM (same topology, prefill EPs accepting, IDENTICAL 14 s settle): 3x200, counter FLAT at 0.0 and ZERO '[PD_CONN_RETRY] retrying SAME EP' log lines. IDENTITY delta counter == count('transient backend connect failure, retrying SAME EP') == 3 == 3. The multiplicity was PREDICTED FROM SOURCE BEFORE THE RUN and held exactly: delta == N because pd_connect_retry_budget returns 1 for P/D disagg (pinned by test_pd_admission.c:627-630) and because the failover loop below (sockproxy_ep.c:1150) calls proxy_setup_ep_connect DIRECTLY rather than through the retry block, so failover candidates cannot inflate this counter. THREE INDEPENDENT FLATS, each a real statement: loxilb_pd_connect_retry_same_ep_ok_total stayed 0 with zero 'affinity preserved' lines (a refusing EP cannot accept a retry -- a move would mean _ok counts attempts rather than successes); loxilb_pd_connect_failover_total stayed 0 (every failover candidate also refused, so nothing succeeded elsewhere -- a move would mean failover is counted on failure too); and the two decode families stayed FLAT at 3.0 (specificity). 11/11 checks. NOT PROMOTED BY THIS ARM: loxilb_pd_connect_retry_same_ep_ok_total -- it stayed at zero here by design, and a counter that did not move has not been shown to work; it needs an arm where a connect fails and then succeeds inside the retry loop. OBSERVED, unscored: this arm moved loxilb_pd_cb_flips_total by 3.0 (each refused connect records a circuit-breaker failure) -- reconnaissance for the cb-flips arm, not evidence here. Polled-pipeline caveat as per the decode row."
   },
   {
    "name": "loxilb_pd_ctrl_alpha",
@@ -7147,7 +7147,7 @@
    "source": "api/prometheus/sockproxy_metrics.go:635",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
-   "implementation_status": "writer-mapped",
+   "implementation_status": "verified-runtime",
    "activation_precondition": "",
    "writer_sources": [
     {
@@ -7193,7 +7193,7 @@
      "entry_point": "main"
     }
    ],
-   "verification_evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:1102, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M08 owns the runtime proof."
+   "verification_evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-decode-eof', WP-11): M08 CPU mock P/D bed (cicd/vllm-kvcache-routing-cpu), build off gw main 2e659259 + ebpf 7ea10f8, image loxilb-inference-gateway:wp11-u24 sha256:fd072b4b7a0a, chain of custody proven host md5 83754e4fcb5d == image md5 == md5 inside the RUNNING llb1. Trigger driven: all three decode EPs replaced by a backend that reads the whole request then closes having written ZERO response bytes -- the exact shape sockproxy_http.c:4925-4938 names. FAULT ARM: 3 requests -> 3x502, every body carrying error pd_decode_backend_died, delta 3.0 on BOTH families. CONTROL ARM (same topology, same requests, healthy backends, IDENTICAL 14 s settle window): 3x200, zero receipts, BOTH families FLAT at delta 0.0. THREE-WAY IDENTITY HELD EXACTLY: receipts 3 == delta_died 3.0 == delta_zero_byte_eof 3.0 -- the receipt leaves through the response path and the deltas through the metrics path, so only one event producing both satisfies it. Subset relation delta_zeof <= delta_died also held. 9/9 checks. NOTE: these families are POLLED (RunSockproxyMetrics sleeps PrometheusDefaultPeriod = 10 s), not CGO-callback, so a sub-10 s settle reads a live writer as dead -- an earlier 3 s run scored delta 0 against a fault that had demonstrably fired. Both arms use the same >10 s window."
   },
   {
    "name": "loxilb_pd_decode_zero_byte_eof_total",
@@ -7213,7 +7213,7 @@
    "source": "api/prometheus/sockproxy_metrics.go:643",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
-   "implementation_status": "writer-mapped",
+   "implementation_status": "verified-runtime",
    "activation_precondition": "",
    "writer_sources": [
     {
@@ -7259,7 +7259,7 @@
      "entry_point": "main"
     }
    ],
-   "verification_evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:1106, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M08 owns the runtime proof."
+   "verification_evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-decode-eof', WP-11): M08 CPU mock P/D bed (cicd/vllm-kvcache-routing-cpu), build off gw main 2e659259 + ebpf 7ea10f8, image loxilb-inference-gateway:wp11-u24 sha256:fd072b4b7a0a, chain of custody proven host md5 83754e4fcb5d == image md5 == md5 inside the RUNNING llb1. Trigger driven: all three decode EPs replaced by a backend that reads the whole request then closes having written ZERO response bytes -- the exact shape sockproxy_http.c:4925-4938 names. FAULT ARM: 3 requests -> 3x502, every body carrying error pd_decode_backend_died, delta 3.0 on BOTH families. CONTROL ARM (same topology, same requests, healthy backends, IDENTICAL 14 s settle window): 3x200, zero receipts, BOTH families FLAT at delta 0.0. THREE-WAY IDENTITY HELD EXACTLY: receipts 3 == delta_died 3.0 == delta_zero_byte_eof 3.0 -- the receipt leaves through the response path and the deltas through the metrics path, so only one event producing both satisfies it. Subset relation delta_zeof <= delta_died also held. 9/9 checks. NOTE: these families are POLLED (RunSockproxyMetrics sleeps PrometheusDefaultPeriod = 10 s), not CGO-callback, so a sub-10 s settle reads a live writer as dead -- an earlier 3 s run scored delta 0 against a fault that had demonstrably fired. Both arms use the same >10 s window."
   },
   {
    "name": "loxilb_pd_ep_info",
@@ -7831,7 +7831,7 @@
    "source": "api/prometheus/sockproxy_metrics.go:627",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
-   "implementation_status": "writer-mapped",
+   "implementation_status": "verified-runtime",
    "activation_precondition": "",
    "writer_sources": [
     {
@@ -7877,7 +7877,7 @@
      "entry_point": "main"
     }
    ],
-   "verification_evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:1098, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M08 owns the runtime proof."
+   "verification_evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-prefill-died', WP-11): same M08 CPU mock P/D bed and same proven chain of custody as the decode-eof row -- cicd/vllm-kvcache-routing-cpu, image loxilb-inference-gateway:wp11-u24 sha256:fd072b4b7a0a, harness md5 5eca3c17d909 identical at author and bed. Trigger driven: all three PREFILL EPs replaced by a backend that reads the whole request then closes having written ZERO response bytes, so the backend fd is destroyed while the client sits in PD_PHASE_PREFILL_WAITING -- the exact condition sockproxy_http.c:4661-4671 guards. FAULT ARM: 3 requests -> 3x503, every body carrying error pd_pool_unavailable, delta 6.0. CONTROL ARM (same topology, same requests, healthy prefill backends, IDENTICAL 14 s settle): 3x200, zero receipts, counter FLAT at delta 0.0 and ZERO 'Prefill backend died' log lines. PRIMARY ORACLE IS THE DATAPATH LOG, NOT THE RECEIPT: unlike the decode leg, this block counts the death and then defers ONE mid-request re-dispatch (pd_prefill_retries 0->1, replayed from pd_saved_headers/pd_saved_body) against a re-selected EP, which with every prefill EP faulted dies too -- so receipts != delta BY CONSTRUCTION and the decode arm's three-way identity is false here. The identity that does hold is delta counter == count('Prefill backend died' lines in /var/log/loxilbdp.log inside llb1) == 6 == 6, one-for-one regardless of multiplicity, because the log_error and the atomic_fetch_add are two statements of one block. The multiplicity was PREDICTED FROM SOURCE BEFORE THE RUN and asserted separately: delta == 2N (6) and receipts == N (3), both exact -- delta == N would have meant the re-dispatch never happened, delta > 2N that the retry budget is not 1. SPECIFICITY ALSO CHECKED: under a prefill fault loxilb_pd_decode_ep_died_total and loxilb_pd_decode_zero_byte_eof_total both stayed FLAT at 3.0, so the decode pair's own verified-runtime evidence is not overstated -- they do not count prefill deaths. 10/10 checks. Polled-pipeline caveat as per the decode row: RunSockproxyMetrics sleeps PrometheusDefaultPeriod = 10 s, both arms use the same >10 s window."
   },
   {
    "name": "loxilb_pd_sessions_active",
@@ -7897,7 +7897,7 @@
    "source": "api/prometheus/sockproxy_metrics.go:323",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
-   "implementation_status": "writer-mapped",
+   "implementation_status": "verified-runtime",
    "activation_precondition": "",
    "writer_sources": [
     {
@@ -7943,7 +7943,7 @@
      "entry_point": "main"
     }
    ],
-   "verification_evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:1025, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M08 owns the runtime proof."
+   "verification_evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-sessions', WP-11): M08 CPU mock P/D bed (cicd/vllm-kvcache-routing-cpu), image loxilb-inference-gateway:wp11-u24 sha256:fd072b4b7a0a, custody proven host build md5 83754e4fcb5d == image == md5 inside the RUNNING llb1. READING THE WRITER FIRST CHANGED THE ARM: sockproxy_metrics.c:192 computes this as HASH_COUNT(tepval->pd_session_map) summed over services -- the size of the session STICKINESS map, NOT a count of concurrent in-flight requests. The obvious drive (hold N requests in-flight against a hanging backend and expect the gauge to read N) would have measured a different thing entirely. Entries are inserted by pd_session_store(), whose key comes from exactly two places (sockproxy_ep.c:831-840, mirrored at sockproxy_pd.c:1910-1922): the JSON body 'user' field, and a client-provided X-Conversation-Id header which takes priority and whose 'auto-' prefix is explicitly skipped. With neither present session_key stays NULL and nothing is stored -- which gives this arm an unusually strong control: THE IDENTICAL REQUEST, same body, same endpoints, minus one header, so a flat control cannot be dismissed as flat-for-lack-of-traffic. THREE EXACT PREDICTIONS, ALL MADE FROM SOURCE BEFORE THE RUN AND ALL HELD. CONTROL: 3 requests, no session key, 3x200 -> delta 0.0. DRIVE A: 3 requests with 3 DISTINCT X-Conversation-Id, 3x200 -> delta 3.0 == N, one map entry per distinct key. DRIVE B: 4 requests sharing ONE X-Conversation-Id -> delta 1.0, NOT 4 -- pd_session_store() is an UPSERT (HASH_FIND_STR then update-in-place, sockproxy_pd.c:1147-1166), so M requests on one key add exactly one entry. Drive B is the check that makes this a SESSION gauge rather than a request counter; a delta of M there would mean it counts requests and the name would be wrong. All settles use the same >10 s window as the other WP-11 rows. 7/7 checks. BOUNDS CHECKED so neither can move the gauge under the measurement: PD_SESSION_MAX_ENTRIES 4096 with LRU eviction above it, PD_SESSION_DEFAULT_TTL 300 s. The flip side is recorded deliberately: this gauge does NOT return to baseline when the arm ends, because entries live out their 300 s TTL -- correct behaviour for an affinity map, so the arm does not assert a return to zero; such an assertion would fail against a working product."
   },
   {
    "name": "loxilb_pd_sg_decode_close_drain_total",
@@ -10443,7 +10443,7 @@
      "note": "registry-mediated dispatch: the link is the receiver type handed to prometheus.MustRegister, not a direct call to Collect"
     }
    ],
-   "verification_evidence": "metric coverage RCA and plan, section B.5b, run 'WP-3 QoS' 2026-09-09 on llbigw-2: bytes_passed 46758599 against curl's 46758393 (+206 HTTP headers). The writer path is proven; WP-3 sign-off is separately blocked by defect D-3."
+   "verification_evidence": "metric coverage RCA and plan, section B.5b, run 'WP-3 QoS' 2026-09-09 on the QoS validation bed: bytes_passed 46758599 against curl's 46758393 (+206 HTTP headers). The writer path is proven; WP-3 sign-off is separately blocked by defect D-3."
   },
   {
    "name": "loxilb_proxy_qos_cbs_bytes",
