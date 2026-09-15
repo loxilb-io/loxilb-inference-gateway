@@ -687,8 +687,8 @@ type LoadbalanceEntryServiceArguments struct {
 	// Rule block identifier included in the LB key. VIP/port/protocol alone may therefore identify more than one logical rule; it is not sufficient to establish L7 policy ownership.
 	Block uint32 `json:"block,omitempty"`
 
-	// Enable the per-endpoint circuit breaker for full-proxy rules. Five consecutive backend connect failures open the breaker; an open endpoint is excluded from selection. Recovery uses a 30-second open interval followed by half-open probing. This is independent of the configured health monitor (probetype); one failed request does not by itself meet the opening threshold.
-	CbEnable bool `json:"cb_enable,omitempty"`
+	// Enable the per-endpoint circuit breaker for full-proxy rules. Five consecutive backend connect failures open the breaker; an open endpoint is excluded from selection. Recovery uses a 30-second open interval followed by half-open probing. This is independent of the configured health monitor (probetype); one failed request does not by itself meet the opening threshold. Omission is resolved at the API layer: on a rule with pd_disagg_mode=true it resolves to true (P/D services default to breaker protection), otherwise to false. An explicit value is honored as given — including false on a P/D rule — and create and update resolve identically, so updating a rule never silently changes the breaker state. GET reports the resolved value.
+	CbEnable *bool `json:"cb_enable,omitempty"`
 
 	// Require a non-empty JSON string cache_salt of at most 63 bytes on H1 and H2 requests and include it in the configured hash identity. Missing or malformed salt is rejected locally with HTTP 400 before upstream dispatch. This is cache-key namespacing, not authentication and not an authenticated tenant-isolation boundary.
 	ChwblEnableCacheSalt *bool `json:"chwbl_enable_cache_salt,omitempty"`

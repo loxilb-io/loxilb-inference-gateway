@@ -151,8 +151,20 @@ func ConfigPostLoadbalancer(params operations.PostConfigLoadbalancerParams, prin
 	lbRules.Serv.PDSessionTTLSec = uint32(params.Attr.ServiceArguments.PdSessionTTLSec)
 	pres.applyPDThresholds(&lbRules.Serv, params.Attr.ServiceArguments)
 
-	// Per-endpoint circuit breaker
-	lbRules.Serv.CbEnable = params.Attr.ServiceArguments.CbEnable
+	// Per-endpoint circuit breaker. Resolved HERE, in exactly one place, so
+	// create and update behave identically. An omitted field on a P/D rule
+	// resolves to enabled — previously that default was applied out of band
+	// by a create-path goroutine that hardcoded enable=true (and a
+	// failure threshold of 3, contradicting the documented 5), never wrote
+	// the rule back, and did not run on update: a rule UPDATE therefore
+	// silently disabled the breaker for the life of the rule while the API
+	// kept reading absent. The resolved value is what the rule stores, what
+	// GET reports, and what the datapath receives on every push.
+	if params.Attr.ServiceArguments.CbEnable != nil {
+		lbRules.Serv.CbEnable = *params.Attr.ServiceArguments.CbEnable
+	} else {
+		lbRules.Serv.CbEnable = params.Attr.ServiceArguments.PdDisaggMode
+	}
 
 	// KV-Cache Exact Routing
 	lbRules.Serv.KvExactMode = uint8(params.Attr.ServiceArguments.KvExactMode)
@@ -634,9 +646,13 @@ func serializeLBRule(lb cmn.LbRuleMod) *models.LoadbalanceEntry {
 		tmpSvc.PdBalanceAbsThreshold = int32(lb.Serv.PDBalanceAbsThreshold)
 	}
 
-	// Per-endpoint circuit breaker
+	// Per-endpoint circuit breaker — report the RESOLVED value, so a P/D
+	// rule that took the default reads true rather than absent (the API
+	// used to read absent while the datapath had the breaker enabled).
+	// False stays omitted, keeping GET output for non-P/D rules unchanged.
 	if lb.Serv.CbEnable {
-		tmpSvc.CbEnable = lb.Serv.CbEnable
+		cbOn := true
+		tmpSvc.CbEnable = &cbOn
 	}
 
 	// KV-Cache Exact Routing

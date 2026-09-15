@@ -3,7 +3,7 @@
   "scope": "LoadbalanceEntry fields and AI KV inventory query parameters; not a test-coverage claim",
   "sourceSha256": {
     "swagger-extras.yml": "4e602fc9652f481e48ede784e51d462300940b1995cb2cd19473fe840e6e0efb",
-    "swagger.yml": "c88673aa32190f20473eff9052547d34386dd80f445def5c2bebf68ac8b13691"
+    "swagger.yml": "00fb9fe1bfebc8a8e08d2cd63084b2bc6a859a0b3b791c34b596a2b94d097e10"
   },
   "fields": [
     {
@@ -416,10 +416,9 @@
       "id": "swagger.yml#/definitions/LoadbalanceEntry/serviceArguments/cb_enable",
       "required": false,
       "contract": {
-        "default": false,
-        "description": "Enable the per-endpoint circuit breaker for full-proxy rules. Five consecutive backend connect failures open the breaker; an open endpoint is excluded from selection. Recovery uses a 30-second open interval followed by half-open probing. This is independent of the configured health monitor (probetype); one failed request does not by itself meet the opening threshold.",
+        "description": "Enable the per-endpoint circuit breaker for full-proxy rules. Five consecutive backend connect failures open the breaker; an open endpoint is excluded from selection. Recovery uses a 30-second open interval followed by half-open probing. This is independent of the configured health monitor (probetype); one failed request does not by itself meet the opening threshold. Omission is resolved at the API layer: on a rule with pd_disagg_mode=true it resolves to true (P/D services default to breaker protection), otherwise to false. An explicit value is honored as given — including false on a P/D rule — and create and update resolve identically, so updating a rule never silently changes the breaker state. GET reports the resolved value.",
         "type": "boolean",
-        "x-nullable": false
+        "x-nullable": true
       }
     },
     {

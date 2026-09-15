@@ -1076,6 +1076,9 @@ type LbServiceArg struct {
 	// selection paths until a 30s open-timeout expires and a half-open probe
 	// succeeds. Complements (does not replace) the liveness prober: the breaker
 	// reacts within one failed request, the prober within one probe interval.
+	// This value arrives RESOLVED from the API layer (an omitted cb_enable on
+	// a pd_disagg_mode rule resolves to true there); everything below the
+	// handler treats it as an ordinary boolean with no default of its own.
 	CbEnable bool `json:"cb_enable,omitempty"`
 
 	// KV-Cache Exact Routing configuration
