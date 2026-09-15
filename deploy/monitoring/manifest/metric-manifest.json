@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-15T01:12:19+00:00",
-  "source_revision": "be11b2744d00183b7350ec10cc6068b472fcd0c0"
+  "generated_at": "2026-09-15T01:33:36+00:00",
+  "source_revision": "69147f0e6e842c5081b086b01b72e89875fc4059"
  },
  "contract": {
   "total": 239,
@@ -27,7 +27,7 @@
   "default_unreferenced": 5,
   "writer_classified": 183,
   "writer_unclassified": 0,
-  "writer_unverified": 74
+  "writer_unverified": 73
  },
  "families": [
   {
@@ -6637,7 +6637,7 @@
    "source": "api/prometheus/sockproxy_metrics.go:339",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
-   "implementation_status": "writer-mapped",
+   "implementation_status": "verified-runtime",
    "activation_precondition": "",
    "writer_sources": [
     {
@@ -6683,7 +6683,7 @@
      "entry_point": "main"
     }
    ],
-   "verification_evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:1030, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M08 owns the runtime proof. ATTEMPTED AND DELIBERATELY NOT PROMOTED 2026-09-15 (WP-11, E.5 row 'wp11-cb-heal'): the cb-heal arm DID drive this counter -- delta 6.0, fully attributable one-for-one to two named sites (sockproxy_health.c:1143 CLOSED->OPEN x3 and :424 OPEN->HALF_OPEN via the 1 Hz health pass x3), with the other four observable sites at zero. It is NOT promoted for one reason: ITS CONTROL COULD NOT BE MADE FLAT. On a back-to-back second run the control window scored delta 3.0 against HEALTHY endpoints, because the preceding run left breakers in HALF_OPEN and they transitioned HALF_OPEN->CLOSED under the control's own traffic. So the arm is not idempotent in circuit-breaker state and the fault delta has no clean control to be different from. NOTE this family has SEVEN writers, one of which -- sockproxy_health.c:1103, OPEN->HALF_OPEN on open_timeout expiry in the traffic path -- increments with NO log line at all, so it is unattributable after the fact; the arm therefore asserts only delta >= sum(six observable site lines), never equality. WHAT AN ARM THAT COULD PROMOTE IT NEEDS: drain the breaker state before the control (drive healthy traffic until this counter stops moving, and assert it has stopped) so the control starts from CLOSED on every EP."
+   "verification_evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-cb-flips', M08 CPU mock P/D bed, scenario cicd/vllm-kvcache-routing-cpu): 9/9. Seven writer sites, six of which log and one of which (sockproxy_health.c:1103, OPEN->HALF_OPEN inside circuit_breaker_should_skip) emits nothing, so an earlier attempt could only claim delta >= sum(six observable lines). The equality is EARNED here by bounding the window: every OPEN->HALF_OPEN transition, logged or silent, requires open_ts to be open_timeout_sec (30s) old, while the breakers are rebuilt CLOSED by the rule post and tripped by TRAFFIC in the request path, so the whole measurement completes in 14.6s. delta 3.0 == count('Circuit breaker CLOSED -> OPEN') == 3 is therefore an identity that TESTS ITSELF -- had the silent site fired, the counter would exceed the line count and the check would be red. Control is the per-rule cb_enable gate (api/models/loadbalance_entry.go:691): with it false the counter is flat while 30 [PD_CONN_RETRY] lines prove the connect-failure call site was still reached, so the control is non-vacuous rather than merely quiet. Predicted delta == 3, one CLOSED->OPEN per prefill endpoint at failure_threshold 5, exact. The other five observable sites asserted SILENT: the two origin sites are unreachable because a refusing endpoint yields no origin status, and the remaining three need either a HALF_OPEN breaker or the 30s timeout. Sites :1162, :1213, :1273, :1306 and :424 remain unproven at runtime; only :1143 is proven by this run."
   },
   {
    "name": "loxilb_pd_cb_proactive_heal_total",
