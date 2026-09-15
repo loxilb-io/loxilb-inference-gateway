@@ -1117,6 +1117,38 @@ qcheck_code "QOS-API-018 absent API key → 404" "404"
 qcheck_json "QOS-API-018 and that one still names the API key" \
   "if (.result // .error // \"\") | test(\"API key\") then \"named\" else \"unnamed\" end" "named" "$got"
 
+# ── QOS-API-019: vip_shared_* round-trip, and POST replaces the whole row ───
+#
+# vip_shared_rps / vip_shared_tpm arm the opt-in per-service shared bucket for
+# keyless traffic. They are settable and returned on this surface and were
+# never asserted, so a serialisation or column mix-up here would be invisible.
+#
+# The second half pins the write semantic: POST REPLACES the row, it does not
+# merge. Combined with "a zero field falls through to unlimited", a client that
+# posts one field to change it silently removes every other bound on the row —
+# a fail-open config change. The spec text does not say which it is, so assert
+# what it does: a silent flip to merge semantics would otherwise pass unseen.
+echo ""
+echo "QOS-API-019: vip_shared_* round-trip, and a partial POST replaces the row"
+api POST /config/ai/ratelimit/defaults \
+  '{"scope":"global","default_user_rps":3,"vip_shared_rps":9,"vip_shared_tpm":900}'
+qcheck_code "QOS-API-019 POST defaults with vip_shared_* → 204" "204"
+api GET /config/ai/ratelimit/defaults/global
+got=$QOS_BODY
+qcheck_json "QOS-API-019 vip_shared_rps round-trips" ".vip_shared_rps" "9"   "$got"
+qcheck_json "QOS-API-019 vip_shared_tpm round-trips" ".vip_shared_tpm" "900" "$got"
+qcheck_json "QOS-API-019 and did not land in the user fields" ".default_user_rps" "3" "$got"
+
+api POST /config/ai/ratelimit/defaults '{"scope":"global","default_user_rps":5}'
+qcheck_code "QOS-API-019 POST one field → 204" "204"
+api GET /config/ai/ratelimit/defaults/global
+got=$QOS_BODY
+qcheck_json "QOS-API-019 the named field changed" ".default_user_rps" "5" "$got"
+qcheck_json "QOS-API-019 an omitted vip_shared_rps was ZEROED, not preserved" \
+  "(.vip_shared_rps // 0)" "0" "$got"
+qcheck_json "QOS-API-019 an omitted vip_shared_tpm was ZEROED, not preserved" \
+  "(.vip_shared_tpm // 0)" "0" "$got"
+
 # ── clean up the rows this block created ────────────────────────────────────
 api DELETE "/config/ai/user/ratelimit/$QOS_T/$QOS_U"
 api DELETE "/config/ai/ratelimit/defaults/global"
@@ -1133,7 +1165,7 @@ echo "QOS-API-Z: declared-vs-executed inventory"
 QOS_EXPECTED="QOS-API-001 QOS-API-002 QOS-API-003 QOS-API-004 QOS-API-005 \
 QOS-API-006 QOS-API-007 QOS-API-008 QOS-API-009 QOS-API-010 QOS-API-010b \
 QOS-API-010c QOS-API-010e QOS-API-011 QOS-API-012 QOS-API-013 QOS-API-014 QOS-API-015 \
-QOS-API-016 QOS-API-017 QOS-API-018"
+QOS-API-016 QOS-API-017 QOS-API-018 QOS-API-019"
 qos_missing=""
 for want in $QOS_EXPECTED; do
   case " $QOS_SEEN " in *" $want "*) ;; *) qos_missing="$qos_missing $want" ;; esac
