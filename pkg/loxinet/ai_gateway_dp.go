@@ -383,7 +383,20 @@ func rateLimitCheckInternal(svc rateLimitService, store *rl.RateLimiterStore, ke
 			tk.LogIt(tk.LogWarning, "[AIGateway] rateLimitCheckInternal: user %s/%s model %s token quota exceeded\n", tenantIDStr, userIDStr, modelName)
 			return 3, 60, "token_quota_exceeded"
 		}
-		if store.IsTokenQuotaExceeded(tenantIDStr) {
+		// Guarded like its four siblings, and for the same reason the
+		// charge side is: quotaBucketsFor creates the tenant aggregate
+		// bucket only while tenantTPM > 0, so once the quota is lifted
+		// nothing charges that bucket again — and its recorded
+		// limitTokens, which IsTokenQuotaExceeded reads, can never be
+		// refreshed to zero. An unguarded read therefore goes on refusing
+		// against a bucket the charge side has already abandoned, for as
+		// long as the debt takes to drain: (spent - burst) / limit
+		// minutes, which grows without bound as one answer outsizes a
+		// tight quota, while the refusal keeps advertising Retry-After 60.
+		// Setting tokens_per_min to 0 is the ONLY way to lift a tenant
+		// token quota — the tenant rate-limit surface has no DELETE — so
+		// unguarded, the lift does not take effect at all.
+		if tenantTPM > 0 && store.IsTokenQuotaExceeded(tenantIDStr) {
 			tk.LogIt(tk.LogWarning, "[AIGateway] rateLimitCheckInternal: tenant %s token quota exceeded\n", tenantIDStr)
 			return 3, 60, "token_quota_exceeded"
 		}
