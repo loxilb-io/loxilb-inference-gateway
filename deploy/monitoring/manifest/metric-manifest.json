@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-15T11:00:37+00:00",
-  "source_revision": "76e41833965a17f6016b749411c81131fa8c95bf"
+  "generated_at": "2026-09-15T12:52:07+00:00",
+  "source_revision": "3c7c949d2079cc7589799874d6180a5f60d23daa"
  },
  "contract": {
   "total": 240,
@@ -894,8 +894,8 @@
      "symbol": "llb_ai_stream_start",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1337,
-     "call_line": 1345,
+     "def_line": 1400,
+     "call_line": 1408,
      "calls": "AdjustActiveStreams",
      "entry_point": "cgo-export"
     }
@@ -2129,8 +2129,8 @@
      "symbol": "llb_ai_normal_session_hit",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1468,
-     "call_line": 1471,
+     "def_line": 1531,
+     "call_line": 1534,
      "calls": "RecordNormalSessionHit",
      "entry_point": "cgo-export"
     }
@@ -2171,8 +2171,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1431,
-     "call_line": 1434,
+     "def_line": 1494,
+     "call_line": 1497,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -2214,8 +2214,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1431,
-     "call_line": 1434,
+     "def_line": 1494,
+     "call_line": 1497,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -2257,8 +2257,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1431,
-     "call_line": 1434,
+     "def_line": 1494,
+     "call_line": 1497,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -2300,8 +2300,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1431,
-     "call_line": 1434,
+     "def_line": 1494,
+     "call_line": 1497,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -2346,8 +2346,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1431,
-     "call_line": 1434,
+     "def_line": 1494,
+     "call_line": 1497,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -2389,8 +2389,8 @@
      "symbol": "llb_ai_pd_session_hit",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1443,
-     "call_line": 1446,
+     "def_line": 1506,
+     "call_line": 1509,
      "calls": "RecordPDSessionHit",
      "entry_point": "cgo-export"
     }
@@ -2432,8 +2432,8 @@
      "symbol": "llb_ai_pd_tier_selected",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1456,
-     "call_line": 1459,
+     "def_line": 1519,
+     "call_line": 1522,
      "calls": "RecordPDTierSelected",
      "entry_point": "cgo-export"
     }
@@ -2562,8 +2562,8 @@
      "symbol": "llb_ai_record_request",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1409,
-     "call_line": 1414,
+     "def_line": 1472,
+     "call_line": 1477,
      "calls": "RecordAIRequest",
      "entry_point": "cgo-export"
     }
@@ -2610,8 +2610,8 @@
      "symbol": "llb_ai_record_request",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1409,
-     "call_line": 1414,
+     "def_line": 1472,
+     "call_line": 1477,
      "calls": "RecordAIRequest",
      "entry_point": "cgo-export"
     }
@@ -2991,8 +2991,8 @@
      "symbol": "llb_ai_token_quota_consume",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1213,
-     "call_line": 1239,
+     "def_line": 1276,
+     "call_line": 1302,
      "calls": "RecordTokenUsage",
      "entry_point": "cgo-export"
     }
@@ -3034,8 +3034,8 @@
      "symbol": "llb_ai_token_quota_consume",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1213,
-     "call_line": 1239,
+     "def_line": 1276,
+     "call_line": 1302,
      "calls": "RecordTokenUsage",
      "entry_point": "cgo-export"
     }
@@ -3079,8 +3079,8 @@
      "symbol": "llb_ai_token_quota_consume",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1213,
-     "call_line": 1239,
+     "def_line": 1276,
+     "call_line": 1302,
      "calls": "RecordTokenUsage",
      "entry_point": "cgo-export"
     }
@@ -3123,8 +3123,8 @@
      "symbol": "llb_ai_record_unmetered",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1485,
-     "call_line": 1487,
+     "def_line": 1548,
+     "call_line": 1550,
      "calls": "RecordUnmeteredRequest",
      "entry_point": "cgo-export"
     }
