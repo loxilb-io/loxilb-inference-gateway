@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-15T02:21:40+00:00",
-  "source_revision": "651f73758afbb935159db4254b4550e96b6bb8c3"
+  "generated_at": "2026-09-15T04:21:24+00:00",
+  "source_revision": "d00d4dd29911acb0935f21f6ded56382a4ee08d2"
  },
  "contract": {
   "total": 239,
@@ -27,7 +27,7 @@
   "default_unreferenced": 5,
   "writer_classified": 183,
   "writer_unclassified": 0,
-  "writer_unverified": 71
+  "writer_unverified": 70
  },
  "families": [
   {
@@ -8030,7 +8030,7 @@
    "source": "api/prometheus/sockproxy_metrics.go:715",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
-   "implementation_status": "writer-mapped",
+   "implementation_status": "verified-runtime",
    "activation_precondition": "",
    "writer_sources": [
     {
@@ -8077,7 +8077,7 @@
      "entry_point": "main"
     }
    ],
-   "verification_evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:1142, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M16 owns the runtime proof."
+   "verification_evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-sg-oversize', M08 CPU mock P/D bed, scenario cicd/vllm-kvcache-routing-cpu): 13/13 from a clean bed -- on a bed with NO GPU and NO SGLang engine. This family was carried as engine-gated alongside the other five pd_sg_*, i.e. blocked on the GPU fleet. It is not. The gate (sockproxy_http.c:8647-8650) is is_streamable && !pd_sg_active && pd_phase == PD_PHASE_NONE && epv->pd_disagg_enabled && epv->pd_engine == PD_ENGINE_SGLANG -- every term a property of the RULE and the REQUEST SHAPE -- and the reject fires before any backend byte moves (sockproxy_pd_sglang.c:196-219 writes the 503 and shuts the client down), so no engine participates at all. Driven by a SECOND rule on :8081 over the SAME six mock endpoints with kvEngineType=sglang, because kvEngineType is IMMUTABLE on a live rule (409 'cant modify rule kv engine type (delete and recreate)') and kvHashAlgo must be OMITTED so the engine default sha256_sglang applies (the server rejects the sha256_cbor pairing outright). Body 852078 B > SP_JSON_INSPECT_MAX 786432 (sockproxy.h:1085), asserted in the harness rather than assumed, because an under-sized body takes the buffered path and scores a vacuous zero that looks exactly like a dead writer. Measured: delta 3.0 == 3 '[PD_SG] streamable request on a disagg rule' datapath log lines == 3 client receipts of 503 pd_sg_oversize_unroutable -- three independent oracles, the receipt one never touching the metrics path. The control is the IDENTICAL body at the vllm fixture rule on :8080, which SERVES it 200 via the documented fail-OPEN PLAIN degradation: delta 0, log silent, no receipt. That is what makes the control non-vacuous -- it proves the request was routable and that the dialect alone flipped the outcome, rather than the body simply being unservable everywhere."
   },
   {
    "name": "loxilb_pd_sg_prefill_abort_decode_total",
