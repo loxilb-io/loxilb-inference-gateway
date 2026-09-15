@@ -163,6 +163,15 @@ realm = {
     # back.
     + [user("r%d" % i, "r%dpw" % i, ["model:llama-70b", "model:mistral-7b"], "tenant-qr")
        for i in range(1, 3)]
+    # The HTTP/2 lifecycle arms. Same reasoning as r1/r2 and the same shape --
+    # a claim held across a slow backend and then torn down -- but the
+    # teardown is an H2 one (a client RST_STREAM, a GOAWAY, a socket that
+    # simply dies), and that settles through a different recorder from the
+    # HTTP/1.1 abort. So it needs a tenant of its own: sharing tenant-qr would
+    # let an HTTP/1.1 leak and an HTTP/2 leak stand in for each other.
+    + [user("hl%d" % i, "hl%dpw" % i, ["model:llama-70b", "model:mistral-7b"],
+            "tenant-hl")
+       for i in range(1, 3)]
     + [
         # Identity safety, from the IdP side. Both tenant values are ordinary
         # directory attributes -- which is the point: an IdP mints what its
