@@ -311,7 +311,7 @@ func (s *Service) GetUserModelRateLimit(tenantID, userID, model string) (tokensP
 
 // GetUserRateLimitEntry is the config GET surface: the full row with
 // metadata and model limits, read from the store directly (config reads are
-// not on the datapath). ErrKeyNotFound when no row exists.
+// not on the datapath). ErrUserRateLimitNotFound when no row exists.
 func (s *Service) GetUserRateLimitEntry(tenantID, userID string) (*cmn.UserRateLimitEntry, error) {
 	db, err := s.store()
 	if err != nil {
@@ -322,7 +322,7 @@ func (s *Service) GetUserRateLimitEntry(tenantID, userID string) (*cmn.UserRateL
 		Scan(&e.RPS, &e.BurstSize, &e.TokensPerMin, &e.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrKeyNotFound
+			return nil, ErrUserRateLimitNotFound
 		}
 		return nil, err
 	}
@@ -379,7 +379,7 @@ func (s *Service) DeleteUserRateLimit(tenantID, userID string) error {
 		return err
 	}
 	if n, aerr := res.RowsAffected(); aerr == nil && n == 0 {
-		return ErrKeyNotFound
+		return ErrUserRateLimitNotFound
 	}
 	if _, err := db.Exec(sqlDeleteUserModelRateLimits, tenantID, userID); err != nil {
 		tk.LogIt(tk.LogError, "[AIKey] Failed to delete user model rate limits for %s/%s: %v\n", tenantID, userID, err)
@@ -390,6 +390,17 @@ func (s *Service) DeleteUserRateLimit(tenantID, userID string) error {
 	tk.LogIt(tk.LogInfo, "[AIKey] Deleted user rate limit for %s/%s\n", tenantID, userID)
 	return nil
 }
+
+// The QoS ladder's rows are not API keys, and their absence must not be
+// reported with the API key's wording. Both wrap ErrNotFound, so the REST
+// layer's 404 classification is unchanged while the message names the row
+// the caller actually asked for.
+var (
+	// ErrUserRateLimitNotFound - no explicit rate-limit row for that user.
+	ErrUserRateLimitNotFound = fmt.Errorf("user rate-limit row %w", ErrNotFound)
+	// ErrRateLimitDefaultsNotFound - no defaults row for that scope.
+	ErrRateLimitDefaultsNotFound = fmt.Errorf("rate-limit defaults row %w", ErrNotFound)
+)
 
 // SetRateLimitDefaults upserts one defaults row. Scope 'global' must carry
 // no rule_ident; scope 'rule' must carry one. All-zero rows are refused for
@@ -505,7 +516,7 @@ func (s *Service) GetRateLimitDefaults(scope, ruleIdent string) (entry cmn.RateL
 }
 
 // GetRateLimitDefaultsEntry is the config GET surface (store-direct, with
-// metadata). ErrKeyNotFound when the row does not exist.
+// metadata). ErrRateLimitDefaultsNotFound when the row does not exist.
 func (s *Service) GetRateLimitDefaultsEntry(scope, ruleIdent string) (*cmn.RateLimitDefaultsEntry, error) {
 	db, err := s.store()
 	if err != nil {
@@ -517,7 +528,7 @@ func (s *Service) GetRateLimitDefaultsEntry(scope, ruleIdent string) (*cmn.RateL
 			&e.VipSharedRPS, &e.VipSharedTPM, &e.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrKeyNotFound
+			return nil, ErrRateLimitDefaultsNotFound
 		}
 		return nil, err
 	}
@@ -537,7 +548,7 @@ func (s *Service) DeleteRateLimitDefaults(scope, ruleIdent string) error {
 		return err
 	}
 	if n, aerr := res.RowsAffected(); aerr == nil && n == 0 {
-		return ErrKeyNotFound
+		return ErrRateLimitDefaultsNotFound
 	}
 	s.rememberDefaults(cacheKeyForDefaults(scope, ruleIdent), &defaultsCacheEntry{})
 	s.Cache.Delete(cacheKeyForDefaults(scope, ruleIdent))
