@@ -1,17 +1,17 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-14T11:03:22+00:00",
-  "source_revision": "bcf386273ce342a7f55e7083d5645fb5fce8a5e4",
+  "generated_at": "2026-09-15T06:09:45+00:00",
+  "source_revision": "e972141b2ec50a07a7ac8919e74f71ff64335361",
   "upstream_repository": "https://github.com/loxilb-io/loxilb",
   "upstream_revision": "71982cd61b23d82c8f2ff1dd38d395bbb4c9360d"
  },
  "contract": {
-  "gateway_families": 239,
+  "gateway_families": 240,
   "upstream_families": 60,
   "present_identical": 35,
   "present_divergent": 0,
-  "absent": 204,
+  "absent": 205,
   "upstream_only": 25
  },
  "upstream_only": [
@@ -1833,6 +1833,17 @@
     "labels": [
      "protocol"
     ]
+   }
+  },
+  {
+   "name": "loxilb_pd_admission_overflow_shed_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": []
    }
   },
   {

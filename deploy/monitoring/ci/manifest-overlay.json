@@ -10,14 +10,14 @@
   "Combined codes (D+P etc.) apply both behaviors."
  ],
  "expected": {
-  "total": 239,
+  "total": 240,
   "owners": {
-   "loxilb": 216,
+   "loxilb": 217,
    "loxilb-ai-controller": 19,
    "loxilb-kv-agent": 4
   },
   "classes": {
-   "default": 183,
+   "default": 184,
    "dpu-doca": 24,
    "aictrl-bridge": 8,
    "kv-agent-health": 1,
@@ -204,6 +204,7 @@
   "loxilb_parser_body_size_bytes": "V",
   "loxilb_parser_calls_total": "V",
   "loxilb_parser_duration_seconds": "V",
+  "loxilb_pd_admission_overflow_shed_total": "E",
   "loxilb_pd_admission_queued_total": "E",
   "loxilb_pd_admission_shed_total": "E",
   "loxilb_pd_cb_flips_total": "E",
@@ -394,6 +395,7 @@
    "loxilb_kv_inventory_fresh",
    "loxilb_kv_subscriber_last_event_timestamp_seconds",
    "loxilb_kv_subscriber_wire_reject_total",
+   "loxilb_pd_admission_overflow_shed_total",
    "loxilb_pd_connect_retry_same_ep_ok_total",
    "loxilb_pd_connect_retry_same_ep_total",
    "loxilb_persist_total",
@@ -522,7 +524,7 @@
   "burndown": {
    "unverified_max": 70,
    "unclassified_max": 0,
-   "_note": "183 packaged families, all classified: 34 verified-runtime, 10 verified-static, 69 conditional-with-proven-writer, 70 writer-mapped. Re-derived 2026-09-15 after WP-11's decode-eof, prefill-died, connect-retry, connect-failover, cb-heal, sessions, kv-t15, trie, cb-flips, admission-shed, admission-queued and sg-oversize arms. unverified_max 83 -> 70 across sessions 18 through 22: the FIRST time this campaign has lowered this ratchet. Every earlier WP (WP-1, WP-2, WP-4, WP-8) promoted families that were already conditional-with-proven-writer, so the writer-mapped pool never shrank; WP-11 targets that pool itself. loxilb_pd_decode_ep_died_total and loxilb_pd_decode_zero_byte_eof_total came OUT of it on driven runtime evidence with a control arm and a three-way receipt identity (E.5 row 'wp11-decode-eof'), and loxilb_pd_prefill_ep_died_total followed on the same bed (E.5 row 'wp11-prefill-died') scored against the datapath-log oracle rather than the receipt, because that leg's one deferred re-dispatch makes receipts != delta by construction. loxilb_pd_trie_nodes came out on the trie arm (E.5 row 'wp11-trie'), which also OVERTURNED a standing determination that the family was engine-gated like the pd_sg_* six: its gate is a per-rule API field, so it is drivable on a CPU mock, and the arm reads the gauge BEFORE traffic to separate the node created at rule add from the nodes added by inserts. loxilb_pd_cb_flips_total came out on the cb-flips arm (E.5 row 'wp11-cb-flips'), which turned an earlier delta>=sum(six lines) into an exact equality by bounding the measurement inside the breaker's 30s open timeout so the one unlogged site could not fire. loxilb_pd_sg_oversize_reject_total came out on the sg-oversize arm (E.5 row 'wp11-sg-oversize'), which OVERTURNED the standing 'engine-gated, needs the GPU fleet' determination for the pd_sg_* group the same way the trie arm did for pd_trie_nodes: its gate reads only the rule's dialect plus the request's body size, and the reject fires before any backend byte moves, so a CPU mock drives it exactly as a fleet would. That leaves FOUR pd_sg_* families, not five, actually pending an SGLang engine. unclassified_max stays 0."
+   "_note": "184 packaged families, all classified: 35 verified-runtime, 10 verified-static, 69 conditional-with-proven-writer, 70 writer-mapped. loxilb_pd_admission_overflow_shed_total is NEW with the D-8 fix (the overflow-valve counter existed in C but was exported by nothing) and enters directly as verified-runtime on the arm-level red/green twin recorded in its own evidence, so unverified_max is unchanged by its arrival. Re-derived 2026-09-15 after WP-11's decode-eof, prefill-died, connect-retry, connect-failover, cb-heal, sessions, kv-t15, trie, cb-flips, admission-shed, admission-queued and sg-oversize arms. unverified_max 83 -> 70 across sessions 18 through 22: the FIRST time this campaign has lowered this ratchet. Every earlier WP (WP-1, WP-2, WP-4, WP-8) promoted families that were already conditional-with-proven-writer, so the writer-mapped pool never shrank; WP-11 targets that pool itself. loxilb_pd_decode_ep_died_total and loxilb_pd_decode_zero_byte_eof_total came OUT of it on driven runtime evidence with a control arm and a three-way receipt identity (E.5 row 'wp11-decode-eof'), and loxilb_pd_prefill_ep_died_total followed on the same bed (E.5 row 'wp11-prefill-died') scored against the datapath-log oracle rather than the receipt, because that leg's one deferred re-dispatch makes receipts != delta by construction. loxilb_pd_trie_nodes came out on the trie arm (E.5 row 'wp11-trie'), which also OVERTURNED a standing determination that the family was engine-gated like the pd_sg_* six: its gate is a per-rule API field, so it is drivable on a CPU mock, and the arm reads the gauge BEFORE traffic to separate the node created at rule add from the nodes added by inserts. loxilb_pd_cb_flips_total came out on the cb-flips arm (E.5 row 'wp11-cb-flips'), which turned an earlier delta>=sum(six lines) into an exact equality by bounding the measurement inside the breaker's 30s open timeout so the one unlogged site could not fire. loxilb_pd_sg_oversize_reject_total came out on the sg-oversize arm (E.5 row 'wp11-sg-oversize'), which OVERTURNED the standing 'engine-gated, needs the GPU fleet' determination for the pd_sg_* group the same way the trie arm did for pd_trie_nodes: its gate reads only the rule's dialect plus the request's body size, and the reject fires before any backend byte moves, so a CPU mock drives it exactly as a fleet would. That leaves FOUR pd_sg_* families, not five, actually pending an SGLang engine. unclassified_max stays 0."
   },
   "unverifiable_roots": [
    "loxilb-ebpf/"
@@ -778,7 +780,7 @@
     ],
     "data_sources": [
      { "symbol": "refreshQosShaperStore", "kind": "func", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 232, "writes": "qosShaperStore" },
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "call_line": 1153, "calls": "refreshQosShaperStore" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "call_line": 1175, "calls": "refreshQosShaperStore" },
      { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
     ],
     "evidence": "metric coverage RCA and plan, section B.5b, run 'WP-3 QoS' 2026-09-09 on the QoS validation bed: bytes_passed 46758599 against curl's 46758393 (+206 HTTP headers). The writer path is proven; WP-3 sign-off is separately blocked by defect D-3."
@@ -791,7 +793,7 @@
     ],
     "data_sources": [
      { "symbol": "refreshQosShaperStore", "kind": "func", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 232, "writes": "qosShaperStore" },
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "call_line": 1153, "calls": "refreshQosShaperStore" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "call_line": 1175, "calls": "refreshQosShaperStore" },
      { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
     ],
     "evidence": "metric coverage RCA and plan, section B.5b: passed minus delayed = 30054432, matching the 30 MB CBS; red twin A held delayed at 0 below CIR. Sign-off blocked by D-3."
@@ -804,7 +806,7 @@
     ],
     "data_sources": [
      { "symbol": "refreshQosShaperStore", "kind": "func", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 232, "writes": "qosShaperStore" },
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "call_line": 1153, "calls": "refreshQosShaperStore" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "call_line": 1175, "calls": "refreshQosShaperStore" },
      { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
     ],
     "evidence": "metric coverage RCA and plan, section B.5b: 1697 parks under shaping, and exactly 0 in red twin A below CIR -- the arm that separates counting bytes from actually shaping. Sign-off blocked by D-3."
@@ -817,7 +819,7 @@
     ],
     "data_sources": [
      { "symbol": "refreshQosShaperStore", "kind": "func", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 232, "writes": "qosShaperStore" },
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "call_line": 1153, "calls": "refreshQosShaperStore" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "call_line": 1175, "calls": "refreshQosShaperStore" },
      { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
     ],
     "evidence": "metric coverage RCA and plan, section B.5b: 15.80 s of park against 16.77 s wall time; mean park 9.3 ms. Sign-off blocked by D-3."
@@ -830,7 +832,7 @@
     ],
     "data_sources": [
      { "symbol": "refreshQosShaperStore", "kind": "func", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 232, "writes": "qosShaperStore" },
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "call_line": 1153, "calls": "refreshQosShaperStore" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "call_line": 1175, "calls": "refreshQosShaperStore" },
      { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
     ],
     "evidence": "metric coverage RCA and plan, section B.5b: parked_connections above zero throughout the shaped drive. Sign-off blocked by D-3."
@@ -843,7 +845,7 @@
     ],
     "data_sources": [
      { "symbol": "refreshQosShaperStore", "kind": "func", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 232, "writes": "qosShaperStore" },
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "call_line": 1153, "calls": "refreshQosShaperStore" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "call_line": 1175, "calls": "refreshQosShaperStore" },
      { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
     ],
     "evidence": "metric coverage RCA and plan, section B.5b: bucket level tracked the shaped drive and sat near zero while rate-bound. Sign-off blocked by D-3."
@@ -856,7 +858,7 @@
     ],
     "data_sources": [
      { "symbol": "refreshQosShaperStore", "kind": "func", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 232, "writes": "qosShaperStore" },
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "call_line": 1153, "calls": "refreshQosShaperStore" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "call_line": 1175, "calls": "refreshQosShaperStore" },
      { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
     ],
     "evidence": "metric coverage RCA and plan, section B.5b: exactly 1e6 for --rate=8:8 and 1.25e7 for --rate=100:100. Sign-off blocked by D-3."
@@ -869,7 +871,7 @@
     ],
     "data_sources": [
      { "symbol": "refreshQosShaperStore", "kind": "func", "file": "api/prometheus/qos_shaper_metrics.go", "def_line": 232, "writes": "qosShaperStore" },
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "call_line": 1153, "calls": "refreshQosShaperStore" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "call_line": 1175, "calls": "refreshQosShaperStore" },
      { "symbol": "Init", "kind": "func", "file": "api/prometheus/prometheus.go", "def_line": 756, "call_line": 806, "calls": "RunSockproxyMetrics", "entry_point": "main" }
     ],
     "evidence": "metric coverage RCA and plan, section B.5b: 3e7 exactly, matching the policy COMMITTEDBLKSIZE. Sign-off blocked by D-3."
@@ -1861,7 +1863,7 @@
    "loxilb_proxy_cache_backpressure_ratio": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "proxyCacheBackpressureRatio", "note": "computed as cache_backpressure_active / active_connections, and 0 when there are no connections rather than NaN" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "proxyCacheBackpressureRatio", "note": "computed as cache_backpressure_active / active_connections, and 0 when there are no connections rather than NaN" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:931, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M02 owns the runtime proof."
@@ -1869,7 +1871,7 @@
    "loxilb_proxy_active_connections": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "proxyActiveConnections" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "proxyActiveConnections" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:932, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M02 owns the runtime proof."
@@ -1877,7 +1879,7 @@
    "loxilb_proxy_active_ssl_connections": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "proxyActiveSslConnections" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "proxyActiveSslConnections" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:933, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M02 owns the runtime proof."
@@ -1885,7 +1887,7 @@
    "loxilb_proxy_conversation_sessions": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "proxyConversationSessions" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "proxyConversationSessions" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:934, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M02 owns the runtime proof."
@@ -1893,7 +1895,7 @@
    "loxilb_proxy_cache_bytes": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "proxyCacheBytes" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "proxyCacheBytes" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:935, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M02 owns the runtime proof."
@@ -1901,7 +1903,7 @@
    "loxilb_proxy_cache_bytes_max_conn": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "proxyCacheBytesMaxConn" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "proxyCacheBytesMaxConn" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:936, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M02 owns the runtime proof."
@@ -1909,7 +1911,7 @@
    "loxilb_proxy_cache_conns_queued": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "proxyCacheConnsQueued" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "proxyCacheConnsQueued" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:937, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M02 owns the runtime proof."
@@ -1917,7 +1919,7 @@
    "loxilb_proxy_conversation_hits_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "proxyConversationHitsTotal", "note": "counter advanced by the per-period delta of the C-side cumulative value, so a datapath restart cannot replay history as one burst" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "proxyConversationHitsTotal", "note": "counter advanced by the per-period delta of the C-side cumulative value, so a datapath restart cannot replay history as one burst" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:942, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M02 owns the runtime proof."
@@ -1925,7 +1927,7 @@
    "loxilb_proxy_conversation_misses_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "proxyConversationMissesTotal" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "proxyConversationMissesTotal" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:947, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M02 owns the runtime proof."
@@ -1933,7 +1935,7 @@
    "loxilb_proxy_http2_sessions_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "proxyHttp2SessionsTotal" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "proxyHttp2SessionsTotal" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:952, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M02 owns the runtime proof."
@@ -1941,7 +1943,7 @@
    "loxilb_proxy_cache_high_water_events_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "proxyCacheHighWaterEventsTotal" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "proxyCacheHighWaterEventsTotal" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:957, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M02 owns the runtime proof."
@@ -1949,7 +1951,7 @@
    "loxilb_proxy_chunked_responses_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "proxyChunkedResponsesTotal" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "proxyChunkedResponsesTotal" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:962, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M02 owns the runtime proof."
@@ -1957,7 +1959,7 @@
    "loxilb_proxy_cache_drain_partial_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "proxyCacheDrainPartialTotal" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "proxyCacheDrainPartialTotal" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:967, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M02 owns the runtime proof."
@@ -1965,7 +1967,7 @@
    "loxilb_proxy_graceful_close_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "proxyGracefulCloseTotal" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "proxyGracefulCloseTotal" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:972, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M02 owns the runtime proof."
@@ -1973,7 +1975,7 @@
    "loxilb_proxy_conversation_ttl_expired_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "proxyConversationTtlExpiredTotal" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "proxyConversationTtlExpiredTotal" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:977, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M02 owns the runtime proof."
@@ -1981,7 +1983,7 @@
    "loxilb_proxy_http_responses_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "proxyHttpResponsesTotal" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "proxyHttpResponsesTotal" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:983, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M02 owns the runtime proof."
@@ -1989,7 +1991,7 @@
    "loxilb_proxy_pd_kv_params_overflow_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "proxyPdKvParamsOverflowTotal" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "proxyPdKvParamsOverflowTotal" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:1021, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M08 owns the runtime proof."
@@ -1997,7 +1999,7 @@
    "loxilb_pd_sessions_active": {
     "status": "verified-runtime",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "pdSessionsActive" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "pdSessionsActive" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-sessions', WP-11): M08 CPU mock P/D bed (cicd/vllm-kvcache-routing-cpu), image loxilb-inference-gateway:wp11-u24 sha256:fd072b4b7a0a, custody proven host build md5 83754e4fcb5d == image == md5 inside the RUNNING llb1. READING THE WRITER FIRST CHANGED THE ARM: sockproxy_metrics.c:192 computes this as HASH_COUNT(tepval->pd_session_map) summed over services -- the size of the session STICKINESS map, NOT a count of concurrent in-flight requests. The obvious drive (hold N requests in-flight against a hanging backend and expect the gauge to read N) would have measured a different thing entirely. Entries are inserted by pd_session_store(), whose key comes from exactly two places (sockproxy_ep.c:831-840, mirrored at sockproxy_pd.c:1910-1922): the JSON body 'user' field, and a client-provided X-Conversation-Id header which takes priority and whose 'auto-' prefix is explicitly skipped. With neither present session_key stays NULL and nothing is stored -- which gives this arm an unusually strong control: THE IDENTICAL REQUEST, same body, same endpoints, minus one header, so a flat control cannot be dismissed as flat-for-lack-of-traffic. THREE EXACT PREDICTIONS, ALL MADE FROM SOURCE BEFORE THE RUN AND ALL HELD. CONTROL: 3 requests, no session key, 3x200 -> delta 0.0. DRIVE A: 3 requests with 3 DISTINCT X-Conversation-Id, 3x200 -> delta 3.0 == N, one map entry per distinct key. DRIVE B: 4 requests sharing ONE X-Conversation-Id -> delta 1.0, NOT 4 -- pd_session_store() is an UPSERT (HASH_FIND_STR then update-in-place, sockproxy_pd.c:1147-1166), so M requests on one key add exactly one entry. Drive B is the check that makes this a SESSION gauge rather than a request counter; a delta of M there would mean it counts requests and the name would be wrong. All settles use the same >10 s window as the other WP-11 rows. 7/7 checks. BOUNDS CHECKED so neither can move the gauge under the measurement: PD_SESSION_MAX_ENTRIES 4096 with LRU eviction above it, PD_SESSION_DEFAULT_TTL 300 s. The flip side is recorded deliberately: this gauge does NOT return to baseline when the arm ends, because entries live out their 300 s TTL -- correct behaviour for an affinity map, so the arm does not assert a return to zero; such an assertion would fail against a working product."
@@ -2005,7 +2007,7 @@
    "loxilb_pd_trie_nodes": {
     "status": "verified-runtime",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "pdTrieNodes", "note": "size of the Tier-1 prefix trie; 0 means the trie is empty, which is a real state and not an absent feature" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "pdTrieNodes", "note": "size of the Tier-1 prefix trie; 0 means the trie is empty, which is a real state and not an absent feature" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-trie', M08 CPU mock P/D bed, scenario cicd/vllm-kvcache-routing-cpu): 12/12 checks, exact source-predicted node counts. The gate is the per-rule API field pd_cache_aware_mode (api/models/loadbalance_entry.go:834 -> api/restapi/handler/loadbalancer.go:150 -> pkg/loxinet/rules.go:4677 -> pkg/loxinet/dpebpf_linux.go:1809), not an engine property, and the one build gate that would degrade the mode to 0 never logged, consistent with the datapath CFLAGS defining HAVE_LLM_SYSTEM_PROMPT_HASH unconditionally. The drive is staged so the two writer classes are separated rather than summed: with the gate closed the gauge is EXACTLY 0 (pd_trie is NULL, so the collector skips the family) while 3/3 requests still terminated at Tier 2, which is what makes the control non-vacuous; opening the gate with NO traffic reads EXACTLY 1, the root node created at rule add; three requests whose system prompts have distinct first bytes then read EXACTLY 1+3=4, one single-leaf insert apiece. Which insert site moved is settled by an independent family: loxilb_ai_pd_tier_selected_total{tier=\"tier2\"} moved +3 while {tier=\"tier1\"} stayed 0, so every insert is attributable to the Tier-2 selection site and the Tier-1 site is asserted silent rather than assumed. Restoring the gate re-POSTs the rule and returns the gauge to EXACTLY 0, which rules out the rule re-add as the cause. Fleet proof still belongs to M08."
@@ -2013,7 +2015,7 @@
    "loxilb_pd_cb_flips_total": {
     "status": "verified-runtime",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "pdCbFlipsTotal" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "pdCbFlipsTotal" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-cb-flips', M08 CPU mock P/D bed, scenario cicd/vllm-kvcache-routing-cpu): 9/9. Seven writer sites, six of which log and one of which (sockproxy_health.c:1103, OPEN->HALF_OPEN inside circuit_breaker_should_skip) emits nothing, so an earlier attempt could only claim delta >= sum(six observable lines). The equality is EARNED here by bounding the window: every OPEN->HALF_OPEN transition, logged or silent, requires open_ts to be open_timeout_sec (30s) old, while the breakers are rebuilt CLOSED by the rule post and tripped by TRAFFIC in the request path, so the whole measurement completes in 14.6s. delta 3.0 == count('Circuit breaker CLOSED -> OPEN') == 3 is therefore an identity that TESTS ITSELF -- had the silent site fired, the counter would exceed the line count and the check would be red. Control is the per-rule cb_enable gate (api/models/loadbalance_entry.go:691): with it false the counter is flat while 30 [PD_CONN_RETRY] lines prove the connect-failure call site was still reached, so the control is non-vacuous rather than merely quiet. Predicted delta == 3, one CLOSED->OPEN per prefill endpoint at failure_threshold 5, exact. The other five observable sites asserted SILENT: the two origin sites are unreachable because a refusing endpoint yields no origin status, and the remaining three need either a HALF_OPEN breaker or the 30s timeout. Sites :1162, :1213, :1273, :1306 and :424 remain unproven at runtime; only :1143 is proven by this run. REPRODUCED 2026-09-15 on a FRESHLY REBUILT bed, 9/9 again, which is the stronger result: on a fresh P/D rule the breaker is switched on OUT OF BAND by the create path and the API field cannot see it, so the arm now forces its declared precondition with a real false->true->false transition. An identical re-post returns 409 lbrule-exists and changes nothing, which would leave the out-of-band enable in place and silently turn the control into a second copy of the drive -- that shortcut was tried and the control went RED, so the forcing step is verified rather than assumed."
@@ -2021,7 +2023,7 @@
    "loxilb_pd_fallback_to_normal_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "pdFallbackToNormalTotal" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "pdFallbackToNormalTotal" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:1034, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M08 owns the runtime proof."
@@ -2029,7 +2031,7 @@
    "loxilb_pd_kv_tier15_fallthrough_total": {
     "status": "verified-runtime",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "pdKvT15FallthroughTotal", "note": "the Tier-1.5 identity partner of pd_kv_tier15_hits_total: a KV-exact lookup that found no usable winner and fell through" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "pdKvT15FallthroughTotal", "note": "the Tier-1.5 identity partner of pd_kv_tier15_hits_total: a KV-exact lookup that found no usable winner and fell through" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-kv-t15', WP-11): M08 CPU mock P/D bed (cicd/vllm-kvcache-routing-cpu), image loxilb-inference-gateway:wp11-u24 sha256:fd072b4b7a0a, custody proven host build md5 83754e4fcb5d == image == md5 inside the RUNNING llb1. THE DIFFICULTY HERE WAS THE CONTROL, NOT THE DRIVE: this counter moves on ORDINARY traffic -- with no real engine inventory every request misses the KV-exact lookup (reason=tokenize) -- so 'send different requests' is not a control, because both arms would move it. The control comes from the GATE instead: the entire Tier-1.5 block (sockproxy_pd.c:2000) is wrapped in if (tepval->kv_exact_mode == 1), so with kvExactMode=0 on the rule neither increment site is reachable. Same VIP, same endpoints, same request body, one config field -- which is the mode-0 red twin this file already names for the neighbouring KV families. CONTROL (kvExactMode=0, read back as 0 before measuring): 4x200, delta 0.0, and BOTH Tier-1.5 log sites silent. DRIVE (kvExactMode=1, read back as 1): 4x200, delta 4.0. IDENTITY delta == count('[KV_T15_FALLTHROUGH]') == 4 == 4. PREDICTED delta == N, exact. TWO REACHABLE WRITERS, DISTINGUISHED: sockproxy_pd.c:2022 (load-imbalance guard skip, '[KV_T15_LOADGUARD]') and sockproxy_pd.c:2042 (Tier 1.5 declined, '[KV_T15_FALLTHROUGH]'). SITE PROVEN: 2042. Site 2022 sits behind pd_kv_loadguard_on() (env LLB_KV_LOADGUARD=1) and was asserted SILENT rather than assumed, so this delta identifies its writer; 2022 remains UNPROVEN at runtime and needs that env set plus a deliberate prefill load imbalance. CROSS-CHECK against an already-proven neighbour: delta loxilb_pd_kv_tier15_miss_reason_total summed over all reasons == 4.0 == delta fallthrough, one decline producing exactly one of each; the reason children are counted inside pd_kv_exact_select and the fallthrough at its call site, so agreement across that boundary is independent evidence. 9/9 checks, and the arm was run TWICE back-to-back with identical results and a clean restore. The rule is left at kvExactMode=1 exactly as found. Polled-pipeline caveat as per the decode row."
@@ -2037,7 +2039,7 @@
    "loxilb_pd_admission_shed_total": {
     "status": "verified-runtime",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "pdAdmissionShedTotal" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "pdAdmissionShedTotal" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-admission-shed', M08 CPU mock P/D bed, scenario cicd/vllm-kvcache-routing-cpu): 11/11, exact multiplicity. The per-EP in-flight admission cap is env-only and getenv-once (LLB_PD_MAX_INFLIGHT_PER_EP, sockproxy_pd.c:1419-1431), so unlike the other P/D gates it cannot be toggled on a live gateway; the bed was rebuilt with cap=1 and queue depth 0, and the arm asserts both values off the RUNNING container rather than trusting the builder. Depth 0 matters for attribution: the parking branch is chosen by pd_queue_depth_per_ep(), so at depth 0 only the shed site (sockproxy_pd.c:1848) is reachable and the overflow shed cannot fire. Drive needs genuine concurrency, since the cap is a statement about requests that OVERLAP: three holders are staggered 0.4s apart against hanging backends so each lands on a distinct prefill EP, then six probes are fired simultaneously at the now-full pool. Control is the same backends and the same cap with only three overlapping requests, which leaves under_cap non-zero at every selection: delta 0 and every shed log site silent. Drive: delta 6.0 == 6 probes == 6 shed log lines == 6 client receipts of 429 {\"error\":\"pd_overloaded\"}, the last written at the dispatch site (sockproxy_ep.c:772-786) and therefore an oracle that does not traverse the metrics pipeline. The drive SHAPE is read out of the product own log rather than assumed: the shed line carries healthy_elig, and all six read 'all 3 healthy prefill EPs at in-flight cap=1'. That assertion was added because a first run shed against a pool of 2 -- control-plane health demotes a hanging backend after roughly 19s -- which made the multiplicity off by one against a pool the prediction was not written for. Queued and overflow sites asserted silent."
@@ -2045,16 +2047,24 @@
    "loxilb_pd_admission_queued_total": {
     "status": "verified-runtime",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "pdAdmissionQueuedTotal" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "pdAdmissionQueuedTotal" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-admission-queued', M08 CPU mock P/D bed, scenario cicd/vllm-kvcache-routing-cpu): 11/11, exact multiplicity from pool arithmetic. Same admission gate as the shed family but the OTHER branch: once every healthy prefill EP is at the in-flight cap, pd_queue_depth_per_ep() chooses shed (depth 0, sockproxy_pd.c:1848) or park (depth > 0, :1887), and the two are mutually exclusive for a given bed. This bed was rebuilt with cap=1 and depth=2, both asserted off the RUNNING container because the values are env-only and getenv-once. Capacity is therefore exact: 3 prefill EPs hold 3 requests in flight and offer 3 x 2 == 6 park slots, so 3 staggered holders plus 9 simultaneous probes must park exactly 6 and overflow exactly 3 -- deterministic in COUNT even though the order of the 9 probes is not. Measured: delta 6.0 == 6 PARKED log lines; pd_admission_shed asserted FLAT because its branch is unreachable at depth 2, so the delta identifies which branch ran; 3 overflow log lines and 3 client receipts of 429 pd_overloaded, the parked requests correctly answering nothing because parking is hold-don't-drop. Control is the same backends, cap and depth with only 3 overlapping requests, leaving under_cap non-zero at every selection: delta 0 with all three log sites silent."
+   },
+   "loxilb_pd_admission_overflow_shed_total": {
+    "status": "verified-runtime",
+    "writer_sources": [
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "pdAdmissionOverflowShedTotal", "note": "family added by the D-8 fix: the C counter pd_admission_overflow_shed_total (sockproxy_pd.c, overflow valve of the bounded-admission layer) existed and incremented before the fix but was read by NOTHING -- pd_admission_stats_get had no case for it, so it never reached the snapshot, the Go registry, or /metrics. With queueing enabled (LLB_PD_QUEUE_DEPTH_PER_EP > 0) the plain shed branch is unreachable and this valve is the ONLY shed that can fire, so before the fix every overload drop on a queueing deployment was invisible" },
+     { "tail": "prom-init-sockproxy-main" }
+    ],
+    "evidence": "runtime evidence, M08 CPU mock P/D bed (scenario cicd/vllm-kvcache-routing-cpu), E.5 row 'd8-overflow-fix'. Fix red-twinned AT THE ARM LEVEL, not only at the gate: the same admission-overflow arm was run against the pre-fix image (0/3 -- the family ABSENT from /metrics while the overflow site demonstrably fired, which is the defect) and then against the fix image on an identically rebuilt bed (9/9). Bed rebuilt with cap=1 depth=2, both asserted off the RUNNING container (env-only, getenv-once). Pool arithmetic exact: 3 prefill EPs hold 3 in flight, 3 x depth 2 == 6 park slots, so 3 holders + 9 simultaneous probes must park exactly 6 and overflow exactly 3. Measured: delta 3.0 == 3 overflow log lines == 3 client receipts of 429 pd_overloaded (three-way identity across the metrics path, the datapath log, and the response path -- the parked requests answer nothing because parking is hold-don't-drop, so the 429 count IS the overflow count). Control (pool exactly filled, no probes): delta 0 with all three admission log sites silent. Sibling regression asserted on the same run: pd_admission_queued delta 6 == 6 PARKED lines and pd_admission_shed flat at 0 with silent log, proving the tail-appended snapshot field disturbed neither neighbour. The fix-aware admission-queued arm then scored 11/11 on the same bed, including the same overflow-metric identity from the other branch's drive."
    },
    "loxilb_pd_cb_proactive_heal_total": {
     "status": "verified-runtime",
     "evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-cb-heal', WP-11): same M08 CPU mock P/D bed, image and custody as the other WP-11 rows; harness md5 795459a556f5. SINGLE WRITER (sockproxy_health.c:425), which is what makes the identity below exact -- contrast loxilb_pd_cb_flips_total, its neighbour at :424, which has SEVEN writers and was deliberately NOT promoted (see below). This arm is TIME-driven, not purely traffic-driven: circuit breaker defaults are failure_threshold=5, open_timeout_sec=30, half_open_max_requests=3 (sockproxy_health.c:1072-1075), and the heal at :424-425 is reached by the 1 Hz health pass, as the field comment at sockproxy.h:147 states. THREE PHASES. Control: all six EPs healthy, the SAME 6-request drive and the SAME 65 s window as the fault arm, 6x200 -- counter FLAT at 0.0 with ZERO '[CB heal] ... 1Hz health pass' log lines. Fault A: all six EPs into 'refuse', 6 requests driven (6x503 pd_pool_unavailable, drive shape asserted so a lost measurement cannot be scored) -- breakers tripped, delta cb_flips 3.0, and critically loxilb_pd_cb_proactive_heal_total stayed FLAT at 0.0 WHILE THE EPS WERE STILL DOWN, so the counter does not heal an endpoint that is still refusing. Fault B: EPs restored, 45 s waited out (open_timeout_sec=30 plus a health pass) -- delta 3.0, one per prefill EP. IDENTITY delta == count('OPEN->HALF_OPEN driven by 1Hz health pass') == 3 == 3, exact because the family has one writer. 9 of 10 checks; the single failure is the CONTROL check for the NEIGHBOUR family cb_flips and is explained below -- every check scoring THIS family passed. HARNESS FINDING recorded rather than papered over: the first version of this arm assumed the 1 Hz health pass would trip the breaker on its own and went RED at delta cb_flips 0. That assumption was wrong, not the product -- failures are recorded by circuit_breaker_record_failure() in the REQUEST path (sockproxy_ep.c:1071 and :1186), so with no traffic there is nothing to count; only the HEAL is health-pass driven. The DRIVE was fixed and the assertions were left untouched. Polled-pipeline caveat as per the decode row.",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "pdCbProactiveHealTotal" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "pdCbProactiveHealTotal" },
      { "tail": "prom-init-sockproxy-main" }
     ]
    },
@@ -2062,7 +2072,7 @@
     "status": "verified-runtime",
     "evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-prefill-died', WP-11): same M08 CPU mock P/D bed and same proven chain of custody as the decode-eof row -- cicd/vllm-kvcache-routing-cpu, image loxilb-inference-gateway:wp11-u24 sha256:fd072b4b7a0a, harness md5 5eca3c17d909 identical at author and bed. Trigger driven: all three PREFILL EPs replaced by a backend that reads the whole request then closes having written ZERO response bytes, so the backend fd is destroyed while the client sits in PD_PHASE_PREFILL_WAITING -- the exact condition sockproxy_http.c:4661-4671 guards. FAULT ARM: 3 requests -> 3x503, every body carrying error pd_pool_unavailable, delta 6.0. CONTROL ARM (same topology, same requests, healthy prefill backends, IDENTICAL 14 s settle): 3x200, zero receipts, counter FLAT at delta 0.0 and ZERO 'Prefill backend died' log lines. PRIMARY ORACLE IS THE DATAPATH LOG, NOT THE RECEIPT: unlike the decode leg, this block counts the death and then defers ONE mid-request re-dispatch (pd_prefill_retries 0->1, replayed from pd_saved_headers/pd_saved_body) against a re-selected EP, which with every prefill EP faulted dies too -- so receipts != delta BY CONSTRUCTION and the decode arm's three-way identity is false here. The identity that does hold is delta counter == count('Prefill backend died' lines in /var/log/loxilbdp.log inside llb1) == 6 == 6, one-for-one regardless of multiplicity, because the log_error and the atomic_fetch_add are two statements of one block. The multiplicity was PREDICTED FROM SOURCE BEFORE THE RUN and asserted separately: delta == 2N (6) and receipts == N (3), both exact -- delta == N would have meant the re-dispatch never happened, delta > 2N that the retry budget is not 1. SPECIFICITY ALSO CHECKED: under a prefill fault loxilb_pd_decode_ep_died_total and loxilb_pd_decode_zero_byte_eof_total both stayed FLAT at 3.0, so the decode pair's own verified-runtime evidence is not overstated -- they do not count prefill deaths. 10/10 checks. Polled-pipeline caveat as per the decode row: RunSockproxyMetrics sleeps PrometheusDefaultPeriod = 10 s, both arms use the same >10 s window.",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "pdPrefillEpDiedTotal" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "pdPrefillEpDiedTotal" },
      { "tail": "prom-init-sockproxy-main" }
     ]
    },
@@ -2070,7 +2080,7 @@
     "status": "verified-runtime",
     "evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-decode-eof', WP-11): M08 CPU mock P/D bed (cicd/vllm-kvcache-routing-cpu), build off gw main 2e659259 + ebpf 7ea10f8, image loxilb-inference-gateway:wp11-u24 sha256:fd072b4b7a0a, chain of custody proven host md5 83754e4fcb5d == image md5 == md5 inside the RUNNING llb1. Trigger driven: all three decode EPs replaced by a backend that reads the whole request then closes having written ZERO response bytes -- the exact shape sockproxy_http.c:4925-4938 names. FAULT ARM: 3 requests -> 3x502, every body carrying error pd_decode_backend_died, delta 3.0 on BOTH families. CONTROL ARM (same topology, same requests, healthy backends, IDENTICAL 14 s settle window): 3x200, zero receipts, BOTH families FLAT at delta 0.0. THREE-WAY IDENTITY HELD EXACTLY: receipts 3 == delta_died 3.0 == delta_zero_byte_eof 3.0 -- the receipt leaves through the response path and the deltas through the metrics path, so only one event producing both satisfies it. Subset relation delta_zeof <= delta_died also held. 9/9 checks. NOTE: these families are POLLED (RunSockproxyMetrics sleeps PrometheusDefaultPeriod = 10 s), not CGO-callback, so a sub-10 s settle reads a live writer as dead -- an earlier 3 s run scored delta 0 against a fault that had demonstrably fired. Both arms use the same >10 s window.",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "pdDecodeEpDiedTotal" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "pdDecodeEpDiedTotal" },
      { "tail": "prom-init-sockproxy-main" }
     ]
    },
@@ -2078,7 +2088,7 @@
     "status": "verified-runtime",
     "evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-decode-eof', WP-11): M08 CPU mock P/D bed (cicd/vllm-kvcache-routing-cpu), build off gw main 2e659259 + ebpf 7ea10f8, image loxilb-inference-gateway:wp11-u24 sha256:fd072b4b7a0a, chain of custody proven host md5 83754e4fcb5d == image md5 == md5 inside the RUNNING llb1. Trigger driven: all three decode EPs replaced by a backend that reads the whole request then closes having written ZERO response bytes -- the exact shape sockproxy_http.c:4925-4938 names. FAULT ARM: 3 requests -> 3x502, every body carrying error pd_decode_backend_died, delta 3.0 on BOTH families. CONTROL ARM (same topology, same requests, healthy backends, IDENTICAL 14 s settle window): 3x200, zero receipts, BOTH families FLAT at delta 0.0. THREE-WAY IDENTITY HELD EXACTLY: receipts 3 == delta_died 3.0 == delta_zero_byte_eof 3.0 -- the receipt leaves through the response path and the deltas through the metrics path, so only one event producing both satisfies it. Subset relation delta_zeof <= delta_died also held. 9/9 checks. NOTE: these families are POLLED (RunSockproxyMetrics sleeps PrometheusDefaultPeriod = 10 s), not CGO-callback, so a sub-10 s settle reads a live writer as dead -- an earlier 3 s run scored delta 0 against a fault that had demonstrably fired. Both arms use the same >10 s window.",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "pdDecodeZeroByteEofTotal" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "pdDecodeZeroByteEofTotal" },
      { "tail": "prom-init-sockproxy-main" }
     ]
    },
@@ -2086,7 +2096,7 @@
     "status": "verified-runtime",
     "evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-connect-failover', WP-11): same M08 CPU mock P/D bed, image and custody as the other WP-11 rows; harness md5 19eea6ec4315 identical at author and bed. THIS FAMILY IS NOT SINGLE-WRITER and the arm was built around that. Four atomic_fetch_add sites exist -- sockproxy_ep.c:1172 ('US-PD804: P/D mid-cycle failover ->'), sockproxy_ep.c:1269 ('LB mid-cycle failover: EP%d unreachable'), sockproxy_pd_vllm.c:686 ('prefill mid-request failover: EP%d died -> EP%d') and the engine-gated sockproxy_pd_sglang.c:944 -- so a bare delta does not say WHICH writer moved and 'the family moves' would overclaim. The arm therefore counts all three reachable log lines separately. SITE PROVEN: sockproxy_pd_vllm.c:686, the vLLM prefill mid-request re-dispatch. Trigger driven: all three prefill EPs put into 'zerobyte', so connect SUCCEEDS (the stub listens) and the backend then dies mid-request; the deferred re-dispatch reconnects to a re-selected EP successfully, which is what site 686 counts. FAULT ARM: delta 3.0. CONTROL ARM (healthy prefill EPs, IDENTICAL 14 s settle): 3x200, counter FLAT at 0.0 and ALL THREE log sites silent at (3,0,0) -> (3,0,0). IDENTITY delta counter == count('prefill mid-request failover') == 3 == 3. PREDICTED delta == N (one successful re-dispatch per client request), exact. SITE SPECIFICITY HELD: delta at sockproxy_ep.c:1172 and :1269 both ZERO, so this delta identifies one writer rather than the family as a whole -- the other two reachable sites remain UNPROVEN at runtime and would need a failover that succeeds onto a HEALTHY EP (site 1172) and a plain-LB mid-cycle failover (site 1269). Note the clients still ended at 503: the failover succeeded AT CONNECT and the request then died again on the replacement EP, which is precisely what a 'reconnect succeeded' counter should record, and is why the client receipt cannot be this family's oracle. 8/8 checks. HOW THE SITE WAS FOUND: the connect-retry arm's baseline showed this counter already at 3.0 when the session began at 0 -- the prefill-died arm had moved it as a side effect -- and the log showed 3 lines at site 686 with 0 at the other two. Polled-pipeline caveat as per the decode row.",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "pdConnectFailoverTotal" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "pdConnectFailoverTotal" },
      { "tail": "prom-init-sockproxy-main" }
     ]
    },
@@ -2094,14 +2104,14 @@
     "status": "verified-runtime",
     "evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-connect-retry', WP-11): same M08 CPU mock P/D bed, image and custody as the other WP-11 rows; harness md5 285e95aa6c85 identical at author and bed. Trigger driven: all three PREFILL EPs put into 'refuse' (the stub deliberately does NOT listen, so the netns REDIRECT aims traffic at a closed port and connect() gets ECONNREFUSED), which is the proxy_setup_ep_connect failure sockproxy_ep.c:1053-1068 retries. FAULT ARM: 3 requests -> 3x503 all carrying pd_pool_unavailable, delta 3.0. CONTROL ARM (same topology, prefill EPs accepting, IDENTICAL 14 s settle): 3x200, counter FLAT at 0.0 and ZERO '[PD_CONN_RETRY] retrying SAME EP' log lines. IDENTITY delta counter == count('transient backend connect failure, retrying SAME EP') == 3 == 3. The multiplicity was PREDICTED FROM SOURCE BEFORE THE RUN and held exactly: delta == N because pd_connect_retry_budget returns 1 for P/D disagg (pinned by test_pd_admission.c:627-630) and because the failover loop below (sockproxy_ep.c:1150) calls proxy_setup_ep_connect DIRECTLY rather than through the retry block, so failover candidates cannot inflate this counter. THREE INDEPENDENT FLATS, each a real statement: loxilb_pd_connect_retry_same_ep_ok_total stayed 0 with zero 'affinity preserved' lines (a refusing EP cannot accept a retry -- a move would mean _ok counts attempts rather than successes); loxilb_pd_connect_failover_total stayed 0 (every failover candidate also refused, so nothing succeeded elsewhere -- a move would mean failover is counted on failure too); and the two decode families stayed FLAT at 3.0 (specificity). 11/11 checks. NOT PROMOTED BY THIS ARM: loxilb_pd_connect_retry_same_ep_ok_total -- it stayed at zero here by design, and a counter that did not move has not been shown to work; it needs an arm where a connect fails and then succeeds inside the retry loop. OBSERVED, unscored: this arm moved loxilb_pd_cb_flips_total by 3.0 (each refused connect records a circuit-breaker failure) -- reconnaissance for the cb-flips arm, not evidence here. Polled-pipeline caveat as per the decode row.",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "pdConnectRetrySameEpTotal" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "pdConnectRetrySameEpTotal" },
      { "tail": "prom-init-sockproxy-main" }
     ]
    },
    "loxilb_pd_connect_retry_same_ep_ok_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "pdConnectRetrySameEpOkTotal", "note": "the success half of the same-endpoint retry pair; retry_total minus this is the failed-retry residual" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "pdConnectRetrySameEpOkTotal", "note": "the success half of the same-endpoint retry pair; retry_total minus this is the failed-retry residual" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:1118, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M08 owns the runtime proof."
@@ -2109,7 +2119,7 @@
    "loxilb_lb_select_failure_shutdown_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "lbSelectFailureShutdownTotal" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "lbSelectFailureShutdownTotal" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:1122, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M02 owns the runtime proof."
@@ -2117,7 +2127,7 @@
    "loxilb_pd_sg_prefill_abort_decode_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "pdSgPrefillAbortDecodeTotal", "note": "SGLang-specific: the C counter only moves for an SGLang P/D deployment, so on any other engine this stays 0 while still being exported" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "pdSgPrefillAbortDecodeTotal", "note": "SGLang-specific: the C counter only moves for an SGLang P/D deployment, so on any other engine this stays 0 while still being exported" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:1126, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M16 owns the runtime proof."
@@ -2125,7 +2135,7 @@
    "loxilb_pd_sg_decode_close_drain_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "pdSgDecodeCloseDrainTotal", "note": "SGLang-specific: the C counter only moves for an SGLang P/D deployment, so on any other engine this stays 0 while still being exported" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "pdSgDecodeCloseDrainTotal", "note": "SGLang-specific: the C counter only moves for an SGLang P/D deployment, so on any other engine this stays 0 while still being exported" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:1130, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M16 owns the runtime proof."
@@ -2133,7 +2143,7 @@
    "loxilb_pd_sg_room_retry_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "pdSgRoomRetryTotal", "note": "SGLang-specific: the C counter only moves for an SGLang P/D deployment, so on any other engine this stays 0 while still being exported" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "pdSgRoomRetryTotal", "note": "SGLang-specific: the C counter only moves for an SGLang P/D deployment, so on any other engine this stays 0 while still being exported" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:1134, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M16 owns the runtime proof."
@@ -2141,7 +2151,7 @@
    "loxilb_pd_sg_prefill_reject_relay_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "pdSgPrefillRejectRelayTotal", "note": "SGLang-specific: the C counter only moves for an SGLang P/D deployment, so on any other engine this stays 0 while still being exported" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "pdSgPrefillRejectRelayTotal", "note": "SGLang-specific: the C counter only moves for an SGLang P/D deployment, so on any other engine this stays 0 while still being exported" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:1138, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M16 owns the runtime proof."
@@ -2149,7 +2159,7 @@
    "loxilb_pd_sg_oversize_reject_total": {
     "status": "verified-runtime",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "pdSgOversizeRejectTotal", "note": "SGLang-specific: the C counter only moves for an SGLang P/D deployment, so on any other engine this stays 0 while still being exported" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "pdSgOversizeRejectTotal", "note": "SGLang-specific: the C counter only moves for an SGLang P/D deployment, so on any other engine this stays 0 while still being exported" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-sg-oversize', M08 CPU mock P/D bed, scenario cicd/vllm-kvcache-routing-cpu): 13/13 from a clean bed -- on a bed with NO GPU and NO SGLang engine. This family was carried as engine-gated alongside the other five pd_sg_*, i.e. blocked on the GPU fleet. It is not. The gate (sockproxy_http.c:8647-8650) is is_streamable && !pd_sg_active && pd_phase == PD_PHASE_NONE && epv->pd_disagg_enabled && epv->pd_engine == PD_ENGINE_SGLANG -- every term a property of the RULE and the REQUEST SHAPE -- and the reject fires before any backend byte moves (sockproxy_pd_sglang.c:196-219 writes the 503 and shuts the client down), so no engine participates at all. Driven by a SECOND rule on :8081 over the SAME six mock endpoints with kvEngineType=sglang, because kvEngineType is IMMUTABLE on a live rule (409 'cant modify rule kv engine type (delete and recreate)') and kvHashAlgo must be OMITTED so the engine default sha256_sglang applies (the server rejects the sha256_cbor pairing outright). Body 852078 B > SP_JSON_INSPECT_MAX 786432 (sockproxy.h:1085), asserted in the harness rather than assumed, because an under-sized body takes the buffered path and scores a vacuous zero that looks exactly like a dead writer. Measured: delta 3.0 == 3 '[PD_SG] streamable request on a disagg rule' datapath log lines == 3 client receipts of 503 pd_sg_oversize_unroutable -- three independent oracles, the receipt one never touching the metrics path. The control is the IDENTICAL body at the vllm fixture rule on :8080, which SERVES it 200 via the documented fail-OPEN PLAIN degradation: delta 0, log silent, no receipt. That is what makes the control non-vacuous -- it proves the request was routable and that the dialect alone flipped the outcome, rather than the body simply being unservable everywhere."
@@ -2157,7 +2167,7 @@
    "loxilb_pd_trt_ctx_early_exit_total": {
     "status": "writer-mapped",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "pdTrtCtxEarlyExitTotal", "note": "SGLang-specific: the C counter only moves for an SGLang P/D deployment, so on any other engine this stays 0 while still being exported" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "pdTrtCtxEarlyExitTotal", "note": "SGLang-specific: the C counter only moves for an SGLang P/D deployment, so on any other engine this stays 0 while still being exported" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:1146, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M16 owns the runtime proof."
@@ -2166,7 +2176,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "L7 (fullproxy) traffic that produced at least one HTTP response: the children are per status class, created from the C snapshot's per-status array, so an L4-only Gateway exposes none.",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "proxyHttpResponsesByStatus", "note": "one child per status class at :989, with the delta applied at :993" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "proxyHttpResponsesByStatus", "note": "one child per status class at :989, with the delta applied at :993" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:989 and :993, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M02 owns the runtime proof."
@@ -2175,7 +2185,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "an LB rule with KV-exact routing configured, so a subscriber goroutine exists for that (service, endpoint); with no such rule nothing creates the child and the gauge is absent rather than 0.",
     "writer_sources": [
-     { "symbol": "SetKvSubscriberConnected", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1403, "writes": "kvSubscriberConnected" },
+     { "symbol": "SetKvSubscriberConnected", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1425, "writes": "kvSubscriberConnected" },
      { "symbol": "setKvConnectedIfLive", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 1034, "call_line": 1040, "calls": "SetKvSubscriberConnected", "note": "the IfLive wrapper drops the write once the context is cancelled, so a torn-down subscriber cannot resurrect a cleared series" },
      { "symbol": "runKvSubscriberLoopBinding", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 737, "call_line": 762, "calls": "setKvConnectedIfLive", "note": "set to 1 on entry and deferred back to 0 at :763" },
      { "tail": "kv-subscriber-rule-config" }
@@ -2186,7 +2196,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "a KV-exact rule whose publisher actually delivered an event: the gauge is stamped on receipt, so it stays absent for an endpoint that connected but never published.",
     "writer_sources": [
-     { "symbol": "SetKvSubscriberLastEvent", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1410, "writes": "kvSubscriberLastEventTs" },
+     { "symbol": "SetKvSubscriberLastEvent", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1432, "writes": "kvSubscriberLastEventTs" },
      { "symbol": "setKvLastEventIfLive", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 1082, "call_line": 1088, "calls": "SetKvSubscriberLastEvent" },
      { "symbol": "runKvSubscriberLoopBinding", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 737, "call_line": 958, "calls": "setKvLastEventIfLive" },
      { "tail": "kv-subscriber-rule-config" }
@@ -2197,7 +2207,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "a KV-exact rule whose subscriber was rebound: the counter is incremented on the rebuild path only, so a stable publisher leaves it at zero -- which is the point of WP-6's kill/restart arm.",
     "writer_sources": [
-     { "symbol": "IncKvSubscriberReconnect", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1424, "writes": "kvSubscriberReconnectTotal" },
+     { "symbol": "IncKvSubscriberReconnect", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1446, "writes": "kvSubscriberReconnectTotal" },
      { "symbol": "incKvReconnectIfLive", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 1048, "call_line": 1054, "calls": "IncKvSubscriberReconnect" },
      { "symbol": "rebuildKvSubscriber", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 1115, "call_line": 1161, "calls": "incKvReconnectIfLive" },
      { "symbol": "runKvSubscriberLoopBinding", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 737, "call_line": 825, "calls": "rebuildKvSubscriber", "note": "the loop retries the rebuild until it succeeds, so one publisher outage produces one increment per successful redial, not one per attempt" },
@@ -2209,7 +2219,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "a KV-exact rule whose ZMQ receive failed; normal traffic never increments it, so WP-6 must inject the fault.",
     "writer_sources": [
-     { "symbol": "IncKvSubscriberRecvError", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1430, "writes": "kvSubscriberRecvErrorTotal" },
+     { "symbol": "IncKvSubscriberRecvError", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1452, "writes": "kvSubscriberRecvErrorTotal" },
      { "symbol": "incKvRecvErrorIfLive", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 1057, "call_line": 1063, "calls": "IncKvSubscriberRecvError" },
      { "symbol": "runKvSubscriberLoopBinding", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 737, "call_line": 812, "calls": "incKvRecvErrorIfLive" },
      { "tail": "kv-subscriber-rule-config" }
@@ -2220,7 +2230,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "a malformed or mismatched KV frame on a KV-exact rule; a well-formed publisher leaves this at zero by construction.",
     "writer_sources": [
-     { "symbol": "IncKvSubscriberWireReject", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1437, "writes": "kvSubscriberWireRejectTotal" },
+     { "symbol": "IncKvSubscriberWireReject", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1459, "writes": "kvSubscriberWireRejectTotal" },
      { "symbol": "incKvWireRejectIfLive", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 1069, "call_line": 1075, "calls": "IncKvSubscriberWireReject" },
      { "symbol": "runKvSubscriberLoopBinding", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 737, "call_line": 937, "calls": "incKvWireRejectIfLive", "note": "reason-labelled; the rank-mismatch reason is raised separately at :949" },
      { "tail": "kv-subscriber-rule-config" }
@@ -2231,7 +2241,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "a KV-exact rule with a live subscriber: the gauge is set to 0 on every path that invalidates freshness and to 1 only after an accepted event, so it has no child until a subscriber runs for that endpoint.",
     "writer_sources": [
-     { "symbol": "SetKvInventoryFresh", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1418, "writes": "kvInventoryFresh" },
+     { "symbol": "SetKvInventoryFresh", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1440, "writes": "kvInventoryFresh" },
      { "symbol": "setKvInventoryFreshIfLive", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 1096, "call_line": 1102, "calls": "SetKvInventoryFresh" },
      { "symbol": "runKvSubscriberLoopBinding", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 737, "call_line": 970, "calls": "setKvInventoryFreshIfLive", "note": "the only site that sets 1; five other sites (:770, :875, :906, :927, :991) clear it, so freshness is asserted by a single positive edge" },
      { "tail": "kv-subscriber-rule-config" }
@@ -2242,7 +2252,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "a KV-exact rule whose publisher exceeded the per-endpoint inventory cap (1000 blocks by default), which needs a deliberate publish flood -- WP-5's arm.",
     "writer_sources": [
-     { "symbol": "IncKvInventoryCapHit", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1446, "writes": "kvInvCapEvictionsTotal" },
+     { "symbol": "IncKvInventoryCapHit", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1468, "writes": "kvInvCapEvictionsTotal" },
      { "symbol": "AddBlocks", "kind": "method", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 166, "call_line": 198, "calls": "IncKvInventoryCapHit", "receiver": "kvInventory", "note": "evicted count comes from the ring insert, so one call can record many evictions" },
      { "symbol": "runKvSubscriberLoopBinding", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 737, "call_line": 965, "calls": "AddBlocks" },
      { "tail": "kv-subscriber-rule-config" }
@@ -2253,7 +2263,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "a KV-exact rule with a subscriber that has accepted at least one publish; the gauge tracks the per-endpoint inventory size.",
     "writer_sources": [
-     { "symbol": "SetKvBlocksGauge", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1166, "writes": "pdKvBlocks" },
+     { "symbol": "SetKvBlocksGauge", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1188, "writes": "pdKvBlocks" },
      { "symbol": "setBlocksGauge", "kind": "method", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 218, "call_line": 222, "calls": "SetKvBlocksGauge", "receiver": "kvInventory" },
      { "symbol": "AddBlocks", "kind": "method", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 166, "call_line": 204, "calls": "setBlocksGauge", "receiver": "kvInventory", "note": "StartKvMetricsBridge (:2273) republishes the same gauge from the bridge goroutine for inventories it owns; eviction (:239) and clear (:258) set it event-driven too" },
      { "symbol": "runKvSubscriberLoopBinding", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 737, "call_line": 965, "calls": "AddBlocks" },
@@ -2265,7 +2275,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "a KV-exact rule with at least one endpoint registered: the info gauge is published when a subscriber rank starts and cleared when it stops.",
     "writer_sources": [
-     { "symbol": "SetKvEpInfo", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1196, "writes": "pdEpInfo", "note": "ClearKvEpInfo (:1215) deletes the child on teardown, so a departed endpoint leaves no stale identity series" },
+     { "symbol": "SetKvEpInfo", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1218, "writes": "pdEpInfo", "note": "ClearKvEpInfo (:1215) deletes the child on teardown, so a departed endpoint leaves no stale identity series" },
      { "symbol": "KvSubscriberStartRank", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 1230, "call_line": 1273, "calls": "SetKvEpInfo" },
      { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 3696, "call_line": 4955, "calls": "KvSubscriberStartRank", "receiver": "RuleH" },
      { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 365, "call_line": 372, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
@@ -2276,7 +2286,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "kvExactMode=1 on the rule plus a request whose block hashes actually matched an endpoint's inventory; with exact mode off the branch is never entered, which is exactly the mode-0 red twin.",
     "writer_sources": [
-     { "symbol": "IncKvTier15HitCounter", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1172, "writes": "pdKvTier15HitsTotal" },
+     { "symbol": "IncKvTier15HitCounter", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1194, "writes": "pdKvTier15HitsTotal" },
      { "tail": "kv-best-worker-cgo" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/ai_kv_subscriber.go:1999. The 2026-09-10 kvperf run read tier15 hits=840 fallthrough=0 from this family, but that run is EVIDENCE-PARTIAL (section E.5.1); scenario M08 owns the exact proof."
@@ -2285,7 +2295,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "kvExactMode=1 and a winner that was already over capacity, so the request spilled to another endpoint; ordinary balanced traffic leaves it at zero.",
     "writer_sources": [
-     { "symbol": "IncKvTier15SpillCounter", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1180, "writes": "kvTier15SpillsTotal" },
+     { "symbol": "IncKvTier15SpillCounter", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1202, "writes": "kvTier15SpillsTotal" },
      { "symbol": "llb_ai_kv_best_worker", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 1856, "call_line": 1980, "calls": "IncKvTier15SpillCounter", "entry_point": "cgo-export" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/ai_kv_subscriber.go:1980. WP-5 owns the deliberate over-capacity arm."
@@ -2294,7 +2304,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "kvExactMode=1 with a cold endpoint eligible for seeding: the seed displaces the scored winner, so it only fires while some endpoint has no inventory yet.",
     "writer_sources": [
-     { "symbol": "IncKvTier15ColdSeedCounter", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1188, "writes": "kvTier15ColdSeedsTotal" },
+     { "symbol": "IncKvTier15ColdSeedCounter", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1210, "writes": "kvTier15ColdSeedsTotal" },
      { "symbol": "llb_ai_kv_best_worker", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 1856, "call_line": 1995, "calls": "kvColdSeedCounterFn", "via": {"var": "kvColdSeedCounterFn", "file": "pkg/loxinet/ai_kv_subscriber.go", "line": 1616}, "entry_point": "cgo-export", "note": "dispatched through a metric seam variable, so a plain name search finds no caller for the writer at all -- the binding is recorded in via and re-checked on every run" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/ai_kv_subscriber.go:1995 through the kvColdSeedCounterFn seam bound at :1616. Scenario M08 owns the runtime proof."
@@ -2303,7 +2313,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "kvExactMode=1 and a lookup that missed for one of the enumerated reasons. The reason children are pre-created at package init, so the series exist at 0 from the first scrape and a missing child means the reason set changed, not that nothing missed.",
     "writer_sources": [
-     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 925, "writes": "pdKvT15MissReasonTotal", "note": "the per-reason counts are lifted out of the C snapshot at :1072; package init at :760 pre-creates every reason child first, so the series exist at 0 before any increment" },
+     { "symbol": "RunSockproxyMetrics", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 943, "writes": "pdKvT15MissReasonTotal", "note": "the per-reason counts are lifted out of the C snapshot at :1072; package init at :760 pre-creates every reason child first, so the series exist at 0 before any increment" },
      { "tail": "prom-init-sockproxy-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:762 pre-creates and :1072 increments. api/prometheus/ TestKvTier15MissCountersRegistered verifies registration through Gather but not any count. Scenario M08 owns the runtime proof."
@@ -2312,7 +2322,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "kvExactMode=1 plus a window of consecutive zero-hit lookups against a NON-empty inventory -- the signature of a block-size or hash-algorithm mismatch. A healthy or empty-inventory service never fires it.",
     "writer_sources": [
-     { "symbol": "IncKvZeroHitWatchdog", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1474, "writes": "kvZeroHitWatchdogTotal" },
+     { "symbol": "IncKvZeroHitWatchdog", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1496, "writes": "kvZeroHitWatchdogTotal" },
      { "symbol": "kvZeroHitWatchdog", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 1685, "call_line": 1712, "calls": "kvZeroHitCounterFn", "via": {"var": "kvZeroHitCounterFn", "file": "pkg/loxinet/ai_kv_subscriber.go", "line": 1670}, "note": "dispatched through a metric seam variable, so a plain name search finds no caller for the writer at all -- the binding is recorded in via and re-checked on every run" },
      { "symbol": "kvSvcScanInventories", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 1725, "call_line": 1815, "calls": "kvZeroHitWatchdog" },
      { "symbol": "llb_ai_kv_best_worker", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 1856, "call_line": 1916, "calls": "kvSvcScanInventories", "entry_point": "cgo-export" }
@@ -2323,7 +2333,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "strict KV-exact attestation configured on the rule AND a completed dataplane contract install: the controller goroutine that publishes the ladder position starts only after the install ACK.",
     "writer_sources": [
-     { "symbol": "SetKvAttestState", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1564, "writes": "kvAttestState", "note": "publishes the ladder position; the empty state at :1576 is the teardown clear, not a value" },
+     { "symbol": "SetKvAttestState", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1586, "writes": "kvAttestState", "note": "publishes the ladder position; the empty state at :1576 is the teardown clear, not a value" },
      { "symbol": "publish", "kind": "method", "file": "pkg/loxinet/ai_kv_attest.go", "def_line": 498, "call_line": 508, "calls": "kvAttestStateGaugeFn", "receiver": "kvAttestController", "via": {"var": "kvAttestStateGaugeFn", "file": "pkg/loxinet/ai_kv_attest.go", "line": 275}, "note": "dispatched through a metric seam variable, so a plain name search finds no caller for the writer at all -- the binding is recorded in via and re-checked on every run" },
      { "symbol": "runLadder", "kind": "method", "file": "pkg/loxinet/ai_kv_attest.go", "def_line": 563, "call_line": 689, "calls": "publish", "receiver": "kvAttestController" },
      { "tail": "kv-attest-controller-loop" }
@@ -2334,7 +2344,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "strict KV-exact attestation configured plus an enforcement fault: the gauge is raised and cleared by the same publish, so 0 means attested, absent means no controller is running for that rule.",
     "writer_sources": [
-     { "symbol": "SetKvAttestEnforcementFault", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1580, "writes": "kvAttestEnforcementFault" },
+     { "symbol": "SetKvAttestEnforcementFault", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1602, "writes": "kvAttestEnforcementFault" },
      { "symbol": "publish", "kind": "method", "file": "pkg/loxinet/ai_kv_attest.go", "def_line": 498, "call_line": 509, "calls": "kvAttestFaultGaugeFn", "receiver": "kvAttestController", "via": {"var": "kvAttestFaultGaugeFn", "file": "pkg/loxinet/ai_kv_attest.go", "line": 276}, "note": "dispatched through a metric seam variable, so a plain name search finds no caller for the writer at all -- the binding is recorded in via and re-checked on every run" },
      { "symbol": "runLadder", "kind": "method", "file": "pkg/loxinet/ai_kv_attest.go", "def_line": 563, "call_line": 689, "calls": "publish", "receiver": "kvAttestController" },
      { "tail": "kv-attest-controller-loop" }
@@ -2345,7 +2355,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "strict KV-exact attestation configured and a typed probe failure; a clean ladder run leaves every reason child untouched.",
     "writer_sources": [
-     { "symbol": "IncKvAttestProbeFail", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1589, "writes": "kvAttestProbeFailTotal" },
+     { "symbol": "IncKvAttestProbeFail", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1611, "writes": "kvAttestProbeFailTotal" },
      { "symbol": "runLadder", "kind": "method", "file": "pkg/loxinet/ai_kv_attest.go", "def_line": 563, "call_line": 620, "calls": "kvAttestProbeFailFn", "receiver": "kvAttestController", "via": {"var": "kvAttestProbeFailFn", "file": "pkg/loxinet/ai_kv_attest.go", "line": 277}, "note": "dispatched through a metric seam variable, so a plain name search finds no caller for the writer at all -- the binding is recorded in via and re-checked on every run; five more reason sites at :629, :779, :790, :810 and :816" },
      { "tail": "kv-attest-controller-loop" }
     ],
@@ -2355,7 +2365,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "strict KV-exact attestation configured and an echo challenge actually run: the counter has an ok and a fail child, and neither exists until the ladder reaches the echo step.",
     "writer_sources": [
-     { "symbol": "IncKvAttestEcho", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1594, "writes": "kvAttestEchoTotal" },
+     { "symbol": "IncKvAttestEcho", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1616, "writes": "kvAttestEchoTotal" },
      { "symbol": "runLadder", "kind": "method", "file": "pkg/loxinet/ai_kv_attest.go", "def_line": 563, "call_line": 657, "calls": "kvAttestEchoFn", "receiver": "kvAttestController", "via": {"var": "kvAttestEchoFn", "file": "pkg/loxinet/ai_kv_attest.go", "line": 278}, "note": "dispatched through a metric seam variable, so a plain name search finds no caller for the writer at all -- the binding is recorded in via and re-checked on every run; result=\"fail\" here and result=\"ok\" at :661" },
      { "tail": "kv-attest-controller-loop" }
     ],
@@ -2365,7 +2375,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "a TRT-LLM KV publisher on the rule whose event stream broke ownership continuity (sequence gap or ownership lost); no other engine decodes this wire binding.",
     "writer_sources": [
-     { "symbol": "IncKvTrtllmDrainOwnershipFault", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1600, "writes": "kvTrtllmDrainOwnFaultTotal" },
+     { "symbol": "IncKvTrtllmDrainOwnershipFault", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1622, "writes": "kvTrtllmDrainOwnFaultTotal" },
      { "symbol": "kvTrtllmOwnershipObserve", "kind": "func", "file": "pkg/loxinet/ai_kv_trtllm_ownership.go", "def_line": 161, "call_line": 191, "calls": "kvTrtllmOwnFaultMetricFn", "via": {"var": "kvTrtllmOwnFaultMetricFn", "file": "pkg/loxinet/ai_kv_trtllm_ownership.go", "line": 104}, "note": "dispatched through a metric seam variable, so a plain name search finds no caller for the writer at all -- the binding is recorded in via and re-checked on every run; sequence-gap here, ownership-lost at :197" },
      { "symbol": "Decode", "kind": "method", "file": "pkg/loxinet/ai_kv_trtllm_source.go", "def_line": 298, "call_line": 314, "calls": "kvTrtllmOwnershipObserve", "receiver": "trtllmWireDecoder" },
      { "symbol": "runKvSubscriberLoopBinding", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 737, "call_line": 934, "calls": "Decode", "note": "the decoder is held behind the kvWireDecoder interface, so this call site names the method, not the concrete type" },
@@ -2377,7 +2387,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "a TRT-LLM publisher that had a standing ownership fault and then recovered; it can only move after the fault counter has.",
     "writer_sources": [
-     { "symbol": "IncKvTrtllmDrainOwnershipHeal", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1605, "writes": "kvTrtllmDrainOwnHealTotal" },
+     { "symbol": "IncKvTrtllmDrainOwnershipHeal", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1627, "writes": "kvTrtllmDrainOwnHealTotal" },
      { "symbol": "kvTrtllmOwnershipObserve", "kind": "func", "file": "pkg/loxinet/ai_kv_trtllm_ownership.go", "def_line": 161, "call_line": 174, "calls": "kvTrtllmOwnHealMetricFn", "via": {"var": "kvTrtllmOwnHealMetricFn", "file": "pkg/loxinet/ai_kv_trtllm_ownership.go", "line": 105}, "note": "dispatched through a metric seam variable, so a plain name search finds no caller for the writer at all -- the binding is recorded in via and re-checked on every run; a second heal site at :127" },
      { "symbol": "Decode", "kind": "method", "file": "pkg/loxinet/ai_kv_trtllm_source.go", "def_line": 298, "call_line": 314, "calls": "kvTrtllmOwnershipObserve", "receiver": "trtllmWireDecoder" },
      { "symbol": "runKvSubscriberLoopBinding", "kind": "func", "file": "pkg/loxinet/ai_kv_subscriber.go", "def_line": 737, "call_line": 934, "calls": "Decode" },
@@ -2389,7 +2399,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "an LB rule whose endpoints were probed and identified: the identity gauge is published per (service, engine) by the admission probe, which runs as a goroutine when the rule is added.",
     "writer_sources": [
-     { "symbol": "SetAiEngineInfo", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1202, "writes": "aiEngineInfo" },
+     { "symbol": "SetAiEngineInfo", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1224, "writes": "aiEngineInfo" },
      { "symbol": "LlamacppAdmissionProbe", "kind": "func", "file": "pkg/loxinet/ai_llamacpp_probe.go", "def_line": 161, "call_line": 163, "calls": "SetAiEngineInfo", "note": "publishes engine=\"llamacpp\"; other engines are identified on their own probe paths" },
      { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 3696, "call_line": 4998, "calls": "LlamacppAdmissionProbe", "receiver": "RuleH" },
      { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 365, "call_line": 372, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
@@ -2400,7 +2410,7 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "a llama.cpp endpoint whose probe found a mismatch worth warning about; a compatible endpoint leaves every kind child at zero, which is WP-5's red twin.",
     "writer_sources": [
-     { "symbol": "IncLlamacppProbeWarning", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1208, "writes": "llamacppProbeWarnTotal" },
+     { "symbol": "IncLlamacppProbeWarning", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 1230, "writes": "llamacppProbeWarnTotal" },
      { "symbol": "LlamacppAdmissionProbe", "kind": "func", "file": "pkg/loxinet/ai_llamacpp_probe.go", "def_line": 161, "call_line": 198, "calls": "IncLlamacppProbeWarning", "note": "one increment per warning kind returned by the probe" },
      { "symbol": "AddLbRule", "kind": "method", "file": "pkg/loxinet/rules.go", "def_line": 3696, "call_line": 4998, "calls": "LlamacppAdmissionProbe", "receiver": "RuleH" },
      { "symbol": "NetLbRuleAdd", "kind": "method", "receiver": "NetAPIStruct", "file": "pkg/loxinet/apiclient.go", "def_line": 365, "call_line": 372, "calls": "AddLbRule", "entry_point": "http-handler", "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go" }
@@ -2411,8 +2421,8 @@
     "status": "conditional-with-proven-writer",
     "activation_precondition": "L7 traffic that produced at least one first-byte sample: the C side keeps the cumulative le-bucket histogram and the collector exposes it verbatim at scrape time, so with no samples there is nothing to emit.",
     "writer_sources": [
-     { "symbol": "Collect", "kind": "method", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 873, "writes": "ttfbDesc", "receiver": "ttfbCollector", "note": "emits a ConstHistogram built from the C-side cumulative buckets rather than observing into a Go histogram, so the exporter cannot double-count what the datapath already counted" },
-     { "symbol": "init", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 887, "call_line": 888, "calls": "ttfbCollector", "entry_point": "registry-collector", "note": "registered once with the default registry, the same one the promauto families in this file use" }
+     { "symbol": "Collect", "kind": "method", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 891, "writes": "ttfbDesc", "receiver": "ttfbCollector", "note": "emits a ConstHistogram built from the C-side cumulative buckets rather than observing into a Go histogram, so the exporter cannot double-count what the datapath already counted" },
+     { "symbol": "init", "kind": "func", "file": "api/prometheus/sockproxy_metrics.go", "def_line": 905, "call_line": 906, "calls": "ttfbCollector", "entry_point": "registry-collector", "note": "registered once with the default registry, the same one the promauto families in this file use" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:873 and the registration at :888. Scenario M02 owns the runtime proof, where the bucket counts must reconcile with the request ledger."
    }
