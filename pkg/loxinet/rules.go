@@ -4110,6 +4110,11 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	if jwtProfErr != nil {
 		return RuleArgsErr, &cmn.RuleArgumentError{Err: jwtProfErr}
 	}
+	// Checked against the resolved api_key_auth, which a replace may have preserved.
+	sockMapCode, err = lbSockMapAiGwCode(&serv, sockMapCode, nextApiKeyAuth)
+	if err != nil {
+		return RuleArgsErr, &cmn.RuleArgumentError{Err: err}
+	}
 	if err := resolveCHWBLContract(&serv, eRule, lBActs.endPoints); err != nil {
 		return RuleUnknownServiceErr, err
 	}
