@@ -1535,11 +1535,15 @@ else
     sleep 2
     c_succ_b=$(pd_req complete success); c_dtmo_b=$(pd_req decode timeout)
     c_wedge_b=$(dplog_count "${PD_WEDGE_LINE}")
+    # Same request shape the rest of this scenario uses: /v1/completions with
+    # the rule's own model. A different model name answers model_unavailable
+    # and a chat-shaped body leaves the prefix extractor's model source empty,
+    # so either would measure the fixture rather than the product.
+    pd_tax_body="{\"model\":\"${KV_MODEL}\",\"prompt\":\"pd taxonomy probe\",\"max_tokens\":8}"
     for i in $(seq 1 ${PD_TAX_N}); do
         $hexec l3h1 curl -s -o /dev/null --max-time 30 \
-            -H 'Content-Type: application/json' \
-            -d '{"model":"test","messages":[{"role":"user","content":"pd taxonomy control"}]}' \
-            "http://${VIP}:${VPORT}/v1/chat/completions" || true
+            -H 'Content-Type: application/json' -d "${pd_tax_body}" \
+            "http://${VIP}:${VPORT}/v1/completions" || true
     done
     sleep 3
     c_succ_a=$(pd_req complete success); c_dtmo_a=$(pd_req decode timeout)
@@ -1560,9 +1564,8 @@ else
     : > "${pd_codes}"
     for i in $(seq 1 ${PD_TAX_N}); do
         ( $hexec l3h1 curl -s -o /dev/null --max-time 90 -w '%{http_code}\n' \
-            -H 'Content-Type: application/json' \
-            -d '{"model":"test","messages":[{"role":"user","content":"pd taxonomy wedge"}]}' \
-            "http://${VIP}:${VPORT}/v1/chat/completions" >> "${pd_codes}" 2>/dev/null ) &
+            -H 'Content-Type: application/json' -d "${pd_tax_body}" \
+            "http://${VIP}:${VPORT}/v1/completions" >> "${pd_codes}" 2>/dev/null ) &
     done
     wait
     sleep 5
