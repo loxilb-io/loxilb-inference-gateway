@@ -115,6 +115,48 @@ _sr_leaks() {
 }
 
 # ---------------------------------------------------------------------------
+# _sr_run <dir> <log> <cmd> — run one command under the step timeout and
+# publish its exit status in _SR_RC.
+#
+# The command's output goes to the LOG FILE, and the bytes it appended are
+# replayed to the console afterwards. It used to be
+#
+#     timeout ... bash -c "cd '$dir' && $cmd" 2>&1 | tee -a "$log"
+#
+# which hangs the entire suite. A scenario that daemonises a helper — and
+# ai-sse-quota's config.sh does, leaving its mock server running for the
+# validation step that follows — hands that process fds 1 and 2, the WRITE
+# end of tee's pipe. tee then waits for an EOF that cannot arrive while the
+# daemon holds the pipe open, and the shell waits for tee. The runner blocks
+# forever on a step whose command exited minutes earlier.
+#
+# The per-step timeout does NOT save it: timeout bounds the step, and the step
+# is not what is stuck. Measured, not reasoned: the runner sat on
+# ai-sse-quota's config.sh for twenty minutes with no child process but tee,
+# and /proc showed the leaked mock holding fds 1 and 2 on the same pipe inode
+# that tee held as fd 0.
+#
+# A regular file cannot be held against us this way — the daemon inherits a
+# file descriptor nobody is waiting on. The cost is that a step's output
+# appears when the step ends rather than as it is produced. The alternative, a
+# `tail -f` follower, races the step's final lines and adds a process the
+# runner would then have to guarantee it kills, which is the class of bug this
+# is fixing.
+# ---------------------------------------------------------------------------
+_SR_RC=0
+_sr_run() {
+  local dir=$1 log=$2 cmd=$3
+  : >> "$log"
+  local from; from=$(wc -c < "$log")
+  timeout --foreground "$SCENARIO_TIMEOUT" \
+    bash -c "cd '$dir' && $cmd" >> "$log" 2>&1
+  _SR_RC=$?
+  # Replay by BYTE offset, not line count: a step whose last write lacks a
+  # trailing newline would otherwise lose that line or repeat it.
+  tail -c "+$((from + 1))" "$log"
+}
+
+# ---------------------------------------------------------------------------
 # run_scenario <dir> [label] -- <step>...
 # ---------------------------------------------------------------------------
 run_scenario() {
@@ -146,15 +188,12 @@ run_scenario() {
   local step
   for step in "${steps[@]}"; do
     echo "--- $label: $step"
-    # Each step is timed out independently. --foreground so a Ctrl-C in an
-    # interactive run still reaches the scenario.
-    #
-    # The step's status must be read out of PIPESTATUS, never from the
-    # pipeline: `tee` is the last element, it succeeds whatever the step did,
-    # and testing the pipeline makes every scenario pass unconditionally.
-    timeout --foreground "$SCENARIO_TIMEOUT" \
-      bash -c "cd '$dir' && $step" 2>&1 | tee -a "$log"
-    rc=${PIPESTATUS[0]}
+    # Each step is timed out independently, and _sr_run keeps the step's
+    # status honest: there is no pipeline whose last element could report
+    # success on the step's behalf, and no pipe a daemonised helper can hold
+    # open to stall the runner. See _sr_run.
+    _sr_run "$dir" "$log" "$step"
+    rc=$_SR_RC
     if [[ $rc != 0 ]]; then
       # timeout(1) reports 124 for the deadline; say so rather than leaving a
       # bare exit code that reads like a product failure.
@@ -170,9 +209,8 @@ run_scenario() {
   # --- cleanup ALWAYS runs, and never overwrites the scenario's verdict -----
   local crc=0
   echo "--- $label: $CLEANUP_CMD (always)"
-  timeout --foreground "$SCENARIO_TIMEOUT" \
-    bash -c "cd '$dir' && $CLEANUP_CMD" 2>&1 | tee -a "$log"
-  crc=${PIPESTATUS[0]}
+  _sr_run "$dir" "$log" "$CLEANUP_CMD"
+  crc=$_SR_RC
   if [[ $crc != 0 ]]; then
     echo "[WARN] $label: cleanup exited $crc"
     # A cleanup failure is only the verdict when the scenario itself passed;
