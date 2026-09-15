@@ -21,6 +21,7 @@ import (
 
 	"github.com/loxilb-io/loxilb/api/restapi/operations/ai"
 	"github.com/loxilb-io/loxilb/api/restapi/operations/auth"
+	"github.com/loxilb-io/loxilb/api/restapi/operations/dpu"
 	"github.com/loxilb-io/loxilb/api/restapi/operations/l4_tracing"
 	"github.com/loxilb-io/loxilb/api/restapi/operations/metadata"
 	"github.com/loxilb-io/loxilb/api/restapi/operations/opa"
@@ -622,6 +623,9 @@ func NewLoxilbRestAPIAPI(spec *loads.Document) *LoxilbRestAPIAPI {
 		AiGetConfigAiJwtauthprofileAllHandler: ai.GetConfigAiJwtauthprofileAllHandlerFunc(func(params ai.GetConfigAiJwtauthprofileAllParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation ai.GetConfigAiJwtauthprofileAll has not yet been implemented")
 		}),
+		AiGetConfigAiKvInventoryHandler: ai.GetConfigAiKvInventoryHandlerFunc(func(params ai.GetConfigAiKvInventoryParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation ai.GetConfigAiKvInventory has not yet been implemented")
+		}),
 		AiGetConfigAiModelProfilesHandler: ai.GetConfigAiModelProfilesHandlerFunc(func(params ai.GetConfigAiModelProfilesParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation ai.GetConfigAiModelProfiles has not yet been implemented")
 		}),
@@ -642,6 +646,12 @@ func NewLoxilbRestAPIAPI(spec *loads.Document) *LoxilbRestAPIAPI {
 		}),
 		GetConfigCertCertIDHandler: GetConfigCertCertIDHandlerFunc(func(params GetConfigCertCertIDParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation GetConfigCertCertID has not yet been implemented")
+		}),
+		DpuGetConfigDpuDebugHandler: dpu.GetConfigDpuDebugHandlerFunc(func(params dpu.GetConfigDpuDebugParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation dpu.GetConfigDpuDebug has not yet been implemented")
+		}),
+		DpuGetConfigDpuHwcountersHandler: dpu.GetConfigDpuHwcountersHandlerFunc(func(params dpu.GetConfigDpuHwcountersParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation dpu.GetConfigDpuHwcounters has not yet been implemented")
 		}),
 		GetConfigL7PolicyAllHandler: GetConfigL7PolicyAllHandlerFunc(func(params GetConfigL7PolicyAllParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation GetConfigL7PolicyAll has not yet been implemented")
@@ -676,6 +686,9 @@ func NewLoxilbRestAPIAPI(spec *loads.Document) *LoxilbRestAPIAPI {
 		TracingGetTraceParsersHandler: tracing.GetTraceParsersHandlerFunc(func(params tracing.GetTraceParsersParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation tracing.GetTraceParsers has not yet been implemented")
 		}),
+		AiPatchConfigAiApikeyKeyIDHandler: ai.PatchConfigAiApikeyKeyIDHandlerFunc(func(params ai.PatchConfigAiApikeyKeyIDParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation ai.PatchConfigAiApikeyKeyID has not yet been implemented")
+		}),
 		PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoHandler: PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoHandlerFunc(func(params PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProto has not yet been implemented")
 		}),
@@ -696,6 +709,9 @@ func NewLoxilbRestAPIAPI(spec *loads.Document) *LoxilbRestAPIAPI {
 		}),
 		PostConfigCertHandler: PostConfigCertHandlerFunc(func(params PostConfigCertParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation PostConfigCert has not yet been implemented")
+		}),
+		DpuPostConfigDpuDebugHandler: dpu.PostConfigDpuDebugHandlerFunc(func(params dpu.PostConfigDpuDebugParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation dpu.PostConfigDpuDebug has not yet been implemented")
 		}),
 		PostConfigL7PolicyHandler: PostConfigL7PolicyHandlerFunc(func(params PostConfigL7PolicyParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation PostConfigL7Policy has not yet been implemented")
@@ -1146,6 +1162,8 @@ type LoxilbRestAPIAPI struct {
 	AiGetConfigAiApikeyKeyIDHandler ai.GetConfigAiApikeyKeyIDHandler
 	// AiGetConfigAiJwtauthprofileAllHandler sets the operation handler for the get config ai jwtauthprofile all operation
 	AiGetConfigAiJwtauthprofileAllHandler ai.GetConfigAiJwtauthprofileAllHandler
+	// AiGetConfigAiKvInventoryHandler sets the operation handler for the get config ai kv inventory operation
+	AiGetConfigAiKvInventoryHandler ai.GetConfigAiKvInventoryHandler
 	// AiGetConfigAiModelProfilesHandler sets the operation handler for the get config ai model profiles operation
 	AiGetConfigAiModelProfilesHandler ai.GetConfigAiModelProfilesHandler
 	// AiGetConfigAiModelProfilesProfileIDHandler sets the operation handler for the get config ai model profiles profile ID operation
@@ -1160,6 +1178,10 @@ type LoxilbRestAPIAPI struct {
 	AiGetConfigAiUserRatelimitTenantIDUserIDHandler ai.GetConfigAiUserRatelimitTenantIDUserIDHandler
 	// GetConfigCertCertIDHandler sets the operation handler for the get config cert cert Id operation
 	GetConfigCertCertIDHandler GetConfigCertCertIDHandler
+	// DpuGetConfigDpuDebugHandler sets the operation handler for the get config dpu debug operation
+	DpuGetConfigDpuDebugHandler dpu.GetConfigDpuDebugHandler
+	// DpuGetConfigDpuHwcountersHandler sets the operation handler for the get config dpu hwcounters operation
+	DpuGetConfigDpuHwcountersHandler dpu.GetConfigDpuHwcountersHandler
 	// GetConfigL7PolicyAllHandler sets the operation handler for the get config l7 policy all operation
 	GetConfigL7PolicyAllHandler GetConfigL7PolicyAllHandler
 	// GetConfigL7PolicyIDHandler sets the operation handler for the get config l7 policy ID operation
@@ -1182,6 +1204,8 @@ type LoxilbRestAPIAPI struct {
 	TracingGetTraceCatalogsHandler tracing.GetTraceCatalogsHandler
 	// TracingGetTraceParsersHandler sets the operation handler for the get trace parsers operation
 	TracingGetTraceParsersHandler tracing.GetTraceParsersHandler
+	// AiPatchConfigAiApikeyKeyIDHandler sets the operation handler for the patch config ai apikey key ID operation
+	AiPatchConfigAiApikeyKeyIDHandler ai.PatchConfigAiApikeyKeyIDHandler
 	// PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoHandler sets the operation handler for the patch config loadbalancer externalipaddress IP address port port protocol proto operation
 	PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoHandler PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoHandler
 	// AiPostConfigAiApikeyHandler sets the operation handler for the post config ai apikey operation
@@ -1196,6 +1220,8 @@ type LoxilbRestAPIAPI struct {
 	AiPostConfigAiUserRatelimitHandler ai.PostConfigAiUserRatelimitHandler
 	// PostConfigCertHandler sets the operation handler for the post config cert operation
 	PostConfigCertHandler PostConfigCertHandler
+	// DpuPostConfigDpuDebugHandler sets the operation handler for the post config dpu debug operation
+	DpuPostConfigDpuDebugHandler dpu.PostConfigDpuDebugHandler
 	// PostConfigL7PolicyHandler sets the operation handler for the post config l7 policy operation
 	PostConfigL7PolicyHandler PostConfigL7PolicyHandler
 	// OpaPostConfigOpaWatcherHandler sets the operation handler for the post config opa watcher operation
@@ -1861,6 +1887,9 @@ func (o *LoxilbRestAPIAPI) Validate() error {
 	if o.AiGetConfigAiJwtauthprofileAllHandler == nil {
 		unregistered = append(unregistered, "ai.GetConfigAiJwtauthprofileAllHandler")
 	}
+	if o.AiGetConfigAiKvInventoryHandler == nil {
+		unregistered = append(unregistered, "ai.GetConfigAiKvInventoryHandler")
+	}
 	if o.AiGetConfigAiModelProfilesHandler == nil {
 		unregistered = append(unregistered, "ai.GetConfigAiModelProfilesHandler")
 	}
@@ -1881,6 +1910,12 @@ func (o *LoxilbRestAPIAPI) Validate() error {
 	}
 	if o.GetConfigCertCertIDHandler == nil {
 		unregistered = append(unregistered, "GetConfigCertCertIDHandler")
+	}
+	if o.DpuGetConfigDpuDebugHandler == nil {
+		unregistered = append(unregistered, "dpu.GetConfigDpuDebugHandler")
+	}
+	if o.DpuGetConfigDpuHwcountersHandler == nil {
+		unregistered = append(unregistered, "dpu.GetConfigDpuHwcountersHandler")
 	}
 	if o.GetConfigL7PolicyAllHandler == nil {
 		unregistered = append(unregistered, "GetConfigL7PolicyAllHandler")
@@ -1915,6 +1950,9 @@ func (o *LoxilbRestAPIAPI) Validate() error {
 	if o.TracingGetTraceParsersHandler == nil {
 		unregistered = append(unregistered, "tracing.GetTraceParsersHandler")
 	}
+	if o.AiPatchConfigAiApikeyKeyIDHandler == nil {
+		unregistered = append(unregistered, "ai.PatchConfigAiApikeyKeyIDHandler")
+	}
 	if o.PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoHandler == nil {
 		unregistered = append(unregistered, "PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoHandler")
 	}
@@ -1935,6 +1973,9 @@ func (o *LoxilbRestAPIAPI) Validate() error {
 	}
 	if o.PostConfigCertHandler == nil {
 		unregistered = append(unregistered, "PostConfigCertHandler")
+	}
+	if o.DpuPostConfigDpuDebugHandler == nil {
+		unregistered = append(unregistered, "dpu.PostConfigDpuDebugHandler")
 	}
 	if o.PostConfigL7PolicyHandler == nil {
 		unregistered = append(unregistered, "PostConfigL7PolicyHandler")
@@ -2814,6 +2855,10 @@ func (o *LoxilbRestAPIAPI) initHandlerCache() {
 	if o.handlers["GET"] == nil {
 		o.handlers["GET"] = make(map[string]http.Handler)
 	}
+	o.handlers["GET"]["/config/ai/kv/inventory"] = ai.NewGetConfigAiKvInventory(o.context, o.AiGetConfigAiKvInventoryHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
 	o.handlers["GET"]["/config/ai/model-profiles"] = ai.NewGetConfigAiModelProfiles(o.context, o.AiGetConfigAiModelProfilesHandler)
 	if o.handlers["GET"] == nil {
 		o.handlers["GET"] = make(map[string]http.Handler)
@@ -2839,6 +2884,14 @@ func (o *LoxilbRestAPIAPI) initHandlerCache() {
 		o.handlers["GET"] = make(map[string]http.Handler)
 	}
 	o.handlers["GET"]["/config/cert/{certId}"] = NewGetConfigCertCertID(o.context, o.GetConfigCertCertIDHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/dpu/debug"] = dpu.NewGetConfigDpuDebug(o.context, o.DpuGetConfigDpuDebugHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/config/dpu/hwcounters"] = dpu.NewGetConfigDpuHwcounters(o.context, o.DpuGetConfigDpuHwcountersHandler)
 	if o.handlers["GET"] == nil {
 		o.handlers["GET"] = make(map[string]http.Handler)
 	}
@@ -2886,6 +2939,10 @@ func (o *LoxilbRestAPIAPI) initHandlerCache() {
 	if o.handlers["PATCH"] == nil {
 		o.handlers["PATCH"] = make(map[string]http.Handler)
 	}
+	o.handlers["PATCH"]["/config/ai/apikey/{key_id}"] = ai.NewPatchConfigAiApikeyKeyID(o.context, o.AiPatchConfigAiApikeyKeyIDHandler)
+	if o.handlers["PATCH"] == nil {
+		o.handlers["PATCH"] = make(map[string]http.Handler)
+	}
 	o.handlers["PATCH"]["/config/loadbalancer/externalipaddress/{ip_address}/port/{port}/protocol/{proto}"] = NewPatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProto(o.context, o.PatchConfigLoadbalancerExternalipaddressIPAddressPortPortProtocolProtoHandler)
 	if o.handlers["POST"] == nil {
 		o.handlers["POST"] = make(map[string]http.Handler)
@@ -2911,6 +2968,10 @@ func (o *LoxilbRestAPIAPI) initHandlerCache() {
 		o.handlers["POST"] = make(map[string]http.Handler)
 	}
 	o.handlers["POST"]["/config/cert"] = NewPostConfigCert(o.context, o.PostConfigCertHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/config/dpu/debug"] = dpu.NewPostConfigDpuDebug(o.context, o.DpuPostConfigDpuDebugHandler)
 	if o.handlers["POST"] == nil {
 		o.handlers["POST"] = make(map[string]http.Handler)
 	}

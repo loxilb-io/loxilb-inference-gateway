@@ -95,6 +95,7 @@ const (
 	AreaAIRateLimit  = "ai_ratelimit"
 	AreaSNI          = "sni"
 	AreaCluster      = "cluster"
+	AreaDPU          = "dpu"
 	AreaGPU          = "gpu"
 	AreaGPUMode      = "gpu_mode"
 	AreaInterface    = "interface"
@@ -128,6 +129,14 @@ var RouteLifecycles = []RouteLifecycle{
 	{Method: "put", Path: "/auth/users/{id}", Class: ClassExternalStore, Area: AreaAuthUsers, DesiredState: true},
 	{Method: "delete", Path: "/auth/users/{id}", Class: ClassExternalStore, Area: AreaAuthUsers, DesiredState: true},
 
+	// --- DPU diagnostics. The POST body is an operational action --
+	// unload a plugin, or pin the DOCA circuit breaker open/closed for a
+	// degraded-path benchmark. Neither is desired state: a restarted
+	// gateway boots with every plugin as configured and the breaker
+	// following DOCA, and an operator who still wants the override
+	// re-enters it.
+	{Method: "post", Path: "/config/dpu/debug", Class: ClassRuntimeRebuilt, Area: AreaDPU},
+
 	// --- AI key/quota plane: key-store database.
 	// --- AI JWT auth profiles: snapshot domain since schema 1.6 (named
 	// issuer configs for data-plane bearer admission; in-memory desired
@@ -135,6 +144,7 @@ var RouteLifecycles = []RouteLifecycle{
 	{Method: "post", Path: "/config/ai/jwtauthprofile", Class: ClassSnapshot, Area: DomainJWTAuthProfile, DesiredState: true},
 	{Method: "delete", Path: "/config/ai/jwtauthprofile/{name}", Class: ClassSnapshot, Area: DomainJWTAuthProfile, DesiredState: true},
 	{Method: "post", Path: "/config/ai/apikey", Class: ClassExternalStore, Area: AreaAIKeys, DesiredState: true},
+	{Method: "patch", Path: "/config/ai/apikey/{key_id}", Class: ClassExternalStore, Area: AreaAIKeys, DesiredState: true},
 	{Method: "delete", Path: "/config/ai/apikey/{key_id}", Class: ClassExternalStore, Area: AreaAIKeys, DesiredState: true},
 	{Method: "post", Path: "/config/ai/tenant/ratelimit", Class: ClassExternalStore, Area: AreaAIRateLimit, DesiredState: true},
 	// The QoS ladder's other two configurable levels. Same class as the
