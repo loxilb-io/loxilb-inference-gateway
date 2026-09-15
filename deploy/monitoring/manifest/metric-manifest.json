@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-15T00:45:30+00:00",
-  "source_revision": "ab59d5678ed6df108ab328554e9f7487abbaaf00"
+  "generated_at": "2026-09-15T01:12:19+00:00",
+  "source_revision": "be11b2744d00183b7350ec10cc6068b472fcd0c0"
  },
  "contract": {
   "total": 239,
@@ -27,7 +27,7 @@
   "default_unreferenced": 5,
   "writer_classified": 183,
   "writer_unclassified": 0,
-  "writer_unverified": 75
+  "writer_unverified": 74
  },
  "families": [
   {
@@ -8298,7 +8298,7 @@
    "source": "api/prometheus/sockproxy_metrics.go:331",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
-   "implementation_status": "writer-mapped",
+   "implementation_status": "verified-runtime",
    "activation_precondition": "",
    "writer_sources": [
     {
@@ -8345,7 +8345,7 @@
      "entry_point": "main"
     }
    ],
-   "verification_evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:1026, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M08 owns the runtime proof."
+   "verification_evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-trie', M08 CPU mock P/D bed, scenario cicd/vllm-kvcache-routing-cpu): 12/12 checks, exact source-predicted node counts. The gate is the per-rule API field pd_cache_aware_mode (api/models/loadbalance_entry.go:834 -> api/restapi/handler/loadbalancer.go:150 -> pkg/loxinet/rules.go:4677 -> pkg/loxinet/dpebpf_linux.go:1809), not an engine property, and the one build gate that would degrade the mode to 0 never logged, consistent with the datapath CFLAGS defining HAVE_LLM_SYSTEM_PROMPT_HASH unconditionally. The drive is staged so the two writer classes are separated rather than summed: with the gate closed the gauge is EXACTLY 0 (pd_trie is NULL, so the collector skips the family) while 3/3 requests still terminated at Tier 2, which is what makes the control non-vacuous; opening the gate with NO traffic reads EXACTLY 1, the root node created at rule add; three requests whose system prompts have distinct first bytes then read EXACTLY 1+3=4, one single-leaf insert apiece. Which insert site moved is settled by an independent family: loxilb_ai_pd_tier_selected_total{tier=\"tier2\"} moved +3 while {tier=\"tier1\"} stayed 0, so every insert is attributable to the Tier-2 selection site and the Tier-1 site is asserted silent rather than assumed. Restoring the gate re-POSTs the rule and returns the gauge to EXACTLY 0, which rules out the rule re-add as the cause. Fleet proof still belongs to M08."
   },
   {
    "name": "loxilb_pd_trt_ctx_early_exit_total",
