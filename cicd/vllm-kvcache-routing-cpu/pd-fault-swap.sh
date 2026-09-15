@@ -1,5 +1,5 @@
 #!/bin/bash
-# pd-fault-swap.sh <ep-netns> hang|ok|off
+# pd-fault-swap.sh <ep-netns> hang|ok|refuse|off
 #
 # Puts one endpoint netns behind a chosen fault backend, or restores it.
 #
@@ -20,8 +20,8 @@
 # fail is not a teardown.
 set -u
 
-EP="${1:?usage: pd-fault-swap.sh <ep-netns> hang|ok|off}"
-STATE="${2:?usage: pd-fault-swap.sh <ep-netns> hang|ok|off}"
+EP="${1:?usage: pd-fault-swap.sh <ep-netns> hang|ok|refuse|off}"
+STATE="${2:?usage: pd-fault-swap.sh <ep-netns> hang|ok|refuse|off}"
 STUB_PORT="${STUB_PORT:-8099}"
 DIR="${PD_FAULT_DIR:-/tmp/pd-fault}"
 PIDFILE="$DIR/$EP.pid"
@@ -95,7 +95,12 @@ stub_kill() {
 }
 
 case "$STATE" in
-  hang|ok)
+  hang|ok|refuse)
+    # `refuse` deliberately does NOT listen: the REDIRECT then points traffic
+    # at a closed port and connect() gets ECONNREFUSED. That is the event the
+    # caller asked for, not a failure of this script, so the usual "did the
+    # stub come up" check below is satisfied by the process being alive rather
+    # than by the port being bound.
     [ -f "$FAULT_STUB" ] || { echo "FATAL: missing $FAULT_STUB" >&2; exit 2; }
     stub_kill || exit 1
     redirect_del

@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-15T23:58:27+00:00",
-  "source_revision": "c58e1ee481bfc12ded112de07219bde497b79d36"
+  "generated_at": "2026-09-15T23:59:18+00:00",
+  "source_revision": "dd70ab692a6d6a0c04cc2e3cf2f4d1b9e64eaa08"
  },
  "contract": {
   "total": 241,
@@ -27,7 +27,7 @@
   "default_unreferenced": 7,
   "writer_classified": 185,
   "writer_unclassified": 0,
-  "writer_unverified": 65
+  "writer_unverified": 64
  },
  "families": [
   {
@@ -7003,7 +7003,7 @@
    "source": "api/prometheus/sockproxy_metrics.go:685",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
-   "implementation_status": "writer-mapped",
+   "implementation_status": "verified-runtime",
    "activation_precondition": "",
    "writer_sources": [
     {
@@ -7012,7 +7012,7 @@
      "file": "api/prometheus/sockproxy_metrics.go",
      "def_line": 943,
      "writes": "pdConnectRetrySameEpOkTotal",
-     "note": "the success half of the same-endpoint retry pair; retry_total minus this is the failed-retry residual"
+     "note": "the success half of the same-endpoint retry pair; retry_total minus this is the failed-retry residual. The gate (sockproxy_ep.c:1053-1070) has three terms and NONE of them reads an engine: ep_cfd < 0 (the initial connect failed), rt_budget > 0 (pd_connect_retry_budget() -- 1 for P/D disagg or KV-exact, 0 for plain LB, a per-rule CONFIG property) and the retry's own connect() >= 0. It is not on the pd_sg_ path at all. The reason it outlived every other pd_* family is narrower than 'hard to reach': no arm had ever produced a connect that FAILS and then SUCCEEDS on the same endpoint, because the retry is in-process and immediate, so the fault has to be count-based at the TCP handshake rather than time-based."
     },
     {
      "symbol": "Init",
@@ -7050,7 +7050,7 @@
      "entry_point": "main"
     }
    ],
-   "verification_evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:1118, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M08 owns the runtime proof."
+   "verification_evidence": "runtime evidence 2026-09-16 (E.5 row 'wp11-connect-retry-ok', WP-11): M08 CPU mock P/D bed (scenario cicd/vllm-kvcache-routing-cpu brought up MON_AIKEY=1, image tag d9b-u24, digest sha256:33b1c5ec698e), harness md5 1f15b550ea86 (verify) / 56503142de20 (backend) / e1cda42a9f79 (swap) / 932492336299 (burst driver), identical at author and bed. 13/13 checks, reproduced on three consecutive runs with zero discarded windows. The LAST non-topology pd_* family. B drives it with an nth-parity REJECT --reject-with tcp-reset on every SECOND SYN reaching the stub port, so a request's initial connect takes ECONNREFUSED and the in-process same-EP retry lands on the very next SYN and connects: delta 3.0 == n, delta pd_connect_retry_same_ep == 3.0 == the same n (the budget is 1, so one attempt per request), 3 'affinity preserved' lines held against the counter in an asserted identity, 3x200 with no receipt, and pd_connect_failover FLAT -- the outcome this family exists to be distinguished from. C IS THE BRANCH ITSELF, NOT SILENCE: with the EPs simply refusing, the retry loop still RUNS, pd_connect_retry_same_ep moves by n and 3 attempt lines are logged, and only the success half is declined; a control where nothing happened could not tell an ATTEMPT counter from a SUCCESS one. The block's two [PD_CONN_RETRY] lines are near collisions by eye ('to preserve affinity' vs 'affinity preserved'), so every stage asserts loose == attempts + oks and the discriminator verifies itself. STAGE ORDER IS LOAD-BEARING: the refusing control runs LAST, because 3 requests x 3 prefill EPs is exactly the breaker trip threshold and running it first meets the drive with 'no healthy prefill candidates' -- selection failing before any connect, which reads identically to 'this family cannot be driven'. THE DRIVE-SHAPE DEFECT THIS ARM CORRECTS IS THE EVIDENCE'S MAIN LESSON. The first version armed ONE nth-parity rule for a whole burst on a measured claim that no other SYN reached the stub port. The claim was false and its measurement had been truncated: the gateway's own vLLM /metrics scraper (pkg/aimetrics.Poller, started per-rule under pdDisaggMode) dials ep.xIP:ep.xPort every 10s, the REDIRECT carries it to the stub port, and at SYN time it is indistinguishable from the data connect. The kernel's rule counter then reported EXACTLY the predicted 3 resets, one per flapped EP, so the drive-shape oracle read as CONFIRMED -- while every reset it had counted was a scrape. The data connects took the accepting slot, succeeded first time, and a WORKING family was reported as a dead one. The fix is a window that states its own shape: the parity is armed FRESH around ONE request with a fall-through witness chain behind the REJECT, so refused+accepted is the total the port saw and a clean window is exactly (1,1); anything else discards the window and re-drives. Red-twinned at the ORACLE, deterministically and in both directions: R1 (REJECT never armed) fails with 'the flap rule pair is incomplete' rather than scoring a flat counter as a product failure, and R2 (--every 1, so the retry is refused too) discards 8 windows and fails with 'no clean single-request window' -- the exact historical failure mode, now caught."
   },
   {
    "name": "loxilb_pd_connect_retry_same_ep_total",

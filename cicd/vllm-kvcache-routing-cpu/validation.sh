@@ -23,6 +23,12 @@
 #            loxilb_ai_pd_requests_total{phase="decode",status="timeout"} and must leave
 #            {phase="prefill",status="timeout"} flat, carrying the request's own model
 #            label. Runs BEFORE check 8, whose collision pre-clean destroys the topology.
+#   check 10 P/D same-endpoint connect retry — a refused connect that SUCCEEDS on retry must
+#            move loxilb_pd_connect_retry_same_ep_ok_total, with the ATTEMPT counter moving by
+#            the same amount and failover flat. Its control is the branch itself (endpoints
+#            refusing: attempts still move, only the success half declines), and its parity
+#            fault is armed PER REQUEST because the stub port is shared with the gateway's own
+#            /metrics scraper. Runs BEFORE check 8, whose collision pre-clean destroys the topology.
 #   check 8  vllm-pd-disagg byte-for-byte re-run [PASS] AFTER the l3ep1/l3ep2 collision pre-clean.
 #
 # Metric source-of-truth (api/prometheus/sockproxy_metrics.go):
@@ -1607,6 +1613,234 @@ else
 fi
 [[ -n "${pd_tax_note}" ]] && echo "  detail:${pd_tax_note}"
 assert "P/D taxonomy: a decode wedge moves {decode,timeout} and leaves {prefill,timeout} flat" "$pd_tax_ok"
+
+#################################################################################
+# P/D same-endpoint connect retry — a refused connect that SUCCEEDS on retry
+#
+#     loxilb_pd_connect_retry_same_ep_ok_total is the SUCCESS half of a pair.
+#     Its sibling counts ATTEMPTS, and a control in which nothing happened
+#     cannot tell the two apart, so the control here is the BRANCH ITSELF: with
+#     the endpoints simply refusing, the retry loop still runs and the attempt
+#     counter still moves, and only the success half is declined.
+#
+#     The gate (sockproxy_ep.c:1053-1070) is ep_cfd < 0 && rt_budget > 0 && the
+#     retry's own connect() >= 0 -- the initial connect failed, the rule is
+#     affinity-bearing (budget 1 for P/D disagg or KV-exact, 0 for plain LB),
+#     and the SAME endpoint accepted the second time. Nothing in it reads an
+#     engine. What it needs is a connect that FAILS and then SUCCEEDS on one
+#     endpoint, and because the retry is in-process and immediate the fault
+#     cannot be time-based: it has to act at the TCP handshake and be
+#     COUNT-based. An nth-parity REJECT --reject-with tcp-reset on every second
+#     SYN does exactly that -- the initial connect takes ECONNREFUSED and the
+#     retry lands on the very next SYN and connects.
+#
+#     🚨 THE PARITY IS ARMED PER REQUEST, AND THAT IS THE WHOLE STAGE. The stub
+#     port is NOT private to the data connect: the gateway's own vLLM /metrics
+#     scraper (pkg/aimetrics.Poller, started per-rule under pdDisaggMode) dials
+#     the endpoint's service port every 10s and the REDIRECT carries it to the
+#     same stub port, where it is indistinguishable from a data connect at SYN
+#     time. A rule left armed across a whole burst counts both in ONE sequence.
+#     That is not hypothetical: the lab arm this stage is ported from did it,
+#     its rule counter reported EXACTLY the predicted resets -- one per flapped
+#     endpoint -- and every reset it had counted was a scrape while the data
+#     connects took the accepting slot and succeeded first time. A WORKING
+#     family was reported dead by a drive-shape oracle that said CONFIRMED.
+#
+#     So each request gets its own freshly armed window, and the window states
+#     its own shape. A fall-through witness chain sits BEHIND the REJECT, so
+#     refused+accepted is the total the port saw and a clean window is exactly
+#     one refused and one accepted. Anything else discards the window and
+#     re-drives rather than scoring it.
+#
+#     🚨 STAGE ORDER IS LOAD-BEARING. The refusing control runs LAST. Three
+#     requests against three prefill endpoints is exactly the circuit breaker's
+#     trip threshold, so running it first meets the drive with "no healthy
+#     prefill candidates": selection fails before any connect is attempted and
+#     the counter reads a flat zero that looks exactly like "this family cannot
+#     be driven".
+#
+#     Placed before the collision pre-clean below, which destroys this
+#     scenario's topology.
+#################################################################################
+echo "=== P/D connect retry: a refused connect that succeeds on the SAME endpoint ==="
+
+PD_RETRY_N=3
+PD_PREFILL_NS="l3ep1 l3ep3 l3ep5"
+# 🚨 These three families are written by the POLLED collector that copies the C
+# proxy_get_metrics() snapshot once per PrometheusDefaultPeriod (10s) — NOT by a
+# direct callback. A 3s wait reads a live writer as DEAD, and in the flat
+# assertions below that reads as "the product is correct" for the wrong reason.
+# One full period plus margin, every time a delta is scored.
+PD_RETRY_SETTLE=14
+PD_STUB_PORT="${STUB_PORT:-8099}"
+PD_RETRY_TAG="[PD_CONN_RETRY]"
+PD_RETRY_ATT_LINE="transient backend connect failure, retrying SAME EP"
+PD_RETRY_OK_LINE="affinity preserved"
+PD_NOPOOL_LINE="no healthy prefill candidates"
+
+# The REJECT counts the REFUSED SYNs. The witness is an EMPTY user chain, so a
+# SYN that reaches it falls through and continues -- it counts the ACCEPTED
+# ones. Order matters: REJECT first, witness second, so the two never
+# double-count and their sum is the total the port saw.
+PD_FLAP_RULE="-p tcp --dport ${PD_STUB_PORT} --syn -m statistic --mode nth --every 2 --packet 0 -m comment --comment wp11flap -j REJECT --reject-with tcp-reset"
+PD_FLAP_WITNESS="-p tcp --dport ${PD_STUB_PORT} --syn -m comment --comment wp11all -j WP11CNT"
+
+pd_ipt() { sudo ip netns exec "$1" iptables ${@:2} >/dev/null 2>&1; }
+
+pd_flap_disarm() {   # idempotent, and it PROVES the REJECT is gone
+    local ns rc=0
+    for ns in ${PD_PREFILL_NS}; do
+        while pd_ipt "$ns" -C INPUT ${PD_FLAP_RULE};    do pd_ipt "$ns" -D INPUT ${PD_FLAP_RULE}    || break; done
+        while pd_ipt "$ns" -C INPUT ${PD_FLAP_WITNESS}; do pd_ipt "$ns" -D INPUT ${PD_FLAP_WITNESS} || break; done
+        # A leftover REJECT would refuse half of every LATER connect, and
+        # nothing about it looks like a fault.
+        pd_ipt "$ns" -C INPUT ${PD_FLAP_RULE} && rc=1
+    done
+    return $rc
+}
+
+pd_flap_arm() {      # FRESH rules: both counters start at zero by construction
+    local ns
+    pd_flap_disarm || return 1
+    for ns in ${PD_PREFILL_NS}; do
+        pd_ipt "$ns" -N WP11CNT                          # exists after the first
+        pd_ipt "$ns" -I INPUT 1 ${PD_FLAP_WITNESS} || return 1
+        pd_ipt "$ns" -I INPUT 1 ${PD_FLAP_RULE}    || return 1
+    done
+    return 0
+}
+
+# pd_flap_counts -> "<refused> <accepted> <pairs>"; pairs must equal the number
+# of prefill netns or a rule is missing and the measurement is not one.
+pd_flap_counts() {
+    local ns out r=0 a=0 pairs=0 hasr hasa
+    for ns in ${PD_PREFILL_NS}; do
+        out=$(sudo ip netns exec "$ns" iptables -L INPUT -v -n -x 2>/dev/null)
+        hasr=$(echo "$out" | grep -c "wp11flap" || true)
+        hasa=$(echo "$out" | grep -c "wp11all"  || true)
+        [[ "$hasr" -ge 1 && "$hasa" -ge 1 ]] && pairs=$(( pairs + 1 ))
+        r=$(( r + $(echo "$out" | awk '/wp11flap/ {s+=$1} END {print s+0}') ))
+        a=$(( a + $(echo "$out" | awk '/wp11all/  {s+=$1} END {print s+0}') ))
+    done
+    echo "$r $a $pairs"
+}
+
+# Both [PD_CONN_RETRY] lines carry the same tag and they are the only two the
+# block emits, so loose must equal attempts + oks. The two are close enough to
+# collide by eye -- "to preserve affinity" vs "affinity preserved" -- which is
+# exactly the shape that has produced false readings before, so the sum is
+# asserted rather than the discriminator trusted.
+pd_retry_counts() { echo "$(dplog_count "${PD_RETRY_TAG}") $(dplog_count "${PD_RETRY_ATT_LINE}") $(dplog_count "${PD_RETRY_OK_LINE}")"; }
+
+pd_retry_drive() {   # one request, the scenario's own shape
+    $hexec l3h1 curl -s -o /dev/null --max-time 60 -w '%{http_code}\n' \
+        -H 'Content-Type: application/json' \
+        -d "{\"model\":\"${KV_MODEL}\",\"prompt\":\"pd connect-retry probe $1\",\"max_tokens\":8}" \
+        "http://${VIP}:${VPORT}/v1/completions" 2>/dev/null
+}
+
+pd_retry_ok=1
+pd_retry_note=""
+PD_RETRY_OK_FAM="loxilb_pd_connect_retry_same_ep_ok_total"
+PD_RETRY_FAM="loxilb_pd_connect_retry_same_ep_total"
+PD_FAILOVER_FAM="loxilb_pd_connect_failover_total"
+
+if [[ ! -x "${PD_SWAP}" ]]; then
+    pd_retry_ok=0; pd_retry_note="missing ${PD_SWAP}"
+else
+    # ---- A control: every connect succeeds first time ---------------------
+    for ns in ${PD_PREFILL_NS}; do sudo ${PD_SWAP} "${ns}" ok >/dev/null || pd_retry_ok=0; done
+    pd_flap_disarm || { pd_retry_ok=0; pd_retry_note="${pd_retry_note} a flap REJECT survived pre-clean;"; }
+    sleep 2
+    a_ok_b=$(metric_val "${PD_RETRY_OK_FAM}"); read a_l_b a_a_b a_o_b <<<"$(pd_retry_counts)"
+    for i in $(seq 1 ${PD_RETRY_N}); do pd_retry_drive "a$i" >/dev/null; done
+    sleep ${PD_RETRY_SETTLE}
+    a_ok_a=$(metric_val "${PD_RETRY_OK_FAM}"); read a_l_a a_a_a a_o_a <<<"$(pd_retry_counts)"
+    echo "  A control-healthy: ${PD_RETRY_OK_FAM} ${a_ok_b}->${a_ok_a} ; attempt lines Δ$(( a_a_a - a_a_b )) ; ok lines Δ$(( a_o_a - a_o_b ))"
+    [[ "${a_ok_a}" == "${a_ok_b}" ]] || { pd_retry_ok=0; pd_retry_note="${pd_retry_note} A moved the success counter with no fault;"; }
+    [[ $(( a_a_a - a_a_b )) -eq 0 && $(( a_o_a - a_o_b )) -eq 0 ]] || { pd_retry_ok=0; pd_retry_note="${pd_retry_note} A entered the retry block at all;"; }
+
+    # ---- B drive: one request per freshly armed parity window -------------
+    b_ok_b=$(metric_val "${PD_RETRY_OK_FAM}"); b_rt_b=$(metric_val "${PD_RETRY_FAM}")
+    b_fo_b=$(metric_val "${PD_FAILOVER_FAM}"); b_np_b=$(dplog_count "${PD_NOPOOL_LINE}")
+    read b_l_b b_a_b b_o_b <<<"$(pd_retry_counts)"
+    refused_tot=0; accepted_tot=0; discarded=0; b_codes=""
+    # 🚨 Locals are PREFIXED. `code` is this scenario's global exit accumulator
+    # and the drive returns an HTTP status, so an unprefixed `code=$(...)` here
+    # put 200 into the script's exit status: every assertion passed and the
+    # scenario still reported FAILED with rc=200. A stage that cannot be
+    # trusted to leave the harness alone is not a stage.
+    for pdr_i in $(seq 1 ${PD_RETRY_N}); do
+        pdr_got=0
+        for pdr_try in 1 2 3 4 5 6 7 8; do
+            pd_flap_arm || { pd_retry_ok=0; pd_retry_note="${pd_retry_note} could not arm the parity;"; break; }
+            pdr_code=$(pd_retry_drive "b${pdr_i}")
+            read pdr_r pdr_a pdr_pairs <<<"$(pd_flap_counts)"
+            pd_flap_disarm || { pd_retry_ok=0; pd_retry_note="${pd_retry_note} a flap REJECT survived its disarm;"; }
+            pdr_npre=$(echo "${PD_PREFILL_NS}" | wc -w)
+            if [[ "${pdr_pairs}" != "${pdr_npre}" ]]; then
+                pd_retry_ok=0; pd_retry_note="${pd_retry_note} the flap rule pair is incomplete (${pdr_pairs}/${pdr_npre});"; break
+            fi
+            if [[ "${pdr_r}" == "1" && "${pdr_a}" == "1" ]]; then
+                refused_tot=$(( refused_tot + pdr_r )); accepted_tot=$(( accepted_tot + pdr_a ))
+                b_codes="${b_codes}${pdr_code} "; pdr_got=1; break
+            fi
+            discarded=$(( discarded + 1 ))
+            echo "    window DISCARDED: refused=${pdr_r} accepted=${pdr_a} (want 1 1) — the /metrics scraper shares this port; re-driving"
+            sleep 3
+        done
+        [[ "${pdr_got}" == "1" ]] || { pd_retry_ok=0; pd_retry_note="${pd_retry_note} no clean window for request ${pdr_i};"; break; }
+    done
+    pd_flap_disarm || true
+    sleep ${PD_RETRY_SETTLE}
+    b_ok_a=$(metric_val "${PD_RETRY_OK_FAM}"); b_rt_a=$(metric_val "${PD_RETRY_FAM}")
+    b_fo_a=$(metric_val "${PD_FAILOVER_FAM}"); b_np_a=$(dplog_count "${PD_NOPOOL_LINE}")
+    read b_l_a b_a_a b_o_a <<<"$(pd_retry_counts)"
+    d_ok=$(( b_ok_a - b_ok_b )); d_rt=$(( b_rt_a - b_rt_b )); d_fo=$(( b_fo_a - b_fo_b ))
+    d_okline=$(( b_o_a - b_o_b ))
+    n_b_codes=$(echo ${b_codes} | wc -w)
+    echo "  B drive shape: refused=${refused_tot} accepted=${accepted_tot} (want ${PD_RETRY_N} each) ; discarded windows=${discarded}"
+    echo "  B: ${PD_RETRY_OK_FAM} Δ${d_ok} ; ${PD_RETRY_FAM} Δ${d_rt} ; ${PD_FAILOVER_FAM} Δ${d_fo} ; ok lines Δ${d_okline} ; codes=${b_codes}"
+    # The pool must have been healthy, or every delta measures an open breaker
+    # rather than the retry block.
+    [[ $(( b_np_a - b_np_b )) -eq 0 ]] || { pd_retry_ok=0; pd_retry_note="${pd_retry_note} selection failed before any connect (Δ'${PD_NOPOOL_LINE}'=$(( b_np_a - b_np_b )));"; }
+    [[ "${refused_tot}" == "${PD_RETRY_N}" && "${accepted_tot}" == "${PD_RETRY_N}" ]] || { pd_retry_ok=0; pd_retry_note="${pd_retry_note} drive shape refused=${refused_tot} accepted=${accepted_tot};"; }
+    # An empty %{http_code} is a FAILED SPAWN, never a gateway answer.
+    [[ "${n_b_codes}" == "${PD_RETRY_N}" ]] || { pd_retry_ok=0; pd_retry_note="${pd_retry_note} lost a measurement (${n_b_codes}/${PD_RETRY_N} codes);"; }
+    [[ "${b_codes// /}" == "$(printf '200%.0s' $(seq 1 ${PD_RETRY_N}))" ]] || { pd_retry_ok=0; pd_retry_note="${pd_retry_note} the retry did not rescue the request (codes=${b_codes});"; }
+    [[ "${d_ok}" == "${PD_RETRY_N}" ]] || { pd_retry_ok=0; pd_retry_note="${pd_retry_note} ${PD_RETRY_OK_FAM} Δ${d_ok};"; }
+    # Same statement as the counter, so an inequality means one oracle lies.
+    [[ "${d_ok}" == "${d_okline}" ]] || { pd_retry_ok=0; pd_retry_note="${pd_retry_note} counter Δ${d_ok} != ok-lines Δ${d_okline};"; }
+    [[ "${d_rt}" == "${PD_RETRY_N}" ]] || { pd_retry_ok=0; pd_retry_note="${pd_retry_note} ${PD_RETRY_FAM} Δ${d_rt};"; }
+    # A move here would mean a DIFFERENT endpoint rescued the request, which is
+    # the outcome this family exists to be distinguished from.
+    [[ "${d_fo}" == "0" ]] || { pd_retry_ok=0; pd_retry_note="${pd_retry_note} failover Δ${d_fo} — affinity was NOT preserved;"; }
+    [[ $(( b_l_a - b_l_b )) -eq $(( ( b_a_a - b_a_b ) + d_okline )) ]] || { pd_retry_ok=0; pd_retry_note="${pd_retry_note} the [PD_CONN_RETRY] discriminator does not account for its own lines;"; }
+
+    # ---- C control: every connect refuses. LAST: it trips the breakers ----
+    for ns in ${PD_PREFILL_NS}; do sudo ${PD_SWAP} "${ns}" refuse >/dev/null || pd_retry_ok=0; done
+    sleep 2
+    c_ok_b=$(metric_val "${PD_RETRY_OK_FAM}"); c_rt_b=$(metric_val "${PD_RETRY_FAM}")
+    read c_l_b c_a_b c_o_b <<<"$(pd_retry_counts)"
+    c_codes=""
+    for i in $(seq 1 ${PD_RETRY_N}); do c_codes="${c_codes}$(pd_retry_drive "c$i") "; done
+    sleep ${PD_RETRY_SETTLE}
+    c_ok_a=$(metric_val "${PD_RETRY_OK_FAM}"); c_rt_a=$(metric_val "${PD_RETRY_FAM}")
+    read c_l_a c_a_a c_o_a <<<"$(pd_retry_counts)"
+    echo "  C control-refusing: ${PD_RETRY_OK_FAM} Δ$(( c_ok_a - c_ok_b )) (want 0) ; ${PD_RETRY_FAM} Δ$(( c_rt_a - c_rt_b )) (want ${PD_RETRY_N}) ; attempt lines Δ$(( c_a_a - c_a_b )) ; ok lines Δ$(( c_o_a - c_o_b )) ; codes=${c_codes}"
+    [[ $(( c_ok_a - c_ok_b )) -eq 0 ]] || { pd_retry_ok=0; pd_retry_note="${pd_retry_note} C moved the SUCCESS counter while every connect failed — it counts attempts;"; }
+    # Non-vacuous: the same branch that holds the increment under test was
+    # entered and then declined. A zero here would mean the flow never reached
+    # the retry block and the flat counter above would prove nothing.
+    [[ $(( c_rt_a - c_rt_b )) -eq ${PD_RETRY_N} && $(( c_a_a - c_a_b )) -eq ${PD_RETRY_N} ]] || { pd_retry_ok=0; pd_retry_note="${pd_retry_note} C never entered the retry block, so its flat success counter proves nothing;"; }
+    [[ $(( c_o_a - c_o_b )) -eq 0 ]] || { pd_retry_ok=0; pd_retry_note="${pd_retry_note} C logged a success line;"; }
+
+    # ---- restore ----------------------------------------------------------
+    pd_flap_disarm || true
+    for ns in ${PD_PREFILL_NS}; do sudo ${PD_SWAP} "${ns}" off >/dev/null || true; done
+fi
+[[ -n "${pd_retry_note}" ]] && echo "  detail:${pd_retry_note}"
+assert "P/D connect retry: a refused connect succeeds on the SAME endpoint and is counted as a SUCCESS" "$pd_retry_ok"
 
 #################################################################################
 # backward-compat — re-run cicd/vllm-pd-disagg byte-for-byte AFTER the collision pre-clean
