@@ -119,13 +119,13 @@ jobs:
       # dependencies and the P/D threshold declaration contracts. The inventory
       # half is the drift gate: it fails when the published argument inventory
       # stops matching the Swagger sources it was generated from.
+      #
+      # The commands live in the scenario directory rather than here so that
+      # the product harness runs this gate and not an approximation of it.
+      # Inline, they were reachable only from this workflow, and the harness
+      # registry pointed at a different script entirely.
       - name: Multi-tier argument contract
-        run: |
-          python3 -B -m unittest discover \
-            -s cicd/ai-multitier-contract -p 'test_*.py'
-          go test -count=1 ./cicd/ai-multitier-contract/inventory
-          go run ./cicd/ai-multitier-contract/inventory \
-            -check cicd/ai-multitier-contract/argument-inventory.json
+        run: ./cicd/ai-multitier-contract/run-ci-gates.sh
 
       - name: Disposable PostgreSQL for the store-backed suites
         # The store legs run with *_TEST_PG=required below: with the server
