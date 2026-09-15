@@ -92,6 +92,41 @@ type Sink interface {
 	OnSample(epIdx int, s WorkerSample)
 }
 
+// Scrape outcomes reported to a ResultSink. Closed set, low cardinality: these
+// are label values, so a new one is an API change, not a detail.
+const (
+	ScrapeOK          = "ok"          // parsed, sample delivered
+	ScrapeUnreachable = "unreachable" // transport failed (refused, timeout, DNS)
+	ScrapeHTTPError   = "http_error"  // answered, but not 200
+	ScrapeBodyError   = "body_error"  // 200, but the body could not be read
+	ScrapeUnparseable = "unparseable" // 200 and readable, but no recognized series
+	ScrapeBadRequest  = "bad_request" // the request could not even be built
+)
+
+// ResultSink is an OPTIONAL extension of Sink. A Sink that also implements it
+// is told the outcome of EVERY scrape attempt, including the successful ones.
+//
+// It exists because a scraper that only reports successes is unobservable in
+// exactly the state that matters. The samples this poller delivers feed live
+// routing decisions, and when an endpoint stops answering /metrics the pushes
+// simply stop -- there is no sample, so there is nothing for a Sink to see.
+// Downstream that is handled (the consumer stops trusting a value nobody
+// refreshes), but handled silently: an operator cannot distinguish "routing on
+// live load" from "routing on a fill-in because every scrape has been failing
+// for ten minutes". Those need opposite responses.
+//
+// The OK outcome is reported too, and that is deliberate rather than
+// symmetry-for-its-own-sake: a counter that moves only on failure cannot tell
+// "nothing is failing" from "the scraper is not running at all", which is the
+// same false-reassurance an eager-zero counter gives.
+//
+// Optional by interface assertion so implementations that do not want it are
+// unaffected. Invoked from the per-EP scrape goroutine, so implementations
+// must be safe for concurrent calls.
+type ResultSink interface {
+	OnScrapeResult(epIdx int, endpoint string, result string)
+}
+
 // Poller polls vLLM /metrics endpoints on a fixed interval with per-EP
 // in-flight dedup, and delivers parsed WorkerSamples to a Sink. It is the
 // extracted Run/scrapeAll/scrapeOne skeleton of loxilb's VllmScraper.
@@ -240,23 +275,37 @@ func (p *Poller) scrapeAll(ctx context.Context) {
 // 3-series set via the lineparser, stamps LastUpdate, and delivers the
 // sample to the sink.
 func (p *Poller) scrapeOne(ctx context.Context, epIdx int, endpoint string) {
+	// Every return path below reports, so the outcome set is exhaustive by
+	// construction: a future early return that forgets to report is visible as
+	// a total that stops matching the scrape count.
+	report := func(result string) {
+		if p.sink == nil {
+			return
+		}
+		if rs, ok := p.sink.(ResultSink); ok {
+			rs.OnScrapeResult(epIdx, endpoint, result)
+		}
+	}
 	url := fmt.Sprintf("http://%s/metrics", endpoint)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		p.log.Warnf("vLLM scraper: failed to create request for %s: %v\n", endpoint, err)
+		report(ScrapeBadRequest)
 		return
 	}
 
 	resp, err := p.client.Do(req)
 	if err != nil {
 		p.log.Debugf("vLLM scraper: %s unreachable: %v\n", endpoint, err)
+		report(ScrapeUnreachable)
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		p.log.Warnf("vLLM scraper: %s returned HTTP %d\n", endpoint, resp.StatusCode)
+		report(ScrapeHTTPError)
 		return
 	}
 
@@ -271,11 +320,13 @@ func (p *Poller) scrapeOne(ctx context.Context, epIdx int, endpoint string) {
 		body, err := io.ReadAll(bodyReader)
 		if err != nil {
 			p.log.Debugf("vLLM scraper: %s body read failed: %v\n", endpoint, err)
+			report(ScrapeBodyError)
 			return
 		}
 		sample, found := ParseVllmBody(bytes.NewReader(body))
 		if !found {
 			p.log.Debugf("vLLM scraper: %s returned no recognized metrics\n", endpoint)
+			report(ScrapeUnparseable)
 			return
 		}
 		if lm := ParseLMCacheBody(bytes.NewReader(body)); len(lm.Raw) > 0 {
@@ -290,6 +341,7 @@ func (p *Poller) scrapeOne(ctx context.Context, epIdx int, endpoint string) {
 		if p.sink != nil {
 			p.sink.OnSample(epIdx, sample)
 		}
+		report(ScrapeOK)
 		return
 	}
 
@@ -298,6 +350,7 @@ func (p *Poller) scrapeOne(ctx context.Context, epIdx int, endpoint string) {
 	sample, found := ParseVllmBody(bodyReader)
 	if !found {
 		p.log.Debugf("vLLM scraper: %s returned no recognized metrics\n", endpoint)
+		report(ScrapeUnparseable)
 		return
 	}
 
@@ -306,4 +359,5 @@ func (p *Poller) scrapeOne(ctx context.Context, epIdx int, endpoint string) {
 	if p.sink != nil {
 		p.sink.OnSample(epIdx, sample)
 	}
+	report(ScrapeOK)
 }
