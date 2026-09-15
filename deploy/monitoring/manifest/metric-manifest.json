@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-15T07:51:59+00:00",
-  "source_revision": "486297efa9890690537ed65094e0da14fe56bdcd"
+  "generated_at": "2026-09-15T08:13:27+00:00",
+  "source_revision": "c8f7236dd26b9618cf1c88f0f6f729d31f507785"
  },
  "contract": {
   "total": 240,
@@ -27,7 +27,7 @@
   "default_unreferenced": 6,
   "writer_classified": 184,
   "writer_unclassified": 0,
-  "writer_unverified": 68
+  "writer_unverified": 67
  },
  "families": [
   {
@@ -8229,7 +8229,7 @@
    "source": "api/prometheus/sockproxy_metrics.go:725",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
-   "implementation_status": "writer-mapped",
+   "implementation_status": "verified-runtime",
    "activation_precondition": "",
    "writer_sources": [
     {
@@ -8238,7 +8238,7 @@
      "file": "api/prometheus/sockproxy_metrics.go",
      "def_line": 943,
      "writes": "pdSgPrefillRejectRelayTotal",
-     "note": "SGLang-specific: the C counter only moves for an SGLang P/D deployment, so on any other engine this stays 0 while still being exported"
+     "note": "SGLang-specific in the sense that the C counter only moves on a rule whose kvEngineType is sglang -- a per-rule API field, NOT a property of the deployment. Proven driven on a CPU mock with no SGLang engine present; on any other dialect this stays 0 while still being exported."
     },
     {
      "symbol": "Init",
@@ -8276,7 +8276,7 @@
      "entry_point": "main"
     }
    ],
-   "verification_evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:1138, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M16 owns the runtime proof."
+   "verification_evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-sg-reject-relay', WP-11): M08 CPU mock P/D bed (scenario cicd/vllm-kvcache-routing-cpu, image tag wp11-u24, digest sha256:fd072b4b7a0a), harness md5 c5a47bce7642 (verify) / 1eea0a2a5fd3 (backend) / 4bcc238fdc6f (swap) / d23a567a6b06 (marker driver), identical at author and bed. 23/23 checks. OVERTURNS THE 'ENGINE-GATED' LABEL A FIFTH TIME: carried as needing an SGLang engine purely because of the pd_sg_* prefix. The gate (sockproxy_pd_sglang.c:312-331) is !drain_handled && status>=400 && pd_sg_decode_untouched() && status<500 && first_feed && !drain_desync -- the rule's dialect plus what the backend SAYS and HOW IT FRAMES IT. No engine internals, and no engine of any dialect took part. FOUR STAGES over one byte-identical request body, decode legs held silent in 'slowok' throughout so the only variable is what the prefill leg answers. A (prefill 200): counter FLAT, both log lines flat, 3x200, client served by decode. B (prefill 500): counter FLAT -- and the control is NON-VACUOUS BY MEASUREMENT because the else-branch of the same if logs instead, 3 'aborting decode leg' lines, client 502 pd_sg_prefill_failed. C (prefill 400): delta 3.0 == n, 3 relay lines, and the CLIENT RECEIVED 400 CARRYING THE ORIGIN'S OWN MARKER -- response-path proof the relay was verbatim rather than a gateway-synthesised error. B AND C DIFFER IN A SINGLE INTEGER IN THE BACKEND'S STATUS LINE and in nothing else. \ud83d\udea8 PATTERN COLLISION FOUND AND GUARDED: the relay log line CONTAINS the abort line's phrase verbatim ('... relaying origin reject verbatim, aborting decode leg ...'), so counting 'aborting decode leg' counts BOTH writers -- the same substring-collision class as the session-21 admission shed/overflow pair. The discriminator is the em dash immediately before 'aborting', and the arm asserts the arithmetic identity loose == relay + strict on EVERY stage, so a pattern that silently stopped matching fails the run instead of under-counting the control. D1 (the same 400 at the vllm fixture rule): counter and relay log FLAT, and the DECODE leg served the client 200 without the origin marker -- same backend, same body, only the rule's dialect differs from C. \ud83d\udd11 That vLLM behaviour is DOCUMENTED, NOT A GAP: sockproxy_pd_vllm.c:160-176 classifies <400 as a breaker success, >=500 as an origin error, and leaves 4xx NEUTRAL ('client faults'), after which the flow continues to the decode leg's recompute. D2 (prefill 500 at the vllm rule) supplies the non-vacuity that D1 alone cannot: the vLLM dialect's own prefill-status site logged 3 times, proving that path DOES read the prefill response, so its silence on a 4xx is a classification decision rather than a blind spot. An earlier run of this arm FAILED on a weaker D that asserted 'some request returned non-200' as a proxy for 'something happened'; that assertion was wrong about the product, and it was replaced with these two rather than relaxed. Polled-pipeline caveat as per the decode row."
   },
   {
    "name": "loxilb_pd_sg_room_retry_total",
