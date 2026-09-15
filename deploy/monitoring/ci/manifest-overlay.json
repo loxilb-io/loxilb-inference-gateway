@@ -395,6 +395,7 @@
    "loxilb_kv_inventory_fresh",
    "loxilb_kv_subscriber_last_event_timestamp_seconds",
    "loxilb_kv_subscriber_wire_reject_total",
+   "loxilb_pd_admission_overflow_shed_total",
    "loxilb_pd_connect_retry_same_ep_ok_total",
    "loxilb_pd_connect_retry_same_ep_total",
    "loxilb_persist_total",
