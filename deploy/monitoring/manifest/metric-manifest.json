@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-15T01:33:36+00:00",
-  "source_revision": "69147f0e6e842c5081b086b01b72e89875fc4059"
+  "generated_at": "2026-09-15T01:49:17+00:00",
+  "source_revision": "b05e0ae1390f3e89e093324ba42123516afe9c80"
  },
  "contract": {
   "total": 239,
@@ -27,7 +27,7 @@
   "default_unreferenced": 5,
   "writer_classified": 183,
   "writer_unclassified": 0,
-  "writer_unverified": 73
+  "writer_unverified": 72
  },
  "families": [
   {
@@ -6571,7 +6571,7 @@
    "source": "api/prometheus/sockproxy_metrics.go:603",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
-   "implementation_status": "writer-mapped",
+   "implementation_status": "verified-runtime",
    "activation_precondition": "",
    "writer_sources": [
     {
@@ -6617,7 +6617,7 @@
      "entry_point": "main"
     }
    ],
-   "verification_evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:1084, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M08 owns the runtime proof."
+   "verification_evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-admission-shed', M08 CPU mock P/D bed, scenario cicd/vllm-kvcache-routing-cpu): 11/11, exact multiplicity. The per-EP in-flight admission cap is env-only and getenv-once (LLB_PD_MAX_INFLIGHT_PER_EP, sockproxy_pd.c:1419-1431), so unlike the other P/D gates it cannot be toggled on a live gateway; the bed was rebuilt with cap=1 and queue depth 0, and the arm asserts both values off the RUNNING container rather than trusting the builder. Depth 0 matters for attribution: the parking branch is chosen by pd_queue_depth_per_ep(), so at depth 0 only the shed site (sockproxy_pd.c:1848) is reachable and the overflow shed cannot fire. Drive needs genuine concurrency, since the cap is a statement about requests that OVERLAP: three holders are staggered 0.4s apart against hanging backends so each lands on a distinct prefill EP, then six probes are fired simultaneously at the now-full pool. Control is the same backends and the same cap with only three overlapping requests, which leaves under_cap non-zero at every selection: delta 0 and every shed log site silent. Drive: delta 6.0 == 6 probes == 6 shed log lines == 6 client receipts of 429 {\"error\":\"pd_overloaded\"}, the last written at the dispatch site (sockproxy_ep.c:772-786) and therefore an oracle that does not traverse the metrics pipeline. The drive SHAPE is read out of the product own log rather than assumed: the shed line carries healthy_elig, and all six read 'all 3 healthy prefill EPs at in-flight cap=1'. That assertion was added because a first run shed against a pool of 2 -- control-plane health demotes a hanging backend after roughly 19s -- which made the multiplicity off by one against a pool the prediction was not written for. Queued and overflow sites asserted silent."
   },
   {
    "name": "loxilb_pd_cb_flips_total",
