@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-15T04:21:24+00:00",
-  "source_revision": "d00d4dd29911acb0935f21f6ded56382a4ee08d2"
+  "generated_at": "2026-09-15T04:57:44+00:00",
+  "source_revision": "8d7ddb5a6d00303a4a65a3bbca4bbc421e9ad0db"
  },
  "contract": {
   "total": 239,
@@ -27,7 +27,7 @@
   "default_unreferenced": 5,
   "writer_classified": 183,
   "writer_unclassified": 0,
-  "writer_unverified": 70
+  "writer_unverified": 69
  },
  "families": [
   {
@@ -8365,7 +8365,7 @@
    "source": "api/prometheus/sockproxy_metrics.go:723",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
-   "implementation_status": "writer-mapped",
+   "implementation_status": "verified-runtime",
    "activation_precondition": "",
    "writer_sources": [
     {
@@ -8374,7 +8374,7 @@
      "file": "api/prometheus/sockproxy_metrics.go",
      "def_line": 925,
      "writes": "pdTrtCtxEarlyExitTotal",
-     "note": "SGLang-specific: the C counter only moves for an SGLang P/D deployment, so on any other engine this stays 0 while still being exported"
+     "note": "single C writer, pd_trt_early_exit_relay in the TRT-LLM dialect module, reached from the sequential prefill-then-decode handler once the buffered context response is parsed. The earlier note on this row read 'SGLang-specific: the C counter only moves for an SGLang P/D deployment' \u2014 that was a copy of the pd_sg_* note onto a pd_trt_* row and was wrong twice over: this family is not on the SGLang path at all, and its gate reads no engine internals of any dialect. Driven runtime evidence below."
     },
     {
      "symbol": "Init",
@@ -8412,7 +8412,7 @@
      "entry_point": "main"
     }
    ],
-   "verification_evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:1146, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M16 owns the runtime proof."
+   "verification_evidence": "runtime evidence, M08 CPU mock P/D bed (scenario cicd/vllm-kvcache-routing-cpu, image tag wp11-u24, digest sha256:fd072b4b7a0a, host-build md5 83754e4fcb5d matched inside the running datapath container), E.5 row 'wp11-trt-early-exit', 15/15 checks. Three stages over ONE request body, each isolating a single term of the gate is_trt && prefill_status==200 && ctx_early_exit_check(prefill_body). A: the campaign's vllm rule, context leg answering finish_reason=stop \u2014 counter flat 0, log flat 0, all three requests answered 200 by the DECODE leg. B: a second rule on another port carrying kvEngineType=trtllm (immutable after create, hence a second rule) with the context leg answering finish_reason=length \u2014 counter flat 0, log flat 0, again served by the decode leg, so the flow demonstrably reached and passed the check. C: the same trtllm rule, same body, context leg answering finish_reason=stop \u2014 delta exactly 3, exactly 3 datapath lines '[PD_TRT_EARLY_EXIT] context response finished the request', and all three clients received the CONTEXT response verbatim rather than a generated one, which is what a skipped generation leg looks like on the response path. B and C differ in one JSON string inside the backend's reply and in nothing else. This family had been carried as the one genuinely engine-gated member of the remaining pd_* pool; no TensorRT-LLM engine and no GPU took part in the run. Metrics path and datapath log agree at 3 == 3 == n; collector period 10s, both halves given the same settle window."
   },
   {
    "name": "loxilb_persist_total",
