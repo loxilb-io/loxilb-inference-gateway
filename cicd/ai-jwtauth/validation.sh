@@ -50,6 +50,12 @@ note_case() {
     # deleted, and the block would be exactly as unprotected as if it carried
     # no label at all.
     QOS-[A-Z][A-Z][A-Z]-[0-9][0-9][0-9]) ;;
+    # ...and the fault-injection block's QOS-ID-nnn is two letters, not
+    # three. Spelled out rather than loosened to a glob: this function
+    # DECLINES silently, so a shape it does not list is a case Z1 can never
+    # report missing, and a glob wide enough to catch it would also catch
+    # a typo it should be reporting.
+    QOS-[A-Z][A-Z]-[0-9][0-9][0-9]) ;;
     *) return ;;
   esac
   case " $SEEN_CASES " in
@@ -105,6 +111,42 @@ chk_code() { # chk_code <name> <expected> <response-with--w-http_code>
   else
     echo "  [FAIL] $1 — HTTP $got, want $2"; FAIL=$((FAIL + 1))
   fi
+}
+
+# chk_aborted <name> <response> -- the ONE place a curl 000 is the expected
+# answer: a case that cuts its own client off mid-request to strand a
+# reservation. chk_code refuses 000 outright, and rightly -- everywhere else
+# it means the measurement was lost. Here it is the measurement, so it gets a
+# named oracle of its own rather than a hole in chk_code's guard: a request
+# that completed is a request that was never aborted, and the case that rests
+# on the abort would be measuring an ordinary served response.
+chk_aborted() {
+  note_case "$1"
+  local got; got=$(http_code_of "$2")
+  if [ "$got" = "000" ]; then
+    echo "  [PASS] $1 (curl reported no completion, as the case requires)"; PASS=$((PASS + 1))
+  else
+    echo "  [FAIL] $1 — the request COMPLETED with HTTP ${got:-none}; nothing was aborted,"
+    echo "         so whatever this case concludes about a stranded claim is untested"
+    FAIL=$((FAIL + 1))
+  fi
+}
+
+# gw_log_count <needle> -- occurrences of a literal string in the gateway's
+# own log. Used by exactly one case, and deliberately: the fine-grained JWT
+# refusal reason is LOG-ONLY by design (pkg/jwtauth/verdict.go states it --
+# the client-facing 401 collapses to invalid_token so the gate is not an
+# oracle, and loxilb_ai_jwt_validation_total labels the COARSE code, with
+# promoting the reasons to the metric named there as an open decision that
+# has to land with the dashboards). So the log is the only place an operator
+# can tell "the IdP is minting identities we cannot represent" from "clients
+# are sending bad tokens", and it is what this case must read.
+#
+# -F, not a plain -c: grep counts a bracketed pattern as a character class,
+# and this file has been bitten by that before.
+gw_log_count() {
+  docker exec llb1 sh -c "cat /var/log/loxilb*.log 2>/dev/null" 2>/dev/null |
+    grep -cF "$1" 2>/dev/null || echo 0
 }
 
 # ---------------------------------------------------------------------------
@@ -1957,6 +1999,487 @@ chk_code     "QOS-TPM-006 the undrained debt refuses t2 again" 429 "$QR"
 chk_has      "QOS-TPM-006 the re-armed refusal names the token quota" "token_quota_exceeded" "$QR"
 chk_receipt  "QOS-TPM-006 the re-refused request never reached the backend" 0 "$QR_NONCE"
 
+
+echo ""
+echo "== QOS fault injection: the arms that have to BREAK something =="
+echo "   QOS-RES-001..003, QOS-OUT-001..004, QOS-ID-001/002. A different"
+echo "   shape of case from everything above: those configured a limit and"
+echo "   drove traffic, these take the store away, abort a request that is"
+echo "   still holding a claim, or hand the gateway an identity the bucket"
+echo "   keyspace cannot represent -- and watch what the gate does."
+
+# ---------------------------------------------------------------------------
+# The store-outage lever.
+#
+# `docker pause pg-jwtauth` CANNOT produce policy_store_unavailable and is not
+# used here. Traced at source: Service.store() (pkg/aikey/service.go) returns
+# an error only when the pool POINTER is nil, and Service.Ticker() never nils
+# an existing pool -- *sql.DB re-dials its own connections. What the error
+# path actually keys on is the QUERY returning an error. A paused Postgres
+# returns nothing at all: the socket stays open and the query blocks, so the
+# request hangs until curl's --max-time kills it and the case scores
+# http_code=000 -- a lost measurement, not a gateway answer.
+#
+# Revoking the data-plane role's USAGE on the schema produces the error
+# directly. Every statement against aigw.* fails at planning time, including
+# on connections that are already open, so there is nothing to wait for; the
+# container and its data directory are untouched, so the GRANT restores
+# service without a gateway restart -- which is exactly what QOS-OUT-004 has
+# to show. Measured on the bed before this was written: 179ms to the error.
+pg_admin_sql() { docker exec "$PG_NAME" psql -U "$PG_OWNER" -d "$PG_DB" -Atc "$1" 2>&1; }
+
+# pg_dp_read -- one read as the DATA-PLANE role, with a hard timeout. The
+# timeout is the point: a lever that hangs and a lever that errors are the
+# same thing to an assertion that only looks at the exit status, and the
+# whole reason the paused-container lever was rejected is that it hangs.
+pg_dp_read() {
+  timeout 5 docker exec -e PGPASSWORD="$PG_DP_PW" "$PG_NAME" \
+    psql -U "$PG_DP_USER" -h 127.0.0.1 -d "$PG_DB" -Atc \
+    "SELECT count(*) FROM ${PG_SCHEMA}.rate_limit_defaults" 2>&1
+}
+
+store_outage_on()  { pg_admin_sql "REVOKE USAGE ON SCHEMA ${PG_SCHEMA} FROM ${PG_DP_USER}"; }
+store_outage_off() { pg_admin_sql "GRANT USAGE ON SCHEMA ${PG_SCHEMA} TO ${PG_DP_USER}"; }
+
+# store_lever_ok <name> errors|serves -- the lever really is in the state the
+# arms below assume, and it got there by ERRORING rather than by hanging.
+# Asserted rather than assumed: every QOS-OUT verdict is a claim about what
+# the gateway does when a read fails, and a lever that silently stopped
+# working would turn all four of them into readings of a healthy store.
+store_lever_ok() {
+  local name=$1 want=$2 t0 t1 out ms
+  note_case "$name"
+  t0=$(date +%s%N); out=$(pg_dp_read); t1=$(date +%s%N)
+  ms=$(( (t1 - t0) / 1000000 ))
+  case "$want" in
+    errors)
+      case "$out" in
+        *"permission denied"*)
+          if [ "$ms" -lt 4000 ]; then
+            echo "  [PASS] $name (errored in ${ms}ms, not a hang)"; PASS=$((PASS + 1))
+          else
+            echo "  [FAIL] $name - the read errored but took ${ms}ms; at that latency a"
+            echo "         request would score http_code=000 and measure curl, not the gate"
+            FAIL=$((FAIL + 1))
+          fi ;;
+        *) echo "  [FAIL] $name - the data-plane read did NOT fail with the outage in place"
+           echo "         (${ms}ms): $(echo "$out" | tr '\n' ' ' | head -c 160)"
+           FAIL=$((FAIL + 1)) ;;
+      esac ;;
+    serves)
+      case "$out" in
+        ''|*[!0-9]*) echo "  [FAIL] $name - the store did not answer a plain read (${ms}ms): $(echo "$out" | tr '\n' ' ' | head -c 160)"
+                     FAIL=$((FAIL + 1)) ;;
+        *) echo "  [PASS] $name (answered $out in ${ms}ms)"; PASS=$((PASS + 1)) ;;
+      esac ;;
+  esac
+}
+
+# ---- the reservation arms' drive shape -----------------------------------
+#
+# A reservation orphaned by an aborted or re-configured request is expired by
+# the epoch advance -- currentQuotaEpoch is wall-clock minute-aligned
+# (now.Unix()/60 in pkg/ratelimit), so the whole window in which a leak is
+# OBSERVABLE is the remainder of the current minute. A sequence that straddles
+# a minute boundary measures the epoch reset instead of the release path and
+# would report a leaking build as clean.
+#
+# qos_epoch_fresh waits for the start of a minute so the sequence has room,
+# and qos_epoch_ok asserts afterwards that it did not straddle one anyway.
+qos_epoch_fresh() {
+  local s
+  s=$(( $(date +%s) % 60 ))
+  if [ "$s" -gt 20 ]; then sleep $(( 61 - s )); fi
+  QOS_EPOCH0=$(( $(date +%s) / 60 ))
+}
+qos_epoch_ok() {
+  note_case "$1"
+  local now; now=$(( $(date +%s) / 60 ))
+  if [ -z "$QOS_EPOCH0" ]; then
+    echo "  [FAIL] $1 - no epoch was recorded; the sequence never ran"
+    FAIL=$((FAIL + 1)); return
+  fi
+  if [ "$now" = "$QOS_EPOCH0" ]; then
+    echo "  [PASS] $1 (one quota epoch throughout)"; PASS=$((PASS + 1))
+  else
+    echo "  [FAIL] $1 - the sequence straddled a quota-epoch boundary"
+    echo "         ($QOS_EPOCH0 -> $now): the epoch advance zeroes every outstanding"
+    echo "         reservation, so this run measured the reset and not the release"
+    FAIL=$((FAIL + 1))
+  fi
+}
+
+# rreq <port> <token> <model-body> <max_tokens> [extra curl args...]
+# One reservation-arm request. max_tokens is what sizes the claim: the
+# admission reservation is prompt-estimate + declared max_tokens, so it is the
+# knob that decides whether a bucket can cover the request.
+rreq() {
+  local port=$1 tok=$2 model=$3 maxt=$4; shift 4
+  RR=$(req "$port" "{\"model\":\"$model\",\"max_tokens\":$maxt,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}" \
+        -H "Authorization: Bearer $tok" "$@")
+  RR_NONCE=$(last_nonce)
+}
+
+QOS_FI_T=tenant-qr
+QOS_OUT_T=tenant-qf
+
+echo ""
+echo "-- QOS-RES: the pre-admission reservation --"
+echo "   Admission claims the request's worst case (prompt estimate +"
+echo "   declared max_tokens) against every bucket in the ladder BEFORE the"
+echo "   request is dispatched, and settlement releases the claim. Both"
+echo "   halves are invisible in a healthy request: what makes them testable"
+echo "   is a claim that is taken and then must come back -- rolled back by a"
+echo "   later bucket's refusal, released by an aborted request, or released"
+echo "   by a request whose configuration vanished under it."
+echo "   Bucket capacity is 100% of tokens_per_min by default, so a tenant"
+echo "   at tokens_per_min=1000 can hold at most 1000 tokens of claim."
+
+qos_cfg POST /config/ai/tenant/ratelimit \
+  "{\"tenant_id\":\"$QOS_FI_T\",\"tokens_per_min\":1000,\"model_limits\":[{\"model\":\"mistral-7b\",\"tokens_per_min\":100}]}"
+qos_cfg_ok   "QOS-RES-001 tenant-qr armed: aggregate 1000, mistral-7b 100"
+
+echo ""
+echo "QOS-RES-001: a LATER bucket's refusal gives back every claim an EARLIER"
+echo "             bucket already granted."
+echo "             The ladder is [tenant 1000, tenant|mistral 100] and the"
+echo "             request asks for ~600: the tenant bucket can cover it, the"
+echo "             model bucket cannot. The refusal is not the interesting"
+echo "             part -- what matters is the tenant bucket afterwards, and"
+echo "             the only way to read that is to send it a request the"
+echo "             model bucket has no say in."
+qos_epoch_fresh
+rreq 2065 "$TOK_r1" mistral-7b 600
+chk_code     "QOS-RES-001 the over-model request is refused" 429 "$RR"
+chk_has      "QOS-RES-001 refused at ADMISSION, not by the post-hoc latch" "token_quota_would_exceed" "$RR"
+chk_not_has  "QOS-RES-001 and not by the latched code" "\"token_quota_exceeded\"" "$RR"
+chk_receipt  "QOS-RES-001 the refused request never reached the backend" 0 "$RR_NONCE"
+rreq 2065 "$TOK_r1" llama-70b 600
+chk_code     "QOS-RES-001 a same-size request on a model the tenant bucket alone gates is admitted" 200 "$RR"
+chk_receipt  "QOS-RES-001 and it reached the backend" 1 "$RR_NONCE"
+qos_epoch_ok "QOS-RES-001 the pair stayed inside one quota epoch"
+
+echo ""
+echo "QOS-RES-002: a request aborted IN FLIGHT releases its claim, and is"
+echo "             charged nothing."
+echo "             The backend is held for 5s and the client is cut off after"
+echo "             1s, so there is no response to extract usage from and the"
+echo "             only thing settlement can do is release. The backend"
+echo "             receipt is the drive-shape oracle: without it, a request"
+echo "             the gateway refused outright would produce the same clean"
+echo "             bucket and the case would pass having tested nothing."
+qos_epoch_fresh
+RCONS0=$(metric_labeled loxilb_ai_tokens_consumed_total "tenant=\"$QOS_FI_T\"")
+rreq 2065 "$TOK_r2" llama-70b 600 -H "X-Test-Delay-Ms: 5000" --max-time 1
+chk_aborted  "QOS-RES-002 the client really did abort" "$RR"
+chk_receipt  "QOS-RES-002 the request HAD reached the backend, so a claim existed" 1 "$RR_NONCE"
+sleep 8
+rreq 2065 "$TOK_r2" llama-70b 600
+chk_code     "QOS-RES-002 a full-size request is admitted afterwards - the claim came back" 200 "$RR"
+chk_has      "QOS-RES-002 and not refused at admission" "server-llama" "$RR"
+chk_receipt  "QOS-RES-002 and it reached the backend" 1 "$RR_NONCE"
+qos_epoch_ok "QOS-RES-002 the abort and the probe stayed inside one quota epoch"
+RCONS1=$(metric_labeled loxilb_ai_tokens_consumed_total "tenant=\"$QOS_FI_T\"")
+if [ "$RCONS0" = "unreadable" ] || [ "$RCONS1" = "unreadable" ]; then
+  note_case "QOS-RES-002"
+  echo "  [FAIL] QOS-RES-002 the consumed-token metric is unreadable - a phantom charge cannot be ruled out"
+  FAIL=$((FAIL + 1))
+else
+  # 12 is the echo's fixed usage for the ONE answered request above. The
+  # aborted request must add nothing: it produced no response and no usage.
+  chk_num "QOS-RES-002 the aborted request was charged nothing (only the probe's 12 landed)" 12 $((RCONS1 - RCONS0))
+fi
+
+echo ""
+echo "QOS-RES-003: a bucket whose CONFIGURATION vanishes while a request is"
+echo "             holding its claim still gets the claim back."
+echo "             Settlement re-resolves the ladder from the store, so a"
+echo "             bucket that stopped resolving between admission and"
+echo "             settlement is a bucket nothing releases. The claim then"
+echo "             sits on the live bucket until the epoch expires it, and"
+echo "             the limit is re-created on top of it -- so the next"
+echo "             request is refused against headroom that is not actually"
+echo "             spent."
+# llama-70b, NOT mistral: :2065's rule serves llama-70b only, and a mistral
+# request there is answered 503 model_unavailable by the ROUTER, long after
+# admission. QOS-RES-001 can use mistral precisely because its request never
+# gets past admission; this one has to reach the backend and come back.
+qos_cfg POST /config/ai/tenant/ratelimit \
+  "{\"tenant_id\":\"$QOS_FI_T\",\"tokens_per_min\":1000,\"model_limits\":[{\"model\":\"llama-70b\",\"tokens_per_min\":1000}]}"
+qos_cfg_ok   "QOS-RES-003 tenant|llama-70b armed at 1000 so it admits the claim"
+qos_epoch_fresh
+# Called directly and then CONSUMED, never inside $( ): new_nonce publishes
+# through a global and a file, and a subshell would leave the ".last" file
+# behind for an unrelated assertion to pick up.
+new_nonce
+RES3_NONCE=$(last_nonce)
+( $hexec l3h1 curl -s -o /dev/null --max-time 20 -X POST \
+    -H "Content-Type: application/json" \
+    -H "X-Test-Nonce: $RES3_NONCE" \
+    -H "X-Test-Delay-Ms: 4000" \
+    -H "Authorization: Bearer $TOK_r2" \
+    -d '{"model":"llama-70b","max_tokens":600,"messages":[{"role":"user","content":"hi"}]}' \
+    "http://$VIP:2065/v1/chat/completions" ) > /dev/null 2>&1 &
+RES3_BG=$!
+sleep 2
+chk_receipt  "QOS-RES-003 the in-flight request reached the backend and is holding its claim" 1 "$RES3_NONCE"
+qos_cfg POST /config/ai/tenant/ratelimit \
+  "{\"tenant_id\":\"$QOS_FI_T\",\"tokens_per_min\":1000,\"model_limits\":[{\"model\":\"llama-70b\",\"tokens_per_min\":0}]}"
+qos_cfg_ok   "QOS-RES-003 the tenant|llama-70b limit is removed while the request is in flight"
+wait $RES3_BG 2>/dev/null
+sleep "$QOS_SETTLE_WAIT"
+qos_cfg POST /config/ai/tenant/ratelimit \
+  "{\"tenant_id\":\"$QOS_FI_T\",\"tokens_per_min\":1000,\"model_limits\":[{\"model\":\"llama-70b\",\"tokens_per_min\":1000}]}"
+qos_cfg_ok   "QOS-RES-003 the tenant|llama-70b limit is put back"
+rreq 2065 "$TOK_r2" llama-70b 600
+chk_code     "QOS-RES-003 a fresh request on the re-created bucket is admitted" 200 "$RR"
+chk_not_has  "QOS-RES-003 it was not refused against a claim nobody released" "token_quota_would_exceed" "$RR"
+chk_receipt  "QOS-RES-003 and it reached the backend" 1 "$RR_NONCE"
+qos_epoch_ok "QOS-RES-003 the whole sequence stayed inside one quota epoch"
+
+echo ""
+echo "-- QOS-OUT: the policy store goes away --"
+echo "   The posture the ladder is supposed to hold: a keyed identity whose"
+echo "   limits are UNKNOWABLE fails closed with policy_store_unavailable and"
+echo "   a 503 -- never a 429, which tells the client to slow down when the"
+echo "   truth is that the gateway cannot tell. An identity the store HAS"
+echo "   answered for keeps being served from the last known answer. And the"
+echo "   opt-in keyless bucket, alone, fails open."
+echo ""
+echo "   Warming first, while the store is healthy. Which identities are"
+echo "   cached and which are not IS the variable every case below turns on,"
+echo "   so it is established deliberately rather than inherited:"
+echo "     f1  driven now, then given an rps=1 row      -> enforced in outage"
+echo "     f2  given a row and then DELETED             -> last-known says"
+echo "         'no row', and the TTL entry is dropped by the delete, so"
+echo "         serving f2 during the outage can ONLY have come from the"
+echo "         last-known map"
+echo "     f3  never driven, never configured           -> unknowable"
+echo "     f4  never driven, and kept for the recovery  -> unknowable"
+store_lever_ok "QOS-OUT-001 the store answers the data-plane role before the outage" serves
+qreq 2063 "Authorization: Bearer $TOK_f1"
+chk_code     "QOS-OUT-001 f1 is served while the store is healthy" 200 "$QR"
+qos_cfg POST /config/ai/user/ratelimit \
+  "{\"tenant_id\":\"$QOS_OUT_T\",\"user_id\":\"$SUB_f1\",\"rps\":1}"
+qos_cfg_ok   "QOS-OUT-001 f1 is given an explicit rps=1 row"
+# f2 is driven FIRST. Every rung the ladder consults is a separate store
+# read with its own cache entry -- the user row, and the user|model row that
+# stage 3 reads next to it -- and only a read the store has ANSWERED leaves a
+# last-known value behind. Setting f2's row without driving f2 leaves its
+# user|model read unknowable, and the outage then refuses f2 for a rung this
+# case is not about, which is exactly what the first run of this arm did.
+qreq 2063 "Authorization: Bearer $TOK_f2"
+chk_code     "QOS-OUT-001 f2 is served while the store is healthy" 200 "$QR"
+qos_cfg POST /config/ai/user/ratelimit \
+  "{\"tenant_id\":\"$QOS_OUT_T\",\"user_id\":\"$SUB_f2\",\"rps\":1}"
+qos_cfg_ok   "QOS-OUT-001 f2 is given a row"
+qos_cfg DELETE "/config/ai/user/ratelimit/$QOS_OUT_T/$SUB_f2"
+qos_cfg_ok   "QOS-OUT-001 f2's row is deleted again - a store-CONFIRMED 'no row'"
+
+PSU0=$(metric_value loxilb_ai_policy_store_unavailable_total)
+store_outage_on >/dev/null
+store_lever_ok "QOS-OUT-001 the outage lever errors the data-plane role's reads" errors
+
+echo ""
+echo "QOS-OUT-001: rows the store already answered for go on being enforced."
+qos_pair 2063 "Authorization: Bearer $TOK_f1" "Authorization: Bearer $TOK_f1"
+qos_gap_ok   "QOS-OUT-001 the pair decided inside one refill"
+chk_code     "QOS-OUT-001 f1's first request is still served during the outage" 200 "$QP1"
+chk_code     "QOS-OUT-001 f1's second request is still REFUSED by the cached row" 429 "$QP2"
+chk_has      "QOS-OUT-001 and the refusal is the user rung, not the outage" "user_rate_limit_exceeded" "$QP2"
+chk_not_has  "QOS-OUT-001 the outage did not switch the rung off" "policy_store_unavailable" "$QP2"
+echo "  and the last-known map, specifically: f2's TTL entry was dropped by the"
+echo "  DELETE, so a build that only kept a TTL cache would have nothing to"
+echo "  answer from and would refuse f2 with the outage's code."
+qreq 2063 "Authorization: Bearer $TOK_f2"
+chk_code     "QOS-OUT-001 f2 is served from the store-confirmed 'no row'" 200 "$QR"
+chk_receipt  "QOS-OUT-001 and f2's request reached the backend" 1 "$QR_NONCE"
+
+echo ""
+echo "QOS-OUT-002: an identity the store has NEVER answered for is refused,"
+echo "             with the outage's own code."
+qreq 2063 "Authorization: Bearer $TOK_f3"
+chk_code     "QOS-OUT-002 f3 is refused" 503 "$QR"
+chk_has      "QOS-OUT-002 with the store's code" "policy_store_unavailable" "$QR"
+chk_not_has  "QOS-OUT-002 and NOT as a rate decision" "rate_limit_exceeded" "$QR"
+chk_not_has  "QOS-OUT-002 and not as a token decision" "token_quota_exceeded" "$QR"
+chk_receipt  "QOS-OUT-002 the refused request never reached the backend" 0 "$QR_NONCE"
+PSU1=$(metric_value loxilb_ai_policy_store_unavailable_total)
+if [ "$PSU0" = "unreadable" ] || [ "$PSU1" = "unreadable" ]; then
+  note_case "QOS-OUT-002"
+  echo "  [FAIL] QOS-OUT-002 policy_store_unavailable_total is unreadable - the outage has no counter"
+  FAIL=$((FAIL + 1))
+elif [ "$PSU1" -gt "$PSU0" ]; then
+  note_case "QOS-OUT-002"
+  echo "  [PASS] QOS-OUT-002 the outage counter moved ($PSU0 -> $PSU1) - reported as an outage, not a throttle"
+  PASS=$((PASS + 1))
+else
+  note_case "QOS-OUT-002"
+  echo "  [FAIL] QOS-OUT-002 policy_store_unavailable_total did not move ($PSU0 -> $PSU1):"
+  echo "         a store outage that reports as a rate-limit spike sends the operator"
+  echo "         looking at the tenant instead of at the store"
+  FAIL=$((FAIL + 1))
+fi
+
+echo ""
+echo "QOS-OUT-003: the opt-in keyless bucket is the ONE arm that fails open."
+echo "             :2064 and :2066 have never been driven, so neither has a"
+echo "             rule-scope defaults row the store has answered for. The"
+echo "             same unreadable read reaches both. The only difference"
+echo "             between the two requests is a credential -- which is"
+echo "             exactly the line the posture draws."
+PSU2=$(metric_value loxilb_ai_policy_store_unavailable_total)
+QR=$(req 2064 "$body_llama"); QR_NONCE=$(last_nonce)
+chk_code     "QOS-OUT-003 the keyless request is SERVED with its defaults unreadable" 200 "$QR"
+chk_receipt  "QOS-OUT-003 and it reached the backend" 1 "$QR_NONCE"
+chk_not_has  "QOS-OUT-003 it was not refused with the outage's code" "policy_store_unavailable" "$QR"
+qreq 2066 "Authorization: Bearer $TOK_f4"
+chk_code     "QOS-OUT-003 the CREDENTIALED request on the same unreadable row is refused" 503 "$QR"
+chk_has      "QOS-OUT-003 with the store's code" "policy_store_unavailable" "$QR"
+chk_receipt  "QOS-OUT-003 and it never reached the backend" 0 "$QR_NONCE"
+PSU3=$(metric_value loxilb_ai_policy_store_unavailable_total)
+if [ "$PSU2" = "unreadable" ] || [ "$PSU3" = "unreadable" ]; then
+  note_case "QOS-OUT-003"
+  echo "  [FAIL] QOS-OUT-003 the outage counter is unreadable - the fail-open cannot be told from the fail-closed"
+  FAIL=$((FAIL + 1))
+else
+  chk_num "QOS-OUT-003 exactly one of the two requests was reported as an outage" 1 $((PSU3 - PSU2))
+fi
+
+echo ""
+echo "QOS-OUT-004: the store comes back and enforcement comes back with it,"
+echo "             with no gateway restart."
+GW_START0=$(docker inspect -f '{{.State.StartedAt}}' llb1 2>/dev/null)
+store_outage_off >/dev/null
+store_lever_ok "QOS-OUT-004 the store answers the data-plane role again" serves
+sleep 1
+qreq 2066 "Authorization: Bearer $TOK_f4"
+chk_code     "QOS-OUT-004 f4 - refused moments ago - is served now" 200 "$QR"
+chk_receipt  "QOS-OUT-004 and it reached the backend" 1 "$QR_NONCE"
+qreq 2063 "Authorization: Bearer $TOK_f3"
+chk_code     "QOS-OUT-004 f3 is served too" 200 "$QR"
+echo "  and recovery is not amnesia: f1's row must still bind."
+qos_pair 2063 "Authorization: Bearer $TOK_f1" "Authorization: Bearer $TOK_f1"
+qos_gap_ok   "QOS-OUT-004 the pair decided inside one refill"
+chk_code     "QOS-OUT-004 f1's first request admitted" 200 "$QP1"
+chk_code     "QOS-OUT-004 f1's second request still refused by its row" 429 "$QP2"
+chk_has      "QOS-OUT-004 by the user rung" "user_rate_limit_exceeded" "$QP2"
+GW_START1=$(docker inspect -f '{{.State.StartedAt}}' llb1 2>/dev/null)
+note_case "QOS-OUT-004"
+if [ -z "$GW_START0" ] || [ -z "$GW_START1" ]; then
+  echo "  [FAIL] QOS-OUT-004 the gateway's start time is unreadable - 'without a restart' is unproven"
+  FAIL=$((FAIL + 1))
+elif [ "$GW_START0" = "$GW_START1" ]; then
+  echo "  [PASS] QOS-OUT-004 the gateway never restarted ($GW_START1)"
+  PASS=$((PASS + 1))
+else
+  echo "  [FAIL] QOS-OUT-004 the gateway restarted during the outage ($GW_START0 -> $GW_START1):"
+  echo "         recovery through a restart is not the property this case claims"
+  FAIL=$((FAIL + 1))
+fi
+
+echo ""
+echo "-- QOS-ID: identities the bucket keyspace cannot represent --"
+echo "   The quota keys are composed by concatenation: the tenant aggregate"
+echo "   bucket is the BARE tenant id, tenant|model joins with '|', and the"
+echo "   user, key and VIP scopes carry a reserved prefix that the peer-sync"
+echo "   wire reads as the scope. So a tenant literally named 'a|b' IS tenant"
+echo "   a's model-b bucket, and one named 'uq:a|b' IS a user bucket on the"
+echo "   wire. Two identities, one quota."
+
+echo ""
+echo "QOS-ID-001: an unsafe identity arriving FROM THE IDP is refused"
+echo "            admission, and nothing is delivered."
+echo "            x1 and x2 are ordinary Keycloak users whose tenant_id"
+echo "            attribute happens to be unrepresentable. A signature does"
+echo "            not make a claim safe -- it proves the IdP minted it, and"
+echo "            IdPs mint what their directories hold."
+echo "            The client body is NOT the oracle here. The 401 surface is"
+echo "            deliberately coarse -- every 401-class refusal collapses to"
+echo "            invalid_token so the gate cannot be used to probe what an"
+echo "            IdP holds -- and the validation metric labels that same"
+echo "            coarse code. The reason reaches the gateway log and nowhere"
+echo "            else, so the log is what gets read, and the count is taken"
+echo "            as a DELTA so an earlier run's lines cannot supply it."
+echo "            x1 and x2 exercise DIFFERENT guards: x1's tenant carries the"
+echo "            composite-key delimiter, x2's carries a reserved scope"
+echo "            prefix and no delimiter at all -- so a build that checked"
+echo "            only for '|' would refuse x1 and admit x2."
+IDLOG0=$(gw_log_count "unsafe_identity")
+IDDEL0=$(gw_log_count "control characters and")
+IDPFX0=$(gw_log_count "reserved rate-limit scope prefix")
+qreq 2040 "Authorization: Bearer $TOK_x1"
+chk_code     "QOS-ID-001 the pipe-bearing tenant claim is refused" 401 "$QR"
+chk_receipt  "QOS-ID-001 nothing was delivered" 0 "$QR_NONCE"
+qreq 2040 "Authorization: Bearer $TOK_x2"
+chk_code     "QOS-ID-001 the reserved-prefix tenant claim is refused" 401 "$QR"
+chk_receipt  "QOS-ID-001 nothing was delivered" 0 "$QR_NONCE"
+IDLOG1=$(gw_log_count "unsafe_identity")
+IDDEL1=$(gw_log_count "control characters and")
+IDPFX1=$(gw_log_count "reserved rate-limit scope prefix")
+chk_num      "QOS-ID-001 both refusals are attributed to the identity, not to a bad token" 2 $((IDLOG1 - IDLOG0))
+chk_num      "QOS-ID-001 exactly one was the delimiter guard" 1 $((IDDEL1 - IDDEL0))
+chk_num      "QOS-ID-001 and exactly one was the reserved-prefix guard" 1 $((IDPFX1 - IDPFX0))
+echo "  Non-vacuity: a SAFE identity on the same port, in the same moment, is served."
+qreq 2040 "Authorization: Bearer $TOK_z"
+chk_code     "QOS-ID-001 a safe neighbour identity is still admitted" 200 "$QR"
+chk_receipt  "QOS-ID-001 and it reached the backend" 1 "$QR_NONCE"
+
+echo ""
+echo "QOS-ID-002: neighbour identities do not alias one another's quota, and"
+echo "            the config surfaces refuse the names that would make them."
+echo "            The IdP half is guarded above; these are the OPERATOR"
+echo "            surfaces, which reach the same bucket keys by a different"
+echo "            road."
+qos_cfg POST /config/ai/tenant/ratelimit \
+  "{\"tenant_id\":\"tenant-qi|llama-70b\",\"tokens_per_min\":100}"
+chk_num      "QOS-ID-002 a tenant named like a tenant|model key is refused" 1 \
+             "$(case "$QOS_CFG_CODE" in 4*) echo 1;; *) echo 0;; esac)"
+QOS_CFG_FRESH=0
+qos_cfg POST /config/ai/tenant/ratelimit \
+  "{\"tenant_id\":\"uq:tenant-qi|z\",\"tokens_per_min\":100}"
+chk_num      "QOS-ID-002 a tenant carrying a reserved scope prefix is refused" 1 \
+             "$(case "$QOS_CFG_CODE" in 4*) echo 1;; *) echo 0;; esac)"
+QOS_CFG_FRESH=0
+qos_cfg POST /config/ai/tenant/ratelimit \
+  "{\"tenant_id\":\"tenant-qi\",\"tokens_per_min\":100,\"model_limits\":[{\"model\":\"llama|70b\",\"tokens_per_min\":10}]}"
+chk_num      "QOS-ID-002 a MODEL name carrying the delimiter is refused" 1 \
+             "$(case "$QOS_CFG_CODE" in 4*) echo 1;; *) echo 0;; esac)"
+QOS_CFG_FRESH=0
+qos_cfg POST /config/ai/apikey \
+  "{\"tenant_id\":\"v:10.10.10.254:2040\",\"name\":\"alias-probe\",\"allowed_models\":[\"llama-70b\"]}"
+chk_num      "QOS-ID-002 an API KEY minting such a tenant is refused too" 1 \
+             "$(case "$QOS_CFG_CODE" in 4*) echo 1;; *) echo 0;; esac)"
+QOS_CFG_FRESH=0
+echo "  Non-vacuity: the same surfaces accept an ordinary name."
+qos_cfg POST /config/ai/tenant/ratelimit "{\"tenant_id\":\"tenant-qi\",\"tokens_per_min\":100000}"
+qos_cfg_ok   "QOS-ID-002 an ordinary tenant_id is still accepted"
+
+echo "  And the runtime half: z and zz differ only by a repeated character,"
+echo "  so a key built without a delimiter would put them in one bucket."
+qos_cfg POST /config/ai/user/ratelimit \
+  "{\"tenant_id\":\"tenant-qi\",\"user_id\":\"$SUB_z\",\"rps\":1}"
+qos_cfg_ok   "QOS-ID-002 an explicit rps=1 row for z alone"
+qos_pair 2063 "Authorization: Bearer $TOK_z" "Authorization: Bearer $TOK_z"
+qos_gap_ok   "QOS-ID-002 z's pair decided inside one refill"
+chk_code     "QOS-ID-002 z's first request admitted" 200 "$QP1"
+chk_code     "QOS-ID-002 z's second request refused by its own row" 429 "$QP2"
+chk_has      "QOS-ID-002 by the user rung" "user_rate_limit_exceeded" "$QP2"
+qos_pair 2063 "Authorization: Bearer $TOK_zz" "Authorization: Bearer $TOK_zz"
+qos_gap_ok   "QOS-ID-002 zz's pair decided inside one refill"
+chk_code     "QOS-ID-002 zz's first request admitted" 200 "$QP1"
+chk_code     "QOS-ID-002 zz's second request admitted - z's row did not reach it" 200 "$QP2"
+chk_receipt  "QOS-ID-002 and zz's second request reached the backend" 1 "$QP2_NONCE"
+
+# Fault-injection hygiene. Not asserted: the verdicts are already in, and a
+# teardown failure must not be reported as a product verdict.
+qos_cfg DELETE "/config/ai/user/ratelimit/$QOS_OUT_T/$SUB_f1"
+qos_cfg DELETE "/config/ai/user/ratelimit/tenant-qi/$SUB_z"
+qos_cfg POST /config/ai/tenant/ratelimit \
+  "{\"tenant_id\":\"$QOS_FI_T\",\"tokens_per_min\":0,\"model_limits\":[{\"model\":\"mistral-7b\",\"tokens_per_min\":0},{\"model\":\"llama-70b\",\"tokens_per_min\":0}]}"
+qos_cfg POST /config/ai/tenant/ratelimit '{"tenant_id":"tenant-qi","tokens_per_min":0}'
+QOS_CFG_FRESH=0
+
 # Hygiene: the rule-scope rows outlive the cases that needed them, and the
 # next thing to run on :2059/:2060 would inherit limits it never asked for.
 # Not asserted - the cases that matter have already been decided, and a
@@ -1977,7 +2500,10 @@ EXPECTED_CASES="A1 A2 A3 A4 A5 A6 A7 A8 B1 B2 B3 C1 C2 C3 C4 C5 C6 D1 D2 D3 D4 D
 QOS-RPS-001 QOS-RPS-002 QOS-RPS-003 QOS-RPS-004 QOS-RPS-005 \
 QOS-DEF-001 QOS-DEF-002 QOS-DEF-003 \
 QOS-VIP-001 QOS-VIP-004 \
-QOS-TPM-001 QOS-TPM-002 QOS-TPM-003 QOS-TPM-004 QOS-TPM-005 QOS-TPM-006"
+QOS-TPM-001 QOS-TPM-002 QOS-TPM-003 QOS-TPM-004 QOS-TPM-005 QOS-TPM-006 \
+QOS-RES-001 QOS-RES-002 QOS-RES-003 \
+QOS-OUT-001 QOS-OUT-002 QOS-OUT-003 QOS-OUT-004 \
+QOS-ID-001 QOS-ID-002"
 missing=""
 for want in $EXPECTED_CASES; do
   case " $SEEN_CASES " in
