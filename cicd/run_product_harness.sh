@@ -74,10 +74,11 @@ cd "$(dirname "$0")" || exit 1
 # become the reported verdict — a green test filed as a failure. `true` is the
 # honest cleanup for a scenario that creates nothing.
 #
-# Phase tags map to docs/internal/CICD_PRODUCT_HARNESS_V2.md. A scenario may
-# appear in more than one phase's work; the tag records which phase put it
-# under CI, so `--phase` answers "what did that phase deliver", not "what does
-# that phase touch".
+# The phase tag is a delivery grouping, so that `--phase N` can re-run exactly
+# the set of scenarios one piece of work put under automation. A scenario may
+# be touched by several pieces of work; the tag records which one first brought
+# it under automation, so `--phase` answers "what did that work deliver", not
+# "what does it touch". `-` means the scenario predates the grouping.
 #
 # 🚨 A step must be the thing CI runs, not something adjacent to it. This row
 # pointed at ai-multitier-contract's run-unit.sh, which is the evidence-
