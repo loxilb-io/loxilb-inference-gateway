@@ -607,6 +607,7 @@ type DpHookInterface interface {
 	DpLBCtFlush(*LBCtDpWorkQ) int
 	DpLBSessionReset(*LBSessionResetWorkQ) int
 	DpLBEndpointHealthUpdate(svcIP net.IP, svcPort uint16, proto uint8, epIndex int, inactive bool) int
+	DpLBEndpointHealthUpdateByAddr(svcIP net.IP, svcPort uint16, proto uint8, epIP net.IP, epPort uint16, inactive bool) int
 	DpLBEndpointHostStateUpdate(svcIP net.IP, svcPort uint16, proto uint8, epIP net.IP, hostState string) int
 	DpLBSetCircuitBreaker(svcIP net.IP, svcPort uint16, proto uint8, enabled bool, failureThreshold uint32, openTimeoutSec uint32) int
 	DpFwRuleAdd(w *FwDpWorkQ) int

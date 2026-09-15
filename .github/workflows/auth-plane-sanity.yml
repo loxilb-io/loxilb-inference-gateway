@@ -35,7 +35,9 @@ on:
       - 'options/**'
       - 'cicd/ai-authsep/**'
       - 'cicd/ai-multitier-security/**'
+      - 'cicd/ai-multitier-contract/**'
       - 'scripts/check-source-invariants.sh'
+      - 'scripts/check_conv_pool_identity.py'
       - 'scripts/aigw-db-bootstrap.sql'
       - 'loxilb-ebpf'
       - '.github/workflows/auth-plane-sanity.yml'
@@ -53,7 +55,9 @@ on:
       - 'options/**'
       - 'cicd/ai-authsep/**'
       - 'cicd/ai-multitier-security/**'
+      - 'cicd/ai-multitier-contract/**'
       - 'scripts/check-source-invariants.sh'
+      - 'scripts/check_conv_pool_identity.py'
       - 'scripts/aigw-db-bootstrap.sql'
       - 'loxilb-ebpf'
       - '.github/workflows/auth-plane-sanity.yml'
@@ -105,6 +109,23 @@ jobs:
           # does not stay one header line. Standalone, so it needs nothing
           # from the datapath build.
           make -C loxilb-ebpf/common test_l7hdr
+
+      # The public argument contract. These checks need no Gateway and no
+      # topology, which is why they belong in this job rather than a container
+      # lane -- the directory has no config/validation/rmconfig trio and so was
+      # reachable from neither the local runner nor any workflow.
+      #
+      # The unittest half pins numeric/enum admission, engine-topology
+      # dependencies and the P/D threshold declaration contracts. The inventory
+      # half is the drift gate: it fails when the published argument inventory
+      # stops matching the Swagger sources it was generated from.
+      #
+      # The commands live in the scenario directory rather than here so that
+      # the product harness runs this gate and not an approximation of it.
+      # Inline, they were reachable only from this workflow, and the harness
+      # registry pointed at a different script entirely.
+      - name: Multi-tier argument contract
+        run: ./cicd/ai-multitier-contract/run-ci-gates.sh
 
       - name: Disposable PostgreSQL for the store-backed suites
         # The store legs run with *_TEST_PG=required below: with the server

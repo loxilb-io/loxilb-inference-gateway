@@ -321,18 +321,25 @@ fi
 # in the gate header against its Go //export twin, so a pin/export mismatch
 # turns red here instead of at runtime.
 #
+# Both int- and void-returning prototypes. It read only `extern int` at first,
+# which quietly exempted every REPORTING export -- the record/hit/usage
+# family, all of them void -- from the one check that covers them. Those are
+# the exports most likely to gain a parameter, because a counter gaining a
+# label is exactly how that happens, and they were the ones not being looked
+# at. Nothing about the failure mode depends on the return type.
+#
 # Counting is by top-level comma; neither side declares function-typed or
 # grouped parameters in this surface, and if one ever appears the check
 # fails loud rather than guessing.
 # ---------------------------------------------------------------------------
 c_param_count() { # c_param_count <name> — arity of the extern prototype
-  sed -n "/extern int $1(/,/);/p" "$C_DECL" | tr '\n' ' ' \
+  sed -n "/extern [a-z]* $1(/,/);/p" "$C_DECL" | tr '\n' ' ' \
     | sed -e "s/.*$1(//" -e 's/).*//' \
     | awk -F',' '{ gsub(/^[ \t]+|[ \t]+$/, ""); if ($0 == "" || $0 == "void") print 0; else print NF }'
 }
 arity_bad=""
 arity_checked=0
-for name in $(grep -ohE 'extern int (llb_[a-z0-9_]+)\(' "$C_DECL" | sed -e 's/extern int //' -e 's/($//' -e 's/(.*//'); do
+for name in $(grep -ohE 'extern (int|void) (llb_[a-z0-9_]+)\(' "$C_DECL" | sed -e 's/extern \(int\|void\) //' -e 's/($//' -e 's/(.*//'); do
   gofile="$(grep -rlE "^//export $name\$" pkg/loxinet/*.go 2>/dev/null | head -1)"
   # Header-declared, no Go export: the weak stub covers it; section 7 owns
   # whether that is allowed for a given symbol. Arity has nothing to check.
@@ -354,15 +361,176 @@ for name in $(grep -ohE 'extern int (llb_[a-z0-9_]+)\(' "$C_DECL" | sed -e 's/ex
     arity_bad="$arity_bad $name(C=$ccount,Go=$gcount)"
   fi
 done
-if [ "$arity_checked" -lt 6 ]; then
+if [ "$arity_checked" -lt 16 ]; then
   # The parser finding almost nothing is its own failure: a header rename
-  # must not turn this check into a vacuous pass.
+  # must not turn this check into a vacuous pass. The floor tracks the real
+  # surface and was raised when void-returning exports were brought in: it
+  # sat at 6 while 11 symbols matched, so the reporting exports could all
+  # have vanished from the scan without the floor noticing.
   fail "export-arity check matched only $arity_checked symbols — parser or header moved"
 elif [ -n "$arity_bad" ]; then
   fail "export arity disagrees between the pinned C header and the Go exports:$arity_bad"
   printf '          the checked-out loxilb-ebpf pin and the Go //export signatures must move together\n'
 else
   pass "export arity is lockstep between C header and Go exports ($arity_checked symbols)"
+fi
+
+# ---------------------------------------------------------------------------
+# 10. The missing-usage reason vocabulary is lockstep between C and Go.
+#
+# loxilb_ai_tokens_missing_total's reason label is a STRING chosen in the data
+# plane (LLB_AI_UMISS_* in the gate header) and validated in the control plane
+# (TokenMissingReason* in api/prometheus/ai_metrics.go). Same problem as the
+# flag bits above, one step worse: the arity check in section 9 compares
+# parameter COUNTS, which a value change does not touch, and the Go allow-list
+# deliberately COLLAPSES anything it does not recognise onto "unknown" so a
+# skewed value can never crash the datapath.
+#
+# That is right at runtime and silent in CI. Mistype one literal on either side
+# and the C still compiles, the Go unit tests still pass (they assert against
+# the Go constants, which agree with themselves), the manifest still validates
+# (it declares the label NAME, not its values) -- and every report in
+# production lands in "unknown". The label stops splitting anything, the
+# per-tenant comparison it exists for answers nothing, and the dashboard shows
+# one flat series that reads like an absence of traffic. Nothing goes red.
+#
+# Three ways that drift can happen, and this section closes all three:
+#   a. a value typed differently on the two sides   -> pairwise comparison
+#   b. a NEW reason added in C with no Go constant  -> C define count
+#   c. a Go constant with no C producer             -> Go constant count
+#
+# The pair list is explicit, exactly like flags_pairs above: adding a reason is
+# supposed to be a two-repo change, and having to name it here is the point.
+# ---------------------------------------------------------------------------
+PROM_GO="api/prometheus/ai_metrics.go"
+# C suffix : Go suffix. Values that cross the cgo boundary, so both sides must
+# spell them identically.
+umiss_pairs="RESPONSE_COMPLETE:ResponseComplete H2_STREAM_CLOSE:H2StreamClose CONNECTION_CLOSE:ConnectionClose"
+# Go-only reasons: written on paths that never reach C. stream_estimated is the
+# streamed arm inside RecordTokenUsage; unknown is where an unrecognised value
+# lands. Named here so the Go-side count below cannot absorb a stray constant.
+umiss_go_only="StreamEstimated Unknown"
+
+umiss_bad=""
+umiss_pair_count=0
+for pair in $umiss_pairs; do
+  cname="${pair%%:*}"; goname="${pair##*:}"
+  umiss_pair_count=$((umiss_pair_count + 1))
+  cval="$(grep -ohE "#define +LLB_AI_UMISS_$cname +\"[a-z0-9_]+\"" "$C_DECL" \
+          | grep -oE '"[a-z0-9_]+"' | tr -d '"' | head -1)"
+  gval="$(grep -ohE "TokenMissingReason$goname += +\"[a-z0-9_]+\"" "$PROM_GO" \
+          | grep -oE '"[a-z0-9_]+"' | tr -d '"' | head -1)"
+  if [ -z "$cval" ] || [ -z "$gval" ] || [ "$cval" != "$gval" ]; then
+    umiss_bad="$umiss_bad $cname(C=${cval:-missing},Go=${gval:-missing})"
+  fi
+done
+
+# (b) Every LLB_AI_UMISS_* define must be named above. A fourth reason added in
+# the data plane with no Go constant is the drift that lands silently in
+# "unknown", so an unnamed define is a failure, not a skip.
+c_umiss_count="$(grep -cE '^#define +LLB_AI_UMISS_[A-Z0-9_]+ +"' "$C_DECL")"
+if [ "$c_umiss_count" != "$umiss_pair_count" ]; then
+  umiss_bad="$umiss_bad define-count(header=$c_umiss_count,checked=$umiss_pair_count)"
+fi
+
+# (c) And every Go constant must be either one of the pairs or declared Go-only,
+# so a constant added to the allow-list with nothing in the data plane to
+# produce it is visible rather than dead.
+go_only_count="$(printf '%s\n' $umiss_go_only | grep -c .)"
+go_umiss_count="$(grep -cE '^[[:space:]]*TokenMissingReason[A-Za-z0-9]+ += +"' "$PROM_GO")"
+go_umiss_expect=$((umiss_pair_count + go_only_count))
+if [ "$go_umiss_count" != "$go_umiss_expect" ]; then
+  umiss_bad="$umiss_bad go-const-count(file=$go_umiss_count,expected=$go_umiss_expect)"
+fi
+
+# (d) And the call sites must USE the defines. A bare "connection_close" typed
+# at a call site would satisfy everything above while drifting on its own, and
+# would make the whole section vacuous.
+umiss_calls="$(awk '
+  /llb_ai_record_usage_missing[ ]*\(/ {
+    if ($0 ~ /^[A-Za-z_]/) next       # the definition, at column 0
+    if ($0 ~ /extern/) next           # a prototype
+    buf = $0
+    while (buf !~ /;/) { if ((getline line) <= 0) break; buf = buf " " line }
+    calls++
+    if (buf ~ /LLB_AI_UMISS_/) ok++
+  }
+  END { printf "%d %d", calls, ok }
+' loxilb-ebpf/common/sockproxy_http.c loxilb-ebpf/common/sockproxy_h2.c)"
+umiss_ncall="${umiss_calls%% *}"; umiss_nok="${umiss_calls##* }"
+if [ "$umiss_ncall" -lt 4 ]; then
+  # Fewer call sites than the four report boundaries means the scan lost them,
+  # which would make (d) pass by finding nothing.
+  umiss_bad="$umiss_bad call-scan(found=$umiss_ncall,expected>=4)"
+elif [ "$umiss_ncall" != "$umiss_nok" ]; then
+  umiss_bad="$umiss_bad literal-at-call-site($((umiss_ncall - umiss_nok)) of $umiss_ncall)"
+fi
+
+if [ -n "$umiss_bad" ]; then
+  fail "missing-usage reason vocabulary is not lockstep between C and Go:$umiss_bad"
+  printf '          a value that disagrees does not crash and does not fail a test:\n'
+  printf '          it collapses to reason="unknown" and the label stops splitting\n'
+else
+  pass "missing-usage reason values are lockstep between C and Go ($umiss_pair_count shared, $umiss_nok call sites use the defines)"
+fi
+
+# ---------------------------------------------------------------------------
+# N. Conversation stickiness names the pool whose endpoint index it carries.
+#
+# Delegated to Python, because this one cannot be done with grep. The pool is
+# the LAST argument of each conv_map helper, so the check has to read a whole
+# argument list -- and an ERE that stops at the first ")" stops at a CAST's
+# paren, which is how "(const proxy_epval_t *)NULL" passed as a pool. It also
+# has to tell a CALL from a prototype, or a file's forward declarations keep
+# it "covered" after its real calls are renamed away. Both need paren and
+# brace matching; see the module docstring for the three holes this replaced
+# and how each was demonstrated.
+# ---------------------------------------------------------------------------
+if python3 -B scripts/check_conv_pool_identity.py; then
+  pass "conversation stickiness names its pool (see line above for call counts)"
+else
+  fail "conversation stickiness must name the pool its endpoint index belongs to"
+fi
+
+# The gate above is only worth what its failure mode is worth: each of its
+# checks is red-twinned on a doctored copy of the pinned source, so a check
+# that can no longer fail (helpers renamed, regex drifted, source moved) is
+# itself a failure here rather than a silently green line.
+if python3 -B scripts/check_conv_pool_identity.py --self-test; then
+  pass "conv-pool gate self-test: every check can go red"
+else
+  fail "conv-pool gate self-test: a check can no longer fail -- the gate is watching nothing"
+fi
+
+# ---------------------------------------------------------------------------
+# The product harness stays out of GitHub workflows.
+#
+# It is QA's tool, run manually on their own cadence, and a full pass is
+# scenario topology measured in minutes -- an order of magnitude more than a
+# PR gate should ever spend. CI reaches the scenarios it gates on directly
+# (cd cicd/<scenario>/ && ./config.sh && ./validation.sh && ./rmconfig.sh);
+# it must never go through the harness runner or its wrapper.
+#
+# This is a grep rather than a note in a README because the rule was broken
+# within minutes of the runner being written -- by wiring the runner's own
+# self-test into auth-plane-sanity, which is exactly the kind of small,
+# reasonable-looking step that puts an afternoon of topology on a PR.
+#
+# Matching is on INVOCATION, not on the name: a comment naming a script is
+# documentation, and ai-gateway-sanity legitimately carries one.
+harness_in_ci=""
+for wf in .github/workflows/*.yml .github/workflows/*.yaml; do
+  [ -f "$wf" ] || continue
+  # Strip comments before matching, so a mention is not an invocation.
+  if sed 's/#.*//' "$wf" \
+     | grep -qE '(^|[^A-Za-z0-9_/-])(\./)?(cicd/)?(run_product_harness|scenario_runner|scenario_runner_selftest|run_local_cicd)\.sh'; then
+    harness_in_ci="$harness_in_ci $(basename "$wf")"
+  fi
+done
+if [ -n "$harness_in_ci" ]; then
+  fail "the product harness is invoked by a workflow:$harness_in_ci -- it is QA's to run manually, never a CI gate"
+else
+  pass "no workflow invokes the product harness runner"
 fi
 
 echo "==========================="
