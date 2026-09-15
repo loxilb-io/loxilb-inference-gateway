@@ -502,6 +502,37 @@ else
   fail "conv-pool gate self-test: a check can no longer fail -- the gate is watching nothing"
 fi
 
+# ---------------------------------------------------------------------------
+# The product harness stays out of GitHub workflows.
+#
+# It is QA's tool, run manually on their own cadence, and a full pass is
+# scenario topology measured in minutes -- an order of magnitude more than a
+# PR gate should ever spend. CI reaches the scenarios it gates on directly
+# (cd cicd/<scenario>/ && ./config.sh && ./validation.sh && ./rmconfig.sh);
+# it must never go through the harness runner or its wrapper.
+#
+# This is a grep rather than a note in a README because the rule was broken
+# within minutes of the runner being written -- by wiring the runner's own
+# self-test into auth-plane-sanity, which is exactly the kind of small,
+# reasonable-looking step that puts an afternoon of topology on a PR.
+#
+# Matching is on INVOCATION, not on the name: a comment naming a script is
+# documentation, and ai-gateway-sanity legitimately carries one.
+harness_in_ci=""
+for wf in .github/workflows/*.yml .github/workflows/*.yaml; do
+  [ -f "$wf" ] || continue
+  # Strip comments before matching, so a mention is not an invocation.
+  if sed 's/#.*//' "$wf" \
+     | grep -qE '(^|[^A-Za-z0-9_/-])(\./)?(cicd/)?(run_product_harness|scenario_runner|scenario_runner_selftest|run_local_cicd)\.sh'; then
+    harness_in_ci="$harness_in_ci $(basename "$wf")"
+  fi
+done
+if [ -n "$harness_in_ci" ]; then
+  fail "the product harness is invoked by a workflow:$harness_in_ci -- it is QA's to run manually, never a CI gate"
+else
+  pass "no workflow invokes the product harness runner"
+fi
+
 echo "==========================="
 if [ "$FAILED" = "0" ]; then echo "ALL INVARIANTS HOLD"; else echo "INVARIANTS VIOLATED"; fi
 exit "$FAILED"
