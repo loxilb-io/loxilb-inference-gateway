@@ -19,12 +19,21 @@
 #   check 5  GET /metrics counter deltas for the 9 routing counters (miss-reason is ONE CounterVec{reason}).
 #   check 6  publisher --kill/restart -> loxilb_kv_subscriber_connected transition + inventory clear + replay.
 #   check 7  feature-enable verified live (kvExactMode active on the rule).
+#   check 9  P/D lifecycle taxonomy — a decode-leg wedge must move
+#            loxilb_ai_pd_requests_total{phase="decode",status="timeout"} and must leave
+#            {phase="prefill",status="timeout"} flat, carrying the request's own model
+#            label. Runs BEFORE check 8, whose collision pre-clean destroys the topology.
 #   check 8  vllm-pd-disagg byte-for-byte re-run [PASS] AFTER the l3ep1/l3ep2 collision pre-clean.
 #
 # Metric source-of-truth (api/prometheus/sockproxy_metrics.go):
 #   loxilb_pd_kv_tier15_hits_total{ep_idx}        loxilb_pd_kv_tier15_miss_reason_total{reason}
 #   loxilb_pd_kv_tier15_fallthrough_total         loxilb_kv_subscriber_connected{service,ep}
 #   loxilb_kv_subscriber_reconnect_total{...}     loxilb_kv_subscriber_recv_error_total{...}
+# P/D lifecycle (api/prometheus/ai_metrics.go, RecordPDRequest):
+#   loxilb_ai_pd_requests_total{model,phase,status} — phase/status are derived from the
+#   error_phase the datapath passes to llb_ai_pd_record, so this family is the ONLY exported
+#   signal naming which leg of a pair failed and how. A family-total oracle cannot see a
+#   mislabel; check 9 therefore asserts per-{phase,status} child deltas, including flats.
 # Inventory: GET /netlox/v1/config/ai/kv/inventory?service_id=<id>&ep_idx=<idx>.
 #
 # REST hits localhost:11111 (auth-off, CICD mode) and MUST run in the llb1 netns (the REST API lives on
@@ -1446,6 +1455,155 @@ echo "  HOL inflation = concurrent_tail - baseline_tail = $(( hol_conc_p99 - hol
 # now visible). We do NOT assert a magnitude (mock rig) — only that both tails are measured.
 hol_ok=$([[ "$hol_base_p99" -gt 0 && "$hol_conc_p99" -gt 0 ]] && echo 1 || echo 0)
 assert "HOL: single-client baseline + concurrent tail latency BOTH captured" "$hol_ok"
+
+#################################################################################
+# P/D lifecycle taxonomy — a decode-leg wedge must be reported as a DECODE fault
+#
+#     loxilb_ai_pd_requests_total{phase,status} is the only exported signal that
+#     says WHICH leg of a P/D pair failed and HOW. It is derived entirely from
+#     the error_phase the datapath passes to llb_ai_pd_record, so a wrong value
+#     is not a cosmetic mislabel -- it sends an operator to the wrong tier.
+#
+#     This stage drives the decode first-byte wedge: the decode endpoints accept
+#     the connection and then never answer and never close, which is the exact
+#     predicate the reaper tests (phase DECODE_SENDING, no decode byte, no
+#     content-length, elapsed >= timeout). The prefill leg completes normally.
+#     A wedged DECODE fleet must therefore move {phase="decode"} and must leave
+#     {phase="prefill",status="timeout"} alone.
+#
+#     🚨 THE FLAT ASSERTION IS THE POINT, not decoration. This regression is
+#     invisible to a family-total oracle: a mislabelled write moves the family
+#     by exactly as much as a correct one. Only the per-{phase,status} child
+#     can tell "the wedge was counted" from "the wedge was counted as a prefill
+#     timeout". Historically it was the latter, and the decode series never
+#     moved at all.
+#
+#     🚨 DRIVE SHAPE IS ASSERTED, NOT ASSUMED. A stub that gives up and CLOSES
+#     sends the decode leg down the zero-byte-EOF path instead, ~10s before the
+#     wedge can fire, and every assertion below would then be scoring the stub
+#     rather than the product. The witness is the ABSENCE of the zero-byte EOF
+#     line together with the PRESENCE of the wedge line, both counted from the
+#     datapath log, which is a third oracle independent of Prometheus and of
+#     the client receipts.
+#
+#     Placed before the collision pre-clean below, which destroys this
+#     scenario's topology.
+#################################################################################
+echo "=== P/D lifecycle taxonomy: a decode wedge is reported as a decode fault ==="
+
+PD_TAX_N=2
+PD_DECODE_NS="l3ep2 l3ep4 l3ep6"
+PD_SWAP="./pd-fault-swap.sh"
+DPLOG="/var/log/loxilbdp.log"
+PD_WEDGE_LINE="P/D decode first-byte timeout"
+PD_ZEOF_LINE="decode backend EOF with ZERO"
+
+# grep -cF, never -c: datapath tags look like "[KV_T15_FALLTHROUGH]" and as a
+# BRE that is a character class matching nearly every line. And an UNREADABLE
+# log must never score as zero -- grep exits 1 on no-match and >1 on a real
+# error, and collapsing those turns "I could not measure" into "nothing
+# happened".
+dplog_count() {
+    local out rc
+    out=$(docker exec llb1 grep -cF "$1" "${DPLOG}" 2>/dev/null); rc=$?
+    if [[ $rc -gt 1 ]]; then echo "-1"; else echo "${out:-0}"; fi
+}
+
+pd_req() {  # pd_req <phase> <status> — summed over models
+    metric_val "loxilb_ai_pd_requests_total\{[^}]*phase=\"$1\"[^}]*status=\"$2\""
+}
+
+# pd_req_empty_model <phase> <status> — the count carried by an EMPTY model
+# label. The summed view above is deliberately blind to this: a failure
+# labelled with a different model than the success for the SAME request still
+# adds to the family total, but vanishes from every per-model dashboard, alert
+# and filter. The reaper used to resolve the model from two sources and fall
+# back to "" while every other site used the four-source resolver, so a timed
+# out request was attributed to no model at all.
+pd_req_empty_model() {
+    metric_val "loxilb_ai_pd_requests_total\{model=\"\",[^}]*phase=\"$1\"[^}]*status=\"$2\""
+}
+
+pd_tax_ok=1
+pd_tax_note=""
+
+if [[ ! -x "${PD_SWAP}" ]]; then
+    pd_tax_ok=0; pd_tax_note="missing ${PD_SWAP}"
+else
+    # ---- control: healthy pair, nothing may look like a wedge --------------
+    for ns in ${PD_DECODE_NS}; do sudo ${PD_SWAP} "${ns}" ok >/dev/null || pd_tax_ok=0; done
+    sleep 2
+    c_succ_b=$(pd_req complete success); c_dtmo_b=$(pd_req decode timeout)
+    c_wedge_b=$(dplog_count "${PD_WEDGE_LINE}")
+    for i in $(seq 1 ${PD_TAX_N}); do
+        $hexec l3h1 curl -s -o /dev/null --max-time 30 \
+            -H 'Content-Type: application/json' \
+            -d '{"model":"test","messages":[{"role":"user","content":"pd taxonomy control"}]}' \
+            "http://${VIP}:${VPORT}/v1/chat/completions" || true
+    done
+    sleep 3
+    c_succ_a=$(pd_req complete success); c_dtmo_a=$(pd_req decode timeout)
+    c_wedge_a=$(dplog_count "${PD_WEDGE_LINE}")
+    echo "  control: {complete,success} ${c_succ_b}->${c_succ_a} ; {decode,timeout} ${c_dtmo_b}->${c_dtmo_a} ; wedge lines ${c_wedge_b}->${c_wedge_a}"
+    [[ "${c_dtmo_a}" == "${c_dtmo_b}" ]] || { pd_tax_ok=0; pd_tax_note="${pd_tax_note} control moved {decode,timeout};"; }
+    [[ "${c_wedge_a}" == "${c_wedge_b}" ]] || { pd_tax_ok=0; pd_tax_note="${pd_tax_note} control logged a wedge;"; }
+
+    # ---- fault: decode accepts and never answers --------------------------
+    for ns in ${PD_DECODE_NS}; do sudo ${PD_SWAP} "${ns}" hang >/dev/null || pd_tax_ok=0; done
+    sleep 2
+    f_ptmo_b=$(pd_req prefill timeout); f_dtmo_b=$(pd_req decode timeout)
+    f_derr_b=$(pd_req decode error)
+    f_wedge_b=$(dplog_count "${PD_WEDGE_LINE}"); f_zeof_b=$(dplog_count "${PD_ZEOF_LINE}")
+    f_dtmo_empty_b=$(pd_req_empty_model decode timeout)
+
+    pd_codes="${CFGDIR}/.pd-tax-codes"
+    : > "${pd_codes}"
+    for i in $(seq 1 ${PD_TAX_N}); do
+        ( $hexec l3h1 curl -s -o /dev/null --max-time 90 -w '%{http_code}\n' \
+            -H 'Content-Type: application/json' \
+            -d '{"model":"test","messages":[{"role":"user","content":"pd taxonomy wedge"}]}' \
+            "http://${VIP}:${VPORT}/v1/chat/completions" >> "${pd_codes}" 2>/dev/null ) &
+    done
+    wait
+    sleep 5
+
+    f_ptmo_a=$(pd_req prefill timeout); f_dtmo_a=$(pd_req decode timeout)
+    f_derr_a=$(pd_req decode error)
+    f_wedge_a=$(dplog_count "${PD_WEDGE_LINE}"); f_zeof_a=$(dplog_count "${PD_ZEOF_LINE}")
+
+    d_ptmo=$(( f_ptmo_a - f_ptmo_b ))
+    d_dtmo=$(( f_dtmo_a - f_dtmo_b ))
+    d_derr=$(( f_derr_a - f_derr_b ))
+    d_wedge=$(( f_wedge_a - f_wedge_b ))
+    d_zeof=$(( f_zeof_a - f_zeof_b ))
+    n_codes=$(grep -c . "${pd_codes}" 2>/dev/null || echo 0)
+
+    echo "  wedge: {decode,timeout} Δ${d_dtmo} (want ${PD_TAX_N}) ; {prefill,timeout} Δ${d_ptmo} (want 0) ; {decode,error} Δ${d_derr} (want 0)"
+    echo "  drive shape: wedge lines Δ${d_wedge} (want ${PD_TAX_N}) ; zero-byte-EOF lines Δ${d_zeof} (want 0) ; codes=$(tr '\n' ' ' < "${pd_codes}")"
+
+    # An empty %{http_code} is a FAILED SPAWN, never a gateway answer -- so the
+    # count of recorded codes must equal the number of requests issued or the
+    # measurement itself is lost.
+    [[ "${n_codes}" == "${PD_TAX_N}" ]] || { pd_tax_ok=0; pd_tax_note="${pd_tax_note} lost a measurement (${n_codes}/${PD_TAX_N} codes);"; }
+    [[ "${f_wedge_b}" != "-1" && "${f_zeof_b}" != "-1" ]] || { pd_tax_ok=0; pd_tax_note="${pd_tax_note} datapath log unreadable;"; }
+    [[ "${d_wedge}" == "${PD_TAX_N}" ]] || { pd_tax_ok=0; pd_tax_note="${pd_tax_note} wedge did not fire ${PD_TAX_N}x;"; }
+    [[ "${d_zeof}" == "0" ]] || { pd_tax_ok=0; pd_tax_note="${pd_tax_note} stub closed first (zero-byte EOF path);"; }
+    [[ "${d_dtmo}" == "${PD_TAX_N}" ]] || { pd_tax_ok=0; pd_tax_note="${pd_tax_note} {decode,timeout} Δ${d_dtmo};"; }
+    [[ "${d_ptmo}" == "0" ]] || { pd_tax_ok=0; pd_tax_note="${pd_tax_note} leaked into {prefill,timeout} Δ${d_ptmo};"; }
+    [[ "${d_derr}" == "0" ]] || { pd_tax_ok=0; pd_tax_note="${pd_tax_note} landed on {decode,error} Δ${d_derr};"; }
+    # The wedge must be attributed to the request's own model, exactly as the
+    # control's successes were. An empty-model child means the failure is
+    # invisible to every per-model view even though the family total moved.
+    d_empty=$(( $(pd_req_empty_model decode timeout) - f_dtmo_empty_b ))
+    echo "  model label: {decode,timeout} with model=\"\" Δ${d_empty} (want 0)"
+    [[ "${d_empty}" == "0" ]] || { pd_tax_ok=0; pd_tax_note="${pd_tax_note} wedge attributed to an EMPTY model label (Δ${d_empty});"; }
+
+    # ---- restore ----------------------------------------------------------
+    for ns in ${PD_DECODE_NS}; do sudo ${PD_SWAP} "${ns}" off >/dev/null || true; done
+    rm -f "${pd_codes}" 2>/dev/null || true
+fi
+[[ -n "${pd_tax_note}" ]] && echo "  detail:${pd_tax_note}"
+assert "P/D taxonomy: a decode wedge moves {decode,timeout} and leaves {prefill,timeout} flat" "$pd_tax_ok"
 
 #################################################################################
 # backward-compat — re-run cicd/vllm-pd-disagg byte-for-byte AFTER the collision pre-clean

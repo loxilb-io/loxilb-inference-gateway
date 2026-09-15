@@ -602,7 +602,10 @@ func TestRecordPDRequest_PhaseTaxonomy(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			model := "pd-taxonomy-" + tc.wantPhase + "-" + tc.wantStatus + "-" + tc.name
+			// No spaces: sanitizeLabel rewrites them, so a model name built
+			// from tc.name would be REGISTERED under one string and looked up
+			// under another, and every delta would read zero.
+			model := "pd-tax-" + strconv.Itoa(tc.errorPhase)
 
 			beforeReqs := getCounterValue(aiPDRequestsTotal, model, tc.wantPhase, tc.wantStatus)
 			beforeKvMissing := getCounterValue(aiPDKvParamsMissing, model)
