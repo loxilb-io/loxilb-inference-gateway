@@ -603,6 +603,34 @@ func (s *RateLimiterStore) SettleTokens(tenantID string, actual, reservedAmt int
 	return s.AllowTokens(tenantID, actual, tokensPerMin, burstPct)
 }
 
+// ReleaseReservation gives back a reservation without charging anything.
+//
+// It is SettleTokens' release half on its own, for the two callers that must
+// hand a claim back to a bucket they are not charging: the ladder's rollback
+// when a later bucket refuses, and settlement's release pass, which has to
+// reach buckets whose configuration stopped resolving while the request was
+// in flight and which therefore are not in the charge set at all.
+//
+// amt<=0 or resEpoch==0 mean no reservation was recorded. A bucket with no
+// entry has nothing to release. The epoch guard is the same one settlement
+// applies: a claim whose window has already rolled over was wiped by the
+// rollover, and releasing it here would take a claim the new window's
+// in-flight requests hold.
+func (s *RateLimiterStore) ReleaseReservation(key string, amt int, resEpoch int64) {
+	if amt <= 0 || resEpoch == 0 {
+		return
+	}
+	v, ok := s.quotaMap.Load(key)
+	if !ok {
+		return
+	}
+	e := v.(*tokenWindowEntry)
+	if atomic.LoadInt64(&e.windowEpoch) != resEpoch {
+		return
+	}
+	reservedSubClamp(e, int64(amt))
+}
+
 // reservedSubClamp releases amt from e.reserved without letting it go
 // negative. The CAS loop matters: an epoch advance can zero the counter
 // between the load and the store, and a blind AddInt64(-amt) would push it
