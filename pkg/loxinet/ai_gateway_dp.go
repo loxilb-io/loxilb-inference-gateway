@@ -1488,7 +1488,10 @@ func llb_ai_record_request(tenantID *C.char, modelName *C.char, statusCode C.int
 //	prefillLatencyMs: prefill phase duration in milliseconds; 0 when unknown
 //	decodeLatencyMs:  decode phase TTFT in milliseconds; 0 when unknown
 //	kvParamsFound:    1 when kv_transfer_params was found, 0 otherwise
-//	errorPhase:       0=success, 1=prefill_timeout, 2=decode_error
+//	errorPhase:       lifecycle outcome; names the leg that failed and how.
+//	                  0=complete/success, 1=prefill/timeout, 2=decode/error,
+//	                  3=decode/timeout, 4=prefill/error, 5=prefill/rejected.
+//	                  See prom.RecordPDRequest for the full contract.
 //
 //export llb_ai_pd_record
 func llb_ai_pd_record(modelName *C.char, prefillLatencyMs C.int64_t, decodeLatencyMs C.int64_t, kvParamsFound C.int, errorPhase C.int) {

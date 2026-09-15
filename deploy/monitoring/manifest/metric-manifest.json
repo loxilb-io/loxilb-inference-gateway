@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-15T12:52:07+00:00",
-  "source_revision": "3c7c949d2079cc7589799874d6180a5f60d23daa"
+  "generated_at": "2026-09-15T13:50:08+00:00",
+  "source_revision": "0d340fe3d3bf89e535557fc16b3d7b11f95e2bab"
  },
  "contract": {
   "total": 240,
@@ -2122,15 +2122,15 @@
      "symbol": "RecordNormalSessionHit",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 786,
+     "def_line": 823,
      "writes": "aiNormalSessionHitsTotal"
     },
     {
      "symbol": "llb_ai_normal_session_hit",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1531,
-     "call_line": 1534,
+     "def_line": 1534,
+     "call_line": 1537,
      "calls": "RecordNormalSessionHit",
      "entry_point": "cgo-export"
     }
@@ -2164,15 +2164,15 @@
      "symbol": "RecordPDRequest",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 715,
+     "def_line": 724,
      "writes": "aiPDDecodeTTFT"
     },
     {
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1494,
-     "call_line": 1497,
+     "def_line": 1497,
+     "call_line": 1500,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -2207,15 +2207,15 @@
      "symbol": "RecordPDRequest",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 715,
+     "def_line": 724,
      "writes": "aiPDKvParamsFound"
     },
     {
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1494,
-     "call_line": 1497,
+     "def_line": 1497,
+     "call_line": 1500,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -2250,15 +2250,15 @@
      "symbol": "RecordPDRequest",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 715,
+     "def_line": 724,
      "writes": "aiPDKvParamsMissing"
     },
     {
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1494,
-     "call_line": 1497,
+     "def_line": 1497,
+     "call_line": 1500,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -2293,15 +2293,15 @@
      "symbol": "RecordPDRequest",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 715,
+     "def_line": 724,
      "writes": "aiPDPrefillDuration"
     },
     {
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1494,
-     "call_line": 1497,
+     "def_line": 1497,
+     "call_line": 1500,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -2338,7 +2338,7 @@
      "symbol": "RecordPDRequest",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 715,
+     "def_line": 724,
      "writes": "aiPDRequestsTotal",
      "note": "labelled model/phase/status; the phase and status are derived from errorPhase, so one call produces exactly one child increment"
     },
@@ -2346,8 +2346,8 @@
      "symbol": "llb_ai_pd_record",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1494,
-     "call_line": 1497,
+     "def_line": 1497,
+     "call_line": 1500,
      "calls": "RecordPDRequest",
      "entry_point": "cgo-export",
      "note": "called by the C fullproxy datapath once per P/D lifecycle event"
@@ -2382,15 +2382,15 @@
      "symbol": "RecordPDSessionHit",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 756,
+     "def_line": 793,
      "writes": "aiPDSessionHitsTotal"
     },
     {
      "symbol": "llb_ai_pd_session_hit",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1506,
-     "call_line": 1509,
+     "def_line": 1509,
+     "call_line": 1512,
      "calls": "RecordPDSessionHit",
      "entry_point": "cgo-export"
     }
@@ -2425,15 +2425,15 @@
      "symbol": "RecordPDTierSelected",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 766,
+     "def_line": 803,
      "writes": "aiPDTierSelectedTotal"
     },
     {
      "symbol": "llb_ai_pd_tier_selected",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1519,
-     "call_line": 1522,
+     "def_line": 1522,
+     "call_line": 1525,
      "calls": "RecordPDTierSelected",
      "entry_point": "cgo-export"
     }
@@ -2466,7 +2466,7 @@
      "symbol": "RecordPolicyStoreUnavailable",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 805,
+     "def_line": 842,
      "writes": "aiPolicyStoreUnavailableTotal"
     },
     {
@@ -2555,7 +2555,7 @@
      "symbol": "RecordAIRequest",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 826,
+     "def_line": 863,
      "writes": "aiRequestDurationSeconds"
     },
     {
@@ -2602,7 +2602,7 @@
      "symbol": "RecordAIRequest",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 826,
+     "def_line": 863,
      "writes": "aiRequestsTotal",
      "note": "outcome=completed here; the denial half is RecordAIRequestDenied (:670), reached from recordGateDenial (pkg/loxinet/ai_gateway_dp.go:284). Summing the family without selecting an outcome double-counts denials as served requests"
     },
@@ -3115,7 +3115,7 @@
      "symbol": "RecordUnmeteredRequest",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 794,
+     "def_line": 831,
      "writes": "aiUnmeteredRequestsTotal",
      "note": "labelled by vip, not tenant -- an unmetered request is precisely one with no tenant"
     },
@@ -3123,8 +3123,8 @@
      "symbol": "llb_ai_record_unmetered",
      "kind": "func",
      "file": "pkg/loxinet/ai_gateway_dp.go",
-     "def_line": 1548,
-     "call_line": 1550,
+     "def_line": 1551,
+     "call_line": 1553,
      "calls": "RecordUnmeteredRequest",
      "entry_point": "cgo-export"
     }

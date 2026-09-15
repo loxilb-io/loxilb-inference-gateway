@@ -711,7 +711,16 @@ func RegisterTokenQuotaSource(fn func() []TokenQuotaState) {
 //	prefillLatencyMs: prefill phase duration in milliseconds; 0 when unknown
 //	decodeLatencyMs:  decode phase duration (TTFT) in milliseconds; 0 when unknown
 //	kvParamsFound:    1 when kv_transfer_params was found in prefill response, 0 otherwise
-//	errorPhase:       0=success, 1=prefill_timeout, 2=decode_error
+//	errorPhase:       the lifecycle outcome, naming the leg that failed AND how
+//	                  it failed. The pair is exported verbatim as {phase,status}
+//	                  on loxilb_ai_pd_requests_total, so a value naming the wrong
+//	                  leg or the wrong failure mode is an operator-visible lie:
+//	                    0 = complete / success
+//	                    1 = prefill  / timeout   (prefill leg ran out of time)
+//	                    2 = decode   / error     (decode leg failed or died)
+//	                    3 = decode   / timeout   (decode leg produced no byte)
+//	                    4 = prefill  / error     (prefill leg failed or died)
+//	                    5 = prefill  / rejected  (origin refused; relayed verbatim)
 func RecordPDRequest(modelName string, prefillLatencyMs, decodeLatencyMs int64, kvParamsFound, errorPhase int) {
 	model := boundModelLabel(modelName)
 
@@ -726,6 +735,15 @@ func RecordPDRequest(modelName string, prefillLatencyMs, decodeLatencyMs int64, 
 	case 2:
 		phase = "decode"
 		status = "error"
+	case 3:
+		phase = "decode"
+		status = "timeout"
+	case 4:
+		phase = "prefill"
+		status = "error"
+	case 5:
+		phase = "prefill"
+		status = "rejected"
 	default:
 		phase = "unknown"
 		status = "error"
@@ -742,11 +760,30 @@ func RecordPDRequest(modelName string, prefillLatencyMs, decodeLatencyMs int64, 
 
 	if kvParamsFound == 1 {
 		aiPDKvParamsFound.WithLabelValues(model).Inc()
-	} else if errorPhase != 1 {
-		// A prefill timeout never produced a response to inspect — counting it
-		// as "kv_transfer_params missing" conflated transport failure with the
-		// usage-absent signal this counter documents.
+	} else if pdPrefillResponseInspected(errorPhase) {
+		// Only a lifecycle that actually parsed a prefill response can say
+		// kv_transfer_params was absent from it. Counting the others conflates
+		// transport failure with the usage-absent signal this counter
+		// documents.
 		aiPDKvParamsMissing.WithLabelValues(model).Inc()
+	}
+}
+
+// pdPrefillResponseInspected reports whether a lifecycle with the given
+// errorPhase got far enough to parse a prefill response, and therefore whether
+// the absence of kv_transfer_params in it is a real observation.
+//
+// Phases 0, 2 and 3 all completed prefill: the request either finished, or
+// failed on the decode leg afterwards. Phases 1, 4 and 5 did not — a prefill
+// timeout, a prefill-side death and an origin reject each leave nothing whose
+// kv_transfer_params could have been read, so counting them as "missing" would
+// report a measurement that was never taken.
+func pdPrefillResponseInspected(errorPhase int) bool {
+	switch errorPhase {
+	case 0, 2, 3:
+		return true
+	default:
+		return false
 	}
 }
 
