@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-15T10:30:37+00:00",
-  "source_revision": "6a7ed6f14b901f15e897a5eedf80ce892c858248"
+  "generated_at": "2026-09-15T11:00:37+00:00",
+  "source_revision": "76e41833965a17f6016b749411c81131fa8c95bf"
  },
  "contract": {
   "total": 240,
@@ -27,7 +27,7 @@
   "default_unreferenced": 6,
   "writer_classified": 184,
   "writer_unclassified": 0,
-  "writer_unverified": 66
+  "writer_unverified": 65
  },
  "families": [
   {
@@ -8162,7 +8162,7 @@
    "source": "api/prometheus/sockproxy_metrics.go:701",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
-   "implementation_status": "writer-mapped",
+   "implementation_status": "verified-runtime",
    "activation_precondition": "",
    "writer_sources": [
     {
@@ -8171,7 +8171,7 @@
      "file": "api/prometheus/sockproxy_metrics.go",
      "def_line": 943,
      "writes": "pdSgPrefillAbortDecodeTotal",
-     "note": "SGLang-specific: the C counter only moves for an SGLang P/D deployment, so on any other engine this stays 0 while still being exported"
+     "note": "SGLang-specific in the sense that the C counter only moves on a rule whose kvEngineType is sglang with pd_disagg_mode -- per-rule API fields, NOT a property of the deployment. Proven driven on a CPU mock with no SGLang engine present. TWO increment statements, both proven: sockproxy_pd_sglang.c:144 inside pd_sg_abort_pair(), itself reached by three callers that each name themselves in the log line (:350 'prefill error status', sockproxy_http.c:4881 'drain leg death', :956 'pair retry failed'); and sockproxy_health.c:711, the reaper's rendezvous wedge, whose increment sits inside if(pd_sg_active) and whose else logs 'P/D decode first-byte timeout' without counting."
     },
     {
      "symbol": "Init",
@@ -8209,7 +8209,7 @@
      "entry_point": "main"
     }
    ],
-   "verification_evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:1126, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M16 owns the runtime proof."
+   "verification_evidence": "runtime evidence 2026-09-15 (E.5 row 'wp11-sg-abort-decode', WP-11): M08 CPU mock P/D bed (scenario cicd/vllm-kvcache-routing-cpu, image tag wp11-u24, digest sha256:fd072b4b7a0a), harness md5 8f47ac2dd776 (verify) / 56503142de20 (backend) / 954789411a4b (swap) / 932492336299 (burst driver), identical at author and bed. 30/30 checks. The LAST pd_sg_* family, and the first with TWO INCREMENT STATEMENTS rather than two callers of one, so the per-site obligation is discharged twice over. Neither gate reads engine internals -- the seventh such reading -- which retires the 'engine-gated' label for the pd_sg_ group entirely. SITE :144 is driven through two of its three callers, each identified by the reason it logs. B (prefill answers 500): delta 3.0 == n, 3 'prefill error status' lines, pd_prefill_ep_died +3 because :145-147 ticks it only for a status OUTSIDE 400..499, and the client carries the pd_sg_prefill_failed receipt. C (prefill closes with zero bytes): delta 3.0 == n, 3 'drain leg death' lines and 0 'pair retry failed', with pd_sg_room_retry +3 proving the one-shot retry was spent BEFORE the abort rather than the pair aborting by some other route. The STATUS caller is asserted silent in C and vice versa. SITE :711 is driven in D: prefill answers 200 and the decode backend accepts but never answers, so the reaper fires at the 30s pd_prefill_timeout default. delta 3.0 == n, 3 'rendezvous wedge' lines, client 504 with the pd_prefill_timeout receipt -- and site :144 asserted SILENT, which is what makes D evidence for a different statement rather than a third run at the first. The byproduct separating the two sites is pd_prefill_ep_died: site :144 feeds it and the wedge ticks nothing else, so it stays FLAT in D while the family moves by 3. E IS THE GATE'S OWN ELSE, not merely a dialect swap: the identical fault at the vllm rule leaves the family flat while the SAME reaper branch logs 'P/D decode first-byte timeout' 3 times and answers a different receipt (pd_decode_timeout vs pd_prefill_timeout). A zero there would have meant the reaper never reached the decode-wedge check and E's flat counter would have proven nothing. D and E differ in one thing only: which port the traffic went to. \ud83d\udea8 TWO SELF-VERIFYING IDENTITIES, asserted on EVERY stage: the cross-site identity delta(family) == delta(:144 lines) + delta(:711 lines), so a stage whose delta is not fully explained by the two log oracles fails instead of being attributed to the site it was aiming at; and the per-caller identity loose == status + drain + retry inside :144, so a new caller or a changed reason string fails as a BROKEN ORACLE rather than silently mis-attributing. \ud83d\udea8 DRIVE SHAPE ASSERTED, AFTER IT SILENTLY DEGRADED ONCE: the first run scored D and E red and looked like a product defect -- the wedge never fired on either dialect and both clients got 502 'decode backend died' at T+20s. The cause was the HARNESS: read_request() sets settimeout(20) and that timeout survived into the hang mode's hold loop, where socket.timeout is an OSError subclass, so the stub closed at 20s and the decode leg took the zero-byte-EOF path ~10s before the 30s wedge could fire. Fixed in the stub (settimeout(None)), and both stages now assert the drive shape directly -- delta('decode backend EOF with ZERO') == 0 -- so a stub that gives up again names itself instead of reading as an undrivable counter."
   },
   {
    "name": "loxilb_pd_sg_prefill_reject_relay_total",
