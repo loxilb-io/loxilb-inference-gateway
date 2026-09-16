@@ -271,6 +271,13 @@ type SockproxySync struct {
 	// itself is mu-protected.
 	rlPushCounter map[string]*int64
 
+	// rlLastRLDial[peerKey] is the last time the rate-limiter push loop
+	// asked connectFn to dial this peer. The loop ticks five times a
+	// second and DialXSyncGRPC blocks for up to 2s on a TCP probe against
+	// a dead peer, so the dial has to be throttled or an unreachable peer
+	// turns the cadence into a reconnect storm.
+	rlLastRLDial sync.Map // map[string]time.Time keyed by peer.IP.String
+
 	// rlPushLoopStarted is set once per peer to avoid spawning duplicate
 	// push goroutines on repeated SetRateLimiterStore + OnStateChange
 	// invocations.
@@ -1124,6 +1131,20 @@ func (s *SockproxySync) rateLimiterPushLoop(peer *DpPeer, peerKey string, client
 		case <-time.After(interval):
 		}
 
+		// Re-check the role on every tick. The gate that decides whether
+		// this node pushes at all lives in peersFn — it returns nil unless
+		// this node holds a MASTER cluster instance — and it used to be
+		// consulted ONCE, when the loop was spawned on MASTER promotion.
+		// A node that was ever master therefore went on pushing forever,
+		// demotion included: on a two-node bring-up where the election
+		// settles the other way after a first flap, BOTH nodes push
+		// absolute snapshots at each other for the life of the process,
+		// which is not the A-P model the cadence and the snapshot shape
+		// were designed around.
+		if !s.peerStillOurs(peerKey) {
+			continue
+		}
+
 		// Skip if no store registered yet.
 		store := s.rlStore.Load()
 		if store == nil {
@@ -1135,9 +1156,21 @@ func (s *SockproxySync) rateLimiterPushLoop(peer *DpPeer, peerKey string, client
 			continue
 		}
 
+		// The push loop owns its own connection. It used to test
+		// clientFn() and skip, which made the rate-limiter half of xsync
+		// depend on something ELSE having dialled first: the dial lives
+		// in the session-sync retry path and in key invalidation, and
+		// nowhere else. On a cluster whose only traffic is L7 AI — no
+		// sockproxy session events, no key revocations — neither ever
+		// runs, so quota state never replicated at all. The silence was
+		// total: no log, no counter, and peer_up left at the 0 the
+		// consumer loop writes at start, which reads the same as a peer
+		// that is merely idle.
 		client := clientFn()
 		if client == nil {
-			continue // peer disconnected; wait for next tick
+			if client = s.dialForRateLimiterPush(peerKey, clientFn); client == nil {
+				continue // still unreachable; the next tick tries again
+			}
 		}
 
 		// Decide push shape: snapshot (A-P, or every-10th in A-A) vs delta (A-A).
@@ -1173,6 +1206,62 @@ func (s *SockproxySync) rateLimiterPushLoop(peer *DpPeer, peerKey string, client
 	}
 }
 
+// peerStillOurs reports whether peerKey is still a peer this node should be
+// pushing rate-limiter state to.
+//
+// peersFn composes both authorities the push depends on: the role gate (nil
+// unless this node holds a MASTER cluster instance) and the live peer set.
+// Asking it per tick is what makes a demotion or a peer removal actually
+// stop the pushes. A nil peersFn is the test-mode contract — no outbound
+// authority was supplied, so the caller owns the decision and the loop does
+// not second-guess it.
+func (s *SockproxySync) peerStillOurs(peerKey string) bool {
+	if s.peersFn == nil {
+		return true
+	}
+	for _, pe := range s.peersFn() {
+		if pe.Peer.String() == peerKey {
+			return true
+		}
+	}
+	return false
+}
+
+// rlDialRetryInterval bounds how often the rate-limiter push loop re-dials
+// a peer it cannot reach. DialXSyncGRPC probes with a 2s TCP timeout before
+// it dials, so without this an unreachable peer would have the 200ms loop
+// permanently inside a connect attempt.
+const rlDialRetryInterval = 2 * time.Second
+
+// dialForRateLimiterPush asks the injected connect hook to establish this
+// peer's gRPC client and returns it, or nil when the peer is still
+// unreachable.
+//
+// The failure is reported, not swallowed. peer_up goes to 0 — its
+// documented meaning, "the last push to this peer did not succeed" — so a
+// cluster whose quota state is not replicating is visible in the same
+// series an operator already watches, and the log says it once per peer
+// rather than five times a second.
+func (s *SockproxySync) dialForRateLimiterPush(peerKey string, clientFn func() XSyncClient) XSyncClient {
+	if s.connectFn == nil {
+		return nil
+	}
+	if last, ok := s.rlLastRLDial.Load(peerKey); ok {
+		if t, ok := last.(time.Time); ok && time.Since(t) < rlDialRetryInterval {
+			return nil
+		}
+	}
+	s.rlLastRLDial.Store(peerKey, time.Now())
+	s.connectFn(peerKey)
+	if client := clientFn(); client != nil {
+		return client
+	}
+	prom.SockproxySyncPeerUpSet(peerKey, 0)
+	s.warnOncePeerRPC(peerKey, "RateLimiterSync",
+		"no gRPC client for the rate-limiter push; AI-QoS quota state is NOT replicating to this peer")
+	return nil
+}
+
 // sendRateLimiterBatch chunks `entries` at rlPushBatchMax and dispatches
 // them via sequential RateLimiterSync RPCs. On codes.Unimplemented the
 // capRateLimiterSync bit is cleared and a single WARN logged.
@@ -1187,21 +1276,25 @@ func (s *SockproxySync) sendRateLimiterBatch(peer *DpPeer, client XSyncClient,
 
 	peerKey := peer.Peer.String()
 	for start := 0; start < len(entries); {
-		// The 500-entry RPC ceiling includes the sentinel: the first chunk
-		// carries it plus 499 payload entries, so no call ever exceeds the
-		// SPEC bound the ceiling encodes.
-		capacity := rlPushBatchMax
-		if start == 0 {
-			capacity--
-		}
+		// The 500-entry RPC ceiling includes the sentinel, and EVERY chunk
+		// carries one, so the ceiling reserves its slot on every chunk.
+		//
+		// Each chunk is an independent RateLimiterSync RPC, scored
+		// independently by the receiver: a chunk that arrives without the
+		// sentinel is indistinguishable from a push by a peer that pre-dates
+		// the ladder scopes. Sending it only on the first chunk therefore made
+		// every push above the ceiling report its own up-to-date sender as an
+		// old peer — inverting the one signal operators have for the
+		// unsupported mixed-version posture.
+		capacity := rlPushBatchMax - 1
 		end := min(start+capacity, len(entries))
 		batch := entries[start:end]
 		protoBatch := &RateLimiterBatch{
 			IsDelta: isDelta,
 			Entries: make([]*RateLimiterEntry, 0, len(batch)+1),
 		}
-		if start == 0 {
-			// Scope-version announcement, first entry of every push. Shaped
+		{
+			// Scope-version announcement, first entry of every chunk. Shaped
 			// as a tenant-quota row whose prefix no merge path recognises:
 			// a v1 peer drops it inside mergeQuotaEntry, a v2 peer strips it
 			// at ingest and learns which vocabulary this node speaks. It is
@@ -1256,7 +1349,10 @@ func (s *SockproxySync) sendRateLimiterBatch(peer *DpPeer, client XSyncClient,
 // IsDelta flag. Returns nil-store-error if no RateLimiterStore is
 // registered yet (allows the wire path to be exercised by tests before
 // the AI gateway is wired in production).
-func (s *SockproxySync) ApplyRateLimiterBatch(m *RateLimiterBatch) error {
+func (s *SockproxySync) ApplyRateLimiterBatch(peerKey string, m *RateLimiterBatch) error {
+	if peerKey == "" {
+		peerKey = "unknown-peer"
+	}
 	store := s.rlStore.Load()
 	if store == nil {
 		// No store registered yet. Not a hard error — the wire path is
@@ -1278,7 +1374,7 @@ func (s *SockproxySync) ApplyRateLimiterBatch(m *RateLimiterBatch) error {
 		if ver, isSentinel := strings.CutPrefix(e.KeyId, "ver:"); isSentinel {
 			sawSentinel = true
 			if v, err := strconv.Atoi(ver); err == nil && v > rl.ScopeWireVersion {
-				s.warnOncePeerRPC("rl-scope-ver", "RateLimiterSync",
+				s.warnOncePeerRPC(peerKey, "RateLimiterSync/scope-newer",
 					fmt.Sprintf("peer speaks scope version %d, this node speaks %d — entries in scopes this build does not know are DROPPED; upgrade this node", v, rl.ScopeWireVersion))
 			}
 			continue
@@ -1300,8 +1396,8 @@ func (s *SockproxySync) ApplyRateLimiterBatch(m *RateLimiterBatch) error {
 		// debt does not survive a failover through it. Mixed-version HA
 		// peering is unsupported (standing posture) — but it should be
 		// loud, not discovered from a bill.
-		s.warnOncePeerRPC("rl-scope-ver", "RateLimiterSync",
-			"a sync peer pre-dates the per-user/per-key-TPM/keyless quota scopes and silently drops their state; upgrade all sync peers together (mixed-version HA is unsupported)")
+		s.warnOncePeerRPC(peerKey, "RateLimiterSync/scope-older",
+			"this sync peer pre-dates the per-user/per-key-TPM/keyless quota scopes and silently drops their state; upgrade all sync peers together (mixed-version HA is unsupported)")
 	}
 	if m.IsDelta {
 		store.ApplyGossipDelta(goEntries)

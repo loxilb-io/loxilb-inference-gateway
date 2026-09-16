@@ -94,37 +94,41 @@ func TestRateLimiterRoundTrip(t *testing.T) {
 	dst := newTestStore()
 	dst.ImportState(snap)
 
-	// Verify per-key config preservation. Re-acquire under lock so the
-	// race detector is happy with the comparison.
+	// Per-key rows are NOT installed by the import, and this assertion was
+	// corrected rather than relaxed. It used to require dst to hold every
+	// source key with matching (rps, burst, lastAccess) — a contract the
+	// wire cannot honour: the proto RateLimiterEntry has no rate and no
+	// burst field, so across a real RateLimiterSync those two always
+	// arrive as zero and the rebuilt limiter is discarded by `check` on
+	// its next call. What the install actually did was hand the receiver's
+	// own live buckets a fresh full burst on every snapshot. Passing the
+	// Go struct straight from Export to Import is what hid that: the test
+	// never crossed the wire the product uses.
 	src.mu.Lock()
-	srcEntries := make(map[string]*limiterEntry, len(src.entries))
-	for k, v := range src.entries {
-		srcEntries[k] = v
-	}
+	nSrcEntries := len(src.entries)
 	src.mu.Unlock()
+	if nSrcEntries != nKeys {
+		t.Fatalf("setup: expected %d per-key entries on src, got %d", nKeys, nSrcEntries)
+	}
 
 	dst.mu.Lock()
-	defer dst.mu.Unlock()
-	if len(dst.entries) != nKeys {
-		t.Fatalf("expected %d per-key entries on dst, got %d", nKeys, len(dst.entries))
+	nDstEntries := len(dst.entries)
+	dst.mu.Unlock()
+	if nDstEntries != 0 {
+		t.Errorf("expected the import to leave the receiver's per-key map alone, got %d entries", nDstEntries)
 	}
-	for k, srcEntry := range srcEntries {
-		dstEntry, ok := dst.entries[k]
-		if !ok {
-			t.Errorf("key %q present in src but missing in dst", k)
-			continue
-		}
-		if dstEntry.rps != srcEntry.rps {
-			t.Errorf("key %q rps mismatch: src=%d dst=%d", k, srcEntry.rps, dstEntry.rps)
-		}
-		if dstEntry.burst != srcEntry.burst {
-			t.Errorf("key %q burst mismatch: src=%d dst=%d", k, srcEntry.burst, dstEntry.burst)
-		}
-		// lastAccess round-trips via UnixNano — equality is exact.
-		if dstEntry.lastAccess.UnixNano() != srcEntry.lastAccess.UnixNano() {
-			t.Errorf("key %q lastAccess mismatch: src=%d dst=%d",
-				k, srcEntry.lastAccess.UnixNano(), dstEntry.lastAccess.UnixNano())
-		}
+
+	// The receiver's own per-key enforcement must survive a snapshot: a
+	// bucket it has already spent is still spent afterwards.
+	if ok, _ := dst.CheckKey("rt-local-key", 1, 1); !ok {
+		t.Fatalf("setup: the receiver's first request must be admitted")
+	}
+	if ok, _ := dst.CheckKey("rt-local-key", 1, 1); ok {
+		t.Fatalf("setup: the receiver's burst must be spent")
+	}
+	dst.ImportState(snap)
+	if ok, _ := dst.CheckKey("rt-local-key", 1, 1); ok {
+		t.Error("a peer snapshot refilled the receiver's own per-key bucket")
 	}
 
 	// Verify per-tenant atomic state preservation.
@@ -370,20 +374,23 @@ func TestRateLimiterExportConcurrent(t *testing.T) {
 	t.Logf("ExportState completed %d times under 100-worker hot-path load", exportCount.Load())
 }
 
-// ---------- documentation: orphaned-reservation trade-off ----------
+// ---------- the per-key half of an absolute snapshot ----------
 
-// TestRateLimiterImportL8Reservation documents the L-8 trade-off: after
-// ImportState replaces the per-key entries map, any outstanding
-// rate.Limiter.Reserve reservations from the prior limiter instance
-// are silently orphaned. The replacement limiter starts with a full
-// bucket (worst case: ~1 RPS extra burst, which the test observes).
+// TestRateLimiterImportKeepsLocalBuckets pins the receiving side of I-2: an
+// absolute snapshot merges quota state and must leave the receiver's own
+// per-key rate limiters untouched.
 //
-// This is the accepted trade-off documented in RESEARCH §4
-// L-8 and in the ImportState comment block. The test exists to
-// surface the behaviour to future maintainers — NOT to demand a fix.
-// A reservation-preserving import is NOT possible without upstream
-// API changes to golang.org/x/time/rate.
-func TestRateLimiterImportL8Reservation(t *testing.T) {
+// This assertion is the inverse of the one it replaces. That one required
+// the post-import bucket to be FULL again and called it the documented L-8
+// orphaned-reservation trade-off, priced at "~1 RPS extra burst per replaced
+// key". Two things were wrong with treating that as acceptable. The price
+// was per-import, not one-off — in A-A mode every tenth push is an absolute
+// snapshot, so a node serving traffic was re-zeroed on that cadence. And
+// there was nothing on the other side of the trade: the proto message has
+// no rate and no burst field, so the replacement limiters were built from
+// zeros and thrown away by `check` on first use. The import could only
+// refill the receiver's live limits, never restore the sender's.
+func TestRateLimiterImportKeepsLocalBuckets(t *testing.T) {
 	t.Parallel()
 
 	s := newTestStore()
@@ -399,24 +406,24 @@ func TestRateLimiterImportL8Reservation(t *testing.T) {
 		t.Fatalf("setup: second immediate request should be denied")
 	}
 
-	// Snapshot + Import — this REPLACES the limiter instance, which is
-	// the documented L-8 behaviour.
 	snap := s.ExportState()
 	s.ImportState(snap)
 
-	// After Import, the fresh limiter has a full bucket → request is
-	// allowed again. This IS the orphaned-reservation effect: the prior
-	// limiter's reservation is gone.
 	allowed, _ = s.CheckKey("burn", 1, 1)
-	if !allowed {
-		t.Errorf("L-8 expected: after ImportState the fresh limiter allows 1 burst-worth of requests. This is documented in RESEARCH §4 — a known trade-off, not a bug.")
+	if allowed {
+		t.Error("a snapshot import refilled a per-key bucket the local rate limit had already refused")
 	}
 
-	// This test PASSES — its purpose is to fail LOUDLY if a future
-	// refactor inadvertently preserves the prior limiter (e.g. by
-	// not replacing s.entries wholesale). If you see this test failing
-	// after a refactor: either restore the wholesale-replace semantics
-	// OR update this test to reflect the new (preserving) semantics.
+	// Non-vacuous: the same import still merges quota state, so a failure
+	// above cannot be an import that quietly did nothing at all.
+	s.AllowTokens("import-live-tenant", 1000000, 1000000, 0)
+	s.AllowTokens("import-live-tenant", 100000, 1000000, 0)
+	dst := newTestStore()
+	dst.AllowTokens("import-live-tenant", 1, 1000000, 0) // publish the limit
+	dst.ImportState(s.ExportState())
+	if !dst.IsTokenQuotaExceeded("import-live-tenant") {
+		t.Error("control: the import no longer carries tenant quota debt either")
+	}
 }
 
 // ---------- Cleanup compatibility ----------
