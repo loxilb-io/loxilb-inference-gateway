@@ -398,6 +398,39 @@ var (
 			Help: "Total AI gateway requests refused with 503 because the service's api_key_auth policy requires a key and the API-key store is unconfigured or unreachable. Non-zero means the gateway is failing closed and legitimate traffic is being refused.",
 		},
 	)
+
+	// aiWorkerScrapeTotal counts every vLLM /metrics scrape attempt by outcome.
+	//
+	// The scraper feeds the live load signals that P/D prefill selection scores
+	// on -- queued_requests and the advertised KV capacity. When an endpoint
+	// stops answering /metrics the pushes simply stop, and the datapath handles
+	// that correctly but SILENTLY: a queue depth nobody has refreshed for
+	// PD_QUEUE_STALE_SEC is dropped and the fleet average substituted, so
+	// selection keeps working on a fill-in. Before this counter there was no
+	// exported signal anywhere that it had happened. Measured on the P/D bed:
+	// a 45s blackout of every prefill endpoint's /metrics moved NO loxilb
+	// family and logged nothing, because the transport failure is Debugf.
+	//
+	// "Routing on live load" and "routing on a fill-in because every scrape has
+	// failed for ten minutes" look identical from outside and need opposite
+	// responses, which is what makes this alertable rather than diagnostic.
+	//
+	// SUCCESS IS COUNTED TOO. A counter that moves only on failure cannot
+	// distinguish "nothing is failing" from "the scraper is not running at
+	// all" -- the same false reassurance an eager zero gives. result="ok" is
+	// the non-vacuity witness and the denominator of any failure ratio.
+	//
+	// Labelled by outcome only, not by endpoint: this is a per-service health
+	// question and the closed result set keeps cardinality bounded. Which
+	// endpoint went dark is a follow-up question, answered by correlating with
+	// the per-EP surfaces rather than by multiplying series here.
+	aiWorkerScrapeTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "loxilb_ai_worker_scrape_total",
+			Help: "Total vLLM worker /metrics scrape attempts by outcome (ok, unreachable, http_error, body_error, unparseable, bad_request). Anything other than ok means P/D load-aware selection is scoring on a stale or substituted signal for that endpoint.",
+		},
+		[]string{"result"},
+	)
 )
 
 // AdjustActiveStreams adjusts the loxilb_ai_active_streams gauge by delta for
@@ -989,6 +1022,52 @@ func RecordUnmeteredRequest(vip string) {
 // to — that is precisely the condition being reported.
 func RecordPolicyStoreUnavailable() {
 	aiPolicyStoreUnavailableTotal.Inc()
+}
+
+// aiWorkerScrapeResults is the closed label set of aiWorkerScrapeTotal, and the
+// single source of truth for both the pre-create loop and the recorder's
+// validation. Adding a value here is an API change to the metric.
+var aiWorkerScrapeResults = []string{
+	"ok", "unreachable", "http_error", "body_error", "unparseable",
+	"bad_request", "unknown",
+}
+
+// init pre-creates every result child so the vector is present at zero in the
+// very first scrape, before anything has been recorded.
+//
+// This is not cosmetic. The condition this family exists to report is "the
+// scraper has stopped producing samples", and a lazily-created vector is
+// ABSENT in exactly that state if the scraper never got as far as one attempt
+// -- indistinguishable, to an alert, from a healthy gateway. Present-at-zero
+// makes "no P/D rule, so no scraper" read as six flat zeros, and gives
+// result="ok" an existing denominator from the start rather than one that
+// appears only once something has already succeeded.
+func init() {
+	for _, r := range aiWorkerScrapeResults {
+		aiWorkerScrapeTotal.WithLabelValues(r)
+	}
+}
+
+// RecordWorkerScrape increments loxilb_ai_worker_scrape_total{result}. Called
+// once per vLLM /metrics scrape attempt from the scraper's result sink,
+// including on success -- see the counter's declaration for why the success
+// arm is not optional.
+//
+// The result string comes from the aimetrics.Scrape* closed set. An unknown
+// value is folded to "unknown" rather than admitted as a label, so a typo
+// upstream cannot silently open the cardinality of this vector.
+func RecordWorkerScrape(result string) {
+	known := false
+	for _, r := range aiWorkerScrapeResults {
+		if r == result && r != "unknown" {
+			known = true
+			break
+		}
+	}
+	if !known {
+		result = "unknown"
+	}
+	aiWorkerScrapeTotal.WithLabelValues(result).Inc()
 }
 
 // RecordAIRequest is the Go entry point called by the CGO export llb_ai_record_request.

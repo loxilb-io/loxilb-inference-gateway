@@ -1,18 +1,18 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-16T08:51:31+00:00",
-  "source_revision": "b098558960f6bbd2b088b10ff3fac544f55f0532"
+  "generated_at": "2026-09-16T11:09:01+00:00",
+  "source_revision": "53c4993833f82c5315423c78639f5ffcb7e25e09"
  },
  "contract": {
-  "total": 249,
+  "total": 250,
   "owners": {
-   "loxilb": 226,
+   "loxilb": 227,
    "loxilb-ai-controller": 19,
    "loxilb-kv-agent": 4
   },
   "classes": {
-   "default": 193,
+   "default": 194,
    "dpu-doca": 24,
    "aictrl-bridge": 8,
    "kv-agent-health": 1,
@@ -21,13 +21,13 @@
   }
  },
  "coverage": {
-  "default_families": 193,
+  "default_families": 194,
   "default_referenced": 157,
   "default_waived": 21,
-  "default_unreferenced": 15,
-  "writer_classified": 193,
+  "default_unreferenced": 16,
+  "writer_classified": 194,
   "writer_unclassified": 0,
-  "writer_unverified": 65
+  "writer_unverified": 64
  },
  "families": [
   {
@@ -886,7 +886,7 @@
      "symbol": "AdjustActiveStreams",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 407,
+     "def_line": 440,
      "writes": "aiActiveStreams",
      "note": "one Add(delta) for both directions; the decrement site is llb_ai_stream_end (pkg/loxinet/ai_gateway_dp.go:958)"
     },
@@ -1278,7 +1278,7 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:700",
+   "source": "api/prometheus/ai_metrics.go:733",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "verified-runtime",
@@ -1289,7 +1289,7 @@
      "kind": "method",
      "receiver": "tokenQuotaCollector",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 743,
+     "def_line": 776,
      "writes": "keyTokenQuotaLimitDesc",
      "note": "computed at scrape time as consumed/limit, keyed key_id; the quota map key carries the scope's wire prefix and is parsed by scopedTokenQuotaState, which drops a key whose field count it does not recognise rather than publishing a guessed identity. Each Desc is named at its own MustNewConstMetric call because the extractor resolves the runtime type by reading that call and cannot follow an identifier"
     },
@@ -1297,8 +1297,8 @@
      "symbol": "RegisterTokenQuotaSource",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 848,
-     "call_line": 850,
+     "def_line": 881,
+     "call_line": 883,
      "calls": "tokenQuotaCollector",
      "note": "sync.Once; the collector reads the live rate-limiter store at scrape time rather than being set on the charge path -- a gauge set on charge would freeze while a tenant is denied"
     },
@@ -1338,7 +1338,7 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:695",
+   "source": "api/prometheus/ai_metrics.go:728",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "verified-runtime",
@@ -1349,7 +1349,7 @@
      "kind": "method",
      "receiver": "tokenQuotaCollector",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 743,
+     "def_line": 776,
      "writes": "keyTokenQuotaUtilizationDesc",
      "note": "computed at scrape time as consumed/limit, keyed key_id; the quota map key carries the scope's wire prefix and is parsed by scopedTokenQuotaState, which drops a key whose field count it does not recognise rather than publishing a guessed identity. Each Desc is named at its own MustNewConstMetric call because the extractor resolves the runtime type by reading that call and cannot follow an identifier"
     },
@@ -1357,8 +1357,8 @@
      "symbol": "RegisterTokenQuotaSource",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 848,
-     "call_line": 850,
+     "def_line": 881,
+     "call_line": 883,
      "calls": "tokenQuotaCollector",
      "note": "sync.Once; the collector reads the live rate-limiter store at scrape time rather than being set on the charge path -- a gauge set on charge would freeze while a tenant is denied"
     },
@@ -2200,7 +2200,7 @@
      "symbol": "RecordModelNotAllowed",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 425,
+     "def_line": 458,
      "writes": "aiModelNotAllowedTotal"
     },
     {
@@ -2242,7 +2242,7 @@
      "symbol": "RecordNormalSessionHit",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 971,
+     "def_line": 1004,
      "writes": "aiNormalSessionHitsTotal"
     },
     {
@@ -2284,7 +2284,7 @@
      "symbol": "RecordPDRequest",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 872,
+     "def_line": 905,
      "writes": "aiPDDecodeTTFT"
     },
     {
@@ -2327,7 +2327,7 @@
      "symbol": "RecordPDRequest",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 872,
+     "def_line": 905,
      "writes": "aiPDKvParamsFound"
     },
     {
@@ -2370,7 +2370,7 @@
      "symbol": "RecordPDRequest",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 872,
+     "def_line": 905,
      "writes": "aiPDKvParamsMissing"
     },
     {
@@ -2413,7 +2413,7 @@
      "symbol": "RecordPDRequest",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 872,
+     "def_line": 905,
      "writes": "aiPDPrefillDuration"
     },
     {
@@ -2458,7 +2458,7 @@
      "symbol": "RecordPDRequest",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 872,
+     "def_line": 905,
      "writes": "aiPDRequestsTotal",
      "note": "labelled model/phase/status; the phase and status are derived from errorPhase, so one call produces exactly one child increment"
     },
@@ -2502,7 +2502,7 @@
      "symbol": "RecordPDSessionHit",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 941,
+     "def_line": 974,
      "writes": "aiPDSessionHitsTotal"
     },
     {
@@ -2545,7 +2545,7 @@
      "symbol": "RecordPDTierSelected",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 951,
+     "def_line": 984,
      "writes": "aiPDTierSelectedTotal"
     },
     {
@@ -2586,7 +2586,7 @@
      "symbol": "RecordPolicyStoreUnavailable",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 990,
+     "def_line": 1023,
      "writes": "aiPolicyStoreUnavailableTotal"
     },
     {
@@ -2631,7 +2631,7 @@
      "symbol": "RecordRateLimitHit",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 415,
+     "def_line": 448,
      "writes": "aiRateLimitHitsTotal"
     },
     {
@@ -2675,7 +2675,7 @@
      "symbol": "RecordAIRequest",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 1011,
+     "def_line": 1090,
      "writes": "aiRequestDurationSeconds"
     },
     {
@@ -2722,7 +2722,7 @@
      "symbol": "RecordAIRequest",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 1011,
+     "def_line": 1090,
      "writes": "aiRequestsTotal",
      "note": "outcome=completed here; the denial half is RecordAIRequestDenied (:670), reached from recordGateDenial (pkg/loxinet/ai_gateway_dp.go:284). Summing the family without selecting an outcome double-counts denials as served requests"
     },
@@ -2763,7 +2763,7 @@
      "symbol": "RecordTokenQuotaColdOpen",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 599,
+     "def_line": 632,
      "writes": "aiTokenQuotaColdOpenTotal"
     },
     {
@@ -2814,7 +2814,7 @@
      "symbol": "RecordTokenQuotaDenied",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 606,
+     "def_line": 639,
      "writes": "aiTokenQuotaDeniedTotal"
     },
     {
@@ -2847,7 +2847,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:649",
+   "source": "api/prometheus/ai_metrics.go:682",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "verified-runtime",
@@ -2858,15 +2858,15 @@
      "kind": "method",
      "receiver": "tokenQuotaCollector",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 743,
+     "def_line": 776,
      "writes": "tokenQuotaLimitDesc"
     },
     {
      "symbol": "RegisterTokenQuotaSource",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 848,
-     "call_line": 850,
+     "def_line": 881,
+     "call_line": 883,
      "calls": "tokenQuotaCollector",
      "note": "sync.Once; the collector reads the live rate-limiter store at scrape time rather than being set on the charge path -- a gauge set on charge would freeze while a tenant is denied"
     },
@@ -2907,7 +2907,7 @@
    "privacy": "label-review",
    "consumers": [],
    "waiver": "Join denominator behind the dashboarded quota-utilization ratios; displaying raw configured limits duplicates config, utilization panels answer headroom.",
-   "source": "api/prometheus/ai_metrics.go:659",
+   "source": "api/prometheus/ai_metrics.go:692",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "verified-runtime",
@@ -2918,15 +2918,15 @@
      "kind": "method",
      "receiver": "tokenQuotaCollector",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 743,
+     "def_line": 776,
      "writes": "tokenQuotaModelLimitDesc"
     },
     {
      "symbol": "RegisterTokenQuotaSource",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 848,
-     "call_line": 850,
+     "def_line": 881,
+     "call_line": 883,
      "calls": "tokenQuotaCollector",
      "note": "sync.Once; the collector reads the live rate-limiter store at scrape time rather than being set on the charge path -- a gauge set on charge would freeze while a tenant is denied"
     },
@@ -2969,7 +2969,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:654",
+   "source": "api/prometheus/ai_metrics.go:687",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "verified-runtime",
@@ -2980,15 +2980,15 @@
      "kind": "method",
      "receiver": "tokenQuotaCollector",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 743,
+     "def_line": 776,
      "writes": "tokenQuotaModelUtilizationDesc"
     },
     {
      "symbol": "RegisterTokenQuotaSource",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 848,
-     "call_line": 850,
+     "def_line": 881,
+     "call_line": 883,
      "calls": "tokenQuotaCollector",
      "note": "sync.Once; the collector reads the live rate-limiter store at scrape time rather than being set on the charge path -- a gauge set on charge would freeze while a tenant is denied"
     },
@@ -3030,7 +3030,7 @@
     "loxilb-ai.json"
    ],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:644",
+   "source": "api/prometheus/ai_metrics.go:677",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "verified-runtime",
@@ -3041,7 +3041,7 @@
      "kind": "method",
      "receiver": "tokenQuotaCollector",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 743,
+     "def_line": 776,
      "writes": "tokenQuotaUtilizationDesc",
      "note": "computed at scrape time as consumed/limit; two tenant IDs that sanitize to the same label emit once, first wins, because a duplicate series fails the whole scrape"
     },
@@ -3049,8 +3049,8 @@
      "symbol": "RegisterTokenQuotaSource",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 848,
-     "call_line": 850,
+     "def_line": 881,
+     "call_line": 883,
      "calls": "tokenQuotaCollector",
      "note": "sync.Once; the collector reads the live rate-limiter store at scrape time rather than being set on the charge path -- a gauge set on charge would freeze while a tenant is denied"
     },
@@ -3104,7 +3104,7 @@
      "symbol": "RecordTokenUsage",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 435,
+     "def_line": 468,
      "writes": "aiTokensConsumedTotal"
     },
     {
@@ -3147,7 +3147,7 @@
      "symbol": "RecordTokenUsage",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 435,
+     "def_line": 468,
      "writes": "aiTokensEstimatedTotal"
     },
     {
@@ -3191,7 +3191,7 @@
      "symbol": "RecordTokenUsage",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 435,
+     "def_line": 468,
      "writes": "aiTokensMissingTotal",
      "note": "the streamed half only, charged from the estimate net, and the sole writer of reason=stream_estimated. The non-streamed half is RecordTokenUsageMissing (api/prometheus/ai_metrics.go:561), reached from the cgo export llb_ai_record_usage_missing (pkg/loxinet/ai_gateway_dp.go:1498), which charges nothing and writes the other three reasons -- so this family must never be read as a subset of loxilb_ai_tokens_estimated_total. It is a second writer chain rather than a hop on this one, and writer_sources holds a single ordered chain, which is why it is recorded here in prose. The reason vocabulary is closed on the Go side by boundTokenMissingReason (api/prometheus/ai_metrics.go:513), which collapses anything it does not know onto \"unknown\": the value crosses cgo from a separately versioned repo, so pin skew is a real way to reach an unlisted value and an allow-list is what keeps the label bounded. The data-plane spellings live in loxilb-ebpf/common/sockproxy_ai_gw.h (LLB_AI_UMISS_*) and must be changed on both sides together. Both writers are attributed-only: a keyless response has no tenant and is counted per VIP in loxilb_ai_unmetered_requests_total instead"
     },
@@ -3235,7 +3235,7 @@
      "symbol": "RecordUnmeteredRequest",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 979,
+     "def_line": 1012,
      "writes": "aiUnmeteredRequestsTotal",
      "note": "labelled by vip, not tenant -- an unmetered request is precisely one with no tenant"
     },
@@ -3268,7 +3268,7 @@
    "privacy": "label-review",
    "consumers": [],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:690",
+   "source": "api/prometheus/ai_metrics.go:723",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "verified-static",
@@ -3279,7 +3279,7 @@
      "kind": "method",
      "receiver": "tokenQuotaCollector",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 743,
+     "def_line": 776,
      "writes": "userModelTokenQuotaLimitDesc",
      "note": "computed at scrape time as consumed/limit, keyed tenant+user+model; the quota map key carries the scope's wire prefix and is parsed by scopedTokenQuotaState, which drops a key whose field count it does not recognise rather than publishing a guessed identity. Each Desc is named at its own MustNewConstMetric call because the extractor resolves the runtime type by reading that call and cannot follow an identifier"
     },
@@ -3287,8 +3287,8 @@
      "symbol": "RegisterTokenQuotaSource",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 848,
-     "call_line": 850,
+     "def_line": 881,
+     "call_line": 883,
      "calls": "tokenQuotaCollector",
      "note": "sync.Once; the collector reads the live rate-limiter store at scrape time rather than being set on the charge path -- a gauge set on charge would freeze while a tenant is denied"
     },
@@ -3330,7 +3330,7 @@
    "privacy": "label-review",
    "consumers": [],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:685",
+   "source": "api/prometheus/ai_metrics.go:718",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "verified-static",
@@ -3341,7 +3341,7 @@
      "kind": "method",
      "receiver": "tokenQuotaCollector",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 743,
+     "def_line": 776,
      "writes": "userModelTokenQuotaUtilizationDesc",
      "note": "computed at scrape time as consumed/limit, keyed tenant+user+model; the quota map key carries the scope's wire prefix and is parsed by scopedTokenQuotaState, which drops a key whose field count it does not recognise rather than publishing a guessed identity. Each Desc is named at its own MustNewConstMetric call because the extractor resolves the runtime type by reading that call and cannot follow an identifier"
     },
@@ -3349,8 +3349,8 @@
      "symbol": "RegisterTokenQuotaSource",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 848,
-     "call_line": 850,
+     "def_line": 881,
+     "call_line": 883,
      "calls": "tokenQuotaCollector",
      "note": "sync.Once; the collector reads the live rate-limiter store at scrape time rather than being set on the charge path -- a gauge set on charge would freeze while a tenant is denied"
     },
@@ -3391,7 +3391,7 @@
    "privacy": "label-review",
    "consumers": [],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:680",
+   "source": "api/prometheus/ai_metrics.go:713",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "verified-static",
@@ -3402,7 +3402,7 @@
      "kind": "method",
      "receiver": "tokenQuotaCollector",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 743,
+     "def_line": 776,
      "writes": "userTokenQuotaLimitDesc",
      "note": "computed at scrape time as consumed/limit, keyed tenant+user; the quota map key carries the scope's wire prefix and is parsed by scopedTokenQuotaState, which drops a key whose field count it does not recognise rather than publishing a guessed identity. Each Desc is named at its own MustNewConstMetric call because the extractor resolves the runtime type by reading that call and cannot follow an identifier"
     },
@@ -3410,8 +3410,8 @@
      "symbol": "RegisterTokenQuotaSource",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 848,
-     "call_line": 850,
+     "def_line": 881,
+     "call_line": 883,
      "calls": "tokenQuotaCollector",
      "note": "sync.Once; the collector reads the live rate-limiter store at scrape time rather than being set on the charge path -- a gauge set on charge would freeze while a tenant is denied"
     },
@@ -3452,7 +3452,7 @@
    "privacy": "label-review",
    "consumers": [],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:675",
+   "source": "api/prometheus/ai_metrics.go:708",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "verified-static",
@@ -3463,7 +3463,7 @@
      "kind": "method",
      "receiver": "tokenQuotaCollector",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 743,
+     "def_line": 776,
      "writes": "userTokenQuotaUtilizationDesc",
      "note": "computed at scrape time as consumed/limit, keyed tenant+user; the quota map key carries the scope's wire prefix and is parsed by scopedTokenQuotaState, which drops a key whose field count it does not recognise rather than publishing a guessed identity. Each Desc is named at its own MustNewConstMetric call because the extractor resolves the runtime type by reading that call and cannot follow an identifier"
     },
@@ -3471,8 +3471,8 @@
      "symbol": "RegisterTokenQuotaSource",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 848,
-     "call_line": 850,
+     "def_line": 881,
+     "call_line": 883,
      "calls": "tokenQuotaCollector",
      "note": "sync.Once; the collector reads the live rate-limiter store at scrape time rather than being set on the charge path -- a gauge set on charge would freeze while a tenant is denied"
     },
@@ -3512,7 +3512,7 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:710",
+   "source": "api/prometheus/ai_metrics.go:743",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "verified-runtime",
@@ -3523,7 +3523,7 @@
      "kind": "method",
      "receiver": "tokenQuotaCollector",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 743,
+     "def_line": 776,
      "writes": "vipTokenQuotaLimitDesc",
      "note": "computed at scrape time as consumed/limit, keyed service; the quota map key carries the scope's wire prefix and is parsed by scopedTokenQuotaState, which drops a key whose field count it does not recognise rather than publishing a guessed identity. Each Desc is named at its own MustNewConstMetric call because the extractor resolves the runtime type by reading that call and cannot follow an identifier"
     },
@@ -3531,8 +3531,8 @@
      "symbol": "RegisterTokenQuotaSource",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 848,
-     "call_line": 850,
+     "def_line": 881,
+     "call_line": 883,
      "calls": "tokenQuotaCollector",
      "note": "sync.Once; the collector reads the live rate-limiter store at scrape time rather than being set on the charge path -- a gauge set on charge would freeze while a tenant is denied"
     },
@@ -3572,7 +3572,7 @@
    "privacy": "none",
    "consumers": [],
    "waiver": "",
-   "source": "api/prometheus/ai_metrics.go:705",
+   "source": "api/prometheus/ai_metrics.go:738",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
    "implementation_status": "verified-runtime",
@@ -3583,7 +3583,7 @@
      "kind": "method",
      "receiver": "tokenQuotaCollector",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 743,
+     "def_line": 776,
      "writes": "vipTokenQuotaUtilizationDesc",
      "note": "computed at scrape time as consumed/limit, keyed service; the quota map key carries the scope's wire prefix and is parsed by scopedTokenQuotaState, which drops a key whose field count it does not recognise rather than publishing a guessed identity. Each Desc is named at its own MustNewConstMetric call because the extractor resolves the runtime type by reading that call and cannot follow an identifier"
     },
@@ -3591,8 +3591,8 @@
      "symbol": "RegisterTokenQuotaSource",
      "kind": "func",
      "file": "api/prometheus/ai_metrics.go",
-     "def_line": 848,
-     "call_line": 850,
+     "def_line": 881,
+     "call_line": 883,
      "calls": "tokenQuotaCollector",
      "note": "sync.Once; the collector reads the live rate-limiter store at scrape time rather than being set on the charge path -- a gauge set on charge would freeze while a tenant is denied"
     },
@@ -3616,6 +3616,108 @@
     }
    ],
    "verification_evidence": "runtime evidence 2026-09-16, cicd/ai-qos-ha-sync QOS-METRIC-2 c on bed llbigw-2, image qmetric-u24 (110 passed / 0 failed): read on the elected master's own /metrics after the keyless VIP bucket was charged, as service=\"20.20.20.254_2021\" utilization 1.1 against limit 10 -- over 1.0 because the 12-token answer puts the bucket in post-hoc debt, which is the documented shape. QOS-METRIC-2 d is the per-LABEL control on the same scrape: 0 of 4 scoped series carry a wire prefix in any label."
+  },
+  {
+   "name": "loxilb_ai_worker_scrape_total",
+   "owner": "loxilb",
+   "class": "default",
+   "packaged": true,
+   "type": "counter",
+   "definition_mechanism": "promauto",
+   "labels": [
+    "result"
+   ],
+   "activation": "P",
+   "priority": "diagnostic",
+   "privacy": "none",
+   "consumers": [],
+   "waiver": "",
+   "source": "api/prometheus/ai_metrics.go:427",
+   "release_scope": "release",
+   "runtime_scope": "gateway-default",
+   "implementation_status": "verified-runtime",
+   "activation_precondition": "",
+   "writer_sources": [
+    {
+     "symbol": "RecordWorkerScrape",
+     "kind": "func",
+     "file": "api/prometheus/ai_metrics.go",
+     "def_line": 1059,
+     "writes": "aiWorkerScrapeTotal",
+     "note": "the vLLM worker /metrics scraper's outcome counter. The seven children are pre-created at init (activation P) because the state this family exists to report is 'the scraper produced no sample at all', and a lazily-created vector is ABSENT in exactly that state -- indistinguishable, to an alert, from a healthy gateway. An unrecognised result string is folded to 'unknown' rather than admitted as a label, so a typo upstream cannot open this vector's cardinality."
+    },
+    {
+     "symbol": "OnScrapeResult",
+     "kind": "method",
+     "receiver": "vllmScraperSink",
+     "file": "pkg/loxinet/ai_vllm_scraper.go",
+     "def_line": 191,
+     "call_line": 192,
+     "calls": "RecordWorkerScrape",
+     "note": "the SOLE implementation of the optional aimetrics.ResultSink. The sibling OnSample is reached only by a scrape that parsed, which is why the failure states needed a separate hook rather than an extra field on the sample."
+    },
+    {
+     "symbol": "scrapeOne",
+     "kind": "method",
+     "receiver": "Poller",
+     "file": "pkg/aimetrics/poll.go",
+     "def_line": 277,
+     "call_line": 286,
+     "calls": "OnScrapeResult",
+     "note": "reports through the ResultSink on EVERY exit -- six return paths plus the two success ones -- so the outcome set is exhaustive by construction and a future early return that forgets to report shows up as a total that stops matching the scrape count"
+    },
+    {
+     "symbol": "scrapeAll",
+     "kind": "method",
+     "receiver": "Poller",
+     "file": "pkg/aimetrics/poll.go",
+     "def_line": 259,
+     "call_line": 269,
+     "calls": "scrapeOne",
+     "note": "one goroutine per EP per tick, with per-EP in-flight dedup: an EP whose scrape is still running is SKIPPED rather than queued, so a hung endpoint produces no report for that tick at all"
+    },
+    {
+     "symbol": "Run",
+     "kind": "method",
+     "receiver": "Poller",
+     "file": "pkg/aimetrics/poll.go",
+     "def_line": 213,
+     "call_line": 231,
+     "calls": "scrapeAll"
+    },
+    {
+     "symbol": "Run",
+     "kind": "method",
+     "receiver": "VllmScraper",
+     "file": "pkg/loxinet/ai_vllm_scraper.go",
+     "def_line": 129,
+     "call_line": 130,
+     "calls": "Run",
+     "note": "the thin loxinet shim over the shared pkg/aimetrics collector"
+    },
+    {
+     "symbol": "AddLbRule",
+     "kind": "method",
+     "receiver": "RuleH",
+     "file": "pkg/loxinet/rules.go",
+     "def_line": 3696,
+     "call_line": 5025,
+     "calls": "Run",
+     "note": "the scraper goroutine is started ONLY for a rule with pdDisaggMode, at a hard-coded 10s interval, against each endpoint's own xIP:xPort -- the same port the P/D data connect uses"
+    },
+    {
+     "symbol": "NetLbRuleAdd",
+     "kind": "method",
+     "receiver": "NetAPIStruct",
+     "file": "pkg/loxinet/apiclient.go",
+     "def_line": 365,
+     "call_line": 372,
+     "calls": "AddLbRule",
+     "entry_point": "http-handler",
+     "note": "the API-hooks implementation behind the LB-rule REST call; the same path replays saved rules at boot from api/loxinlp/nlp.go"
+    }
+   ],
+   "verification_evidence": "NEW 2026-09-16 (WP-11 D-14), filed and fixed in the same session. THE GAP, driven rather than argued: the scraper feeding P/D load-aware prefill selection (queued_requests and the advertised KV capacity) had five distinct failure exits and not one of them touched a metric, and the two that matter operationally -- transport failure and unparseable body -- are Debugf, below the shipped log level. On the M08 CPU mock P/D bed all three prefill endpoints were put behind a closed port for 45s, four-plus full scrape cycles with every scrape failing: NO loxilb family moved and nothing was logged. The only counter that reacted was loxilb_l4_error_events_total{reason=rst_client} -- the L4 plane saw the resets while the AI plane saw nothing. It matters because the datapath already handles this condition and handles it SILENTLY: sockproxy_pd.c's H-17 guard drops a queued_requests older than PD_QUEUE_STALE_SEC and substitutes the fleet average, so selection keeps working on a fill-in with no exported signal that it is doing so -- and 'routing on live load' and 'routing on a fill-in because every scrape has failed for ten minutes' need opposite responses. Contrast the sibling live feed, the KV subscriber, which exports connected, last_event_timestamp_seconds, reconnect_total, recv_error_total, wire_reject_total AND loxilb_kv_inventory_fresh. THE FIX, red/green twinned at the FAMILY level on the same bed. RED: on the pre-fix image the family is not flat, it is ABSENT -- zero lines in /metrics -- which is the defect state exactly. GREEN, on an image carrying the fix (d14-u24, digest sha256:4e262e1e6dd6): all SEVEN children present from init with six at 0, and the seventh (unparseable) already at 24 because this fixture's endpoints answer reflect-echo rather than vLLM, so every scrape genuinely parses as unrecognised -- an honest reading, not a stub artifact. Driving the same 45s prefill blackout then moved unreachable 0 -> 12, which is 3 endpoints x 4 scrape cycles, WHILE unparseable moved 24 -> 36 in the same window from the three DECODE endpoints that were still answering: per-endpoint outcome discrimination inside one measurement, so the control is carried by the drive rather than by a separate stage. On recovery unreachable froze at 12 while unparseable kept climbing 48 -> 60 -- the counter stops exactly when the fault clears -- and ok and http_error stayed 0 throughout, so no outcome leaked into another. UNIT: pkg/aimetrics TestEveryScrapeReportsExactlyOnce holds the exhaustiveness property (reports == scrapes across a mix of outcomes), so a future early return that forgets to report fails there rather than showing up later as a total that quietly undercounts; api/prometheus TestWorkerScrapePresentAtZero holds the pre-create, and TestRecordWorkerScrapeFoldsUnknown holds the closed label set. \ud83d\udea8 TRAP MET AND WORTH CARRYING: the first green run read only ONE child, and the cause was not the code -- config.sh had resolved the image TAG while it still pointed at the previous build, so llb1 ran an older id under the right name. docker inspect -f '{{.Image}}' llb1 against docker image inspect -f '{{.Id}}' on the tag is the only truthful answer to what is running; same class as pinning a cross-repo gitlink at a branch head."
   },
   {
    "name": "loxilb_autopersist_consecutive_failures",
@@ -7387,7 +7489,7 @@
    "source": "api/prometheus/sockproxy_metrics.go:685",
    "release_scope": "release",
    "runtime_scope": "gateway-default",
-   "implementation_status": "writer-mapped",
+   "implementation_status": "verified-runtime",
    "activation_precondition": "",
    "writer_sources": [
     {
@@ -7396,7 +7498,7 @@
      "file": "api/prometheus/sockproxy_metrics.go",
      "def_line": 943,
      "writes": "pdConnectRetrySameEpOkTotal",
-     "note": "the success half of the same-endpoint retry pair; retry_total minus this is the failed-retry residual"
+     "note": "the success half of the same-endpoint retry pair; retry_total minus this is the failed-retry residual. The gate (sockproxy_ep.c:1053-1070) has three terms and NONE of them reads an engine: ep_cfd < 0 (the initial connect failed), rt_budget > 0 (pd_connect_retry_budget() -- 1 for P/D disagg or KV-exact, 0 for plain LB, a per-rule CONFIG property) and the retry's own connect() >= 0. It is not on the pd_sg_ path at all. The reason it outlived every other pd_* family is narrower than 'hard to reach': no arm had ever produced a connect that FAILS and then SUCCEEDS on the same endpoint, because the retry is in-process and immediate, so the fault has to be count-based at the TCP handshake rather than time-based."
     },
     {
      "symbol": "Init",
@@ -7434,7 +7536,7 @@
      "entry_point": "main"
     }
    ],
-   "verification_evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): api/prometheus/sockproxy_metrics.go:1118, inside the collector goroutine that copies the C proxy_get_metrics() snapshot each period. No test drives the collector and no bed run has checked this family's value; scenario M08 owns the runtime proof."
+   "verification_evidence": "runtime evidence 2026-09-16 (E.5 row 'wp11-connect-retry-ok', WP-11): M08 CPU mock P/D bed (scenario cicd/vllm-kvcache-routing-cpu brought up MON_AIKEY=1, image tag d9b-u24, digest sha256:33b1c5ec698e), harness md5 1f15b550ea86 (verify) / 56503142de20 (backend) / e1cda42a9f79 (swap) / 932492336299 (burst driver), identical at author and bed. 13/13 checks, reproduced on three consecutive runs with zero discarded windows. The LAST non-topology pd_* family. B drives it with an nth-parity REJECT --reject-with tcp-reset on every SECOND SYN reaching the stub port, so a request's initial connect takes ECONNREFUSED and the in-process same-EP retry lands on the very next SYN and connects: delta 3.0 == n, delta pd_connect_retry_same_ep == 3.0 == the same n (the budget is 1, so one attempt per request), 3 'affinity preserved' lines held against the counter in an asserted identity, 3x200 with no receipt, and pd_connect_failover FLAT -- the outcome this family exists to be distinguished from. C IS THE BRANCH ITSELF, NOT SILENCE: with the EPs simply refusing, the retry loop still RUNS, pd_connect_retry_same_ep moves by n and 3 attempt lines are logged, and only the success half is declined; a control where nothing happened could not tell an ATTEMPT counter from a SUCCESS one. The block's two [PD_CONN_RETRY] lines are near collisions by eye ('to preserve affinity' vs 'affinity preserved'), so every stage asserts loose == attempts + oks and the discriminator verifies itself. STAGE ORDER IS LOAD-BEARING: the refusing control runs LAST, because 3 requests x 3 prefill EPs is exactly the breaker trip threshold and running it first meets the drive with 'no healthy prefill candidates' -- selection failing before any connect, which reads identically to 'this family cannot be driven'. THE DRIVE-SHAPE DEFECT THIS ARM CORRECTS IS THE EVIDENCE'S MAIN LESSON. The first version armed ONE nth-parity rule for a whole burst on a measured claim that no other SYN reached the stub port. The claim was false and its measurement had been truncated: the gateway's own vLLM /metrics scraper (pkg/aimetrics.Poller, started per-rule under pdDisaggMode) dials ep.xIP:ep.xPort every 10s, the REDIRECT carries it to the stub port, and at SYN time it is indistinguishable from the data connect. The kernel's rule counter then reported EXACTLY the predicted 3 resets, one per flapped EP, so the drive-shape oracle read as CONFIRMED -- while every reset it had counted was a scrape. The data connects took the accepting slot, succeeded first time, and a WORKING family was reported as a dead one. The fix is a window that states its own shape: the parity is armed FRESH around ONE request with a fall-through witness chain behind the REJECT, so refused+accepted is the total the port saw and a clean window is exactly (1,1); anything else discards the window and re-drives. Red-twinned at the ORACLE, deterministically and in both directions: R1 (REJECT never armed) fails with 'the flap rule pair is incomplete' rather than scoring a flat counter as a product failure, and R2 (--every 1, so the retry is refused too) discards 8 windows and fails with 'no clean single-request window' -- the exact historical failure mode, now caught."
   },
   {
    "name": "loxilb_pd_connect_retry_same_ep_total",

@@ -45,6 +45,7 @@ import (
 	"net"
 	"time"
 
+	prom "github.com/loxilb-io/loxilb/api/prometheus"
 	"github.com/loxilb-io/loxilb/pkg/aimetrics"
 	tk "github.com/loxilb-io/loxilib"
 )
@@ -173,4 +174,20 @@ func (k *vllmScraperSink) OnSample(epIdx int, smp aimetrics.WorkerSample) {
 	// at read time (V5 — never divide-by-zero in the cap math).
 	C.llb_ai_update_ep_capacity(C.uint32_t(k.serviceIP), C.uint16_t(k.servicePort),
 		C.int(epIdx), C.uint32_t(smp.NumGPUBlocks))
+}
+
+// OnScrapeResult implements the optional aimetrics.ResultSink, exporting the
+// outcome of every scrape attempt as loxilb_ai_worker_scrape_total{result}.
+//
+// OnSample above is reached ONLY by a scrape that parsed, so on its own it
+// leaves the failure states invisible: when an endpoint stops answering
+// /metrics the pushes just stop, the datapath's staleness guard quietly
+// substitutes a fleet average for the value nobody is refreshing, and nothing
+// is exported to say selection is now running on a fill-in. This is the hook
+// that makes that state alertable.
+//
+// epIdx/endpoint are deliberately not turned into labels -- see the counter's
+// declaration for the cardinality argument.
+func (k *vllmScraperSink) OnScrapeResult(_ int, _ string, result string) {
+	prom.RecordWorkerScrape(result)
 }

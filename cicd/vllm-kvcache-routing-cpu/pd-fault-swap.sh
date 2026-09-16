@@ -1,7 +1,14 @@
 #!/bin/bash
-# pd-fault-swap.sh <ep-netns> hang|ok|off
+# pd-fault-swap.sh <ep-netns> hang|ok|refuse|zerobyte|slowok|off
 #
 # Puts one endpoint netns behind a chosen fault backend, or restores it.
+#
+# `slowok` takes STUB_DELAY (seconds, default 8): the stub reads the whole
+# request, stays silent for that long, then answers exactly as `ok` does. It is
+# the only mode here that holds a connection OPEN without failing it, which is
+# what an arm needs when the thing under test is per-endpoint in-flight load
+# (pd_ep_loads[].active_conns) rather than a fault. `hang` cannot serve that
+# purpose: it ends in a zero-byte close and moves the death counters.
 #
 # Mechanism: each EP netns already runs reflect-echo on :80. A fault mode
 # starts pd-fault-backend.py on $STUB_PORT and REDIRECTs :80 to it; `off`
@@ -20,9 +27,10 @@
 # fail is not a teardown.
 set -u
 
-EP="${1:?usage: pd-fault-swap.sh <ep-netns> hang|ok|off}"
-STATE="${2:?usage: pd-fault-swap.sh <ep-netns> hang|ok|off}"
+EP="${1:?usage: pd-fault-swap.sh <ep-netns> hang|ok|refuse|zerobyte|slowok|off}"
+STATE="${2:?usage: pd-fault-swap.sh <ep-netns> hang|ok|refuse|zerobyte|slowok|off}"
 STUB_PORT="${STUB_PORT:-8099}"
+STUB_DELAY="${STUB_DELAY:-8}"
 DIR="${PD_FAULT_DIR:-/tmp/pd-fault}"
 PIDFILE="$DIR/$EP.pid"
 LOGFILE="$DIR/$EP.log"
@@ -95,12 +103,25 @@ stub_kill() {
 }
 
 case "$STATE" in
-  hang|ok)
+  hang|ok|refuse|zerobyte|slowok)
+    # `refuse` deliberately does NOT listen: the REDIRECT then points traffic
+    # at a closed port and connect() gets ECONNREFUSED. That is the event the
+    # caller asked for, not a failure of this script, so the usual "did the
+    # stub come up" check below is satisfied by the process being alive rather
+    # than by the port being bound.
     [ -f "$FAULT_STUB" ] || { echo "FATAL: missing $FAULT_STUB" >&2; exit 2; }
     stub_kill || exit 1
     redirect_del
-    nse python3 "$FAULT_STUB" --mode "$STATE" --port "$STUB_PORT" \
-        >"$LOGFILE" 2>&1 &
+    # --delay is only read by slowok; passing it unconditionally would still be
+    # inert, but keeping it off the other modes' argv keeps their invocation
+    # byte-identical to what they were proven with.
+    if [ "$STATE" = slowok ]; then
+      nse python3 "$FAULT_STUB" --mode "$STATE" --port "$STUB_PORT" \
+          --delay "$STUB_DELAY" >"$LOGFILE" 2>&1 &
+    else
+      nse python3 "$FAULT_STUB" --mode "$STATE" --port "$STUB_PORT" \
+          >"$LOGFILE" 2>&1 &
+    fi
     echo $! > "$PIDFILE"
     sleep 1
     if ! kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
@@ -112,7 +133,7 @@ case "$STATE" in
         -j REDIRECT --to-port "$STUB_PORT" || exit 1
     nse iptables -t nat -A OUTPUT -p tcp --dport 80 \
         -j REDIRECT --to-port "$STUB_PORT" || exit 1
-    echo "$EP fault-mode=$STATE (pid $(cat "$PIDFILE") port $STUB_PORT)"
+    echo "$EP fault-mode=$STATE (pid $(cat "$PIDFILE") port $STUB_PORT$([ "$STATE" = slowok ] && echo " delay ${STUB_DELAY}s"))"
     ;;
   off)
     redirect_del
@@ -120,7 +141,7 @@ case "$STATE" in
     echo "$EP fault-mode=off (reflect-echo restored)"
     ;;
   *)
-    echo "FATAL: unknown state '$STATE' (hang|ok|off)" >&2
+    echo "FATAL: unknown state '$STATE' (hang|ok|refuse|zerobyte|slowok|off)" >&2
     exit 2
     ;;
 esac

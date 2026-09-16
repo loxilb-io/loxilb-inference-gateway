@@ -1,17 +1,17 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-16T09:47:12+00:00",
-  "source_revision": "2257a40c994e32659b5dbbcc196d7a5f9b6a3523",
+  "generated_at": "2026-09-16T11:09:37+00:00",
+  "source_revision": "53c4993833f82c5315423c78639f5ffcb7e25e09",
   "upstream_repository": "https://github.com/loxilb-io/loxilb",
   "upstream_revision": "71982cd61b23d82c8f2ff1dd38d395bbb4c9360d"
  },
  "contract": {
-  "gateway_families": 249,
+  "gateway_families": 250,
   "upstream_families": 60,
   "present_identical": 35,
   "present_divergent": 0,
-  "absent": 214,
+  "absent": 215,
   "upstream_only": 25
  },
  "upstream_only": [
@@ -1201,6 +1201,19 @@
     "type": "gauge",
     "labels": [
      "service"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_worker_scrape_total",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "counter",
+    "labels": [
+     "result"
     ]
    }
   },

@@ -39,6 +39,23 @@ _fail_next = False      # One-shot: next inference request answers HTTP 500
                         # Armed via POST /admin/fail-next, cleared on consume
                         # or /admin/reset; mirrors the mock_sglang_pd.py knob.
 _args = None            # Set by main(); allows handlers to access parsed args
+# The gateway's kv_transfer_params buffer is PD_KV_PARAMS_MAX_LEN = 65536 (sockproxy.h);
+# the extractor overflows on `val_len >= capacity`. Target comfortably above it so the
+# arm does not sit on the boundary, where a one-field change to the object could silently
+# drop the payload back under the bound and turn the overflow arm green-but-vacuous.
+PD_KV_PARAMS_OVERSIZE_TARGET = 80000
+_kv_params_mode = "on"  # "on" | "off" | "oversize" — shape of kv_transfer_params in the
+                        # PREFILL response. Default "on" is byte-identical to the
+                        # historical behaviour, so the scenarios that docker-cp this file
+                        # (llamacpp-lb, sglang-pd-disagg, trtllm-pd-disagg) are unaffected.
+                        # A runtime admin knob rather than an env var on purpose: the gateway
+                        # reads this per response, so an arm can switch shape without
+                        # recreating the container, and the control arm can be the identical
+                        # request with only this one field changed.
+                        #   off      -> the key is OMITTED entirely; the gateway parses a
+                        #               prefill response that simply has no params
+                        #   oversize -> the value exceeds PD_KV_PARAMS_MAX_LEN (64KB), which
+                        #               is the only way to reach the extractor's overflow arm
 # Identity of this server instance, echoed as the X-Served-By response header so
 # a test can attribute a proxied response to the endpoint that produced it. In
 # Kubernetes POD_NAME (downward API) names the pod; hostname covers docker/netns.
@@ -214,7 +231,7 @@ class MockVLLMHandler(BaseHTTPRequestHandler):
         model = req.get("model", MODEL_NAME)
 
         if SERVER_ROLE == "prefill":
-            self._send_json(200, {
+            payload = {
                 "id": cmpl_id,
                 "object": "text_completion",
                 "created": int(time.time()),
@@ -225,8 +242,11 @@ class MockVLLMHandler(BaseHTTPRequestHandler):
                     "finish_reason": "length"
                 }],
                 "usage": {"prompt_tokens": 10, "completion_tokens": 1, "total_tokens": 11},
-                "kv_transfer_params": self._make_kv_params()
-            })
+            }
+            kvp = self._make_kv_params()
+            if kvp is not None:
+                payload["kv_transfer_params"] = kvp
+            self._send_json(200, payload)
         else:
             self._send_json(200, {
                 "id": cmpl_id,
@@ -243,7 +263,7 @@ class MockVLLMHandler(BaseHTTPRequestHandler):
 
     def _send_prefill_response(self, cmpl_id, model):
         """Prefill: non-streaming response with kv_transfer_params."""
-        self._send_json(200, {
+        payload = {
             "id": cmpl_id,
             "object": "chat.completion",
             "created": int(time.time()),
@@ -254,8 +274,11 @@ class MockVLLMHandler(BaseHTTPRequestHandler):
                 "finish_reason": "length"
             }],
             "usage": {"prompt_tokens": 12, "completion_tokens": 1, "total_tokens": 13},
-            "kv_transfer_params": self._make_kv_params()
-        })
+        }
+        kvp = self._make_kv_params()
+        if kvp is not None:
+            payload["kv_transfer_params"] = kvp
+        self._send_json(200, payload)
 
     def _send_decode_response(self, cmpl_id, model):
         """Decode: non-streaming response."""
@@ -307,7 +330,29 @@ class MockVLLMHandler(BaseHTTPRequestHandler):
         """Generate mock kv_transfer_params matching real vLLM nixl_connector.py format.
 
         remote_block_ids is a nested array: one list of block IDs per TP rank.
+
+        Returns None when the kv-params mode is "off", in which case the caller OMITS
+        the key rather than sending a null: the gateway's extractor searches the
+        response for the key, so a null would still be a present-but-unusable value
+        and would not exercise the absent path the way a real non-disaggregated
+        serve does.
         """
+        if _kv_params_mode == "off":
+            return None
+        if _kv_params_mode == "oversize":
+            # Exceed the extractor's 64KB buffer (PD_KV_PARAMS_MAX_LEN, sockproxy.h).
+            # MEASURED, not estimated: a first cut hard-coded 12000 blocks on a guessed
+            # digit width and produced 61122 bytes — UNDER the bound, so the overflow arm
+            # would never have fired and the family would have read as dead. Grow until the
+            # COMPACT serialization clears the bound with margin (the wire form carries
+            # separators and is therefore never smaller than what is measured here).
+            blocks_per_rank = 12000
+            while True:
+                probe = [list(range(i * 100, i * 100 + blocks_per_rank))
+                         for i in range(tp_size)]
+                if len(json.dumps(probe, separators=(',', ':'))) >= PD_KV_PARAMS_OVERSIZE_TARGET:
+                    break
+                blocks_per_rank *= 2
         remote_block_ids = [
             list(range(i * 100, i * 100 + blocks_per_rank))
             for i in range(tp_size)
@@ -357,7 +402,7 @@ class AdminHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_POST(self):
-        global _health_ok, _fail_next
+        global _health_ok, _fail_next, _kv_params_mode
         if not self._auth_ok():
             self.send_response(401)
             self.end_headers()
@@ -366,9 +411,18 @@ class AdminHandler(BaseHTTPRequestHandler):
             _fail_next = True
             self._reply_json({"fail_next": True})
             print(f"[{SERVER_ROLE}] [admin] fail-next ARMED", flush=True)
+        elif self.path in ("/admin/kv-params-on", "/admin/kv-params-off",
+                           "/admin/kv-params-oversize"):
+            # Shape of kv_transfer_params in the PREFILL response. The print is the
+            # arm's receipt that the knob actually moved: a control that silently
+            # failed to switch would otherwise be scored as a product result.
+            _kv_params_mode = self.path.rsplit("-", 1)[1]
+            self._reply_json({"kv_params_mode": _kv_params_mode})
+            print(f"[{SERVER_ROLE}] [admin] kv-params mode = {_kv_params_mode}", flush=True)
         elif self.path == "/admin/reset":
             _fail_next = False
-            self._reply_json({"fail_next": False})
+            _kv_params_mode = "on"
+            self._reply_json({"fail_next": False, "kv_params_mode": _kv_params_mode})
             print(f"[{SERVER_ROLE}] [admin] knobs RESET", flush=True)
         elif self.path == "/admin/health-fail":
             _health_ok = False
@@ -401,6 +455,7 @@ class AdminHandler(BaseHTTPRequestHandler):
             data = json.dumps({
                 "health_ok": _health_ok,
                 "fail_next": _fail_next,
+                "kv_params_mode": _kv_params_mode,
                 "role": SERVER_ROLE,
                 "request_count": _request_count,
             }).encode()
