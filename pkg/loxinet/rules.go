@@ -4110,8 +4110,15 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 	if jwtProfErr != nil {
 		return RuleArgsErr, &cmn.RuleArgumentError{Err: jwtProfErr}
 	}
-	// Checked against the resolved api_key_auth, which a replace may have preserved.
-	sockMapCode, err = lbSockMapAiGwCode(&serv, sockMapCode, nextApiKeyAuth)
+	// Checked against the resolved api_key_auth, which a replace may have
+	// preserved, and against the listener's L7 attachment as it stands. The
+	// attachment is read from the index rather than the policy registry because
+	// this path already holds mh.mtx and the registry's lock is taken before it
+	// (see l7AttachedRules). NetL7PolicyAdd refuses the other order, and the data
+	// plane declines to install a pair for such a rule as well, which covers the
+	// window between this check and the write.
+	l7Attached := l7RuleHasPolicy(serv.ServIP, serv.ServPort, serv.Proto)
+	sockMapCode, err = lbSockMapL7Code(&serv, sockMapCode, nextApiKeyAuth, l7Attached)
 	if err != nil {
 		return RuleArgsErr, &cmn.RuleArgumentError{Err: err}
 	}
@@ -5142,6 +5149,11 @@ func (R *RuleH) DeleteLbRule(serv cmn.LbServiceArg) (int, error) {
 	delete(R.tables[RtLB].eMap, rt.ruleKey())
 	// drop the opaque-id index entry alongside the rule.
 	R.unregisterOpaqueID(rule)
+	// The sockproxy L7 attach is torn down with the listener, so the attachment
+	// index must not outlive it: a rule recreated here may legitimately ask for
+	// acceleration. The policy itself stays in its registry, pointing at an
+	// lbId that no longer resolves, exactly as NetL7PolicyDel documents.
+	l7ClearAttached(serv.ServIP, serv.ServPort, serv.Proto)
 	if rule.ruleNum < RtMaximumLbs {
 		R.tables[RtLB].rArr[rule.ruleNum] = nil
 	}

@@ -669,6 +669,9 @@ func applyL7Policy(hooks Hooks, doc *Document, tolerateExists bool) (int, int, e
 	n, skipped := 0, 0
 	for i := range doc.Domains.L7Policy {
 		p := &doc.Domains.L7Policy[i]
+		// Tells the control plane this is a replay, so a conflict the snapshot
+		// already contains warns instead of aborting the restore.
+		p.RestoreReplay = true
 		if _, err := hooks.NetL7PolicyAdd(p); err != nil {
 			if tolerateExists && isIdempotentExists(err) {
 				skipped++

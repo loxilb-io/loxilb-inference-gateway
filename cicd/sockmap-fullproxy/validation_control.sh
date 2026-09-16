@@ -290,9 +290,9 @@ sockmap_section 7 "C-9 — verdict passes and failure logs"
 sockmap_assert_no_pass llb1 "$PEER_MISS_START" "C-9 no socket ran the verdict without a peer"
 fail_cnt=$(sockmap_log_failure_count llb1)
 if (( fail_cnt == 0 )); then
-  sockmap_result "C-9 no sockmap failure messages in docker logs" "OK"
+  sockmap_result "C-9 no sockmap failure messages in the daemon logs" "OK"
 else
-  sockmap_result "C-9 no sockmap failure messages in docker logs" "FAILED" "$fail_cnt occurrences"
+  sockmap_result "C-9 no sockmap failure messages in the daemon logs" "FAILED" "$fail_cnt occurrences"
 fi
 
 sockmap_finalize "$SCENARIO"
