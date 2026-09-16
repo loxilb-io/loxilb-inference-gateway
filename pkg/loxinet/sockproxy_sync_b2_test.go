@@ -142,7 +142,7 @@ func TestRateLimiterServerHandlerRoutes(t *testing.T) {
 			{KeyId: "t:srv-tenant-2", IsTenant: true, EpochStartTs: 100, TokensConsumed: 99},
 		},
 	}
-	if err := coord.ApplyRateLimiterBatch(batch1); err != nil {
+	if err := coord.ApplyRateLimiterBatch("test-peer", batch1); err != nil {
 		t.Fatalf("ApplyRateLimiterBatch (snapshot) failed: %v", err)
 	}
 	state := store.ExportState()
@@ -165,7 +165,7 @@ func TestRateLimiterServerHandlerRoutes(t *testing.T) {
 			{KeyId: "t:srv-tenant-2", IsTenant: true, EpochStartTs: 100, TokensConsumed: 200},
 		},
 	}
-	if err := coord.ApplyRateLimiterBatch(batch2); err != nil {
+	if err := coord.ApplyRateLimiterBatch("test-peer", batch2); err != nil {
 		t.Fatalf("ApplyRateLimiterBatch (delta) failed: %v", err)
 	}
 	state = store.ExportState()
@@ -189,7 +189,7 @@ func TestRateLimiterApplyNilStore(t *testing.T) {
 	batch := &RateLimiterBatch{IsDelta: false, Entries: []*RateLimiterEntry{
 		{KeyId: "t:no-store-tenant", IsTenant: true, EpochStartTs: 1, TokensConsumed: 1},
 	}}
-	if err := coord.ApplyRateLimiterBatch(batch); err != nil {
+	if err := coord.ApplyRateLimiterBatch("test-peer", batch); err != nil {
 		t.Errorf("ApplyRateLimiterBatch with no store should be nil-error (graceful), got %v", err)
 	}
 }
@@ -229,22 +229,29 @@ func TestRateLimiterSendBatchChunking(t *testing.T) {
 	if len(srv.batches) != 3 {
 		t.Fatalf("expected 3 batches recorded, got %d", len(srv.batches))
 	}
-	// Every push leads with the scope-version sentinel, INSIDE the
-	// 500-entry RPC ceiling: the first chunk is the sentinel + 499 payload
-	// entries, so no call ever exceeds the SPEC bound. 1200 payload rows
-	// therefore chunk as 499+500+201, and the first wire batch's first
-	// entry is the sentinel, not payload.
-	wantSizes := []int{500, 500, 201}
+	// EVERY chunk leads with the scope-version sentinel, INSIDE the 500-entry
+	// RPC ceiling: each chunk is the sentinel + 499 payload entries, so no
+	// call ever exceeds the SPEC bound. 1200 payload rows therefore chunk as
+	// 499+499+202.
+	//
+	// This assertion previously required the opposite — "the sentinel must
+	// lead the PUSH, not every chunk". That contract is not one the receiver
+	// can honour: chunks are independent RPCs with no push identity, sequence
+	// number or stream on the wire, so a chunk arriving without the sentinel
+	// is indistinguishable from a push by a peer that pre-dates the ladder
+	// scopes, and the receiver warned accordingly about its own up-to-date
+	// sender. See TestChunkedPushDoesNotSelfReportAsOldPeer, which asserts
+	// that consequence at the receiver.
+	wantSizes := []int{500, 500, 203}
 	for i, b := range srv.batches {
 		if len(b.Entries) != wantSizes[i] {
 			t.Errorf("batch %d: expected %d entries, got %d", i, wantSizes[i], len(b.Entries))
 		}
 	}
-	if srv.batches[0].Entries[0].KeyId != rl.ScopeSentinelKeyID {
-		t.Errorf("first wire entry must be the scope sentinel, got %q", srv.batches[0].Entries[0].KeyId)
-	}
-	if srv.batches[1].Entries[0].KeyId == rl.ScopeSentinelKeyID {
-		t.Errorf("the sentinel must lead the PUSH, not every chunk")
+	for i, b := range srv.batches {
+		if b.Entries[0].KeyId != rl.ScopeSentinelKeyID {
+			t.Errorf("chunk %d must lead with the scope sentinel, got %q", i, b.Entries[0].KeyId)
+		}
 	}
 }
 
@@ -504,4 +511,502 @@ func itoaT(i int) string {
 		buf[pos] = '-'
 	}
 	return string(buf[pos:])
+}
+
+// ---------- Scope-version sentinel: sender/receiver contract ----------
+
+// warnRecorded reports whether the coordinator has latched the warn-once key
+// for (peerKey, rpcName). warnOncePeerRPC stores exactly this key the first
+// time it emits, so the map is a direct, non-vacuous oracle for "did this
+// degrade warning fire, and about whom".
+func warnRecorded(s *SockproxySync, peerKey, rpcName string) bool {
+	_, ok := s.warnOnce.Load(peerKey + "/" + rpcName)
+	return ok
+}
+
+// TestChunkedPushDoesNotSelfReportAsOldPeer — a push larger than the RPC
+// ceiling must not make its own up-to-date sender look like a peer that
+// pre-dates the ladder scopes.
+//
+// Every chunk is an INDEPENDENT RateLimiterSync RPC and the receiver scores
+// each one on its own: there is no push identity, sequence number or stream on
+// the wire, so a chunk that arrives without the sentinel is indistinguishable
+// from a push by a v1 peer. "The sentinel leads the push" is therefore not a
+// contract the receiver can honour — only "the sentinel leads every chunk" is.
+//
+// With the sentinel on the first chunk only, a 1200-entry push from a fully
+// current node made that node's own peer log say it "pre-dates the
+// per-user/per-key-TPM/keyless quota scopes" — inverting the single signal
+// operators have for the unsupported mixed-version posture.
+func TestChunkedPushDoesNotSelfReportAsOldPeer(t *testing.T) {
+	t.Parallel()
+	srv := &mockRateLimiterServer{}
+	client, cleanup := startMockRLServer(t, srv)
+	defer cleanup()
+
+	sender := newTestCoordinator(newMockApplier(0))
+	peer := &DpPeer{Peer: net.ParseIP("127.0.0.1"), CapMask: 0xFFFFFFFF}
+
+	// Comfortably more than one chunk's worth.
+	const n = 1200
+	entries := make([]rl.RateLimiterEntry, n)
+	for i := 0; i < n; i++ {
+		entries[i] = rl.RateLimiterEntry{
+			KeyID:    "t:chunk-tenant-" + itoaT(i),
+			IsTenant: true,
+			Consumed: int64(i),
+		}
+	}
+	if err := sender.sendRateLimiterBatch(peer, client, entries, false); err != nil {
+		t.Fatalf("sendRateLimiterBatch returned error: %v", err)
+	}
+
+	srv.mu.Lock()
+	wire := make([]*RateLimiterBatch, len(srv.batches))
+	copy(wire, srv.batches)
+	srv.mu.Unlock()
+	if len(wire) < 2 {
+		t.Fatalf("test needs a multi-chunk push to be meaningful, got %d chunk(s)", len(wire))
+	}
+
+	// Every chunk must announce the vocabulary, because every chunk is scored
+	// alone. This is the property the receiver's check actually depends on.
+	for i, b := range wire {
+		if len(b.Entries) == 0 || b.Entries[0].KeyId != rl.ScopeSentinelKeyID {
+			got := "<empty>"
+			if len(b.Entries) > 0 {
+				got = b.Entries[0].KeyId
+			}
+			t.Errorf("chunk %d/%d does not lead with the scope sentinel (got %q); "+
+				"the receiver scores each RPC alone and will read it as a v1 peer",
+				i, len(wire), got)
+		}
+		if len(b.Entries) > rlPushBatchMax {
+			t.Errorf("chunk %d carries %d entries, over the %d ceiling",
+				i, len(b.Entries), rlPushBatchMax)
+		}
+	}
+
+	// The end-to-end consequence, asserted at the receiver rather than inferred
+	// from the wire: feed the captured chunks into a real receiving coordinator
+	// and require that it never accuses this sender of being an old peer.
+	recv := newTestCoordinator(newMockApplier(0))
+	recv.SetRateLimiterStore(rl.New())
+	const senderKey = "10.0.0.7:4041"
+	for _, b := range wire {
+		if err := recv.ApplyRateLimiterBatch(senderKey, b); err != nil {
+			t.Fatalf("ApplyRateLimiterBatch: %v", err)
+		}
+	}
+	if warnRecorded(recv, senderKey, "RateLimiterSync/scope-older") {
+		t.Errorf("receiver reported an up-to-date sender as pre-dating the ladder scopes")
+	}
+}
+
+// TestScopeVersionWarningsNameThePeerAndDoNotMask — the two scope-version
+// warnings must be attributed to the peer they are about, and must not
+// suppress one another.
+//
+// Both used to pass the literal "rl-scope-ver" where warnOncePeerRPC takes a
+// peerKey. That made the warn-once key process-global, so across an entire
+// fleet the message fired at most ONCE, logged peer=rl-scope-ver instead of an
+// address, and let whichever of the two messages happened first silence the
+// other permanently — including silencing a genuine old peer that joined later.
+func TestScopeVersionWarningsNameThePeerAndDoNotMask(t *testing.T) {
+	t.Parallel()
+	recv := newTestCoordinator(newMockApplier(0))
+	recv.SetRateLimiterStore(rl.New())
+
+	const oldPeer = "10.0.0.8:4041"
+	const newPeer = "10.0.0.9:4041"
+
+	// A peer that pre-dates the ladder scopes: no sentinel at all.
+	if err := recv.ApplyRateLimiterBatch(oldPeer, &RateLimiterBatch{
+		Entries: []*RateLimiterEntry{{KeyId: "t:tenant-a", IsTenant: true}},
+	}); err != nil {
+		t.Fatalf("ApplyRateLimiterBatch(old): %v", err)
+	}
+	// A peer speaking a vocabulary NEWER than this build.
+	if err := recv.ApplyRateLimiterBatch(newPeer, &RateLimiterBatch{
+		Entries: []*RateLimiterEntry{
+			{KeyId: "ver:99", IsTenant: true},
+			{KeyId: "t:tenant-b", IsTenant: true},
+		},
+	}); err != nil {
+		t.Fatalf("ApplyRateLimiterBatch(new): %v", err)
+	}
+
+	// Both must be recorded. Pre-fix only the first survived: the second hit
+	// the same global key and was dropped as a duplicate.
+	if !warnRecorded(recv, oldPeer, "RateLimiterSync/scope-older") {
+		t.Errorf("no scope-older warning attributed to %s", oldPeer)
+	}
+	if !warnRecorded(recv, newPeer, "RateLimiterSync/scope-newer") {
+		t.Errorf("no scope-newer warning attributed to %s (masked by the other message?)", newPeer)
+	}
+	// And the warning must not be filed under a literal tag.
+	if warnRecorded(recv, "rl-scope-ver", "RateLimiterSync") {
+		t.Errorf("warning filed under the literal \"rl-scope-ver\" instead of a peer address")
+	}
+
+	// A second old peer must still be reported: warn-once is per peer, not
+	// per fleet. This is the case a process-global key loses outright.
+	const otherOldPeer = "10.0.0.10:4041"
+	if err := recv.ApplyRateLimiterBatch(otherOldPeer, &RateLimiterBatch{
+		Entries: []*RateLimiterEntry{{KeyId: "t:tenant-c", IsTenant: true}},
+	}); err != nil {
+		t.Fatalf("ApplyRateLimiterBatch(old2): %v", err)
+	}
+	if !warnRecorded(recv, otherOldPeer, "RateLimiterSync/scope-older") {
+		t.Errorf("a second old peer went unreported; warn-once must be per peer")
+	}
+}
+
+// TestSnapshotImportDoesNotResetTheReceiversRpsBuckets — an absolute
+// rate-limiter snapshot must not hand the receiving node's own per-key RPS
+// buckets a fresh full burst.
+//
+// ImportState replaces the per-key entries map wholesale and rebuilds each
+// limiter from the entry's (RPS, Burst). Those two fields have no slot in
+// the wire message — RateLimiterEntry carries key_id, is_tenant,
+// last_refill_ns, current_tokens, epoch_start_ts, tokens_consumed and
+// exceeded, and rlGoEntryToProto never writes a rate or a burst. So every
+// imported limiter arrives as rate.NewLimiter(0, 0), RateLimiterStore.check
+// sees a config mismatch on the next call and mints a brand-new FULL bucket.
+// The snapshot's per-key half therefore carries nothing the receiver can
+// use, and the one thing it does is reset the receiver's live enforcement.
+//
+// The push is not a once-per-failover event: in A-A mode every tenth push
+// is an absolute snapshot, so a serving node is re-zeroed on that cadence
+// while it is admitting traffic against those very buckets.
+//
+// The two halves of the assertion are deliberate. The tenant-quota control
+// proves the harness can see synced state arrive at all — without it a
+// "bucket still denies" result could just as well mean the push never
+// landed.
+func TestSnapshotImportDoesNotResetTheReceiversRpsBuckets(t *testing.T) {
+	t.Parallel()
+	srv := &mockRateLimiterServer{}
+	client, cleanup := startMockRLServer(t, srv)
+	defer cleanup()
+
+	// The sending node: one per-key bucket and one tenant driven deep into
+	// quota debt (a full burst plus a 10% overrun — ~6s of drain, longer
+	// than this test runs, so the debt cannot heal before the assertions).
+	sendStore := rl.New()
+	sendStore.CheckKey("shared-key", 1, 1)
+	sendStore.AllowTokens("debt-tenant", 1000000, 1000000, 0)
+	sendStore.AllowTokens("debt-tenant", 100000, 1000000, 0)
+
+	sender := newTestCoordinator(newMockApplier(0))
+	peer := &DpPeer{Peer: net.ParseIP("127.0.0.9"), CapMask: 0xFFFFFFFF}
+	if err := sender.sendRateLimiterBatch(peer, client, sendStore.ExportState(), false); err != nil {
+		t.Fatalf("sendRateLimiterBatch: %v", err)
+	}
+
+	srv.mu.Lock()
+	wire := make([]*RateLimiterBatch, len(srv.batches))
+	copy(wire, srv.batches)
+	srv.mu.Unlock()
+	if len(wire) == 0 {
+		t.Fatalf("setup: no batch reached the wire")
+	}
+
+	// The receiving node is serving traffic of its own: it has charged the
+	// same tenant once (which is what publishes the tenant's limit locally,
+	// the denominator the debt check reads against) and has already spent
+	// its own burst on the same key.
+	recvStore := rl.New()
+	recvStore.AllowTokens("debt-tenant", 1, 1000000, 0)
+	if ok, _ := recvStore.CheckKey("shared-key", 1, 1); !ok {
+		t.Fatalf("setup: the receiver's first request must be admitted")
+	}
+	if ok, _ := recvStore.CheckKey("shared-key", 1, 1); ok {
+		t.Fatalf("setup: the receiver's burst must be spent before the push lands")
+	}
+	recv := newTestCoordinator(newMockApplier(0))
+	recv.SetRateLimiterStore(recvStore)
+
+	const senderKey = "10.0.0.9:4041"
+	for _, b := range wire {
+		if err := recv.ApplyRateLimiterBatch(senderKey, b); err != nil {
+			t.Fatalf("ApplyRateLimiterBatch: %v", err)
+		}
+	}
+
+	// Control: state really did cross the wire and land in this store.
+	if !recvStore.IsTokenQuotaExceeded("debt-tenant") {
+		t.Fatalf("control failed: the sender's tenant quota debt did not reach the receiver, " +
+			"so the per-key result below proves nothing")
+	}
+
+	// Subject: the receiver's own spent bucket must still be spent.
+	if ok, _ := recvStore.CheckKey("shared-key", 1, 1); ok {
+		t.Errorf("a peer snapshot refilled the receiver's own per-key RPS bucket: " +
+			"the request that was refused a moment ago is now admitted")
+	}
+
+	// And it is not a one-off: price what each further snapshot is worth to
+	// a caller that keeps asking. Every admission here is one the local rate
+	// limit had already refused.
+	extra := 0
+	for i := 0; i < 3; i++ {
+		for _, b := range wire {
+			if err := recv.ApplyRateLimiterBatch(senderKey, b); err != nil {
+				t.Fatalf("ApplyRateLimiterBatch (replay %d): %v", i, err)
+			}
+		}
+		if ok, _ := recvStore.CheckKey("shared-key", 1, 1); ok {
+			extra++
+		}
+	}
+	if extra != 0 {
+		t.Errorf("%d of 3 replayed snapshots each bought the caller another admission "+
+			"past a rate limit that had already refused it", extra)
+	}
+}
+
+// TestRateLimiterPushDialsItsOwnPeer — the rate-limiter push loop must
+// establish its own connection to a peer it has none for.
+//
+// The loop used to test clientFn() and skip when it came back nil, so the
+// rate-limiter half of xsync ran only after something ELSE had dialled.
+// Only two paths dial: the session-sync retry and key invalidation. A
+// cluster whose traffic is L7 AI does neither, so quota state never
+// replicated — and nothing said so, because the skip had no log, no
+// counter, and left peer_up at the 0 the consumer loop writes at start.
+//
+// clientFn here returns nil until the connect hook has run, which is
+// exactly the production shape: spClients is empty until connectFn stores
+// a client in it.
+func TestRateLimiterPushDialsItsOwnPeer(t *testing.T) {
+	t.Parallel()
+	srv := &mockRateLimiterServer{}
+	client, cleanup := startMockRLServer(t, srv)
+	defer cleanup()
+
+	coord := newTestCoordinator(newMockApplier(0))
+	coord.haMode.Store("AP")
+	store := rl.New()
+	// Seed one quota entry: ExportState must be non-empty or the loop
+	// short-circuits before it ever looks for a client, and the test would
+	// pass for the wrong reason.
+	store.AllowTokens("dial-tenant", 1, 1000000, 0)
+	coord.SetRateLimiterStore(store)
+
+	var connects atomic.Int32
+	var connected atomic.Bool
+	coord.SetConnectFn(func(string) {
+		connects.Add(1)
+		connected.Store(true)
+	})
+	clientFn := func() XSyncClient {
+		if connected.Load() {
+			return client
+		}
+		return nil
+	}
+
+	peer := &DpPeer{Peer: net.ParseIP("127.0.0.11"), CapMask: 0xFFFFFFFF}
+	coord.StartRateLimiterPushLoop(peer, clientFn)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) && srv.calls.Load() == 0 {
+		time.Sleep(50 * time.Millisecond)
+	}
+	close(coord.shutdownCh)
+	coord.wg.Wait()
+
+	if connects.Load() == 0 {
+		t.Fatalf("the push loop never asked the connect hook to dial the peer")
+	}
+	if got := srv.calls.Load(); got == 0 {
+		t.Errorf("no RateLimiterSync reached the peer after the loop dialled it (connects=%d)",
+			connects.Load())
+	}
+}
+
+// TestRateLimiterPushDialIsThrottled — a peer that cannot be dialled must
+// not be re-dialled on every tick.
+//
+// The loop runs at 200ms in A-P and DialXSyncGRPC blocks for up to 2s on a
+// TCP probe before it gives up, so an unthrottled retry turns an
+// unreachable peer into a permanent connect storm. The bound is one
+// attempt per rlDialRetryInterval.
+func TestRateLimiterPushDialIsThrottled(t *testing.T) {
+	t.Parallel()
+	coord := newTestCoordinator(newMockApplier(0))
+	coord.haMode.Store("AP")
+	store := rl.New()
+	store.AllowTokens("throttle-tenant", 1, 1000000, 0)
+	coord.SetRateLimiterStore(store)
+
+	var connects atomic.Int32
+	coord.SetConnectFn(func(string) { connects.Add(1) })
+	// Never connects: the peer is unreachable for the whole run.
+	clientFn := func() XSyncClient { return nil }
+
+	peer := &DpPeer{Peer: net.ParseIP("127.0.0.12"), CapMask: 0xFFFFFFFF}
+	coord.StartRateLimiterPushLoop(peer, clientFn)
+
+	const run = 2500 * time.Millisecond
+	time.Sleep(run)
+	close(coord.shutdownCh)
+	coord.wg.Wait()
+
+	ticks := int(run / rlPushIntervalAP)         // ~12
+	maxDials := int(run/rlDialRetryInterval) + 2 // ~3, with slack for timing
+	got := int(connects.Load())
+	if got == 0 {
+		t.Fatalf("the loop never dialled at all over %v; the throttle cannot be under test", run)
+	}
+	if got > maxDials {
+		t.Errorf("dialled %d times in %v (%d ticks); the throttle allows at most %d",
+			got, run, ticks, maxDials)
+	}
+}
+
+// TestEveryLadderScopeSurvivesTheWire — the per-user, per-user-model,
+// per-key and per-VIP quota scopes must reach a peer in the same state the
+// tenant scopes do.
+//
+// The ladder scopes keep their wire prefix in the local map key and the
+// two legacy tenant scopes do not, so they take different branches in
+// QuotaWireKey on the way out and in QuotaMapKey on the way back. A scope
+// that fell through either branch would be silently absent at the receiver
+// — silently, because a bucket the receiver has never charged has no
+// published limit, so IsTokenQuotaExceeded reads false and the request is
+// simply admitted.
+//
+// The tenant row is the control: it proves the push, the chunking and the
+// merge all ran, so a ladder row that is missing is missing for its own
+// reasons.
+func TestEveryLadderScopeSurvivesTheWire(t *testing.T) {
+	t.Parallel()
+	srv := &mockRateLimiterServer{}
+	client, cleanup := startMockRLServer(t, srv)
+	defer cleanup()
+
+	const tpm = 10
+	// A full-burst charge plus a 20% overrun: ~12s of drain, far longer
+	// than this test runs, so no bucket can heal before the assertions.
+	keys := []struct{ name, key string }{
+		{"tenant", "wire-tenant"},
+		{"tenant|model", "wire-tenant|wire-model"},
+		{"user", rl.UserQuotaKey("wire-tenant", "wire-user")},
+		{"user|model", rl.UserModelQuotaKey("wire-tenant", "wire-user", "wire-model")},
+		{"key", rl.KeyQuotaKey("wire-key-id")},
+		{"vip", rl.VipSharedQuotaKey("10.0.0.1:2020")},
+	}
+	sendStore := rl.New()
+	for _, k := range keys {
+		sendStore.AllowTokens(k.key, tpm, tpm, 0)
+		sendStore.AllowTokens(k.key, tpm/5+1, tpm, 0)
+		if !sendStore.IsTokenQuotaExceeded(k.key) {
+			t.Fatalf("setup: %s bucket (%q) is not in debt on the sender", k.name, k.key)
+		}
+	}
+
+	sender := newTestCoordinator(newMockApplier(0))
+	peer := &DpPeer{Peer: net.ParseIP("127.0.0.13"), CapMask: 0xFFFFFFFF}
+	if err := sender.sendRateLimiterBatch(peer, client, sendStore.ExportState(), false); err != nil {
+		t.Fatalf("sendRateLimiterBatch: %v", err)
+	}
+	srv.mu.Lock()
+	wire := make([]*RateLimiterBatch, len(srv.batches))
+	copy(wire, srv.batches)
+	srv.mu.Unlock()
+	if len(wire) == 0 {
+		t.Fatalf("setup: no batch reached the wire")
+	}
+
+	recvStore := rl.New()
+	recv := newTestCoordinator(newMockApplier(0))
+	recv.SetRateLimiterStore(recvStore)
+	for _, b := range wire {
+		if err := recv.ApplyRateLimiterBatch("10.0.0.13:4041", b); err != nil {
+			t.Fatalf("ApplyRateLimiterBatch: %v", err)
+		}
+	}
+
+	// The oracle is the pre-admission reservation, not IsTokenQuotaExceeded.
+	// A receiver that has never charged a bucket has no limit published on
+	// it, and IsTokenQuotaExceeded reads a stored limit — it answers false
+	// on every freshly-imported bucket whether or not the debt arrived, so
+	// it cannot tell the two apart. ReserveTokens takes the limit as an
+	// argument, exactly as the request path supplies it from configuration,
+	// and refuses when the bucket's level cannot cover the claim. That is
+	// the first thing a real request asks after a failover.
+	for _, k := range keys {
+		allowed, _, _ := recvStore.ReserveTokens(k.key, 1, tpm, 0)
+		if allowed {
+			t.Errorf("%s scope (%q) did not arrive in debt at the receiver: "+
+				"the first request after a failover is admitted against an exhausted quota",
+				k.name, k.key)
+		}
+	}
+}
+
+// TestRateLimiterPushStopsWhenThePeerIsNoLongerOurs — a node that stops
+// being master must stop pushing rate-limiter state.
+//
+// The role gate lives in peersFn: it returns nil unless this node holds a
+// MASTER cluster instance. It used to be consulted once, when the loop was
+// spawned on promotion, so a node that was ever master pushed forever. On a
+// two-node bring-up whose election flaps once before it settles — which is
+// the ordinary case, not a pathological one — both nodes end up pushing
+// absolute snapshots at each other for the life of the process.
+//
+// The first half of the test is its own control: without it, "no pushes
+// after demotion" is equally well explained by a loop that never pushed.
+func TestRateLimiterPushStopsWhenThePeerIsNoLongerOurs(t *testing.T) {
+	t.Parallel()
+	srv := &mockRateLimiterServer{}
+	client, cleanup := startMockRLServer(t, srv)
+	defer cleanup()
+
+	coord := newTestCoordinator(newMockApplier(0))
+	coord.haMode.Store("AP")
+	store := rl.New()
+	store.AllowTokens("demote-tenant", 1, 1000000, 0)
+	coord.SetRateLimiterStore(store)
+
+	peer := &DpPeer{Peer: net.ParseIP("127.0.0.14"), CapMask: 0xFFFFFFFF}
+	var master atomic.Bool
+	master.Store(true)
+	coord.peersFn = func() []DpPeer {
+		if !master.Load() {
+			return nil // demoted: no peers to push to
+		}
+		return []DpPeer{*peer}
+	}
+
+	coord.StartRateLimiterPushLoop(peer, func() XSyncClient { return client })
+
+	// Control: while this node is master, pushes must actually happen.
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) && srv.calls.Load() == 0 {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if srv.calls.Load() == 0 {
+		close(coord.shutdownCh)
+		coord.wg.Wait()
+		t.Fatalf("control failed: no push happened while this node was master, " +
+			"so a later silence would prove nothing")
+	}
+
+	// Demote, let several push intervals pass, then count from a fresh mark.
+	master.Store(false)
+	time.Sleep(3 * rlPushIntervalAP)
+	mark := srv.calls.Load()
+	time.Sleep(6 * rlPushIntervalAP)
+	after := srv.calls.Load()
+	close(coord.shutdownCh)
+	coord.wg.Wait()
+
+	if after != mark {
+		t.Errorf("a demoted node pushed %d more RateLimiterSync batches over %v; "+
+			"the role gate is only consulted when the loop is spawned",
+			after-mark, 6*rlPushIntervalAP)
+	}
 }

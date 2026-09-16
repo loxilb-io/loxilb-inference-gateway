@@ -55,6 +55,7 @@ import (
 	"github.com/loxilb-io/loxilb/pkg/aikey"
 	tk "github.com/loxilb-io/loxilib"
 	"google.golang.org/grpc"
+	grpcpeer "google.golang.org/grpc/peer"
 )
 
 // DpWorkOnBlockCtAdd - Add block CT entries from remote goRPC client
@@ -334,13 +335,30 @@ func (xs *XSync) SockproxySessionBulkGet(ctx context.Context, req *SockproxyBulk
 // observable before the AI gateway has registered the store) and (b)
 // translates the proto entries into Go-side ratelimit.RateLimiterEntry
 // values before calling the store.
+// xsyncPeerKey names the peer that opened this RPC, for the degrade warnings
+// that have to say WHICH peer they are about. gRPC carries the remote address
+// on the context; a transport that does not supply one yields "", and the
+// caller substitutes a placeholder rather than silently attributing the
+// warning to nothing.
+//
+// The scope-version warnings used to pass a fixed literal here. That made the
+// warn-once key process-global, so the message fired at most once for an
+// entire fleet, named "rl-scope-ver" instead of a peer, and let whichever of
+// the two scope messages fired first suppress the other for good.
+func xsyncPeerKey(ctx context.Context) string {
+	if p, ok := grpcpeer.FromContext(ctx); ok && p.Addr != nil {
+		return p.Addr.String()
+	}
+	return ""
+}
+
 func (xs *XSync) RateLimiterSync(ctx context.Context, m *RateLimiterBatch) (*XSyncReply, error) {
 	if !mh.ready {
 		return &XSyncReply{Response: -1}, errors.New("Not-Ready")
 	}
 	tk.LogIt(tk.LogDebug, "RPC - RateLimiterSync delta=%v entries=%d\n", m.IsDelta, len(m.Entries))
 	coord := NewSockproxySync()
-	if err := coord.ApplyRateLimiterBatch(m); err != nil {
+	if err := coord.ApplyRateLimiterBatch(xsyncPeerKey(ctx), m); err != nil {
 		return &XSyncReply{Response: -1}, err
 	}
 	return &XSyncReply{Response: 0}, nil

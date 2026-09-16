@@ -19,9 +19,11 @@ package loxinet
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
+	prom "github.com/loxilb-io/loxilb/api/prometheus"
 	cmn "github.com/loxilb-io/loxilb/common"
 	"github.com/loxilb-io/loxilb/pkg/aikey"
 	rl "github.com/loxilb-io/loxilb/pkg/ratelimit"
@@ -750,5 +752,152 @@ func TestTokenQuotaReserveRollbackReleasesEveryEarlierBucket(t *testing.T) {
 	}
 	if allowed, _, _ := tokenQuotaReserveInternal(plain, store, tenant, "other", user, "", "", 10000); !allowed {
 		t.Fatalf("the refused request left claims behind on the rungs that had admitted it")
+	}
+}
+
+// TestTokenQuotaStatesFromKeepsTenantsAndDropsLadderScopes — the scrape-time
+// tenant quota series must carry tenants, and only tenants.
+//
+// The rate limiter's quota map is keyed by scope: the tenant aggregate and
+// "<tenant>|<model>" keep bare keys, while the ladder buckets keep their wire
+// prefix ("uq:", "um:", "kq:", "v:"). Splitting every key on the first "|"
+// published an API key and a keyless service as tenants, and a user as a
+// model. The two tenant rows below are the control: they prove the converter
+// still emits, so a ladder row that disappears is a filter and not an empty
+// result.
+func TestTokenQuotaStatesFromKeepsTenantsAndDropsLadderScopes(t *testing.T) {
+	got := tokenQuotaStatesFrom([]rl.TokenQuotaUsage{
+		{TenantID: "acme", Consumed: 10, Limit: 100},
+		{TenantID: modelQuotaKey("acme", "gpt-4"), Consumed: 20, Limit: 200},
+		{TenantID: rl.UserQuotaKey("acme", "bob"), Consumed: 30, Limit: 300},
+		{TenantID: rl.UserModelQuotaKey("acme", "bob", "gpt-4"), Consumed: 40, Limit: 400},
+		{TenantID: rl.KeyQuotaKey("ak-123"), Consumed: 50, Limit: 500},
+		{TenantID: rl.VipSharedQuotaKey("10.0.0.1:8080"), Consumed: 60, Limit: 600},
+	})
+
+	want := []prom.TokenQuotaState{
+		{Tenant: "acme", Model: "", Consumed: 10, Limit: 100},
+		{Tenant: "acme", Model: "gpt-4", Consumed: 20, Limit: 200},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d tenant-scoped rows, got %d: %+v", len(want), len(got), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("row %d: got %+v want %+v", i, got[i], want[i])
+		}
+	}
+
+	// Named, so a regression says which identity leaked and onto which label.
+	for _, st := range got {
+		if rl.HasReservedScopePrefix(st.Tenant) {
+			t.Errorf("a %q-scoped bucket is exported as tenant=%q model=%q", st.Tenant[:strings.IndexByte(st.Tenant, ':')+1], st.Tenant, st.Model)
+		}
+	}
+}
+
+// TestReserveSeesImportedDebtOnEveryLadderRung — the pre-admission
+// reservation must refuse against a bucket whose debt arrived from a peer,
+// on every rung, not just the tenant aggregate.
+//
+// This is the question a failover actually asks. The receiving node has
+// never charged the bucket, so nothing has published a limit on it and
+// IsTokenQuotaExceeded — the post-hoc gate — reads false whatever arrived.
+// The reservation is the only stage that can refuse the FIRST request,
+// because it takes the limit as an argument, from configuration, exactly
+// as the request path supplies it.
+//
+// The tenant aggregate is the control: it is the rung that is known to
+// work, so a ladder rung failing beside it is failing on its own account.
+func TestReserveSeesImportedDebtOnEveryLadderRung(t *testing.T) {
+	const tpm = 10
+	const tenant = "imp-tenant"
+	const user = "imp-user"
+	const model = "imp-model"
+	const keyID = "imp-key-id"
+	const svcIdent = "10.0.0.1:2020"
+
+	for _, tc := range []struct {
+		name    string
+		bucket  string
+		svc     *mockRateLimitService
+		tenant  string
+		user    string
+		keyID   string
+		svcName string
+	}{
+		{
+			name:   "tenant aggregate (control)",
+			bucket: tenant,
+			svc:    &mockRateLimitService{tenantTPM: tpm},
+			tenant: tenant,
+		},
+		{
+			name:   "tenant|model",
+			bucket: modelQuotaKey(tenant, model),
+			svc:    &mockRateLimitService{modelTPM: map[string]int{model: tpm}},
+			tenant: tenant,
+		},
+		{
+			name:   "per-user",
+			bucket: rl.UserQuotaKey(tenant, user),
+			svc: &mockRateLimitService{
+				userRows: map[string]cmn.UserRateLimitEntry{tenant + "|" + user: {TokensPerMin: tpm}},
+			},
+			tenant: tenant,
+			user:   user,
+		},
+		{
+			name:   "per-user-per-model",
+			bucket: rl.UserModelQuotaKey(tenant, user, model),
+			svc: &mockRateLimitService{
+				userModelTPM: map[string]int{tenant + "|" + user + "|" + model: tpm},
+			},
+			tenant: tenant,
+			user:   user,
+		},
+		{
+			name:   "per-key TPM",
+			bucket: rl.KeyQuotaKey(keyID),
+			svc: &mockRateLimitService{
+				keyByID: map[string]*cmn.ApiKeySummary{keyID: {TokensPerMin: tpm}},
+			},
+			tenant: tenant,
+			keyID:  keyID,
+		},
+		{
+			name:   "per-VIP shared",
+			bucket: rl.VipSharedQuotaKey(svcIdent),
+			svc: &mockRateLimitService{
+				defaults: map[string]cmn.RateLimitDefaultsEntry{
+					"rule|" + svcIdent: {VipSharedTPM: tpm},
+				},
+			},
+			svcName: svcIdent,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// A peer's absolute snapshot, arriving at a node that has never
+			// served this identity: one quota row, in debt, nothing else.
+			src := rl.New()
+			src.AllowTokens(tc.bucket, tpm, tpm, 0)
+			src.AllowTokens(tc.bucket, tpm/5+1, tpm, 0)
+			if !src.IsTokenQuotaExceeded(tc.bucket) {
+				t.Fatalf("setup: %q is not in debt on the sending node", tc.bucket)
+			}
+			store := rl.New()
+			store.ImportState(src.ExportState())
+
+			mdl := model
+			if tc.user == "" && tc.keyID == "" && tc.tenant == "" {
+				mdl = "" // the keyless rung names no model
+			}
+			allowed, _, _ := tokenQuotaReserveInternal(tc.svc, store,
+				tc.tenant, mdl, tc.user, tc.keyID, tc.svcName, 1)
+			if allowed {
+				t.Errorf("the imported debt on %q did not refuse the first request: "+
+					"this rung admits one full request per node after a failover", tc.bucket)
+			}
+		})
 	}
 }

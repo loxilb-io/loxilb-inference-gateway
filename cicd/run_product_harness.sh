@@ -98,6 +98,7 @@ REGISTRY=(
   "ai-multitier-contract|0|true|./run-ci-gates.sh"
   "ai-sse-quota|-|./rmconfig.sh|./config.sh;./validation.sh"
   "ai-model-routing|-|./rmconfig.sh|./config.sh;./validation.sh"
+  "ai-qos-ha-sync|5|./rmconfig.sh|./config.sh;./validation.sh"
 )
 
 usage() { sed -n '2,50p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
