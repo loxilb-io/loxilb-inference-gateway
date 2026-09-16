@@ -2467,6 +2467,9 @@ M_LOG_VLLM="kv_transfer_params too large"
 M_LOG_TRT="disaggregated_params too large"
 # The wedge guard that actually fires on an over-cap prefill response (sockproxy_http.c).
 M_LOG_WEDGE="exceeds buffer cap"
+# The refusal to extract from a truncated body. Distinct from the wedge line above: that one
+# says the response was force-completed, this one says nothing downstream trusted the prefix.
+M_LOG_TRUNC="truncated at the buffer cap"
 
 # m_kv_mode <on|off|oversize> — switch the prefill response shape and PROVE it switched.
 # A control that silently failed to switch would be scored as a product result.
@@ -2556,13 +2559,22 @@ echo "  M2 (mode=off): served=${m2_served}/${M_N} found=+${d_f2} missing=+${d_m2
 #
 # An earlier cut of this stage asserted `overflow == N` here and failed; the product was
 # right and the assertion was wrong. What actually happens is the long-context wedge guard
-# in sockproxy_http.c: the declared response can never fit, so the proxy FAILS OPEN, forces
-# completion once the headers are in, and runs the extractor over a TRUNCATED body.
+# in sockproxy_http.c: the declared response can never fit, so the proxy FAILS OPEN and
+# forces completion once the headers are in, leaving a TRUNCATED body behind.
 #
-# So this arm covers the path that is real, and deliberately does NOT assert found/missing.
-# Truncation is currently reported as kv_params_FOUND even though the object is cut in half
-# — see the finding recorded alongside this stage — and pinning that here would lock in the
-# behaviour a fix should change. The claims below are the ones that stay true either way.
+# So this arm covers the path that is real, and it now pins BOTH faces of it.
+#
+# How much of an over-cap response is in the buffer when the guard fires is a race on what
+# the socket has delivered: one byte-identical 80KB response was force-completed at 322,
+# 27166, 54010 and 65536 bytes. Extracting from that prefix regardless gave this one arm two
+# outcomes from one product — a short prefix missed the params key, read as MISSING, and the
+# request was served; a long one found the key, read as FOUND, and the client got NOTHING,
+# because the decode leg was handed an object cut at an arbitrary byte. Two CI runs of
+# identical code scored 4/4 and 0/4 on exactly that split.
+#
+# The oversize value is ~80KB against a 64KB buffer, so a COMPLETE object is not reachable
+# on this arm at all. The datapath therefore refuses to extract from a body it truncated,
+# which is what makes the claims below deterministic rather than a coin flip.
 if m_kv_mode oversize; then
   check "TM3a: prefill switched to kv-params OVERSIZE" 0
 else
@@ -2570,7 +2582,7 @@ else
 fi
 m3_f=$(m_found); m3_m=$(m_missing); m3_o=$(m_overflow)
 m3_lv=$(m_dplog "$M_LOG_VLLM"); m3_lt=$(m_dplog "$M_LOG_TRT")
-m3_lw=$(m_dplog "$M_LOG_WEDGE")
+m3_lw=$(m_dplog "$M_LOG_WEDGE"); m3_lc=$(m_dplog "$M_LOG_TRUNC")
 m3_served=$(m_drive "$M_N")
 sleep "$M_SETTLE"
 d_f3=$(( $(m_found)    - m3_f ))
@@ -2579,7 +2591,8 @@ d_o3=$(( $(m_overflow) - m3_o ))
 d_lv=$(( $(m_dplog "$M_LOG_VLLM") - m3_lv ))
 d_lt=$(( $(m_dplog "$M_LOG_TRT")  - m3_lt ))
 d_lw=$(( $(m_dplog "$M_LOG_WEDGE") - m3_lw ))
-echo "  M3 (mode=oversize): served=${m3_served}/${M_N} found=+${d_f3} missing=+${d_m3} overflow=+${d_o3} wedge-log=+${d_lw} vllm-ovf-log=+${d_lv} trt-ovf-log=+${d_lt}"
+d_lc=$(( $(m_dplog "$M_LOG_TRUNC") - m3_lc ))
+echo "  M3 (mode=oversize): served=${m3_served}/${M_N} found=+${d_f3} missing=+${d_m3} overflow=+${d_o3} wedge-log=+${d_lw} skip-log=+${d_lc} vllm-ovf-log=+${d_lv} trt-ovf-log=+${d_lt}"
 
 [ "$d_lw" = "$M_N" ] \
   && check "TM3b: the buffer-cap wedge guard fired once per request (+${d_lw} == ${M_N})" 0 \
@@ -2593,7 +2606,7 @@ echo "  M3 (mode=oversize): served=${m3_served}/${M_N} found=+${d_f3} missing=+$
 [ "$d_lt" = "0" ] \
   && check "TM3e: the TRT-LLM overflow site stayed FLAT (+${d_lt}) on a vLLM rule" 0 \
   || check "TM3e: the TRT-LLM overflow site stayed FLAT (+${d_lt}) on a vLLM rule" 1
-[ "$m3_lw" -ge 0 ] && [ "$m3_lv" -ge 0 ] && [ "$m3_lt" -ge 0 ] \
+[ "$m3_lw" -ge 0 ] && [ "$m3_lv" -ge 0 ] && [ "$m3_lt" -ge 0 ] && [ "$m3_lc" -ge 0 ] \
   && check "TM3f: the datapath log was readable (flat readings are not vacuous)" 0 \
   || check "TM3f: the datapath log was readable (flat readings are not vacuous)" 1
 # TM3g is the regression test for the wedge itself, and it must assert the
@@ -2607,6 +2620,20 @@ echo "  M3 (mode=oversize): served=${m3_served}/${M_N} found=+${d_f3} missing=+$
 [ "$m3_served" = "$M_N" ] \
   && check "TM3g: the over-cap response still serves ${m3_served}/${M_N} — the wedge guard fails OPEN, it does not hang" 0 \
   || check "TM3g: the over-cap response still serves ${m3_served}/${M_N} — the wedge guard fails OPEN, it does not hang" 1
+# TM3h/TM3i are the other face of the same fix, and they are what keeps TM3g honest. Serving
+# 4/4 is also what a SHORT prefix produced before the fix, so served alone cannot tell a
+# refusal to extract from a lucky race. found FLAT + missing == N can: the key WAS on the
+# wire (M1 proves the extractor finds it when the body is whole), so a params-found here
+# could only be the half object.
+[ "$d_f3" = "0" ] \
+  && check "TM3h: kv_params_found FLAT (+${d_f3}) — a body cut mid-object is not a transfer" 0 \
+  || check "TM3h: kv_params_found FLAT (+${d_f3}) — a body cut mid-object is not a transfer" 1
+[ "$d_m3" = "$M_N" ] \
+  && check "TM3i: kv_params_missing +${d_m3} == ${M_N} — truncation degrades to ABSENT, as the guard promises" 0 \
+  || check "TM3i: kv_params_missing +${d_m3} == ${M_N} — truncation degrades to ABSENT, as the guard promises" 1
+[ "$d_lc" = "$M_N" ] \
+  && check "TM3j: the extractor was skipped once per truncated body (+${d_lc} == ${M_N})" 0 \
+  || check "TM3j: the extractor was skipped once per truncated body (+${d_lc} == ${M_N})" 1
 
 # ── M4: conservation across every arm driven above ─────────────────────────────────────
 # Every one of the 3*M_N requests completed, so all were inspected lifecycles and each
