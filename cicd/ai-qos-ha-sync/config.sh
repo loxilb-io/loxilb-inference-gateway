@@ -295,6 +295,33 @@ done
 # refused — two requests decide a leg, with no timing in the oracle.
 cfg_both POST /config/ai/tenant/ratelimit \
   '{"tenant_id":"ha-tenant","rps":0,"tokens_per_min":10}'
+# QOS-HA-005's pair. Both tenants carry BOTH an aggregate bound and a
+# per-model bound, and the two differ only in WHICH of the two is small
+# enough to refuse. QOS-HA-002 and -003 each configure one scope alone, so
+# neither can tell whether the scopes still cross when a tenant holds both —
+# the shape a real tenant with a model carve-out actually has. Here the
+# generous bound is 100000, far beyond anything the case spends, so the rung
+# that refuses at the far node is the only rung that COULD have.
+cfg_both POST /config/ai/tenant/ratelimit \
+  '{"tenant_id":"ha-agg-only","rps":0,"tokens_per_min":10,"model_limits":[{"model":"qos-ha-model","tokens_per_min":100000}]}'
+cfg_both POST /config/ai/tenant/ratelimit \
+  '{"tenant_id":"ha-model-only","rps":0,"tokens_per_min":100000,"model_limits":[{"model":"qos-ha-model","tokens_per_min":10}]}'
+for t in ha-ctl-005a ha-ctl-005b; do
+  cfg_both POST /config/ai/tenant/ratelimit \
+    '{"tenant_id":"'"$t"'","rps":0,"tokens_per_min":10,"model_limits":[{"model":"qos-ha-model","tokens_per_min":10}]}'
+done
+# QOS-HA-007's subject: an identity with a bound it cannot exhaust, used to
+# ask whether peer snapshots arriving at a node reduce what a caller that
+# has spent NOTHING there may have. Phantom headroom is the failure the
+# declared case names, and the only way to see it is to spend nothing.
+cfg_both POST /config/ai/tenant/ratelimit \
+  '{"tenant_id":"ha-phantom-tenant","rps":0,"tokens_per_min":100000}'
+# QOS-HA-012's subject: spent at the node that is about to be killed, asked
+# again at the survivor after it promotes.
+cfg_both POST /config/ai/tenant/ratelimit \
+  '{"tenant_id":"ha-kill-tenant","rps":0,"tokens_per_min":10}'
+cfg_both POST /config/ai/tenant/ratelimit \
+  '{"tenant_id":"ha-ctl-012","rps":0,"tokens_per_min":10}'
 # QOS-HA-009's subject: a tenant whose quota has to survive a snapshot that
 # does not fit in one RPC. Bounded exactly like the others so the only thing
 # distinguishing its result is the size of the snapshot carrying it.
@@ -373,6 +400,13 @@ mint_key ha-ctl-003-key      ha-ctl-003        0
 mint_key ha-ctl-004-key      ha-ctl-004        0
 mint_key ha-chunk-key        ha-chunk-tenant   0
 mint_key ha-ctl-009-key      ha-ctl-009        0
+mint_key ha-agg-only-key     ha-agg-only       0
+mint_key ha-model-only-key   ha-model-only     0
+mint_key ha-ctl-005a-key     ha-ctl-005a       0
+mint_key ha-ctl-005b-key     ha-ctl-005b       0
+mint_key ha-phantom-key      ha-phantom-tenant 0
+mint_key ha-kill-key         ha-kill-tenant    0
+mint_key ha-ctl-012-key      ha-ctl-012        0
 # The key-TPM rung (QOS-HA-004): the key itself carries the bound, and its
 # tenant deliberately has no row, so a refusal can only be the key rung.
 mint_key ha-key-tpm          ha-keytpm-tenant  10

@@ -459,6 +459,83 @@ echo "--- QOS-HA-003: per-tenant-per-model token quota ---"
 quota_crosses "QOS-HA-003" ha-tenant-model-key ha-ctl-003-key
 
 echo ""
+echo "--- QOS-HA-005: a tenant holding BOTH scopes syncs both ---"
+##############################################################################
+# QOS-HA-002 and -003 each configure one scope on its own, so between them
+# they never answer the question a real tenant poses: when an aggregate bound
+# and a per-model carve-out exist together, does the rung that actually
+# refused still cross?
+#
+# Two arms, identical except for which of the two bounds is the small one.
+# The other is 100000 — far beyond anything either arm spends — so in each
+# arm exactly one rung can possibly be responsible for a refusal at the far
+# node, and it is a different rung in each. A wire mapping that dropped the
+# aggregate scope passes the second arm and fails the first; one that
+# dropped the composite scope does the reverse. Either way the pair says
+# WHICH, where one arm could only say "something crossed".
+quota_crosses "QOS-HA-005a aggregate rung" ha-agg-only-key   ha-ctl-005a-key
+echo ""
+quota_crosses "QOS-HA-005b model rung"     ha-model-only-key ha-ctl-005b-key
+
+##############################################################################
+echo ""
+echo "--- QOS-HA-007: peer state must not mint phantom headroom ---"
+##############################################################################
+# The declared case is "no double reservation, lost release or phantom
+# headroom". Phantom headroom is the half a two-container bed can see:
+# whether the snapshots arriving at a node change what a caller who has
+# spent NOTHING there is allowed.
+#
+# The reservation half — a lost release stranding a claim — turns on a peer's
+# activity minute LEADING the local one, and both containers here read one
+# host clock, so the window is a boundary race a few milliseconds wide. A
+# case built on it would be a timing test wearing a quota test's name, which
+# is the same reason this suite drives the standby directly instead of moving
+# a VIP. It is covered where it can be made deterministic, in the Go tests
+# for the store's receive path.
+#
+# The oracle is a COUNT, driven at the standby while the master pushes. A
+# single request cannot see headroom shrink; it can only see it gone.
+PHANTOM_KEY=$(key_raw ha-phantom-key)
+if [ -z "$PHANTOM_KEY" ]; then
+  bad "QOS-HA-007 identity present" "missing raw key for ha-phantom-key"
+else
+  # Precondition: the master must be pushing, or "nothing changed at the
+  # standby" is a statement about a silent channel and not about snapshots.
+  PH_MARK=$(metric "$MASTER" loxilb_sockproxy_sync_push_latency_seconds_count 'rpc="RateLimiterSync"')
+  PH_ADMITTED=0
+  PH_TOTAL=0
+  for _ in $(seq 1 8); do
+    new_nonce
+    c=$(req "$SVIP" 2020 "$PHANTOM_KEY")
+    PH_TOTAL=$((PH_TOTAL + 1))
+    [ "$c" = "200" ] && PH_ADMITTED=$((PH_ADMITTED + 1))
+  done
+  PH_NOW=$(metric "$MASTER" loxilb_sockproxy_sync_push_latency_seconds_count 'rpc="RateLimiterSync"')
+  if [ "$PH_MARK" = "unreadable" ] || [ "$PH_NOW" = "unreadable" ]; then
+    bad "QOS-HA-007 pre: snapshots were arriving during the window" \
+        "the master's push counter is unreadable, so the window carried no proven peer state"
+  elif ! awk -v a="$PH_NOW" -v b="$PH_MARK" 'BEGIN{exit !(a>b)}'; then
+    bad "QOS-HA-007 pre: snapshots were arriving during the window" \
+        "the master completed no push during the window ($PH_MARK -> $PH_NOW); nothing arrived to mint headroom from"
+  else
+    ok "QOS-HA-007 pre: snapshots were arriving during the window" \
+       "master push count $PH_MARK -> $PH_NOW"
+  fi
+  # 12 tokens a request against 100000/min: all eight must be admitted. The
+  # bound exists only so the tenant resolves a quota at all — a tenant with
+  # no bound is never consulted and the case would pass vacuously.
+  if [ "$PH_ADMITTED" -eq "$PH_TOTAL" ]; then
+    ok "QOS-HA-007 an unspent identity keeps its full allowance at $STANDBY" \
+       "$PH_ADMITTED/$PH_TOTAL admitted against a 100000/min bound"
+  else
+    bad "QOS-HA-007 an unspent identity keeps its full allowance at $STANDBY" \
+        "only $PH_ADMITTED/$PH_TOTAL admitted; this identity has spent nothing anywhere, so peer state has taken headroom it never used"
+  fi
+fi
+
+##############################################################################
+echo ""
 echo "--- QOS-HA-004: per-key token quota ---"
 # The key-TPM bucket is keyed on the key id, which config.sh proved is the
 # same id on both nodes. Its tenant carries no row of its own, so a refusal
@@ -681,6 +758,123 @@ quota_crosses "QOS-HA-009" ha-chunk-key ha-ctl-009-key
 
 ##############################################################################
 echo ""
+echo "--- QOS-HA-008: the legacy tenant scopes round-trip unambiguously ---"
+##############################################################################
+# The two tenant scopes pre-date scope prefixing, so their map keys carry no
+# prefix and the wire mapping INFERS which of the two a key is from whether
+# it contains "|": "tenant" exports as "t:tenant", "tenant|model" as
+# "tm:tenant|model", and the receiver strips whichever it finds.
+#
+# QOS-HA-002, -003 and -005 drive both scopes across that mapping and show
+# they arrive. What none of them can show is why the inference is SAFE,
+# because the inference is only unambiguous while no identity can contain the
+# delimiter. A tenant that could be named "acme|gpt-4" would share one bucket
+# with tenant "acme"'s gpt-4 carve-out — one tenant's spend refusing another,
+# through a wire mapping that did exactly what it was told.
+#
+# So the case asserts the guard rather than re-driving the path: the config
+# surface must refuse the delimiter. Both orders are checked, because a guard
+# that only rejects a leading or trailing "|" would pass a one-sided probe.
+scope_guard() { # <case> <tenant-id>
+  local resp code
+  resp=$($hexec "$MASTER" curl -s -m 5 -w '\nhttp_code=%{http_code}' -X POST \
+    "http://localhost:11111/netlox/v1/config/ai/tenant/ratelimit" \
+    -H 'Content-Type: application/json' \
+    -d '{"tenant_id":"'"$2"'","rps":0,"tokens_per_min":10}' 2>/dev/null)
+  code=$(printf '%s' "$resp" | sed -n 's/^http_code=//p')
+  case "$code" in
+    4*) ok "$1" "HTTP $code" ;;
+    2*) bad "$1" "accepted (HTTP $code); this identity aliases another tenant's per-model bucket through the sync wire mapping" ;;
+    *)  bad "$1" "HTTP ${code:-<none>} — neither a refusal nor an acceptance, so the guard is not under test" ;;
+  esac
+}
+scope_guard "QOS-HA-008a the delimiter is refused inside a tenant id"  "ha-alias|qos-ha-model"
+scope_guard "QOS-HA-008b the delimiter is refused at the end"          "ha-alias2|"
+# Control: the same call with a legal id must be ACCEPTED. Without it, three
+# refusals are equally well explained by a surface refusing everything.
+resp=$($hexec "$MASTER" curl -s -m 5 -w '\nhttp_code=%{http_code}' -X POST \
+  "http://localhost:11111/netlox/v1/config/ai/tenant/ratelimit" \
+  -H 'Content-Type: application/json' \
+  -d '{"tenant_id":"ha-alias-control","rps":0,"tokens_per_min":10}' 2>/dev/null)
+case "$(printf '%s' "$resp" | sed -n 's/^http_code=//p')" in
+  2*) ok "QOS-HA-008c control: a legal tenant id is still accepted" ;;
+  *)  bad "QOS-HA-008c control: a legal tenant id is still accepted" \
+          "the surface refused a legal id too ($resp), so the refusals above are not about the delimiter" ;;
+esac
+
+##############################################################################
+echo ""
+echo "--- QOS-HA-012: the active node is killed ---"
+##############################################################################
+# LAST, and it has to be: it takes a node away and nothing after it could
+# run. Everything above has already been scored.
+#
+# Spend an identity at the node holding the traffic, prove the debt reached
+# the other one, then stop that node and ask the survivor the same question.
+# `docker stop` rather than `kill`: these containers carry
+# `--restart unless-stopped`, so a kill would bring the node back mid-case
+# and the run would be scoring a race instead of a failover.
+KILL_KEY=$(key_raw ha-kill-key)
+KILL_CTL=$(key_raw ha-ctl-012-key)
+if [ -z "$KILL_KEY" ] || [ -z "$KILL_CTL" ]; then
+  bad "QOS-HA-012 identities present" "missing raw key for ha-kill-key or ha-ctl-012-key"
+else
+  new_nonce; code=$(req "$MVIP" 2020 "$KILL_KEY")
+  chk_code "QOS-HA-012 a: first request admitted on $MASTER" 200 "$code"
+  new_nonce; code=$(req "$MVIP" 2020 "$KILL_KEY")
+  chk_code "QOS-HA-012 b: second request refused on $MASTER" 429 "$code"
+
+  # The debt must have travelled BEFORE the node goes away. Afterwards there
+  # is no sender left to ask, and a survivor that refuses would be
+  # indistinguishable from one that never learned anything and refuses for
+  # its own reasons.
+  K_MARK=$(metric "$MASTER" loxilb_sockproxy_sync_push_latency_seconds_count 'rpc="RateLimiterSync"')
+  K_NOW="$K_MARK"
+  for _ in $(seq 1 30); do
+    K_NOW=$(metric "$MASTER" loxilb_sockproxy_sync_push_latency_seconds_count 'rpc="RateLimiterSync"')
+    [ "$K_NOW" = "unreadable" ] && break
+    awk -v a="$K_NOW" -v b="$K_MARK" 'BEGIN{exit !(a>=b+3)}' && break
+    sleep 1
+  done
+  if [ "$K_NOW" = "unreadable" ] || ! awk -v a="$K_NOW" -v b="$K_MARK" 'BEGIN{exit !(a>=b+3)}'; then
+    bad "QOS-HA-012 pre: the debt was pushed before the node was stopped" \
+        "push count $K_MARK -> $K_NOW; the survivor's answer below would be about its own state, not the failover"
+  else
+    ok "QOS-HA-012 pre: the debt was pushed before the node was stopped" "count $K_MARK -> $K_NOW"
+
+    docker stop "$MASTER" >/dev/null 2>&1
+    PROMOTE_SECS=0
+    for PROMOTE_SECS in $(seq 1 45); do
+      out=$($hexec "$STANDBY" curl -s --max-time 5 \
+        "http://localhost:11111/netlox/v1/config/cistate/all" 2>/dev/null)
+      case "$out" in *'"state":"MASTER"'*|*'"state": "MASTER"'*) break ;; esac
+      sleep 1
+    done
+    out=$($hexec "$STANDBY" curl -s --max-time 5 \
+      "http://localhost:11111/netlox/v1/config/cistate/all" 2>/dev/null)
+    case "$out" in
+      *'"state":"MASTER"'*|*'"state": "MASTER"'*)
+        ok "QOS-HA-012 c: $STANDBY promoted after $MASTER was stopped" "after ${PROMOTE_SECS}s" ;;
+      *)
+        bad "QOS-HA-012 c: $STANDBY promoted after $MASTER was stopped" \
+            "still holds no MASTER instance ${PROMOTE_SECS}s after the other node went away" ;;
+    esac
+
+    # The control has never spent anywhere. If the survivor refuses it too,
+    # the survivor is refusing for a reason that is not this identity's debt
+    # — it has just lost a peer, which is its own kind of reason — and the
+    # subject verdict below would mean nothing.
+    new_nonce; code=$(req "$SVIP" 2020 "$KILL_CTL")
+    chk_code "QOS-HA-012 d: control identity admitted on the survivor" 200 "$code"
+
+    new_nonce; code=$(req "$SVIP" 2020 "$KILL_KEY")
+    chk_code "QOS-HA-012 e: the spent identity is still refused on the survivor" 429 "$code"
+    chk_receipts "QOS-HA-012 e: the refusal delivered nothing" 0
+  fi
+fi
+
+##############################################################################
+echo ""
 echo "#########################################"
 echo "ai-qos-ha-sync: $PASS passed, $FAIL failed"
 echo "#########################################"
@@ -689,7 +883,7 @@ echo "#########################################"
 # mode a pass count cannot show.
 EXECUTED=$(printf '%s' "$CASES" | grep -c . || true)
 echo "  cases executed: $EXECUTED"
-if [ "$EXECUTED" -lt 20 ]; then
+if [ "$EXECUTED" -lt 70 ]; then
   echo "  [FAIL] declared-vs-executed: only $EXECUTED case verdicts were recorded;"
   echo "         a leg that returned early is indistinguishable from one that passed"
   FAIL=$((FAIL + 1))
