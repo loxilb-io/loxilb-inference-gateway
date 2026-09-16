@@ -149,7 +149,60 @@ var sockproxySyncPeerLagSeconds = promauto.NewGaugeVec(
 	[]string{"peer"},
 )
 
+// sockproxySyncPeerScopeVersion reports the rate-limiter sync-wire scope
+// vocabulary each peer was last observed to speak.
+//
+// Before this series the posture was visible only as a warn-ONCE log line,
+// which is the wrong shape for the question an operator actually has. "Is
+// any peer in this cluster still on the old vocabulary right now?" cannot
+// be answered by a line that was printed once, possibly days ago, possibly
+// before the peer was upgraded — and a warning that never clears cannot
+// show that it was fixed.
+//
+// Values:
+//
+//   - 2 (or higher) — the peer announced its version in the scope sentinel
+//     every push leads with. A value ABOVE this build's own
+//     rl.ScopeWireVersion means the peer knows scopes this node drops.
+//   - 1 — the peer sent a batch with NO sentinel, which is exactly what a
+//     build predating the ladder scopes (u:/uq:/um:/kq:/v:) does. Its merge
+//     path drops those scopes silently, so per-user, per-key-TPM and
+//     keyless-bucket debt does not survive a failover through it.
+//   - 0 — a sentinel arrived that this build could not parse. Distinct from
+//     1 on purpose: "an unreadable announcement" and "no announcement" are
+//     different faults and only one of them is a version skew.
+//
+// Written on every received batch rather than once per peer, so the series
+// tracks an upgrade: a peer that comes back on the new vocabulary moves
+// from 1 to 2 on its first push. Like every other per-peer sync series the
+// children persist for the process lifetime.
+var sockproxySyncPeerScopeVersion = promauto.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "loxilb_sockproxy_sync_peer_scope_version",
+		Help: "Rate-limiter sync-wire scope vocabulary last announced by this peer (2+ = sentinel version; 1 = no sentinel, a build predating the ladder scopes that silently drops them; 0 = sentinel present but unparseable). Updated on every received batch.",
+	},
+	[]string{"peer"},
+)
+
 // ---------- Exported convenience helpers (used by pkg/loxinet/sockproxy_sync.go) ----------
+
+// SockproxySyncPeerScopeVersionSet records the scope vocabulary a peer
+// announced on the batch just received. See the gauge's doc for the
+// meaning of 0 and 1, which are not versions a peer ever sends.
+func SockproxySyncPeerScopeVersionSet(peer string, version int) {
+	sockproxySyncPeerScopeVersion.WithLabelValues(peer).Set(float64(version))
+}
+
+// SockproxySyncPeerScopeVersionValue returns the current scope-version
+// gauge value for a peer. Test-only getter (mirrors SockproxySyncPeerUpValue).
+func SockproxySyncPeerScopeVersionValue(peer string) float64 {
+	g := sockproxySyncPeerScopeVersion.WithLabelValues(peer)
+	m := &dto.Metric{}
+	if err := g.(prometheus.Metric).Write(m); err != nil {
+		return 0
+	}
+	return m.GetGauge().GetValue()
+}
 
 // SockproxySyncPeerUpSet records the outcome of the last completed sync
 // push to a peer (1 = success, 0 = failure/abandoned).

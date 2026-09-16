@@ -50,6 +50,7 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
 
+	prom "github.com/loxilb-io/loxilb/api/prometheus"
 	rl "github.com/loxilb-io/loxilb/pkg/ratelimit"
 )
 
@@ -661,6 +662,92 @@ func TestScopeVersionWarningsNameThePeerAndDoNotMask(t *testing.T) {
 	}
 	if !warnRecorded(recv, otherOldPeer, "RateLimiterSync/scope-older") {
 		t.Errorf("a second old peer went unreported; warn-once must be per peer")
+	}
+}
+
+// TestPeerScopeVersionGaugeTracksEachPeerAndClearsOnUpgrade — the posture a
+// warn-once line can only announce must also be READABLE, per peer, now.
+//
+// A warning is the wrong shape for "is any peer still on the old vocabulary
+// right now": it is printed once, possibly before the peer was upgraded, and
+// it can never clear. So there was no series to answer it with, and the
+// mixed-version case that wanted to assert "the warning clears" had nothing
+// to observe. The gauge is written on EVERY batch for exactly that reason,
+// and the upgrade leg below is the half a once-per-peer write would fail.
+func TestPeerScopeVersionGaugeTracksEachPeerAndClearsOnUpgrade(t *testing.T) {
+	recv := newTestCoordinator(newMockApplier(0))
+	recv.SetRateLimiterStore(rl.New())
+
+	// Distinct addresses: these gauge children persist for the process
+	// lifetime and this test must not read another test's peer.
+	//
+	// The batch arrives keyed by the gRPC peer address, which carries the
+	// sender's EPHEMERAL source port, but the gauge must be labelled with
+	// the HOST — otherwise every reconnect mints a new child and the series
+	// can never be joined with peer_up, which labels the same peer with a
+	// bare IP. So each peer is pushed under an address with a port and read
+	// back under the host alone; reading it back under the full address
+	// would pass on the unnormalised code and is the point of the split.
+	const oldPeer, oldHost = "10.0.0.20:40318", "10.0.0.20"
+	const newerPeer, newerHost = "10.0.0.21:51002", "10.0.0.21"
+	const brokenPeer, brokenHost = "10.0.0.22:33771", "10.0.0.22"
+
+	send := func(peer string, entries ...*RateLimiterEntry) {
+		t.Helper()
+		if err := recv.ApplyRateLimiterBatch(peer, &RateLimiterBatch{Entries: entries}); err != nil {
+			t.Fatalf("ApplyRateLimiterBatch(%s): %v", peer, err)
+		}
+	}
+
+	// No sentinel at all: a build predating the ladder scopes.
+	send(oldPeer, &RateLimiterEntry{KeyId: "t:tenant-a", IsTenant: true})
+	if got := prom.SockproxySyncPeerScopeVersionValue(oldHost); got != 1 {
+		t.Errorf("a sentinel-less peer reads %v, want 1 — the one peer state an operator most needs to see has no series", got)
+	}
+
+	// A vocabulary newer than this build's.
+	send(newerPeer,
+		&RateLimiterEntry{KeyId: "ver:99", IsTenant: true},
+		&RateLimiterEntry{KeyId: "t:tenant-b", IsTenant: true})
+	if got := prom.SockproxySyncPeerScopeVersionValue(newerHost); got != 99 {
+		t.Errorf("peer scope version = %v, want 99", got)
+	}
+
+	// A sentinel this build cannot read is NOT the same as no sentinel:
+	// reporting it as 1 would name the peer old when the truth is that its
+	// announcement was unreadable.
+	send(brokenPeer,
+		&RateLimiterEntry{KeyId: "ver:not-a-number", IsTenant: true},
+		&RateLimiterEntry{KeyId: "t:tenant-c", IsTenant: true})
+	if got := prom.SockproxySyncPeerScopeVersionValue(brokenHost); got != 0 {
+		t.Errorf("an unparseable sentinel reads %v, want 0 (distinct from 1, which means no sentinel)", got)
+	}
+
+	// The upgrade. This is the assertion a once-per-peer write cannot pass,
+	// and the reason the gauge is written on every batch.
+	send(oldPeer,
+		&RateLimiterEntry{KeyId: rl.ScopeSentinelKeyID, IsTenant: true},
+		&RateLimiterEntry{KeyId: "t:tenant-a", IsTenant: true})
+	if got := prom.SockproxySyncPeerScopeVersionValue(oldHost); got != float64(rl.ScopeWireVersion) {
+		t.Errorf("after the peer upgraded the gauge still reads %v, want %d; the series cannot clear and is no better than the warning", got, rl.ScopeWireVersion)
+	}
+
+	// The connection-keyed spelling must export NOTHING. Without this the
+	// three reads above would also pass on code that labels by connection,
+	// because the helper creates a child on demand and a fresh child reads 0
+	// — which is indistinguishable from "this peer is fine" only if you
+	// never ask what 0 means.
+	if got := prom.SockproxySyncPeerScopeVersionValue(oldPeer); got != 0 {
+		t.Errorf("the port-bearing key %q exports %v; the label is the connection, not the peer, so every reconnect mints a child", oldPeer, got)
+	}
+
+	// The others must not have moved: a gauge that tracked the last batch
+	// from ANY peer would pass every assertion above and be useless.
+	if got := prom.SockproxySyncPeerScopeVersionValue(newerHost); got != 99 {
+		t.Errorf("peer %s moved to %v when a different peer pushed; the series is not per peer", newerHost, got)
+	}
+	if got := prom.SockproxySyncPeerScopeVersionValue(brokenHost); got != 0 {
+		t.Errorf("peer %s moved to %v when a different peer pushed; the series is not per peer", brokenHost, got)
 	}
 }
 

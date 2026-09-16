@@ -800,17 +800,25 @@ func getGlobalRL() *rl.RateLimiterStore {
 //
 // A wrong label is worse than a missing one: the tenant series is what
 // saturation alerts read, and these rows moved it by exactly as much as a
-// real tenant would. They are dropped here. Per-user, per-key and per-VIP
-// saturation is consequently not exported at all — that gap is real, and
-// closing it means new series with their own names, not a tenant label
-// carrying something that is not a tenant.
+// real tenant would.
+//
+// They are no longer merely dropped. Each ladder scope is now routed onto a
+// series with its OWN name and its own labels — which is what "closing it
+// means new series with their own names, not a tenant label carrying
+// something that is not a tenant" asked for. The "t:"/"tm:" wire spellings
+// are still dropped: those are a key that should never have reached the
+// local map at all, and inventing a series for them would publish a bug.
 func tokenQuotaStatesFrom(usages []rl.TokenQuotaUsage) []prom.TokenQuotaState {
 	out := make([]prom.TokenQuotaState, 0, len(usages))
 	for _, u := range usages {
+		if scoped, ok := scopedTokenQuotaState(u); ok {
+			out = append(out, scoped)
+			continue
+		}
 		if rl.HasReservedScopePrefix(u.TenantID) {
-			// Not a tenant aggregate or a tenant|model bucket: one of the
-			// ladder scopes, or the "t:"/"tm:" wire spelling of a key that
-			// should never have reached the local map.
+			// A wire-prefixed key that is NOT one of the identity scopes:
+			// the "t:"/"tm:"/"k:"/"u:"/"ver:" spellings, none of which
+			// belongs in the local quota map.
 			continue
 		}
 		// Composite tenant|model keys carry the per-model buckets; split
@@ -828,6 +836,55 @@ func tokenQuotaStatesFrom(usages []rl.TokenQuotaUsage) []prom.TokenQuotaState {
 		})
 	}
 	return out
+}
+
+// scopedTokenQuotaState routes one identity-scoped quota bucket onto its own
+// series, or reports false for anything that is not one.
+//
+// The identity scopes keep their wire prefix IN the local map key, so the
+// key is the whole identity: "uq:<tenant>|<user>", "um:<tenant>|<user>|
+// <model>", "kq:<key_id>", "v:<service>".
+//
+// Every split demands an EXACT field count and drops the row otherwise.
+// That is deliberate and it is the lesson of the defect this function
+// exists to finish undoing: the old code split on the first "|" and
+// published whatever came out, so a key shape it did not expect became a
+// wrong label rather than a missing one. The delimiter cannot legally
+// appear inside a tenant, user or model — the config surface refuses it,
+// which is what makes the prefix inference unambiguous — so a count that
+// does not match means this build does not understand the key, and the
+// honest answer to that is silence.
+func scopedTokenQuotaState(u rl.TokenQuotaUsage) (prom.TokenQuotaState, bool) {
+	st := prom.TokenQuotaState{Consumed: u.Consumed, Limit: u.Limit}
+	switch {
+	case strings.HasPrefix(u.TenantID, "uq:"):
+		parts := strings.Split(strings.TrimPrefix(u.TenantID, "uq:"), "|")
+		if len(parts) != 2 {
+			return st, false
+		}
+		st.Scope, st.Tenant, st.User = "user", parts[0], parts[1]
+	case strings.HasPrefix(u.TenantID, "um:"):
+		parts := strings.Split(strings.TrimPrefix(u.TenantID, "um:"), "|")
+		if len(parts) != 3 {
+			return st, false
+		}
+		st.Scope, st.Tenant, st.User, st.Model = "user_model", parts[0], parts[1], parts[2]
+	case strings.HasPrefix(u.TenantID, "kq:"):
+		id := strings.TrimPrefix(u.TenantID, "kq:")
+		if id == "" || strings.Contains(id, "|") {
+			return st, false
+		}
+		st.Scope, st.KeyID = "key", id
+	case strings.HasPrefix(u.TenantID, "v:"):
+		svc := strings.TrimPrefix(u.TenantID, "v:")
+		if svc == "" {
+			return st, false
+		}
+		st.Scope, st.Service = "vip", svc
+	default:
+		return st, false
+	}
+	return st, true
 }
 
 // llb_ai_ratelimit_check enforces per-key and per-tenant RPS limits for an

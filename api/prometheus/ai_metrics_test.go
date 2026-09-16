@@ -18,6 +18,7 @@ package prometheus
 
 import (
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -569,6 +570,93 @@ func TestTokenQuotaCollector(t *testing.T) {
 	}
 	if v := limit["t-one"]; v != 200 {
 		t.Fatalf("expected limit 200 for t-one, got %f", v)
+	}
+}
+
+// TestTokenQuotaCollectorScopedSeries — each identity scope lands on its own
+// family with its own labels, and the tenant families stay EMPTY.
+//
+// The flat assertion is the load-bearing half. The defect these series
+// replace was a per-key bucket published as a tenant, and a per-family
+// oracle cannot see a wrong label: a mislabelled row moves the tenant family
+// by exactly as much as a real tenant would. So this snapshot contains no
+// tenant rows at all, and any sample on a tenant family is a routing bug
+// naming itself.
+func TestTokenQuotaCollectorScopedSeries(t *testing.T) {
+	c := &tokenQuotaCollector{snapshot: func() []TokenQuotaState {
+		return []TokenQuotaState{
+			{Scope: "user", Tenant: "acme", User: "bob", Consumed: 30, Limit: 300},
+			{Scope: "user_model", Tenant: "acme", User: "bob", Model: "gpt-4", Consumed: 100, Limit: 400},
+			{Scope: "key", KeyID: "ak-123", Consumed: 250, Limit: 500},
+			{Scope: "vip", Service: "10.0.0.1:8080", Consumed: 900, Limit: 600}, // overshoot: 1.5
+			{Scope: "key", KeyID: "ak-nolimit", Consumed: 5, Limit: 0},          // skipped
+			{Scope: "key", KeyID: "dup a", Consumed: 1, Limit: 10},              // sanitizes to dup_a
+			{Scope: "key", KeyID: "dup_a", Consumed: 9, Limit: 10},              // duplicate, dropped
+			{Scope: "nonsense", Tenant: "acme", Consumed: 1, Limit: 10},         // unknown scope, dropped
+		}
+	}}
+	reg := prometheus.NewPedanticRegistry()
+	reg.MustRegister(c)
+
+	mfs, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("gather failed: %v", err)
+	}
+
+	// family -> joined label values -> value.
+	got := map[string]map[string]float64{}
+	for _, mf := range mfs {
+		for _, m := range mf.GetMetric() {
+			var parts []string
+			for _, lp := range m.GetLabel() {
+				parts = append(parts, lp.GetName()+"="+lp.GetValue())
+			}
+			if got[mf.GetName()] == nil {
+				got[mf.GetName()] = map[string]float64{}
+			}
+			got[mf.GetName()][strings.Join(parts, ",")] = m.GetGauge().GetValue()
+		}
+	}
+
+	for _, want := range []struct {
+		family string
+		labels string
+		value  float64
+	}{
+		{"loxilb_ai_user_token_quota_utilization", "tenant=acme,user=bob", 0.1},
+		{"loxilb_ai_user_token_quota_limit_tokens", "tenant=acme,user=bob", 300},
+		{"loxilb_ai_user_model_token_quota_utilization", "model=gpt-4,tenant=acme,user=bob", 0.25},
+		{"loxilb_ai_user_model_token_quota_limit_tokens", "model=gpt-4,tenant=acme,user=bob", 400},
+		{"loxilb_ai_key_token_quota_utilization", "key_id=ak-123", 0.5},
+		{"loxilb_ai_key_token_quota_limit_tokens", "key_id=ak-123", 500},
+		// The colon is sanitized to an underscore on the way to the label;
+		// the expectation carries the sanitized form deliberately.
+		{"loxilb_ai_vip_token_quota_utilization", "service=10.0.0.1_8080", 1.5},
+		{"loxilb_ai_vip_token_quota_limit_tokens", "service=10.0.0.1_8080", 600},
+		{"loxilb_ai_key_token_quota_utilization", "key_id=dup_a", 0.1}, // first wins
+	} {
+		if v, ok := got[want.family][want.labels]; !ok {
+			t.Errorf("%s{%s} missing; family has %v", want.family, want.labels, got[want.family])
+		} else if v != want.value {
+			t.Errorf("%s{%s} = %f, want %f", want.family, want.labels, v, want.value)
+		}
+	}
+
+	if _, ok := got["loxilb_ai_key_token_quota_utilization"]["key_id=ak-nolimit"]; ok {
+		t.Error("a zero-limit bucket must not be exported: there is no denominator")
+	}
+
+	// The flats. Not "the tenant family has no acme" — the family must have
+	// no samples at all, because nothing in the snapshot is a tenant.
+	for _, flat := range []string{
+		"loxilb_ai_token_quota_utilization",
+		"loxilb_ai_token_quota_limit_tokens",
+		"loxilb_ai_token_quota_model_utilization",
+		"loxilb_ai_token_quota_model_limit_tokens",
+	} {
+		if n := len(got[flat]); n != 0 {
+			t.Errorf("%s emitted %d samples (%v) from a snapshot with no tenant rows; an identity scope is being published as a tenant", flat, n, got[flat])
+		}
 	}
 }
 
