@@ -2039,6 +2039,12 @@ var ErrInvalidRole = errors.New("invalid role: must be one of admin, viewer")
 // credential failure rather than a server fault and maps to HTTP 401.
 var ErrBootstrapClosed = errors.New("user bootstrap is closed")
 
+// ErrSockMapNoRule reports that a sockmap-reset named a service the data plane
+// has no sockproxy rule for. It is a sentinel because the REST layer answers 404
+// for it and 500 for every other failure of that call, and matching on message
+// text would make the status depend on wording.
+var ErrSockMapNoRule = errors.New("sockmap-reset: no sockproxy rule for this service")
+
 // NetHookInterface - Go interface which needs to be implemented to talk to loxinet module
 type NetHookInterface interface {
 	NetMirrorGet() ([]MirrGetMod, error)
@@ -2106,6 +2112,14 @@ type NetHookInterface interface {
 	// NetL7PolicyRemove detaches any L7 policy from the VIP:port:proto rule
 	// (regfrees every compiled REGEX program on the C side).
 	NetL7PolicyRemove(vip string, port uint16, proto string) (int, error)
+	// ErrSockMapNoRule below is the one distinguishable failure of this call.
+	// NetSockMapResetAccel closes the connections of one rule that the kernel is
+	// currently accelerating and returns how many were closed. A configuration
+	// change applies to new connections only, because the sockmap verdict decides
+	// on its peer_map lookup alone; this is how an operator stops acceleration on
+	// connections that are already running. Connections of the same rule that were
+	// never paired are left alone.
+	NetSockMapResetAccel(vip string, port uint16, proto string) (int, error)
 	// NetL7PolicyGet returns every stored L7_POLICY resource (deep copies,
 	// sorted by id). The desired-state policy registry lives control-plane
 	// side (pkg/loxinet), so REST CRUD and config snapshot/restore share

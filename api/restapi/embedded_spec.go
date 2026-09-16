@@ -4571,7 +4571,7 @@ func init() {
             },
             "sockMapMode": {
               "default": "off",
-              "description": "Directional sockmap acceleration for this FullProxy service - off (default), both, request (client-\u003ebackend only), response (backend-\u003eclient only). The direction that is not selected stays on the userspace relay and never runs the sockmap verdict. A mode other than off requires a plaintext tcp fullproxy service with an ipv4 external IP and ipv4 endpoints, and the daemon started with --sockmapsupport; a request that does not meet either condition is rejected with 400 before any rule state changes. A snapshot restore on a daemon without --sockmapsupport keeps the mode, logs a warning and runs the rule unaccelerated. A service whose data plane changes bytes on every request accepts only off and is rejected with 400 otherwise. Those are sse_mode, pd_disagg_mode, ANY api_key_auth declaration - an explicit disabled included, since that value still makes the gateway strip X-Api-Key, as is one kept by a replace that omits the field - and an attached L7 policy. On an accelerated connection the later keep-alive requests skip admission, the request-header rewrites and the X-Api-Key strip, and the responses are not recorded. Attaching an L7 policy to a service that declares a mode is rejected with 400 as well, since a policy can arrive long after the rule. A snapshot restore of such a service turns the mode off with a warning; a restored policy whose rule declares a mode is attached with a warning and the rule stays unaccelerated. Services are told apart by address and port; services pointing at the same endpoint address and port, or host-based services on the same VIP address and port, share a portset entry, but a connection is accelerated only in the directions its own service selects. HTTP/2, including h2c, is never accelerated. Changing the mode or deleting the service applies to new connections; a connection already accelerated keeps redirecting until it closes. Redirect correctness depends on the kernel - see docs/sockmap-acceleration.md before enabling.",
+              "description": "Directional sockmap acceleration for this FullProxy service - off (default), both, request (client-\u003ebackend only), response (backend-\u003eclient only). The direction that is not selected stays on the userspace relay and never runs the sockmap verdict. A mode other than off requires a plaintext tcp fullproxy service with an ipv4 external IP and ipv4 endpoints, and the daemon started with --sockmapsupport; a request that does not meet either condition is rejected with 400 before any rule state changes. A snapshot restore on a daemon without --sockmapsupport keeps the mode, logs a warning and runs the rule unaccelerated. A service whose data plane changes bytes on every request accepts only off and is rejected with 400 otherwise. Those are sse_mode, pd_disagg_mode, ANY api_key_auth declaration - an explicit disabled included, since that value still makes the gateway strip X-Api-Key, as is one kept by a replace that omits the field - and an attached L7 policy. On an accelerated connection the later keep-alive requests skip admission, the request-header rewrites and the X-Api-Key strip, and the responses are not recorded. Attaching an L7 policy to a service that declares a mode is rejected with 400 as well, since a policy can arrive long after the rule. A snapshot restore of such a service turns the mode off with a warning; a restored policy whose rule declares a mode is attached with a warning and the rule stays unaccelerated. Services are told apart by address and port; services pointing at the same endpoint address and port, or host-based services on the same VIP address and port, share a portset entry, but a connection is accelerated only in the directions its own service selects. HTTP/2, including h2c, is never accelerated. Adding a direction applies to new connections; a connection already running is never accelerated retroactively. Taking a direction away, and deleting the service, close the connections that had it accelerated, since the verdict decides on the pairing installed when a connection was accepted and could not otherwise be reached. POST .../sockmapreset does the same without changing the configuration. Connections that were never accelerated are not touched. Redirect correctness depends on the kernel - see docs/sockmap-acceleration.md before enabling.",
               "enum": [
                 "off",
                 "both",
@@ -6592,6 +6592,17 @@ func init() {
       "required": [
         "ulclIdent"
       ],
+      "type": "object"
+    },
+    "SockMapResetResult": {
+      "description": "Result of stopping sockmap acceleration on a service's live connections.",
+      "properties": {
+        "droppedConnections": {
+          "description": "How many accelerated connections were closed. Zero means the service had none, which is also the answer for a service whose sockMapMode is off. Connections that were never accelerated are not counted because they are not touched.",
+          "type": "integer",
+          "x-omitempty": false
+        }
+      },
       "type": "object"
     },
     "SuccessResponse": {
@@ -14043,6 +14054,68 @@ func init() {
           }
         },
         "summary": "Get the resolved KV-exact composition status of Load balancer rules"
+      }
+    },
+    "/config/loadbalancer/externalipaddress/{ip_address}/port/{port}/protocol/{proto}/sockmapreset": {
+      "post": {
+        "description": "Closes the connections of this service that the kernel is currently accelerating, and reports how many were closed. A configuration change applies to new connections only - the sockmap verdict decides on the socket pairing installed when a connection was accepted, so a connection already accelerated keeps redirecting until it closes. This is the operation that stops it on connections that are already running, for instance after finding the kernel affected by the redirect defect documented in docs/sockmap-acceleration.md. It closes rather than unmaps, because removing a socket from the map while traffic flows can drop bytes mid-connection while closing cannot; clients reconnect and the new connections follow the service as it now stands. Connections of the same service that were never accelerated are not touched, which includes every HTTP/2 connection and any connection that has not yet sent a request. The operation is idempotent and answers 200 with zero on a service that has nothing accelerated, including one whose sockMapMode is off. A service that does not exist answers 404. Changing sockMapMode so that it gives up a direction, and deleting the service, already perform this teardown.",
+        "operationId": "postConfigLoadbalancerSockmapReset",
+        "parameters": [
+          {
+            "description": "External (VIP) IP address of the load balancer service",
+            "in": "path",
+            "name": "ip_address",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "description": "Service port of the load balancer service",
+            "in": "path",
+            "name": "port",
+            "required": true,
+            "type": "number"
+          },
+          {
+            "description": "Protocol of the load balancer service (tcp/udp/sctp)",
+            "in": "path",
+            "name": "proto",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/SockMapResetResult"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
+          }
+        },
+        "summary": "Stop sockmap acceleration on this service's live connections"
       }
     },
     "/config/loadbalancer/externalipaddress/{ip_address}/port/{port}/protocol/{proto}/stats": {
@@ -26713,6 +26786,74 @@ func init() {
         }
       }
     },
+    "/config/loadbalancer/externalipaddress/{ip_address}/port/{port}/protocol/{proto}/sockmapreset": {
+      "post": {
+        "description": "Closes the connections of this service that the kernel is currently accelerating, and reports how many were closed. A configuration change applies to new connections only - the sockmap verdict decides on the socket pairing installed when a connection was accepted, so a connection already accelerated keeps redirecting until it closes. This is the operation that stops it on connections that are already running, for instance after finding the kernel affected by the redirect defect documented in docs/sockmap-acceleration.md. It closes rather than unmaps, because removing a socket from the map while traffic flows can drop bytes mid-connection while closing cannot; clients reconnect and the new connections follow the service as it now stands. Connections of the same service that were never accelerated are not touched, which includes every HTTP/2 connection and any connection that has not yet sent a request. The operation is idempotent and answers 200 with zero on a service that has nothing accelerated, including one whose sockMapMode is off. A service that does not exist answers 404. Changing sockMapMode so that it gives up a direction, and deleting the service, already perform this teardown.",
+        "summary": "Stop sockmap acceleration on this service's live connections",
+        "operationId": "postConfigLoadbalancerSockmapReset",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "External (VIP) IP address of the load balancer service",
+            "name": "ip_address",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "number",
+            "description": "Service port of the load balancer service",
+            "name": "port",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "Protocol of the load balancer service (tcp/udp/sctp)",
+            "name": "proto",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/SockMapResetResult"
+            }
+          },
+          "401": {
+            "description": "Invalid authentication credentials",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        }
+      }
+    },
     "/config/loadbalancer/externalipaddress/{ip_address}/port/{port}/protocol/{proto}/stats": {
       "get": {
         "description": "Returns the per-LB statistics quad (activeConnections, bytesIn, bytesOut, totalConnections) for the rule identified by its composite key (Octavia). activeConnections is the same selector-agnostic live concurrent-connection count the connectionLimit gate enforces; bytesIn/bytesOut are the real per-direction CT byte totals; totalConnections is a monotonic cumulative counter reset to zero on restart.",
@@ -37138,7 +37279,7 @@ func init() {
               "type": "boolean"
             },
             "sockMapMode": {
-              "description": "Directional sockmap acceleration for this FullProxy service - off (default), both, request (client-\u003ebackend only), response (backend-\u003eclient only). The direction that is not selected stays on the userspace relay and never runs the sockmap verdict. A mode other than off requires a plaintext tcp fullproxy service with an ipv4 external IP and ipv4 endpoints, and the daemon started with --sockmapsupport; a request that does not meet either condition is rejected with 400 before any rule state changes. A snapshot restore on a daemon without --sockmapsupport keeps the mode, logs a warning and runs the rule unaccelerated. A service whose data plane changes bytes on every request accepts only off and is rejected with 400 otherwise. Those are sse_mode, pd_disagg_mode, ANY api_key_auth declaration - an explicit disabled included, since that value still makes the gateway strip X-Api-Key, as is one kept by a replace that omits the field - and an attached L7 policy. On an accelerated connection the later keep-alive requests skip admission, the request-header rewrites and the X-Api-Key strip, and the responses are not recorded. Attaching an L7 policy to a service that declares a mode is rejected with 400 as well, since a policy can arrive long after the rule. A snapshot restore of such a service turns the mode off with a warning; a restored policy whose rule declares a mode is attached with a warning and the rule stays unaccelerated. Services are told apart by address and port; services pointing at the same endpoint address and port, or host-based services on the same VIP address and port, share a portset entry, but a connection is accelerated only in the directions its own service selects. HTTP/2, including h2c, is never accelerated. Changing the mode or deleting the service applies to new connections; a connection already accelerated keeps redirecting until it closes. Redirect correctness depends on the kernel - see docs/sockmap-acceleration.md before enabling.",
+              "description": "Directional sockmap acceleration for this FullProxy service - off (default), both, request (client-\u003ebackend only), response (backend-\u003eclient only). The direction that is not selected stays on the userspace relay and never runs the sockmap verdict. A mode other than off requires a plaintext tcp fullproxy service with an ipv4 external IP and ipv4 endpoints, and the daemon started with --sockmapsupport; a request that does not meet either condition is rejected with 400 before any rule state changes. A snapshot restore on a daemon without --sockmapsupport keeps the mode, logs a warning and runs the rule unaccelerated. A service whose data plane changes bytes on every request accepts only off and is rejected with 400 otherwise. Those are sse_mode, pd_disagg_mode, ANY api_key_auth declaration - an explicit disabled included, since that value still makes the gateway strip X-Api-Key, as is one kept by a replace that omits the field - and an attached L7 policy. On an accelerated connection the later keep-alive requests skip admission, the request-header rewrites and the X-Api-Key strip, and the responses are not recorded. Attaching an L7 policy to a service that declares a mode is rejected with 400 as well, since a policy can arrive long after the rule. A snapshot restore of such a service turns the mode off with a warning; a restored policy whose rule declares a mode is attached with a warning and the rule stays unaccelerated. Services are told apart by address and port; services pointing at the same endpoint address and port, or host-based services on the same VIP address and port, share a portset entry, but a connection is accelerated only in the directions its own service selects. HTTP/2, including h2c, is never accelerated. Adding a direction applies to new connections; a connection already running is never accelerated retroactively. Taking a direction away, and deleting the service, close the connections that had it accelerated, since the verdict decides on the pairing installed when a connection was accepted and could not otherwise be reached. POST .../sockmapreset does the same without changing the configuration. Connections that were never accelerated are not touched. Redirect correctness depends on the kernel - see docs/sockmap-acceleration.md before enabling.",
               "type": "string",
               "default": "off",
               "enum": [
@@ -37829,7 +37970,7 @@ func init() {
           "type": "boolean"
         },
         "sockMapMode": {
-          "description": "Directional sockmap acceleration for this FullProxy service - off (default), both, request (client-\u003ebackend only), response (backend-\u003eclient only). The direction that is not selected stays on the userspace relay and never runs the sockmap verdict. A mode other than off requires a plaintext tcp fullproxy service with an ipv4 external IP and ipv4 endpoints, and the daemon started with --sockmapsupport; a request that does not meet either condition is rejected with 400 before any rule state changes. A snapshot restore on a daemon without --sockmapsupport keeps the mode, logs a warning and runs the rule unaccelerated. A service whose data plane changes bytes on every request accepts only off and is rejected with 400 otherwise. Those are sse_mode, pd_disagg_mode, ANY api_key_auth declaration - an explicit disabled included, since that value still makes the gateway strip X-Api-Key, as is one kept by a replace that omits the field - and an attached L7 policy. On an accelerated connection the later keep-alive requests skip admission, the request-header rewrites and the X-Api-Key strip, and the responses are not recorded. Attaching an L7 policy to a service that declares a mode is rejected with 400 as well, since a policy can arrive long after the rule. A snapshot restore of such a service turns the mode off with a warning; a restored policy whose rule declares a mode is attached with a warning and the rule stays unaccelerated. Services are told apart by address and port; services pointing at the same endpoint address and port, or host-based services on the same VIP address and port, share a portset entry, but a connection is accelerated only in the directions its own service selects. HTTP/2, including h2c, is never accelerated. Changing the mode or deleting the service applies to new connections; a connection already accelerated keeps redirecting until it closes. Redirect correctness depends on the kernel - see docs/sockmap-acceleration.md before enabling.",
+          "description": "Directional sockmap acceleration for this FullProxy service - off (default), both, request (client-\u003ebackend only), response (backend-\u003eclient only). The direction that is not selected stays on the userspace relay and never runs the sockmap verdict. A mode other than off requires a plaintext tcp fullproxy service with an ipv4 external IP and ipv4 endpoints, and the daemon started with --sockmapsupport; a request that does not meet either condition is rejected with 400 before any rule state changes. A snapshot restore on a daemon without --sockmapsupport keeps the mode, logs a warning and runs the rule unaccelerated. A service whose data plane changes bytes on every request accepts only off and is rejected with 400 otherwise. Those are sse_mode, pd_disagg_mode, ANY api_key_auth declaration - an explicit disabled included, since that value still makes the gateway strip X-Api-Key, as is one kept by a replace that omits the field - and an attached L7 policy. On an accelerated connection the later keep-alive requests skip admission, the request-header rewrites and the X-Api-Key strip, and the responses are not recorded. Attaching an L7 policy to a service that declares a mode is rejected with 400 as well, since a policy can arrive long after the rule. A snapshot restore of such a service turns the mode off with a warning; a restored policy whose rule declares a mode is attached with a warning and the rule stays unaccelerated. Services are told apart by address and port; services pointing at the same endpoint address and port, or host-based services on the same VIP address and port, share a portset entry, but a connection is accelerated only in the directions its own service selects. HTTP/2, including h2c, is never accelerated. Adding a direction applies to new connections; a connection already running is never accelerated retroactively. Taking a direction away, and deleting the service, close the connections that had it accelerated, since the verdict decides on the pairing installed when a connection was accepted and could not otherwise be reached. POST .../sockmapreset does the same without changing the configuration. Connections that were never accelerated are not touched. Redirect correctness depends on the kernel - see docs/sockmap-acceleration.md before enabling.",
           "type": "string",
           "default": "off",
           "enum": [
@@ -40269,6 +40410,17 @@ func init() {
         "ulclIP": {
           "description": "Access network IP address",
           "type": "string"
+        }
+      }
+    },
+    "SockMapResetResult": {
+      "description": "Result of stopping sockmap acceleration on a service's live connections.",
+      "type": "object",
+      "properties": {
+        "droppedConnections": {
+          "description": "How many accelerated connections were closed. Zero means the service had none, which is also the answer for a service whose sockMapMode is off. Connections that were never accelerated are not counted because they are not touched.",
+          "type": "integer",
+          "x-omitempty": false
         }
       }
     },

@@ -716,6 +716,9 @@ func NewLoxilbRestAPIAPI(spec *loads.Document) *LoxilbRestAPIAPI {
 		PostConfigL7PolicyHandler: PostConfigL7PolicyHandlerFunc(func(params PostConfigL7PolicyParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation PostConfigL7Policy has not yet been implemented")
 		}),
+		PostConfigLoadbalancerSockmapResetHandler: PostConfigLoadbalancerSockmapResetHandlerFunc(func(params PostConfigLoadbalancerSockmapResetParams, principal interface{}) middleware.Responder {
+			return middleware.NotImplemented("operation PostConfigLoadbalancerSockmapReset has not yet been implemented")
+		}),
 		OpaPostConfigOpaWatcherHandler: opa.PostConfigOpaWatcherHandlerFunc(func(params opa.PostConfigOpaWatcherParams, principal interface{}) middleware.Responder {
 			return middleware.NotImplemented("operation opa.PostConfigOpaWatcher has not yet been implemented")
 		}),
@@ -1224,6 +1227,8 @@ type LoxilbRestAPIAPI struct {
 	DpuPostConfigDpuDebugHandler dpu.PostConfigDpuDebugHandler
 	// PostConfigL7PolicyHandler sets the operation handler for the post config l7 policy operation
 	PostConfigL7PolicyHandler PostConfigL7PolicyHandler
+	// PostConfigLoadbalancerSockmapResetHandler sets the operation handler for the post config loadbalancer sockmap reset operation
+	PostConfigLoadbalancerSockmapResetHandler PostConfigLoadbalancerSockmapResetHandler
 	// OpaPostConfigOpaWatcherHandler sets the operation handler for the post config opa watcher operation
 	OpaPostConfigOpaWatcherHandler opa.PostConfigOpaWatcherHandler
 	// PutConfigCertCertIDHandler sets the operation handler for the put config cert cert Id operation
@@ -1979,6 +1984,9 @@ func (o *LoxilbRestAPIAPI) Validate() error {
 	}
 	if o.PostConfigL7PolicyHandler == nil {
 		unregistered = append(unregistered, "PostConfigL7PolicyHandler")
+	}
+	if o.PostConfigLoadbalancerSockmapResetHandler == nil {
+		unregistered = append(unregistered, "PostConfigLoadbalancerSockmapResetHandler")
 	}
 	if o.OpaPostConfigOpaWatcherHandler == nil {
 		unregistered = append(unregistered, "opa.PostConfigOpaWatcherHandler")
@@ -2976,6 +2984,10 @@ func (o *LoxilbRestAPIAPI) initHandlerCache() {
 		o.handlers["POST"] = make(map[string]http.Handler)
 	}
 	o.handlers["POST"]["/config/l7policy"] = NewPostConfigL7Policy(o.context, o.PostConfigL7PolicyHandler)
+	if o.handlers["POST"] == nil {
+		o.handlers["POST"] = make(map[string]http.Handler)
+	}
+	o.handlers["POST"]["/config/loadbalancer/externalipaddress/{ip_address}/port/{port}/protocol/{proto}/sockmapreset"] = NewPostConfigLoadbalancerSockmapReset(o.context, o.PostConfigLoadbalancerSockmapResetHandler)
 	if o.handlers["POST"] == nil {
 		o.handlers["POST"] = make(map[string]http.Handler)
 	}
