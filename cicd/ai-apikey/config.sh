@@ -184,6 +184,36 @@ $hexec llb1 curl -s -X POST http://localhost:11111/netlox/v1/config/loadbalancer
   }'
 
 echo ""
+
+# F-P0-3. The boot-replay probe further up is sound for what it names, but it
+# is not the whole freeze, and it runs in the wrong place for the other half.
+# Auto-persist is a DEBOUNCED write-through fired BY a successful mutating
+# call, so the rule POST immediately above can start a freeze that lands on
+# validation.sh's FIRST write seconds later — which is exactly how this
+# scenario once produced a phantom "503 Maintenance mode / configuration is
+# frozen" in CI and was green on the re-run.
+#
+# The repair is a positive signal placed after the writes: /status/ready
+# reports `ready` with the reasons behind it. The absence of a 503 before the
+# writes means "not started yet", which is indistinguishable from "finished";
+# `ready: true` after them is a verdict.
+echo "Waiting for /status/ready after the config writes (F-P0-3)"
+for i in $(seq 1 40); do
+  rs=$($hexec llb1 curl -s -m 5 -H "Authorization: Bearer $TOKEN" \
+    http://localhost:11111/netlox/v1/status/ready 2>/dev/null)
+  if printf '%s' "$rs" | python3 -c \
+      "import sys,json; sys.exit(0 if json.load(sys.stdin).get('ready') is True else 1)" 2>/dev/null; then
+    echo "  configuration ready (${i})"
+    break
+  fi
+  if [ "$i" -eq 40 ]; then
+    echo "  FATAL: /status/ready never reported ready; last answer:"
+    printf '%s\n' "$rs"
+    exit 1
+  fi
+  sleep 2
+done
+
 echo "#########################################"
 echo "ai-apikey testbed ready"
 echo "#########################################"

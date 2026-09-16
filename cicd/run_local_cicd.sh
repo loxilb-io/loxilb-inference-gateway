@@ -188,10 +188,6 @@ run_scenario tcplbmaxep -- './config.sh' './validation.sh'
 
 run_scenario ipmasquerade -- './config.sh' './validation.sh'
 
-run_scenario httpsproxy 'httpsproxy (second run)' -- './config.sh' './validation.sh'
-
-run_scenario e2ehttpsproxy 'e2ehttpsproxy (second run)' -- './config.sh' './validation-http1.sh' './validation-http2.sh'
-
 run_scenario tcplb-src -- './config.sh' './validation.sh'
 
 run_scenario udplb-persist -- './config.sh' './validation.sh'

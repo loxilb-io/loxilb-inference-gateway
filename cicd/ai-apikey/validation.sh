@@ -968,6 +968,82 @@ for spec in \
   qcheck "QOS-API-012 unauth $m $p → 401" "401" "$st"
 done
 
+# ── QOS-API-012b: an AUTHENTICATED caller without the authority is 403 ───────
+#
+# 012 above only covers the missing credential. A present credential that may
+# not do this is a different decision with a different status, and it is the
+# one that actually separates authentication from authorization: if role
+# enforcement regressed to "any valid token wins", every 401 assertion above
+# would still pass.
+#
+# viewer is GET-only by pkg/authz's closed set (AuthorizeRole: RoleViewer
+# returns nil for GET and for POST /auth/logout, ErrPermissionDenied for
+# everything else), so the same endpoint list must answer 403 to a viewer and
+# 401 to nobody at all.
+echo ""
+echo "QOS-API-012b: an authenticated viewer is refused the writes, and allowed the reads"
+QOS_VGUARD="qos-viewer-guarded"
+
+$hexec llb1 curl -s -o /dev/null -X POST http://localhost:11111/netlox/v1/auth/users \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
+  -d '{"username":"qos-viewer","password":"Viewer123!","role":"viewer"}' 2>/dev/null
+VIEWER_TOKEN=$($hexec llb1 curl -s -X POST http://localhost:11111/netlox/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"qos-viewer","password":"Viewer123!"}' 2>/dev/null \
+  | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))" 2>/dev/null)
+
+# No token means the viewer account was never created, and every 403 below
+# would then be a 401 scored against the wrong mechanism. Fail the measurement
+# rather than the product.
+if [[ -z "$VIEWER_TOKEN" ]]; then
+  qos_note "QOS-API-012b"
+  echo "  QOS-API-012b [FAILED] — no viewer token: the account was not created, so the 403 legs cannot be scored"
+  code=1
+else
+  # The positive control, and it has to come first: a viewer that cannot read
+  # either is a principal denied everything, which would make every 403 below
+  # true for a reason that has nothing to do with the method.
+  st=$($hexec llb1 curl -s -o /dev/null -w "%{http_code}" -X GET \
+    -H "Authorization: Bearer $VIEWER_TOKEN" \
+    "http://localhost:11111/netlox/v1/config/ai/user/ratelimit/$QOS_T" 2>/dev/null)
+  qcheck "QOS-API-012b viewer GET tenant list → 200" "200" "$st"
+
+  # The block owns the row the viewer tries to delete. QOS-API-003 already
+  # removed $QOS_T/$QOS_U, so borrowing it would make "the row survived" fail
+  # for a reason that has nothing to do with authorization.
+  api POST /config/ai/user/ratelimit \
+    "{\"tenant_id\":\"$QOS_T\",\"user_id\":\"$QOS_VGUARD\",\"rps\":3,\"tokens_per_min\":300}"
+  qcheck_code "QOS-API-012b fixture row created as admin → 204" "204"
+
+  for spec in \
+    "POST|/config/ai/user/ratelimit|{\"tenant_id\":\"$QOS_T\",\"user_id\":\"viewer-must-not-write\",\"rps\":1}" \
+    "DELETE|/config/ai/user/ratelimit/$QOS_T/$QOS_VGUARD|" \
+    "POST|/config/ai/ratelimit/defaults|{\"rule_ident\":\"viewer-must-not-write\",\"rps\":1}" \
+    "DELETE|/config/ai/ratelimit/defaults/global|" ; do
+    m=${spec%%|*}; rest=${spec#*|}; p=${rest%%|*}; b=${rest#*|}
+    if [[ -n "$b" ]]; then
+      st=$($hexec llb1 curl -s -o /dev/null -w "%{http_code}" -X "$m" \
+        -H "Content-Type: application/json" -H "Authorization: Bearer $VIEWER_TOKEN" \
+        "http://localhost:11111/netlox/v1$p" -d "$b" 2>/dev/null)
+    else
+      st=$($hexec llb1 curl -s -o /dev/null -w "%{http_code}" -X "$m" \
+        -H "Authorization: Bearer $VIEWER_TOKEN" \
+        "http://localhost:11111/netlox/v1$p" 2>/dev/null)
+    fi
+    qcheck "QOS-API-012b viewer $m $p → 403" "403" "$st"
+  done
+
+  # The refusals must have been refusals. A status is what the gateway SAID;
+  # these two reads are what it DID, and a 403 that wrote anyway is the worst
+  # of both readings.
+  api GET "/config/ai/user/ratelimit/$QOS_T/$QOS_VGUARD"
+  qcheck_code "QOS-API-012b the row the viewer was refused to delete survived → 200" "200"
+  api GET "/config/ai/user/ratelimit/$QOS_T/viewer-must-not-write"
+  qcheck_code "QOS-API-012b the row the viewer was refused to create never appeared → 404" "404"
+
+  api DELETE "/config/ai/user/ratelimit/$QOS_T/$QOS_VGUARD"
+fi
+
 # ── QOS-API-013: absent rows answer 404, not an empty success ───────────────
 echo ""
 echo "QOS-API-013: a row that does not exist is 404"
@@ -1164,7 +1240,7 @@ echo ""
 echo "QOS-API-Z: declared-vs-executed inventory"
 QOS_EXPECTED="QOS-API-001 QOS-API-002 QOS-API-003 QOS-API-004 QOS-API-005 \
 QOS-API-006 QOS-API-007 QOS-API-008 QOS-API-009 QOS-API-010 QOS-API-010b \
-QOS-API-010c QOS-API-010e QOS-API-011 QOS-API-012 QOS-API-013 QOS-API-014 QOS-API-015 \
+QOS-API-010c QOS-API-010e QOS-API-011 QOS-API-012 QOS-API-012b QOS-API-013 QOS-API-014 QOS-API-015 \
 QOS-API-016 QOS-API-017 QOS-API-018 QOS-API-019"
 qos_missing=""
 for want in $QOS_EXPECTED; do
