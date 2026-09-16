@@ -661,3 +661,107 @@ func TestScopeVersionWarningsNameThePeerAndDoNotMask(t *testing.T) {
 		t.Errorf("a second old peer went unreported; warn-once must be per peer")
 	}
 }
+
+// TestSnapshotImportDoesNotResetTheReceiversRpsBuckets — an absolute
+// rate-limiter snapshot must not hand the receiving node's own per-key RPS
+// buckets a fresh full burst.
+//
+// ImportState replaces the per-key entries map wholesale and rebuilds each
+// limiter from the entry's (RPS, Burst). Those two fields have no slot in
+// the wire message — RateLimiterEntry carries key_id, is_tenant,
+// last_refill_ns, current_tokens, epoch_start_ts, tokens_consumed and
+// exceeded, and rlGoEntryToProto never writes a rate or a burst. So every
+// imported limiter arrives as rate.NewLimiter(0, 0), RateLimiterStore.check
+// sees a config mismatch on the next call and mints a brand-new FULL bucket.
+// The snapshot's per-key half therefore carries nothing the receiver can
+// use, and the one thing it does is reset the receiver's live enforcement.
+//
+// The push is not a once-per-failover event: in A-A mode every tenth push
+// is an absolute snapshot, so a serving node is re-zeroed on that cadence
+// while it is admitting traffic against those very buckets.
+//
+// The two halves of the assertion are deliberate. The tenant-quota control
+// proves the harness can see synced state arrive at all — without it a
+// "bucket still denies" result could just as well mean the push never
+// landed.
+func TestSnapshotImportDoesNotResetTheReceiversRpsBuckets(t *testing.T) {
+	t.Parallel()
+	srv := &mockRateLimiterServer{}
+	client, cleanup := startMockRLServer(t, srv)
+	defer cleanup()
+
+	// The sending node: one per-key bucket and one tenant driven deep into
+	// quota debt (a full burst plus a 10% overrun — ~6s of drain, longer
+	// than this test runs, so the debt cannot heal before the assertions).
+	sendStore := rl.New()
+	sendStore.CheckKey("shared-key", 1, 1)
+	sendStore.AllowTokens("debt-tenant", 1000000, 1000000, 0)
+	sendStore.AllowTokens("debt-tenant", 100000, 1000000, 0)
+
+	sender := newTestCoordinator(newMockApplier(0))
+	peer := &DpPeer{Peer: net.ParseIP("127.0.0.9"), CapMask: 0xFFFFFFFF}
+	if err := sender.sendRateLimiterBatch(peer, client, sendStore.ExportState(), false); err != nil {
+		t.Fatalf("sendRateLimiterBatch: %v", err)
+	}
+
+	srv.mu.Lock()
+	wire := make([]*RateLimiterBatch, len(srv.batches))
+	copy(wire, srv.batches)
+	srv.mu.Unlock()
+	if len(wire) == 0 {
+		t.Fatalf("setup: no batch reached the wire")
+	}
+
+	// The receiving node is serving traffic of its own: it has charged the
+	// same tenant once (which is what publishes the tenant's limit locally,
+	// the denominator the debt check reads against) and has already spent
+	// its own burst on the same key.
+	recvStore := rl.New()
+	recvStore.AllowTokens("debt-tenant", 1, 1000000, 0)
+	if ok, _ := recvStore.CheckKey("shared-key", 1, 1); !ok {
+		t.Fatalf("setup: the receiver's first request must be admitted")
+	}
+	if ok, _ := recvStore.CheckKey("shared-key", 1, 1); ok {
+		t.Fatalf("setup: the receiver's burst must be spent before the push lands")
+	}
+	recv := newTestCoordinator(newMockApplier(0))
+	recv.SetRateLimiterStore(recvStore)
+
+	const senderKey = "10.0.0.9:4041"
+	for _, b := range wire {
+		if err := recv.ApplyRateLimiterBatch(senderKey, b); err != nil {
+			t.Fatalf("ApplyRateLimiterBatch: %v", err)
+		}
+	}
+
+	// Control: state really did cross the wire and land in this store.
+	if !recvStore.IsTokenQuotaExceeded("debt-tenant") {
+		t.Fatalf("control failed: the sender's tenant quota debt did not reach the receiver, " +
+			"so the per-key result below proves nothing")
+	}
+
+	// Subject: the receiver's own spent bucket must still be spent.
+	if ok, _ := recvStore.CheckKey("shared-key", 1, 1); ok {
+		t.Errorf("a peer snapshot refilled the receiver's own per-key RPS bucket: " +
+			"the request that was refused a moment ago is now admitted")
+	}
+
+	// And it is not a one-off: price what each further snapshot is worth to
+	// a caller that keeps asking. Every admission here is one the local rate
+	// limit had already refused.
+	extra := 0
+	for i := 0; i < 3; i++ {
+		for _, b := range wire {
+			if err := recv.ApplyRateLimiterBatch(senderKey, b); err != nil {
+				t.Fatalf("ApplyRateLimiterBatch (replay %d): %v", i, err)
+			}
+		}
+		if ok, _ := recvStore.CheckKey("shared-key", 1, 1); ok {
+			extra++
+		}
+	}
+	if extra != 0 {
+		t.Errorf("%d of 3 replayed snapshots each bought the caller another admission "+
+			"past a rate limit that had already refused it", extra)
+	}
+}

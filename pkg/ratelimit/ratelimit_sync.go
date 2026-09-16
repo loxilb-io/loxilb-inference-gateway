@@ -22,12 +22,21 @@
  *                        / AllowTokens call while a slow peer accepts the
  *                        push.
  *
- * I-2 (L-8 trade-off): ImportState replaces the existing entries map
- *                        wholesale, orphaning any outstanding
- * *rate.Limiter.Reserve reservations from the
- *                        prior limiter instances. Worst case: ~1 RPS extra
- *                        burst per replaced key. Accepted per RESEARCH §4
- *
+ * I-2 (per-key rows are informational): ImportState merges quota state and
+ *                        leaves the receiver's own per-key limiter map
+ *                        alone. It used to replace that map wholesale and
+ *                        rebuild each limiter from the entry's (rps, burst)
+ *                        — but those two fields have no slot in the wire
+ *                        message, so every rebuilt limiter arrived as
+ *                        rate.NewLimiter(0, 0) and `check` minted a fresh
+ *                        FULL bucket on its next call. The import could
+ *                        therefore only refill the receiver's live rate
+ *                        limits, never restore the sender's; in A-A mode
+ *                        every tenth push is an absolute snapshot, so a
+ *                        serving node paid that refill on that cadence.
+ *                        Per-key buckets are config-driven and rebuilt
+ *                        lazily by the receiver's own CheckKey, exactly as
+ *                        ApplyGossipDelta has always documented.
  *
  * I-3 (gossip idempotency): ApplyGossipDelta uses max(local.Consumed,
  *                        remote.Consumed) for the per-tenant `consumed`
@@ -37,12 +46,15 @@
  *
  *   I-4 (cap on opaque state): *rate.Limiter internals are opaque (the
  *                        upstream golang.org/x/time/rate API exposes only
- *                        Allow / Reserve / Wait). Export rebuilds from
- *                        config (rps, burst, lastAccess) only — confirmed
- *                        in RESEARCH §4. The atomic tokenWindowEntry state
- *                        IS preserved byte-for-byte because all its fields
- *                        are accessed via atomic operations and are
- *                        directly readable.
+ *                        Allow / Reserve / Wait), so a per-key bucket's
+ *                        live fill level is not exportable at all. Export
+ *                        reads (rps, burst, lastAccess) off the local
+ *                        entry, but the proto message has no field for the
+ *                        first two, so a peer sees neither — see I-2 for
+ *                        what that means on receive. The atomic
+ *                        tokenWindowEntry state IS preserved byte-for-byte
+ *                        because all its fields are accessed via atomic
+ *                        operations and are directly readable.
  */
 
 package ratelimit
@@ -50,9 +62,6 @@ package ratelimit
 import (
 	"strings"
 	"sync/atomic"
-	"time"
-
-	"golang.org/x/time/rate"
 )
 
 // RateLimiterEntry is the Go-side analog of the proto RateLimiterEntry
@@ -95,8 +104,8 @@ import (
 // prefixes — that code is immutable — but the new node's warning is not).
 type RateLimiterEntry struct {
 	KeyID        string // "k:<id>", "t:<id>" or "tm:<id>|<model>" — scope-prefixed identifier
-	RPS          int    // limiterEntry.rps (per-key only; 0 for tenant)
-	Burst        int    // limiterEntry.burst (per-key only; 0 for tenant)
+	RPS          int    // limiterEntry.rps (per-key only; NO wire field — see I-2)
+	Burst        int    // limiterEntry.burst (per-key only; NO wire field — see I-2)
 	IsTenant     bool   // true if this entry represents a tenant/model quota
 	WindowEpoch  int64  // tokenWindowEntry.windowEpoch — last-activity minute (quota only)
 	Consumed     int64  // tokenWindowEntry.tatMs — bucket virtual drain time in Unix ms (quota only)
@@ -282,63 +291,37 @@ func (s *RateLimiterStore) ExportState() []RateLimiterEntry {
 	return out
 }
 
-// ImportState atomically replaces the existing per-key entries map with
-// the supplied snapshot AND merges tenant quota state. Used on the
-// receiver side when a peer sends an absolute snapshot (A-P backup, or
+// ImportState merges an absolute peer snapshot into the local store. Used
+// on the receiver side when a peer sends a full snapshot (A-P backup, or
 // the every-10th-push insurance batch in A-A mode).
 //
-// Note: outstanding rate.Limiter.Reserve reservations from the prior
-// limiter instances are orphaned by replacement. Worst case: ~1 RPS
-// extra burst per replaced key. Accepted per RESEARCH §4.
-// This is the documented trade-off for keeping the lock surface small
-// and the Import path simple. A reservation-preserving import is feasible
-// but would require either (a) deep-copying *rate.Limiter internals
-// (opaque per I-4), or (b) iterating over the prior limiters' pending
-// reservations (no upstream API for that). Neither is worth the cost
-// for HA failover semantics.
+// Only the quota rows are installed. The snapshot's per-key rows are
+// deliberately ignored, and the reason is a property of the wire, not a
+// preference: RateLimiterEntry carries key_id, is_tenant, last_refill_ns,
+// current_tokens, epoch_start_ts, tokens_consumed and exceeded — there is
+// no rate and no burst on it, and rlGoEntryToProto never writes one. A
+// rebuilt limiter therefore always arrived as rate.NewLimiter(0, 0), which
+// `check` discards on the next call as a configuration mismatch and
+// replaces with a brand-new FULL bucket. Installing them bought the
+// receiver nothing and cost it the enforcement state it was holding: a
+// caller the local rate limit had just refused was admitted again on the
+// next snapshot. Per-key buckets are reconstructed lazily by the receiver
+// via CheckKey with the same (rps, burst) the control plane already
+// replicates through other channels — the posture ApplyGossipDelta below
+// has documented all along.
 //
-// Tenant quotas are merged with max semantics on `consumed` to keep
-// behaviour aligned with ApplyGossipDelta — even a snapshot import
-// should not retract counter values. WindowEpoch follows last-writer
-// semantics: a newer epoch zeros the consumed counter automatically
-// (via the AllowTokens hot-path CAS), but here we set the windowEpoch
-// AND consumed atomically from the snapshot, which represents a known-
-// good source-of-truth state.
+// Tenant quotas are merged with max semantics on both monotonic fields, so
+// an absolute snapshot cannot retract a counter either. A LOWER remote
+// drain time only means the remote node has seen less spend, never that
+// quota should be refunded.
 func (s *RateLimiterStore) ImportState(entries []RateLimiterEntry) {
 	// Receiving any peer snapshot proves a live peer re-taught us: end the
 	// cold-start warmup (no-op unless the store was warming).
 	s.endQuotaWarmup(false)
 
-	// Rebuild the per-key entries map under the mutex. The fresh map is
-	// installed by reference; previous limiters become eligible for GC
-	// once any in-flight check call returns.
-	fresh := make(map[string]*limiterEntry, len(entries))
-	for _, e := range entries {
-		if e.IsTenant {
-			continue
-		}
-		// Rebuild *rate.Limiter from (rps, burst) config. Internal state
-		// (tokens, last) is reset to a full bucket — see I-2 trade-off
-		// comment above.
-		fresh[e.KeyID] = &limiterEntry{
-			limiter:    rate.NewLimiter(rate.Limit(e.RPS), e.Burst),
-			rps:        e.RPS,
-			burst:      e.Burst,
-			lastAccess: time.Unix(0, e.LastAccessNs),
-		}
-	}
-
-	s.mu.Lock()
-	s.entries = fresh
-	s.mu.Unlock()
-
-	// Quota merge. LoadOrStore inside mergeQuotaEntry guarantees we never
-	// overwrite a *tokenWindowEntry that another goroutine may be holding
-	// a pointer to (callers from AllowTokens cache the pointer past Load).
-	// Both monotonic fields take the max (I-3 idempotency) — with the
-	// bucket in drain-time form even an absolute snapshot merges this way,
-	// because a LOWER remote drain time only means the remote node has
-	// seen less spend, never that quota should be refunded.
+	// LoadOrStore inside mergeQuotaEntry guarantees we never overwrite a
+	// *tokenWindowEntry that another goroutine may be holding a pointer to
+	// (callers from AllowTokens cache the pointer past Load).
 	for _, e := range entries {
 		if !e.IsTenant {
 			continue
