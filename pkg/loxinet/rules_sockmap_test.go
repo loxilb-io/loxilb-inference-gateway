@@ -102,64 +102,151 @@ func TestLbSockMapCodeEligibility(t *testing.T) {
 	}
 }
 
-// An AI gateway service re-runs admission at every keep-alive request and records
-// requests from their responses, so an accelerated direction would let later
-// requests through unchecked and leave responses unrecorded. Every non-off mode is
-// refused, whichever of the three inputs makes the service an AI gateway.
-func TestLbSockMapAiGwCodeRefused(t *testing.T) {
-	aiGw := map[string]func(*cmn.LbServiceArg) string{
-		"sse_mode":                   func(s *cmn.LbServiceArg) string { s.SSEMode = true; return "" },
-		"pd_disagg_mode":             func(s *cmn.LbServiceArg) string { s.PDDisaggMode = true; return "" },
-		"api_key_auth=required":      func(s *cmn.LbServiceArg) string { return cmn.ApiKeyAuthRequired },
-		"api_key_auth=jwt":           func(s *cmn.LbServiceArg) string { return cmn.ApiKeyAuthJWT },
-		"api_key_auth=apikey-or-jwt": func(s *cmn.LbServiceArg) string { return cmn.ApiKeyAuthApiKeyOrJWT },
+// Every declaration that puts per-request work on the relay path refuses every
+// non-off mode. sse_mode and pd_disagg_mode re-run admission at each keep-alive
+// request and record requests from their responses; any non-empty api_key_auth
+// makes the gateway own the X-Api-Key header and strip it on every request; an
+// attached L7 policy rewrites request headers on every request.
+func TestLbSockMapL7CodeRefused(t *testing.T) {
+	// name -> (mutate serv, api_key_auth, l7Attached)
+	perRequest := map[string]struct {
+		mutate     func(*cmn.LbServiceArg)
+		apiKeyAuth string
+		l7Attached bool
+	}{
+		"sse_mode":                   {mutate: func(s *cmn.LbServiceArg) { s.SSEMode = true }},
+		"pd_disagg_mode":             {mutate: func(s *cmn.LbServiceArg) { s.PDDisaggMode = true }},
+		"api_key_auth=required":      {apiKeyAuth: cmn.ApiKeyAuthRequired},
+		"api_key_auth=jwt":           {apiKeyAuth: cmn.ApiKeyAuthJWT},
+		"api_key_auth=apikey-or-jwt": {apiKeyAuth: cmn.ApiKeyAuthApiKeyOrJWT},
+		// The case the AI-gateway test could not express: an EXPLICIT "disabled"
+		// enforces no credential, so aiGwModeFor reads it as "not an AI gateway",
+		// but it still claims the X-Api-Key namespace and the data plane strips
+		// the header on every request. An accelerated request direction would
+		// carry the tenant's key upstream from the second keep-alive request on.
+		"api_key_auth=disabled (explicit)": {apiKeyAuth: cmn.ApiKeyAuthDisabled},
+		"l7 policy attached":               {l7Attached: true},
 	}
-	for name, mutate := range aiGw {
+	for name, tc := range perRequest {
 		for mode, code := range map[string]uint8{"both": 1, "request": 2, "response": 3} {
 			serv := sockMapServ(mode)
-			apiKeyAuth := mutate(&serv)
-			got, err := lbSockMapAiGwCode(&serv, code, apiKeyAuth)
-			if !errors.Is(err, errSockMapAiGateway) || got != 0 {
-				t.Fatalf("%s, mode %s: want errSockMapAiGateway and code 0, got %d err %v", name, mode, got, err)
+			if tc.mutate != nil {
+				tc.mutate(&serv)
+			}
+			got, err := lbSockMapL7Code(&serv, code, tc.apiKeyAuth, tc.l7Attached)
+			if !errors.Is(err, errSockMapPerRequestL7) || got != 0 {
+				t.Fatalf("%s, mode %s: want errSockMapPerRequestL7 and code 0, got %d err %v",
+					name, mode, got, err)
 			}
 		}
 	}
 }
 
-// A service that is not an AI gateway keeps its mode, and off is valid on any service.
-func TestLbSockMapAiGwCodeAllowed(t *testing.T) {
-	for _, apiKeyAuth := range []string{"", cmn.ApiKeyAuthDisabled} {
-		serv := sockMapServ("request")
-		if got, err := lbSockMapAiGwCode(&serv, 2, apiKeyAuth); err != nil || got != 2 {
-			t.Fatalf("api_key_auth %q: want code 2, got %d err %v", apiKeyAuth, got, err)
-		}
+// The mirror image: a service that declares nothing keeps its mode. Without this
+// the refusal could widen into a blanket ban and nothing would fail.
+func TestLbSockMapL7CodeAllowed(t *testing.T) {
+	// An OMITTED api_key_auth declares nothing: the data plane touches no header
+	// and a backend-owned X-Api-Key passes through untouched, so the rule stays
+	// accelerable. This is the one api_key_auth value that does.
+	serv := sockMapServ("request")
+	if got, err := lbSockMapL7Code(&serv, 2, "", false); err != nil || got != 2 {
+		t.Fatalf("api_key_auth omitted: want code 2, got %d err %v", got, err)
 	}
 
-	serv := sockMapServ("off")
+	// off asks for nothing, so it is valid on any service.
+	serv = sockMapServ("off")
 	serv.SSEMode = true
-	if got, err := lbSockMapAiGwCode(&serv, 0, cmn.ApiKeyAuthRequired); err != nil || got != 0 {
-		t.Fatalf("off on an AI gateway service: want code 0, got %d err %v", got, err)
+	if got, err := lbSockMapL7Code(&serv, 0, cmn.ApiKeyAuthRequired, true); err != nil || got != 0 {
+		t.Fatalf("off on a per-request service: want code 0, got %d err %v", got, err)
+	}
+}
+
+// sockMapPerRequestL7 must not be confused with aiGwModeFor: they answer
+// different questions and disagree on exactly one input. aiGwModeFor arms
+// accounting and streaming state; this one decides who owns the header bytes.
+func TestSockMapPerRequestL7DivergesFromAiGwMode(t *testing.T) {
+	serv := sockMapServ("both")
+	if aiGwModeFor(serv.SSEMode, serv.PDDisaggMode, cmn.ApiKeyAuthDisabled) {
+		t.Fatal("an explicit api_key_auth=disabled is not an AI gateway service")
+	}
+	if !sockMapPerRequestL7(&serv, cmn.ApiKeyAuthDisabled, false) {
+		t.Fatal("an explicit api_key_auth=disabled still owns X-Api-Key, so it must refuse acceleration")
+	}
+	// And they agree on an omitted declaration.
+	if aiGwModeFor(serv.SSEMode, serv.PDDisaggMode, "") ||
+		sockMapPerRequestL7(&serv, "", false) {
+		t.Fatal("an omitted api_key_auth declares nothing on either axis")
+	}
+
+	// The streaming/disaggregation arm is delegated to aiGwModeFor rather than
+	// re-spelled, so it must still answer for those two inputs on their own.
+	for name, mutate := range map[string]func(*cmn.LbServiceArg){
+		"sse_mode":       func(s *cmn.LbServiceArg) { s.SSEMode = true },
+		"pd_disagg_mode": func(s *cmn.LbServiceArg) { s.PDDisaggMode = true },
+	} {
+		s := sockMapServ("both")
+		mutate(&s)
+		if !sockMapPerRequestL7(&s, "", false) {
+			t.Fatalf("%s alone must refuse acceleration", name)
+		}
 	}
 }
 
 // The check follows the api_key_auth the rule will carry, not the incoming field. A
 // replace that omits api_key_auth keeps enforcement on (apiKeyAuthOnReplace), so an
 // empty incoming value must not let acceleration through on a protected service.
-func TestLbSockMapAiGwCodeUsesResolvedApiKeyAuth(t *testing.T) {
+func TestLbSockMapL7CodeUsesResolvedApiKeyAuth(t *testing.T) {
 	serv := sockMapServ("both") // incoming api_key_auth omitted
 	resolved := apiKeyAuthOnReplace(cmn.ApiKeyAuthRequired, serv.ApiKeyAuth)
-	if _, err := lbSockMapAiGwCode(&serv, 1, resolved); !errors.Is(err, errSockMapAiGateway) {
-		t.Fatalf("replace omitting api_key_auth on a protected service: want errSockMapAiGateway, got %v", err)
+	if _, err := lbSockMapL7Code(&serv, 1, resolved, false); !errors.Is(err, errSockMapPerRequestL7) {
+		t.Fatalf("replace omitting api_key_auth on a protected service: want errSockMapPerRequestL7, got %v", err)
 	}
 }
 
 // A snapshot restore must not fail, since an error aborts the whole loadbalancer
-// domain. The rule is restored with acceleration off.
-func TestLbSockMapAiGwCodeRestoreReplay(t *testing.T) {
-	serv := sockMapServ("request")
-	serv.SSEMode = true
-	serv.RestoreReplay = true
-	if got, err := lbSockMapAiGwCode(&serv, 2, ""); err != nil || got != 0 {
-		t.Fatalf("restore replay of an AI gateway service: want code 0 and no error, got %d err %v", got, err)
+// domain. The rule is restored with acceleration off. This holds for an attached
+// L7 policy as well, which is the one input the rule document does not carry.
+func TestLbSockMapL7CodeRestoreReplay(t *testing.T) {
+	for name, tc := range map[string]struct {
+		apiKeyAuth string
+		l7Attached bool
+		sse        bool
+	}{
+		"sse_mode":           {sse: true},
+		"explicit disabled":  {apiKeyAuth: cmn.ApiKeyAuthDisabled},
+		"l7 policy attached": {l7Attached: true},
+	} {
+		serv := sockMapServ("request")
+		serv.SSEMode = tc.sse
+		serv.RestoreReplay = true
+		if got, err := lbSockMapL7Code(&serv, 2, tc.apiKeyAuth, tc.l7Attached); err != nil || got != 0 {
+			t.Fatalf("restore replay (%s): want code 0 and no error, got %d err %v", name, got, err)
+		}
+	}
+}
+
+// The attachment index is what the rule path reads, so its three maintenance
+// points must agree: an attach marks, a detach clears, and a deleted rule clears.
+func TestL7AttachmentIndex(t *testing.T) {
+	vip, port, proto := "10.10.10.254", uint16(2062), "tcp"
+	l7ClearAttached(vip, port, proto)
+	if l7RuleHasPolicy(vip, port, proto) {
+		t.Fatal("a listener with no policy must not be marked attached")
+	}
+	l7MarkAttached(vip, port, proto)
+	if !l7RuleHasPolicy(vip, port, proto) {
+		t.Fatal("an attached policy must be visible to the rule path")
+	}
+	// The key is the attach key: protocol case must not split an entry.
+	if !l7RuleHasPolicy(vip, port, "TCP") {
+		t.Fatal("the protocol is matched case-insensitively")
+	}
+	// A different listener is unaffected.
+	if l7RuleHasPolicy(vip, port+1, proto) {
+		t.Fatal("the index must be per listener")
+	}
+	l7ClearAttached(vip, port, proto)
+	if l7RuleHasPolicy(vip, port, proto) {
+		t.Fatal("a detached policy must clear the index")
 	}
 }

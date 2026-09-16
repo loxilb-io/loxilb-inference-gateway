@@ -275,9 +275,9 @@ fi
 sockmap_section 6 "loxilb log scan for sockmap failures"
 fail_cnt=$(sockmap_log_failure_count llb1)
 if (( fail_cnt == 0 )); then
-  sockmap_result "no sockmap failure messages in docker logs" "OK"
+  sockmap_result "no sockmap failure messages in the daemon logs" "OK"
 else
-  sockmap_result "no sockmap failure messages in docker logs" "FAILED" "$fail_cnt occurrences"
+  sockmap_result "no sockmap failure messages in the daemon logs" "FAILED" "$fail_cnt occurrences"
 fi
 
 # ---------- Step 7: delete -> portset cleanup ----------
