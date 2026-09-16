@@ -776,6 +776,84 @@ func TestSnapshotImportDoesNotResetTheReceiversRpsBuckets(t *testing.T) {
 	}
 }
 
+// TestSentinellessBatchStillMergesTheLegacyScopes — warning about a peer is
+// not the same as refusing its state, and the difference is the whole of the
+// mixed-version posture.
+//
+// A batch with no scope-version sentinel comes from a peer that pre-dates the
+// ladder scopes. The receiver says so, once, per peer. What it must NOT do is
+// treat the batch as unusable: the two tenant scopes pre-date the sentinel
+// too, they are exactly the state such a peer CAN express, and dropping them
+// would turn a documented graceful degrade into a silent enforcement gap at
+// the moment a fleet is half upgraded — the moment it matters.
+//
+// The control is the same batch WITH a sentinel. Without it, "the legacy rows
+// merged" is equally well explained by a receiver that merges everything
+// regardless, which would make the warning meaningless rather than the
+// behaviour correct.
+func TestSentinellessBatchStillMergesTheLegacyScopes(t *testing.T) {
+	t.Parallel()
+
+	// A drain time well ahead of now is what "this tenant has spent" looks
+	// like on the wire; the receiver publishes a limit for each tenant first
+	// so the debt has a denominator to be read against.
+	tat := time.Now().Add(90 * time.Second).UnixMilli()
+	legacyRows := func(tenant string) []*RateLimiterEntry {
+		return []*RateLimiterEntry{
+			{KeyId: "t:" + tenant, IsTenant: true, TokensConsumed: tat, EpochStartTs: 1},
+			{KeyId: "tm:" + tenant + "|m1", IsTenant: true, TokensConsumed: tat, EpochStartTs: 1},
+		}
+	}
+
+	store := rl.New()
+	store.AllowTokens("old-tenant", 1, 1000, 0)
+	store.AllowTokens("old-tenant|m1", 1, 1000, 0)
+	store.AllowTokens("new-tenant", 1, 1000, 0)
+	store.AllowTokens("new-tenant|m1", 1, 1000, 0)
+
+	recv := newTestCoordinator(newMockApplier(0))
+	recv.SetRateLimiterStore(store)
+
+	const oldPeer = "10.0.0.31:4041"
+	const newPeer = "10.0.0.32:4041"
+
+	// Subject: a peer that sends no sentinel.
+	if err := recv.ApplyRateLimiterBatch(oldPeer, &RateLimiterBatch{
+		Entries: legacyRows("old-tenant"),
+	}); err != nil {
+		t.Fatalf("ApplyRateLimiterBatch(old): %v", err)
+	}
+	// Control: the identical rows, led by a sentinel.
+	if err := recv.ApplyRateLimiterBatch(newPeer, &RateLimiterBatch{
+		Entries: append([]*RateLimiterEntry{{KeyId: rl.ScopeSentinelKeyID, IsTenant: true}},
+			legacyRows("new-tenant")...),
+	}); err != nil {
+		t.Fatalf("ApplyRateLimiterBatch(new): %v", err)
+	}
+
+	// Drive shape: the peer must actually have been classified as old, or
+	// the subject arm is just the control under another name.
+	if !warnRecorded(recv, oldPeer, "RateLimiterSync/scope-older") {
+		t.Fatalf("setup: the sentinel-less peer was not reported as pre-dating the ladder scopes, "+
+			"so %s is not under test as an old peer", oldPeer)
+	}
+	if warnRecorded(recv, newPeer, "RateLimiterSync/scope-older") {
+		t.Fatalf("setup: the sentinel-bearing peer was reported as old; the control is not a control")
+	}
+
+	for _, c := range []struct{ key, what string }{
+		{"new-tenant", "control: a sentinel-bearing peer's tenant debt"},
+		{"new-tenant|m1", "control: a sentinel-bearing peer's tenant|model debt"},
+		{"old-tenant", "a sentinel-less peer's tenant debt"},
+		{"old-tenant|m1", "a sentinel-less peer's tenant|model debt"},
+	} {
+		if !store.IsTokenQuotaExceeded(c.key) {
+			t.Errorf("%s did not land: the receiver warned about the peer AND discarded "+
+				"the scopes that peer can legitimately express", c.what)
+		}
+	}
+}
+
 // TestRateLimiterPushDoesNotStarveQuotaRowsBehindUnusableRows — the rows a
 // push puts on the wire must be rows the peer can do something with, and
 // the quota rows must not ride behind the ones it cannot.
