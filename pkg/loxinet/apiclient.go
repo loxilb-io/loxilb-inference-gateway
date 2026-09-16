@@ -534,6 +534,23 @@ func (na *NetAPIStruct) NetL7PolicyRemove(vip string, port uint16, proto string)
 	return 0, nil
 }
 
+// NetSockMapResetAccel - close the connections of one rule that the kernel is
+// accelerating, and report how many were closed. See the interface comment in
+// common/common.go for why a configuration change alone cannot do this.
+func (na *NetAPIStruct) NetSockMapResetAccel(vip string, port uint16, proto string) (int, error) {
+	if na.BgpPeerMode {
+		return 0, errors.New("running in bgp only mode")
+	}
+	ip := net.ParseIP(vip)
+	if ip == nil {
+		return 0, fmt.Errorf("sockmap-reset: invalid VIP %q", vip)
+	}
+	if mh.dpEbpf == nil {
+		return 0, errors.New("sockmap-reset: ebpf datapath not initialized")
+	}
+	return DpSockMapDropAccelConns(ip, port, l7ProtoToNum(proto))
+}
+
 // NetCtInfoGet - Get connection track info from loxinet
 func (na *NetAPIStruct) NetCtInfoGet() ([]cmn.CtInfo, error) {
 	if na.BgpPeerMode {

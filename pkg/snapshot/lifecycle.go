@@ -172,6 +172,11 @@ var RouteLifecycles = []RouteLifecycle{
 	{Method: "patch", Path: "/config/loadbalancer/externalipaddress/{ip_address}/port/{port}/protocol/{proto}", Class: ClassSnapshot, Area: DomainLoadBalancer, DesiredState: true},
 	{Method: "delete", Path: "/config/loadbalancer/all", Class: ClassSnapshot, Area: DomainLoadBalancer, DesiredState: true},
 	{Method: "delete", Path: "/config/loadbalancer/externalipaddress/{ip_address}/port/{port}/protocol/{proto}", Class: ClassSnapshot, Area: DomainLoadBalancer, DesiredState: true},
+	// A runtime ACTION on a captured domain, not desired state: it closes the
+	// connections of one service that the kernel is currently accelerating.
+	// Nothing about it survives a reboot, and nothing should — after a restart
+	// there are no accelerated connections to stop.
+	{Method: "post", Path: "/config/loadbalancer/externalipaddress/{ip_address}/port/{port}/protocol/{proto}/sockmapreset", Class: ClassRuntimeRebuilt, Area: DomainLoadBalancer, DesiredState: false},
 	{Method: "delete", Path: "/config/loadbalancer/externalipaddress/{ip_address}/port/{port}/portmax/{portmax}/protocol/{proto}", Class: ClassSnapshot, Area: DomainLoadBalancer, DesiredState: true},
 	{Method: "delete", Path: "/config/loadbalancer/hosturl/{hosturl}/externalipaddress/{ip_address}/port/{port}/protocol/{proto}", Class: ClassSnapshot, Area: DomainLoadBalancer, DesiredState: true},
 	{Method: "delete", Path: "/config/loadbalancer/hosturl/{hosturl}/externalipaddress/{ip_address}/port/{port}/portmax/{portmax}/protocol/{proto}", Class: ClassSnapshot, Area: DomainLoadBalancer, DesiredState: true},

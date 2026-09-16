@@ -4335,6 +4335,17 @@ func (R *RuleH) AddLbRule(serv cmn.LbServiceArg, servSecIPs []cmn.LbSecIPArg, se
 		eRule.hChk.actChk = serv.Monitor
 		eRule.pTO = serv.PersistTimeout
 		eRule.ppv2En = serv.ProxyProtocolV2
+		// A mode that takes a direction away must stop the connections already
+		// having it accelerated. The verdict decides on its peer_map lookup
+		// alone, so without this they would keep redirecting under a mode that
+		// no longer asks for it, until they closed on their own. Adding a
+		// direction drops nothing: an existing connection is never accelerated
+		// retroactively.
+		if sockMapModeReduces(eRule.sockMapMode, sockMapCode) {
+			sockMapDropAccelForRule(serv.ServIP, serv.ServPort, serv.Proto,
+				fmt.Sprintf("sockMapMode %s -> %s",
+					cmn.SockMapCodeToMode(eRule.sockMapMode), cmn.SockMapCodeToMode(sockMapCode)))
+		}
 		eRule.sockMapMode = sockMapCode
 		eRule.act.action.(*ruleLBActs).sel = lBActs.sel
 
@@ -5124,6 +5135,14 @@ func (R *RuleH) DeleteLbRule(serv cmn.LbServiceArg) (int, error) {
 	rule := R.tables[RtLB].eMap[rt.ruleKey()]
 	if rule == nil {
 		return RuleNotExistsErr, errors.New("no-rule error")
+	}
+
+	// Stop acceleration on this rule's live connections while the sockproxy rule
+	// they hang off still exists. Unaccelerated connections are untouched and
+	// drain as they always have; an accelerated pair would otherwise keep
+	// redirecting in the kernel after the rule that asked for it was gone.
+	if rule.sockMapMode != 0 {
+		sockMapDropAccelForRule(serv.ServIP, serv.ServPort, serv.Proto, "rule deleted")
 	}
 
 	defer R.tables[RtLB].Mark.ReleaseMarker(rule.ruleNum)

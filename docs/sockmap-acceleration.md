@@ -83,11 +83,35 @@ request and paired the client socket with a backend socket. From then on:
 HTTP/2 connections, including plaintext h2c, are never accelerated. The proxy
 pairs no sockets for them, so none of their sockets runs the verdict program.
 
-Changing a service's `sockMapMode`, or deleting the service, applies to new
-connections. A connection that is already accelerated keeps redirecting in the
-kernel until it closes. To stop acceleration on live connections at once, for
-example after finding the kernel affected by the defect below, restart loxilb or
-make clients reconnect.
+### Stopping it on connections that are already running
+
+The verdict decides on the socket pairing installed when a connection was
+accepted, so configuration alone cannot reach a connection that is already
+accelerated — it keeps redirecting until it closes.
+
+**Adding** a direction therefore applies to new connections only: a connection
+that is already running is never accelerated retroactively, and is undisturbed.
+
+**Taking a direction away closes the connections that had it accelerated.**
+Lowering `sockMapMode`, switching to the other direction, and deleting the service
+all do this. Connections of the same service that were never accelerated are not
+touched — they drain as they always have, which includes every HTTP/2 connection
+and any connection that has not yet sent a request.
+
+To stop acceleration without changing the configuration, for example after finding
+the kernel affected by the defect below:
+
+```
+curl -X POST http://localhost:11111/netlox/v1/config/loadbalancer/\
+externalipaddress/10.10.10.254/port/2020/protocol/tcp/sockmapreset
+{"droppedConnections":12}
+```
+
+It closes rather than unmaps. Removing a socket from the map while traffic flows
+races the kernel's own retry path and can drop bytes mid-connection; closing
+cannot, because the connection is over either way. Clients reconnect, and the new
+connections follow the service as it now stands. The call is idempotent: a service
+with nothing accelerated answers `200` with `0`.
 
 ## How services are kept apart
 
@@ -340,6 +364,10 @@ bpftool map dump name sockmap_stats
 | `sock_verdict_map` | the sockets of accelerated connections whose incoming direction is accelerated, added once their pair is in `peer_map` |
 | `sockmap_stats` | verdict counters: redirects (total, request, response), peer misses |
 
+After a `sockmapreset`, or after lowering a mode, `sock_verdict_map` and
+`peer_map` return to the size they had before those connections existed. A
+residue there is a leak worth reporting.
+
 A non-zero peer miss count means a socket ran the verdict without a pair. The
 proxy removes a socket from `sock_verdict_map` before its pair, so the count
 stays at zero; a growing count is a bug worth reporting. The ineligible counter
@@ -365,7 +393,7 @@ traffic is being relayed in userspace and the configuration is having no effect.
 | `validation_refcount.sh` | portset refcounts across in-place updates, mode changes and shared endpoints |
 | `validation_request_path.sh` | h2c through every mode, split and streamed and pipelined requests, half-closed clients, mode change and delete under a live connection, no verdict pass |
 | `validation_equivalence.sh` | what the client and the backend observe on an accelerated rule is identical to `off`: one rule per mode over one endpoint, compared record by record, plus chunked, pipelined, streamed, truncated, 204/304/HEAD and half-closed shapes |
-| `validation_control.sh` | stopping acceleration on live connections: the admin action drops one rule's accelerated connections and nothing else, and the maps return to their baseline |
+| `validation_control.sh` | stopping acceleration on live connections: the action drops one rule's accelerated connections and nothing else, a mode reduction and a delete do the same, and the maps return to their baseline |
 | `validation_perf.sh` | throughput, acceleration on vs off, on a pair of services sharing every port |
 | `validation-cpu.sh` | CPU comparison on the same pair |
 | `validation-sse-cpu.sh` | CPU per token on SSE streaming, including `request` / `response` arms |
