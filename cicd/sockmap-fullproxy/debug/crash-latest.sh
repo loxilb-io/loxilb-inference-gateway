@@ -15,6 +15,9 @@
 # Usage: ./crash-latest.sh [attempts]
 # set -u is deliberately not used: spawn_docker_host in common.sh reads conditionally
 # set variables, and an unset expansion would terminate the shell immediately.
+# Lives under debug/ but runs from the suite directory: every path below
+# (../common.sh, ./config.sh, ./sse_server.js) is written relative to it.
+cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 source ../common.sh
 source ./sockmap_common.sh
 sockmap_init_artifacts
