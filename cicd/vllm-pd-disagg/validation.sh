@@ -2407,6 +2407,217 @@ fi  # llb2-exists guard
 bail_check
 fi  # Phase L
 
+if should_run_phase "M"; then
+echo "#########################################"
+echo "PHASE M — P/D KV-TRANSFER-PARAMS ACCOUNTING"
+echo "#########################################"
+#
+# Families (all three were conditional-with-proven-writer — no committed coverage):
+#   loxilb_ai_pd_kv_params_found_total{model}
+#   loxilb_ai_pd_kv_params_missing_total{model}
+#   loxilb_proxy_pd_kv_params_overflow_total
+#
+# The first two are the two arms of ONE if/else (api/prometheus/ai_metrics.go), so they
+# are mutually exclusive by construction and a request moves exactly one of them — but
+# ONLY when the lifecycle got far enough to parse a prefill response.
+# pdPrefillResponseInspected(errorPhase) is true for {0 complete, 2 decode/error,
+# 3 decode/timeout} and false for {1 prefill/timeout, 4 prefill/error, 5 prefill/rejected}.
+# So a DECODE-leg failure still moves the pair (prefill was inspected) while a PREFILL-leg
+# failure moves NEITHER. That asymmetry is the difference between "counts requests" and
+# "counts prefill responses inspected", and M4 below is what tells them apart.
+#
+# The control is the identical request with ONE field changed in the prefill response,
+# switched at runtime through the mock's admin knob — no container recreate, so nothing
+# else about the fixture can drift between the drive and its control.
+#
+# 🚨 TWO PIPELINES IN ONE STAGE. found/missing are written by llb_ai_pd_record, a DIRECT
+# CGO callback, and appear immediately. overflow is a C global_stats counter drained by
+# RunSockproxyMetrics, which sleeps PrometheusDefaultPeriod = 10s. A settle sized for the
+# callback would read a live overflow writer as dead, so every arm here settles past one
+# full collector period — including the arms that expect ZERO, whose whole value is that
+# they had a real chance to move.
+
+M_PREFILL_EP=l3ep1          # port 2020 is 1 prefill + 1 decode; l3ep1 serves prefill
+M_ADMIN="http://127.0.0.1:9000/admin"
+M_N=4                       # requests per arm
+M_SETTLE=14                 # > one 10s collector period, with margin
+
+m_metrics() { $hexec llb1 curl -s http://localhost:11111/netlox/v1/metrics 2>/dev/null; }
+
+# m_val <extended-regex> — sum the value column of matching non-comment metric lines.
+m_val() {
+  m_metrics | grep -v '^#' | grep -E "$1" | awk '{s+=$NF} END{printf "%d", s+0}'
+}
+
+m_found()    { m_val '^loxilb_ai_pd_kv_params_found_total'; }
+m_missing()  { m_val '^loxilb_ai_pd_kv_params_missing_total'; }
+m_overflow() { m_val '^loxilb_proxy_pd_kv_params_overflow_total'; }
+
+# The two overflow SITES share one counter but not one log line: sockproxy_pd.c writes
+# "kv_transfer_params too large" on the vLLM path and "disaggregated_params too large" on
+# the TRT-LLM path. On a vLLM rule only the first is reachable, so the second is asserted
+# FLAT — a per-family delta alone could not tell which site moved.
+m_dplog() {
+  local out rc
+  out=$($dexec llb1 grep -cF "$1" /var/log/loxilbdp.log 2>/dev/null); rc=$?
+  # grep -c prints 0 AND exits 1 on no match; a `|| echo 0` would append a second 0.
+  if [ "$rc" -gt 1 ]; then echo "-1"; else echo "${out:-0}"; fi
+}
+M_LOG_VLLM="kv_transfer_params too large"
+M_LOG_TRT="disaggregated_params too large"
+# The wedge guard that actually fires on an over-cap prefill response (sockproxy_http.c).
+M_LOG_WEDGE="exceeds buffer cap"
+
+# m_kv_mode <on|off|oversize> — switch the prefill response shape and PROVE it switched.
+# A control that silently failed to switch would be scored as a product result.
+m_kv_mode() {
+  local want="$1" got
+  $dexec "$M_PREFILL_EP" curl -s -m 5 -X POST "${M_ADMIN}/kv-params-${want}" >/dev/null 2>&1
+  got=$($dexec "$M_PREFILL_EP" curl -s -m 5 "${M_ADMIN}/status" 2>/dev/null \
+        | grep -o '"kv_params_mode": *"[^"]*"' | cut -d'"' -f4)
+  [ "$got" = "$want" ] && return 0 || return 1
+}
+
+# m_drive <n> — issue n P/D completions through the VIP; echo how many returned choices.
+m_drive() {
+  local n="$1" i ok=0 r
+  for i in $(seq 1 "$n"); do
+    r=$($dexec l3h1 curl -sk --cacert /tmp/minica.pem -m 20 \
+          https://10.10.10.254:2020/v1/completions \
+          -H "Content-Type: application/json" \
+          -d "{\"model\":\"${MODEL}\",\"prompt\":\"kvparams-${i}\",\"max_tokens\":8}" 2>/dev/null)
+    echo "$r" | grep -q '"choices"' && ok=$((ok + 1))
+  done
+  echo "$ok"
+}
+
+# ── M0: the knob is real ───────────────────────────────────────────────────────────────
+m_kv_mode on && check "TM0: prefill mock accepts the kv-params knob (mode=on)" 0 \
+             || check "TM0: prefill mock accepts the kv-params knob (mode=on)" 1
+
+# ── M1: params PRESENT -> found, and only found ────────────────────────────────────────
+m1_f=$(m_found); m1_m=$(m_missing); m1_o=$(m_overflow)
+m1_served=$(m_drive "$M_N")
+sleep "$M_SETTLE"
+d_f=$(( $(m_found)    - m1_f ))
+d_m=$(( $(m_missing)  - m1_m ))
+d_o=$(( $(m_overflow) - m1_o ))
+echo "  M1 (mode=on): served=${m1_served}/${M_N} found=+${d_f} missing=+${d_m} overflow=+${d_o}"
+
+[ "$m1_served" = "$M_N" ] \
+  && check "TM1a: all ${M_N} drive requests were served (drive shape)" 0 \
+  || check "TM1a: all ${M_N} drive requests were served (drive shape)" 1
+[ "$d_f" = "$M_N" ] \
+  && check "TM1b: kv_params_found +${d_f} == ${M_N} requests carrying params" 0 \
+  || check "TM1b: kv_params_found +${d_f} == ${M_N} requests carrying params" 1
+[ "$d_m" = "0" ] \
+  && check "TM1c: kv_params_missing FLAT (+${d_m}) — the if/else is exclusive" 0 \
+  || check "TM1c: kv_params_missing FLAT (+${d_m}) — the if/else is exclusive" 1
+[ "$d_o" = "0" ] \
+  && check "TM1d: overflow FLAT (+${d_o}) on an in-bounds payload" 0 \
+  || check "TM1d: overflow FLAT (+${d_o}) on an in-bounds payload" 1
+
+# ── M2: the identical request with the params OMITTED -> missing, and only missing ─────
+if m_kv_mode off; then
+  check "TM2a: prefill switched to kv-params OFF (control armed)" 0
+else
+  check "TM2a: prefill switched to kv-params OFF (control armed)" 1
+fi
+m2_f=$(m_found); m2_m=$(m_missing); m2_o=$(m_overflow)
+m2_served=$(m_drive "$M_N")
+sleep "$M_SETTLE"
+d_f2=$(( $(m_found)    - m2_f ))
+d_m2=$(( $(m_missing)  - m2_m ))
+d_o2=$(( $(m_overflow) - m2_o ))
+echo "  M2 (mode=off): served=${m2_served}/${M_N} found=+${d_f2} missing=+${d_m2} overflow=+${d_o2}"
+
+[ "$m2_served" = "$M_N" ] \
+  && check "TM2b: control still serves ${M_N}/${M_N} — absence of params is not an error" 0 \
+  || check "TM2b: control still serves ${M_N}/${M_N} — absence of params is not an error" 1
+[ "$d_f2" = "0" ] \
+  && check "TM2c: kv_params_found FLAT (+${d_f2}) with the key omitted" 0 \
+  || check "TM2c: kv_params_found FLAT (+${d_f2}) with the key omitted" 1
+[ "$d_m2" = "$M_N" ] \
+  && check "TM2d: kv_params_missing +${d_m2} == ${M_N} inspected-but-absent responses" 0 \
+  || check "TM2d: kv_params_missing +${d_m2} == ${M_N} inspected-but-absent responses" 1
+[ "$d_o2" = "0" ] \
+  && check "TM2e: overflow FLAT (+${d_o2}) when the key is absent, not oversized" 0 \
+  || check "TM2e: overflow FLAT (+${d_o2}) when the key is absent, not oversized" 1
+
+# ── M3: an oversized prefill response takes the TRUNCATION path, not the overflow one ──
+#
+# 🚨 THE OVERFLOW SITE IS UNREACHABLE OVER THE WIRE, AND THE ARITHMETIC SAYS SO.
+# pd_extract_kv_params overflows on `val_len >= kv_capacity` with capacity
+# PD_KV_PARAMS_MAX_LEN = 65536 (sockproxy.h), but the value it measures is a sub-span of
+# pd_prefill_resp_buf, whose cap is `64 * 1024` = 65536 INCLUDING the HTTP headers
+# (sockproxy_pd_vllm.c). A span inside a 65536-byte buffer can never itself reach 65536,
+# so the two bounds being EQUAL makes the overflow branch dead on the network path — only
+# a direct unit call with a larger buffer reaches it (test_pd_rewriter.c does exactly that).
+#
+# An earlier cut of this stage asserted `overflow == N` here and failed; the product was
+# right and the assertion was wrong. What actually happens is the long-context wedge guard
+# in sockproxy_http.c: the declared response can never fit, so the proxy FAILS OPEN, forces
+# completion once the headers are in, and runs the extractor over a TRUNCATED body.
+#
+# So this arm covers the path that is real, and deliberately does NOT assert found/missing.
+# Truncation is currently reported as kv_params_FOUND even though the object is cut in half
+# — see the finding recorded alongside this stage — and pinning that here would lock in the
+# behaviour a fix should change. The claims below are the ones that stay true either way.
+if m_kv_mode oversize; then
+  check "TM3a: prefill switched to kv-params OVERSIZE" 0
+else
+  check "TM3a: prefill switched to kv-params OVERSIZE" 1
+fi
+m3_f=$(m_found); m3_m=$(m_missing); m3_o=$(m_overflow)
+m3_lv=$(m_dplog "$M_LOG_VLLM"); m3_lt=$(m_dplog "$M_LOG_TRT")
+m3_lw=$(m_dplog "$M_LOG_WEDGE")
+m3_served=$(m_drive "$M_N")
+sleep "$M_SETTLE"
+d_f3=$(( $(m_found)    - m3_f ))
+d_m3=$(( $(m_missing)  - m3_m ))
+d_o3=$(( $(m_overflow) - m3_o ))
+d_lv=$(( $(m_dplog "$M_LOG_VLLM") - m3_lv ))
+d_lt=$(( $(m_dplog "$M_LOG_TRT")  - m3_lt ))
+d_lw=$(( $(m_dplog "$M_LOG_WEDGE") - m3_lw ))
+echo "  M3 (mode=oversize): served=${m3_served}/${M_N} found=+${d_f3} missing=+${d_m3} overflow=+${d_o3} wedge-log=+${d_lw} vllm-ovf-log=+${d_lv} trt-ovf-log=+${d_lt}"
+
+[ "$d_lw" = "$M_N" ] \
+  && check "TM3b: the buffer-cap wedge guard fired once per request (+${d_lw} == ${M_N})" 0 \
+  || check "TM3b: the buffer-cap wedge guard fired once per request (+${d_lw} == ${M_N})" 1
+[ "$d_o3" = "0" ] \
+  && check "TM3c: kv_params_overflow FLAT (+${d_o3}) — truncation is NOT the overflow site" 0 \
+  || check "TM3c: kv_params_overflow FLAT (+${d_o3}) — truncation is NOT the overflow site" 1
+[ "$d_lv" = "0" ] \
+  && check "TM3d: no '${M_LOG_VLLM}' line — the overflow branch is unreachable over the wire" 0 \
+  || check "TM3d: no '${M_LOG_VLLM}' line — the overflow branch is unreachable over the wire" 1
+[ "$d_lt" = "0" ] \
+  && check "TM3e: the TRT-LLM overflow site stayed FLAT (+${d_lt}) on a vLLM rule" 0 \
+  || check "TM3e: the TRT-LLM overflow site stayed FLAT (+${d_lt}) on a vLLM rule" 1
+[ "$m3_lw" -ge 0 ] && [ "$m3_lv" -ge 0 ] && [ "$m3_lt" -ge 0 ] \
+  && check "TM3f: the datapath log was readable (flat readings are not vacuous)" 0 \
+  || check "TM3f: the datapath log was readable (flat readings are not vacuous)" 1
+[ "$m3_served" = "0" ] \
+  && check "TM3g: an over-cap prefill response does not yield a served completion (${m3_served}/${M_N})" 0 \
+  || check "TM3g: an over-cap prefill response does not yield a served completion (${m3_served}/${M_N})" 1
+
+# ── M4: conservation across every arm driven above ─────────────────────────────────────
+# Every one of the 3*M_N requests completed, so all were inspected lifecycles and each
+# moved exactly one of the pair. A per-family delta cannot see a request counted twice or
+# not at all; this identity can.
+m_tot_f=$(( d_f + d_f2 + d_f3 ))
+m_tot_m=$(( d_m + d_m2 + d_m3 ))
+m_tot_req=$(( M_N * 3 ))
+echo "  M4: found_total=${m_tot_f} + missing_total=${m_tot_m} vs ${m_tot_req} inspected lifecycles"
+[ "$(( m_tot_f + m_tot_m ))" = "$m_tot_req" ] \
+  && check "TM4: conservation — found+missing (${m_tot_f}+${m_tot_m}) == ${m_tot_req} inspected lifecycles" 0 \
+  || check "TM4: conservation — found+missing (${m_tot_f}+${m_tot_m}) == ${m_tot_req} inspected lifecycles" 1
+
+# Restore the shipped default so any later phase (and any re-run) sees an unmodified mock.
+m_kv_mode on >/dev/null 2>&1 || true
+
+bail_check
+fi  # Phase M
+
 echo "#########################################"
 echo "Results"
 echo "#########################################"
