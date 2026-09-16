@@ -795,3 +795,109 @@ func TestTokenQuotaStatesFromKeepsTenantsAndDropsLadderScopes(t *testing.T) {
 		}
 	}
 }
+
+// TestReserveSeesImportedDebtOnEveryLadderRung — the pre-admission
+// reservation must refuse against a bucket whose debt arrived from a peer,
+// on every rung, not just the tenant aggregate.
+//
+// This is the question a failover actually asks. The receiving node has
+// never charged the bucket, so nothing has published a limit on it and
+// IsTokenQuotaExceeded — the post-hoc gate — reads false whatever arrived.
+// The reservation is the only stage that can refuse the FIRST request,
+// because it takes the limit as an argument, from configuration, exactly
+// as the request path supplies it.
+//
+// The tenant aggregate is the control: it is the rung that is known to
+// work, so a ladder rung failing beside it is failing on its own account.
+func TestReserveSeesImportedDebtOnEveryLadderRung(t *testing.T) {
+	const tpm = 10
+	const tenant = "imp-tenant"
+	const user = "imp-user"
+	const model = "imp-model"
+	const keyID = "imp-key-id"
+	const svcIdent = "10.0.0.1:2020"
+
+	for _, tc := range []struct {
+		name    string
+		bucket  string
+		svc     *mockRateLimitService
+		tenant  string
+		user    string
+		keyID   string
+		svcName string
+	}{
+		{
+			name:   "tenant aggregate (control)",
+			bucket: tenant,
+			svc:    &mockRateLimitService{tenantTPM: tpm},
+			tenant: tenant,
+		},
+		{
+			name:   "tenant|model",
+			bucket: modelQuotaKey(tenant, model),
+			svc:    &mockRateLimitService{modelTPM: map[string]int{model: tpm}},
+			tenant: tenant,
+		},
+		{
+			name:   "per-user",
+			bucket: rl.UserQuotaKey(tenant, user),
+			svc: &mockRateLimitService{
+				userRows: map[string]cmn.UserRateLimitEntry{tenant + "|" + user: {TokensPerMin: tpm}},
+			},
+			tenant: tenant,
+			user:   user,
+		},
+		{
+			name:   "per-user-per-model",
+			bucket: rl.UserModelQuotaKey(tenant, user, model),
+			svc: &mockRateLimitService{
+				userModelTPM: map[string]int{tenant + "|" + user + "|" + model: tpm},
+			},
+			tenant: tenant,
+			user:   user,
+		},
+		{
+			name:   "per-key TPM",
+			bucket: rl.KeyQuotaKey(keyID),
+			svc: &mockRateLimitService{
+				keyByID: map[string]*cmn.ApiKeySummary{keyID: {TokensPerMin: tpm}},
+			},
+			tenant: tenant,
+			keyID:  keyID,
+		},
+		{
+			name:   "per-VIP shared",
+			bucket: rl.VipSharedQuotaKey(svcIdent),
+			svc: &mockRateLimitService{
+				defaults: map[string]cmn.RateLimitDefaultsEntry{
+					"rule|" + svcIdent: {VipSharedTPM: tpm},
+				},
+			},
+			svcName: svcIdent,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// A peer's absolute snapshot, arriving at a node that has never
+			// served this identity: one quota row, in debt, nothing else.
+			src := rl.New()
+			src.AllowTokens(tc.bucket, tpm, tpm, 0)
+			src.AllowTokens(tc.bucket, tpm/5+1, tpm, 0)
+			if !src.IsTokenQuotaExceeded(tc.bucket) {
+				t.Fatalf("setup: %q is not in debt on the sending node", tc.bucket)
+			}
+			store := rl.New()
+			store.ImportState(src.ExportState())
+
+			mdl := model
+			if tc.user == "" && tc.keyID == "" && tc.tenant == "" {
+				mdl = "" // the keyless rung names no model
+			}
+			allowed, _, _ := tokenQuotaReserveInternal(tc.svc, store,
+				tc.tenant, mdl, tc.user, tc.keyID, tc.svcName, 1)
+			if allowed {
+				t.Errorf("the imported debt on %q did not refuse the first request: "+
+					"this rung admits one full request per node after a failover", tc.bucket)
+			}
+		})
+	}
+}

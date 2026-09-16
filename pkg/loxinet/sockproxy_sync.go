@@ -1131,6 +1131,20 @@ func (s *SockproxySync) rateLimiterPushLoop(peer *DpPeer, peerKey string, client
 		case <-time.After(interval):
 		}
 
+		// Re-check the role on every tick. The gate that decides whether
+		// this node pushes at all lives in peersFn — it returns nil unless
+		// this node holds a MASTER cluster instance — and it used to be
+		// consulted ONCE, when the loop was spawned on MASTER promotion.
+		// A node that was ever master therefore went on pushing forever,
+		// demotion included: on a two-node bring-up where the election
+		// settles the other way after a first flap, BOTH nodes push
+		// absolute snapshots at each other for the life of the process,
+		// which is not the A-P model the cadence and the snapshot shape
+		// were designed around.
+		if !s.peerStillOurs(peerKey) {
+			continue
+		}
+
 		// Skip if no store registered yet.
 		store := s.rlStore.Load()
 		if store == nil {
@@ -1190,6 +1204,27 @@ func (s *SockproxySync) rateLimiterPushLoop(peer *DpPeer, peerKey string, client
 			tk.LogIt(tk.LogDebug, "[SOCKPROXY_SYNC] RateLimiterSync push to peer=%s failed: %v\n", peerKey, err)
 		}
 	}
+}
+
+// peerStillOurs reports whether peerKey is still a peer this node should be
+// pushing rate-limiter state to.
+//
+// peersFn composes both authorities the push depends on: the role gate (nil
+// unless this node holds a MASTER cluster instance) and the live peer set.
+// Asking it per tick is what makes a demotion or a peer removal actually
+// stop the pushes. A nil peersFn is the test-mode contract — no outbound
+// authority was supplied, so the caller owns the decision and the loop does
+// not second-guess it.
+func (s *SockproxySync) peerStillOurs(peerKey string) bool {
+	if s.peersFn == nil {
+		return true
+	}
+	for _, pe := range s.peersFn() {
+		if pe.Peer.String() == peerKey {
+			return true
+		}
+	}
+	return false
 }
 
 // rlDialRetryInterval bounds how often the rate-limiter push loop re-dials

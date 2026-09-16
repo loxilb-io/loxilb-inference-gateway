@@ -865,3 +865,148 @@ func TestRateLimiterPushDialIsThrottled(t *testing.T) {
 			got, run, ticks, maxDials)
 	}
 }
+
+// TestEveryLadderScopeSurvivesTheWire — the per-user, per-user-model,
+// per-key and per-VIP quota scopes must reach a peer in the same state the
+// tenant scopes do.
+//
+// The ladder scopes keep their wire prefix in the local map key and the
+// two legacy tenant scopes do not, so they take different branches in
+// QuotaWireKey on the way out and in QuotaMapKey on the way back. A scope
+// that fell through either branch would be silently absent at the receiver
+// — silently, because a bucket the receiver has never charged has no
+// published limit, so IsTokenQuotaExceeded reads false and the request is
+// simply admitted.
+//
+// The tenant row is the control: it proves the push, the chunking and the
+// merge all ran, so a ladder row that is missing is missing for its own
+// reasons.
+func TestEveryLadderScopeSurvivesTheWire(t *testing.T) {
+	t.Parallel()
+	srv := &mockRateLimiterServer{}
+	client, cleanup := startMockRLServer(t, srv)
+	defer cleanup()
+
+	const tpm = 10
+	// A full-burst charge plus a 20% overrun: ~12s of drain, far longer
+	// than this test runs, so no bucket can heal before the assertions.
+	keys := []struct{ name, key string }{
+		{"tenant", "wire-tenant"},
+		{"tenant|model", "wire-tenant|wire-model"},
+		{"user", rl.UserQuotaKey("wire-tenant", "wire-user")},
+		{"user|model", rl.UserModelQuotaKey("wire-tenant", "wire-user", "wire-model")},
+		{"key", rl.KeyQuotaKey("wire-key-id")},
+		{"vip", rl.VipSharedQuotaKey("10.0.0.1:2020")},
+	}
+	sendStore := rl.New()
+	for _, k := range keys {
+		sendStore.AllowTokens(k.key, tpm, tpm, 0)
+		sendStore.AllowTokens(k.key, tpm/5+1, tpm, 0)
+		if !sendStore.IsTokenQuotaExceeded(k.key) {
+			t.Fatalf("setup: %s bucket (%q) is not in debt on the sender", k.name, k.key)
+		}
+	}
+
+	sender := newTestCoordinator(newMockApplier(0))
+	peer := &DpPeer{Peer: net.ParseIP("127.0.0.13"), CapMask: 0xFFFFFFFF}
+	if err := sender.sendRateLimiterBatch(peer, client, sendStore.ExportState(), false); err != nil {
+		t.Fatalf("sendRateLimiterBatch: %v", err)
+	}
+	srv.mu.Lock()
+	wire := make([]*RateLimiterBatch, len(srv.batches))
+	copy(wire, srv.batches)
+	srv.mu.Unlock()
+	if len(wire) == 0 {
+		t.Fatalf("setup: no batch reached the wire")
+	}
+
+	recvStore := rl.New()
+	recv := newTestCoordinator(newMockApplier(0))
+	recv.SetRateLimiterStore(recvStore)
+	for _, b := range wire {
+		if err := recv.ApplyRateLimiterBatch("10.0.0.13:4041", b); err != nil {
+			t.Fatalf("ApplyRateLimiterBatch: %v", err)
+		}
+	}
+
+	// The oracle is the pre-admission reservation, not IsTokenQuotaExceeded.
+	// A receiver that has never charged a bucket has no limit published on
+	// it, and IsTokenQuotaExceeded reads a stored limit — it answers false
+	// on every freshly-imported bucket whether or not the debt arrived, so
+	// it cannot tell the two apart. ReserveTokens takes the limit as an
+	// argument, exactly as the request path supplies it from configuration,
+	// and refuses when the bucket's level cannot cover the claim. That is
+	// the first thing a real request asks after a failover.
+	for _, k := range keys {
+		allowed, _, _ := recvStore.ReserveTokens(k.key, 1, tpm, 0)
+		if allowed {
+			t.Errorf("%s scope (%q) did not arrive in debt at the receiver: "+
+				"the first request after a failover is admitted against an exhausted quota",
+				k.name, k.key)
+		}
+	}
+}
+
+// TestRateLimiterPushStopsWhenThePeerIsNoLongerOurs — a node that stops
+// being master must stop pushing rate-limiter state.
+//
+// The role gate lives in peersFn: it returns nil unless this node holds a
+// MASTER cluster instance. It used to be consulted once, when the loop was
+// spawned on promotion, so a node that was ever master pushed forever. On a
+// two-node bring-up whose election flaps once before it settles — which is
+// the ordinary case, not a pathological one — both nodes end up pushing
+// absolute snapshots at each other for the life of the process.
+//
+// The first half of the test is its own control: without it, "no pushes
+// after demotion" is equally well explained by a loop that never pushed.
+func TestRateLimiterPushStopsWhenThePeerIsNoLongerOurs(t *testing.T) {
+	t.Parallel()
+	srv := &mockRateLimiterServer{}
+	client, cleanup := startMockRLServer(t, srv)
+	defer cleanup()
+
+	coord := newTestCoordinator(newMockApplier(0))
+	coord.haMode.Store("AP")
+	store := rl.New()
+	store.AllowTokens("demote-tenant", 1, 1000000, 0)
+	coord.SetRateLimiterStore(store)
+
+	peer := &DpPeer{Peer: net.ParseIP("127.0.0.14"), CapMask: 0xFFFFFFFF}
+	var master atomic.Bool
+	master.Store(true)
+	coord.peersFn = func() []DpPeer {
+		if !master.Load() {
+			return nil // demoted: no peers to push to
+		}
+		return []DpPeer{*peer}
+	}
+
+	coord.StartRateLimiterPushLoop(peer, func() XSyncClient { return client })
+
+	// Control: while this node is master, pushes must actually happen.
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) && srv.calls.Load() == 0 {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if srv.calls.Load() == 0 {
+		close(coord.shutdownCh)
+		coord.wg.Wait()
+		t.Fatalf("control failed: no push happened while this node was master, " +
+			"so a later silence would prove nothing")
+	}
+
+	// Demote, let several push intervals pass, then count from a fresh mark.
+	master.Store(false)
+	time.Sleep(3 * rlPushIntervalAP)
+	mark := srv.calls.Load()
+	time.Sleep(6 * rlPushIntervalAP)
+	after := srv.calls.Load()
+	close(coord.shutdownCh)
+	coord.wg.Wait()
+
+	if after != mark {
+		t.Errorf("a demoted node pushed %d more RateLimiterSync batches over %v; "+
+			"the role gate is only consulted when the loop is spawned",
+			after-mark, 6*rlPushIntervalAP)
+	}
+}
