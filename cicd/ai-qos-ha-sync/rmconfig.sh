@@ -29,6 +29,17 @@ delete_docker_host l3ep1
 
 docker rm -f pg-qos-ha >/dev/null 2>&1
 
+# QOS-HA-012 stops a gateway on purpose, and delete_docker_host stops llb*
+# rather than removing them, so this scenario can end with a container that
+# exists, is not running, and still owns its name. The next config.sh would
+# then try to create a container whose name is taken, and the failure
+# surfaces three steps later as "REST API not ready" — a node that never
+# started reads exactly like a node that started slowly. Remove them by
+# name, idempotently.
+for c in llb1 llb2 ka_llb1 ka_llb2; do
+  docker rm -f "$c" >/dev/null 2>&1
+done
+
 rm -f "${CFGDIR}/.keys" "${CFGDIR}/.fresh" "${CFGDIR}/.llb1-bridge-ip" "${CFGDIR}/.llb2-bridge-ip"
 rm -rf "${CFGDIR}/llb1_config" "${CFGDIR}/llb2_config"
 

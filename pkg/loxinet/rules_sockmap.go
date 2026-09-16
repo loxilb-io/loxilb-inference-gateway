@@ -52,32 +52,68 @@ func lbSockMapCode(serv *cmn.LbServiceArg, sockMapSupport bool) (uint8, error) {
 	return code, nil
 }
 
-// errSockMapAiGateway refuses sockmap acceleration on an AI gateway service.
-var errSockMapAiGateway = errors.New("sockmap-accel is not allowed on an AI gateway service (sse_mode, pd_disagg_mode or api_key_auth)")
+// errSockMapPerRequestL7 refuses sockmap acceleration on a service whose data
+// plane rewrites or inspects bytes on every request or response.
+var errSockMapPerRequestL7 = errors.New("sockmap-accel is not allowed on a service whose data plane touches every request (sse_mode, pd_disagg_mode, a declared api_key_auth, or an attached L7 policy)")
 
-// lbSockMapAiGwCode refuses a sockMapMode other than off on a service that does
-// AI-gateway processing, and returns the code the rule keeps. Such a service needs
-// userspace to see every request and every response on a connection: the proxy
-// re-runs admission (the API key and the rate limit among its checks) at each
-// keep-alive request boundary and records the request from its response. Once a
-// direction is accelerated the kernel moves those bytes between the sockets, so on
-// the same connection the second and later requests reach the backend unchecked,
-// and responses are never recorded.
+// errSockMapL7Policy is the same refusal seen from the L7 policy side.
+var errSockMapL7Policy = errors.New("an L7 policy cannot be attached to a sockmap-accelerated service: acceleration is only allowed where the data plane rewrites nothing per request")
+
+// sockMapPerRequestL7 reports whether this service's data plane does per-request
+// or per-response work that acceleration would skip. Acceleration replaces the
+// userspace relay with a kernel redirect, so from the moment a direction is
+// accelerated userspace no longer sees those bytes and can neither inspect nor
+// rewrite them. Four declarations put work on that path:
+//
+//   - sse_mode and pd_disagg_mode: the proxy records each request from its
+//     response, and re-runs admission at every keep-alive request boundary.
+//   - a declared api_key_auth, "disabled" INCLUDED: every non-empty declaration
+//     gives the data plane a non-zero apikey_auth wire value, and it then strips
+//     X-Api-Key before dispatch on EVERY request. An explicit "disabled" enforces
+//     no credential but still claims the header's namespace for the gateway, so an
+//     accelerated request direction would carry the tenant's key upstream from the
+//     second keep-alive request on. This is why the test is the wire value and not
+//     aiGwModeFor, which resolves "disabled" to "not an AI gateway" — a correct
+//     answer to a different question (that one arms accounting, this one owns
+//     header bytes).
+//   - an attached L7 policy: the proxy overwrites X-Forwarded-For, adds
+//     X-Forwarded-Port and -Proto, applies the insertHeaders SET/ADD/REMOVE
+//     operations on every request, and can inject a Set-Cookie on every response.
+//
+// aiGwModeFor is deliberately left alone as a predicate: it decides ai_gw_mode
+// in the data plane, which is accounting and streaming state, not byte
+// ownership. Its streaming/disaggregation arm is REUSED here rather than
+// re-spelled, because that expression has exactly one definition in the tree
+// (scripts/check-source-invariants.sh enforces it: independent copies once
+// disagreed and a DPU deployment reaped long-lived inference connections). It is
+// called with an empty credential so only the sse/pd axis comes from it; the
+// credential and the L7 policy are this function's own inputs, and they are
+// precisely where the two predicates answer differently.
+func sockMapPerRequestL7(serv *cmn.LbServiceArg, apiKeyAuth string, l7Attached bool) bool {
+	return aiGwModeFor(serv.SSEMode, serv.PDDisaggMode, "") ||
+		apiKeyAuthWireValue(apiKeyAuth) != 0 || l7Attached
+}
+
+// lbSockMapL7Code refuses a sockMapMode other than off on such a service and
+// returns the code the rule keeps.
 //
 // apiKeyAuth must be the policy the rule will carry after a replace, not the
 // incoming field: a replace that omits api_key_auth keeps enforcement on, so the
 // incoming value alone would let acceleration through on a protected service.
+// l7Attached likewise describes the listener as it is, since a policy can be
+// attached long after the rule was created; NetL7PolicyAdd refuses the other
+// order.
 //
 // A snapshot restore replay is not failed, since that would abort the whole
 // loadbalancer domain. The rule is restored with acceleration off instead.
-func lbSockMapAiGwCode(serv *cmn.LbServiceArg, code uint8, apiKeyAuth string) (uint8, error) {
-	if code == 0 || !aiGwModeFor(serv.SSEMode, serv.PDDisaggMode, apiKeyAuth) {
+func lbSockMapL7Code(serv *cmn.LbServiceArg, code uint8, apiKeyAuth string, l7Attached bool) (uint8, error) {
+	if code == 0 || !sockMapPerRequestL7(serv, apiKeyAuth, l7Attached) {
 		return code, nil
 	}
 	if !serv.RestoreReplay {
-		return 0, errSockMapAiGateway
+		return 0, errSockMapPerRequestL7
 	}
-	tk.LogIt(tk.LogWarning, "lb-rule %s:%d: sockMapMode %s dropped on restore, not allowed on an AI gateway service\n",
+	tk.LogIt(tk.LogWarning, "lb-rule %s:%d: sockMapMode %s dropped on restore, not allowed where the data plane touches every request\n",
 		serv.ServIP, serv.ServPort, serv.SockMapMode)
 	return 0, nil
 }

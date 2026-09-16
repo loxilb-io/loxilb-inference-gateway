@@ -122,24 +122,56 @@ A service is rejected at configuration time unless all of these hold:
 | plaintext service (no TLS) | see below |
 | IPv4 external IP | current implementation limit |
 | daemon started with `--sockmapsupport` | the BPF assets must be loaded |
-| not an AI gateway service: no `sse_mode`, `pd_disagg_mode` or `api_key_auth` | see below |
+| the data plane changes no byte per request: no `sse_mode`, no `pd_disagg_mode`, no declared
+`api_key_auth`, and no attached L7 policy | see below |
 
 Setting `sockMapMode` on a service that does not qualify returns
 `sockmap-accel requires plaintext tcp fullproxy ipv4 service`, or
 `sockmap-accel requires loxilb started with --sockmapsupport` when only the
 daemon flag is missing, or
-`sockmap-accel is not allowed on an AI gateway service (sse_mode, pd_disagg_mode or api_key_auth)`.
+`sockmap-accel is not allowed on a service whose data plane touches every request (sse_mode, pd_disagg_mode, a declared api_key_auth, or an attached L7 policy)`.
 
-An AI gateway service needs the proxy to see every request and every response.
-It checks the API key and the rate limit again at each keep-alive request, and it
-records each request from its response. An accelerated direction moves those bytes
-in the kernel instead. With `request` or `both`, the second and later requests on
-a connection reach the backend without those checks. With `response` or `both`,
-responses are not recorded. So only `off` is accepted on such a service. The check
-uses the `api_key_auth` the service keeps after an update, so an update that omits
-`api_key_auth` on a protected service is refused as well. A snapshot restore of an
-older configuration that combines the two does not fail: the service is restored with
-`sockMapMode` off and a warning is logged.
+### Why only a service that rewrites nothing
+
+Acceleration replaces the userspace relay. From the moment a direction is handed
+to the kernel, userspace no longer sees those bytes and can neither inspect nor
+rewrite them — so a service that does per-request work would lose it silently,
+from the **second** request on a connection, which is exactly where it would be
+hardest to notice.
+
+Four declarations put work on that path:
+
+| declaration | what an accelerated direction would skip |
+|---|---|
+| `sse_mode`, `pd_disagg_mode` | admission is re-run at each keep-alive request boundary, and each request is recorded from its response |
+| `api_key_auth` = `required` / `jwt` / `apikey-or-jwt` | the credential check, and the strip that keeps the caller's `X-Api-Key` out of the backend |
+| `api_key_auth` = an explicit `disabled` | the strip. This value enforces no credential, but it still declares `X-Api-Key` the **gateway's** namespace, so the header is removed before dispatch. Accelerated, the tenant's key would reach the backend from the second keep-alive request on |
+| an attached L7 policy | `X-Forwarded-For` is overwritten with the real peer address, `X-Forwarded-Port` and `-Proto` are added, and the `insertHeaders` SET/ADD/REMOVE operations are applied — on every request. A `HTTP_COOKIE` route also injects a `Set-Cookie` on every response |
+
+An **omitted** `api_key_auth` is the one credential value that stays accelerable:
+it declares nothing, a backend-owned `X-Api-Key` passes through untouched, and no
+header is rewritten.
+
+The pairing is refused from both sides, because either can come second:
+
+- setting a `sockMapMode` on a service that already carries an L7 policy is
+  rejected with 400;
+- attaching an L7 policy to a service that declares a `sockMapMode` is rejected
+  with 400.
+
+The credential check uses the `api_key_auth` the service keeps after an update, so
+an update that omits `api_key_auth` on a protected service is refused as well.
+
+A snapshot restore of an older configuration that combines the two does not fail.
+A service is restored with `sockMapMode` off and a warning. A restored L7 policy
+whose service declares a mode is attached with a warning and the service is left
+unaccelerated — the loadbalancer domain is applied before the policy domain, so
+refusing there would abort the whole restore, and dropping the policy instead would
+silently relax a header or routing decision.
+
+Independently of the configuration check, the data plane declines to pair a
+connection whose service carries a policy or a declared `api_key_auth`. That covers
+the window where a policy is attached while connections are already live.
 
 A further check happens per connection in the datapath: **only plaintext
 HTTP→HTTP is accelerated.** If TLS is in play on either side — TLS termination,

@@ -283,9 +283,9 @@ sockmap_section 6 "loxilb log scan for sockmap failures"
 
 fail_cnt=$(sockmap_log_failure_count llb1)
 if (( fail_cnt == 0 )); then
-  sockmap_result "no sockmap failure messages in docker logs" "OK"
+  sockmap_result "no sockmap failure messages in the daemon logs" "OK"
 else
-  sockmap_result "no sockmap failure messages in docker logs" "FAILED" "$fail_cnt occurrences"
+  sockmap_result "no sockmap failure messages in the daemon logs" "FAILED" "$fail_cnt occurrences"
   sudo docker logs llb1 2>&1 \
     | grep -E "Sockmap: Registration failed!|Sockmap: peer_map|sockmap: " \
     | tail -20 \
@@ -372,9 +372,6 @@ fi
 # resolves "disabled" to "not an AI gateway" and lets the combination through,
 # which is the defect. "jwt" and "apikey-or-jwt" belong to the unit tests: those
 # modes also require a configured JWT profile, and that check answers first.
-sockmap_xfail_register "R-6" "explicit api_key_auth=disabled is not refused yet (issue 1, PR-A)"
-sockmap_xfail_register "R-7" "explicit api_key_auth=disabled is not refused yet (issue 1, PR-A)"
-sockmap_xfail_register "R-8" "explicit api_key_auth=disabled is not refused yet (issue 1, PR-A)"
 aigw_expect_refused "R-6 api_key_auth=disabled + request"  ',"api_key_auth":"disabled"' request
 aigw_expect_refused "R-7 api_key_auth=disabled + response" ',"api_key_auth":"disabled"' response
 aigw_expect_refused "R-8 api_key_auth=disabled + both"     ',"api_key_auth":"disabled"' both
@@ -410,9 +407,6 @@ L7_PORT=2062
 L7_EP_PORT=8261
 L7_LB_ID="sockmap-l7-lb"
 L7_POL_ID="sockmap-l7-pol"
-
-sockmap_xfail_register "R-10" "a rule carrying an L7 policy still accepts a sockMapMode (issue 1, PR-A)"
-sockmap_xfail_register "R-11" "an L7 policy still attaches to an accelerated rule (issue 1, PR-A)"
 
 # $1 sockMapMode; prints "<http code> <body>"
 l7_lb_post() {
