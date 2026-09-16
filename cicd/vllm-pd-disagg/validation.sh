@@ -2596,9 +2596,17 @@ echo "  M3 (mode=oversize): served=${m3_served}/${M_N} found=+${d_f3} missing=+$
 [ "$m3_lw" -ge 0 ] && [ "$m3_lv" -ge 0 ] && [ "$m3_lt" -ge 0 ] \
   && check "TM3f: the datapath log was readable (flat readings are not vacuous)" 0 \
   || check "TM3f: the datapath log was readable (flat readings are not vacuous)" 1
-[ "$m3_served" = "0" ] \
-  && check "TM3g: an over-cap prefill response does not yield a served completion (${m3_served}/${M_N})" 0 \
-  || check "TM3g: an over-cap prefill response does not yield a served completion (${m3_served}/${M_N})" 1
+# TM3g is the regression test for the wedge itself, and it must assert the
+# FAIL-OPEN, not its absence. sockproxy_http.c:1587 forces completion exactly
+# here — "the flow sat in PREFILL_WAITING until the client timed out — NO
+# response at all ... but the proxy must FAIL OPEN, not hang" — so an over-cap
+# prefill response STILL serves, on a body the extractor then reads truncated.
+# Asserting 0 served would have gone green only by reintroducing the hang.
+# Paired with TM3b, which proves the arm really drove the over-cap path: the
+# guard fired once per request, and every request was still answered.
+[ "$m3_served" = "$M_N" ] \
+  && check "TM3g: the over-cap response still serves ${m3_served}/${M_N} — the wedge guard fails OPEN, it does not hang" 0 \
+  || check "TM3g: the over-cap response still serves ${m3_served}/${M_N} — the wedge guard fails OPEN, it does not hang" 1
 
 # ── M4: conservation across every arm driven above ─────────────────────────────────────
 # Every one of the 3*M_N requests completed, so all were inspected lifecycles and each
