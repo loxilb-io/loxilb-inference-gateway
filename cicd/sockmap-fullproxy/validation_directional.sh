@@ -34,11 +34,11 @@
 #         REDIRECT_REQ > 0, with REDIRECT_RESP == 0
 #   - The directional counters (REDIRECT_REQ/RESP) are global PERCPU values, so each
 #     measurement window drives traffic to one VIP only and is judged by the delta.
-#   - Only the sockets that receive the accelerated direction are in sock_verdict_map
-#     (the VIP portset entry of a request-only rule and the endpoint entry of a
-#     response-only rule carry verdict_refs). The other direction therefore never runs
-#     the verdict: PEER_MISS + INELIGIBLE may only grow by the unpaired first request of
-#     each connection (request-only), never per request or per response.
+#   - Only the sockets that receive the accelerated direction are in sock_verdict_map,
+#     and only once their pair is installed: the backend socket when the pair is
+#     installed, the client socket after the first request has been handed to the
+#     backend. The other direction never runs the verdict, and no socket runs it
+#     without a peer, so PEER_MISS + INELIGIBLE must not grow at all.
 
 source ../common.sh
 source ./sockmap_common.sh
@@ -219,14 +219,12 @@ if (( resp_req_delta == 0 )); then
 else
   sockmap_result "resp-only REDIRECT_REQ unchanged (==0)" "FAILED" "delta=$resp_req_delta; request leaked to kernel"
 fi
-# Client sockets are not in sock_verdict_map, so no request reaches the verdict. Without
-# the split every request after the first would (>= (KA_REQS-1)*KA_CONNS). The bound
-# leaves room for a request that happens to span two segments.
-MISS_BOUND=$(( 2 * KA_CONNS ))
-if (( resp_miss_delta <= MISS_BOUND )); then
-  sockmap_result "resp-only requests skip verdict (miss+inelig<=$MISS_BOUND)" "OK" "delta=$resp_miss_delta"
+# Client sockets are not in sock_verdict_map, and the backend sockets that are always
+# have a peer, so nothing is passed up by the verdict.
+if (( resp_miss_delta == 0 )); then
+  sockmap_result "resp-only verdict passes nothing (miss+inelig==0)" "OK"
 else
-  sockmap_result "resp-only requests skip verdict (miss+inelig<=$MISS_BOUND)" "FAILED" "delta=$resp_miss_delta; client sockets run the verdict"
+  sockmap_result "resp-only verdict passes nothing (miss+inelig==0)" "FAILED" "delta=$resp_miss_delta; a socket ran the verdict without a peer"
 fi
 
 # ---------- Step 5: request-only ----------
@@ -262,13 +260,12 @@ if (( req_resp_delta == 0 )); then
 else
   sockmap_result "req-only REDIRECT_RESP unchanged (==0)" "FAILED" "delta=$req_resp_delta; response leaked to kernel"
 fi
-# Backend sockets are not in sock_verdict_map, so no response reaches the verdict. Only
-# each connection's first request, read before its backend exists, may miss peer_map.
-# Without the split every response would (>= KA_REQS*KA_CONNS).
-if (( req_miss_delta <= MISS_BOUND )); then
-  sockmap_result "req-only responses skip verdict (miss+inelig<=$MISS_BOUND)" "OK" "delta=$req_miss_delta"
+# Backend sockets are not in sock_verdict_map, and a client socket is added only after
+# its first request went through userspace, so nothing is passed up by the verdict.
+if (( req_miss_delta == 0 )); then
+  sockmap_result "req-only verdict passes nothing (miss+inelig==0)" "OK"
 else
-  sockmap_result "req-only responses skip verdict (miss+inelig<=$MISS_BOUND)" "FAILED" "delta=$req_miss_delta; backend sockets run the verdict"
+  sockmap_result "req-only verdict passes nothing (miss+inelig==0)" "FAILED" "delta=$req_miss_delta; a socket ran the verdict without a peer"
 fi
 
 # ---------- Step 6: log scan ----------
