@@ -2697,58 +2697,109 @@ echo "             all: a denial otherwise arrives as HEADERS+DATA+END_STREAM"
 echo "             in one burst, and a stream that has already ended cannot"
 echo "             be reset -- the case would silently become a no-op."
 echo "             150 of them on ONE connection, so"
-echo "             what accumulates is per-STREAM state; the run is repeated"
-echo "             so a fixed warm-up can be told apart from a slope."
+echo "             what accumulates is per-STREAM state. The process is driven"
+echo "             until its resident set SETTLES, and only then is the slope"
+echo "             measured -- warm-up is not the subject and must not be"
+echo "             scored as one."
 echo "             Verdict: every denial was actually produced, the gateway"
 echo "             is still serving afterwards, and the resident set is not"
 echo "             climbing with the stream count."
-# The budgets, and what they can actually see.
+# The budget, and what it can actually see.
 #
-# Measured on the bed at the pin: +4 kB total and +0 kB in the last round over
-# 450 reset streams. The ceilings below are that measurement with room for
-# allocator noise, NOT a round number picked to be safe -- a budget nobody
-# measured is a budget that passes everything.
+# 🚨 THIS CASE USED TO SCORE WARM-UP AS A LEAK. Recorded because the shape of
+# the mistake matters more than the number that replaced it.
 #
-# 🚨 Stated plainly because the case must not claim more than it proves: at
-# 450 streams this oracle resolves roughly a kilobyte per stream. A leaked
-# per-stream structure (kilobytes each, fixed identity arrays) trips it; the
-# deny BODY on its own is a couple of hundred bytes and would not. So the
-# deny-body release is covered by the drive-shape assertion -- every stream
+# It ran three fixed rounds and required +1024 kB total / +512 kB in the last
+# round, calibrated on ONE bed sample that read "+4 kB total, +0 kB last
+# round". That sample was taken with the process already warm -- ~500
+# assertions of this same suite run before this case -- so the warm-up landed
+# outside the measured window by luck of ordering, not by design. First CI
+# exposure reported +1684 kB and failed.
+#
+# Measured afterwards on the bed, same image, same pin (llbigw-2, 4 cores):
+#
+#   a WARM process:  settles in 2 rounds; slope +4 kB over 900 streams
+#   a COLD process:  settles in 13 rounds (1950 streams), with lumps of
+#                    +1020 kB as late as round 10; slope +80 kB over 900
+#                    streams once settled
+#   two identical cold runs disagreed by 45x over the same "settled" window
+#   (+28 kB vs +1272 kB / 900 streams) when settledness was ASSUMED
+#
+# So resident-set growth on this process is lumpy and irreproducible at the
+# hundreds-of-kB scale while it warms, and flat afterwards. A fixed round
+# count cannot tell those apart in either direction: tightening the ceiling
+# flakes, loosening it passes everything. The fix is not a bigger number, it
+# is to stop assuming the precondition and start PROVING it -- drive until two
+# consecutive rounds are quiet, then measure.
+#
+# The slope ceiling below is the worst settled measurement (+80 kB) with ~5x
+# for allocator noise. At 900 streams it resolves ~0.43 kB/stream, which is
+# SHARPER than the 3-round version's ~1 kB/stream, not looser -- the case
+# gained sensitivity by refusing to measure warm-up.
+#
+# 🚨 Still stated plainly: this rules out a leaked per-stream STRUCTURE
+# (kilobytes each -- 2 kB/stream would read as +1800 kB, ~4.7x the ceiling).
+# The deny BODY alone is a couple of hundred bytes and would not trip it, so
+# the body release stays covered by the drive-shape assertion -- every stream
 # really was refused and reset with its body still queued -- and by the
-# gateway still serving afterwards; the resident set is what rules out the
-# larger per-stream leak alongside it.
+# gateway still serving afterwards.
 #
-# Two numbers rather than one because either alone is weak: a total ceiling
-# alone passes a slow leak, and a flat LAST round alone passes a build that
-# leaked its whole budget in round one and then stopped.
+# An UNSETTLED run is a failed MEASUREMENT, not a detected leak, and says so.
+# It is not quietly passed: an oracle that cannot obtain its reading has not
+# shown the resident set is flat.
 h2l_tokens "H2-LIFE-003"
-H2L_RSS_CEIL_KB=1024
-H2L_RSS_TAIL_KB=512
-H2L_RSS0=$(gw_rss_kb)
+H2L_SETTLE_KB=64        # a round this quiet counts as settled
+H2L_SETTLE_NEED=2       # consecutive quiet rounds required
+H2L_WARM_CAP=30         # give up after this many (cold bed needed 13)
+H2L_MEAS_ROUNDS=6       # scored rounds = 900 streams
+H2L_SLOPE_KB=384        # ceiling over those 900 streams
 H2L_DENY_OK=1
 H2L_DENY_WHY=""
-for h2l_round in 1 2 3; do
+H2L_ROUNDS=0
+
+# Every round -- warm-up included -- re-asserts the full drive shape. A round
+# that stopped denying or stopped resetting would otherwise quietly warm the
+# process with the wrong traffic and still be counted toward settling.
+h2l_round_drive() {
   h2life denyrst 2048 "" --streams 150 --max-tokens 10
-  # Both halves of the drive shape, every round: 150 streams that were
-  # DENIED (a 200 would mean the request was served and no deny body was ever
-  # built) and 150 that were reset. The summary line of the last round alone
-  # would leave two thirds of the run unchecked.
-  # Three things, every round, and the third is the one that makes this case
-  # the case it claims to be: 150 streams DENIED (a 200 would mean the request
-  # was served and no deny body was ever built), all 150 RESET, and all 150
-  # still UNDRAINED at the moment they were reset. Without the third, a build
-  # that delivered every body would score exactly the same.
   for h2l_want in '"denied": 150' '"reset": 150' '"undrained": 150' '"statuses": ["401"]'; do
     case "$H2L_SUM" in
       *"$h2l_want"*) ;;
-      *) H2L_DENY_OK=0; H2L_DENY_WHY="round $h2l_round wanted $h2l_want: $H2L_SUM" ;;
+      *) H2L_DENY_OK=0; H2L_DENY_WHY="round $H2L_ROUNDS wanted $h2l_want: $H2L_SUM" ;;
     esac
   done
-  eval "H2L_RSS$h2l_round=\$(gw_rss_kb)"
+}
+
+# Phase 1 -- drive until the resident set goes quiet. Growth here is NOT
+# scored; the point is only to reach a state where growth means something.
+H2L_STREAK=0
+H2L_PREV=$(gw_rss_kb)
+while [ "$H2L_ROUNDS" -lt "$H2L_WARM_CAP" ]; do
+  H2L_ROUNDS=$((H2L_ROUNDS + 1))
+  h2l_round_drive
+  H2L_NOW=$(gw_rss_kb)
+  if [ "$H2L_PREV" = unreadable ] || [ -z "$H2L_NOW" ]; then break; fi
+  H2L_D=$(( H2L_NOW - H2L_PREV ))
+  H2L_PREV=$H2L_NOW
+  if [ "$H2L_D" -le "$H2L_SETTLE_KB" ]; then
+    H2L_STREAK=$((H2L_STREAK + 1))
+    [ "$H2L_STREAK" -ge "$H2L_SETTLE_NEED" ] && break
+  else
+    H2L_STREAK=0
+  fi
 done
+
+# Phase 2 -- the scored rounds, on a process that has proven it is quiet.
+H2L_RSS0=$(gw_rss_kb)
+for h2l_m in $(seq 1 "$H2L_MEAS_ROUNDS"); do
+  H2L_ROUNDS=$((H2L_ROUNDS + 1))
+  h2l_round_drive
+done
+H2L_RSS3=$(gw_rss_kb)
+H2L_STREAMS=$(( H2L_ROUNDS * 150 ))
 note_case "H2-LIFE-003"
 if [ "$H2L_DENY_OK" = 1 ]; then
-  echo "  [PASS] H2-LIFE-003 all 450 streams were refused 401 and reset with their body still queued"
+  echo "  [PASS] H2-LIFE-003 all $H2L_STREAMS streams were refused 401 and reset with their body still queued"
   PASS=$((PASS + 1))
 else
   echo "  [FAIL] H2-LIFE-003 - a round did not deny-and-reset all 150 streams, so the"
@@ -2763,23 +2814,31 @@ if [ "$H2L_RSS0" = unreadable ] || [ -z "$H2L_RSS3" ]; then
   FAIL=$((FAIL + 1))
 else
   H2L_GROW=$(( H2L_RSS3 - H2L_RSS0 ))
-  H2L_TAIL=$(( H2L_RSS3 - H2L_RSS2 ))
+  H2L_MEAS_STREAMS=$(( H2L_MEAS_ROUNDS * 150 ))
   note_case "H2-LIFE-003"
-  # Two conditions, because either alone is weak: a ceiling alone passes a
-  # slow leak, and a flat LAST round alone passes a build that leaked its
-  # whole budget in round one.
-  if [ "$H2L_GROW" -le "$H2L_RSS_CEIL_KB" ] && [ "$H2L_TAIL" -le "$H2L_RSS_TAIL_KB" ]; then
-    echo "  [PASS] H2-LIFE-003 resident set flat across 450 reset streams (+${H2L_GROW} kB total, +${H2L_TAIL} kB in the last round)"
+  if [ "$H2L_STREAK" -lt "$H2L_SETTLE_NEED" ]; then
+    # Not a leak verdict. The oracle never reached the state in which its
+    # reading means anything, so it has nothing to report about flatness --
+    # and an unobtainable measurement is not evidence of a flat resident set
+    # any more than an unreadable one is.
+    echo "  [FAIL] H2-LIFE-003 - the resident set never settled: $H2L_WARM_CAP warm-up"
+    echo "         rounds ($(( H2L_WARM_CAP * 150 )) streams) without $H2L_SETTLE_NEED consecutive rounds"
+    echo "         under ${H2L_SETTLE_KB} kB. That is a failed MEASUREMENT, not a detected leak --"
+    echo "         the slope below was never measured on a quiet process"
+    FAIL=$((FAIL + 1))
+  elif [ "$H2L_GROW" -le "$H2L_SLOPE_KB" ]; then
+    echo "  [PASS] H2-LIFE-003 resident set flat across $H2L_MEAS_STREAMS reset streams on a settled"
+    echo "         process (+${H2L_GROW} kB, budget ${H2L_SLOPE_KB} kB; settled after $(( H2L_ROUNDS - H2L_MEAS_ROUNDS )) warm-up rounds)"
     PASS=$((PASS + 1))
   else
-    echo "  [FAIL] H2-LIFE-003 - resident set grew +${H2L_GROW} kB over 450 reset streams"
-    echo "         (+${H2L_TAIL} kB in the last round alone); budget is ${H2L_RSS_CEIL_KB} kB total"
-    echo "         and ${H2L_RSS_TAIL_KB} kB for a settled round"
+    echo "  [FAIL] H2-LIFE-003 - resident set grew +${H2L_GROW} kB over $H2L_MEAS_STREAMS reset streams"
+    echo "         on a process that had already settled (budget ${H2L_SLOPE_KB} kB). Warm-up is"
+    echo "         excluded by construction, so this is slope, not start-up cost"
     FAIL=$((FAIL + 1))
   fi
 fi
 r=$(bearer_req 2048 "$body_llama" "$TOK_ALICE" --http2-prior-knowledge)
-chk_code "H2-LIFE-003 the gateway still serves HTTP/2 after 450 reset streams" 200 "$r"
+chk_code "H2-LIFE-003 the gateway still serves HTTP/2 after $H2L_STREAMS reset streams" 200 "$r"
 h2_receipt_at l3ep1 "H2-LIFE-003 and that request reached the backend" 1 "$(last_nonce)"
 
 echo ""
