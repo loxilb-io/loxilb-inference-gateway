@@ -67,15 +67,33 @@ rm -f "${CFGDIR}/.fresh"
 
 # ---------------------------------------------------------------- the client
 
-NONCE_SEQ=0
 LAST_NONCE=""
-# new_nonce MUST be called from the caller's own shell, never from inside
-# req: every call site captures req's status with $( ), which runs it in a
-# SUBSHELL, so a nonce minted there is discarded with that subshell and the
-# parent keeps whatever it had. The receipt lookups would then all ask about
-# a nonce the backend has never seen, read 0, and turn every "the denial
-# delivered nothing" assertion into a vacuous pass.
-new_nonce() { NONCE_SEQ=$((NONCE_SEQ + 1)); LAST_NONCE="qha-$$-$NONCE_SEQ"; }
+# The nonce counter lives in a FILE, not a shell variable, and that is the
+# whole point.
+#
+# A shell variable could not survive the way this suite drives traffic. Every
+# call site captures a status with $( ), and two driving loops run entirely
+# inside one, so a counter incremented there is discarded with the subshell
+# and the parent goes on minting nonces those loops already spent. Both
+# failure modes are silent and both produce PASSES: a receipt lookup for a
+# nonce the backend never saw reads 0 and makes every "the denial delivered
+# nothing" assertion vacuous, and a REUSED nonce reads the earlier request's
+# deliveries and makes a clean single delivery look like a double.
+#
+# That trap has now been struck three times in this one file. A rule that
+# every future caller has to remember has already failed; a counter that
+# cannot be rewound by a subshell cannot be got wrong. LAST_NONCE is still
+# shell-local — it is read by the same shell that minted it, which is the
+# one thing about the old scheme that always worked.
+NONCE_FILE=$(mktemp -t qha-nonce.XXXXXX) || { echo "FATAL: cannot create the nonce counter"; exit 1; }
+echo 0 > "$NONCE_FILE"
+trap 'rm -f "$NONCE_FILE"' EXIT
+new_nonce() {
+  local n
+  n=$(( $(cat "$NONCE_FILE") + 1 ))
+  echo "$n" > "$NONCE_FILE"
+  LAST_NONCE="qha-$$-$n"
+}
 
 # req <vip> <port> <key-raw|-> -> prints the HTTP status
 # Every request carries its own nonce, so each call site gets an independent
@@ -200,7 +218,7 @@ echo "  elected MASTER=$MASTER ($MVIP)  STANDBY=$STANDBY ($SVIP)"
 
 ##############################################################################
 echo ""
-echo "--- SYNC-1 / QOS-HA-001: rate-limiter state actually crosses the wire ---"
+echo "--- SYNC-3: a master with no quota state must push nothing ---"
 ##############################################################################
 # peer_up is NOT the oracle here. Six sites write that gauge, most of them on
 # the session-sync path, so a peer_up of 1 is consistent with a
@@ -209,8 +227,122 @@ echo "--- SYNC-1 / QOS-HA-001: rate-limiter state actually crosses the wire ---"
 # observes it with rpc="RateLimiterSync", and only after the RPC returned.
 
 RL_BEFORE=$(metric "$MASTER" loxilb_sockproxy_sync_push_latency_seconds_count 'rpc="RateLimiterSync"')
-# Give the master some quota state to push: without a charged bucket
-# ExportState is empty and the push loop short-circuits before the RPC.
+
+# SYNC-3 first, because it can only be asked BEFORE any AI request is served
+# and the answer is destroyed by the seed below.
+#
+# config.sh has already written a dozen tenant, user and key rate limits, and
+# each of those writes builds a live RPS limiter on the spot. None of them is
+# quota state: an RPS bucket's rate and burst have no field on the sync wire
+# at all, so a peer receiving one gets a name and a timestamp and skips it.
+# With no bucket yet charged there is therefore nothing to replicate, and a
+# master that pushes anyway is pushing rows its peer will drop — five times a
+# second, for the life of the process, at the cost of real RPCs.
+#
+# Zero is read as an assertion and not as an absence: the metric helper
+# reports an absent counter family as 0 and a failed scrape as "unreadable",
+# so a dark node cannot pass this by being unmeasurable.
+if [ "$RL_BEFORE" = "unreadable" ]; then
+  bad "SYNC-3 no quota state means no push" \
+      "the master's push counter is unreadable before the first request"
+elif awk -v v="$RL_BEFORE" 'BEGIN{exit !(v==0)}'; then
+  ok "SYNC-3 no quota state means no push" "count=0 with $MASTER holding only RPS limiter rows"
+else
+  bad "SYNC-3 no quota state means no push" \
+      "$MASTER completed $RL_BEFORE RateLimiterSync RPCs before any bucket was charged; every row in them is one the receiver drops"
+fi
+
+
+##############################################################################
+echo ""
+echo "--- QOS-HA-010/011: the cold-start warm-up window ---"
+##############################################################################
+# The token-quota store arms its cold-start warm-up lazily, at the FIRST AI
+# request a node serves, not at boot. Inside that window every request that
+# resolves any quota bound is denied 429 with token_quota_warming — which is
+# the designed behaviour, and is also indistinguishable at the status line
+# from the quota denials every case below is about. Running the quota cases
+# without waiting for the window is how a suite reports "the first request
+# was refused on the master" as a product failure.
+#
+# The probe identity carries a bound far larger than the probe can spend, so
+# the only thing that can refuse it is the warming gate.
+warm_wait() { # <node> <vip> -> prints "<saw_warming> <seconds> <final code>"
+  local node=$1 vip=$2 raw body code i saw=0
+  raw=$(key_raw ha-warm-key)
+  for i in $(seq 1 60); do
+    # Safe inside $( ) now that the counter is file-backed: the nonce this
+    # mints is spent by this loop and can never be handed out again.
+    new_nonce
+    body=$($hexec l3h1 curl -s -w '\n%{http_code}' --max-time 10 -X POST \
+      -H 'Content-Type: application/json' -H "X-Test-Nonce: $LAST_NONCE" \
+      -H "X-Api-Key: $raw" --data "$BODY" \
+      "http://$vip:2020/v1/chat/completions" 2>/dev/null)
+    code=$(printf '%s' "$body" | tail -1)
+    case "$body" in *token_quota_warming*) saw=1 ;; esac
+    if [ "$code" = "200" ]; then echo "$saw $i $code"; return; fi
+    sleep 1
+  done
+  echo "$saw 60 $code"
+}
+
+for pair in "$MASTER $MVIP" "$STANDBY $SVIP"; do
+  set -- $pair
+  read -r W_SAW W_SECS W_CODE <<EOF
+$(warm_wait "$1" "$2")
+EOF
+  if [ "$W_CODE" != "200" ]; then
+    bad "QOS-HA-011 $1 leaves the warm-up window" \
+        "still answering $W_CODE after ${W_SECS}s; the window is documented as bounded"
+  elif [ "$W_SECS" -gt 30 ]; then
+    bad "QOS-HA-011 $1 leaves the warm-up window" \
+        "took ${W_SECS}s, far beyond the bounded cold-start window"
+  else
+    ok "QOS-HA-011 $1 leaves the warm-up window" "admitting after ${W_SECS}s"
+  fi
+  # Whether the window was OBSERVED is reported, not asserted: the node may
+  # already have served a request and armed the window before this probe
+  # ran, and demanding to see it would make the case depend on ordering
+  # rather than on behaviour.
+  if [ "$W_SAW" = "1" ]; then
+    echo "       (QOS-HA-010: $1 answered token_quota_warming inside the window)"
+  fi
+done
+
+
+##############################################################################
+echo ""
+echo "--- SYNC-1 / QOS-HA-001: rate-limiter state actually crosses the wire ---"
+##############################################################################
+# peer_up is NOT the oracle here. Six sites write that gauge, most of them on
+# the session-sync path, so a peer_up of 1 is consistent with a
+# RateLimiterSync that has never been attempted. The discriminating series is
+# the push-latency histogram's per-RPC count: only sendRateLimiterBatch
+# observes it with rpc="RateLimiterSync", and only after the RPC returned.
+#
+# This runs AFTER the warm-up wait above, and that ordering is load-bearing.
+# The seed identity carries a quota bound so that serving it charges a
+# bucket — which also puts it squarely inside the cold-start warming gate,
+# and a request denied 429 token_quota_warming is indistinguishable at the
+# status line from a sync failure. Seeding before the window closed reported
+# the warm-up as "the seed request was refused on the master".
+#
+# What that ordering costs, stated rather than glossed: the warm-up probe
+# charges a bucket of its own, so pushes are already running by the time the
+# mark below is taken and this case no longer proves that the SEED started
+# them. It proves liveness — the master is completing RateLimiterSync RPCs —
+# which is all any case downstream needs from it, and it still fails against
+# a build whose push loop never dials. The causal claim moved up to SYNC-3,
+# which is the only point in the run where "no quota state yet" is true.
+
+RL_BEFORE=$(metric "$MASTER" loxilb_sockproxy_sync_push_latency_seconds_count 'rpc="RateLimiterSync"')
+# Give the master some quota state to push. The seed identity carries a
+# tokens-per-minute bound far larger than it could ever spend: large enough
+# that the seed can never be refused, present so that serving it CHARGES a
+# quota bucket. A seed whose tenant has no bound at all charges nothing —
+# AllowTokens returns before it creates an entry — so it would leave the
+# store with no quota state and this precondition would be asserting the
+# push of rows that carry none.
 new_nonce; code=$(req "$MVIP" 2020 "$(key_raw ha-seed-key)")
 chk_code "SYNC-1a seed request admitted on the master" 200 "$code"
 
@@ -246,64 +378,6 @@ else
   bad "SYNC-2 the standby sent no RateLimiterSync push" \
       "$STANDBY pushed $RL_REV RateLimiterSync RPCs while holding no MASTER instance"
 fi
-
-##############################################################################
-echo ""
-echo "--- QOS-HA-010/011: the cold-start warm-up window ---"
-##############################################################################
-# The token-quota store arms its cold-start warm-up lazily, at the FIRST AI
-# request a node serves, not at boot. Inside that window every request that
-# resolves any quota bound is denied 429 with token_quota_warming — which is
-# the designed behaviour, and is also indistinguishable at the status line
-# from the quota denials every case below is about. Running the quota cases
-# without waiting for the window is how a suite reports "the first request
-# was refused on the master" as a product failure.
-#
-# The probe identity carries a bound far larger than the probe can spend, so
-# the only thing that can refuse it is the warming gate.
-warm_wait() { # <node> <vip> -> prints "<saw_warming> <seconds> <final code>"
-  local node=$1 vip=$2 raw body code i saw=0
-  raw=$(key_raw ha-warm-key)
-  for i in $(seq 1 60); do
-    # Its OWN nonce namespace, not new_nonce. warm_wait runs inside $( ),
-    # so any NONCE_SEQ it advanced would be discarded with that subshell —
-    # and the parent would go on minting nonces this loop has already
-    # spent, so later receipt counts would include these probe requests.
-    LAST_NONCE="qha-warm-$$-$1-$i"
-    body=$($hexec l3h1 curl -s -w '\n%{http_code}' --max-time 10 -X POST \
-      -H 'Content-Type: application/json' -H "X-Test-Nonce: $LAST_NONCE" \
-      -H "X-Api-Key: $raw" --data "$BODY" \
-      "http://$vip:2020/v1/chat/completions" 2>/dev/null)
-    code=$(printf '%s' "$body" | tail -1)
-    case "$body" in *token_quota_warming*) saw=1 ;; esac
-    if [ "$code" = "200" ]; then echo "$saw $i $code"; return; fi
-    sleep 1
-  done
-  echo "$saw 60 $code"
-}
-
-for pair in "$MASTER $MVIP" "$STANDBY $SVIP"; do
-  set -- $pair
-  read -r W_SAW W_SECS W_CODE <<EOF
-$(warm_wait "$1" "$2")
-EOF
-  if [ "$W_CODE" != "200" ]; then
-    bad "QOS-HA-011 $1 leaves the warm-up window" \
-        "still answering $W_CODE after ${W_SECS}s; the window is documented as bounded"
-  elif [ "$W_SECS" -gt 30 ]; then
-    bad "QOS-HA-011 $1 leaves the warm-up window" \
-        "took ${W_SECS}s, far beyond the bounded cold-start window"
-  else
-    ok "QOS-HA-011 $1 leaves the warm-up window" "admitting after ${W_SECS}s"
-  fi
-  # Whether the window was OBSERVED is reported, not asserted: the node may
-  # already have served a request and armed the window before this probe
-  # ran, and demanding to see it would make the case depend on ordering
-  # rather than on behaviour.
-  if [ "$W_SAW" = "1" ]; then
-    echo "       (QOS-HA-010: $1 answered token_quota_warming inside the window)"
-  fi
-done
 
 ##############################################################################
 # quota_crosses <case-prefix> <key-name> <control-key-name>
@@ -512,6 +586,98 @@ fi
 $hexec "$STANDBY" curl -s -m 5 -o /dev/null -X PATCH \
   "http://localhost:11111/netlox/v1/config/ai/apikey/$kid" \
   -H 'Content-Type: application/json' -d '{"rate_limit_rps":0,"burst_size":0,"tokens_per_min":0}'
+
+##############################################################################
+echo ""
+echo "--- QOS-HA-009: a snapshot larger than one RPC ---"
+##############################################################################
+# LAST on purpose: it adds several hundred limiter rows to the master, and
+# every push after that point carries them. A case that ran afterwards would
+# be measuring this one's setup.
+#
+# A push is chunked at a fixed ceiling and each chunk is its own RPC. What
+# fills those chunks is the question. The store's snapshot walks the keyed
+# RPS limiter table FIRST and appends the quota rows LAST — and a per-key row
+# is one no receiver can act on: the wire message has no rate and no burst
+# field, so both merge paths skip it. A gateway holding more keyed limiters
+# than the ceiling therefore spent whole RPCs, five times a second, per peer,
+# carrying nothing, and the quota rows — the only rows a failover needs —
+# rode in the chunk behind them.
+#
+# The oracle is the push-latency histogram's count, which sendRateLimiterBatch
+# observes once per RPC. Rate, not total: the same window is measured before
+# and after the limiter table grows, so the reading is "did the RPC cost scale
+# with rows nobody can use", with the node's own cadence as its baseline.
+
+RPC_WINDOW=6
+rpc_rate() { # -> RPCs completed by the master over RPC_WINDOW seconds
+  local a b
+  a=$(metric "$MASTER" loxilb_sockproxy_sync_push_latency_seconds_count 'rpc="RateLimiterSync"')
+  sleep "$RPC_WINDOW"
+  b=$(metric "$MASTER" loxilb_sockproxy_sync_push_latency_seconds_count 'rpc="RateLimiterSync"')
+  if [ "$a" = "unreadable" ] || [ "$b" = "unreadable" ]; then echo "unreadable"; return; fi
+  awk -v a="$a" -v b="$b" 'BEGIN{printf "%d", b-a}'
+}
+
+RPC_BASE=$(rpc_rate)
+# A baseline too small to halve cannot show a doubling. Asserted, not
+# assumed: if the master is not pushing at its documented cadence the
+# comparison below has no scale and must not be scored.
+if [ "$RPC_BASE" = "unreadable" ]; then
+  bad "QOS-HA-009 pre: the master's push rate is readable" \
+      "the scrape failed, so the chunking measurement has no baseline"
+elif [ "$RPC_BASE" -lt 10 ]; then
+  bad "QOS-HA-009 pre: the master pushes at its A-P cadence" \
+      "only $RPC_BASE RPCs in ${RPC_WINDOW}s; at 200ms a tick that is far below cadence, and a 2x change could not be told from noise"
+else
+  ok "QOS-HA-009 pre: the master pushes at its A-P cadence" \
+     "$RPC_BASE RPCs in ${RPC_WINDOW}s"
+fi
+
+# Grow the keyed limiter table past the chunk ceiling. A per-user rate limit
+# creates its bucket in the same call that stores it (NetUserRateLimitSet
+# resets the live bucket), so this needs no traffic at all — which is what
+# keeps the measurement about chunking rather than about load.
+CHUNK_ROWS=560
+ROWS_OK=0
+for i in $(seq 1 $CHUNK_ROWS); do
+  c=$($hexec "$MASTER" curl -s -m 5 -o /dev/null -w '%{http_code}' -X POST \
+    "http://localhost:11111/netlox/v1/config/ai/user/ratelimit" \
+    -H 'Content-Type: application/json' \
+    -d '{"tenant_id":"ha-bulk-tenant","user_id":"bulk-'"$i"'","rps":5,"burst_size":5}' 2>/dev/null)
+  case "$c" in 2*) ROWS_OK=$((ROWS_OK + 1)) ;; esac
+done
+# Drive shape before verdict. The claim under test is about a snapshot that
+# EXCEEDS one chunk; if the rows were refused there is no such snapshot and
+# any reading below describes a different experiment.
+if [ "$ROWS_OK" -lt 510 ]; then
+  bad "QOS-HA-009 drive shape: the limiter table exceeds one chunk" \
+      "only $ROWS_OK of $CHUNK_ROWS per-user limits were accepted; the ceiling is 499 rows per RPC, so the snapshot under test was never built"
+else
+  ok "QOS-HA-009 drive shape: the limiter table exceeds one chunk" \
+     "$ROWS_OK per-user limiter rows, ceiling 499 per RPC"
+fi
+
+RPC_BIG=$(rpc_rate)
+if [ "$RPC_BIG" = "unreadable" ]; then
+  bad "QOS-HA-009 the RPC cost does not scale with rows no peer can use" \
+      "the scrape failed after the limiter table grew"
+elif [ "$RPC_BASE" = "unreadable" ] || [ "$RPC_BASE" -lt 10 ]; then
+  bad "QOS-HA-009 the RPC cost does not scale with rows no peer can use" \
+      "no usable baseline; measured $RPC_BIG RPCs in ${RPC_WINDOW}s"
+elif awk -v a="$RPC_BIG" -v b="$RPC_BASE" 'BEGIN{exit !(a > b*1.5)}'; then
+  bad "QOS-HA-009 the RPC cost does not scale with rows no peer can use" \
+      "$RPC_BASE -> $RPC_BIG RPCs per ${RPC_WINDOW}s after adding $ROWS_OK per-key rows; the extra RPCs carry rows both merge paths skip"
+else
+  ok "QOS-HA-009 the RPC cost does not scale with rows no peer can use" \
+     "$RPC_BASE -> $RPC_BIG RPCs per ${RPC_WINDOW}s across $ROWS_OK added limiter rows"
+fi
+
+# And the claim that actually matters: with the limiter table over the
+# ceiling, quota debt still crosses. Same helper, same controls as every
+# other rung — the only thing changed is the size of the snapshot carrying
+# it, which is the point.
+quota_crosses "QOS-HA-009" ha-chunk-key ha-ctl-009-key
 
 ##############################################################################
 echo ""

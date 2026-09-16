@@ -295,6 +295,11 @@ done
 # refused — two requests decide a leg, with no timing in the oracle.
 cfg_both POST /config/ai/tenant/ratelimit \
   '{"tenant_id":"ha-tenant","rps":0,"tokens_per_min":10}'
+# QOS-HA-009's subject: a tenant whose quota has to survive a snapshot that
+# does not fit in one RPC. Bounded exactly like the others so the only thing
+# distinguishing its result is the size of the snapshot carrying it.
+cfg_both POST /config/ai/tenant/ratelimit \
+  '{"tenant_id":"ha-chunk-tenant","rps":0,"tokens_per_min":10}'
 cfg_both POST /config/ai/tenant/ratelimit \
   '{"tenant_id":"ha-tenant-model","rps":0,"model_limits":[{"model":"qos-ha-model","tokens_per_min":10}]}'
 # The per-user rungs live under a tenant with NO aggregate bound of its own,
@@ -315,7 +320,14 @@ cfg_both POST /config/ai/user/ratelimit \
 # never ending.
 cfg_both POST /config/ai/tenant/ratelimit \
   '{"tenant_id":"ha-warm-tenant","rps":0,"tokens_per_min":100000}'
-for t in ha-ctl-002 ha-ctl-003 ha-ctl-004; do
+# The sync-liveness seed's tenant. It needs a bound for the seed request to
+# CHARGE anything — AllowTokens returns before creating an entry when the
+# tenant has no quota — and the bound has to be far beyond what one request
+# spends, because a seed that could be refused would leave SYNC-1 asserting
+# a push that never had state to carry.
+cfg_both POST /config/ai/tenant/ratelimit \
+  '{"tenant_id":"ha-seed-tenant","rps":0,"tokens_per_min":100000}'
+for t in ha-ctl-002 ha-ctl-003 ha-ctl-004 ha-ctl-009; do
   cfg_both POST /config/ai/tenant/ratelimit \
     '{"tenant_id":"'"$t"'","rps":0,"tokens_per_min":10}'
 done
@@ -359,6 +371,8 @@ mint_key ha-um-key           ha-um-tenant      0
 mint_key ha-ctl-002-key      ha-ctl-002        0
 mint_key ha-ctl-003-key      ha-ctl-003        0
 mint_key ha-ctl-004-key      ha-ctl-004        0
+mint_key ha-chunk-key        ha-chunk-tenant   0
+mint_key ha-ctl-009-key      ha-ctl-009        0
 # The key-TPM rung (QOS-HA-004): the key itself carries the bound, and its
 # tenant deliberately has no row, so a refusal can only be the key rung.
 mint_key ha-key-tpm          ha-keytpm-tenant  10
