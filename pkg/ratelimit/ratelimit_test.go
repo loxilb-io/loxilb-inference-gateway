@@ -598,17 +598,18 @@ func TestSettleSkipsReleaseAfterRollover(t *testing.T) {
 
 	s.ReserveTokens("tenant1", 400, tokensPerMin, 0)
 
-	// Roll the window over (the epoch-advance simulation used throughout this
-	// file), then let a NEW request win the reset and record its claim. The
-	// global epoch counter cannot be advanced from a test, so the first
-	// reservation's tag is made stale RELATIVE to the entry: after the forced
-	// rollover it reads as freshEp-1, one window behind the entry's current
-	// window — exactly the state a real rollover leaves behind.
+	// Roll the window over the way the clock does it, then let a NEW request
+	// win the reset and record its claim. The global epoch counter CAN be
+	// advanced from a test — pinQuotaClock stops the clock goroutine writing
+	// it, which is what makes storing it deterministic — so this drives the
+	// real touchQuotaEpoch path rather than simulating its effect by editing
+	// the entry, and it is the reservation marker that decides a rollover.
 	v, _ := s.quotaMap.Load("tenant1")
 	e := v.(*tokenWindowEntry)
-	atomic.StoreInt64(&e.windowEpoch, atomic.LoadInt64(&e.windowEpoch)-1)
-	_, _, freshEp := s.ReserveTokens("tenant1", 300, tokensPerMin, 0)
-	staleEp := freshEp - 1
+	staleEp := currentQuotaEpoch.Load()
+	currentQuotaEpoch.Store(staleEp + 1)
+	t.Cleanup(func() { currentQuotaEpoch.Store(staleEp) })
+	s.ReserveTokens("tenant1", 300, tokensPerMin, 0)
 	if got := atomic.LoadInt64(&e.reserved); got != 300 {
 		t.Fatalf("rollover winner must seed reserved with its own claim only, got %d", got)
 	}
@@ -693,6 +694,7 @@ func TestReservedClampNeverNegative(t *testing.T) {
 // through AllowTokens (no reservations recorded) must not carry a dead claim
 // from a previous window into admission arithmetic.
 func TestAllowTokensRolloverZeroesReserved(t *testing.T) {
+	pinQuotaClock(t)
 	s := &RateLimiterStore{entries: make(map[string]*limiterEntry)}
 
 	const tokensPerMin = 1000
@@ -701,7 +703,10 @@ func TestAllowTokensRolloverZeroesReserved(t *testing.T) {
 
 	v, _ := s.quotaMap.Load("tenant1")
 	e := v.(*tokenWindowEntry)
-	atomic.StoreInt64(&e.windowEpoch, atomic.LoadInt64(&e.windowEpoch)-1)
+	// Advance the clock's minute, as a real rollover does.
+	base := currentQuotaEpoch.Load()
+	currentQuotaEpoch.Store(base + 1)
+	t.Cleanup(func() { currentQuotaEpoch.Store(base) })
 
 	// A plain charge wins the rollover reset.
 	s.AllowTokens("tenant1", 100, tokensPerMin, 0)

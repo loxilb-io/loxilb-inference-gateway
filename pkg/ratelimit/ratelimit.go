@@ -244,10 +244,26 @@ type tokenWindowEntry struct {
 	// settles). It is NODE-LOCAL state: never exported on the peer-sync wire
 	// (RateLimiterEntry stays untouched) — a reservation is a transient claim
 	// on THIS node's admission decision, not consumed quota. It is zeroed
-	// when windowEpoch advances, which bounds any reservation orphaned by an
-	// aborted request to one 60-second epoch, exactly as the fixed window's
-	// rollover reset did.
-	reserved    int64
+	// when reservedEpoch advances, which bounds any reservation orphaned by
+	// an aborted request to one 60-second epoch, exactly as the fixed
+	// window's rollover reset did.
+	reserved int64
+	// reservedEpoch is the minute `reserved` belongs to, and it is NODE-LOCAL
+	// for the same reason `reserved` is.
+	//
+	// It exists because windowEpoch cannot do this job: windowEpoch is also
+	// the peer-visible activity stamp, so a peer's merge moves it, and a
+	// field two writers advance for two different reasons can only honour
+	// one of them. The merge path has no business expiring this node's
+	// in-flight claims, and when windowEpoch carried both meanings it did
+	// something worse than expire them — it moved the stamp WITHOUT the
+	// zeroing that is supposed to accompany an advance, so every settle's
+	// `== resEpoch` guard then failed and released nothing. The claims
+	// accumulated against a bucket that was nearly full, and the node that
+	// had spent LESS was the one refusing admissions.
+	//
+	// Only local activity advances it, so no peer can reach it.
+	reservedEpoch int64
 	limitTokens int64 // tokens-per-minute quota seen on the last charge; read by TokenQuotaSnapshot
 	// burstPct is the tenant's bucket-capacity knob in percent of
 	// limitTokens, published alongside limitTokens on every charge and
@@ -259,15 +275,27 @@ type tokenWindowEntry struct {
 	burstPct int64
 }
 
-// touchQuotaEpoch stamps the entry's activity epoch with the current minute.
-// The winner of the minute-advance CAS also expires the previous epoch's
-// reservations: any claim still outstanding after a whole minute belongs to
-// an aborted request that will never settle (its settlement, if it does
-// arrive, carries the stale epoch tag and skips the release).
+// touchQuotaEpoch stamps both of the entry's minute markers with the current
+// minute. They are separate fields because they answer to different writers.
+//
+// windowEpoch is the shared activity stamp: it rides the sync wire, drives
+// idle eviction, and a peer's merge may already have carried it past this
+// node's clock. Nothing about a reservation may hang off it.
+//
+// reservedEpoch is node-local, and the winner of ITS advance expires the
+// previous minute's reservations: a claim still outstanding after a whole
+// minute belongs to an aborted request that will never settle (its
+// settlement, if it does arrive, carries the stale tag and skips the
+// release). Because only local activity advances it, a peer can neither
+// expire this node's claims nor — the failure this split fixes — move the
+// marker out from under them so that no settle can ever release one.
 func touchQuotaEpoch(e *tokenWindowEntry) {
 	epoch := currentQuotaEpoch.Load()
-	stored := atomic.LoadInt64(&e.windowEpoch)
-	if epoch > stored && atomic.CompareAndSwapInt64(&e.windowEpoch, stored, epoch) {
+	if stored := atomic.LoadInt64(&e.windowEpoch); epoch > stored {
+		atomic.CompareAndSwapInt64(&e.windowEpoch, stored, epoch)
+	}
+	if stored := atomic.LoadInt64(&e.reservedEpoch); epoch > stored &&
+		atomic.CompareAndSwapInt64(&e.reservedEpoch, stored, epoch) {
 		atomic.StoreInt64(&e.reserved, 0)
 	}
 }
@@ -595,7 +623,10 @@ func (s *RateLimiterStore) SettleTokens(tenantID string, actual, reservedAmt int
 	if reservedAmt > 0 && resEpoch > 0 {
 		if v, ok := s.quotaMap.Load(tenantID); ok {
 			e := v.(*tokenWindowEntry)
-			if atomic.LoadInt64(&e.windowEpoch) == resEpoch {
+			// reservedEpoch, not windowEpoch: the claim was tagged with a
+			// marker only this node advances, so the release cannot be
+			// skipped because a peer's snapshot moved a shared stamp.
+			if atomic.LoadInt64(&e.reservedEpoch) == resEpoch {
 				reservedSubClamp(e, int64(reservedAmt))
 			}
 		}
@@ -628,7 +659,8 @@ func (s *RateLimiterStore) ReleaseReservation(key string, amt int, resEpoch int6
 		return
 	}
 	e := v.(*tokenWindowEntry)
-	if atomic.LoadInt64(&e.windowEpoch) != resEpoch {
+	// See SettleTokens: the guard reads the node-local marker.
+	if atomic.LoadInt64(&e.reservedEpoch) != resEpoch {
 		return
 	}
 	reservedSubClamp(e, int64(amt))
