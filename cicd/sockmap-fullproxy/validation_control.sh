@@ -7,9 +7,9 @@
 # connections, and an explicit admin action drops the accelerated connections of
 # one rule — only those, and without a drop window, since it only closes.
 #
-# None of this exists yet. The action is PR-B, so every case here is registered
-# as a known defect and reports XFAIL until it lands; each will report XPASS, and
-# fail the suite, once it works, which is the signal to drop the registration.
+# The action is POST .../protocol/{proto}/sockmapreset. A run against a build that
+# does not have it reports the dependent cases BLOCKED rather than passing them
+# vacuously (see the note below the case list).
 #
 #   1. boot assets
 #   2. backends: request_path_server.js (HTTP/1.1) and h2c_server.js
@@ -18,11 +18,9 @@
 #      C-3  another rule's accelerated connections survive
 #      C-4  sock_verdict_map and peer_map return to their baseline size
 #
-# The cases split two ways while the action is missing. C-1, C-5, C-6 and the two
-# that invoke the action assert the missing behaviour directly, so they are known
-# defects and report XFAIL. The rest only mean something once something is actually
-# being dropped — "the other rule survived" is vacuously true when nothing is
-# dropped — so they report BLOCKED rather than a pass that claims a fix.
+# "The other rule's connections survived" is vacuously true when nothing is being
+# dropped at all, so every case downstream of the action is BLOCKED rather than
+# passed when the action is absent.
 #   4. C-5  reducing the mode (both -> off) drops the accelerated connections
 #      C-6  deleting the rule drops them
 #   5. C-7  a rule with no accelerated connection answers 200 with 0 dropped
@@ -50,16 +48,11 @@ PORT_B=2091      # accelerated, must be untouched
 PORT_C=2092      # accelerated rule serving h2c, so nothing is ever accelerated
 ALL_PORTS="$PORT_A $PORT_B $PORT_C"
 
-XFAIL_PRB="the admin teardown action does not exist yet (issue 2, PR-B)"
-BLOCKED_PRB="needs a working teardown action to mean anything (issue 2, PR-B)"
-# Only the cases that DIRECTLY assert the missing behaviour are known defects.
+BLOCKED_PRB="needs a working teardown action to mean anything"
 # Everything downstream of the action — "the other rule survived", "the maps came
-# back", "an unknown rule 404s" — would pass VACUOUSLY while nothing is dropped, so
-# those are reported BLOCKED instead: an xfail there reports XPASS and claims a fix
-# that has not happened.
-for c in C-1 C-5 C-6 C-7-action C-10-action; do
-  sockmap_xfail_register "$c" "$XFAIL_PRB"
-done
+# back", "an unknown rule 404s" — would pass VACUOUSLY if the action were not
+# there, so those report BLOCKED rather than OK when it is missing. The gate below
+# decides which it is; with the action present every case is evaluated for real.
 
 # Is the route implemented at all? Probed on a port that carries no rule: an
 # unimplemented route answers 404 with go-swagger's "path ... was not found",

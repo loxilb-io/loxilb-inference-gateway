@@ -898,6 +898,37 @@ func ConfigGetLoadbalancerByID(params operations.GetConfigLoadbalancerIDParams, 
 	return operations.NewGetConfigLoadbalancerIDOK().WithPayload(serializeLBRule(*lb))
 }
 
+// ConfigPostLoadbalancerSockmapReset stops sockmap acceleration on the live
+// connections of one service and reports how many were closed.
+//
+// A configuration change applies to new connections only: the sockmap verdict
+// decides on the socket pairing installed when a connection was accepted, so a
+// connection already accelerated keeps redirecting until it closes. This is the
+// operation that stops it on connections that are already running.
+//
+// 200 with zero is a correct answer, not a miss: a service with nothing
+// accelerated, including one whose sockMapMode is off, has nothing to close. Only
+// a service that does not exist is a 404.
+func ConfigPostLoadbalancerSockmapReset(params operations.PostConfigLoadbalancerSockmapResetParams, principal interface{}) middleware.Responder {
+	tk.LogIt(tk.LogTrace, "api: Load balancer %s API called. url : %s\n", params.HTTPRequest.Method, params.HTTPRequest.URL)
+
+	dropped, err := ApiHooks.NetSockMapResetAccel(params.IPAddress, uint16(params.Port), params.Proto)
+	if err != nil {
+		tk.LogIt(tk.LogDebug, "api: sockmap reset failed: %v\n", err)
+		// The datapath reports an absent sockproxy rule distinctly, which is the
+		// only 404 here; anything else is a failure of the operation itself. The
+		// error VALUE is passed on, not its text, so a typed rejection keeps the
+		// status its type carries.
+		if errors.Is(err, cmn.ErrSockMapNoRule) {
+			return operations.NewPostConfigLoadbalancerSockmapResetNotFound()
+		}
+		return &ErrorResponse{Payload: ResultErrorResponseError(err)}
+	}
+
+	return operations.NewPostConfigLoadbalancerSockmapResetOK().WithPayload(
+		&models.SockMapResetResult{DroppedConnections: int64(dropped)})
+}
+
 // ConfigGetLoadbalancerStatus - GET per-LB lifecycle status
 // {adminStateUp, operatingStatus, lastUpdated} for a rule by composite key
 // (Octavia).

@@ -30,7 +30,8 @@ on OK.
   sizes     <host> <port>           responses of 1/65535/65536/307200/1048576
                                     bytes, verified against the backend pattern
   special   <host> <port>           204, 304 and HEAD on one connection
-  abort     <host> <port>           backend promises 2N bytes, sends N, then FIN
+  abort     <host> <port> [n]       backend promises 2N bytes, sends N, then FIN;
+                                    repeated n times (the race is intermittent)
   idle      <host> <port> <secs>    connect, wait secs sending nothing, then use
                                     the connection (it was never accelerated)
 
@@ -331,13 +332,36 @@ def mode_special(host, port):
 ABORT_N = 50000
 
 
-def mode_abort(host, port):
+def mode_abort(host, port, n=1):
+    """Repeated on purpose. When the response direction is accelerated the
+    backend's FIN can beat its own redirected bytes to the client, and that race
+    is lost only some of the time — a single attempt reports a defect present as
+    a pass most runs, which is worse than not testing it."""
+    bad = []
+    for i in range(n):
+        err = _abort_once(host, port)
+        if err:
+            bad.append(err)
+    # The count is always reported, in a fixed shape the suite parses, so a rate
+    # that grows is visible even where the case does not fail on it.
+    if bad:
+        return 'FAIL %d/%d early: %s' % (len(bad), n, bad[0])
+    return 'OK 0/%d early' % n
+
+
+def _abort_once(host, port):
+    """Returns None when the truncation looked as it does without acceleration,
+    or a description of how it differed."""
     s = connect(host, port)
     r = Reader(s)
     head, _ = request('GET', '/abort?abort=%d' % ABORT_N, host)
     s.sendall(head)
-    while b'\r\n\r\n' not in r.buf:
-        r._fill()
+    try:
+        while b'\r\n\r\n' not in r.buf:
+            r._fill()
+    except (EOFError, ConnectionResetError) as e:
+        s.close()
+        return 'closed before the response headers arrived (%s)' % type(e).__name__
     hdr, r.buf = r.buf.split(b'\r\n\r\n', 1)
     lines = hdr.decode('latin-1').split('\r\n')
     status = int(lines[0].split()[1])
@@ -349,12 +373,12 @@ def mode_abort(host, port):
     body = r.drain()
     s.close()
     if status != 200 or promised != ABORT_N * 2:
-        return 'FAIL status=%d content-length=%d' % (status, promised)
+        return 'status=%d content-length=%d' % (status, promised)
     if len(body) != ABORT_N:
-        return 'FAIL truncated response delivered %d of %d bytes' % (len(body), ABORT_N)
+        return 'delivered %d of the %d bytes the backend sent' % (len(body), ABORT_N)
     if body != pattern(ABORT_N):
-        return 'FAIL truncated response content differs at offset %d' % first_diff(body, pattern(ABORT_N))
-    return 'OK truncated at %d of %d promised bytes' % (ABORT_N, promised)
+        return 'content differs at offset %d' % first_diff(body, pattern(ABORT_N))
+    return None
 
 
 def mode_halfpartial(host, port):

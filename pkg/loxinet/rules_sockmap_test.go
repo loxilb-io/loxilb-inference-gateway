@@ -250,3 +250,44 @@ func TestL7AttachmentIndex(t *testing.T) {
 		t.Fatal("a detached policy must clear the index")
 	}
 }
+
+// Which mode changes drop the connections already being accelerated. Adding a
+// direction must NOT: an existing connection is never accelerated retroactively,
+// so dropping it would cost a client its connection for no gain.
+func TestSockMapModeReduces(t *testing.T) {
+	const (
+		off  = uint8(0)
+		both = uint8(1)
+		req  = uint8(2)
+		resp = uint8(3)
+	)
+	name := map[uint8]string{off: "off", both: "both", req: "request", resp: "response"}
+
+	reduces := map[[2]uint8]bool{
+		// taking a direction away
+		{both, off}: true, {both, req}: true, {both, resp}: true,
+		{req, off}: true, {req, resp}: true,
+		{resp, off}: true, {resp, req}: true,
+		// adding one, or no change
+		{off, off}: false, {off, both}: false, {off, req}: false, {off, resp}: false,
+		{both, both}: false,
+		{req, req}:   false, {req, both}: false,
+		{resp, resp}: false, {resp, both}: false,
+	}
+	for pair, want := range reduces {
+		if got := sockMapModeReduces(pair[0], pair[1]); got != want {
+			t.Fatalf("%s -> %s: want reduces=%v, got %v", name[pair[0]], name[pair[1]], want, got)
+		}
+	}
+
+	// The direction decomposition the rule above is built from.
+	for code, want := range map[uint8][2]bool{
+		off: {false, false}, both: {true, true}, req: {true, false}, resp: {false, true},
+	} {
+		gotReq, gotResp := sockMapDirs(code)
+		if gotReq != want[0] || gotResp != want[1] {
+			t.Fatalf("%s: want req=%v resp=%v, got req=%v resp=%v",
+				name[code], want[0], want[1], gotReq, gotResp)
+		}
+	}
+}

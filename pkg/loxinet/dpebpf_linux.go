@@ -48,6 +48,9 @@ int proxy_update_ep_health_by_ip(struct proxy_ent *key, uint32_t ep_ip, uint8_t 
 // more than one pool. An address names the same backend in every pool that carries it.
 int proxy_update_ep_health_by_addr(struct proxy_ent *key, uint32_t ep_ip, uint16_t ep_port, uint8_t inactive);
 int proxy_update_kv_exact_contract(struct proxy_ent *key, uint32_t binding_gen, uint8_t api_mode, uint8_t eligible, uint64_t *applied);
+// Closes the connections of one rule that the kernel is accelerating and returns
+// how many; -ENOENT when the rule does not exist.
+int proxy_sockmap_drop_accel(struct proxy_ent *key);
 int kv_compute_block_hashes(uint8_t hash_algo, const uint32_t *tokens, int n_tokens, uint32_t block_size, uint8_t *out_hashes, int hash_stride, int max_blocks);
 int proxy_set_drain_policy(struct proxy_ent *key, unsigned int policy, uint32_t timeout_sec);
 int proxy_set_circuit_breaker(struct proxy_ent *key, uint8_t enabled, uint32_t failure_threshold, uint32_t open_timeout_sec);
@@ -6022,6 +6025,40 @@ func DpProxyDeleteCert(certId string) int {
 
 // --- L7 content-routing policy attach bridge --------
 //
+// DpSockMapDropAccelConns closes the connections of one rule that the kernel is
+// accelerating and returns how many were closed.
+//
+// The verdict decides on its peer_map lookup alone, so a rule changed or deleted
+// applies to new connections while an accelerated pair keeps redirecting until it
+// closes — deliberate, because the verdict must never SK_PASS a socket in
+// sock_verdict_map. This is how an operator stops acceleration on connections
+// that are already running. Connections of the same rule that were never paired
+// are left alone.
+//
+// Returns (dropped, nil), or an error when the rule does not exist.
+func DpSockMapDropAccelConns(serviceIP net.IP, port uint16, proto uint8) (int, error) {
+	if serviceIP.To4() == nil {
+		return 0, errors.New("sockmap-reset: ipv6 service is not accelerated")
+	}
+	var proxyKey C.struct_proxy_ent
+	proxyKey.xip = C.uint(tk.IPtonl(serviceIP))
+	proxyKey.xport = C.ushort(tk.Htons(port))
+	proxyKey.protocol = C.uchar(proto)
+
+	ret := int(C.proxy_sockmap_drop_accel(&proxyKey))
+	if ret < 0 {
+		if ret == -int(C.ENOENT) {
+			return 0, fmt.Errorf("%w (%s:%d)", cmn.ErrSockMapNoRule, serviceIP.String(), port)
+		}
+		return 0, fmt.Errorf("sockmap-reset: %s:%d failed (%d)", serviceIP.String(), port, ret)
+	}
+	if ret > 0 {
+		tk.LogIt(tk.LogInfo, "[DP] sockmap-reset %s:%d dropped %d accelerated connection(s)\n",
+			serviceIP.String(), port, ret)
+	}
+	return ret, nil
+}
+
 // DpProxyAttachL7Policy / DpProxyDetachL7Policy carry the validated L7 route IR to
 // the running sockproxy via a SEPARATE CGO call (proxy_attach_l7_policy), modeled on
 // DpProxyConfigureMTLS — NEVER inline on proxy_arg (the 4096-byte _Static_assert).
