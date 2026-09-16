@@ -19,6 +19,7 @@ package prometheus
 import (
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -616,6 +617,27 @@ type TokenQuotaState struct {
 	Model    string
 	Consumed int64
 	Limit    int64
+
+	// Scope selects which series this bucket belongs on. Empty is the
+	// tenant ladder: the aggregate when Model is empty, the tenant|model
+	// bucket otherwise. The rest are the identity scopes, which were
+	// exported nowhere until this field existed — the tenant series had to
+	// drop them, because a per-key bucket published as {tenant="kq:<id>"}
+	// moves a saturation alert by exactly as much as a real tenant would
+	// and a wrong label is worse than a missing one.
+	//
+	// Each scope gets a series with its OWN name and its own labels, which
+	// is the whole point: "user" is not a spelling of "tenant".
+	//
+	//   ""           tenant aggregate, or tenant|model when Model is set
+	//   "user"       per-user quota          — Tenant + User
+	//   "user_model" per-user-per-model      — Tenant + User + Model
+	//   "key"        per-API-key token quota — KeyID
+	//   "vip"        per-VIP keyless bucket  — Service
+	Scope   string
+	User    string
+	KeyID   string
+	Service string
 }
 
 var (
@@ -639,6 +661,57 @@ var (
 		"Per-model tokens-per-minute quota for a tenant as of the pair's most recent charge.",
 		[]string{"tenant", "model"}, nil,
 	)
+
+	// The identity scopes. Same scrape-time semantics as the tenant pair
+	// above — utilization may exceed 1.0 while a bucket is in post-hoc debt
+	// and decays as it refills — on series named for what they actually
+	// key on.
+	//
+	// Cardinality is bounded by ACTIVE buckets, not by configured
+	// identities: a bucket exists only once the identity has a quota bound
+	// AND has been charged, and the store's Cleanup removes it again after
+	// its inactivity window. A fleet with many API keys therefore exports
+	// children for the keys currently spending, not for every key on file.
+	userTokenQuotaUtilizationDesc = prometheus.NewDesc(
+		"loxilb_ai_user_token_quota_utilization",
+		"Fraction of a user's per-minute token quota currently spent and not yet refilled, computed at scrape time. Same semantics as loxilb_ai_token_quota_utilization, keyed tenant+user.",
+		[]string{"tenant", "user"}, nil,
+	)
+	userTokenQuotaLimitDesc = prometheus.NewDesc(
+		"loxilb_ai_user_token_quota_limit_tokens",
+		"Per-user tokens-per-minute quota as of that user's most recent charge. Headroom in tokens = limit * (1 - utilization).",
+		[]string{"tenant", "user"}, nil,
+	)
+	userModelTokenQuotaUtilizationDesc = prometheus.NewDesc(
+		"loxilb_ai_user_model_token_quota_utilization",
+		"Fraction of a user's per-model per-minute token quota currently spent and not yet refilled, computed at scrape time. Keyed tenant+user+model.",
+		[]string{"tenant", "user", "model"}, nil,
+	)
+	userModelTokenQuotaLimitDesc = prometheus.NewDesc(
+		"loxilb_ai_user_model_token_quota_limit_tokens",
+		"Per-user-per-model tokens-per-minute quota as of that pair's most recent charge.",
+		[]string{"tenant", "user", "model"}, nil,
+	)
+	keyTokenQuotaUtilizationDesc = prometheus.NewDesc(
+		"loxilb_ai_key_token_quota_utilization",
+		"Fraction of an API key's own per-minute token quota currently spent and not yet refilled, computed at scrape time. Keyed by key_id — the store's opaque identifier, never the key material.",
+		[]string{"key_id"}, nil,
+	)
+	keyTokenQuotaLimitDesc = prometheus.NewDesc(
+		"loxilb_ai_key_token_quota_limit_tokens",
+		"Per-API-key tokens-per-minute quota as of that key's most recent charge.",
+		[]string{"key_id"}, nil,
+	)
+	vipTokenQuotaUtilizationDesc = prometheus.NewDesc(
+		"loxilb_ai_vip_token_quota_utilization",
+		"Fraction of a keyless service's shared per-minute token quota currently spent and not yet refilled, computed at scrape time. Keyed by the service ident the VIP bucket is configured on.",
+		[]string{"service"}, nil,
+	)
+	vipTokenQuotaLimitDesc = prometheus.NewDesc(
+		"loxilb_ai_vip_token_quota_limit_tokens",
+		"Per-VIP shared keyless tokens-per-minute quota as of that service's most recent charge.",
+		[]string{"service"}, nil,
+	)
 )
 
 // tokenQuotaCollector exports quota utilization at scrape time by reading the
@@ -657,6 +730,14 @@ func (c *tokenQuotaCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- tokenQuotaLimitDesc
 	ch <- tokenQuotaModelUtilizationDesc
 	ch <- tokenQuotaModelLimitDesc
+	ch <- userTokenQuotaUtilizationDesc
+	ch <- userTokenQuotaLimitDesc
+	ch <- userModelTokenQuotaUtilizationDesc
+	ch <- userModelTokenQuotaLimitDesc
+	ch <- keyTokenQuotaUtilizationDesc
+	ch <- keyTokenQuotaLimitDesc
+	ch <- vipTokenQuotaUtilizationDesc
+	ch <- vipTokenQuotaLimitDesc
 }
 
 func (c *tokenQuotaCollector) Collect(ch chan<- prometheus.Metric) {
@@ -666,6 +747,73 @@ func (c *tokenQuotaCollector) Collect(ch chan<- prometheus.Metric) {
 	seen := make(map[string]struct{})
 	for _, st := range c.snapshot() {
 		if st.Limit <= 0 {
+			continue
+		}
+		// The identity scopes route first: each has its own Desc, so the
+		// dedupe key is namespaced by scope and a user called "x" can
+		// never collide with a tenant called "x".
+		if st.Scope != "" {
+			util := float64(st.Consumed) / float64(st.Limit)
+			limit := float64(st.Limit)
+			// firstOf keys the dedupe by scope as well as by labels, so a
+			// user called "x" can never collide with a tenant called "x".
+			firstOf := func(labels ...string) bool {
+				k := st.Scope + "\x00" + strings.Join(labels, "\x00")
+				if _, dup := seen[k]; dup {
+					return false
+				}
+				seen[k] = struct{}{}
+				return true
+			}
+			// Each Desc is named at its own MustNewConstMetric call rather
+			// than reached through a variable, and that is a requirement
+			// and not a style: the metric extractor resolves a family's
+			// runtime type by reading this call, and a Desc arriving as an
+			// identifier it cannot follow becomes a family typed "desc" —
+			// which is how a family ends up reported absent and a panel
+			// built on it looks broken.
+			switch st.Scope {
+			case "user":
+				tenant, user := sanitizeLabel(st.Tenant), sanitizeLabel(st.User)
+				if !firstOf(tenant, user) {
+					continue
+				}
+				ch <- prometheus.MustNewConstMetric(userTokenQuotaUtilizationDesc,
+					prometheus.GaugeValue, util, tenant, user)
+				ch <- prometheus.MustNewConstMetric(userTokenQuotaLimitDesc,
+					prometheus.GaugeValue, limit, tenant, user)
+			case "user_model":
+				tenant, user := sanitizeLabel(st.Tenant), sanitizeLabel(st.User)
+				model := sanitizeLabel(st.Model)
+				if !firstOf(tenant, user, model) {
+					continue
+				}
+				ch <- prometheus.MustNewConstMetric(userModelTokenQuotaUtilizationDesc,
+					prometheus.GaugeValue, util, tenant, user, model)
+				ch <- prometheus.MustNewConstMetric(userModelTokenQuotaLimitDesc,
+					prometheus.GaugeValue, limit, tenant, user, model)
+			case "key":
+				keyID := sanitizeLabel(st.KeyID)
+				if !firstOf(keyID) {
+					continue
+				}
+				ch <- prometheus.MustNewConstMetric(keyTokenQuotaUtilizationDesc,
+					prometheus.GaugeValue, util, keyID)
+				ch <- prometheus.MustNewConstMetric(keyTokenQuotaLimitDesc,
+					prometheus.GaugeValue, limit, keyID)
+			case "vip":
+				service := sanitizeLabel(st.Service)
+				if !firstOf(service) {
+					continue
+				}
+				ch <- prometheus.MustNewConstMetric(vipTokenQuotaUtilizationDesc,
+					prometheus.GaugeValue, util, service)
+				ch <- prometheus.MustNewConstMetric(vipTokenQuotaLimitDesc,
+					prometheus.GaugeValue, limit, service)
+			}
+			// An unknown scope falls through here having emitted nothing:
+			// dropped rather than guessed onto a series, because
+			// mislabelling is the defect this whole split exists to undo.
 			continue
 		}
 		tenant := sanitizeLabel(st.Tenant)

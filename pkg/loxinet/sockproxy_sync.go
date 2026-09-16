@@ -59,6 +59,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"net"
 	"strconv"
 	"strings"
 	"sync"
@@ -1399,6 +1400,22 @@ func (s *SockproxySync) ApplyRateLimiterBatch(peerKey string, m *RateLimiterBatc
 			m.IsDelta, len(m.Entries))
 		return nil
 	}
+	// The metric label is the peer HOST, not the connection.
+	//
+	// peerKey arrives here from xsyncPeerKey, which is the gRPC peer address
+	// and therefore carries the sender's EPHEMERAL source port — a different
+	// string on every reconnect. As a gauge label that is doubly wrong: the
+	// children accumulate without bound, each frozen at whatever the dead
+	// connection last said, so "is any peer still on the old vocabulary"
+	// becomes a max over a growing pile of ghosts; and it cannot be joined
+	// with the send-side series, which labels the same peer with a bare IP
+	// (peer_up{peer="10.0.0.3"} against peer_scope_version{peer=
+	// "10.0.0.3:40318"}). Normalised here rather than in xsyncPeerKey, whose
+	// per-connection identity other callers rely on.
+	peerHost := peerKey
+	if h, _, err := net.SplitHostPort(peerKey); err == nil && h != "" {
+		peerHost = h
+	}
 	goEntries := make([]rl.RateLimiterEntry, 0, len(m.Entries))
 	sawSentinel := false
 	for _, e := range m.Entries {
@@ -1411,9 +1428,22 @@ func (s *SockproxySync) ApplyRateLimiterBatch(peerKey string, m *RateLimiterBatc
 		// fleet to discover the gap at failover.
 		if ver, isSentinel := strings.CutPrefix(e.KeyId, "ver:"); isSentinel {
 			sawSentinel = true
-			if v, err := strconv.Atoi(ver); err == nil && v > rl.ScopeWireVersion {
-				s.warnOncePeerRPC(peerKey, "RateLimiterSync/scope-newer",
-					fmt.Sprintf("peer speaks scope version %d, this node speaks %d — entries in scopes this build does not know are DROPPED; upgrade this node", v, rl.ScopeWireVersion))
+			if v, err := strconv.Atoi(ver); err == nil {
+				// The gauge is written on every batch, not once. The
+				// warning below is warn-once and can never clear, so it
+				// cannot answer "is any peer still on the old vocabulary
+				// NOW" — which is the question, and the one thing a
+				// mixed-version bed needs to be able to observe.
+				prom.SockproxySyncPeerScopeVersionSet(peerHost, v)
+				if v > rl.ScopeWireVersion {
+					s.warnOncePeerRPC(peerKey, "RateLimiterSync/scope-newer",
+						fmt.Sprintf("peer speaks scope version %d, this node speaks %d — entries in scopes this build does not know are DROPPED; upgrade this node", v, rl.ScopeWireVersion))
+				}
+			} else {
+				// A sentinel this build cannot read is its own fault, and
+				// reporting it as version 1 would name the peer old when
+				// the truth is that its announcement was unreadable.
+				prom.SockproxySyncPeerScopeVersionSet(peerHost, 0)
 			}
 			continue
 		}
@@ -1441,6 +1471,14 @@ func (s *SockproxySync) ApplyRateLimiterBatch(peerKey string, m *RateLimiterBatc
 		// debt does not survive a failover through it. Mixed-version HA
 		// peering is unsupported (standing posture) — but it should be
 		// loud, not discovered from a bill.
+		//
+		// This is THE case the gauge exists for, so it is written here and
+		// not only on the sentinel path: version 1 is precisely "the
+		// vocabulary before the sentinel was added", and a peer that only
+		// ever sends sentinel-less batches would otherwise have no series
+		// at all — indistinguishable at scrape time from a peer that has
+		// never pushed.
+		prom.SockproxySyncPeerScopeVersionSet(peerHost, 1)
 		s.warnOncePeerRPC(peerKey, "RateLimiterSync/scope-older",
 			"this sync peer pre-dates the per-user/per-key-TPM/keyless quota scopes and silently drops their state; upgrade all sync peers together (mixed-version HA is unsupported)")
 	}

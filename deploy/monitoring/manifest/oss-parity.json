@@ -1,17 +1,17 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-15T06:09:45+00:00",
-  "source_revision": "e972141b2ec50a07a7ac8919e74f71ff64335361",
+  "generated_at": "2026-09-16T09:47:12+00:00",
+  "source_revision": "2257a40c994e32659b5dbbcc196d7a5f9b6a3523",
   "upstream_repository": "https://github.com/loxilb-io/loxilb",
   "upstream_revision": "71982cd61b23d82c8f2ff1dd38d395bbb4c9360d"
  },
  "contract": {
-  "gateway_families": 240,
+  "gateway_families": 249,
   "upstream_families": 60,
   "present_identical": 35,
   "present_divergent": 0,
-  "absent": 205,
+  "absent": 214,
   "upstream_only": 25
  },
  "upstream_only": [
@@ -682,6 +682,32 @@
    }
   },
   {
+   "name": "loxilb_ai_key_token_quota_limit_tokens",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "key_id"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_key_token_quota_utilization",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "key_id"
+    ]
+   }
+  },
+  {
    "name": "loxilb_ai_keyed_services",
    "owner": "loxilb",
    "class": "default",
@@ -1091,6 +1117,90 @@
     "type": "counter",
     "labels": [
      "vip"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_user_model_token_quota_limit_tokens",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "model",
+     "tenant",
+     "user"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_user_model_token_quota_utilization",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "model",
+     "tenant",
+     "user"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_user_token_quota_limit_tokens",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "tenant",
+     "user"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_user_token_quota_utilization",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "tenant",
+     "user"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_vip_token_quota_limit_tokens",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "service"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_ai_vip_token_quota_utilization",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "service"
     ]
    }
   },
@@ -3069,6 +3179,19 @@
   },
   {
    "name": "loxilb_sockproxy_sync_peer_lag_seconds",
+   "owner": "loxilb",
+   "class": "default",
+   "parity": "absent",
+   "present_upstream": false,
+   "gateway": {
+    "type": "gauge",
+    "labels": [
+     "peer"
+    ]
+   }
+  },
+  {
+   "name": "loxilb_sockproxy_sync_peer_scope_version",
    "owner": "loxilb",
    "class": "default",
    "parity": "absent",

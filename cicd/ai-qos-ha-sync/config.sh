@@ -322,6 +322,31 @@ cfg_both POST /config/ai/tenant/ratelimit \
   '{"tenant_id":"ha-kill-tenant","rps":0,"tokens_per_min":10}'
 cfg_both POST /config/ai/tenant/ratelimit \
   '{"tenant_id":"ha-ctl-012","rps":0,"tokens_per_min":10}'
+# QOS-HA-012 also asks whether the promoted node ENFORCES rather than merely
+# remembers: a fresh identity, never spent anywhere, driven at the survivor
+# after it takes the role. Preserved state and live enforcement are two
+# different claims and the old case only ever made the first.
+cfg_both POST /config/ai/tenant/ratelimit \
+  '{"tenant_id":"ha-fresh-012","rps":0,"tokens_per_min":10}'
+# The two partition cases. Each needs an identity that has never been driven
+# when its fault is armed, because the whole question is what the OTHER node
+# knows, and an identity already spent there answers for its own reasons.
+#
+# ha-xpart is spent at the master with the quota channel cut and is NEVER
+# driven at the standby, so the standby's post-heal refusal cannot be its
+# own spend. ha-xdiv measures the divergence itself — it IS driven at both —
+# and is therefore useless for anything afterwards, which is why it is a
+# second identity rather than a second question asked of the first.
+cfg_both POST /config/ai/tenant/ratelimit \
+  '{"tenant_id":"ha-xpart-tenant","rps":0,"tokens_per_min":10}'
+cfg_both POST /config/ai/tenant/ratelimit \
+  '{"tenant_id":"ha-xdiv-tenant","rps":0,"tokens_per_min":10}'
+cfg_both POST /config/ai/tenant/ratelimit \
+  '{"tenant_id":"ha-split-tenant","rps":0,"tokens_per_min":10}'
+for t in ha-ctl-013 ha-ctl-014; do
+  cfg_both POST /config/ai/tenant/ratelimit \
+    '{"tenant_id":"'"$t"'","rps":0,"tokens_per_min":10}'
+done
 # QOS-HA-009's subject: a tenant whose quota has to survive a snapshot that
 # does not fit in one RPC. Bounded exactly like the others so the only thing
 # distinguishing its result is the size of the snapshot carrying it.
@@ -407,6 +432,12 @@ mint_key ha-ctl-005b-key     ha-ctl-005b       0
 mint_key ha-phantom-key      ha-phantom-tenant 0
 mint_key ha-kill-key         ha-kill-tenant    0
 mint_key ha-ctl-012-key      ha-ctl-012        0
+mint_key ha-fresh-012-key    ha-fresh-012      0
+mint_key ha-xpart-key        ha-xpart-tenant   0
+mint_key ha-xdiv-key         ha-xdiv-tenant    0
+mint_key ha-ctl-013-key      ha-ctl-013        0
+mint_key ha-split-key        ha-split-tenant   0
+mint_key ha-ctl-014-key      ha-ctl-014        0
 # The key-TPM rung (QOS-HA-004): the key itself carries the bound, and its
 # tenant deliberately has no row, so a refusal can only be the key rung.
 mint_key ha-key-tpm          ha-keytpm-tenant  10
