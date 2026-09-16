@@ -142,7 +142,7 @@ func TestRateLimiterServerHandlerRoutes(t *testing.T) {
 			{KeyId: "t:srv-tenant-2", IsTenant: true, EpochStartTs: 100, TokensConsumed: 99},
 		},
 	}
-	if err := coord.ApplyRateLimiterBatch(batch1); err != nil {
+	if err := coord.ApplyRateLimiterBatch("test-peer", batch1); err != nil {
 		t.Fatalf("ApplyRateLimiterBatch (snapshot) failed: %v", err)
 	}
 	state := store.ExportState()
@@ -165,7 +165,7 @@ func TestRateLimiterServerHandlerRoutes(t *testing.T) {
 			{KeyId: "t:srv-tenant-2", IsTenant: true, EpochStartTs: 100, TokensConsumed: 200},
 		},
 	}
-	if err := coord.ApplyRateLimiterBatch(batch2); err != nil {
+	if err := coord.ApplyRateLimiterBatch("test-peer", batch2); err != nil {
 		t.Fatalf("ApplyRateLimiterBatch (delta) failed: %v", err)
 	}
 	state = store.ExportState()
@@ -189,7 +189,7 @@ func TestRateLimiterApplyNilStore(t *testing.T) {
 	batch := &RateLimiterBatch{IsDelta: false, Entries: []*RateLimiterEntry{
 		{KeyId: "t:no-store-tenant", IsTenant: true, EpochStartTs: 1, TokensConsumed: 1},
 	}}
-	if err := coord.ApplyRateLimiterBatch(batch); err != nil {
+	if err := coord.ApplyRateLimiterBatch("test-peer", batch); err != nil {
 		t.Errorf("ApplyRateLimiterBatch with no store should be nil-error (graceful), got %v", err)
 	}
 }
@@ -229,22 +229,29 @@ func TestRateLimiterSendBatchChunking(t *testing.T) {
 	if len(srv.batches) != 3 {
 		t.Fatalf("expected 3 batches recorded, got %d", len(srv.batches))
 	}
-	// Every push leads with the scope-version sentinel, INSIDE the
-	// 500-entry RPC ceiling: the first chunk is the sentinel + 499 payload
-	// entries, so no call ever exceeds the SPEC bound. 1200 payload rows
-	// therefore chunk as 499+500+201, and the first wire batch's first
-	// entry is the sentinel, not payload.
-	wantSizes := []int{500, 500, 201}
+	// EVERY chunk leads with the scope-version sentinel, INSIDE the 500-entry
+	// RPC ceiling: each chunk is the sentinel + 499 payload entries, so no
+	// call ever exceeds the SPEC bound. 1200 payload rows therefore chunk as
+	// 499+499+202.
+	//
+	// This assertion previously required the opposite — "the sentinel must
+	// lead the PUSH, not every chunk". That contract is not one the receiver
+	// can honour: chunks are independent RPCs with no push identity, sequence
+	// number or stream on the wire, so a chunk arriving without the sentinel
+	// is indistinguishable from a push by a peer that pre-dates the ladder
+	// scopes, and the receiver warned accordingly about its own up-to-date
+	// sender. See TestChunkedPushDoesNotSelfReportAsOldPeer, which asserts
+	// that consequence at the receiver.
+	wantSizes := []int{500, 500, 203}
 	for i, b := range srv.batches {
 		if len(b.Entries) != wantSizes[i] {
 			t.Errorf("batch %d: expected %d entries, got %d", i, wantSizes[i], len(b.Entries))
 		}
 	}
-	if srv.batches[0].Entries[0].KeyId != rl.ScopeSentinelKeyID {
-		t.Errorf("first wire entry must be the scope sentinel, got %q", srv.batches[0].Entries[0].KeyId)
-	}
-	if srv.batches[1].Entries[0].KeyId == rl.ScopeSentinelKeyID {
-		t.Errorf("the sentinel must lead the PUSH, not every chunk")
+	for i, b := range srv.batches {
+		if b.Entries[0].KeyId != rl.ScopeSentinelKeyID {
+			t.Errorf("chunk %d must lead with the scope sentinel, got %q", i, b.Entries[0].KeyId)
+		}
 	}
 }
 
@@ -504,4 +511,153 @@ func itoaT(i int) string {
 		buf[pos] = '-'
 	}
 	return string(buf[pos:])
+}
+
+// ---------- Scope-version sentinel: sender/receiver contract ----------
+
+// warnRecorded reports whether the coordinator has latched the warn-once key
+// for (peerKey, rpcName). warnOncePeerRPC stores exactly this key the first
+// time it emits, so the map is a direct, non-vacuous oracle for "did this
+// degrade warning fire, and about whom".
+func warnRecorded(s *SockproxySync, peerKey, rpcName string) bool {
+	_, ok := s.warnOnce.Load(peerKey + "/" + rpcName)
+	return ok
+}
+
+// TestChunkedPushDoesNotSelfReportAsOldPeer — a push larger than the RPC
+// ceiling must not make its own up-to-date sender look like a peer that
+// pre-dates the ladder scopes.
+//
+// Every chunk is an INDEPENDENT RateLimiterSync RPC and the receiver scores
+// each one on its own: there is no push identity, sequence number or stream on
+// the wire, so a chunk that arrives without the sentinel is indistinguishable
+// from a push by a v1 peer. "The sentinel leads the push" is therefore not a
+// contract the receiver can honour — only "the sentinel leads every chunk" is.
+//
+// With the sentinel on the first chunk only, a 1200-entry push from a fully
+// current node made that node's own peer log say it "pre-dates the
+// per-user/per-key-TPM/keyless quota scopes" — inverting the single signal
+// operators have for the unsupported mixed-version posture.
+func TestChunkedPushDoesNotSelfReportAsOldPeer(t *testing.T) {
+	t.Parallel()
+	srv := &mockRateLimiterServer{}
+	client, cleanup := startMockRLServer(t, srv)
+	defer cleanup()
+
+	sender := newTestCoordinator(newMockApplier(0))
+	peer := &DpPeer{Peer: net.ParseIP("127.0.0.1"), CapMask: 0xFFFFFFFF}
+
+	// Comfortably more than one chunk's worth.
+	const n = 1200
+	entries := make([]rl.RateLimiterEntry, n)
+	for i := 0; i < n; i++ {
+		entries[i] = rl.RateLimiterEntry{
+			KeyID:    "t:chunk-tenant-" + itoaT(i),
+			IsTenant: true,
+			Consumed: int64(i),
+		}
+	}
+	if err := sender.sendRateLimiterBatch(peer, client, entries, false); err != nil {
+		t.Fatalf("sendRateLimiterBatch returned error: %v", err)
+	}
+
+	srv.mu.Lock()
+	wire := make([]*RateLimiterBatch, len(srv.batches))
+	copy(wire, srv.batches)
+	srv.mu.Unlock()
+	if len(wire) < 2 {
+		t.Fatalf("test needs a multi-chunk push to be meaningful, got %d chunk(s)", len(wire))
+	}
+
+	// Every chunk must announce the vocabulary, because every chunk is scored
+	// alone. This is the property the receiver's check actually depends on.
+	for i, b := range wire {
+		if len(b.Entries) == 0 || b.Entries[0].KeyId != rl.ScopeSentinelKeyID {
+			got := "<empty>"
+			if len(b.Entries) > 0 {
+				got = b.Entries[0].KeyId
+			}
+			t.Errorf("chunk %d/%d does not lead with the scope sentinel (got %q); "+
+				"the receiver scores each RPC alone and will read it as a v1 peer",
+				i, len(wire), got)
+		}
+		if len(b.Entries) > rlPushBatchMax {
+			t.Errorf("chunk %d carries %d entries, over the %d ceiling",
+				i, len(b.Entries), rlPushBatchMax)
+		}
+	}
+
+	// The end-to-end consequence, asserted at the receiver rather than inferred
+	// from the wire: feed the captured chunks into a real receiving coordinator
+	// and require that it never accuses this sender of being an old peer.
+	recv := newTestCoordinator(newMockApplier(0))
+	recv.SetRateLimiterStore(rl.New())
+	const senderKey = "10.0.0.7:4041"
+	for _, b := range wire {
+		if err := recv.ApplyRateLimiterBatch(senderKey, b); err != nil {
+			t.Fatalf("ApplyRateLimiterBatch: %v", err)
+		}
+	}
+	if warnRecorded(recv, senderKey, "RateLimiterSync/scope-older") {
+		t.Errorf("receiver reported an up-to-date sender as pre-dating the ladder scopes")
+	}
+}
+
+// TestScopeVersionWarningsNameThePeerAndDoNotMask — the two scope-version
+// warnings must be attributed to the peer they are about, and must not
+// suppress one another.
+//
+// Both used to pass the literal "rl-scope-ver" where warnOncePeerRPC takes a
+// peerKey. That made the warn-once key process-global, so across an entire
+// fleet the message fired at most ONCE, logged peer=rl-scope-ver instead of an
+// address, and let whichever of the two messages happened first silence the
+// other permanently — including silencing a genuine old peer that joined later.
+func TestScopeVersionWarningsNameThePeerAndDoNotMask(t *testing.T) {
+	t.Parallel()
+	recv := newTestCoordinator(newMockApplier(0))
+	recv.SetRateLimiterStore(rl.New())
+
+	const oldPeer = "10.0.0.8:4041"
+	const newPeer = "10.0.0.9:4041"
+
+	// A peer that pre-dates the ladder scopes: no sentinel at all.
+	if err := recv.ApplyRateLimiterBatch(oldPeer, &RateLimiterBatch{
+		Entries: []*RateLimiterEntry{{KeyId: "t:tenant-a", IsTenant: true}},
+	}); err != nil {
+		t.Fatalf("ApplyRateLimiterBatch(old): %v", err)
+	}
+	// A peer speaking a vocabulary NEWER than this build.
+	if err := recv.ApplyRateLimiterBatch(newPeer, &RateLimiterBatch{
+		Entries: []*RateLimiterEntry{
+			{KeyId: "ver:99", IsTenant: true},
+			{KeyId: "t:tenant-b", IsTenant: true},
+		},
+	}); err != nil {
+		t.Fatalf("ApplyRateLimiterBatch(new): %v", err)
+	}
+
+	// Both must be recorded. Pre-fix only the first survived: the second hit
+	// the same global key and was dropped as a duplicate.
+	if !warnRecorded(recv, oldPeer, "RateLimiterSync/scope-older") {
+		t.Errorf("no scope-older warning attributed to %s", oldPeer)
+	}
+	if !warnRecorded(recv, newPeer, "RateLimiterSync/scope-newer") {
+		t.Errorf("no scope-newer warning attributed to %s (masked by the other message?)", newPeer)
+	}
+	// And the warning must not be filed under a literal tag.
+	if warnRecorded(recv, "rl-scope-ver", "RateLimiterSync") {
+		t.Errorf("warning filed under the literal \"rl-scope-ver\" instead of a peer address")
+	}
+
+	// A second old peer must still be reported: warn-once is per peer, not
+	// per fleet. This is the case a process-global key loses outright.
+	const otherOldPeer = "10.0.0.10:4041"
+	if err := recv.ApplyRateLimiterBatch(otherOldPeer, &RateLimiterBatch{
+		Entries: []*RateLimiterEntry{{KeyId: "t:tenant-c", IsTenant: true}},
+	}); err != nil {
+		t.Fatalf("ApplyRateLimiterBatch(old2): %v", err)
+	}
+	if !warnRecorded(recv, otherOldPeer, "RateLimiterSync/scope-older") {
+		t.Errorf("a second old peer went unreported; warn-once must be per peer")
+	}
 }

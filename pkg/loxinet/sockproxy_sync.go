@@ -1187,21 +1187,25 @@ func (s *SockproxySync) sendRateLimiterBatch(peer *DpPeer, client XSyncClient,
 
 	peerKey := peer.Peer.String()
 	for start := 0; start < len(entries); {
-		// The 500-entry RPC ceiling includes the sentinel: the first chunk
-		// carries it plus 499 payload entries, so no call ever exceeds the
-		// SPEC bound the ceiling encodes.
-		capacity := rlPushBatchMax
-		if start == 0 {
-			capacity--
-		}
+		// The 500-entry RPC ceiling includes the sentinel, and EVERY chunk
+		// carries one, so the ceiling reserves its slot on every chunk.
+		//
+		// Each chunk is an independent RateLimiterSync RPC, scored
+		// independently by the receiver: a chunk that arrives without the
+		// sentinel is indistinguishable from a push by a peer that pre-dates
+		// the ladder scopes. Sending it only on the first chunk therefore made
+		// every push above the ceiling report its own up-to-date sender as an
+		// old peer — inverting the one signal operators have for the
+		// unsupported mixed-version posture.
+		capacity := rlPushBatchMax - 1
 		end := min(start+capacity, len(entries))
 		batch := entries[start:end]
 		protoBatch := &RateLimiterBatch{
 			IsDelta: isDelta,
 			Entries: make([]*RateLimiterEntry, 0, len(batch)+1),
 		}
-		if start == 0 {
-			// Scope-version announcement, first entry of every push. Shaped
+		{
+			// Scope-version announcement, first entry of every chunk. Shaped
 			// as a tenant-quota row whose prefix no merge path recognises:
 			// a v1 peer drops it inside mergeQuotaEntry, a v2 peer strips it
 			// at ingest and learns which vocabulary this node speaks. It is
@@ -1256,7 +1260,10 @@ func (s *SockproxySync) sendRateLimiterBatch(peer *DpPeer, client XSyncClient,
 // IsDelta flag. Returns nil-store-error if no RateLimiterStore is
 // registered yet (allows the wire path to be exercised by tests before
 // the AI gateway is wired in production).
-func (s *SockproxySync) ApplyRateLimiterBatch(m *RateLimiterBatch) error {
+func (s *SockproxySync) ApplyRateLimiterBatch(peerKey string, m *RateLimiterBatch) error {
+	if peerKey == "" {
+		peerKey = "unknown-peer"
+	}
 	store := s.rlStore.Load()
 	if store == nil {
 		// No store registered yet. Not a hard error — the wire path is
@@ -1278,7 +1285,7 @@ func (s *SockproxySync) ApplyRateLimiterBatch(m *RateLimiterBatch) error {
 		if ver, isSentinel := strings.CutPrefix(e.KeyId, "ver:"); isSentinel {
 			sawSentinel = true
 			if v, err := strconv.Atoi(ver); err == nil && v > rl.ScopeWireVersion {
-				s.warnOncePeerRPC("rl-scope-ver", "RateLimiterSync",
+				s.warnOncePeerRPC(peerKey, "RateLimiterSync/scope-newer",
 					fmt.Sprintf("peer speaks scope version %d, this node speaks %d — entries in scopes this build does not know are DROPPED; upgrade this node", v, rl.ScopeWireVersion))
 			}
 			continue
@@ -1300,8 +1307,8 @@ func (s *SockproxySync) ApplyRateLimiterBatch(m *RateLimiterBatch) error {
 		// debt does not survive a failover through it. Mixed-version HA
 		// peering is unsupported (standing posture) — but it should be
 		// loud, not discovered from a bill.
-		s.warnOncePeerRPC("rl-scope-ver", "RateLimiterSync",
-			"a sync peer pre-dates the per-user/per-key-TPM/keyless quota scopes and silently drops their state; upgrade all sync peers together (mixed-version HA is unsupported)")
+		s.warnOncePeerRPC(peerKey, "RateLimiterSync/scope-older",
+			"this sync peer pre-dates the per-user/per-key-TPM/keyless quota scopes and silently drops their state; upgrade all sync peers together (mixed-version HA is unsupported)")
 	}
 	if m.IsDelta {
 		store.ApplyGossipDelta(goEntries)
