@@ -19,9 +19,11 @@ package loxinet
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
+	prom "github.com/loxilb-io/loxilb/api/prometheus"
 	cmn "github.com/loxilb-io/loxilb/common"
 	"github.com/loxilb-io/loxilb/pkg/aikey"
 	rl "github.com/loxilb-io/loxilb/pkg/ratelimit"
@@ -750,5 +752,46 @@ func TestTokenQuotaReserveRollbackReleasesEveryEarlierBucket(t *testing.T) {
 	}
 	if allowed, _, _ := tokenQuotaReserveInternal(plain, store, tenant, "other", user, "", "", 10000); !allowed {
 		t.Fatalf("the refused request left claims behind on the rungs that had admitted it")
+	}
+}
+
+// TestTokenQuotaStatesFromKeepsTenantsAndDropsLadderScopes — the scrape-time
+// tenant quota series must carry tenants, and only tenants.
+//
+// The rate limiter's quota map is keyed by scope: the tenant aggregate and
+// "<tenant>|<model>" keep bare keys, while the ladder buckets keep their wire
+// prefix ("uq:", "um:", "kq:", "v:"). Splitting every key on the first "|"
+// published an API key and a keyless service as tenants, and a user as a
+// model. The two tenant rows below are the control: they prove the converter
+// still emits, so a ladder row that disappears is a filter and not an empty
+// result.
+func TestTokenQuotaStatesFromKeepsTenantsAndDropsLadderScopes(t *testing.T) {
+	got := tokenQuotaStatesFrom([]rl.TokenQuotaUsage{
+		{TenantID: "acme", Consumed: 10, Limit: 100},
+		{TenantID: modelQuotaKey("acme", "gpt-4"), Consumed: 20, Limit: 200},
+		{TenantID: rl.UserQuotaKey("acme", "bob"), Consumed: 30, Limit: 300},
+		{TenantID: rl.UserModelQuotaKey("acme", "bob", "gpt-4"), Consumed: 40, Limit: 400},
+		{TenantID: rl.KeyQuotaKey("ak-123"), Consumed: 50, Limit: 500},
+		{TenantID: rl.VipSharedQuotaKey("10.0.0.1:8080"), Consumed: 60, Limit: 600},
+	})
+
+	want := []prom.TokenQuotaState{
+		{Tenant: "acme", Model: "", Consumed: 10, Limit: 100},
+		{Tenant: "acme", Model: "gpt-4", Consumed: 20, Limit: 200},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d tenant-scoped rows, got %d: %+v", len(want), len(got), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("row %d: got %+v want %+v", i, got[i], want[i])
+		}
+	}
+
+	// Named, so a regression says which identity leaked and onto which label.
+	for _, st := range got {
+		if rl.HasReservedScopePrefix(st.Tenant) {
+			t.Errorf("a %q-scoped bucket is exported as tenant=%q model=%q", st.Tenant[:strings.IndexByte(st.Tenant, ':')+1], st.Tenant, st.Model)
+		}
 	}
 }

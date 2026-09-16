@@ -779,27 +779,55 @@ func getGlobalRL() *rl.RateLimiterStore {
 		// the shared store. Registered here (not init) so the collector
 		// can never observe a nil store.
 		prom.RegisterTokenQuotaSource(func() []prom.TokenQuotaState {
-			usages := globalRL.TokenQuotaSnapshot()
-			out := make([]prom.TokenQuotaState, 0, len(usages))
-			for _, u := range usages {
-				// Composite tenant|model keys carry the per-model buckets;
-				// split them so the collector can export them on the
-				// model-labelled series instead of mangling the tenant label.
-				tenant, model := u.TenantID, ""
-				if i := strings.IndexByte(u.TenantID, '|'); i >= 0 {
-					tenant, model = u.TenantID[:i], u.TenantID[i+1:]
-				}
-				out = append(out, prom.TokenQuotaState{
-					Tenant:   tenant,
-					Model:    model,
-					Consumed: u.Consumed,
-					Limit:    u.Limit,
-				})
-			}
-			return out
+			return tokenQuotaStatesFrom(globalRL.TokenQuotaSnapshot())
 		})
 	})
 	return globalRL
+}
+
+// tokenQuotaStatesFrom converts a rate-limiter quota snapshot into the two
+// tenant-scoped series the scrape-time collector exports.
+//
+// The quota map holds more than tenants. Since the ladder scopes shipped it
+// also holds "uq:<tenant>|<user>", "um:<tenant>|<user>|<model>",
+// "kq:<key_id>" and "v:<service>" buckets, and those keep their wire prefix
+// in the map key. Splitting every key on the first "|" therefore published
+// an API key as loxilb_ai_token_quota_utilization{tenant="kq:<key_id>"}, a
+// keyless service as {tenant="v:<service>"}, and a user's bucket as
+// {tenant="uq:<tenant>", model="<user>"} — three identities on a series
+// whose help text promises a tenant, and a user name in a label that means
+// a model.
+//
+// A wrong label is worse than a missing one: the tenant series is what
+// saturation alerts read, and these rows moved it by exactly as much as a
+// real tenant would. They are dropped here. Per-user, per-key and per-VIP
+// saturation is consequently not exported at all — that gap is real, and
+// closing it means new series with their own names, not a tenant label
+// carrying something that is not a tenant.
+func tokenQuotaStatesFrom(usages []rl.TokenQuotaUsage) []prom.TokenQuotaState {
+	out := make([]prom.TokenQuotaState, 0, len(usages))
+	for _, u := range usages {
+		if rl.HasReservedScopePrefix(u.TenantID) {
+			// Not a tenant aggregate or a tenant|model bucket: one of the
+			// ladder scopes, or the "t:"/"tm:" wire spelling of a key that
+			// should never have reached the local map.
+			continue
+		}
+		// Composite tenant|model keys carry the per-model buckets; split
+		// them so the collector can export them on the model-labelled
+		// series instead of mangling the tenant label.
+		tenant, model := u.TenantID, ""
+		if i := strings.IndexByte(u.TenantID, '|'); i >= 0 {
+			tenant, model = u.TenantID[:i], u.TenantID[i+1:]
+		}
+		out = append(out, prom.TokenQuotaState{
+			Tenant:   tenant,
+			Model:    model,
+			Consumed: u.Consumed,
+			Limit:    u.Limit,
+		})
+	}
+	return out
 }
 
 // llb_ai_ratelimit_check enforces per-key and per-tenant RPS limits for an
