@@ -711,6 +711,109 @@ fi
 
 ##############################################################################
 echo ""
+echo "--- QOS-METRIC-2: every quota scope is readable on its own series ---"
+##############################################################################
+# The other half of QOS-METRIC-1. Dropping the ladder rows stopped the
+# mislabelling, and it left per-user, per-key and per-VIP saturation exported
+# NOWHERE: an operator could see a tenant approaching its bound and had no
+# series at all for the user, the key or the keyless service inside it. Each
+# scope now has a family named for what it keys on.
+#
+# Every rung below has already been charged by the cases above, so a family
+# that reads empty here is not "nothing happened" — it is a scope whose
+# bucket exists in the store and reaches no series.
+QM_PAGE=$($hexec "$MASTER" curl -s --max-time 8 "http://localhost:11111/netlox/v1/metrics" 2>/dev/null)
+if [ -z "$QM_PAGE" ]; then
+  bad "QOS-METRIC-2 the metrics page is readable" "empty scrape from $MASTER"
+else
+  # qm_child <case> <family> <label-regex> — one series must exist AND its
+  # value must be a number. A family present with an unparseable value is a
+  # different failure from an absent one and must not read as success.
+  qm_child() {
+    local line
+    line=$(printf '%s\n' "$QM_PAGE" | grep -E "^$2\{[^}]*$3" | head -1)
+    if [ -z "$line" ]; then
+      bad "$1" "no $2 series matching $3; the bucket was charged but reaches no series"
+      return
+    fi
+    case "${line##* }" in
+      ''|*[!0-9.e+-]*) bad "$1" "series present but its value is unreadable: $line" ;;
+      *) ok "$1" "${line##*\{}" ;;
+    esac
+  }
+
+  # The per-user and per-user-per-model scopes are NOT asserted here, and the
+  # reason is structural rather than an omission. A request's user identity
+  # comes from bearer/JWT validation — the API key table has no user binding
+  # at all — so on a bed whose only credential is X-Api-Key, userID is empty,
+  # quotaBucketsFor never builds a uq:/um: bucket, and no charge can create
+  # one. config.sh mints ha-user-key and ha-um-key and nothing drives them.
+  # Asserting those two families here would be asserting a bed property, not
+  # a product one. Their runtime home is the JWT scenario; their routing is
+  # covered by TestTokenQuotaCollectorScopedSeries.
+  qm_child "QOS-METRIC-2 a: the per-key quota is readable" \
+    loxilb_ai_key_token_quota_utilization "key_id=\"$(key_id ha-key-tpm)\""
+  qm_child "QOS-METRIC-2 b: the per-key quota's bound is readable" \
+    loxilb_ai_key_token_quota_limit_tokens "key_id=\"$(key_id ha-key-tpm)\""
+  # The keyless bucket is configured per rule ident, and the ident carries a
+  # colon that the label sanitizer rewrites — matched loosely on the VIP
+  # rather than pinned to a spelling this suite does not own.
+  qm_child "QOS-METRIC-2 c: the per-VIP keyless quota is readable" \
+    loxilb_ai_vip_token_quota_utilization 'service="'"${MVIP//./\\.}"''
+
+  # The control, and it is the one that matters. These four families must
+  # carry identities, not wire keys — the defect QOS-METRIC-1 names, one
+  # column across. A "uq:" that survived into a user label is the same bug
+  # that put a key in a tenant label.
+  QM_LEAK=$(printf '%s\n' "$QM_PAGE" |
+    grep -E '^loxilb_ai_(user|user_model|key|vip)_token_quota_(utilization|limit_tokens)\{' |
+    grep -cE '(tenant|user|model|key_id|service)="(k|u|t|tm|uq|um|kq|v|ver):' || true)
+  QM_TOTAL=$(printf '%s\n' "$QM_PAGE" |
+    grep -cE '^loxilb_ai_(user|user_model|key|vip)_token_quota_(utilization|limit_tokens)\{' || true)
+  if [ "${QM_TOTAL:-0}" -eq 0 ]; then
+    bad "QOS-METRIC-2 d: the scoped families carry no wire-prefixed identity" \
+        "the four scoped families are absent entirely, so a zero leak count proves nothing"
+  elif [ "${QM_LEAK:-0}" -eq 0 ]; then
+    ok "QOS-METRIC-2 d: the scoped families carry no wire-prefixed identity" \
+       "$QM_TOTAL series, 0 carrying a wire prefix in any label"
+  else
+    bad "QOS-METRIC-2 d: the scoped families carry no wire-prefixed identity" \
+        "$QM_LEAK of $QM_TOTAL scoped series publish a wire key as an identity"
+  fi
+
+  # The scope-version gauge lives on the node that RECEIVES, which in A-P is
+  # the standby: the master pushes and never gets told anything, so the
+  # family is legitimately absent there. Scraping the master for it read 0 —
+  # and 0 is a VALUE this gauge defines ("a sentinel this build could not
+  # parse"), so through a summing helper that reports an absent family as
+  # zero, "nobody pushed to this node" and "the peer's announcement was
+  # corrupt" are the same number. Matched on the raw page instead, where
+  # absent and zero are different things.
+  SV_LINE=$($hexec "$STANDBY" curl -s --max-time 8 "http://localhost:11111/netlox/v1/metrics" 2>/dev/null |
+    grep -E '^loxilb_sockproxy_sync_peer_scope_version\{' | head -1)
+  if [ -z "$SV_LINE" ]; then
+    bad "QOS-METRIC-2 e: the peer's scope vocabulary is readable on the receiver" \
+        "no peer_scope_version series on $STANDBY, which has been receiving pushes throughout this run; the posture is still unreadable"
+  else
+    SV=${SV_LINE##* }
+    # The label must be the peer HOST. The receive-side peer key carries the
+    # sender's ephemeral source port, which would mint a new child on every
+    # reconnect and could never be joined with peer_up's bare-IP label.
+    case "$SV_LINE" in
+      *:[0-9]*\"*) bad "QOS-METRIC-2 e: the peer's scope vocabulary is readable on the receiver" \
+                      "the peer label carries a port ($SV_LINE); a reconnect would mint a new child and peer_up cannot be joined to it" ;;
+      *) if awk -v v="$SV" 'BEGIN{exit !(v>=2)}'; then
+           ok "QOS-METRIC-2 e: the peer's scope vocabulary is readable on the receiver" "${SV_LINE#*\{}"
+         else
+           bad "QOS-METRIC-2 e: the peer's scope vocabulary is readable on the receiver" \
+               "reads $SV on a same-build cluster; 1 means the peer sent no sentinel and 0 means it sent one this build could not read, and neither is possible between two of these"
+         fi ;;
+    esac
+  fi
+fi
+
+##############################################################################
+echo ""
 echo "--- QOS-HA-SNAP-1: a peer snapshot must not refill the receiver's RPS ---"
 ##############################################################################
 # The receiving node's own per-key RATE limit must survive the master's
@@ -1364,7 +1467,7 @@ echo "#########################################"
 # mode a pass count cannot show.
 EXECUTED=$(printf '%s' "$CASES" | grep -c . || true)
 echo "  cases executed: $EXECUTED"
-if [ "$EXECUTED" -lt 96 ]; then
+if [ "$EXECUTED" -lt 105 ]; then
   echo "  [FAIL] declared-vs-executed: only $EXECUTED case verdicts were recorded;"
   echo "         a leg that returned early is indistinguishable from one that passed"
   FAIL=$((FAIL + 1))

@@ -19,7 +19,6 @@ package loxinet
 import (
 	"errors"
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 
@@ -755,17 +754,24 @@ func TestTokenQuotaReserveRollbackReleasesEveryEarlierBucket(t *testing.T) {
 	}
 }
 
-// TestTokenQuotaStatesFromKeepsTenantsAndDropsLadderScopes — the scrape-time
-// tenant quota series must carry tenants, and only tenants.
+// TestTokenQuotaStatesFromRoutesEveryScopeToItsOwnSeries — each quota scope
+// must reach the series named for what it keys on, and the tenant labels must
+// still carry tenants and only tenants.
 //
 // The rate limiter's quota map is keyed by scope: the tenant aggregate and
 // "<tenant>|<model>" keep bare keys, while the ladder buckets keep their wire
 // prefix ("uq:", "um:", "kq:", "v:"). Splitting every key on the first "|"
 // published an API key and a keyless service as tenants, and a user as a
-// model. The two tenant rows below are the control: they prove the converter
-// still emits, so a ladder row that disappears is a filter and not an empty
-// result.
-func TestTokenQuotaStatesFromKeepsTenantsAndDropsLadderScopes(t *testing.T) {
+// model. That defect was first fixed by DROPPING the ladder rows, which left
+// per-user, per-key and per-VIP saturation exported nowhere; they are now
+// routed onto their own series instead.
+//
+// This test must keep doing BOTH jobs. Asserting only the new routing would
+// let the original defect back in through a row whose Scope is set AND whose
+// Tenant carries a prefix, so the no-prefix sweep below stays, and it now
+// covers User, KeyID and Service too — the labels a mis-parse would land on
+// today.
+func TestTokenQuotaStatesFromRoutesEveryScopeToItsOwnSeries(t *testing.T) {
 	got := tokenQuotaStatesFrom([]rl.TokenQuotaUsage{
 		{TenantID: "acme", Consumed: 10, Limit: 100},
 		{TenantID: modelQuotaKey("acme", "gpt-4"), Consumed: 20, Limit: 200},
@@ -778,21 +784,83 @@ func TestTokenQuotaStatesFromKeepsTenantsAndDropsLadderScopes(t *testing.T) {
 	want := []prom.TokenQuotaState{
 		{Tenant: "acme", Model: "", Consumed: 10, Limit: 100},
 		{Tenant: "acme", Model: "gpt-4", Consumed: 20, Limit: 200},
+		{Scope: "user", Tenant: "acme", User: "bob", Consumed: 30, Limit: 300},
+		{Scope: "user_model", Tenant: "acme", User: "bob", Model: "gpt-4", Consumed: 40, Limit: 400},
+		{Scope: "key", KeyID: "ak-123", Consumed: 50, Limit: 500},
+		{Scope: "vip", Service: "10.0.0.1:8080", Consumed: 60, Limit: 600},
 	}
 	if len(got) != len(want) {
-		t.Fatalf("expected %d tenant-scoped rows, got %d: %+v", len(want), len(got), got)
+		t.Fatalf("expected %d rows, got %d: %+v", len(want), len(got), got)
 	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("row %d: got %+v want %+v", i, got[i], want[i])
+	// Order-independent: the converter's output order follows its input, but
+	// nothing downstream depends on it and pinning it would fail for a
+	// reordering that broke nothing.
+	for _, w := range want {
+		found := false
+		for _, g := range got {
+			if g == w {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("missing row %+v; got %+v", w, got)
 		}
 	}
 
 	// Named, so a regression says which identity leaked and onto which label.
+	// Every identity-bearing label, not just the tenant: a "uq:" that
+	// survived into User would be the same defect one column across.
 	for _, st := range got {
-		if rl.HasReservedScopePrefix(st.Tenant) {
-			t.Errorf("a %q-scoped bucket is exported as tenant=%q model=%q", st.Tenant[:strings.IndexByte(st.Tenant, ':')+1], st.Tenant, st.Model)
+		for label, v := range map[string]string{
+			"tenant": st.Tenant, "model": st.Model,
+			"user": st.User, "key_id": st.KeyID, "service": st.Service,
+		} {
+			if v != "" && rl.HasReservedScopePrefix(v) {
+				t.Errorf("a wire-prefixed identity reached label %s=%q (scope=%q, row %+v)", label, v, st.Scope, st)
+			}
 		}
+	}
+}
+
+// TestScopedTokenQuotaStateDropsKeysItCannotParse — a key shape this build
+// does not understand must produce NO series, never a guessed one.
+//
+// The delimiter cannot legally appear inside a tenant, user or model: the
+// config surface refuses it, which is what makes the prefix inference
+// unambiguous in the first place. So a field count that does not match means
+// the key came from somewhere this build cannot reason about, and the only
+// safe label for it is no label at all. Each case below would, under a
+// "split and publish whatever falls out" parser, have produced a plausible
+// looking series carrying the wrong identity.
+func TestScopedTokenQuotaStateDropsKeysItCannotParse(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		key  string
+	}{
+		{"user scope with no user", "uq:acme"},
+		{"user scope with a model appended", "uq:acme|bob|gpt-4"},
+		{"user-model scope missing the model", "um:acme|bob"},
+		{"user-model scope with a fourth field", "um:acme|bob|gpt-4|extra"},
+		{"key scope with an empty id", "kq:"},
+		{"key scope carrying a delimiter", "kq:ak-123|bob"},
+		{"vip scope with an empty service", "v:"},
+		{"a scope this build does not know", "zz:something"},
+		{"the wire spelling of a tenant, which must never be in the map", "t:acme"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if st, ok := scopedTokenQuotaState(rl.TokenQuotaUsage{
+				TenantID: tc.key, Consumed: 1, Limit: 10,
+			}); ok {
+				t.Fatalf("key %q was parsed into %+v; an unparseable key must export nothing", tc.key, st)
+			}
+			// And it must not sneak out through the converter either.
+			for _, g := range tokenQuotaStatesFrom([]rl.TokenQuotaUsage{{TenantID: tc.key, Consumed: 1, Limit: 10}}) {
+				if g.Scope != "" {
+					t.Fatalf("key %q reached the collector as %+v", tc.key, g)
+				}
+			}
+		})
 	}
 }
 
