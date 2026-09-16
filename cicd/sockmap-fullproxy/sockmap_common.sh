@@ -439,10 +439,14 @@ sockmap_redirect_resp_count() {
   sockmap_stat_sum "$1" "$SOCKMAP_STAT_REDIRECT_RESP"
 }
 
-# Counts sockmap failure messages in docker logs.
+# Counts sockmap failure messages. The daemon writes to /var/log/loxilb*.log
+# INSIDE the container, and `docker logs` is empty for it, so reading only docker
+# logs made this check pass vacuously — it never saw a failure it was meant to
+# catch. Both sources are read now: the datapath log carries the C-side messages
+# and the control-plane log the loader's.
 sockmap_log_failure_count() {
   local llb=$1
-  sudo docker logs "$llb" 2>&1 \
+  { sudo docker logs "$llb" 2>&1; _sm_dexec "$llb" sh -c 'cat /var/log/loxilb*.log 2>/dev/null'; } \
     | grep -cE "Sockmap: Registration failed!|Sockmap: peer_map registration failed!|Sockmap: peer_map delete failed|Sockmap: sock_verdict_map (add|delete) failed|sockmap: load failed|sockmap: attach failed|sockmap: portset map get failed|sockmap: portset fd get failed|sockmap: skmsg helper load failed|sockmap: skstream helper load failed|sockmap: portset update failed|sockmap: failed to (add|delete|remove)|sockmap: rule [0-9]+: failed|sockmap: rule id [0-9]+ out of range|sockmap: --sockmapsupport requires"
 }
 

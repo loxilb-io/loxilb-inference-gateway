@@ -47,6 +47,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/google/uuid"
@@ -63,6 +64,48 @@ var l7PolMux sync.RWMutex
 // are deep copies owned by the registry; they are never handed out by
 // reference.
 var l7PolReg = map[string]*cmn.L7PolicyArg{}
+
+// l7AttachMux guards l7AttachedRules. It is a LEAF lock: it is taken while
+// l7PolMux (the policy paths) or mh.mtx (the rule paths) is already held, and
+// it takes nothing itself, so no lock order can invert.
+var l7AttachMux sync.RWMutex
+
+// l7AttachedRules records which listeners carry an attached L7 policy, keyed
+// the way the sockproxy attach itself is keyed — VIP, port and protocol.
+//
+// The rule path needs this answer and cannot get it from l7PolReg: that
+// registry is keyed by policy id and stores an lbId, so resolving it to a
+// listener needs NetLbRuleGet, which takes mh.mtx — the reverse of the order
+// the policy paths use (l7PolMux first, then mh.mtx). Rather than invert a lock
+// order, the fact is indexed where both sides can read it cheaply.
+var l7AttachedRules = map[string]bool{}
+
+func l7AttachKey(vip string, port uint16, proto string) string {
+	return fmt.Sprintf("%s|%d|%s", vip, port, strings.ToLower(proto))
+}
+
+// l7MarkAttached records that a listener now carries a policy.
+func l7MarkAttached(vip string, port uint16, proto string) {
+	l7AttachMux.Lock()
+	defer l7AttachMux.Unlock()
+	l7AttachedRules[l7AttachKey(vip, port, proto)] = true
+}
+
+// l7ClearAttached drops the record. Called when a policy is detached and when
+// the LB rule itself goes away, since the sockproxy attach is torn down with
+// the listener.
+func l7ClearAttached(vip string, port uint16, proto string) {
+	l7AttachMux.Lock()
+	defer l7AttachMux.Unlock()
+	delete(l7AttachedRules, l7AttachKey(vip, port, proto))
+}
+
+// l7RuleHasPolicy reports whether this listener carries an attached L7 policy.
+func l7RuleHasPolicy(vip string, port uint16, proto string) bool {
+	l7AttachMux.RLock()
+	defer l7AttachMux.RUnlock()
+	return l7AttachedRules[l7AttachKey(vip, port, proto)]
+}
 
 // copyL7Policy returns a deep copy of p (nested rule slices and action
 // pointers included), so registry entries never alias caller-owned or
@@ -176,11 +219,37 @@ func (na *NetAPIStruct) NetL7PolicyAdd(p *cmn.L7PolicyArg) (int, error) {
 		return RuleErrBase, fmt.Errorf("l7policy: load-balancer %q not found", p.LbId)
 	}
 
+	// An L7 policy and sockmap acceleration are mutually exclusive, for the
+	// reason lbSockMapL7Code states. The rule path enforces the same pairing,
+	// but a policy can be attached long after the rule was created, so the
+	// refusal has to live on both sides.
+	//
+	// A restore replay is warned about rather than refused. The loadbalancer
+	// domain applies before this one, so a snapshot taken while the combination
+	// was accepted brings the accelerated rule back first, and refusing the
+	// policy here would abort the whole restore (applyL7Policy propagates the
+	// error). Dropping the policy instead is worse: it silently relaxes a header
+	// or routing decision. So the policy is attached and the acceleration is left
+	// declared but inert — the data plane declines to pair a connection on a rule
+	// carrying a policy, which is the same shape as a mode restored without
+	// --sockmapsupport.
+	if code, ok := cmn.SockMapModeToCode(lb.Serv.SockMapMode); ok && code != 0 {
+		if !p.RestoreReplay {
+			return RuleErrBase, fmt.Errorf("l7policy: %v: load-balancer %s has sockMapMode %s",
+				errSockMapL7Policy, p.LbId, lb.Serv.SockMapMode)
+		}
+		tk.LogIt(tk.LogWarning, "l7policy %s attached on restore to LB id=%s (%s:%d/%s) which declares "+
+			"sockMapMode %s: the rule is not accelerated while the policy is attached. Set its "+
+			"sockMapMode to off, or delete the policy, to make the configuration say what it does\n",
+			p.Id, p.LbId, lb.Serv.ServIP, lb.Serv.ServPort, lb.Serv.Proto, lb.Serv.SockMapMode)
+	}
+
 	if _, err := na.NetL7PolicyApply(lb.Serv.ServIP, lb.Serv.ServPort, lb.Serv.Proto, p.Rules); err != nil {
 		return RuleErrBase, err
 	}
 
 	l7PolReg[p.Id] = copyL7Policy(p)
+	l7MarkAttached(lb.Serv.ServIP, lb.Serv.ServPort, lb.Serv.Proto)
 	tk.LogIt(tk.LogInfo, "l7policy %s attached to LB id=%s VIP=%s:%d/%s (%d rules)\n",
 		p.Id, p.LbId, lb.Serv.ServIP, lb.Serv.ServPort, lb.Serv.Proto, len(p.Rules))
 	return 0, nil
@@ -211,6 +280,7 @@ func (na *NetAPIStruct) NetL7PolicyDel(id string) (int, error) {
 		if _, derr := na.NetL7PolicyRemove(lb.Serv.ServIP, lb.Serv.ServPort, lb.Serv.Proto); derr != nil {
 			return RuleErrBase, fmt.Errorf("l7policy: detach %s: %w", id, derr)
 		}
+		l7ClearAttached(lb.Serv.ServIP, lb.Serv.ServPort, lb.Serv.Proto)
 	}
 	delete(l7PolReg, id)
 	tk.LogIt(tk.LogInfo, "l7policy %s detached from LB id=%s\n", id, pol.LbId)

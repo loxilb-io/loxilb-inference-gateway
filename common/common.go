@@ -1360,6 +1360,15 @@ type L7PolicyArg struct {
 	LbId string `json:"lbId,omitempty"`
 	// Rules - the ordered L7 routes (FIRST-MATCH-WINS by ascending position).
 	Rules []L7RuleArg `json:"rules,omitempty"`
+	// RestoreReplay - set by the snapshot engine when this attach is a restore
+	// replay rather than a fresh POST. A replay must not be refused for a
+	// conflict the snapshot already contains: the loadbalancer domain applies
+	// before this one, so a rule that was accelerated when the snapshot was
+	// taken is already back by the time its policy arrives, and refusing here
+	// would abort the whole restore. In-memory only (json:"-"), and deliberately
+	// not carried into the registry copy, so it can never reach a GET or a
+	// captured document.
+	RestoreReplay bool `json:"-"`
 }
 
 // JWTAuthProfileMod - named issuer configuration for data-plane bearer
