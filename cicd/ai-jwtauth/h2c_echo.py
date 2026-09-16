@@ -20,6 +20,17 @@ and the HTTP/2 settle path reads it out of the stream's own tail window, so
 this is the only way to drive "an H2 response completed and no dialect could
 read usage from it" — the shape the missing-usage accounting leg needs.
 
+An X-Test-Delay-Ms request header holds the response for that many
+milliseconds, the same per-request knob hdr_echo.py carries and for the same
+reason: the interval between admission and settlement is the only window in
+which an H2 stream has a live reservation to reset, abandon or GOAWAY out
+from under, and unheld it is microseconds long. A delayed request is answered
+from its OWN thread, so several delayed streams can be in flight on one
+connection at once — which is the whole point for the GOAWAY case, and is why
+the delay could not simply be a sleep in the connection loop. The receipt is
+recorded and the body drained BEFORE the delay, so a delayed request still
+counts as having arrived.
+
 Usage: h2c_echo.py <label> <port> [no-usage]
 """
 
@@ -27,6 +38,7 @@ import json
 import socket
 import sys
 import threading
+import time
 
 import h2.config
 import h2.connection
@@ -47,16 +59,47 @@ receipts = {}
 receipts_lock = threading.Lock()
 
 
-def respond(conn, stream_id, status, body):
-    conn.send_headers(stream_id, [
-        (":status", str(status)),
-        ("content-type", "application/json"),
-        ("content-length", str(len(body))),
-    ])
-    conn.send_data(stream_id, body, end_stream=True)
+class Peer:
+    """One client connection: the h2 state machine, its socket, and the one
+    lock that owns both.
+
+    h2.connection.H2Connection is not thread-safe and neither is interleaving
+    two sendall() calls on one socket, so every touch of either — from the
+    receive loop and from each delayed responder thread — goes through this
+    lock. Without it the delay knob would corrupt the frame stream instead of
+    widening a window.
+    """
+
+    def __init__(self, sock, conn):
+        self.sock = sock
+        self.conn = conn
+        self.lock = threading.Lock()
+
+    def flush_locked(self):
+        data = self.conn.data_to_send()
+        if data:
+            self.sock.sendall(data)
 
 
-def handle_request(conn, stream_id, headers, body):
+def respond(peer, stream_id, status, body):
+    with peer.lock:
+        try:
+            peer.conn.send_headers(stream_id, [
+                (":status", str(status)),
+                ("content-type", "application/json"),
+                ("content-length", str(len(body))),
+            ])
+            peer.conn.send_data(stream_id, body, end_stream=True)
+            peer.flush_locked()
+        except Exception:      # noqa: BLE001
+            # The client reset this stream or dropped the connection while we
+            # held it. That is the case under test on several legs, not an
+            # error here: the stream is gone, there is nothing to answer, and
+            # raising would take the other streams on this connection with it.
+            pass
+
+
+def handle_request(peer, stream_id, headers, body):
     hdr = {}
     for name, value in headers:
         if isinstance(name, bytes):
@@ -72,7 +115,7 @@ def handle_request(conn, stream_id, headers, body):
         nonce = path[len("/__receipts/"):]
         with receipts_lock:
             count = receipts.get(nonce, 0)
-        respond(conn, stream_id, 200, str(count).encode())
+        respond(peer, stream_id, 200, str(count).encode())
         return
 
     nonce = hdr.get("x-test-nonce", "")
@@ -80,9 +123,17 @@ def handle_request(conn, stream_id, headers, body):
         with receipts_lock:
             receipts[nonce] = receipts.get(nonce, 0) + 1
 
+    # After the receipt, before the answer — see the module docstring.
+    delay_ms = hdr.get("x-test-delay-ms")
+    if delay_ms:
+        try:
+            time.sleep(min(max(int(delay_ms), 0), 30000) / 1000.0)
+        except ValueError:
+            pass
+
     if ERROR_STATUS:
         # Label retained so the leg can prove it reached THIS pool.
-        respond(conn, stream_id, ERROR_STATUS, json.dumps({
+        respond(peer, stream_id, ERROR_STATUS, json.dumps({
             "label": LABEL,
             "error": {"message": "upstream failure", "type": "server_error"},
         }).encode())
@@ -100,48 +151,78 @@ def handle_request(conn, stream_id, headers, body):
     if EMIT_USAGE:
         reply["usage"] = {"prompt_tokens": 5, "completion_tokens": 7,
                           "total_tokens": 12}
-    respond(conn, stream_id, 200, json.dumps(reply).encode())
+    respond(peer, stream_id, 200, json.dumps(reply).encode())
+
+
+def dispatch(peer, stream_id, headers, body):
+    """Answer inline, or on a thread when the request asked to be held.
+
+    Inline is the default on purpose: every leg that existed before the delay
+    knob keeps its exact ordering, and the suite does not pay a thread per
+    request. Only a request carrying X-Test-Delay-Ms — which is asking for a
+    window in which other streams must stay live — is moved off the receive
+    loop.
+    """
+    for name, value in headers:
+        if isinstance(name, bytes):
+            name = name.decode("utf8", "replace")
+        if name.lower() == "x-test-delay-ms":
+            threading.Thread(target=handle_request,
+                             args=(peer, stream_id, headers, body),
+                             daemon=True).start()
+            return
+    handle_request(peer, stream_id, headers, body)
 
 
 def handle_conn(sock):
     config = h2.config.H2Configuration(client_side=False,
                                        header_encoding=None)
     conn = h2.connection.H2Connection(config=config)
-    conn.initiate_connection()
-    sock.sendall(conn.data_to_send())
+    peer = Peer(sock, conn)
+    with peer.lock:
+        conn.initiate_connection()
+        peer.flush_locked()
 
     streams = {}  # stream_id -> {"headers": [...], "body": bytearray}
-    sock.settimeout(20)
+    # Long enough to outlive the widest delay a leg may ask for (30s), plus
+    # room to answer it. A shorter timeout would close the connection out from
+    # under a held stream and hand the case a teardown it did not drive.
+    sock.settimeout(45)
     try:
         while True:
             data = sock.recv(65535)
             if not data:
                 break
-            events = conn.receive_data(data)
-            for event in events:
-                if isinstance(event, h2.events.RequestReceived):
-                    streams[event.stream_id] = {
-                        "headers": event.headers, "body": bytearray()}
-                    if event.stream_ended:
-                        st = streams.pop(event.stream_id)
-                        handle_request(conn, event.stream_id,
-                                       st["headers"], bytes(st["body"]))
-                elif isinstance(event, h2.events.DataReceived):
-                    st = streams.get(event.stream_id)
-                    if st is not None:
-                        st["body"] += event.data
-                    conn.acknowledge_received_data(
-                        len(event.data), event.stream_id)
-                elif isinstance(event, h2.events.StreamEnded):
-                    st = streams.pop(event.stream_id, None)
-                    if st is not None:
-                        handle_request(conn, event.stream_id,
-                                       st["headers"], bytes(st["body"]))
-                elif isinstance(event, h2.events.ConnectionTerminated):
-                    return
-            out = conn.data_to_send()
-            if out:
-                sock.sendall(out)
+            ready = []
+            with peer.lock:
+                events = conn.receive_data(data)
+                for event in events:
+                    if isinstance(event, h2.events.RequestReceived):
+                        streams[event.stream_id] = {
+                            "headers": event.headers, "body": bytearray()}
+                        if event.stream_ended:
+                            ready.append((event.stream_id,
+                                          streams.pop(event.stream_id)))
+                    elif isinstance(event, h2.events.DataReceived):
+                        st = streams.get(event.stream_id)
+                        if st is not None:
+                            st["body"] += event.data
+                        conn.acknowledge_received_data(
+                            len(event.data), event.stream_id)
+                    elif isinstance(event, h2.events.StreamEnded):
+                        st = streams.pop(event.stream_id, None)
+                        if st is not None:
+                            ready.append((event.stream_id, st))
+                    elif isinstance(event, h2.events.ConnectionTerminated):
+                        return
+                peer.flush_locked()
+            # Dispatched with the lock RELEASED: an inline answer takes it
+            # again inside respond(), and a held one must not be holding it
+            # while it sleeps — that would stall every other stream on the
+            # connection and quietly turn the multi-stream cases into
+            # one-at-a-time ones.
+            for stream_id, st in ready:
+                dispatch(peer, stream_id, st["headers"], bytes(st["body"]))
     except (socket.timeout, OSError):
         pass
     finally:

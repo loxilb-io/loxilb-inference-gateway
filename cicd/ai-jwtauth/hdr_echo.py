@@ -27,6 +27,7 @@ Control endpoint (not counted, never proxied):
 """
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 LABEL = sys.argv[1] if len(sys.argv) > 1 else "server"
@@ -127,6 +128,24 @@ class Handler(BaseHTTPRequestHandler):
                 self._drain_identity(int(self.headers.get("Content-Length") or 0))
         except (ValueError, OSError):
             self.close_connection = True
+
+        # A per-request delay, so a case can hold a request OPEN at the
+        # backend while it changes something. The admission reservation is
+        # taken before dispatch and released at settlement, so "in flight" is
+        # the only window in which a claim exists to abort or to strand --
+        # and without a way to widen that window it is microseconds long.
+        #
+        # Per-request rather than a process mode: the same backend serves
+        # every port, and a mode flag would slow the whole suite down. It is
+        # applied AFTER the receipt is recorded and the body drained, so a
+        # delayed request still counts as having arrived, which is what the
+        # reservation arms assert.
+        delay_ms = self.headers.get("X-Test-Delay-Ms")
+        if delay_ms:
+            try:
+                time.sleep(min(max(int(delay_ms), 0), 30000) / 1000.0)
+            except ValueError:
+                pass
 
         # The usage suffix feeds the gateway's settle path (the extractor
         # scans the response tail for the LAST complete "usage" object, so

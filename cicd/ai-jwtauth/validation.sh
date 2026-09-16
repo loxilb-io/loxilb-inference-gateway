@@ -50,6 +50,17 @@ note_case() {
     # deleted, and the block would be exactly as unprotected as if it carried
     # no label at all.
     QOS-[A-Z][A-Z][A-Z]-[0-9][0-9][0-9]) ;;
+    # ...and the fault-injection block's QOS-ID-nnn is two letters, not
+    # three. Spelled out rather than loosened to a glob: this function
+    # DECLINES silently, so a shape it does not list is a case Z1 can never
+    # report missing, and a glob wide enough to catch it would also catch
+    # a typo it should be reporting.
+    QOS-[A-Z][A-Z]-[0-9][0-9][0-9]) ;;
+    # ...and the HTTP/2 lifecycle block's IDs are a two-part prefix with a
+    # digit inside it. Spelled out for the same reason as the two above: a
+    # shape this function does not list is a case Z1 can never report
+    # missing, so the block would run unprotected.
+    H2-LIFE-[0-9][0-9][0-9]) ;;
     *) return ;;
   esac
   case " $SEEN_CASES " in
@@ -105,6 +116,54 @@ chk_code() { # chk_code <name> <expected> <response-with--w-http_code>
   else
     echo "  [FAIL] $1 — HTTP $got, want $2"; FAIL=$((FAIL + 1))
   fi
+}
+
+# chk_aborted <name> <response> -- the ONE place a curl 000 is the expected
+# answer: a case that cuts its own client off mid-request to strand a
+# reservation. chk_code refuses 000 outright, and rightly -- everywhere else
+# it means the measurement was lost. Here it is the measurement, so it gets a
+# named oracle of its own rather than a hole in chk_code's guard: a request
+# that completed is a request that was never aborted, and the case that rests
+# on the abort would be measuring an ordinary served response.
+chk_aborted() {
+  note_case "$1"
+  local got; got=$(http_code_of "$2")
+  if [ "$got" = "000" ]; then
+    echo "  [PASS] $1 (curl reported no completion, as the case requires)"; PASS=$((PASS + 1))
+  else
+    echo "  [FAIL] $1 — the request COMPLETED with HTTP ${got:-none}; nothing was aborted,"
+    echo "         so whatever this case concludes about a stranded claim is untested"
+    FAIL=$((FAIL + 1))
+  fi
+}
+
+# gw_log_count <needle> -- occurrences of a literal string in the gateway's
+# own log. Used by exactly one case, and deliberately: the fine-grained JWT
+# refusal reason is LOG-ONLY by design (pkg/jwtauth/verdict.go states it --
+# the client-facing 401 collapses to invalid_token so the gate is not an
+# oracle, and loxilb_ai_jwt_validation_total labels the COARSE code, with
+# promoting the reasons to the metric named there as an open decision that
+# has to land with the dashboards). So the log is the only place an operator
+# can tell "the IdP is minting identities we cannot represent" from "clients
+# are sending bad tokens", and it is what this case must read.
+#
+# -F, not a plain -c: grep counts a bracketed pattern as a character class,
+# and this file has been bitten by that before.
+gw_log_count() {
+  # No `|| echo 0`. grep -c PRINTS the count and then exits 1 when that count
+  # is zero, so the fallback fires on top of the number grep already emitted
+  # and the helper returns the two-line string "0\n0". Every caller that
+  # compares it numerically -- `[ "$a" -gt "$b" ]` -- then dies on "integer
+  # expression expected" and the branch silently takes its else. This was
+  # latent for as long as the helper has existed: its only caller happened to
+  # be a needle that is always present, so the zero case was never taken.
+  local n
+  n=$(docker exec llb1 sh -c "cat /var/log/loxilb*.log 2>/dev/null" 2>/dev/null |
+        grep -cF "$1")
+  case "$n" in
+    ''|*[!0-9]*) echo 0 ;;
+    *) echo "$n" ;;
+  esac
 }
 
 # ---------------------------------------------------------------------------
@@ -1957,6 +2016,487 @@ chk_code     "QOS-TPM-006 the undrained debt refuses t2 again" 429 "$QR"
 chk_has      "QOS-TPM-006 the re-armed refusal names the token quota" "token_quota_exceeded" "$QR"
 chk_receipt  "QOS-TPM-006 the re-refused request never reached the backend" 0 "$QR_NONCE"
 
+
+echo ""
+echo "== QOS fault injection: the arms that have to BREAK something =="
+echo "   QOS-RES-001..003, QOS-OUT-001..004, QOS-ID-001/002. A different"
+echo "   shape of case from everything above: those configured a limit and"
+echo "   drove traffic, these take the store away, abort a request that is"
+echo "   still holding a claim, or hand the gateway an identity the bucket"
+echo "   keyspace cannot represent -- and watch what the gate does."
+
+# ---------------------------------------------------------------------------
+# The store-outage lever.
+#
+# `docker pause pg-jwtauth` CANNOT produce policy_store_unavailable and is not
+# used here. Traced at source: Service.store() (pkg/aikey/service.go) returns
+# an error only when the pool POINTER is nil, and Service.Ticker() never nils
+# an existing pool -- *sql.DB re-dials its own connections. What the error
+# path actually keys on is the QUERY returning an error. A paused Postgres
+# returns nothing at all: the socket stays open and the query blocks, so the
+# request hangs until curl's --max-time kills it and the case scores
+# http_code=000 -- a lost measurement, not a gateway answer.
+#
+# Revoking the data-plane role's USAGE on the schema produces the error
+# directly. Every statement against aigw.* fails at planning time, including
+# on connections that are already open, so there is nothing to wait for; the
+# container and its data directory are untouched, so the GRANT restores
+# service without a gateway restart -- which is exactly what QOS-OUT-004 has
+# to show. Measured on the bed before this was written: 179ms to the error.
+pg_admin_sql() { docker exec "$PG_NAME" psql -U "$PG_OWNER" -d "$PG_DB" -Atc "$1" 2>&1; }
+
+# pg_dp_read -- one read as the DATA-PLANE role, with a hard timeout. The
+# timeout is the point: a lever that hangs and a lever that errors are the
+# same thing to an assertion that only looks at the exit status, and the
+# whole reason the paused-container lever was rejected is that it hangs.
+pg_dp_read() {
+  timeout 5 docker exec -e PGPASSWORD="$PG_DP_PW" "$PG_NAME" \
+    psql -U "$PG_DP_USER" -h 127.0.0.1 -d "$PG_DB" -Atc \
+    "SELECT count(*) FROM ${PG_SCHEMA}.rate_limit_defaults" 2>&1
+}
+
+store_outage_on()  { pg_admin_sql "REVOKE USAGE ON SCHEMA ${PG_SCHEMA} FROM ${PG_DP_USER}"; }
+store_outage_off() { pg_admin_sql "GRANT USAGE ON SCHEMA ${PG_SCHEMA} TO ${PG_DP_USER}"; }
+
+# store_lever_ok <name> errors|serves -- the lever really is in the state the
+# arms below assume, and it got there by ERRORING rather than by hanging.
+# Asserted rather than assumed: every QOS-OUT verdict is a claim about what
+# the gateway does when a read fails, and a lever that silently stopped
+# working would turn all four of them into readings of a healthy store.
+store_lever_ok() {
+  local name=$1 want=$2 t0 t1 out ms
+  note_case "$name"
+  t0=$(date +%s%N); out=$(pg_dp_read); t1=$(date +%s%N)
+  ms=$(( (t1 - t0) / 1000000 ))
+  case "$want" in
+    errors)
+      case "$out" in
+        *"permission denied"*)
+          if [ "$ms" -lt 4000 ]; then
+            echo "  [PASS] $name (errored in ${ms}ms, not a hang)"; PASS=$((PASS + 1))
+          else
+            echo "  [FAIL] $name - the read errored but took ${ms}ms; at that latency a"
+            echo "         request would score http_code=000 and measure curl, not the gate"
+            FAIL=$((FAIL + 1))
+          fi ;;
+        *) echo "  [FAIL] $name - the data-plane read did NOT fail with the outage in place"
+           echo "         (${ms}ms): $(echo "$out" | tr '\n' ' ' | head -c 160)"
+           FAIL=$((FAIL + 1)) ;;
+      esac ;;
+    serves)
+      case "$out" in
+        ''|*[!0-9]*) echo "  [FAIL] $name - the store did not answer a plain read (${ms}ms): $(echo "$out" | tr '\n' ' ' | head -c 160)"
+                     FAIL=$((FAIL + 1)) ;;
+        *) echo "  [PASS] $name (answered $out in ${ms}ms)"; PASS=$((PASS + 1)) ;;
+      esac ;;
+  esac
+}
+
+# ---- the reservation arms' drive shape -----------------------------------
+#
+# A reservation orphaned by an aborted or re-configured request is expired by
+# the epoch advance -- currentQuotaEpoch is wall-clock minute-aligned
+# (now.Unix()/60 in pkg/ratelimit), so the whole window in which a leak is
+# OBSERVABLE is the remainder of the current minute. A sequence that straddles
+# a minute boundary measures the epoch reset instead of the release path and
+# would report a leaking build as clean.
+#
+# qos_epoch_fresh waits for the start of a minute so the sequence has room,
+# and qos_epoch_ok asserts afterwards that it did not straddle one anyway.
+qos_epoch_fresh() {
+  local s
+  s=$(( $(date +%s) % 60 ))
+  if [ "$s" -gt 20 ]; then sleep $(( 61 - s )); fi
+  QOS_EPOCH0=$(( $(date +%s) / 60 ))
+}
+qos_epoch_ok() {
+  note_case "$1"
+  local now; now=$(( $(date +%s) / 60 ))
+  if [ -z "$QOS_EPOCH0" ]; then
+    echo "  [FAIL] $1 - no epoch was recorded; the sequence never ran"
+    FAIL=$((FAIL + 1)); return
+  fi
+  if [ "$now" = "$QOS_EPOCH0" ]; then
+    echo "  [PASS] $1 (one quota epoch throughout)"; PASS=$((PASS + 1))
+  else
+    echo "  [FAIL] $1 - the sequence straddled a quota-epoch boundary"
+    echo "         ($QOS_EPOCH0 -> $now): the epoch advance zeroes every outstanding"
+    echo "         reservation, so this run measured the reset and not the release"
+    FAIL=$((FAIL + 1))
+  fi
+}
+
+# rreq <port> <token> <model-body> <max_tokens> [extra curl args...]
+# One reservation-arm request. max_tokens is what sizes the claim: the
+# admission reservation is prompt-estimate + declared max_tokens, so it is the
+# knob that decides whether a bucket can cover the request.
+rreq() {
+  local port=$1 tok=$2 model=$3 maxt=$4; shift 4
+  RR=$(req "$port" "{\"model\":\"$model\",\"max_tokens\":$maxt,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}" \
+        -H "Authorization: Bearer $tok" "$@")
+  RR_NONCE=$(last_nonce)
+}
+
+QOS_FI_T=tenant-qr
+QOS_OUT_T=tenant-qf
+
+echo ""
+echo "-- QOS-RES: the pre-admission reservation --"
+echo "   Admission claims the request's worst case (prompt estimate +"
+echo "   declared max_tokens) against every bucket in the ladder BEFORE the"
+echo "   request is dispatched, and settlement releases the claim. Both"
+echo "   halves are invisible in a healthy request: what makes them testable"
+echo "   is a claim that is taken and then must come back -- rolled back by a"
+echo "   later bucket's refusal, released by an aborted request, or released"
+echo "   by a request whose configuration vanished under it."
+echo "   Bucket capacity is 100% of tokens_per_min by default, so a tenant"
+echo "   at tokens_per_min=1000 can hold at most 1000 tokens of claim."
+
+qos_cfg POST /config/ai/tenant/ratelimit \
+  "{\"tenant_id\":\"$QOS_FI_T\",\"tokens_per_min\":1000,\"model_limits\":[{\"model\":\"mistral-7b\",\"tokens_per_min\":100}]}"
+qos_cfg_ok   "QOS-RES-001 tenant-qr armed: aggregate 1000, mistral-7b 100"
+
+echo ""
+echo "QOS-RES-001: a LATER bucket's refusal gives back every claim an EARLIER"
+echo "             bucket already granted."
+echo "             The ladder is [tenant 1000, tenant|mistral 100] and the"
+echo "             request asks for ~600: the tenant bucket can cover it, the"
+echo "             model bucket cannot. The refusal is not the interesting"
+echo "             part -- what matters is the tenant bucket afterwards, and"
+echo "             the only way to read that is to send it a request the"
+echo "             model bucket has no say in."
+qos_epoch_fresh
+rreq 2065 "$TOK_r1" mistral-7b 600
+chk_code     "QOS-RES-001 the over-model request is refused" 429 "$RR"
+chk_has      "QOS-RES-001 refused at ADMISSION, not by the post-hoc latch" "token_quota_would_exceed" "$RR"
+chk_not_has  "QOS-RES-001 and not by the latched code" "\"token_quota_exceeded\"" "$RR"
+chk_receipt  "QOS-RES-001 the refused request never reached the backend" 0 "$RR_NONCE"
+rreq 2065 "$TOK_r1" llama-70b 600
+chk_code     "QOS-RES-001 a same-size request on a model the tenant bucket alone gates is admitted" 200 "$RR"
+chk_receipt  "QOS-RES-001 and it reached the backend" 1 "$RR_NONCE"
+qos_epoch_ok "QOS-RES-001 the pair stayed inside one quota epoch"
+
+echo ""
+echo "QOS-RES-002: a request aborted IN FLIGHT releases its claim, and is"
+echo "             charged nothing."
+echo "             The backend is held for 5s and the client is cut off after"
+echo "             1s, so there is no response to extract usage from and the"
+echo "             only thing settlement can do is release. The backend"
+echo "             receipt is the drive-shape oracle: without it, a request"
+echo "             the gateway refused outright would produce the same clean"
+echo "             bucket and the case would pass having tested nothing."
+qos_epoch_fresh
+RCONS0=$(metric_labeled loxilb_ai_tokens_consumed_total "tenant=\"$QOS_FI_T\"")
+rreq 2065 "$TOK_r2" llama-70b 600 -H "X-Test-Delay-Ms: 5000" --max-time 1
+chk_aborted  "QOS-RES-002 the client really did abort" "$RR"
+chk_receipt  "QOS-RES-002 the request HAD reached the backend, so a claim existed" 1 "$RR_NONCE"
+sleep 8
+rreq 2065 "$TOK_r2" llama-70b 600
+chk_code     "QOS-RES-002 a full-size request is admitted afterwards - the claim came back" 200 "$RR"
+chk_has      "QOS-RES-002 and not refused at admission" "server-llama" "$RR"
+chk_receipt  "QOS-RES-002 and it reached the backend" 1 "$RR_NONCE"
+qos_epoch_ok "QOS-RES-002 the abort and the probe stayed inside one quota epoch"
+RCONS1=$(metric_labeled loxilb_ai_tokens_consumed_total "tenant=\"$QOS_FI_T\"")
+if [ "$RCONS0" = "unreadable" ] || [ "$RCONS1" = "unreadable" ]; then
+  note_case "QOS-RES-002"
+  echo "  [FAIL] QOS-RES-002 the consumed-token metric is unreadable - a phantom charge cannot be ruled out"
+  FAIL=$((FAIL + 1))
+else
+  # 12 is the echo's fixed usage for the ONE answered request above. The
+  # aborted request must add nothing: it produced no response and no usage.
+  chk_num "QOS-RES-002 the aborted request was charged nothing (only the probe's 12 landed)" 12 $((RCONS1 - RCONS0))
+fi
+
+echo ""
+echo "QOS-RES-003: a bucket whose CONFIGURATION vanishes while a request is"
+echo "             holding its claim still gets the claim back."
+echo "             Settlement re-resolves the ladder from the store, so a"
+echo "             bucket that stopped resolving between admission and"
+echo "             settlement is a bucket nothing releases. The claim then"
+echo "             sits on the live bucket until the epoch expires it, and"
+echo "             the limit is re-created on top of it -- so the next"
+echo "             request is refused against headroom that is not actually"
+echo "             spent."
+# llama-70b, NOT mistral: :2065's rule serves llama-70b only, and a mistral
+# request there is answered 503 model_unavailable by the ROUTER, long after
+# admission. QOS-RES-001 can use mistral precisely because its request never
+# gets past admission; this one has to reach the backend and come back.
+qos_cfg POST /config/ai/tenant/ratelimit \
+  "{\"tenant_id\":\"$QOS_FI_T\",\"tokens_per_min\":1000,\"model_limits\":[{\"model\":\"llama-70b\",\"tokens_per_min\":1000}]}"
+qos_cfg_ok   "QOS-RES-003 tenant|llama-70b armed at 1000 so it admits the claim"
+qos_epoch_fresh
+# Called directly and then CONSUMED, never inside $( ): new_nonce publishes
+# through a global and a file, and a subshell would leave the ".last" file
+# behind for an unrelated assertion to pick up.
+new_nonce
+RES3_NONCE=$(last_nonce)
+( $hexec l3h1 curl -s -o /dev/null --max-time 20 -X POST \
+    -H "Content-Type: application/json" \
+    -H "X-Test-Nonce: $RES3_NONCE" \
+    -H "X-Test-Delay-Ms: 4000" \
+    -H "Authorization: Bearer $TOK_r2" \
+    -d '{"model":"llama-70b","max_tokens":600,"messages":[{"role":"user","content":"hi"}]}' \
+    "http://$VIP:2065/v1/chat/completions" ) > /dev/null 2>&1 &
+RES3_BG=$!
+sleep 2
+chk_receipt  "QOS-RES-003 the in-flight request reached the backend and is holding its claim" 1 "$RES3_NONCE"
+qos_cfg POST /config/ai/tenant/ratelimit \
+  "{\"tenant_id\":\"$QOS_FI_T\",\"tokens_per_min\":1000,\"model_limits\":[{\"model\":\"llama-70b\",\"tokens_per_min\":0}]}"
+qos_cfg_ok   "QOS-RES-003 the tenant|llama-70b limit is removed while the request is in flight"
+wait $RES3_BG 2>/dev/null
+sleep "$QOS_SETTLE_WAIT"
+qos_cfg POST /config/ai/tenant/ratelimit \
+  "{\"tenant_id\":\"$QOS_FI_T\",\"tokens_per_min\":1000,\"model_limits\":[{\"model\":\"llama-70b\",\"tokens_per_min\":1000}]}"
+qos_cfg_ok   "QOS-RES-003 the tenant|llama-70b limit is put back"
+rreq 2065 "$TOK_r2" llama-70b 600
+chk_code     "QOS-RES-003 a fresh request on the re-created bucket is admitted" 200 "$RR"
+chk_not_has  "QOS-RES-003 it was not refused against a claim nobody released" "token_quota_would_exceed" "$RR"
+chk_receipt  "QOS-RES-003 and it reached the backend" 1 "$RR_NONCE"
+qos_epoch_ok "QOS-RES-003 the whole sequence stayed inside one quota epoch"
+
+echo ""
+echo "-- QOS-OUT: the policy store goes away --"
+echo "   The posture the ladder is supposed to hold: a keyed identity whose"
+echo "   limits are UNKNOWABLE fails closed with policy_store_unavailable and"
+echo "   a 503 -- never a 429, which tells the client to slow down when the"
+echo "   truth is that the gateway cannot tell. An identity the store HAS"
+echo "   answered for keeps being served from the last known answer. And the"
+echo "   opt-in keyless bucket, alone, fails open."
+echo ""
+echo "   Warming first, while the store is healthy. Which identities are"
+echo "   cached and which are not IS the variable every case below turns on,"
+echo "   so it is established deliberately rather than inherited:"
+echo "     f1  driven now, then given an rps=1 row      -> enforced in outage"
+echo "     f2  given a row and then DELETED             -> last-known says"
+echo "         'no row', and the TTL entry is dropped by the delete, so"
+echo "         serving f2 during the outage can ONLY have come from the"
+echo "         last-known map"
+echo "     f3  never driven, never configured           -> unknowable"
+echo "     f4  never driven, and kept for the recovery  -> unknowable"
+store_lever_ok "QOS-OUT-001 the store answers the data-plane role before the outage" serves
+qreq 2063 "Authorization: Bearer $TOK_f1"
+chk_code     "QOS-OUT-001 f1 is served while the store is healthy" 200 "$QR"
+qos_cfg POST /config/ai/user/ratelimit \
+  "{\"tenant_id\":\"$QOS_OUT_T\",\"user_id\":\"$SUB_f1\",\"rps\":1}"
+qos_cfg_ok   "QOS-OUT-001 f1 is given an explicit rps=1 row"
+# f2 is driven FIRST. Every rung the ladder consults is a separate store
+# read with its own cache entry -- the user row, and the user|model row that
+# stage 3 reads next to it -- and only a read the store has ANSWERED leaves a
+# last-known value behind. Setting f2's row without driving f2 leaves its
+# user|model read unknowable, and the outage then refuses f2 for a rung this
+# case is not about, which is exactly what the first run of this arm did.
+qreq 2063 "Authorization: Bearer $TOK_f2"
+chk_code     "QOS-OUT-001 f2 is served while the store is healthy" 200 "$QR"
+qos_cfg POST /config/ai/user/ratelimit \
+  "{\"tenant_id\":\"$QOS_OUT_T\",\"user_id\":\"$SUB_f2\",\"rps\":1}"
+qos_cfg_ok   "QOS-OUT-001 f2 is given a row"
+qos_cfg DELETE "/config/ai/user/ratelimit/$QOS_OUT_T/$SUB_f2"
+qos_cfg_ok   "QOS-OUT-001 f2's row is deleted again - a store-CONFIRMED 'no row'"
+
+PSU0=$(metric_value loxilb_ai_policy_store_unavailable_total)
+store_outage_on >/dev/null
+store_lever_ok "QOS-OUT-001 the outage lever errors the data-plane role's reads" errors
+
+echo ""
+echo "QOS-OUT-001: rows the store already answered for go on being enforced."
+qos_pair 2063 "Authorization: Bearer $TOK_f1" "Authorization: Bearer $TOK_f1"
+qos_gap_ok   "QOS-OUT-001 the pair decided inside one refill"
+chk_code     "QOS-OUT-001 f1's first request is still served during the outage" 200 "$QP1"
+chk_code     "QOS-OUT-001 f1's second request is still REFUSED by the cached row" 429 "$QP2"
+chk_has      "QOS-OUT-001 and the refusal is the user rung, not the outage" "user_rate_limit_exceeded" "$QP2"
+chk_not_has  "QOS-OUT-001 the outage did not switch the rung off" "policy_store_unavailable" "$QP2"
+echo "  and the last-known map, specifically: f2's TTL entry was dropped by the"
+echo "  DELETE, so a build that only kept a TTL cache would have nothing to"
+echo "  answer from and would refuse f2 with the outage's code."
+qreq 2063 "Authorization: Bearer $TOK_f2"
+chk_code     "QOS-OUT-001 f2 is served from the store-confirmed 'no row'" 200 "$QR"
+chk_receipt  "QOS-OUT-001 and f2's request reached the backend" 1 "$QR_NONCE"
+
+echo ""
+echo "QOS-OUT-002: an identity the store has NEVER answered for is refused,"
+echo "             with the outage's own code."
+qreq 2063 "Authorization: Bearer $TOK_f3"
+chk_code     "QOS-OUT-002 f3 is refused" 503 "$QR"
+chk_has      "QOS-OUT-002 with the store's code" "policy_store_unavailable" "$QR"
+chk_not_has  "QOS-OUT-002 and NOT as a rate decision" "rate_limit_exceeded" "$QR"
+chk_not_has  "QOS-OUT-002 and not as a token decision" "token_quota_exceeded" "$QR"
+chk_receipt  "QOS-OUT-002 the refused request never reached the backend" 0 "$QR_NONCE"
+PSU1=$(metric_value loxilb_ai_policy_store_unavailable_total)
+if [ "$PSU0" = "unreadable" ] || [ "$PSU1" = "unreadable" ]; then
+  note_case "QOS-OUT-002"
+  echo "  [FAIL] QOS-OUT-002 policy_store_unavailable_total is unreadable - the outage has no counter"
+  FAIL=$((FAIL + 1))
+elif [ "$PSU1" -gt "$PSU0" ]; then
+  note_case "QOS-OUT-002"
+  echo "  [PASS] QOS-OUT-002 the outage counter moved ($PSU0 -> $PSU1) - reported as an outage, not a throttle"
+  PASS=$((PASS + 1))
+else
+  note_case "QOS-OUT-002"
+  echo "  [FAIL] QOS-OUT-002 policy_store_unavailable_total did not move ($PSU0 -> $PSU1):"
+  echo "         a store outage that reports as a rate-limit spike sends the operator"
+  echo "         looking at the tenant instead of at the store"
+  FAIL=$((FAIL + 1))
+fi
+
+echo ""
+echo "QOS-OUT-003: the opt-in keyless bucket is the ONE arm that fails open."
+echo "             :2064 and :2066 have never been driven, so neither has a"
+echo "             rule-scope defaults row the store has answered for. The"
+echo "             same unreadable read reaches both. The only difference"
+echo "             between the two requests is a credential -- which is"
+echo "             exactly the line the posture draws."
+PSU2=$(metric_value loxilb_ai_policy_store_unavailable_total)
+QR=$(req 2064 "$body_llama"); QR_NONCE=$(last_nonce)
+chk_code     "QOS-OUT-003 the keyless request is SERVED with its defaults unreadable" 200 "$QR"
+chk_receipt  "QOS-OUT-003 and it reached the backend" 1 "$QR_NONCE"
+chk_not_has  "QOS-OUT-003 it was not refused with the outage's code" "policy_store_unavailable" "$QR"
+qreq 2066 "Authorization: Bearer $TOK_f4"
+chk_code     "QOS-OUT-003 the CREDENTIALED request on the same unreadable row is refused" 503 "$QR"
+chk_has      "QOS-OUT-003 with the store's code" "policy_store_unavailable" "$QR"
+chk_receipt  "QOS-OUT-003 and it never reached the backend" 0 "$QR_NONCE"
+PSU3=$(metric_value loxilb_ai_policy_store_unavailable_total)
+if [ "$PSU2" = "unreadable" ] || [ "$PSU3" = "unreadable" ]; then
+  note_case "QOS-OUT-003"
+  echo "  [FAIL] QOS-OUT-003 the outage counter is unreadable - the fail-open cannot be told from the fail-closed"
+  FAIL=$((FAIL + 1))
+else
+  chk_num "QOS-OUT-003 exactly one of the two requests was reported as an outage" 1 $((PSU3 - PSU2))
+fi
+
+echo ""
+echo "QOS-OUT-004: the store comes back and enforcement comes back with it,"
+echo "             with no gateway restart."
+GW_START0=$(docker inspect -f '{{.State.StartedAt}}' llb1 2>/dev/null)
+store_outage_off >/dev/null
+store_lever_ok "QOS-OUT-004 the store answers the data-plane role again" serves
+sleep 1
+qreq 2066 "Authorization: Bearer $TOK_f4"
+chk_code     "QOS-OUT-004 f4 - refused moments ago - is served now" 200 "$QR"
+chk_receipt  "QOS-OUT-004 and it reached the backend" 1 "$QR_NONCE"
+qreq 2063 "Authorization: Bearer $TOK_f3"
+chk_code     "QOS-OUT-004 f3 is served too" 200 "$QR"
+echo "  and recovery is not amnesia: f1's row must still bind."
+qos_pair 2063 "Authorization: Bearer $TOK_f1" "Authorization: Bearer $TOK_f1"
+qos_gap_ok   "QOS-OUT-004 the pair decided inside one refill"
+chk_code     "QOS-OUT-004 f1's first request admitted" 200 "$QP1"
+chk_code     "QOS-OUT-004 f1's second request still refused by its row" 429 "$QP2"
+chk_has      "QOS-OUT-004 by the user rung" "user_rate_limit_exceeded" "$QP2"
+GW_START1=$(docker inspect -f '{{.State.StartedAt}}' llb1 2>/dev/null)
+note_case "QOS-OUT-004"
+if [ -z "$GW_START0" ] || [ -z "$GW_START1" ]; then
+  echo "  [FAIL] QOS-OUT-004 the gateway's start time is unreadable - 'without a restart' is unproven"
+  FAIL=$((FAIL + 1))
+elif [ "$GW_START0" = "$GW_START1" ]; then
+  echo "  [PASS] QOS-OUT-004 the gateway never restarted ($GW_START1)"
+  PASS=$((PASS + 1))
+else
+  echo "  [FAIL] QOS-OUT-004 the gateway restarted during the outage ($GW_START0 -> $GW_START1):"
+  echo "         recovery through a restart is not the property this case claims"
+  FAIL=$((FAIL + 1))
+fi
+
+echo ""
+echo "-- QOS-ID: identities the bucket keyspace cannot represent --"
+echo "   The quota keys are composed by concatenation: the tenant aggregate"
+echo "   bucket is the BARE tenant id, tenant|model joins with '|', and the"
+echo "   user, key and VIP scopes carry a reserved prefix that the peer-sync"
+echo "   wire reads as the scope. So a tenant literally named 'a|b' IS tenant"
+echo "   a's model-b bucket, and one named 'uq:a|b' IS a user bucket on the"
+echo "   wire. Two identities, one quota."
+
+echo ""
+echo "QOS-ID-001: an unsafe identity arriving FROM THE IDP is refused"
+echo "            admission, and nothing is delivered."
+echo "            x1 and x2 are ordinary Keycloak users whose tenant_id"
+echo "            attribute happens to be unrepresentable. A signature does"
+echo "            not make a claim safe -- it proves the IdP minted it, and"
+echo "            IdPs mint what their directories hold."
+echo "            The client body is NOT the oracle here. The 401 surface is"
+echo "            deliberately coarse -- every 401-class refusal collapses to"
+echo "            invalid_token so the gate cannot be used to probe what an"
+echo "            IdP holds -- and the validation metric labels that same"
+echo "            coarse code. The reason reaches the gateway log and nowhere"
+echo "            else, so the log is what gets read, and the count is taken"
+echo "            as a DELTA so an earlier run's lines cannot supply it."
+echo "            x1 and x2 exercise DIFFERENT guards: x1's tenant carries the"
+echo "            composite-key delimiter, x2's carries a reserved scope"
+echo "            prefix and no delimiter at all -- so a build that checked"
+echo "            only for '|' would refuse x1 and admit x2."
+IDLOG0=$(gw_log_count "unsafe_identity")
+IDDEL0=$(gw_log_count "control characters and")
+IDPFX0=$(gw_log_count "reserved rate-limit scope prefix")
+qreq 2040 "Authorization: Bearer $TOK_x1"
+chk_code     "QOS-ID-001 the pipe-bearing tenant claim is refused" 401 "$QR"
+chk_receipt  "QOS-ID-001 nothing was delivered" 0 "$QR_NONCE"
+qreq 2040 "Authorization: Bearer $TOK_x2"
+chk_code     "QOS-ID-001 the reserved-prefix tenant claim is refused" 401 "$QR"
+chk_receipt  "QOS-ID-001 nothing was delivered" 0 "$QR_NONCE"
+IDLOG1=$(gw_log_count "unsafe_identity")
+IDDEL1=$(gw_log_count "control characters and")
+IDPFX1=$(gw_log_count "reserved rate-limit scope prefix")
+chk_num      "QOS-ID-001 both refusals are attributed to the identity, not to a bad token" 2 $((IDLOG1 - IDLOG0))
+chk_num      "QOS-ID-001 exactly one was the delimiter guard" 1 $((IDDEL1 - IDDEL0))
+chk_num      "QOS-ID-001 and exactly one was the reserved-prefix guard" 1 $((IDPFX1 - IDPFX0))
+echo "  Non-vacuity: a SAFE identity on the same port, in the same moment, is served."
+qreq 2040 "Authorization: Bearer $TOK_z"
+chk_code     "QOS-ID-001 a safe neighbour identity is still admitted" 200 "$QR"
+chk_receipt  "QOS-ID-001 and it reached the backend" 1 "$QR_NONCE"
+
+echo ""
+echo "QOS-ID-002: neighbour identities do not alias one another's quota, and"
+echo "            the config surfaces refuse the names that would make them."
+echo "            The IdP half is guarded above; these are the OPERATOR"
+echo "            surfaces, which reach the same bucket keys by a different"
+echo "            road."
+qos_cfg POST /config/ai/tenant/ratelimit \
+  "{\"tenant_id\":\"tenant-qi|llama-70b\",\"tokens_per_min\":100}"
+chk_num      "QOS-ID-002 a tenant named like a tenant|model key is refused" 1 \
+             "$(case "$QOS_CFG_CODE" in 4*) echo 1;; *) echo 0;; esac)"
+QOS_CFG_FRESH=0
+qos_cfg POST /config/ai/tenant/ratelimit \
+  "{\"tenant_id\":\"uq:tenant-qi|z\",\"tokens_per_min\":100}"
+chk_num      "QOS-ID-002 a tenant carrying a reserved scope prefix is refused" 1 \
+             "$(case "$QOS_CFG_CODE" in 4*) echo 1;; *) echo 0;; esac)"
+QOS_CFG_FRESH=0
+qos_cfg POST /config/ai/tenant/ratelimit \
+  "{\"tenant_id\":\"tenant-qi\",\"tokens_per_min\":100,\"model_limits\":[{\"model\":\"llama|70b\",\"tokens_per_min\":10}]}"
+chk_num      "QOS-ID-002 a MODEL name carrying the delimiter is refused" 1 \
+             "$(case "$QOS_CFG_CODE" in 4*) echo 1;; *) echo 0;; esac)"
+QOS_CFG_FRESH=0
+qos_cfg POST /config/ai/apikey \
+  "{\"tenant_id\":\"v:10.10.10.254:2040\",\"name\":\"alias-probe\",\"allowed_models\":[\"llama-70b\"]}"
+chk_num      "QOS-ID-002 an API KEY minting such a tenant is refused too" 1 \
+             "$(case "$QOS_CFG_CODE" in 4*) echo 1;; *) echo 0;; esac)"
+QOS_CFG_FRESH=0
+echo "  Non-vacuity: the same surfaces accept an ordinary name."
+qos_cfg POST /config/ai/tenant/ratelimit "{\"tenant_id\":\"tenant-qi\",\"tokens_per_min\":100000}"
+qos_cfg_ok   "QOS-ID-002 an ordinary tenant_id is still accepted"
+
+echo "  And the runtime half: z and zz differ only by a repeated character,"
+echo "  so a key built without a delimiter would put them in one bucket."
+qos_cfg POST /config/ai/user/ratelimit \
+  "{\"tenant_id\":\"tenant-qi\",\"user_id\":\"$SUB_z\",\"rps\":1}"
+qos_cfg_ok   "QOS-ID-002 an explicit rps=1 row for z alone"
+qos_pair 2063 "Authorization: Bearer $TOK_z" "Authorization: Bearer $TOK_z"
+qos_gap_ok   "QOS-ID-002 z's pair decided inside one refill"
+chk_code     "QOS-ID-002 z's first request admitted" 200 "$QP1"
+chk_code     "QOS-ID-002 z's second request refused by its own row" 429 "$QP2"
+chk_has      "QOS-ID-002 by the user rung" "user_rate_limit_exceeded" "$QP2"
+qos_pair 2063 "Authorization: Bearer $TOK_zz" "Authorization: Bearer $TOK_zz"
+qos_gap_ok   "QOS-ID-002 zz's pair decided inside one refill"
+chk_code     "QOS-ID-002 zz's first request admitted" 200 "$QP1"
+chk_code     "QOS-ID-002 zz's second request admitted - z's row did not reach it" 200 "$QP2"
+chk_receipt  "QOS-ID-002 and zz's second request reached the backend" 1 "$QP2_NONCE"
+
+# Fault-injection hygiene. Not asserted: the verdicts are already in, and a
+# teardown failure must not be reported as a product verdict.
+qos_cfg DELETE "/config/ai/user/ratelimit/$QOS_OUT_T/$SUB_f1"
+qos_cfg DELETE "/config/ai/user/ratelimit/tenant-qi/$SUB_z"
+qos_cfg POST /config/ai/tenant/ratelimit \
+  "{\"tenant_id\":\"$QOS_FI_T\",\"tokens_per_min\":0,\"model_limits\":[{\"model\":\"mistral-7b\",\"tokens_per_min\":0},{\"model\":\"llama-70b\",\"tokens_per_min\":0}]}"
+qos_cfg POST /config/ai/tenant/ratelimit '{"tenant_id":"tenant-qi","tokens_per_min":0}'
+QOS_CFG_FRESH=0
+
 # Hygiene: the rule-scope rows outlive the cases that needed them, and the
 # next thing to run on :2059/:2060 would inherit limits it never asked for.
 # Not asserted - the cases that matter have already been decided, and a
@@ -1968,6 +2508,545 @@ qos_cfg POST /config/ai/tenant/ratelimit '{"tenant_id":"tenant-qt","tokens_per_m
 QOS_CFG_FRESH=0
 
 echo ""
+echo "== H2-LIFE: the HTTP/2 connection and stream lifecycle =="
+echo "   Everything above that aborts a request aborts an HTTP/1.1 one, and"
+echo "   HTTP/2 does not settle where HTTP/1.1 settles. An H/1.1 connection"
+echo "   releases an unspent claim from the teardown path in proxy_pdestroy;"
+echo "   an H/2 stream settles either at its OWN close (nghttp2's stream-close"
+echo "   callback) or, if the connection dies with streams still in flight,"
+echo "   from a deferred sweep of the session. Those are two recorders, and"
+echo "   the same suite already learned the hard way that a sibling recorder"
+echo "   proves nothing about its twin -- :2055 said nothing about :2056."
+echo ""
+echo "   So each case below names WHICH teardown it drives, and proves it"
+echo "   drove it: the driver reports whether the stream was really still in"
+echo "   flight when it was cancelled, and a case whose stream had already"
+echo "   been answered is measuring an ordinary served response."
+echo ""
+echo "   Per the plan's rule for this phase, the verdict is reservation state"
+echo "   and metric receipts, not traffic success: an aborted request has no"
+echo "   client-visible outcome to assert, and every one of these paths"
+echo "   degrades gracefully enough that traffic alone would stay green."
+
+# tenant-hl is armed wide enough that three concurrent claims fit inside it
+# with room to spare, and the probe that follows is sized so that exactly one
+# unreleased claim is enough to refuse it. Sizing it any tighter would make
+# the verdict turn on the prompt-token ESTIMATE, which is not the thing under
+# test; sizing it looser would let a leak hide.
+#   bucket                 4000
+#   each in-flight claim   ~1030  (max_tokens 1000 + the prompt estimate)
+#   the probe              ~3530  (max_tokens 3500)
+# All three claims released -> 4000 available -> the probe is admitted.
+# One claim stranded        -> 2970 available -> the probe is refused.
+H2L_T=tenant-hl
+qos_cfg POST /config/ai/tenant/ratelimit \
+  "{\"tenant_id\":\"$H2L_T\",\"tokens_per_min\":4000}"
+qos_cfg_ok   "H2-LIFE-001 tenant-hl armed at 4000 tokens/min"
+
+# h2life <mode> <port> <token> [extra args...] -- one lifecycle drive.
+# Publishes H2L_OUT (every line) and H2L_SUM (the summary line), because the
+# summary is what says whether the case drove the shape it claims. Run
+# directly and NOT inside $( ) by the callers that need a nonce, for the
+# reason new_nonce documents.
+h2life() {
+  local mode=$1 port=$2 tok=$3; shift 3
+  printf '%s' "$tok" > .tok_h2life
+  H2L_OUT=$($hexec l3h1 python3 ./h2_life.py "$mode" "$VIP" "$port" \
+              --token-file "$(pwd)/.tok_h2life" "$@" 2>/dev/null)
+  rm -f .tok_h2life
+  H2L_SUM=$(echo "$H2L_OUT" | grep '"summary"')
+}
+
+# h2l_mint <user> -> a fresh access token, or "".
+# h2l_tokens <case-id> -- refresh every identity this block drives.
+#
+# 🚨 Not optional, and not a nicety. The realm's accessTokenLifespan is 300s
+# and config.sh mints every credential the suite uses at setup time. The
+# blocks above spend most of that window; THIS block then adds three
+# quota-epoch alignments, each of which can sleep up to a minute. The last
+# case ran with a token that had expired 90s earlier, and what it reported was
+# a 401 -- the bearer gate refusing an expired credential, which is CORRECT
+# behaviour -- dressed up as a broken HTTP/2 lifecycle path. Minting per case
+# keeps the credential out of the variables under test.
+h2l_mint() {
+  curl -s --max-time 10 -X POST     -d "client_id=aigw-client" -d "username=$1" -d "password=${1}pw"     -d "grant_type=password"     "$KC_ISSUER/protocol/openid-connect/token" |
+    python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null
+}
+h2l_tokens() {
+  local case=$1
+  TOK_hl1=$(h2l_mint hl1)
+  TOK_hl2=$(h2l_mint hl2)
+  TOK_ALICE=$(h2l_mint alice)
+  # An empty token is not a small problem: every request below would be
+  # refused 401 and every case would report the product as broken. Named here
+  # so the run says "the harness could not get a credential" instead.
+  if [ -z "$TOK_hl1" ] || [ -z "$TOK_hl2" ] || [ -z "$TOK_ALICE" ]; then
+    note_case "$case"
+    echo "  [FAIL] $case - could not mint fresh credentials from the IdP; every"
+    echo "         assertion below would read a 401 and blame the gateway"
+    FAIL=$((FAIL + 1))
+  fi
+}
+
+# gw_rss_kb -- the gateway's resident set, from the kernel rather than from
+# anything the binary reports about itself.
+gw_rss_kb() {
+  local pid
+  pid=$(docker exec llb1 sh -c \
+        'for p in /proc/[0-9]*; do
+           case "$(cat $p/comm 2>/dev/null)" in loxilb) echo ${p#/proc/}; break;; esac
+         done' 2>/dev/null | head -1)
+  [ -n "$pid" ] || { echo unreadable; return; }
+  docker exec llb1 sh -c "awk '/VmRSS/{print \$2}' /proc/$pid/status" 2>/dev/null |
+    tr -dc '0-9'
+}
+
+# h2l_sample -- the two families every case here reads, sampled together so
+# a case cannot accidentally compare a request count from one moment with a
+# token count from another.
+h2l_sample() {
+  H2L_REQ=$(metric_labeled loxilb_ai_requests_total "tenant=\"$H2L_T\"" 'outcome="completed"')
+  H2L_TOK=$(metric_labeled loxilb_ai_tokens_consumed_total "tenant=\"$H2L_T\"")
+}
+h2l_delta_ok() { # h2l_delta_ok <name> <want-requests> <want-tokens> <req0> <tok0>
+  local name=$1 wr=$2 wt=$3 r0=$4 t0=$5
+  if [ "$r0" = "unreadable" ] || [ "$H2L_REQ" = "unreadable" ] ||
+     [ "$t0" = "unreadable" ] || [ "$H2L_TOK" = "unreadable" ]; then
+    note_case "$name"
+    echo "  [FAIL] $name - the metric scrape failed; neither a phantom record nor a"
+    echo "         phantom charge can be ruled out from an unreadable family"
+    FAIL=$((FAIL + 1)); return
+  fi
+  chk_num "$name completed-request records" "$wr" $((H2L_REQ - r0))
+  chk_num "$name tokens charged"            "$wt" $((H2L_TOK - t0))
+}
+
+echo ""
+echo "H2-LIFE-001: a client RST_STREAM on a stream that is still in flight"
+echo "             releases its reservation and does NOT fabricate a"
+echo "             completed request."
+echo "             The backend is held for 5s and the stream is cancelled"
+echo "             after 1.5s, so no backend status was ever seen for it."
+echo "             The CONNECTION is then closed cleanly, which is what"
+echo "             isolates this case: the stream settles through nghttp2's"
+echo "             own stream-close callback, not through the"
+echo "             connection-teardown sweep that H2-LIFE-002 drives."
+echo "             Two things must be true afterwards, and they are"
+echo "             independent: the claim is back (so the next full-size"
+echo "             request is admitted), and loxilb_ai_requests_total gained"
+echo "             NOTHING for the cancelled stream -- a request that never"
+echo "             received a status did not complete, and counting it as a"
+echo "             200 both invents served traffic and drags the served"
+echo "             latency histogram toward the abort."
+h2l_tokens "H2-LIFE-001"
+qos_epoch_fresh
+h2l_sample; H2L_REQ0=$H2L_REQ; H2L_TOK0=$H2L_TOK
+new_nonce; H2L_N1=$(last_nonce)
+h2life rst 2067 "$TOK_hl1" --nonce "$H2L_N1" --max-tokens 3000 \
+       --delay-ms 5000 --wait-ms 1500
+chk_has      "H2-LIFE-001 the stream really was cancelled in flight" '"reset": true' "$H2L_SUM"
+chk_has      "H2-LIFE-001 and it had NOT already been answered" '"answered_before_reset": false' "$H2L_SUM"
+h2_receipt_at l3ep1 "H2-LIFE-001 the cancelled request HAD reached the backend, so a claim existed" 1 "$H2L_N1"
+sleep 8
+rreq 2067 "$TOK_hl1" llama-70b 3000 --http2-prior-knowledge
+chk_code     "H2-LIFE-001 a full-size request is admitted afterwards - the claim came back" 200 "$RR"
+chk_has      "H2-LIFE-001 and it was answered by the h2 pool" "server-h2-llama" "$RR"
+chk_not_has  "H2-LIFE-001 it was not refused against a claim nobody released" "token_quota_would_exceed" "$RR"
+h2_receipt_at l3ep1 "H2-LIFE-001 and it reached the backend" 1 "$RR_NONCE"
+qos_epoch_ok "H2-LIFE-001 the cancel and the probe stayed inside one quota epoch"
+sleep "$QOS_SETTLE_WAIT"
+h2l_sample
+# One record and one charge, both from the PROBE. The cancelled stream saw no
+# status and carried no usage, so it owes neither.
+h2l_delta_ok "H2-LIFE-001 only the probe was recorded and charged;" 1 12 "$H2L_REQ0" "$H2L_TOK0"
+
+echo ""
+echo "H2-LIFE-002: a response whose usage the gateway HAS, on a connection the"
+echo "             client destroys before the exchange finishes, is settled"
+echo "             exactly once."
+echo "             The client dies the instant the response status arrives,"
+echo "             with the socket reset rather than closed. Which recorder"
+echo "             wins is a race by construction -- the stream's own close"
+echo "             may run first, or the connection-teardown sweep may find"
+echo "             it still in flight -- and that is precisely the assertion:"
+echo "             the answer must be the same either way. Exactly one"
+echo "             completed-request record and exactly one charge of 12."
+echo "             Two would mean the two recorders both settled the stream;"
+echo "             zero would mean neither did and the usage was dropped."
+h2l_tokens "H2-LIFE-002"
+h2l_sample; H2L_REQ0=$H2L_REQ; H2L_TOK0=$H2L_TOK
+new_nonce; H2L_N2=$(last_nonce)
+h2life hdrkill 2067 "$TOK_hl1" --nonce "$H2L_N2" --max-tokens 100 \
+       --wait-ms 8000 --linger-ms 700
+chk_has      "H2-LIFE-002 the response status reached the client before it died" '"saw_headers": true' "$H2L_SUM"
+h2_receipt_at l3ep1 "H2-LIFE-002 the request reached the backend" 1 "$H2L_N2"
+sleep 8
+h2l_sample
+h2l_delta_ok "H2-LIFE-002 settled exactly once;" 1 12 "$H2L_REQ0" "$H2L_TOK0"
+
+echo ""
+echo "H2-LIFE-003: a stream reset before the gateway's own deny body is"
+echo "             drained does not accumulate."
+echo "             An H/2 denial is answered by the gateway itself: HEADERS"
+echo "             plus a DATA body served from a per-stream provider. A"
+echo "             client that resets the stream the moment the headers land"
+echo "             leaves that body queued and never read, which is the"
+echo "             allocation under test. The client holds its flow-control"
+echo "             window at ZERO so the body cannot leave the gateway at"
+echo "             all: a denial otherwise arrives as HEADERS+DATA+END_STREAM"
+echo "             in one burst, and a stream that has already ended cannot"
+echo "             be reset -- the case would silently become a no-op."
+echo "             150 of them on ONE connection, so"
+echo "             what accumulates is per-STREAM state. The process is driven"
+echo "             until its resident set SETTLES, and only then is the slope"
+echo "             measured -- warm-up is not the subject and must not be"
+echo "             scored as one."
+echo "             Verdict: every denial was actually produced, the gateway"
+echo "             is still serving afterwards, and the resident set is not"
+echo "             climbing with the stream count."
+# The budget, and what it can actually see.
+#
+# 🚨 THIS CASE USED TO SCORE WARM-UP AS A LEAK. Recorded because the shape of
+# the mistake matters more than the number that replaced it.
+#
+# It ran three fixed rounds and required +1024 kB total / +512 kB in the last
+# round, calibrated on ONE bed sample that read "+4 kB total, +0 kB last
+# round". That sample was taken with the process already warm -- ~500
+# assertions of this same suite run before this case -- so the warm-up landed
+# outside the measured window by luck of ordering, not by design. First CI
+# exposure reported +1684 kB and failed.
+#
+# Measured afterwards on the bed, same image, same pin (llbigw-2, 4 cores):
+#
+#   a WARM process:  settles in 2 rounds; slope +4 kB over 900 streams
+#   a COLD process:  settles in 13 rounds (1950 streams), with lumps of
+#                    +1020 kB as late as round 10; slope +80 kB over 900
+#                    streams once settled
+#   two identical cold runs disagreed by 45x over the same "settled" window
+#   (+28 kB vs +1272 kB / 900 streams) when settledness was ASSUMED
+#
+# So resident-set growth on this process is lumpy and irreproducible at the
+# hundreds-of-kB scale while it warms, and flat afterwards. A fixed round
+# count cannot tell those apart in either direction: tightening the ceiling
+# flakes, loosening it passes everything. The fix is not a bigger number, it
+# is to stop assuming the precondition and start PROVING it -- drive until two
+# consecutive rounds are quiet, then measure.
+#
+# The slope ceiling below is the worst settled measurement (+80 kB) with ~5x
+# for allocator noise. At 900 streams it resolves ~0.43 kB/stream, which is
+# SHARPER than the 3-round version's ~1 kB/stream, not looser -- the case
+# gained sensitivity by refusing to measure warm-up.
+#
+# 🚨 Still stated plainly: this rules out a leaked per-stream STRUCTURE
+# (kilobytes each -- 2 kB/stream would read as +1800 kB, ~4.7x the ceiling).
+# The deny BODY alone is a couple of hundred bytes and would not trip it, so
+# the body release stays covered by the drive-shape assertion -- every stream
+# really was refused and reset with its body still queued -- and by the
+# gateway still serving afterwards.
+#
+# An UNSETTLED run is a failed MEASUREMENT, not a detected leak, and says so.
+# It is not quietly passed: an oracle that cannot obtain its reading has not
+# shown the resident set is flat.
+h2l_tokens "H2-LIFE-003"
+H2L_SETTLE_KB=64        # a round this quiet counts as settled
+H2L_SETTLE_NEED=2       # consecutive quiet rounds required
+H2L_WARM_CAP=30         # give up after this many (cold bed needed 13)
+H2L_MEAS_ROUNDS=6       # scored rounds = 900 streams
+H2L_SLOPE_KB=384        # ceiling over those 900 streams
+H2L_DENY_OK=1
+H2L_DENY_WHY=""
+H2L_ROUNDS=0
+
+# Every round -- warm-up included -- re-asserts the full drive shape. A round
+# that stopped denying or stopped resetting would otherwise quietly warm the
+# process with the wrong traffic and still be counted toward settling.
+h2l_round_drive() {
+  h2life denyrst 2048 "" --streams 150 --max-tokens 10
+  for h2l_want in '"denied": 150' '"reset": 150' '"undrained": 150' '"statuses": ["401"]'; do
+    case "$H2L_SUM" in
+      *"$h2l_want"*) ;;
+      *) H2L_DENY_OK=0; H2L_DENY_WHY="round $H2L_ROUNDS wanted $h2l_want: $H2L_SUM" ;;
+    esac
+  done
+}
+
+# Warm-up -- drive until the resident set goes quiet. Growth here is NOT
+# scored; the point is only to reach a state where growth means something.
+H2L_STREAK=0
+H2L_PREV=$(gw_rss_kb)
+while [ "$H2L_ROUNDS" -lt "$H2L_WARM_CAP" ]; do
+  H2L_ROUNDS=$((H2L_ROUNDS + 1))
+  h2l_round_drive
+  H2L_NOW=$(gw_rss_kb)
+  if [ "$H2L_PREV" = unreadable ] || [ -z "$H2L_NOW" ]; then break; fi
+  H2L_D=$(( H2L_NOW - H2L_PREV ))
+  H2L_PREV=$H2L_NOW
+  if [ "$H2L_D" -le "$H2L_SETTLE_KB" ]; then
+    H2L_STREAK=$((H2L_STREAK + 1))
+    [ "$H2L_STREAK" -ge "$H2L_SETTLE_NEED" ] && break
+  else
+    H2L_STREAK=0
+  fi
+done
+
+# Measurement -- the scored rounds, on a process that has proven it is quiet.
+H2L_RSS0=$(gw_rss_kb)
+for h2l_m in $(seq 1 "$H2L_MEAS_ROUNDS"); do
+  H2L_ROUNDS=$((H2L_ROUNDS + 1))
+  h2l_round_drive
+done
+H2L_RSS3=$(gw_rss_kb)
+H2L_STREAMS=$(( H2L_ROUNDS * 150 ))
+note_case "H2-LIFE-003"
+if [ "$H2L_DENY_OK" = 1 ]; then
+  echo "  [PASS] H2-LIFE-003 all $H2L_STREAMS streams were refused 401 and reset with their body still queued"
+  PASS=$((PASS + 1))
+else
+  echo "  [FAIL] H2-LIFE-003 - a round did not deny-and-reset all 150 streams, so the"
+  echo "         deny-body path was not exercised the number of times this case claims"
+  echo "         ($H2L_DENY_WHY)"
+  FAIL=$((FAIL + 1))
+fi
+if [ "$H2L_RSS0" = unreadable ] || [ -z "$H2L_RSS3" ]; then
+  note_case "H2-LIFE-003"
+  echo "  [FAIL] H2-LIFE-003 - the gateway's resident set is unreadable; that is not"
+  echo "         evidence of a flat one"
+  FAIL=$((FAIL + 1))
+else
+  H2L_GROW=$(( H2L_RSS3 - H2L_RSS0 ))
+  H2L_MEAS_STREAMS=$(( H2L_MEAS_ROUNDS * 150 ))
+  note_case "H2-LIFE-003"
+  if [ "$H2L_STREAK" -lt "$H2L_SETTLE_NEED" ]; then
+    # Not a leak verdict. The oracle never reached the state in which its
+    # reading means anything, so it has nothing to report about flatness --
+    # and an unobtainable measurement is not evidence of a flat resident set
+    # any more than an unreadable one is.
+    echo "  [FAIL] H2-LIFE-003 - the resident set never settled: $H2L_WARM_CAP warm-up"
+    echo "         rounds ($(( H2L_WARM_CAP * 150 )) streams) without $H2L_SETTLE_NEED consecutive rounds"
+    echo "         under ${H2L_SETTLE_KB} kB. That is a failed MEASUREMENT, not a detected leak --"
+    echo "         the slope below was never measured on a quiet process"
+    FAIL=$((FAIL + 1))
+  elif [ "$H2L_GROW" -le "$H2L_SLOPE_KB" ]; then
+    echo "  [PASS] H2-LIFE-003 resident set flat across $H2L_MEAS_STREAMS reset streams on a settled"
+    echo "         process (+${H2L_GROW} kB, budget ${H2L_SLOPE_KB} kB; settled after $(( H2L_ROUNDS - H2L_MEAS_ROUNDS )) warm-up rounds)"
+    PASS=$((PASS + 1))
+  else
+    echo "  [FAIL] H2-LIFE-003 - resident set grew +${H2L_GROW} kB over $H2L_MEAS_STREAMS reset streams"
+    echo "         on a process that had already settled (budget ${H2L_SLOPE_KB} kB). Warm-up is"
+    echo "         excluded by construction, so this is slope, not start-up cost"
+    FAIL=$((FAIL + 1))
+  fi
+fi
+r=$(bearer_req 2048 "$body_llama" "$TOK_ALICE" --http2-prior-knowledge)
+chk_code "H2-LIFE-003 the gateway still serves HTTP/2 after $H2L_STREAMS reset streams" 200 "$r"
+h2_receipt_at l3ep1 "H2-LIFE-003 and that request reached the backend" 1 "$(last_nonce)"
+
+echo ""
+echo "H2-LIFE-004: a GOAWAY with several streams in flight leaves EVERY"
+echo "             stream's reservation released, not just one."
+echo "             Three streams are held at the backend and the session is"
+echo "             then told to end with none of them answered. The probe"
+echo "             afterwards is sized so that a SINGLE stranded claim"
+echo "             refuses it: three claims of ~1030 against a 4000 bucket"
+echo "             leave 3530 free only if all three came back."
+echo "             Measured, not assumed: a client GOAWAY does NOT make"
+echo "             nghttp2 close the streams here, so these three settle"
+echo "             through the connection-teardown SWEEP rather than the"
+echo "             per-stream close. That is why this case is green on a"
+echo "             build where H2-LIFE-001 is red -- the sweep already"
+echo "             guards its record on a real status. The record assertion"
+echo "             stays as the regression guard for the sweep's own half;"
+echo "             H2-LIFE-001, which keeps its connection open, is the one"
+echo "             that isolates the per-stream recorder."
+h2l_tokens "H2-LIFE-004"
+qos_epoch_fresh
+h2l_sample; H2L_REQ0=$H2L_REQ; H2L_TOK0=$H2L_TOK
+new_nonce; H2L_G1=$(last_nonce)
+new_nonce; H2L_G2=$(last_nonce)
+new_nonce; H2L_G3=$(last_nonce)
+h2life goaway 2067 "$TOK_hl1" --streams 3 \
+       --nonce "$H2L_G1" --nonce "$H2L_G2" --nonce "$H2L_G3" \
+       --max-tokens 1000 --delay-ms 6000 --wait-ms 2000
+chk_has "H2-LIFE-004 the GOAWAY really was sent with the streams live" '"sent": true' "$H2L_SUM"
+chk_has "H2-LIFE-004 and none of them had been answered first" '"answered_before_goaway": 0' "$H2L_SUM"
+h2_receipt_at l3ep1 "H2-LIFE-004 stream 1 reached the backend, so it held a claim" 1 "$H2L_G1"
+h2_receipt_at l3ep1 "H2-LIFE-004 stream 2 reached the backend, so it held a claim" 1 "$H2L_G2"
+h2_receipt_at l3ep1 "H2-LIFE-004 stream 3 reached the backend, so it held a claim" 1 "$H2L_G3"
+sleep 9
+rreq 2067 "$TOK_hl1" llama-70b 3500 --http2-prior-knowledge
+chk_code     "H2-LIFE-004 a probe that only fits if ALL THREE claims came back is admitted" 200 "$RR"
+chk_not_has  "H2-LIFE-004 and it was not refused against a stranded claim" "token_quota_would_exceed" "$RR"
+h2_receipt_at l3ep1 "H2-LIFE-004 and the probe reached the backend" 1 "$RR_NONCE"
+qos_epoch_ok "H2-LIFE-004 the GOAWAY and the probe stayed inside one quota epoch"
+sleep "$QOS_SETTLE_WAIT"
+h2l_sample
+h2l_delta_ok "H2-LIFE-004 only the probe was recorded and charged;" 1 12 "$H2L_REQ0" "$H2L_TOK0"
+
+echo ""
+echo "H2-LIFE-005: deleting a rule while HTTP/2 streams are running on it"
+echo "             does not take the gateway with it."
+echo "             The rule is created here rather than by config.sh: this"
+echo "             case destroys it, and a service the suite deletes cannot"
+echo "             be one a later re-run expects to find. Two streams are"
+echo "             held at its backend and the rule is removed under them."
+echo "             The verdict is that the gateway is still answering on an"
+echo "             unrelated service afterwards and that the deletion really"
+echo "             happened -- not that the doomed streams succeeded, which"
+echo "             they are entitled not to."
+h2l_tokens "H2-LIFE-005"
+r=$($hexec l3h1 curl -s --max-time 8 -X POST \
+  "http://$VIP:11111/netlox/v1/config/loadbalancer" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "serviceArguments": {
+      "externalIP": "10.10.10.254", "port": 2069, "protocol": "tcp",
+      "sel": 0, "mode": 4, "host": "10.10.10.254",
+      "path_prefix": "/", "path_match_mode": "prefix",
+      "model_name": "llama-70b",
+      "api_key_auth": "jwt", "jwt_auth_profile": "kc",
+      "inactiveTimeOut": 30
+    },
+    "endpoints": [{"endpointIP": "31.31.31.1", "targetPort": 8090, "weight": 1}]
+  }')
+chk_has "H2-LIFE-005 the doomed rule was created" "Success" "$r"
+sleep 2
+new_nonce; H2L_D1=$(last_nonce)
+new_nonce; H2L_D2=$(last_nonce)
+printf '%s' "$TOK_hl2" > .tok_h2life_hold
+( $hexec l3h1 python3 ./h2_life.py hold "$VIP" 2069 \
+    --token-file "$(pwd)/.tok_h2life_hold" \
+    --nonce "$H2L_D1" --nonce "$H2L_D2" --streams 2 \
+    --max-tokens 100 --delay-ms 9000 --wait-ms 15000 ) > .h2life_hold.out 2>&1 &
+H2L_HOLD_BG=$!
+sleep 3
+h2_receipt_at l3ep1 "H2-LIFE-005 stream 1 is in flight on the doomed rule" 1 "$H2L_D1"
+h2_receipt_at l3ep1 "H2-LIFE-005 stream 2 is in flight on the doomed rule" 1 "$H2L_D2"
+# The full key: a rule carrying a host and a model_name is not reachable by
+# the short delete path, which answers 404 and reads exactly like "already
+# gone" while the rule keeps serving.
+r=$($hexec l3h1 curl -s --max-time 8 -w ' http_code=%{http_code}' -X DELETE \
+  "http://$VIP:11111/netlox/v1/config/loadbalancer/hosturl/10.10.10.254/externalipaddress/10.10.10.254/port/2069/protocol/tcp?path_prefix=/&path_match_mode=prefix&model_name=llama-70b")
+H2L_DEL_CODE=$(http_code_of "$r")
+note_case "H2-LIFE-005"
+case "$H2L_DEL_CODE" in
+  2*) echo "  [PASS] H2-LIFE-005 the rule was deleted under the live streams (HTTP $H2L_DEL_CODE)"
+      PASS=$((PASS + 1)) ;;
+  404) echo "  [FAIL] H2-LIFE-005 - the delete answered 404. A rule carrying a host and a"
+       echo "         model_name is not reachable by the short path, and a 404 there reads"
+       echo "         exactly like 'already gone' while the rule keeps serving. The rule was"
+       echo "         NOT removed, so nothing below measures a deletion"
+       FAIL=$((FAIL + 1)) ;;
+  *) echo "  [FAIL] H2-LIFE-005 - the delete answered ${H2L_DEL_CODE:-none}; the rule is still there"
+     FAIL=$((FAIL + 1)) ;;
+esac
+wait "$H2L_HOLD_BG" 2>/dev/null
+rm -f .tok_h2life_hold
+sleep 3
+# Responsive, and responsive on the DATA plane rather than only on the API:
+# a gateway whose proxy thread died would still answer the management port.
+r=$(bearer_req 2067 "$body_llama" "$TOK_hl1" --http2-prior-knowledge)
+chk_code "H2-LIFE-005 the gateway still serves HTTP/2 on an unrelated service" 200 "$r"
+h2_receipt_at l3ep1 "H2-LIFE-005 and that request reached the backend" 1 "$(last_nonce)"
+r=$($hexec l3h1 curl -s --max-time 8 -o /dev/null -w '%{http_code}' \
+      "http://$VIP:11111/netlox/v1/config/loadbalancer/all")
+chk_num "H2-LIFE-005 and the management API still answers" 200 "$r"
+# The deletion is read back rather than trusted: a 2xx on the delete says the
+# API accepted it, not that the listener went away, and a service that still
+# answers would mean the streams above were never torn down by anything.
+r=$($hexec l3h1 curl -s -o /dev/null --max-time 6 --http2-prior-knowledge \
+      -w '%{http_code}' -X POST -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $TOK_hl2" -d "$body_llama" \
+      "http://$VIP:2069/v1/chat/completions" 2>/dev/null)
+note_case "H2-LIFE-005"
+if [ "$r" = "200" ]; then
+  echo "  [FAIL] H2-LIFE-005 - :2069 still serves after the delete; the rule was not removed"
+  FAIL=$((FAIL + 1))
+else
+  echo "  [PASS] H2-LIFE-005 the deleted service no longer serves (curl reported ${r:-none})"
+  PASS=$((PASS + 1))
+fi
+
+echo ""
+echo "H2-LIFE-006: a long-lived HTTP/2 connection survives other connections"
+echo "             being opened and recycled underneath it."
+echo "             One connection makes a request, sixty short connections"
+echo "             are then opened and destroyed against the same service,"
+echo "             and the FIRST connection makes a second request. A"
+echo "             backend descriptor closed by one of the recycled"
+echo "             connections and still referenced by the surviving"
+echo "             session shows up here and nowhere else: every leg above"
+echo "             uses one connection for one request."
+h2l_tokens "H2-LIFE-006"
+h2life control 2048 "$TOK_ALICE" --churn 60 --max-tokens 10
+chk_has "H2-LIFE-006 the churn completed without a connection failing" '"churn_failures": 0' "$H2L_SUM"
+H2L_C1=$(echo "$H2L_OUT" | grep '"stream"' | head -1)
+H2L_C2=$(echo "$H2L_OUT" | grep '"stream"' | tail -1)
+chk_has "H2-LIFE-006 the control connection's first request was served" '"status": "200"' "$H2L_C1"
+chk_has "H2-LIFE-006 and its SECOND request, after the churn, was served too" '"status": "200"' "$H2L_C2"
+chk_has "H2-LIFE-006 by the real pool, not a synthetic answer" "server-h2-llama" "$H2L_C2"
+
+echo ""
+echo "H2-LIFE-007: a backend connection that cannot be created releases the"
+echo "             claim the admission gate already took, and leaves nothing"
+echo "             behind that the next request can trip over."
+echo "             :2068's endpoint is a port nothing listens on, so every"
+echo "             dispatch is refused at connect(). The request was admitted"
+echo "             -- the gate ran and reserved -- and then never reached a"
+echo "             backend, so: no receipt, no completed-request record (no"
+echo "             status was ever seen), and the claim must come back."
+echo "             Three attempts rather than one, because a single stale"
+echo "             session is only dangerous to the request that follows it."
+h2l_tokens "H2-LIFE-007"
+qos_epoch_fresh
+h2l_sample; H2L_REQ0=$H2L_REQ; H2L_TOK0=$H2L_TOK
+H2L_CONN_ERR0=$(gw_log_count "connect 31.31.31.1:8099")
+new_nonce; H2L_F1=$(last_nonce)
+new_nonce; H2L_F2=$(last_nonce)
+new_nonce; H2L_F3=$(last_nonce)
+h2life hold 2068 "$TOK_hl1" --streams 3 \
+       --nonce "$H2L_F1" --nonce "$H2L_F2" --nonce "$H2L_F3" \
+       --max-tokens 1000 --wait-ms 8000
+# All three, not just the first: a run where one attempt failed and two were
+# quietly answered by something else is a different case from the one this
+# block claims to drive.
+H2L_F_503=$(echo "$H2L_OUT" | grep -cF '"status": "503"')
+chk_num      "H2-LIFE-007 all three dead-backend requests are answered 503" 3 "$H2L_F_503"
+h2_receipt_at l3ep1 "H2-LIFE-007 and nothing reached a backend" 0 "$H2L_F1"
+# The datapath's own receipt, and the reason this case can claim to drive a
+# CONNECTION-creation failure rather than a routing refusal: a service whose
+# endpoint is merely marked unhealthy answers 503 too, and from the client
+# side the two are identical. This line only exists because connect() was
+# actually called and actually failed.
+H2L_CONN_ERR1=$(gw_log_count "connect 31.31.31.1:8099")
+if [ "$H2L_CONN_ERR1" -gt "$H2L_CONN_ERR0" ]; then
+  note_case "H2-LIFE-007"
+  echo "  [PASS] H2-LIFE-007 the datapath really did fail to CREATE the backend connection"
+  echo "         (connect 31.31.31.1:8099 errored $((H2L_CONN_ERR1 - H2L_CONN_ERR0)) more time(s))"
+  PASS=$((PASS + 1))
+else
+  note_case "H2-LIFE-007"
+  echo "  [FAIL] H2-LIFE-007 - the datapath logged no connect failure for 31.31.31.1:8099."
+  echo "         The 503 came from somewhere earlier than the backend connection, so this"
+  echo "         case did not drive the failure it names"
+  FAIL=$((FAIL + 1))
+fi
+sleep 9
+rreq 2067 "$TOK_hl1" llama-70b 3500 --http2-prior-knowledge
+chk_code     "H2-LIFE-007 a probe that only fits if all three claims came back is admitted" 200 "$RR"
+chk_not_has  "H2-LIFE-007 and it was not refused against a stranded claim" "token_quota_would_exceed" "$RR"
+h2_receipt_at l3ep1 "H2-LIFE-007 and the probe reached the backend, so the good service is intact" 1 "$RR_NONCE"
+qos_epoch_ok "H2-LIFE-007 the failures and the probe stayed inside one quota epoch"
+sleep "$QOS_SETTLE_WAIT"
+h2l_sample
+h2l_delta_ok "H2-LIFE-007 only the probe was recorded and charged;" 1 12 "$H2L_REQ0" "$H2L_TOK0"
+
+# Lifecycle hygiene. Not asserted: the verdicts are in, and a teardown
+# failure must not be reported as a product verdict.
+qos_cfg POST /config/ai/tenant/ratelimit "{\"tenant_id\":\"$H2L_T\",\"tokens_per_min\":0}"
+QOS_CFG_FRESH=0
+rm -f .h2life_hold.out .tok_h2life .tok_h2life_hold
+
+echo ""
 echo "== Z: the suite ran what it claims to run =="
 echo "   A deleted, renamed, or skipped block stops being tested silently:"
 echo "   the pass count simply gets smaller and the run still says OK. This"
@@ -1977,7 +3056,11 @@ EXPECTED_CASES="A1 A2 A3 A4 A5 A6 A7 A8 B1 B2 B3 C1 C2 C3 C4 C5 C6 D1 D2 D3 D4 D
 QOS-RPS-001 QOS-RPS-002 QOS-RPS-003 QOS-RPS-004 QOS-RPS-005 \
 QOS-DEF-001 QOS-DEF-002 QOS-DEF-003 \
 QOS-VIP-001 QOS-VIP-004 \
-QOS-TPM-001 QOS-TPM-002 QOS-TPM-003 QOS-TPM-004 QOS-TPM-005 QOS-TPM-006"
+QOS-TPM-001 QOS-TPM-002 QOS-TPM-003 QOS-TPM-004 QOS-TPM-005 QOS-TPM-006 \
+QOS-RES-001 QOS-RES-002 QOS-RES-003 \
+QOS-OUT-001 QOS-OUT-002 QOS-OUT-003 QOS-OUT-004 \
+QOS-ID-001 QOS-ID-002 \
+H2-LIFE-001 H2-LIFE-002 H2-LIFE-003 H2-LIFE-004 H2-LIFE-005 H2-LIFE-006 H2-LIFE-007"
 missing=""
 for want in $EXPECTED_CASES; do
   case " $SEEN_CASES " in

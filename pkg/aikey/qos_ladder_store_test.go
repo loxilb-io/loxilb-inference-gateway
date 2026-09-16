@@ -377,3 +377,86 @@ func TestUserModelRateLimitRemovalLeavesNoCachedQuota(t *testing.T) {
 		t.Fatalf("deleted user's model quota resurrected by the outage path: got (%d,%v) want (0,nil)", tpm, err)
 	}
 }
+
+// TestTenantAndKeySurfacesRefuseAliasingIdentities: the three QoS write
+// surfaces that reach a bucket key through a TENANT id, held to the rule the
+// user surface above has always enforced.
+//
+// The keyspace property is one property, and it was enforced in one place.
+// The tenant aggregate quota is keyed on the BARE tenant id
+// (pkg/loxinet/ai_gateway_dp.go quotaBucketsFor), and tenant|model composes
+// with the same delimiter, so a tenant literally named "t1|gpt-4" IS tenant
+// t1's gpt-4 bucket — two identities spending one quota. A tenant carrying a
+// reserved scope prefix is the cross-scope twin: "uq:t1|alice" as a tenant
+// aggregate key is a USER-scope key on the quota sync wire, so the bucket
+// round-trips into a scope nobody addressed it to.
+//
+// Each of these three surfaces could mint such a tenant. The refusal must
+// also fire ahead of the store handle: a guard that only runs once a pool
+// exists answers a caller's mistake with the outage's error code, and does
+// not run at all on a gateway whose store is down.
+func TestTenantAndKeySurfacesRefuseAliasingIdentities(t *testing.T) {
+	svc := &Service{} // no store attached, exactly as the user-surface leg above
+	bad := []struct{ name, tenant string }{
+		{"pipe in tenant", "t1|gpt-4"},
+		{"reserved user-quota prefix", "uq:t1|alice"},
+		{"reserved vip prefix", "v:llb-svc"},
+		{"reserved tenant-wire prefix", "t:t1"},
+	}
+	for _, tc := range bad {
+		t.Run("tenant_ratelimit/"+tc.name, func(t *testing.T) {
+			assertValidationRefusal(t, svc.SetTenantRateLimit(tc.tenant, 1, 0, 0))
+		})
+		t.Run("tenant_model_ratelimit/"+tc.name, func(t *testing.T) {
+			assertValidationRefusal(t, svc.SetTenantModelRateLimit(tc.tenant, "gpt-4", 10))
+		})
+		t.Run("apikey_create/"+tc.name, func(t *testing.T) {
+			_, _, err := svc.CreateAPIKey(cmn.ApiKeyEntry{TenantID: tc.tenant, Name: "k"})
+			assertValidationRefusal(t, err)
+		})
+	}
+
+	// The model half of the composite key is the same property from the other
+	// side, and the ad-hoc check this surface used to carry saw only the pipe.
+	for _, model := range []string{"gpt|4", "um:t1|alice|gpt-4", "kq:abc"} {
+		t.Run("tenant_model_ratelimit/model "+model, func(t *testing.T) {
+			assertValidationRefusal(t, svc.SetTenantModelRateLimit("t1", model, 10))
+		})
+	}
+
+	// Non-vacuity: an ordinary identity must still reach the store, or a
+	// validator that refused everything would pass every case above and take
+	// the whole config surface down.
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"tenant_ratelimit", svc.SetTenantRateLimit("t1", 1, 0, 0)},
+		{"tenant_model_ratelimit", svc.SetTenantModelRateLimit("t1", "gpt-4", 10)},
+	} {
+		if !errors.Is(tc.err, ErrDBUnavailable) {
+			t.Errorf("%s: a valid identity was refused before the store (got %v) — "+
+				"the guard is rejecting ordinary names", tc.name, tc.err)
+		}
+	}
+	if _, _, err := svc.CreateAPIKey(cmn.ApiKeyEntry{TenantID: "t1", Name: "k"}); !errors.Is(err, ErrDBUnavailable) {
+		t.Errorf("apikey_create: a valid tenant was refused before the store (got %v)", err)
+	}
+}
+
+// assertValidationRefusal is the shared oracle of the leg above: refused,
+// refused BEFORE the store, and refused with the type the API layer
+// classifies on.
+func assertValidationRefusal(t *testing.T, err error) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("identity must be refused at validation")
+	}
+	if errors.Is(err, ErrDBUnavailable) {
+		t.Fatalf("refusal reached the store; validation must fire first (got %v)", err)
+	}
+	var ve *cmn.ValidationError
+	if !errors.As(err, &ve) {
+		t.Fatalf("refusal is not a *cmn.ValidationError (got %T) — the API would answer 500", err)
+	}
+}

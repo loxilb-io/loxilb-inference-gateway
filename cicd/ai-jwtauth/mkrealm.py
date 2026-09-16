@@ -147,7 +147,51 @@ realm = {
        # already in debt from the aggregate case -- the two rungs answer with
        # the same error code, so a tenant carrying both cannot say which one
        # refused. Hence its own tenant rather than another user in tenant-qm.
-       user("n1", "n1pw", ["model:llama-70b", "model:mistral-7b"], "tenant-qn")],
+       user("n1", "n1pw", ["model:llama-70b", "model:mistral-7b"], "tenant-qn")]
+    # The fault-injection arms (QOS-RES / QOS-OUT / QOS-ID). The outage arms
+    # turn on whether the store has EVER answered for an identity, so theirs
+    # cannot be reuses of anything above: a user some earlier case drove is a
+    # user whose rows are cached, and "cached" versus "never read" is the
+    # entire distinction those cases measure.
+    + [user("f%d" % i, "f%dpw" % i, ["model:llama-70b"], "tenant-qf")
+       for i in range(1, 5)]
+    # The reservation arms hold a claim across a slow backend and then abort
+    # it. A leaked claim is only visible as a denial of the NEXT request
+    # against the same bucket, so a bucket anything else spends would
+    # attribute someone else's traffic to the leak. Both models, because
+    # QOS-RES-001 needs a second model to show the FIRST bucket's claim came
+    # back.
+    + [user("r%d" % i, "r%dpw" % i, ["model:llama-70b", "model:mistral-7b"], "tenant-qr")
+       for i in range(1, 3)]
+    # The HTTP/2 lifecycle arms. Same reasoning as r1/r2 and the same shape --
+    # a claim held across a slow backend and then torn down -- but the
+    # teardown is an H2 one (a client RST_STREAM, a GOAWAY, a socket that
+    # simply dies), and that settles through a different recorder from the
+    # HTTP/1.1 abort. So it needs a tenant of its own: sharing tenant-qr would
+    # let an HTTP/1.1 leak and an HTTP/2 leak stand in for each other.
+    + [user("hl%d" % i, "hl%dpw" % i, ["model:llama-70b", "model:mistral-7b"],
+            "tenant-hl")
+       for i in range(1, 3)]
+    + [
+        # Identity safety, from the IdP side. Both tenant values are ordinary
+        # directory attributes -- which is the point: an IdP mints what its
+        # directory holds, and self-service registration fills directories.
+        # "tenant-x|llama-70b" IS the composite bucket key of tenant
+        # "tenant-x" and model "llama-70b"; "uq:tenant-q|q1" IS q1's
+        # user-scope quota key on the sync wire. Neither can be carried
+        # without one identity spending another's quota.
+        user("x1", "x1pw", ["model:llama-70b"], "tenant-x|llama-70b"),
+        # No delimiter in this one, on purpose: it must be refused by the
+        # reserved-prefix guard alone. With a pipe in it as well, a build
+        # that had lost the prefix check entirely would still refuse it and
+        # the case would report a guard that is not there.
+        user("x2", "x2pw", ["model:llama-70b"], "v:tenant-x"),
+        # Neighbour identities inside one tenant: the no-aliasing control.
+        # "z" is a prefix of "zz", so a bucket key built by concatenation
+        # without a delimiter would put them in one bucket.
+        user("z", "zpw", ["model:llama-70b"], "tenant-qi"),
+        user("zz", "zzpw", ["model:llama-70b"], "tenant-qi"),
+    ],
 }
 
 with open(sys.argv[1], "w") as f:

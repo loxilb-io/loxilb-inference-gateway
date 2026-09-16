@@ -571,3 +571,115 @@ func TestTokenQuotaCollector(t *testing.T) {
 		t.Fatalf("expected limit 200 for t-one, got %f", v)
 	}
 }
+
+// TestRecordPDRequest_PhaseTaxonomy pins the whole errorPhase -> {phase,status}
+// contract in one place, because the defect this table exists to prevent is not
+// a wrong line of code but a wrong MAPPING: the C datapath distinguishes a
+// prefill timeout, a decode wedge, a prefill-side death and an origin reject in
+// its logs and its response bodies, and for a long time reported all four on
+// loxilb_ai_pd_requests_total{phase="prefill",status="timeout"}. An operator
+// following that series was sent to the wrong tier.
+//
+// Each row also pins whether the lifecycle may contribute to kv_params_missing.
+// Only a lifecycle that actually parsed a prefill response can report that
+// kv_transfer_params was absent from it.
+func TestRecordPDRequest_PhaseTaxonomy(t *testing.T) {
+	cases := []struct {
+		name          string
+		errorPhase    int
+		wantPhase     string
+		wantStatus    string
+		wantKvMissing bool
+	}{
+		{"success", 0, "complete", "success", true},
+		{"prefill timeout", 1, "prefill", "timeout", false},
+		{"decode error", 2, "decode", "error", true},
+		{"decode timeout", 3, "decode", "timeout", true},
+		{"prefill error", 4, "prefill", "error", false},
+		{"prefill rejected", 5, "prefill", "rejected", false},
+		{"unknown phase", 99, "unknown", "error", false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// No spaces: sanitizeLabel rewrites them, so a model name built
+			// from tc.name would be REGISTERED under one string and looked up
+			// under another, and every delta would read zero.
+			model := "pd-tax-" + strconv.Itoa(tc.errorPhase)
+
+			beforeReqs := getCounterValue(aiPDRequestsTotal, model, tc.wantPhase, tc.wantStatus)
+			beforeKvMissing := getCounterValue(aiPDKvParamsMissing, model)
+
+			// kvParamsFound=0 throughout so the guard, not the found-path, decides.
+			RecordPDRequest(model, 0, 0, 0, tc.errorPhase)
+
+			afterReqs := getCounterValue(aiPDRequestsTotal, model, tc.wantPhase, tc.wantStatus)
+			afterKvMissing := getCounterValue(aiPDKvParamsMissing, model)
+
+			if afterReqs-beforeReqs != 1.0 {
+				t.Errorf("errorPhase=%d: expected pd_requests_total{phase=%q,status=%q} +1, got delta %f",
+					tc.errorPhase, tc.wantPhase, tc.wantStatus, afterReqs-beforeReqs)
+			}
+
+			gotKvMissing := afterKvMissing-beforeKvMissing == 1.0
+			if gotKvMissing != tc.wantKvMissing {
+				t.Errorf("errorPhase=%d: kv_params_missing fired=%v, want %v (delta %f)",
+					tc.errorPhase, gotKvMissing, tc.wantKvMissing, afterKvMissing-beforeKvMissing)
+			}
+		})
+	}
+}
+
+// TestRecordPDRequest_TimeoutLegsAreSeparable is the direct regression guard for
+// the conflation: a prefill timeout and a decode first-byte wedge are distinct
+// failures of distinct tiers, so they must not share a series. Before the fix
+// both recorded errorPhase=1 and {phase="decode"} stayed flat forever, so a
+// wedged decode fleet was indistinguishable from a slow prefill fleet.
+func TestRecordPDRequest_TimeoutLegsAreSeparable(t *testing.T) {
+	model := "pd-timeout-legs"
+
+	beforePrefill := getCounterValue(aiPDRequestsTotal, model, "prefill", "timeout")
+	beforeDecode := getCounterValue(aiPDRequestsTotal, model, "decode", "timeout")
+
+	RecordPDRequest(model, 5000, 0, 0, 1) // prefill leg ran out of time
+	RecordPDRequest(model, 0, 0, 0, 3)    // decode leg never produced a byte
+
+	afterPrefill := getCounterValue(aiPDRequestsTotal, model, "prefill", "timeout")
+	afterDecode := getCounterValue(aiPDRequestsTotal, model, "decode", "timeout")
+
+	if afterPrefill-beforePrefill != 1.0 {
+		t.Errorf("prefill timeout must land on {prefill,timeout} exactly once, got delta %f",
+			afterPrefill-beforePrefill)
+	}
+	if afterDecode-beforeDecode != 1.0 {
+		t.Errorf("decode wedge must land on {decode,timeout} exactly once, got delta %f",
+			afterDecode-beforeDecode)
+	}
+}
+
+// TestRecordPDRequest_DecodeWedgeReportsKnownKv covers the sub-defect the phase
+// change exposed. The decode first-byte wedge happens AFTER prefill completed,
+// so the proxy already holds the kv_transfer_params answer. The C site used to
+// hardcode kvParamsFound=0, which was invisible only because errorPhase=1
+// suppressed both kv counters; once the wedge became phase 3 that hardcoded 0
+// would have reported a false "missing" for every wedge whose prefill DID carry
+// kv params.
+func TestRecordPDRequest_DecodeWedgeReportsKnownKv(t *testing.T) {
+	model := "pd-wedge-kv"
+
+	beforeFound := getCounterValue(aiPDKvParamsFound, model)
+	beforeMissing := getCounterValue(aiPDKvParamsMissing, model)
+
+	RecordPDRequest(model, 0, 0, 1, 3) // decode wedge, prefill HAD kv params
+
+	afterFound := getCounterValue(aiPDKvParamsFound, model)
+	afterMissing := getCounterValue(aiPDKvParamsMissing, model)
+
+	if afterFound-beforeFound != 1.0 {
+		t.Errorf("a decode wedge whose prefill carried kv params must count as found, got delta %f",
+			afterFound-beforeFound)
+	}
+	if afterMissing != beforeMissing {
+		t.Errorf("it must NOT also count as missing, got delta %f", afterMissing-beforeMissing)
+	}
+}

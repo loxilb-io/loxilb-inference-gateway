@@ -88,9 +88,51 @@
 #                                              rung and could not have come
 #                                              from the token side
 #
-#   :2053 is NOT in this map on purpose — the P2 case creates a rule there at
-#   RUNTIME, to prove a 63-byte profile name is usable. A port added here
-#   would silently collide with it.
+#     2063 jwt            profile kc           QoS fault injection: the store
+#                                              outage arms. Driven ONCE while
+#                                              the store is healthy, so its
+#                                              rule-scope defaults row and its
+#                                              tenant row are store-confirmed
+#                                              before the outage begins
+#     2064 none+sse       (keyless)            QoS fault injection: the
+#                                              keyless opt-in bucket whose
+#                                              defaults row the store has
+#                                              NEVER answered for. Nothing
+#                                              may drive it before the
+#                                              outage -- the first read has
+#                                              to happen while the store is
+#                                              down, or the fail-open arm
+#                                              measures a cache hit
+#     2065 jwt            profile kc           QoS fault injection: the
+#                                              reservation arms (slow backend,
+#                                              aborted and re-configured
+#                                              in-flight requests)
+#     2066 jwt            profile kc           QoS fault injection: :2064's
+#                                              control. Same never-read
+#                                              defaults row, same outage, but
+#                                              CREDENTIALED -- so the pair
+#                                              differs only in whether an
+#                                              identity was presented
+#     2067 jwt            profile kc           HTTP/2 lifecycle: the h2c pool
+#                                              again, but its OWN service so
+#                                              the reservation arms hold a
+#                                              bucket nothing else spends.
+#                                              Every teardown shape (client
+#                                              RST_STREAM, GOAWAY, an abrupt
+#                                              socket death) is driven here
+#     2068 jwt            profile kc           HTTP/2 lifecycle: the endpoint
+#                                              is a port NOTHING listens on,
+#                                              so every dispatch fails to
+#                                              create its backend connection.
+#                                              A live-but-wrong backend would
+#                                              answer something; a refused
+#                                              connect is the only shape that
+#                                              exercises the failure path
+#
+#   :2053 and :2069 are NOT in this map on purpose — the P2 case creates a
+#   rule at :2053 at RUNTIME to prove a 63-byte profile name is usable, and
+#   the HTTP/2 rule-deletion case creates and then DELETES one at :2069. A
+#   port added here would silently collide with either.
 
 source ../common.sh
 
@@ -575,6 +617,34 @@ add_lb_rule 2060 "llama-70b"  "31.31.31.1" jwt           kc 8080
 # between a request here and one there is the shared bucket itself.
 add_lb_rule 2061 "llama-70b"  "31.31.31.1" jwt           kc 8080
 
+# The fault-injection services. Same profile and same backend as :2040, so
+# nothing about the arms below turns on the service being different -- only
+# on what the store can and cannot answer at the moment they run.
+#
+# :2066 exists to be the CONTROL for :2064: one unreadable defaults row, two
+# requests, and the only difference between them is a credential. Without it
+# "keyless fails open" is a claim about one observation with nothing to
+# compare it to.
+add_lb_rule 2063 "llama-70b"  "31.31.31.1" jwt           kc 8080
+add_lb_rule 2065 "llama-70b"  "31.31.31.1" jwt           kc 8080
+add_lb_rule 2066 "llama-70b"  "31.31.31.1" jwt           kc 8080
+
+# The HTTP/2 lifecycle services.
+#
+# :2067 is :2048's backend (the h2c echo, usage-bearing) behind its own VIP
+# port. It is separate because the lifecycle arms read a token bucket before
+# and after a teardown, and :2048 is driven by the H2 gate legs -- a bucket
+# another block spends cannot say whether a claim came back.
+add_lb_rule 2067 "llama-70b"  "31.31.31.1" jwt           kc 8090
+
+# :2068's endpoint is a port in l3ep1 that nothing binds. The gateway's
+# connect() is refused immediately, which is the backend-connection-creation
+# failure the lifecycle case needs; an endpoint that is merely wrong would
+# complete a connection and answer something, and the failure path would
+# never run. 8099 is not served by any backend config.sh starts -- keep it
+# that way.
+add_lb_rule 2068 "llama-70b"  "31.31.31.1" jwt           kc 8099
+
 # TLS + ALPN. Every H2 port above is h2c, so nothing here has ever run the
 # bearer gate on a connection whose HTTP/2 was negotiated through the TLS
 # handshake instead of a cleartext preface. That is a different entry path in
@@ -704,6 +774,11 @@ add_keyless_rule() { # <port> <ep_ip> <tport>
 add_keyless_rule 2051 "31.31.31.1" 8080   # H/1.1 echo (usage-bearing)
 add_keyless_rule 2052 "31.31.31.1" 8090   # h2 echo (usage-bearing)
 add_keyless_rule 2062 "31.31.31.1" 8080   # H/1.1 echo — the VIP rate rung
+# The fail-open arm's service. It deliberately gets NO defaults row, here or
+# anywhere: the row's absence is what leaves the read unknowable during the
+# outage, and a row created here would be remembered at config time and
+# answer from cache when the arm needs it to fail.
+add_keyless_rule 2064 "31.31.31.1" 8080   # H/1.1 echo — never driven before the outage
 
 # The shared bucket is OPT-IN: a rule-scope defaults row arms it for the
 # services that ask for one. vip_shared_tpm=10 with the echoes' fixed
@@ -831,7 +906,13 @@ print(json.loads(base64.urlsafe_b64decode(p)).get('sub', ''))
 }
 
 QOS_STATE=""
-for qu in q1 q2 q3 q4 q5 q6 q7 q8 q9 q10 t1 t2 m1 m2 n1; do
+# f1..f4 (tenant-qf), r1/r2 (tenant-qr), x1/x2 (unsafe tenant claims),
+# z/zz (tenant-qi) and hl1/hl2 (tenant-hl, the HTTP/2 lifecycle arms) belong
+# to the fault-injection and lifecycle blocks; they are minted here with the
+# rest so a token expiry cannot separate them from the identities the earlier
+# blocks use.
+for qu in q1 q2 q3 q4 q5 q6 q7 q8 q9 q10 t1 t2 m1 m2 n1 \
+          f1 f2 f3 f4 r1 r2 x1 x2 z zz hl1 hl2; do
   tok=$(mint aigw-client "$qu" "${qu}pw")
   if [ -z "$tok" ]; then
     echo "FATAL: could not mint a token for the QoS identity $qu"
@@ -850,7 +931,9 @@ for qu in q1 q2 q3 q4 q5 q6 q7 q8 q9 q10 t1 t2 m1 m2 n1; do
 TOK_${qu}='$tok'
 SUB_${qu}='$sub'"
 done
-echo "QoS identities minted (q1..q10 tenant-q, t1/t2 tenant-qt, m1/m2 tenant-qm, n1 tenant-qn)"
+echo "QoS identities minted (q1..q10 tenant-q, t1/t2 tenant-qt, m1/m2 tenant-qm, n1 tenant-qn,"
+echo "                       f1..f4 tenant-qf, r1/r2 tenant-qr, x1/x2 unsafe, z/zz tenant-qi,"
+echo "                       hl1/hl2 tenant-hl)"
 
 # The key arm's own credential. The llama-only key above is spent by the
 # precedence legs, and the key rung PATCHes its holder's rps — doing that to
@@ -881,6 +964,12 @@ TOK_ALICE='$TOK_ALICE'
 TOK_BOB='$TOK_BOB'
 TOK_CAROL='$TOK_CAROL'
 TOK_BADSIG='$TOK_BADSIG'
+PG_NAME='$PG_NAME'
+PG_DP_USER='aigwuser'
+PG_DP_PW='$DP_PW'
+PG_SCHEMA='aigw'
+PG_OWNER='$PG_OWNER'
+PG_DB='$PG_DB'
 KC_ISSUER='$KC_ISSUER'
 KC_CLIENT_SHORT='aigw-short'
 KC_NAME='$KC_NAME'

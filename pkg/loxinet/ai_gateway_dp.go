@@ -935,10 +935,7 @@ func tokenQuotaReserveInternal(svc rateLimitService, store *rl.RateLimiterStore,
 		bAllowed, bRetry, bEpoch := store.ReserveTokens(b.key, want, b.tpm, b.burstPct)
 		if !bAllowed {
 			for j := range taken {
-				p := buckets[j]
-				if resEpoch != 0 {
-					store.SettleTokens(p.key, 0, want, resEpoch, p.tpm, p.burstPct)
-				}
+				store.ReleaseReservation(buckets[j].key, want, resEpoch)
 			}
 			return false, bRetry, 0
 		}
@@ -948,6 +945,58 @@ func tokenQuotaReserveInternal(svc rateLimitService, store *rl.RateLimiterStore,
 		}
 	}
 	return true, 0, resEpoch
+}
+
+// quotaReleaseKeysFor names every bucket key a request's admission
+// reservation could have landed on, derived from the identity ALONE — no
+// store reads, no configuration.
+//
+// It exists because settlement cannot ask the store which buckets took the
+// claim. quotaBucketsFor answers "which buckets does this request's spend
+// land on NOW", and that is the right question for the CHARGE and the wrong
+// one for the RELEASE: a bucket whose limit stopped resolving between
+// admission and settlement — an operator removing a per-model quota, or a
+// single store read erroring mid-flight, which quotaBucketsFor tolerates by
+// dropping the bucket — is absent from that answer, so nothing released its
+// claim. The claim then sat on the live bucket until the epoch expired it,
+// and any request the bucket admitted in the meantime was measured against
+// headroom that was not actually spent. Measured: a 429
+// token_quota_would_exceed against a bucket holding nothing.
+//
+// The keys must stay in step with the ones quotaBucketsFor builds; both are
+// spelled through the same rl helpers so a scope added to one is a compile
+// error away from the other.
+//
+// Releasing from a bucket that holds no claim is a no-op: ReleaseReservation
+// skips a key with no entry, skips an entry whose window has rolled, and
+// clamps at zero. The residual case it does NOT distinguish is a bucket that
+// came into existence AFTER this request reserved — a limit added mid-flight
+// — where the release takes a claim a concurrent request holds. That is the
+// deliberate trade: over-releasing over-admits by one request's worth for the
+// moment until that request settles, while under-releasing denies the bucket
+// for the rest of the epoch, and the read-error path makes under-releasing
+// much the more likely of the two.
+func quotaReleaseKeysFor(tenantID, modelName, userID, keyID, svcIdent string) []string {
+	var out []string
+	if tenantID != "" {
+		out = append(out, tenantID)
+		if modelName != "" {
+			out = append(out, modelQuotaKey(tenantID, modelName))
+		}
+		if userID != "" {
+			out = append(out, rl.UserQuotaKey(tenantID, userID))
+			if modelName != "" {
+				out = append(out, rl.UserModelQuotaKey(tenantID, userID, modelName))
+			}
+		}
+	}
+	if keyID != "" {
+		out = append(out, rl.KeyQuotaKey(keyID))
+	}
+	if svcIdent != "" {
+		out = append(out, rl.VipSharedQuotaKey(svcIdent))
+	}
+	return out
 }
 
 // quotaBucket names one token-quota bucket a request is accountable to.
@@ -1036,10 +1085,12 @@ func quotaBucketsFor(svc rateLimitService, tenantID, modelName, userID, keyID, s
 //
 // The reservation must be released even when the response produced no
 // countable tokens (count 0) or the quota config was removed mid-flight —
-// an unreleased claim denies the tenant's admissions until the epoch
-// expires it. Settlement mirrors reservation's dual-bucket shape: the
-// charge lands on the tenant aggregate AND, when configured, the
-// tenant|model bucket, and the claim is released from both.
+// an unreleased claim denies the bucket's admissions until the epoch
+// expires it. Release and charge therefore run over DIFFERENT sets: the
+// charge lands on the buckets whose limits currently resolve, while the
+// release covers every bucket the identity could have reserved against
+// (quotaReleaseKeysFor), because a bucket that stopped resolving mid-flight
+// is precisely the one nothing else would give the claim back to.
 //
 // Returns (allowed, retrySecs). allowed=false means the charge put either
 // bucket into debt: the NEXT request's rateLimitCheckInternal stage 3
@@ -1059,12 +1110,24 @@ func tokenQuotaConsumeInternal(svc rateLimitService, store *rl.RateLimiterStore,
 	if reservedAmt <= 0 && (count <= 0 || len(buckets) == 0) {
 		return true, 0
 	}
-	// The request's PRIMARY bucket settles even when its own limit resolved
-	// to zero (reservation release rides the settle call): the tenant
-	// aggregate for attributed traffic — matching the old shape — and the
-	// per-VIP shared bucket for keyless traffic, whose claim would
-	// otherwise strand when the defaults row vanishes mid-request. Every
-	// other bucket exists only with a live limit.
+	// The release runs FIRST and over its own key set — every bucket this
+	// identity could have reserved against, not the buckets whose limits
+	// still resolve. See quotaReleaseKeysFor: the two sets differ exactly
+	// when a limit disappeared under an in-flight request, which is the case
+	// where a missed release costs the bucket the rest of its epoch.
+	//
+	// Charging below therefore passes no reservation: the claim is already
+	// back, and letting SettleTokens release it a second time would subtract
+	// it twice from any bucket present in both sets.
+	for _, k := range quotaReleaseKeysFor(tenantID, modelName, userID, keyID, svcIdent) {
+		store.ReleaseReservation(k, reservedAmt, resEpoch)
+	}
+	// The request's PRIMARY bucket is charged even when its own limit
+	// resolved to zero: the tenant aggregate for attributed traffic, and the
+	// per-VIP shared bucket for keyless traffic. It used to carry the
+	// reservation release as well, which is why it was the ONE bucket a
+	// vanishing configuration could not strand a claim on; the release pass
+	// above now covers every scope, so this is a charge fallback only.
 	primaryKey := tenantID
 	if tenantID == "" {
 		primaryKey = rl.VipSharedQuotaKey(svcIdent)
@@ -1072,7 +1135,7 @@ func tokenQuotaConsumeInternal(svc rateLimitService, store *rl.RateLimiterStore,
 	settledPrimary := false
 	allowed = true
 	for _, b := range buckets {
-		bAllowed, bRetry := store.SettleTokens(b.key, count, reservedAmt, resEpoch, b.tpm, b.burstPct)
+		bAllowed, bRetry := store.SettleTokens(b.key, count, 0, 0, b.tpm, b.burstPct)
 		if b.key == primaryKey {
 			settledPrimary = true
 		}
@@ -1082,7 +1145,7 @@ func tokenQuotaConsumeInternal(svc rateLimitService, store *rl.RateLimiterStore,
 		}
 	}
 	if !settledPrimary {
-		pAllowed, pRetry := store.SettleTokens(primaryKey, count, reservedAmt, resEpoch, 0, 0)
+		pAllowed, pRetry := store.SettleTokens(primaryKey, count, 0, 0, 0, 0)
 		if !pAllowed {
 			allowed = false
 			retrySecs = max(retrySecs, pRetry)
@@ -1425,7 +1488,10 @@ func llb_ai_record_request(tenantID *C.char, modelName *C.char, statusCode C.int
 //	prefillLatencyMs: prefill phase duration in milliseconds; 0 when unknown
 //	decodeLatencyMs:  decode phase TTFT in milliseconds; 0 when unknown
 //	kvParamsFound:    1 when kv_transfer_params was found, 0 otherwise
-//	errorPhase:       0=success, 1=prefill_timeout, 2=decode_error
+//	errorPhase:       lifecycle outcome; names the leg that failed and how.
+//	                  0=complete/success, 1=prefill/timeout, 2=decode/error,
+//	                  3=decode/timeout, 4=prefill/error, 5=prefill/rejected.
+//	                  See prom.RecordPDRequest for the full contract.
 //
 //export llb_ai_pd_record
 func llb_ai_pd_record(modelName *C.char, prefillLatencyMs C.int64_t, decodeLatencyMs C.int64_t, kvParamsFound C.int, errorPhase C.int) {

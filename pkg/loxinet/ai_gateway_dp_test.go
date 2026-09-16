@@ -669,3 +669,86 @@ func TestTokenQuotaReserveInternalPerTenantBurst(t *testing.T) {
 		t.Fatal("400 tokens must be admitted at a 50% burst of 1000 TPM")
 	}
 }
+
+// TestTokenQuotaConsumeReleasesAVanishedBucket: a bucket whose limit stops
+// resolving between admission and settlement still gets its claim back.
+//
+// Settlement re-resolves the ladder from the store, so the buckets it charges
+// are the ones configured NOW. That is right for the charge and wrong for the
+// release: an operator removing a per-model quota — or a single store read
+// erroring mid-flight, which quotaBucketsFor tolerates by dropping the bucket
+// — leaves the claim on a live bucket with nothing to hand it back. It then
+// sits there until the epoch expires it, and every request the bucket
+// measures in the meantime is measured against headroom that is not spent.
+//
+// The oracle is the NEXT reservation, because the leak has no other surface:
+// the leaked claim is invisible in the charge, in the response and in the
+// config. Observed as a live 429 token_quota_would_exceed against a bucket
+// holding nothing (cicd/ai-jwtauth QOS-RES-003).
+func TestTokenQuotaConsumeReleasesAVanishedBucket(t *testing.T) {
+	store := rl.New()
+	const tenant, model = "tenant-vanish", "gpt-4"
+
+	// Admission: both the tenant aggregate and the tenant|model bucket take
+	// a 900-token claim.
+	armed := &mockRateLimitService{tenantTPM: 1000, modelTPM: map[string]int{model: 1000}}
+	allowed, _, ep := tokenQuotaReserveInternal(armed, store, tenant, model, "", "", "", 900)
+	if !allowed {
+		t.Fatalf("reserve 900 against two 1000-token buckets: expected admitted")
+	}
+
+	// The model limit is removed while the request is in flight, so
+	// settlement no longer resolves that bucket at all.
+	vanished := &mockRateLimitService{tenantTPM: 1000}
+	if allowed, _ := tokenQuotaConsumeInternal(vanished, store, tenant, model, "", "", "", 0, 900, ep); !allowed {
+		t.Fatalf("settlement of a vanished bucket: expected allowed")
+	}
+
+	// The limit comes back. A fresh full-size request must fit: nothing was
+	// charged, so the only thing that could refuse it is a claim nobody
+	// released.
+	allowed, _, _ = tokenQuotaReserveInternal(armed, store, tenant, model, "", "", "", 900)
+	if !allowed {
+		t.Fatalf("reserve 900 after the vanished bucket settled: refused against a claim " +
+			"nobody released — the bucket is holding phantom spend for the rest of the epoch")
+	}
+
+	// Non-vacuity: the release must not be a blanket wipe either. A claim
+	// that is still outstanding has to keep denying an over-large request,
+	// or this test would pass against a settlement that simply zeroed
+	// every bucket it touched.
+	if allowed, _, _ := tokenQuotaReserveInternal(armed, store, tenant, model, "", "", "", 900); allowed {
+		t.Fatalf("a second 900-token claim fitted alongside the first in a 1000-token " +
+			"bucket — the release is wiping claims rather than returning one")
+	}
+}
+
+// TestTokenQuotaReserveRollbackReleasesEveryEarlierBucket is the rollback
+// half of the same property, pinned on the USER rungs rather than the tenant
+// ones so a fix that only covered the tenant aggregate cannot satisfy both.
+func TestTokenQuotaReserveRollbackReleasesEveryEarlierBucket(t *testing.T) {
+	store := rl.New()
+	const tenant, user, model = "tenant-rb", "u1", "gpt-4"
+
+	// Ladder: tenant 10000, tenant|model 10000, user 10000, user|model 100.
+	// A 900-token request clears the first three and cannot fit the last.
+	svc := &mockRateLimitService{
+		tenantTPM:    10000,
+		modelTPM:     map[string]int{model: 10000},
+		userRows:     map[string]cmn.UserRateLimitEntry{tenant + "|" + user: {TokensPerMin: 10000}},
+		userModelTPM: map[string]int{tenant + "|" + user + "|" + model: 100},
+	}
+	if allowed, _, _ := tokenQuotaReserveInternal(svc, store, tenant, model, user, "", "", 900); allowed {
+		t.Fatalf("reserve 900 against a 100-token user|model bucket: expected refused")
+	}
+
+	// Every claim the earlier rungs granted must be gone: a request on a
+	// model with no tight bucket exercises exactly those rungs.
+	plain := &mockRateLimitService{
+		tenantTPM: 10000,
+		userRows:  map[string]cmn.UserRateLimitEntry{tenant + "|" + user: {TokensPerMin: 10000}},
+	}
+	if allowed, _, _ := tokenQuotaReserveInternal(plain, store, tenant, "other", user, "", "", 10000); !allowed {
+		t.Fatalf("the refused request left claims behind on the rungs that had admitted it")
+	}
+}

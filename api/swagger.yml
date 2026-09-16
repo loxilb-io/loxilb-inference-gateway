@@ -7753,6 +7753,54 @@ paths:
       operationId: deleteConfigAiApikeyKeyID
       tags:
         - ai
+    patch:
+      x-raw-middleware: true  # served by global middleware, not this stub (see swagger-extras.yml for the real contract)
+      summary: Update an AI gateway API key
+      description: >-
+        Updates the allowed model list, the enabled flag, and/or the key's
+        rate-limit fields. A body naming none of the patchable fields is
+        refused 400 rather than accepted as a no-op. This marked stub is
+        intercepted by raw middleware; swagger-extras.yml carries the field
+        set, the presence semantics, and the two distinct 400 classes.
+      parameters:
+        - name: key_id
+          in: path
+          type: string
+          required: true
+          description: API key identifier
+        - name: attr
+          in: body
+          required: true
+          description: >-
+            Fields to update. The served contract declares these individually;
+            this stub deliberately does not restate them, so the two documents
+            cannot disagree about the field set.
+          schema:
+            type: object
+      responses:
+        '401':
+          $ref: '#/responses/ManagementUnauthorized'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
+        '204':
+          description: Patch applied; no response body
+        '400':
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/Error'
+        '404':
+          description: API key not found
+          schema:
+            $ref: '#/definitions/Error'
+        '500':
+          description: Internal service error
+          schema:
+            $ref: '#/definitions/Error'
+      operationId: patchConfigAiApikeyKeyID
+      tags:
+        - ai
   '/config/ai/tenant/ratelimit':
     post:
       summary: Set or update tenant rate limit
@@ -8299,6 +8347,131 @@ paths:
       operationId: deleteConfigOpaWatcher
       tags:
         - opa
+#----------------------------------------------
+# Raw-middleware routes — AI KV inventory and DPU diagnostics
+#
+# These are served by setupGlobalMiddleware, not by the generated router, so
+# the operations produced from these stubs are never reached. They are
+# declared here only so the main specification names the whole management
+# surface: a reader who asks "does endpoint X exist?" of swagger.yml alone
+# was previously told no for every route below, and acted on it.
+#----------------------------------------------
+  '/config/ai/kv/inventory':
+    get:
+      x-raw-middleware: true  # served by global middleware, not this stub (see swagger-extras.yml for the real contract)
+      summary: "Get the AI KV cache inventory"
+      description: >-
+        Returns the KV-cache inventory the gateway holds for cache-aware
+        routing. This marked stub is intercepted by raw middleware;
+        swagger-extras.yml describes the actual response envelope.
+      responses:
+        '401':
+          $ref: '#/responses/ManagementUnauthorized'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
+        "200":
+          description: OK
+          schema:
+            type: object
+        "500":
+          description: Internal service error
+          schema:
+            $ref: '#/definitions/Error'
+      operationId: getConfigAiKvInventory
+      tags:
+        - ai
+  '/config/dpu/debug':
+    get:
+      x-raw-middleware: true  # served by global middleware, not this stub (see swagger-extras.yml for the real contract)
+      summary: "Get DPU debug state"
+      description: >-
+        Returns the current DPU debug configuration and state. This marked
+        stub is intercepted by raw middleware; swagger-extras.yml describes
+        the actual response envelope.
+      responses:
+        '401':
+          $ref: '#/responses/ManagementUnauthorized'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
+        "200":
+          description: OK
+          schema:
+            type: object
+        "500":
+          description: Internal service error
+          schema:
+            $ref: '#/definitions/Error'
+      operationId: getConfigDpuDebug
+      tags:
+        - dpu
+    post:
+      x-raw-middleware: true  # served by global middleware, not this stub (see swagger-extras.yml for the real contract)
+      summary: "Set DPU debug state"
+      description: >-
+        Updates the DPU debug configuration. This marked stub is intercepted
+        by raw middleware; swagger-extras.yml describes the accepted body and
+        the actual response envelope.
+      parameters:
+        - name: attr
+          in: body
+          required: true
+          description: >-
+            Debug settings to apply. The served contract declares these; this
+            stub deliberately does not restate them.
+          schema:
+            type: object
+      responses:
+        '401':
+          $ref: '#/responses/ManagementUnauthorized'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/PostSuccess'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/Error'
+        "500":
+          description: Internal service error
+          schema:
+            $ref: '#/definitions/Error'
+      operationId: postConfigDpuDebug
+      tags:
+        - dpu
+  '/config/dpu/hwcounters':
+    get:
+      x-raw-middleware: true  # served by global middleware, not this stub (see swagger-extras.yml for the real contract)
+      summary: "Get DPU hardware counters"
+      description: >-
+        Returns hardware counter readings from the DPU. This marked stub is
+        intercepted by raw middleware; swagger-extras.yml describes the actual
+        response envelope.
+      responses:
+        '401':
+          $ref: '#/responses/ManagementUnauthorized'
+        '403':
+          $ref: '#/responses/ManagementForbidden'
+        '503':
+          $ref: '#/responses/ManagementStoreUnavailable'
+        "200":
+          description: OK
+          schema:
+            type: object
+        "500":
+          description: Internal service error
+          schema:
+            $ref: '#/definitions/Error'
+      operationId: getConfigDpuHwcounters
+      tags:
+        - dpu
 #----------------------------------------------
 # AI Gateway — JWT auth profiles (data-plane bearer admission)
 #----------------------------------------------

@@ -7809,6 +7809,65 @@ func init() {
         "tags": [
           "ai"
         ]
+      },
+      "patch": {
+        "description": "Updates the allowed model list, the enabled flag, and/or the key's rate-limit fields. A body naming none of the patchable fields is refused 400 rather than accepted as a no-op. This marked stub is intercepted by raw middleware; swagger-extras.yml carries the field set, the presence semantics, and the two distinct 400 classes.",
+        "operationId": "patchConfigAiApikeyKeyID",
+        "parameters": [
+          {
+            "description": "API key identifier",
+            "in": "path",
+            "name": "key_id",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "description": "Fields to update. The served contract declares these individually; this stub deliberately does not restate them, so the two documents cannot disagree about the field set.",
+            "in": "body",
+            "name": "attr",
+            "required": true,
+            "schema": {
+              "type": "object"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Patch applied; no response body"
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "$ref": "#/responses/ManagementUnauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
+          "404": {
+            "description": "API key not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
+          }
+        },
+        "summary": "Update an AI gateway API key",
+        "tags": [
+          "ai"
+        ],
+        "x-raw-middleware": true
       }
     },
     "/config/ai/jwtauthprofile": {
@@ -7970,6 +8029,40 @@ func init() {
         "tags": [
           "ai"
         ]
+      }
+    },
+    "/config/ai/kv/inventory": {
+      "get": {
+        "description": "Returns the KV-cache inventory the gateway holds for cache-aware routing. This marked stub is intercepted by raw middleware; swagger-extras.yml describes the actual response envelope.",
+        "operationId": "getConfigAiKvInventory",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object"
+            }
+          },
+          "401": {
+            "$ref": "#/responses/ManagementUnauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
+          }
+        },
+        "summary": "Get the AI KV cache inventory",
+        "tags": [
+          "ai"
+        ],
+        "x-raw-middleware": true
       }
     },
     "/config/ai/model-profiles": {
@@ -10108,6 +10201,123 @@ func init() {
           }
         },
         "summary": "Delete a BFD session"
+      }
+    },
+    "/config/dpu/debug": {
+      "get": {
+        "description": "Returns the current DPU debug configuration and state. This marked stub is intercepted by raw middleware; swagger-extras.yml describes the actual response envelope.",
+        "operationId": "getConfigDpuDebug",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object"
+            }
+          },
+          "401": {
+            "$ref": "#/responses/ManagementUnauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
+          }
+        },
+        "summary": "Get DPU debug state",
+        "tags": [
+          "dpu"
+        ],
+        "x-raw-middleware": true
+      },
+      "post": {
+        "description": "Updates the DPU debug configuration. This marked stub is intercepted by raw middleware; swagger-extras.yml describes the accepted body and the actual response envelope.",
+        "operationId": "postConfigDpuDebug",
+        "parameters": [
+          {
+            "description": "Debug settings to apply. The served contract declares these; this stub deliberately does not restate them.",
+            "in": "body",
+            "name": "attr",
+            "required": true,
+            "schema": {
+              "type": "object"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/PostSuccess"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "$ref": "#/responses/ManagementUnauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
+          }
+        },
+        "summary": "Set DPU debug state",
+        "tags": [
+          "dpu"
+        ],
+        "x-raw-middleware": true
+      }
+    },
+    "/config/dpu/hwcounters": {
+      "get": {
+        "description": "Returns hardware counter readings from the DPU. This marked stub is intercepted by raw middleware; swagger-extras.yml describes the actual response envelope.",
+        "operationId": "getConfigDpuHwcounters",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object"
+            }
+          },
+          "401": {
+            "$ref": "#/responses/ManagementUnauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/ManagementForbidden"
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "$ref": "#/responses/ManagementStoreUnavailable"
+          }
+        },
+        "summary": "Get DPU hardware counters",
+        "tags": [
+          "dpu"
+        ],
+        "x-raw-middleware": true
       }
     },
     "/config/endpoint": {
@@ -19912,6 +20122,74 @@ func init() {
             }
           }
         }
+      },
+      "patch": {
+        "description": "Updates the allowed model list, the enabled flag, and/or the key's rate-limit fields. A body naming none of the patchable fields is refused 400 rather than accepted as a no-op. This marked stub is intercepted by raw middleware; swagger-extras.yml carries the field set, the presence semantics, and the two distinct 400 classes.",
+        "tags": [
+          "ai"
+        ],
+        "summary": "Update an AI gateway API key",
+        "operationId": "patchConfigAiApikeyKeyID",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "API key identifier",
+            "name": "key_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "description": "Fields to update. The served contract declares these individually; this stub deliberately does not restate them, so the two documents cannot disagree about the field set.",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Patch applied; no response body"
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Missing or invalid management credential",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "404": {
+            "description": "API key not found",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        },
+        "x-raw-middleware": true
       }
     },
     "/config/ai/jwtauthprofile": {
@@ -20082,6 +20360,49 @@ func init() {
             }
           }
         }
+      }
+    },
+    "/config/ai/kv/inventory": {
+      "get": {
+        "description": "Returns the KV-cache inventory the gateway holds for cache-aware routing. This marked stub is intercepted by raw middleware; swagger-extras.yml describes the actual response envelope.",
+        "tags": [
+          "ai"
+        ],
+        "summary": "Get the AI KV cache inventory",
+        "operationId": "getConfigAiKvInventory",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object"
+            }
+          },
+          "401": {
+            "description": "Missing or invalid management credential",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        },
+        "x-raw-middleware": true
       }
     },
     "/config/ai/model-profiles": {
@@ -22261,6 +22582,150 @@ func init() {
             }
           }
         }
+      }
+    },
+    "/config/dpu/debug": {
+      "get": {
+        "description": "Returns the current DPU debug configuration and state. This marked stub is intercepted by raw middleware; swagger-extras.yml describes the actual response envelope.",
+        "tags": [
+          "dpu"
+        ],
+        "summary": "Get DPU debug state",
+        "operationId": "getConfigDpuDebug",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object"
+            }
+          },
+          "401": {
+            "description": "Missing or invalid management credential",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        },
+        "x-raw-middleware": true
+      },
+      "post": {
+        "description": "Updates the DPU debug configuration. This marked stub is intercepted by raw middleware; swagger-extras.yml describes the accepted body and the actual response envelope.",
+        "tags": [
+          "dpu"
+        ],
+        "summary": "Set DPU debug state",
+        "operationId": "postConfigDpuDebug",
+        "parameters": [
+          {
+            "description": "Debug settings to apply. The served contract declares these; this stub deliberately does not restate them.",
+            "name": "attr",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/PostSuccess"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "401": {
+            "description": "Missing or invalid management credential",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        },
+        "x-raw-middleware": true
+      }
+    },
+    "/config/dpu/hwcounters": {
+      "get": {
+        "description": "Returns hardware counter readings from the DPU. This marked stub is intercepted by raw middleware; swagger-extras.yml describes the actual response envelope.",
+        "tags": [
+          "dpu"
+        ],
+        "summary": "Get DPU hardware counters",
+        "operationId": "getConfigDpuHwcounters",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object"
+            }
+          },
+          "401": {
+            "description": "Missing or invalid management credential",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "403": {
+            "description": "Authenticated principal is not authorized for this operation",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          },
+          "503": {
+            "description": "Management credential store unavailable; the credential could not be evaluated",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            }
+          }
+        },
+        "x-raw-middleware": true
       }
     },
     "/config/endpoint": {
