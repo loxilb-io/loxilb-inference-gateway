@@ -13,6 +13,9 @@
 # The raw byte tail at the point of the parse failure is also dumped for inspection.
 #
 # Usage: ./seq-diag.sh [rounds]
+# Lives under debug/ but runs from the suite directory: every path below
+# (../common.sh, ./config.sh, ./sse_server.js) is written relative to it.
+cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 source ../common.sh
 source ./sockmap_common.sh
 sockmap_init_artifacts
