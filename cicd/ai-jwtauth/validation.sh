@@ -1845,14 +1845,24 @@ echo "             only thing they share. The limit gauge is the charge"
 echo "             oracle: a quota key publishes its limit only when"
 echo "             something CHARGES it, so absent-then-10 is the spend"
 echo "             arriving, not a row being configured."
-QOS_VIP_LABEL='tenant="v_10.10.10.254_2061"'
-VLIM0=$(metric_labeled loxilb_ai_token_quota_limit_tokens "$QOS_VIP_LABEL")
+#             The oracle reads the per-VIP family, and it has to. This case
+#             used to read the shared bucket off the TENANT family, as
+#             tenant="v_10.10.10.254_2061" — the VIP's wire key published in
+#             a label that means a tenant. That was a defect, it was fixed by
+#             dropping those rows, and dropping them left this assertion
+#             reading 0 forever against a bucket that was being charged
+#             perfectly well: the gauge it watched had stopped existing, and
+#             a charge oracle that can only go down cannot fail loudly. The
+#             bucket is now published as loxilb_ai_vip_token_quota_* keyed by
+#             service, which is what this case wanted to name all along.
+QOS_VIP_LABEL='service="10.10.10.254_2061"'
+VLIM0=$(metric_labeled loxilb_ai_vip_token_quota_limit_tokens "$QOS_VIP_LABEL")
 chk_num      "QOS-VIP-004 nothing has charged the shared bucket yet" 0 "$VLIM0"
 qreq 2061 "Authorization: Bearer $TOK_q4"
 chk_code     "QOS-VIP-004 q4's credentialed request admitted" 200 "$QR"
 chk_receipt  "QOS-VIP-004 q4's request reached the backend" 1 "$QR_NONCE"
 sleep $QOS_SETTLE_WAIT
-VLIM1=$(metric_labeled loxilb_ai_token_quota_limit_tokens "$QOS_VIP_LABEL")
+VLIM1=$(metric_labeled loxilb_ai_vip_token_quota_limit_tokens "$QOS_VIP_LABEL")
 chk_num      "QOS-VIP-004 the credentialed answer charged the shared bucket" 10 "$VLIM1"
 qreq 2061 "Authorization: Bearer $TOK_t1"
 chk_code     "QOS-VIP-004 a different tenant is refused by what q4 spent" 429 "$QR"
