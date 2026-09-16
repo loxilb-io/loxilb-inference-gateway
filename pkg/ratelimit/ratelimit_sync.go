@@ -201,10 +201,15 @@ func quotaEntryInDebt(we *tokenWindowEntry, nowMs int64) bool {
 // only make the local node more conservative, never mint headroom. The
 // wire Exceeded bit is ignored: debt is derived from the merged drain time,
 // so importing it arrives for free and a stale flag can never wrongly deny.
-func (s *RateLimiterStore) mergeQuotaEntry(e RateLimiterEntry) {
+//
+// Returns whether the entry actually landed in the quota map. The callers
+// use that to tell a batch that re-taught this node something from one that
+// carried no quota state at all — a distinction the cold-start warmup turns
+// on, and which the count of received entries cannot make.
+func (s *RateLimiterStore) mergeQuotaEntry(e RateLimiterEntry) bool {
 	mapKey, ok := QuotaMapKey(e.KeyID)
 	if !ok {
-		return
+		return false
 	}
 	loaded, _ := s.quotaMap.LoadOrStore(mapKey, &tokenWindowEntry{})
 	we := loaded.(*tokenWindowEntry)
@@ -221,6 +226,7 @@ func (s *RateLimiterStore) mergeQuotaEntry(e RateLimiterEntry) {
 			break
 		}
 	}
+	return true
 }
 
 // ExportState returns a full snapshot of every per-key bucket AND every
@@ -315,18 +321,33 @@ func (s *RateLimiterStore) ExportState() []RateLimiterEntry {
 // drain time only means the remote node has seen less spend, never that
 // quota should be refunded.
 func (s *RateLimiterStore) ImportState(entries []RateLimiterEntry) {
-	// Receiving any peer snapshot proves a live peer re-taught us: end the
-	// cold-start warmup (no-op unless the store was warming).
-	s.endQuotaWarmup(false)
-
 	// LoadOrStore inside mergeQuotaEntry guarantees we never overwrite a
 	// *tokenWindowEntry that another goroutine may be holding a pointer to
 	// (callers from AllowTokens cache the pointer past Load).
+	merged := 0
 	for _, e := range entries {
 		if !e.IsTenant {
 			continue
 		}
-		s.mergeQuotaEntry(e)
+		if s.mergeQuotaEntry(e) {
+			merged++
+		}
+	}
+
+	// The cold-start warmup ends on quota state, not on an arrival. It used
+	// to end at the top of this function, on any batch at all — and a
+	// snapshot arrives CHUNKED, every row this loop skips is one a peer sent
+	// anyway, and the store's own export puts the quota rows LAST. A node
+	// that came up cold therefore stopped holding quota-limited admissions
+	// the moment a chunk of per-key rows landed, having been taught nothing,
+	// and it did so under the wrong signal: the cold-open counter stays at
+	// zero and the callback reports "warmed from peer state". The one series
+	// an operator has for "this node is serving a cold quota window" says the
+	// opposite of the truth. A batch that merged nothing leaves the warmup
+	// running, so the next chunk — or the deadline, honestly reported —
+	// settles it instead.
+	if merged > 0 {
+		s.endQuotaWarmup(false)
 	}
 }
 
@@ -414,9 +435,7 @@ func (s *RateLimiterStore) ExportDelta(prevSnapshot map[string]int64) []RateLimi
 //	  idempotent under reorder/replay). The wire Exceeded bit is
 //	  ignored; debt is derived from the merged drain time.
 func (s *RateLimiterStore) ApplyGossipDelta(entries []RateLimiterEntry) {
-	// Any received gossip batch ends the cold-start warmup (see ImportState).
-	s.endQuotaWarmup(false)
-
+	merged := 0
 	for _, e := range entries {
 		if !e.IsTenant {
 			// -B: per-key bucket gossip is not in scope; A-A
@@ -426,6 +445,13 @@ func (s *RateLimiterStore) ApplyGossipDelta(entries []RateLimiterEntry) {
 			// CheckKey call.
 			continue
 		}
-		s.mergeQuotaEntry(e)
+		if s.mergeQuotaEntry(e) {
+			merged++
+		}
+	}
+	// Same rule as ImportState: a batch that taught this node no quota
+	// state does not end the cold-start warmup.
+	if merged > 0 {
+		s.endQuotaWarmup(false)
 	}
 }

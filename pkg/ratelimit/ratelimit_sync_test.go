@@ -537,6 +537,146 @@ func TestRateLimiterExportDeltaProgress(t *testing.T) {
 	}
 }
 
+// ---------- Cold-start warmup ----------
+
+// warmupProbe arms a store's cold-start warmup and reports what the
+// callback saw. The callback is the node's ONLY outward signal here — the
+// cold-open counter and the log line both hang off it — so the test reads
+// it rather than the warm flag alone.
+type warmupProbe struct {
+	store    *RateLimiterStore
+	fired    atomic.Int32
+	failOpen atomic.Int32
+}
+
+func newWarmupProbe(timeout time.Duration) *warmupProbe {
+	p := &warmupProbe{store: newTestStore()}
+	p.store.StartQuotaWarmup(timeout, func(failOpen bool) {
+		p.fired.Add(1)
+		if failOpen {
+			p.failOpen.Add(1)
+		}
+	})
+	return p
+}
+
+// quotaRow is one tenant row shaped like a peer's snapshot entry: a drain
+// time well ahead of now, which is what "this tenant has spent" looks like
+// on the wire.
+func quotaRow(tenant string) RateLimiterEntry {
+	return RateLimiterEntry{
+		KeyID:       "t:" + tenant,
+		IsTenant:    true,
+		WindowEpoch: currentQuotaEpoch.Load(),
+		Consumed:    quotaNowMs.Load() + 30_000,
+	}
+}
+
+// TestColdWarmupNeedsQuotaStateNotJustABatch — a node that came up cold
+// holds quota-limited admissions until a peer re-teaches it. What counts as
+// "re-taught" is the point of this test.
+//
+// A snapshot does not arrive whole. sendRateLimiterBatch chunks it, each
+// chunk is an independent ImportState, and the store's own ExportState
+// walks the keyed limiter table before it appends a single quota row. A
+// gateway with more keyed limiters than the chunk ceiling therefore
+// delivers a first chunk in which every row is one the merge path skips.
+//
+// Ending the warmup there is worse than early: the callback reports
+// failOpen=false, so the cold-open counter stays at zero and the log says
+// "warmed from peer state". The node is serving a cold quota window and the
+// one series an operator watches for exactly that says it is not.
+//
+// The control is the same call with one tenant row in it. Without it, "the
+// warmup is still running" is equally well explained by a warmup that
+// nothing can end.
+func TestColdWarmupNeedsQuotaStateNotJustABatch(t *testing.T) {
+	t.Parallel()
+
+	keyRows := []RateLimiterEntry{
+		{KeyID: "k:key-a", IsTenant: false},
+		{KeyID: "u:acme|bob", IsTenant: false},
+	}
+
+	t.Run("snapshot chunk carrying no quota row", func(t *testing.T) {
+		t.Parallel()
+		p := newWarmupProbe(time.Hour)
+		p.store.ImportState(keyRows)
+		if !p.store.QuotaWarming() {
+			t.Error("a snapshot chunk that merged no quota state ended the cold-start warmup: " +
+				"the node stopped holding quota-limited admissions having been taught nothing")
+		}
+		if got := p.fired.Load(); got != 0 {
+			t.Errorf("the warmup callback fired %d times on a chunk that taught the node nothing; "+
+				"it reports failOpen=false, so the cold-open counter never records the cold window", got)
+		}
+	})
+
+	t.Run("gossip delta carrying no quota row", func(t *testing.T) {
+		t.Parallel()
+		p := newWarmupProbe(time.Hour)
+		p.store.ApplyGossipDelta(keyRows)
+		if !p.store.QuotaWarming() {
+			t.Error("a gossip batch that merged no quota state ended the cold-start warmup")
+		}
+	})
+
+	t.Run("rows the merge path cannot place", func(t *testing.T) {
+		t.Parallel()
+		// IsTenant is the sender's claim, not a fact: the scope sentinel
+		// rides the wire with it set, and any row whose prefix this build
+		// does not know lands here too. mergeQuotaEntry drops both. A
+		// batch made entirely of them taught this node nothing either.
+		p := newWarmupProbe(time.Hour)
+		p.store.ImportState([]RateLimiterEntry{
+			{KeyID: ScopeSentinelKeyID, IsTenant: true},
+			{KeyID: "zz:from-a-newer-build", IsTenant: true},
+		})
+		if !p.store.QuotaWarming() {
+			t.Error("a batch of rows the merge path could not place ended the cold-start warmup")
+		}
+	})
+
+	t.Run("control: one quota row ends it", func(t *testing.T) {
+		t.Parallel()
+		p := newWarmupProbe(time.Hour)
+		p.store.ImportState(append(append([]RateLimiterEntry{}, keyRows...), quotaRow("acme")))
+		if p.store.QuotaWarming() {
+			t.Fatal("control failed: a batch with a real quota row did not end the warmup, " +
+				"so the results above prove nothing about which batches end it")
+		}
+		if got, want := p.fired.Load(), int32(1); got != want {
+			t.Fatalf("control: warmup callback fired %d times, want %d", got, want)
+		}
+		if got := p.failOpen.Load(); got != 0 {
+			t.Errorf("control: warmup ended with failOpen=%d, want 0 — state DID arrive", got)
+		}
+	})
+
+	t.Run("control: the deadline still ends it, honestly", func(t *testing.T) {
+		t.Parallel()
+		// The fix must not turn "wait for state" into "wait forever": a
+		// node that is never taught has to fall through to the fail-open
+		// window and SAY so.
+		p := newWarmupProbe(50 * time.Millisecond)
+		p.store.ImportState(keyRows)
+		deadline := time.Now().Add(5 * time.Second)
+		for p.fired.Load() == 0 && time.Now().Before(deadline) {
+			time.Sleep(5 * time.Millisecond)
+		}
+		if got := p.fired.Load(); got != 1 {
+			t.Fatalf("warmup callback fired %d times after the deadline passed, want 1", got)
+		}
+		if got := p.failOpen.Load(); got != 1 {
+			t.Errorf("the deadline ended the warmup with failOpen=%d, want 1 — "+
+				"no peer state ever arrived and the cold window must be recorded", got)
+		}
+		if p.store.QuotaWarming() {
+			t.Error("the store is still warming after its deadline expired")
+		}
+	})
+}
+
 // ---------- Tiny helpers ----------
 
 // itoa avoids importing strconv for a one-line conversion in test names.

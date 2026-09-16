@@ -298,9 +298,12 @@ func New() *RateLimiterStore {
 
 // StartQuotaWarmup puts the store into the token-quota warming state for at
 // most timeout: a node that restarts loses its in-memory quota counters, so
-// until a peer re-teaches it (the first received sync batch — ImportState or
-// ApplyGossipDelta — ends the warmup) the admission gate treats every
-// quota-limited tenant as not-yet-decidable rather than silently fail-open.
+// until a peer re-teaches it (the first received sync batch that actually
+// merges quota state — ImportState or ApplyGossipDelta — ends the warmup)
+// the admission gate treats every quota-limited tenant as not-yet-decidable
+// rather than silently fail-open. A batch that merges nothing re-taught this
+// node nothing and leaves the warmup running: snapshots arrive chunked, and
+// a chunk carrying no quota row is an arrival, not an answer.
 //
 // onDone is invoked exactly once when the warmup ends: failOpen=false when
 // peer state arrived in time, failOpen=true when the deadline expired first
