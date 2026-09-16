@@ -15,8 +15,10 @@
 #   4. HTTP/1.1 on request and both: split first request with a 1 byte tail, a
 #      streamed upload (the request direction activates after the body), five
 #      pipelined requests, and a half-closed client not disturbing the service
+#      (whether it is ANSWERED is case E-11 of validation_equivalence.sh)
 #   5. a live keep-alive connection survives a mode change and a rule delete, and
-#      a new connection follows the new mode
+#      a new connection follows the new mode (today's semantics; the target is
+#      cases C-5 and C-6 of validation_control.sh)
 #   6. PEER_MISS never grows and no sockmap failure is logged
 
 source ../common.sh
@@ -147,8 +149,10 @@ for port in "$H1_REQ_PORT" "$H1_BOTH_PORT"; do
   out=$($hexec l3h1 python3 "$CLIENT" pipeline "$VIP" "$port" 2>&1)
   sockmap_result "$label: pipelined requests in order" "$([[ $out == OK* ]] && echo OK || echo FAILED)" "$out"
 
-  # sockproxy closes a client connection on its half-close without answering,
-  # with or without sockmap, so only check that the service is undisturbed.
+  # Whether a half-closed client is ANSWERED is case E-11 of
+  # validation_equivalence.sh: sockproxy closes such a connection without
+  # answering, with or without sockmap (issue 3, PR-C). What this suite checks is
+  # the separate property that such a client does not disturb the service.
   $hexec l3h1 python3 "$CLIENT" halfclose "$VIP" "$port" >/dev/null 2>&1
   out=$($hexec l3h1 python3 "$CLIENT" keepalive "$VIP" "$port" 1 50 2>&1)
   sockmap_result "$label: service undisturbed by a half-closed client" "$([[ $out == OK* ]] && echo OK || echo FAILED)" "$out"
@@ -156,7 +160,10 @@ done
 
 # ---------- Step 5: rule changes under a live connection ----------
 # A pair that is accelerated keeps redirecting until it closes; a rule change or
-# delete applies to new connections.
+# delete applies to new connections. That is today's semantics and the reason
+# there is no way to stop acceleration on a live connection: cases C-5 and C-6 of
+# validation_control.sh assert the opposite as the target, and when PR-B lands the
+# expectations below move there (decision D-C of the follow-up plan).
 sockmap_section 5 "Rule changes under a live keep-alive connection"
 $hexec l3h1 python3 "$CLIENT" keepalive "$VIP" "$H1_BOTH_PORT" 6 100 > "$SOCKMAP_ARTIFACTS_DIR/rp_ka_mode.txt" 2>&1 &
 ka_pid=$!

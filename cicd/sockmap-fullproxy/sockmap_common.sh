@@ -24,6 +24,38 @@ SOCKMAP_STAT_REDIRECT_RESP=4
 
 # result tracking
 SOCKMAP_FAIL_COUNT=0
+SOCKMAP_XFAIL_COUNT=0
+SOCKMAP_XPASS_COUNT=0
+SOCKMAP_BLOCKED_COUNT=0
+
+# Known-defect registry. A case registered here is EXPECTED to fail until the
+# defect is fixed: a failure prints XFAIL and is not counted, and a pass prints
+# XPASS and IS counted. So fixing the defect turns the suite red until the
+# registration is removed, and a registration can never quietly outlive its
+# defect. The key is matched exactly first, then as a label prefix, so
+# registering a case ID covers every label that starts with it.
+declare -A SOCKMAP_XFAIL=()
+
+# sockmap_xfail_register <label-or-prefix> <reason>
+sockmap_xfail_register() {
+  SOCKMAP_XFAIL["$1"]="$2"
+}
+
+# Prints the reason a label is a known defect, or returns 1.
+_sockmap_xfail_reason() {
+  local label=$1 key
+  if [[ -n "${SOCKMAP_XFAIL[$label]:-}" ]]; then
+    printf '%s' "${SOCKMAP_XFAIL[$label]}"
+    return 0
+  fi
+  for key in "${!SOCKMAP_XFAIL[@]}"; do
+    if [[ "$label" == "$key"* ]]; then
+      printf '%s' "${SOCKMAP_XFAIL[$key]}"
+      return 0
+    fi
+  done
+  return 1
+}
 
 sockmap_init_artifacts() {
   mkdir -p "$SOCKMAP_ARTIFACTS_DIR"
@@ -459,10 +491,66 @@ sockmap_result() {
   local label=$1
   local status=$2
   local detail=${3:-}
+  local reason
+  if reason=$(_sockmap_xfail_reason "$label"); then
+    if [[ "$status" == "OK" ]]; then
+      printf "    %-48s : %s (%s — drop the xfail registration)\n" \
+             "$label" "XPASS" "$reason"
+      SOCKMAP_XPASS_COUNT=$((SOCKMAP_XPASS_COUNT + 1))
+      SOCKMAP_FAIL_COUNT=$((SOCKMAP_FAIL_COUNT + 1))
+    else
+      printf "    %-48s : %s (%s)%s\n" \
+             "$label" "XFAIL" "$reason" "${detail:+ [$detail]}"
+      SOCKMAP_XFAIL_COUNT=$((SOCKMAP_XFAIL_COUNT + 1))
+    fi
+    return
+  fi
   if [[ "$status" == "OK" ]]; then
     printf "    %-48s : %s%s\n" "$label" "OK" "${detail:+ ($detail)}"
   else
     printf "    %-48s : %s%s\n" "$label" "FAILED" "${detail:+ ($detail)}"
     SOCKMAP_FAIL_COUNT=$((SOCKMAP_FAIL_COUNT + 1))
   fi
+}
+
+# A case whose PRECONDITION is missing, so it cannot be evaluated at all. Use it
+# instead of xfail wherever the check would otherwise pass VACUOUSLY: "the other
+# rule's connections survived" is not evidence of anything while nothing is being
+# dropped, and registering it as a known defect would report XPASS and claim a fix
+# that has not happened.
+sockmap_result_blocked() {
+  printf "    %-48s : %s (%s)\n" "$1" "BLOCKED" "$2"
+  SOCKMAP_BLOCKED_COUNT=$((SOCKMAP_BLOCKED_COUNT + 1))
+}
+
+# Prints the RESULT line for a suite and returns its exit status. Reports the
+# known-defect counts so an XFAIL-heavy green run is never mistaken for a clean
+# one.
+sockmap_finalize() {
+  local scenario=$1
+  local tail=""
+  (( SOCKMAP_XFAIL_COUNT > 0 )) && tail+=" ($SOCKMAP_XFAIL_COUNT known defect(s) xfailed)"
+  (( SOCKMAP_BLOCKED_COUNT > 0 )) && tail+=" ($SOCKMAP_BLOCKED_COUNT case(s) blocked, not evaluated)"
+  echo
+  if (( SOCKMAP_FAIL_COUNT == 0 )); then
+    echo "RESULT: $scenario [OK]$tail"
+    return 0
+  fi
+  if (( SOCKMAP_XPASS_COUNT > 0 )); then
+    echo "NOTE: $SOCKMAP_XPASS_COUNT case(s) marked xfail now pass — remove their" \
+         "sockmap_xfail_register lines."
+  fi
+  echo "RESULT: $scenario [FAILED] ($SOCKMAP_FAIL_COUNT check(s) failed)$tail"
+  echo "Artifacts: $SOCKMAP_ARTIFACTS_DIR/"
+  return 1
+}
+
+# Drops a rule's accelerated connections through the REST API (PR-B). Prints
+# "<http code> <body>". The endpoint does not exist yet, so every caller must be
+# registered as a known defect until PR-B lands.
+sockmap_reset_accel_via_api() {
+  local llb=$1 vip=$2 vport=$3
+  local url="http://localhost:11111/netlox/v1/config/loadbalancer/externalipaddress/${vip}/port/${vport}/protocol/tcp/sockmapreset"
+  _sm_dexec "$llb" curl -sS -w '\n%{http_code}' -X POST "$url" \
+    | awk 'NR==1{b=$0} END{print $0" "b}'
 }

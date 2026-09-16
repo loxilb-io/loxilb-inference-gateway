@@ -332,9 +332,17 @@ traffic is being relayed in userspace and the configuration is having no effect.
 | `validation_directional.sh` | `request` / `response` modes, the unaccelerated direction skipping the verdict, portset cleanup |
 | `validation_refcount.sh` | portset refcounts across in-place updates, mode changes and shared endpoints |
 | `validation_request_path.sh` | h2c through every mode, split and streamed and pipelined requests, half-closed clients, mode change and delete under a live connection, no verdict pass |
+| `validation_equivalence.sh` | what the client and the backend observe on an accelerated rule is identical to `off`: one rule per mode over one endpoint, compared record by record, plus chunked, pipelined, streamed, truncated, 204/304/HEAD and half-closed shapes |
+| `validation_control.sh` | stopping acceleration on live connections: the admin action drops one rule's accelerated connections and nothing else, and the maps return to their baseline |
 | `validation_perf.sh` | throughput, acceleration on vs off, on a pair of services sharing every port |
 | `validation-cpu.sh` | CPU comparison on the same pair |
 | `validation-sse-cpu.sh` | CPU per token on SSE streaming, including `request` / `response` arms |
+
+Some cases in `validation_equivalence.sh` and `validation_control.sh` describe
+where the feature is going rather than where it is: those report `XFAIL` with the
+defect they are waiting on, and they turn the suite red (`XPASS`) once it is
+fixed, which is the signal to drop the registration. A run that ends `[OK]` names
+how many cases were xfailed.
 
 `cicd/sockmap-fullproxy/minrepro/` is a standalone reproducer for the kernel
 defect. It uses no loxilb code and can be submitted upstream as-is.
