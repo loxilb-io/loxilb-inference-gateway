@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
  "provenance": {
-  "generated_at": "2026-09-16T02:13:09+00:00",
-  "source_revision": "733a034d69744a1890714b713014b3feeb293c95"
+  "generated_at": "2026-09-16T02:43:42+00:00",
+  "source_revision": "4ee400e45c42234e9cb2c7fd3eb8f7fdf8b23763"
  },
  "contract": {
   "total": 240,
@@ -12139,8 +12139,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 856,
-     "call_line": 888,
+     "def_line": 863,
+     "call_line": 895,
      "calls": "SockproxySyncApplyErrorInc"
     },
     {
@@ -12192,8 +12192,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 856,
-     "call_line": 877,
+     "def_line": 863,
+     "call_line": 884,
      "calls": "SockproxySyncConflictInc",
      "note": "one outcome per branch: :874, :876 and :878"
     },
@@ -12246,8 +12246,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 468,
-     "call_line": 507,
+     "def_line": 475,
+     "call_line": 514,
      "calls": "SockproxySyncDropInc",
      "note": "reason=\"peer_unreachable\" once the retry budget is spent; the batch is dropped rather than queued forever"
     },
@@ -12256,8 +12256,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 437,
-     "call_line": 460,
+     "def_line": 444,
+     "call_line": 467,
      "calls": "sendWithRetry"
     },
     {
@@ -12265,8 +12265,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 388,
-     "call_line": 412,
+     "def_line": 395,
+     "call_line": 419,
      "calls": "consumerLoop"
     },
     {
@@ -12274,8 +12274,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 350,
-     "call_line": 363,
+     "def_line": 357,
+     "call_line": 370,
      "calls": "spawnConsumersForKnownPeers"
     },
     {
@@ -12334,8 +12334,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 856,
-     "call_line": 883,
+     "def_line": 863,
+     "call_line": 890,
      "calls": "SockproxySyncHealthRejectInc"
     },
     {
@@ -12387,8 +12387,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 811,
-     "call_line": 821,
+     "def_line": 818,
+     "call_line": 828,
      "calls": "SockproxySyncInflightRpcInc",
      "note": "decremented again at :822; the rate-limiter push path does the same pair at :1201 and :1205"
     },
@@ -12397,8 +12397,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 468,
-     "call_line": 495,
+     "def_line": 475,
+     "call_line": 502,
      "calls": "sendOnce"
     },
     {
@@ -12406,8 +12406,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 437,
-     "call_line": 460,
+     "def_line": 444,
+     "call_line": 467,
      "calls": "sendWithRetry"
     },
     {
@@ -12415,8 +12415,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 388,
-     "call_line": 412,
+     "def_line": 395,
+     "call_line": 419,
      "calls": "consumerLoop"
     },
     {
@@ -12424,8 +12424,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 350,
-     "call_line": 363,
+     "def_line": 357,
+     "call_line": 370,
      "calls": "spawnConsumersForKnownPeers"
     },
     {
@@ -12484,8 +12484,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 743,
-     "call_line": 764,
+     "def_line": 750,
+     "call_line": 771,
      "calls": "SockproxySyncOverflowInc",
      "note": "three kinds at :761, :768 and :775; the C-side producer path increments the same family from sendNonBlockingDropOldest (:917, :925, :935), which is reached from the cgo export llb_sockproxy_emit_sync_event (:1012)"
     },
@@ -12494,8 +12494,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 667,
-     "call_line": 685,
+     "def_line": 674,
+     "call_line": 692,
      "calls": "enqueueForPeer"
     },
     {
@@ -12503,8 +12503,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 350,
-     "call_line": 356,
+     "def_line": 357,
+     "call_line": 363,
      "calls": "drainLoop"
     },
     {
@@ -12563,8 +12563,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 468,
-     "call_line": 499,
+     "def_line": 475,
+     "call_line": 506,
      "calls": "SockproxySyncPeerLagSet",
      "note": "stamped only after a push the peer accepted, so an unstamped gauge reads 0 rather than a stale lag"
     },
@@ -12573,8 +12573,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 437,
-     "call_line": 460,
+     "def_line": 444,
+     "call_line": 467,
      "calls": "sendWithRetry"
     },
     {
@@ -12582,8 +12582,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 388,
-     "call_line": 412,
+     "def_line": 395,
+     "call_line": 419,
      "calls": "consumerLoop"
     },
     {
@@ -12591,8 +12591,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 350,
-     "call_line": 363,
+     "def_line": 357,
+     "call_line": 370,
      "calls": "spawnConsumersForKnownPeers"
     },
     {
@@ -12651,8 +12651,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 437,
-     "call_line": 448,
+     "def_line": 444,
+     "call_line": 455,
      "calls": "SockproxySyncPeerUpSet",
      "note": "also set from sendWithRetry on success (:488, :495) and on retry exhaustion (:505), and from sendRateLimiterBatch (:1218, :1229)"
     },
@@ -12661,8 +12661,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 388,
-     "call_line": 412,
+     "def_line": 395,
+     "call_line": 419,
      "calls": "consumerLoop",
      "note": "also re-entered from OnStateChange (:657) when a BFD role change promotes this node to MASTER"
     },
@@ -12671,8 +12671,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 350,
-     "call_line": 363,
+     "def_line": 357,
+     "call_line": 370,
      "calls": "spawnConsumersForKnownPeers"
     },
     {
@@ -12732,8 +12732,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 811,
-     "call_line": 824,
+     "def_line": 818,
+     "call_line": 831,
      "calls": "SockproxySyncPushLatencyObserve",
      "note": "rpc=\"SockproxySessionMod\"; the rate-limiter batch path observes its own rpc label at :1204"
     },
@@ -12742,8 +12742,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 468,
-     "call_line": 495,
+     "def_line": 475,
+     "call_line": 502,
      "calls": "sendOnce"
     },
     {
@@ -12751,8 +12751,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 437,
-     "call_line": 460,
+     "def_line": 444,
+     "call_line": 467,
      "calls": "sendWithRetry"
     },
     {
@@ -12760,8 +12760,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 388,
-     "call_line": 412,
+     "def_line": 395,
+     "call_line": 419,
      "calls": "consumerLoop"
     },
     {
@@ -12769,8 +12769,8 @@
      "kind": "method",
      "receiver": "SockproxySync",
      "file": "pkg/loxinet/sockproxy_sync.go",
-     "def_line": 350,
-     "call_line": 363,
+     "def_line": 357,
+     "call_line": 370,
      "calls": "spawnConsumersForKnownPeers"
     },
     {

@@ -765,3 +765,103 @@ func TestSnapshotImportDoesNotResetTheReceiversRpsBuckets(t *testing.T) {
 			"past a rate limit that had already refused it", extra)
 	}
 }
+
+// TestRateLimiterPushDialsItsOwnPeer — the rate-limiter push loop must
+// establish its own connection to a peer it has none for.
+//
+// The loop used to test clientFn() and skip when it came back nil, so the
+// rate-limiter half of xsync ran only after something ELSE had dialled.
+// Only two paths dial: the session-sync retry and key invalidation. A
+// cluster whose traffic is L7 AI does neither, so quota state never
+// replicated — and nothing said so, because the skip had no log, no
+// counter, and left peer_up at the 0 the consumer loop writes at start.
+//
+// clientFn here returns nil until the connect hook has run, which is
+// exactly the production shape: spClients is empty until connectFn stores
+// a client in it.
+func TestRateLimiterPushDialsItsOwnPeer(t *testing.T) {
+	t.Parallel()
+	srv := &mockRateLimiterServer{}
+	client, cleanup := startMockRLServer(t, srv)
+	defer cleanup()
+
+	coord := newTestCoordinator(newMockApplier(0))
+	coord.haMode.Store("AP")
+	store := rl.New()
+	// Seed one quota entry: ExportState must be non-empty or the loop
+	// short-circuits before it ever looks for a client, and the test would
+	// pass for the wrong reason.
+	store.AllowTokens("dial-tenant", 1, 1000000, 0)
+	coord.SetRateLimiterStore(store)
+
+	var connects atomic.Int32
+	var connected atomic.Bool
+	coord.SetConnectFn(func(string) {
+		connects.Add(1)
+		connected.Store(true)
+	})
+	clientFn := func() XSyncClient {
+		if connected.Load() {
+			return client
+		}
+		return nil
+	}
+
+	peer := &DpPeer{Peer: net.ParseIP("127.0.0.11"), CapMask: 0xFFFFFFFF}
+	coord.StartRateLimiterPushLoop(peer, clientFn)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) && srv.calls.Load() == 0 {
+		time.Sleep(50 * time.Millisecond)
+	}
+	close(coord.shutdownCh)
+	coord.wg.Wait()
+
+	if connects.Load() == 0 {
+		t.Fatalf("the push loop never asked the connect hook to dial the peer")
+	}
+	if got := srv.calls.Load(); got == 0 {
+		t.Errorf("no RateLimiterSync reached the peer after the loop dialled it (connects=%d)",
+			connects.Load())
+	}
+}
+
+// TestRateLimiterPushDialIsThrottled — a peer that cannot be dialled must
+// not be re-dialled on every tick.
+//
+// The loop runs at 200ms in A-P and DialXSyncGRPC blocks for up to 2s on a
+// TCP probe before it gives up, so an unthrottled retry turns an
+// unreachable peer into a permanent connect storm. The bound is one
+// attempt per rlDialRetryInterval.
+func TestRateLimiterPushDialIsThrottled(t *testing.T) {
+	t.Parallel()
+	coord := newTestCoordinator(newMockApplier(0))
+	coord.haMode.Store("AP")
+	store := rl.New()
+	store.AllowTokens("throttle-tenant", 1, 1000000, 0)
+	coord.SetRateLimiterStore(store)
+
+	var connects atomic.Int32
+	coord.SetConnectFn(func(string) { connects.Add(1) })
+	// Never connects: the peer is unreachable for the whole run.
+	clientFn := func() XSyncClient { return nil }
+
+	peer := &DpPeer{Peer: net.ParseIP("127.0.0.12"), CapMask: 0xFFFFFFFF}
+	coord.StartRateLimiterPushLoop(peer, clientFn)
+
+	const run = 2500 * time.Millisecond
+	time.Sleep(run)
+	close(coord.shutdownCh)
+	coord.wg.Wait()
+
+	ticks := int(run / rlPushIntervalAP)         // ~12
+	maxDials := int(run/rlDialRetryInterval) + 2 // ~3, with slack for timing
+	got := int(connects.Load())
+	if got == 0 {
+		t.Fatalf("the loop never dialled at all over %v; the throttle cannot be under test", run)
+	}
+	if got > maxDials {
+		t.Errorf("dialled %d times in %v (%d ticks); the throttle allows at most %d",
+			got, run, ticks, maxDials)
+	}
+}

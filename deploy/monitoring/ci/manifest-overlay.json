@@ -1022,9 +1022,9 @@
     "status": "verified-static",
     "writer_sources": [
      { "symbol": "SockproxySyncPeerUpSet", "kind": "func", "file": "api/prometheus/sockproxy_sync_metrics.go", "def_line": 156, "writes": "sockproxySyncPeerUp" },
-     { "symbol": "consumerLoop", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 437, "call_line": 448, "calls": "SockproxySyncPeerUpSet", "note": "also set from sendWithRetry on success (:488, :495) and on retry exhaustion (:505), and from sendRateLimiterBatch (:1218, :1229)" },
-     { "symbol": "spawnConsumersForKnownPeers", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 388, "call_line": 412, "calls": "consumerLoop", "note": "also re-entered from OnStateChange (:657) when a BFD role change promotes this node to MASTER" },
-     { "symbol": "Start", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 350, "call_line": 363, "calls": "spawnConsumersForKnownPeers" },
+     { "symbol": "consumerLoop", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 444, "call_line": 455, "calls": "SockproxySyncPeerUpSet", "note": "also set from sendWithRetry on success (:488, :495) and on retry exhaustion (:505), and from sendRateLimiterBatch (:1218, :1229)" },
+     { "symbol": "spawnConsumersForKnownPeers", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 395, "call_line": 419, "calls": "consumerLoop", "note": "also re-entered from OnStateChange (:657) when a BFD role change promotes this node to MASTER" },
+     { "symbol": "Start", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 357, "call_line": 370, "calls": "spawnConsumersForKnownPeers" },
      { "tail": "loxinet-sockproxy-sync-main" }
     ],
     "evidence": "pkg/loxinet/sockproxy_sync_test.go TestPeerConsumerDrainsQueue asserts the gauge is exactly 1 after a successful drain (:553) and TestPeerConsumerRetriesAndDrops asserts exactly 0 after retry exhaustion (:648) -- a positive and its red twin. Fleet proof belongs to scenario M15."
@@ -1033,10 +1033,10 @@
     "status": "verified-static",
     "writer_sources": [
      { "symbol": "SockproxySyncPeerLagSet", "kind": "func", "file": "api/prometheus/sockproxy_sync_metrics.go", "def_line": 162, "writes": "sockproxySyncPeerLagSeconds" },
-     { "symbol": "sendWithRetry", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 468, "call_line": 499, "calls": "SockproxySyncPeerLagSet", "note": "stamped only after a push the peer accepted, so an unstamped gauge reads 0 rather than a stale lag" },
-     { "symbol": "consumerLoop", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 437, "call_line": 460, "calls": "sendWithRetry" },
-     { "symbol": "spawnConsumersForKnownPeers", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 388, "call_line": 412, "calls": "consumerLoop" },
-     { "symbol": "Start", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 350, "call_line": 363, "calls": "spawnConsumersForKnownPeers" },
+     { "symbol": "sendWithRetry", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 475, "call_line": 506, "calls": "SockproxySyncPeerLagSet", "note": "stamped only after a push the peer accepted, so an unstamped gauge reads 0 rather than a stale lag" },
+     { "symbol": "consumerLoop", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 444, "call_line": 467, "calls": "sendWithRetry" },
+     { "symbol": "spawnConsumersForKnownPeers", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 395, "call_line": 419, "calls": "consumerLoop" },
+     { "symbol": "Start", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 357, "call_line": 370, "calls": "spawnConsumersForKnownPeers" },
      { "tail": "loxinet-sockproxy-sync-main" }
     ],
     "evidence": "pkg/loxinet/sockproxy_sync_test.go TestPeerConsumerDrainsQueue asserts a positive lag after a successful push (:556); TestPeerConsumerRetriesAndDrops asserts exactly 0 when no push ever succeeded (:651). Fleet proof belongs to scenario M15."
@@ -1045,10 +1045,10 @@
     "status": "verified-static",
     "writer_sources": [
      { "symbol": "SockproxySyncDropInc", "kind": "func", "file": "api/prometheus/sockproxy_sync_metrics.go", "def_line": 218, "writes": "sockproxySyncDropTotal" },
-     { "symbol": "sendWithRetry", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 468, "call_line": 507, "calls": "SockproxySyncDropInc", "note": "reason=\"peer_unreachable\" once the retry budget is spent; the batch is dropped rather than queued forever" },
-     { "symbol": "consumerLoop", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 437, "call_line": 460, "calls": "sendWithRetry" },
-     { "symbol": "spawnConsumersForKnownPeers", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 388, "call_line": 412, "calls": "consumerLoop" },
-     { "symbol": "Start", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 350, "call_line": 363, "calls": "spawnConsumersForKnownPeers" },
+     { "symbol": "sendWithRetry", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 475, "call_line": 514, "calls": "SockproxySyncDropInc", "note": "reason=\"peer_unreachable\" once the retry budget is spent; the batch is dropped rather than queued forever" },
+     { "symbol": "consumerLoop", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 444, "call_line": 467, "calls": "sendWithRetry" },
+     { "symbol": "spawnConsumersForKnownPeers", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 395, "call_line": 419, "calls": "consumerLoop" },
+     { "symbol": "Start", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 357, "call_line": 370, "calls": "spawnConsumersForKnownPeers" },
      { "tail": "loxinet-sockproxy-sync-main" }
     ],
     "evidence": "pkg/loxinet/sockproxy_sync_test.go TestPeerConsumerRetriesAndDrops asserts a delta of exactly 1 on the peer_unreachable child against an always-failing mock peer. Fleet proof belongs to scenario M15."
@@ -1058,11 +1058,11 @@
     "activation_precondition": "cluster mode with at least one peer instance: the gauge's children are created per peer key inside sendOnce, and on a single-node Gateway peersFn returns no peers so no consumer ever runs.",
     "writer_sources": [
      { "symbol": "SockproxySyncInflightRpcInc", "kind": "func", "file": "api/prometheus/sockproxy_sync_metrics.go", "def_line": 209, "writes": "sockproxySyncInflightRpc" },
-     { "symbol": "sendOnce", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 811, "call_line": 821, "calls": "SockproxySyncInflightRpcInc", "note": "decremented again at :822; the rate-limiter push path does the same pair at :1201 and :1205" },
-     { "symbol": "sendWithRetry", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 468, "call_line": 495, "calls": "sendOnce" },
-     { "symbol": "consumerLoop", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 437, "call_line": 460, "calls": "sendWithRetry" },
-     { "symbol": "spawnConsumersForKnownPeers", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 388, "call_line": 412, "calls": "consumerLoop" },
-     { "symbol": "Start", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 350, "call_line": 363, "calls": "spawnConsumersForKnownPeers" },
+     { "symbol": "sendOnce", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 818, "call_line": 828, "calls": "SockproxySyncInflightRpcInc", "note": "decremented again at :822; the rate-limiter push path does the same pair at :1201 and :1205" },
+     { "symbol": "sendWithRetry", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 475, "call_line": 502, "calls": "sendOnce" },
+     { "symbol": "consumerLoop", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 444, "call_line": 467, "calls": "sendWithRetry" },
+     { "symbol": "spawnConsumersForKnownPeers", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 395, "call_line": 419, "calls": "consumerLoop" },
+     { "symbol": "Start", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 357, "call_line": 370, "calls": "spawnConsumersForKnownPeers" },
      { "tail": "loxinet-sockproxy-sync-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): the inc/dec pair in pkg/loxinet/sockproxy_sync.go:818 and :822. The HA sync tests assert peer_up, peer_lag and drop_total but not this gauge; scenario M15 owns its proof."
@@ -1072,11 +1072,11 @@
     "activation_precondition": "cluster mode with at least one peer instance; the histogram's children are per (peer, rpc) and are only created when a push is actually attempted, so a single-node Gateway exposes none.",
     "writer_sources": [
      { "symbol": "SockproxySyncPushLatencyObserve", "kind": "func", "file": "api/prometheus/sockproxy_sync_metrics.go", "def_line": 204, "writes": "sockproxySyncPushLatencySeconds" },
-     { "symbol": "sendOnce", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 811, "call_line": 824, "calls": "SockproxySyncPushLatencyObserve", "note": "rpc=\"SockproxySessionMod\"; the rate-limiter batch path observes its own rpc label at :1204" },
-     { "symbol": "sendWithRetry", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 468, "call_line": 495, "calls": "sendOnce" },
-     { "symbol": "consumerLoop", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 437, "call_line": 460, "calls": "sendWithRetry" },
-     { "symbol": "spawnConsumersForKnownPeers", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 388, "call_line": 412, "calls": "consumerLoop" },
-     { "symbol": "Start", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 350, "call_line": 363, "calls": "spawnConsumersForKnownPeers" },
+     { "symbol": "sendOnce", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 818, "call_line": 831, "calls": "SockproxySyncPushLatencyObserve", "note": "rpc=\"SockproxySessionMod\"; the rate-limiter batch path observes its own rpc label at :1204" },
+     { "symbol": "sendWithRetry", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 475, "call_line": 502, "calls": "sendOnce" },
+     { "symbol": "consumerLoop", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 444, "call_line": 467, "calls": "sendWithRetry" },
+     { "symbol": "spawnConsumersForKnownPeers", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 395, "call_line": 419, "calls": "consumerLoop" },
+     { "symbol": "Start", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 357, "call_line": 370, "calls": "spawnConsumersForKnownPeers" },
      { "tail": "loxinet-sockproxy-sync-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/sockproxy_sync.go:821 observes the elapsed push. No test asserts the histogram; scenario M15 owns its proof."
@@ -1086,9 +1086,9 @@
     "activation_precondition": "cluster mode plus back-pressure: a child appears only when a per-peer queue is actually full, which needs a peer whose consumer cannot keep up (or a paused peer). A single-node Gateway enqueues nothing.",
     "writer_sources": [
      { "symbol": "SockproxySyncOverflowInc", "kind": "func", "file": "api/prometheus/sockproxy_sync_metrics.go", "def_line": 189, "writes": "sockproxySyncOverflowTotal" },
-     { "symbol": "enqueueForPeer", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 743, "call_line": 764, "calls": "SockproxySyncOverflowInc", "note": "three kinds at :761, :768 and :775; the C-side producer path increments the same family from sendNonBlockingDropOldest (:917, :925, :935), which is reached from the cgo export llb_sockproxy_emit_sync_event (:1012)" },
-     { "symbol": "drainLoop", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 667, "call_line": 685, "calls": "enqueueForPeer" },
-     { "symbol": "Start", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 350, "call_line": 356, "calls": "drainLoop" },
+     { "symbol": "enqueueForPeer", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 750, "call_line": 771, "calls": "SockproxySyncOverflowInc", "note": "three kinds at :761, :768 and :775; the C-side producer path increments the same family from sendNonBlockingDropOldest (:917, :925, :935), which is reached from the cgo export llb_sockproxy_emit_sync_event (:1012)" },
+     { "symbol": "drainLoop", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 674, "call_line": 692, "calls": "enqueueForPeer" },
+     { "symbol": "Start", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 357, "call_line": 363, "calls": "drainLoop" },
      { "tail": "loxinet-sockproxy-sync-main" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): six increment sites across enqueueForPeer and sendNonBlockingDropOldest. No test asserts the counter; scenario M15 owns its proof."
@@ -1098,7 +1098,7 @@
     "activation_precondition": "an inbound XSync push from a peer Gateway (cluster mode with a MASTER pushing to this node) whose entry the local applier rejects; nothing on a single-node Gateway calls ApplyOne.",
     "writer_sources": [
      { "symbol": "SockproxySyncApplyErrorInc", "kind": "func", "file": "api/prometheus/sockproxy_sync_metrics.go", "def_line": 223, "writes": "sockproxySyncApplyErrorsTotal" },
-     { "symbol": "ApplyOne", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 856, "call_line": 888, "calls": "SockproxySyncApplyErrorInc" },
+     { "symbol": "ApplyOne", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 863, "call_line": 895, "calls": "SockproxySyncApplyErrorInc" },
      { "tail": "sockproxy-xsync-server" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/sockproxy_sync.go:885, the applier-error branch of ApplyOne. Scenario M15 owns the runtime proof."
@@ -1108,7 +1108,7 @@
     "activation_precondition": "an inbound XSync push from a peer whose entry collides with local state; the outcome label (which side won) is only decided inside ApplyOne, so no child exists until a peer actually pushes.",
     "writer_sources": [
      { "symbol": "SockproxySyncConflictInc", "kind": "func", "file": "api/prometheus/sockproxy_sync_metrics.go", "def_line": 199, "writes": "sockproxySyncConflictTotal" },
-     { "symbol": "ApplyOne", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 856, "call_line": 877, "calls": "SockproxySyncConflictInc", "note": "one outcome per branch: :874, :876 and :878" },
+     { "symbol": "ApplyOne", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 863, "call_line": 884, "calls": "SockproxySyncConflictInc", "note": "one outcome per branch: :874, :876 and :878" },
      { "tail": "sockproxy-xsync-server" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): three outcome branches in ApplyOne. pkg/loxinet/sockproxy_sync_test.go TestSockproxySyncConflictResolution exercises the resolution but asserts applier state, not this counter; scenario M15 owns its proof."
@@ -1118,7 +1118,7 @@
     "activation_precondition": "an inbound XSync push that the health gate rejects (peer or entry judged unhealthy); reachable only when a peer Gateway is pushing, so it stays absent on a single node.",
     "writer_sources": [
      { "symbol": "SockproxySyncHealthRejectInc", "kind": "func", "file": "api/prometheus/sockproxy_sync_metrics.go", "def_line": 194, "writes": "sockproxySyncHealthRejectTotal" },
-     { "symbol": "ApplyOne", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 856, "call_line": 883, "calls": "SockproxySyncHealthRejectInc" },
+     { "symbol": "ApplyOne", "kind": "method", "receiver": "SockproxySync", "file": "pkg/loxinet/sockproxy_sync.go", "def_line": 863, "call_line": 890, "calls": "SockproxySyncHealthRejectInc" },
      { "tail": "sockproxy-xsync-server" }
     ],
     "evidence": "source re-verification 2026-09-10 (plan Part E, WP-0 burn-down): pkg/loxinet/sockproxy_sync.go:880, the health-gate branch. pkg/loxinet/sockproxy_sync_test.go TestSockproxySyncHealthGate drives the gate but asserts the apply decision, not this counter; scenario M15 owns its proof."

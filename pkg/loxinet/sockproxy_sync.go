@@ -271,6 +271,13 @@ type SockproxySync struct {
 	// itself is mu-protected.
 	rlPushCounter map[string]*int64
 
+	// rlLastRLDial[peerKey] is the last time the rate-limiter push loop
+	// asked connectFn to dial this peer. The loop ticks five times a
+	// second and DialXSyncGRPC blocks for up to 2s on a TCP probe against
+	// a dead peer, so the dial has to be throttled or an unreachable peer
+	// turns the cadence into a reconnect storm.
+	rlLastRLDial sync.Map // map[string]time.Time keyed by peer.IP.String
+
 	// rlPushLoopStarted is set once per peer to avoid spawning duplicate
 	// push goroutines on repeated SetRateLimiterStore + OnStateChange
 	// invocations.
@@ -1135,9 +1142,21 @@ func (s *SockproxySync) rateLimiterPushLoop(peer *DpPeer, peerKey string, client
 			continue
 		}
 
+		// The push loop owns its own connection. It used to test
+		// clientFn() and skip, which made the rate-limiter half of xsync
+		// depend on something ELSE having dialled first: the dial lives
+		// in the session-sync retry path and in key invalidation, and
+		// nowhere else. On a cluster whose only traffic is L7 AI — no
+		// sockproxy session events, no key revocations — neither ever
+		// runs, so quota state never replicated at all. The silence was
+		// total: no log, no counter, and peer_up left at the 0 the
+		// consumer loop writes at start, which reads the same as a peer
+		// that is merely idle.
 		client := clientFn()
 		if client == nil {
-			continue // peer disconnected; wait for next tick
+			if client = s.dialForRateLimiterPush(peerKey, clientFn); client == nil {
+				continue // still unreachable; the next tick tries again
+			}
 		}
 
 		// Decide push shape: snapshot (A-P, or every-10th in A-A) vs delta (A-A).
@@ -1171,6 +1190,41 @@ func (s *SockproxySync) rateLimiterPushLoop(peer *DpPeer, peerKey string, client
 			tk.LogIt(tk.LogDebug, "[SOCKPROXY_SYNC] RateLimiterSync push to peer=%s failed: %v\n", peerKey, err)
 		}
 	}
+}
+
+// rlDialRetryInterval bounds how often the rate-limiter push loop re-dials
+// a peer it cannot reach. DialXSyncGRPC probes with a 2s TCP timeout before
+// it dials, so without this an unreachable peer would have the 200ms loop
+// permanently inside a connect attempt.
+const rlDialRetryInterval = 2 * time.Second
+
+// dialForRateLimiterPush asks the injected connect hook to establish this
+// peer's gRPC client and returns it, or nil when the peer is still
+// unreachable.
+//
+// The failure is reported, not swallowed. peer_up goes to 0 — its
+// documented meaning, "the last push to this peer did not succeed" — so a
+// cluster whose quota state is not replicating is visible in the same
+// series an operator already watches, and the log says it once per peer
+// rather than five times a second.
+func (s *SockproxySync) dialForRateLimiterPush(peerKey string, clientFn func() XSyncClient) XSyncClient {
+	if s.connectFn == nil {
+		return nil
+	}
+	if last, ok := s.rlLastRLDial.Load(peerKey); ok {
+		if t, ok := last.(time.Time); ok && time.Since(t) < rlDialRetryInterval {
+			return nil
+		}
+	}
+	s.rlLastRLDial.Store(peerKey, time.Now())
+	s.connectFn(peerKey)
+	if client := clientFn(); client != nil {
+		return client
+	}
+	prom.SockproxySyncPeerUpSet(peerKey, 0)
+	s.warnOncePeerRPC(peerKey, "RateLimiterSync",
+		"no gRPC client for the rate-limiter push; AI-QoS quota state is NOT replicating to this peer")
+	return nil
 }
 
 // sendRateLimiterBatch chunks `entries` at rlPushBatchMax and dispatches
