@@ -87,7 +87,11 @@ LAST_NONCE=""
 # one thing about the old scheme that always worked.
 NONCE_FILE=$(mktemp -t qha-nonce.XXXXXX) || { echo "FATAL: cannot create the nonce counter"; exit 1; }
 echo 0 > "$NONCE_FILE"
-trap 'rm -f "$NONCE_FILE"' EXIT
+# partition_clear is defined further down; the trap resolves it when it
+# fires, and it must run even on the paths that exit early — a scenario that
+# aborts mid-partition would otherwise hand the next run a bed whose nodes
+# cannot see each other, and config.sh has no reason to look.
+trap 'partition_clear >/dev/null 2>&1; rm -f "$NONCE_FILE"' EXIT
 new_nonce() {
   local n
   n=$(( $(cat "$NONCE_FILE") + 1 ))
@@ -200,6 +204,118 @@ master_node() {
 
 other_node() { [ "$1" = "llb1" ] && echo "llb2" || echo "llb1"; }
 node_vip()   { [ "$1" = "llb1" ] && echo "$VIP1" || echo "$VIP2"; }
+
+# is_master <node> — true when this node holds a MASTER cluster instance.
+is_master() {
+  local out
+  out=$($hexec "$1" curl -s --max-time 5 \
+    "http://localhost:11111/netlox/v1/config/cistate/all" 2>/dev/null)
+  case "$out" in
+    *'"state":"MASTER"'*|*'"state": "MASTER"'*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# ---------------------------------------------------------- partitions
+#
+# Two cases below cut ONE protocol between the nodes and leave the other
+# running, which is the only way to separate "the cluster lost its peer"
+# from "the cluster kept its peer and lost its quota channel". The nodes
+# reach each other over the docker bridge; config.sh recorded both bridge
+# addresses precisely so a fault could be keyed on the peer rather than on
+# an interface that also carries the client and backend nets.
+#
+# Keying bluntly is safe HERE and it is worth saying why, because it is not
+# safe in general: 3784, 22222 and 22223 are dedicated to BFD and xsync, so
+# a DROP on one of them cannot also be counting somebody else's packets.
+# Nothing below uses a count-based match, which is the form that goes wrong
+# when a port has more than one dialler.
+#
+# The rules live in a chain of this scenario's own, jumped to from INPUT and
+# OUTPUT, so the packet counters belong to this fault alone — and the chain
+# ends in RETURN, which is the witness. A DROP count of zero means one of
+# two completely different things, and only the RETURN count tells them
+# apart: traffic traversed the chain and none of it was the protocol we cut
+# (the fault is aimed wrong), or nothing traversed the chain at all (the
+# chain is not on the path and the fault is not armed). Reporting either as
+# "the partition held" is how a scenario scores a fault that never happened.
+PART_CHAIN=QHAPART
+LLB1_BIP=$(cat "${CFGDIR}/.llb1-bridge-ip" 2>/dev/null)
+LLB2_BIP=$(cat "${CFGDIR}/.llb2-bridge-ip" 2>/dev/null)
+node_bip()   { [ "$1" = "llb1" ] && echo "$LLB1_BIP" || echo "$LLB2_BIP"; }
+
+# partition_arm <proto> <port> [port...] — cut these ports between the nodes.
+partition_arm() {
+  local proto=$1; shift
+  local n peer p
+  for n in llb1 llb2; do
+    peer=$(node_bip "$(other_node "$n")")
+    $hexec "$n" iptables -N "$PART_CHAIN" >/dev/null 2>&1
+    $hexec "$n" iptables -F "$PART_CHAIN" >/dev/null 2>&1
+    for p in "$@"; do
+      # Both directions: inbound from the peer on that port, and our own
+      # outbound to it. Dropping only one side leaves a half-open channel
+      # whose behaviour is neither the partition nor the healthy case.
+      $hexec "$n" iptables -A "$PART_CHAIN" -p "$proto" -s "$peer" --dport "$p" -j DROP >/dev/null 2>&1
+      $hexec "$n" iptables -A "$PART_CHAIN" -p "$proto" -d "$peer" --dport "$p" -j DROP >/dev/null 2>&1
+    done
+    $hexec "$n" iptables -A "$PART_CHAIN" -j RETURN >/dev/null 2>&1
+    $hexec "$n" iptables -I INPUT  1 -j "$PART_CHAIN" >/dev/null 2>&1
+    $hexec "$n" iptables -I OUTPUT 1 -j "$PART_CHAIN" >/dev/null 2>&1
+  done
+}
+
+# part_counts <node> -> "<dropped> <fell-through>"
+part_counts() {
+  $hexec "$1" iptables -L "$PART_CHAIN" -v -n -x 2>/dev/null |
+    awk '$3=="DROP"{d+=$1} $3=="RETURN"{r+=$1} END{printf "%d %d", d+0, r+0}'
+}
+
+# partition_witness <case> — scores whether the fault is actually armed and
+# actually intercepting, from the chain's own counters on both nodes.
+partition_witness() {
+  local n d r td=0 tr=0 detail=""
+  for n in llb1 llb2; do
+    read -r d r <<EOF
+$(part_counts "$n")
+EOF
+    td=$((td + d)); tr=$((tr + r)); detail="$detail $n:drop=$d,through=$r"
+  done
+  if [ "$tr" -eq 0 ] && [ "$td" -eq 0 ]; then
+    bad "$1" "the partition chain saw no packets at all —$detail; it is not on the path, so nothing below is a partition result"
+  elif [ "$td" -eq 0 ]; then
+    bad "$1" "the chain is live but dropped nothing —$detail; the fault is aimed at a port this cluster does not use"
+  else
+    ok "$1" "dropped $td packets, $tr fell through"
+  fi
+}
+
+partition_clear() {
+  local n
+  for n in llb1 llb2; do
+    while $hexec "$n" iptables -D INPUT  -j "$PART_CHAIN" >/dev/null 2>&1; do :; done
+    while $hexec "$n" iptables -D OUTPUT -j "$PART_CHAIN" >/dev/null 2>&1; do :; done
+    $hexec "$n" iptables -F "$PART_CHAIN" >/dev/null 2>&1
+    $hexec "$n" iptables -X "$PART_CHAIN" >/dev/null 2>&1
+  done
+}
+
+# partition_healed <case> — a fault left armed does not announce itself; it
+# silently turns every later case into a partition case. Assert the removal
+# rather than trusting the delete's exit status.
+partition_healed() {
+  local n left=""
+  for n in llb1 llb2; do
+    if $hexec "$n" iptables -L "$PART_CHAIN" -n >/dev/null 2>&1; then
+      left="$left $n"
+    fi
+  done
+  if [ -n "$left" ]; then
+    bad "$1" "the partition chain still exists on$left; every case after this one would be running under a fault"
+  else
+    ok "$1" "the partition chain is gone from both nodes"
+  fi
+}
 
 echo "#########################################"
 echo "ai-qos-ha-sync validation"
@@ -804,6 +920,286 @@ esac
 
 ##############################################################################
 echo ""
+echo "--- QOS-HA-013: the quota channel dies while both nodes keep serving ---"
+##############################################################################
+# BFD stays up, so there is no election and no failover: both nodes hold the
+# roles they had and both keep answering on their own VIP. Only xsync is cut.
+# That is the fault the whole feature exists to survive, and nothing tested
+# it — a dead quota channel is silent by construction, and silence is what a
+# harness reads as success.
+#
+# Three separate claims, and only two of them are the product's to keep:
+#
+#   * the node must SAY the channel is dead. peer_up is the series an
+#     operator already watches and sendRateLimiterBatch writes 0 to it on a
+#     real push failure. A partition an operator cannot see is worse than
+#     one they can.
+#   * the divergence itself is MEASURED, not asserted. With the channel cut
+#     the far node cannot know what was spent here, so it admitting a second
+#     full allowance is arithmetic, not a defect to be scored green.
+#   * what IS an invariant is that the divergence does not outlive the
+#     partition. The backlog must reach the far node once the channel comes
+#     back, and that is asserted on an identity the far node has never
+#     served — otherwise its refusal would be its own spend answering.
+if [ -z "$LLB1_BIP" ] || [ -z "$LLB2_BIP" ]; then
+  bad "QOS-HA-013 the peer addresses are known" \
+      "config.sh did not record both bridge IPs; a partition cannot be keyed on the peer"
+else
+  XP_KEY=$(key_raw ha-xpart-key); XD_KEY=$(key_raw ha-xdiv-key)
+  XC_KEY=$(key_raw ha-ctl-013-key)
+  if [ -z "$XP_KEY" ] || [ -z "$XD_KEY" ] || [ -z "$XC_KEY" ]; then
+    bad "QOS-HA-013 identities present" "missing raw key for ha-xpart-key, ha-xdiv-key or ha-ctl-013-key"
+  else
+    partition_arm tcp 22222 22223
+    # Armed BEFORE anything is spent, and proven armed before anything is
+    # spent, because the debt below drains in about a minute and every
+    # second spent establishing the fault is a second off the window the
+    # heal has to land in.
+    sleep 6
+    partition_witness "QOS-HA-013 a: the xsync partition is armed and intercepting"
+
+    # The master notices. Polled rather than read once: the push that fails
+    # is on its own cadence and the first one after the cut may still be in
+    # flight.
+    PU="unreadable"
+    for _ in $(seq 1 20); do
+      PU=$(metric "$MASTER" loxilb_sockproxy_sync_peer_up)
+      [ "$PU" = "unreadable" ] && break
+      awk -v v="$PU" 'BEGIN{exit !(v==0)}' && break
+      sleep 1
+    done
+    if [ "$PU" = "unreadable" ]; then
+      bad "QOS-HA-013 b: $MASTER reports the peer down" \
+          "peer_up is unreadable, so whether the node noticed cannot be decided"
+    elif awk -v v="$PU" 'BEGIN{exit !(v==0)}'; then
+      ok "QOS-HA-013 b: $MASTER reports the peer down" "peer_up=0"
+    else
+      bad "QOS-HA-013 b: $MASTER reports the peer down" \
+          "peer_up=$PU with the quota channel cut; a cluster that is not replicating looks exactly like one that is"
+    fi
+
+    # The measurement. Spend an identity at the master, then ask the far
+    # node the same question while the channel is down. This one is
+    # reported, not scored: see the header above.
+    new_nonce; code=$(req "$MVIP" 2020 "$XD_KEY")
+    chk_code "QOS-HA-013 c: divergence probe admitted once on $MASTER" 200 "$code"
+    new_nonce; code=$(req "$MVIP" 2020 "$XD_KEY")
+    chk_code "QOS-HA-013 d: divergence probe refused on $MASTER" 429 "$code"
+    new_nonce; DIV=$(req "$SVIP" 2020 "$XD_KEY")
+    echo "       (QOS-HA-013: with the quota channel cut, $STANDBY answered HTTP $DIV"
+    echo "        to an identity already exhausted on $MASTER — a second full"
+    echo "        allowance per node is the documented cost of the partition)"
+
+    # The subject. Spent at the master, never driven at the standby, so
+    # nothing the standby does to it can be the standby's own spend.
+    new_nonce; code=$(req "$MVIP" 2020 "$XP_KEY")
+    chk_code "QOS-HA-013 e: the subject identity is admitted once on $MASTER" 200 "$code"
+    new_nonce; code=$(req "$MVIP" 2020 "$XP_KEY")
+    chk_code "QOS-HA-013 f: the subject identity is refused on $MASTER" 429 "$code"
+
+    partition_clear
+    partition_healed "QOS-HA-013 g: the partition is lifted"
+
+    # Wait for the CHANNEL, on the channel's own series, before asking the
+    # far node anything. peer_up goes to 1 in exactly one place — after a
+    # RateLimiterSync batch returned without error — so a 1 here is a push
+    # that completed since the heal, which is the mechanism the assertion
+    # below is about. Waiting on a clock instead would make the case a race
+    # between the reconnect and the debt's 60-second drain.
+    PU="unreadable"
+    for _ in $(seq 1 25); do
+      PU=$(metric "$MASTER" loxilb_sockproxy_sync_peer_up)
+      [ "$PU" = "unreadable" ] && break
+      awk -v v="$PU" 'BEGIN{exit !(v>0)}' && break
+      sleep 1
+    done
+    if [ "$PU" != "unreadable" ] && awk -v v="$PU" 'BEGIN{exit !(v>0)}'; then
+      ok "QOS-HA-013 h: peer_up recovers on $MASTER after the heal" "peer_up=$PU"
+    else
+      bad "QOS-HA-013 h: peer_up recovers on $MASTER after the heal" \
+          "peer_up=$PU; the series that reported the outage never reports the recovery, so it cannot be used to clear an alert"
+    fi
+
+    # Now the invariant, and it is asked EXACTLY ONCE.
+    #
+    # This was a polling loop, and the loop made the assertion vacuous — it
+    # could not fail. The far node has its own bound, so the first poll is
+    # admitted and CHARGES it, and the second poll is refused by the debt
+    # that first poll just created. The 429 that came back was the node's
+    # own spend answering, not anything that crossed the wire, and a twin
+    # with the heal removed passed it just as happily. Retrying a question
+    # whose asking changes the answer is not polling; it is driving the
+    # state you are trying to measure.
+    #
+    # One request, after the channel has been proven back: a node that
+    # learned nothing admits it, and the case reddens.
+    new_nonce; HEAL=$(req "$SVIP" 2020 "$XP_KEY")
+    if [ "$HEAL" = "429" ]; then
+      ok "QOS-HA-013 i: the spend made during the partition reaches $STANDBY after the heal" "HTTP 429"
+    else
+      bad "QOS-HA-013 i: the spend made during the partition reaches $STANDBY after the heal" \
+          "HTTP ${HEAL:-<none>} — $STANDBY never served this identity, so a full allowance here is $MASTER's backlog never arriving; the divergence outlived the partition"
+    fi
+    chk_receipts "QOS-HA-013 i: that refusal delivered nothing" 0
+
+    # The control has never been driven anywhere. Without it, the 429 above
+    # is equally well explained by a node that came out of the partition
+    # refusing everything.
+    new_nonce; code=$(req "$SVIP" 2020 "$XC_KEY")
+    chk_code "QOS-HA-013 j: control identity still admitted on $STANDBY" 200 "$code"
+  fi
+fi
+
+
+##############################################################################
+echo ""
+echo "--- QOS-HA-014: BFD is partitioned and both nodes promote ---"
+##############################################################################
+# The other half of the same fault: cut the election traffic and leave the
+# quota channel up. Each node stops hearing the other, each concludes it is
+# alone, and both promote — split-brain, two masters pushing absolute
+# snapshots at each other for as long as it lasts. The push is role-gated to
+# a node holding a MASTER instance, so this is the ONLY configuration in
+# which the receive path runs in both directions at once.
+#
+# The claim under test is the merge's: quota folds with take-the-max on the
+# drain time, so an arriving snapshot can make a node more conservative and
+# never less. Bidirectional push is where that stops being obvious — each
+# node is now importing a view of the same bucket that lags its own, and a
+# merge that installed the peer's value instead of the larger of the two
+# would hand the spender its quota back on the next tick. Nothing exercised
+# that direction before.
+if [ -z "$LLB1_BIP" ] || [ -z "$LLB2_BIP" ]; then
+  bad "QOS-HA-014 the peer addresses are known" \
+      "config.sh did not record both bridge IPs; a partition cannot be keyed on the peer"
+else
+  SP_KEY=$(key_raw ha-split-key); SC_KEY=$(key_raw ha-ctl-014-key)
+  if [ -z "$SP_KEY" ] || [ -z "$SC_KEY" ]; then
+    bad "QOS-HA-014 identities present" "missing raw key for ha-split-key or ha-ctl-014-key"
+  else
+    # Pre-state, asserted on BOTH nodes. "One master" is the condition the
+    # case changes, and a bed that was already split would make every
+    # verdict below describe nothing.
+    if is_master "$MASTER" && ! is_master "$STANDBY"; then
+      ok "QOS-HA-014 a: exactly one master before the partition" "$MASTER MASTER, $STANDBY not"
+    else
+      bad "QOS-HA-014 a: exactly one master before the partition" \
+          "$MASTER master=$(is_master "$MASTER" && echo yes || echo no), $STANDBY master=$(is_master "$STANDBY" && echo yes || echo no)"
+    fi
+    # The standby's push counter, marked here and re-read below. A node that
+    # holds no MASTER instance has no peers to push to, so this number is
+    # frozen for as long as it stays a backup — which makes its movement the
+    # feature's own evidence that a promotion happened.
+    S_MARK=$(metric "$STANDBY" loxilb_sockproxy_sync_push_latency_seconds_count 'rpc="RateLimiterSync"')
+
+    partition_arm udp 3784
+    # BFD detects in about 300ms (100ms interval, 3 retries), so a few
+    # seconds is already generous; the wait is for the promotion to be
+    # written, not for the fault to be noticed.
+    sleep 6
+    partition_witness "QOS-HA-014 b: the BFD partition is armed and intercepting"
+
+    SPLIT=0
+    for _ in $(seq 1 30); do
+      if is_master "$MASTER" && is_master "$STANDBY"; then SPLIT=1; break; fi
+      sleep 1
+    done
+    if [ "$SPLIT" = "1" ]; then
+      ok "QOS-HA-014 c: both nodes hold a MASTER instance" "split-brain reached"
+    else
+      bad "QOS-HA-014 c: both nodes hold a MASTER instance" \
+          "$MASTER master=$(is_master "$MASTER" && echo yes || echo no), $STANDBY master=$(is_master "$STANDBY" && echo yes || echo no) 30s after BFD was cut; the condition every assertion below names was never reached"
+    fi
+
+    # The promotion, proven by the push rather than by the role read-back. A
+    # cistate read proves the control plane changed its mind; this proves
+    # the rate limiter acted on it.
+    S_NOW="$S_MARK"
+    for _ in $(seq 1 30); do
+      S_NOW=$(metric "$STANDBY" loxilb_sockproxy_sync_push_latency_seconds_count 'rpc="RateLimiterSync"')
+      [ "$S_NOW" = "unreadable" ] && break
+      awk -v a="$S_NOW" -v b="$S_MARK" 'BEGIN{exit !(a>b)}' && break
+      sleep 1
+    done
+    if [ "$S_MARK" = "unreadable" ] || [ "$S_NOW" = "unreadable" ]; then
+      bad "QOS-HA-014 d: the promoted $STANDBY starts pushing" \
+          "the push counter is unreadable, so the reverse direction cannot be decided"
+    elif awk -v a="$S_NOW" -v b="$S_MARK" 'BEGIN{exit !(a>b)}'; then
+      ok "QOS-HA-014 d: the promoted $STANDBY starts pushing" "count $S_MARK -> $S_NOW"
+    else
+      bad "QOS-HA-014 d: the promoted $STANDBY starts pushing" \
+          "count stayed at $S_NOW; only one direction is live, so the mutual-import condition this case is about is not in effect"
+    fi
+
+    # The subject. Spend at one node while both are masters.
+    new_nonce; code=$(req "$MVIP" 2020 "$SP_KEY")
+    chk_code "QOS-HA-014 e: admitted once on $MASTER during the split" 200 "$code"
+    new_nonce; code=$(req "$MVIP" 2020 "$SP_KEY")
+    chk_code "QOS-HA-014 f: refused on $MASTER during the split" 429 "$code"
+
+    # It must cross, even with the election broken — xsync is untouched.
+    #
+    # Wait on the PUSH, then ask once. The far node has its own bound, so a
+    # retry loop here would admit the first request, charge it, and read its
+    # own debt back as "the spend crossed" — the same vacuity QOS-HA-013's
+    # heal assertion was built with. Pushes that completed after the spend
+    # are the mechanism that could have carried it, and the histogram counts
+    # exactly those.
+    X_MARK=$(metric "$MASTER" loxilb_sockproxy_sync_push_latency_seconds_count 'rpc="RateLimiterSync"')
+    X_NOW="$X_MARK"
+    for _ in $(seq 1 30); do
+      X_NOW=$(metric "$MASTER" loxilb_sockproxy_sync_push_latency_seconds_count 'rpc="RateLimiterSync"')
+      [ "$X_NOW" = "unreadable" ] && break
+      awk -v a="$X_NOW" -v b="$X_MARK" 'BEGIN{exit !(a>=b+5)}' && break
+      sleep 1
+    done
+    if [ "$X_MARK" = "unreadable" ] || [ "$X_NOW" = "unreadable" ] ||
+       ! awk -v a="$X_NOW" -v b="$X_MARK" 'BEGIN{exit !(a>=b+5)}'; then
+      bad "QOS-HA-014 g: the spend crosses to $STANDBY while both are masters" \
+          "$MASTER completed no pushes after the spend (count $X_MARK -> $X_NOW); nothing could have carried it and the far node's answer would be about something else"
+    else
+      new_nonce; XOVER=$(req "$SVIP" 2020 "$SP_KEY")
+      chk_code "QOS-HA-014 g: the spend crosses to $STANDBY while both are masters" 429 "$XOVER"
+    fi
+
+    new_nonce; code=$(req "$SVIP" 2020 "$SC_KEY")
+    chk_code "QOS-HA-014 h: control identity still admitted on $STANDBY" 200 "$code"
+
+    # The retraction question, and the reason this case exists. Both nodes
+    # are now exporting the same bucket and importing each other's view of
+    # it. A merge that took the peer's drain time instead of the larger one
+    # would refund the spender here, on the very next tick.
+    sleep 4
+    new_nonce; code=$(req "$MVIP" 2020 "$SP_KEY")
+    chk_code "QOS-HA-014 i: the spender is still refused after importing its peer's snapshot" 429 "$code"
+    chk_receipts "QOS-HA-014 i: that refusal delivered nothing" 0
+
+    partition_clear
+    partition_healed "QOS-HA-014 j: the BFD partition is lifted"
+
+    # The cluster has to come back to one master, and which one it picks is
+    # not ours to predict — so it is re-resolved rather than assumed. Every
+    # case after this one addresses the nodes by role.
+    ONE=0
+    for _ in $(seq 1 45); do
+      if is_master llb1 && ! is_master llb2; then ONE=1; break; fi
+      if is_master llb2 && ! is_master llb1; then ONE=1; break; fi
+      sleep 1
+    done
+    if [ "$ONE" = "1" ]; then
+      MASTER=$(master_node); STANDBY=$(other_node "$MASTER")
+      MVIP=$(node_vip "$MASTER"); SVIP=$(node_vip "$STANDBY")
+      ok "QOS-HA-014 k: the split resolves to a single master" "MASTER=$MASTER STANDBY=$STANDBY"
+    else
+      bad "QOS-HA-014 k: the split resolves to a single master" \
+          "llb1 master=$(is_master llb1 && echo yes || echo no), llb2 master=$(is_master llb2 && echo yes || echo no) 45s after BFD was restored; two masters outliving the partition is the split-brain, not the recovery"
+    fi
+  fi
+fi
+
+
+##############################################################################
+echo ""
 echo "--- QOS-HA-012: the active node is killed ---"
 ##############################################################################
 # LAST, and it has to be: it takes a node away and nothing after it could
@@ -814,11 +1210,63 @@ echo "--- QOS-HA-012: the active node is killed ---"
 # `docker stop` rather than `kill`: these containers carry
 # `--restart unless-stopped`, so a kill would bring the node back mid-case
 # and the run would be scoring a race instead of a failover.
+#
+# What this case does NOT prove, stated up front because its name promises
+# more than it delivers. The subject assertion — the survivor still refuses
+# the spent identity — was already true before the kill, because the debt had
+# synced; that is what the cross-node cases above establish. Delete the
+# `docker stop` and it still passes. So the role transfer is asserted
+# separately below, and the parts that need a live peer are not asserted
+# here at all:
+#
+#   * "a promoted node starts pushing" is the feature's own lever for a real
+#     transfer, and it CANNOT be used here. The push loop needs a gRPC
+#     client, and dialForRateLimiterPush cannot build one to a container
+#     that has stopped — so it returns early and the push histogram never
+#     observes. On a two-node bed the promoted survivor has no peer left to
+#     push to, and a flat counter after this promotion is correct behaviour.
+#     That lever is exercised where it works: the split-brain case above
+#     promotes a node while its peer is still answering.
+#   * what IS asserted here instead: the standby's push counter is frozen
+#     while it is a backup (the same property, in the direction this
+#     topology can still measure), the stopped node really stops answering
+#     on its VIP, and a FRESH identity — never spent anywhere — is enforced
+#     at the survivor after promotion. Preserved state and live enforcement
+#     are different claims and only the second one needs the promotion.
 KILL_KEY=$(key_raw ha-kill-key)
 KILL_CTL=$(key_raw ha-ctl-012-key)
-if [ -z "$KILL_KEY" ] || [ -z "$KILL_CTL" ]; then
-  bad "QOS-HA-012 identities present" "missing raw key for ha-kill-key or ha-ctl-012-key"
+KILL_FRESH=$(key_raw ha-fresh-012-key)
+if [ -z "$KILL_KEY" ] || [ -z "$KILL_CTL" ] || [ -z "$KILL_FRESH" ]; then
+  bad "QOS-HA-012 identities present" "missing raw key for ha-kill-key, ha-ctl-012-key or ha-fresh-012-key"
 else
+  # Roles before the kill, on BOTH nodes. "The survivor was promoted" is a
+  # statement about a change, and a node that already held MASTER cannot be
+  # said to have been promoted by anything this case did.
+  if is_master "$MASTER" && ! is_master "$STANDBY"; then
+    ok "QOS-HA-012 pre-a: $MASTER holds MASTER and $STANDBY does not"
+  else
+    bad "QOS-HA-012 pre-a: $MASTER holds MASTER and $STANDBY does not" \
+        "$MASTER master=$(is_master "$MASTER" && echo yes || echo no), $STANDBY master=$(is_master "$STANDBY" && echo yes || echo no); the promotion below would not be a change of role"
+  fi
+
+  # The backup pushes nothing, asserted here and not inherited from SYNC-2:
+  # the split-brain case promoted this node and demoted it again in between,
+  # so its counter is no longer zero and the standing "count=0" result no
+  # longer covers the state this case starts in. Frozen over an interval is
+  # the property that survives that history.
+  B_MARK=$(metric "$STANDBY" loxilb_sockproxy_sync_push_latency_seconds_count 'rpc="RateLimiterSync"')
+  sleep 4
+  B_HOLD=$(metric "$STANDBY" loxilb_sockproxy_sync_push_latency_seconds_count 'rpc="RateLimiterSync"')
+  if [ "$B_MARK" = "unreadable" ] || [ "$B_HOLD" = "unreadable" ]; then
+    bad "QOS-HA-012 pre-b: the backup pushes nothing while it is a backup" \
+        "the push counter is unreadable on $STANDBY"
+  elif [ "$B_MARK" = "$B_HOLD" ]; then
+    ok "QOS-HA-012 pre-b: the backup pushes nothing while it is a backup" "count held at $B_HOLD over 4s"
+  else
+    bad "QOS-HA-012 pre-b: the backup pushes nothing while it is a backup" \
+        "count moved $B_MARK -> $B_HOLD on a node holding no MASTER instance; the role gate is not holding and this bed is already split"
+  fi
+
   new_nonce; code=$(req "$MVIP" 2020 "$KILL_KEY")
   chk_code "QOS-HA-012 a: first request admitted on $MASTER" 200 "$code"
   new_nonce; code=$(req "$MVIP" 2020 "$KILL_KEY")
@@ -842,23 +1290,44 @@ else
   else
     ok "QOS-HA-012 pre: the debt was pushed before the node was stopped" "count $K_MARK -> $K_NOW"
 
-    docker stop "$MASTER" >/dev/null 2>&1
-    PROMOTE_SECS=0
-    for PROMOTE_SECS in $(seq 1 45); do
-      out=$($hexec "$STANDBY" curl -s --max-time 5 \
-        "http://localhost:11111/netlox/v1/config/cistate/all" 2>/dev/null)
-      case "$out" in *'"state":"MASTER"'*|*'"state": "MASTER"'*) break ;; esac
+    KILLED=$MASTER
+    docker stop "$KILLED" >/dev/null 2>&1
+    # Elapsed time, not the loop counter. `for PROMOTE_SECS in $(seq 1 45)`
+    # is read on the iteration that BREAKS, before that iteration's sleep —
+    # so a promotion seen on the first poll reported "after 1s" no matter
+    # how long the cistate call itself took, and a slow bed could report a
+    # number smaller than the time it actually spent.
+    T0=$(date +%s)
+    PROMOTED=0
+    for _ in $(seq 1 45); do
+      if is_master "$STANDBY"; then PROMOTED=1; break; fi
       sleep 1
     done
-    out=$($hexec "$STANDBY" curl -s --max-time 5 \
-      "http://localhost:11111/netlox/v1/config/cistate/all" 2>/dev/null)
-    case "$out" in
-      *'"state":"MASTER"'*|*'"state": "MASTER"'*)
-        ok "QOS-HA-012 c: $STANDBY promoted after $MASTER was stopped" "after ${PROMOTE_SECS}s" ;;
-      *)
-        bad "QOS-HA-012 c: $STANDBY promoted after $MASTER was stopped" \
-            "still holds no MASTER instance ${PROMOTE_SECS}s after the other node went away" ;;
-    esac
+    PROMOTE_SECS=$(( $(date +%s) - T0 ))
+    if [ "$PROMOTED" = "1" ]; then
+      ok "QOS-HA-012 c: $STANDBY promoted after $KILLED was stopped" "after ${PROMOTE_SECS}s"
+    else
+      bad "QOS-HA-012 c: $STANDBY promoted after $KILLED was stopped" \
+          "still holds no MASTER instance ${PROMOTE_SECS}s after the other node went away"
+    fi
+
+    # The kill has to have landed on the DATA path, not merely on the
+    # container list. Without this, a case that stopped nothing — or stopped
+    # something that kept forwarding — reads exactly like a clean failover,
+    # because every question below is asked of the other node anyway.
+    #
+    # The seed identity, not a control: this probe is EXPECTED to go
+    # unanswered, but if the node is in fact still serving it must come back
+    # 200, and only an identity that can never be refused makes that
+    # distinction. An exhausted one would answer 429 and let a node that is
+    # very much alive be scored as gone.
+    new_nonce; code=$(req "$MVIP" 2020 "$(key_raw ha-seed-key)")
+    if [ "$code" = "200" ]; then
+      bad "QOS-HA-012 c2: the stopped node's VIP no longer answers" \
+          "$MVIP still answered HTTP 200 after $KILLED was stopped; nothing was taken away"
+    else
+      ok "QOS-HA-012 c2: the stopped node's VIP no longer answers" "HTTP ${code:-<none>} on $MVIP"
+    fi
 
     # The control has never spent anywhere. If the survivor refuses it too,
     # the survivor is refusing for a reason that is not this identity's debt
@@ -870,6 +1339,18 @@ else
     new_nonce; code=$(req "$SVIP" 2020 "$KILL_KEY")
     chk_code "QOS-HA-012 e: the spent identity is still refused on the survivor" 429 "$code"
     chk_receipts "QOS-HA-012 e: the refusal delivered nothing" 0
+
+    # Live enforcement, not preserved state. Everything above asks the
+    # survivor to remember something; this asks it to DO something, with an
+    # identity that has never been spent on either node, after it took the
+    # role. A promoted node that had come back with an empty quota store and
+    # was serving fail-open would pass every assertion above and fail this
+    # one.
+    new_nonce; code=$(req "$SVIP" 2020 "$KILL_FRESH")
+    chk_code "QOS-HA-012 f: a fresh identity is admitted once on the survivor" 200 "$code"
+    new_nonce; code=$(req "$SVIP" 2020 "$KILL_FRESH")
+    chk_code "QOS-HA-012 f: the survivor enforces it on the second request" 429 "$code"
+    chk_receipts "QOS-HA-012 f: that refusal delivered nothing" 0
   fi
 fi
 
@@ -883,7 +1364,7 @@ echo "#########################################"
 # mode a pass count cannot show.
 EXECUTED=$(printf '%s' "$CASES" | grep -c . || true)
 echo "  cases executed: $EXECUTED"
-if [ "$EXECUTED" -lt 70 ]; then
+if [ "$EXECUTED" -lt 96 ]; then
   echo "  [FAIL] declared-vs-executed: only $EXECUTED case verdicts were recorded;"
   echo "         a leg that returned early is indistinguishable from one that passed"
   FAIL=$((FAIL + 1))
