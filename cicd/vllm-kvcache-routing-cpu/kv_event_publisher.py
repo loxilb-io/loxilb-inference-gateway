@@ -646,7 +646,15 @@ def _publish_corpus(args) -> int:
             pub.close()
 
     if ranks == 1:
+        # blocks_total = DISTINCT published uint64 hashes (same field name and
+        # meaning as the multi-rank report below). It is the ONLY place the
+        # ingesting side can learn N: the subscriber's cap-eviction arithmetic
+        # is `evicted = N - cap`, so an arm that wants an exact delta rather
+        # than "> 0" has to read N from the drive side rather than assume it
+        # from a prompt count. Re-emission across --repeat passes is set-
+        # idempotent here, so this counts the SET, not the emissions.
         print(f"PUBLISH done: prompts={published} last_seq={pubs[0].seq - 1} "
+              f"blocks_total={len(rank_hashes[0])} "
               f"algo={args.algo} bind={args.bind}:{args.port}")
     else:
         # Multi-rank report: rank_blocks = DISTINCT published

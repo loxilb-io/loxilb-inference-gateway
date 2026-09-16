@@ -407,6 +407,33 @@ metric_val() {
     echo "${v:-0}"
 }
 
+# metric_series <family> <label> <value> — the value of the ONE series of <family>
+# carrying <label>="<value>" (0 if that series is absent).
+#
+# metric_val above sums the whole FAMILY, which cannot see a wrong LABEL: a write
+# attributed to the wrong endpoint moves the family by exactly as much as a correct
+# one, so a family-level delta passes while the attribution is broken. Every
+# per-endpoint claim here reads ONE series and asserts the siblings stayed FLAT —
+# the flats are the half that makes the attribution real.
+#
+# Exactly-one-series discipline: the count of matching lines is checked, so a
+# second series appearing under the same label value (a relabelling regression)
+# fails loudly instead of being silently summed away. More than one match yields
+# -1, which is NUMERIC on purpose: a non-numeric sentinel would make the caller's
+# `[[ x -eq y ]]` a syntax error rather than a failed assert (the `grep -c` "0\n0"
+# trap in one more disguise). -1 can never equal a counter or a delta.
+metric_series() {
+    local fam="$1" lab="$2" val="$3" lines n
+    lines=$(llb_curl "${METRICS}" 2>/dev/null \
+        | grep -E "^${fam}\{[^}]*${lab}=\"${val}\"")
+    n=$(printf '%s' "${lines}" | grep -c .)
+    if [[ "${n:-0}" -gt 1 ]]; then
+        echo "-1"
+        return
+    fi
+    printf '%s' "${lines}" | awk '{printf "%d", $NF} END{if(NR==0) printf "0"}'
+}
+
 # loxilb_log_count <ANCHORED-EXTENDED-REGEX> — count matching lines in the in-container loxilb log.
 # Log-marker discipline: the prompt corpus text flows through the SAME container (request bodies, debug
 # echoes), so a bare word like `AllBlocksCleared` can self-satisfy a grep against arbitrary log text
@@ -968,56 +995,155 @@ echo "  partial outage: sibling idx ${CHAOS_LIVE_IDX} tier15_hits ${live_hits_be
 d08c_ok=$([[ "${d08c_sibling_wins}" == 1 && "${d08c_served}" == 1 ]] && echo 1 || echo 0)
 assert "(chaos: partial outage) down EP stops winning argmax, a sibling keeps serving (graceful degradation)" "$d08c_ok"
 
-# ── (cap/eviction) drive an EP over the lowered LOXILB_KV_MAX_BLOCKS → counter>0 AND Size==cap ─────────
-#    config.sh injected LOXILB_KV_MAX_BLOCKS=${KV_MAX_BLOCKS} into llb1. Flood ONE prefill EP with far
-#    more distinct blocks than the cap (a synthetic many-prompt corpus — distinct CONTENT, not seq) so
-#    its inventory overflows: loxilb_kv_inv_cap_evictions_total must move (> its pre-flood value) AND the
-#    EP's KVINV Size must PIN at the cap (FIFO eviction holds the bound — end-to-end). The
-#    eviction is ALSO observable in the log via the structured cap-hit marker (structured-marker-anchored, not a bare
-#    word). The flood publishes to EP-B so it does not perturb the EP-A/EP-C state the legs above used.
-echo "=== (cap/eviction) overflow the lowered cap (${KV_MAX_BLOCKS}) -> evictions_total>0 AND KVINV Size==cap ==="
-cap_evict_before="$(metric_val "loxilb_kv_inv_cap_evictions_total")"
-# Observability of cap-hits is the prometheus counter loxilb_kv_inv_cap_evictions_total (the
-# authoritative "publisher misbehaving" signal) + the pinned inventory Size — NOT a log grep: the Go
-# subscriber logs via logrus to stderr, which loxilb's `docker exec -dt` launch discards (the file
-# /var/log/loxilb*.log is the loxilib tk-logger only). So this leg asserts on metric + Size (the
-# log-grep self-satisfy concern is moot — there is no log grep to self-satisfy).
-# Block hashes are CONTENT-derived, NOT seq-derived: re-publishing one corpus at different --seq-base
-# yields IDENTICAL hashes and never grows the inventory (the prior 4-pass loop produced only ~4 blocks).
-# Generate a SYNTHETIC corpus of many DISTINCT prompts (each ~32 blocks) so a single resident publisher
-# emits > KV_MAX_BLOCKS distinct blocks in ONE monotonic seq run (no per-publish reconnect/resync churn).
-# 60 prompts * ~32 blocks ~= 1900 distinct blocks >> the 1000 cap -> FIFO eviction pins Size at the cap.
-CAP_FLOOD_CORPUS="${CFGDIR}/.kvpub-cap-flood.json"
+# ── (cap/eviction) the conservation identity across the cap, driven from BOTH sides ────────────────────
+#
+#    config.sh injected LOXILB_KV_MAX_BLOCKS=${KV_MAX_BLOCKS} into llb1. The subscriber's eviction
+#    arithmetic (kvInventory.AddBlocks) is not a rate or a rounding: inserting N distinct hashes into an
+#    EMPTY inventory capped at C evicts exactly max(0, N-C) and leaves exactly min(N, C) resident. So
+#    ONE identity covers both sides of the cap:
+#
+#        Δ loxilb_kv_inv_cap_evictions_total{ep}  +  KVINV Size{ep}  ==  N
+#
+#    and the two arms below differ in exactly ONE field — the size of the published corpus:
+#
+#        UNDER the cap (EP-C, N < C):  Δ == 0 EXACTLY and Size == N
+#        OVER  the cap (EP-B, N > C):  Δ == N-C EXACTLY and Size == C
+#
+#    Why an exact delta and not the previous "moved > 0": a counter held at a nonzero value by anything
+#    at all satisfies "> 0", and the family's own writer note says one AddBlocks call can record MANY
+#    evictions, so a per-call count is not the oracle either. N is. The under-cap arm is the control the
+#    leg previously had none of: same publisher, same flood machinery, same EP lifecycle, corpus smaller
+#    than the cap — and the counter must not move AT ALL.
+#
+#    N is read from the drive side rather than assumed: the publisher reports blocks_total=<distinct
+#    published uint64 hashes>. An arm that guesses N from a prompt count is guessing the tokenizer's
+#    block split as well.
+#
+#    Drive shape is proven, not hoped for. --repeat 1 --settle-sec means the publisher binds, waits out
+#    loxilb's redial backoff, emits exactly ONE pass and exits; a repeating publisher would re-add the
+#    hashes it just had evicted and evict the same count again on every pass, so Δ would be a multiple
+#    of N-C with no way to tell which multiple. A partial pass and a double pass BOTH fail the exact
+#    equality, which is what makes the identity self-checking. The large --seq-base (>> the EP's
+#    lastSeq) makes the subscriber's first post-reconnect message a CLEAR, so the pass fills an EMPTY
+#    inventory — the precondition the arithmetic above needs. --no-vocabulary keeps the trailing
+#    AllBlocksCleared from wiping the result.
+#
+#    Attribution is proven, not assumed. The family carries {service,ep}: a mis-attributed eviction
+#    moves the FAMILY by exactly as much as a correct one, so each arm reads the ONE series for the EP
+#    it flooded and asserts the other two prefill EPs' series stayed FLAT. The flats are the half that
+#    makes the attribution real.
+#
+#    Observability here is the counter + the KVINV Size, NOT a log grep: the Go subscriber logs via
+#    logrus to stderr, which loxilb's `docker exec -dt` launch discards (/var/log/loxilb*.log is the
+#    loxilib tk-logger only).
+#
+#    EP choice: EP-C is left EMPTY by the down-at-startup chaos leg above, which is exactly the fresh
+#    inventory the under-cap arm wants; the over-cap flood goes to EP-B so neither arm perturbs the
+#    EP-A state the resync leg below depends on.
+
+CAP_FAMILY="loxilb_kv_inv_cap_evictions_total"
+
+# cap_publish_one_pass <corpus-file> <ep-ip> <seq-base> <log-file> — bind a publisher on one EP, emit
+# EXACTLY one pass after the settle window, wait for it to finish, and echo the blocks_total it
+# reported (empty on failure — the caller treats that as FATAL, never as zero).
+cap_publish_one_pass() {
+    local corpus="$1" ep_ip="$2" seq_base="$3" log="$4" _w
+    for _pp in $(pgrep -f "${PUB_TAG}" 2>/dev/null); do kill "${_pp}" >/dev/null 2>&1 || true; done
+    sleep 1
+    rm -f "${log}"
+    setsid $hexec "$(netns_for_ep_ip "${ep_ip}")" bash -c "export PYTHONPATH='${PY_USER_SITE}' PYTHONHASHSEED=0; exec -a ${PUB_TAG} python3 '${PUBLISHER}' \
+        --corpus '${corpus}' --tokenizer '${TOKENIZER_SRC}' --vectors '${VECTORS_SRC}' \
+        --bind '${ep_ip}' --port ${KV_ZMQ_PORT} --algo ${KV_HASH_ALGO} \
+        --block-size ${KV_BLOCK_SIZE} --seq-base ${seq_base} --repeat 1 --settle-sec 20 \
+        --no-vocabulary" >"${log}" 2>&1 &
+    # Wait on the MECHANISM (the publisher's own completion line), never on a clock: the settle window
+    # alone says nothing about whether the pass was emitted.
+    for _w in $(seq 1 90); do
+        grep -q '^PUBLISH done:' "${log}" 2>/dev/null && break
+        sleep 1
+    done
+    sed -n 's/^PUBLISH done:.*blocks_total=\([0-9][0-9]*\).*/\1/p' "${log}" 2>/dev/null | head -1
+}
+
+# cap_settled_size <ep_idx> — the EP's KVINV Size once it has stopped moving (3 equal consecutive
+# samples). Ingest of a ~2000-block pass is not instantaneous and a single read can catch it mid-flight.
+cap_settled_size() {
+    local idx="$1" prev="" cur stable=0 _w
+    for _w in $(seq 1 60); do
+        cur="$(inv_total "${idx}")"
+        if [[ "${cur}" == "${prev}" ]]; then
+            stable=$((stable + 1))
+            [[ "${stable}" -ge 2 ]] && { echo "${cur}"; return; }
+        else
+            stable=0
+        fi
+        prev="${cur}"
+        sleep 1
+    done
+    echo "${prev:-0}"
+}
+
+echo "=== (cap/eviction) conservation across the cap (${KV_MAX_BLOCKS}): evictions{ep} + Size{ep} == distinct published ==="
+
 # The publisher consumes a FLAT LIST [{"prompt":..}], NOT {"prompts":[..]} (same shape config.sh's
 # baseline + publish_prompt_to_ep write). A {"prompts":[..]} object makes it read 0 prompts (silent).
+# Block hashes are CONTENT-derived, NOT seq-derived: re-publishing one corpus at a different --seq-base
+# yields IDENTICAL hashes and never grows the inventory. Each synthetic prompt carries its own index so
+# the prefix chains — and therefore every block hash — differ across prompts.
+CAP_UNDER_CORPUS="${CFGDIR}/.kvpub-cap-under.json"
+CAP_FLOOD_CORPUS="${CFGDIR}/.kvpub-cap-flood.json"
+python3 -c "import json,sys
+json.dump([{'prompt':('cap under distinct filler block number %03d '%i)*48} for i in range(8)],
+  open(sys.argv[1],'w'))" "${CAP_UNDER_CORPUS}" 2>/dev/null
 python3 -c "import json,sys
 json.dump([{'prompt':('cap flood distinct filler block number %03d '%i)*48} for i in range(60)],
   open(sys.argv[1],'w'))" "${CAP_FLOOD_CORPUS}" 2>/dev/null
-for _pp in $(pgrep -f "${PUB_TAG}" 2>/dev/null); do kill "${_pp}" >/dev/null 2>&1 || true; done
-sleep 1
-# One RESIDENT publisher (--repeat 6 keeps it bound ~30s so the subscriber redials after the pre-kill
-# and ingests a full pass — a one-shot pass exits before the redial window and is missed). The large
-# seq-base (9000 >> EP-B's lastSeq) makes the first post-reconnect message a CLEAR, so Size reflects
-# ONLY this flood set; --no-vocabulary keeps the trailing AllBlocksCleared from wiping it afterward.
+
+# ---- arm 1: UNDER the cap (control) — same machinery, smaller corpus, counter must not move ----------
+cap_u_a_before="$(metric_series "${CAP_FAMILY}" ep "${EP_A_IDX}")"
+cap_u_b_before="$(metric_series "${CAP_FAMILY}" ep "${EP_B_IDX}")"
+cap_u_c_before="$(metric_series "${CAP_FAMILY}" ep "${EP_C_IDX}")"
+CAP_UNDER_LOG="${CFGDIR}/.kvpub-cap-under.log"
+cap_u_n="$(cap_publish_one_pass "${CAP_UNDER_CORPUS}" "${EP_C_IP}" 8000 "${CAP_UNDER_LOG}")"
+cap_u_size="$(cap_settled_size "${EP_C_IDX}")"
+cap_u_a_after="$(metric_series "${CAP_FAMILY}" ep "${EP_A_IDX}")"
+cap_u_b_after="$(metric_series "${CAP_FAMILY}" ep "${EP_B_IDX}")"
+cap_u_c_after="$(metric_series "${CAP_FAMILY}" ep "${EP_C_IDX}")"
+# An unread blocks_total is a LOST MEASUREMENT, never a zero: score it as a hard failure.
+cap_u_shape=$([[ -n "${cap_u_n}" && "${cap_u_n}" -gt 0 && "${cap_u_n}" -lt "${KV_MAX_BLOCKS}" ]] && echo 1 || echo 0)
+cap_u_delta=$((cap_u_c_after - cap_u_c_before))
+cap_u_flat=$([[ "${cap_u_a_after}" -eq "${cap_u_a_before}" && "${cap_u_b_after}" -eq "${cap_u_b_before}" ]] && echo 1 || echo 0)
+echo "  under-cap arm (EP-C idx ${EP_C_IDX}): published N=${cap_u_n:-<UNREAD>} (want 0<N<${KV_MAX_BLOCKS}) ; evictions{ep=${EP_C_IDX}} ${cap_u_c_before}->${cap_u_c_after} (want +0 EXACT) ; Size=${cap_u_size} (want ==N) ; siblings ep=${EP_A_IDX} ${cap_u_a_before}->${cap_u_a_after} ep=${EP_B_IDX} ${cap_u_b_before}->${cap_u_b_after} (want FLAT)"
+cap_u_ok=$([[ "${cap_u_shape}" == 1 && "${cap_u_delta}" -eq 0 && "${cap_u_size}" -eq "${cap_u_n}" && "${cap_u_flat}" == 1 ]] && echo 1 || echo 0)
+assert "(cap control) a corpus UNDER the cap evicts EXACTLY nothing: delta 0, Size == N published, siblings flat" "$cap_u_ok"
+
+# ---- arm 2: OVER the cap (drive) — one field changed, the counter must move by EXACTLY N-cap ---------
+cap_o_a_before="${cap_u_a_after}"
+cap_o_b_before="${cap_u_b_after}"
+cap_o_c_before="${cap_u_c_after}"
 CAP_FLOOD_LOG="${CFGDIR}/.kvpub-cap-flood.log"
-setsid $hexec "$(netns_for_ep_ip "${EP_B_IP}")" bash -c "export PYTHONPATH='${PY_USER_SITE}' PYTHONHASHSEED=0; exec -a ${PUB_TAG} python3 '${PUBLISHER}' \
-    --corpus '${CAP_FLOOD_CORPUS}' --tokenizer '${TOKENIZER_SRC}' --vectors '${VECTORS_SRC}' \
-    --bind '${EP_B_IP}' --port ${KV_ZMQ_PORT} --algo ${KV_HASH_ALGO} \
-    --block-size ${KV_BLOCK_SIZE} --seq-base 9000 --repeat 6 --repeat-interval 5 --no-vocabulary" >"${CAP_FLOOD_LOG}" 2>&1 &
-sleep 14   # let the subscriber connect, ingest the >1000-block flood, and run the cap-eviction loop
-cap_evict_after="${cap_evict_before}"
-for _ in $(seq 1 15); do
-    cap_evict_after="$(metric_val "loxilb_kv_inv_cap_evictions_total")"
-    [[ "${cap_evict_after}" -gt "${cap_evict_before}" ]] && break
-    sleep 1
-done
-cap_size="$(inv_total "${EP_B_IDX}")"
-cap_counter_moved=$([[ "${cap_evict_after}" -gt "${cap_evict_before}" ]] && echo 1 || echo 0)
-# Size must PIN exactly at the cap (FIFO holds the bound at KV_MAX_BLOCKS, not merely <=).
-cap_size_pinned=$([[ "${cap_size}" -eq "${KV_MAX_BLOCKS}" ]] && echo 1 || echo 0)
-echo "  cap=${KV_MAX_BLOCKS} ; evictions_total ${cap_evict_before}->${cap_evict_after} (want delta) ; KVINV Size=${cap_size} (want ==cap, pinned)"
-cap_ok=$([[ "${cap_counter_moved}" == 1 && "${cap_size_pinned}" == 1 ]] && echo 1 || echo 0)
-assert "(cap) overflow drives loxilb_kv_inv_cap_evictions_total>0 AND KVINV Size pinned at the cap" "$cap_ok"
+cap_o_n="$(cap_publish_one_pass "${CAP_FLOOD_CORPUS}" "${EP_B_IP}" 9000 "${CAP_FLOOD_LOG}")"
+cap_o_size="$(cap_settled_size "${EP_B_IDX}")"
+cap_o_a_after="$(metric_series "${CAP_FAMILY}" ep "${EP_A_IDX}")"
+cap_o_b_after="$(metric_series "${CAP_FAMILY}" ep "${EP_B_IDX}")"
+cap_o_c_after="$(metric_series "${CAP_FAMILY}" ep "${EP_C_IDX}")"
+cap_o_shape=$([[ -n "${cap_o_n}" && "${cap_o_n}" -gt "${KV_MAX_BLOCKS}" ]] && echo 1 || echo 0)
+cap_o_delta=$((cap_o_b_after - cap_o_b_before))
+cap_o_want=$((${cap_o_n:-0} - KV_MAX_BLOCKS))
+cap_o_flat=$([[ "${cap_o_a_after}" -eq "${cap_o_a_before}" && "${cap_o_c_after}" -eq "${cap_o_c_before}" ]] && echo 1 || echo 0)
+echo "  over-cap arm (EP-B idx ${EP_B_IDX}): published N=${cap_o_n:-<UNREAD>} (want N>${KV_MAX_BLOCKS}) ; evictions{ep=${EP_B_IDX}} ${cap_o_b_before}->${cap_o_b_after} delta=${cap_o_delta} (want ${cap_o_want} EXACT) ; Size=${cap_o_size} (want ==${KV_MAX_BLOCKS}) ; siblings ep=${EP_A_IDX} ${cap_o_a_before}->${cap_o_a_after} ep=${EP_C_IDX} ${cap_o_c_before}->${cap_o_c_after} (want FLAT)"
+cap_o_ok=$([[ "${cap_o_shape}" == 1 && "${cap_o_delta}" -eq "${cap_o_want}" && "${cap_o_size}" -eq "${KV_MAX_BLOCKS}" && "${cap_o_flat}" == 1 ]] && echo 1 || echo 0)
+assert "(cap drive) a corpus OVER the cap evicts EXACTLY N-cap, Size pins at the cap, siblings flat" "$cap_o_ok"
+
+# ---- the identity itself, stated once over both arms -------------------------------------------------
+# evicted + resident == published, on both sides of the cap. This is the claim the two arms above make
+# jointly; asserting it separately means a future change that breaks the invariant while keeping each
+# arm's individual numbers self-consistent still goes red.
+cap_id_u=$([[ $((cap_u_delta + cap_u_size)) -eq "${cap_u_n:-0}" ]] && echo 1 || echo 0)
+cap_id_o=$([[ $((cap_o_delta + cap_o_size)) -eq "${cap_o_n:-0}" ]] && echo 1 || echo 0)
+echo "  conservation: under-cap ${cap_u_delta}+${cap_u_size}==${cap_u_n:-<UNREAD>} -> ${cap_id_u} ; over-cap ${cap_o_delta}+${cap_o_size}==${cap_o_n:-<UNREAD>} -> ${cap_id_o}"
+cap_ok=$([[ "${cap_id_u}" == 1 && "${cap_id_o}" == 1 ]] && echo 1 || echo 0)
+assert "(cap) evictions{ep} + KVINV Size{ep} == distinct blocks published, on BOTH sides of the cap" "$cap_ok"
 
 # ── (resync KEEP/CLEAR) transient blip KEEPs the warm inventory; a low-seq restart CLEARs it ───────────
 #    The seq-reset discriminator replaced the unconditional reconnect ClearAll: a --kill where
@@ -1056,6 +1182,134 @@ echo "  KEEP: warm Size=${resync_warm_size} -> after blip Size=${resync_keep_siz
 echo "  CLEAR: warm Size=${resync_warm_size} -> after low-seq restart Size=${resync_clear_size} (want < warm: stale base dropped, fresh-only)"
 resync_ok=$([[ "${resync_keep_ok}" == 1 && "${resync_clear_ok}" == 1 ]] && echo 1 || echo 0)
 assert "(resync) transient blip KEEPs warm inventory AND a low-seq restart CLEARs (Size drops to fresh-only)" "$resync_ok"
+
+# ── (spill) the load-aware selector leaves the affinity winner when that winner is in flight ───────────
+#
+#    loxilb_pd_kv_tier15_spills_total{ep_idx} has ONE writer repo-wide (ai_kv_subscriber.go, inside
+#    llb_ai_kv_best_worker) and fires when the bounded-load arm moves the choice OFF the pure-overlap
+#    argmax. Reading the gate rather than the family name matters here: every term is drivable on this
+#    CPU bed and NONE of them needs a GPU or an engine.
+#
+#      * the arm is live      — kvLbMode() is "hard" unless LOXILB_KV_LB_MODE / the legacy
+#                               LOXILB_KV_UNIFIED_MODE says otherwise, which this scenario does not set.
+#      * the candidate set    — only endpoints with POSITIVE overlap are candidates. A prefix published
+#                               to exactly one endpoint is a SINGLETON candidate set, and a singleton's
+#                               self-referential cap can never be exceeded, so it can never spill. That
+#                               is why the setup publishes the SAME prompt to all three prefill EPs.
+#      * the load             — load_i is loxilb's OWN tepval->pd_ep_loads[i].active_conns, incremented
+#                               at endpoint selection and released at pd_cleanup. It is NOT a scraped
+#                               engine metric (the kvCandidate comment still says "KVCacheUsagePerc +
+#                               QueuedRequests"; that describes the dead scraper path, not this one).
+#                               One in-flight request is therefore the whole fault injection.
+#      * the capacity         — cap_i = ceil((1+eps)*totalLoad*cap_i/totalCap) with eps from the default
+#                               mean-load factor, and every clamped capacity equal here. With one
+#                               request in flight on the argmax EP and none elsewhere, the argmax is AT
+#                               its cap and the siblings are under it: the spill is arithmetic, not luck.
+#
+#    The two arms differ in exactly ONE field — whether the two requests OVERLAP IN TIME:
+#
+#      control: two SEQUENTIAL requests, nothing ever in flight -> spills +0 EXACTLY, both land argmax
+#      drive:   the first request held open on the argmax EP, the second issued while it is in flight
+#               -> spills{sibling} +1 EXACTLY, and the second request lands on the SIBLING
+#
+#    Attribution: spills carries {ep_idx} and it labels the SPILL TARGET. A per-family delta could not
+#    tell a spill to the right endpoint from a spill to the wrong one, so each arm reads the three
+#    series individually and requires the two that must not move to be FLAT.
+#
+#    Confound excluded by construction, not by hope: the cold-start seeder diverts every Nth hit to an
+#    EMPTY-inventory prefill EP, which would move hits to an endpoint without any spill. It can only
+#    target an endpoint below its warm floor, so the setup warms ALL THREE and the stage asserts both
+#    the sizes and a flat cold-seed counter. A moved cold-seed counter means the arm degraded into a
+#    different arm and the spill numbers below are not about spilling.
+echo "=== (spill) load-aware selector: one in-flight request on the affinity winner must spill the next ==="
+SPILL_FAMILY="loxilb_pd_kv_tier15_spills_total"
+SPILL_WARM_FLOOR=16     # kvColdSeedMinBlocksDefault — at/above this an EP is not a cold-seed target
+CORPUS_BEFORE_SPILL="${CORPUS}"
+CORPUS="${LONGCTX_CORPUS}"   # a prompt long enough to warm every EP past the cold-seed floor
+
+# Setup: the SAME long prompt on all three prefill EPs. Identical inventories mean identical overlap,
+# so the pure-overlap argmax is decided by the deterministic lowest-index tie-break — EP-A.
+publish_prompt_to_ep "longctx-code-review" "${EP_A_IP}"
+publish_prompt_to_ep "longctx-code-review" "${EP_B_IP}"
+publish_prompt_to_ep "longctx-code-review" "${EP_C_IP}"
+spill_size_a="$(inv_total "${EP_A_IDX}")"
+spill_size_b="$(inv_total "${EP_B_IDX}")"
+spill_size_c="$(inv_total "${EP_C_IDX}")"
+spill_setup_ok=$([[ "${spill_size_a}" -ge "${SPILL_WARM_FLOOR}" && \
+                   "${spill_size_b}" -ge "${SPILL_WARM_FLOOR}" && \
+                   "${spill_size_c}" -ge "${SPILL_WARM_FLOOR}" && \
+                   "${spill_size_a}" -eq "${spill_size_b}" ]] && echo 1 || echo 0)
+echo "  setup: KVINV Size A=${spill_size_a} B=${spill_size_b} C=${spill_size_c} (want all >= ${SPILL_WARM_FLOOR} so no EP is a cold-seed target, and A == B so the argmax tie-break decides)"
+assert "(spill setup) all three prefill EPs warm past the cold-seed floor with A and B carrying the SAME prefix" "$spill_setup_ok"
+
+spill_body="${CFGDIR}/.spill-req.json"
+longctx_body_file "longctx-code-review" "${spill_body}"
+spill_post() {   # spill_post <outfile> — one probe through the VIP, body from the file above
+    $hexec l3h1 curl -s -o "$1" --max-time 40 -X POST "http://${VIP}:${VPORT}/v1/completions" \
+        -H 'Content-Type: application/json' --data-binary @"${spill_body}" >/dev/null 2>&1
+}
+
+# ---- arm 1: CONTROL — the same two requests, never overlapping -> the selector must not spill --------
+sp_c_s0="$(metric_series "${SPILL_FAMILY}" ep_idx "${EP_A_IDX}")"
+sp_c_s2="$(metric_series "${SPILL_FAMILY}" ep_idx "${EP_B_IDX}")"
+sp_c_s4="$(metric_series "${SPILL_FAMILY}" ep_idx "${EP_C_IDX}")"
+sp_c_h0="$(tier15_hits "${EP_A_IDX}")"; sp_c_h2="$(tier15_hits "${EP_B_IDX}")"; sp_c_h4="$(tier15_hits "${EP_C_IDX}")"
+sp_c_seed_before="$(metric_val "loxilb_pd_kv_tier15_cold_seeds_total")"
+spill_post "${CFGDIR}/.spill-ctl-1.out"
+spill_post "${CFGDIR}/.spill-ctl-2.out"
+sleep 3
+sp_c_s0a="$(metric_series "${SPILL_FAMILY}" ep_idx "${EP_A_IDX}")"
+sp_c_s2a="$(metric_series "${SPILL_FAMILY}" ep_idx "${EP_B_IDX}")"
+sp_c_s4a="$(metric_series "${SPILL_FAMILY}" ep_idx "${EP_C_IDX}")"
+sp_c_h0a="$(tier15_hits "${EP_A_IDX}")"; sp_c_h2a="$(tier15_hits "${EP_B_IDX}")"; sp_c_h4a="$(tier15_hits "${EP_C_IDX}")"
+sp_c_seed_after="$(metric_val "loxilb_pd_kv_tier15_cold_seeds_total")"
+echo "  control: spills{0,2,4} ${sp_c_s0}->${sp_c_s0a} ${sp_c_s2}->${sp_c_s2a} ${sp_c_s4}->${sp_c_s4a} (want ALL +0) ; hits{0,2,4} ${sp_c_h0}->${sp_c_h0a} ${sp_c_h2}->${sp_c_h2a} ${sp_c_h4}->${sp_c_h4a} (want +2/+0/+0) ; cold_seeds ${sp_c_seed_before}->${sp_c_seed_after} (want +0)"
+sp_ctl_ok=$([[ "${sp_c_s0a}" -eq "${sp_c_s0}" && "${sp_c_s2a}" -eq "${sp_c_s2}" && "${sp_c_s4a}" -eq "${sp_c_s4}" && \
+               $((sp_c_h0a - sp_c_h0)) -eq 2 && "${sp_c_h2a}" -eq "${sp_c_h2}" && "${sp_c_h4a}" -eq "${sp_c_h4}" && \
+               "${sp_c_seed_after}" -eq "${sp_c_seed_before}" ]] && echo 1 || echo 0)
+assert "(spill control) two SEQUENTIAL requests never spill: spills +0 on every ep_idx, both hits land on the argmax EP" "$sp_ctl_ok"
+
+# ---- arm 2: DRIVE — hold the first request open on the argmax EP, then issue the second -------------
+# slowok is `ok` with a guaranteed silent window: it reads the whole request, stays quiet, then answers
+# a normal 200. `hang` would also hold the connection but ends in a zero-byte close, which moves the
+# decode/prefill death counters — a fault, when what this arm needs is load.
+SPILL_HOLD_SEC=10
+STUB_DELAY="${SPILL_HOLD_SEC}" "${CFGDIR}/pd-fault-swap.sh" "$(netns_for_ep_ip "${EP_A_IP}")" slowok \
+    | sed 's/^/  /' || true
+sp_d_s0="$(metric_series "${SPILL_FAMILY}" ep_idx "${EP_A_IDX}")"
+sp_d_s2="$(metric_series "${SPILL_FAMILY}" ep_idx "${EP_B_IDX}")"
+sp_d_s4="$(metric_series "${SPILL_FAMILY}" ep_idx "${EP_C_IDX}")"
+sp_d_h0="$(tier15_hits "${EP_A_IDX}")"; sp_d_h2="$(tier15_hits "${EP_B_IDX}")"; sp_d_h4="$(tier15_hits "${EP_C_IDX}")"
+sp_d_seed_before="$(metric_val "loxilb_pd_kv_tier15_cold_seeds_total")"
+# The holder, in the background. It is NOT scored for latency — its only job is to occupy one
+# active_conns unit on the argmax EP while the probe is selected.
+( spill_post "${CFGDIR}/.spill-hold.out" ) &
+spill_hold_pid=$!
+# Wait on the MECHANISM, not on a clock: the holder is only useful once the SELECTOR has run for it and
+# chosen EP-A, which is exactly what its hits{A} increment says. A sleep here would score a probe that
+# raced ahead of the holder's selection and report a product failure that never happened.
+sp_held=0
+for _w in $(seq 1 25); do
+    [[ "$(tier15_hits "${EP_A_IDX}")" -gt "${sp_d_h0}" ]] && { sp_held=1; break; }
+    sleep 1
+done
+sp_d_h0_held="$(tier15_hits "${EP_A_IDX}")"
+spill_post "${CFGDIR}/.spill-probe.out"
+sleep 2
+sp_d_s0a="$(metric_series "${SPILL_FAMILY}" ep_idx "${EP_A_IDX}")"
+sp_d_s2a="$(metric_series "${SPILL_FAMILY}" ep_idx "${EP_B_IDX}")"
+sp_d_s4a="$(metric_series "${SPILL_FAMILY}" ep_idx "${EP_C_IDX}")"
+sp_d_h0a="$(tier15_hits "${EP_A_IDX}")"; sp_d_h2a="$(tier15_hits "${EP_B_IDX}")"; sp_d_h4a="$(tier15_hits "${EP_C_IDX}")"
+sp_d_seed_after="$(metric_val "loxilb_pd_kv_tier15_cold_seeds_total")"
+wait "${spill_hold_pid}" 2>/dev/null || true
+"${CFGDIR}/pd-fault-swap.sh" "$(netns_for_ep_ip "${EP_A_IP}")" off | sed 's/^/  /' || true
+echo "  drive: holder selected EP-A=${sp_held} (hits{${EP_A_IDX}} ${sp_d_h0}->${sp_d_h0_held}) ; spills{0,2,4} ${sp_d_s0}->${sp_d_s0a} ${sp_d_s2}->${sp_d_s2a} ${sp_d_s4}->${sp_d_s4a} (want +0/+1/+0) ; hits{0,2,4} ${sp_d_h0}->${sp_d_h0a} ${sp_d_h2}->${sp_d_h2a} ${sp_d_h4}->${sp_d_h4a} (want +1/+1/+0) ; cold_seeds ${sp_d_seed_before}->${sp_d_seed_after} (want +0)"
+sp_drv_ok=$([[ "${sp_held}" == 1 && \
+               "${sp_d_s0a}" -eq "${sp_d_s0}" && $((sp_d_s2a - sp_d_s2)) -eq 1 && "${sp_d_s4a}" -eq "${sp_d_s4}" && \
+               $((sp_d_h0a - sp_d_h0)) -eq 1 && $((sp_d_h2a - sp_d_h2)) -eq 1 && "${sp_d_h4a}" -eq "${sp_d_h4}" && \
+               "${sp_d_seed_after}" -eq "${sp_d_seed_before}" ]] && echo 1 || echo 0)
+assert "(spill drive) one in-flight request on the argmax EP spills the next to the sibling: spills{${EP_B_IDX}} +1 EXACT, siblings flat" "$sp_drv_ok"
+CORPUS="${CORPUS_BEFORE_SPILL}"
 
 #################################################################################
 # KV-T15 EVIDENCE DUMP (non-assert) — capture the selector's per-request decisions BEFORE
