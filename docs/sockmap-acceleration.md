@@ -68,6 +68,27 @@ in `request` mode the backend socket never does. The requests of a `response`
 service, or the responses of a `request` service, are relayed in userspace
 exactly as with `off`.
 
+### When a connection is accelerated
+
+A connection is handed to the kernel only after the proxy has parsed its first
+request and paired the client socket with a backend socket. From then on:
+
+- **response direction** — from the first response on. The backend socket is
+  registered when the pair is made, before the request is forwarded.
+- **request direction** — once the proxy has forwarded every client byte it has
+  read: after the first request, and for a streamed upload (a body above 64KB
+  that needs no inspection) after the whole body. Registering earlier would let
+  bytes the client sends next overtake the request still being forwarded.
+
+HTTP/2 connections, including plaintext h2c, are never accelerated. The proxy
+pairs no sockets for them, so none of their sockets runs the verdict program.
+
+Changing a service's `sockMapMode`, or deleting the service, applies to new
+connections. A connection that is already accelerated keeps redirecting in the
+kernel until it closes. To stop acceleration on live connections at once, for
+example after finding the kernel affected by the defect below, restart loxilb or
+make clients reconnect.
+
 ## How services are kept apart
 
 Each service is accelerated or not on its own, even when services share ports.
@@ -81,14 +102,14 @@ affect each other, and neither do two services whose backends listen on the same
 port on different hosts. A VIP of `0.0.0.0` matches any local address on its
 port.
 
-The limit is a shared address and port. Two services that point at the **same
-endpoint address and port** share its acceleration state, because a backend
-connection carries nothing that says which service opened it. The same holds
-for host-based services on one VIP address and port. If one of them accelerates
-a direction, the matching sockets of the other also run the verdict program.
-They are not redirected (the verdict finds no peer and passes the data on), but
-they do take the psock receive path. Give such services separate ports if that
-matters.
+A shared address and port is shared at one level only. Two services that point
+at the **same endpoint address and port** share its portset entry, because a
+backend connection carries nothing that says which service opened it, and the
+same holds for host-based services on one VIP address and port. If one of them
+accelerates a direction, the matching sockets of the other are also registered
+as possible redirect targets (`sock_proxy_map`). That is all they share: whether
+a connection runs the verdict program is decided per connection by the service
+that handled it, so a service with `off` still relays in userspace.
 
 ## Eligibility
 
@@ -218,6 +239,17 @@ Elsewhere use `uname -r`. A distribution may have backported the fix without
 bumping the base version, so also check the vendor changelog for `3b4f14b7`
 before concluding a kernel is affected.
 
+### A second defect, avoided by design
+
+Kernels from v6.14, and the stable backports in 6.1.130, 6.6.80 and 6.12.17, have
+a separate defect in `tcp_bpf_strp_read_sock()` (still present on mainline). On a
+socket in a stream-verdict map, data the verdict passes up to the socket
+(`SK_PASS`) can move the socket's `copied_seq` past the received data, after
+which a small incoming segment no longer wakes the reader. loxilb never lets the
+verdict pass data up: a socket is added to `sock_verdict_map` only once it has a
+peer to redirect to. Kernels with this defect need nothing extra for sockmap
+acceleration.
+
 ## Should you enable it?
 
 | situation | recommendation |
@@ -273,12 +305,18 @@ bpftool map dump name sockmap_stats
 | `sockmap_vip_portset` | one entry per accelerated service: VIP address and port |
 | `sockmap_ep_portset` | one entry per endpoint address and port of accelerated services |
 | `sock_proxy_map` | every live socket of an accelerated service (redirect targets) |
-| `sock_verdict_map` | the sockets whose incoming direction is accelerated |
-| `sockmap_stats` | verdict counters: redirects, peer misses, ineligible |
+| `sock_verdict_map` | the sockets of accelerated connections whose incoming direction is accelerated, added once their pair is in `peer_map` |
+| `sockmap_stats` | verdict counters: redirects (total, request, response), peer misses |
+
+A non-zero peer miss count means a socket ran the verdict without a pair. The
+proxy removes a socket from `sock_verdict_map` before its pair, so the count
+stays at zero; a growing count is a bug worth reporting. The ineligible counter
+is retired and always reads zero.
 
 Each portset entry carries `refs` (accelerated services using it) and
 `verdict_refs` (how many of them accelerate the direction a matching socket
-receives: requests for a VIP entry, responses for an endpoint entry).
+receives: requests for a VIP entry, responses for an endpoint entry). The
+datapath no longer reads `verdict_refs`; it is the loader's bookkeeping.
 
 An empty `sock_proxy_map` under load means acceleration is not engaging; the
 traffic is being relayed in userspace and the configuration is having no effect.
@@ -293,9 +331,18 @@ traffic is being relayed in userspace and the configuration is having no effect.
 | `validation_concurrent.sh` | concurrent connection handling |
 | `validation_directional.sh` | `request` / `response` modes, the unaccelerated direction skipping the verdict, portset cleanup |
 | `validation_refcount.sh` | portset refcounts across in-place updates, mode changes and shared endpoints |
+| `validation_request_path.sh` | h2c through every mode, split and streamed and pipelined requests, half-closed clients, mode change and delete under a live connection, no verdict pass |
+| `validation_equivalence.sh` | what the client and the backend observe on an accelerated rule is identical to `off`: one rule per mode over one endpoint, compared record by record, plus chunked, pipelined, streamed, truncated, 204/304/HEAD and half-closed shapes |
+| `validation_control.sh` | stopping acceleration on live connections: the admin action drops one rule's accelerated connections and nothing else, and the maps return to their baseline |
 | `validation_perf.sh` | throughput, acceleration on vs off, on a pair of services sharing every port |
 | `validation-cpu.sh` | CPU comparison on the same pair |
 | `validation-sse-cpu.sh` | CPU per token on SSE streaming, including `request` / `response` arms |
+
+Some cases in `validation_equivalence.sh` and `validation_control.sh` describe
+where the feature is going rather than where it is: those report `XFAIL` with the
+defect they are waiting on, and they turn the suite red (`XPASS`) once it is
+fixed, which is the signal to drop the registration. A run that ends `[OK]` names
+how many cases were xfailed.
 
 `cicd/sockmap-fullproxy/minrepro/` is a standalone reproducer for the kernel
 defect. It uses no loxilb code and can be submitted upstream as-is.

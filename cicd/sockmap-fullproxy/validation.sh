@@ -11,7 +11,12 @@
 #   5. HTTP traffic through R2: responses are correct and sock_proxy_map does not grow
 #   6. docker logs contain no sockmap failure messages
 #   7. after deleting R1, port 2020 is removed from vip_portset
-#   8. an AI gateway service (sse_mode, api_key_auth) refuses a sockMapMode other than off
+#   8. a service whose data plane touches request bytes refuses a sockMapMode
+#      other than off: sse_mode, pd_disagg_mode, and ANY api_key_auth declaration
+#      including an explicit "disabled" (R-1..R-8), while an omitted api_key_auth
+#      stays accelerable (R-16)
+#   9. an L7 policy and a sockMapMode are mutually exclusive in both attach
+#      orders (R-10..R-13)
 
 source ../common.sh
 source ./sockmap_common.sh
@@ -333,7 +338,9 @@ aigw_post() {
 aigw_expect_refused() {
   local out
   out=$(aigw_post "$2" "$3")
-  if [[ "$out" == 400\ * && "$out" == *"AI gateway"* ]]; then
+  # The needle is "sockmap", not "AI gateway": PR-A widens the refusal beyond
+  # ai_gw services and rewords the message.
+  if [[ "$out" == 400\ * && "$out" == *"sockmap"* ]]; then
     sockmap_result "$1 refused" "OK"
   else
     sockmap_result "$1 refused" "FAILED" "$out"
@@ -343,26 +350,144 @@ aigw_expect_refused() {
 
 # pd_disagg_mode is covered by the unit tests: a P/D rule also needs prefill and
 # decode endpoints, and that check answers before this one.
-aigw_expect_refused "sse_mode + request"           ',"sse_mode":true'            request
-aigw_expect_refused "sse_mode + response"          ',"sse_mode":true'            response
-aigw_expect_refused "api_key_auth=required + both" ',"api_key_auth":"required"' both
+aigw_expect_refused "R-1 sse_mode + request"           ',"sse_mode":true'            request
+aigw_expect_refused "R-2 sse_mode + response"          ',"sse_mode":true'            response
+aigw_expect_refused "R-3 api_key_auth=required + both" ',"api_key_auth":"required"' both
 
 out=$(aigw_post ',"api_key_auth":"required"' off)
 if [[ "$out" == 200\ * ]]; then
   sockmap_result "api_key_auth=required + off accepted" "OK"
-  aigw_expect_refused "replace omitting api_key_auth + request" '' request
+  aigw_expect_refused "R-3 replace omitting api_key_auth + request" '' request
   sockmap_delete_lb_via_api llb1 10.10.10.254 "$AIGW_PORT" >/dev/null 2>&1 || true
 else
   sockmap_result "api_key_auth=required + off accepted" "FAILED" "$out"
 fi
 
-# ---------- finalize ----------
-echo
-if (( SOCKMAP_FAIL_COUNT == 0 )); then
-  echo "RESULT: $SCENARIO [OK]"
-  exit 0
+# R-6..R-8 (issue 1, PR-A). ANY non-empty api_key_auth declaration gives the data
+# plane a non-zero apikey_auth wire value, and it then strips X-Api-Key from
+# EVERY request — an explicit "disabled" included, because that value claims the
+# header's namespace for the gateway without enforcing a credential. An
+# accelerated request direction skips that strip from the second keep-alive
+# request on, so the tenant credential reaches the backend. The ai_gw check
+# resolves "disabled" to "not an AI gateway" and lets the combination through,
+# which is the defect. "jwt" and "apikey-or-jwt" belong to the unit tests: those
+# modes also require a configured JWT profile, and that check answers first.
+sockmap_xfail_register "R-6" "explicit api_key_auth=disabled is not refused yet (issue 1, PR-A)"
+sockmap_xfail_register "R-7" "explicit api_key_auth=disabled is not refused yet (issue 1, PR-A)"
+sockmap_xfail_register "R-8" "explicit api_key_auth=disabled is not refused yet (issue 1, PR-A)"
+aigw_expect_refused "R-6 api_key_auth=disabled + request"  ',"api_key_auth":"disabled"' request
+aigw_expect_refused "R-7 api_key_auth=disabled + response" ',"api_key_auth":"disabled"' response
+aigw_expect_refused "R-8 api_key_auth=disabled + both"     ',"api_key_auth":"disabled"' both
+
+# R-16: the mirror image of R-6..R-8, guarding against over-refusal. An OMITTED
+# api_key_auth declares nothing, the data plane touches no header, and the rule
+# must stay accelerable. The rule is deleted first on purpose: a POST against an
+# existing rule is a replace, and a replace that omits api_key_auth PRESERVES it,
+# so a leftover rule from the cases above would make this refuse for the right
+# reason at the wrong moment.
+sockmap_delete_lb_via_api llb1 10.10.10.254 "$AIGW_PORT" >/dev/null 2>&1 || true
+out=$(aigw_post '' both)
+if [[ "$out" == 200\ * ]]; then
+  sockmap_result "R-16 api_key_auth omitted + both accepted" "OK"
 else
-  echo "RESULT: $SCENARIO [FAILED] ($SOCKMAP_FAIL_COUNT check(s) failed)"
-  echo "Artifacts: $SOCKMAP_ARTIFACTS_DIR/"
-  exit 1
+  sockmap_result "R-16 api_key_auth omitted + both accepted" "FAILED" "$out"
 fi
+sockmap_delete_lb_via_api llb1 10.10.10.254 "$AIGW_PORT" >/dev/null 2>&1 || true
+
+# ---------- Step 9: an L7 policy and acceleration are mutually exclusive ----------
+# A rule with an L7 policy rewrites request headers on EVERY request
+# (l7_inject_req_headers_h1: X-Forwarded-For always overwritten, X-Forwarded-Port
+# and -Proto, and the insertHeaders SET/ADD/REMOVE operations) and can inject a
+# Set-Cookie on every response. An accelerated direction moves those bytes in the
+# kernel instead, so from the second keep-alive request the policy is not applied:
+# a client-supplied X-Forwarded-For rides through unmodified and a REMOVE stops
+# removing. Neither side of the pairing is checked today, and the policy can be
+# attached AFTER the rule is created, so the refusal has to live in both places
+# (issue 1, PR-A).
+sockmap_section 9 "An L7 policy and a sockMapMode are mutually exclusive"
+
+L7_PORT=2062
+L7_EP_PORT=8261
+L7_LB_ID="sockmap-l7-lb"
+L7_POL_ID="sockmap-l7-pol"
+
+sockmap_xfail_register "R-10" "a rule carrying an L7 policy still accepts a sockMapMode (issue 1, PR-A)"
+sockmap_xfail_register "R-11" "an L7 policy still attaches to an accelerated rule (issue 1, PR-A)"
+
+# $1 sockMapMode; prints "<http code> <body>"
+l7_lb_post() {
+  local body="{\"serviceArguments\":{\"id\":\"$L7_LB_ID\",\"externalIP\":\"10.10.10.254\",\"port\":$L7_PORT,\"protocol\":\"tcp\",\"mode\":4,\"name\":\"sockmap-l7\",\"sockMapMode\":\"$1\"},\"endpoints\":[{\"endpointIP\":\"31.31.31.1\",\"targetPort\":$L7_EP_PORT,\"weight\":1}]}"
+  _sm_dexec llb1 curl -sS -w '\n%{http_code}' -X POST -H 'Content-Type: application/json' \
+    -d "$body" "http://localhost:11111/netlox/v1/config/loadbalancer" \
+    | awk 'NR==1{b=$0} END{print $0" "b}'
+}
+
+# Attaches a policy that rewrites request headers, which is the processing an
+# accelerated request direction would skip. Prints "<http code> <body>".
+l7_pol_post() {
+  local body="{\"id\":\"$L7_POL_ID\",\"name\":\"sockmap-l7-headers\",\"lbId\":\"$L7_LB_ID\",\"rules\":[{\"position\":1,\"matchSets\":[{\"conditions\":[{\"field\":\"PATH\",\"op\":\"STARTS_WITH\",\"value\":\"/\"}]}],\"action\":{\"kind\":\"REJECT\",\"reject\":{\"statusCode\":451}},\"insertHeaders\":[{\"op\":\"REMOVE\",\"name\":\"X-Internal\",\"value\":\"\"}]}]}"
+  _sm_dexec llb1 curl -sS -w '\n%{http_code}' -X POST -H 'Content-Type: application/json' \
+    -d "$body" "http://localhost:11111/netlox/v1/config/l7policy" \
+    | awk 'NR==1{b=$0} END{print $0" "b}'
+}
+
+l7_pol_delete() {
+  _sm_dexec llb1 curl -sS -o /dev/null -X DELETE \
+    "http://localhost:11111/netlox/v1/config/l7policy/id/$L7_POL_ID" >/dev/null 2>&1 || true
+}
+
+l7_ok() { [[ "$1" == 20*\ * ]]; }
+
+l7_pol_delete
+sockmap_delete_lb_via_api llb1 10.10.10.254 "$L7_PORT" >/dev/null 2>&1 || true
+
+# R-11: the rule is accelerated first, then the policy is attached.
+out=$(l7_lb_post both)
+if l7_ok "$out"; then
+  resp=$(l7_pol_post)
+  if [[ "$resp" == 400\ * ]]; then
+    sockmap_result "R-11 policy refused on an accelerated rule" "OK"
+  else
+    sockmap_result "R-11 policy refused on an accelerated rule" "FAILED" "$resp"
+  fi
+  # The attach may have been accepted; start the next case from a clean state.
+  l7_pol_delete
+else
+  sockmap_result "R-11 policy refused on an accelerated rule" "FAILED" "LB create: $out"
+fi
+
+# R-12: with the rule back on off, the same attach must succeed. This is the
+# positive control that keeps the refusal from becoming a blanket ban.
+out=$(l7_lb_post off)
+if l7_ok "$out"; then
+  resp=$(l7_pol_post)
+  if l7_ok "$resp"; then
+    sockmap_result "R-12 policy attaches to an off rule" "OK"
+  else
+    sockmap_result "R-12 policy attaches to an off rule" "FAILED" "$resp"
+  fi
+else
+  sockmap_result "R-12 policy attaches to an off rule" "FAILED" "LB replace: $out"
+fi
+
+# R-10: the other order — the policy is attached, then a mode is requested.
+resp=$(l7_lb_post both)
+if [[ "$resp" == 400\ * ]]; then
+  sockmap_result "R-10 sockMapMode refused on a policy rule" "OK"
+else
+  sockmap_result "R-10 sockMapMode refused on a policy rule" "FAILED" "$resp"
+  l7_lb_post off >/dev/null    # it was accepted; undo before R-13
+fi
+
+# R-13: once the policy is gone the rule may be accelerated again.
+l7_pol_delete
+resp=$(l7_lb_post both)
+if l7_ok "$resp"; then
+  sockmap_result "R-13 sockMapMode accepted after the policy is deleted" "OK"
+else
+  sockmap_result "R-13 sockMapMode accepted after the policy is deleted" "FAILED" "$resp"
+fi
+sockmap_delete_lb_via_api llb1 10.10.10.254 "$L7_PORT" >/dev/null 2>&1 || true
+
+# ---------- finalize ----------
+sockmap_finalize "$SCENARIO"

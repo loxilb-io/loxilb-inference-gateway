@@ -13,6 +13,9 @@
 # Surviving here supports the reading that the defect itself lives on the shared path,
 # but the sockmap path creates the trigger - a storm of abrupt connection teardowns -
 # and so raises the probability sharply.
+# Lives under debug/ but runs from the suite directory: every path below
+# (../common.sh, ./config.sh, ./sse_server.js) is written relative to it.
+cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 source ../common.sh
 source ./sockmap_common.sh
 sockmap_init_artifacts
