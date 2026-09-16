@@ -2770,7 +2770,7 @@ h2l_round_drive() {
   done
 }
 
-# Phase 1 -- drive until the resident set goes quiet. Growth here is NOT
+# Warm-up -- drive until the resident set goes quiet. Growth here is NOT
 # scored; the point is only to reach a state where growth means something.
 H2L_STREAK=0
 H2L_PREV=$(gw_rss_kb)
@@ -2789,7 +2789,7 @@ while [ "$H2L_ROUNDS" -lt "$H2L_WARM_CAP" ]; do
   fi
 done
 
-# Phase 2 -- the scored rounds, on a process that has proven it is quiet.
+# Measurement -- the scored rounds, on a process that has proven it is quiet.
 H2L_RSS0=$(gw_rss_kb)
 for h2l_m in $(seq 1 "$H2L_MEAS_ROUNDS"); do
   H2L_ROUNDS=$((H2L_ROUNDS + 1))
