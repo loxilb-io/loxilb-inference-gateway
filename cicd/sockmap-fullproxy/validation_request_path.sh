@@ -16,9 +16,10 @@
 #      streamed upload (the request direction activates after the body), five
 #      pipelined requests, and a half-closed client not disturbing the service
 #      (whether it is ANSWERED is case E-11 of validation_equivalence.sh)
-#   5. a live keep-alive connection survives a mode change and a rule delete, and
-#      a new connection follows the new mode (today's semantics; the target is
-#      cases C-5 and C-6 of validation_control.sh)
+#   5. a live keep-alive connection is undisturbed by a mode change that only ADDS
+#      a direction, and a new connection follows the new mode. Taking a direction
+#      away, and deleting the rule, drop the accelerated connections instead and
+#      belong to validation_control.sh (C-5, C-6)
 #   6. PEER_MISS never grows and no sockmap failure is logged
 
 source ../common.sh
@@ -159,38 +160,36 @@ for port in "$H1_REQ_PORT" "$H1_BOTH_PORT"; do
 done
 
 # ---------- Step 5: rule changes under a live connection ----------
-# A pair that is accelerated keeps redirecting until it closes; a rule change or
-# delete applies to new connections. That is today's semantics and the reason
-# there is no way to stop acceleration on a live connection: cases C-5 and C-6 of
-# validation_control.sh assert the opposite as the target, and when PR-B lands the
-# expectations below move there (decision D-C of the follow-up plan).
+# Adding or keeping a direction applies to NEW connections: an existing connection
+# is never accelerated retroactively, so one that is already running is undisturbed.
+# Taking a direction away is the other case and belongs to validation_control.sh
+# (C-5, C-6): those connections are dropped, because the verdict decides on the
+# pairing installed when they were accepted and would otherwise keep redirecting
+# under a mode that no longer asks for it.
 sockmap_section 5 "Rule changes under a live keep-alive connection"
+# response -> both ADDS the request direction, so nothing is taken away and the
+# live connection keeps running (unaccelerated in that direction, as it has been
+# since it was accepted).
+sockmap_create_lb_via_api llb1 "$VIP" "$H1_BOTH_PORT" "$H1_EP_PORT" "$EPS" response rp-h1-both >/dev/null
+sleep 1
 $hexec l3h1 python3 "$CLIENT" keepalive "$VIP" "$H1_BOTH_PORT" 6 100 > "$SOCKMAP_ARTIFACTS_DIR/rp_ka_mode.txt" 2>&1 &
 ka_pid=$!
 sleep 2
-sockmap_create_lb_via_api llb1 "$VIP" "$H1_BOTH_PORT" "$H1_EP_PORT" "$EPS" response rp-h1-both >/dev/null
+sockmap_create_lb_via_api llb1 "$VIP" "$H1_BOTH_PORT" "$H1_EP_PORT" "$EPS" both rp-h1-both >/dev/null
 wait "$ka_pid"
 out=$(cat "$SOCKMAP_ARTIFACTS_DIR/rp_ka_mode.txt")
-sockmap_result "live connection survives both -> response" "$([[ $out == OK* ]] && echo OK || echo FAILED)" "$out"
+sockmap_result "live connection survives response -> both" "$([[ $out == OK* ]] && echo OK || echo FAILED)" "$out"
 
 req_before=$(sockmap_redirect_req_count llb1)
 resp_before=$(sockmap_redirect_resp_count llb1)
 out=$($hexec l3h1 python3 "$CLIENT" keepalive "$VIP" "$H1_BOTH_PORT" 1 50 2>&1)
 req_delta=$(( $(sockmap_redirect_req_count llb1) - req_before ))
 resp_delta=$(( $(sockmap_redirect_resp_count llb1) - resp_before ))
-if [[ $out == OK* ]] && (( req_delta == 0 && resp_delta > 0 )); then
-  sockmap_result "new connection follows response mode" "OK" "req=$req_delta resp=$resp_delta"
+if [[ $out == OK* ]] && (( req_delta > 0 && resp_delta > 0 )); then
+  sockmap_result "new connection follows the new mode" "OK" "req=$req_delta resp=$resp_delta"
 else
-  sockmap_result "new connection follows response mode" "FAILED" "$out req=$req_delta resp=$resp_delta"
+  sockmap_result "new connection follows the new mode" "FAILED" "$out req=$req_delta resp=$resp_delta"
 fi
-
-$hexec l3h1 python3 "$CLIENT" keepalive "$VIP" "$H1_REQ_PORT" 4 100 > "$SOCKMAP_ARTIFACTS_DIR/rp_ka_delete.txt" 2>&1 &
-ka_pid=$!
-sleep 1.5
-sockmap_delete_lb_via_api llb1 "$VIP" "$H1_REQ_PORT" >/dev/null
-wait "$ka_pid"
-out=$(cat "$SOCKMAP_ARTIFACTS_DIR/rp_ka_delete.txt")
-sockmap_result "live accelerated connection survives rule delete" "$([[ $out == OK* ]] && echo OK || echo FAILED)" "$out"
 
 # ---------- Step 6: counters and logs ----------
 sockmap_section 6 "Verdict passes and failure logs"

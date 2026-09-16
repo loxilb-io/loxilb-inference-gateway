@@ -18,6 +18,7 @@ package loxinet
 
 import (
 	"errors"
+	"net"
 
 	cmn "github.com/loxilb-io/loxilb/common"
 	tk "github.com/loxilb-io/loxilib"
@@ -116,4 +117,43 @@ func lbSockMapL7Code(serv *cmn.LbServiceArg, code uint8, apiKeyAuth string, l7At
 	tk.LogIt(tk.LogWarning, "lb-rule %s:%d: sockMapMode %s dropped on restore, not allowed where the data plane touches every request\n",
 		serv.ServIP, serv.ServPort, serv.SockMapMode)
 	return 0, nil
+}
+
+// sockMapDirs reports which directions a dataplane mode code accelerates
+// (0=off, 1=both, 2=request, 3=response).
+func sockMapDirs(code uint8) (req bool, resp bool) {
+	return code == 1 || code == 2, code == 1 || code == 3
+}
+
+// sockMapModeReduces reports whether moving from one mode to another takes a
+// direction AWAY. Adding one does not qualify: an existing connection is never
+// accelerated retroactively, so there is nothing to act on.
+func sockMapModeReduces(from, to uint8) bool {
+	fromReq, fromResp := sockMapDirs(from)
+	toReq, toResp := sockMapDirs(to)
+	return (fromReq && !toReq) || (fromResp && !toResp)
+}
+
+// sockMapDropAccelForRule closes the connections a rule is having accelerated,
+// logging rather than failing: the caller has already committed the
+// configuration change, and a rule whose connections could not be dropped is
+// still correctly configured — it is the live connections that lag. The reason
+// it is done at all is that the verdict decides on its peer_map lookup alone, so
+// without this an accelerated pair would keep redirecting under a mode that no
+// longer asks for it, until it closed on its own.
+func sockMapDropAccelForRule(vip string, port uint16, proto string, why string) {
+	ip := net.ParseIP(vip)
+	if ip == nil || mh.dpEbpf == nil {
+		return
+	}
+	n, err := DpSockMapDropAccelConns(ip, port, l7ProtoToNum(proto))
+	if err != nil {
+		tk.LogIt(tk.LogDebug, "lb-rule %s:%d: %s, no accelerated connection dropped (%v)\n",
+			vip, port, why, err)
+		return
+	}
+	if n > 0 {
+		tk.LogIt(tk.LogInfo, "lb-rule %s:%d: %s, dropped %d accelerated connection(s)\n",
+			vip, port, why, n)
+	}
 }
