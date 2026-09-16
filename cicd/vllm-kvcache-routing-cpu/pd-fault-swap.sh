@@ -1,5 +1,5 @@
 #!/bin/bash
-# pd-fault-swap.sh <ep-netns> hang|ok|refuse|off
+# pd-fault-swap.sh <ep-netns> hang|ok|refuse|zerobyte|off
 #
 # Puts one endpoint netns behind a chosen fault backend, or restores it.
 #
@@ -20,8 +20,8 @@
 # fail is not a teardown.
 set -u
 
-EP="${1:?usage: pd-fault-swap.sh <ep-netns> hang|ok|refuse|off}"
-STATE="${2:?usage: pd-fault-swap.sh <ep-netns> hang|ok|refuse|off}"
+EP="${1:?usage: pd-fault-swap.sh <ep-netns> hang|ok|refuse|zerobyte|off}"
+STATE="${2:?usage: pd-fault-swap.sh <ep-netns> hang|ok|refuse|zerobyte|off}"
 STUB_PORT="${STUB_PORT:-8099}"
 DIR="${PD_FAULT_DIR:-/tmp/pd-fault}"
 PIDFILE="$DIR/$EP.pid"
@@ -95,7 +95,7 @@ stub_kill() {
 }
 
 case "$STATE" in
-  hang|ok|refuse)
+  hang|ok|refuse|zerobyte)
     # `refuse` deliberately does NOT listen: the REDIRECT then points traffic
     # at a closed port and connect() gets ECONNREFUSED. That is the event the
     # caller asked for, not a failure of this script, so the usual "did the
@@ -125,7 +125,7 @@ case "$STATE" in
     echo "$EP fault-mode=off (reflect-echo restored)"
     ;;
   *)
-    echo "FATAL: unknown state '$STATE' (hang|ok|off)" >&2
+    echo "FATAL: unknown state '$STATE' (hang|ok|refuse|zerobyte|off)" >&2
     exit 2
     ;;
 esac

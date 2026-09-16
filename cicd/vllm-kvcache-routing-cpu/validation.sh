@@ -23,6 +23,25 @@
 #            loxilb_ai_pd_requests_total{phase="decode",status="timeout"} and must leave
 #            {phase="prefill",status="timeout"} flat, carrying the request's own model
 #            label. Runs BEFORE check 8, whose collision pre-clean destroys the topology.
+#   check 11 P/D decode-leg death — a decode backend closing with ZERO response bytes must move
+#            loxilb_pd_decode_ep_died_total AND loxilb_pd_decode_zero_byte_eof_total by the same
+#            amount as the client-visible pd_decode_backend_died receipts. died is a SIX-writer
+#            family, so the stage asserts the zero-byte SITE fired and the other five (two
+#            initiate-decode callers, mid-stream EOF, and both SGLang sites) stayed FLAT.
+#            Runs BEFORE check 10, which ends with all three prefill breakers OPEN.
+#   check 12 P/D prefill-leg death — a prefill backend dying mid-request must move
+#            loxilb_pd_prefill_ep_died_total once per DEAD ENDPOINT (prefill re-dispatches, so
+#            the oracle is Δcounter == Δ"Prefill backend died" log lines, not Δ == requests),
+#            with the client receipt keyed on its DETAIL ("prefill backend connection dropped")
+#            because three sites share the pd_pool_unavailable error code. The three SGLang
+#            writers are asserted FLAT. Ends by PROVING the pool recovered, which is check 10's
+#            precondition.
+#   check 13 P/D proactive circuit-breaker heal — an OPEN breaker must be driven OPEN->HALF_OPEN
+#            by the 1Hz health pass with NO traffic, moving loxilb_pd_cb_proactive_heal_total.
+#            Single writer, so Δcounter == Δ its log line EXACTLY; loxilb_pd_cb_flips_total is
+#            asserted only as a SUPERSET because one of its seven sites logs nothing at all.
+#            Control gets the same request count AND the same trip+heal wall clock. Runs after
+#            check 12 (clean, no breaker open) and before check 10.
 #   check 10 P/D same-endpoint connect retry — a refused connect that SUCCEEDS on retry must
 #            move loxilb_pd_connect_retry_same_ep_ok_total, with the ATTEMPT counter moving by
 #            the same amount and failover flat. Its control is the branch itself (endpoints
@@ -1613,6 +1632,478 @@ else
 fi
 [[ -n "${pd_tax_note}" ]] && echo "  detail:${pd_tax_note}"
 assert "P/D taxonomy: a decode wedge moves {decode,timeout} and leaves {prefill,timeout} flat" "$pd_tax_ok"
+
+#################################################################################
+# P/D decode-leg death — a decode backend that closes with ZERO response bytes
+#
+#     loxilb_pd_decode_ep_died_total is a SIX-WRITER family. A delta on it
+#     proves a WRITER ran, not that THIS writer ran, and the six are not
+#     interchangeable -- they carry different client outcomes (503 vs 502 vs a
+#     cut stream) and two of them belong to a different engine dialect
+#     entirely. Read out of the source, the sites and the line each emits are:
+#
+#       sockproxy_http.c:1597   pd_initiate_decode() failed   "Failed to initiate decode"
+#       sockproxy_http.c:7447   pd_initiate_decode() failed   "Failed to initiate decode"   (2nd caller, SAME text)
+#       sockproxy_http.c:4937   zero-byte decode EOF          "decode backend EOF with ZERO"   (+ zero_byte_eof)
+#       sockproxy_http.c:4994   mid-stream decode EOF         "decode backend EOF mid-stream"
+#       sockproxy_pd_sglang.c:478  SGLang decode connect      "[PD_SG] decode EP"
+#       sockproxy_pd_sglang.c:545  SGLang decode send         "[PD_SG] decode send failed"
+#
+#     So the family total moving is NOT the claim this stage makes. The claim
+#     is that the zero-byte site and ONLY the zero-byte site fired, and the
+#     other five are asserted FLAT in the same window. Without that, a defect
+#     that re-routed this event to the mid-stream site -- or an SGLang site
+#     firing on a vLLM rule -- would move the family by exactly as much and be
+#     invisible, which is the failure mode this campaign exists to catch.
+#
+#     The byproduct is what makes the attribution cheap: the zero-byte caller
+#     ticks pd_decode_zero_byte_eof on its way to the shared statement and no
+#     other caller can, so Δzero_byte_eof is a witness for that ONE site.
+#
+#     🚨 The two "decode backend EOF" lines share a prefix and grep -cF is
+#     literal but NOT discriminating, so the discriminator is made
+#     self-verifying: the loose prefix count must equal zero + mid-stream. If
+#     that identity breaks, the two counts are not measuring what their names
+#     say and every verdict below is void.
+#
+#     🚨 PLACED BEFORE THE CONNECT-RETRY STAGE ON PURPOSE. That stage ends with
+#     a refusing control that is exactly the circuit breaker's trip threshold,
+#     so all three prefill breakers finish OPEN. Run this stage after it and
+#     the drive never gets past prefill into the decode phase at all: the
+#     counter reads a flat zero that looks precisely like "this family cannot
+#     be driven". The control leg below is also the vacuity guard -- if it is
+#     not 200 it is not a control, and the fault leg has nothing to differ FROM.
+#
+#     🚨 These families are written by the POLLED collector that copies the C
+#     proxy_get_metrics() snapshot once per PrometheusDefaultPeriod (10s), not
+#     by a direct callback, so a short settle reads a live writer as dead and
+#     makes the FLAT assertions vacuous as well as the moving ones wrong.
+#################################################################################
+echo "=== P/D decode death: a zero-byte decode EOF is counted, receipted and attributed to its OWN site ==="
+
+PD_EOF_N=3
+PD_EOF_SETTLE=14
+PD_DIED_FAM="loxilb_pd_decode_ep_died_total"
+PD_ZEOF_FAM="loxilb_pd_decode_zero_byte_eof_total"
+PD_EOF_RECEIPT="pd_decode_backend_died"
+
+PD_EOF_L_ZERO="decode backend EOF with ZERO"
+PD_EOF_L_MID="decode backend EOF mid-stream"
+PD_EOF_L_LOOSE="decode backend EOF "
+PD_EOF_L_INIT="Failed to initiate decode"
+PD_EOF_L_SGC="[PD_SG] decode EP"
+PD_EOF_L_SGS="[PD_SG] decode send failed"
+
+# "<zero> <mid> <loose> <init> <sg_connect> <sg_send>"
+pd_eof_sites() {
+    echo "$(dplog_count "${PD_EOF_L_ZERO}") $(dplog_count "${PD_EOF_L_MID}")" \
+         "$(dplog_count "${PD_EOF_L_LOOSE}") $(dplog_count "${PD_EOF_L_INIT}")" \
+         "$(dplog_count "${PD_EOF_L_SGC}") $(dplog_count "${PD_EOF_L_SGS}")"
+}
+
+# pd_eof_drive <tag> <codes-file> <receipts-file>
+# The loop writes to FILES: a curl that fails to SPAWN yields an EMPTY code,
+# and an empty code is a LOST MEASUREMENT, never a gateway answer. Collecting
+# in a variable through a pipe would hide both that and the count.
+pd_eof_drive() {
+    local tag="$1" cf="$2" rf="$3" i out
+    : > "${cf}"; : > "${rf}"
+    for i in $(seq 1 ${PD_EOF_N}); do
+        out=$($hexec l3h1 curl -s --max-time 60 -w '\n%{http_code}' \
+            -H 'Content-Type: application/json' \
+            -d "{\"model\":\"${KV_MODEL}\",\"prompt\":\"pd decode-eof ${tag} $i\",\"max_tokens\":8}" \
+            "http://${VIP}:${VPORT}/v1/completions" 2>/dev/null)
+        printf '%s\n' "${out##*$'\n'}" >> "${cf}"
+        printf '%s\n' "${out}" | grep -cF "${PD_EOF_RECEIPT}" >> "${rf}" || true
+    done
+}
+
+pd_eof_sum()   { awk '{s+=$1} END{printf "%d", s+0}' "$1"; }
+pd_eof_codes() { tr '\n' ' ' < "$1"; }
+pd_eof_n200()  { grep -cx '200' "$1" || true; }
+
+pd_eof_ok=1
+pd_eof_note=""
+pd_eof_cf="$(mktemp)"; pd_eof_rf="$(mktemp)"
+
+if [[ ! -x "${PD_SWAP}" ]]; then
+    pd_eof_ok=0; pd_eof_note="missing ${PD_SWAP}"
+else
+    # ---- presence: both are EAGER scalars -------------------------------
+    # They must be present at zero from init. An ABSENT family makes every
+    # delta below a subtraction against nothing, which reads as "flat".
+    e_have_d=$(llb_curl "${METRICS}" 2>/dev/null | grep -cE "^${PD_DIED_FAM}" || true)
+    e_have_z=$(llb_curl "${METRICS}" 2>/dev/null | grep -cE "^${PD_ZEOF_FAM}" || true)
+    echo "  presence: ${PD_DIED_FAM}=${e_have_d} ${PD_ZEOF_FAM}=${e_have_z} (want >=1 each)"
+    [[ "${e_have_d}" -ge 1 && "${e_have_z}" -ge 1 ]] || { pd_eof_ok=0; pd_eof_note="${pd_eof_note} an eager scalar is ABSENT before any traffic — this build does not register it;"; }
+
+    # ---- A control: decode backends answer normally ----------------------
+    for ns in ${PD_DECODE_NS}; do sudo ${PD_SWAP} "${ns}" ok >/dev/null || { pd_eof_ok=0; pd_eof_note="${pd_eof_note} could not put ${ns} in ok mode;"; }; done
+    sleep 2
+    a_d_b=$(metric_val "${PD_DIED_FAM}"); a_z_b=$(metric_val "${PD_ZEOF_FAM}")
+    read a_s0_b a_s1_b a_s2_b a_s3_b a_s4_b a_s5_b <<<"$(pd_eof_sites)"
+    pd_eof_drive "a" "${pd_eof_cf}" "${pd_eof_rf}"
+    sleep ${PD_EOF_SETTLE}
+    a_d_a=$(metric_val "${PD_DIED_FAM}"); a_z_a=$(metric_val "${PD_ZEOF_FAM}")
+    a_codes="$(pd_eof_codes "${pd_eof_cf}")"; a_n=$(wc -l < "${pd_eof_cf}"); a_200=$(pd_eof_n200 "${pd_eof_cf}"); a_rcpt=$(pd_eof_sum "${pd_eof_rf}")
+    echo "  A control-healthy: ${PD_DIED_FAM} Δ$(( a_d_a - a_d_b )) ${PD_ZEOF_FAM} Δ$(( a_z_a - a_z_b )) ; codes=${a_codes}; receipts=${a_rcpt}"
+    [[ "${a_n}" -eq "${PD_EOF_N}" ]] || { pd_eof_ok=0; pd_eof_note="${pd_eof_note} A lost a measurement (${a_n}/${PD_EOF_N} codes);"; }
+    # The vacuity guard. A control that is not 200 is not a control.
+    [[ "${a_200}" -eq "${PD_EOF_N}" ]] || { pd_eof_ok=0; pd_eof_note="${pd_eof_note} A did not reach the decode phase (${a_200}/${PD_EOF_N} were 200, codes=${a_codes}) — the fault leg has nothing to differ FROM;"; }
+    [[ $(( a_d_a - a_d_b )) -eq 0 ]] || { pd_eof_ok=0; pd_eof_note="${pd_eof_note} A moved ${PD_DIED_FAM} with no fault;"; }
+    [[ $(( a_z_a - a_z_b )) -eq 0 ]] || { pd_eof_ok=0; pd_eof_note="${pd_eof_note} A moved ${PD_ZEOF_FAM} with no fault;"; }
+    [[ "${a_rcpt}" -eq 0 ]] || { pd_eof_ok=0; pd_eof_note="${pd_eof_note} A carried a ${PD_EOF_RECEIPT} receipt with no fault;"; }
+
+    # ---- B fault: decode backends close with ZERO response bytes ---------
+    for ns in ${PD_DECODE_NS}; do sudo ${PD_SWAP} "${ns}" zerobyte >/dev/null || { pd_eof_ok=0; pd_eof_note="${pd_eof_note} could not put ${ns} in zerobyte mode;"; }; done
+    sleep 2
+    b_d_b=$(metric_val "${PD_DIED_FAM}"); b_z_b=$(metric_val "${PD_ZEOF_FAM}")
+    read b_s0_b b_s1_b b_s2_b b_s3_b b_s4_b b_s5_b <<<"$(pd_eof_sites)"
+    pd_eof_drive "b" "${pd_eof_cf}" "${pd_eof_rf}"
+    sleep ${PD_EOF_SETTLE}
+    b_d_a=$(metric_val "${PD_DIED_FAM}"); b_z_a=$(metric_val "${PD_ZEOF_FAM}")
+    read b_s0_a b_s1_a b_s2_a b_s3_a b_s4_a b_s5_a <<<"$(pd_eof_sites)"
+    b_codes="$(pd_eof_codes "${pd_eof_cf}")"; b_n=$(wc -l < "${pd_eof_cf}"); b_rcpt=$(pd_eof_sum "${pd_eof_rf}")
+    d_died=$(( b_d_a - b_d_b )); d_zeof=$(( b_z_a - b_z_b ))
+    d_zero=$(( b_s0_a - b_s0_b )); d_mid=$(( b_s1_a - b_s1_b )); d_loose=$(( b_s2_a - b_s2_b ))
+    d_init=$(( b_s3_a - b_s3_b )); d_sgc=$(( b_s4_a - b_s4_b )); d_sgs=$(( b_s5_a - b_s5_b ))
+    echo "  B fault-zerobyte: ${PD_DIED_FAM} Δ${d_died} ${PD_ZEOF_FAM} Δ${d_zeof} ; receipts=${b_rcpt}/${PD_EOF_N} ; codes=${b_codes}"
+    echo "  B site lines: zero Δ${d_zero} mid-stream Δ${d_mid} init-decode Δ${d_init} sg-connect Δ${d_sgc} sg-send Δ${d_sgs} (loose Δ${d_loose})"
+
+    [[ "${b_n}" -eq "${PD_EOF_N}" ]] || { pd_eof_ok=0; pd_eof_note="${pd_eof_note} B lost a measurement (${b_n}/${PD_EOF_N} codes);"; }
+    # An UNREADABLE log is not a flat log. dplog_count returns -1 on a real
+    # grep error, and collapsing that into 0 would turn "I could not measure"
+    # into "that site stayed silent" — which is the verdict this stage sells.
+    for v in "${b_s0_b}" "${b_s1_b}" "${b_s2_b}" "${b_s3_b}" "${b_s4_b}" "${b_s5_b}" "${b_s0_a}" "${b_s1_a}" "${b_s2_a}" "${b_s3_a}" "${b_s4_a}" "${b_s5_a}"; do
+        [[ "${v}" != "-1" ]] || { pd_eof_ok=0; pd_eof_note="${pd_eof_note} datapath log unreadable — the FLAT site verdicts would be vacuous;"; break; }
+    done
+    # the family moved, and the client was told
+    [[ "${d_died}" -gt 0 ]] || { pd_eof_ok=0; pd_eof_note="${pd_eof_note} ${PD_DIED_FAM} flat under a zero-byte decode close;"; }
+    [[ "${d_zeof}" -gt 0 ]] || { pd_eof_ok=0; pd_eof_note="${pd_eof_note} ${PD_ZEOF_FAM} flat under a zero-byte decode close;"; }
+    [[ "${b_rcpt}" -gt 0 ]] || { pd_eof_ok=0; pd_eof_note="${pd_eof_note} no client carried the ${PD_EOF_RECEIPT} receipt;"; }
+    # Receipts leave through the RESPONSE path and the deltas through the
+    # METRICS path; they agree only if one block did both.
+    [[ "${b_rcpt}" -eq "${d_died}" && "${d_died}" -eq "${d_zeof}" ]] || { pd_eof_ok=0; pd_eof_note="${pd_eof_note} receipts=${b_rcpt} Δdied=${d_died} Δzeof=${d_zeof} disagree — the counter and the client's 502 are not the same event;"; }
+    # self-verifying discriminator: the loose prefix must be exactly its two parts
+    [[ "${d_loose}" -eq $(( d_zero + d_mid )) ]] || { pd_eof_ok=0; pd_eof_note="${pd_eof_note} log discriminator is not discriminating (loose Δ${d_loose} != zero Δ${d_zero} + mid Δ${d_mid});"; }
+    # THE ATTRIBUTION: this one site fired, and it fired as often as the family
+    [[ "${d_zero}" -eq "${d_died}" ]] || { pd_eof_ok=0; pd_eof_note="${pd_eof_note} the zero-byte SITE fired Δ${d_zero} times but the family moved Δ${d_died} — another writer contributed;"; }
+    # ...and the other five stayed silent
+    [[ "${d_mid}"  -eq 0 ]] || { pd_eof_ok=0; pd_eof_note="${pd_eof_note} the MID-STREAM site also fired (Δ${d_mid});"; }
+    [[ "${d_init}" -eq 0 ]] || { pd_eof_ok=0; pd_eof_note="${pd_eof_note} an initiate-decode site also fired (Δ${d_init});"; }
+    [[ "${d_sgc}"  -eq 0 ]] || { pd_eof_ok=0; pd_eof_note="${pd_eof_note} the SGLang decode-connect site fired on a vLLM rule (Δ${d_sgc});"; }
+    [[ "${d_sgs}"  -eq 0 ]] || { pd_eof_ok=0; pd_eof_note="${pd_eof_note} the SGLang decode-send site fired on a vLLM rule (Δ${d_sgs});"; }
+
+    # ---- restore ---------------------------------------------------------
+    for ns in ${PD_DECODE_NS}; do sudo ${PD_SWAP} "${ns}" off >/dev/null || true; done
+fi
+rm -f "${pd_eof_cf}" "${pd_eof_rf}" 2>/dev/null || true
+[[ -n "${pd_eof_note}" ]] && echo "  detail:${pd_eof_note}"
+assert "P/D decode death: a zero-byte decode EOF moves died+zero_byte_eof, receipts agree, and the other five writer sites stay flat" "$pd_eof_ok"
+
+#################################################################################
+# P/D prefill-leg death — a prefill backend that dies mid-request
+#
+#     loxilb_pd_prefill_ep_died_total is a FOUR-WRITER family, and three of the
+#     four belong to the SGLang dialect, which this vLLM scenario never enters:
+#
+#       sockproxy_http.c:4671        vLLM prefill backend died   "Prefill backend died"
+#       sockproxy_http.c:4883        SGLang drain-leg death      "[PD_SG] drain leg died"
+#       sockproxy_pd_sglang.c:146    SGLang abort-pair (5xx)     byproduct: pd_sg_prefill_abort_decode
+#       sockproxy_pd_sglang.c:367    SGLang 5xx after relay      "AFTER decode bytes relayed"
+#
+#     So "the family moved" is not the claim. The claim is that the vLLM site
+#     fired and the three SGLang sites did not -- a dialect leaking across
+#     rules would move the family by exactly as much and be invisible.
+#
+#     🚨 ONE CLIENT REQUEST CAN PRODUCE SEVERAL DEATHS. Prefill is idempotent
+#     and the request survives in pd_saved_headers/pd_saved_body, so a death
+#     re-dispatches to the next endpoint and the counter moves once per DEAD
+#     ENDPOINT, not once per request. Asserting Δ == request-count would be
+#     wrong in a way that looks like a product defect. The oracle that survives
+#     the multiplicity is the identity Δcounter == Δ"Prefill backend died"
+#     lines: the log_error and the atomic_fetch_add are two statements of ONE
+#     block, so they agree whatever the re-dispatch count turns out to be.
+#
+#     🚨 THE RECEIPT IS KEYED ON ITS DETAIL, NOT ITS ERROR CODE. Three
+#     different sites answer "pd_pool_unavailable" (sockproxy_http.c:1604,
+#     :4737, :7478) and only :4737 is prefill exhaustion; :1604 is a decode
+#     endpoint being unreachable. Matching the error code alone would accept a
+#     DECODE-path receipt as evidence for a PREFILL-path assertion, so the
+#     match is on "prefill backend connection dropped".
+#
+#     🚨 THIS STAGE TRIPS THE PREFILL BREAKERS, and check 10 below needs them
+#     CLOSED -- its healthy control is three 200s. So the stage does not end at
+#     its last assertion: it restores the endpoints and then PROVES the pool
+#     came back, which is both the precondition check 10 depends on and a real
+#     assertion about breaker recovery. Leaving that to luck is how a later
+#     stage fails for a reason that has nothing to do with what it tests.
+#################################################################################
+echo "=== P/D prefill death: a dying prefill backend is counted, receipted and attributed to the vLLM site ==="
+
+PD_PD_N=3
+# Defined HERE, not borrowed: this stage runs BEFORE check 10, which is where
+# the prefill netns list used to be introduced. Check 10 re-assigns the same
+# value later; relying on that ordering would make this stage silently drive
+# an EMPTY endpoint list if the two were ever reordered.
+PD_PREFILL_NS="l3ep1 l3ep3 l3ep5"
+PD_PD_SETTLE=14
+PD_PDIED_FAM="loxilb_pd_prefill_ep_died_total"
+PD_SGABORT_FAM="loxilb_pd_sg_prefill_abort_decode_total"
+PD_PD_RECEIPT="prefill backend connection dropped"
+
+PD_PDIED_L_VLLM="Prefill backend died"
+PD_PDIED_L_SGDRAIN="[PD_SG] drain leg died"
+PD_PDIED_L_SGAFTER="AFTER decode bytes relayed"
+
+# "<vllm> <sg_drain> <sg_after>"
+pd_pd_sites() {
+    echo "$(dplog_count "${PD_PDIED_L_VLLM}") $(dplog_count "${PD_PDIED_L_SGDRAIN}") $(dplog_count "${PD_PDIED_L_SGAFTER}")"
+}
+
+# pd_pd_drive <tag> <codes-file> <receipts-file>
+pd_pd_drive() {
+    local tag="$1" cf="$2" rf="$3" i out
+    : > "${cf}"; : > "${rf}"
+    for i in $(seq 1 ${PD_PD_N}); do
+        out=$($hexec l3h1 curl -s --max-time 60 -w '\n%{http_code}' \
+            -H 'Content-Type: application/json' \
+            -d "{\"model\":\"${KV_MODEL}\",\"prompt\":\"pd prefill-died ${tag} $i\",\"max_tokens\":8}" \
+            "http://${VIP}:${VPORT}/v1/completions" 2>/dev/null)
+        printf '%s\n' "${out##*$'\n'}" >> "${cf}"
+        printf '%s\n' "${out}" | grep -cF "${PD_PD_RECEIPT}" >> "${rf}" || true
+    done
+}
+
+pd_pd_ok=1
+pd_pd_note=""
+pd_pd_cf="$(mktemp)"; pd_pd_rf="$(mktemp)"
+
+if [[ ! -x "${PD_SWAP}" ]]; then
+    pd_pd_ok=0; pd_pd_note="missing ${PD_SWAP}"
+else
+    p_have=$(llb_curl "${METRICS}" 2>/dev/null | grep -cE "^${PD_PDIED_FAM}" || true)
+    echo "  presence: ${PD_PDIED_FAM}=${p_have} (want >=1)"
+    [[ "${p_have}" -ge 1 ]] || { pd_pd_ok=0; pd_pd_note="${pd_pd_note} ${PD_PDIED_FAM} is ABSENT before any traffic;"; }
+
+    # Prove the log oracle can READ before trusting a zero from it. A pattern
+    # that never matches and a log that cannot be opened look identical
+    # downstream. Check 11 above leaves its own line in this log, so a zero
+    # here means the oracle is blind, not that the bed is clean.
+    pd_anchor=$(dplog_count "${PD_EOF_L_ZERO}")
+    echo "  log oracle readable: ${DPLOG} holds ${pd_anchor} check-11 decode-EOF lines (0 or -1 = blind)"
+    [[ "${pd_anchor}" != "-1" && "${pd_anchor}" -ge 1 ]] || { pd_pd_ok=0; pd_pd_note="${pd_pd_note} the datapath log oracle is BLIND (anchor=${pd_anchor}) — every FLAT verdict below would be vacuous;"; }
+
+    # ---- A control: prefill backends answer normally ---------------------
+    for ns in ${PD_PREFILL_NS}; do sudo ${PD_SWAP} "${ns}" ok >/dev/null || { pd_pd_ok=0; pd_pd_note="${pd_pd_note} could not put ${ns} in ok mode;"; }; done
+    sleep 2
+    pa_f_b=$(metric_val "${PD_PDIED_FAM}"); pa_sg_b=$(metric_val "${PD_SGABORT_FAM}")
+    read pa_s0_b pa_s1_b pa_s2_b <<<"$(pd_pd_sites)"
+    pd_pd_drive "a" "${pd_pd_cf}" "${pd_pd_rf}"
+    sleep ${PD_PD_SETTLE}
+    pa_f_a=$(metric_val "${PD_PDIED_FAM}")
+    read pa_s0_a pa_s1_a pa_s2_a <<<"$(pd_pd_sites)"
+    pa_codes="$(tr '\n' ' ' < "${pd_pd_cf}")"; pa_n=$(wc -l < "${pd_pd_cf}"); pa_200=$(grep -cx '200' "${pd_pd_cf}" || true); pa_rcpt=$(awk '{s+=$1} END{printf "%d", s+0}' "${pd_pd_rf}")
+    echo "  A control-healthy: ${PD_PDIED_FAM} Δ$(( pa_f_a - pa_f_b )) ; vLLM site lines Δ$(( pa_s0_a - pa_s0_b )) ; codes=${pa_codes}; receipts=${pa_rcpt}"
+    [[ "${pa_n}" -eq "${PD_PD_N}" ]] || { pd_pd_ok=0; pd_pd_note="${pd_pd_note} A lost a measurement (${pa_n}/${PD_PD_N} codes);"; }
+    [[ "${pa_200}" -eq "${PD_PD_N}" ]] || { pd_pd_ok=0; pd_pd_note="${pd_pd_note} A is not a control (${pa_200}/${PD_PD_N} were 200, codes=${pa_codes});"; }
+    [[ $(( pa_f_a - pa_f_b )) -eq 0 ]] || { pd_pd_ok=0; pd_pd_note="${pd_pd_note} A moved ${PD_PDIED_FAM} with no fault;"; }
+    [[ $(( pa_s0_a - pa_s0_b )) -eq 0 ]] || { pd_pd_ok=0; pd_pd_note="${pd_pd_note} A logged a prefill-death line with no fault;"; }
+    [[ "${pa_rcpt}" -eq 0 ]] || { pd_pd_ok=0; pd_pd_note="${pd_pd_note} A carried a prefill-exhaustion receipt with no fault;"; }
+
+    # ---- B fault: prefill backends close with ZERO response bytes --------
+    for ns in ${PD_PREFILL_NS}; do sudo ${PD_SWAP} "${ns}" zerobyte >/dev/null || { pd_pd_ok=0; pd_pd_note="${pd_pd_note} could not put ${ns} in zerobyte mode;"; }; done
+    sleep 2
+    pb_f_b=$(metric_val "${PD_PDIED_FAM}"); pb_sg_b=$(metric_val "${PD_SGABORT_FAM}")
+    read pb_s0_b pb_s1_b pb_s2_b <<<"$(pd_pd_sites)"
+    pd_pd_drive "b" "${pd_pd_cf}" "${pd_pd_rf}"
+    sleep ${PD_PD_SETTLE}
+    pb_f_a=$(metric_val "${PD_PDIED_FAM}"); pb_sg_a=$(metric_val "${PD_SGABORT_FAM}")
+    read pb_s0_a pb_s1_a pb_s2_a <<<"$(pd_pd_sites)"
+    pb_codes="$(tr '\n' ' ' < "${pd_pd_cf}")"; pb_n=$(wc -l < "${pd_pd_cf}"); pb_rcpt=$(awk '{s+=$1} END{printf "%d", s+0}' "${pd_pd_rf}")
+    dp_fam=$(( pb_f_a - pb_f_b )); dp_vllm=$(( pb_s0_a - pb_s0_b ))
+    dp_sgdr=$(( pb_s1_a - pb_s1_b )); dp_sgaf=$(( pb_s2_a - pb_s2_b )); dp_sgab=$(( pb_sg_a - pb_sg_b ))
+    echo "  B fault-zerobyte: ${PD_PDIED_FAM} Δ${dp_fam} ; receipts=${pb_rcpt}/${PD_PD_N} ; codes=${pb_codes}"
+    echo "  B site evidence: vLLM Δ${dp_vllm} ; sg-drain Δ${dp_sgdr} ; sg-after Δ${dp_sgaf} ; ${PD_SGABORT_FAM} Δ${dp_sgab}"
+
+    [[ "${pb_n}" -eq "${PD_PD_N}" ]] || { pd_pd_ok=0; pd_pd_note="${pd_pd_note} B lost a measurement (${pb_n}/${PD_PD_N} codes);"; }
+    for v in "${pb_s0_b}" "${pb_s1_b}" "${pb_s2_b}" "${pb_s0_a}" "${pb_s1_a}" "${pb_s2_a}"; do
+        [[ "${v}" != "-1" ]] || { pd_pd_ok=0; pd_pd_note="${pd_pd_note} datapath log unreadable during the fault window;"; break; }
+    done
+    [[ "${dp_fam}" -gt 0 ]] || { pd_pd_ok=0; pd_pd_note="${pd_pd_note} ${PD_PDIED_FAM} flat while every prefill backend died;"; }
+    [[ "${pb_rcpt}" -gt 0 ]] || { pd_pd_ok=0; pd_pd_note="${pd_pd_note} no client carried the prefill-exhaustion receipt (${PD_PD_RECEIPT});"; }
+    # Survives the re-dispatch multiplicity: same block, two statements.
+    [[ "${dp_fam}" -eq "${dp_vllm}" ]] || { pd_pd_ok=0; pd_pd_note="${pd_pd_note} Δcounter=${dp_fam} != Δ'${PD_PDIED_L_VLLM}' lines=${dp_vllm} — the counter and the log are not the same event;"; }
+    # ...and the three SGLang writers stayed out of it.
+    [[ "${dp_sgdr}" -eq 0 ]] || { pd_pd_ok=0; pd_pd_note="${pd_pd_note} the SGLang drain-leg site fired on a vLLM rule (Δ${dp_sgdr});"; }
+    [[ "${dp_sgaf}" -eq 0 ]] || { pd_pd_ok=0; pd_pd_note="${pd_pd_note} the SGLang after-relay site fired on a vLLM rule (Δ${dp_sgaf});"; }
+    [[ "${dp_sgab}" -eq 0 ]] || { pd_pd_ok=0; pd_pd_note="${pd_pd_note} the SGLang abort-pair site fired on a vLLM rule (${PD_SGABORT_FAM} Δ${dp_sgab});"; }
+
+    # ---- restore, and PROVE the pool came back --------------------------
+    # Not housekeeping: check 10 below opens with three healthy 200s, and this
+    # stage has just tripped every prefill breaker. A stage that leaves the bed
+    # broken makes the NEXT stage fail for a reason that is not its own.
+    for ns in ${PD_PREFILL_NS}; do sudo ${PD_SWAP} "${ns}" off >/dev/null || true; done
+    pd_pd_heal=0
+    for i in $(seq 1 12); do
+        sleep 5
+        if [[ "$($hexec l3h1 curl -s -o /dev/null --max-time 30 -w '%{http_code}' \
+                -H 'Content-Type: application/json' \
+                -d "{\"model\":\"${KV_MODEL}\",\"prompt\":\"pd prefill-heal probe $i\",\"max_tokens\":8}" \
+                "http://${VIP}:${VPORT}/v1/completions" 2>/dev/null)" == "200" ]]; then
+            pd_pd_heal=$i; break
+        fi
+    done
+    echo "  recovery: prefill pool served a 200 again after ${pd_pd_heal} probe(s) (0 = never recovered)"
+    [[ "${pd_pd_heal}" -gt 0 ]] || { pd_pd_ok=0; pd_pd_note="${pd_pd_note} the prefill pool never served a 200 again after the endpoints were restored — the breakers did not recover;"; }
+fi
+rm -f "${pd_pd_cf}" "${pd_pd_rf}" 2>/dev/null || true
+[[ -n "${pd_pd_note}" ]] && echo "  detail:${pd_pd_note}"
+assert "P/D prefill death: a dying prefill backend moves prefill_ep_died with the vLLM site's own log line, receipts agree, the three SGLang sites stay flat, and the pool recovers" "$pd_pd_ok"
+
+#################################################################################
+# P/D proactive circuit-breaker heal — the 1Hz health pass, not traffic
+#
+#     loxilb_pd_cb_proactive_heal_total has exactly ONE writer
+#     (sockproxy_health.c:425), so Δcounter == Δ its log line is an EXACT
+#     identity rather than the inequality the multi-writer families get.
+#
+#     What makes the family worth a stage is WHICH heal it counts. KV/PD
+#     selection skips an OPEN breaker, and recovery normally needs a successful
+#     relay -- which can never happen on an endpoint nothing selects. That is a
+#     latch: a prefill endpoint whose breaker opened during a restart would be
+#     skipped permanently. The health pass breaks it by driving OPEN->HALF_OPEN
+#     off the relay path entirely, so the endpoint re-enters rotation and the
+#     next genuine success closes it. This stage's whole point is that the heal
+#     happens with NO traffic at all: the fault's second phase drives nothing.
+#
+#     🚨 THIS ARM IS TIME-DRIVEN, AND THE CONTROL MUST GET THE SAME WALL CLOCK.
+#     A control that is merely "healthy" would be flat because nobody waited,
+#     and a counter that healed on a plain timer regardless of breaker state
+#     would sail straight through it. So the control gets the same request
+#     count AND the same trip+heal window as the fault.
+#
+#     🚨 FAILURES ARE RECORDED IN THE REQUEST PATH, NOT THE HEALTH PASS. An
+#     earlier version of this arm made the endpoints refuse and simply waited,
+#     assuming the 1Hz pass would trip the breaker by itself. It read Δ0 and
+#     looked like a dead product; the assumption was the defect. Only the HEAL
+#     is health-pass driven. So phase A DRIVES traffic to record the failures,
+#     and asserts the CLOSED->OPEN lines actually moved -- without that the
+#     heal in phase B would be a delta against breakers that never opened.
+#
+#     🚨 pd_cb_flips IS ONLY AN INEQUALITY HERE, DELIBERATELY. It has seven
+#     writers and one of them -- sockproxy_health.c:1103, OPEN->HALF_OPEN on
+#     open_timeout expiry in the traffic path -- increments with NO log line at
+#     all. Six sites can be counted and one cannot, so the only statement the
+#     code supports is Δflips >= Δ(the observable sites). Asserting equality
+#     would be claiming evidence that does not exist. The silent site is itself
+#     worth reporting: a state transition that counts but leaves no trace
+#     cannot be attributed after the fact.
+#
+#     🚨 RUNS BEFORE CHECK 10 AND AFTER CHECK 12. Its control needs a bed with
+#     NO breaker already open -- check 10 ends with three of them OPEN, and
+#     they would heal during this stage's control window and move the very
+#     counter the control asserts flat. Check 12 above ends by proving the pool
+#     recovered, which is exactly the clean start this needs.
+#################################################################################
+echo "=== P/D proactive CB heal: an OPEN breaker is healed by the 1Hz health pass with no traffic ==="
+
+PD_CB_N=6
+PD_CB_TRIP_WAIT=20
+PD_CB_HEAL_WAIT=45
+PD_CB_ALL_NS="l3ep1 l3ep2 l3ep3 l3ep4 l3ep5 l3ep6"
+PD_HEAL_FAM="loxilb_pd_cb_proactive_heal_total"
+PD_FLIPS_FAM="loxilb_pd_cb_flips_total"
+PD_HEAL_LINE="OPEN->HALF_OPEN driven by 1Hz health pass"
+PD_CB_OPEN_LINE="Circuit breaker CLOSED → OPEN"
+
+pd_cb_drive() {   # <tag> <codes-file>
+    local tag="$1" cf="$2" i
+    : > "${cf}"
+    for i in $(seq 1 ${PD_CB_N}); do
+        $hexec l3h1 curl -s -o /dev/null --max-time 60 -w '%{http_code}\n' \
+            -H 'Content-Type: application/json' \
+            -d "{\"model\":\"${KV_MODEL}\",\"prompt\":\"pd cb-heal ${tag} $i\",\"max_tokens\":8}" \
+            "http://${VIP}:${VPORT}/v1/completions" 2>/dev/null >> "${cf}"
+    done
+}
+
+pd_cb_ok=1
+pd_cb_note=""
+pd_cb_cf="$(mktemp)"
+
+if [[ ! -x "${PD_SWAP}" ]]; then
+    pd_cb_ok=0; pd_cb_note="missing ${PD_SWAP}"
+else
+    c_have=$(llb_curl "${METRICS}" 2>/dev/null | grep -cE "^${PD_HEAL_FAM}" || true)
+    echo "  presence: ${PD_HEAL_FAM}=${c_have} (want >=1)"
+    [[ "${c_have}" -ge 1 ]] || { pd_cb_ok=0; pd_cb_note="${pd_cb_note} ${PD_HEAL_FAM} is ABSENT before any traffic;"; }
+
+    # ---- A control: healthy, SAME traffic AND the SAME wall clock ---------
+    for ns in ${PD_CB_ALL_NS}; do sudo ${PD_SWAP} "${ns}" off >/dev/null || true; done
+    sleep 3
+    ca_h_b=$(metric_val "${PD_HEAL_FAM}"); ca_f_b=$(metric_val "${PD_FLIPS_FAM}")
+    ca_l_b=$(dplog_count "${PD_HEAL_LINE}")
+    pd_cb_drive "a" "${pd_cb_cf}"
+    ca_codes="$(tr '\n' ' ' < "${pd_cb_cf}")"; ca_200=$(grep -cx '200' "${pd_cb_cf}" || true); ca_n=$(wc -l < "${pd_cb_cf}")
+    sleep $(( PD_CB_TRIP_WAIT + PD_CB_HEAL_WAIT ))
+    ca_h_a=$(metric_val "${PD_HEAL_FAM}"); ca_f_a=$(metric_val "${PD_FLIPS_FAM}")
+    ca_l_a=$(dplog_count "${PD_HEAL_LINE}")
+    echo "  A control-healthy (same ${PD_CB_N} requests + same $(( PD_CB_TRIP_WAIT + PD_CB_HEAL_WAIT ))s window): ${PD_HEAL_FAM} Δ$(( ca_h_a - ca_h_b )) ; ${PD_FLIPS_FAM} Δ$(( ca_f_a - ca_f_b )) ; heal lines Δ$(( ca_l_a - ca_l_b )) ; codes=${ca_codes}"
+    [[ "${ca_n}" -eq "${PD_CB_N}" ]] || { pd_cb_ok=0; pd_cb_note="${pd_cb_note} A lost a measurement (${ca_n}/${PD_CB_N} codes);"; }
+    [[ "${ca_200}" -eq "${PD_CB_N}" ]] || { pd_cb_ok=0; pd_cb_note="${pd_cb_note} A is not a control (${ca_200}/${PD_CB_N} were 200, codes=${ca_codes});"; }
+    [[ $(( ca_h_a - ca_h_b )) -eq 0 ]] || { pd_cb_ok=0; pd_cb_note="${pd_cb_note} ${PD_HEAL_FAM} moved over a full trip+heal window with NO breaker open — it heals on a timer regardless of state;"; }
+    [[ $(( ca_l_a - ca_l_b )) -eq 0 ]] || { pd_cb_ok=0; pd_cb_note="${pd_cb_note} A logged a heal line with no breaker open;"; }
+    [[ $(( ca_f_a - ca_f_b )) -eq 0 ]] || { pd_cb_ok=0; pd_cb_note="${pd_cb_note} ${PD_FLIPS_FAM} moved on healthy traffic;"; }
+
+    # ---- B phase 1: refuse + DRIVE, so the request path records failures --
+    for ns in ${PD_CB_ALL_NS}; do sudo ${PD_SWAP} "${ns}" refuse >/dev/null || { pd_cb_ok=0; pd_cb_note="${pd_cb_note} could not put ${ns} in refuse mode;"; }; done
+    sleep 2
+    cb_h_b=$(metric_val "${PD_HEAL_FAM}"); cb_f_b=$(metric_val "${PD_FLIPS_FAM}")
+    cb_l_b=$(dplog_count "${PD_HEAL_LINE}"); cb_o_b=$(dplog_count "${PD_CB_OPEN_LINE}")
+    pd_cb_drive "b" "${pd_cb_cf}"
+    cb_codes="$(tr '\n' ' ' < "${pd_cb_cf}")"
+    sleep ${PD_CB_TRIP_WAIT}
+    cb_o_m=$(dplog_count "${PD_CB_OPEN_LINE}")
+    echo "  B1 trip: CLOSED→OPEN lines Δ$(( cb_o_m - cb_o_b )) ; codes=${cb_codes}"
+    # Drive-shape proof. If nothing opened, the heal below is a delta against
+    # breakers that were never OPEN, and a zero there would read as a dead
+    # family rather than as an arm that failed to set up its own precondition.
+    [[ "${cb_o_b}" != "-1" && "${cb_o_m}" != "-1" ]] || { pd_cb_ok=0; pd_cb_note="${pd_cb_note} datapath log unreadable during the trip phase;"; }
+    [[ $(( cb_o_m - cb_o_b )) -gt 0 ]] || { pd_cb_ok=0; pd_cb_note="${pd_cb_note} no breaker reached OPEN (CLOSED→OPEN Δ0) — the heal phase below would be vacuous;"; }
+
+    # ---- B phase 2: restore and DRIVE NOTHING. Only the health pass runs ---
+    for ns in ${PD_CB_ALL_NS}; do sudo ${PD_SWAP} "${ns}" off >/dev/null || true; done
+    sleep ${PD_CB_HEAL_WAIT}
+    cb_h_a=$(metric_val "${PD_HEAL_FAM}"); cb_f_a=$(metric_val "${PD_FLIPS_FAM}")
+    cb_l_a=$(dplog_count "${PD_HEAL_LINE}")
+    d_heal=$(( cb_h_a - cb_h_b )); d_flips=$(( cb_f_a - cb_f_b )); d_heall=$(( cb_l_a - cb_l_b ))
+    echo "  B2 heal (NO traffic driven, ${PD_CB_HEAL_WAIT}s): ${PD_HEAL_FAM} Δ${d_heal} ; heal lines Δ${d_heall} ; ${PD_FLIPS_FAM} Δ${d_flips}"
+    [[ "${cb_l_b}" != "-1" && "${cb_l_a}" != "-1" ]] || { pd_cb_ok=0; pd_cb_note="${pd_cb_note} datapath log unreadable during the heal phase;"; }
+    [[ "${d_heal}" -gt 0 ]] || { pd_cb_ok=0; pd_cb_note="${pd_cb_note} ${PD_HEAL_FAM} flat — an OPEN breaker was NOT healed by the health pass, which is the permanent-skip latch this family exists to report;"; }
+    # Single writer, so this is an exact identity, not an inequality.
+    [[ "${d_heal}" -eq "${d_heall}" ]] || { pd_cb_ok=0; pd_cb_note="${pd_cb_note} Δcounter=${d_heal} != Δheal-log=${d_heall} — the family has ONE writer, so these must agree exactly;"; }
+    # Inequality ON PURPOSE: one pd_cb_flips site logs nothing at all.
+    [[ "${d_flips}" -ge "${d_heal}" ]] || { pd_cb_ok=0; pd_cb_note="${pd_cb_note} ${PD_FLIPS_FAM} Δ${d_flips} < ${PD_HEAL_FAM} Δ${d_heal} — every proactive heal IS a flip, so the superset counted fewer than the subset;"; }
+
+    # ---- restore, and PROVE the pool serves again ------------------------
+    for ns in ${PD_CB_ALL_NS}; do sudo ${PD_SWAP} "${ns}" off >/dev/null || true; done
+    pd_cb_heal_ok=0
+    for i in $(seq 1 12); do
+        sleep 5
+        if [[ "$($hexec l3h1 curl -s -o /dev/null --max-time 30 -w '%{http_code}' \
+                -H 'Content-Type: application/json' \
+                -d "{\"model\":\"${KV_MODEL}\",\"prompt\":\"pd cb-heal recovery probe $i\",\"max_tokens\":8}" \
+                "http://${VIP}:${VPORT}/v1/completions" 2>/dev/null)" == "200" ]]; then
+            pd_cb_heal_ok=$i; break
+        fi
+    done
+    echo "  recovery: pool served a 200 again after ${pd_cb_heal_ok} probe(s) (0 = never recovered)"
+    [[ "${pd_cb_heal_ok}" -gt 0 ]] || { pd_cb_ok=0; pd_cb_note="${pd_cb_note} the pool never served a 200 again — a healed breaker did not restore service;"; }
+fi
+rm -f "${pd_cb_cf}" 2>/dev/null || true
+[[ -n "${pd_cb_note}" ]] && echo "  detail:${pd_cb_note}"
+assert "P/D proactive CB heal: an OPEN breaker is healed by the 1Hz health pass with no traffic, counted exactly once per log line" "$pd_cb_ok"
 
 #################################################################################
 # P/D same-endpoint connect retry — a refused connect that SUCCEEDS on retry
