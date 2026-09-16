@@ -42,6 +42,20 @@
 #            asserted only as a SUPERSET because one of its seven sites logs nothing at all.
 #            Control gets the same request count AND the same trip+heal wall clock. Runs after
 #            check 12 (clean, no breaker open) and before check 10.
+#   check 14 P/D session stickiness gauge — loxilb_pd_sessions_active is HASH_COUNT of the
+#            session map, not a request or concurrency count. Control = the IDENTICAL request
+#            minus X-Conversation-Id (no key ⇒ no entry) so a flat control is not flat-for-lack-
+#            of-traffic; 3 distinct keys must add EXACTLY 3; 4 requests on ONE key must add
+#            EXACTLY 1 because pd_session_store is an UPSERT. One insert statement has FOUR
+#            callers, so both failover callers are asserted flat. The gauge is NOT asserted to
+#            return to baseline — entries live out a 300s TTL and that is correct.
+#   check 15 P/D radix-trie gauge — loxilb_pd_trie_nodes is gated by the per-rule API field
+#            pd_cache_aware_mode (an extended-mutable field, so the stage flips it by re-POSTing
+#            the same rule). Gate closed ⇒ EXACTLY 0 while Tier-2 traffic still flows; gate open
+#            with NO traffic ⇒ EXACTLY 1, isolating the config-time writer from the traffic-time
+#            one; 3 distinct-first-byte prompts ⇒ EXACTLY 4 (radix insert off the root adds one
+#            node per key); closing the gate ⇒ back to EXACTLY 0. Insert site attributed by an
+#            independent family: tier_selected{tier="tier2"} moves, {tier="tier1"} stays flat.
 #   check 10 P/D same-endpoint connect retry — a refused connect that SUCCEEDS on retry must
 #            move loxilb_pd_connect_retry_same_ep_ok_total, with the ATTEMPT counter moving by
 #            the same amount and failover flat. Its control is the branch itself (endpoints
@@ -2106,6 +2120,331 @@ rm -f "${pd_cb_cf}" 2>/dev/null || true
 assert "P/D proactive CB heal: an OPEN breaker is healed by the 1Hz health pass with no traffic, counted exactly once per log line" "$pd_cb_ok"
 
 #################################################################################
+# P/D session stickiness gauge — a SESSION count, not a request count
+#
+#     loxilb_pd_sessions_active is not a counter and not a concurrency gauge.
+#     sockproxy_metrics.c:192 computes it as HASH_COUNT(tepval->pd_session_map)
+#     summed over services: the SIZE OF THE STICKINESS MAP. The obvious drive --
+#     hold N requests in flight against a hanging backend and expect N -- would
+#     measure a different thing entirely and pass or fail for the wrong reason.
+#
+#     Entries come from pd_session_store(), and a key exists only if the request
+#     carries one. The key is read from exactly two places
+#     (sockproxy_ep.c:834-838, mirrored at sockproxy_pd.c:1917-1928): the JSON
+#     body "user" field, and a client-provided X-Conversation-Id header which
+#     takes priority and whose auto-generated "auto-" prefix is explicitly
+#     skipped. With neither present the key stays NULL and nothing is stored.
+#
+#     That gives this stage an unusually strong control: THE IDENTICAL REQUEST,
+#     same body, same endpoints, MINUS ONE HEADER. A flat control here cannot be
+#     dismissed as flat-for-lack-of-traffic, which is the usual weakness of a
+#     gauge control.
+#
+#     🚨 DRIVE B IS THE POINT OF THE STAGE. pd_session_store is an UPSERT
+#     (HASH_FIND_STR then update-in-place, sockproxy_pd.c:1146-1167; the
+#     HASH_ADD_STR at :1213 is reached only when the key is NOT found), so M
+#     requests sharing ONE key add EXACTLY ONE entry. A delta of M there would
+#     mean the gauge counts requests and its name is wrong. Without drive B,
+#     drive A alone is equally consistent with a request counter.
+#
+#     🚨 ONE INSERT STATEMENT, FOUR CALLERS. pd_session_store is called from
+#     sockproxy_ep.c:840 (normal selection), sockproxy_ep.c:1165 (mid-cycle
+#     failover), sockproxy_pd_vllm.c:683 (prefill mid-request failover) and
+#     sockproxy_pd_sglang.c:949 (SGLang). A delta proves a caller ran, not WHICH
+#     one, so the two failover callers are asserted flat by their own log lines
+#     AND by loxilb_pd_connect_failover_total, which the vLLM failover caller
+#     ticks on its way past and the normal caller cannot.
+#
+#     🚨 THIS GAUGE DOES NOT RETURN TO BASELINE AND MUST NOT BE ASSERTED TO.
+#     Entries live out PD_SESSION_DEFAULT_TTL (300s, sockproxy_pd.c:958) because
+#     that is correct behaviour for an affinity map. An assertion that it falls
+#     back to zero would FAIL AGAINST A WORKING PRODUCT. The bound above it
+#     (PD_SESSION_MAX_ENTRIES 4096, LRU-evicted) is far out of reach here, so
+#     neither eviction nor TTL can move the gauge under the measurement.
+#################################################################################
+echo "=== P/D session gauge: sessions_active counts session KEYS, and an upsert adds one ==="
+
+PD_SESS_FAM="loxilb_pd_sessions_active"
+PD_FAILOVER_FAM2="loxilb_pd_connect_failover_total"
+PD_SESS_SETTLE=14
+PD_SESS_SEL_LINE="US-PD804: P/D EP selected"
+PD_SESS_MIDFO_LINE="US-PD804: P/D mid-cycle failover"
+PD_SESS_LOOSE_LINE="US-PD804: P/D "
+PD_SESS_VLLMFO_LINE="prefill mid-request failover"
+
+# "<selected> <midcycle_failover> <loose> <vllm_failover>"
+pd_sess_sites() {
+    echo "$(dplog_count "${PD_SESS_SEL_LINE}") $(dplog_count "${PD_SESS_MIDFO_LINE}")" \
+         "$(dplog_count "${PD_SESS_LOOSE_LINE}") $(dplog_count "${PD_SESS_VLLMFO_LINE}")"
+}
+
+# pd_sess_drive <codes-file> <n> [conv-id]
+# With no conv-id the request carries NO session key at all -- same body, same
+# endpoints, one header fewer. That is the control.
+pd_sess_drive() {
+    local cf="$1" n="$2" cid="${3:-}" i
+    : > "${cf}"
+    for i in $(seq 1 "${n}"); do
+        if [[ -n "${cid}" ]]; then
+            $hexec l3h1 curl -s -o /dev/null --max-time 60 -w '%{http_code}\n' \
+                -H 'Content-Type: application/json' -H "X-Conversation-Id: ${cid}" \
+                -d "{\"model\":\"${KV_MODEL}\",\"prompt\":\"pd session probe ${cid} $i\",\"max_tokens\":8}" \
+                "http://${VIP}:${VPORT}/v1/completions" 2>/dev/null >> "${cf}"
+        else
+            $hexec l3h1 curl -s -o /dev/null --max-time 60 -w '%{http_code}\n' \
+                -H 'Content-Type: application/json' \
+                -d "{\"model\":\"${KV_MODEL}\",\"prompt\":\"pd session probe nokey $i\",\"max_tokens\":8}" \
+                "http://${VIP}:${VPORT}/v1/completions" 2>/dev/null >> "${cf}"
+        fi
+    done
+}
+
+pd_sess_ok=1
+pd_sess_note=""
+pd_sess_cf="$(mktemp)"
+PD_SESS_STAMP="$(date +%s)"
+
+s_have=$(llb_curl "${METRICS}" 2>/dev/null | grep -cE "^${PD_SESS_FAM}" || true)
+echo "  presence: ${PD_SESS_FAM}=${s_have} (want >=1)"
+[[ "${s_have}" -ge 1 ]] || { pd_sess_ok=0; pd_sess_note="${pd_sess_note} ${PD_SESS_FAM} is ABSENT — every delta below would be computed from nothing;"; }
+
+# Endpoints healthy and unmodified for the whole stage: this gauge is driven by
+# request SHAPE, not by faults, and a fault would drag in the failover callers
+# that the site assertions below require to stay silent.
+for ns in ${PD_PREFILL_NS} ${PD_DECODE_NS}; do sudo ${PD_SWAP} "${ns}" off >/dev/null || true; done
+sleep 3
+
+# ---- A control: identical requests carrying NO session key -----------------
+sa_b=$(metric_val "${PD_SESS_FAM}"); sa_fo_b=$(metric_val "${PD_FAILOVER_FAM2}")
+read sa_s0_b sa_s1_b sa_s2_b sa_s3_b <<<"$(pd_sess_sites)"
+pd_sess_drive "${pd_sess_cf}" 3
+sleep ${PD_SESS_SETTLE}
+sa_a=$(metric_val "${PD_SESS_FAM}")
+sa_codes="$(tr '\n' ' ' < "${pd_sess_cf}")"; sa_n=$(wc -l < "${pd_sess_cf}"); sa_200=$(grep -cx '200' "${pd_sess_cf}" || true)
+echo "  A control (3 requests, NO X-Conversation-Id): ${PD_SESS_FAM} ${sa_b}->${sa_a} Δ$(( sa_a - sa_b )) ; codes=${sa_codes}"
+[[ "${sa_n}" -eq 3 ]] || { pd_sess_ok=0; pd_sess_note="${pd_sess_note} A lost a measurement (${sa_n}/3 codes);"; }
+[[ "${sa_200}" -eq 3 ]] || { pd_sess_ok=0; pd_sess_note="${pd_sess_note} A is not a control (${sa_200}/3 were 200, codes=${sa_codes});"; }
+[[ $(( sa_a - sa_b )) -eq 0 ]] || { pd_sess_ok=0; pd_sess_note="${pd_sess_note} A moved the gauge Δ$(( sa_a - sa_b )) on requests carrying NO session key — something other than the key is creating map entries;"; }
+
+# ---- B drive: three DISTINCT keys must add EXACTLY three -------------------
+sb_b=$(metric_val "${PD_SESS_FAM}")
+: > "${pd_sess_cf}.all"
+for k in 1 2 3; do pd_sess_drive "${pd_sess_cf}" 1 "wp11-sess-${PD_SESS_STAMP}-${k}"; cat "${pd_sess_cf}" >> "${pd_sess_cf}.all"; done
+sleep ${PD_SESS_SETTLE}
+sb_a=$(metric_val "${PD_SESS_FAM}")
+sb_codes="$(tr '\n' ' ' < "${pd_sess_cf}.all")"; sb_200=$(grep -cx '200' "${pd_sess_cf}.all" || true)
+d_sb=$(( sb_a - sb_b ))
+echo "  B drive (3 requests, 3 DISTINCT keys): ${PD_SESS_FAM} ${sb_b}->${sb_a} Δ${d_sb} (want EXACTLY 3) ; codes=${sb_codes}"
+[[ "${sb_200}" -eq 3 ]] || { pd_sess_ok=0; pd_sess_note="${pd_sess_note} B did not get 3x200 (codes=${sb_codes});"; }
+[[ "${d_sb}" -eq 3 ]] || { pd_sess_ok=0; pd_sess_note="${pd_sess_note} 3 distinct session keys moved the gauge Δ${d_sb}, not 3 — one key must add exactly one map entry;"; }
+
+# ---- C drive: FOUR requests on ONE key must add EXACTLY one ---------------
+# This is the check that makes it a SESSION gauge rather than a request counter.
+sc_b=$(metric_val "${PD_SESS_FAM}")
+pd_sess_drive "${pd_sess_cf}" 4 "wp11-sess-${PD_SESS_STAMP}-shared"
+sleep ${PD_SESS_SETTLE}
+sc_a=$(metric_val "${PD_SESS_FAM}")
+read sc_s0_a sc_s1_a sc_s2_a sc_s3_a <<<"$(pd_sess_sites)"
+sa_fo_a=$(metric_val "${PD_FAILOVER_FAM2}")
+sc_codes="$(tr '\n' ' ' < "${pd_sess_cf}")"; sc_n=$(wc -l < "${pd_sess_cf}"); sc_200=$(grep -cx '200' "${pd_sess_cf}" || true)
+d_sc=$(( sc_a - sc_b ))
+echo "  C drive (4 requests, ONE shared key): ${PD_SESS_FAM} ${sc_b}->${sc_a} Δ${d_sc} (want EXACTLY 1 — upsert) ; codes=${sc_codes}"
+[[ "${sc_n}" -eq 4 ]] || { pd_sess_ok=0; pd_sess_note="${pd_sess_note} C lost a measurement (${sc_n}/4 codes);"; }
+[[ "${sc_200}" -eq 4 ]] || { pd_sess_ok=0; pd_sess_note="${pd_sess_note} C did not get 4x200 (codes=${sc_codes});"; }
+[[ "${d_sc}" -eq 1 ]] || { pd_sess_ok=0; pd_sess_note="${pd_sess_note} 4 requests on ONE key moved the gauge Δ${d_sc}, not 1 — pd_session_store is an UPSERT, so a delta of 4 would mean this gauge counts REQUESTS and its name is wrong;"; }
+
+# ---- which caller did it -------------------------------------------------
+d_sel=$(( sc_s0_a - sa_s0_b )); d_midfo=$(( sc_s1_a - sa_s1_b ))
+d_loose=$(( sc_s2_a - sa_s2_b )); d_vllmfo=$(( sc_s3_a - sa_s3_b ))
+d_fo=$(( sa_fo_a - sa_fo_b ))
+echo "  caller evidence over the whole stage: selected Δ${d_sel} ; mid-cycle failover Δ${d_midfo} ; vLLM prefill failover Δ${d_vllmfo} ; ${PD_FAILOVER_FAM2} Δ${d_fo} (loose Δ${d_loose})"
+for v in "${sa_s0_b}" "${sa_s1_b}" "${sa_s2_b}" "${sa_s3_b}" "${sc_s0_a}" "${sc_s1_a}" "${sc_s2_a}" "${sc_s3_a}"; do
+    [[ "${v}" != "-1" ]] || { pd_sess_ok=0; pd_sess_note="${pd_sess_note} datapath log unreadable — the FLAT caller verdicts would be vacuous;"; break; }
+done
+[[ "${d_sel}" -gt 0 ]] || { pd_sess_ok=0; pd_sess_note="${pd_sess_note} the normal selection caller never logged, so no caller is attributable;"; }
+# Self-verifying: the loose prefix is shared by exactly these two lines.
+[[ "${d_loose}" -eq $(( d_sel + d_midfo )) ]] || { pd_sess_ok=0; pd_sess_note="${pd_sess_note} log discriminator is not discriminating (loose Δ${d_loose} != selected Δ${d_sel} + mid-cycle Δ${d_midfo});"; }
+[[ "${d_midfo}" -eq 0 ]] || { pd_sess_ok=0; pd_sess_note="${pd_sess_note} the mid-cycle failover caller also stored sessions (Δ${d_midfo}) — the deltas above are not attributable to normal selection;"; }
+[[ "${d_vllmfo}" -eq 0 ]] || { pd_sess_ok=0; pd_sess_note="${pd_sess_note} the vLLM prefill-failover caller also stored sessions (Δ${d_vllmfo});"; }
+[[ "${d_fo}" -eq 0 ]] || { pd_sess_ok=0; pd_sess_note="${pd_sess_note} ${PD_FAILOVER_FAM2} Δ${d_fo} — a failover ran during a no-fault stage, so a failover caller may own part of the gauge delta;"; }
+
+rm -f "${pd_sess_cf}" "${pd_sess_cf}.all" 2>/dev/null || true
+[[ -n "${pd_sess_note}" ]] && echo "  detail:${pd_sess_note}"
+assert "P/D session gauge: no key adds nothing, 3 distinct keys add 3, and 4 requests on one key add 1 (upsert), all from the normal selection caller" "$pd_sess_ok"
+
+#################################################################################
+# P/D radix-trie gauge — a CONFIG-gated structure with an exact node arithmetic
+#
+#     loxilb_pd_trie_nodes (sockproxy_metrics.c:196) is pd_trie_node_count()
+#     summed over services: the live size of the Tier-1 radix trie. It is gated
+#     by the per-rule API field pd_cache_aware_mode, NOT by an engine and NOT by
+#     a build flag on this image -- common/Makefile defines
+#     HAVE_LLM_SYSTEM_PROMPT_HASH unconditionally, and the one code path that
+#     would degrade the mode to 0 logs when it does. pd_cache_aware_mode is in
+#     the extended-mutable-field set (pkg/loxinet/rules.go:4183), so flipping it
+#     is a re-POST of the SAME rule, not a delete plus re-add by hand; a field
+#     NOT in that set (kvEngineType) rejects instead, which is why this stage
+#     can toggle its own gate but a stage for that one could not.
+#
+#     🚨 A GAUGE HAS TWO WRITER CLASSES AND ONE END-STATE READING CANNOT TELL
+#     THEM APART. Opening the gate creates the trie ROOT at rule-add time
+#     (pd_trie_create sets node_count = 1, sockproxy_pd_trie.c:316) -- that is
+#     the CONFIG-time writer. Requests then add leaves -- the TRAFFIC-time
+#     writer. So the stage reads the gauge with the gate OPEN and NO TRAFFIC
+#     first, pinning the config-time contribution at EXACTLY 1, and only then
+#     drives. Without that reading, 4 could be one root plus three inserts or
+#     any other split, and the arithmetic below would prove nothing.
+#
+#     The node arithmetic is read out of pd_trie_insert (sockproxy_pd_trie.c:384).
+#     It is a RADIX trie: a key whose FIRST BYTE matches no child of the root
+#     allocates ONE leaf holding the whole remaining text (node_count++ at :403).
+#     A key sharing a first byte with an existing child SPLITS it and adds TWO
+#     (:452 mid, :463 leaf). So three prompts with DISTINCT first bytes add
+#     exactly three, and 1 + 3 = 4 is an exact prediction rather than a
+#     direction. The prompts below therefore start with distinct characters on
+#     purpose -- for /v1/completions the trie key is the PROMPT TEXT itself
+#     (sockproxy_json.c:1138 copies the unescaped prompt into
+#     prefix_key.prefix), not a hash, so the first byte is ours to choose.
+#
+#     🚨 WHICH INSERT SITE. There are two (sockproxy_pd.c:1998 Tier-1, :2168
+#     Tier-2) and they are not interchangeable. Tier 1 inserts ONLY on a trie
+#     MATCH at or above the threshold; Tier 1.5 (kvExactMode=1 here) RETURNS
+#     before Tier 2 when it resolves. So the prompts are stamped and unique:
+#     they cannot match the trie and cannot hit a KV block, and they fall
+#     through to the Tier-2 RR site. That is asserted, not assumed, by an
+#     INDEPENDENT family -- loxilb_ai_pd_tier_selected_total{tier="tier2"} must
+#     move by the drive count while {tier="tier1"} stays flat.
+#
+#     🚨 NO SESSION KEY ON THESE REQUESTS. Tier 0 is session stickiness and
+#     returns before Tier 1 entirely, so an X-Conversation-Id would route the
+#     drive past both insert sites and read as a dead family.
+#
+#     Closing the gate again must return the gauge to EXACTLY 0, which is what
+#     rules out "the rule re-add did it" as an explanation for the rise.
+#################################################################################
+echo "=== P/D trie gauge: a config-gated trie, one root plus one leaf per distinct-first-byte key ==="
+
+PD_TRIE_FAM="loxilb_pd_trie_nodes"
+PD_TRIE_SETTLE=14
+PD_TRIE_N=3
+PD_TRIE_STAMP="$(date +%s)"
+
+pd_tier_sel() { metric_val "loxilb_ai_pd_tier_selected_total\{[^}]*tier=\"$1\""; }
+
+# Re-POST the scenario's own rule with pd_cache_aware_mode set as asked. Same
+# key (externalIP/port/host/model_name), so this is a field change on the live
+# rule rather than a second service.
+pd_trie_post() {   # <true|false> -> echoes the HTTP code
+    local mode="$1"
+    $hexec llb1 curl -s -o /dev/null --max-time 20 -w '%{http_code}' \
+        -X POST "${LBBASE}" -H 'Content-Type: application/json' -d "{
+  \"serviceArguments\": {
+    \"externalIP\": \"${VIP}\",
+    \"port\": ${VPORT},
+    \"protocol\": \"tcp\",
+    \"sel\": 0,
+    \"mode\": 4,
+    \"host\": \"${VIP}\",
+    \"model_name\": \"${KV_MODEL}\",
+    \"pd_disagg_mode\": true,
+    \"probeRetries\": 1,
+    \"pd_cache_aware_mode\": ${mode},
+    \"kvExactMode\": 1,
+    \"kvZmqPort\": ${KV_ZMQ_PORT},
+    \"kvHashAlgo\": \"${KV_HASH_ALGO}\",
+    \"kvWarmupSec\": 20,
+    \"kvBlockSize\": ${KV_BLOCK_SIZE}
+  },
+  \"endpoints\": [
+    { \"endpointIP\": \"31.31.31.1\", \"targetPort\": 80, \"weight\": 1, \"ep_role\": 1 },
+    { \"endpointIP\": \"32.32.32.1\", \"targetPort\": 80, \"weight\": 1, \"ep_role\": 2 },
+    { \"endpointIP\": \"33.33.33.1\", \"targetPort\": 80, \"weight\": 1, \"ep_role\": 1 },
+    { \"endpointIP\": \"34.34.34.1\", \"targetPort\": 80, \"weight\": 1, \"ep_role\": 2 },
+    { \"endpointIP\": \"35.35.35.1\", \"targetPort\": 80, \"weight\": 1, \"ep_role\": 1 },
+    { \"endpointIP\": \"36.36.36.1\", \"targetPort\": 80, \"weight\": 1, \"ep_role\": 2 }
+  ]
+}" 2>/dev/null
+}
+
+# Three prompts with DISTINCT first bytes, each stamped so it can neither match
+# the trie nor hit a KV block. NO X-Conversation-Id: a session key returns at
+# Tier 0, before either insert site.
+pd_trie_drive() {   # <codes-file>
+    local cf="$1" p
+    : > "${cf}"
+    for p in A B C; do
+        $hexec l3h1 curl -s -o /dev/null --max-time 60 -w '%{http_code}\n' \
+            -H 'Content-Type: application/json' \
+            -d "{\"model\":\"${KV_MODEL}\",\"prompt\":\"${p}lpha trie probe ${PD_TRIE_STAMP} ${p} unique tail\",\"max_tokens\":8}" \
+            "http://${VIP}:${VPORT}/v1/completions" 2>/dev/null >> "${cf}"
+    done
+}
+
+pd_trie_ok=1
+pd_trie_note=""
+pd_trie_cf="$(mktemp)"
+
+t_have=$(llb_curl "${METRICS}" 2>/dev/null | grep -cE "^${PD_TRIE_FAM} " || true)
+echo "  presence: ${PD_TRIE_FAM}=${t_have} (want >=1 — ABSENT and 0 are different states and metric_val cannot tell them apart)"
+[[ "${t_have}" -ge 1 ]] || { pd_trie_ok=0; pd_trie_note="${pd_trie_note} ${PD_TRIE_FAM} is ABSENT, so every reading below is a subtraction against nothing;"; }
+
+for ns in ${PD_PREFILL_NS} ${PD_DECODE_NS}; do sudo ${PD_SWAP} "${ns}" off >/dev/null || true; done
+sleep 3
+
+# ---- A control: gate CLOSED, real traffic, gauge pinned at zero ------------
+ta_t2_b=$(pd_tier_sel tier2)
+pd_trie_drive "${pd_trie_cf}"
+sleep ${PD_TRIE_SETTLE}
+ta_v=$(metric_val "${PD_TRIE_FAM}"); ta_t2_a=$(pd_tier_sel tier2)
+ta_codes="$(tr '\n' ' ' < "${pd_trie_cf}")"; ta_200=$(grep -cx '200' "${pd_trie_cf}" || true)
+echo "  A control (gate CLOSED, ${PD_TRIE_N} requests): ${PD_TRIE_FAM}=${ta_v} (want EXACTLY 0) ; tier2 Δ$(( ta_t2_a - ta_t2_b )) ; codes=${ta_codes}"
+[[ "${ta_200}" -eq "${PD_TRIE_N}" ]] || { pd_trie_ok=0; pd_trie_note="${pd_trie_note} A did not get ${PD_TRIE_N}x200 (codes=${ta_codes});"; }
+[[ "${ta_v}" -eq 0 ]] || { pd_trie_ok=0; pd_trie_note="${pd_trie_note} the gauge reads ${ta_v} with pd_cache_aware_mode OFF — the trie exists without its gate;"; }
+# Non-vacuous: the requests really were routed, so the flat gauge is the gate's
+# doing and not an absence of traffic.
+[[ $(( ta_t2_a - ta_t2_b )) -ge "${PD_TRIE_N}" ]] || { pd_trie_ok=0; pd_trie_note="${pd_trie_note} A drove no Tier-2 selections (Δ$(( ta_t2_a - ta_t2_b ))), so the zero gauge proves nothing;"; }
+
+# ---- B: open the gate, drive NOTHING — isolate the CONFIG-time writer -----
+tb_code=$(pd_trie_post true)
+sleep ${PD_TRIE_SETTLE}
+tb_v=$(metric_val "${PD_TRIE_FAM}")
+echo "  B gate OPENED, NO traffic: POST -> HTTP ${tb_code} ; ${PD_TRIE_FAM}=${tb_v} (want EXACTLY 1 — the root created at rule add)"
+[[ "${tb_code}" =~ ^2 ]] || { pd_trie_ok=0; pd_trie_note="${pd_trie_note} the gate-open POST answered HTTP ${tb_code};"; }
+[[ "${tb_v}" -eq 1 ]] || { pd_trie_ok=0; pd_trie_note="${pd_trie_note} with the gate open and NO traffic the gauge reads ${tb_v}, not 1 — the config-time contribution is not one root, so the drive arithmetic below cannot be attributed;"; }
+
+# ---- C: drive three distinct-first-byte keys -> EXACTLY 1+3 = 4 -----------
+tc_t1_b=$(pd_tier_sel tier1); tc_t2_b=$(pd_tier_sel tier2)
+pd_trie_drive "${pd_trie_cf}"
+sleep ${PD_TRIE_SETTLE}
+tc_v=$(metric_val "${PD_TRIE_FAM}")
+tc_t1_a=$(pd_tier_sel tier1); tc_t2_a=$(pd_tier_sel tier2)
+tc_codes="$(tr '\n' ' ' < "${pd_trie_cf}")"; tc_200=$(grep -cx '200' "${pd_trie_cf}" || true)
+d_t1=$(( tc_t1_a - tc_t1_b )); d_t2=$(( tc_t2_a - tc_t2_b ))
+echo "  C drive (${PD_TRIE_N} distinct first bytes): ${PD_TRIE_FAM}=${tc_v} (want EXACTLY $(( 1 + PD_TRIE_N ))) ; tier1 Δ${d_t1} ; tier2 Δ${d_t2} ; codes=${tc_codes}"
+[[ "${tc_200}" -eq "${PD_TRIE_N}" ]] || { pd_trie_ok=0; pd_trie_note="${pd_trie_note} C did not get ${PD_TRIE_N}x200 (codes=${tc_codes});"; }
+[[ "${tc_v}" -eq $(( 1 + PD_TRIE_N )) ]] || { pd_trie_ok=0; pd_trie_note="${pd_trie_note} ${PD_TRIE_N} distinct-first-byte keys took the trie to ${tc_v}, not $(( 1 + PD_TRIE_N )) — a radix insert off the root adds exactly one node per key;"; }
+# Attribution by an INDEPENDENT family: every insert belongs to the Tier-2 site.
+[[ "${d_t2}" -ge "${PD_TRIE_N}" ]] || { pd_trie_ok=0; pd_trie_note="${pd_trie_note} tier2 moved Δ${d_t2} for ${PD_TRIE_N} requests — the drive did not reach the Tier-2 insert site;"; }
+[[ "${d_t1}" -eq 0 ]] || { pd_trie_ok=0; pd_trie_note="${pd_trie_note} tier1 moved Δ${d_t1} — the Tier-1 insert site also ran, so the node count is not attributable to Tier 2 alone;"; }
+
+# ---- D: close the gate -> EXACTLY 0, and the service still serves ---------
+# This is what rules out "the rule re-add produced the rise": the same re-POST
+# with the gate closed must take it back to zero, not leave a residue.
+td_code=$(pd_trie_post false)
+sleep ${PD_TRIE_SETTLE}
+td_v=$(metric_val "${PD_TRIE_FAM}")
+pd_trie_drive "${pd_trie_cf}"
+td_codes="$(tr '\n' ' ' < "${pd_trie_cf}")"; td_200=$(grep -cx '200' "${pd_trie_cf}" || true)
+echo "  D gate CLOSED again: POST -> HTTP ${td_code} ; ${PD_TRIE_FAM}=${td_v} (want EXACTLY 0) ; post-restore codes=${td_codes}"
+[[ "${td_code}" =~ ^2 ]] || { pd_trie_ok=0; pd_trie_note="${pd_trie_note} the gate-close POST answered HTTP ${td_code};"; }
+[[ "${td_v}" -eq 0 ]] || { pd_trie_ok=0; pd_trie_note="${pd_trie_note} closing the gate left the gauge at ${td_v}, not 0 — the trie outlived its gate;"; }
+[[ "${td_200}" -eq "${PD_TRIE_N}" ]] || { pd_trie_ok=0; pd_trie_note="${pd_trie_note} the service did not serve after the rule was restored (codes=${td_codes}) — this stage must hand the next one a working rule;"; }
+
+rm -f "${pd_trie_cf}" 2>/dev/null || true
+[[ -n "${pd_trie_note}" ]] && echo "  detail:${pd_trie_note}"
+assert "P/D trie gauge: gated off it is 0, opening it alone gives exactly the root, three distinct keys give exactly root+3 via the Tier-2 site, and closing it returns to 0" "$pd_trie_ok"
+
+#################################################################################
 # P/D same-endpoint connect retry — a refused connect that SUCCEEDS on retry
 #
 #     loxilb_pd_connect_retry_same_ep_ok_total is the SUCCESS half of a pair.
@@ -2252,6 +2591,25 @@ else
     [[ $(( a_a_a - a_a_b )) -eq 0 && $(( a_o_a - a_o_b )) -eq 0 ]] || { pd_retry_ok=0; pd_retry_note="${pd_retry_note} A entered the retry block at all;"; }
 
     # ---- B drive: one request per freshly armed parity window -------------
+    # 🚨 A DISCARDED WINDOW STILL DROVE A REAL REQUEST, AND ITS COUNTER
+    # MOVEMENT IS REAL. The discard removes the window from the drive-shape
+    # accounting (refused_tot/accepted_tot) but it cannot remove it from the
+    # metric, which was already incremented: a window that read (3,1) had its
+    # request refused and then rescued by the retry exactly like a clean one.
+    # With ONE baseline taken outside the loop, the delta therefore counts
+    # clean windows PLUS discarded ones, so a single discard makes the family
+    # read Δ4 for 3 scored windows and the stage fails as though the product
+    # over-counted. It does not: the counter and its log line agreed at 4, and
+    # 4 requests really were driven. Two oracles, and only one of them was
+    # taught about discards.
+    #
+    # The sound fix is to make the baseline describe exactly the windows that
+    # get scored, so the whole B phase is re-driven from a FRESH baseline
+    # whenever it contained a discard. Re-baselining works only because the
+    # settle below is a full collector period: the polluted movement is banked
+    # before the next round reads its baseline. The assertions are unchanged.
+    pdr_round_clean=0
+    for pdr_round in 1 2 3; do
     b_ok_b=$(metric_val "${PD_RETRY_OK_FAM}"); b_rt_b=$(metric_val "${PD_RETRY_FAM}")
     b_fo_b=$(metric_val "${PD_FAILOVER_FAM}"); b_np_b=$(dplog_count "${PD_NOPOOL_LINE}")
     read b_l_b b_a_b b_o_b <<<"$(pd_retry_counts)"
@@ -2284,6 +2642,10 @@ else
     done
     pd_flap_disarm || true
     sleep ${PD_RETRY_SETTLE}
+        if [[ "${discarded}" -eq 0 ]]; then pdr_round_clean=1; break; fi
+        echo "    round ${pdr_round} contained ${discarded} discarded window(s) — their counter movement is real and already banked; re-baselining and re-driving the whole phase"
+    done
+    [[ "${pdr_round_clean}" == "1" ]] || { pd_retry_ok=0; pd_retry_note="${pd_retry_note} no discard-free round in 3 attempts — the /metrics scraper shared the port every time;"; }
     b_ok_a=$(metric_val "${PD_RETRY_OK_FAM}"); b_rt_a=$(metric_val "${PD_RETRY_FAM}")
     b_fo_a=$(metric_val "${PD_FAILOVER_FAM}"); b_np_a=$(dplog_count "${PD_NOPOOL_LINE}")
     read b_l_a b_a_a b_o_a <<<"$(pd_retry_counts)"
