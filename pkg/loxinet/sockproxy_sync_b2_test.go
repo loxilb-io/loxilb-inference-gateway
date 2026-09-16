@@ -36,6 +36,8 @@ package loxinet
 import (
 	"context"
 	"net"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -666,19 +668,27 @@ func TestScopeVersionWarningsNameThePeerAndDoNotMask(t *testing.T) {
 // rate-limiter snapshot must not hand the receiving node's own per-key RPS
 // buckets a fresh full burst.
 //
-// ImportState replaces the per-key entries map wholesale and rebuilds each
-// limiter from the entry's (RPS, Burst). Those two fields have no slot in
-// the wire message — RateLimiterEntry carries key_id, is_tenant,
+// ImportState USED TO replace the per-key entries map wholesale and rebuild
+// each limiter from the entry's (RPS, Burst). Those two fields have no slot
+// in the wire message — RateLimiterEntry carries key_id, is_tenant,
 // last_refill_ns, current_tokens, epoch_start_ts, tokens_consumed and
 // exceeded, and rlGoEntryToProto never writes a rate or a burst. So every
-// imported limiter arrives as rate.NewLimiter(0, 0), RateLimiterStore.check
-// sees a config mismatch on the next call and mints a brand-new FULL bucket.
-// The snapshot's per-key half therefore carries nothing the receiver can
-// use, and the one thing it does is reset the receiver's live enforcement.
+// imported limiter arrived as rate.NewLimiter(0, 0), RateLimiterStore.check
+// saw a config mismatch on the next call and minted a brand-new FULL bucket.
+// The snapshot's per-key half carried nothing the receiver could use, and
+// the one thing it did was reset the receiver's live enforcement.
 //
 // The push is not a once-per-failover event: in A-A mode every tenth push
-// is an absolute snapshot, so a serving node is re-zeroed on that cadence
-// while it is admitting traffic against those very buckets.
+// is an absolute snapshot, so a serving node was re-zeroed on that cadence
+// while it was admitting traffic against those very buckets.
+//
+// This node's own sender no longer emits per-key rows at all, so the batch
+// below is built by handing sendRateLimiterBatch a raw store snapshot
+// directly. That is deliberate and it is what keeps this test honest: the
+// property under test is that a per-key row cannot reset a live bucket
+// NO MATTER WHO SENT IT, and a peer is not obliged to be this build. A
+// version of this test that let the local sender decide what to put on the
+// wire would go quietly vacuous the day the sender stopped sending them.
 //
 // The two halves of the assertion are deliberate. The tenant-quota control
 // proves the harness can see synced state arrive at all — without it a
@@ -764,6 +774,118 @@ func TestSnapshotImportDoesNotResetTheReceiversRpsBuckets(t *testing.T) {
 		t.Errorf("%d of 3 replayed snapshots each bought the caller another admission "+
 			"past a rate limit that had already refused it", extra)
 	}
+}
+
+// TestRateLimiterPushDoesNotStarveQuotaRowsBehindUnusableRows — the rows a
+// push puts on the wire must be rows the peer can do something with, and
+// the quota rows must not ride behind the ones it cannot.
+//
+// Both receive paths skip non-tenant rows: the per-key (rps, burst) has no
+// slot in RateLimiterEntry, so a per-key row reaches a peer carrying a name
+// and a timestamp and nothing it could enforce with. The sender kept
+// shipping them anyway, and two mechanisms turned that waste into harm.
+// ExportState walks the keyed limiter table first and appends the quota
+// rows LAST; sendRateLimiterBatch chunks at a fixed ceiling. A gateway
+// holding more keyed limiters than that ceiling therefore pushed whole
+// RPCs — five a second, per peer — without one row of quota state in them,
+// and the rows that are the point of the push arrived last.
+//
+// The second arm is the measurement that makes the first one mean
+// something: it sends the same store's UNFILTERED snapshot down the same
+// call and reads where the quota row lands. Without it, "the quota row is
+// in chunk 1" is equally well explained by a store too small to chunk.
+func TestRateLimiterPushDoesNotStarveQuotaRowsBehindUnusableRows(t *testing.T) {
+	t.Parallel()
+
+	// A store with one more keyed limiter than a single chunk can hold,
+	// plus one tenant driven into quota debt — the state a failover
+	// actually needs to survive.
+	store := rl.New()
+	for i := 0; i < rlPushBatchMax; i++ {
+		store.CheckKey("starve-key-"+strconv.Itoa(i), 100, 100)
+	}
+	store.AllowTokens("starve-tenant", 1000000, 1000000, 0)
+	store.AllowTokens("starve-tenant", 100000, 1000000, 0)
+
+	full := store.ExportState()
+	if len(full) <= rlPushBatchMax {
+		t.Fatalf("setup: the snapshot must exceed one chunk to be under test (got %d rows, ceiling %d)",
+			len(full), rlPushBatchMax)
+	}
+
+	// Arm: what the push loop actually puts on the wire.
+	armSrv := &mockRateLimiterServer{}
+	armClient, armCleanup := startMockRLServer(t, armSrv)
+	defer armCleanup()
+	sender := newTestCoordinator(newMockApplier(0))
+	armPeer := &DpPeer{Peer: net.ParseIP("127.0.0.21"), CapMask: 0xFFFFFFFF}
+	if err := sender.sendRateLimiterBatch(armPeer, armClient, rlWireEntries(full), false); err != nil {
+		t.Fatalf("sendRateLimiterBatch (filtered): %v", err)
+	}
+	armWire := drainBatches(armSrv)
+
+	// Comparison arm: the same snapshot, unfiltered, down the same call.
+	rawSrv := &mockRateLimiterServer{}
+	rawClient, rawCleanup := startMockRLServer(t, rawSrv)
+	defer rawCleanup()
+	rawPeer := &DpPeer{Peer: net.ParseIP("127.0.0.22"), CapMask: 0xFFFFFFFF}
+	if err := sender.sendRateLimiterBatch(rawPeer, rawClient, full, false); err != nil {
+		t.Fatalf("sendRateLimiterBatch (unfiltered): %v", err)
+	}
+	rawWire := drainBatches(rawSrv)
+
+	armChunk, armRows, armUnusable := quotaRowChunk(armWire, "t:starve-tenant")
+	rawChunk, rawRows, rawUnusable := quotaRowChunk(rawWire, "t:starve-tenant")
+	t.Logf("filtered:   %d RPC(s), %d rows, %d unusable, quota row in chunk %d",
+		len(armWire), armRows, armUnusable, armChunk)
+	t.Logf("unfiltered: %d RPC(s), %d rows, %d unusable, quota row in chunk %d",
+		len(rawWire), rawRows, rawUnusable, rawChunk)
+
+	if rawChunk <= 1 {
+		t.Fatalf("the unfiltered arm put the quota row in chunk %d: this store does not "+
+			"reproduce the starvation, so the filtered result below proves nothing", rawChunk)
+	}
+	if armChunk != 1 {
+		t.Errorf("the quota row reached the peer in chunk %d, behind %d row(s) it cannot use",
+			armChunk, armUnusable)
+	}
+	if armUnusable != 0 {
+		t.Errorf("%d of %d rows on the wire are rows every receive path skips", armUnusable, armRows)
+	}
+	if len(armWire) != 1 {
+		t.Errorf("a snapshot of %d quota row(s) took %d RPCs", armRows, len(armWire))
+	}
+}
+
+// drainBatches returns a copy of everything the mock server has received.
+func drainBatches(srv *mockRateLimiterServer) []*RateLimiterBatch {
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	out := make([]*RateLimiterBatch, len(srv.batches))
+	copy(out, srv.batches)
+	return out
+}
+
+// quotaRowChunk reports the 1-based chunk that carried keyID, the total
+// rows across every chunk, and how many of them are rows the receive path
+// skips. The scope sentinel is excluded from both counts: it is a version
+// announcement every chunk must carry, not state.
+func quotaRowChunk(wire []*RateLimiterBatch, keyID string) (chunk, rows, unusable int) {
+	for i, b := range wire {
+		for _, e := range b.Entries {
+			if e == nil || strings.HasPrefix(e.KeyId, "ver:") {
+				continue
+			}
+			rows++
+			if !e.IsTenant {
+				unusable++
+			}
+			if e.KeyId == keyID && chunk == 0 {
+				chunk = i + 1
+			}
+		}
+	}
+	return chunk, rows, unusable
 }
 
 // TestRateLimiterPushDialsItsOwnPeer — the rate-limiter push loop must

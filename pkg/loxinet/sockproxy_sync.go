@@ -1197,6 +1197,7 @@ func (s *SockproxySync) rateLimiterPushLoop(peer *DpPeer, peerKey string, client
 			isDelta = false
 		}
 
+		entries = rlWireEntries(entries)
 		if len(entries) == 0 {
 			continue
 		}
@@ -1204,6 +1205,43 @@ func (s *SockproxySync) rateLimiterPushLoop(peer *DpPeer, peerKey string, client
 			tk.LogIt(tk.LogDebug, "[SOCKPROXY_SYNC] RateLimiterSync push to peer=%s failed: %v\n", peerKey, err)
 		}
 	}
+}
+
+// rlWireEntries drops the rows a rate-limiter push cannot deliver anything
+// with. Both receive paths skip non-tenant rows — the per-key (rps, burst)
+// has no slot in RateLimiterEntry at all, so a per-key row arrives carrying
+// a name and a timestamp and nothing a peer could enforce with.
+//
+// Sending them anyway was not merely wasteful, and the waste scales with
+// the wrong number: ExportState walks the keyed limiter table FIRST and
+// appends the quota rows LAST, while sendRateLimiterBatch chunks at a fixed
+// ceiling. A gateway holding more keyed limiters than that ceiling
+// therefore pushed whole RPCs — five times a second, per peer, forever —
+// in which not one row was quota state, and the rows that ARE the point of
+// the push rode in the last chunk, behind every byte of it. That is where
+// a mid-snapshot RPC failure costs the most and where a receiver still
+// waiting on its cold-start warmup was made to wait longest.
+//
+// Returns the input slice untouched when nothing needs dropping, so the
+// common shape (delta pushes, which are quota-only already) allocates
+// nothing.
+func rlWireEntries(entries []rl.RateLimiterEntry) []rl.RateLimiterEntry {
+	drop := 0
+	for i := range entries {
+		if !entries[i].IsTenant {
+			drop++
+		}
+	}
+	if drop == 0 {
+		return entries
+	}
+	out := make([]rl.RateLimiterEntry, 0, len(entries)-drop)
+	for i := range entries {
+		if entries[i].IsTenant {
+			out = append(out, entries[i])
+		}
+	}
+	return out
 }
 
 // peerStillOurs reports whether peerKey is still a peer this node should be
@@ -1379,12 +1417,19 @@ func (s *SockproxySync) ApplyRateLimiterBatch(peerKey string, m *RateLimiterBatc
 			}
 			continue
 		}
-		// WR-01: ApplyGossipDelta silently no-ops non-tenant rows
-		// (ratelimit_sync.go:323-331). Drop them at ingest to avoid
-		// pointless alloc + GC pressure on hundreds-of-key delta batches.
-		// Absolute (ImportState) snapshots still carry every row because
-		// the receiver clears state before installing.
-		if m.IsDelta && !e.IsTenant {
+		// Both merge paths silently no-op non-tenant rows — ImportState
+		// has done so since it stopped installing the per-key map
+		// wholesale, so the "absolute snapshots carry every row because
+		// the receiver clears state before installing" exemption this
+		// filter used to carry died with that clear. Drop them at ingest
+		// on BOTH shapes: they cost an alloc and a conversion each and
+		// reach a loop that skips them.
+		//
+		// The drop is at ingest deliberately, not only at egress. A peer
+		// is not obliged to be this build (see the scope-sentinel warning
+		// below); a row this node cannot use must not become state
+		// whichever sender produced it.
+		if !e.IsTenant {
 			continue
 		}
 		goEntries = append(goEntries, rlProtoEntryToGo(e))
